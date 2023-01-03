@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -196,6 +196,9 @@ class AndroidMetricsServiceClient : public MetricsServiceClient,
   // should use `GetAppPackageNameIfLoggable`.
   std::string GetAppPackageName();
 
+  // Returns the installer type of the app.
+  virtual InstallerPackageType GetInstallerPackageType();
+
  protected:
   // Called by MaybeStartMetrics() to allow embedder specific initialization.
   virtual void OnMetricsStart() = 0;
@@ -220,10 +223,7 @@ class AndroidMetricsServiceClient : public MetricsServiceClient,
   // we log metrics. If this returns false, MetricsServiceClient should
   // indicate reporting is disabled. Sampling is due to storage/bandwidth
   // considerations.
-  bool IsInSample() const;
-
-  // Returns the installer type of the app.
-  virtual InstallerPackageType GetInstallerPackageType();
+  virtual bool IsInSample() const;
 
   // Determines if the embedder app is the type of app for which we may log the
   // package name. If this returns false, GetAppPackageNameIfLoggable() must

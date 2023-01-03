@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,6 +40,13 @@ class PermissionStatus final : public EventTargetWithInlineData,
   // EventTarget implementation.
   const AtomicString& InterfaceName() const override;
   ExecutionContext* GetExecutionContext() const override;
+  // Called when an event listener has been successfully added.
+  void AddedEventListener(const AtomicString& event_type,
+                          RegisteredEventListener&) override;
+
+  // Called when an event listener has been successfully removed.
+  void RemovedEventListener(const AtomicString& event_type,
+                            const RegisteredEventListener&) override;
 
   // ScriptWrappable implementation.
   bool HasPendingActivity() const final;

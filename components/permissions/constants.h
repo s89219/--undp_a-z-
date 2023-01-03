@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,10 +20,19 @@ COMPONENT_EXPORT(PERMISSIONS_COMMON)
 extern const char kPermissionsPostPromptSurveyPromptDispositionKey[];
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
+extern const char kPermissionsPostPromptSurveyPromptDispositionReasonKey[];
+
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+extern const char kPermissionsPostPromptSurveyActionKey[];
+
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
+extern const char kPermissionsPostPromptSurveyRequestTypeKey[];
+
+COMPONENT_EXPORT(PERMISSIONS_COMMON)
 extern const char kPermissionsPostPromptSurveyHadGestureKey[];
 
 COMPONENT_EXPORT(PERMISSIONS_COMMON)
-extern const char kPermissionsPostPromptSurveyPromptDispositionReasonKey[];
+extern const char kPermissionsPostPromptSurveyReleaseChannelKey[];
 #endif
 
 }  // namespace permissions

@@ -84,6 +84,7 @@
 #include "third_party/blink/renderer/core/css/css_style_declaration.h"
 #include "third_party/blink/renderer/core/css/media_query_list_listener.h"
 #include "third_party/blink/renderer/core/css/media_query_matcher.h"
+#include "third_party/blink/renderer/core/css/properties/longhands.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/focus_params.h"
@@ -147,6 +148,7 @@
 #include "third_party/blink/renderer/platform/keyboard_codes.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/testing/histogram_tester.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/url_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
@@ -203,7 +205,7 @@ class TestData {
   WebViewImpl* web_view_;
 };
 
-class AutoResizeWebViewClient : public frame_test_helpers::TestWebViewClient {
+class AutoResizeWebViewClient : public WebViewClient {
  public:
   // WebViewClient methods
   void DidAutoResize(const gfx::Size& new_size) override {
@@ -452,7 +454,7 @@ TEST_F(WebViewTest, SetBaseBackgroundColor) {
 
   // Creating a new frame view with the background color having 0 alpha.
   frame->CreateView(gfx::Size(1024, 768), Color::kTransparent);
-  EXPECT_EQ(SK_ColorTRANSPARENT, frame->View()->BaseBackgroundColor());
+  EXPECT_EQ(Color::kTransparent, frame->View()->BaseBackgroundColor());
   frame->View()->Dispose();
 
   const Color transparent_red(100, 0, 0, 0);
@@ -464,7 +466,7 @@ TEST_F(WebViewTest, SetBaseBackgroundColor) {
 TEST_F(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
   // Note: this test doesn't use WebViewHelper since it intentionally runs
   // initialization code between WebView and WebLocalFrame creation.
-  frame_test_helpers::TestWebViewClient web_view_client;
+  WebViewClient web_view_client;
   WebViewImpl* web_view = To<WebViewImpl>(
       WebView::Create(&web_view_client,
                       /*is_hidden=*/false,
@@ -487,7 +489,8 @@ TEST_F(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
 
   frame_test_helpers::TestWebFrameClient web_frame_client;
   WebLocalFrame* frame = WebLocalFrame::CreateMainFrame(
-      web_view, &web_frame_client, nullptr, LocalFrameToken(), nullptr);
+      web_view, &web_frame_client, nullptr, LocalFrameToken(), DocumentToken(),
+      nullptr);
   web_frame_client.Bind(frame);
 
   frame_test_helpers::TestWebFrameWidget* widget =
@@ -497,7 +500,7 @@ TEST_F(WebViewTest, SetBaseBackgroundColorBeforeMainFrame) {
   // The color should be passed to the compositor.
   cc::LayerTreeHost* host = widget->LayerTreeHostForTesting();
   EXPECT_EQ(SK_ColorBLUE, web_view->BackgroundColor());
-  EXPECT_EQ(SK_ColorBLUE, host->background_color());
+  EXPECT_EQ(SkColors::kBlue, host->background_color());
 
   web_view->Close();
 }
@@ -531,15 +534,15 @@ TEST_F(WebViewTest, SetBaseBackgroundColorAndBlendWithExistingContent) {
 
   view->GetLayoutView()->GetDocument().Lifecycle().AdvanceTo(
       DocumentLifecycle::kInPaint);
-  PaintLayerPainter(*root_layer).PaintLayerContents(builder->Context());
+  PaintLayerPainter(*root_layer).Paint(builder->Context());
   view->GetLayoutView()->GetDocument().Lifecycle().AdvanceTo(
       DocumentLifecycle::kPaintClean);
-  builder->EndRecording()->Playback(&canvas);
+  builder->EndRecording().Playback(&canvas);
 
   // The result should be a blend of red and green.
   SkColor color = bitmap.getColor(kWidth / 2, kHeight / 2);
-  EXPECT_TRUE(RedChannel(color));
-  EXPECT_TRUE(GreenChannel(color));
+  EXPECT_TRUE(SkColorGetR(color));
+  EXPECT_TRUE(SkColorGetG(color));
 }
 
 TEST_F(WebViewTest, SetBaseBackgroundColorWithColorScheme) {
@@ -684,7 +687,7 @@ TEST_F(WebViewTest, PlatformColorsChangedOnDeviceEmulation) {
   EXPECT_EQ(original, OutlineColor(span1));
 
   // Set the focus ring color for the mobile theme to something known.
-  Color custom_color = MakeRGB(123, 145, 167);
+  Color custom_color = Color::FromRGB(123, 145, 167);
   {
     ScopedMobileLayoutThemeForTest mobile_layout_theme_enabled(true);
     LayoutTheme::GetTheme().SetCustomFocusRingColor(custom_color);
@@ -2482,24 +2485,27 @@ TEST_F(WebViewTest, BackForwardRestoreScroll) {
   main_frame_local->Loader().GetDocumentLoader()->CommitSameDocumentNavigation(
       item1->Url(), WebFrameLoadType::kBackForward, item1.Get(),
       ClientRedirectPolicy::kNotClientRedirect,
-      false /* has_transient_user_activation */, nullptr /* initiator_origin */,
-      false /* is_synchronously_committed */,
+      /*has_transient_user_activation=*/false, /*initiator_origin=*/nullptr,
+      /*is_synchronously_committed=*/false,
       mojom::blink::TriggeringEventInfo::kNotFromEvent,
-      true /* is_browser_initiated */);
+      /*is_browser_initiated=*/true,
+      /*soft_navigation_heuristics_task_id=*/absl::nullopt);
   main_frame_local->Loader().GetDocumentLoader()->CommitSameDocumentNavigation(
       item2->Url(), WebFrameLoadType::kBackForward, item2.Get(),
       ClientRedirectPolicy::kNotClientRedirect,
-      false /* has_transient_user_activation */, nullptr /* initiator_origin */,
-      false /* is_synchronously_committed */,
+      /*has_transient_user_activation=*/false, /*initiator_origin=*/nullptr,
+      /*is_synchronously_committed=*/false,
       mojom::blink::TriggeringEventInfo::kNotFromEvent,
-      true /* is_browser_initiated */);
+      /*is_browser_initiated=*/true,
+      /*soft_navigation_heuristics_task_id=*/absl::nullopt);
   main_frame_local->Loader().GetDocumentLoader()->CommitSameDocumentNavigation(
       item1->Url(), WebFrameLoadType::kBackForward, item1.Get(),
       ClientRedirectPolicy::kNotClientRedirect,
-      false /* has_transient_user_activation */, nullptr /* initiator_origin */,
-      false /* is_synchronously_committed */,
+      /*has_transient_user_activation=*/false, /*initiator_origin=*/nullptr,
+      /*is_synchronously_committed=*/false,
       mojom::blink::TriggeringEventInfo::kNotFromEvent,
-      true /* is_browser_initiated */);
+      /*is_browser_initiated=*/true,
+      /*soft_navigation_heuristics_task_id=*/absl::nullopt);
   web_view_impl->MainFrameWidget()->UpdateAllLifecyclePhases(
       DocumentUpdateReason::kTest);
 
@@ -2518,18 +2524,20 @@ TEST_F(WebViewTest, BackForwardRestoreScroll) {
   main_frame_local->Loader().GetDocumentLoader()->CommitSameDocumentNavigation(
       item1->Url(), WebFrameLoadType::kBackForward, item1.Get(),
       ClientRedirectPolicy::kNotClientRedirect,
-      false /* has_transient_user_activation */, nullptr /* initiator_origin */,
-      false /* is_synchronously_committed */,
+      /*has_transient_user_activation=*/false, /*initiator_origin=*/nullptr,
+      /*is_synchronously_committed=*/false,
       mojom::blink::TriggeringEventInfo::kNotFromEvent,
-      true /* is_browser_initiated */);
+      /*is_browser_initiated=*/true,
+      /*soft_navigation_heuristics_task_id=*/absl::nullopt);
 
   main_frame_local->Loader().GetDocumentLoader()->CommitSameDocumentNavigation(
       item3->Url(), WebFrameLoadType::kBackForward, item3.Get(),
       ClientRedirectPolicy::kNotClientRedirect,
-      false /* has_transient_user_activation */, nullptr /* initiator_origin */,
-      false /* is_synchronously_committed */,
+      /*has_transient_user_activation=*/false, /*initiator_origin=*/nullptr,
+      /*is_synchronously_committed=*/false,
       mojom::blink::TriggeringEventInfo::kNotFromEvent,
-      true /* is_browser_initiated */);
+      /*is_browser_initiated=*/true,
+      /*soft_navigation_heuristics_task_id=*/absl::nullopt);
   // The scroll offset is only applied via invoking the anchor via the main
   // lifecycle, or a forced layout.
   // TODO(chrishtr): At the moment, WebLocalFrameImpl::GetScrollOffset() does
@@ -2736,7 +2744,8 @@ TEST_F(WebViewTest, ClientTapHandlingNullWebViewClient) {
       /*page_base_background_color=*/absl::nullopt));
   frame_test_helpers::TestWebFrameClient web_frame_client;
   WebLocalFrame* local_frame = WebLocalFrame::CreateMainFrame(
-      web_view, &web_frame_client, nullptr, LocalFrameToken(), nullptr);
+      web_view, &web_frame_client, nullptr, LocalFrameToken(), DocumentToken(),
+      nullptr);
   web_frame_client.Bind(local_frame);
   WebNonCompositedWidgetClient widget_client;
   frame_test_helpers::TestWebFrameWidget* widget =
@@ -3078,6 +3087,7 @@ TEST_F(WebViewTest, ContextMenuAndDragOnImageLongPress) {
       base_url_ + "long_press_links_and_images.html");
 
   web_view->SettingsImpl()->SetTouchDragDropEnabled(true);
+  web_view->SettingsImpl()->SetModalContextMenu(false);
   web_view->MainFrameViewWidget()->Resize(gfx::Size(500, 300));
   UpdateAllLifecyclePhases();
   RunPendingTasks();
@@ -3106,6 +3116,7 @@ TEST_F(WebViewTest, ContextMenuAndDragOnLinkLongPress) {
       base_url_ + "long_press_links_and_images.html");
 
   web_view->SettingsImpl()->SetTouchDragDropEnabled(true);
+  web_view->SettingsImpl()->SetModalContextMenu(false);
   web_view->MainFrameViewWidget()->Resize(gfx::Size(500, 300));
   UpdateAllLifecyclePhases();
   RunPendingTasks();
@@ -3257,7 +3268,7 @@ TEST_F(WebViewTest, TouchDoesntSelectEmptyTextarea) {
   auto* text_area_element = To<HTMLTextAreaElement>(static_cast<Node*>(
       web_view->MainFrameImpl()->GetDocument().GetElementById(
           blanklinestextbox)));
-  text_area_element->setValue("hello");
+  text_area_element->SetValue("hello");
 
   // Long-press past last word of textbox.
   EXPECT_TRUE(SimulateGestureAtElementById(
@@ -3811,36 +3822,46 @@ TEST_F(WebViewTest,
   frame->SetAutofillClient(nullptr);
 }
 
-class ViewCreatingWebViewClient : public frame_test_helpers::TestWebViewClient {
+class ViewCreatingWebFrameClient
+    : public frame_test_helpers::TestWebFrameClient {
  public:
-  ViewCreatingWebViewClient() : did_focus_called_(false) {}
-
-  // WebViewClient overrides.
-  WebView* CreateView(WebLocalFrame* opener,
-                      const WebURLRequest&,
-                      const WebWindowFeatures&,
-                      const WebString& name,
-                      WebNavigationPolicy,
-                      network::mojom::blink::WebSandboxFlags,
-                      const SessionStorageNamespaceId&,
-                      bool& consumed_user_gesture,
-                      const absl::optional<WebImpression>&) override {
-    return web_view_helper_.InitializeWithOpener(opener);
+  // WebLocalFrameClient overrides.
+  WebView* CreateNewWindow(
+      const WebURLRequest&,
+      const WebWindowFeatures&,
+      const WebString& name,
+      WebNavigationPolicy,
+      network::mojom::blink::WebSandboxFlags,
+      const SessionStorageNamespaceId&,
+      bool& consumed_user_gesture,
+      const absl::optional<Impression>&,
+      const absl::optional<WebPictureInPictureWindowOptions>&) override {
+    return web_view_helper_.InitializeWithOpener(Frame());
   }
-  void DidFocus() override { did_focus_called_ = true; }
-
-  bool DidFocusCalled() const { return did_focus_called_; }
   WebView* CreatedWebView() const { return web_view_helper_.GetWebView(); }
 
  private:
   frame_test_helpers::WebViewHelper web_view_helper_;
-  bool did_focus_called_;
+};
+
+class ViewCreatingWebViewClient : public WebViewClient {
+ public:
+  ViewCreatingWebViewClient() = default;
+
+  void DidFocus() override { did_focus_called_ = true; }
+
+  bool DidFocusCalled() const { return did_focus_called_; }
+
+ private:
+  bool did_focus_called_ = false;
 };
 
 TEST_F(WebViewTest, DoNotFocusCurrentFrameOnNavigateFromLocalFrame) {
+  ViewCreatingWebFrameClient frame_client;
   ViewCreatingWebViewClient client;
   frame_test_helpers::WebViewHelper web_view_helper;
-  WebViewImpl* web_view_impl = web_view_helper.Initialize(nullptr, &client);
+  WebViewImpl* web_view_impl =
+      web_view_helper.Initialize(&frame_client, &client);
 
   WebURL base_url = url_test_helpers::ToKURL("http://example.com/");
   frame_test_helpers::LoadHTMLString(
@@ -3864,9 +3885,11 @@ TEST_F(WebViewTest, DoNotFocusCurrentFrameOnNavigateFromLocalFrame) {
 }
 
 TEST_F(WebViewTest, FocusExistingFrameOnNavigate) {
+  ViewCreatingWebFrameClient frame_client;
   ViewCreatingWebViewClient client;
   frame_test_helpers::WebViewHelper web_view_helper;
-  WebViewImpl* web_view_impl = web_view_helper.Initialize(nullptr, &client);
+  WebViewImpl* web_view_impl =
+      web_view_helper.Initialize(&frame_client, &client);
   WebLocalFrameImpl* frame = web_view_impl->MainFrameImpl();
   frame->SetName("_start");
 
@@ -3876,7 +3899,7 @@ TEST_F(WebViewTest, FocusExistingFrameOnNavigate) {
   To<LocalFrame>(web_view_impl->GetPage()->MainFrame())
       ->Tree()
       .FindOrCreateFrameForNavigation(request, "_blank");
-  ASSERT_TRUE(client.CreatedWebView());
+  ASSERT_TRUE(frame_client.CreatedWebView());
   EXPECT_FALSE(client.DidFocusCalled());
 
   // Make a request from the new window that will navigate the original window.
@@ -3884,7 +3907,7 @@ TEST_F(WebViewTest, FocusExistingFrameOnNavigate) {
   WebURLRequest web_url_request_with_target_start(KURL("about:blank"));
   FrameLoadRequest request_with_target_start(
       nullptr, web_url_request_with_target_start.ToResourceRequest());
-  To<LocalFrame>(static_cast<WebViewImpl*>(client.CreatedWebView())
+  To<LocalFrame>(static_cast<WebViewImpl*>(frame_client.CreatedWebView())
                      ->GetPage()
                      ->MainFrame())
       ->Tree()
@@ -3894,20 +3917,22 @@ TEST_F(WebViewTest, FocusExistingFrameOnNavigate) {
   web_view_helper.Reset();  // Remove dependency on locally scoped client.
 }
 
-class ViewReusingWebViewClient : public frame_test_helpers::TestWebViewClient {
+class ViewReusingWebFrameClient
+    : public frame_test_helpers::TestWebFrameClient {
  public:
-  ViewReusingWebViewClient() = default;
+  ViewReusingWebFrameClient() = default;
 
-  // WebViewClient methods
-  WebView* CreateView(WebLocalFrame*,
-                      const WebURLRequest&,
-                      const WebWindowFeatures&,
-                      const WebString& name,
-                      WebNavigationPolicy,
-                      network::mojom::blink::WebSandboxFlags,
-                      const SessionStorageNamespaceId&,
-                      bool& consumed_user_gesture,
-                      const absl::optional<WebImpression>&) override {
+  // WebLocalFrameClient methods
+  WebView* CreateNewWindow(
+      const WebURLRequest&,
+      const WebWindowFeatures&,
+      const WebString& name,
+      WebNavigationPolicy,
+      network::mojom::blink::WebSandboxFlags,
+      const SessionStorageNamespaceId&,
+      bool& consumed_user_gesture,
+      const absl::optional<Impression>&,
+      const absl::optional<WebPictureInPictureWindowOptions>&) override {
     return web_view_;
   }
 
@@ -3919,11 +3944,10 @@ class ViewReusingWebViewClient : public frame_test_helpers::TestWebViewClient {
 
 TEST_F(WebViewTest,
        ReuseExistingWindowOnCreateViewUsesCorrectNavigationPolicy) {
-  ViewReusingWebViewClient view_client;
+  ViewReusingWebFrameClient frame_client;
   frame_test_helpers::WebViewHelper web_view_helper;
-  WebViewImpl* web_view_impl =
-      web_view_helper.Initialize(nullptr, &view_client);
-  view_client.SetWebView(web_view_impl);
+  WebViewImpl* web_view_impl = web_view_helper.Initialize(&frame_client);
+  frame_client.SetWebView(web_view_impl);
   LocalFrame* frame = To<LocalFrame>(web_view_impl->GetPage()->MainFrame());
 
   // Request a new window, but the WebViewClient will decline to and instead
@@ -3994,53 +4018,53 @@ TEST_F(WebViewTest, ChooseValueFromDateTimeChooser) {
   auto* input_element = To<HTMLInputElement>(document->getElementById("date"));
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)->ResponseHandler(true, 0);
-  EXPECT_EQ("1970-01-01", input_element->value());
+  EXPECT_EQ("1970-01-01", input_element->Value());
 
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)
       ->ResponseHandler(true, std::numeric_limits<double>::quiet_NaN());
-  EXPECT_EQ("", input_element->value());
+  EXPECT_EQ("", input_element->Value());
 
   input_element =
       To<HTMLInputElement>(document->getElementById("datetimelocal"));
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)->ResponseHandler(true, 0);
-  EXPECT_EQ("1970-01-01T00:00", input_element->value());
+  EXPECT_EQ("1970-01-01T00:00", input_element->Value());
 
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)
       ->ResponseHandler(true, std::numeric_limits<double>::quiet_NaN());
-  EXPECT_EQ("", input_element->value());
+  EXPECT_EQ("", input_element->Value());
 
   input_element = To<HTMLInputElement>(document->getElementById("month"));
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)->ResponseHandler(true, 0);
-  EXPECT_EQ("1970-01", input_element->value());
+  EXPECT_EQ("1970-01", input_element->Value());
 
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)
       ->ResponseHandler(true, std::numeric_limits<double>::quiet_NaN());
-  EXPECT_EQ("", input_element->value());
+  EXPECT_EQ("", input_element->Value());
 
   input_element = To<HTMLInputElement>(document->getElementById("time"));
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)->ResponseHandler(true, 0);
-  EXPECT_EQ("00:00", input_element->value());
+  EXPECT_EQ("00:00", input_element->Value());
 
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)
       ->ResponseHandler(true, std::numeric_limits<double>::quiet_NaN());
-  EXPECT_EQ("", input_element->value());
+  EXPECT_EQ("", input_element->Value());
 
   input_element = To<HTMLInputElement>(document->getElementById("week"));
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)->ResponseHandler(true, 0);
-  EXPECT_EQ("1970-W01", input_element->value());
+  EXPECT_EQ("1970-W01", input_element->Value());
 
   OpenDateTimeChooser(web_view_impl, input_element);
   GetExternalDateTimeChooser(web_view_impl)
       ->ResponseHandler(true, std::numeric_limits<double>::quiet_NaN());
-  EXPECT_EQ("", input_element->value());
+  EXPECT_EQ("", input_element->Value());
 
   // Clear the WebViewClient from the webViewHelper to avoid use-after-free in
   // the WebViewHelper destructor.
@@ -4073,7 +4097,10 @@ class CreateChildCounterFrameClient
       const FramePolicy&,
       const WebFrameOwnerProperties&,
       FrameOwnerElementType,
-      WebPolicyContainerBindParams policy_container_bind_params) override;
+      WebPolicyContainerBindParams policy_container_bind_params,
+      ukm::SourceId document_ukm_source_id,
+      base::FunctionRef<void(WebLocalFrame*, const DocumentToken&)>
+          complete_initialization) override;
 
   int Count() const { return count_; }
 
@@ -4088,11 +4115,15 @@ WebLocalFrame* CreateChildCounterFrameClient::CreateChildFrame(
     const FramePolicy& frame_policy,
     const WebFrameOwnerProperties& frame_owner_properties,
     FrameOwnerElementType frame_owner_element_type,
-    WebPolicyContainerBindParams policy_container_bind_params) {
+    WebPolicyContainerBindParams policy_container_bind_params,
+    ukm::SourceId document_ukm_source_id,
+    base::FunctionRef<void(WebLocalFrame*, const DocumentToken&)>
+        complete_initialization) {
   ++count_;
   return TestWebFrameClient::CreateChildFrame(
       scope, name, fallback_name, frame_policy, frame_owner_properties,
-      frame_owner_element_type, std::move(policy_container_bind_params));
+      frame_owner_element_type, std::move(policy_container_bind_params),
+      document_ukm_source_id, complete_initialization);
 }
 
 TEST_F(WebViewTest, ChangeDisplayMode) {
@@ -4828,27 +4859,19 @@ class MockUnhandledTapNotifierImpl : public mojom::blink::UnhandledTapNotifier {
       mojom::blink::UnhandledTapInfoPtr unhandled_tap_info) override {
     was_unhandled_tap_ = true;
     tapped_position_ = unhandled_tap_info->tapped_position_in_viewport;
-    element_text_run_length_ = unhandled_tap_info->element_text_run_length;
-    font_size_ = unhandled_tap_info->font_size_in_pixels;
   }
   bool WasUnhandledTap() const { return was_unhandled_tap_; }
   int GetTappedXPos() const { return tapped_position_.x(); }
   int GetTappedYPos() const { return tapped_position_.y(); }
-  int GetFontSize() const { return font_size_; }
-  int GetElementTextRunLength() const { return element_text_run_length_; }
   void Reset() {
     was_unhandled_tap_ = false;
     tapped_position_ = gfx::Point();
-    element_text_run_length_ = 0;
-    font_size_ = 0;
     receiver_.reset();
   }
 
  private:
   bool was_unhandled_tap_ = false;
   gfx::Point tapped_position_;
-  int element_text_run_length_ = 0;
-  int font_size_ = 0;
 
   mojo::Receiver<mojom::blink::UnhandledTapNotifier> receiver_{this};
 };
@@ -4934,8 +4957,6 @@ TEST_F(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeeded) {
   EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
   EXPECT_EQ(64, mock_notifier_.GetTappedXPos());
   EXPECT_EQ(278, mock_notifier_.GetTappedYPos());
-  EXPECT_EQ(16, mock_notifier_.GetFontSize());
-  EXPECT_EQ(7, mock_notifier_.GetElementTextRunLength());
 
   // Test basic tap handling and notification.
   Tap("target");
@@ -4963,8 +4984,6 @@ TEST_F(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeeded) {
   constexpr float expected_y = 82 * scale - (scale * visual_y);
   EXPECT_EQ(expected_x, mock_notifier_.GetTappedXPos());
   EXPECT_EQ(expected_y, mock_notifier_.GetTappedYPos());
-  EXPECT_EQ(16, mock_notifier_.GetFontSize());
-  EXPECT_EQ(28, mock_notifier_.GetElementTextRunLength());
 }
 
 TEST_F(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithMutateDom) {
@@ -5004,16 +5023,6 @@ TEST_F(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithNonTriggeringNodes) {
 
   Tap("focusable");
   EXPECT_FALSE(mock_notifier_.WasUnhandledTap());
-}
-
-TEST_F(ShowUnhandledTapTest, ShowUnhandledTapUIIfNeededWithTextSizes) {
-  Tap("large");
-  EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
-  EXPECT_EQ(20, mock_notifier_.GetFontSize());
-
-  Tap("small");
-  EXPECT_TRUE(mock_notifier_.WasUnhandledTap());
-  EXPECT_EQ(10, mock_notifier_.GetFontSize());
 }
 
 #endif  // BUILDFLAG(ENABLE_UNHANDLED_TAP)
@@ -5177,21 +5186,23 @@ TEST_F(WebViewTest, ForceAndResetViewport) {
   SetViewportSize(gfx::Size(100, 150));
   DevToolsEmulator* dev_tools_emulator = web_view_impl->GetDevToolsEmulator();
 
-  TransformationMatrix expected_matrix;
+  gfx::Transform expected_matrix;
   expected_matrix.MakeIdentity();
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   // Override applies transform, sets visible rect, and disables
   // visual viewport clipping.
-  TransformationMatrix matrix =
+  gfx::Transform matrix =
       dev_tools_emulator->ForceViewportForTesting(gfx::PointF(50, 55), 2.f);
-  expected_matrix.MakeIdentity().Scale(2.f).Translate(-50, -55);
+  expected_matrix = gfx::Transform::MakeScale(2.f);
+  expected_matrix.Translate(-50, -55);
   EXPECT_EQ(expected_matrix, matrix);
 
   // Setting new override discards previous one.
   matrix = dev_tools_emulator->ForceViewportForTesting(gfx::PointF(5.4f, 10.5f),
                                                        1.5f);
-  expected_matrix.MakeIdentity().Scale(1.5f).Translate(-5.4f, -10.5f);
+  expected_matrix = gfx::Transform::MakeScale(1.5f);
+  expected_matrix.Translate(-5.4f, -10.5f);
   EXPECT_EQ(expected_matrix, matrix);
 
   // Clearing override restores original transform, visible rect and
@@ -5207,21 +5218,23 @@ TEST_F(WebViewTest, ViewportOverrideIntegratesDeviceMetricsOffsetAndScale) {
       web_view_helper_.InitializeAndLoad(base_url_ + "200-by-300.html");
   web_view_impl->MainFrameViewWidget()->Resize(gfx::Size(100, 150));
 
-  TransformationMatrix expected_matrix;
+  gfx::Transform expected_matrix;
   expected_matrix.MakeIdentity();
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   DeviceEmulationParams emulation_params;
   emulation_params.scale = 2.f;
   web_view_impl->EnableDeviceEmulation(emulation_params);
-  expected_matrix.MakeIdentity().Scale(2.f);
+  expected_matrix = gfx::Transform::MakeScale(2.f);
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   // Device metrics offset and scale are applied before viewport override.
   emulation_params.viewport_offset = gfx::PointF(5, 10);
   emulation_params.viewport_scale = 1.5f;
   web_view_impl->EnableDeviceEmulation(emulation_params);
-  expected_matrix.MakeIdentity().Scale(1.5f).Translate(-5, -10).Scale(2.f);
+  expected_matrix = gfx::Transform::MakeScale(1.5f);
+  expected_matrix.Translate(-5, -10);
+  expected_matrix.Scale(2.f);
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 }
 
@@ -5234,7 +5247,7 @@ TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
   LocalFrameView* frame_view =
       web_view_impl->MainFrameImpl()->GetFrame()->View();
 
-  TransformationMatrix expected_matrix;
+  gfx::Transform expected_matrix;
   expected_matrix.MakeIdentity();
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
@@ -5249,31 +5262,28 @@ TEST_F(WebViewTest, ViewportOverrideAdaptsToScaleAndScroll) {
   emulation_params.viewport_offset = gfx::PointF(50, 55);
   emulation_params.viewport_scale = 2.f;
   web_view_impl->EnableDeviceEmulation(emulation_params);
-  expected_matrix.MakeIdentity()
-      .Scale(2.f)
-      .Translate(-50, -55)
-      .Translate(100, 150)
-      .Scale(1. / 1.5f);
+  expected_matrix = gfx::Transform::MakeScale(2.f);
+  expected_matrix.Translate(-50, -55);
+  expected_matrix.Translate(100, 150);
+  expected_matrix.Scale(1. / 1.5f);
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   // Transform adapts to scroll changes.
   frame_view->LayoutViewport()->SetScrollOffset(
       ScrollOffset(50, 55), mojom::blink::ScrollType::kProgrammatic,
       mojom::blink::ScrollBehavior::kInstant);
-  expected_matrix.MakeIdentity()
-      .Scale(2.f)
-      .Translate(-50, -55)
-      .Translate(50, 55)
-      .Scale(1. / 1.5f);
+  expected_matrix = gfx::Transform::MakeScale(2.f);
+  expected_matrix.Translate(-50, -55);
+  expected_matrix.Translate(50, 55);
+  expected_matrix.Scale(1. / 1.5f);
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 
   // Transform adapts to page scale changes.
   web_view_impl->SetPageScaleFactor(2.f);
-  expected_matrix.MakeIdentity()
-      .Scale(2.f)
-      .Translate(-50, -55)
-      .Translate(50, 55)
-      .Scale(1. / 2.f);
+  expected_matrix = gfx::Transform::MakeScale(2.f);
+  expected_matrix.Translate(-50, -55);
+  expected_matrix.Translate(50, 55);
+  expected_matrix.Scale(1. / 2.f);
   EXPECT_EQ(expected_matrix, web_view_impl->GetDeviceEmulationTransform());
 }
 
@@ -5338,8 +5348,9 @@ TEST_F(WebViewTest, WidthMediaQueryWithPageZoomAfterPrinting) {
   Document* document = frame->GetFrame()->GetDocument();
   Element* div = document->getElementById("d");
 
-  EXPECT_EQ(MakeRGB(0, 128, 0), div->GetComputedStyle()->VisitedDependentColor(
-                                    GetCSSPropertyColor()));
+  EXPECT_EQ(
+      Color::FromRGB(0, 128, 0),
+      div->GetComputedStyle()->VisitedDependentColor(GetCSSPropertyColor()));
 
   gfx::Size page_size(300, 360);
 
@@ -5349,8 +5360,9 @@ TEST_F(WebViewTest, WidthMediaQueryWithPageZoomAfterPrinting) {
   frame->PrintBegin(print_params, WebNode());
   frame->PrintEnd();
 
-  EXPECT_EQ(MakeRGB(0, 128, 0), div->GetComputedStyle()->VisitedDependentColor(
-                                    GetCSSPropertyColor()));
+  EXPECT_EQ(
+      Color::FromRGB(0, 128, 0),
+      div->GetComputedStyle()->VisitedDependentColor(GetCSSPropertyColor()));
 }
 
 TEST_F(WebViewTest, ViewportUnitsPrintingWithPageZoom) {
@@ -5388,6 +5400,24 @@ TEST_F(WebViewTest, ViewportUnitsPrintingWithPageZoom) {
   EXPECT_EQ(expected_width, t1->OffsetWidth());
   EXPECT_EQ(expected_width, t2->OffsetWidth());
 
+  frame->PrintEnd();
+}
+
+TEST_F(WebViewTest, ResizeWithFixedPosCrash) {
+  if (!RuntimeEnabledFeatures::LayoutNGEnabled())
+    return;
+  ScopedLayoutNGPrintingForTest ng_printing_enabled(true);
+  WebViewImpl* web_view = web_view_helper_.Initialize();
+  WebURL base_url = url_test_helpers::ToKURL("http://example.com/");
+  frame_test_helpers::LoadHTMLString(web_view->MainFrameImpl(),
+                                     "<div style='position:fixed;'></div>",
+                                     base_url);
+  WebLocalFrameImpl* frame = web_view->MainFrameImpl();
+  gfx::Size page_size(300, 360);
+  WebPrintParams print_params;
+  print_params.print_content_area.set_size(page_size);
+  frame->PrintBegin(print_params, WebNode());
+  web_view->MainFrameWidget()->Resize(page_size);
   frame->PrintEnd();
 }
 

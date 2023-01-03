@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.ColorRes;
 import androidx.annotation.VisibleForTesting;
 import androidx.appcompat.content.res.AppCompatResources;
@@ -29,9 +30,7 @@ import androidx.core.view.ViewCompat;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.metrics.RecordUserAction;
-import org.chromium.base.supplier.BooleanSupplier;
 import org.chromium.base.supplier.ObservableSupplier;
-import org.chromium.chrome.browser.flags.CachedFeatureFlags;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.omnibox.LocationBar;
 import org.chromium.chrome.browser.omnibox.LocationBarCoordinator;
@@ -62,6 +61,7 @@ import org.chromium.ui.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.function.BooleanSupplier;
 
 /**
  * The Toolbar object for Tablet screens.
@@ -71,15 +71,19 @@ public class ToolbarTablet
         extends ToolbarLayout implements OnClickListener, View.OnLongClickListener {
     private ObjectAnimator mTabSwitcherModeAnimation;
 
-    /** Downloads page for offline access. */
+    /**
+     * Downloads page for offline access.
+     */
     public interface OfflineDownloader {
         /**
          * Trigger the download of a page.
+         *
          * @param context Context to pull resources from.
          * @param tab Tab containing the page to download.
          */
         void downloadPage(Context context, Tab tab);
     }
+
     private HomeButton mHomeButton;
     private ImageButton mBackButton;
     private ImageButton mForwardButton;
@@ -113,6 +117,7 @@ public class ToolbarTablet
 
     /**
      * Constructs a ToolbarTablet object.
+     *
      * @param context The Context in which this View object is created.
      * @param attrs The AttributeSet that was specified with this View.
      */
@@ -167,13 +172,14 @@ public class ToolbarTablet
     @Override
     public void setLocationBarCoordinator(LocationBarCoordinator locationBarCoordinator) {
         mLocationBar = locationBarCoordinator;
-        final int color = ChromeColors.getSurfaceColor(getContext(), R.dimen.default_elevation_2);
-        mLocationBar.getTabletCoordinator().getBackground().setTint(color);
+        final @ColorInt int color =
+                ChromeColors.getSurfaceColor(getContext(), R.dimen.default_elevation_2);
+        mLocationBar.getTabletCoordinator().tintBackground(color);
     }
 
     /**
-     * Sets up key listeners after native initialization is complete, so that we can invoke
-     * native functions.
+     * Sets up key listeners after native initialization is complete, so that we can invoke native
+     * functions.
      */
     @Override
     public void onNativeLibraryReady() {
@@ -385,8 +391,9 @@ public class ToolbarTablet
     }
 
     @Override
-    boolean isReadyForTextureCapture() {
-        return !urlHasFocus();
+    public CaptureReadinessResult isReadyForTextureCapture() {
+        // Don't track tablet metrics yet for capturing, just return unknown for now.
+        return CaptureReadinessResult.unknown(!urlHasFocus());
     }
 
     @Override
@@ -421,9 +428,10 @@ public class ToolbarTablet
     @Override
     public void onThemeColorChanged(int color, boolean shouldAnimate) {
         setBackgroundColor(color);
-        final int textBoxColor = ThemeUtils.getTextBoxColorForToolbarBackgroundInNonNativePage(
-                getContext(), color, isIncognito());
-        mLocationBar.getTabletCoordinator().getBackground().setTint(textBoxColor);
+        final @ColorInt int textBoxColor =
+                ThemeUtils.getTextBoxColorForToolbarBackgroundInNonNativePage(
+                        getContext(), color, isIncognito());
+        mLocationBar.getTabletCoordinator().tintBackground(textBoxColor);
         mLocationBar.updateVisualsForState();
         setToolbarHairlineColor(color);
     }
@@ -505,6 +513,7 @@ public class ToolbarTablet
             MenuButtonCoordinator menuButtonCoordinator) {
         boolean isInTabSwitcherMode = mShowTabStack && inTabSwitcherMode;
         mIsInTabSwitcherMode = isInTabSwitcherMode;
+        mAccessibilitySwitcherButton.setClickable(!isInTabSwitcherMode);
 
         if (isTabletGridTabSwitcherPolishEnabled()) {
             int importantForAccessibility = inTabSwitcherMode
@@ -569,7 +578,7 @@ public class ToolbarTablet
     }
 
     @Override
-    protected void initialize(ToolbarDataProvider toolbarDataProvider,
+    public void initialize(ToolbarDataProvider toolbarDataProvider,
             ToolbarTabController tabController, MenuButtonCoordinator menuButtonCoordinator,
             ObservableSupplier<Boolean> isProgressBarVisibleSupplier,
             HistoryDelegate historyDelegate, BooleanSupplier partnerHomepageEnabledSupplier,
@@ -583,7 +592,7 @@ public class ToolbarTablet
     }
 
     @Override
-    void destroy() {
+    public void destroy() {
         super.destroy();
         if (mButtonVisibilityAnimators != null) {
             mButtonVisibilityAnimators.removeAllListeners();
@@ -599,6 +608,11 @@ public class ToolbarTablet
 
     @Override
     void onAccessibilityStatusChanged(boolean enabled) {
+        enableTabStackButton(enabled);
+    }
+
+    @VisibleForTesting
+    void enableTabStackButton(boolean enabled) {
         mShowTabStack = (enabled && isAccessibilityTabSwitcherPreferenceEnabled())
                 || isGridTabSwitcherEnabled();
         updateSwitcherButtonVisibility(mShowTabStack);
@@ -661,6 +675,9 @@ public class ToolbarTablet
             ApiCompatibilityUtils.setImageTintList(mOptionalButton, null);
         }
 
+        if (buttonSpec.getIPHCommandBuilder() != null) {
+            buttonSpec.getIPHCommandBuilder().setAnchorView(mOptionalButton);
+        }
         mOptionalButton.setOnClickListener(buttonSpec.getOnClickListener());
         if (buttonSpec.getOnLongClickListener() == null) {
             mOptionalButton.setLongClickable(false);
@@ -686,7 +703,7 @@ public class ToolbarTablet
 
     @Override
     @VisibleForTesting
-    public View getOptionalButtonView() {
+    public View getOptionalButtonViewForTesting() {
         return mOptionalButton;
     }
 
@@ -713,6 +730,7 @@ public class ToolbarTablet
 
     /**
      * Sets the toolbar start padding based on whether the buttons are visible.
+     *
      * @param buttonsVisible Whether the toolbar buttons are visible.
      */
     private void setStartPaddingBasedOnButtonVisibility(boolean buttonsVisible) {
@@ -725,7 +743,7 @@ public class ToolbarTablet
 
     /**
      * @return The difference in start padding when the buttons are visible and when they are not
-     *         visible.
+     * visible.
      */
     public int getStartPaddingDifferenceForButtonVisibilityAnimation() {
         // If the home button is visible then the padding doesn't change.
@@ -820,11 +838,31 @@ public class ToolbarTablet
     }
 
     private boolean isGridTabSwitcherEnabled() {
-        return CachedFeatureFlags.isEnabled(ChromeFeatureList.GRID_TAB_SWITCHER_FOR_TABLETS);
+        return ChromeFeatureList.sGridTabSwitcherForTablets.isEnabled();
     }
 
     private boolean isTabletGridTabSwitcherPolishEnabled() {
         return ChromeFeatureList.getFieldTrialParamByFeatureAsBoolean(
                 ChromeFeatureList.GRID_TAB_SWITCHER_FOR_TABLETS, "enable_launch_polish", false);
+    }
+
+    @VisibleForTesting
+    ImageButton[] getToolbarButtons() {
+        return mToolbarButtons;
+    }
+
+    @VisibleForTesting
+    ObjectAnimator getTabSwitcherModeAnimation() {
+        return mTabSwitcherModeAnimation;
+    }
+
+    @VisibleForTesting
+    void enableButtonVisibilityChangeAnimationForTesting() {
+        mShouldAnimateButtonVisibilityChange = true;
+    }
+
+    @VisibleForTesting
+    void setToolbarButtonsVisibleForTesting(boolean value) {
+        mToolbarButtonsVisible = value;
     }
 }

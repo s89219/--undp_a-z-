@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -138,9 +138,9 @@ void PhotosService::OnPrimaryAccountChanged(
   }
 }
 
-void PhotosService::GetMemories(GetMemoriesCallback callback) {
+void PhotosService::GetMemories(GetMemoriesCallback get_memories_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  callbacks_.push_back(std::move(callback));
+  callbacks_.push_back(std::move(get_memories_callback));
   if (callbacks_.size() > 1) {
     return;
   }
@@ -413,7 +413,7 @@ void PhotosService::OnJsonReceived(
 void PhotosService::OnJsonParsed(
     const std::string& token,
     data_decoder::DataDecoder::ValueOrError result) {
-  if (!result.value) {
+  if (!result.has_value()) {
     for (auto& callback : callbacks_) {
       std::move(callback).Run(std::vector<photos::mojom::MemoryPtr>());
     }
@@ -421,7 +421,7 @@ void PhotosService::OnJsonParsed(
     return;
   }
 
-  auto* memories = result.value->FindListPath("memory");
+  auto* memories = result->FindListPath("memory");
   if (!memories) {
     base::UmaHistogramCustomCounts("NewTabPage.Photos.DataResponseCount", 0, 0,
                                    10, 11);
@@ -434,9 +434,8 @@ void PhotosService::OnJsonParsed(
   std::vector<photos::mojom::MemoryPtr> memory_list;
 
   base::UmaHistogramCustomCounts("NewTabPage.Photos.DataResponseCount",
-                                 memories->GetListDeprecated().size(), 0, 10,
-                                 11);
-  for (const auto& memory : memories->GetListDeprecated()) {
+                                 memories->GetList().size(), 0, 10, 11);
+  for (const auto& memory : memories->GetList()) {
     auto* title = memory.FindStringPath("title.header");
     auto* memory_id = memory.FindStringPath("memoryMediaKey");
     auto* cover_id = memory.FindStringPath("coverMediaKey");
@@ -448,9 +447,19 @@ void PhotosService::OnJsonParsed(
     auto mojo_memory = photos::mojom::Memory::New();
     mojo_memory->id = *memory_id;
     mojo_memory->title = *title;
-    mojo_memory->item_url =
-        GURL("https://photos.google.com/memory/featured/" + *memory_id +
-             "/photo/" + *cover_id + "?referrer=CHROME_NTP");
+
+    // If fake data, use photos homepage for url.
+    std::string fake_data_choice = base::GetFieldTrialParamValueByFeature(
+        ntp_features::kNtpPhotosModule,
+        ntp_features::kNtpPhotosModuleDataParam);
+    if (fake_data_choice != "") {
+      mojo_memory->item_url = GURL("https://photos.google.com");
+    } else {
+      mojo_memory->item_url =
+          GURL("https://photos.google.com/memory/featured/" + *memory_id +
+               "/photo/" + *cover_id + "?referrer=CHROME_NTP");
+    }
+
     if (cover_url) {
       mojo_memory->cover_url = GURL(*cover_url + "?access_token=" + token);
     } else if (cover_dat_url) {

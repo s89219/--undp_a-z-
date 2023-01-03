@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2013 The Chromium Authors. All rights reserved.
-
-     Use of this source code is governed by a BSD-style license that can be
-     found in the LICENSE file.
+<!--
+Copyright 2013 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Common text sizes -->
@@ -39,6 +39,9 @@
     <dimen name="menu_footer_chip_end_padding">8dp</dimen>
     <dimen name="menu_footer_chip_icon_size">16dp</dimen>
     <dimen name="menu_footer_chip_vertical_inset">8dp</dimen>
+
+    <!-- Custom menu-->
+    <dimen name="menu_negative_software_vertical_offset">0dp</dimen>
 
     <!-- Dropdown default measures -->
     <dimen name="dropdown_item_height">50dp</dimen>

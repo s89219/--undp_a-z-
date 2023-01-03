@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -71,10 +71,8 @@ class GPUComputePassEncoder : public DawnObject<WGPUComputePassEncoder>,
   void dispatchIndirect(const DawnObject<WGPUBuffer>* indirectBuffer,
                         uint64_t indirectOffset);
   void writeTimestamp(const DawnObject<WGPUQuerySet>* querySet,
-                      uint32_t queryIndex) {
-    GetProcs().computePassEncoderWriteTimestamp(
-        GetHandle(), querySet->GetHandle(), queryIndex);
-  }
+                      uint32_t queryIndex,
+                      ExceptionState& exception_state);
   void end() { GetProcs().computePassEncoderEnd(GetHandle()); }
   void endPass();
 

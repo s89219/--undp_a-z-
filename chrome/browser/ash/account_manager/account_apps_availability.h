@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@ namespace ash {
 // changes it manually in OS Settings.
 // There should be only one instance of this class, which is attached to the
 // only regular Ash profile. The class should exist only if Account Manager
-// exists (if `ash::IsAccountManagerAvailable(profile)` is `true`).
+// exists (if `IsAccountManagerAvailable(profile)` is `true`).
 class AccountAppsAvailability
     : public KeyedService,
       public account_manager::AccountManagerFacade::Observer,
@@ -65,8 +65,7 @@ class AccountAppsAvailability
   AccountAppsAvailability(const AccountAppsAvailability&) = delete;
   AccountAppsAvailability& operator=(const AccountAppsAvailability&) = delete;
 
-  // Returns `true` if `kArcAccountRestrictions` and `kLacrosSupport` are
-  // enabled.
+  // Returns `true` if `kLacrosSupport` is enabled.
   static bool IsArcAccountRestrictionsEnabled();
 
   static void RegisterPrefs(PrefRegistrySimple* registry);
@@ -103,6 +102,8 @@ class AccountAppsAvailability
   // `AccountManagerFacade::Observer`:
   void OnAccountUpserted(const account_manager::Account& account) override;
   void OnAccountRemoved(const account_manager::Account& account) override;
+  void OnAuthErrorChanged(const account_manager::AccountKey& account,
+                          const GoogleServiceAuthError& error) override;
 
   // Initialize the prefs: add all Gaia accounts from Account Manager with
   // is_available_in_arc=true.

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "base/memory/scoped_refptr.h"
 #include "base/threading/thread.h"
+#include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -44,15 +45,17 @@ class VideoCaptureServiceImpl : public mojom::VideoCaptureService {
   void ConnectToCameraAppDeviceBridge(
       mojo::PendingReceiver<cros::mojom::CameraAppDeviceBridge> receiver)
       override;
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   void ConnectToDeviceFactory(
       mojo::PendingReceiver<mojom::DeviceFactory> receiver) override;
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   void ConnectToVideoSourceProvider(
       mojo::PendingReceiver<mojom::VideoSourceProvider> receiver) override;
   void SetRetryCount(int32_t count) override;
   void BindControlsForTesting(
       mojo::PendingReceiver<mojom::TestingControls> receiver) override;
-
+#if BUILDFLAG(IS_WIN)
+  void OnGpuInfoUpdate(const CHROME_LUID& luid) override;
+#endif
  private:
   class GpuDependenciesContext;
 
@@ -61,8 +64,11 @@ class VideoCaptureServiceImpl : public mojom::VideoCaptureService {
   void LazyInitializeVideoSourceProvider();
   void OnLastSourceProviderClientDisconnected();
 
-  mojo::Receiver<mojom::VideoCaptureService> receiver_;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
   mojo::ReceiverSet<mojom::DeviceFactory> factory_receivers_;
+#endif
+
+  mojo::Receiver<mojom::VideoCaptureService> receiver_;
   std::unique_ptr<VirtualDeviceEnabledDeviceFactory> device_factory_;
   std::unique_ptr<VideoSourceProviderImpl> video_source_provider_;
   std::unique_ptr<GpuDependenciesContext> gpu_dependencies_context_;

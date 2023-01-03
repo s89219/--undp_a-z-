@@ -1,18 +1,15 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chromeos/ash/components/dbus/cros_healthd/fake_cros_healthd_client.h"
 
 #include "base/callback.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
 
 namespace ash::cros_healthd {
 
 namespace {
-
-// TODO(https://crbug.com/1164001): remove after migration to namespace ash.
-namespace mojom = ::chromeos::cros_healthd::mojom;
 
 // Used to track the fake instance, mirrors the instance in the base class.
 FakeCrosHealthdClient* g_instance = nullptr;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -264,8 +264,8 @@ TEST(StringOrdinalTest, Sort) {
   std::vector<StringOrdinal> ordinals = sorted_ordinals;
   base::RandomShuffle(ordinals.begin(), ordinals.end());
   base::ranges::sort(ordinals, StringOrdinal::LessThanFn());
-  EXPECT_TRUE(std::equal(ordinals.begin(), ordinals.end(),
-                         sorted_ordinals.begin(), StringOrdinal::EqualsFn()));
+  EXPECT_TRUE(base::ranges::equal(ordinals, sorted_ordinals,
+                                  StringOrdinal::EqualsFn()));
 }
 
 }  // namespace

@@ -1,10 +1,13 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview Rewrites a braille key event.
  */
+import {BrailleKeyCommand, BrailleKeyEvent} from '../../common/braille/braille_key_types.js';
+import {QueueMode} from '../../common/tts_types.js';
+import {Output} from '../output/output.js';
 
 /**
  * A class that transforms a sequence of braille key events into a standard key

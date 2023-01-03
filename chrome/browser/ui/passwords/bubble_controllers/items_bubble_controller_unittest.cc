@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -19,7 +20,7 @@
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
-#include "components/sync/driver/test_sync_service.h"
+#include "components/sync/test/test_sync_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_renderer_host.h"
@@ -27,6 +28,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using ::testing::_;
 using ::testing::Return;
 using ::testing::ReturnRef;
 
@@ -91,7 +93,7 @@ class ItemsBubbleControllerTest : public ::testing::Test {
   content::BrowserTaskEnvironment task_environment_;
   content::RenderViewHostTestEnabler rvh_enabler_;
   std::unique_ptr<TestingProfile> profile_;
-  syncer::TestSyncService* test_sync_service_;
+  raw_ptr<syncer::TestSyncService> test_sync_service_;
   std::unique_ptr<content::WebContents> test_web_contents_;
   std::unique_ptr<PasswordsModelDelegateMock> mock_delegate_;
   std::unique_ptr<ItemsBubbleController> controller_;
@@ -171,7 +173,7 @@ TEST_F(ItemsBubbleControllerTest, OnPasswordActionAddPassword) {
   form.username_value = u"User";
   form.password_value = u"123456";
 
-  EXPECT_CALL(*GetStore(), AddLogin(form));
+  EXPECT_CALL(*GetStore(), AddLogin(form, _));
 
   controller()->OnPasswordAction(
       form, PasswordBubbleControllerBase::PasswordAction::kAddPassword);
@@ -216,12 +218,17 @@ TEST_F(ItemsBubbleControllerTest, ShouldReturnPasswordSyncState) {
   sync_service()->SetDisableReasons({});
   sync_service()->SetTransportState(
       syncer::SyncService::TransportState::ACTIVE);
-  sync_service()->SetActiveDataTypes({});
+  sync_service()->GetUserSettings()->SetSelectedTypes(
+      /*sync_everything=*/false,
+      /*types=*/syncer::UserSelectableTypeSet());
 
   EXPECT_EQ(controller()->GetPasswordSyncState(),
             password_manager::SyncState::kNotSyncing);
 
-  sync_service()->SetActiveDataTypes({syncer::ModelTypeSet(syncer::PASSWORDS)});
+  sync_service()->GetUserSettings()->SetSelectedTypes(
+      /*sync_everything=*/false,
+      /*types=*/syncer::UserSelectableTypeSet(
+          syncer::UserSelectableType::kPasswords));
   EXPECT_EQ(
       controller()->GetPasswordSyncState(),
       password_manager::SyncState::kAccountPasswordsActiveNormalEncryption);

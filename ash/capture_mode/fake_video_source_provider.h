@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,7 +44,12 @@ class FakeVideoSourceProvider
                      const std::string& display_name,
                      const std::string& model_id,
                      media::VideoFacingMode camera_facing_mode);
+  void AddFakeCameraWithoutNotifying(const std::string& device_id,
+                                     const std::string& display_name,
+                                     const std::string& model_id,
+                                     media::VideoFacingMode camera_facing_mode);
   void RemoveFakeCamera(const std::string& device_id);
+  void RemoveFakeCameraWithoutNotifying(const std::string& device_id);
 
   // video_capture::mojom::VideoSourceProvider:
   void GetSourceInfos(GetSourceInfosCallback callback) override;
@@ -54,7 +59,6 @@ class FakeVideoSourceProvider
   void AddSharedMemoryVirtualDevice(
       const media::VideoCaptureDeviceInfo& device_info,
       mojo::PendingRemote<video_capture::mojom::Producer> producer,
-      bool send_buffer_handles_to_producer_as_raw_file_descriptors,
       mojo::PendingReceiver<video_capture::mojom::SharedMemoryVirtualDevice>
           virtual_device_receiver) override {}
   void AddTextureVirtualDevice(

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,8 +58,7 @@ class ExtensionInfoTest : public extensions::ExtensionServiceTestBase {
         .AddPermission(kPermission2)
         .AddPermission(kPermission3);
     if (is_app) {
-      extensionBuilder.SetManifestPath({"app", "launch", "web_url"},
-                                       kAppLaunchUrl);
+      extensionBuilder.SetManifestPath("app.launch.web_url", kAppLaunchUrl);
     }
     if (from_webstore) {
       extensionBuilder.AddFlags(extensions::Extension::FROM_WEBSTORE);

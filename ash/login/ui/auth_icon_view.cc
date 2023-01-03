@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "ash/login/ui/horizontal_image_sequence_animation_decoder.h"
 #include "ash/style/ash_color_provider.h"
+#include "ash/style/color_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -63,7 +64,7 @@ SkColor GetColor(AuthIconView::Color color) {
       return AshColorProvider::Get()->GetContentLayerColor(
           AshColorProvider::ContentLayerType::kIconColorPrimary);
     case AuthIconView::Color::kDisabled:
-      return AshColorProvider::Get()->GetDisabledColor(
+      return ColorUtil::GetDisabledColor(
           GetColor(AuthIconView::Color::kPrimary));
     case AuthIconView::Color::kError:
       // TODO(crbug.com/1233614): Either find a system color to match the color
@@ -196,8 +197,9 @@ void AuthIconView::RunNudgeAnimation() {
 
 void AuthIconView::StartProgressAnimation() {
   // Progress animation already running.
-  if (progress_animation_timer_.IsRunning())
+  if (progress_animation_timer_.IsRunning()) {
     return;
+  }
 
   progress_animation_start_time_ = base::TimeTicks::Now();
   progress_animation_timer_.Start(
@@ -209,8 +211,9 @@ void AuthIconView::StartProgressAnimation() {
 
 void AuthIconView::StopProgressAnimation() {
   // Progress already stopped.
-  if (!progress_animation_timer_.IsRunning())
+  if (!progress_animation_timer_.IsRunning()) {
     return;
+  }
 
   progress_animation_timer_.Stop();
   SchedulePaint();
@@ -241,8 +244,9 @@ gfx::Size AuthIconView::CalculatePreferredSize() const {
 
 void AuthIconView::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() != ui::ET_GESTURE_TAP &&
-      event->type() != ui::ET_GESTURE_TAP_DOWN)
+      event->type() != ui::ET_GESTURE_TAP_DOWN) {
     return;
+  }
 
   if (on_tap_or_click_callback_) {
     on_tap_or_click_callback_.Run();

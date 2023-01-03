@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,19 +35,19 @@ public final class SyncTestUtil {
     private SyncTestUtil() {}
 
     /**
-     * Returns whether sync is requested.
-     */
-    public static boolean isSyncRequested() {
-        return TestThreadUtils.runOnUiThreadBlockingNoException(
-                () -> SyncService.get().isSyncRequested());
-    }
-
-    /**
      * Returns whether sync-the-feature can start.
      */
     public static boolean canSyncFeatureStart() {
         return TestThreadUtils.runOnUiThreadBlockingNoException(
                 () -> SyncService.get().canSyncFeatureStart());
+    }
+
+    /**
+     * Returns whether sync-the-feature is enabled.
+     */
+    public static boolean isSyncFeatureEnabled() {
+        return TestThreadUtils.runOnUiThreadBlockingNoException(
+                () -> SyncService.get().isSyncFeatureEnabled());
     }
 
     /**

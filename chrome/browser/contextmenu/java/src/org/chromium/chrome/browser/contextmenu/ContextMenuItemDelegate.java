@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@ import androidx.annotation.IntDef;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.common.Referrer;
 import org.chromium.url.GURL;
-import org.chromium.url.Origin;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -97,10 +96,8 @@ public interface ContextMenuItemDelegate {
     /**
      * Called when the {@code url} should be opened in a new incognito tab.
      * @param url The URL to open.
-     * @param initiatorOrigin the origin from which the navigation is initiated, used elsewhere in
-     *         the navigation stack for privacy decisions.
      */
-    void onOpenInNewIncognitoTab(GURL url, Origin initiatorOrigin);
+    void onOpenInNewIncognitoTab(GURL url);
 
     /**
      * Called when the {@code url} is of an image and should be opened in the same tab.

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package org.chromium.components.page_info;
 
 import android.app.Activity;
 import android.app.Dialog;
-import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Color;
@@ -39,7 +38,6 @@ import org.chromium.components.security_state.ConnectionSecurityLevel;
 import org.chromium.components.security_state.SecurityStateModel;
 import org.chromium.components.url_formatter.UrlFormatter;
 import org.chromium.content_public.browser.BrowserContextHandle;
-import org.chromium.content_public.browser.ContentFeatureList;
 import org.chromium.content_public.browser.LoadCommittedDetails;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsObserver;
@@ -130,11 +128,6 @@ public class PageInfoController implements PageInfoMainController, ModalDialogPr
     // The controller for the cookies section of the page info.
     private PageInfoCookiesController mCookiesController;
 
-    // The controller for the page zoom section of the page info. Instantiated only when
-    // {@link ContentFeatureList.ACCESSIBILITY_PAGE_ZOOM} is enabled.
-    @Nullable
-    private PageInfoPageZoomController mPageZoomController;
-
     // All subpage controllers.
     private Collection<PageInfoSubpageController> mSubpageControllers;
 
@@ -199,7 +192,7 @@ public class PageInfoController implements PageInfoMainController, ModalDialogPr
         PageInfoContainer.Params containerParams = new PageInfoContainer.Params();
         boolean useDarkText = !ColorUtils.inNightMode(mContext);
         OmniboxUrlEmphasizer.emphasizeUrl(displayUrlBuilder, mContext, autocompleteSchemeClassifier,
-                mSecurityLevel, mIsInternalPage, useDarkText,
+                mSecurityLevel, useDarkText,
                 /*emphasizeScheme=*/true);
         containerParams.url = displayUrlBuilder;
         containerParams.urlOriginLength = OmniboxUrlEmphasizer.getOriginEndIndex(
@@ -225,21 +218,6 @@ public class PageInfoController implements PageInfoMainController, ModalDialogPr
             if (mCookiesController != null) mCookiesController.onUiClosing();
         };
         mDelegate.initOfflinePageUiParams(viewParams, this::runAfterDismiss);
-        if (!mIsInternalPage && !mDelegate.isShowingOfflinePage()
-                && mDelegate.isInstantAppAvailable(mFullUrl.getSpec())) {
-            final Intent instantAppIntent = mDelegate.getInstantAppIntentForUrl(mFullUrl.getSpec());
-            viewParams.instantAppButtonClickCallback = () -> {
-                try {
-                    getActivity().startActivity(instantAppIntent);
-                    RecordUserAction.record("Android.InstantApps.LaunchedFromWebsiteSettingsPopup");
-                } catch (ActivityNotFoundException e) {
-                    mView.disableInstantAppButton();
-                }
-            };
-            RecordUserAction.record("Android.InstantApps.OpenInstantAppButtonShown");
-        } else {
-            viewParams.instantAppButtonShown = false;
-        }
         viewParams.httpsImageCompressionMessageShown = mDelegate.isHttpsImageCompressionApplied();
         mView = new PageInfoView(mContext, viewParams);
         if (isSheet(mContext)) mView.setBackgroundColor(Color.WHITE);
@@ -267,23 +245,6 @@ public class PageInfoController implements PageInfoMainController, ModalDialogPr
         mCookiesController =
                 new PageInfoCookiesController(this, mView.getCookiesRowView(), mDelegate);
         mSubpageControllers.add(mCookiesController);
-
-        // Only create the controller for Page Zoom if feature flag is enabled.
-        if (ContentFeatureList.isEnabled(ContentFeatureList.ACCESSIBILITY_PAGE_ZOOM)) {
-            mPageZoomController = new PageInfoPageZoomController(this, mView.getPageZoomRowView(),
-                    mWebContents, new PageInfoPageZoomController.PageZoomControllerObserver() {
-                        @Override
-                        public void onSubpageCreated() {
-                            mDialog.reduceWindowDim();
-                        }
-
-                        @Override
-                        public void onSubpageRemoved() {
-                            mDialog.resetWindowDimToDefault();
-                        }
-                    });
-            mSubpageControllers.add(mPageZoomController);
-        }
 
         // TODO(crbug.com/1173154): Setup forget this site button after history delete is
         // implemented.
@@ -412,7 +373,7 @@ public class PageInfoController implements PageInfoMainController, ModalDialogPr
      * Updates the Topic view if present.
      */
     @CalledByNative
-    private void updateTopicsDisplay(String[] topics) {
+    private void setAdPersonalizationInfo(boolean hasJoinedUserToInterestGroup, String[] topics) {
         // This logic is a little weird. On Android we already have separate controllers for most
         // PageInfo components and they usually update themselves. On Desktop we still have one big
         // controller. Here we are reusing Desktop controller to update the Android component.
@@ -421,7 +382,8 @@ public class PageInfoController implements PageInfoMainController, ModalDialogPr
         for (PageInfoSubpageController controller : mSubpageControllers) {
             if (controller instanceof PageInfoAdPersonalizationController) {
                 ((PageInfoAdPersonalizationController) controller)
-                        .setTopicsDisplay(Arrays.asList(topics));
+                        .setAdPersonalizationInfo(
+                                hasJoinedUserToInterestGroup, Arrays.asList(topics));
             }
         }
     }

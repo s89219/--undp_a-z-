@@ -39,8 +39,11 @@
 #include "mojo/public/cpp/bindings/shared_remote.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/blink/public/common/fenced_frame/redacted_fenced_frame_config.h"
+#include "third_party/blink/public/common/frame/view_transition_state.h"
 #include "third_party/blink/public/common/loader/loading_behavior_flag.h"
 #include "third_party/blink/public/common/permissions_policy/document_policy.h"
+#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/mojom/fenced_frame/fenced_frame.mojom-blink.h"
 #include "third_party/blink/public/mojom/frame/triggering_event_info.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/loader/content_security_notifier.mojom-blink.h"
@@ -48,7 +51,7 @@
 #include "third_party/blink/public/mojom/loader/same_document_navigation_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/page/page.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/page_state/page_state.mojom-blink.h"
-#include "third_party/blink/public/mojom/timing/worker_timing_container.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/service_worker/controller_service_worker_mode.mojom-blink.h"
 #include "third_party/blink/public/platform/scheduler/web_scoped_virtual_time_pauser.h"
 #include "third_party/blink/public/platform/web_navigation_body_loader.h"
 #include "third_party/blink/public/web/web_document_loader.h"
@@ -56,14 +59,13 @@
 #include "third_party/blink/public/web/web_history_commit_type.h"
 #include "third_party/blink/public/web/web_navigation_params.h"
 #include "third_party/blink/public/web/web_navigation_type.h"
-#include "third_party/blink/public/web/web_origin_policy.h"
-#include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/weak_identifier_map.h"
 #include "third_party/blink/renderer/core/frame/dactyloscoper.h"
 #include "third_party/blink/renderer/core/frame/frame_types.h"
 #include "third_party/blink/renderer/core/frame/policy_container.h"
 #include "third_party/blink/renderer/core/frame/use_counter_impl.h"
+#include "third_party/blink/renderer/core/html/fenced_frame/fenced_frame_reporting.h"
 #include "third_party/blink/renderer/core/html/parser/parser_synchronization_policy.h"
 #include "third_party/blink/renderer/core/loader/document_load_timing.h"
 #include "third_party/blink/renderer/core/loader/frame_loader_types.h"
@@ -71,6 +73,7 @@
 #include "third_party/blink/renderer/core/loader/preload_helper.h"
 #include "third_party/blink/renderer/core/page/viewport_description.h"
 #include "third_party/blink/renderer/core/permissions_policy/policy_helper.h"
+#include "third_party/blink/renderer/platform/bindings/source_location.h"
 #include "third_party/blink/renderer/platform/exported/wrapped_resource_response.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
@@ -80,12 +83,11 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
-#include "third_party/blink/renderer/platform/loader/fetch/source_keyed_cached_metadata_handler.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
 #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
+
 namespace base {
 class TickClock;
 }
@@ -109,12 +111,16 @@ class SerializedScriptValue;
 class SubresourceFilter;
 class WebServiceWorkerNetworkProvider;
 
+namespace scheduler {
+class TaskAttributionId;
+}  // namespace scheduler
 namespace mojom {
 enum class CommitResult : int32_t;
-}
+}  // namespace mojom
 
-// Enables code caching for inline scripts.
-extern const base::Feature kCacheInlineScriptCode;
+namespace {
+struct SameSizeAsDocumentLoader;
+}  // namespace
 
 // The DocumentLoader fetches a main resource and handles the result.
 // TODO(https://crbug.com/855189). This was originally structured to have a
@@ -192,7 +198,11 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
     return last_navigation_had_transient_user_activation_;
   }
   void SetCodeCacheHost(
-      mojo::PendingRemote<mojom::CodeCacheHost> code_cache_host) override;
+      CrossVariantMojoRemote<mojom::blink::CodeCacheHostInterfaceBase>
+          code_cache_host) override;
+  WebString OriginCalculationDebugInfo() const override {
+    return origin_calculation_debug_info_;
+  }
 
   MHTMLArchive* Archive() const { return archive_.Get(); }
 
@@ -227,14 +237,17 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   // |is_synchronously_committed| is described in comment for
   // CommitSameDocumentNavigation.
-  void UpdateForSameDocumentNavigation(const KURL&,
-                                       HistoryItem*,
-                                       mojom::blink::SameDocumentNavigationType,
-                                       scoped_refptr<SerializedScriptValue>,
-                                       WebFrameLoadType,
-                                       const SecurityOrigin* initiator_origin,
-                                       bool is_browser_initiated,
-                                       bool is_synchronously_committed);
+  void UpdateForSameDocumentNavigation(
+      const KURL&,
+      HistoryItem*,
+      mojom::blink::SameDocumentNavigationType,
+      scoped_refptr<SerializedScriptValue>,
+      WebFrameLoadType,
+      const SecurityOrigin* initiator_origin,
+      bool is_browser_initiated,
+      bool is_synchronously_committed,
+      absl::optional<scheduler::TaskAttributionId>
+          soft_navigation_heuristics_task_id);
 
   const ResourceResponse& GetResponse() const { return response_; }
 
@@ -282,7 +295,9 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       const SecurityOrigin* initiator_origin,
       bool is_synchronously_committed,
       mojom::blink::TriggeringEventInfo,
-      bool is_browser_initiated);
+      bool is_browser_initiated,
+      absl::optional<scheduler::TaskAttributionId>
+          soft_navigation_heuristics_task_id);
 
   void SetDefersLoading(LoaderFreezeMode);
 
@@ -322,7 +337,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   }
 
   UseCounterImpl& GetUseCounter() { return use_counter_; }
-  Dactyloscoper& GetDactyloscoper() { return dactyloscoper_; }
 
   PrefetchedSignedExchangeManager* GetPrefetchedSignedExchangeManager() const;
 
@@ -355,9 +369,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
                                     HistoryNavigationType,
                                     CommitReason commit_reason);
 
-  mojo::PendingReceiver<mojom::blink::WorkerTimingContainer>
-  TakePendingWorkerTimingReceiver(int request_id);
-
   const KURL& WebBundlePhysicalUrl() const { return web_bundle_physical_url_; }
 
   bool NavigationScrollAllowed() const { return navigation_scroll_allowed_; }
@@ -381,7 +392,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   CodeCacheHost* GetCodeCacheHost();
   static void DisableCodeCacheForTesting();
 
-  mojo::PendingRemote<blink::mojom::CodeCacheHost> CreateWorkerCodeCacheHost();
+  mojo::PendingRemote<mojom::blink::CodeCacheHost> CreateWorkerCodeCacheHost();
 
   HashMap<KURL, EarlyHintsPreloadEntry> GetEarlyHintsPreloadedResources();
 
@@ -389,9 +400,69 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
     return ad_auction_components_;
   }
 
-  const mojom::blink::FencedFrameReportingPtr& FencedFrameReporting() const {
+  const absl::optional<blink::FencedFrameReporting>& FencedFrameReporting()
+      const {
     return fenced_frame_reporting_;
   }
+
+  const absl::optional<FencedFrame::RedactedFencedFrameProperties>&
+  FencedFrameProperties() const {
+    return fenced_frame_properties_;
+  }
+
+  // Detect if the page is reloaded or after form submitted. This method is
+  // called in order to disable some interventions or optimizations based on the
+  // heuristic that the user might reload the page when interventions cause
+  // problems. Also, the user is likely to avoid reloading the page when they
+  // submit forms. So this method is useful to skip interventions in the
+  // following conditions.
+  // - Reload a page.
+  // - Submit a form.
+  // - Resubmit a form.
+  // The reason why we use DocumentLoader::GetNavigationType() instead of
+  // DocumentLoader::LoadType() is that DocumentLoader::LoadType() is reset to
+  // WebFrameLoadType::kStandard on DidFinishNavigation(). When JavaScript adds
+  // iframes after navigation, DocumentLoader::LoadType() always returns
+  // WebFrameLoadType::kStandard. DocumentLoader::GetNavigationType() doesn't
+  // have this problem.
+  bool IsReloadedOrFormSubmitted() const;
+
+  // (crbug.com/1371756) Record the page if the main resource is not fetched via
+  // ServiceWorker and at least one subresource is fetched via ServiceWorker.
+  // This method won't record the page if the main resource was not controlled
+  // by ServiceWorker at the time of the initial navigation. This helps us to
+  // understand the potential impact of the fetch fast-path effort.
+  void MaybeRecordServiceWorkerFallbackMainResource(
+      bool was_subresource_fetched_via_service_worker);
+
+  // (crbug.com/1371756) Returns the initial state of
+  // ControllerServiceWorkerMode in the document. We store this info to capture
+  // the case when the main document has installed ServiceWorker and the page is
+  // already controlled or not.
+  mojom::blink::ControllerServiceWorkerMode ServiceWorkerInitialControllerMode()
+      const {
+    return service_worker_initial_controller_mode_;
+  }
+
+  // Starts loading the navigation body in a background thread.
+  static void MaybeStartLoadingBodyInBackground(
+      WebNavigationBodyLoader* body_loader,
+      LocalFrame* frame,
+      const KURL& url,
+      const ResourceResponse& response);
+
+  // This needs to be kept as public to be accessible from
+  // SameSizeAsDocumentLoader as GCC will fail to allow access
+  // even if it is friend of DocumentLoader
+  class DecodedBodyData;
+
+  network::mojom::NavigationDeliveryType GetNavigationDeliveryType() const {
+    return navigation_delivery_type_;
+  }
+
+  void UpdateSubresourceLoadMetrics(
+      uint32_t number_of_subresources_loaded,
+      uint32_t number_of_subresource_loads_handled_by_service_worker);
 
  protected:
   // Based on its MIME type, if the main document's response corresponds to an
@@ -421,6 +492,10 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   Member<MHTMLArchive> archive_;
 
  private:
+  friend struct SameSizeAsDocumentLoader;
+  class BodyData;
+  class EncodedBodyData;
+
   Frame* CalculateOwnerFrame();
   scoped_refptr<SecurityOrigin> CalculateOrigin(Document* owner_document);
   void InitializeWindow(Document* owner_document);
@@ -451,7 +526,9 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       const SecurityOrigin* initiator_origin,
       bool is_browser_initiated,
       bool is_synchronously_committed,
-      mojom::blink::TriggeringEventInfo);
+      mojom::blink::TriggeringEventInfo,
+      absl::optional<scheduler::TaskAttributionId>
+          soft_navigation_heuristics_task_id);
 
   // Use these method only where it's guaranteed that |m_frame| hasn't been
   // cleared.
@@ -468,7 +545,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   void StartLoadingInternal();
   void StartLoadingResponse();
-  void StartLoadingBodyWithCodeCache();
   void FinishedLoading(base::TimeTicks finish_time);
   void CancelLoadAfterCSPDenied(const ResourceResponse&);
 
@@ -481,34 +557,38 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   bool ShouldReportTimingInfoToParent();
 
-  void CommitData(const char* bytes, size_t length);
-  // Processes the data stored in the data_buffer_, used to avoid appending data
-  // to the parser in a nested message loop.
-  void ProcessDataBuffer(const char* bytes = nullptr, size_t length = 0);
+  void CommitData(BodyData& data);
+  // Processes the data stored in |data_buffer_| or |decoded_data_buffer_|, used
+  // to avoid appending data to the parser in a nested message loop.
+  void ProcessDataBuffer(BodyData* data = nullptr);
+  void BodyDataReceivedImpl(BodyData& data);
 
   // WebNavigationBodyLoader::Client
-  void BodyCodeCacheReceived(mojo_base::BigBuffer data) override;
   void BodyDataReceived(base::span<const char> data) override;
+  void DecodedBodyDataReceived(const WebString& data,
+                               const WebEncodingData& encoding_data,
+                               base::span<const char> encoded_data) override;
   void BodyLoadingFinished(base::TimeTicks completion_time,
                            int64_t total_encoded_data_length,
                            int64_t total_encoded_body_length,
                            int64_t total_decoded_body_length,
                            bool should_report_corb_blocking,
                            const absl::optional<WebURLError>& error) override;
+  ProcessBackgroundDataCallback TakeProcessBackgroundDataCallback() override;
 
   void ApplyClientHintsConfig(
       const WebVector<network::mojom::WebClientHintsType>&
           enabled_client_hints);
 
-  // For SignedExchangeSubresourcePrefetch feature. If the page was loaded from
-  // a signed exchage which has "allowed-alt-sxg" link headers in the inner
-  // response and PrefetchedSignedExchanges were passed from the previous page,
-  // initializes a PrefetchedSignedExchangeManager which will hold the
-  // subresource signed exchange related headers ("alternate" link header in the
-  // outer response and "allowed-alt-sxg" link header in the inner response of
-  // the page's signed exchange), and the passed PrefetchedSignedExchanges.
-  // The created PrefetchedSignedExchangeManager will be used to load the
-  // prefetched signed exchanges for matching requests.
+  // If the page was loaded from a signed exchange which has "allowed-alt-sxg"
+  // link headers in the inner response and PrefetchedSignedExchanges were
+  // passed from the previous page, initializes a
+  // PrefetchedSignedExchangeManager which will hold the subresource signed
+  // exchange related headers ("alternate" link header in the outer response and
+  // "allowed-alt-sxg" link header in the inner response of the page's signed
+  // exchange), and the passed PrefetchedSignedExchanges. The created
+  // PrefetchedSignedExchangeManager will be used to load the prefetched signed
+  // exchanges for matching requests.
   void InitializePrefetchedSignedExchangeManager();
 
   bool IsJavaScriptURLOrXSLTCommit() const {
@@ -518,9 +598,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   // Computes and creates CSP for this document.
   ContentSecurityPolicy* CreateCSP();
-
-  // Whether the isolated code cache should be used for this document.
-  bool UseIsolatedCodeCache();
 
   // Params are saved in constructor and are cleared after StartLoading().
   // TODO(dgozman): remove once StartLoading is merged with constructor.
@@ -532,14 +609,17 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   // conversion.
   std::unique_ptr<PolicyContainer> policy_container_;
 
+  // The permissions policy to be applied to the window at initialization time.
+  const absl::optional<ParsedPermissionsPolicy> initial_permissions_policy_;
+
   // These fields are copied from WebNavigationParams, see there for definition.
+  DocumentToken token_;
   KURL url_;
   AtomicString http_method_;
   // The referrer on the final request for this document.
   AtomicString referrer_;
   scoped_refptr<EncodedFormData> http_body_;
   AtomicString http_content_type_;
-  absl::optional<WebOriginPolicy> origin_policy_;
   const scoped_refptr<const SecurityOrigin> requestor_origin_;
   const KURL unreachable_url_;
   const KURL pre_redirect_url_for_failed_navigations_;
@@ -577,13 +657,22 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       content_security_notifier_;
 
   const scoped_refptr<SecurityOrigin> origin_to_commit_;
+
+  // Information about how `origin_to_commit_` was calculated, to help debug if
+  // it differs from the origin calculated on the browser side.
+  // TODO(https://crbug.com/1220238): Remove this.
+  AtomicString origin_calculation_debug_info_;
+
   blink::BlinkStorageKey storage_key_;
-  const network::mojom::WebSandboxFlags sandbox_flags_;
   WebNavigationType navigation_type_;
 
   DocumentLoadTiming document_load_timing_;
 
   base::TimeTicks time_of_last_data_received_;
+
+  mojom::blink::ControllerServiceWorkerMode
+      service_worker_initial_controller_mode_ =
+          mojom::blink::ControllerServiceWorkerMode::kNoController;
 
   std::unique_ptr<WebServiceWorkerNetworkProvider>
       service_worker_network_provider_;
@@ -603,7 +692,12 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   // Used to protect against reentrancy into CommitData().
   bool in_commit_data_;
+
+  // Either |data_buffer_| or |decoded_data_buffer_| will be used depending on
+  // whether BodyDataReceived() or DecodedBodyDataReceived() is called.
   scoped_refptr<SharedBuffer> data_buffer_;
+  Vector<DecodedBodyData> decoded_data_buffer_;
+
   const base::UnguessableToken devtools_navigation_token_;
 
   LoaderFreezeMode freeze_mode_ = LoaderFreezeMode::kNone;
@@ -642,6 +736,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   // |archive_|, but won't have |loading_main_document_from_mhtml_archive_| set.
   bool loading_main_document_from_mhtml_archive_ = false;
   const bool loading_srcdoc_ = false;
+  const KURL fallback_srcdoc_base_url_;
   const bool loading_url_as_empty_document_ = false;
   const bool is_static_data_ = false;
   CommitReason commit_reason_ = CommitReason::kRegular;
@@ -649,7 +744,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   scoped_refptr<ResourceTimingInfo> navigation_timing_info_;
   bool report_timing_info_to_parent_ = false;
   WebScopedVirtualTimePauser virtual_time_pauser_;
-  Member<SourceKeyedCachedMetadataHandler> cached_metadata_handler_;
   Member<PrefetchedSignedExchangeManager> prefetched_signed_exchange_manager_;
   const KURL web_bundle_physical_url_;
   const KURL web_bundle_claimed_url_;
@@ -661,8 +755,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   // page load metrics that aggregates usage from frames to one page load and
   // report feature usage to UMA histograms per page load.
   UseCounterImpl use_counter_;
-
-  Dactyloscoper dactyloscoper_;
 
   const base::TickClock* clock_;
 
@@ -699,17 +791,21 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   // reporting metadata which in turn is a map from the event type to the
   // reporting url. `nullptr` otherwise.
   // https://github.com/WICG/turtledove/blob/main/Fenced_Frames_Ads_Reporting.md
-  mojom::blink::FencedFrameReportingPtr fenced_frame_reporting_;
-
-  // Whether the document should be anonymous or not.
-  const bool anonymous_ = false;
-
-  // Both of these bits must be true to commit preloaded data to the parser when
-  // features::kEarlyBodyLoad is enabled.
-  bool waiting_for_document_loader_ = false;
-  bool waiting_for_code_cache_ = false;
+  absl::optional<blink::FencedFrameReporting> fenced_frame_reporting_;
 
   std::unique_ptr<ExtraData> extra_data_;
+
+  // Reduced accept language for top-level frame.
+  const AtomicString reduced_accept_language_;
+
+  const network::mojom::NavigationDeliveryType navigation_delivery_type_;
+
+  // Provides state from the previous Document that will be replaced by this
+  // navigation for a ViewTransition.
+  absl::optional<ViewTransitionState> view_transition_state_;
+
+  absl::optional<FencedFrame::RedactedFencedFrameProperties>
+      fenced_frame_properties_;
 };
 
 DECLARE_WEAK_IDENTIFIER_MAP(DocumentLoader);

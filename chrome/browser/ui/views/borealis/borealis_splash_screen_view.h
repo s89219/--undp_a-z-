@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "chrome/browser/ash/borealis/borealis_util.h"
 #include "chrome/browser/ash/borealis/borealis_window_manager.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
+
 // A splash screen for borealis, displays when borealis is clicked and closed
 // when the first borealis window shows.
 namespace borealis {
@@ -32,10 +33,7 @@ class BorealisSplashScreenView
   void OnGetRootPath(const std::string& path);
 
  private:
-  void CreateImageView(gfx::Image image);
-
   Profile* profile_ = nullptr;
-  base::raw_ptr<views::Label> steam_label_;
   base::raw_ptr<views::Label> starting_label_;
   base::WeakPtrFactory<BorealisSplashScreenView> weak_factory_;
 };

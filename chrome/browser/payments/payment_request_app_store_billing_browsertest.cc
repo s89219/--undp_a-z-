@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +30,6 @@ IN_PROC_BROWSER_TEST_F(
     PaymentRequestAppStoreBillingTest,
     ErrorMessageActionableWhenRequestAppStoreBillingNotInTwa) {
   std::string expected = "success";
-  EXPECT_EQ(expected, content::EvalJs(GetActiveWebContents(), "install()"));
   EXPECT_EQ(
       expected,
       content::EvalJs(GetActiveWebContents(),
@@ -54,7 +53,6 @@ IN_PROC_BROWSER_TEST_F(PaymentRequestAppStoreBillingTest,
   test_controller()->SetTwaPackageName("com.merchant.twa");
 
   std::string expected = "success";
-  EXPECT_EQ(expected, content::EvalJs(GetActiveWebContents(), "install()"));
   EXPECT_EQ(
       expected,
       content::EvalJs(GetActiveWebContents(),
@@ -81,7 +79,6 @@ IN_PROC_BROWSER_TEST_F(PaymentRequestAppStoreBillingTest,
 IN_PROC_BROWSER_TEST_F(PaymentRequestAppStoreBillingTest,
                        NormalErrorMessageForNonStoreUrl) {
   std::string expected = "success";
-  EXPECT_EQ(expected, content::EvalJs(GetActiveWebContents(), "install()"));
   std::string non_app_store_pay =
       https_server()
           ->GetURL("/app_store_billing_tests/method_manifest.json")

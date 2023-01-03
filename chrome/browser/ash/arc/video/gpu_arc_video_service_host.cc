@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,8 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "base/threading/thread_checker.h"
+#include "chromeos/components/cdm_factory_daemon/cdm_factory_daemon_proxy_ash.h"
+#include "chromeos/components/cdm_factory_daemon/mojom/browser_cdm_factory.mojom.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_feature_checker.h"
@@ -34,6 +36,7 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "mojo/public/cpp/platform/platform_channel.h"
 #include "mojo/public/cpp/system/invitation.h"
 #include "mojo/public/cpp/system/platform_handle.h"
@@ -129,7 +132,9 @@ class VideoAcceleratorFactoryService : public mojom::VideoAcceleratorFactory {
   void CreateDecodeAccelerator(
       mojo::PendingReceiver<mojom::VideoDecodeAccelerator> receiver,
       mojo::PendingRemote<
-          mojom::ProtectedBufferManager> /*protected_buffer_manager*/)
+          mojom::ProtectedBufferManager> /*protected_buffer_manager*/,
+      mojo::PendingRemote<
+          chromeos::cdm::mojom::BrowserCdmFactory> /*browser_cdm_factory*/)
       override {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
@@ -148,7 +153,7 @@ class VideoAcceleratorFactoryService : public mojom::VideoAcceleratorFactory {
     // blocklist. Note: base::Unretained(this) is safe because *|this| should
     // never die. See the CHECK() in the destructor.
     const scoped_refptr<base::SingleThreadTaskRunner>& task_runner =
-        base::ThreadTaskRunnerHandle::Get();
+        base::SingleThreadTaskRunner::GetCurrentDefault();
     CHECK(task_runner);
     auto gpu_feature_checker = content::GpuFeatureChecker::Create(
         gpu::GpuFeatureType::GPU_FEATURE_TYPE_ACCELERATED_VIDEO_DECODE,
@@ -230,8 +235,17 @@ class VideoAcceleratorFactoryService : public mojom::VideoAcceleratorFactory {
       content::BindInterfaceInGpuProcess(
           protected_buffer_manager.InitWithNewPipeAndPassReceiver());
 
+      // Version 10 accepts a BrowserCdmFactory.
+      oop_video_factory.RequireVersion(10);
+      mojo::PendingRemote<chromeos::cdm::mojom::BrowserCdmFactory>
+          browser_cdm_factory;
+      mojo::MakeSelfOwnedReceiver(
+          chromeos::CdmFactoryDaemonProxyAsh::CreateBrowserCdmFactoryProxy(),
+          browser_cdm_factory.InitWithNewPipeAndPassReceiver());
+
       oop_video_factory->CreateDecodeAccelerator(
-          std::move(receiver), std::move(protected_buffer_manager));
+          std::move(receiver), std::move(protected_buffer_manager),
+          std::move(browser_cdm_factory));
       oop_video_factories_.Add(std::move(oop_video_factory));
       return;
     }

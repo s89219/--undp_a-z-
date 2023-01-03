@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,9 +13,9 @@
 #include "base/win/windows_types.h"
 #include "chrome/updater/constants.h"
 #include "chrome/updater/updater_scope.h"
-#include "chrome/updater/util.h"
+#include "chrome/updater/util/util.h"
+#include "chrome/updater/util/win_util.h"
 #include "chrome/updater/win/win_constants.h"
-#include "chrome/updater/win/win_util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace updater {
@@ -24,9 +24,8 @@ absl::optional<int> RemoveUninstalledAppsTask::GetUnregisterReason(
     const std::string& app_id,
     const base::FilePath& /*ecp*/) const {
   base::win::RegKey key;
-  if (key.Open(scope_ == UpdaterScope::kSystem ? HKEY_LOCAL_MACHINE
-                                               : HKEY_CURRENT_USER,
-               base::StrCat({CLIENTS_KEY, base::SysUTF8ToWide(app_id)}).c_str(),
+  if (key.Open(IsSystemInstall(scope_) ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER,
+               GetAppClientsKey(app_id).c_str(),
                Wow6432(KEY_READ)) == ERROR_FILE_NOT_FOUND) {
     return absl::make_optional(kUninstallPingReasonUninstalled);
   }

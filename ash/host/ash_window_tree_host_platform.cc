@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -90,9 +90,8 @@ void AshWindowTreeHostPlatform::ConfineCursorToBoundsInRoot(
   if (!allow_confine_cursor())
     return;
 
-  gfx::RectF bounds_f(bounds_in_root);
-  GetRootTransform().TransformRect(&bounds_f);
-  last_cursor_confine_bounds_in_pixels_ = gfx::ToEnclosingRect(bounds_f);
+  last_cursor_confine_bounds_in_pixels_ =
+      GetRootTransform().MapRect(bounds_in_root);
   platform_window()->ConfineCursorToBounds(
       last_cursor_confine_bounds_in_pixels_);
 }
@@ -124,6 +123,10 @@ void AshWindowTreeHostPlatform::UpdateCursorConfig() {
 void AshWindowTreeHostPlatform::ClearCursorConfig() {
   ui::CursorController::GetInstance()->ClearCursorConfigForWindow(
       GetAcceleratedWidget());
+}
+
+void AshWindowTreeHostPlatform::UpdateRootWindowSize() {
+  aura::WindowTreeHostPlatform::UpdateRootWindowSize();
 }
 
 void AshWindowTreeHostPlatform::SetRootWindowTransformer(
@@ -165,7 +168,8 @@ gfx::Transform AshWindowTreeHostPlatform::GetInverseRootTransform() const {
   return transformer_helper_.GetInverseTransform();
 }
 
-gfx::Rect AshWindowTreeHostPlatform::GetTransformedRootWindowBoundsInPixels(
+gfx::Rect
+AshWindowTreeHostPlatform::GetTransformedRootWindowBoundsFromPixelSize(
     const gfx::Size& host_size_in_pixels) const {
   return transformer_helper_.GetTransformedWindowBounds(host_size_in_pixels);
 }

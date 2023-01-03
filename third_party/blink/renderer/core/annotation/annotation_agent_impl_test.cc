@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -281,7 +281,7 @@ TEST_F(AnnotationAgentImplTest, RemoveClearsState) {
 
   EXPECT_FALSE(IsRemoved(agent));
 
-  agent->Attach(GetDocument());
+  agent->Attach();
   ASSERT_TRUE(agent->IsAttached());
 
   agent->Remove();
@@ -305,7 +305,7 @@ TEST_F(AnnotationAgentImplTest, AttachIsSynchronous) {
       mojom::blink::AnnotationType::kSharedHighlight,
       *MakeGarbageCollected<MockAnnotationSelector>());
 
-  agent->Attach(GetDocument());
+  agent->Attach();
   EXPECT_TRUE(agent->IsAttached());
 }
 
@@ -329,14 +329,14 @@ TEST_F(AnnotationAgentImplTest, SuccessfulAttachCreatesMarker) {
   auto* agent_bar = CreateAgentForRange(range_bar);
   ASSERT_TRUE(agent_bar);
 
-  agent_foo->Attach(GetDocument());
+  agent_foo->Attach();
   ASSERT_TRUE(agent_foo->IsAttached());
 
   // A marker should have been created on "FOO" but not yet on "BAR".
   EXPECT_EQ(NumMarkersInRange(*range_foo), 1ul);
   EXPECT_EQ(NumMarkersInRange(*range_bar), 0ul);
 
-  agent_bar->Attach(GetDocument());
+  agent_bar->Attach();
   ASSERT_TRUE(agent_bar->IsAttached());
 
   // Both "FOO" and "BAR" should each have a single marker.
@@ -370,8 +370,8 @@ TEST_F(AnnotationAgentImplTest, RemovedAgentRemovesMarkers) {
   auto* agent_bar = CreateAgentForRange(range_bar);
   ASSERT_TRUE(agent_bar);
 
-  agent_foo->Attach(GetDocument());
-  agent_bar->Attach(GetDocument());
+  agent_foo->Attach();
+  agent_bar->Attach();
   ASSERT_EQ(NumMarkersInRange(*range_foo), 1ul);
   ASSERT_EQ(NumMarkersInRange(*range_bar), 1ul);
 
@@ -405,7 +405,7 @@ TEST_F(AnnotationAgentImplTest, AgentFailsAttachment) {
       CreateRangeToExpectedText(p, 0, 17, "TEST FOO PAGE BAR");
   ASSERT_EQ(NumMarkersInRange(*range), 0ul);
 
-  agent->Attach(GetDocument());
+  agent->Attach();
 
   EXPECT_EQ(NumMarkersInRange(*range), 0ul);
   EXPECT_FALSE(agent->IsAttached());
@@ -432,11 +432,58 @@ TEST_F(AnnotationAgentImplTest, AgentFailsAttachmentReportsToHost) {
   ASSERT_TRUE(host.agent_.is_connected());
   ASSERT_FALSE(host.did_finish_attachment_rect_);
 
-  agent->Attach(GetDocument());
+  agent->Attach();
   host.FlushForTesting();
 
   ASSERT_TRUE(host.did_finish_attachment_rect_);
   EXPECT_TRUE(host.did_finish_attachment_rect_->IsEmpty());
+}
+
+// Tests that an overlapping marker still reports a completed attachment to the
+// host.
+TEST_F(AnnotationAgentImplTest, AttachmentToOverlappingMarkerReportsToHost) {
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <p id='text'>TEST FOO PAGE BAR</p>
+  )HTML");
+
+  Element* element_text = GetDocument().getElementById("text");
+
+  auto* agent = CreateAgentFailsAttach();
+  ASSERT_TRUE(agent);
+  RangeInFlatTree* range_foo =
+      CreateRangeToExpectedText(element_text, 5, 13, "FOO PAGE");
+  auto* agent_foo = CreateAgentForRange(range_foo);
+  ASSERT_TRUE(agent_foo);
+
+  RangeInFlatTree* range_bar =
+      CreateRangeToExpectedText(element_text, 9, 17, "PAGE BAR");
+  auto* agent_bar = CreateAgentForRange(range_bar);
+  ASSERT_TRUE(agent_bar);
+
+  MockAnnotationAgentHost host_foo;
+  MockAnnotationAgentHost host_bar;
+  host_foo.BindToAgent(*agent_foo);
+  host_bar.BindToAgent(*agent_bar);
+
+  ASSERT_FALSE(host_foo.did_finish_attachment_rect_);
+  ASSERT_FALSE(host_bar.did_finish_attachment_rect_);
+
+  agent_foo->Attach();
+  ASSERT_TRUE(agent_foo->IsAttached());
+
+  host_foo.FlushForTesting();
+
+  EXPECT_TRUE(host_foo.did_finish_attachment_rect_);
+  ASSERT_FALSE(host_bar.did_finish_attachment_rect_);
+
+  agent_bar->Attach();
+  ASSERT_TRUE(agent_bar->IsAttached());
+
+  host_bar.FlushForTesting();
+  EXPECT_TRUE(host_bar.did_finish_attachment_rect_);
 }
 
 // Tests that attached agents report the document-coordinate rects of the
@@ -511,7 +558,7 @@ TEST_F(AnnotationAgentImplTest, AttachmentReportsRectsToHost) {
   ASSERT_FALSE(host_foo.did_finish_attachment_rect_);
   ASSERT_FALSE(host_bar.did_finish_attachment_rect_);
 
-  agent_foo->Attach(GetDocument());
+  agent_foo->Attach();
   EXPECT_TRUE(agent_foo->IsAttached());
 
   host_foo.FlushForTesting();
@@ -520,7 +567,7 @@ TEST_F(AnnotationAgentImplTest, AttachmentReportsRectsToHost) {
   EXPECT_EQ(*host_foo.did_finish_attachment_rect_, gfx::Rect(0, 1010, 30, 10));
   ASSERT_FALSE(host_bar.did_finish_attachment_rect_);
 
-  agent_bar->Attach(GetDocument());
+  agent_bar->Attach();
   EXPECT_TRUE(agent_bar->IsAttached());
 
   host_bar.FlushForTesting();
@@ -567,7 +614,7 @@ TEST_F(AnnotationAgentImplTest, AgentScrollIntoView) {
 
   MockAnnotationAgentHost host_foo;
   host_foo.BindToAgent(*agent_foo);
-  agent_foo->Attach(GetDocument());
+  agent_foo->Attach();
   ASSERT_TRUE(agent_foo->IsAttached());
 
   host_foo.FlushForTesting();
@@ -630,7 +677,7 @@ TEST_F(AnnotationAgentImplTest, AgentScrollIntoViewZoomed) {
 
   MockAnnotationAgentHost host_foo;
   host_foo.BindToAgent(*agent_foo);
-  agent_foo->Attach(GetDocument());
+  agent_foo->Attach();
   ASSERT_TRUE(agent_foo->IsAttached());
 
   host_foo.FlushForTesting();
@@ -641,6 +688,53 @@ TEST_F(AnnotationAgentImplTest, AgentScrollIntoViewZoomed) {
   host_foo.FlushForTesting();
 
   EXPECT_TRUE(ExpectInViewport(*element_foo));
+}
+
+// Test that calling ScrollIntoView while layout is dirty causes the page to
+// update layout and correctly ScrollIntoView the agent.
+TEST_F(AnnotationAgentImplTest, ScrollIntoViewWithDirtyLayout) {
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style>
+      p {
+        position: absolute;
+        top: 100px;
+      }
+    </style>
+    <p id='text'>FOO BAR</p>
+  )HTML");
+
+  Compositor().BeginFrame();
+
+  Element* element_text = GetDocument().getElementById("text");
+
+  RangeInFlatTree* range_foo =
+      CreateRangeToExpectedText(element_text, 0, 3, "FOO");
+  auto* agent_foo = CreateAgentForRange(range_foo);
+  ASSERT_TRUE(agent_foo);
+
+  ASSERT_TRUE(ExpectInViewport(*element_text));
+  ASSERT_EQ(GetDocument().View()->GetRootFrameViewport()->GetScrollOffset(),
+            ScrollOffset());
+
+  MockAnnotationAgentHost host_foo;
+  host_foo.BindToAgent(*agent_foo);
+  agent_foo->Attach();
+  ASSERT_TRUE(agent_foo->IsAttached());
+  host_foo.FlushForTesting();
+
+  element_text->setAttribute(html_names::kStyleAttr, "top: 2000px");
+
+  // Invoking ScrollIntoView on the agent should perform layout and then cause
+  // the attached content to scroll into the viewport.
+  host_foo.agent_->ScrollIntoView();
+  host_foo.FlushForTesting();
+
+  EXPECT_TRUE(ExpectInViewport(*element_text));
+  EXPECT_GT(GetDocument().View()->GetRootFrameViewport()->GetScrollOffset().y(),
+            1000);
 }
 
 }  // namespace blink

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -150,7 +150,7 @@ class SupervisedUserExtensionTest : public ExtensionServiceTestWithInstall {
     auto function = base::MakeRefCounted<
         WebstorePrivateIsPendingCustodianApprovalFunction>();
 
-    std::unique_ptr<base::Value> result(RunFunctionAndReturnSingleResult(
+    absl::optional<base::Value> result(RunFunctionAndReturnSingleResult(
         function.get(), "[\"" + extension_id + "\"]", browser_context()));
     return result->GetBool();
   }
@@ -444,9 +444,9 @@ TEST_F(SupervisedUserExtensionTest, UpdateWithoutPermissionIncrease) {
   // Prefs are updated via sync.
   PrefService* pref_service = profile()->GetPrefs();
   ASSERT_TRUE(pref_service);
-  const base::Value* approved_extensions =
-      pref_service->GetDictionary(prefs::kSupervisedUserApprovedExtensions);
-  EXPECT_TRUE(approved_extensions->FindStringKey(id));
+  const base::Value::Dict& approved_extensions =
+      pref_service->GetDict(prefs::kSupervisedUserApprovedExtensions);
+  EXPECT_TRUE(approved_extensions.FindString(id));
 }
 
 // Tests that the kApprovalGranted UMA metric only increments once without

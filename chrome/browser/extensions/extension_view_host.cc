@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,7 +39,8 @@ ExtensionViewHost::ExtensionViewHost(const Extension* extension,
       browser_(browser) {
   // Not used for panels, see PanelHost.
   DCHECK(host_type == mojom::ViewType::kExtensionDialog ||
-         host_type == mojom::ViewType::kExtensionPopup);
+         host_type == mojom::ViewType::kExtensionPopup ||
+         host_type == mojom::ViewType::kExtensionSidePanel);
 
   // The browser should always be associated with the same original profile as
   // this view host. The profiles may not be identical (i.e., one may be the
@@ -67,11 +68,7 @@ ExtensionViewHost::ExtensionViewHost(const Extension* extension,
     content::HostZoomMap* zoom_map =
         content::HostZoomMap::GetForWebContents(host_contents());
     zoom_map->SetTemporaryZoomLevel(
-        host_contents()
-            ->GetMainFrame()
-            ->GetProcess()
-            ->GetID(),
-        host_contents()->GetMainFrame()->GetRenderViewHost()->GetRoutingID(),
+        host_contents()->GetPrimaryMainFrame()->GetGlobalId(),
         zoom_map->GetDefaultZoomLevel());
   }
 }

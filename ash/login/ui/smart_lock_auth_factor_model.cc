@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,9 +23,10 @@ std::unique_ptr<SmartLockAuthFactorModel>
 SmartLockAuthFactorModel::Factory::Create(
     SmartLockState initial_state,
     base::RepeatingCallback<void()> arrow_button_tap_callback) {
-  if (factory_instance_)
+  if (factory_instance_) {
     return factory_instance_->CreateInstance(initial_state,
                                              arrow_button_tap_callback);
+  }
   return std::make_unique<SmartLockAuthFactorModel>(initial_state,
                                                     arrow_button_tap_callback);
 }
@@ -51,8 +52,9 @@ void SmartLockAuthFactorModel::OnArrowButtonTapOrClickEvent() {
 }
 
 void SmartLockAuthFactorModel::SetSmartLockState(SmartLockState state) {
-  if (state_ == state)
+  if (state_ == state) {
     return;
+  }
 
   // Clear out the timeout if the state changes. This shouldn't happen
   // ordinarily -- permanent error states are permanent after all -- but this is
@@ -112,7 +114,7 @@ AuthFactorType SmartLockAuthFactorModel::GetType() const {
 int SmartLockAuthFactorModel::GetLabelId() const {
   if (auth_result_.has_value()) {
     if (auth_result_.value()) {
-      return IDS_SMART_LOCK_LABEL_PHONE_LOCKED;
+      return IDS_AUTH_FACTOR_LABEL_UNLOCKED;
     }
 
     // Once the Smart Lock error message has timed out, prompt the

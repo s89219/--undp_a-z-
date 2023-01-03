@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,8 @@ SignalHandler::~SignalHandler() = default;
 void SignalHandler::Initialize(
     StorageService* storage_service,
     history::HistoryService* history_service,
-    const std::vector<optimization_guide::proto::OptimizationTarget>&
-        segment_ids) {
+    const base::flat_set<proto::SegmentId>& segment_ids,
+    base::RepeatingClosure models_refresh_callback) {
   user_action_signal_handler_ = std::make_unique<UserActionSignalHandler>(
       storage_service->signal_database());
   histogram_signal_handler_ = std::make_unique<HistogramSignalHandler>(
@@ -31,7 +31,7 @@ void SignalHandler::Initialize(
     // If UKM engine is enabled and history service is not available, then we
     // would write metrics without URLs to the database, which is OK.
     history_service_observer_ = std::make_unique<HistoryServiceObserver>(
-        history_service, storage_service);
+        history_service, storage_service, models_refresh_callback);
   }
 
   signal_filter_processor_ = std::make_unique<SignalFilterProcessor>(

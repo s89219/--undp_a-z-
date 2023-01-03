@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@ import "services/device/public/mojom/screen_orientation_lock_types.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 import "third_party/blink/public/mojom/manifest/display_mode.mojom";
 import "third_party/blink/public/mojom/manifest/capture_links.mojom";
-import "third_party/blink/public/mojom/manifest/handle_links.mojom";
+import "third_party/blink/public/mojom/manifest/manifest_launch_handler.mojom";
 import "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom";
 import "ui/gfx/geometry/mojom/geometry.mojom";
 import "url/mojom/url.mojom";
@@ -41,7 +41,7 @@ struct Manifest {
 
   array<ManifestImageResource> icons;
 
-  array<ManifestImageResource> screenshots;
+  array<ManifestScreenshot> screenshots;
 
   array<ManifestShortcutItem> shortcuts;
 
@@ -95,10 +95,11 @@ struct Manifest {
 
   // TODO(crbug.com/1163398): This field is non-standard and part of a Chrome
   // experiment. See:
-  // https://github.com/WICG/sw-launch/blob/main/declarative_link_capturing.md#proposal
+  // https://github.com/WICG/web-app-launch/blob/main/declarative_link_capturing.md#proposal
   // As such, this field should not be exposed by default.
   CaptureLinks capture_links;
 
+  // TODO(b/245352075): Remove this field.
   // TODO(crbug.com/1212263): This field is non-standard and part of a Chrome
   // experiment. See:
   // https://github.com/robbiemc/pwa-isolated-storage/blob/main/explainer.md
@@ -108,7 +109,7 @@ struct Manifest {
 
   // TODO(crbug.com/1231886): This field is non-standard and part of a Chrome
   // experiment. See:
-  // https://github.com/WICG/sw-launch/blob/main/launch_handler.md
+  // https://github.com/WICG/web-app-launch/blob/main/launch_handler.md
   ManifestLaunchHandler? launch_handler;
 
   // TODO(crbug.com/1259777): This field is non-standard and part of a Chrome
@@ -119,13 +120,20 @@ struct Manifest {
 
   // TODO(crbug.com/1271804): This field is non-standard and part of a Chrome
   // experiment. See:
-  // https://github.com/w3c/manifest/issues/975#issuecomment-960222756
+  // https://github.com/WICG/manifest-incubations/blob/gh-pages/user-preferences-explainer.md
   ManifestUserPreferences? user_preferences;
 
-  // TODO(crbug.com/1254457): This field is non-standard and part of a Chrome
+  // TODO(crbug.com/1318305): This field is non-standard and part of a Chrome
+  // experiment. See: https://github.com/w3c/manifest/issues/1045
+  bool has_dark_theme_color;
+  uint32 dark_theme_color;
+  bool has_dark_background_color;
+  uint32 dark_background_color;
+
+  // TODO(crbug.com/897314): This field is non-standard and part of a Chrome
   // experiment. See:
-  // https://github.com/WICG/pwa-url-handler/blob/main/handle_links/explainer.md
-  HandleLinks handle_links;
+  // https://github.com/WICG/manifest-incubations/blob/gh-pages/tabbed-mode-explainer.md
+  ManifestTabStrip? tab_strip;
 };
 
 // Structure representing a Shortcut Item per the Manifest specification, see:
@@ -170,6 +178,25 @@ struct ManifestImageResource {
   // Never empty. Defaults to a vector with a single value, IconPurpose::ANY,
   // if not explicitly specified in the manifest.
   array<Purpose> purpose;
+};
+
+// Structure representing a screenshot as per the Manifest specification, see:
+// https://www.w3.org/TR/manifest-app-info/#screenshots-member. This includes
+// a ImageResource with some additional members.
+struct ManifestScreenshot {
+  enum FormFactor {
+    kUnknown = 0,
+    kWide,
+    kNarrow,
+  };
+
+  ManifestImageResource image;
+
+  // The form factor for which a given screenshot applies.
+  FormFactor form_factor;
+
+  // This serves as the accessible name of the screenshot.
+  mojo_base.mojom.String16? label;
 };
 
 // Structure representing a share target file.
@@ -289,27 +316,6 @@ struct ManifestFileHandler {
   LaunchType launch_type;
 };
 
-// Represents how web app launches should be handled with regard to opening
-// windows or recycling existing ones.
-// Spec: https://github.com/WICG/sw-launch/blob/main/launch_handler.md
-struct ManifestLaunchHandler {
-  // The client to use for app launches.
-  enum RouteTo {
-    // Use whatever the platform would do by default.
-    kAuto,
-    // Create a new client for each app launch.
-    kNewClient,
-    // Use an existing client if available, otherwise create a new one to use.
-    // Navigate the existing client to the launch URL.
-    kExistingClientNavigate,
-    // Use an existing client if available, otherwise create a new one to use.
-    // Do not navigate the client and just enqueue a LaunchParams in the
-    // document's LaunchQueue.
-    kExistingClientRetain,
-  };
-  RouteTo route_to;
-};
-
 // Structure representing the translated manifest fields. Each field corresponds
 // to a translatable field in the Web App Manifest and contains a translation of
 // that field. Each field is optional as there is no mandatory field which must
@@ -335,6 +341,43 @@ struct ManifestUserPreferenceOverrides {
 
   bool has_background_color;
   uint32 background_color;
+};
+
+// Structure representing customizations to the tab strip.
+struct ManifestTabStrip {
+  HomeTabUnion home_tab;
+  NewTabButtonUnion new_tab_button;
+};
+
+// Represents whether a particular tab strip customization is present or not.
+// If kAuto, the platform can decide what the behaviour should be.
+enum TabStripMemberVisibility {
+  kAuto,
+  kAbsent,
+};
+
+union HomeTabUnion {
+  TabStripMemberVisibility visibility;
+  HomeTabParams params;
+};
+
+union NewTabButtonUnion {
+  TabStripMemberVisibility visibility;
+  NewTabButtonParams params;
+};
+
+// Structure representing the home tab customization to the tab strip.
+struct HomeTabParams {
+  // If the array is empty, the platform can choose what icon to use. This is
+  // the same as setting 'auto' on the icons field.
+  array<ManifestImageResource> icons;
+};
+
+// Structure representing the new tab button customization to the tab strip.
+struct NewTabButtonParams {
+  // If url is not present, the platform can choose what to do. This is the
+  // same as setting 'auto' on the url field.
+  url.mojom.Url? url;
 };
 
 // Debug information for a parsed manifest.

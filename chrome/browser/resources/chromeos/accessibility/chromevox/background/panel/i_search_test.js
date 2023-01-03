@@ -1,10 +1,10 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Include test fixture.
 GEN_INCLUDE([
-  '//chrome/browser/resources/chromeos/accessibility/chromevox/testing/chromevox_next_e2e_test_base.js'
+  '//chrome/browser/resources/chromeos/accessibility/chromevox/testing/chromevox_next_e2e_test_base.js',
 ]);
 
 /**
@@ -19,7 +19,10 @@ ChromeVoxISearchTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   async setUpDeferred() {
     await super.setUpDeferred();
+
+    // Alphabetical based on file path.
     await importModule('ISearch', '/chromevox/background/panel/i_search.js');
+    await importModule('Cursor', '/common/cursors/cursor.js');
   }
 
   get linksAndHeadingsDoc() {
@@ -75,10 +78,10 @@ class FakeISearchHandler {
 }
 
 
-TEST_F('ChromeVoxISearchTest', 'Simple', async function() {
+AX_TEST_F('ChromeVoxISearchTest', 'Simple', async function() {
   const rootNode = await this.runWithLoadedTree(this.linksAndHeadingsDoc);
   const handler = new FakeISearchHandler(this);
-  const search = new ISearch(new cursors.Cursor(rootNode, 0));
+  const search = new ISearch(new Cursor(rootNode, 0));
   search.handler = handler;
 
   // Simple forward search.

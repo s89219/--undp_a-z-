@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,40 @@ enum class WindowSnapActionSource {
 // Used to save histogram metrics about how the user initiates window snapping.
 constexpr char kWindowSnapActionSourceHistogram[] =
     "Ash.Wm.WindowSnapActionSource";
+
+// Used to record the user action on initiating the multi-window resizer.
+constexpr char kMultiWindowResizerShow[] = "MultiWindowResizerShow";
+
+// Used to record the user action on initiating the multi-window resizer when
+// two windows are snapped.
+constexpr char kMultiWindowResizerShowTwoWindowsSnapped[] =
+    "MultiWindowResizerShow_TwoWindowsSnapped";
+
+// Used to record the user action on clicking on the multi-window resizer.
+constexpr char kMultiWindowResizerClick[] = "MultiWindowResizerClick";
+
+// Used to record the user action on clicking on the multi-window resizer when
+// two windows are snapped.
+constexpr char kMultiWindowResizerClickTwoWindowsSnapped[] =
+    "MultiWindowResizerClick_TwoWindowsSnapped";
+
+// Used to record the histogram metrics on initiating the multi-window resizer.
+constexpr char kMultiWindowResizerShowHistogramName[] =
+    "Ash.Wm.MultiWindowResizerShow";
+
+// Used to record the histogram metrics on initiating the multi-window resizer
+// when two windows are snapped.
+constexpr char kMultiWindowResizerShowTwoWindowsSnappedHistogramName[] =
+    "Ash.Wm.MultiWindowResizerShowTwoWindowsSnapped";
+
+// Used to record the histogram metrics on clicking on the multi-window resizer.
+constexpr char kMultiWindowResizerClickHistogramName[] =
+    "Ash.Wm.MultiWindowResizerClick";
+
+// Used to record the histogram metrics on clicking on the multi-window resizer
+// when two windows are snapped.
+constexpr char kMultiWindowResizerClickTwoWindowsSnappedHistogramName[] =
+    "Ash.Wm.MultiWindowResizerClickTwoWindowsSnapped";
 
 }  // namespace ash
 

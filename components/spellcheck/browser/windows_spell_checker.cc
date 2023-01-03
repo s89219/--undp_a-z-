@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner_thread_mode.h"
-#include "base/task/task_runner_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/win/com_init_util.h"
 #include "base/win/core_winrt_util.h"
@@ -160,8 +159,7 @@ void BackgroundHelper::CreateSpellCheckerFactory() {
   DCHECK(background_task_runner_->RunsTasksInCurrentSequence());
   base::win::AssertComApartmentType(base::win::ComApartmentType::STA);
 
-  if (!spellcheck::WindowsVersionSupportsSpellchecker() ||
-      FAILED(::CoCreateInstance(__uuidof(::SpellCheckerFactory), nullptr,
+  if (FAILED(::CoCreateInstance(__uuidof(::SpellCheckerFactory), nullptr,
                                 (CLSCTX_INPROC_SERVER | CLSCTX_LOCAL_SERVER),
                                 IID_PPV_ARGS(&spell_checker_factory_)))) {
     spell_checker_factory_ = nullptr;
@@ -509,8 +507,8 @@ WindowsSpellChecker::~WindowsSpellChecker() {
 void WindowsSpellChecker::CreateSpellChecker(
     const std::string& lang_tag,
     base::OnceCallback<void(bool)> callback) {
-  base::PostTaskAndReplyWithResult(
-      background_task_runner_.get(), FROM_HERE,
+  background_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(
           &windows_spell_checker::BackgroundHelper::CreateSpellChecker,
           base::Unretained(background_helper_.get()), lang_tag),
@@ -529,8 +527,8 @@ void WindowsSpellChecker::RequestTextCheck(
     int document_tag,
     const std::u16string& text,
     spellcheck_platform::TextCheckCompleteCallback callback) {
-  base::PostTaskAndReplyWithResult(
-      background_task_runner_.get(), FROM_HERE,
+  background_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&windows_spell_checker::BackgroundHelper::
                          RequestTextCheckForAllLanguages,
                      base::Unretained(background_helper_.get()), document_tag,
@@ -541,8 +539,8 @@ void WindowsSpellChecker::RequestTextCheck(
 void WindowsSpellChecker::GetPerLanguageSuggestions(
     const std::u16string& word,
     spellcheck_platform::GetSuggestionsCallback callback) {
-  base::PostTaskAndReplyWithResult(
-      background_task_runner_.get(), FROM_HERE,
+  background_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(
           &windows_spell_checker::BackgroundHelper::GetPerLanguageSuggestions,
           base::Unretained(background_helper_.get()), word),
@@ -583,7 +581,7 @@ void WindowsSpellChecker::RecordChromeLocalesStats(
       base::BindOnce(
           &windows_spell_checker::BackgroundHelper::RecordChromeLocalesStats,
           base::Unretained(background_helper_.get()), std::move(chrome_locales),
-          metrics));
+          base::UnsafeDanglingUntriaged(metrics)));
 }
 
 void WindowsSpellChecker::RecordSpellcheckLocalesStats(
@@ -599,8 +597,8 @@ void WindowsSpellChecker::RecordSpellcheckLocalesStats(
 void WindowsSpellChecker::IsLanguageSupported(
     const std::string& lang_tag,
     base::OnceCallback<void(bool)> callback) {
-  base::PostTaskAndReplyWithResult(
-      background_task_runner_.get(), FROM_HERE,
+  background_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(
           &windows_spell_checker::BackgroundHelper::IsLanguageSupported,
           base::Unretained(background_helper_.get()), lang_tag),
@@ -609,8 +607,8 @@ void WindowsSpellChecker::IsLanguageSupported(
 
 void WindowsSpellChecker::RetrieveSpellcheckLanguages(
     spellcheck_platform::RetrieveSpellcheckLanguagesCompleteCallback callback) {
-  base::PostTaskAndReplyWithResult(
-      background_task_runner_.get(), FROM_HERE,
+  background_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(
           &windows_spell_checker::BackgroundHelper::RetrieveSpellcheckLanguages,
           base::Unretained(background_helper_.get())),

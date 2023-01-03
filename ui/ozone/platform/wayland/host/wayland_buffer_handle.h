@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/gfx/gpu_fence_handle.h"
 #include "ui/gfx/native_widget_types.h"
@@ -56,6 +57,10 @@ class WaylandBufferHandle {
   // wl_buffer.release events.
   void OnExplicitRelease(WaylandSurface* requestor);
 
+  WaylandBufferBacking::BufferBackingType backing_type() const {
+    return backing_->GetBackingType();
+  }
+
  private:
   // Called when wl_buffer object is created.
   void OnWlBufferCreated(wl::Object<struct wl_buffer> wl_buffer);
@@ -65,7 +70,7 @@ class WaylandBufferHandle {
   // wl_buffer_listener:
   static void BufferRelease(void* data, struct wl_buffer* wl_buffer);
 
-  const WaylandBufferBacking* backing_;
+  raw_ptr<const WaylandBufferBacking> backing_;
 
   // A wl_buffer backed by the dmabuf/shm |backing_| created on the GPU side.
   wl::Object<struct wl_buffer> wl_buffer_;

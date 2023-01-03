@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,8 +47,9 @@ bool ListsContainTheSamePrinters(const PrinterList& list_a,
 
     auto it = std::find_if(
         begin, end,
-        [&a](const std::pair<std::string, const chromeos::Printer*>& entry)
-            -> bool { return PrintersAreMostlyEqual(a, *(entry.second)); });
+        [&a](const std::pair<std::string, const chromeos::Printer*>& entry) {
+          return PrintersAreMostlyEqual(a, *(entry.second));
+        });
 
     if (it == end) {
       // Element in a does not match an element in b. Lists do not contain the
@@ -87,12 +88,11 @@ bool EditPrinterDescription(ash::SyncedPrintersManager* manager,
                             const std::string& description) {
   PrinterList printers = manager->GetSavedPrinters();
   std::string printer_id = PrinterId(index);
-  auto found = base::ranges::find(
-      printers, printer_id,
-      [](const chromeos::Printer& printer) { return printer.id(); });
+  auto found = base::ranges::find(printers, printer_id, &chromeos::Printer::id);
 
-  if (found == printers.end())
+  if (found == printers.end()) {
     return false;
+  }
 
   found->set_description(description);
   manager->UpdateSavedPrinter(*found);
@@ -178,6 +178,6 @@ PrintersMatchChecker::PrintersMatchChecker()
     : AwaitMatchStatusChangeChecker(base::BindRepeating(
           &printers_helper::AllProfilesContainSamePrinters)) {}
 
-PrintersMatchChecker::~PrintersMatchChecker() {}
+PrintersMatchChecker::~PrintersMatchChecker() = default;
 
 }  // namespace printers_helper

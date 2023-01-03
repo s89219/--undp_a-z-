@@ -1,19 +1,28 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_WEB_APPLICATIONS_WEB_APP_UTILS_H_
 #define CHROME_BROWSER_WEB_APPLICATIONS_WEB_APP_UTILS_H_
 
+#include <stddef.h>
+
+#include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_forward.h"
+#include "build/build_config.h"
+#include "build/buildflag.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_id.h"
+#include "chrome/browser/web_applications/web_app_sources.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "components/services/app_service/public/cpp/file_handler.h"
-#include "content/public/common/alternative_error_page_override_info.mojom.h"
+#include "components/services/app_service/public/cpp/run_on_os_login_types.h"
+#include "components/services/app_service/public/mojom/types.mojom-forward.h"
 
 class GURL;
 class Profile;
@@ -35,11 +44,7 @@ namespace default_offline {
 // |AlternativeErrorPageOverrideInfo| mojom struct.
 const char kMessage[] = "web_app_default_offline_message";
 const char kAppShortName[] = "app_short_name";
-const char kThemeColor[] = "theme_color";
-const char kBackgroundColor[] = "customized_background_color";
 const char kIconUrl[] = "icon_url";
-const char kDarkModeBackgroundColor[] = "dark_mode_background_color";
-const char kDarkModeThemeColor[] = "dark_mode_theme_color";
 }  // namespace default_offline
 
 // These functions return true if the WebApp System or its subset is allowed
@@ -51,8 +56,6 @@ const char kDarkModeThemeColor[] = "dark_mode_theme_color";
 bool AreWebAppsEnabled(const Profile* profile);
 // Is user allowed to install web apps from UI:
 bool AreWebAppsUserInstallable(Profile* profile);
-// Can system web apps be installed:
-bool AreSystemWebAppsSupported();
 
 // Get BrowserContext to use for a WebApp KeyedService creation.
 content::BrowserContext* GetBrowserContextForWebApps(
@@ -89,7 +92,7 @@ base::FilePath GetWebAppsTempDirectory(
 // tool/metrics/histograms/histograms.xml: "SystemWebAppProfileCategory".
 std::string GetProfileCategoryForLogging(Profile* profile);
 
-// Returns true if the WebApp should have `web_app::WebAppChromeOsData()`.
+// Returns true if the WebApp should have `WebAppChromeOsData()`.
 bool IsChromeOsDataMandatory();
 
 // Returns true if sync should install web apps locally by default.
@@ -114,38 +117,8 @@ GetFileTypeAssociationsHandledByWebAppForDisplay(Profile* profile,
 
 // As above, but returns the extensions handled by the app as a vector of
 // strings.
-std::vector<std::string> GetFileTypeAssociationsHandledByWebAppForDisplayAsList(
-    Profile* profile,
-    const AppId& app_id);
-
-// Updates the approved or disallowed protocol list for the given app. If
-// necessary, it also updates the protocol registration with the OS.
-void PersistProtocolHandlersUserChoice(
-    Profile* profile,
-    const AppId& app_id,
-    const GURL& protocol_url,
-    bool allowed,
-    base::OnceClosure update_finished_callback);
-
-// Updates the File Handling API approval state for the given app. If
-// necessary, it also updates the registration with the OS.
-void PersistFileHandlersUserChoice(Profile* profile,
-                                   const AppId& app_id,
-                                   bool allowed,
-                                   base::OnceClosure update_finished_callback);
-
-// Updates the file handler registration with the OS to match the app's
-// settings. Note that this tries to avoid extra work by no-oping if the current
-// OS state matches what is calculated to be the desired stated. For example, if
-// Chromium has already registered file handlers with the OS, and finds that
-// file handlers *should* be registered with the OS, this function will no-op.
-// This will not account for what the current file handlers actually are. The
-// actual set of file handlers can only change on app update, and that path must
-// go through `OsIntegrationManager::UpdateOsHooks()`, which always clobbers and
-// renews the entire set of OS-registered file handlers (and other OS hooks).
-void UpdateFileHandlerOsIntegration(WebAppProvider* provider,
-                                    const AppId& app_id,
-                                    base::OnceClosure update_finished_callback);
+std::vector<std::u16string> TransformFileExtensionsForDisplay(
+    const std::set<std::string>& extensions);
 
 // Check if only |specified_sources| exist in the |sources|
 bool HasAnySpecifiedSourcesAndNoOtherSources(WebAppSources sources,
@@ -160,6 +133,9 @@ AppId GetAppIdFromAppSettingsUrl(const GURL& url);
 // Check if |url|'s path is an installed web app.
 bool HasAppSettingsPage(Profile* profile, const GURL& url);
 
+// Returns whether `url` is in scope `scope`. False if scope is invalid.
+bool IsInScope(const GURL& url, const GURL& scope);
+
 #if BUILDFLAG(IS_CHROMEOS)
 // The kLacrosPrimary and kWebAppsCrosapi features are each independently
 // sufficient to enable the web apps Crosapi (used for Lacros web app
@@ -168,12 +144,10 @@ bool IsWebAppsCrosapiEnabled();
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-// Enables System Web Apps so we can test SWA features in Lacros, even we don't
-// have actual SWAs in Lacros.
-void EnableSystemWebAppsInLacrosForTesting();
-
 // Allow user web apps on profiles other than the main profile.
-void SkipMainProfileCheckForTesting();
+void SetSkipMainProfileCheckForTesting(bool skip_check);
+
+bool IsMainProfileCheckSkippedForTesting();
 #endif
 
 constexpr char kAppSettingsPageEntryPointsHistogramName[] =
@@ -188,6 +162,32 @@ enum class AppSettingsPageEntryPoint {
   kChromeAppsPage = 1,
   kMaxValue = kChromeAppsPage,
 };
+
+// When user_display_mode indicates a user preference for opening in
+// a browser tab, we open in a browser tab. If the developer has specified
+// the app should utilize more advanced display modes and/or fallback chain,
+// attempt honor those preferences. Otherwise, we open in a standalone
+// window (for app_display_mode 'standalone' or 'fullscreen'), or a minimal-ui
+// window (for app_display_mode 'browser' or 'minimal-ui').
+//
+// |is_isolated| overrides browser display mode for Isolated Web Apps because
+// they can't be open as a tab.
+DisplayMode ResolveEffectiveDisplayMode(
+    DisplayMode app_display_mode,
+    const std::vector<DisplayMode>& app_display_mode_overrides,
+    mojom::UserDisplayMode user_display_mode,
+    bool is_isolated);
+
+apps::LaunchContainer ConvertDisplayModeToAppLaunchContainer(
+    DisplayMode display_mode);
+
+std::string RunOnOsLoginModeToString(RunOnOsLoginMode mode);
+
+// Converts RunOnOsLoginMode from RunOnOsLoginMode to
+// apps::RunOnOsLoginMode.
+apps::RunOnOsLoginMode ConvertOsLoginMode(RunOnOsLoginMode login_mode);
+
+const char* IconsDownloadedResultToString(IconsDownloadedResult result);
 
 }  // namespace web_app
 

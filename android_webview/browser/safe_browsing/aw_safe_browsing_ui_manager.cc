@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -105,16 +105,14 @@ int AwSafeBrowsingUIManager::GetErrorUiType(
   return client->GetErrorUiType();
 }
 
-void AwSafeBrowsingUIManager::SendSerializedThreatDetails(
+void AwSafeBrowsingUIManager::SendThreatDetails(
     content::BrowserContext* browser_context,
-    const std::string& serialized) {
+    std::unique_ptr<safe_browsing::ClientSafeBrowsingReportRequest> report) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (!serialized.empty()) {
-    DVLOG(1) << "Sending serialized threat details";
-    safe_browsing::AwPingManagerFactory::GetForBrowserContext(browser_context)
-        ->ReportThreatDetails(serialized);
-  }
+  DVLOG(1) << "Sending threat details";
+  safe_browsing::AwPingManagerFactory::GetForBrowserContext(browser_context)
+      ->ReportThreatDetails(std::move(report));
 }
 
 safe_browsing::BaseBlockingPage*

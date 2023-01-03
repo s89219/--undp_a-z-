@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,7 +57,7 @@ bool WebCursor::SetCursor(const ui::Cursor& cursor) {
 
 bool WebCursor::operator==(const WebCursor& other) const {
   return
-#if defined(USE_AURA) || defined(USE_OZONE)
+#if defined(USE_AURA) || BUILDFLAG(IS_OZONE)
       rotation_ == other.rotation_ &&
 #endif
       cursor_ == other.cursor_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include "base/strings/string_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/messaging/native_messaging_launch_from_native.h"
@@ -74,8 +73,8 @@ class NativeMessagingApiTest : public NativeMessagingApiTestBase,
   bool RunTest(const char* extension_name) {
     if (GetParam() == ContextType::kPersistentBackground)
       return RunExtensionTest(extension_name);
-    std::string lazy_exension_name = base::StrCat({extension_name, "/lazy"});
-    return RunExtensionTest(lazy_exension_name.c_str());
+    std::string lazy_extension_name = base::StrCat({extension_name, "/lazy"});
+    return RunExtensionTest(lazy_extension_name.c_str());
   }
 };
 
@@ -112,7 +111,7 @@ IN_PROC_BROWSER_TEST_P(NativeMessagingApiTest,
   ASSERT_TRUE(RunTest("native_messaging_connect")) << message_;
 }
 
-#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_CHROMEOS_LACROS)
+#if !BUILDFLAG(IS_CHROMEOS)
 
 base::CommandLine CreateNativeMessagingConnectCommandLine(
     const std::string& connect_id,
@@ -435,7 +434,7 @@ IN_PROC_BROWSER_TEST_F(NativeMessagingLaunchBackgroundModeApiTest,
   ASSERT_NO_FATAL_FAILURE(TestKeepAliveStateObserver().WaitForNoKeepAlive());
 }
 
-#endif  // !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_CHROMEOS_LACROS)
+#endif  // !BUILDFLAG(IS_CHROMEOS)
 
 }  // namespace
 }  // namespace extensions

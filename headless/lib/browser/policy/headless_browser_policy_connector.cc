@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,7 +48,9 @@ std::unique_ptr<ConfigurationPolicyHandlerList> BuildHandlerList(
       base::BindRepeating(&GetChromePolicyDetails),
       /*allow_future_policies=*/false);
 
+#if !BUILDFLAG(IS_CHROMEOS)
   handlers->AddHandler(std::make_unique<HeadlessModePolicyHandler>());
+#endif
 
   handlers->AddHandler(
       std::make_unique<URLBlocklistPolicyHandler>(key::kURLBlocklist));
@@ -123,7 +125,7 @@ HeadlessBrowserPolicyConnector::CreatePlatformProvider() {
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT}),
       policy::PlatformManagementService::GetInstance(),
-      kRegistryChromePolicyKey, IsCommandLineSwitchSupported()));
+      kRegistryChromePolicyKey));
   return std::make_unique<AsyncPolicyProvider>(GetSchemaRegistry(),
                                                std::move(loader));
 #elif BUILDFLAG(IS_MAC)

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,38 +16,35 @@
 #include "ash/system/diagnostics/networking_log.h"
 #include "ash/system/diagnostics/routine_log.h"
 #include "ash/system/diagnostics/telemetry_log.h"
+#include "ash/test/ash_test_base.h"
 #include "ash/webui/diagnostics_ui/mojom/system_data_provider.mojom.h"
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/memory/ptr_util.h"
-#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_simple_task_runner.h"
 #include "base/values.h"
+#include "chromeos/ash/components/test/ash_test_suite.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/test_web_ui.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "ui/shell_dialogs/select_file_dialog_factory.h"
 #include "ui/shell_dialogs/select_file_policy.h"
+#include "url/gurl.h"
 
-#include "ash/test/ash_test_base.h"
-#include "ash/test/ash_test_suite.h"
-#include "ui/base/resource/resource_bundle.h"
-
-namespace ash {
-namespace diagnostics {
+namespace ash::diagnostics {
 namespace {
 
 constexpr char kHandlerFunctionName[] = "handlerFunctionName";
-constexpr char kRoutineLogFileName[] = "diagnostic_routine_log";
 
 mojom::SystemInfoPtr CreateSystemInfoPtr(const std::string& board_name,
                                          const std::string& marketing_name,
@@ -124,7 +121,8 @@ class TestSelectFileDialog : public ui::SelectFileDialog {
                       int file_type_index,
                       const base::FilePath::StringType& default_extension,
                       gfx::NativeWindow owning_window,
-                      void* params) override {
+                      void* params,
+                      const GURL* caller) override {
     if (selected_path_.empty()) {
       listener_->FileSelectionCanceled(params);
       return;
@@ -169,38 +167,47 @@ class TestSelectFileDialogFactory : public ui::SelectFileDialogFactory {
   base::FilePath selected_path_;
 };
 
-class SessionLogHandlerTest : public testing::Test {
+// Test class using NoSessionAshTestBase to ensure shell is available for
+// tests requiring DiagnosticsLogController singleton.
+class SessionLogHandlerTest : public NoSessionAshTestBase {
  public:
   SessionLogHandlerTest()
-      : task_environment_(),
-        task_runner_(new base::TestSimpleTaskRunner()),
-        web_ui_(),
-        session_log_handler_() {
+      : NoSessionAshTestBase(
+            base::test::TaskEnvironment::TimeSource::MOCK_TIME),
+        task_runner_(new base::TestSimpleTaskRunner()) {}
+  ~SessionLogHandlerTest() override = default;
+
+  void SetUp() override {
     EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
-    base::FilePath routine_log_path =
-        temp_dir_.GetPath().AppendASCII(kRoutineLogFileName);
-    auto telemetry_log = std::make_unique<TelemetryLog>();
-    auto routine_log = std::make_unique<RoutineLog>(routine_log_path);
-    auto networking_log = std::make_unique<NetworkingLog>(temp_dir_.GetPath());
-    telemetry_log_ = telemetry_log.get();
-    routine_log_ = routine_log.get();
-    networking_log_ = networking_log.get();
+    // Setup to ensure ash::Shell can configure for tests.
+    ui::ResourceBundle::CleanupSharedInstance();
+    AshTestSuite::LoadTestResources();
+    NoSessionAshTestBase::SetUp();
+    DiagnosticsLogController::Initialize(
+        std::make_unique<FakeDiagnosticsBrowserDelegate>());
+    auto* controller = DiagnosticsLogController::Get();
+    telemetry_log_ = controller->GetTelemetryLog();
+    routine_log_ = controller->GetRoutineLog();
+    networking_log_ = controller->GetNetworkingLog();
     session_log_handler_ = std::make_unique<diagnostics::SessionLogHandler>(
         base::BindRepeating(&CreateTestSelectFilePolicy),
-        std::move(telemetry_log), std::move(routine_log),
-        std::move(networking_log), &holding_space_client_);
+        /*telemetry_log*/ nullptr, /*routine_log*/ nullptr,
+        /*networking_log*/ nullptr, &holding_space_client_);
     session_log_handler_->SetWebUIForTest(&web_ui_);
     session_log_handler_->RegisterMessages();
     session_log_handler_->SetTaskRunnerForTesting(task_runner_);
 
-    base::ListValue args;
-    web_ui_.HandleReceivedMessage("initialize", &args);
+    // Call handler to enable Javascript.
+    base::Value::List args;
+    web_ui_.HandleReceivedMessage("initialize", args);
   }
 
-  ~SessionLogHandlerTest() override {
+  void TearDown() override {
     task_runner_.reset();
-    task_environment_.RunUntilIdle();
+    task_environment()->RunUntilIdle();
     ui::SelectFileDialog::SetFactory(nullptr);
+
+    NoSessionAshTestBase::TearDown();
   }
 
   void RunTasks() { task_runner_->RunPendingTasks(); }
@@ -214,25 +221,25 @@ class SessionLogHandlerTest : public testing::Test {
   }
 
  protected:
-  base::test::TaskEnvironment task_environment_{
-      base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   // Task runner for tasks posted by save session log handler.
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
-
   content::TestWebUI web_ui_;
-  std::unique_ptr<diagnostics::SessionLogHandler> session_log_handler_;
+  std::unique_ptr<SessionLogHandler> session_log_handler_;
+  base::ScopedTempDir temp_dir_;
   TelemetryLog* telemetry_log_;
   RoutineLog* routine_log_;
   NetworkingLog* networking_log_;
   testing::NiceMock<ash::MockHoldingSpaceClient> holding_space_client_;
-  base::ScopedTempDir temp_dir_;
 };
 
 TEST_F(SessionLogHandlerTest, SaveSessionLog) {
+  // Run until idle to finish necessary setup.
+  task_environment()->RunUntilIdle();
+
   base::RunLoop run_loop;
   // Populate routine log
   routine_log_->LogRoutineStarted(mojom::RoutineType::kCpuStress);
-  task_environment_.RunUntilIdle();
+  task_environment()->RunUntilIdle();
 
   // Populate telemetry log
   const std::string expected_board_name = "board_name";
@@ -255,10 +262,10 @@ TEST_F(SessionLogHandlerTest, SaveSessionLog) {
   // Select file
   base::FilePath log_path = temp_dir_.GetPath().AppendASCII("test_path");
   ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactory(log_path));
-  base::ListValue args;
+  base::Value::List args;
   args.Append(kHandlerFunctionName);
   session_log_handler_->SetLogCreatedClosureForTest(run_loop.QuitClosure());
-  web_ui_.HandleReceivedMessage("saveSessionLog", &args);
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
   run_loop.RunUntilIdle();
   const std::string expected_system_log_header = "=== System ===";
   const std::string expected_system_info_section_name = "--- System Info ---";
@@ -303,67 +310,40 @@ TEST_F(SessionLogHandlerTest, SaveSessionLog) {
   EXPECT_EQ("--- Network Events ---", log_lines[17]);
 }
 
-// Test class using NoSessionAshTestBase to ensure shell is available for
-// tests requiring DiagnosticsLogController singleton.
-class SessionLogHandlerAshTest : public NoSessionAshTestBase {
- public:
-  SessionLogHandlerAshTest() : task_runner_(new base::TestSimpleTaskRunner()) {}
-  ~SessionLogHandlerAshTest() override = default;
-
-  void SetUp() override {
-    // Setup to ensure ash::Shell can configure for tests.
-    ui::ResourceBundle::CleanupSharedInstance();
-    AshTestSuite::LoadTestResources();
-    // Setup feature list before setting up ash::Shell.
-    feature_list_.InitAndEnableFeature(
-        ash::features::kEnableLogControllerForDiagnosticsApp);
-    NoSessionAshTestBase::SetUp();
-    DiagnosticsLogController::Initialize(
-        std::make_unique<FakeDiagnosticsBrowserDelegate>());
-    session_log_handler_ = std::make_unique<SessionLogHandler>(
-        base::BindRepeating(&CreateTestSelectFilePolicy),
-        /*telemetry_log*/ nullptr,
-        /*routine_log*/ nullptr,
-        /*networking_log*/ nullptr,
-        /*holding_space_client*/ &holding_space_client_);
-    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    session_log_handler_->SetWebUIForTest(&web_ui_);
-    session_log_handler_->RegisterMessages();
-    session_log_handler_->SetTaskRunnerForTesting(task_runner_);
-    // Call handler to enable Javascript.
-    base::ListValue args;
-    web_ui_.HandleReceivedMessage("initialize", &args);
-  }
-
-  void RunTasks() { task_runner_->RunPendingTasks(); }
-
- protected:
-  base::test::ScopedFeatureList feature_list_;
-  std::unique_ptr<SessionLogHandler> session_log_handler_;
-  content::TestWebUI web_ui_;
-  base::ScopedTempDir temp_dir_;
-  testing::NiceMock<ash::MockHoldingSpaceClient> holding_space_client_;
-  // Task runner for tasks posted by save session log handler.
-  scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
-};
-
 // Validates behavior when log controller is used to generate session log.
-TEST_F(SessionLogHandlerAshTest, SaveSessionLogFlagEnabled) {
-  const std::string expected_log_header = "Diagnostics Log";
+TEST_F(SessionLogHandlerTest, SaveHeaderOnlySessionLog) {
   base::RunLoop run_loop;
 
   // Simulate select file
   base::FilePath log_path = temp_dir_.GetPath().AppendASCII("test_path");
   ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactory(log_path));
-  base::ListValue args;
+  base::Value::List args;
   args.Append(kHandlerFunctionName);
   session_log_handler_->SetLogCreatedClosureForTest(run_loop.QuitClosure());
-  web_ui_.HandleReceivedMessage("saveSessionLog", &args);
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
   RunTasks();
 
   const std::vector<std::string> log_lines = GetCombinedLogContents(log_path);
-  ASSERT_EQ(1u, log_lines.size());
-  EXPECT_EQ(expected_log_header, log_lines[0]);
+  ASSERT_EQ(8u, log_lines.size());
+
+  // Empty system data log.
+  const std::string expected_system_header = "=== System ===";
+  EXPECT_EQ(expected_system_header, log_lines[0]);
+  const std::string expected_routine_header = "--- Test Routines ---";
+  EXPECT_EQ(expected_routine_header, log_lines[1]);
+  const std::string expected_no_routine_msg =
+      "No routines of this type were run in the session.";
+  EXPECT_EQ(expected_no_routine_msg, log_lines[2]);
+
+  // Empty network data log.
+  const std::string expected_network_header = "=== Networking ===";
+  EXPECT_EQ(expected_network_header, log_lines[3]);
+  const std::string expected_network_info_header = "--- Network Info ---";
+  EXPECT_EQ(expected_network_info_header, log_lines[4]);
+  EXPECT_EQ(expected_routine_header, log_lines[5]);
+  EXPECT_EQ(expected_no_routine_msg, log_lines[6]);
+  const std::string expected_network_events_header = "--- Network Events ---";
+  EXPECT_EQ(expected_network_events_header, log_lines[7]);
 }
 
 // Validates that invoking the saveSessionLog Web UI event opens the
@@ -374,11 +354,11 @@ TEST_F(SessionLogHandlerTest, SelectDirectory) {
   ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactory(log_path));
 
   const size_t call_data_count_before_call = web_ui_.call_data().size();
-  base::ListValue args;
+  base::Value::List args;
   args.Append(kHandlerFunctionName);
   base::RunLoop run_loop;
   session_log_handler_->SetLogCreatedClosureForTest(run_loop.QuitClosure());
-  web_ui_.HandleReceivedMessage("saveSessionLog", &args);
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
   RunTasks();
   run_loop.RunUntilIdle();
 
@@ -397,9 +377,9 @@ TEST_F(SessionLogHandlerTest, CancelDialog) {
       new TestSelectFileDialogFactory(base::FilePath()));
 
   const size_t call_data_count_before_call = web_ui_.call_data().size();
-  base::ListValue args;
+  base::Value::List args;
   args.Append(kHandlerFunctionName);
-  web_ui_.HandleReceivedMessage("saveSessionLog", &args);
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
   RunTasks();
 
   EXPECT_EQ(call_data_count_before_call + 1u, web_ui_.call_data().size());
@@ -415,13 +395,13 @@ TEST_F(SessionLogHandlerTest, CancelDialog) {
 TEST_F(SessionLogHandlerTest, AddToHoldingSpace) {
   base::FilePath log_path = temp_dir_.GetPath().AppendASCII("test_path");
   ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactory(log_path));
-  base::ListValue args;
+  base::Value::List args;
   args.Append(kHandlerFunctionName);
 
   EXPECT_CALL(holding_space_client(), AddDiagnosticsLog(testing::Eq(log_path)));
   base::RunLoop run_loop;
   session_log_handler_->SetLogCreatedClosureForTest(run_loop.QuitClosure());
-  web_ui_.HandleReceivedMessage("saveSessionLog", &args);
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
   RunTasks();
   run_loop.RunUntilIdle();
 }
@@ -431,16 +411,38 @@ TEST_F(SessionLogHandlerTest, AddToHoldingSpace) {
 TEST_F(SessionLogHandlerTest, CleanUpDialogOnDeconstruct) {
   base::FilePath log_path = temp_dir_.GetPath().AppendASCII("test_path");
   ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactory(log_path));
-  base::ListValue args;
+  base::Value::List args;
   args.Append(kHandlerFunctionName);
   base::RunLoop run_loop;
 
   session_log_handler_->SetLogCreatedClosureForTest(run_loop.QuitClosure());
-  web_ui_.HandleReceivedMessage("saveSessionLog", &args);
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
   EXPECT_NO_FATAL_FAILURE(session_log_handler_.reset());
   EXPECT_NO_FATAL_FAILURE(task_runner_.reset());
   EXPECT_NO_FATAL_FAILURE(run_loop.RunUntilIdle());
 }
 
-}  // namespace diagnostics
-}  // namespace ash
+// Validates CreateSessionLog task does not trigger a Use-After-Free error
+// when SessionLogHandler is destroyed before task is run. See crbug/1328708.
+TEST_F(SessionLogHandlerTest, NoUseAfterFree) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(
+      ash::features::kEnableLogControllerForDiagnosticsApp);
+  base::FilePath log_path = temp_dir_.GetPath().AppendASCII("test_path");
+  ui::SelectFileDialog::SetFactory(new TestSelectFileDialogFactory(log_path));
+  base::Value::List args;
+  args.Append(kHandlerFunctionName);
+  base::RunLoop run_loop;
+
+  session_log_handler_->SetLogCreatedClosureForTest(
+      base::BindLambdaForTesting([]() { NOTREACHED(); }));
+  EXPECT_EQ(0u, task_runner_->NumPendingTasks());
+  web_ui_.HandleReceivedMessage("saveSessionLog", args);
+  EXPECT_EQ(1u, task_runner_->NumPendingTasks());
+  EXPECT_NO_FATAL_FAILURE(session_log_handler_.reset());
+  task_runner_->RunUntilIdle();
+  EXPECT_EQ(0u, task_runner_->NumPendingTasks());
+  EXPECT_NO_FATAL_FAILURE(task_runner_->RunUntilIdle());
+}
+
+}  // namespace ash::diagnostics

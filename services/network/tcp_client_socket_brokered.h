@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,16 @@
 #define SERVICES_NETWORK_TCP_CLIENT_SOCKET_BROKERED_H_
 
 #include "base/component_export.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/sequence_checker.h"
 #include "build/build_config.h"
+#include "mojo/public/cpp/platform/platform_handle.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_once_callback.h"
 #include "net/nqe/network_quality_estimator.h"
-#include "net/socket/connection_attempts.h"
 #include "net/socket/socket_tag.h"
+#include "net/socket/stream_socket.h"
 #include "net/socket/tcp_socket.h"
 #include "net/socket/transport_client_socket.h"
 
@@ -26,6 +29,9 @@ class SocketTag;
 }  // namespace net
 
 namespace network {
+
+class BrokeredClientSocketFactory;
+class TransferableSocket;
 
 // A client socket used exclusively with a socket broker. Currently intended for
 // Windows and Android only. Not intended to be used by non-brokered
@@ -43,7 +49,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPClientSocketBrokered
           brokered_socket_performance_watcher,
       net::NetworkQualityEstimator* network_quality_estimator,
       net::NetLog* net_log,
-      const net::NetLogSource& source);
+      const net::NetLogSource& source,
+      BrokeredClientSocketFactory* client_socket_factory);
 
   ~TCPClientSocketBrokered() override;
 
@@ -54,10 +61,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPClientSocketBrokered
   int Bind(const net::IPEndPoint& address) override;
   bool SetKeepAlive(bool enable, int delay) override;
   bool SetNoDelay(bool no_delay) override;
-  void SetSocketCreatorForTesting(
-      base::RepeatingCallback<std::unique_ptr<net::TransportClientSocket>(void)>
-          socket_creator) override;
-  net::ConnectionAttempts GetConnectionAttempts() const override;
 
   // StreamSocket implementation.
   void SetBeforeConnectCallback(
@@ -103,28 +106,43 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) TCPClientSocketBrokered
 
   void DidCompleteConnect(net::CompletionOnceCallback callback, int result);
 
+  void DidCompleteCreate(net::CompletionOnceCallback callback,
+                         network::TransferableSocket socket,
+                         int result);
+
   // The list of addresses we should try in order to establish a connection.
-  net::AddressList addresses_;
+  net::AddressList addresses_ GUARDED_BY_CONTEXT(sequence_checker_);
 
   // Arguments for creating a new TCPClientSocket
-  std::unique_ptr<net::SocketPerformanceWatcher> socket_performance_watcher_;
+  std::unique_ptr<net::SocketPerformanceWatcher> socket_performance_watcher_
+      GUARDED_BY_CONTEXT(sequence_checker_);
 
-  net::NetworkQualityEstimator* network_quality_estimator_;
+  raw_ptr<net::NetworkQualityEstimator> network_quality_estimator_
+      GUARDED_BY_CONTEXT(sequence_checker_);
 
-  net::NetLog* net_log_;
+  raw_ptr<net::NetLog> net_log_ GUARDED_BY_CONTEXT(sequence_checker_);
 
-  const net::NetLogSource source_;
+  const net::NetLogSource source_ GUARDED_BY_CONTEXT(sequence_checker_);
 
   // State to track whether socket is currently attempting to connect.
-  bool is_connect_in_progress_ = false;
+  bool is_connect_in_progress_ GUARDED_BY_CONTEXT(sequence_checker_) = false;
+
+  BeforeConnectCallback before_connect_callback_;
 
   // Need to store the tag in case ApplySocketTag() is called before Connect().
-  net::SocketTag tag_;
+  net::SocketTag tag_ GUARDED_BY_CONTEXT(sequence_checker_);
 
-  std::unique_ptr<net::TransportClientSocket> brokered_socket_;
+  // The underlying brokered socket. Created when the socket is created for
+  // Connect().
+  std::unique_ptr<net::TransportClientSocket> brokered_socket_
+      GUARDED_BY_CONTEXT(sequence_checker_);
 
-  base::RepeatingCallback<std::unique_ptr<net::TransportClientSocket>(void)>
-      socket_creator_for_testing_;
+  // The ClientSocketFactory that created this socket. Used to send IPCs to the
+  // remote SocketBroker.
+  const raw_ptr<BrokeredClientSocketFactory> client_socket_factory_
+      GUARDED_BY_CONTEXT(sequence_checker_);
+
+  SEQUENCE_CHECKER(sequence_checker_);
 
   base::WeakPtrFactory<TCPClientSocketBrokered> brokered_weak_ptr_factory_{
       this};

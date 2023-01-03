@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/components/tpm/install_attributes.h"
 #include "base/bind.h"
 #include "base/guid.h"
 #include "base/logging.h"
@@ -19,6 +18,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/net/system_network_context_manager.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/cloud/dm_auth.h"
@@ -538,32 +538,31 @@ void AccountStatusCheckFetcher::Fetch(FetchCallback callback) {
 }
 
 void AccountStatusCheckFetcher::OnAccountStatusCheckReceived(
-    DeviceManagementService::Job* job,
-    DeviceManagementStatus dm_status,
-    int net_error,
-    const em::DeviceManagementResponse& response) {
+    DMServerJobResult result) {
   // TODO(crbug.com/1271134): Logging as "WARNING" to make sure it's preserved
   // in the logs.
-  LOG(WARNING) << "Account check response received. DM Status: " << dm_status;
+  LOG(WARNING) << "Account check response received. DM Status: "
+               << result.dm_status;
 
   fetch_request_job_.reset();
   std::string user_id;
   bool fetch_succeeded = false;
-  switch (dm_status) {
+  switch (result.dm_status) {
     case DM_STATUS_SUCCESS: {
-      if (!response.has_check_user_account_response()) {
+      if (!result.response.has_check_user_account_response()) {
         LOG(WARNING) << "Invalid Account check response.";
         break;
       }
 
       // Fetch has succeeded.
       fetch_succeeded = true;
-      result_ = ParseStatus(response.check_user_account_response(), email_);
+      result_ =
+          ParseStatus(result.response.check_user_account_response(), email_);
       RecordAccountStatusCheckResult(result_);
       break;
     }
     default: {  // All other error cases
-      LOG(ERROR) << "Account check failed. DM Status: " << dm_status;
+      LOG(ERROR) << "Account check failed. DM Status: " << result.dm_status;
       break;
     }
   }

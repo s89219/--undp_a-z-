@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "ash/login/ui/login_pin_view.h"
 #include "ash/login/ui/non_accessible_view.h"
 #include "ash/login/ui/views_utils.h"
-#include "ash/public/cpp/in_session_auth_dialog_controller.h"
+#include "ash/public/cpp/webauthn_dialog_controller.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "base/bind.h"
@@ -77,8 +77,6 @@ constexpr SkColor kErrorColor = gfx::kGoogleRed600;
 
 constexpr int kSpacingBeforeButtons = 32;
 
-constexpr int kMaxPinAttempts = 5;
-
 }  // namespace
 
 // Consists of fingerprint icon view and a label.
@@ -91,7 +89,7 @@ class AuthDialogContentsView::FingerprintView : public views::View {
     // views::View
     void GetAccessibleNodeData(ui::AXNodeData* node_data) override {
       node_data->role = ax::mojom::Role::kStaticText;
-      node_data->SetName(accessible_name_);
+      node_data->SetNameChecked(accessible_name_);
     }
 
     void SetAccessibleName(const std::u16string& name) {
@@ -310,7 +308,7 @@ class AuthDialogContentsView::TitleLabel : public views::Label {
   // views::View
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override {
     node_data->role = ax::mojom::Role::kStaticText;
-    node_data->SetName(accessible_name_);
+    node_data->SetNameChecked(accessible_name_);
   }
 
  private:
@@ -416,7 +414,7 @@ void AuthDialogContentsView::AddedToWidget() {
   if (auth_methods_ & kAuthFingerprint) {
     // Inject a callback from the contents view so that we can show retry
     // prompt.
-    InSessionAuthDialogController::Get()->AuthenticateUserWithFingerprint(
+    WebAuthNDialogController::Get()->AuthenticateUserWithFingerprint(
         base::BindOnce(&AuthDialogContentsView::OnFingerprintAuthComplete,
                        weak_factory_.GetWeakPtr()));
   }
@@ -458,7 +456,7 @@ void AuthDialogContentsView::AddOriginNameView() {
 
 void AuthDialogContentsView::AddPinTextInputView() {
   pin_text_input_view_ =
-      container_->AddChildView(std::make_unique<LoginPasswordView>(palette_));
+      container_->AddChildView(std::make_unique<LoginPasswordView>());
 
   pin_text_input_view_->SetPaintToLayer();
   pin_text_input_view_->layer()->SetFillsBoundsOpaquely(false);
@@ -472,7 +470,7 @@ void AuthDialogContentsView::AddPinTextInputView() {
 
 void AuthDialogContentsView::AddPasswordView() {
   password_view_ =
-      container_->AddChildView(std::make_unique<LoginPasswordView>(palette_));
+      container_->AddChildView(std::make_unique<LoginPasswordView>());
 
   password_view_->SetPaintToLayer();
   password_view_->layer()->SetFillsBoundsOpaquely(false);
@@ -495,7 +493,7 @@ void AuthDialogContentsView::AddPinPadView() {
   DCHECK(auth_methods_ & kAuthPin);
   if (pin_autosubmit_on_) {
     pin_pad_view_ = container_->AddChildView(std::make_unique<LoginPinView>(
-        LoginPinView::Style::kAlphanumeric, palette_,
+        LoginPinView::Style::kAlphanumeric,
         base::BindRepeating(&AuthDialogContentsView::OnInsertDigitFromPinPad,
                             base::Unretained(this)),
         base::BindRepeating(&AuthDialogContentsView::OnBackspaceFromPinPad,
@@ -508,7 +506,7 @@ void AuthDialogContentsView::AddPinPadView() {
                             base::Unretained(this)));
   } else {
     pin_pad_view_ = container_->AddChildView(std::make_unique<LoginPinView>(
-        LoginPinView::Style::kAlphanumeric, palette_,
+        LoginPinView::Style::kAlphanumeric,
         base::BindRepeating(&AuthDialogContentsView::OnInsertDigitFromPinPad,
                             base::Unretained(this)),
         base::BindRepeating(&AuthDialogContentsView::OnBackspaceFromPinPad,
@@ -528,7 +526,7 @@ void AuthDialogContentsView::AddPinPadView() {
 
 void AuthDialogContentsView::AddPinDigitInputView() {
   pin_digit_input_view_ =
-      container_->AddChildView(std::make_unique<LoginPinInputView>(palette_));
+      container_->AddChildView(std::make_unique<LoginPinInputView>());
   pin_digit_input_view_->UpdateLength(auth_metadata_.autosubmit_pin_length);
   pin_digit_input_view_->SetVisible(true);
 }
@@ -572,7 +570,7 @@ void AuthDialogContentsView::AddActionButtonsView() {
 
 void AuthDialogContentsView::OnInsertDigitFromPinPad(int digit) {
   // Ignore anything if reached max attempts.
-  if (pin_attempts_ >= kMaxPinAttempts)
+  if (pin_locked_out_)
     return;
 
   if (title_->IsShowingError())
@@ -587,7 +585,7 @@ void AuthDialogContentsView::OnInsertDigitFromPinPad(int digit) {
 
 void AuthDialogContentsView::OnBackspaceFromPinPad() {
   // Ignore anything if reached max attempts.
-  if (pin_attempts_ >= kMaxPinAttempts)
+  if (pin_locked_out_)
     return;
 
   if (title_->IsShowingError())
@@ -626,7 +624,7 @@ void AuthDialogContentsView::OnAuthSubmit(bool authenticated_by_pin,
   } else {
     password_view_->SetReadOnly(true);
   }
-  InSessionAuthDialogController::Get()->AuthenticateUserWithPasswordOrPin(
+  WebAuthNDialogController::Get()->AuthenticateUserWithPasswordOrPin(
       base::UTF16ToUTF8(password), authenticated_by_pin,
       base::BindOnce(&AuthDialogContentsView::OnPasswordOrPinAuthComplete,
                      weak_factory_.GetWeakPtr(), authenticated_by_pin));
@@ -634,16 +632,17 @@ void AuthDialogContentsView::OnAuthSubmit(bool authenticated_by_pin,
 
 void AuthDialogContentsView::OnPasswordOrPinAuthComplete(
     bool authenticated_by_pin,
-    absl::optional<bool> success) {
+    bool success,
+    bool can_use_pin) {
   // On success, do nothing, and the dialog will dismiss.
-  if (success.has_value() && success.value())
+  if (success)
     return;
 
   std::u16string error_text;
   if (authenticated_by_pin) {
-    pin_attempts_++;
+    pin_locked_out_ = !can_use_pin;
     error_text =
-        pin_attempts_ >= kMaxPinAttempts
+        pin_locked_out_
             ? l10n_util::GetStringUTF16(
                   IDS_ASH_IN_SESSION_AUTH_PIN_TOO_MANY_ATTEMPTS)
             : l10n_util::GetStringUTF16(IDS_ASH_IN_SESSION_AUTH_PIN_INCORRECT);
@@ -656,7 +655,7 @@ void AuthDialogContentsView::OnPasswordOrPinAuthComplete(
   if (!authenticated_by_pin) {
     password_view_->Reset();
     password_view_->SetReadOnly(false);
-  } else if (pin_attempts_ < kMaxPinAttempts) {
+  } else if (can_use_pin) {
     if (pin_autosubmit_on_) {
       pin_digit_input_view_->Reset();
       pin_digit_input_view_->SetReadOnly(false);
@@ -673,7 +672,7 @@ void AuthDialogContentsView::OnFingerprintAuthComplete(
   fingerprint_view_->SetState(fingerprint_state);
   // Prepare for the next fingerprint scan.
   if (!success && fingerprint_state == FingerprintState::AVAILABLE_DEFAULT) {
-    InSessionAuthDialogController::Get()->AuthenticateUserWithFingerprint(
+    WebAuthNDialogController::Get()->AuthenticateUserWithFingerprint(
         base::BindOnce(&AuthDialogContentsView::OnFingerprintAuthComplete,
                        weak_factory_.GetWeakPtr()));
   }
@@ -681,11 +680,11 @@ void AuthDialogContentsView::OnFingerprintAuthComplete(
 }
 
 void AuthDialogContentsView::OnCancelButtonPressed(const ui::Event& event) {
-  InSessionAuthDialogController::Get()->Cancel();
+  WebAuthNDialogController::Get()->Cancel();
 }
 
 void AuthDialogContentsView::OnNeedHelpButtonPressed(const ui::Event& event) {
-  InSessionAuthDialogController::Get()->OpenInSessionAuthHelpPage();
+  WebAuthNDialogController::Get()->OpenInSessionAuthHelpPage();
 }
 
 }  // namespace ash

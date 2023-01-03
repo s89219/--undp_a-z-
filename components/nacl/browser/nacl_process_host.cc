@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,6 @@
 #include "base/sys_byteorder.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/nacl/browser/nacl_browser.h"
@@ -85,6 +84,7 @@
 #include "base/win/windows_version.h"
 #include "components/nacl/browser/nacl_broker_service_win.h"
 #include "components/nacl/common/nacl_debug_exception_handler_win.h"
+#include "sandbox/policy/win/sandbox_win.h"
 #endif
 
 using content::BrowserThread;
@@ -179,6 +179,11 @@ class NaClSandboxedProcessLauncherDelegate
     if (!nacl::AllocateAddressSpaceASLR(process, kNaClSandboxSize)) {
       DLOG(WARNING) << "Failed to reserve address space for Native Client";
     }
+  }
+
+  std::string GetSandboxTag() override {
+    return sandbox::policy::SandboxWin::GetSandboxTagForDelegate(
+        "nacl-process-host", GetSandboxType());
   }
 
   bool CetCompatible() override {
@@ -812,8 +817,8 @@ bool NaClProcessHost::StartPPAPIProxy(
 
   ipc_proxy_channel_ = IPC::ChannelProxy::Create(
       channel_handle.release(), IPC::Channel::MODE_CLIENT, nullptr,
-      base::ThreadTaskRunnerHandle::Get().get(),
-      base::ThreadTaskRunnerHandle::Get().get());
+      base::SingleThreadTaskRunner::GetCurrentDefault().get(),
+      base::SingleThreadTaskRunner::GetCurrentDefault().get());
   // Create the browser ppapi host and enable PPAPI message dispatching to the
   // browser process.
   ppapi_host_.reset(content::BrowserPpapiHost::CreateExternalPluginProcess(
@@ -1048,7 +1053,8 @@ bool NaClProcessHost::AttachDebugExceptionHandler(const std::string& info,
                info);
   }
   NaClStartDebugExceptionHandlerThread(
-      std::move(process), info, base::ThreadTaskRunnerHandle::Get(),
+      std::move(process), info,
+      base::SingleThreadTaskRunner::GetCurrentDefault(),
       base::BindRepeating(
           &NaClProcessHost::OnDebugExceptionHandlerLaunchedByBroker,
           weak_factory_.GetWeakPtr()));

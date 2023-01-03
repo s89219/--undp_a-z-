@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,6 +95,9 @@ void RemoveDriveDownloadDirectoryIfExists();
 
 // Returns nullopt if not a drive URL.
 absl::optional<std::string> GetIdFromDriveUrl(const GURL& url);
+
+// Returns true if window is PluginVM.
+bool IsPluginvmWindowId(const std::string& window_id);
 
 // A subscription for changes to PluginVm policy that may affect
 // PluginVmFeatures::Get()->IsAllowed.

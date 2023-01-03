@@ -1,10 +1,10 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/web_state_list/web_state_list_order_controller.h"
 
-#include <memory>
+#import <memory>
 
 #import "ios/chrome/browser/web_state_list/fake_web_state_list_delegate.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
@@ -12,8 +12,8 @@
 #import "ios/chrome/browser/web_state_list/web_state_opener.h"
 #import "ios/web/public/test/fakes/fake_navigation_manager.h"
 #import "ios/web/public/test/fakes/fake_web_state.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "testing/platform_test.h"
+#import "testing/gtest/include/gtest/gtest.h"
+#import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -63,24 +63,150 @@ TEST_F(WebStateListOrderControllerTest, DetermineInsertionIndex) {
   InsertNewWebState(1, WebStateOpener());
   web::WebState* opener = web_state_list_.GetWebStateAt(0);
 
-  // Verify that first child WebState is inserted after |opener| if there are
+  // Verify that first child WebState is inserted after `opener` if there are
   // no other children.
-  EXPECT_EQ(1, order_controller_.DetermineInsertionIndex(opener));
+  EXPECT_EQ(1, order_controller_.DetermineInsertionIndex(
+                   WebStateList::kInvalidIndex, opener, false, false));
 
   // Verify that  WebState is inserted at the end if it has no opener.
-  EXPECT_EQ(2, order_controller_.DetermineInsertionIndex(nullptr));
+  EXPECT_EQ(2, order_controller_.DetermineInsertionIndex(
+                   WebStateList::kInvalidIndex, nullptr, false, false));
 
-  // Add a child WebState to |opener|, and verify that a second child would be
+  // Add a child WebState to `opener`, and verify that a second child would be
   // inserted after the first.
   InsertNewWebState(2, WebStateOpener(opener));
 
-  EXPECT_EQ(3, order_controller_.DetermineInsertionIndex(opener));
+  EXPECT_EQ(3, order_controller_.DetermineInsertionIndex(
+                   WebStateList::kInvalidIndex, opener, false, false));
 
-  // Add a grand-child to |opener|, and verify that adding another child to
-  // |opener| would be inserted before the grand-child.
+  // Add a grand-child to `opener`, and verify that adding another child to
+  // `opener` would be inserted before the grand-child.
   InsertNewWebState(3, WebStateOpener(web_state_list_.GetWebStateAt(1)));
 
-  EXPECT_EQ(3, order_controller_.DetermineInsertionIndex(opener));
+  EXPECT_EQ(3, order_controller_.DetermineInsertionIndex(
+                   WebStateList::kInvalidIndex, opener, false, false));
+}
+
+// Tests determination of insertion index for pinned and non-pinned WebStates
+// when no opener is provided and insertion index is forced (FORCE_INDEX flag is
+// set).
+TEST_F(WebStateListOrderControllerTest, DetermineInsertionIndex_HasForceIndex) {
+  InsertNewWebState(0, WebStateOpener());
+  InsertNewWebState(1, WebStateOpener());
+  InsertNewWebState(2, WebStateOpener());
+  InsertNewWebState(3, WebStateOpener());
+  InsertNewWebState(4, WebStateOpener());
+
+  // Pin first three WebStates.
+  web_state_list_.SetWebStatePinnedAt(0, true);
+  web_state_list_.SetWebStatePinnedAt(1, true);
+  web_state_list_.SetWebStatePinnedAt(2, true);
+
+  // Verify that insertion index of pinned WebState, added within pinned
+  // WebStates range equals the forced index.
+  EXPECT_EQ(1,
+            order_controller_.DetermineInsertionIndex(1, nullptr, true, true));
+
+  // Verify that insertion index of non-pinned WebState, added within non-pinned
+  // WebStates range equals the forced index.
+  EXPECT_EQ(3,
+            order_controller_.DetermineInsertionIndex(3, nullptr, true, false));
+
+  // Verify that insertion index of pinned WebState, added outside of pinned
+  // WebStates range equals the index of first non-pinned WebState (end of
+  // pinned WebStates list).
+  EXPECT_EQ(3,
+            order_controller_.DetermineInsertionIndex(4, nullptr, true, true));
+
+  // Verify that insertion index of non-pinned WebState, added outside of
+  // non-pinned WebStates range equals the count of WebStates (end of non-pinned
+  // WebStates list).
+  EXPECT_EQ(5,
+            order_controller_.DetermineInsertionIndex(0, nullptr, true, false));
+}
+
+// Tests determination of insertion index for pinned and non-pinned WebStates
+// when opener is provied and insertion index is not forced (FORCE_INDEX flag
+// is not set).
+TEST_F(WebStateListOrderControllerTest, DetermineInsertionIndex_HasOpener) {
+  InsertNewWebState(0, WebStateOpener());
+  InsertNewWebState(1, WebStateOpener());
+  InsertNewWebState(2, WebStateOpener());
+  InsertNewWebState(3, WebStateOpener());
+  InsertNewWebState(4, WebStateOpener());
+
+  // Pin first three WebStates.
+  web_state_list_.SetWebStatePinnedAt(0, true);
+  web_state_list_.SetWebStatePinnedAt(1, true);
+  web_state_list_.SetWebStatePinnedAt(2, true);
+
+  // Create pinned and non-pinned range openers.
+  web::WebState* opener = web_state_list_.GetWebStateAt(1);
+  web::WebState* opener2 = web_state_list_.GetWebStateAt(4);
+
+  // Verify that insertion index of pinned WebState, added within pinned
+  // WebStates range equals the opener index + 1.
+  EXPECT_EQ(2,
+            order_controller_.DetermineInsertionIndex(0, opener, false, true));
+
+  // Verify that insertion index of non-pinned WebState, added within non-pinned
+  // WebStates range equals the opener index + 1.
+  EXPECT_EQ(
+      5, order_controller_.DetermineInsertionIndex(3, opener2, false, false));
+
+  // Verify that insertion index of pinned WebState, added outside of pinned
+  // WebStates range equals the index of first non-pinned WebState (end of
+  // pinned WebStates list).
+  EXPECT_EQ(3,
+            order_controller_.DetermineInsertionIndex(4, opener2, false, true));
+
+  // Verify that insertion index of non-pinned WebState, added outside of
+  // non-pinned WebStates range equals the count of WebStates (end of non-pinned
+  // WebStates list).
+  EXPECT_EQ(5,
+            order_controller_.DetermineInsertionIndex(0, opener, false, false));
+}
+
+// Tests determination of insertion index for pinned and non-pinned WebStates
+// when opener is provied and it has children WebStates.
+TEST_F(WebStateListOrderControllerTest,
+       DetermineInsertionIndex_HasOpenerChildren) {
+  InsertNewWebState(0, WebStateOpener());
+  InsertNewWebState(1, WebStateOpener(web_state_list_.GetWebStateAt(0)));
+  InsertNewWebState(2, WebStateOpener());
+  InsertNewWebState(3, WebStateOpener(web_state_list_.GetWebStateAt(2)));
+  InsertNewWebState(4, WebStateOpener());
+
+  // Pin first three WebStates.
+  web_state_list_.SetWebStatePinnedAt(0, true);
+  web_state_list_.SetWebStatePinnedAt(1, true);
+  web_state_list_.SetWebStatePinnedAt(2, true);
+
+  // Create pinned and non-pinned range openers.
+  web::WebState* opener = web_state_list_.GetWebStateAt(0);
+  web::WebState* opener2 = web_state_list_.GetWebStateAt(2);
+
+  // Verify that insertion index of pinned WebState, added within pinned
+  // WebStates range equals the opener last child index + 1.
+  EXPECT_EQ(2,
+            order_controller_.DetermineInsertionIndex(0, opener, false, true));
+
+  // Verify that insertion index of non-pinned WebState, added within non-pinned
+  // WebStates range equals the opener last child index + 1.
+  EXPECT_EQ(
+      4, order_controller_.DetermineInsertionIndex(3, opener2, false, false));
+
+  // Verify that insertion index of pinned WebState, added outside of pinned
+  // WebStates range equals the index of first non-pinned WebState (end of
+  // pinned WebStates list).
+  EXPECT_EQ(3,
+            order_controller_.DetermineInsertionIndex(4, opener2, false, true));
+
+  // Verify that insertion index of non-pinned WebState, added outside of
+  // non-pinned WebStates range equals the count of WebStates (end of non-pinned
+  // WebStates list).
+  EXPECT_EQ(5,
+            order_controller_.DetermineInsertionIndex(0, opener, false, false));
 }
 
 // Test that the selection of the next tab to show when closing a tab respect

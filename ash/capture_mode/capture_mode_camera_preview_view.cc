@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,12 @@
 #include "ash/accessibility/scoped_a11y_override_window_setter.h"
 #include "ash/capture_mode/capture_mode_constants.h"
 #include "ash/capture_mode/capture_mode_controller.h"
+#include "ash/capture_mode/capture_mode_session.h"
 #include "ash/capture_mode/capture_mode_util.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/ash_color_id.h"
 #include "base/bind.h"
 #include "base/check.h"
 #include "ui/aura/window_tree_host.h"
@@ -63,10 +64,21 @@ CameraPreviewResizeButton::CameraPreviewResizeButton(
     CameraPreviewView* camera_preview_view,
     views::Button::PressedCallback callback,
     const gfx::VectorIcon& icon)
-    : CaptureModeButton(std::move(callback), icon),
+    : IconButton(std::move(callback),
+                 IconButton::Type::kMediumFloating,
+                 &icon,
+                 // the tooltip depends on the current expanded state of the
+                 // button and will be updated by `CameraPreviewView`.
+                 /*accessible_name=*/u"",
+                 /*is_togglable=*/false,
+                 /*has_border=*/true),
       camera_preview_view_(camera_preview_view) {}
 
 CameraPreviewResizeButton::~CameraPreviewResizeButton() = default;
+
+views::View* CameraPreviewResizeButton::GetView() {
+  return this;
+}
 
 void CameraPreviewResizeButton::PseudoFocus() {
   DCHECK(camera_preview_view_->is_collapsible());
@@ -80,7 +92,7 @@ void CameraPreviewResizeButton::PseudoBlur() {
   camera_preview_view_->ScheduleRefreshResizeButtonVisibility();
 }
 
-BEGIN_METADATA(CameraPreviewResizeButton, CaptureModeButton)
+BEGIN_METADATA(CameraPreviewResizeButton, IconButton)
 END_METADATA
 
 // -----------------------------------------------------------------------------
@@ -107,19 +119,29 @@ CameraPreviewView::CameraPreviewView(
               camera_controller_->is_camera_preview_collapsed())))),
       scoped_a11y_overrider_(
           std::make_unique<ScopedA11yOverrideWindowSetter>()) {
+  // Add an empty border to the camera preview. This is done to keep some gap
+  // between the focus ring and the contents of the camera preview, as focus
+  // ring will extend a little beyond the border.
+  SetBorder(views::CreateEmptyBorder(capture_mode::kCameraPreviewBorderSize));
+
   resize_button_->SetPaintToLayer();
   resize_button_->layer()->SetFillsBoundsOpaquely(false);
-  resize_button_->SetBackground(views::CreateRoundedRectBackground(
-      AshColorProvider::Get()->GetBaseLayerColor(
-          AshColorProvider::BaseLayerType::kTransparent80),
+  resize_button_->SetBackground(views::CreateThemedRoundedRectBackground(
+      kColorAshShieldAndBase80,
       resize_button_->GetPreferredSize().height() / 2.f));
 
   accessibility_observation_.Observe(Shell::Get()->accessibility_controller());
   RefreshResizeButtonVisibility();
   UpdateResizeButtonTooltip();
+  capture_mode_util::MaybeUpdateCameraPrivacyIndicator(/*camera_on=*/true);
 }
 
-CameraPreviewView::~CameraPreviewView() = default;
+CameraPreviewView::~CameraPreviewView() {
+  auto* controller = CaptureModeController::Get();
+  if (controller->IsActive() && !controller->is_recording_in_progress())
+    controller->capture_mode_session()->OnCameraPreviewDestroyed();
+  capture_mode_util::MaybeUpdateCameraPrivacyIndicator(/*camera_on=*/false);
+}
 
 void CameraPreviewView::SetIsCollapsible(bool value) {
   if (value != is_collapsible_) {
@@ -300,7 +322,8 @@ void CameraPreviewView::Layout() {
   const gfx::Rect bounds(
       (width() - resize_button_size.width()) / 2.f,
       height() - resize_button_size.height() -
-          capture_mode::kSpaceBetweenResizeButtonAndCameraPreview,
+          capture_mode::kSpaceBetweenResizeButtonAndCameraPreview -
+          capture_mode::kCameraPreviewBorderSize,
       resize_button_size.width(), resize_button_size.height());
   resize_button_->SetBoundsRect(bounds);
 
@@ -316,8 +339,9 @@ void CameraPreviewView::Layout() {
   // a render surface. This also avoids the rendering artifacts seen in
   // https://crbug.com/1312059.
   DCHECK_EQ(width(), height());
-  camera_video_renderer_.host_window()->layer()->SetRoundedCornerRadius(
-      gfx::RoundedCornersF(height() / 2.f));
+  auto* layer = camera_video_renderer_.host_window()->layer();
+  layer->SetRoundedCornerRadius(gfx::RoundedCornersF(height() / 2.f));
+  layer->SetIsFastRoundedCorner(true);
 
   // Refocus the camera preview to relayout the focus ring on it.
   if (has_focus())
@@ -326,9 +350,9 @@ void CameraPreviewView::Layout() {
 
 void CameraPreviewView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   views::View::GetAccessibleNodeData(node_data);
+  node_data->role = ax::mojom::Role::kVideo;
   node_data->SetName(
       l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_CAMERA_PREVIEW_FOCUSED));
-  node_data->role = ax::mojom::Role::kVideo;
 }
 
 views::View* CameraPreviewView::GetView() {
@@ -355,13 +379,12 @@ void CameraPreviewView::OnResizeButtonPressed() {
 }
 
 void CameraPreviewView::UpdateResizeButton() {
-  resize_button_->SetImage(
+  resize_button_->SetImageModel(
       views::Button::STATE_NORMAL,
-      gfx::CreateVectorIcon(
+      ui::ImageModel::FromVectorIcon(
           GetIconOfResizeButton(
               camera_controller_->is_camera_preview_collapsed()),
-          AshColorProvider::Get()->GetContentLayerColor(
-              AshColorProvider::ContentLayerType::kIconColorPrimary)));
+          kColorAshIconColorPrimary));
   UpdateResizeButtonTooltip();
 }
 

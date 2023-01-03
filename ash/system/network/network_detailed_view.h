@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,12 +47,6 @@ class ASH_EXPORT NetworkDetailedView : public TrayDetailedView,
   NetworkDetailedView& operator=(const NetworkDetailedView&) = delete;
   ~NetworkDetailedView() override;
 
-  // Notifies that the network list has changed and the layout is invalid.
-  void NotifyNetworkListChanged();
-
-  // Returns the network list.
-  views::View* network_list();
-
  protected:
   enum ListType { LIST_TYPE_NETWORK, LIST_TYPE_VPN };
 
@@ -60,10 +54,15 @@ class ASH_EXPORT NetworkDetailedView : public TrayDetailedView,
                       Delegate* delegate,
                       ListType list_type);
 
+  TrayNetworkStateModel* model() { return model_; }
+
+  views::Button* settings_button() { return settings_button_; }
+
   Delegate* delegate() { return delegate_; }
 
  private:
   friend class NetworkDetailedViewTest;
+  friend class NetworkDetailedNetworkViewTest;
 
   // Used for testing. Starts at 1 because view IDs should not be 0.
   enum class NetworkDetailedViewChildId {

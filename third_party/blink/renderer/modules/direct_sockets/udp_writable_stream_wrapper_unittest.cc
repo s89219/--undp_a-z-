@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/googletest/src/googlemock/include/gmock/gmock-matchers.h"
@@ -53,8 +54,15 @@ class FakeDirectUDPSocket : public blink::mojom::blink::DirectUDPSocket {
 
 class StreamCreator : public GarbageCollected<StreamCreator> {
  public:
-  StreamCreator() : receiver_{&fake_udp_socket_} {}
-  ~StreamCreator() { test::RunPendingTasks(); }
+  StreamCreator()
+      : fake_udp_socket_{std::make_unique<FakeDirectUDPSocket>()},
+        receiver_{fake_udp_socket_.get()} {}
+
+  explicit StreamCreator(std::unique_ptr<FakeDirectUDPSocket> socket)
+      : fake_udp_socket_(std::move(socket)),
+        receiver_{fake_udp_socket_.get()} {}
+
+  ~StreamCreator() = default;
 
   UDPWritableStreamWrapper* Create(const V8TestingScope& scope) {
     auto* udp_socket =
@@ -65,24 +73,51 @@ class StreamCreator : public GarbageCollected<StreamCreator> {
 
     auto* script_state = scope.GetScriptState();
     stream_wrapper_ = MakeGarbageCollected<UDPWritableStreamWrapper>(
-        script_state, udp_socket);
+        script_state,
+        WTF::BindOnce(&StreamCreator::Close, WrapWeakPersistent(this)),
+        udp_socket);
     return stream_wrapper_;
   }
 
   void Trace(Visitor* visitor) const { visitor->Trace(stream_wrapper_); }
 
-  FakeDirectUDPSocket& fake_udp_socket() { return fake_udp_socket_; }
+  FakeDirectUDPSocket* fake_udp_socket() { return fake_udp_socket_.get(); }
+
+  bool CloseCalledWith(bool error) { return close_called_with_ == error; }
+
+  void Cleanup() {
+    fake_udp_socket_.reset();
+    receiver_.reset();
+  }
 
  private:
-  FakeDirectUDPSocket fake_udp_socket_;
+  void Close(ScriptValue exception) {
+    close_called_with_ = !exception.IsEmpty();
+  }
+
+  absl::optional<bool> close_called_with_;
+  std::unique_ptr<FakeDirectUDPSocket> fake_udp_socket_;
   mojo::Receiver<blink::mojom::blink::DirectUDPSocket> receiver_;
   Member<UDPWritableStreamWrapper> stream_wrapper_;
+};
+
+class ScopedStreamCreator {
+ public:
+  explicit ScopedStreamCreator(StreamCreator* stream_creator)
+      : stream_creator_(stream_creator) {}
+
+  ~ScopedStreamCreator() { stream_creator_->Cleanup(); }
+
+  StreamCreator* operator->() const { return stream_creator_; }
+
+ private:
+  Persistent<StreamCreator> stream_creator_;
 };
 
 TEST(UDPWritableStreamWrapperTest, Create) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   EXPECT_TRUE(udp_writable_stream_wrapper->Writable());
@@ -91,7 +126,7 @@ TEST(UDPWritableStreamWrapperTest, Create) {
 TEST(UDPWritableStreamWrapperTest, WriteUdpMessage) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   auto* script_state = scope.GetScriptState();
@@ -113,14 +148,14 @@ TEST(UDPWritableStreamWrapperTest, WriteUdpMessage) {
 
   ASSERT_TRUE(tester.IsFulfilled());
 
-  auto& fake_udp_socket = stream_creator->fake_udp_socket();
-  EXPECT_THAT(fake_udp_socket.GetReceivedData(), ::testing::ElementsAre('A'));
+  auto* fake_udp_socket = stream_creator->fake_udp_socket();
+  EXPECT_THAT(fake_udp_socket->GetReceivedData(), ::testing::ElementsAre('A'));
 }
 
 TEST(UDPWritableStreamWrapperTest, WriteUdpMessageFromTypedArray) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   auto* script_state = scope.GetScriptState();
@@ -144,15 +179,15 @@ TEST(UDPWritableStreamWrapperTest, WriteUdpMessageFromTypedArray) {
 
   ASSERT_TRUE(tester.IsFulfilled());
 
-  auto& fake_udp_socket = stream_creator->fake_udp_socket();
-  EXPECT_THAT(fake_udp_socket.GetReceivedData(),
+  auto* fake_udp_socket = stream_creator->fake_udp_socket();
+  EXPECT_THAT(fake_udp_socket->GetReceivedData(),
               ::testing::ElementsAre('A', 'B', 'C'));
 }
 
 TEST(UDPWritableStreamWrapperTest, WriteUdpMessageWithEmptyDataField) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   auto* script_state = scope.GetScriptState();
@@ -177,14 +212,14 @@ TEST(UDPWritableStreamWrapperTest, WriteUdpMessageWithEmptyDataField) {
   ASSERT_TRUE(tester.IsFulfilled());
 
   // Nothing should have been written from the empty DOMArrayBuffer.
-  auto& fake_udp_socket = stream_creator->fake_udp_socket();
-  EXPECT_THAT(fake_udp_socket.GetReceivedData(), ::testing::ElementsAre());
+  auto* fake_udp_socket = stream_creator->fake_udp_socket();
+  EXPECT_THAT(fake_udp_socket->GetReceivedData(), ::testing::ElementsAre());
 }
 
 TEST(UDPWritableStreamWrapperTest, WriteUdpMessageWithoutDataField) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   auto* script_state = scope.GetScriptState();
@@ -216,7 +251,7 @@ TEST(UDPWritableStreamWrapperTest, WriteUdpMessageWithoutDataField) {
 TEST(UDPWritableStreamWrapperTest, WriteAfterFinishedWrite) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   auto* script_state = scope.GetScriptState();
@@ -240,15 +275,15 @@ TEST(UDPWritableStreamWrapperTest, WriteAfterFinishedWrite) {
     ASSERT_TRUE(tester.IsFulfilled());
   }
 
-  auto& fake_udp_socket = stream_creator->fake_udp_socket();
-  EXPECT_THAT(fake_udp_socket.GetReceivedData(),
+  auto* fake_udp_socket = stream_creator->fake_udp_socket();
+  EXPECT_THAT(fake_udp_socket->GetReceivedData(),
               ::testing::ElementsAre('A', 'B'));
 }
 
 TEST(UDPWritableStreamWrapperTest, WriteAfterClose) {
   V8TestingScope scope;
 
-  auto* stream_creator = MakeGarbageCollected<StreamCreator>();
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>());
   auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
 
   auto* script_state = scope.GetScriptState();
@@ -286,6 +321,42 @@ TEST(UDPWritableStreamWrapperTest, WriteAfterClose) {
   write_after_close_tester.WaitUntilSettled();
 
   ASSERT_TRUE(write_after_close_tester.IsRejected());
+}
+
+TEST(UDPWritableStreamWrapperTest, WriteFailed) {
+  class FailingFakeDirectUDPSocket : public FakeDirectUDPSocket {
+   public:
+    void Send(base::span<const uint8_t> data, SendCallback callback) override {
+      std::move(callback).Run(net::ERR_UNEXPECTED);
+    }
+  };
+
+  V8TestingScope scope;
+
+  ScopedStreamCreator stream_creator(MakeGarbageCollected<StreamCreator>(
+      std::make_unique<FailingFakeDirectUDPSocket>()));
+  auto* udp_writable_stream_wrapper = stream_creator->Create(scope);
+
+  auto* script_state = scope.GetScriptState();
+  auto* writer = udp_writable_stream_wrapper->Writable()->getWriter(
+      script_state, ASSERT_NO_EXCEPTION);
+
+  auto* chunk = DOMArrayBuffer::Create("A", 1);
+  auto* message = UDPMessage::Create();
+  message->setData(
+      MakeGarbageCollected<V8UnionArrayBufferOrArrayBufferView>(chunk));
+
+  ScriptPromise write_result =
+      writer->write(script_state, ScriptValue::From(script_state, message),
+                    ASSERT_NO_EXCEPTION);
+  ScriptPromiseTester write_tester(script_state, write_result);
+  write_tester.WaitUntilSettled();
+
+  ASSERT_TRUE(write_tester.IsRejected());
+  ASSERT_EQ(udp_writable_stream_wrapper->GetState(),
+            StreamWrapper::State::kAborted);
+
+  ASSERT_TRUE(stream_creator->CloseCalledWith(/*error=*/true));
 }
 
 }  // namespace

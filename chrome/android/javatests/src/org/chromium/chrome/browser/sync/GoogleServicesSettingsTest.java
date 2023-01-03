@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,19 +26,20 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.preferences.Pref;
+import org.chromium.chrome.browser.price_tracking.PriceTrackingFeatures;
+import org.chromium.chrome.browser.price_tracking.PriceTrackingUtilities;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.settings.SettingsActivityTestRule;
 import org.chromium.chrome.browser.signin.services.IdentityServicesProvider;
 import org.chromium.chrome.browser.sync.settings.GoogleServicesSettings;
-import org.chromium.chrome.browser.tasks.tab_management.PriceTrackingUtilities;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
 import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.chrome.test.util.browser.signin.AccountManagerTestRule;
-import org.chromium.components.autofill_assistant.AssistantFeatures;
-import org.chromium.components.autofill_assistant.AutofillAssistantPreferencesUtil;
+import org.chromium.chrome.test.util.browser.signin.SigninTestRule;
 import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
+import org.chromium.components.prefs.PrefService;
 import org.chromium.components.signin.identitymanager.ConsentLevel;
 import org.chromium.components.user_prefs.UserPrefs;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
@@ -53,7 +54,7 @@ public class GoogleServicesSettingsTest {
             AccountManagerTestRule.generateChildEmail("account@gmail.com");
 
     @Rule
-    public final AccountManagerTestRule mAccountManagerTestRule = new AccountManagerTestRule();
+    public final SigninTestRule mSigninTestRule = new SigninTestRule();
 
     public final ChromeTabbedActivityTestRule mActivityTestRule =
             new ChromeTabbedActivityTestRule();
@@ -79,16 +80,16 @@ public class GoogleServicesSettingsTest {
 
     @After
     public void tearDown() {
-        TestThreadUtils.runOnUiThreadBlocking(
-                ()
-                        -> UserPrefs.get(Profile.getLastUsedRegularProfile())
-                                   .setBoolean(Pref.SIGNIN_ALLOWED, true));
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            PrefService prefService = UserPrefs.get(Profile.getLastUsedRegularProfile());
+            prefService.clearPref(Pref.SIGNIN_ALLOWED);
+        });
     }
 
     @Test
     @LargeTest
     public void allowSigninOptionHiddenFromChildUser() {
-        mAccountManagerTestRule.addAccountAndWaitForSeeding(CHILD_ACCOUNT_NAME);
+        mSigninTestRule.addAccountAndWaitForSeeding(CHILD_ACCOUNT_NAME);
         final Profile profile = TestThreadUtils.runOnUiThreadBlockingNoException(
                 Profile::getLastUsedRegularProfile);
         CriteriaHelper.pollUiThread(profile::isChild);
@@ -104,7 +105,7 @@ public class GoogleServicesSettingsTest {
     @Test
     @LargeTest
     public void signOutUserWithoutShowingSignOutDialog() {
-        mAccountManagerTestRule.addTestAccountThenSignin();
+        mSigninTestRule.addTestAccountThenSignin();
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
         ChromeSwitchPreference allowChromeSignin =
                 (ChromeSwitchPreference) googleServicesSettings.findPreference(
@@ -129,7 +130,7 @@ public class GoogleServicesSettingsTest {
     @Test
     @LargeTest
     public void showSignOutDialogBeforeSigningUserOut() {
-        mAccountManagerTestRule.addTestAccountThenSigninAndEnableSync();
+        mSigninTestRule.addTestAccountThenSigninAndEnableSync();
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
         ChromeSwitchPreference allowChromeSignin =
                 (ChromeSwitchPreference) googleServicesSettings.findPreference(
@@ -148,132 +149,14 @@ public class GoogleServicesSettingsTest {
         Assert.assertFalse("Chrome Signin should not be allowed", allowChromeSignin.isChecked());
     }
 
-    /**
-     * Test: if the onboarding was never shown, the AA chrome preference should not exist.
-     *
-     * Note:
-     * - Presence of the {@link GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT}
-     *   shared preference indicates whether onboarding was shown or not.
-     * - There's a separate settings screen added if either AUTOFILL_ASSISTANT_PROACTIVE_HELP or
-     *   OMNIBOX_ASSISTANT_VOICE_SEARCH is enabled.
-     */
     @Test
     @LargeTest
-    @Feature({"Sync"})
-    @EnableFeatures(AssistantFeatures.AUTOFILL_ASSISTANT_NAME)
-    @DisableFeatures({AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME,
-            ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH})
-    public void
-    testAutofillAssistantNoPreferenceIfOnboardingNeverShown() {
-        final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            Assert.assertNull(googleServicesSettings.findPreference(
-                    GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT));
-        });
-    }
-
-    /**
-     * Test: if the onboarding was shown at least once, the AA chrome preference should also exist.
-     *
-     * Note:
-     * - Presence of the {@link GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT}
-     *   shared preference indicates whether onboarding was shown or not.
-     * - There's a separate settings screen added if either AUTOFILL_ASSISTANT_PROACTIVE_HELP or
-     *   OMNIBOX_ASSISTANT_VOICE_SEARCH is enabled.
-     */
-    @Test
-    @LargeTest
-    @Feature({"Sync"})
-    @EnableFeatures(AssistantFeatures.AUTOFILL_ASSISTANT_NAME)
-    @DisableFeatures({AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME,
-            ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH})
-    public void
-    testAutofillAssistantPreferenceShownIfOnboardingShown() {
-        setAutofillAssistantSwitchValue(true);
-        final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            Assert.assertNotNull(googleServicesSettings.findPreference(
-                    GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT));
-        });
-    }
-
-    /**
-     * Ensure that the "Autofill Assistant" setting is not shown when the feature is disabled.
-     */
-    @Test
-    @LargeTest
-    @Feature({"Sync"})
-    @DisableFeatures({AssistantFeatures.AUTOFILL_ASSISTANT_NAME,
-            AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME,
-            ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH})
-    public void
-    testAutofillAssistantNoPreferenceIfFeatureDisabled() {
-        setAutofillAssistantSwitchValue(true);
-        final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            Assert.assertNull(googleServicesSettings.findPreference(
-                    GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT));
-        });
-    }
-
-    /**
-     * Ensure that the "Autofill Assistant" on/off switch works.
-     */
-    @Test
-    @LargeTest
-    @Feature({"Sync"})
-    @EnableFeatures(AssistantFeatures.AUTOFILL_ASSISTANT_NAME)
-    @DisableFeatures({AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME,
-            ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH})
-    public void
-    testAutofillAssistantSwitchOn() {
-        TestThreadUtils.runOnUiThreadBlocking(() -> { setAutofillAssistantSwitchValue(true); });
+    @Feature({"AssistantVoiceSearch"})
+    @EnableFeatures(ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH)
+    public void testAutofillAssistantSubsection_AssistantVoiceSeach() {
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
 
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            ChromeSwitchPreference autofillAssistantSwitch =
-                    (ChromeSwitchPreference) googleServicesSettings.findPreference(
-                            GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT);
-            Assert.assertTrue(autofillAssistantSwitch.isChecked());
-
-            autofillAssistantSwitch.performClick();
-            Assert.assertFalse(googleServicesSettings.isAutofillAssistantSwitchOn());
-            autofillAssistantSwitch.performClick();
-            Assert.assertTrue(googleServicesSettings.isAutofillAssistantSwitchOn());
-        });
-    }
-
-    @Test
-    @LargeTest
-    @Feature({"Sync"})
-    @EnableFeatures(AssistantFeatures.AUTOFILL_ASSISTANT_NAME)
-    @DisableFeatures({AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME,
-            ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH})
-    public void
-    testAutofillAssistantSwitchOff() {
-        TestThreadUtils.runOnUiThreadBlocking(() -> { setAutofillAssistantSwitchValue(false); });
-        final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
-
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            ChromeSwitchPreference autofillAssistantSwitch =
-                    (ChromeSwitchPreference) googleServicesSettings.findPreference(
-                            GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT);
-            Assert.assertFalse(autofillAssistantSwitch.isChecked());
-        });
-    }
-
-    @Test
-    @LargeTest
-    @Feature({"Sync"})
-    @EnableFeatures(AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME)
-    @DisableFeatures(ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH)
-    public void testAutofillAssistantProactiveHelp() {
-        final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
-
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            Assert.assertNull(googleServicesSettings.findPreference(
-                    GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT));
-
             Assert.assertTrue(
                     googleServicesSettings
                             .findPreference(
@@ -285,16 +168,14 @@ public class GoogleServicesSettingsTest {
     @Test
     @LargeTest
     @Feature({"AssistantVoiceSearch"})
-    @EnableFeatures(ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH)
-    @DisableFeatures(AssistantFeatures.AUTOFILL_ASSISTANT_PROACTIVE_HELP_NAME)
-    public void testAutofillAssistantSubsection_AssistantVoiceSeach() {
+    @EnableFeatures({ChromeFeatureList.OMNIBOX_ASSISTANT_VOICE_SEARCH,
+            ChromeFeatureList.ASSISTANT_NON_PERSONALIZED_VOICE_SEARCH})
+    public void
+    testAutofillAssistantSubsection_NonPersonalizedAssistant() {
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
 
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            Assert.assertNull(googleServicesSettings.findPreference(
-                    GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT));
-
-            Assert.assertTrue(
+            Assert.assertFalse(
                     googleServicesSettings
                             .findPreference(
                                     GoogleServicesSettings.PREF_AUTOFILL_ASSISTANT_SUBSECTION)
@@ -340,7 +221,7 @@ public class GoogleServicesSettingsTest {
     public void
     testPriceTrackingAnnotations() {
         TestThreadUtils.runOnUiThreadBlocking(
-                () -> PriceTrackingUtilities.setIsSignedInAndSyncEnabledForTesting(true));
+                () -> PriceTrackingFeatures.setIsSignedInAndSyncEnabledForTesting(true));
 
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
 
@@ -368,7 +249,7 @@ public class GoogleServicesSettingsTest {
     public void
     testPriceTrackingAnnotations_FeatureDisabled() {
         TestThreadUtils.runOnUiThreadBlocking(
-                () -> PriceTrackingUtilities.setIsSignedInAndSyncEnabledForTesting(true));
+                () -> PriceTrackingFeatures.setIsSignedInAndSyncEnabledForTesting(true));
 
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
 
@@ -388,7 +269,7 @@ public class GoogleServicesSettingsTest {
     public void
     testPriceTrackingAnnotations_NotSignedIn() {
         TestThreadUtils.runOnUiThreadBlocking(
-                () -> PriceTrackingUtilities.setIsSignedInAndSyncEnabledForTesting(false));
+                () -> PriceTrackingFeatures.setIsSignedInAndSyncEnabledForTesting(false));
 
         final GoogleServicesSettings googleServicesSettings = startGoogleServicesSettings();
 
@@ -396,10 +277,6 @@ public class GoogleServicesSettingsTest {
             Assert.assertNull(googleServicesSettings.findPreference(
                     GoogleServicesSettings.PREF_PRICE_TRACKING_ANNOTATIONS));
         });
-    }
-
-    private void setAutofillAssistantSwitchValue(boolean newValue) {
-        AutofillAssistantPreferencesUtil.setAssistantEnabledPreference(newValue);
     }
 
     private GoogleServicesSettings startGoogleServicesSettings() {

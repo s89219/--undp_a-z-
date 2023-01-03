@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,13 +23,19 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/test_host_resolver.h"
+#include "content/utility/services.h"
+#include "mojo/public/cpp/bindings/callback_helpers.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "net/base/address_family.h"
+#include "net/base/address_list.h"
 #include "net/base/ip_address.h"
 #include "net/cert/ev_root_ca_metadata.h"
 #include "net/cert/mock_cert_verifier.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/dns/host_resolver_system_task.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/dns/public/dns_over_https_server_config.h"
 #include "net/http/transport_security_state.h"
@@ -37,6 +43,7 @@
 #include "net/log/net_log.h"
 #include "net/nqe/network_quality_estimator.h"
 #include "net/test/test_data_directory.h"
+#include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "sandbox/policy/sandbox_type.h"
 #include "services/network/cookie_manager.h"
 #include "services/network/disk_cache/mojo_backend_file_operations_factory.h"
@@ -46,6 +53,7 @@
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/network_change_manager.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
+#include "services/network/public/mojom/network_service_test.mojom.h"
 #include "services/network/sct_auditing/sct_auditing_cache.h"
 #include "services/network/sct_auditing/sct_auditing_reporter.h"
 
@@ -494,6 +502,14 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
     std::move(callback).Run();
   }
 
+  void ForceNetworkQualityEstimatorReportWifiAsSlow2G(
+      SimulateNetworkChangeCallback callback) override {
+    network::NetworkService::GetNetworkServiceForTesting()
+        ->network_quality_estimator()
+        ->ForceReportWifiAsSlow2GForTesting();
+    std::move(callback).Run();
+  }
+
   void SimulateCrash() override {
     LOG(ERROR) << "Intentionally terminating current process to simulate"
                   " NetworkService crash for testing.";
@@ -505,6 +521,18 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
   void MockCertVerifierSetDefaultResult(
       int32_t default_result,
       MockCertVerifierSetDefaultResultCallback callback) override {
+    // TODO(crbug.com/1377734): Since testing/variations/
+    // fieldtrial_testing_config.json changes the command line flags after
+    // ContentBrowserTest::SetUpCommandLine() and NetworkServiceTest
+    // instantiation, MockCertVerifierSetDefaultResult can be called without
+    // `mock_cert_verifier_` initialization.
+    // Actually since all mock cert verification tests call this function first,
+    // we should remove the set up using the command line flags.
+    if (!mock_cert_verifier_) {
+      mock_cert_verifier_ = std::make_unique<net::MockCertVerifier>();
+      network::NetworkContext::SetCertVerifierForTesting(
+          mock_cert_verifier_.get());
+    }
     mock_cert_verifier_->set_default_result(default_result);
     std::move(callback).Run();
   }
@@ -630,7 +658,7 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
 
   void OpenFile(const base::FilePath& path,
                 base::OnceCallback<void(bool)> callback) override {
-    base::File file(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+    base::File file(path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_READ);
     std::move(callback).Run(file.IsValid());
   }
 
@@ -676,20 +704,50 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
       const base::FilePath& path,
       bool reset,
       CreateSimpleCacheCallback callback) override {
-    auto backend_holder = base::MakeRefCounted<
-        base::RefCountedData<std::unique_ptr<disk_cache::Backend>>>();
     const auto reset_mode = reset ? disk_cache::ResetHandling::kReset
                                   : disk_cache::ResetHandling::kResetOnError;
-    int rv = disk_cache::CreateCacheBackend(
+    disk_cache::BackendResult result = disk_cache::CreateCacheBackend(
         net::DISK_CACHE, net::CACHE_BACKEND_SIMPLE,
         base::MakeRefCounted<network::MojoBackendFileOperationsFactory>(
             std::move(factory)),
         path, 64 * 1024 * 1024, reset_mode, net::NetLog::Get(),
-        &backend_holder->data,
         base::BindOnce(&NetworkServiceTestImpl::OnCacheCreated,
-                       weak_factory_.GetWeakPtr(), backend_holder,
-                       std::move(callback)));
-    DCHECK_EQ(rv, net::ERR_IO_PENDING);
+                       weak_factory_.GetWeakPtr(), std::move(callback)));
+    DCHECK_EQ(result.net_error, net::ERR_IO_PENDING);
+  }
+
+  void MakeRequestToServer(network::TransferableSocket transferred,
+                           const net::IPEndPoint& endpoint,
+                           MakeRequestToServerCallback callback) override {
+    net::TCPSocket socket(nullptr, nullptr, net::NetLogSource());
+    socket.AdoptConnectedSocket(transferred.TakeSocket(), endpoint);
+    const std::string kRequest("GET / HTTP/1.0\r\n\r\n");
+    auto io_buffer = base::MakeRefCounted<net::StringIOBuffer>(kRequest);
+
+    int rv = socket.Write(io_buffer.get(), io_buffer->size(), base::DoNothing(),
+                          TRAFFIC_ANNOTATION_FOR_TESTS);
+    // For purposes of tests, this IPC only supports sync Write calls.
+    DCHECK_NE(net::ERR_IO_PENDING, rv);
+    std::move(callback).Run(rv == static_cast<int>(kRequest.size()));
+  }
+
+  void ResolveOwnHostnameWithSystemDns(
+      ResolveOwnHostnameWithSystemDnsCallback callback) override {
+    std::unique_ptr<net::HostResolverSystemTask> system_task =
+        net::HostResolverSystemTask::CreateForOwnHostname(
+            net::AddressFamily::ADDRESS_FAMILY_UNSPECIFIED, 0);
+    net::HostResolverSystemTask* system_task_ptr = system_task.get();
+    auto forward_system_dns_results =
+        [](std::unique_ptr<net::HostResolverSystemTask>,
+           net::SystemDnsResultsCallback callback,
+           const net::AddressList& addr_list, int os_error, int net_error) {
+          std::move(callback).Run(addr_list, os_error, net_error);
+        };
+    auto results_cb = base::BindOnce(
+        std::move(forward_system_dns_results), std::move(system_task),
+        mojo::WrapCallbackWithDefaultInvokeIfNotRun(
+            std::move(callback), net::AddressList(), 0, net::ERR_ABORTED));
+    system_task_ptr->Start(std::move(results_cb));
   }
 
  private:
@@ -698,15 +756,10 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
     latest_memory_pressure_level_ = memory_pressure_level;
   }
 
-  void OnCacheCreated(
-      scoped_refptr<base::RefCountedData<std::unique_ptr<disk_cache::Backend>>>
-          backend_holder,
-      CreateSimpleCacheCallback callback,
-      int rv) {
-    DCHECK(backend_holder);
-    std::unique_ptr<disk_cache::Backend> backend =
-        std::move(backend_holder->data);
-    if (rv != net::OK) {
+  void OnCacheCreated(CreateSimpleCacheCallback callback,
+                      disk_cache::BackendResult result) {
+    std::unique_ptr<disk_cache::Backend> backend = std::move(result.backend);
+    if (result.net_error != net::OK) {
       DCHECK(!backend);
       std::move(callback).Run(mojo::NullRemote());
       return;
@@ -719,6 +772,8 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
     std::move(callback).Run(std::move(remote));
   }
 
+  void OnNetworkDataWritten(int rv) { write_result_ = rv; }
+
   bool registered_as_destruction_observer_ = false;
   bool have_test_doh_servers_ = false;
   mojo::ReceiverSet<network::mojom::NetworkServiceTest> receivers_;
@@ -730,26 +785,42 @@ class NetworkServiceTestHelper::NetworkServiceTestImpl
   base::MemoryPressureListener::MemoryPressureLevel
       latest_memory_pressure_level_ =
           base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE;
+  int write_result_;
   std::unique_ptr<disk_cache::Backend> disk_cache_backend_;
 
   base::WeakPtrFactory<NetworkServiceTestImpl> weak_factory_{this};
 };
 
 NetworkServiceTestHelper::NetworkServiceTestHelper()
-    : network_service_test_impl_(new NetworkServiceTestImpl) {}
+    : network_service_test_impl_(new NetworkServiceTestImpl) {
+  static bool is_created = false;
+  DCHECK(!is_created) << "NetworkServiceTestHelper shouldn't be created twice.";
+  is_created = true;
+}
 
 NetworkServiceTestHelper::~NetworkServiceTestHelper() = default;
+
+std::unique_ptr<NetworkServiceTestHelper> NetworkServiceTestHelper::Create() {
+  if (base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          switches::kUtilitySubType) == network::mojom::NetworkService::Name_) {
+    std::unique_ptr<NetworkServiceTestHelper> helper(
+        new NetworkServiceTestHelper());
+    SetNetworkBinderCreationCallbackForTesting(
+        base::BindOnce(&NetworkServiceTestHelper::RegisterNetworkBinders,
+                       base::Unretained(helper.get())));
+    return helper;
+  }
+  return nullptr;
+}
 
 void NetworkServiceTestHelper::RegisterNetworkBinders(
     service_manager::BinderRegistry* registry) {
   registry->AddInterface(base::BindRepeating(
-      &NetworkServiceTestHelper::BindNetworkServiceTestReceiver,
+      [](NetworkServiceTestHelper* helper,
+         mojo::PendingReceiver<network::mojom::NetworkServiceTest> receiver) {
+        helper->network_service_test_impl_->BindReceiver(std::move(receiver));
+      },
       base::Unretained(this)));
-}
-
-void NetworkServiceTestHelper::BindNetworkServiceTestReceiver(
-    mojo::PendingReceiver<network::mojom::NetworkServiceTest> receiver) {
-  network_service_test_impl_->BindReceiver(std::move(receiver));
 }
 
 }  // namespace content

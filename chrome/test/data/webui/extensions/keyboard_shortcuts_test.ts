@@ -1,13 +1,11 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /** @fileoverview Suite of tests for extension-keyboard-shortcuts. */
 
 import {ExtensionsKeyboardShortcutsElement, isValidKeyCode, Key, keystrokeToString} from 'chrome://extensions/extensions.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {isChildVisible} from 'chrome://webui-test/test_util.js';
 
@@ -34,7 +32,7 @@ suite(extension_shortcut_tests.suiteName, function() {
   let testDelegate: TestService;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     keyboardShortcuts = document.createElement('extensions-keyboard-shortcuts');
     testDelegate = new TestService();
     keyboardShortcuts.delegate = testDelegate;
@@ -49,7 +47,7 @@ suite(extension_shortcut_tests.suiteName, function() {
         isActive: true,
         scope: chrome.developerPrivate.CommandScope.CHROME,
         isExtensionAction: true,
-      }]
+      }],
     });
     twoCommands = createExtensionInfo({
       id: 'c'.repeat(32),
@@ -69,8 +67,8 @@ suite(extension_shortcut_tests.suiteName, function() {
           isActive: false,
           scope: chrome.developerPrivate.CommandScope.CHROME,
           isExtensionAction: false,
-        }
-      ]
+        },
+      ],
     });
 
     keyboardShortcuts.set('items', [noCommands, oneCommand, twoCommands]);
@@ -80,7 +78,7 @@ suite(extension_shortcut_tests.suiteName, function() {
     flush();
   });
 
-  test(assert(extension_shortcut_tests.TestNames.Layout), function() {
+  test(extension_shortcut_tests.TestNames.Layout, function() {
     function isVisibleOnCard(e: HTMLElement, s: string): boolean {
       // We check the light DOM in the card because it's a regular old div,
       // rather than a fancy-schmancy custom element.
@@ -109,9 +107,9 @@ suite(extension_shortcut_tests.suiteName, function() {
     assertTrue(isValidKeyCode('F'.charCodeAt(0)));
     assertTrue(isValidKeyCode('Z'.charCodeAt(0)));
     assertTrue(isValidKeyCode('4'.charCodeAt(0)));
-    assertTrue(isValidKeyCode(Key.PageUp));
-    assertTrue(isValidKeyCode(Key.MediaPlayPause));
-    assertTrue(isValidKeyCode(Key.Down));
+    assertTrue(isValidKeyCode(Key.PAGE_UP));
+    assertTrue(isValidKeyCode(Key.MEDIA_PLAY_PAUSE));
+    assertTrue(isValidKeyCode(Key.DOWN));
     assertFalse(isValidKeyCode(16));   // Shift
     assertFalse(isValidKeyCode(17));   // Ctrl
     assertFalse(isValidKeyCode(18));   // Alt
@@ -132,17 +130,15 @@ suite(extension_shortcut_tests.suiteName, function() {
     assertEquals('Ctrl+Shift+A', keystrokeToString(e));
   });
 
-  test(extension_shortcut_tests.TestNames.ScopeChange, function() {
+  test(extension_shortcut_tests.TestNames.ScopeChange, async function() {
     const selectElement = keyboardShortcuts.shadowRoot!.querySelector('select');
     assertTrue(!!selectElement);
     selectElement.value = 'GLOBAL';
     selectElement.dispatchEvent(
         new CustomEvent('change', {bubbles: true, composed: true}));
-    return testDelegate.whenCalled('updateExtensionCommandScope')
-        .then(params => {
-          assertEquals(oneCommand.id, params[0]);
-          assertEquals(oneCommand.commands[0]!.name, params[1]);
-          assertEquals(selectElement.value, params[2]);
-        });
+    const params = await testDelegate.whenCalled('updateExtensionCommandScope');
+    assertEquals(oneCommand.id, params[0]);
+    assertEquals(oneCommand.commands[0]!.name, params[1]);
+    assertEquals(selectElement.value, params[2]);
   });
 });

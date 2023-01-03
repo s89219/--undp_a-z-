@@ -1,37 +1,37 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/badges/badge_mediator.h"
 
-#include <map>
+#import <map>
 
-#include "base/mac/foundation_util.h"
-#include "base/metrics/user_metrics.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/infobars/badge_state.h"
-#include "ios/chrome/browser/infobars/infobar_badge_tab_helper.h"
-#include "ios/chrome/browser/infobars/infobar_badge_tab_helper_delegate.h"
-#include "ios/chrome/browser/infobars/infobar_ios.h"
-#include "ios/chrome/browser/infobars/infobar_manager_impl.h"
-#include "ios/chrome/browser/infobars/infobar_metrics_recorder.h"
+#import "base/mac/foundation_util.h"
+#import "base/metrics/user_metrics.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/infobars/badge_state.h"
+#import "ios/chrome/browser/infobars/infobar_badge_tab_helper.h"
+#import "ios/chrome/browser/infobars/infobar_badge_tab_helper_delegate.h"
+#import "ios/chrome/browser/infobars/infobar_ios.h"
+#import "ios/chrome/browser/infobars/infobar_manager_impl.h"
+#import "ios/chrome/browser/infobars/infobar_metrics_recorder.h"
 #import "ios/chrome/browser/infobars/infobar_type.h"
+#import "ios/chrome/browser/infobars/overlays/default_infobar_overlay_request_factory.h"
 #import "ios/chrome/browser/infobars/overlays/infobar_overlay_request_inserter.h"
-#include "ios/chrome/browser/infobars/overlays/infobar_overlay_util.h"
-#include "ios/chrome/browser/main/browser.h"
+#import "ios/chrome/browser/infobars/overlays/infobar_overlay_util.h"
+#import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/overlays/public/overlay_presenter.h"
 #import "ios/chrome/browser/overlays/public/overlay_presenter_observer_bridge.h"
-#include "ios/chrome/browser/overlays/public/overlay_request_queue.h"
+#import "ios/chrome/browser/overlays/public/overlay_request_queue.h"
 #import "ios/chrome/browser/ui/badges/badge_button.h"
 #import "ios/chrome/browser/ui/badges/badge_consumer.h"
 #import "ios/chrome/browser/ui/badges/badge_item.h"
 #import "ios/chrome/browser/ui/badges/badge_static_item.h"
 #import "ios/chrome/browser/ui/badges/badge_tappable_item.h"
-#include "ios/chrome/browser/ui/badges/badge_type_util.h"
+#import "ios/chrome/browser/ui/badges/badge_type_util.h"
 #import "ios/chrome/browser/ui/commands/browser_coordinator_commands.h"
-#import "ios/chrome/browser/ui/commands/infobar_commands.h"
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/list_model/list_model.h"
-#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/chrome/browser/web_state_list/web_state_list_observer_bridge.h"
 #import "ios/web/public/permissions/permissions.h"
@@ -91,7 +91,7 @@ const char kInfobarOverflowBadgeShownUserAction[] =
   self = [super init];
   if (self) {
     DCHECK(browser);
-    // Create the incognito badge if |browser| is off-the-record.
+    // Create the incognito badge if `browser` is off-the-record.
     if (browser->GetBrowserState()->IsOffTheRecord()) {
       _offTheRecordBadge =
           [[BadgeStaticItem alloc] initWithBadgeType:kBadgeTypeIncognito];
@@ -119,7 +119,7 @@ const char kInfobarOverflowBadgeShownUserAction[] =
 }
 
 - (void)dealloc {
-  // |-disconnect| must be called before deallocation.
+  // `-disconnect` must be called before deallocation.
   DCHECK(!_webStateList);
 }
 
@@ -250,13 +250,6 @@ const char kInfobarOverflowBadgeShownUserAction[] =
   return badgeTypes;
 }
 
-- (void)addToReadingListBadgeButtonTapped:(id)sender {
-  BadgeButton* badgeButton = base::mac::ObjCCastStrict<BadgeButton>(sender);
-  DCHECK_EQ(badgeButton.badgeType, kBadgeTypeAddToReadingList);
-
-  [self handleTappedBadgeButton:badgeButton];
-}
-
 - (void)passwordsBadgeButtonTapped:(id)sender {
   BadgeButton* badgeButton = base::mac::ObjCCastStrict<BadgeButton>(sender);
   DCHECK(badgeButton.badgeType == kBadgeTypePasswordSave ||
@@ -298,7 +291,7 @@ const char kInfobarOverflowBadgeShownUserAction[] =
   // Log overflow badge tap.
   base::RecordAction(
       base::UserMetricsAction(kInfobarOverflowBadgeTappedUserAction));
-  if (!ShouldUseUIKitPopupMenu()) {
+  if (!UseSymbols()) {
     NSMutableArray<id<BadgeItem>>* popupMenuBadges =
         [[NSMutableArray alloc] init];
     // Get all non-fullscreen badges.
@@ -440,7 +433,7 @@ const char kInfobarOverflowBadgeShownUserAction[] =
 
 #pragma mark - Private
 
-// Mark the |item|'s infobar type's read status to YES.
+// Mark the `item`'s infobar type's read status to YES.
 - (void)onBadgeItemRead:(id<BadgeItem>)item {
   item.badgeState |= BadgeStateRead;
   if (self.badgeTabHelper) {
@@ -461,20 +454,21 @@ const char kInfobarOverflowBadgeShownUserAction[] =
   [self.consumer markDisplayedBadgeAsRead:YES];
 }
 
-// Shows the modal UI when |button| is tapped.
+// Shows the modal UI when `button` is tapped.
 - (void)handleTappedBadgeButton:(BadgeButton*)button {
   InfobarType infobarType = InfobarTypeForBadgeType(button.badgeType);
   [self addModalRequestForInfobarType:infobarType];
   [self recordMetricsForBadgeButton:button infobarType:infobarType];
 }
 
-// Adds a modal request for the Infobar of |infobarType|.
+// Adds a modal request for the Infobar of `infobarType`.
 - (void)addModalRequestForInfobarType:(InfobarType)infobarType {
   DCHECK(self.webState);
   InfoBarIOS* infobar = [self infobarWithType:infobarType];
   DCHECK(infobar);
   if (infobar) {
-    InfobarOverlayRequestInserter::CreateForWebState(self.webState);
+    InfobarOverlayRequestInserter::CreateForWebState(
+        self.webState, &DefaultInfobarOverlayRequestFactory);
     InsertParams params(infobar);
     params.overlay_type = InfobarOverlayType::kModal;
     params.insertion_index = OverlayRequestQueue::FromWebState(
@@ -486,7 +480,7 @@ const char kInfobarOverflowBadgeShownUserAction[] =
   }
 }
 
-// Returns the infobar in the active WebState's InfoBarManager with |type|.
+// Returns the infobar in the active WebState's InfoBarManager with `type`.
 - (InfoBarIOS*)infobarWithType:(InfobarType)type {
   InfoBarManagerImpl* manager = InfoBarManagerImpl::FromWebState(self.webState);
   for (size_t index = 0; index < manager->infobar_count(); ++index) {

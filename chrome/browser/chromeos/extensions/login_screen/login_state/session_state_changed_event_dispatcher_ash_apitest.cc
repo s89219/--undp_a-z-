@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,7 +38,7 @@ IN_PROC_BROWSER_TEST_F(SessionStateChangedEventDispatcherApitest,
   };
 
   for (const auto& test : kTestCases) {
-    ExtensionTestMessageListener listener(test.expected, /*will_reply=*/false);
+    ExtensionTestMessageListener listener(test.expected);
     session_manager->SetSessionState(test.session_state);
     ASSERT_TRUE(listener.WaitUntilSatisfied());
   }

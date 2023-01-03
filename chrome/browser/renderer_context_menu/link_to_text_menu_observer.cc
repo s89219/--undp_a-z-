@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/no_destructor.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/feature_engagement/tracker_factory.h"
@@ -75,7 +75,7 @@ std::vector<std::string> GetAggregatedSelectors(
 // static
 std::unique_ptr<LinkToTextMenuObserver> LinkToTextMenuObserver::Create(
     RenderViewContextMenuProxy* proxy,
-    content::RenderFrameHost* render_frame_host,
+    content::GlobalRenderFrameHostId render_frame_host_id,
     CompletionCallback callback) {
   // WebContents can be null in tests.
   content::WebContents* web_contents = proxy->GetWebContents();
@@ -86,17 +86,17 @@ std::unique_ptr<LinkToTextMenuObserver> LinkToTextMenuObserver::Create(
     return nullptr;
   }
 
-  DCHECK(render_frame_host);
-  return base::WrapUnique(new LinkToTextMenuObserver(proxy, render_frame_host,
-                                                     std::move(callback)));
+  DCHECK(content::RenderFrameHost::FromID(render_frame_host_id));
+  return base::WrapUnique(new LinkToTextMenuObserver(
+      proxy, render_frame_host_id, std::move(callback)));
 }
 
 LinkToTextMenuObserver::LinkToTextMenuObserver(
     RenderViewContextMenuProxy* proxy,
-    content::RenderFrameHost* render_frame_host,
+    content::GlobalRenderFrameHostId render_frame_host_id,
     CompletionCallback callback)
     : proxy_(proxy),
-      render_frame_host_(render_frame_host),
+      render_frame_host_id_(render_frame_host_id),
       completion_callback_(std::move(callback)) {}
 
 LinkToTextMenuObserver::~LinkToTextMenuObserver() = default;
@@ -177,11 +177,22 @@ void LinkToTextMenuObserver::OnRequestLinkGenerationCompleted(
   LinkGenerationStatus status = selector.empty()
                                     ? LinkGenerationStatus::kFailure
                                     : LinkGenerationStatus::kSuccess;
+
+  // If the RenderFrameHost is no longer in the frame tree since the request was
+  // issued, mark the request as a failure to ensure the RenderFrameHost isn't
+  // used later for UKM.
+  auto* rfh = content::RenderFrameHost::FromID(render_frame_host_id_);
+  if (!rfh && status == LinkGenerationStatus::kSuccess) {
+    status = LinkGenerationStatus::kFailure;
+    error = LinkGenerationError::kUnknown;
+  }
+
   shared_highlighting::LogLinkRequestedBeforeStatus(status, ready_status);
+
   if (status == LinkGenerationStatus::kSuccess) {
     DCHECK_EQ(error, LinkGenerationError::kNone);
-    shared_highlighting::LogRequestedSuccessMetrics(
-        render_frame_host_->GetPageUkmSourceId());
+    DCHECK(rfh);
+    shared_highlighting::LogRequestedSuccessMetrics(rfh->GetPageUkmSourceId());
   } else {
     DCHECK_NE(error, LinkGenerationError::kNone);
     CompleteWithError(error);
@@ -212,7 +223,7 @@ void LinkToTextMenuObserver::RegisterGenerationCompleteCallbackForTesting(
 
 void LinkToTextMenuObserver::RequestLinkGeneration() {
   content::RenderFrameHost* main_frame =
-      proxy_->GetWebContents()->GetMainFrame();
+      proxy_->GetWebContents()->GetPrimaryMainFrame();
   if (!main_frame)
     return;
 
@@ -246,7 +257,7 @@ void LinkToTextMenuObserver::StartLinkGenerationRequestWithTimeout() {
   GetRemote()->RequestSelector(
       base::BindOnce(&LinkToTextMenuObserver::OnRequestLinkGenerationCompleted,
                      weak_ptr_factory_.GetWeakPtr()));
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&LinkToTextMenuObserver::Timeout,
                      weak_ptr_factory_.GetWeakPtr()),
@@ -272,19 +283,26 @@ void LinkToTextMenuObserver::ExecuteCopyLinkToText() {
 }
 
 void LinkToTextMenuObserver::Timeout() {
-  DCHECK(remote_.is_bound());
-  DCHECK(remote_.is_connected());
-  if (is_generation_complete_)
-    return;
-  remote_->Cancel();
-  remote_.reset();
+  auto* rfh = content::RenderFrameHost::FromID(render_frame_host_id_);
+  // The renderer may remove the frame. Or it may have crashed leaving the
+  // remote disconnected with the Timeout task still queued.
+  if (rfh && rfh->IsRenderFrameLive()) {
+    CHECK(remote_.is_connected());
+    if (is_generation_complete_)
+      return;
+    remote_->Cancel();
+    remote_.reset();
+  }
   CompleteWithError(LinkGenerationError::kTimeout);
 }
 
 void LinkToTextMenuObserver::CompleteWithError(LinkGenerationError error) {
   is_generation_complete_ = true;
-  shared_highlighting::LogRequestedFailureMetrics(
-      render_frame_host_->GetPageUkmSourceId(), error);
+  auto* rfh = content::RenderFrameHost::FromID(render_frame_host_id_);
+  if (rfh) {
+    shared_highlighting::LogRequestedFailureMetrics(rfh->GetPageUkmSourceId(),
+                                                    error);
+  }
 
   execute_command_pending_ = false;
   NotifyLinkToTextMenuCompleted();
@@ -292,18 +310,12 @@ void LinkToTextMenuObserver::CompleteWithError(LinkGenerationError error) {
 
 void LinkToTextMenuObserver::ReshareLink() {
   // Get the list of RenderFrameHosts from the current page.
-  proxy_->GetWebContents()->GetMainFrame()->ForEachRenderFrameHost(
-      base::BindRepeating(
-          [](std::vector<content::GlobalRenderFrameHostId>*
-                 render_frame_host_ids,
-             std::vector<mojo::Remote<blink::mojom::TextFragmentReceiver>>*
-                 text_fragment_remotes,
-             content::RenderFrameHost* rfh) {
-            render_frame_host_ids->push_back(rfh->GetGlobalId());
-            mojo::Remote<blink::mojom::TextFragmentReceiver> remote;
-            text_fragment_remotes->push_back(std::move(remote));
-          },
-          &render_frame_host_ids_, &text_fragment_remotes_));
+  proxy_->GetWebContents()->GetPrimaryMainFrame()->ForEachRenderFrameHost(
+      [this](content::RenderFrameHost* rfh) {
+        render_frame_host_ids_.push_back(rfh->GetGlobalId());
+        mojo::Remote<blink::mojom::TextFragmentReceiver> remote;
+        text_fragment_remotes_.push_back(std::move(remote));
+      });
 
   get_frames_existing_selectors_counter_ = render_frame_host_ids_.size();
 
@@ -362,8 +374,8 @@ void LinkToTextMenuObserver::OnGetExistingSelectorsComplete(
 
 void LinkToTextMenuObserver::RemoveHighlights() {
   // Remove highlights from all frames in the primary page.
-  proxy_->GetWebContents()->GetMainFrame()->ForEachRenderFrameHost(
-      base::BindRepeating(RemoveHighlightsInFrame));
+  proxy_->GetWebContents()->GetPrimaryMainFrame()->ForEachRenderFrameHost(
+      &RemoveHighlightsInFrame);
 
   execute_command_pending_ = false;
   NotifyLinkToTextMenuCompleted();
@@ -372,17 +384,22 @@ void LinkToTextMenuObserver::RemoveHighlights() {
 mojo::Remote<blink::mojom::TextFragmentReceiver>&
 LinkToTextMenuObserver::GetRemote() {
   if (!remote_.is_bound()) {
-    render_frame_host_->GetRemoteInterfaces()->GetInterface(
+    auto* rfh = content::RenderFrameHost::FromID(render_frame_host_id_);
+    CHECK(rfh);
+    rfh->GetRemoteInterfaces()->GetInterface(
         remote_.BindNewPipeAndPassReceiver());
   }
   return remote_;
 }
 
 void LinkToTextMenuObserver::CopyTextToClipboard(const std::string& text) {
+  auto* rfh = content::RenderFrameHost::FromID(render_frame_host_id_);
+  CHECK(rfh);
+
   std::unique_ptr<ui::DataTransferEndpoint> data_transfer_endpoint =
-      !render_frame_host_->GetBrowserContext()->IsOffTheRecord()
+      !rfh->GetBrowserContext()->IsOffTheRecord()
           ? std::make_unique<ui::DataTransferEndpoint>(
-                render_frame_host_->GetMainFrame()->GetLastCommittedURL())
+                rfh->GetMainFrame()->GetLastCommittedURL())
           : nullptr;
 
   ui::ScopedClipboardWriter scw(ui::ClipboardBuffer::kCopyPaste,

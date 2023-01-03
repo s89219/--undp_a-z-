@@ -1,8 +1,51 @@
 {
-  "$build/goma": {
-    "rpc_extra_params": "?prod",
-    "server_host": "goma.chromium.org",
-    "use_luci_auth": true
+  "$build/chromium_tests_builder_config": {
+    "builder_config": {
+      "builder_db": {
+        "entries": [
+          {
+            "builder_id": {
+              "bucket": "ci",
+              "builder": "Mac ASAN Release Media",
+              "project": "chromium"
+            },
+            "builder_spec": {
+              "builder_group": "chromium.fuzz",
+              "clusterfuzz_archive": {
+                "archive_name_prefix": "asan",
+                "gs_acl": "public-read",
+                "gs_bucket": "chrome-test-builds/media"
+              },
+              "execution_mode": "COMPILE_AND_TEST",
+              "legacy_chromium_config": {
+                "apply_configs": [
+                  "mb",
+                  "clobber"
+                ],
+                "build_config": "Release",
+                "config": "chromium_asan",
+                "target_bits": 64
+              },
+              "legacy_gclient_config": {
+                "config": "chromium"
+              }
+            }
+          }
+        ]
+      },
+      "builder_ids": [
+        {
+          "bucket": "ci",
+          "builder": "Mac ASAN Release Media",
+          "project": "chromium"
+        }
+      ]
+    }
+  },
+  "$build/reclient": {
+    "instance": "rbe-chromium-trusted",
+    "jobs": 250,
+    "metrics_project": "chromium-reclient-metrics"
   },
   "$recipe_engine/resultdb/test_presentation": {
     "column_keys": [],
@@ -12,5 +55,8 @@
     ]
   },
   "builder_group": "chromium.fuzz",
-  "recipe": "chromium"
+  "recipe": "chromium",
+  "sheriff_rotations": [
+    "chromium.fuzz"
+  ]
 }

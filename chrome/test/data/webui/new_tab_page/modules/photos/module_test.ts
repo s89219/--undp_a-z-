@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,27 +7,277 @@ import 'chrome://webui-test/mojo_webui_test_support.js';
 import {DisableModuleEvent, DismissModuleEvent, photosDescriptor, PhotosModuleElement, PhotosProxy} from 'chrome://new-tab-page/lazy_load.js';
 import {$$, DomIf} from 'chrome://new-tab-page/new_tab_page.js';
 import {PhotosHandlerRemote} from 'chrome://new-tab-page/photos.mojom-webui.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 
-import {fakeMetricsPrivate, MetricsTracker} from '../../metrics_test_support.js';
+import {fakeMetricsPrivate, MetricsTracker} from '../../../metrics_test_support.js';
 import {installMock} from '../../test_support.js';
 
 suite('NewTabPageModulesPhotosModuleTest', () => {
-  let handler: TestBrowserProxy;
+  let handler: TestBrowserProxy<PhotosHandlerRemote>;
   let metrics: MetricsTracker;
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     handler = installMock(PhotosHandlerRemote, PhotosProxy.setHandler);
     metrics = fakeMetricsPrivate();
   });
 
+  suite('svg-split-enabled-boy-dog-image', () => {
+    setup(() => {
+      loadTimeData.overrideValues({
+        photosModuleCustomArtWork: '1',
+        photosModuleSplitSvgCustomArtWork: true,
+      });
+    });
+
+    test('artwork with constituent images of boy and dog shown', async () => {
+      // Arrange.
+      const data = {
+        memories: [
+          {
+            title: 'Title 1',
+            id: 'key1',
+            coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+          },
+          {
+            title: 'Title 2',
+            id: 'key2',
+            coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+          },
+        ],
+      };
+      handler.setResultFor('getMemories', Promise.resolve(data));
+      handler.setResultFor(
+          'shouldShowOptInScreen', Promise.resolve({showOptInScreen: true}));
+      handler.setResultFor(
+          'shouldShowSoftOptOutButton',
+          Promise.resolve({showSoftOptOutButton: false}));
+      handler.setResultFor(
+          'getOptInTitleText',
+          Promise.resolve({optInTitleText: 'See your memories here'}));
+      const module =
+          await photosDescriptor.initialize(0) as PhotosModuleElement;
+      assertTrue(!!module);
+      document.body.append(module);
+      await handler.whenCalled('getMemories');
+      await handler.whenCalled('shouldShowOptInScreen');
+      await handler.whenCalled('shouldShowSoftOptOutButton');
+      await handler.whenCalled('getOptInTitleText');
+
+      const boyDogCustomArtWork =
+          module.shadowRoot!.querySelector('#boyDogcustomArtWork');
+      assertTrue(!!boyDogCustomArtWork);
+
+      // All other artworks are not shown
+      const lakeBoycustomArtWork =
+          module.shadowRoot!.querySelector('#lakeBoycustomArtWork');
+      assertTrue(!lakeBoycustomArtWork);
+
+      const illustrationsCustomArtWork =
+          module.shadowRoot!.querySelector('#illustrationsCustomArtWork');
+      assertTrue(!illustrationsCustomArtWork);
+
+      const defaultArtWork =
+          module.shadowRoot!.querySelector('#defaultOpInArtWork');
+      assertTrue(!defaultArtWork);
+    });
+  });
+
+  suite('svg-split-enabled-lake-boy-image', () => {
+    setup(() => {
+      loadTimeData.overrideValues({
+        photosModuleCustomArtWork: '2',
+        photosModuleSplitSvgCustomArtWork: true,
+      });
+    });
+
+    test('artwork with constituent images of lake and boy shown', async () => {
+      // Arrange.
+      const data = {
+        memories: [
+          {
+            title: 'Title 1',
+            id: 'key1',
+            coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+          },
+          {
+            title: 'Title 2',
+            id: 'key2',
+            coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+          },
+        ],
+      };
+      handler.setResultFor('getMemories', Promise.resolve(data));
+      handler.setResultFor(
+          'shouldShowOptInScreen', Promise.resolve({showOptInScreen: true}));
+      handler.setResultFor(
+          'shouldShowSoftOptOutButton',
+          Promise.resolve({showSoftOptOutButton: false}));
+      handler.setResultFor(
+          'getOptInTitleText',
+          Promise.resolve({optInTitleText: 'See your memories here'}));
+      const module =
+          await photosDescriptor.initialize(0) as PhotosModuleElement;
+      assertTrue(!!module);
+      document.body.append(module);
+      await handler.whenCalled('getMemories');
+      await handler.whenCalled('shouldShowOptInScreen');
+      await handler.whenCalled('shouldShowSoftOptOutButton');
+      await handler.whenCalled('getOptInTitleText');
+
+      const lakeBoycustomArtWork =
+          module.shadowRoot!.querySelector('#lakeBoycustomArtWork');
+      assertTrue(!!lakeBoycustomArtWork);
+
+      // All other artworks are not shown
+      const boyDogCustomArtWork =
+          module.shadowRoot!.querySelector('#boyDogcustomArtWork');
+      assertTrue(!boyDogCustomArtWork);
+
+      const illustrationsCustomArtWork =
+          module.shadowRoot!.querySelector('#illustrationsCustomArtWork');
+      assertTrue(!illustrationsCustomArtWork);
+
+      const defaultArtWork =
+          module.shadowRoot!.querySelector('#defaultOpInArtWork');
+      assertTrue(!defaultArtWork);
+    });
+  });
+
+  suite('svg-split-enabled-illustrations-image', () => {
+    setup(() => {
+      loadTimeData.overrideValues({
+        photosModuleCustomArtWork: '3',
+        photosModuleSplitSvgCustomArtWork: true,
+      });
+    });
+
+    test('artwork with constituent images of illustrations shown', async () => {
+      // Arrange.
+      const data = {
+        memories: [
+          {
+            title: 'Title 1',
+            id: 'key1',
+            coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+          },
+          {
+            title: 'Title 2',
+            id: 'key2',
+            coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+          },
+        ],
+      };
+      handler.setResultFor('getMemories', Promise.resolve(data));
+      handler.setResultFor(
+          'shouldShowOptInScreen', Promise.resolve({showOptInScreen: true}));
+      handler.setResultFor(
+          'shouldShowSoftOptOutButton',
+          Promise.resolve({showSoftOptOutButton: false}));
+      handler.setResultFor(
+          'getOptInTitleText',
+          Promise.resolve({optInTitleText: 'See your memories here'}));
+      const module =
+          await photosDescriptor.initialize(0) as PhotosModuleElement;
+      assertTrue(!!module);
+      document.body.append(module);
+      await handler.whenCalled('getMemories');
+      await handler.whenCalled('shouldShowOptInScreen');
+      await handler.whenCalled('shouldShowSoftOptOutButton');
+      await handler.whenCalled('getOptInTitleText');
+
+      const illustrationsCustomArtWork =
+          module.shadowRoot!.querySelector('#illustrationsCustomArtWork');
+      assertTrue(!!illustrationsCustomArtWork);
+
+      // All other artworks are not shown
+      const boyDogCustomArtWork =
+          module.shadowRoot!.querySelector('#boyDogcustomArtWork');
+      assertTrue(!boyDogCustomArtWork);
+
+      const lakeBoycustomArtWork =
+          module.shadowRoot!.querySelector('#lakeBoycustomArtWork');
+      assertTrue(!lakeBoycustomArtWork);
+
+      const defaultArtWork =
+          module.shadowRoot!.querySelector('#defaultOpInArtWork');
+      assertTrue(!defaultArtWork);
+    });
+  });
+
+  suite('svg-split-enabled-default-image', () => {
+    setup(() => {
+      loadTimeData.overrideValues({
+        photosModuleCustomArtWork: '4',
+        photosModuleSplitSvgCustomArtWork: true,
+      });
+    });
+
+    test(
+        'default artwork shown constituent images design is not implemented',
+        async () => {
+          // Arrange.
+          const data = {
+            memories: [
+              {
+                title: 'Title 1',
+                id: 'key1',
+                coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+              },
+              {
+                title: 'Title 2',
+                id: 'key2',
+                coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+              },
+            ],
+          };
+          handler.setResultFor('getMemories', Promise.resolve(data));
+          handler.setResultFor(
+              'shouldShowOptInScreen',
+              Promise.resolve({showOptInScreen: true}));
+          handler.setResultFor(
+              'shouldShowSoftOptOutButton',
+              Promise.resolve({showSoftOptOutButton: false}));
+          handler.setResultFor(
+              'getOptInTitleText',
+              Promise.resolve({optInTitleText: 'See your memories here'}));
+          const module =
+              await photosDescriptor.initialize(0) as PhotosModuleElement;
+          assertTrue(!!module);
+          document.body.append(module);
+          await handler.whenCalled('getMemories');
+          await handler.whenCalled('shouldShowOptInScreen');
+          await handler.whenCalled('shouldShowSoftOptOutButton');
+          await handler.whenCalled('getOptInTitleText');
+
+          const defaultArtWork =
+              module.shadowRoot!.querySelector('#defaultOpInArtWork');
+          assertTrue(!!defaultArtWork);
+
+          // All other artworks are not shown
+          const boyDogCustomArtWork =
+              module.shadowRoot!.querySelector('#boyDogcustomArtWork');
+          assertTrue(!boyDogCustomArtWork);
+
+          const lakeBoycustomArtWork =
+              module.shadowRoot!.querySelector('#lakeBoycustomArtWork');
+          assertTrue(!lakeBoycustomArtWork);
+
+          const illustrationsCustomArtWork =
+              module.shadowRoot!.querySelector('#illustrationsCustomArtWork');
+          assertTrue(!illustrationsCustomArtWork);
+        });
+  });
+
   suite('custom-artwork-enabled', () => {
     setup(() => {
-      loadTimeData.overrideValues({photosModuleCustomArtWork: '1'});
+      loadTimeData.overrideValues({
+        photosModuleCustomArtWork: '1',
+        photosModuleSplitSvgCustomArtWork: false,
+      });
     });
 
     test(
@@ -39,14 +289,14 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
               {
                 title: 'Title 1',
                 id: 'key1',
-                coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+                coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
               },
               {
                 title: 'Title 2',
                 id: 'key2',
-                coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
-              }
-            ]
+                coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+              },
+            ],
           };
           handler.setResultFor('getMemories', Promise.resolve(data));
           handler.setResultFor(
@@ -74,7 +324,7 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
               img.getAttribute('src'));
 
           const defaultArtWork =
-              module.shadowRoot!.querySelector('#optInArtwork');
+              module.shadowRoot!.querySelector('#defaultOpInArtWork');
           assertTrue(!defaultArtWork);
         });
   });
@@ -88,14 +338,14 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
             {
               title: 'Title 1',
               id: 'key1',
-              coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+              coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
             },
             {
               title: 'Title 2',
               id: 'key2',
-              coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
-            }
-          ]
+              coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+            },
+          ],
         };
         handler.setResultFor('getMemories', Promise.resolve(data));
         handler.setResultFor(
@@ -119,7 +369,7 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         assertTrue(!img);
 
         const defaultArtWork =
-            module.shadowRoot!.querySelector('#optInArtwork');
+            module.shadowRoot!.querySelector('#defaultOpInArtWork');
         assertTrue(!!defaultArtWork);
       });
 
@@ -130,14 +380,14 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         {
           title: 'Title 1',
           id: 'key1',
-          coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
         },
         {
           title: 'Title 2',
           id: 'key2',
-          coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
-        }
-      ]
+          coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+        },
+      ],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -199,14 +449,14 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         {
           title: 'Title 1',
           id: 'key1',
-          coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
         },
         {
           title: 'Title 2',
           id: 'key2',
-          coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
-        }
-      ]
+          coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+        },
+      ],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -240,14 +490,14 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         {
           title: 'Title 1',
           id: 'key1',
-          coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
         },
         {
           title: 'Title 2',
           id: 'key2',
-          coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
-        }
-      ]
+          coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+        },
+      ],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -292,14 +542,14 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         {
           title: 'Title 1',
           id: 'key1',
-          coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
         },
         {
           title: 'Title 2',
           id: 'key2',
-          coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
-        }
-      ]
+          coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
+        },
+      ],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -338,8 +588,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
       memories: [{
         title: 'Title 1',
         id: 'key1',
-        coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
-      }]
+        coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+      }],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -369,24 +619,24 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         {
           title: 'Title 1',
           id: 'key1',
-          coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
         },
         {
           title: 'Title 2',
           id: 'key2',
-          coverUrl: {url: 'https://fakeurl.com/2?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/2?token=foo'},
         },
         {
           title: 'Title 3',
           id: 'key3',
-          coverUrl: {url: 'https://fakeurl.com/3?token=foo'}
+          coverUrl: {url: 'https://fakeurl.com/3?token=foo'},
         },
         {
           title: 'Title 4',
           id: 'key4',
-          coverUrl: {url: 'https://fakeurl.com/4?token=foo'}
-        }
-      ]
+          coverUrl: {url: 'https://fakeurl.com/4?token=foo'},
+        },
+      ],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -416,8 +666,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
       memories: [{
         title: 'Title 1',
         id: 'key1',
-        coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
-      }]
+        coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+      }],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -465,8 +715,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
       memories: [{
         title: 'Title 1',
         id: 'key1',
-        coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
-      }]
+        coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+      }],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -514,8 +764,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         title: 'Title 1',
         id: 'key1',
         coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
-        itemUrl: {url: '#'}
-      }]
+        itemUrl: {url: '#'},
+      }],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -552,8 +802,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
             title: 'Title 1',
             id: 'key1',
             coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
-            itemUrl: {url: '#'}
-          }]
+            itemUrl: {url: '#'},
+          }],
         };
         handler.setResultFor('getMemories', Promise.resolve(data));
         handler.setResultFor(
@@ -590,8 +840,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
             title: 'Title 1',
             id: 'key1',
             coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
-            itemUrl: {url: '#'}
-          }]
+            itemUrl: {url: '#'},
+          }],
         };
         handler.setResultFor('getMemories', Promise.resolve(data));
         handler.setResultFor(
@@ -624,8 +874,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
         title: 'Title 1',
         id: 'key1',
         coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
-        itemUrl: {url: '#'}
-      }]
+        itemUrl: {url: '#'},
+      }],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(
@@ -658,8 +908,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
             title: 'Title 1',
             id: 'key1',
             coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
-            itemUrl: {url: '#'}
-          }]
+            itemUrl: {url: '#'},
+          }],
         };
         handler.setResultFor('getMemories', Promise.resolve(data));
         handler.setResultFor(
@@ -700,8 +950,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
             title: 'Title 1',
             id: 'key1',
             coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
-            itemUrl: {url: '#'}
-          }]
+            itemUrl: {url: '#'},
+          }],
         };
         handler.setResultFor('getMemories', Promise.resolve(data));
         handler.setResultFor(
@@ -740,8 +990,8 @@ suite('NewTabPageModulesPhotosModuleTest', () => {
       memories: [{
         title: 'Title 1',
         id: 'key1',
-        coverUrl: {url: 'https://fakeurl.com/1?token=foo'}
-      }]
+        coverUrl: {url: 'https://fakeurl.com/1?token=foo'},
+      }],
     };
     handler.setResultFor('getMemories', Promise.resolve(data));
     handler.setResultFor(

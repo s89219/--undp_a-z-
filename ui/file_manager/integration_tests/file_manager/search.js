@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@ import {BASIC_DRIVE_ENTRY_SET, BASIC_LOCAL_ENTRY_SET} from './test_data.js';
 /**
  * Expected files shown in the search results for 'hello'
  *
- * @type {Array<TestEntryInfo>}
+ * @type {!Array<!TestEntryInfo>}
  * @const
  */
 const SEARCH_RESULTS_ENTRY_SET = [
@@ -125,13 +125,19 @@ testcase.searchDownloadsClearSearchKeyDown = async () => {
       await remoteCall.waitForElement(appId, '#search-box [type="search"]');
   chrome.test.assertEq('', searchInput.value);
 
-  // Wait for the search wrapper to be collapsed.
-  await remoteCall.waitForElement(appId, '#search-wrapper[collapsed]');
-
-  // Check the search button is focused.
-  const button =
-      await remoteCall.callRemoteTestUtil('deepGetActiveElement', appId, []);
-  chrome.test.assertEq('search-button', button.attributes['id']);
+  // Wait until the search button get the focus.
+  // Use repeatUntil() here because the focus won't shift to search button
+  // until the CSS animation is finished.
+  const caller = getCaller();
+  await repeatUntil(async () => {
+    const activeElement =
+        await remoteCall.callRemoteTestUtil('getActiveElement', appId, []);
+    if (activeElement.attributes['id'] !== 'search-button') {
+      return pending(
+          caller, 'Expected active element should be search-button, got %s',
+          activeElement.attributes['id']);
+    }
+  });
 };
 
 /**
@@ -145,8 +151,7 @@ testcase.searchHidingTextEntryField = async () => {
   const appId = await setupAndWaitUntilReady(RootPath.DOWNLOADS, [entry], []);
 
   // Select an entry in the file list.
-  chrome.test.assertTrue(await remoteCall.callRemoteTestUtil(
-      'selectFile', appId, [entry.nameText]));
+  await remoteCall.waitUntilSelected(appId, entry.nameText);
 
   // Click the toolbar search button.
   await remoteCall.waitAndClickElement(appId, '#search-button');
@@ -304,4 +309,18 @@ testcase.searchQueryLaunchParam = async () => {
       return pending(caller, 'Waiting files list to be updated.');
     }
   });
+};
+
+/**
+ * Checks that the search options are shown as expected.
+ */
+testcase.searchOptions = async () => {
+  // Open Files app on Downloads.
+  const appId = await setupAndWaitUntilReady(RootPath.DOWNLOADS);
+
+  // Enter some text in the search box. Minimum one character is needed.
+  await remoteCall.typeSearchText(appId, 'x');
+
+  // Verify that the search options are visible.
+  await remoteCall.waitForElement(appId, 'xf-search-options:not([hidden])');
 };

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,6 +33,12 @@ class ASH_EXPORT AdaptiveChargingNudgeController
   base::OneShotTimer* GetNudgeDelayTimerForTesting() {
     return nudge_delay_timer_.get();
   }
+
+#if DCHECK_IS_ON()
+  // This is intended to be used by developers to test the UI of the adaptive
+  // charging feature.
+  void ShowNudgeForTesting();
+#endif  // DCHECK_IS_ON()
 
  private:
   // SystemNudgeController:

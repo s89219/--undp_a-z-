@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,12 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "components/optimization_guide/proto/models.pb.h"
 #include "components/segmentation_platform/internal/execution/default_model_manager.h"
-
-using optimization_guide::proto::OptimizationTarget;
+#include "components/segmentation_platform/public/proto/segmentation_platform.pb.h"
 
 namespace segmentation_platform {
+
+using proto::SegmentId;
 
 class HistogramSignalHandler;
 class HistoryServiceObserver;
@@ -28,7 +28,7 @@ class SignalFilterProcessor {
                         UserActionSignalHandler* user_action_signal_handler,
                         HistogramSignalHandler* histogram_signal_handler,
                         HistoryServiceObserver* history_observer,
-                        const std::vector<OptimizationTarget>& segment_ids);
+                        const base::flat_set<SegmentId>& segment_ids);
   ~SignalFilterProcessor();
 
   // Disallow copy/assign.
@@ -49,11 +49,14 @@ class SignalFilterProcessor {
  private:
   void FilterSignals(DefaultModelManager::SegmentInfoList segment_infos);
 
-  const raw_ptr<StorageService> storage_service_;
+  // Boolean to only record metrics the first time models are updated.
+  bool is_first_time_model_update_{true};
+
+  const raw_ptr<StorageService, DanglingUntriaged> storage_service_;
   const raw_ptr<UserActionSignalHandler> user_action_signal_handler_;
   const raw_ptr<HistogramSignalHandler> histogram_signal_handler_;
-  const raw_ptr<HistoryServiceObserver> history_observer_;
-  std::vector<OptimizationTarget> segment_ids_;
+  const raw_ptr<HistoryServiceObserver, DanglingUntriaged> history_observer_;
+  const base::flat_set<SegmentId> segment_ids_;
 
   base::WeakPtrFactory<SignalFilterProcessor> weak_ptr_factory_{this};
 };

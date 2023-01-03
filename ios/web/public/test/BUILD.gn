@@ -1,4 +1,4 @@
-# Copyright 2017 The Chromium Authors. All rights reserved.
+# Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -45,6 +45,22 @@ source_set("test") {
     "web_state_test_util.mm",
     "web_task_environment.h",
   ]
+}
+
+source_set("download_test_utils") {
+  deps = [
+    "//base",
+    "//ios/web/public/download",
+  ]
+
+  sources = [
+    "download_task_test_util.h",
+    "download_task_test_util.mm",
+  ]
+
+  frameworks = [ "Foundation.framework" ]
+
+  configs += [ "//build/config/compiler:enable_arc" ]
 }
 
 # Those fixtures *must* not be used directly from //ios/chrome code as they

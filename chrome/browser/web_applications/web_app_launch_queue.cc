@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,15 +54,15 @@ class EntriesBuilder {
   EntriesBuilder(content::WebContents* web_contents,
                  const GURL& launch_url,
                  size_t expected_number_of_entries)
-      : entry_factory_(web_contents->GetMainFrame()
+      : entry_factory_(web_contents->GetPrimaryMainFrame()
                            ->GetProcess()
                            ->GetStoragePartition()
                            ->GetFileSystemAccessEntryFactory()),
         context_(blink::StorageKey(url::Origin::Create(launch_url)),
                  launch_url,
                  content::GlobalRenderFrameHostId(
-                     web_contents->GetMainFrame()->GetProcess()->GetID(),
-                     web_contents->GetMainFrame()->GetRoutingID())) {
+                     web_contents->GetPrimaryMainFrame()->GetProcess()->GetID(),
+                     web_contents->GetPrimaryMainFrame()->GetRoutingID())) {
     entries_.reserve(expected_number_of_entries);
   }
 
@@ -103,10 +103,10 @@ WebAppLaunchQueue::WebAppLaunchQueue(content::WebContents* web_contents,
 WebAppLaunchQueue::~WebAppLaunchQueue() = default;
 
 void WebAppLaunchQueue::Enqueue(WebAppLaunchParams launch_params) {
-  DCHECK(registrar_.IsUrlInAppScope(launch_params.target_url,
-                                    launch_params.app_id));
+  DCHECK(registrar_->IsUrlInAppScope(launch_params.target_url,
+                                     launch_params.app_id));
   DCHECK(launch_params.dir.empty() ||
-         registrar_.IsSystemApp(launch_params.app_id));
+         registrar_->IsSystemApp(launch_params.app_id));
 
   // Drop the existing queue state if a new launch navigation was started.
   if (launch_params.started_new_navigation) {
@@ -143,7 +143,7 @@ void WebAppLaunchQueue::DidFinishNavigation(content::NavigationHandle* handle) {
   if (pending_navigation_) {
     pending_navigation_ = false;
     // The launch navigation may have redirected out of the app scope.
-    if (!registrar_.IsUrlInAppScope(handle->GetURL(), queue_.front().app_id)) {
+    if (!registrar_->IsUrlInAppScope(handle->GetURL(), queue_.front().app_id)) {
       Reset();
       return;
     }
@@ -176,10 +176,12 @@ void WebAppLaunchQueue::SendQueuedLaunchParams(const GURL& current_url) {
 
 void WebAppLaunchQueue::SendLaunchParams(WebAppLaunchParams launch_params,
                                          const GURL& current_url) {
-  DCHECK(registrar_.IsUrlInAppScope(current_url, launch_params.app_id));
+  DCHECK(registrar_->IsUrlInAppScope(current_url, launch_params.app_id));
   mojo::AssociatedRemote<blink::mojom::WebLaunchService> launch_service;
-  web_contents()->GetMainFrame()->GetRemoteAssociatedInterfaces()->GetInterface(
-      &launch_service);
+  web_contents()
+      ->GetPrimaryMainFrame()
+      ->GetRemoteAssociatedInterfaces()
+      ->GetInterface(&launch_service);
   DCHECK(launch_service);
 
   if (!launch_params.paths.empty() || !launch_params.dir.empty()) {

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,10 +27,8 @@ extension SettingsEnum {
 
 @objc
 class SafetyCheckTableViewController: SettingsRootTableViewController, SafetyCheckConsumer {
-  enum Constants {
-    // The accessibility identifier of the privacy settings collection view.
-    static let safetyCheckTableViewId = "kSafetyCheckTableViewId"
-  }
+  // The accessibility identifier of the safety check table view.
+  @objc static let accessibilityIdentifier = "kSafetyCheckTableViewId"
 
   @objc weak var presentationDelegate: SafetyCheckTableViewControllerPresentationDelegate?
   // Handler for taps on items on the safety check page.
@@ -75,7 +73,7 @@ class SafetyCheckTableViewController: SettingsRootTableViewController, SafetyChe
 
   override func viewDidLoad() {
     super.viewDidLoad()
-    self.tableView.accessibilityIdentifier = Constants.safetyCheckTableViewId
+    self.tableView.accessibilityIdentifier = SafetyCheckTableViewController.accessibilityIdentifier
     self.title = L10NUtils.string(forMessageId: IDS_OPTIONS_ADVANCED_SECTION_TITLE_SAFETY_CHECK)
   }
 

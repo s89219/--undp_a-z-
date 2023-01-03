@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -62,10 +62,11 @@ void VrWebContentsObserver::WebContentsDestroyed() {
   std::move(on_destroy_).Run();
 }
 
-void VrWebContentsObserver::RenderViewHostChanged(
-    content::RenderViewHost* old_host,
-    content::RenderViewHost* new_host) {
-  new_host->GetWidget()->GetView()->SetIsInVR(true);
+void VrWebContentsObserver::RenderFrameHostChanged(
+    content::RenderFrameHost* old_host,
+    content::RenderFrameHost* new_host) {
+  if (new_host->IsInPrimaryMainFrame())
+    new_host->GetRenderWidgetHost()->GetView()->SetIsInVR(true);
 }
 
 }  // namespace vr

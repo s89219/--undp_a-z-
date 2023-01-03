@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,10 +38,6 @@ class VirtualCardEnrollBubbleViews : public AutofillBubbleBase,
 
   void Show(DisplayReason reason);
 
-  bool NetworkIconNotEmptyForTesting() {
-    return !card_network_icon_->GetImageModel().IsEmpty();
-  }
-
   // AutofillBubbleBase:
   void Hide() override;
 
@@ -49,7 +45,6 @@ class VirtualCardEnrollBubbleViews : public AutofillBubbleBase,
   void AddedToWidget() override;
   std::u16string GetWindowTitle() const override;
   void WindowClosing() override;
-  void OnWidgetClosing(views::Widget* widget) override;
 
  protected:
   VirtualCardEnrollBubbleController* controller() const { return controller_; }
@@ -70,11 +65,6 @@ class VirtualCardEnrollBubbleViews : public AutofillBubbleBase,
   void IssuerLegalMessageClicked(const GURL& url);
 
   raw_ptr<VirtualCardEnrollBubbleController> controller_;
-
-  PaymentsBubbleClosedReason closed_reason_ =
-      PaymentsBubbleClosedReason::kUnknown;
-
-  raw_ptr<views::ImageView> card_network_icon_ = nullptr;
 
   base::WeakPtrFactory<VirtualCardEnrollBubbleViews> weak_ptr_factory_{this};
 };

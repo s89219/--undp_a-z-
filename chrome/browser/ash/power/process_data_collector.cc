@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <sys/types.h>
 
-#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -25,6 +24,7 @@
 #include "base/files/file_util.h"
 #include "base/i18n/number_formatting.h"
 #include "base/notreached.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -37,7 +37,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/ash/system/procfs_util.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -323,8 +323,8 @@ ProcessDataCollector::GetProcessUsages() {
       process_list.begin(), process_list.end(), 0.,
       [](const auto& i, const auto& s) { return i + s.power_usage_fraction; });
   if (total != 0) {
-    std::for_each(process_list.begin(), process_list.end(),
-                  [&total](auto& c) { c.power_usage_fraction /= total; });
+    base::ranges::for_each(
+        process_list, [&total](auto& c) { c.power_usage_fraction /= total; });
   }
 
   return process_list;
@@ -362,8 +362,8 @@ void ProcessDataCollector::StartSamplingCpuUsage() {
 }
 
 void ProcessDataCollector::SampleCpuUsage() {
-  base::PostTaskAndReplyWithResult(
-      cpu_data_task_runner_.get(), FROM_HERE,
+  cpu_data_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       base::BindOnce(&ProcessDataCollector::ComputeSampleAsync, config_,
                      prev_samples_, curr_samples_, curr_summary_),
       base::BindOnce(&ProcessDataCollector::SaveSamplesOnUIThread,

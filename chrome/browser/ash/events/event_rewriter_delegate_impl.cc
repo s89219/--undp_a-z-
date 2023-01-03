@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,7 +46,7 @@ bool EventRewriterDelegateImpl::RewriteModifierKeys() {
   if (user_manager::UserManager::Get()->IsLoggedInAsGuest() &&
       LoginDisplayHost::default_host())
     return false;
-  return true;
+  return !suppress_modifier_key_rewrites_;
 }
 
 bool EventRewriterDelegateImpl::GetKeyboardRemappedPrefValue(
@@ -118,10 +118,6 @@ bool EventRewriterDelegateImpl::NotifyDeprecatedRightClickRewrite() {
   return deprecation_controller_->NotifyDeprecatedRightClickRewrite();
 }
 
-bool EventRewriterDelegateImpl::NotifyDeprecatedFKeyRewrite() {
-  return deprecation_controller_->NotifyDeprecatedFKeyRewrite();
-}
-
 bool EventRewriterDelegateImpl::NotifyDeprecatedSixPackKeyRewrite(
     ui::KeyboardCode key_code) {
   return deprecation_controller_->NotifyDeprecatedSixPackKeyRewrite(key_code);
@@ -134,4 +130,8 @@ const PrefService* EventRewriterDelegateImpl::GetPrefService() const {
   return profile ? profile->GetPrefs() : nullptr;
 }
 
+void EventRewriterDelegateImpl::SuppressModifierKeyRewrites(
+    bool should_suppress) {
+  suppress_modifier_key_rewrites_ = should_suppress;
+}
 }  // namespace ash

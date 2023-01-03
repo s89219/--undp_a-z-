@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{vor 1 Tag}other{vor # Tagen}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{vor 1 Minute}other{vor # Minuten}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 min}other{# min}}</translation>
+<translation id="1181037720776840403">Entfernen</translation>
 <translation id="1243314992276662751">Hochladen</translation>
 <translation id="1266864766717917324"><ph name="CONTENT_TYPE" /> konnte nicht geteilt werden</translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Hohe Anzeigedichte verwenden</translation>
 <translation id="2482878487686419369">Benachrichtigungen</translation>
 <translation id="2497284189126895209">Alle Dateien</translation>
-<translation id="2498950423397131220">Unverankert</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Die Kalibrierung ist abgeschlossen</translation>
 <translation id="252373100621549798">Display unbekannt</translation>

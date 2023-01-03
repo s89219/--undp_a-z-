@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -127,10 +127,10 @@ void BrandcodeConfigFetcher::OnXmlConfigParsed(
   // failure. The difference is whether |default_settings_| is populated.
   base::ScopedClosureRunner scoped_closure(std::move(fetch_callback_));
 
-  if (!value_or_error.value)
+  if (!value_or_error.has_value())
     return;
 
-  const base::Value* node = &value_or_error.value.value();
+  const base::Value* node = &*value_or_error;
   if (!data_decoder::IsXmlElementNamed(*node, "response"))
     return;
 

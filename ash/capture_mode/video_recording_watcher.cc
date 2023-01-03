@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,12 +11,13 @@
 #include "ash/capture_mode/capture_mode_camera_preview_view.h"
 #include "ash/capture_mode/capture_mode_constants.h"
 #include "ash/capture_mode/capture_mode_controller.h"
+#include "ash/capture_mode/capture_mode_demo_tools_controller.h"
 #include "ash/capture_mode/capture_mode_metrics.h"
 #include "ash/capture_mode/recording_overlay_controller.h"
 #include "ash/constants/ash_features.h"
 #include "ash/projector/projector_controller_impl.h"
 #include "ash/shell.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/ash_color_id.h"
 #include "ash/wm/desks/desks_util.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
@@ -24,15 +25,18 @@
 #include "base/check_op.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/aura/cursor/cursor_lookup.h"
-#include "ui/aura/window.h"
+#include "ui/aura/client/cursor_shape_client.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/paint_recorder.h"
 #include "ui/display/screen.h"
+#include "ui/events/types/event_type.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/dip_util.h"
+#include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -75,10 +79,10 @@ gfx::PointF GetCursorLocationInWindow(aura::Window* window) {
   return cursor_point;
 }
 
-// Gets the location of the given mouse |event| in the coordinates of the given
-// |window|.
+// Gets the location of the given `event` in the coordinates of the given
+// `window`.
 gfx::PointF GetEventLocationInWindow(aura::Window* window,
-                                     const ui::MouseEvent& event) {
+                                     const ui::LocatedEvent& event) {
   aura::Window* target = static_cast<aura::Window*>(event.target());
   gfx::PointF location = event.location_f();
   if (target != window)
@@ -120,8 +124,9 @@ gfx::RectF GetCursorOverlayBounds(
 }
 
 CameraPreviewView* GetCameraPreviewView() {
-  auto* camera_controller = CaptureModeController::Get()->camera_controller();
-  return camera_controller ? camera_controller->camera_preview_view() : nullptr;
+  return CaptureModeController::Get()
+      ->camera_controller()
+      ->camera_preview_view();
 }
 
 }  // namespace
@@ -231,17 +236,24 @@ VideoRecordingWatcher::VideoRecordingWatcher(
   window_being_recorded_->AddPreTargetHandler(
       this, ui::EventTarget::Priority::kAccessibility);
 
-  auto* camera_controller = controller_->camera_controller();
-  if (camera_controller)
-    camera_controller->OnRecordingStarted(is_in_projector_mode_);
+  controller_->camera_controller()->OnRecordingStarted(is_in_projector_mode_);
 
   if (is_in_projector_mode_) {
     recording_overlay_controller_ =
         std::make_unique<RecordingOverlayController>(window_being_recorded_,
                                                      GetOverlayWidgetBounds());
   }
-  if (features::IsProjectorEnabled())
-    ProjectorControllerImpl::Get()->OnRecordingStarted(is_in_projector_mode_);
+
+  if (features::AreCaptureModeDemoToolsEnabled() &&
+      controller_->enable_demo_tools()) {
+    demo_tools_controller_ =
+        std::make_unique<CaptureModeDemoToolsController>(this);
+  }
+
+  if (features::IsProjectorEnabled()) {
+    ProjectorControllerImpl::Get()->OnRecordingStarted(current_root_,
+                                                       is_in_projector_mode_);
+  }
 }
 
 VideoRecordingWatcher::~VideoRecordingWatcher() {
@@ -260,10 +272,12 @@ void VideoRecordingWatcher::ShutDown() {
   is_shutting_down_ = true;
   DCHECK(window_being_recorded_);
 
+  window_size_change_throttle_timer_.Stop();
   cursor_events_throttle_timer_.Stop();
   cursor_capture_overlay_remote_.reset();
   root_observer_.reset();
   recording_overlay_controller_.reset();
+  demo_tools_controller_.reset();
   dimmers_.clear();
 
   if (features::IsProjectorEnabled())
@@ -284,12 +298,11 @@ void VideoRecordingWatcher::ShutDown() {
   auto to_be_removed_request = std::move(non_root_window_capture_request_);
   window_being_recorded_->RemoveObserver(this);
   display::Screen::GetScreen()->RemoveObserver(this);
-  if (controller_->camera_controller()) {
-    controller_->camera_controller()->OnRecordingEnded();
-  }
+  controller_->camera_controller()->OnRecordingEnded();
 }
 
-aura::Window* VideoRecordingWatcher::GetCameraPreviewParentWindow() const {
+aura::Window* VideoRecordingWatcher::GetOnCaptureSurfaceWidgetParentWindow()
+    const {
   DCHECK(window_being_recorded_);
   return window_being_recorded_->IsRootWindow()
              ? window_being_recorded_->GetChildById(
@@ -297,7 +310,7 @@ aura::Window* VideoRecordingWatcher::GetCameraPreviewParentWindow() const {
              : window_being_recorded_;
 }
 
-gfx::Rect VideoRecordingWatcher::GetCameraPreviewConfineBounds() const {
+gfx::Rect VideoRecordingWatcher::GetCaptureSurfaceConfineBounds() const {
   DCHECK(window_being_recorded_);
   switch (recording_source_) {
     case CaptureModeSource::kFullscreen:
@@ -351,9 +364,7 @@ void VideoRecordingWatcher::OnWindowBoundsChanged(
 
   // The bounds of the camera preview should be updated if the bounds of the
   // window being recorded is changed.
-  auto* camera_controller = controller_->camera_controller();
-  if (camera_controller)
-    camera_controller->MaybeUpdatePreviewWidget();
+  controller_->camera_controller()->MaybeUpdatePreviewWidget();
 }
 
 void VideoRecordingWatcher::OnWindowOpacitySet(
@@ -404,6 +415,9 @@ void VideoRecordingWatcher::OnWindowRemovingFromRootWindow(
   root_observer_ =
       std::make_unique<RecordedWindowRootObserver>(current_root_, this);
   controller_->OnRecordedWindowChangingRoot(window_being_recorded_, new_root);
+
+  if (is_in_projector_mode_)
+    ProjectorControllerImpl::Get()->OnRecordedWindowChangingRoot(new_root);
 }
 
 void VideoRecordingWatcher::OnPaintLayer(const ui::PaintContext& context) {
@@ -414,10 +428,7 @@ void VideoRecordingWatcher::OnPaintLayer(const ui::PaintContext& context) {
 
   ui::PaintRecorder recorder(context, layer()->size());
   gfx::Canvas* canvas = recorder.canvas();
-  auto* color_provider = AshColorProvider::Get();
-  const SkColor dimming_color = color_provider->GetShieldLayerColor(
-      AshColorProvider::ShieldLayerType::kShield40);
-  canvas->DrawColor(dimming_color);
+  canvas->DrawColor(capture_mode::kDimmingShieldColor);
 
   // We don't draw a region border around the recorded window. We just paint the
   // above shield as a backdrop.
@@ -473,9 +484,12 @@ void VideoRecordingWatcher::OnDisplayMetricsChanged(
   // The bounds of camera preview should be updated accordingly if the display
   // metrics is changed. When the capture source is `kWindow`, it will be
   // handled in `OnWindowBoundsChanged`;
-  auto* camera_controller = controller_->camera_controller();
-  if (camera_controller && recording_source_ != CaptureModeSource::kWindow)
-    camera_controller->MaybeUpdatePreviewWidget();
+  if (recording_source_ != CaptureModeSource::kWindow)
+    controller_->camera_controller()->MaybeUpdatePreviewWidget();
+
+  if (demo_tools_controller_) {
+    demo_tools_controller_->RefreshBounds();
+  }
 
   // We don't show a dimming overlay when recording a fullscreen.
   if (recording_source_ == CaptureModeSource::kFullscreen)
@@ -501,6 +515,9 @@ void VideoRecordingWatcher::OnDimmedWindowParentChanged(
 }
 
 void VideoRecordingWatcher::OnKeyEvent(ui::KeyEvent* event) {
+  if (demo_tools_controller_)
+    demo_tools_controller_->OnKeyEvent(event);
+
   if (event->type() != ui::ET_KEY_PRESSED)
     return;
 
@@ -513,6 +530,8 @@ void VideoRecordingWatcher::OnKeyEvent(ui::KeyEvent* event) {
 }
 
 void VideoRecordingWatcher::OnMouseEvent(ui::MouseEvent* event) {
+  const gfx::PointF location_in_window =
+      GetEventLocationInWindow(window_being_recorded_, *event);
   switch (event->type()) {
     case ui::ET_MOUSEWHEEL:
     case ui::ET_MOUSE_CAPTURE_CHANGED:
@@ -522,17 +541,29 @@ void VideoRecordingWatcher::OnMouseEvent(ui::MouseEvent* event) {
       auto* camera_preview_view = GetCameraPreviewView();
       if (camera_preview_view)
         camera_preview_view->MaybeBlurFocus(*event);
+
+      if (demo_tools_controller_)
+        demo_tools_controller_->PerformMousePressAnimation(location_in_window);
     }
       [[fallthrough]];
     case ui::ET_MOUSE_RELEASED:
       // Pressed/released events are important, so we handle them immediately.
-      UpdateCursorOverlayNow(
-          GetEventLocationInWindow(window_being_recorded_, *event));
+      UpdateCursorOverlayNow(location_in_window);
       return;
 
     default:
-      UpdateOrThrottleCursorOverlay(
-          GetEventLocationInWindow(window_being_recorded_, *event));
+      UpdateOrThrottleCursorOverlay(location_in_window);
+  }
+}
+
+void VideoRecordingWatcher::OnTouchEvent(ui::TouchEvent* event) {
+  if (demo_tools_controller_ && (event->type() == ui::ET_TOUCH_PRESSED ||
+                                 event->type() == ui::ET_TOUCH_RELEASED ||
+                                 event->type() == ui::ET_TOUCH_MOVED ||
+                                 event->type() == ui::ET_TOUCH_CANCELLED)) {
+    demo_tools_controller_->OnTouchEvent(
+        event->type(), event->pointer_details().id,
+        GetEventLocationInWindow(window_being_recorded_, *event));
   }
 }
 
@@ -555,8 +586,12 @@ void VideoRecordingWatcher::OnCursorCompositingStateChanged(bool enabled) {
 
 gfx::Rect VideoRecordingWatcher::GetEffectivePartialRegionBounds() const {
   DCHECK_EQ(recording_source_, CaptureModeSource::kRegion);
-  gfx::Rect result = current_root_->bounds();
-  result.Intersect(partial_region_bounds_);
+  // TODO(afakhry): Consider having the region to anchor to the nearest corner,
+  // so that screen rotation doesn't result in the apparent change of the region
+  // position. Discussion with PM/UX determined that this is a low priority for
+  // now.
+  gfx::Rect result = partial_region_bounds_;
+  result.AdjustToFit(current_root_->bounds());
   return result;
 }
 
@@ -679,10 +714,6 @@ void VideoRecordingWatcher::UpdateLayerStackingAndDimmers() {
     return;
   }
 
-  // For windows that are above the recorded window in the z-order and on the
-  // same display, they're dimmed separately.
-  const SkColor dimming_color = AshColorProvider::Get()->GetShieldLayerColor(
-      AshColorProvider::ShieldLayerType::kShield40);
   // We use |kAllDesks| here for the following reasons:
   // 1- A dimmed window can move out from the desk where the window being
   //    recorded is (either by keyboard shortcut or drag and drop in overview).
@@ -711,10 +742,12 @@ void VideoRecordingWatcher::UpdateLayerStackingAndDimmers() {
       continue;
     }
 
+    // Dim windows that are above the recorded window in the z-order and on the
+    // same display.
     auto& dimmer = dimmers_[window];
     if (!dimmer) {
       dimmer = std::make_unique<WindowDimmer>(window, /*animate=*/false, this);
-      dimmer->SetDimColor(dimming_color);
+      dimmer->SetDimColor(kColorAshShieldAndBase40);
       dimmer->window()->Show();
     }
   }
@@ -767,19 +800,23 @@ void VideoRecordingWatcher::UpdateCursorOverlayNow(
   const gfx::NativeCursor cursor = GetCurrentCursor();
   DCHECK_NE(cursor.type(), ui::mojom::CursorType::kNull);
 
-  const float cursor_image_scale_factor = cursor.image_scale_factor();
-  const SkBitmap cursor_image = aura::GetCursorBitmap(cursor);
+  absl::optional<ui::CursorData> cursor_data =
+      aura::client::GetCursorShapeClient()->GetCursorData(cursor);
+  if (!cursor_data)
+    return;
+
+  const SkBitmap& cursor_image = cursor_data->bitmaps[0];
+  if (cursor_image.drawsNothing()) {
+    last_cursor_ = gfx::NativeCursor();
+    HideCursorOverlay();
+    return;
+  }
+
   const gfx::RectF cursor_overlay_bounds = GetCursorOverlayBounds(
-      window_being_recorded_, location, aura::GetCursorHotspot(cursor),
-      cursor_image_scale_factor, cursor_image);
+      window_being_recorded_, location, cursor_data->hotspot,
+      cursor.image_scale_factor(), cursor_image);
 
   if (cursor != last_cursor_) {
-    if (cursor_image.drawsNothing()) {
-      last_cursor_ = gfx::NativeCursor();
-      HideCursorOverlay();
-      return;
-    }
-
     last_cursor_ = cursor;
     last_cursor_overlay_bounds_ = cursor_overlay_bounds;
     cursor_capture_overlay_remote_->SetImageAndBounds(

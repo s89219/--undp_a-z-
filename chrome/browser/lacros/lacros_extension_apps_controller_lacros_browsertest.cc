@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "chrome/browser/lacros/lacros_extension_apps_publisher.h"
 #include "chrome/browser/lacros/lacros_extensions_util.h"
 #include "chrome/browser/ui/browser_element_identifiers.h"
+#include "chrome/browser/ui/lacros/window_utility.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/crosapi/mojom/test_controller.mojom-test-utils.h"
 #include "chromeos/crosapi/mojom/test_controller.mojom.h"
@@ -58,8 +59,10 @@ class LacrosExtensionAppsControllerTest
     }
 
     // Wait for item to stop existing in shelf.
-    if (!app_id_.empty())
-      browser_test_util::WaitForShelfItem(app_id_, /*exists=*/false);
+    if (!app_id_.empty()) {
+      ASSERT_TRUE(
+          browser_test_util::WaitForShelfItem(app_id_, /*exists=*/false));
+    }
   }
 
   std::string app_id_;
@@ -88,7 +91,7 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest, ShowsInShelf) {
 
   // No item should exist in the shelf before the window is launched.
   InstallApp();
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false));
 
   // There should be no app windows.
   ASSERT_TRUE(
@@ -98,11 +101,11 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest, ShowsInShelf) {
   crosapi::mojom::LaunchParamsPtr launch_params =
       crosapi::mojom::LaunchParams::New();
   launch_params->app_id = app_id();
-  launch_params->launch_source = apps::mojom::LaunchSource::kFromTest;
+  launch_params->launch_source = apps::LaunchSource::kFromTest;
   controller->Launch(std::move(launch_params), base::DoNothing());
 
   // Wait for item to exist in shelf.
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true));
 }
 
 // Test that clicking a pinned chrome app in the shelf launches it.
@@ -127,17 +130,17 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest, LaunchPinnedApp) {
 
   // No item should exist in the shelf before the window is launched.
   InstallApp();
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false));
 
   // Launch the app via LacrosExtensionAppsController.
   crosapi::mojom::LaunchParamsPtr launch_params =
       crosapi::mojom::LaunchParams::New();
   launch_params->app_id = app_id();
-  launch_params->launch_source = apps::mojom::LaunchSource::kFromTest;
+  launch_params->launch_source = apps::LaunchSource::kFromTest;
   controller->Launch(std::move(launch_params), base::DoNothing());
 
   // Wait for item to exist in shelf.
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true));
 
   // Pin the shelf item.
   crosapi::mojom::TestControllerAsyncWaiter waiter(
@@ -152,10 +155,10 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest, LaunchPinnedApp) {
   extensions::AppWindowRegistry::AppWindowList app_windows =
       extensions::AppWindowRegistry::Get(profile())->app_windows();
   for (extensions::AppWindow* app_window : app_windows) {
-    std::string window_id = browser_test_util::GetWindowId(
+    std::string window_id = lacros_window_utility::GetRootWindowUniqueId(
         app_window->GetNativeWindow()->GetRootWindow());
     app_window->GetBaseWindow()->Close();
-    browser_test_util::WaitForWindowDestruction(window_id);
+    ASSERT_TRUE(browser_test_util::WaitForWindowDestruction(window_id));
   }
 
   // Confirm that there are no open windows.
@@ -209,17 +212,17 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest, DefaultContextMenu) {
 
   // No item should exist in the shelf before the window is launched.
   InstallApp();
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false));
 
   // Launch the app via LacrosExtensionAppsController.
   crosapi::mojom::LaunchParamsPtr launch_params =
       crosapi::mojom::LaunchParams::New();
   launch_params->app_id = app_id();
-  launch_params->launch_source = apps::mojom::LaunchSource::kFromTest;
+  launch_params->launch_source = apps::LaunchSource::kFromTest;
   controller->Launch(std::move(launch_params), base::DoNothing());
 
   // Wait for item to exist in shelf.
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true));
 
   // Get the context menu.
   crosapi::mojom::TestControllerAsyncWaiter waiter(
@@ -259,18 +262,18 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest,
   // No item should exist in the shelf before the window is launched.
   InstallApp();
   LOG(INFO) << "No item starts in shelf";
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false));
 
   // Launch the app via LacrosExtensionAppsController.
   crosapi::mojom::LaunchParamsPtr launch_params =
       crosapi::mojom::LaunchParams::New();
   launch_params->app_id = app_id();
-  launch_params->launch_source = apps::mojom::LaunchSource::kFromTest;
+  launch_params->launch_source = apps::LaunchSource::kFromTest;
   controller->Launch(std::move(launch_params), base::DoNothing());
 
   // Wait for item to exist in shelf.
   LOG(INFO) << "Wait for item to appear in shelf after install";
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/true));
 
   // Select index 2, which corresponds to Uninstall.
   base::HistogramTester tester;
@@ -286,14 +289,14 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest,
   // This pops up an ash dialog to confirm uninstall. First we wait fo the
   // dialog to appear, and then we click the confirm button.
   std::string element_name = kAppUninstallDialogOkButtonId.GetName();
-  browser_test_util::WaitForElementCreation(element_name);
+  ASSERT_TRUE(browser_test_util::WaitForElementCreation(element_name));
   waiter.ClickElement(element_name, &success);
   ASSERT_TRUE(success);
 
   // Wait for the item to be no longer visible in the shelf as it's uninstalled
   // which implicitly closes the window.
   LOG(INFO) << "Wait for item to disappear from shelf after uninstall";
-  browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false);
+  ASSERT_TRUE(browser_test_util::WaitForShelfItem(app_id(), /*exists=*/false));
 }
 
 }  // namespace

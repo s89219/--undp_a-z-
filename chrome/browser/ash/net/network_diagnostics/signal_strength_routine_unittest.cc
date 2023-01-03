@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +54,7 @@ class SignalStrengthRoutineTest : public ::testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  chromeos::NetworkStateTestHelper& network_state_helper() {
+  NetworkStateTestHelper& network_state_helper() {
     return cros_network_config_test_helper_.network_state_helper();
   }
   SignalStrengthRoutine* signal_strength_routine() {
@@ -104,7 +104,7 @@ TEST_F(SignalStrengthRoutineTest, TestBadWiFiSignal) {
 }
 
 TEST_F(SignalStrengthRoutineTest, TestNoWiFiConnection) {
-  SetUpWiFi(shill::kStateOffline, kGoodWiFiSignal);
+  SetUpWiFi(shill::kStateIdle, kGoodWiFiSignal);
   std::vector<mojom::SignalStrengthProblem> expected_problems = {};
   signal_strength_routine()->RunRoutine(
       base::BindOnce(&SignalStrengthRoutineTest::CompareResult, weak_ptr(),

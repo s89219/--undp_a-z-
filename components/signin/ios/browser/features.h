@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,10 +21,7 @@ extern const char kDelayThresholdMinutesToUpdateGaiaCookie[];
 extern const char kWaitThresholdMillisecondsForCapabilitiesApi[];
 
 // Feature to enable FRE MICe.
-extern const base::Feature kNewMobileIdentityConsistencyFRE;
-
-// Feature to enable Unicorn account sign-in for iOS.
-extern const base::Feature kEnableUnicornAccountSupport;
+BASE_DECLARE_FEATURE(kNewMobileIdentityConsistencyFRE);
 
 }  // namespace signin
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,8 +33,6 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_builder.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-#include "ui/display/test/scoped_screen_override.h"
-#include "ui/display/test/test_screen.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/test/ash_test_helper.h"
@@ -48,20 +46,17 @@
 
 namespace extensions {
 
-using display::test::ScopedScreenOverride;
-
 namespace {
 
-std::unique_ptr<base::ListValue> RunTabsQueryFunction(
-    Browser* browser,
-    const Extension* extension,
-    const std::string& query_info) {
+base::Value::List RunTabsQueryFunction(Browser* browser,
+                                       const Extension* extension,
+                                       const std::string& query_info) {
   scoped_refptr<TabsQueryFunction> function(new TabsQueryFunction());
   function->set_extension(extension);
   std::unique_ptr<base::Value> value(
       extension_function_test_utils::RunFunctionAndReturnSingleResult(
           function.get(), query_info, browser, api_test_utils::NONE));
-  return base::ListValue::From(std::move(value));
+  return std::move(*value).TakeList();
 }
 
 // Creates an extension with "tabs" permission.
@@ -127,13 +122,15 @@ class TabsApiUnitTest : public ExtensionServiceTestBase {
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   ash::AshTestHelper test_helper_;
-#else
-  display::test::TestScreen test_screen_;
-  std::unique_ptr<ScopedScreenOverride> scoped_screen_override_;
 #endif
 };
 
 void TabsApiUnitTest::SetUp() {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  ash::AshTestHelper::InitParams ash_params;
+  ash_params.start_session = true;
+  test_helper_.SetUp(std::move(ash_params));
+#endif
   // Force TabManager/TabLifecycleUnitSource creation.
   g_browser_process->GetTabManager();
 
@@ -145,14 +142,6 @@ void TabsApiUnitTest::SetUp() {
   params.type = Browser::TYPE_NORMAL;
   params.window = browser_window_.get();
   browser_.reset(Browser::Create(params));
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  ash::AshTestHelper::InitParams ash_params;
-  ash_params.start_session = true;
-  test_helper_.SetUp(std::move(ash_params));
-#else
-  scoped_screen_override_ =
-      std::make_unique<ScopedScreenOverride>(&test_screen_);
-#endif
 }
 
 void TabsApiUnitTest::TearDown() {
@@ -306,10 +295,9 @@ TEST_F(TabsApiUnitTest, QueryWithoutTabsPermission) {
 
   // An extension without "tabs" permission will see none of the 3 tabs.
   scoped_refptr<const Extension> extension = ExtensionBuilder("Test").Build();
-  std::unique_ptr<base::ListValue> tabs_list_without_permission(
-      RunTabsQueryFunction(browser(), extension.get(), kTitleAndURLQueryInfo));
-  ASSERT_TRUE(tabs_list_without_permission);
-  EXPECT_EQ(0u, tabs_list_without_permission->GetListDeprecated().size());
+  base::Value::List tabs_list_without_permission =
+      RunTabsQueryFunction(browser(), extension.get(), kTitleAndURLQueryInfo);
+  EXPECT_EQ(0u, tabs_list_without_permission.size());
 
   // An extension with "tabs" permission however will see the third tab.
   scoped_refptr<const Extension> extension_with_permission =
@@ -322,14 +310,11 @@ TEST_F(TabsApiUnitTest, QueryWithoutTabsPermission) {
                   .Set("permissions", ListBuilder().Append("tabs").Build())
                   .Build())
           .Build();
-  std::unique_ptr<base::ListValue> tabs_list_with_permission(
-      RunTabsQueryFunction(browser(), extension_with_permission.get(),
-                           kTitleAndURLQueryInfo));
-  ASSERT_TRUE(tabs_list_with_permission);
-  ASSERT_EQ(1u, tabs_list_with_permission->GetListDeprecated().size());
+  base::Value::List tabs_list_with_permission = RunTabsQueryFunction(
+      browser(), extension_with_permission.get(), kTitleAndURLQueryInfo);
+  ASSERT_EQ(1u, tabs_list_with_permission.size());
 
-  const base::Value& third_tab_info =
-      tabs_list_with_permission->GetListDeprecated()[0];
+  const base::Value& third_tab_info = tabs_list_with_permission[0];
   ASSERT_TRUE(third_tab_info.is_dict());
   absl::optional<int> third_tab_id = third_tab_info.FindIntKey("id");
   EXPECT_EQ(ExtensionTabUtil::GetTabId(web_contentses[2]), third_tab_id);
@@ -379,14 +364,11 @@ TEST_F(TabsApiUnitTest, QueryWithHostPermission) {
           .Build();
 
   {
-    std::unique_ptr<base::ListValue> tabs_list_with_permission(
-        RunTabsQueryFunction(browser(), extension_with_permission.get(),
-                             kTitleAndURLQueryInfo));
-    ASSERT_TRUE(tabs_list_with_permission);
-    ASSERT_EQ(1u, tabs_list_with_permission->GetListDeprecated().size());
+    base::Value::List tabs_list_with_permission = RunTabsQueryFunction(
+        browser(), extension_with_permission.get(), kTitleAndURLQueryInfo);
+    ASSERT_EQ(1u, tabs_list_with_permission.size());
 
-    const base::Value& third_tab_info =
-        tabs_list_with_permission->GetListDeprecated()[0];
+    const base::Value& third_tab_info = tabs_list_with_permission[0];
     ASSERT_TRUE(third_tab_info.is_dict());
     absl::optional<int> third_tab_id = third_tab_info.FindIntKey("id");
     EXPECT_EQ(ExtensionTabUtil::GetTabId(web_contentses[2]), third_tab_id);
@@ -395,17 +377,13 @@ TEST_F(TabsApiUnitTest, QueryWithHostPermission) {
   // Try the same without title, first and third tabs will match.
   const char* kURLQueryInfo = "[{\"url\": \"*://www.google.com/*\"}]";
   {
-    std::unique_ptr<base::ListValue> tabs_list_with_permission(
-        RunTabsQueryFunction(browser(), extension_with_permission.get(),
-                             kURLQueryInfo));
-    ASSERT_TRUE(tabs_list_with_permission);
-    ASSERT_EQ(2u, tabs_list_with_permission->GetListDeprecated().size());
+    base::Value::List tabs_list_with_permission = RunTabsQueryFunction(
+        browser(), extension_with_permission.get(), kURLQueryInfo);
+    ASSERT_EQ(2u, tabs_list_with_permission.size());
 
-    const base::Value& first_tab_info =
-        tabs_list_with_permission->GetListDeprecated()[0];
+    const base::Value& first_tab_info = tabs_list_with_permission[0];
     ASSERT_TRUE(first_tab_info.is_dict());
-    const base::Value& third_tab_info =
-        tabs_list_with_permission->GetListDeprecated()[1];
+    const base::Value& third_tab_info = tabs_list_with_permission[1];
     ASSERT_TRUE(third_tab_info.is_dict());
 
     std::vector<int> expected_tabs_ids;
@@ -1127,8 +1105,9 @@ TEST_F(TabsApiUnitTest, TabsGoForwardAndBackWithoutTabId) {
   ASSERT_EQ(2, tab_strip_model->count());
 
   // Activate first tab.
-  tab_strip_model->ActivateTabAt(tab1_index,
-                                 {TabStripModel::GestureType::kOther});
+  tab_strip_model->ActivateTabAt(
+      tab1_index, TabStripUserGestureDetails(
+                      TabStripUserGestureDetails::GestureType::kOther));
 
   // Go back without tab_id. But first tab should be navigated since it's
   // activated.
@@ -1159,8 +1138,9 @@ TEST_F(TabsApiUnitTest, TabsGoForwardAndBackWithoutTabId) {
               controller.GetLastCommittedEntry()->GetTransitionType());
 
   // Activate second tab.
-  tab_strip_model->ActivateTabAt(tab2_index,
-                                 {TabStripModel::GestureType::kOther});
+  tab_strip_model->ActivateTabAt(
+      tab2_index, TabStripUserGestureDetails(
+                      TabStripUserGestureDetails::GestureType::kOther));
 
   auto goback_function2 = base::MakeRefCounted<TabsGoBackFunction>();
   goback_function2->set_extension(extension_with_tabs_permission.get());

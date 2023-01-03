@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,4 +23,7 @@ function generateBid(interestGroup, auctionSignals, perBuyerSignals,
 function reportWin(auctionSignals, perBuyerSignals, sellerSignals,
                    browserSignals) {
   sendReportTo(browserSignals.interestGroupOwner + '/echoall?report_bidder');
+  registerAdBeacon({'auctionwinner':
+   browserSignals.interestGroupOwner.replace('a.test','d.test') +
+                                             '/echoall?report_win_beacon'});
 }

@@ -1,6 +1,6 @@
 {% extends "chrome/android/java/AndroidManifest.xml" %}
 
-# Copyright 2015 The Chromium Authors. All rights reserved.
+# Copyright 2015 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -68,9 +68,10 @@
 
         <activity android:name="org.chromium.ui.test.util.BlankUiTestActivity"
             android:theme="@style/Theme.Chromium.Activity"
-            android:exported="true"/>
+          android:exported="true"
+          android:configChanges="orientation|keyboardHidden|keyboard|screenSize|mcc|mnc|screenLayout|smallestScreenSize|uiMode|density"/>
 
-        <activity android:name="org.chromium.chrome.browser.ui.signin.account_picker.AccountPickerBottomSheetTest$DummyAddAccountActivity"
+        <activity android:name="org.chromium.components.signin.test.util.FakeAccountManagerFacade$AddAccountActivityStub"
             android:exported="true"/>
 
         <service

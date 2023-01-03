@@ -1,10 +1,13 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 GEN_INCLUDE([
-  'accessibility_test_base.js', 'assert_additions.js', 'callback_helper.js',
-  'common.js', 'doc_utils.js'
+  'accessibility_test_base.js',
+  'assert_additions.js',
+  'callback_helper.js',
+  'common.js',
+  'doc_utils.js',
 ]);
 
 /**
@@ -23,11 +26,19 @@ E2ETestBase = class extends AccessibilityTestBase {
   async setUpDeferred() {
     await super.setUpDeferred();
     await importModule('EventGenerator', '/common/event_generator.js');
+    await importModule('KeyCode', '/common/key_code.js');
+    await importModule('constants', '/common/constants.js');
   }
 
   /** @override */
   testGenCppIncludes() {
     GEN(`
+  #include "ash/accessibility/accessibility_delegate.h"
+  #include "ash/shell.h"
+  #include "base/bind.h"
+  #include "base/callback.h"
+  #include "base/containers/flat_set.h"
+  #include "chrome/browser/ash/accessibility/accessibility_manager.h"
   #include "chrome/browser/ash/crosapi/browser_manager.h"
   #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
   #include "chrome/browser/ui/browser.h"
@@ -61,7 +72,10 @@ E2ETestBase = class extends AccessibilityTestBase {
     `);
   }
 
-  testGenPreambleCommon(extensionIdName, failOnConsoleError = true) {
+  testGenPreambleCommon(
+      extensionIdName, failOnConsoleError = true, allowedMessages = []) {
+    const messages = allowedMessages.reduce(
+        (accumulator, message) => accumulator + `u"${message}",`, '');
     GEN(`
     WaitForExtension(extension_misc::${extensionIdName}, std::move(load_cb));
 
@@ -71,17 +85,25 @@ E2ETestBase = class extends AccessibilityTestBase {
                 extension_misc::${extensionIdName});
 
     bool fail_on_console_error = ${failOnConsoleError};
+    // Convert |allowedMessages| into a C++ set.
+    base::flat_set<std::u16string> allowed_messages({${messages}});
     content::WebContentsConsoleObserver console_observer(host->host_contents());
-    // A11y extensions should not log warnings or errors: these should cause
-    // test failures.
+    // In most cases, A11y extensions should not log warnings or errors.
+    // However, informational messages may be logged in some cases and should
+    // be specified in |allowed_messages|. All other messages should cause test
+    // failures.
     auto filter =
-        [](const content::WebContentsConsoleObserver::Message& message) {
+        [](const base::flat_set<std::u16string>& allowed,
+           const content::WebContentsConsoleObserver::Message& message) {
+          if (allowed.contains(message.message))
+            return false;
+
           return message.log_level ==
               blink::mojom::ConsoleMessageLevel::kWarning ||
               message.log_level == blink::mojom::ConsoleMessageLevel::kError;
         };
     if (fail_on_console_error) {
-      console_observer.SetFilter(base::BindRepeating(filter));
+      console_observer.SetFilter(base::BindRepeating(filter, allowed_messages));
     }
     `);
   }
@@ -133,13 +155,13 @@ E2ETestBase = class extends AccessibilityTestBase {
    * @param {boolean=} capture
    */
   async waitForEvent(node, eventType, capture) {
-    return new Promise(resolve => {
+    return new Promise(this.newCallback(resolve => {
       const callback = this.newCallback(() => {
         node.removeEventListener(eventType, callback, capture);
         resolve();
       });
       node.addEventListener(eventType, callback, capture);
-    });
+    }));
   }
 
   /**
@@ -222,7 +244,7 @@ E2ETestBase = class extends AccessibilityTestBase {
    *     returned once the document is ready.
    */
   async runWithLoadedTree(doc, opt_params = {}) {
-    return new Promise(async resolve => {
+    return new Promise(this.newCallback(async resolve => {
       // Make sure the test doesn't finish until this function has resolved.
       let callback = this.newCallback(resolve);
       this.desktop_ = await new Promise(r => chrome.automation.getDesktop(r));
@@ -240,7 +262,7 @@ E2ETestBase = class extends AccessibilityTestBase {
 
       // Listener for both load complete and focus events that eventually
       // triggers the test.
-      const listener = async (event) => {
+      const listener = async event => {
         if (hasLacrosChromePath && !didNavigateForLacros) {
           // We have yet to request navigation in the Lacros tab. Do so now by
           // getting the default focus (the address bar), setting the value to
@@ -290,7 +312,7 @@ E2ETestBase = class extends AccessibilityTestBase {
           listener({target: f});
         });
       }
-    });
+    }));
   }
 
   /**
@@ -302,8 +324,8 @@ E2ETestBase = class extends AccessibilityTestBase {
    */
   runWithLoadedOptionsPage(callback, matchUrlRegExp = /options.html/) {
     callback = this.newCallback(callback);
-    chrome.automation.getDesktop((desktop) => {
-      const listener = (event) => {
+    chrome.automation.getDesktop(desktop => {
+      const listener = event => {
         if (!matchUrlRegExp.test(event.target.docUrl) ||
             !event.target.docLoaded) {
           return;

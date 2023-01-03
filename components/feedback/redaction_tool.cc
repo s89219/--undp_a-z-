@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,11 @@
 #include "build/chromeos_buildflags.h"
 #include "components/feedback/pii_types.h"
 #include "net/base/ip_address.h"
+#ifdef USE_SYSTEM_RE2
+#include <re2/re2.h>
+#else
 #include "third_party/re2/src/re2/re2.h"
+#endif //USE_SYSTEM_RE2
 
 using re2::RE2;
 
@@ -49,9 +53,23 @@ namespace {
 // (?:regex) denotes non-capturing parentheses group.
 CustomPatternWithAlias kCustomPatternsWithContext[] = {
     // ModemManager
-    {"CellID", "(\\bCell ID: ')([0-9a-fA-F]+)(')", PIIType::kCellID},
+    {"CellID", "(\\bCell ID: ')([0-9a-fA-F]+)(')", PIIType::kLocationInfo},
     {"LocAC", "(\\bLocation area code: ')([0-9a-fA-F]+)(')",
-     PIIType::kLocationAreaCode},
+     PIIType::kLocationInfo},
+
+    // Android. Must run first since this expression matches the replacement.
+    //
+    // If we don't get helpful delimiters like a single/double quote, then we
+    // can only try our best and take out the next 32 characters, the max length
+    // of a SSID. Require at least one non-quote character though so we skip
+    // over the quoted SSIDs (which the following patterns will catch and
+    // redact).
+    {"SSID", "(?i-s)(\\bSSID: )([^'\"]{1,32})(.*)", PIIType::kSSID},
+    // Replace any SSID inside quotes.
+    {"SSID", "(?i-s)(\\bSSID: ['\"])(.+)(['\"])", PIIType::kSSID},
+    // Special WifiNetworkSpecifier#toString.
+    {"SSID", "(?i-s)(\\bSSID Match pattern=[^ ]*\\s?)(.+)(\\})",
+     PIIType::kSSID},
 
     // wpa_supplicant
     {"SSID", "(?i-s)(\\bssid[= ]')(.+)(')", PIIType::kSSID},
@@ -87,10 +105,11 @@ CustomPatternWithAlias kCustomPatternsWithContext[] = {
 
     // UUIDs given by the 'blkid' tool. These don't necessarily look like
     // standard UUIDs, so treat them specially.
-    {"UUID", R"xxx((UUID=")([0-9a-zA-Z-]+)("))xxx", PIIType::kUUID},
+    {"UUID", R"xxx((UUID=")([0-9a-zA-Z-]+)("))xxx", PIIType::kStableIdentifier},
     // Also cover UUIDs given by the 'lvs' and 'pvs' tools, which similarly
     // don't necessarily look like standard UUIDs.
-    {"UUID", R"xxx(("[lp]v_uuid":")([0-9a-zA-Z-]+)("))xxx", PIIType::kUUID},
+    {"UUID", R"xxx(("[lp]v_uuid":")([0-9a-zA-Z-]+)("))xxx",
+     PIIType::kStableIdentifier},
 
     // Volume labels presented in the 'blkid' tool, and as part of removable
     // media paths shown in various logs such as cros-disks (in syslog).
@@ -222,6 +241,31 @@ std::string MaybeScrubIPAddress(const std::string& addr) {
   return "";
 }
 
+// Some strings can contain pieces that match like IPv4 addresses but aren't.
+// This function can be used to determine if this was the case by evaluating
+// the skipped piece. It returns true, if the matched address was erroneous
+// and should be skipped instead.
+bool ShouldSkipIPAddress(const re2::StringPiece& skipped) {
+  // MomdemManager can dump out firmware revision fields that can also
+  // confuse the IPv4 matcher e.g. "Revision: 81600.0000.00.29.19.16_DO"
+  // so ignore the replacement if the skipped piece looks like
+  // "Revision: .*<ipv4>". Note however that if this field contains
+  // values delimited by multiple spaces, any matches after the first
+  // will lose the context and be redacted.
+  static const re2::StringPiece rev("Revision: ");
+  static const re2::StringPiece space(" ");
+  const auto pos = skipped.rfind(rev);
+  if (pos != re2::StringPiece::npos &&
+      skipped.find(space, pos + rev.length()) == re2::StringPiece::npos) {
+    return true;
+  }
+
+  // USB paths can be confused with IPv4 Addresses because they can look
+  // similar: n-n.n.n.n . Ignore replacement if previous char is `-`
+  static const re2::StringPiece dash("-");
+  return skipped.ends_with(dash);
+}
+
 // Helper macro: Non capturing group
 #define NCG(x) "(?:" x ")"
 // Helper macro: Optional non capturing group
@@ -275,7 +319,8 @@ std::string MaybeScrubIPAddress(const std::string& addr) {
 #define PORT DIGIT "*"
 
 // This is a diversion of RFC 3987
-#define SCHEME NCG("http|https|ftp|chrome|chrome-extension|android|rtsp|file")
+#define SCHEME \
+  NCG("http|https|ftp|chrome|chrome-extension|android|rtsp|file|isolated-app")
 
 #define IPRIVATE            \
   "["                       \
@@ -387,7 +432,11 @@ CustomPatternWithAlias kCustomPatternsWithoutContext[] = {
     {"UUID",
      "(?i)([0-9a-zA-Z]{8}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-[0-9a-zA-Z]{4}-"
      "[0-9a-zA-Z]{12})",
-     PIIType::kUUID},
+     PIIType::kStableIdentifier},
+    // Eche UID which is a base64 conversion of a 32 bytes public key.
+    {"UID",
+     "((?:[A-Za-z0-9+/]{4}){10}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=))",
+     PIIType::kStableIdentifier},
 };
 
 // Like RE2's FindAndConsume, searches for the first occurrence of |pattern| in
@@ -503,10 +552,11 @@ std::string RedactionTool::RedactAndKeepSelected(
 
   // Do hashes last since they may appear in URLs and they also prevent us
   // from properly recognizing the Android storage paths.
-  if (pii_types_to_keep.find(PIIType::kHash) == pii_types_to_keep.end()) {
+  if (pii_types_to_keep.find(PIIType::kStableIdentifier) ==
+      pii_types_to_keep.end()) {
     // URLs and Android storage paths will be partially redacted (only hashes)
     // if |pii_types_to_keep| contains PIIType::kURL or
-    // PIIType::kAndroidAppStoragePath and not PIIType::kHash.
+    // PIIType::kAndroidAppStoragePath and not PIIType::kStableIdentifier.
     redacted = RedactHashes(std::move(redacted), nullptr);
   }
   return redacted;
@@ -624,7 +674,7 @@ std::string RedactionTool::RedactHashes(
       hashes_[hash] = replacement_hash;
     }
     if (detected != nullptr) {
-      (*detected)[PIIType::kHash].insert(hash);
+      (*detected)[PIIType::kStableIdentifier].insert(hash);
     }
 
     result += replacement_hash;
@@ -837,7 +887,6 @@ std::string RedactionTool::RedactCustomPatternWithoutContext(
   re2::StringPiece text(input);
   re2::StringPiece skipped;
   re2::StringPiece matched_id;
-  const re2::StringPiece dash("-");
   while (FindAndConsumeAndGetSkipped(&text, *re, &skipped, &matched_id)) {
     if (IsUrlExempt(matched_id, first_party_extension_ids_)) {
       skipped.AppendToString(&result);
@@ -849,9 +898,9 @@ std::string RedactionTool::RedactCustomPatternWithoutContext(
     if (identifier_space->count(matched_id_as_string) == 0) {
       replacement_id = MaybeScrubIPAddress(matched_id_as_string);
       if (replacement_id != matched_id_as_string) {
-        // USB paths can be confused with IPv4 Addresses because they can look
-        // similar: n-n.n.n.n . Ignore replacement if previous char is `-`
-        if (skipped.ends_with(dash) && strcmp("IPv4", pattern.alias) == 0) {
+        // Double-check overly opportunistic IPv4 address matching.
+        if ((strcmp("IPv4", pattern.alias) == 0) &&
+            ShouldSkipIPAddress(skipped)) {
           skipped.AppendToString(&result);
           matched_id.AppendToString(&result);
           continue;

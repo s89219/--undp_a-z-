@@ -1,11 +1,13 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chromecast.base;
 
-import org.chromium.base.Consumer;
-import org.chromium.base.Function;
+import java.util.function.BiFunction;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Interface for Observable state.
@@ -36,6 +38,21 @@ public abstract class Observable<T> {
      */
     public final <U> Observable<Both<T, U>> and(Observable<U> other) {
         return flatMap(t -> other.flatMap(u -> just(Both.both(t, u))));
+    }
+
+    /**
+     * Creates an Observable out of the activations of `this` and `other`. An observer that is
+     * subscribed to the result will be subscribed to both `this` and `other` at the same time.
+     *
+     * This combines Observables in the same way that concatenation combines lists. This operation
+     * forms a monoid over Observables with empty() as the identity element. I.e. for all
+     * Observables `x`:
+     *
+     *   x.or(empty()) == x
+     *   empty().or(x) == x
+     */
+    public final Observable<T> or(Observable<T> other) {
+        return make(observer -> Scopes.combine(subscribe(observer), other.subscribe(observer)));
     }
 
     /**
@@ -104,16 +121,54 @@ public abstract class Observable<T> {
     }
 
     /**
+     * Returns an Observable with its type mapped to Unit.
+     */
+    public final Observable<Unit> opaque() {
+        return map(x -> Unit.unit());
+    }
+
+    /**
+     * Returns an Observable that combines the state of all of this Observable's data into
+     * a single activation of type A, where the state is combined by successively applying |acc|
+     * when this Observable adds data, and |dim| when this Observable removes data.
+     *
+     * By default, if |this| is empty, then the result Observable will be activated with the value
+     * of |start|. If |this| is activated with data, then that T-typed data and the current A-typed
+     * data from the result Observable will be fed to |acc| to calculate the new A-typed data for
+     * the result Observable. If |this| has data deactivated, then that data, along with the current
+     * A-typed data from the result Observable, will be fed to |dim| to calculate the new A-typed
+     * data for the result Observable.
+     *
+     * There is always exactly one activation in the result Observable.
+     *
+     * This method provides a generic way to combine the state of multiple activations, "remember"
+     * previous activations, or keep track of ordering in a way that can't be done with pure monadic
+     * operations.
+     */
+    public final <A> Observable<A> fold(A start, BiFunction<A, T, A> acc, BiFunction<A, T, A> dim) {
+        return make(observer -> {
+            Cell<A> current = new Cell<>(start);
+            Subscription sub = subscribe(t -> {
+                current.mutate(a -> acc.apply(a, t));
+                return () -> current.mutate(a -> dim.apply(a, t));
+            });
+            return Scopes.combine(sub, current.subscribe(observer))::close;
+        });
+    }
+
+    /**
+     * Returns an Observable that contains the number of activations in |this|, which updates
+     * dynamically as |this| updates.
+     */
+    public final Observable<Integer> count() {
+        return fold(0, (n, x) -> n + 1, (n, x) -> n - 1);
+    }
+
+    /**
      * Returns an Observable that is activated only when the given Observable is not activated.
      */
     public static Observable<?> not(Observable<?> observable) {
-        Controller<Unit> opposite = new Controller<>();
-        opposite.set(Unit.unit());
-        observable.subscribe(x -> {
-            opposite.reset();
-            return () -> opposite.set(Unit.unit());
-        });
-        return opposite;
+        return observable.count().filter(n -> n == 0);
     }
 
     /**
@@ -160,10 +215,60 @@ public abstract class Observable<T> {
     public Observable<T> debug(Consumer<String> logger) {
         return make(observer -> {
             logger.accept("subscribe");
-            return Scopes.combine(() -> logger.accept("unsubscribe"), subscribe(data -> {
+            Scope subscription = subscribe(data -> {
                 logger.accept(new StringBuilder("open ").append(data).toString());
-                return () -> logger.accept(new StringBuilder("close ").append(data).toString());
-            })::close);
+                Scope scope = observer.open(data);
+                Scope debugClose =
+                        () -> logger.accept(new StringBuilder("close ").append(data).toString());
+                return Scopes.combine(scope, debugClose);
+            })::close;
+            Scope debugUnsubscribe = () -> logger.accept("unsubscribe");
+            return Scopes.combine(subscription, debugUnsubscribe);
         });
+    }
+
+    /**
+     * An abstraction over posting a delayed task. Implementations should run the posted Runnable
+     * after a certain amount of time has elapsed, preferably on the same thread that posted the
+     * Runnable.
+     */
+    public interface Scheduler {
+        void postDelayed(Runnable runnable, long delay);
+    }
+
+    /**
+     * Return an Observable that activates a given amount of time (in milliseconds) after it is
+     * subscribed to.
+     *
+     * Note that the alarm countdown starts when subscribed, not when the Observable is constructed.
+     * Therefore, if there are multiple observers, each will have its own timer.
+     *
+     * If you use an alarm as the argument to an `.and()` operator, for example, a unique timer will
+     * start for each activation of the left-hand side of the `.and()` call.
+     *
+     * The Scheduler is responsible for executing a Runnable after the given delay has elapsed,
+     * preferably on the same thread that invoked its postDelayed() method, unless the observers of
+     * this Observable are thread-safe.
+     */
+    public static Observable<?> alarm(Scheduler scheduler, long ms) {
+        return make(observer -> {
+            Controller<Unit> activation = new Controller<>();
+            scheduler.postDelayed(() -> activation.set(Unit.unit()), ms);
+            return activation.subscribe(observer);
+        });
+    }
+
+    /**
+     * An Observable that delays any activations by the given amount of time.
+     *
+     * If the activation is revoked before the given amount of time elapses, the activation is
+     * effectively "canceled" from the perspective of observers.
+     *
+     * The Scheduler is responsible for executing a Runnable after the given delay has elapsed,
+     * preferably on the same thread that invoked its postDelayed() method, unless the observers of
+     * this Observable are thread-safe.
+     */
+    public final Observable<T> delay(Scheduler scheduler, long ms) {
+        return flatMap(t -> alarm(scheduler, ms).map(x -> t));
     }
 }

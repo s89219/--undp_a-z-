@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,9 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/strings/sys_string_conversions.h"
+#import "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #import "ios/chrome/browser/web/chrome_web_client.h"
 #import "ios/web/public/js_messaging/web_frame.h"
 #import "ios/web/public/js_messaging/web_frames_manager.h"
@@ -18,7 +18,7 @@
 #import "ios/web/public/test/web_task_environment.h"
 #import "ios/web/public/web_state.h"
 #import "testing/gtest_mac.h"
-#include "testing/platform_test.h"
+#import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -38,7 +38,7 @@ class SuggestionControllerJavaScriptFeatureTest : public PlatformTest {
     web_state_->GetView();
     web_state_->SetKeepRenderProcessAlive(true);
   }
-  // Returns the main frame of |web_state()|'s current page.
+  // Returns the main frame of `web_state()`'s current page.
   web::WebFrame* GetMainFrame();
   // Helper method that initializes a form with three fields. Can be used to
   // test whether adding an attribute on the second field causes it to be
@@ -49,7 +49,7 @@ class SuggestionControllerJavaScriptFeatureTest : public PlatformTest {
     return web::test::ExecuteJavaScript(@"document.activeElement.name",
                                         web_state());
   }
-  // Waits until the active element is |name|.
+  // Waits until the active element is `name`.
   BOOL WaitUntilElementSelected(NSString* name) {
     return base::test::ios::WaitUntilConditionOrTimeout(
         base::test::ios::kWaitForJSCompletionTimeout, ^bool {
@@ -353,26 +353,8 @@ TEST_F(SuggestionControllerJavaScriptFeatureTest,
   SequentialNavigationSkipCheck(@"type='checkbox'", YES);
 }
 
-// Special test for a condition where the closeKeyboard script would cause an
-// illegal JS recursion if a blur event results in an event that triggers a
-// crwebinvoke:// back, such as a page change.
-TEST_F(SuggestionControllerJavaScriptFeatureTest, CloseKeyboardSafetyTest) {
-  web::test::LoadHtml(@"<select id='select'>Select</select>", web_state());
-  web::test::ExecuteJavaScript(
-      @"select.onblur = function(){window.location.href = '#test'}",
-      web_state());
-  web::test::ExecuteJavaScript(@"select.focus()", web_state());
-  // In the failure condition the app will crash during the next line.
-  autofill::SuggestionControllerJavaScriptFeature::GetInstance()
-      ->CloseKeyboardForFrame(GetMainFrame());
-  // TODO(crbug.com/661624): add a check for the keyboard actually being
-  // dismissed; unfortunately it is not known how to adapt
-  // WaitForBackgroundTasks to yield for events wrapped with window.setTimeout()
-  // or other deferred events.
-}
-
 // Test fixture to test
-// |FetchPreviousAndNextElementsPresenceInFrameWithID|.
+// `FetchPreviousAndNextElementsPresenceInFrameWithID`.
 class FetchPreviousAndNextExceptionTest
     : public SuggestionControllerJavaScriptFeatureTest {
  public:
@@ -383,7 +365,7 @@ class FetchPreviousAndNextExceptionTest
 
  protected:
   // Evaluates JS and tests that the completion handler passed to
-  // |FetchPreviousAndNextElementsPresenceInFrameWithID| is called with
+  // `FetchPreviousAndNextElementsPresenceInFrameWithID` is called with
   // (false, false) indicating no previous and next element.
   void EvaluateJavaScriptAndExpectNoPreviousAndNextElement(NSString* js) {
     web::test::ExecuteJavaScript(js, web_state());
@@ -403,22 +385,22 @@ class FetchPreviousAndNextExceptionTest
   }
 };
 
-// Tests that |fetchPreviousAndNextElementsPresenceWithCompletionHandler| works
-// when |__gCrWeb.suggestion.hasPreviousElement| throws an exception.
+// Tests that `fetchPreviousAndNextElementsPresenceWithCompletionHandler` works
+// when `__gCrWeb.suggestion.hasPreviousElement` throws an exception.
 TEST_F(FetchPreviousAndNextExceptionTest, HasPreviousElementException) {
   EvaluateJavaScriptAndExpectNoPreviousAndNextElement(
       @"__gCrWeb.suggestion.hasPreviousElement = function() { bar.foo1; }");
 }
 
-// Tests that |fetchPreviousAndNextElementsPresenceWithCompletionHandler| works
-// when |__gCrWeb.suggestion.hasNextElement| throws an exception.
+// Tests that `fetchPreviousAndNextElementsPresenceWithCompletionHandler` works
+// when `__gCrWeb.suggestion.hasNextElement` throws an exception.
 TEST_F(FetchPreviousAndNextExceptionTest, HasNextElementException) {
   EvaluateJavaScriptAndExpectNoPreviousAndNextElement(
       @"__gCrWeb.suggestion.hasNextElement = function() { bar.foo1; }");
 }
 
-// Tests that |fetchPreviousAndNextElementsPresenceWithCompletionHandler| works
-// when |Array.toString| has been overridden to return a malformed string
+// Tests that `fetchPreviousAndNextElementsPresenceWithCompletionHandler` works
+// when `Array.toString` has been overridden to return a malformed string
 // without a ",".
 TEST_F(FetchPreviousAndNextExceptionTest, HasPreviousElementNull) {
   EvaluateJavaScriptAndExpectNoPreviousAndNextElement(

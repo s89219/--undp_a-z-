@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -100,12 +100,6 @@ class EnterpriseEnrollmentHelper {
   // lifetime, and only if none of the EnrollUsing* was called before.
   virtual void EnrollUsingAttestation() = 0;
 
-  // Starts enterprise enrollment for offline demo-mode.
-  // EnrollForOfflineDemo is used offline, no network connections. Thus it goes
-  // into enrollment without authentication -- and applies policies which are
-  // stored locally.
-  virtual void EnrollForOfflineDemo() = 0;
-
   // Starts device attribute update process. First tries to get
   // permission to update device attributes for current user
   // using stored during enrollment oauth token.
@@ -149,11 +143,5 @@ class EnterpriseEnrollmentHelper {
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::EnterpriseEnrollmentHelper;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_ENROLLMENT_ENTERPRISE_ENROLLMENT_HELPER_H_

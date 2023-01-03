@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,12 @@ class TimeTicks;
 }
 
 namespace component_updater {
+
+// A command-line switch that can also be set from chrome://flags for opting in
+// or out of DCHECK binaries for Lacros (where available).
+extern const char kPreferDcheckSwitch[];
+extern const char kPreferDcheckOptIn[];
+extern const char kPreferDcheckOptOut[];
 
 // The name of the directory under DIR_COMPONENT_USER that cros component
 // installers puts all of the installed components.
@@ -72,10 +78,10 @@ class CrOSComponentInstallerPolicy : public ComponentInstallerPolicy {
   bool SupportsGroupPolicyEnabledComponentUpdates() const override;
   bool RequiresNetworkEncryption() const override;
   update_client::CrxInstaller::Result OnCustomInstall(
-      const base::Value& manifest,
+      const base::Value::Dict& manifest,
       const base::FilePath& install_dir) override;
   void OnCustomUninstall() override;
-  bool VerifyInstallation(const base::Value& manifest,
+  bool VerifyInstallation(const base::Value::Dict& manifest,
                           const base::FilePath& install_dir) const override;
   base::FilePath GetRelativeInstallDir() const override;
   void GetHash(std::vector<uint8_t>* hash) const override;
@@ -103,7 +109,7 @@ class EnvVersionInstallerPolicy : public CrOSComponentInstallerPolicy {
   // ComponentInstallerPolicy:
   void ComponentReady(const base::Version& version,
                       const base::FilePath& path,
-                      base::Value manifest) override;
+                      base::Value::Dict manifest) override;
   update_client::InstallerAttributes GetInstallerAttributes() const override;
 
  private:
@@ -128,7 +134,7 @@ class LacrosInstallerPolicy : public CrOSComponentInstallerPolicy {
   // ComponentInstallerPolicy:
   void ComponentReady(const base::Version& version,
                       const base::FilePath& path,
-                      base::Value manifest) override;
+                      base::Value::Dict manifest) override;
   update_client::InstallerAttributes GetInstallerAttributes() const override;
 
   static void SetAshVersionForTest(const char* version);
@@ -148,7 +154,7 @@ class DemoAppInstallerPolicy : public CrOSComponentInstallerPolicy {
   // ComponentInstallerPolicy:
   void ComponentReady(const base::Version& version,
                       const base::FilePath& path,
-                      base::Value manifest) override;
+                      base::Value::Dict manifest) override;
   update_client::InstallerAttributes GetInstallerAttributes() const override;
 };
 
@@ -198,6 +204,14 @@ class CrOSComponentInstaller : public CrOSComponentManager {
     // after the first.
     std::vector<LoadCallback> callbacks;
   };
+
+  // Removes the load cache entry for `component_name`. Currently this is done
+  // to avoid dispatching loads for old component versions. This can occur when
+  // the old version has loaded successfully and is now in the load cache.
+  // TODO(crbug.com/1352867): The load cache is an implementation detail and
+  // should not be exposed in the public API for this class. Remove this once we
+  // have a more comprehensive solution for all CrOS components.
+  void RemoveLoadCacheEntry(const std::string& component_name);
 
   // Test-only method for introspection.
   std::map<std::string, LoadInfo>& GetLoadCacheForTesting();

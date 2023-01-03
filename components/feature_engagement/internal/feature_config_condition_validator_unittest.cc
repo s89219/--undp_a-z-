@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,14 +25,18 @@ namespace feature_engagement {
 
 namespace {
 
-const base::Feature kFeatureConfigTestFeatureFoo{
-    "test_foo", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kFeatureConfigTestFeatureBar{
-    "test_bar", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kFeatureConfigTestFeatureQux{
-    "test_qux", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kFeatureConfigTestFeatureXyz{
-    "test_xyz", base::FEATURE_DISABLED_BY_DEFAULT};
+BASE_FEATURE(kFeatureConfigTestFeatureFoo,
+             "test_foo",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kFeatureConfigTestFeatureBar,
+             "test_bar",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kFeatureConfigTestFeatureQux,
+             "test_qux",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kFeatureConfigTestFeatureXyz,
+             "test_xyz",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 FeatureConfig GetValidFeatureConfig() {
   FeatureConfig config;
@@ -58,6 +62,12 @@ FeatureConfig GetNonBlockingFeatureConfig() {
   return config;
 }
 
+GroupConfig GetValidGroupConfig() {
+  GroupConfig config;
+  config.valid = true;
+  return config;
+}
+
 SessionRateImpact CreateSessionRateImpactTypeExplicit(
     std::vector<std::string> affected_features) {
   SessionRateImpact impact;
@@ -68,7 +78,10 @@ SessionRateImpact CreateSessionRateImpactTypeExplicit(
 
 class TestConfiguration : public Configuration {
  public:
-  TestConfiguration() { config_ = GetValidFeatureConfig(); }
+  TestConfiguration() {
+    config_ = GetValidFeatureConfig();
+    group_config_ = GetValidGroupConfig();
+  }
   ~TestConfiguration() override = default;
 
   // Configuration implementation.
@@ -86,10 +99,26 @@ class TestConfiguration : public Configuration {
   const std::vector<std::string> GetRegisteredFeatures() const override {
     return std::vector<std::string>();
   }
+  const GroupConfig& GetGroupConfig(const base::Feature& group) const override {
+    return group_config_;
+  }
+  const GroupConfig& GetGroupConfigByName(
+      const std::string& group_name) const override {
+    return group_config_;
+  }
+  const Configuration::GroupConfigMap& GetRegisteredGroupConfigs()
+      const override {
+    return group_map_;
+  }
+  const std::vector<std::string> GetRegisteredGroups() const override {
+    return std::vector<std::string>();
+  }
 
  private:
   FeatureConfig config_;
+  GroupConfig group_config_;
   Configuration::ConfigMap map_;
+  Configuration::GroupConfigMap group_map_;
 };
 
 class TestEventModel : public EventModel {

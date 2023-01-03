@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,6 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.download.DownloadManagerBridge.DownloadEnqueueRequest;
 import org.chromium.chrome.browser.download.DownloadManagerBridge.DownloadEnqueueResponse;
 import org.chromium.chrome.browser.download.DownloadNotificationUmaHelper.UmaDownloadResumption;
-import org.chromium.chrome.browser.download.items.OfflineContentAggregatorFactory;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.incognito.IncognitoUtils;
@@ -57,8 +56,6 @@ import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.components.offline_items_collection.ContentId;
 import org.chromium.components.offline_items_collection.FailState;
 import org.chromium.components.offline_items_collection.LegacyHelpers;
-import org.chromium.components.offline_items_collection.OfflineItem;
-import org.chromium.components.offline_items_collection.OfflineItemSchedule;
 import org.chromium.components.offline_items_collection.PendingState;
 import org.chromium.components.prefs.PrefService;
 import org.chromium.components.user_prefs.UserPrefs;
@@ -92,7 +89,6 @@ public class DownloadManagerService implements DownloadController.Observer,
     public static final long UNKNOWN_BYTES_RECEIVED = -1;
 
     private static final Set<String> sFirstSeenDownloadIds = new HashSet<String>();
-    private static final Set<String> sInProgressCCTDownloadIds = new HashSet<String>();
 
     private static DownloadManagerService sDownloadManagerService;
     private static boolean sIsNetworkListenerDisabled;
@@ -208,23 +204,6 @@ public class DownloadManagerService implements DownloadController.Observer,
     }
 
     /**
-     * Methods to modify the set of downloads currently being downloaded through the new CCT
-     * downloads UI.
-     * @param guid GUID of the offline item.
-     */
-    public static void addCCTDownload(String guid) {
-        sInProgressCCTDownloadIds.add(guid);
-    }
-
-    public static boolean inProgressCCTDownloadsContains(String guid) {
-        return sInProgressCCTDownloadIds.contains(guid);
-    }
-
-    public static void removeCCTDownload(String guid) {
-        sInProgressCCTDownloadIds.remove(guid);
-    }
-
-    /**
      * For tests only: sets the DownloadManagerService.
      * @param service An instance of DownloadManagerService.
      * @return Null or a currently set instance of DownloadManagerService.
@@ -304,7 +283,7 @@ public class DownloadManagerService implements DownloadController.Observer,
             status = DownloadStatus.FAILED;
         } else {
             mimeType = MimeUtils.remapGenericMimeType(
-                    mimeType, downloadInfo.getOriginalUrl(), downloadInfo.getFileName());
+                    mimeType, downloadInfo.getOriginalUrl().getSpec(), downloadInfo.getFileName());
         }
         DownloadInfo newInfo =
                 DownloadInfo.Builder.fromDownloadInfo(downloadInfo).setMimeType(mimeType).build();
@@ -369,7 +348,6 @@ public class DownloadManagerService implements DownloadController.Observer,
             DownloadManagerService.getDownloadManagerService().checkForExternallyRemovedDownloads(
                     ProfileKey.getLastUsedRegularProfileKey());
 
-            removeInterstitialDownloadPendingDeletion();
             mActivityLaunched = true;
         }
     }
@@ -433,24 +411,6 @@ public class DownloadManagerService implements DownloadController.Observer,
             // up-to-date.
             Log.e(TAG, "Failed to write DownloadInfo " + type);
         }
-    }
-
-    /**
-     * Remove downloads in the case that Chrome closes before a download interstitial can remove a
-     * deleted/cancelled download.
-     */
-    private static void removeInterstitialDownloadPendingDeletion() {
-        String contentIdString = SharedPreferencesManager.getInstance().readString(
-                ChromePreferenceKeys.DOWNLOAD_INTERSTITIAL_DOWNLOAD_PENDING_REMOVAL, "");
-        if (TextUtils.isEmpty(contentIdString)) return;
-
-        String[] contentIdData = contentIdString.split(","); // { namespace, id }
-        assert contentIdData.length == 2;
-
-        OfflineContentAggregatorFactory.get().removeItem(
-                new ContentId(contentIdData[0], contentIdData[1]));
-        SharedPreferencesManager.getInstance().removeKeySync(
-                ChromePreferenceKeys.DOWNLOAD_INTERSTITIAL_DOWNLOAD_PENDING_REMOVAL);
     }
 
     /**
@@ -533,10 +493,12 @@ public class DownloadManagerService implements DownloadController.Observer,
                                 ChromeFeatureList.DOWNLOAD_OFFLINE_CONTENT_PROVIDER)
                         && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q);
                 if (!success && shouldAddCompletedDownload) {
-                    long systemDownloadId = DownloadManagerBridge.addCompletedDownload(
-                            info.getFileName(), info.getDescription(), info.getMimeType(),
-                            info.getFilePath(), info.getBytesReceived(), info.getOriginalUrl(),
-                            info.getReferrer(), info.getDownloadGuid());
+                    // TODO(https://crbug.com/783819): Migrate mReferrer and mOriginalUrl to GURL
+                    long systemDownloadId =
+                            DownloadManagerBridge.addCompletedDownload(info.getFileName(),
+                                    info.getDescription(), info.getMimeType(), info.getFilePath(),
+                                    info.getBytesReceived(), info.getOriginalUrl().getSpec(),
+                                    info.getReferrer().getSpec(), info.getDownloadGuid());
                     success = systemDownloadId != DownloadConstants.INVALID_DOWNLOAD_ID;
                     if (success) item.setSystemDownloadId(systemDownloadId);
                 }
@@ -697,7 +659,7 @@ public class DownloadManagerService implements DownloadController.Observer,
         request.description = item.getDownloadInfo().getDescription();
         request.mimeType = item.getDownloadInfo().getMimeType();
         request.cookie = item.getDownloadInfo().getCookie();
-        request.referrer = item.getDownloadInfo().getReferrer();
+        request.referrer = item.getDownloadInfo().getReferrer().getSpec();
         request.userAgent = item.getDownloadInfo().getUserAgent();
         request.notifyCompleted = notifyCompleted;
         DownloadManagerBridge.enqueueNewDownload(
@@ -814,8 +776,8 @@ public class DownloadManagerService implements DownloadController.Observer,
             @DownloadOpenSource int source) {
         openDownloadedContent(ContextUtils.getApplicationContext(), downloadInfo.getFilePath(),
                 isSupportedMimeType(downloadInfo.getMimeType()), downloadInfo.getOTRProfileId(),
-                downloadInfo.getDownloadGuid(), downloadId, downloadInfo.getOriginalUrl(),
-                downloadInfo.getReferrer(), source, downloadInfo.getMimeType());
+                downloadInfo.getDownloadGuid(), downloadId, downloadInfo.getOriginalUrl().getSpec(),
+                downloadInfo.getReferrer().getSpec(), source, downloadInfo.getMimeType());
     }
 
     /**
@@ -1320,22 +1282,6 @@ public class DownloadManagerService implements DownloadController.Observer,
     }
 
     /**
-     * Change the download schedule to start the download in a different condition.
-     * @param id The id of the {@link OfflineItem} that requests the change.
-     * @param schedule The download schedule that defines when to start the download.
-     * @param otrProfileID The {@link OTRProfileID} of the download. Null if in regular mode.
-     */
-    // Deprecated after new download backend.
-    public void changeSchedule(
-            final ContentId id, final OfflineItemSchedule schedule, OTRProfileID otrProfileID) {
-        boolean onlyOnWifi = (schedule == null) ? false : schedule.onlyOnWifi;
-        long startTimeMs = (schedule == null) ? -1 : schedule.startTimeMs;
-        DownloadManagerServiceJni.get().changeSchedule(getNativeDownloadManagerService(),
-                DownloadManagerService.this, id.id, onlyOnWifi, startTimeMs,
-                IncognitoUtils.getProfileKeyFromOTRProfileID(otrProfileID));
-    }
-
-    /**
      * Add an Intent extra for StateAtCancel UMA to know the state of a request prior to a
      * user-initiated cancel.
      * @param intent The Intent associated with the download action.
@@ -1494,8 +1440,8 @@ public class DownloadManagerService implements DownloadController.Observer,
         DownloadInfo downloadInfo = downloadItem.getDownloadInfo();
         boolean canOpen = DownloadUtils.openFile(downloadInfo.getFilePath(),
                 downloadInfo.getMimeType(), downloadInfo.getDownloadGuid(),
-                downloadInfo.getOTRProfileId(), downloadInfo.getOriginalUrl(),
-                downloadInfo.getReferrer(), source, ContextUtils.getApplicationContext());
+                downloadInfo.getOTRProfileId(), downloadInfo.getOriginalUrl().getSpec(),
+                downloadInfo.getReferrer().getSpec(), source, ContextUtils.getApplicationContext());
         if (!canOpen) {
             openDownloadsPage(downloadInfo.getOTRProfileId(), source);
         }
@@ -1742,8 +1688,6 @@ public class DownloadManagerService implements DownloadController.Observer,
         void renameDownload(long nativeDownloadManagerService, DownloadManagerService caller,
                 String downloadGuid, String targetName, Callback</*RenameResult*/ Integer> callback,
                 ProfileKey profileKey);
-        void changeSchedule(long nativeDownloadManagerService, DownloadManagerService caller,
-                String downloadGuid, boolean onlyOnWifi, long startTimeMs, ProfileKey profileKey);
         void getAllDownloads(long nativeDownloadManagerService, DownloadManagerService caller,
                 ProfileKey profileKey);
         void checkForExternallyRemovedDownloads(long nativeDownloadManagerService,

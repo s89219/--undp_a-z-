@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/page_load_metrics/observers/page_load_metrics_observer_test_harness.h"
 #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
@@ -66,7 +67,7 @@ class FromGWSPageLoadMetricsObserverTest
   }
 
  protected:
-  FromGWSPageLoadMetricsObserver* observer_ = nullptr;
+  raw_ptr<FromGWSPageLoadMetricsObserver> observer_ = nullptr;
 };
 
 class FromGWSPageLoadMetricsLoggerTest : public testing::Test {};
@@ -91,12 +92,14 @@ TEST_F(FromGWSPageLoadMetricsObserverTest, NoPreviousCommittedUrl) {
   tester()->NavigateToUntrackedUrl();
   tester()->histogram_tester().ExpectTotalCount(
       internal::kHistogramFromGWSFirstImagePaint, 0);
+  auto entries = tester()->test_ukm_recorder().GetEntriesByName(
+      ukm::builders::PageLoad_FromGoogleSearch::kEntryName);
+  EXPECT_EQ(0u, entries.size());
   size_t document_created_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("DocumentCreated").size();
   size_t unload_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("Unload").size();
-  EXPECT_EQ(0ul, tester()->test_ukm_recorder().entries_count() -
-                     document_created_entries_count - unload_entries_count);
+  EXPECT_EQ(document_created_entries_count, unload_entries_count);
 }
 
 TEST_F(FromGWSPageLoadMetricsObserverTest, NonSearchPreviousCommittedUrl) {
@@ -114,12 +117,14 @@ TEST_F(FromGWSPageLoadMetricsObserverTest, NonSearchPreviousCommittedUrl) {
   tester()->NavigateToUntrackedUrl();
   tester()->histogram_tester().ExpectTotalCount(
       internal::kHistogramFromGWSFirstImagePaint, 0);
+  auto entries = tester()->test_ukm_recorder().GetEntriesByName(
+      ukm::builders::PageLoad_FromGoogleSearch::kEntryName);
+  EXPECT_EQ(0u, entries.size());
   size_t document_created_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("DocumentCreated").size();
   size_t unload_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("Unload").size();
-  EXPECT_EQ(0ul, tester()->test_ukm_recorder().entries_count() -
-                     document_created_entries_count - unload_entries_count);
+  EXPECT_EQ(document_created_entries_count, unload_entries_count);
 }
 
 TEST_F(FromGWSPageLoadMetricsObserverTest,
@@ -138,12 +143,14 @@ TEST_F(FromGWSPageLoadMetricsObserverTest,
   tester()->NavigateToUntrackedUrl();
   tester()->histogram_tester().ExpectTotalCount(
       internal::kHistogramFromGWSFirstImagePaint, 0);
+  auto entries = tester()->test_ukm_recorder().GetEntriesByName(
+      ukm::builders::PageLoad_FromGoogleSearch::kEntryName);
+  EXPECT_EQ(0u, entries.size());
   size_t document_created_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("DocumentCreated").size();
   size_t unload_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("Unload").size();
-  EXPECT_EQ(0ul, tester()->test_ukm_recorder().entries_count() -
-                     document_created_entries_count - unload_entries_count);
+  EXPECT_EQ(document_created_entries_count, unload_entries_count);
 }
 
 TEST_F(FromGWSPageLoadMetricsObserverTest,
@@ -164,12 +171,14 @@ TEST_F(FromGWSPageLoadMetricsObserverTest,
   tester()->NavigateToUntrackedUrl();
   tester()->histogram_tester().ExpectTotalCount(
       internal::kHistogramFromGWSFirstImagePaint, 0);
+  auto entries = tester()->test_ukm_recorder().GetEntriesByName(
+      ukm::builders::PageLoad_FromGoogleSearch::kEntryName);
+  EXPECT_EQ(0u, entries.size());
   size_t document_created_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("DocumentCreated").size();
   size_t unload_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("Unload").size();
-  EXPECT_EQ(0ul, tester()->test_ukm_recorder().entries_count() -
-                     document_created_entries_count - unload_entries_count);
+  EXPECT_EQ(document_created_entries_count, unload_entries_count);
 }
 
 TEST_F(FromGWSPageLoadMetricsObserverTest, SearchPreviousCommittedUrl1) {
@@ -194,8 +203,7 @@ TEST_F(FromGWSPageLoadMetricsObserverTest, SearchPreviousCommittedUrl1) {
   NavigateAndCommit(GURL(kExampleUrl));
 
   tester()->SimulateTimingUpdate(timing);
-  page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, {});
+  page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, {});
   tester()->SimulateRenderDataUpdate(render_data);
   render_data.layout_shift_delta = 1.5;
   render_data.layout_shift_delta_before_input_or_scroll = 0.0;
@@ -630,12 +638,15 @@ TEST_F(FromGWSPageLoadMetricsObserverTest,
   tester()->histogram_tester().ExpectTotalCount(
       internal::kHistogramFromGWSFirstImagePaint, 0);
 
+  auto entries = tester()->test_ukm_recorder().GetEntriesByName(
+      ukm::builders::PageLoad_FromGoogleSearch::kEntryName);
+  EXPECT_EQ(0u, entries.size());
+
   size_t document_created_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("DocumentCreated").size();
   size_t unload_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("Unload").size();
-  EXPECT_EQ(0ul, tester()->test_ukm_recorder().entries_count() -
-                     document_created_entries_count - unload_entries_count);
+  EXPECT_EQ(document_created_entries_count, unload_entries_count);
 }
 
 TEST_F(FromGWSPageLoadMetricsObserverTest,
@@ -649,8 +660,7 @@ TEST_F(FromGWSPageLoadMetricsObserverTest,
 
   NavigateAndCommit(GURL("https://www.google.com/search#q=test"));
   NavigateAndCommit(GURL(kExampleUrl));
-  page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, {});
+  page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, {});
   tester()->SimulateRenderDataUpdate(render_data);
 
   web_contents()->WasHidden();
@@ -1006,14 +1016,14 @@ TEST_F(FromGWSPageLoadMetricsObserverWithSidePanelTest,
       first_image_paint, 1);
 
   // Test UKM metrics recorded successfully.
+  auto entries = tester()->test_ukm_recorder().GetEntriesByName(
+      ukm::builders::PageLoad_FromGoogleSearch::kEntryName);
+  EXPECT_EQ(1u, entries.size());
   size_t document_created_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("DocumentCreated").size();
   size_t unload_entries_count =
       tester()->test_ukm_recorder().GetEntriesByName("Unload").size();
-  size_t adjusted_ukm_entries_count =
-      tester()->test_ukm_recorder().entries_count() -
-      document_created_entries_count - unload_entries_count;
-  EXPECT_EQ(1ul, adjusted_ukm_entries_count);
+  EXPECT_EQ(document_created_entries_count, unload_entries_count);
 }
 
 // Ensures link initiated side panel navigations from Google SRPs log expected
@@ -1046,8 +1056,7 @@ TEST_F(FromGWSPageLoadMetricsObserverWithSidePanelTest,
   NavigateAndCommit(GURL(kExampleUrl2));
   tester()->SimulateTimingUpdate(timing);
 
-  page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, 0, 0, 0,
-                                                              0, {});
+  page_load_metrics::mojom::FrameRenderDataUpdate render_data(1.0, 1.0, {});
   tester()->SimulateRenderDataUpdate(render_data);
   render_data.layout_shift_delta = 1.5;
   render_data.layout_shift_delta_before_input_or_scroll = 0.0;

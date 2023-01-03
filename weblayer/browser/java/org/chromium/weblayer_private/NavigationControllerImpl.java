@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,15 +78,6 @@ public final class NavigationControllerImpl extends INavigationController.Stub {
         NavigateParamsImpl params = (NavigateParamsImpl) iParams;
         WebResourceResponseInfo responseInfo = null;
         if (params.getResponse() != null) {
-            if (mTab.isActiveTab()) {
-                BrowserImpl browser = mTab.getBrowser();
-                UrlBarControllerImpl urlBarController = browser.getUrlBarControllerImpl();
-                if (urlBarController != null && urlBarController.hasActiveView()) {
-                    throw new IllegalStateException(
-                            "Can't navigate to an InputStream if the stock URL bar is visible.");
-                }
-            }
-
             WebResourceResponse response =
                     ObjectWrapper.unwrap(params.getResponse(), WebResourceResponse.class);
             responseInfo = new WebResourceResponseInfo(response.getMimeType(),

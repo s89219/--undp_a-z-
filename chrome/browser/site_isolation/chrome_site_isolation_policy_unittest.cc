@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -108,12 +108,13 @@ TEST_F(ChromeSiteIsolationPolicyTest, IsolatedOriginsContainChromeOrigins) {
   std::vector<url::Origin> expected_embedder_origins =
       site_isolation::GetBrowserSpecificBuiltInIsolatedOrigins();
 #if !BUILDFLAG(IS_ANDROID)
-  expected_embedder_origins.push_back(
-      url::Origin::Create(GaiaUrls::GetInstance()->gaia_url()));
+  expected_embedder_origins.push_back(GaiaUrls::GetInstance()->gaia_origin());
 #endif
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   expected_embedder_origins.push_back(
       url::Origin::Create(extension_urls::GetWebstoreLaunchURL()));
+  expected_embedder_origins.push_back(
+      url::Origin::Create(extension_urls::GetNewWebstoreLaunchURL()));
 #endif
   auto* cpsp = content::ChildProcessSecurityPolicy::GetInstance();
   std::vector<url::Origin> isolated_origins = cpsp->GetIsolatedOrigins();

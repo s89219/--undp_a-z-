@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "components/version_info/version_info.h"
+#include "content/public/browser/attribution_config.h"
 #include "content/public/browser/attribution_reporting.h"
 #include "content/public/test/attribution_simulator.h"
 #include "content/public/test/attribution_simulator_environment.h"
@@ -40,6 +41,7 @@ constexpr char kSwitchRandomizedResponseRateNavigation[] =
     "randomized_response_rate_navigation";
 constexpr char kSwitchRandomizedResponseRateEvent[] =
     "randomized_response_rate_event";
+constexpr char kSwitchRemoveActualReportTimes[] = "remove_actual_report_times";
 constexpr char kSwitchRemoveAssembledReport[] = "remove_assembled_report";
 constexpr char kSwitchSkipDebugCookieChecks[] = "skip_debug_cookie_checks";
 
@@ -59,6 +61,7 @@ constexpr const char* kAllowedSwitches[] = {
     kSwitchRandomizedResponseRateNavigation,
     kSwitchRandomizedResponseRateEvent,
     kSwitchSkipDebugCookieChecks,
+    kSwitchRemoveActualReportTimes,
 };
 
 constexpr char kHelpMsg[] = R"(
@@ -74,6 +77,7 @@ attribution_reporting_simulator
   [--report_time_format=<format>]
   [--remove_assembled_report]
   [--skip_debug_cookie_checks]
+  [--remove_actual_report_times]
 
 attribution_reporting_simulator is a command-line tool that simulates the
 Attribution Reporting API for for sources and triggers specified in an input
@@ -88,10 +92,10 @@ containing sources and triggers to register in the simulation. The format
 is described below in detail.
 
 Learn more about the Attribution Reporting API at
-https://github.com/WICG/conversion-measurement-api#attribution-reporting-api.
+https://github.com/WICG/attribution-reporting-api#attribution-reporting-api.
 
 Learn about the meaning of the input and output fields at
-https://github.com/WICG/conversion-measurement-api/blob/main/EVENT.md.
+https://github.com/WICG/attribution-reporting-api/blob/main/EVENT.md.
 
 Switches:
   --copy_input_to_output    - Optional. If present, the input is copied to the
@@ -151,13 +155,13 @@ Switches:
                               output more deterministic.
 
   --report_time_format=<format>
-                            - Optional. Either `seconds_since_unix_epoch`
+                            - Optional. Either `milliseconds_since_unix_epoch`
                               (default) or `iso8601`. Controls the report time
                               output format.
 
-                              `seconds_since_unix_epoch`: Report times are
-                              integer seconds since the Unix epoch, e.g.
-                              1643408373.
+                              `milliseconds_since_unix_epoch`: Report times are
+                              integer milliseconds since the Unix epoch, e.g.
+                              1643408373000.
 
                               `iso8601`: Report times are ISO 8601 strings,
                               e.g. "2022-01-28T22:19:33.000Z".
@@ -171,6 +175,11 @@ Switches:
 
   --skip_debug_cookie_checks
                             - Optional. If present, skips debug cookie checks.
+
+  --remove_actual_report_times
+                            - Optional. If present, removes the `report_time`
+                              field from reports, as they are subject to
+                              implementation details.
 
   --version                 - Outputs the tool version and exits.
 
@@ -189,21 +198,20 @@ int ProcessJsonString(const std::string& json_input,
                       const content::AttributionSimulationOptions& options,
                       bool copy_input_to_output,
                       int json_write_options) {
-  base::JSONReader::ValueWithError result =
-      base::JSONReader::ReadAndReturnValueWithError(
-          json_input, base::JSONParserOptions::JSON_PARSE_RFC);
-  if (!result.value) {
-    std::cerr << "failed to deserialize input: " << result.error_message
+  auto result = base::JSONReader::ReadAndReturnValueWithError(
+      json_input, base::JSONParserOptions::JSON_PARSE_RFC);
+  if (!result.has_value()) {
+    std::cerr << "failed to deserialize input: " << result.error().message
               << std::endl;
     return 1;
   }
 
   base::Value input_copy;
   if (copy_input_to_output)
-    input_copy = result.value->Clone();
+    input_copy = result->Clone();
 
-  base::Value output = content::RunAttributionSimulation(
-      std::move(*result.value), options, std::cerr);
+  base::Value output =
+      content::RunAttributionSimulation(std::move(*result), options, std::cerr);
   if (output.type() == base::Value::Type::NONE)
     return 1;
 
@@ -309,18 +317,18 @@ int main(int argc, char* argv[]) {
     noise_seed = value;
   }
 
-  auto randomized_response_rates =
-      content::AttributionRandomizedResponseRates::kDefault;
+  content::AttributionConfig config;
 
   if (!ParseRandomizedResponseRateSwitch(
           command_line, kSwitchRandomizedResponseRateNavigation,
-          &randomized_response_rates.navigation)) {
+          &config.event_level_limit
+               .navigation_source_randomized_response_rate)) {
     return 1;
   }
 
-  if (!ParseRandomizedResponseRateSwitch(command_line,
-                                         kSwitchRandomizedResponseRateEvent,
-                                         &randomized_response_rates.event)) {
+  if (!ParseRandomizedResponseRateSwitch(
+          command_line, kSwitchRandomizedResponseRateEvent,
+          &config.event_level_limit.event_source_randomized_response_rate)) {
     return 1;
   }
 
@@ -337,13 +345,13 @@ int main(int argc, char* argv[]) {
   }
 
   auto report_time_format =
-      content::AttributionReportTimeFormat::kSecondsSinceUnixEpoch;
+      content::AttributionReportTimeFormat::kMillisecondsSinceUnixEpoch;
   if (command_line.HasSwitch(kSwitchReportTimeFormat)) {
     std::string str = command_line.GetSwitchValueASCII(kSwitchReportTimeFormat);
 
     if (str == "iso8601") {
       report_time_format = content::AttributionReportTimeFormat::kISO8601;
-    } else if (str != "seconds_since_unix_epoch") {
+    } else if (str != "milliseconds_since_unix_epoch") {
       std::cerr << "unknown report time format: " << str << std::endl;
       return 1;
     }
@@ -369,14 +377,20 @@ int main(int argc, char* argv[]) {
   content::AttributionSimulationOptions options({
       .noise_mode = noise_mode,
       .noise_seed = noise_seed,
-      .randomized_response_rates = randomized_response_rates,
+      .config = config,
       .delay_mode = delay_mode,
-      .remove_report_ids = command_line.HasSwitch(kSwitchRemoveReportIds),
-      .report_time_format = report_time_format,
-      .remove_assembled_report =
-          command_line.HasSwitch(kSwitchRemoveAssembledReport),
       .skip_debug_cookie_checks =
           command_line.HasSwitch(kSwitchSkipDebugCookieChecks),
+      .output_options =
+          content::AttributionSimulationOutputOptions{
+              .remove_report_ids =
+                  command_line.HasSwitch(kSwitchRemoveReportIds),
+              .report_time_format = report_time_format,
+              .remove_assembled_report =
+                  command_line.HasSwitch(kSwitchRemoveAssembledReport),
+              .remove_actual_report_times =
+                  command_line.HasSwitch(kSwitchRemoveActualReportTimes),
+          },
   });
 
   content::AttributionSimulatorEnvironment env(argc, argv);

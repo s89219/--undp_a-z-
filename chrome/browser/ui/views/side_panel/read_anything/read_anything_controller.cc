@@ -1,101 +1,194 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_controller.h"
 
-#include <string>
 #include <vector>
 
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/webui/side_panel/read_anything/read_anything.mojom.h"
-#include "ui/accessibility/ax_node.h"
-#include "ui/accessibility/ax_role_properties.h"
-#include "ui/accessibility/ax_tree.h"
-
-namespace {
-
-using read_anything::mojom::ContentNode;
-using read_anything::mojom::ContentNodePtr;
-using read_anything::mojom::ContentType;
-
-ContentNodePtr GetFromAXNode(ui::AXNode* ax_node) {
-  auto content_node = ContentNode::New();
-
-  // Set ContentNode.type. If ax_node role doesn't map to a ContentType, return
-  // nullptr.
-  if (ui::IsHeading(ax_node->GetRole())) {
-    content_node->type = ContentType::kHeading;
-    content_node->heading_level =
-        ax_node->GetIntAttribute(ax::mojom::IntAttribute::kHierarchicalLevel);
-  } else if (ax_node->GetRole() == ax::mojom::Role::kParagraph) {
-    content_node->type = ContentType::kParagraph;
-  } else {
-    return nullptr;
-  }
-
-  // Set ContentNode.text. If ax_node doesn't contain any text, return nullptr.
-  if (!ax_node->GetTextContentLengthUTF8())
-    return nullptr;
-  content_node->text = ax_node->GetTextContentUTF8();
-
-  return content_node;
-}
-
-}  // namespace
+#include "chrome/browser/ui/views/side_panel/read_anything/read_anything_constants.h"
+#include "chrome/browser/ui/webui/side_panel/read_anything/read_anything_prefs.h"
+#include "chrome/common/accessibility/read_anything.mojom.h"
+#include "ui/accessibility/ax_tree_update.h"
 
 ReadAnythingController::ReadAnythingController(ReadAnythingModel* model,
                                                Browser* browser)
-    : model_(model), browser_(browser) {}
-
-void ReadAnythingController::OnFontChoiceChanged(int new_choice) {
-  model_->SetSelectedFontIndex(new_choice);
+    : model_(model), browser_(browser) {
+  DCHECK(browser_);
+  browser_->tab_strip_model()->AddObserver(this);
+  WebContentsObserver::Observe(
+      browser_->tab_strip_model()->GetActiveWebContents());
 }
 
-void ReadAnythingController::OnUIShown() {
-  if (!browser_)
+ReadAnythingController::~ReadAnythingController() {
+  TabStripModelObserver::StopObservingAll(this);
+  WebContentsObserver::Observe(nullptr);
+}
+
+void ReadAnythingController::Activate(bool active) {
+  active_ = active;
+  SnapshotAXTree();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ReadAnythingFontCombobox::Delegate:
+///////////////////////////////////////////////////////////////////////////////
+
+void ReadAnythingController::OnFontChoiceChanged(int new_index) {
+  if (!model_->GetFontModel()->IsValidFontIndex(new_index))
     return;
 
-  content::WebContents* web_contents =
-      browser_->tab_strip_model()->GetActiveWebContents();
-  if (!web_contents)
+  model_->SetSelectedFontByIndex(new_index);
+
+  browser_->profile()->GetPrefs()->SetString(
+      prefs::kAccessibilityReadAnythingFontName,
+      model_->GetFontModel()->GetFontNameAt(new_index));
+}
+
+ui::ComboboxModel* ReadAnythingController::GetFontComboboxModel() {
+  return model_->GetFontModel();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ReadAnythingToolbarView::Delegate:
+///////////////////////////////////////////////////////////////////////////////
+
+void ReadAnythingController::OnFontSizeChanged(bool increase) {
+  if (increase) {
+    model_->IncreaseTextSize();
+  } else {
+    model_->DecreaseTextSize();
+  }
+
+  browser_->profile()->GetPrefs()->SetDouble(
+      prefs::kAccessibilityReadAnythingFontScale, model_->GetFontScale());
+}
+
+void ReadAnythingController::OnColorsChanged(int new_index) {
+  if (!model_->GetColorsModel()->IsValidIndex(new_index))
+    return;
+
+  model_->SetSelectedColorsByIndex(new_index);
+
+  browser_->profile()->GetPrefs()->SetInteger(
+      prefs::kAccessibilityReadAnythingColorInfo, new_index);
+}
+
+ReadAnythingMenuModel* ReadAnythingController::GetColorsModel() {
+  return model_->GetColorsModel();
+}
+
+void ReadAnythingController::OnLineSpacingChanged(int new_index) {
+  if (!model_->GetLineSpacingModel()->IsValidIndex(new_index))
+    return;
+
+  model_->SetSelectedLineSpacingByIndex(new_index);
+
+  browser_->profile()->GetPrefs()->SetInteger(
+      prefs::kAccessibilityReadAnythingLineSpacing, new_index);
+}
+
+ReadAnythingMenuModel* ReadAnythingController::GetLineSpacingModel() {
+  return model_->GetLineSpacingModel();
+}
+
+void ReadAnythingController::OnLetterSpacingChanged(int new_index) {
+  if (!model_->GetLetterSpacingModel()->IsValidIndex(new_index))
+    return;
+
+  model_->SetSelectedLetterSpacingByIndex(new_index);
+
+  browser_->profile()->GetPrefs()->SetInteger(
+      prefs::kAccessibilityReadAnythingLetterSpacing, new_index);
+}
+
+ReadAnythingMenuModel* ReadAnythingController::GetLetterSpacingModel() {
+  return model_->GetLetterSpacingModel();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// ReadAnythingPageHandler::Delegate:
+///////////////////////////////////////////////////////////////////////////////
+
+void ReadAnythingController::OnUIReady() {
+  ui_ready_ = true;
+  SnapshotAXTree();
+}
+
+void ReadAnythingController::OnUIDestroyed() {
+  ui_ready_ = false;
+}
+
+void ReadAnythingController::OnLinkClicked(const GURL& url,
+                                           bool open_in_new_tab) {
+  if (!web_contents())
+    return;
+  WindowOpenDisposition disposition =
+      open_in_new_tab ? WindowOpenDisposition::NEW_FOREGROUND_TAB
+                      : WindowOpenDisposition::CURRENT_TAB;
+  content::OpenURLParams params(url, content::Referrer(), disposition,
+                                ui::PAGE_TRANSITION_LINK,
+                                /* is_renderer_initiated= */ true);
+  params.initiator_origin = url::Origin::Create(web_contents()->GetURL());
+  browser_->OpenURL(params);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// TabStripModelObserver:
+///////////////////////////////////////////////////////////////////////////////
+
+void ReadAnythingController::OnTabStripModelChanged(
+    TabStripModel* tab_strip_model,
+    const TabStripModelChange& change,
+    const TabStripSelectionChange& selection) {
+  if (!selection.active_tab_changed())
+    return;
+  WebContentsObserver::Observe(selection.new_contents);
+  SnapshotAXTree();
+}
+
+void ReadAnythingController::OnTabStripModelDestroyed(
+    TabStripModel* tab_strip_model) {
+  // If the TabStripModel is destroyed before |this|, remove |this| as an
+  // observer and set |browser_| to nullptr.
+  DCHECK(browser_);
+  tab_strip_model->RemoveObserver(this);
+  browser_ = nullptr;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// content::WebContentsObserver:
+///////////////////////////////////////////////////////////////////////////////
+
+void ReadAnythingController::DidStopLoading() {
+  SnapshotAXTree();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+void ReadAnythingController::SnapshotAXTree() {
+  if (!active_ || !ui_ready_ || !web_contents())
     return;
 
   // Read Anything just runs on the main frame and does not run on embedded
   // content.
-  content::RenderFrameHost* render_frame_host = web_contents->GetMainFrame();
+  content::RenderFrameHost* render_frame_host =
+      web_contents()->GetPrimaryMainFrame();
   if (!render_frame_host)
     return;
 
-  // Request a distilled AXTree for the main frame.
-  render_frame_host->RequestDistilledAXTree(
-      base::BindOnce(&ReadAnythingController::OnAXTreeDistilled,
-                     weak_pointer_factory_.GetWeakPtr()));
+  // Request an AXTreeSnapshot on the main render frame, not the entire web
+  // contents. The web contents snapshotter combines all render frames which
+  // Read Anything doesn't require.
+  render_frame_host->RequestAXTreeSnapshot(
+      base::BindOnce(&ReadAnythingController::OnAXTreeSnapshotted,
+                     weak_pointer_factory_.GetWeakPtr()),
+      kReadAnythingAXMode, /* exclude_offscreen= */ false,
+      /* max_nodes= */ 0, /* timeout= */ {});
 }
 
-void ReadAnythingController::OnAXTreeDistilled(
-    const ui::AXTreeUpdate& snapshot,
-    const std::vector<ui::AXNodeID>& content_node_ids) {
-  // Unserialize the snapshot.
-  ui::AXTree tree;
-  bool success = tree.Unserialize(snapshot);
-  if (!success)
-    return;
-
-  std::vector<ContentNodePtr> content_nodes;
-  for (auto ax_node_id : content_node_ids) {
-    ui::AXNode* ax_node = tree.GetFromId(ax_node_id);
-    if (!ax_node)
-      continue;
-    auto content_node = GetFromAXNode(ax_node);
-    if (!content_node)
-      continue;
-    content_nodes.push_back(std::move(content_node));
-  }
-
-  // Update the content in the model.
-  model_->SetContent(std::move(content_nodes));
+void ReadAnythingController::OnAXTreeSnapshotted(
+    const ui::AXTreeUpdate& snapshot) {
+  model_->OnAXTreeSnapshotted(snapshot);
 }
-
-ReadAnythingController::~ReadAnythingController() = default;

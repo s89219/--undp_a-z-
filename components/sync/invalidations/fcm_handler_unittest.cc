@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -131,16 +131,13 @@ class FCMHandlerTest : public testing::Test {
 TEST_F(FCMHandlerTest, ShouldReturnValidToken) {
   // Check that the handler gets the token through GetToken.
   EXPECT_CALL(mock_instance_id_, GetToken)
-      .WillOnce(
-          WithArg<4>(Invoke([this](InstanceID::GetTokenCallback callback) {
-            EXPECT_TRUE(fcm_handler_.IsWaitingForToken());
-            std::move(callback).Run("token", InstanceID::Result::SUCCESS);
-          })));
+      .WillOnce(WithArg<4>(Invoke([](InstanceID::GetTokenCallback callback) {
+        std::move(callback).Run("token", InstanceID::Result::SUCCESS);
+      })));
 
   fcm_handler_.StartListening();
 
   EXPECT_EQ("token", fcm_handler_.GetFCMRegistrationToken());
-  EXPECT_FALSE(fcm_handler_.IsWaitingForToken());
 }
 
 TEST_F(FCMHandlerTest, ShouldPropagatePayloadToListener) {
@@ -246,9 +243,64 @@ TEST_F(FCMHandlerTest, ShouldClearTokenOnStopListeningPermanently) {
   // Token should be cleared when StopListeningPermanently() is called.
   EXPECT_CALL(mock_token_observer, OnFCMRegistrationTokenChanged());
   fcm_handler_.StopListeningPermanently();
-  EXPECT_EQ("", fcm_handler_.GetFCMRegistrationToken());
+  EXPECT_EQ(absl::nullopt, fcm_handler_.GetFCMRegistrationToken());
 
   fcm_handler_.RemoveTokenObserver(&mock_token_observer);
+}
+
+TEST_F(FCMHandlerTest, ShouldReplayIncomingMessagesOnAddingListener) {
+  const std::string kPayloadValue1 = "payload_1";
+  const std::string kPayloadValue2 = "payload_2";
+
+  gcm::IncomingMessage gcm_message;
+  gcm_message.raw_data = kPayloadValue1;
+  fcm_handler_.OnMessage(kSyncInvalidationsAppId, gcm_message);
+
+  gcm_message.raw_data = kPayloadValue2;
+  fcm_handler_.OnMessage(kSyncInvalidationsAppId, gcm_message);
+
+  NiceMock<MockListener> mock_listener;
+  EXPECT_CALL(mock_listener, OnInvalidationReceived(kPayloadValue1));
+  EXPECT_CALL(mock_listener, OnInvalidationReceived(kPayloadValue2));
+  fcm_handler_.AddListener(&mock_listener);
+
+  // Adding the same listener twice should have no effect.
+  fcm_handler_.AddListener(&mock_listener);
+  fcm_handler_.RemoveListener(&mock_listener);
+}
+
+TEST_F(FCMHandlerTest, ShouldLimitIncomingMessagesForReplay) {
+  gcm::IncomingMessage gcm_message;
+  gcm_message.raw_data = "payload";
+  for (size_t i = 0; i < 100; ++i) {
+    fcm_handler_.OnMessage(kSyncInvalidationsAppId, gcm_message);
+  }
+
+  NiceMock<MockListener> mock_listener;
+  EXPECT_CALL(mock_listener, OnInvalidationReceived).Times(5);
+  fcm_handler_.AddListener(&mock_listener);
+  fcm_handler_.RemoveListener(&mock_listener);
+}
+
+TEST_F(FCMHandlerTest, ShouldClearLastIncomingMessagesOnStopListening) {
+  EXPECT_CALL(mock_instance_id_, GetToken)
+      .WillRepeatedly(
+          WithArg<4>(Invoke([](InstanceID::GetTokenCallback callback) {
+            std::move(callback).Run("token", InstanceID::Result::SUCCESS);
+          })));
+  fcm_handler_.StartListening();
+
+  gcm::IncomingMessage gcm_message;
+  gcm_message.raw_data = "payload";
+  fcm_handler_.OnMessage(kSyncInvalidationsAppId, gcm_message);
+
+  fcm_handler_.StopListening();
+  fcm_handler_.StartListening();
+
+  NiceMock<MockListener> mock_listener;
+  EXPECT_CALL(mock_listener, OnInvalidationReceived).Times(0);
+  fcm_handler_.AddListener(&mock_listener);
+  fcm_handler_.RemoveListener(&mock_listener);
 }
 
 }  // namespace

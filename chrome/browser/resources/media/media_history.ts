@@ -1,11 +1,11 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://resources/cr_elements/cr_tab_box/cr_tab_box.js';
 
 import {assert, assertNotReached} from 'chrome://resources/js/assert_ts.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import {String16} from 'chrome://resources/mojo/mojo/public/mojom/base/string16.mojom-webui.js';
 
 import {MediaDataTable, MediaDataTableDelegate} from './media_data_table.js';
@@ -14,9 +14,9 @@ import {MediaHistoryStats, MediaHistoryStore, MediaHistoryStoreRemote} from './m
 // Allow a function to be provided by tests, which will be called when
 // the page has been populated.
 const mediaHistoryPageIsPopulatedResolver = new PromiseResolver<void>();
-const whenPageIsPopulatedForTest = function() {
+function whenPageIsPopulatedForTest(): Promise<void> {
   return mediaHistoryPageIsPopulatedResolver.promise;
-};
+}
 Object.assign(window, {whenPageIsPopulatedForTest});
 
 let store: MediaHistoryStoreRemote|null = null;
@@ -206,7 +206,7 @@ function setSelectedTab(id: string) {
   const tabbox = document.querySelector('cr-tab-box');
   assert(tabbox);
   const index =
-      Array.from(tabbox.querySelectorAll<HTMLElement>('div[slot=\'tabs\']'))
+      Array.from(tabbox.querySelectorAll<HTMLElement>('div[slot=\'tab\']'))
           .findIndex(tab => tab.id === id);
   tabbox.setAttribute('selected-index', `${index}`);
 }
@@ -251,7 +251,7 @@ document.addEventListener('DOMContentLoaded', function() {
   tabBox.addEventListener('selected-index-change', function(e) {
     const tabbox = document.querySelector('cr-tab-box');
     assert(tabbox);
-    const tabs = tabbox.querySelectorAll<HTMLElement>('div[slot=\'tabs\']');
+    const tabs = tabbox.querySelectorAll<HTMLElement>('div[slot=\'tab\']');
     const selectedTab = tabs[(e as CustomEvent<number>).detail];
     window.location.hash = 'tab-' + selectedTab.id;
   }, true);

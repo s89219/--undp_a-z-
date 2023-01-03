@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,17 +12,20 @@
 #include "content/browser/site_instance_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/common/referrer.h"
-#include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/page_state/page_state.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
+namespace network {
+class ResourceRequestBody;
+}
+
 namespace content {
 
-class WebBundleNavigationInfo;
 class SubresourceWebBundleNavigationInfo;
+class WebBundleNavigationInfo;
 
 // Represents a session history item for a particular frame.  It is matched with
 // corresponding FrameTreeNodes using unique name (or by the root position).
@@ -53,6 +56,7 @@ class CONTENT_EXPORT FrameNavigationEntry
       const absl::optional<url::Origin>& origin,
       const Referrer& referrer,
       const absl::optional<url::Origin>& initiator_origin,
+      const absl::optional<GURL>& initiator_base_url,
       const std::vector<GURL>& redirect_chain,
       const blink::PageState& page_state,
       const std::string& method,
@@ -83,6 +87,7 @@ class CONTENT_EXPORT FrameNavigationEntry
       const absl::optional<url::Origin>& origin,
       const Referrer& referrer,
       const absl::optional<url::Origin>& initiator_origin,
+      const absl::optional<GURL>& initiator_base_url,
       const std::vector<GURL>& redirect_chain,
       const blink::PageState& page_state,
       const std::string& method,
@@ -161,6 +166,12 @@ class CONTENT_EXPORT FrameNavigationEntry
   // trusted surface like the omnibox or the bookmarks bar).
   const absl::optional<url::Origin>& initiator_origin() const {
     return initiator_origin_;
+  }
+
+  // The base url of the initiator of the navigation. This is only set if the
+  // url is about:blank or about:srcdoc.
+  const absl::optional<GURL>& initiator_base_url() const {
+    return initiator_base_url_;
   }
 
   // The origin of the document the frame has committed. It is optional, since
@@ -272,6 +283,8 @@ class CONTENT_EXPORT FrameNavigationEntry
   absl::optional<url::Origin> committed_origin_;
   Referrer referrer_;
   absl::optional<url::Origin> initiator_origin_;
+  // TODO(https://crbug.com/1399599): Persist `initiator_base_url_`.
+  absl::optional<GURL> initiator_base_url_;
   // This is used when transferring a pending entry from one process to another.
   // We also send the main frame's redirect chain through session sync for
   // offline analysis.

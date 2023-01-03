@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,6 @@
 #import "ios/chrome/browser/ui/badges/badge_static_item.h"
 #import "ios/chrome/browser/ui/badges/badge_tappable_item.h"
 #import "ios/chrome/browser/ui/badges/badge_type.h"
-#import "ios/chrome/browser/ui/util/named_guide.h"
-#import "ios/chrome/browser/ui/util/named_guide_util.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
 #import "ios/showcase/badges/sc_badge_constants.h"
 
@@ -188,7 +186,6 @@
   [self didMoveToParentViewController:self.badgeViewController];
   self.consumer = self.badgeViewController;
 
-  AddNamedGuidesToView(@[ kBadgeOverflowMenuGuide ], self.view);
   BadgeStaticItem* incognitoItem =
       [[BadgeStaticItem alloc] initWithBadgeType:kBadgeTypeIncognito];
   BadgeTappableItem* passwordBadgeItem =

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,15 @@
 
 #include "ash/webui/grit/ash_print_management_resources.h"
 #include "ash/webui/grit/ash_print_management_resources_map.h"
-#include "ash/webui/print_management/mojom/printing_manager.mojom.h"
 #include "ash/webui/print_management/url_constants.h"
+#include "chromeos/components/print_management/mojom/printing_manager.mojom.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "ui/base/webui/web_ui_util.h"
-#include "ui/resources/grit/webui_generated_resources.h"
+#include "ui/resources/grit/webui_resources.h"
 
 namespace ash {
 namespace printing {
@@ -28,7 +28,7 @@ void SetUpWebUIDataSource(content::WebUIDataSource* source,
     source->AddResourcePath(resource.path, resource.id);
   }
   source->SetDefaultResource(default_resource);
-  source->AddResourcePath("test_loader.html", IDR_WEBUI_HTML_TEST_LOADER_HTML);
+  source->AddResourcePath("test_loader.html", IDR_WEBUI_TEST_LOADER_HTML);
   source->AddResourcePath("test_loader.js", IDR_WEBUI_JS_TEST_LOADER_JS);
   source->AddResourcePath("test_loader_util.js",
                           IDR_WEBUI_JS_TEST_LOADER_UTIL_JS);
@@ -116,15 +116,18 @@ PrintManagementUI::PrintManagementUI(
           kChromeUIPrintManagementHost);
   html_source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
-      "script-src chrome://resources chrome://test 'self';");
+      "script-src chrome://resources chrome://test chrome://webui-test "
+      "'self';");
   html_source->DisableTrustedTypesCSP();
 
   const auto resources = base::make_span(kAshPrintManagementResources,
                                          kAshPrintManagementResourcesSize);
-  SetUpWebUIDataSource(html_source, resources, IDR_PRINT_MANAGEMENT_INDEX_HTML);
+  SetUpWebUIDataSource(html_source, resources,
+                       IDR_ASH_PRINT_MANAGEMENT_INDEX_HTML);
 
-  html_source->AddResourcePath("printing_manager.mojom-lite.js",
-                               IDR_PRINTING_MANAGER_MOJO_LITE_JS);
+  html_source->AddResourcePath(
+      "printing_manager.mojom-webui.js",
+      IDR_ASH_PRINT_MANAGEMENT_PRINTING_MANAGER_MOJOM_WEBUI_JS);
 
   AddPrintManagementStrings(html_source);
 }
@@ -132,7 +135,9 @@ PrintManagementUI::PrintManagementUI(
 PrintManagementUI::~PrintManagementUI() = default;
 
 void PrintManagementUI::BindInterface(
-    mojo::PendingReceiver<mojom::PrintingMetadataProvider> receiver) {
+    mojo::PendingReceiver<
+        chromeos::printing::printing_manager::mojom::PrintingMetadataProvider>
+        receiver) {
   bind_pending_receiver_callback_.Run(std::move(receiver));
 }
 

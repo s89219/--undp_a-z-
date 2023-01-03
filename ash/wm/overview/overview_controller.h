@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,11 +95,7 @@ class ASH_EXPORT OverviewController : public OverviewDelegate,
 
   OverviewSession* overview_session() { return overview_session_.get(); }
 
-  OverviewWallpaperController* overview_wallpaper_controller() {
-    return overview_wallpaper_controller_.get();
-  }
-
-  bool disable_app_id_check_for_saved_desks() {
+  bool disable_app_id_check_for_saved_desks() const {
     return disable_app_id_check_for_saved_desks_;
   }
 
@@ -115,7 +111,7 @@ class ASH_EXPORT OverviewController : public OverviewDelegate,
   std::vector<aura::Window*> GetWindowsListInOverviewGridsForTest();
 
  private:
-  friend class DesksTemplatesTest;
+  friend class SavedDeskTest;
 
   void set_disable_app_id_check_for_saved_desks(bool val) {
     disable_app_id_check_for_saved_desks_ = val;

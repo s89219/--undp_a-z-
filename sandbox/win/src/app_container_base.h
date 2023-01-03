@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/files/file_path.h"
-#include "base/memory/ref_counted.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/sid.h"
 #include "base/win/windows_types.h"
@@ -32,7 +31,7 @@ class AppContainerBase final : public AppContainer {
   bool GetPipePath(const wchar_t* pipe_name,
                    base::FilePath* pipe_path) override;
   bool AccessCheck(const wchar_t* object_name,
-                   SecurityObjectType object_type,
+                   base::win::SecurityObjectType object_type,
                    DWORD desired_access,
                    DWORD* granted_access,
                    BOOL* access_status) override;

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
+#include "base/scoped_observation_traits.h"
 #include "base/unguessable_token.h"
 #include "components/permissions/object_permission_context_base.h"
 #include "content/public/browser/serial_delegate.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/device/public/mojom/serial.mojom-forward.h"
 #include "third_party/blink/public/mojom/serial/serial.mojom.h"
@@ -45,6 +47,8 @@ class SerialChooserContext
   SerialChooserContext& operator=(const SerialChooserContext&) = delete;
 
   ~SerialChooserContext() override;
+
+  static base::Value PortInfoToValue(const device::mojom::SerialPortInfo& port);
 
   // ObjectPermissionContextBase:
   std::string GetKeyForObject(const base::Value& object) override;
@@ -127,5 +131,22 @@ class SerialChooserContext
 
   base::WeakPtrFactory<SerialChooserContext> weak_factory_{this};
 };
+
+namespace base {
+
+template <>
+struct ScopedObservationTraits<SerialChooserContext,
+                               SerialChooserContext::PortObserver> {
+  static void AddObserver(SerialChooserContext* source,
+                          SerialChooserContext::PortObserver* observer) {
+    source->AddPortObserver(observer);
+  }
+  static void RemoveObserver(SerialChooserContext* source,
+                             SerialChooserContext::PortObserver* observer) {
+    source->RemovePortObserver(observer);
+  }
+};
+
+}  // namespace base
 
 #endif  // CHROME_BROWSER_SERIAL_SERIAL_CHOOSER_CONTEXT_H_

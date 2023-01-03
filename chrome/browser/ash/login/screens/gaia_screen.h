@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,19 +7,24 @@
 
 #include <string>
 
+#include "ash/public/cpp/screen_backlight_observer.h"
+#include "ash/system/power/backlights_forced_off_setter.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/values.h"
 #include "chrome/browser/ash/login/screens/base_screen.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
+#include "components/account_id/account_id.h"
 
 namespace ash {
 
+class GaiaView;
+
 // This class represents GAIA screen: login screen that is responsible for
-// GAIA-based sign-in.
-class GaiaScreen : public BaseScreen {
+// GAIA-based sign-in. Screen observs backlight to turn the camera off if the
+// device screen is not ON.
+class GaiaScreen : public BaseScreen, public ScreenBacklightObserver {
  public:
   using TView = GaiaView;
 
@@ -28,7 +33,6 @@ class GaiaScreen : public BaseScreen {
     CANCEL,
     ENTERPRISE_ENROLL,
     START_CONSUMER_KIOSK,
-    SAML_VIDEO_TIMEOUT,
   };
 
   static std::string GetResultString(Result result);
@@ -50,6 +54,14 @@ class GaiaScreen : public BaseScreen {
   // Loads online Gaia (for child signin) into the webview.
   void LoadOnlineForChildSignin();
   void ShowAllowlistCheckFailedError();
+  // Reset authenticator.
+  void Reset();
+  // Calls authenticator reload on JS side.
+  void ReloadGaiaAuthenticator();
+
+  // ScreenBacklightObserver:
+  void OnScreenBacklightStateChanged(
+      ScreenBacklightState screen_backlight_state) override;
 
  private:
   void ShowImpl() override;
@@ -60,14 +72,11 @@ class GaiaScreen : public BaseScreen {
   base::WeakPtr<TView> view_;
 
   ScreenExitCallback exit_callback_;
+
+  base::ScopedObservation<BacklightsForcedOffSetter, ScreenBacklightObserver>
+      backlights_forced_off_observation_{this};
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::GaiaScreen;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_SCREENS_GAIA_SCREEN_H_

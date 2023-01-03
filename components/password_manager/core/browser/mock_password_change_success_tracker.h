@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,14 +17,6 @@ class MockPasswordChangeSuccessTracker : public PasswordChangeSuccessTracker {
   ~MockPasswordChangeSuccessTracker() override;
 
   MOCK_METHOD(void,
-              OnChangePasswordFlowStarted,
-              (const GURL& url,
-               const std::string& username,
-               StartEvent event_type,
-               EntryPoint entry_point),
-              (override));
-
-  MOCK_METHOD(void,
               OnManualChangePasswordFlowStarted,
               (const GURL& url,
                const std::string& username,
@@ -37,17 +29,11 @@ class MockPasswordChangeSuccessTracker : public PasswordChangeSuccessTracker {
               (override));
 
   MOCK_METHOD(void,
-              OnChangePasswordFlowModified,
-              (const GURL& url,
-               const std::string& username,
-               StartEvent new_event_type),
-              (override));
-
-  MOCK_METHOD(void,
               OnChangePasswordFlowCompleted,
               (const GURL& url,
                const std::string& username,
-               EndEvent event_type),
+               EndEvent event_type,
+               bool phished),
               (override));
 };
 

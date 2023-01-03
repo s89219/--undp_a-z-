@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.AttributeSet;
 import android.view.KeyEvent;
-import android.view.View.OnKeyListener;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -26,7 +25,6 @@ import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.Log;
 import org.chromium.base.StrictModeContext;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.components.browser_ui.widget.text.VerticallyFixedEditText;
 
 /**
@@ -37,7 +35,6 @@ public class AutocompleteEditText
     private static final String TAG = "AutocompleteEdit";
 
     private static final boolean DEBUG = false;
-
     private final AccessibilityManager mAccessibilityManager;
 
     private AutocompleteEditTextModelBase mModel;
@@ -114,15 +111,7 @@ public class AutocompleteEditText
     private void ensureModel() {
         if (mModel != null) return;
 
-        if (!ChromeFeatureList.isInitialized()
-                || ChromeFeatureList.isEnabled(ChromeFeatureList.SPANNABLE_INLINE_AUTOCOMPLETE)) {
-            Log.w(TAG, "Using spannable model...");
-            mModel = new SpannableAutocompleteEditTextModel(this);
-        } else {
-            Log.w(TAG, "Using non-spannable model...");
-            mModel = new AutocompleteEditTextModel(this);
-        }
-        // Feed initial values.
+        mModel = new SpannableAutocompleteEditTextModel(this);
         mModel.setIgnoreTextChangeFromAutocomplete(true);
         mModel.onFocusChanged(hasFocus());
         mModel.onSetText(getText());

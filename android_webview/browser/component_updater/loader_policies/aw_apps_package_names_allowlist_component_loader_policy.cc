@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,6 +37,10 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace android_webview {
+
+const base::TimeDelta kWebViewAppsMinAllowlistThrottleTimeDelta =
+    base::Hours(1);
+const base::TimeDelta kWebViewAppsMaxAllowlistThrottleTimeDelta = base::Days(2);
 
 namespace {
 
@@ -145,14 +149,13 @@ bool ShouldThrottleAppPackageNamesAllowlistComponent(
     return false;
   }
   base::TimeDelta throttle_time_delta(
-      features::kWebViewAppsMinAllowlistThrottleTimeDelta.Get());
+      kWebViewAppsMinAllowlistThrottleTimeDelta);
   if (cached_record.has_value()) {
     base::Time expiry_date = cached_record.value().GetExpiryDate();
     bool in_the_allowlist = !expiry_date.is_min();
     bool is_allowlist_expired = expiry_date <= base::Time::Now();
     if (!in_the_allowlist || !is_allowlist_expired) {
-      throttle_time_delta =
-          features::kWebViewAppsMaxAllowlistThrottleTimeDelta.Get();
+      throttle_time_delta = kWebViewAppsMaxAllowlistThrottleTimeDelta;
     }
   }
   return base::Time::Now() - last_update <= throttle_time_delta;
@@ -196,15 +199,17 @@ AwAppsPackageNamesAllowlistComponentLoaderPolicy::
 void AwAppsPackageNamesAllowlistComponentLoaderPolicy::ComponentLoaded(
     const base::Version& version,
     base::flat_map<std::string, base::ScopedFD>& fd_map,
-    std::unique_ptr<base::DictionaryValue> manifest) {
+    base::Value::Dict manifest) {
   DCHECK(version.IsValid());
 
   // Have to use double because base::DictionaryValue doesn't support int64
   // values.
   absl::optional<double> expiry_date_ms =
-      manifest->FindDoublePath(kExpiryDateKey);
-  absl::optional<int> num_hash = manifest->FindIntPath(kBloomFilterNumHashKey);
-  absl::optional<int> num_bits = manifest->FindIntPath(kBloomFilterNumBitsKey);
+      manifest.FindDoubleByDottedPath(kExpiryDateKey);
+  absl::optional<int> num_hash =
+      manifest.FindIntByDottedPath(kBloomFilterNumHashKey);
+  absl::optional<int> num_bits =
+      manifest.FindIntByDottedPath(kBloomFilterNumBitsKey);
   // Being conservative and consider the allowlist expired when a valid expiry
   // date is absent.
   if (!expiry_date_ms.has_value() || !num_hash.has_value() ||
@@ -268,11 +273,12 @@ void LoadPackageNamesAllowlistComponent(
     AwMetricsServiceClient* metrics_service_client) {
   DCHECK(metrics_service_client);
 
-  if (!base::FeatureList::IsEnabled(
-          android_webview::features::kWebViewAppsPackageNamesAllowlist)) {
+  // Prevent loading of client-side allowlist if using server-side allowlist
+  if (base::FeatureList::IsEnabled(
+          android_webview::features::
+              kWebViewAppsPackageNamesServerSideAllowlist)) {
     return;
   }
-
   absl::optional<AppPackageNameLoggingRule> cached_record =
       metrics_service_client->GetCachedAppPackageNameLoggingRule();
   base::Time last_update =

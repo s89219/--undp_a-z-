@@ -14,76 +14,72 @@
 """Tests for object detector."""
 
 import enum
-import json
 
 from absl.testing import parameterized
-# TODO(b/220067158): Change to import tensorflow and leverage tf.test once
-# fixed the dependency issue.
-from google.protobuf import json_format
-import unittest
-from tensorflow_lite_support.python.task.core.proto import base_options_pb2
+import tensorflow as tf
+
+from tensorflow_lite_support.python.task.core import base_options as base_options_module
 from tensorflow_lite_support.python.task.processor.proto import bounding_box_pb2
 from tensorflow_lite_support.python.task.processor.proto import class_pb2
 from tensorflow_lite_support.python.task.processor.proto import detection_options_pb2
 from tensorflow_lite_support.python.task.processor.proto import detections_pb2
 from tensorflow_lite_support.python.task.vision import object_detector
 from tensorflow_lite_support.python.task.vision.core import tensor_image
-from tensorflow_lite_support.python.test import base_test
 from tensorflow_lite_support.python.test import test_util
 
-_BaseOptions = base_options_pb2.BaseOptions
+_BaseOptions = base_options_module.BaseOptions
+_Category = class_pb2.Category
+_BoundingBox = bounding_box_pb2.BoundingBox
+_Detection = detections_pb2.Detection
+_DetectionResult = detections_pb2.DetectionResult
 _ObjectDetector = object_detector.ObjectDetector
 _ObjectDetectorOptions = object_detector.ObjectDetectorOptions
 
 _MODEL_FILE = 'coco_ssd_mobilenet_v1_1.0_quant_2018_06_29.tflite'
 _IMAGE_FILE = 'cats_and_dogs.jpg'
-_EXPECTED_DETECTIONS = [
-    ({
-        'origin_x': 54,
-        'origin_y': 396,
-        'width': 393,
-        'height': 196
-    }, {
-        'index': 16,
-        'score': 0.64453125,
-        'class_name': 'cat'
-    }),
-    ({
-        'origin_x': 602,
-        'origin_y': 157,
-        'width': 394,
-        'height': 447
-    }, {
-        'index': 16,
-        'score': 0.59765625,
-        'class_name': 'cat'
-    }),
-    ({
-        'origin_x': 261,
-        'origin_y': 394,
-        'width': 179,
-        'height': 209
-    }, {
-        'index': 16,
-        'score': 0.5625,
-        'class_name': 'cat'
-    }),
-    ({
-        'origin_x': 389,
-        'origin_y': 197,
-        'width': 276,
-        'height': 409
-    }, {
-        'index': 17,
-        'score': 0.51171875,
-        'class_name': 'dog'
-    })
-]
+_EXPECTED_DETECTION_RESULT = _DetectionResult(detections=[
+    _Detection(
+        bounding_box=_BoundingBox(
+            origin_x=54, origin_y=396, width=393, height=196),
+        categories=[
+            _Category(
+                index=16,
+                score=0.64453125,
+                display_name='',
+                category_name='cat')
+        ]),
+    _Detection(
+        bounding_box=_BoundingBox(
+            origin_x=602, origin_y=157, width=394, height=447),
+        categories=[
+            _Category(
+                index=16,
+                score=0.59765625,
+                display_name='',
+                category_name='cat')
+        ]),
+    _Detection(
+        bounding_box=_BoundingBox(
+            origin_x=261, origin_y=394, width=179, height=209),
+        categories=[
+            _Category(
+                index=16, score=0.5625, display_name='', category_name='cat')
+        ]),
+    _Detection(
+        bounding_box=_BoundingBox(
+            origin_x=389, origin_y=197, width=276, height=409),
+        categories=[
+            _Category(
+                index=17,
+                score=0.51171875,
+                display_name='',
+                category_name='dog')
+        ])
+])
 _ALLOW_LIST = ['cat', 'dog']
 _DENY_LIST = ['cat']
 _SCORE_THRESHOLD = 0.3
 _MAX_RESULTS = 3
-_ACCEPTABLE_ERROR_RANGE = 0.000001
 
 
 class ModelFileType(enum.Enum):
@@ -100,23 +96,7 @@ def _create_detector_from_options(base_options, **detection_options):
   return detector
 
 
-def _build_test_data(expected_detections):
-  expected_result = detections_pb2.DetectionResult()
-
-  for index in range(len(expected_detections)):
-    bounding_box, category = expected_detections[index]
-    detection = detections_pb2.Detection()
-    detection.bounding_box.CopyFrom(
-        bounding_box_pb2.BoundingBox(**bounding_box))
-    detection.classes.append(class_pb2.Category(**category))
-    expected_result.detections.append(detection)
-
-  expected_result_dict = json.loads(json_format.MessageToJson(expected_result))
-
-  return expected_result_dict
-
-
-class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
+class ObjectDetectorTest(parameterized.TestCase, tf.test.TestCase):
 
   def setUp(self):
     super().setUp()
@@ -154,10 +134,10 @@ class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
       self.assertIsInstance(detector, _ObjectDetector)
 
   @parameterized.parameters(
-      (ModelFileType.FILE_NAME, 4, _EXPECTED_DETECTIONS),
-      (ModelFileType.FILE_CONTENT, 4, _EXPECTED_DETECTIONS))
+      (ModelFileType.FILE_NAME, 4, _EXPECTED_DETECTION_RESULT),
+      (ModelFileType.FILE_CONTENT, 4, _EXPECTED_DETECTION_RESULT))
   def test_detect_model(self, model_file_type, max_results,
-                        expected_detections):
+                        expected_detection_result):
     # Creates detector.
     if model_file_type is ModelFileType.FILE_NAME:
       base_options = _BaseOptions(file_name=self.model_path)
@@ -177,14 +157,10 @@ class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
 
     # Performs object detection on the input.
     image_result = detector.detect(image)
-    image_result_dict = json.loads(json_format.MessageToJson(image_result))
-
-    # Builds test data.
-    expected_result_dict = _build_test_data(expected_detections)
 
     # Comparing results.
-    self.assertDeepAlmostEqual(
-        image_result_dict, expected_result_dict, delta=_ACCEPTABLE_ERROR_RANGE)
+    self.assertProtoEquals(image_result.to_pb2(),
+                           expected_detection_result.to_pb2())
 
   def test_score_threshold_option(self):
     # Creates detector.
@@ -197,16 +173,13 @@ class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
 
     # Performs object detection on the input.
     image_result = detector.detect(image)
-    image_result_dict = json.loads(json_format.MessageToJson(image_result))
+    detections = image_result.detections
 
-    categories = image_result_dict['detections']
-
-    for category in categories:
-      score = category['classes'][0]['score']
+    for detection in detections:
+      score = detection.categories[0].score
       self.assertGreaterEqual(
           score, _SCORE_THRESHOLD,
-          'Classification with score lower than threshold found. {0}'.format(
-              category))
+          f'Detection with score lower than threshold found. {detection}')
 
   def test_max_results_option(self):
     # Creates detector.
@@ -219,8 +192,7 @@ class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
 
     # Performs object detection on the input.
     image_result = detector.detect(image)
-    image_result_dict = json.loads(json_format.MessageToJson(image_result))
-    detections = image_result_dict['detections']
+    detections = image_result.detections
 
     self.assertLessEqual(
         len(detections), _MAX_RESULTS, 'Too many results returned.')
@@ -229,42 +201,37 @@ class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
     # Creates detector.
     base_options = _BaseOptions(file_name=self.model_path)
     detector = _create_detector_from_options(
-        base_options, class_name_allowlist=_ALLOW_LIST)
+        base_options, category_name_allowlist=_ALLOW_LIST)
 
     # Loads image.
     image = tensor_image.TensorImage.create_from_file(self.test_image_path)
 
     # Performs object detection on the input.
     image_result = detector.detect(image)
-    image_result_dict = json.loads(json_format.MessageToJson(image_result))
+    detections = image_result.detections
 
-    categories = image_result_dict['detections']
-
-    for category in categories:
-      label = category['classes'][0]['className']
-      self.assertIn(
-          label, _ALLOW_LIST,
-          'Label "{0}" found but not in label allow list'.format(label))
+    for detection in detections:
+      label = detection.categories[0].category_name
+      self.assertIn(label, _ALLOW_LIST,
+                    f'Label {label} found but not in label allow list')
 
   def test_deny_list_option(self):
     # Creates detector.
     base_options = _BaseOptions(file_name=self.model_path)
     detector = _create_detector_from_options(
-        base_options, class_name_denylist=_DENY_LIST)
+        base_options, category_name_denylist=_DENY_LIST)
 
     # Loads image.
     image = tensor_image.TensorImage.create_from_file(self.test_image_path)
 
     # Performs object detection on the input.
     image_result = detector.detect(image)
-    image_result_dict = json.loads(json_format.MessageToJson(image_result))
+    detections = image_result.detections
 
-    categories = image_result_dict['detections']
-
-    for category in categories:
-      label = category['classes'][0]['className']
+    for detection in detections:
+      label = detection.categories[0].category_name
       self.assertNotIn(label, _DENY_LIST,
-                       'Label "{0}" found but in deny list.'.format(label))
+                       f'Label {label} found but in deny list.')
 
   def test_combined_allowlist_and_denylist(self):
     # Fails with combined allowlist and denylist
@@ -274,11 +241,11 @@ class ObjectDetectorTest(parameterized.TestCase, base_test.BaseTestCase):
         r'exclusive options.'):
       base_options = _BaseOptions(file_name=self.model_path)
       detection_options = detection_options_pb2.DetectionOptions(
-          class_name_allowlist=['foo'], class_name_denylist=['bar'])
+          category_name_allowlist=['foo'], category_name_denylist=['bar'])
       options = _ObjectDetectorOptions(
           base_options=base_options, detection_options=detection_options)
       _ObjectDetector.create_from_options(options)
 
 
 if __name__ == '__main__':
-  unittest.main()
+  tf.test.main()

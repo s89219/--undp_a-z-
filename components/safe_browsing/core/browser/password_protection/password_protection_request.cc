@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -226,7 +226,7 @@ void PasswordProtectionRequest::FillRequestProto(bool is_sampled_ping) {
       password_protection_service_->UserClickedThroughSBInterstitial(this);
   request_proto_->set_clicked_through_interstitial(
       clicked_through_interstitial);
-  request_proto_->set_content_type(mime_type_);
+  request_proto_->set_content_type(*mime_type_);
 
 #if BUILDFLAG(FULL_SAFE_BROWSING)
   if (password_protection_service_->IsExtendedReporting() &&
@@ -264,7 +264,6 @@ void PasswordProtectionRequest::FillRequestProto(bool is_sampled_ping) {
           request_proto_->mutable_password_reuse_event();
       bool matches_signin_password =
           password_type_ == PasswordType::PRIMARY_ACCOUNT_PASSWORD;
-      reuse_event->set_is_chrome_signin_password(matches_signin_password);
       reuse_event->set_reused_password_type(
           password_protection_service_->GetPasswordProtectionReusedPasswordType(
               password_type_));

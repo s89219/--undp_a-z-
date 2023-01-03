@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,7 +42,7 @@ NativeIOFileSync::NativeIOFileSync(
       capacity_tracker_(capacity_tracker) {
   DCHECK_GE(backing_file_length, 0);
   DCHECK(capacity_tracker);
-  backend_file_.set_disconnect_handler(WTF::Bind(
+  backend_file_.set_disconnect_handler(WTF::BindOnce(
       &NativeIOFileSync::OnBackendDisconnect, WrapWeakPersistent(this)));
 }
 
@@ -215,11 +215,10 @@ NativeIOReadResult* NativeIOFileSync::read(ScriptState* script_state,
 
   NativeIOReadResult* read_result = MakeGarbageCollected<NativeIOReadResult>();
   read_result->setReadBytes(0);
-  DOMArrayBufferView* result_buffer =
-      TransferToNewArrayBufferView(script_state->GetIsolate(), buffer);
+  DOMArrayBufferView* result_buffer = TransferToNewArrayBufferView(
+      script_state->GetIsolate(), buffer, exception_state);
   if (!result_buffer) {
-    exception_state.ThrowTypeError("Could not transfer buffer");
-    return read_result;
+    return nullptr;
   }
   DCHECK(buffer->IsDetached());
 
@@ -256,11 +255,10 @@ NativeIOWriteResult* NativeIOFileSync::write(
       MakeGarbageCollected<NativeIOWriteResult>();
   write_result->setWrittenBytes(0);
 
-  DOMArrayBufferView* result_buffer =
-      TransferToNewArrayBufferView(script_state->GetIsolate(), buffer);
+  DOMArrayBufferView* result_buffer = TransferToNewArrayBufferView(
+      script_state->GetIsolate(), buffer, exception_state);
   if (!result_buffer) {
-    exception_state.ThrowTypeError("Could not transfer buffer");
-    return write_result;
+    return nullptr;
   }
   DCHECK(buffer->IsDetached());
 

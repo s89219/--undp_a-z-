@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,23 +8,25 @@
 #include <memory>
 #include <vector>
 
+#include "ash/constants/ash_features.h"
+#include "ash/public/cpp/personalization_app/enterprise_policy_delegate.h"
 #include "ash/webui/personalization_app/personalization_app_url_constants.h"
 #include "ash/webui/personalization_app/search/search.mojom-forward.h"
 #include "ash/webui/personalization_app/search/search.mojom.h"
 #include "ash/webui/personalization_app/search/search_concept.h"
 #include "ash/webui/personalization_app/search/search_tag_registry.h"
+#include "base/check.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
-#include "chromeos/components/local_search_service/public/cpp/local_search_service_proxy.h"
-#include "chromeos/components/local_search_service/shared_structs.h"
+#include "chromeos/ash/components/local_search_service/public/cpp/local_search_service_proxy.h"
+#include "chromeos/ash/components/local_search_service/shared_structs.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "components/prefs/pref_service.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 
@@ -37,12 +39,13 @@ bool CompareSearchResults(const mojom::SearchResultPtr& a,
 }  // namespace
 
 SearchHandler::SearchHandler(
-    ::chromeos::local_search_service::LocalSearchServiceProxy&
-        local_search_service_proxy,
-    PrefService* pref_service)
-    : search_tag_registry_(
-          std::make_unique<SearchTagRegistry>(local_search_service_proxy,
-                                              pref_service)) {
+    local_search_service::LocalSearchServiceProxy& local_search_service_proxy,
+    PrefService* pref_service,
+    std::unique_ptr<EnterprisePolicyDelegate> enterprise_policy_delegate)
+    : search_tag_registry_(std::make_unique<SearchTagRegistry>(
+          local_search_service_proxy,
+          pref_service,
+          std::move(enterprise_policy_delegate))) {
   local_search_service_proxy.GetIndex(
       local_search_service::IndexId::kPersonalization,
       local_search_service::Backend::kLinearMap,
@@ -51,6 +54,9 @@ SearchHandler::SearchHandler(
 
   search_tag_registry_observer_.Observe(search_tag_registry_.get());
 }
+
+// For testing purposes only.
+SearchHandler::SearchHandler() = default;
 
 SearchHandler::~SearchHandler() = default;
 
@@ -85,11 +91,10 @@ void SearchHandler::OnRegistryUpdated() {
 void SearchHandler::OnLocalSearchDone(
     SearchCallback callback,
     uint32_t max_num_results,
-    ::chromeos::local_search_service::ResponseStatus response_status,
-    const absl::optional<std::vector<::chromeos::local_search_service::Result>>&
+    local_search_service::ResponseStatus response_status,
+    const absl::optional<std::vector<local_search_service::Result>>&
         local_search_service_results) {
-  if (response_status !=
-      ::chromeos::local_search_service::ResponseStatus::kSuccess) {
+  if (response_status != local_search_service::ResponseStatus::kSuccess) {
     LOG(ERROR) << "Cannot search; LocalSearchService returned "
                << static_cast<int>(response_status)
                << ". Returning empty results array.";
@@ -115,11 +120,11 @@ void SearchHandler::OnLocalSearchDone(
       continue;
     }
 
-    search_results.push_back(
-        mojom::SearchResult::New(/*text=*/
-                                 l10n_util::GetStringUTF16(matching_content_id),
-                                 /*relative_url=*/search_concept->relative_url,
-                                 /*relevance_score=*/local_result.score));
+    search_results.push_back(mojom::SearchResult::New(
+        /*id=*/search_concept->id,
+        /*text=*/l10n_util::GetStringUTF16(matching_content_id),
+        /*relative_url=*/search_concept->relative_url,
+        /*relevance_score=*/local_result.score));
   }
 
   // Limit to top |max_num_results| results. Use partial_sort and then resize.
@@ -133,5 +138,4 @@ void SearchHandler::OnLocalSearchDone(
   std::move(callback).Run(std::move(search_results));
 }
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app

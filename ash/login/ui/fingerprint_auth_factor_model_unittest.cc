@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -61,6 +61,11 @@ class FingerprintAuthFactorModelTest : public AshTestBase {
     model_->Init(&icon_, base::BindRepeating(
                              &FingerprintAuthFactorModelTest::OnStateChanged,
                              base::Unretained(this)));
+  }
+
+  void TearDown() override {
+    FingerprintAuthFactorModel::Factory::SetFactoryForTesting(nullptr);
+    AshTestBase::TearDown();
   }
 
   void OnStateChanged() { on_state_changed_called_ = true; }

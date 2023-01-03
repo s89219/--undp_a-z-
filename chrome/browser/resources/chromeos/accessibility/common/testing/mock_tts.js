@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -104,9 +104,11 @@ MockTts.prototype = {
       voiceName: 'English US',
       lang: 'en-US',
       eventTypes: [
-        this.EventType.START, this.EventTypeEND, this.EventType.WORD,
-        this.EventType.CANCELLED
-      ]
+        this.EventType.START,
+        this.EventTypeEND,
+        this.EventType.WORD,
+        this.EventType.CANCELLED,
+      ],
     }]);
   },
   isSpeaking(callback) {
@@ -144,5 +146,5 @@ MockTts.prototype = {
       const [options, event] = this.pendingEvents_.pop();
       options.onEvent(event);
     }
-  }
+  },
 };

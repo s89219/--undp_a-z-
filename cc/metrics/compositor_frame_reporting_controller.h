@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,7 @@ struct FrameTimingDetails;
 
 namespace cc {
 class DroppedFrameCounter;
+class EventLatencyTracker;
 class UkmManager;
 struct BeginMainFrameMetrics;
 struct FrameInfo;
@@ -40,6 +41,7 @@ class CC_EXPORT CompositorFrameReportingController {
   enum PipelineStage {
     kBeginImplFrame = 0,
     kBeginMainFrame,
+    kReadyToCommit,
     kCommit,
     kActivate,
     kNumPipelineStages
@@ -109,9 +111,15 @@ class CC_EXPORT CompositorFrameReportingController {
     global_trackers_.frame_sequence_trackers = frame_sequence_trackers;
   }
 
+  void set_event_latency_tracker(EventLatencyTracker* event_latency_tracker) {
+    global_trackers_.event_latency_tracker = event_latency_tracker;
+  }
+
   void BeginMainFrameStarted(base::TimeTicks begin_main_frame_start_time) {
     begin_main_frame_start_time_ = begin_main_frame_start_time;
   }
+
+  bool HasReporterAt(PipelineStage stage) const;
 
  protected:
   struct SubmittedCompositorFrame {
@@ -125,7 +133,6 @@ class CC_EXPORT CompositorFrameReportingController {
   };
   base::TimeTicks Now() const;
 
-  bool HasReporterAt(PipelineStage stage) const;
   bool next_activate_has_invalidation() const {
     return next_activate_has_invalidation_;
   }
@@ -231,6 +238,15 @@ class CC_EXPORT CompositorFrameReportingController {
 
   // interval of last begin frame args.
   base::TimeDelta last_interval_;
+
+  CompositorFrameReporter::CompositorLatencyInfo
+      previous_latency_predictions_main_;
+  CompositorFrameReporter::CompositorLatencyInfo
+      previous_latency_predictions_impl_;
+
+  // Container that stores the EventLatency stage latency predictions based on
+  // previous event traces.
+  CompositorFrameReporter::EventLatencyInfo event_latency_predictions_;
 };
 
 }  // namespace cc

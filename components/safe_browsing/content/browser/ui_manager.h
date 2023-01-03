@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -89,6 +89,13 @@ class SafeBrowsingUIManager : public BaseUIManager {
         const GURL& page_url,
         const std::string& reason,
         int net_error_code) = 0;
+#if !BUILDFLAG(IS_ANDROID)
+    virtual void TriggerUrlFilteringInterstitialExtensionEventIfDesired(
+        content::WebContents* web_contents,
+        const GURL& page_url,
+        const std::string& threat_type,
+        safe_browsing::RTLookupResponse rt_lookup_response) = 0;
+#endif
 
     // Gets the NoStatePrefetchContents instance associated with |web_contents|
     // if one exists (i.e., if |web_contents| is being prerendered).
@@ -140,10 +147,11 @@ class SafeBrowsingUIManager : public BaseUIManager {
   // on UI thread. If shutdown is true, the manager is disabled permanently.
   void Stop(bool shutdown);
 
-  // Called on the IO thread by the ThreatDetails with the serialized
-  // protocol buffer, so the service can send it over.
-  void SendSerializedThreatDetails(content::BrowserContext* browser_context,
-                                   const std::string& serialized) override;
+  // Called on the IO thread by the ThreatDetails with the report, so the
+  // service can send it over.
+  void SendThreatDetails(
+      content::BrowserContext* browser_context,
+      std::unique_ptr<ClientSafeBrowsingReportRequest> report) override;
 
   // Calls |BaseUIManager::OnBlockingPageDone()| and triggers
   // |OnSecurityInterstitialProceeded| event if |proceed| is true.
@@ -180,6 +188,15 @@ class SafeBrowsingUIManager : public BaseUIManager {
       const std::string& reason,
       int net_error_code);
 
+#if !BUILDFLAG(IS_ANDROID)
+  // Invokes TriggerUrlFilteringInterstitialExtensionEventIfDesired() on
+  // |delegate_|.
+  void ForwardUrlFilteringInterstitialExtensionEventToEmbedder(
+      content::WebContents* web_contents,
+      const GURL& page_url,
+      const std::string& threat_type,
+      safe_browsing::RTLookupResponse rt_lookup_response);
+#endif
   SafeBrowsingBlockingPageFactory* blocking_page_factory() {
     return blocking_page_factory_.get();
   }

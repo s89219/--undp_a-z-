@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,7 +78,8 @@ export function createPrinterListEntry(
  * @private
  */
 export function getPrinterEntries(printersElement) {
-  const entryList = printersElement.$$('#printerEntryList');
+  const entryList =
+      printersElement.shadowRoot.querySelector('#printerEntryList');
   return entryList.querySelectorAll(
       'settings-cups-printers-entry:not([hidden])');
 }

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "components/page_load_metrics/common/page_load_timing.h"
 #include "components/page_load_metrics/renderer/page_timing_sender.h"
 #include "third_party/blink/public/common/use_counter/use_counter_feature.h"
-#include "third_party/blink/public/mojom/mobile_metrics/mobile_friendliness.mojom.h"
 
 namespace page_load_metrics {
 
@@ -63,7 +62,7 @@ class FakePageTimingSender : public PageTimingSender {
 
     void VerifyExpectedInputTiming() const;
 
-    void VerifyExpectedMobileFriendliness() const;
+    void VerifyExpectedSubresourceLoadMetrics() const;
 
     // PageLoad features that are expected to be sent through SendTiming()
     // should be passed via UpdateExpectedPageLoadFeatures.
@@ -76,12 +75,17 @@ class FakePageTimingSender : public PageTimingSender {
 
     void UpdateExpectedInputTiming(const base::TimeDelta input_delay);
 
-    void UpdateExpectedMobileFriendliness(
-        const blink::MobileFriendliness& mobile_friendliness);
+    void UpdateExpectedSubresourceLoadMetrics(
+        const mojom::SubresourceLoadMetrics& subresource_load_metrics);
 
     void UpdateExpectedMainFrameIntersectionRect(
         const gfx::Rect& main_frame_intersection_rect) {
       expected_main_frame_intersection_rect_ = main_frame_intersection_rect;
+    }
+
+    void UpdateExpectedMainFrameViewportRect(
+        const gfx::Rect& main_frame_viewport_rect) {
+      expected_main_frame_viewport_rect_ = main_frame_viewport_rect;
     }
 
     // Forces verification that actual features sent through SendTiming match
@@ -89,6 +93,7 @@ class FakePageTimingSender : public PageTimingSender {
     void VerifyExpectedFeatures() const;
     void VerifyExpectedRenderData() const;
     void VerifyExpectedMainFrameIntersectionRect() const;
+    void VerifyExpectedMainFrameViewportRect() const;
 
     const std::vector<mojom::PageLoadTimingPtr>& expected_timings() const {
       return expected_timings_;
@@ -105,7 +110,8 @@ class FakePageTimingSender : public PageTimingSender {
         const mojom::FrameRenderDataUpdate& render_data,
         const mojom::CpuTimingPtr& cpu_timing,
         const mojom::InputTimingPtr& input_timing,
-        const absl::optional<blink::MobileFriendliness>& mobile_friendliness);
+        const mojom::SubresourceLoadMetricsPtr& subresource_load_metrics,
+        uint32_t soft_navigation_count);
 
    private:
     std::vector<mojom::PageLoadTimingPtr> expected_timings_;
@@ -118,10 +124,12 @@ class FakePageTimingSender : public PageTimingSender {
     mojom::FrameRenderDataUpdate actual_render_data_;
     absl::optional<gfx::Rect> expected_main_frame_intersection_rect_;
     absl::optional<gfx::Rect> actual_main_frame_intersection_rect_;
+    absl::optional<gfx::Rect> expected_main_frame_viewport_rect_;
+    absl::optional<gfx::Rect> actual_main_frame_viewport_rect_;
     mojom::InputTimingPtr expected_input_timing;
     mojom::InputTimingPtr actual_input_timing;
-    absl::optional<blink::MobileFriendliness> expected_mobile_friendliness;
-    absl::optional<blink::MobileFriendliness> actual_mobile_friendliness;
+    mojom::SubresourceLoadMetricsPtr expected_subresource_load_metrics_;
+    mojom::SubresourceLoadMetricsPtr actual_subresource_load_metrics_;
   };
 
   explicit FakePageTimingSender(PageTimingValidator* validator);
@@ -138,8 +146,8 @@ class FakePageTimingSender : public PageTimingSender {
                   const mojom::FrameRenderDataUpdate& render_data,
                   const mojom::CpuTimingPtr& cpu_timing,
                   mojom::InputTimingPtr new_input_timing,
-                  const absl::optional<blink::MobileFriendliness>&
-                      mobile_friendliness) override;
+                  mojom::SubresourceLoadMetricsPtr subresource_load_metrics,
+                  uint32_t soft_navigation_count) override;
 
   void SetUpSmoothnessReporting(
       base::ReadOnlySharedMemoryRegion shared_memory) override;

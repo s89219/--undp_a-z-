@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,12 @@
 #include "base/strings/string_piece_forward.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/web_applications/externally_managed_app_manager.h"
+#include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_install_manager.h"
 #include "chrome/browser/web_applications/web_app_install_manager_observer.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 class GURL;
@@ -44,20 +46,40 @@ SkColor GetIconTopLeftColor(const base::FilePath& shortcut_path);
 // Always selects to open app in its own window.
 AppId InstallWebAppFromPage(Browser* browser, const GURL& app_url);
 
+// Same as InstallWebAppFromPage() but waits for the app browser window to
+// appear and closes it.
+AppId InstallWebAppFromPageAndCloseAppBrowser(Browser* browser,
+                                              const GURL& app_url);
+
 // Navigates to |app_url|, verifies WebApp installability, and installs app.
 AppId InstallWebAppFromManifest(Browser* browser, const GURL& app_url);
 
-// Launches a new app window for |app| in |profile|.
-Browser* LaunchWebAppBrowser(Profile*, const AppId&);
+// Launches a new app window for |app| in |profile| with specified
+// |disposition|.
+Browser* LaunchWebAppBrowser(
+    Profile*,
+    const AppId&,
+    WindowOpenDisposition disposition = WindowOpenDisposition::CURRENT_TAB);
 
 // Launches the app, waits for the app url to load.
-Browser* LaunchWebAppBrowserAndWait(Profile*, const AppId&);
+Browser* LaunchWebAppBrowserAndWait(
+    Profile*,
+    const AppId&,
+    WindowOpenDisposition disposition = WindowOpenDisposition::CURRENT_TAB);
 
 // Launches a new tab for |app| in |profile|.
 Browser* LaunchBrowserForWebAppInTab(Profile*, const AppId&);
 
+// Launches the web app to the given URL.
+Browser* LaunchWebAppToURL(Profile* profile,
+                           const AppId& app_id,
+                           const GURL& url);
+
 // Return |ExternalInstallOptions| with OS shortcut creation disabled.
-ExternalInstallOptions CreateInstallOptions(const GURL& url);
+ExternalInstallOptions CreateInstallOptions(
+    const GURL& url,
+    const ExternalInstallSource& source =
+        ExternalInstallSource::kInternalDefault);
 
 // Synchronous version of ExternallyManagedAppManager::Install.
 ExternallyManagedAppManager::InstallResult ExternallyManagedAppManagerInstall(
@@ -66,6 +88,9 @@ ExternallyManagedAppManager::InstallResult ExternallyManagedAppManagerInstall(
 
 // If |proceed_through_interstitial| is true, asserts that a security
 // interstitial is shown, and clicks through it, before returning.
+// Note - this does NOT wait for the given url to load, it just waits for
+// navigation to complete. To ensure the given url is fully loaded, wait for
+// that separately.
 void NavigateToURLAndWait(Browser* browser,
                           const GURL& url,
                           bool proceed_through_interstitial = false);
@@ -94,13 +119,6 @@ void CloseAndWait(Browser* browser);
 
 bool IsBrowserOpen(const Browser* test_browser);
 
-void UninstallWebApp(Profile* profile, const AppId& app_id);
-
-using UninstallWebAppCallback = base::OnceCallback<void(bool uninstalled)>;
-void UninstallWebAppWithCallback(Profile* profile,
-                                 const AppId& app_id,
-                                 UninstallWebAppCallback callback);
-
 // Helper class that lets you await one Browser added and one Browser removed
 // event. Optionally filters to a specific Browser with |filter|. Useful for
 // closing the web app window that appears after installation from page.
@@ -117,13 +135,16 @@ class BrowserWaiter : public BrowserListObserver {
   void OnBrowserRemoved(Browser* browser) override;
 
  private:
-  const raw_ptr<Browser> filter_ = nullptr;
+  const raw_ptr<Browser, DanglingUntriaged> filter_ = nullptr;
 
   base::RunLoop added_run_loop_;
-  raw_ptr<Browser> added_browser_ = nullptr;
+  raw_ptr<Browser, DanglingUntriaged> added_browser_ = nullptr;
 
   base::RunLoop removed_run_loop_;
-  raw_ptr<Browser> removed_browser_ = nullptr;
+  // TODO(crbug.com/1298696): browser_tests breaks with MTECheckedPtr
+  // enabled. Triage.
+  raw_ptr<Browser, DanglingUntriagedDegradeToNoOpWhenMTE> removed_browser_ =
+      nullptr;
 };
 
 class UpdateAwaiter : public WebAppInstallManagerObserver {
@@ -142,6 +163,9 @@ class UpdateAwaiter : public WebAppInstallManagerObserver {
   base::ScopedObservation<WebAppInstallManager, WebAppInstallManagerObserver>
       scoped_observation_{this};
 };
+
+// Creates a temporary file with the |extension|.
+base::FilePath CreateTestFileWithExtension(base::StringPiece extension);
 
 }  // namespace web_app
 

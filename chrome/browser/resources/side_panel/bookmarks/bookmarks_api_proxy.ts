@@ -1,23 +1,35 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {ChromeEvent} from '/tools/typescript/definitions/chrome_event.js';
 import {ClickModifiers} from 'chrome://resources/mojo/ui/base/mojom/window_open_disposition.mojom-webui.js';
 
-import {BookmarksPageHandlerFactory, BookmarksPageHandlerRemote} from './bookmarks.mojom-webui.js';
+import {ActionSource, BookmarksPageHandlerFactory, BookmarksPageHandlerRemote} from './bookmarks.mojom-webui.js';
 
 let instance: BookmarksApiProxy|null = null;
 
 export interface BookmarksApiProxy {
   callbackRouter: {[key: string]: ChromeEvent<Function>};
+  bookmarkCurrentTabInFolder(folderId: string): void;
   cutBookmark(id: string): void;
-  copyBookmark(id: string): Promise<void>;
-  getFolders(): Promise<chrome.bookmarks.BookmarkTreeNode[]>;
-  openBookmark(url: string, depth: number, clickModifiers: ClickModifiers):
+  contextMenuOpenBookmarkInNewTab(ids: string[], source: ActionSource): void;
+  contextMenuOpenBookmarkInNewWindow(ids: string[], source: ActionSource): void;
+  contextMenuOpenBookmarkInIncognitoWindow(ids: string[], source: ActionSource):
       void;
+  contextMenuDelete(id: string, source: ActionSource): void;
+  copyBookmark(id: string): Promise<void>;
+  createFolder(parentId: string, title: string): void;
+  deleteBookmarks(ids: string[]): Promise<void>;
+  getActiveUrl(): Promise<string|undefined>;
+  getFolders(): Promise<chrome.bookmarks.BookmarkTreeNode[]>;
+  openBookmark(
+      id: string, depth: number, clickModifiers: ClickModifiers,
+      source: ActionSource): void;
   pasteToBookmark(parentId: string, destinationId?: string): Promise<void>;
-  showContextMenu(id: string, x: number, y: number): void;
+  renameBookmark(id: string, title: string): void;
+  showContextMenu(id: string, x: number, y: number, source: ActionSource): void;
+  showUi(): void;
 }
 
 export class BookmarksApiProxyImpl implements BookmarksApiProxy {
@@ -31,6 +43,8 @@ export class BookmarksApiProxyImpl implements BookmarksApiProxy {
       onCreated: chrome.bookmarks.onCreated,
       onMoved: chrome.bookmarks.onMoved,
       onRemoved: chrome.bookmarks.onRemoved,
+      onTabActivated: chrome.tabs.onActivated,
+      onTabUpdated: chrome.tabs.onUpdated,
     };
 
     this.handler = new BookmarksPageHandlerRemote();
@@ -40,13 +54,55 @@ export class BookmarksApiProxyImpl implements BookmarksApiProxy {
         this.handler.$.bindNewPipeAndPassReceiver());
   }
 
+  bookmarkCurrentTabInFolder(folderId: string) {
+    this.handler.bookmarkCurrentTabInFolder(BigInt(folderId));
+  }
+
   cutBookmark(id: string) {
     chrome.bookmarkManagerPrivate.cut([id]);
+  }
+
+  contextMenuOpenBookmarkInNewTab(ids: string[], source: ActionSource) {
+    this.handler.executeOpenInNewTabCommand(ids.map(id => BigInt(id)), source);
+  }
+
+  contextMenuOpenBookmarkInNewWindow(ids: string[], source: ActionSource) {
+    this.handler.executeOpenInNewWindowCommand(
+        ids.map(id => BigInt(id)), source);
+  }
+
+  contextMenuOpenBookmarkInIncognitoWindow(
+      ids: string[], source: ActionSource) {
+    this.handler.executeOpenInIncognitoWindowCommand(
+        ids.map(id => BigInt(id)), source);
+  }
+
+  contextMenuDelete(id: string, source: ActionSource) {
+    this.handler.executeDeleteCommand(BigInt(id), source);
   }
 
   copyBookmark(id: string) {
     return new Promise<void>(resolve => {
       chrome.bookmarkManagerPrivate.copy([id], resolve);
+    });
+  }
+
+  createFolder(parentId: string, title: string) {
+    chrome.bookmarks.create({parentId: parentId, title: title, index: 0});
+  }
+
+  deleteBookmarks(ids: string[]) {
+    return new Promise<void>(resolve => {
+      chrome.bookmarkManagerPrivate.removeTrees(ids, resolve);
+    });
+  }
+
+  getActiveUrl() {
+    return chrome.tabs.query({active: true, currentWindow: true}).then(tabs => {
+      if (tabs[0]) {
+        return tabs[0].url;
+      }
+      return undefined;
     });
   }
 
@@ -61,8 +117,10 @@ export class BookmarksApiProxyImpl implements BookmarksApiProxy {
         }));
   }
 
-  openBookmark(url: string, depth: number, clickModifiers: ClickModifiers) {
-    this.handler.openBookmark({url}, depth, clickModifiers);
+  openBookmark(
+      id: string, depth: number, clickModifiers: ClickModifiers,
+      source: ActionSource) {
+    this.handler.openBookmark(BigInt(id), depth, clickModifiers, source);
   }
 
   pasteToBookmark(parentId: string, destinationId?: string) {
@@ -72,8 +130,16 @@ export class BookmarksApiProxyImpl implements BookmarksApiProxy {
     });
   }
 
-  showContextMenu(id: string, x: number, y: number) {
-    this.handler.showContextMenu(id, {x, y});
+  renameBookmark(id: string, title: string) {
+    chrome.bookmarks.update(id, {title: title});
+  }
+
+  showContextMenu(id: string, x: number, y: number, source: ActionSource) {
+    this.handler.showContextMenu(id, {x, y}, source);
+  }
+
+  showUi() {
+    this.handler.showUI();
   }
 
   static getInstance(): BookmarksApiProxy {

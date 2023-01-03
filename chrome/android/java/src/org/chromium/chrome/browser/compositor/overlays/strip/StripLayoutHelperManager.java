@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@ import android.graphics.RectF;
 import android.os.Handler;
 import android.os.SystemClock;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.supplier.Supplier;
@@ -26,7 +27,7 @@ import org.chromium.chrome.browser.compositor.layouts.components.TintedComposito
 import org.chromium.chrome.browser.compositor.layouts.eventfilter.AreaGestureEventFilter;
 import org.chromium.chrome.browser.compositor.layouts.eventfilter.GestureHandler;
 import org.chromium.chrome.browser.compositor.scene_layer.TabStripSceneLayer;
-import org.chromium.chrome.browser.flags.CachedFeatureFlags;
+import org.chromium.chrome.browser.device.DeviceClassManager;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.layouts.EventFilter;
 import org.chromium.chrome.browser.layouts.LayoutStateProvider.LayoutStateObserver;
@@ -42,12 +43,15 @@ import org.chromium.chrome.browser.tab.TabLaunchType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tabmodel.TabCreatorManager;
 import org.chromium.chrome.browser.tabmodel.TabModel;
+import org.chromium.chrome.browser.tabmodel.TabModelFilterProvider;
 import org.chromium.chrome.browser.tabmodel.TabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabObserver;
+import org.chromium.chrome.browser.tasks.tab_groups.TabGroupModelFilter;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
+import org.chromium.chrome.browser.tasks.tab_management.TabUiThemeProvider;
 import org.chromium.components.browser_ui.widget.animation.Interpolators;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.LocalizationUtils;
@@ -68,10 +72,15 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
 
     // Model selector buttons constants.
     private static final float MODEL_SELECTOR_BUTTON_Y_OFFSET_DP = 10.f;
-    private static final float MODEL_SELECTOR_BUTTON_END_PADDING_DP = 6.f;
-    private static final float MODEL_SELECTOR_BUTTON_START_PADDING_DP = 3.f;
+    private static final float MODEL_SELECTOR_BUTTON_PADDING_DP = 12.f;
     private static final float MODEL_SELECTOR_BUTTON_WIDTH_DP = 24.f;
     private static final float MODEL_SELECTOR_BUTTON_HEIGHT_DP = 24.f;
+    private static final float MODEL_SELECTOR_BUTTON_BACKGROUND_Y_OFFSET_DP = 0.f;
+    private static final float MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP_FOLIO = 36.f;
+    private static final float MODEL_SELECTOR_BUTTON_BACKGROUND_HEIGHT_DP_FOLIO = 36.f;
+    private static final float MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP_DETACHED = 38.f;
+    private static final float MODEL_SELECTOR_BUTTON_BACKGROUND_HEIGHT_DP_DETACHED = 38.f;
+    private static final float MODEL_SELECTOR_BUTTON_CLICK_SLOP_DP = 12.f;
 
     // External influences
     private TabModelSelector mTabModelSelector;
@@ -89,11 +98,11 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
     private float mWidth;  // in dp units
     private final float mHeight;  // in dp units
     private int mOrientation;
-    private final CompositorButton mModelSelectorButton;
+    private CompositorButton mModelSelectorButton;
 
+    private Context mContext;
     private final StripScrim mStripScrim;
     private boolean mBrowserScrimShowing;
-    private boolean mTabSwitcherActive;
     private ValueAnimator mScrimFadeAnimation;
 
     private TabStripSceneLayer mTabStripTreeProvider;
@@ -101,6 +110,7 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
     private TabStripEventHandler mTabStripEventHandler;
     private TabSwitcherLayoutObserver mTabSwitcherLayoutObserver;
 
+    private float mModelSelectorWidth;
     private TabModelSelectorTabModelObserver mTabModelSelectorTabModelObserver;
     private TabModelSelectorTabObserver mTabModelSelectorTabObserver;
     private final TabModelSelectorObserver mTabModelSelectorObserver =
@@ -128,7 +138,7 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
         @Override
         public void onUpOrCancel() {
             if (mModelSelectorButton.onUpOrCancel() && mTabModelSelector != null) {
-                getActiveStripLayoutHelper().finishAnimation();
+                getActiveStripLayoutHelper().finishAnimationsAndPushTabUpdates();
                 if (!mModelSelectorButton.isVisible()) return;
                 mTabModelSelector.selectModel(!mTabModelSelector.isIncognitoSelected());
                 return;
@@ -188,28 +198,23 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
         }
 
         @Override
-        public void onFinishedShowing(int layoutType) {
-            if (layoutType != LayoutType.TAB_SWITCHER) return;
-            mTabSwitcherActive = true;
-        }
-
-        @Override
-        public void onFinishedHiding(int layoutType) {
-            if (layoutType != LayoutType.TAB_SWITCHER) return;
-            mTabSwitcherActive = false;
-        }
-
-        @Override
         public void onStartedHiding(
                 @LayoutType int layoutType, boolean showToolbar, boolean delayAnimation) {
             if (layoutType != LayoutType.TAB_SWITCHER) return;
             updateScrimVisibility(false);
         }
 
+        @Override
+        public void onTabSelectionHinted(int tabId) {
+            LayoutStateObserver.super.onTabSelectionHinted(tabId);
+        }
+
         private void updateScrimVisibility(boolean visibility) {
             // Handled by separate scrim over entire browser in the polished version.
             if (isGridTabSwitcherPolishEnabled()) {
-                mBrowserScrimShowing = visibility;
+                // Scrim doesn't actually show if the a11y list switcher is showing.
+                mBrowserScrimShowing =
+                        visibility && !DeviceClassManager.enableAccessibilityLayout(mContext);
                 return;
             }
 
@@ -264,24 +269,56 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
         mEventFilter =
                 new AreaGestureEventFilter(context, mTabStripEventHandler, null, false, false);
 
-        mNormalHelper = new StripLayoutHelper(context, updateHost, renderHost, false);
-        mIncognitoHelper = new StripLayoutHelper(context, updateHost, renderHost, true);
-
         CompositorOnClickHandler selectorClickHandler = new CompositorOnClickHandler() {
             @Override
             public void onClick(long time) {
                 handleModelSelectorButtonClick();
             }
         };
-        mModelSelectorButton = new CompositorButton(context, MODEL_SELECTOR_BUTTON_WIDTH_DP,
-                MODEL_SELECTOR_BUTTON_HEIGHT_DP, selectorClickHandler);
+        if (ChromeFeatureList.sTabStripRedesign.isEnabled()) {
+            if (TabUiFeatureUtilities.isTabStripFolioEnabled()) {
+                createFolioModelSelectorButtion(context, selectorClickHandler);
+            } else {
+                createDetachedModelSelectorButtion(context, selectorClickHandler);
+            }
+
+            // Model selector button icon color
+            int iconDefaultColor =
+                    context.getResources().getColor(R.color.model_selector_button_icon_color);
+            int iconIncognitoColor =
+                    context.getResources().getColor(R.color.default_icon_color_secondary_light);
+
+            // Model selector button background color.
+            // Default bg color is surface inverse.
+            int backgroundDefaultColor =
+                    context.getResources().getColor(R.color.model_selector_button_bg_color);
+
+            // Incognito bg color is surface 1 baseline for folio, surface 2 baseline for detached.
+            int backgroundIncognitoColor = TabUiFeatureUtilities.isTabStripFolioEnabled()
+                    ? context.getResources().getColor(R.color.default_bg_color_dark_elev_1_baseline)
+                    : context.getResources().getColor(
+                            R.color.default_bg_color_dark_elev_2_baseline);
+
+            ((TintedCompositorButton) mModelSelectorButton)
+                    .setTint(iconDefaultColor, iconDefaultColor, iconIncognitoColor,
+                            iconIncognitoColor);
+            ((TintedCompositorButton) mModelSelectorButton)
+                    .setBackgroundTint(backgroundDefaultColor, backgroundDefaultColor,
+                            backgroundIncognitoColor, backgroundIncognitoColor);
+            mModelSelectorButton.setY(MODEL_SELECTOR_BUTTON_BACKGROUND_Y_OFFSET_DP);
+        } else {
+            mModelSelectorButton = new CompositorButton(context, MODEL_SELECTOR_BUTTON_WIDTH_DP,
+                    MODEL_SELECTOR_BUTTON_HEIGHT_DP, selectorClickHandler);
+            mModelSelectorButton.setResources(R.drawable.btn_tabstrip_switch_normal,
+                    R.drawable.btn_tabstrip_switch_normal, R.drawable.location_bar_incognito_badge,
+                    R.drawable.location_bar_incognito_badge);
+            mModelSelectorButton.setY(MODEL_SELECTOR_BUTTON_Y_OFFSET_DP);
+            mModelSelectorWidth = MODEL_SELECTOR_BUTTON_WIDTH_DP;
+        }
         mModelSelectorButton.setIncognito(false);
         mModelSelectorButton.setVisible(false);
         // Pressed resources are the same as the unpressed resources.
-        mModelSelectorButton.setResources(R.drawable.btn_tabstrip_switch_normal,
-                R.drawable.btn_tabstrip_switch_normal, R.drawable.location_bar_incognito_badge,
-                R.drawable.location_bar_incognito_badge);
-        mModelSelectorButton.setY(MODEL_SELECTOR_BUTTON_Y_OFFSET_DP);
+        mModelSelectorButton.setClickSlop(MODEL_SELECTOR_BUTTON_CLICK_SLOP_DP);
 
         Resources res = context.getResources();
         mHeight = res.getDimension(R.dimen.tab_strip_height) / res.getDisplayMetrics().density;
@@ -293,7 +330,38 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
         mStripScrim.setVisible(false);
         mBrowserScrimShowing = false;
 
+        mNormalHelper =
+                new StripLayoutHelper(context, updateHost, renderHost, false, mModelSelectorButton);
+        mIncognitoHelper =
+                new StripLayoutHelper(context, updateHost, renderHost, true, mModelSelectorButton);
+
         onContextChanged(context);
+    }
+
+    private void createFolioModelSelectorButtion(
+            Context context, CompositorOnClickHandler selectorClickHandler) {
+        mModelSelectorButton =
+                new TintedCompositorButton(context, MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP_FOLIO,
+                        MODEL_SELECTOR_BUTTON_BACKGROUND_HEIGHT_DP_FOLIO, selectorClickHandler,
+                        R.drawable.ic_incognito);
+
+        // Tab strip redesign folio enabled bg size 36 * 36.
+        ((TintedCompositorButton) mModelSelectorButton)
+                .setBackgroundResourceId(R.drawable.bg_circle_new_tab_button_folio);
+        mModelSelectorWidth = MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP_FOLIO;
+    }
+
+    private void createDetachedModelSelectorButtion(
+            Context context, CompositorOnClickHandler selectorClickHandler) {
+        mModelSelectorButton = new TintedCompositorButton(context,
+                MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP_DETACHED,
+                MODEL_SELECTOR_BUTTON_BACKGROUND_HEIGHT_DP_DETACHED, selectorClickHandler,
+                R.drawable.ic_incognito);
+
+        // Tab strip redesign folio enabled bg size 38 * 38.
+        ((TintedCompositorButton) mModelSelectorButton)
+                .setBackgroundResourceId(R.drawable.bg_circle_new_tab_button_detached);
+        mModelSelectorWidth = MODEL_SELECTOR_BUTTON_BACKGROUND_WIDTH_DP_DETACHED;
     }
 
     /**
@@ -338,7 +406,7 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
 
     private void handleModelSelectorButtonClick() {
         if (mTabModelSelector == null) return;
-        getActiveStripLayoutHelper().finishAnimation();
+        getActiveStripLayoutHelper().finishAnimationsAndPushTabUpdates();
         if (!mModelSelectorButton.isVisible()) return;
         mTabModelSelector.selectModel(!mTabModelSelector.isIncognitoSelected());
     }
@@ -383,18 +451,23 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
     public void onSizeChanged(
             float width, float height, float visibleViewportOffsetY, int orientation) {
         mWidth = width;
-        mOrientation = orientation;
+        boolean orientationChanged = false;
+        if (mOrientation != orientation) {
+            mOrientation = orientation;
+            orientationChanged = true;
+        }
         if (!LocalizationUtils.isLayoutRtl()) {
             mModelSelectorButton.setX(
-                    mWidth - MODEL_SELECTOR_BUTTON_WIDTH_DP - MODEL_SELECTOR_BUTTON_END_PADDING_DP);
+                    mWidth - mModelSelectorWidth - MODEL_SELECTOR_BUTTON_PADDING_DP);
         } else {
-            mModelSelectorButton.setX(MODEL_SELECTOR_BUTTON_END_PADDING_DP);
+            mModelSelectorButton.setX(MODEL_SELECTOR_BUTTON_PADDING_DP);
         }
 
         updateStripScrim();
 
-        mNormalHelper.onSizeChanged(mWidth, mHeight);
-        mIncognitoHelper.onSizeChanged(mWidth, mHeight);
+        mNormalHelper.onSizeChanged(mWidth, mHeight, orientationChanged, LayoutManagerImpl.time());
+        mIncognitoHelper.onSizeChanged(
+                mWidth, mHeight, orientationChanged, LayoutManagerImpl.time());
 
         mStripFilterArea.set(0, 0, mWidth, Math.min(getHeight(), visibleViewportOffsetY));
         mEventFilter.setEventArea(mStripFilterArea);
@@ -417,12 +490,18 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
     }
 
     private float getModelSelectorButtonWidthWithPadding() {
-        return MODEL_SELECTOR_BUTTON_WIDTH_DP + MODEL_SELECTOR_BUTTON_END_PADDING_DP
-                + MODEL_SELECTOR_BUTTON_START_PADDING_DP;
+        return mModelSelectorWidth + (MODEL_SELECTOR_BUTTON_PADDING_DP * 2);
     }
 
     public TintedCompositorButton getNewTabButton() {
         return getActiveStripLayoutHelper().getNewTabButton();
+    }
+
+    /**
+     * @return The touch target offset to be applied to the new tab button.
+     */
+    public float getNewTabBtnTouchTargetOffset() {
+        return getActiveStripLayoutHelper().getNewTabButtonTouchTargetOffset();
     }
 
     public CompositorButton getModelSelectorButton() {
@@ -454,20 +533,6 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
      */
     public float getRightFadeOpacity() {
         return getActiveStripLayoutHelper().getRightFadeOpacity();
-    }
-
-    /**
-     * @return The brightness of background tabs in the tabstrip.
-     */
-    public float getBackgroundTabBrightness() {
-        return getActiveStripLayoutHelper().getBackgroundTabBrightness();
-    }
-
-    /**
-     * @return The brightness of the entire tabstrip.
-     */
-    public float getBrightness() {
-        return getActiveStripLayoutHelper().getBrightness();
     }
 
     /** Update the title cache for the available tabs in the model. */
@@ -528,6 +593,13 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
                 tabCreatorManager.getTabCreator(false));
         mIncognitoHelper.setTabModel(mTabModelSelector.getModel(true),
                 tabCreatorManager.getTabCreator(true));
+        if (TabUiFeatureUtilities.isTabletTabGroupsEnabled(mContext)) {
+            TabModelFilterProvider provider = mTabModelSelector.getTabModelFilterProvider();
+            mNormalHelper.setTabGroupModelFilter(
+                    (TabGroupModelFilter) provider.getTabModelFilter(false));
+            mIncognitoHelper.setTabGroupModelFilter(
+                    (TabGroupModelFilter) provider.getTabModelFilter(true));
+        }
         tabModelSwitched(mTabModelSelector.isIncognitoSelected());
 
         mTabModelSelectorTabModelObserver = new TabModelSelectorTabModelObserver(modelSelector) {
@@ -564,7 +636,6 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
                 if (mLayerTitleCacheSupplier.hasValue()) {
                     mLayerTitleCacheSupplier.get().remove(tab.getId());
                 }
-                getStripLayoutHelper(tab.isIncognito()).tabClosureCommited();
             }
 
             @Override
@@ -574,46 +645,32 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
             }
 
             @Override
-            public void didCloseTab(Tab tab) {
+            public void onFinishingTabClosure(Tab tab) {
                 getStripLayoutHelper(tab.isIncognito()).tabClosed(time(), tab.getId());
                 updateModelSwitcherButton();
             }
 
             @Override
-            public void willCloseTab(Tab tab, boolean animate) {
-                if (!tab.isIncognito()) {
-                    getStripLayoutHelper(tab.isIncognito())
-                            .willCloseTab(tab.getId(), mTabSwitcherActive);
-                }
-            }
-
-            @Override
             public void willCloseAllTabs(boolean incognito) {
-                getStripLayoutHelper(incognito).willCloseAllTabs(mTabSwitcherActive);
+                getStripLayoutHelper(incognito).willCloseAllTabs();
                 updateModelSwitcherButton();
-            }
-
-            @Override
-            public void allTabsClosureCommitted() {
-                if (mLayerTitleCacheSupplier.hasValue()) {
-                    mLayerTitleCacheSupplier.get().clearExcept(Tab.INVALID_TAB_ID);
-                }
-                getStripLayoutHelper(false).tabClosureCommited();
             }
 
             @Override
             public void didSelectTab(Tab tab, @TabSelectionType int type, int lastId) {
                 if (tab.getId() == lastId) return;
-                getStripLayoutHelper(tab.isIncognito()).tabSelected(time(), tab.getId(), lastId);
+                getStripLayoutHelper(tab.isIncognito())
+                        .tabSelected(time(), tab.getId(), lastId, false);
             }
 
             @Override
             public void didAddTab(Tab tab, int type, int creationState) {
                 boolean selected = type != TabLaunchType.FROM_LONGPRESS_BACKGROUND
                         || (mTabModelSelector.isIncognitoSelected() && tab.isIncognito());
+                boolean onStartup = type == TabLaunchType.FROM_RESTORE;
                 getStripLayoutHelper(tab.isIncognito())
-                        .tabCreated(
-                                time(), tab.getId(), mTabModelSelector.getCurrentTabId(), selected);
+                        .tabCreated(time(), tab.getId(), mTabModelSelector.getCurrentTabId(),
+                                selected, false, onStartup);
             }
         };
 
@@ -664,7 +721,7 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
             }
 
             @Override
-            public void onFaviconUpdated(Tab tab, Bitmap icon) {
+            public void onFaviconUpdated(Tab tab, Bitmap icon, GURL iconUrl) {
                 updateTitleForTab(tab);
             }
         };
@@ -692,18 +749,23 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
         return mOrientation;
     }
 
+    public @ColorInt int getBackgroundColor() {
+        return TabUiThemeProvider.getTabStripBackgroundColor(mContext, mIsIncognito);
+    }
+
     /**
      * Updates all internal resources and dimensions.
      * @param context The current Android {@link Context}.
      */
     public void onContextChanged(Context context) {
+        mContext = context;
         mNormalHelper.onContextChanged(context);
         mIncognitoHelper.onContextChanged(context);
     }
 
     @Override
     public boolean updateOverlay(long time, long dt) {
-        getInactiveStripLayoutHelper().finishAnimation();
+        getInactiveStripLayoutHelper().finishAnimationsAndPushTabUpdates();
         return getActiveStripLayoutHelper().updateLayout(time);
     }
 
@@ -744,12 +806,12 @@ public class StripLayoutHelperManager implements SceneOverlay, PauseResumeWithNa
     }
 
     private boolean isGridTabSwitcherPolishEnabled() {
-        return CachedFeatureFlags.isEnabled(ChromeFeatureList.GRID_TAB_SWITCHER_FOR_TABLETS)
+        return ChromeFeatureList.sGridTabSwitcherForTablets.isEnabled()
                 && TabUiFeatureUtilities.GRID_TAB_SWITCHER_FOR_TABLETS_POLISH.getValue();
     }
 
     private boolean isGridTabSwitcherNonPolishEnabled() {
-        return CachedFeatureFlags.isEnabled(ChromeFeatureList.GRID_TAB_SWITCHER_FOR_TABLETS)
+        return ChromeFeatureList.sGridTabSwitcherForTablets.isEnabled()
                 && !TabUiFeatureUtilities.GRID_TAB_SWITCHER_FOR_TABLETS_POLISH.getValue();
     }
 

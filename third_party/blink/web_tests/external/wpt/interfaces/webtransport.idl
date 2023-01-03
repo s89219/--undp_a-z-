@@ -22,6 +22,7 @@ interface WebTransport {
   Promise<WebTransportStats> getStats();
   readonly attribute Promise<undefined> ready;
   readonly attribute WebTransportReliabilityMode reliability;
+  readonly attribute WebTransportCongestionControl congestionControl;
   readonly attribute Promise<WebTransportCloseInfo> closed;
   undefined close(optional WebTransportCloseInfo closeInfo = {});
 
@@ -31,8 +32,8 @@ interface WebTransport {
   /* a ReadableStream of WebTransportBidirectionalStream objects */
   readonly attribute ReadableStream incomingBidirectionalStreams;
 
-  Promise<WritableStream> createUnidirectionalStream();
-  /* a ReadableStream of ReceiveStreams */
+  Promise<WebTransportSendStream> createUnidirectionalStream();
+  /* a ReadableStream of WebTransportReceiveStream objects */
   readonly attribute ReadableStream incomingUnidirectionalStreams;
 };
 
@@ -51,6 +52,13 @@ dictionary WebTransportOptions {
   boolean allowPooling = false;
   boolean requireUnreliable = false;
   sequence<WebTransportHash> serverCertificateHashes;
+  WebTransportCongestionControl congestionControl = "default";
+};
+
+enum WebTransportCongestionControl {
+  "default",
+  "throughput",
+  "low-latency",
 };
 
 dictionary WebTransportCloseInfo {
@@ -81,9 +89,32 @@ dictionary WebTransportDatagramStats {
 };
 
 [Exposed=(Window,Worker), SecureContext]
+interface WebTransportSendStream : WritableStream {
+  Promise<WebTransportSendStreamStats> getStats();
+};
+
+dictionary WebTransportSendStreamStats {
+  DOMHighResTimeStamp timestamp;
+  unsigned long long bytesWritten;
+  unsigned long long bytesSent;
+  unsigned long long bytesAcknowledged;
+};
+
+[Exposed=(Window,Worker), SecureContext]
+interface WebTransportReceiveStream : ReadableStream {
+  Promise<WebTransportReceiveStreamStats> getStats();
+};
+
+dictionary WebTransportReceiveStreamStats {
+  DOMHighResTimeStamp timestamp;
+  unsigned long long bytesReceived;
+  unsigned long long bytesRead;
+};
+
+[Exposed=(Window,Worker), SecureContext]
 interface WebTransportBidirectionalStream {
-  readonly attribute ReadableStream readable;
-  readonly attribute WritableStream writable;
+  readonly attribute WebTransportReceiveStream readable;
+  readonly attribute WebTransportSendStream writable;
 };
 
 [Exposed=(Window,Worker), SecureContext]

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "components/permissions/features.h"
 #include "components/permissions/permission_uma_util.h"
+#include "components/permissions/permission_util.h"
 #include "components/permissions/request_type.h"
 #include "components/permissions/test/mock_permission_request.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
@@ -476,101 +477,4 @@ TEST_F(PredictionBasedPermissionUiSelectorTest, HoldbackHistogramTest) {
   histogram_tester.ExpectTotalCount(
       "Permissions.PredictionService.Response.Geolocation",
       /*count=*/2);
-}
-
-TEST_F(PredictionBasedPermissionUiSelectorTest, HoldbackDecisionTest) {
-  permissions::GeneratePredictionsResponse mock_response_very_unlikely;
-  auto* very_unlikely_prediction =
-      mock_response_very_unlikely.mutable_prediction()->Add();
-  very_unlikely_prediction->mutable_grant_likelihood()->set_discretized_likelihood(
-      permissions::
-          PermissionPrediction_Likelihood_DiscretizedLikelihood_VERY_UNLIKELY);
-
-  permissions::GeneratePredictionsResponse mock_response_likely;
-  auto* likely_prediction = mock_response_likely.mutable_prediction()->Add();
-  likely_prediction->mutable_grant_likelihood()->set_discretized_likelihood(
-      permissions::
-          PermissionPrediction_Likelihood_DiscretizedLikelihood_LIKELY);
-
-  PredictionBasedPermissionUiSelector prediction_selector(profile());
-  // No holdback.
-  feature_list_->Reset();
-  feature_list_->InitWithFeaturesAndParameters(
-      {
-          {features::kPermissionPredictions,
-           {{features::kPermissionPredictionsHoldbackChance.name, "0"}}},
-          {features::kPermissionGeolocationPredictions,
-           {{features::kPermissionGeolocationPredictionsHoldbackChance.name,
-             "0"}}},
-          {permissions::features::kPermissionOnDeviceNotificationPredictions,
-           {{permissions::feature_params::
-                 kPermissionOnDeviceNotificationPredictionsHoldbackChance.name,
-             "0"}}},
-      },
-      {});
-
-  absl::optional<Decision> actual_decision;
-  prediction_selector.callback_ = base::BindLambdaForTesting(
-      [&](const Decision& decision) { actual_decision = decision; });
-
-  prediction_selector.LookupResponseReceived(
-      false, permissions::RequestType::kNotifications, false, false,
-      absl::nullopt);
-  EXPECT_EQ(actual_decision->decision_held_back, absl::nullopt);
-
-  prediction_selector.callback_ = base::BindLambdaForTesting(
-      [&](const Decision& decision) { actual_decision = decision; });
-
-  prediction_selector.LookupResponseReceived(
-      false, permissions::RequestType::kNotifications, true, false,
-      mock_response_very_unlikely);
-  EXPECT_EQ(actual_decision->decision_held_back, false);
-
-  prediction_selector.callback_ = base::BindLambdaForTesting(
-      [&](const Decision& decision) { actual_decision = decision; });
-
-  prediction_selector.LookupResponseReceived(
-      false, permissions::RequestType::kNotifications, true, false,
-      mock_response_likely);
-  EXPECT_EQ(actual_decision->decision_held_back, false);
-
-  // 100% Holdback chance.
-  feature_list_->Reset();
-  feature_list_->InitWithFeaturesAndParameters(
-      {
-          {features::kPermissionPredictions,
-           {{features::kPermissionPredictionsHoldbackChance.name, "1"}}},
-          {features::kPermissionGeolocationPredictions,
-           {{features::kPermissionGeolocationPredictionsHoldbackChance.name,
-             "1"}}},
-          {permissions::features::kPermissionOnDeviceNotificationPredictions,
-           {{permissions::feature_params::
-                 kPermissionOnDeviceNotificationPredictionsHoldbackChance.name,
-             "1"}}},
-      },
-      {});
-
-  prediction_selector.callback_ = base::BindLambdaForTesting(
-      [&](const Decision& decision) { actual_decision = decision; });
-
-  prediction_selector.LookupResponseReceived(
-      false, permissions::RequestType::kNotifications, false, false,
-      absl::nullopt);
-  EXPECT_EQ(actual_decision->decision_held_back, absl::nullopt);
-
-  prediction_selector.callback_ = base::BindLambdaForTesting(
-      [&](const Decision& decision) { actual_decision = decision; });
-
-  prediction_selector.LookupResponseReceived(
-      false, permissions::RequestType::kNotifications, true, false,
-      mock_response_very_unlikely);
-  EXPECT_EQ(actual_decision->decision_held_back, true);
-
-  prediction_selector.callback_ = base::BindLambdaForTesting(
-      [&](const Decision& decision) { actual_decision = decision; });
-
-  prediction_selector.LookupResponseReceived(
-      false, permissions::RequestType::kNotifications, true, false,
-      mock_response_likely);
-  EXPECT_EQ(actual_decision->decision_held_back, true);
 }

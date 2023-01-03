@@ -1,14 +1,14 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://history/history.js';
 
 import {BrowserProxyImpl, BrowserServiceImpl, HistoryAppElement, HistorySideBarElement, MetricsProxyImpl} from 'chrome://history/history.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {keyDownOn} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks} from 'chrome://webui-test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestBrowserProxy, TestMetricsProxy} from './history_clusters/utils.js';
 import {TestBrowserService} from './test_browser_service.js';
@@ -33,7 +33,7 @@ import {navigateTo} from './test_util.js';
 
     setup(function() {
       window.history.replaceState({}, '', '/');
-      document.body.innerHTML = '';
+      document.body.innerHTML = window.trustedTypes!.emptyHTML;
       BrowserServiceImpl.setInstance(new TestBrowserService());
       testBrowserProxy = new TestBrowserProxy();
       BrowserProxyImpl.setInstance(testBrowserProxy);

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,8 @@
 #include "chrome/browser/ash/borealis/infra/described.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/sessions/exit_type_service.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/concierge/concierge_client.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 
 namespace {
 
@@ -86,9 +86,9 @@ void BorealisContextManagerImpl::Startup::Start(
 BorealisContextManagerImpl::BorealisContextManagerImpl(Profile* profile)
     : profile_(profile), weak_factory_(this) {
   // ConciergeClient may not be initialized in tests.
-  if (chromeos::ConciergeClient::Get()) {
+  if (ash::ConciergeClient::Get()) {
     ShutDownBorealisIfRunning();
-    chromeos::ConciergeClient::Get()->AddVmObserver(this);
+    ash::ConciergeClient::Get()->AddVmObserver(this);
   }
 }
 
@@ -97,8 +97,8 @@ BorealisContextManagerImpl::~BorealisContextManagerImpl() {
   // prior to BorealisService/BorealisContextManagerImpl in tests. Therefore we
   // must not keep a pointer to the observed ConciergeClient, either directly or
   // via ScopedObservation or similar.
-  if (chromeos::ConciergeClient::Get()) {
-    chromeos::ConciergeClient::Get()->RemoveVmObserver(this);
+  if (ash::ConciergeClient::Get()) {
+    ash::ConciergeClient::Get()->RemoveVmObserver(this);
   }
 }
 
@@ -109,7 +109,7 @@ void BorealisContextManagerImpl::ShutDownBorealisIfRunning() {
   vm_tools::concierge::GetVmInfoRequest request;
   request.set_owner_id(ash::ProfileHelper::GetUserIdHashFromProfile(profile_));
   request.set_name(kBorealisVmName);
-  chromeos::ConciergeClient::Get()->GetVmInfo(
+  ash::ConciergeClient::Get()->GetVmInfo(
       std::move(request),
       base::BindOnce(
           [](base::WeakPtr<BorealisContextManagerImpl> weak_this,
@@ -130,7 +130,7 @@ void BorealisContextManagerImpl::SendShutdownRequest(
   vm_tools::concierge::StopVmRequest request;
   request.set_owner_id(ash::ProfileHelper::GetUserIdHashFromProfile(profile_));
   request.set_name(vm_name);
-  chromeos::ConciergeClient::Get()->StopVm(
+  ash::ConciergeClient::Get()->StopVm(
       std::move(request),
       base::BindOnce(
           [](base::OnceCallback<void(BorealisShutdownResult)>

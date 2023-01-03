@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -120,8 +120,10 @@ class FormCache {
       const std::vector<blink::WebFormControlElement>& control_elements);
 
   // Clears the value of the |control_element|.
+  // |trigger_element| is the element on which the user triggered a request
+  // to clear the form.
   void ClearElement(blink::WebFormControlElement& control_element,
-                    const blink::WebFormControlElement& element);
+                    const blink::WebFormControlElement& trigger_element);
 
   // Clears all entries from |initial_select_values_| and
   // |initial_checked_state_| whose keys not contained in |ids_to_retain|.

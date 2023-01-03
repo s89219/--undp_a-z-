@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -83,7 +83,7 @@ class ClientControlledShellSurface : public ShellSurfaceBase,
   void SetBounds(int64_t display_id, const gfx::Rect& bounds);
 
   // Set origin of bounds for surface while preserving the size.
-  void SetBoundsOrigin(const gfx::Point& origin);
+  void SetBoundsOrigin(int64_t display_id, const gfx::Point& origin);
 
   // Set size of bounds for surface while preserving the origin.
   void SetBoundsSize(const gfx::Size& size);
@@ -186,8 +186,8 @@ class ClientControlledShellSurface : public ShellSurfaceBase,
   bool IsInputEnabled(Surface* surface) const override;
   void OnSetFrame(SurfaceFrameType type) override;
   void OnSetFrameColors(SkColor active_color, SkColor inactive_color) override;
-  void SetSnappedToPrimary() override;
-  void SetSnappedToSecondary() override;
+  void SetSnapPrimary(float snap_ratio) override;
+  void SetSnapSecondary(float snap_ratio) override;
   void SetPip() override;
   void UnsetPip() override;
 
@@ -239,6 +239,9 @@ class ClientControlledShellSurface : public ShellSurfaceBase,
   // Update the resizability based on the resize lock type.
   void UpdateResizability() override;
 
+  // Overridden from exo::ShellSurfaceBase
+  void SetSystemModal(bool system_modal) override;
+
  protected:
   // Overridden from ShellSurfaceBase:
   float GetScale() const override;
@@ -250,7 +253,8 @@ class ClientControlledShellSurface : public ShellSurfaceBase,
   class ScopedLockedToRoot;
 
   // Overridden from ShellSurfaceBase:
-  void SetWidgetBounds(const gfx::Rect& bounds) override;
+  void SetWidgetBounds(const gfx::Rect& bounds,
+                       bool adjusted_by_server) override;
   gfx::Rect GetShadowBounds() const override;
   void InitializeWindowState(ash::WindowState* window_state) override;
   absl::optional<gfx::Rect> GetWidgetBounds() const override;
@@ -287,7 +291,7 @@ class ClientControlledShellSurface : public ShellSurfaceBase,
   ash::NonClientFrameViewAsh* GetFrameView();
   const ash::NonClientFrameViewAsh* GetFrameView() const;
 
-  void EnsurePendingScale();
+  void EnsurePendingScale(bool commit_immediately);
   float GetClientToDpPendingScale() const;
 
   gfx::Rect GetClientBoundsForWindowBoundsAndWindowState(

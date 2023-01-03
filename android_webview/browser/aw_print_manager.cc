@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,7 +63,7 @@ void AwPrintManager::PdfWritingDone(int page_count) {
 
 bool AwPrintManager::PrintNow() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  auto* rfh = web_contents()->GetMainFrame();
+  auto* rfh = web_contents()->GetPrimaryMainFrame();
   if (!rfh->IsRenderFrameLive())
     return false;
   GetPrintRenderFrame(rfh)->PrintRequestedPages();
@@ -148,14 +148,13 @@ void AwPrintManager::DidPrintDocument(
   }
 
   DCHECK(pdf_writing_done_callback());
-  base::PostTaskAndReplyWithResult(
-      base::ThreadPool::CreateTaskRunner(
-          {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
-           base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})
-          .get(),
-      FROM_HERE, base::BindOnce(&SaveDataToFd, fd_, number_pages(), data),
-      base::BindOnce(&AwPrintManager::OnDidPrintDocumentWritingDone,
-                     pdf_writing_done_callback(), std::move(callback)));
+  base::ThreadPool::CreateTaskRunner(
+      {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
+       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN})
+      ->PostTaskAndReplyWithResult(
+          FROM_HERE, base::BindOnce(&SaveDataToFd, fd_, number_pages(), data),
+          base::BindOnce(&AwPrintManager::OnDidPrintDocumentWritingDone,
+                         pdf_writing_done_callback(), std::move(callback)));
 }
 
 // static

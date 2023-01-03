@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,8 @@ class DummyUkmDataManager : public UkmDataManager {
   DummyUkmDataManager();
   ~DummyUkmDataManager() override;
 
-  DummyUkmDataManager(DummyUkmDataManager&) = delete;
-  DummyUkmDataManager& operator=(DummyUkmDataManager&) = delete;
+  DummyUkmDataManager(const DummyUkmDataManager&) = delete;
+  DummyUkmDataManager& operator=(const DummyUkmDataManager&) = delete;
 
   // UkmDataManager implementation:
   void Initialize(const base::FilePath& database_path,

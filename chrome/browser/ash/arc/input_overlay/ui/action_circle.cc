@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,7 @@
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
 
-namespace arc {
-namespace input_overlay {
+namespace arc::input_overlay {
 namespace {
 constexpr SkColor kViewColor = SK_ColorTRANSPARENT;
 constexpr SkColor kEditDefaultColor = SkColorSetA(SK_ColorWHITE, 0x80);
@@ -64,7 +63,7 @@ void ActionCircle::SetDisplayMode(DisplayMode mode) {
       SetBackground(std::make_unique<CircleBackground>(kEditDefaultColor,
                                                        kEditDefaultStroke));
       break;
-    case DisplayMode::kEdited:
+    case DisplayMode::kEditedSuccess:
     case DisplayMode::kEditedUnbound:
       SetBackground(
           std::make_unique<CircleBackground>(kEditedColor, kEditedStroke));
@@ -77,5 +76,4 @@ void ActionCircle::SetDisplayMode(DisplayMode mode) {
   current_mode_ = mode;
 }
 
-}  // namespace input_overlay
-}  // namespace arc
+}  // namespace arc::input_overlay

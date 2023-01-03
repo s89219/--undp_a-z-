@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,10 @@ package org.chromium.chrome.browser.password_manager;
 
 import android.accounts.Account;
 
-import com.google.common.base.Optional;
-
 import org.chromium.base.Callback;
 
 import java.util.Date;
+import java.util.Optional;
 
 /**
  * Interface to send backend requests to a downstream implementation to fulfill password store
@@ -53,7 +52,8 @@ public interface PasswordStoreAndroidBackend {
      * @param syncingAccount Account used to sync passwords. If the syncingAccount is empty local
      *         account will be used.
      * @param loginsReply Callback that is called on success with serialized {@link
-     *         org.chromium.components.sync.protocol.ListPasswordsResult} data.
+     *         org.chromium.components.password_manager.core.browser.proto.ListPasswordsResult}
+     * data.
      * @param failureCallback A callback that is called on failure for any reason. May return sync.
      */
     void getAllLogins(Optional<Account> syncingAccount, Callback<byte[]> loginsReply,
@@ -70,9 +70,9 @@ public interface PasswordStoreAndroidBackend {
      *         org.chromium.components.sync.protocol.ListPasswordsResult} data.
      * @param failureCallback A callback that is called on failure for any reason. May return sync.
      */
-    default void getAllLoginsBetween(Date createdAfter, Date createdBefore,
+    void getAllLoginsBetween(Date createdAfter, Date createdBefore,
             Optional<Account> syncingAccount, Callback<byte[]> loginsReply,
-            Callback<Exception> failureCallback){};
+            Callback<Exception> failureCallback);
 
     /**
      * Triggers an async list call to retrieve autofillable logins.
@@ -80,7 +80,8 @@ public interface PasswordStoreAndroidBackend {
      * @param syncingAccount Account used to sync passwords. If the syncingAccount is empty local
      *         account will be used.
      * @param loginsReply Callback that is called on success with serialized {@link
-     *         org.chromium.components.sync.protocol.ListPasswordsResult} data.
+     *         org.chromium.components.password_manager.core.browser.proto.ListPasswordsResult}
+     * data.
      * @param failureCallback A callback that is called on failure for any reason. May return sync.
      */
     void getAutofillableLogins(Optional<Account> syncingAccount, Callback<byte[]> loginsReply,
@@ -94,7 +95,8 @@ public interface PasswordStoreAndroidBackend {
      * @param syncingAccount Account used to sync passwords. If the syncingAccount is empty local
      *         account will be used.
      * @param loginsReply Callback that is called on success with serialized {@link
-     *         org.chromium.components.sync.protocol.ListPasswordsResult} data.
+     *         org.chromium.components.password_manager.core.browser.proto.ListPasswordsResult}
+     * data.
      * @param failureCallback A callback that is called on failure for any reason. May return sync.
      */
     void getLoginsForSignonRealm(String signonRealm, Optional<Account> syncingAccount,

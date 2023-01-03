@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,10 +14,10 @@ import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
 
 import android.support.test.InstrumentationRegistry;
-import android.support.test.uiautomator.UiDevice;
 import android.view.View;
 
 import androidx.test.filters.SmallTest;
+import androidx.test.uiautomator.UiDevice;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -34,7 +34,6 @@ import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.FlakyTest;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.app.ChromeActivity;
 import org.chromium.chrome.browser.compositor.bottombar.OverlayPanel.StateChangeReason;
@@ -42,6 +41,7 @@ import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.payments.handler.PaymentHandlerCoordinator;
 import org.chromium.chrome.browser.payments.handler.PaymentHandlerCoordinator.PaymentHandlerUiObserver;
 import org.chromium.chrome.test.ChromeJUnit4RunnerDelegate;
+import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetTestSupport;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.content_public.browser.WebContents;
@@ -61,10 +61,8 @@ import java.util.List;
 @ParameterAnnotations.UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
 public class ExpandablePaymentHandlerTest {
-    // Open a tab on the blank page first to initiate the native bindings required by the test
-    // server.
     @Rule
-    public PaymentRequestTestRule mRule = new PaymentRequestTestRule("about:blank");
+    public ChromeTabbedActivityTestRule mRule = new ChromeTabbedActivityTestRule();
 
     // Host the tests on https://127.0.0.1, because file:// URLs cannot have service workers.
     private EmbeddedTestServer mServer;
@@ -123,6 +121,7 @@ public class ExpandablePaymentHandlerTest {
 
     @Before
     public void setUp() throws Throwable {
+        mRule.startMainActivityOnBlankPage();
         mDevice = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation());
         mDefaultActivity = mRule.getActivity();
         mBottomSheetTestSupport = new BottomSheetTestSupport(
@@ -159,7 +158,7 @@ public class ExpandablePaymentHandlerTest {
 
     private GURL defaultPaymentAppUrl() {
         return new GURL(mServer.getURL(
-                "/components/test/data/payments/maxpay.com/payment_handler_window.html"));
+                "/components/test/data/payments/maxpay.test/payment_handler_window.html"));
     }
 
     private PaymentHandlerUiObserver defaultUiObserver() {
@@ -207,7 +206,7 @@ public class ExpandablePaymentHandlerTest {
 
     @Test
     @SmallTest
-    @FlakyTest(message = "https://crbug.com/1191988")
+    @DisabledTest(message = "https://crbug.com/1191988")
     @Feature({"Payments"})
     public void testSwipeDownCloseUI() throws Throwable {
         startDefaultServer();
@@ -336,6 +335,7 @@ public class ExpandablePaymentHandlerTest {
     @Test
     @SmallTest
     @Feature({"Payments"})
+    @DisabledTest(message = "https://crbug.com/1382925")
     public void testOpenPageInfoDialog() throws Throwable {
         startDefaultServer();
         PaymentHandlerCoordinator paymentHandler = createPaymentHandlerAndShow(mDefaultIsIncognito);
@@ -344,7 +344,7 @@ public class ExpandablePaymentHandlerTest {
         onView(withId(R.id.security_icon)).perform(click());
 
         String paymentAppUrl = mServer.getURL(
-                "/components/test/data/payments/maxpay.com/payment_handler_window.html");
+                "/components/test/data/payments/maxpay.test/payment_handler_window.html");
 
         // The UI only shows a hostname by default. Expand to full URL.
         onView(withId(R.id.page_info_url_wrapper)).perform(click());
@@ -373,7 +373,7 @@ public class ExpandablePaymentHandlerTest {
         onView(withId(R.id.origin)).check(matches(withText(getOrigin(mServer))));
 
         String anotherUrl =
-                mServer.getURL("/components/test/data/payments/bobpay.com/app1/index.html");
+                mServer.getURL("/components/test/data/payments/bobpay.test/app1/index.html");
         mRule.runOnUiThread(
                 ()
                         -> paymentHandler.getWebContentsForTest().getNavigationController().loadUrl(
@@ -399,7 +399,7 @@ public class ExpandablePaymentHandlerTest {
     @SmallTest
     @Feature({"Payments"})
     @ParameterAnnotations.UseMethodParameter(BadCertParams.class)
-    @FlakyTest(message = "https://crbug.com/1288003")
+    @DisabledTest(message = "https://crbug.com/1288003")
     public void testInsecureConnectionNotShowUi(int badCertificate) throws Throwable {
         startServer(badCertificate);
         PaymentHandlerCoordinator paymentHandler = createPaymentHandlerAndShow(mDefaultIsIncognito);

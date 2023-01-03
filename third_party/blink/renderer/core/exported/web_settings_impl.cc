@@ -380,10 +380,6 @@ void WebSettingsImpl::SetTextTrackWindowColor(const WebString& color) {
   settings_->SetTextTrackWindowColor(color);
 }
 
-void WebSettingsImpl::SetTextTrackWindowPadding(const WebString& padding) {
-  settings_->SetTextTrackWindowPadding(padding);
-}
-
 void WebSettingsImpl::SetTextTrackWindowRadius(const WebString& radius) {
   settings_->SetTextTrackWindowRadius(radius);
 }
@@ -781,4 +777,7 @@ void WebSettingsImpl::SetWebXRImmersiveArAllowed(
   settings_->SetWebXRImmersiveArAllowed(webxr_immersive_ar_allowed);
 }
 
+void WebSettingsImpl::SetModalContextMenu(bool is_available) {
+  settings_->SetModalContextMenu(is_available);
+}
 }  // namespace blink

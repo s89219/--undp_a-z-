@@ -62,7 +62,7 @@ adb shell settings put global package_verifier_enable 0
 ### Using Emulators
 
 Running tests on emulators is the same as [on device](#Running-Tests). Refer to
-[android_emulator.md](../android_emulator.md) for setting up emulators.
+[android_emulator.md](/docs/android_emulator.md) for setting up emulators.
 
 ## Building Tests
 
@@ -99,6 +99,16 @@ Java test files vary a bit more widely than their C++ counterparts:
 Once you know what to build, just do it like you normally would build anything
 else, e.g.: `ninja -C out/Release chrome_public_test_apk`
 
+### Determining Test Target
+
+If you do not know what target a test file belongs to, you can use
+`//tools/autotest.py` to figure it out fo you:
+
+```sh
+# Builds relevant test target and then runs the test:
+tools/autotest.py -C <output directory> TestClassName
+```
+
 ## Running Tests
 
 All functional tests should be runnable via the wrapper scripts generated at
@@ -114,6 +124,18 @@ to do otherwise by `-d/--device`.
 The commands used by the buildbots are printed in the logs. Look at
 https://build.chromium.org/ to duplicate the same test command as a particular
 builder.
+
+### Listing Available Tests
+
+Use `--list-tests` to list what tests are available.
+
+```sh
+# Prints out all available tests:
+<output directory>/bin/run_<target_name> --list-tests
+
+# Prints out all available tests that match a filter:
+<output directory>/bin/run_<target_name> --list-tests -f "*MyFilter*"
+```
 
 ### INSTALL\_FAILED\_CONTAINER\_ERROR or INSTALL\_FAILED\_INSUFFICIENT\_STORAGE
 
@@ -260,7 +282,7 @@ You might want to add stars `*` to each as a regular expression, e.g.
 
 ### Debugging
 
-Similar to [debugging apk targets](../android_debugging_instructions.md#debugging-java):
+Similar to [debugging apk targets](/docs/android_debugging_instructions.md#debugging-java):
 
 ```shell
 out/Debug/bin/run_content_shell_test_apk --wait-for-java-debugger

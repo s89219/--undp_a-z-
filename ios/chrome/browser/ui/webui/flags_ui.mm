@@ -1,37 +1,37 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/ui/webui/flags_ui.h"
+#import "ios/chrome/browser/ui/webui/flags_ui.h"
 
-#include <memory>
-#include <string>
-#include <utility>
+#import <memory>
+#import <string>
+#import <utility>
 
-#include "base/bind.h"
-#include "base/callback_helpers.h"
-#include "base/memory/ptr_util.h"
-#include "base/strings/utf_string_conversions.h"
-#include "base/values.h"
-#include "build/branding_buildflags.h"
-#include "components/flags_ui/flags_ui_constants.h"
-#include "components/flags_ui/flags_ui_pref_names.h"
-#include "components/flags_ui/pref_service_flags_storage.h"
-#include "components/grit/components_resources.h"
-#include "components/prefs/pref_registry_simple.h"
-#include "components/prefs/pref_service.h"
-#include "components/strings/grit/components_chromium_strings.h"
-#include "components/strings/grit/components_strings.h"
-#include "components/version_info/version_info.h"
-#include "ios/chrome/browser/application_context.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
-#include "ios/chrome/browser/flags/about_flags.h"
-#include "ios/web/public/webui/web_ui_ios.h"
-#include "ios/web/public/webui/web_ui_ios_data_source.h"
-#include "ios/web/public/webui/web_ui_ios_message_handler.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
+#import "base/bind.h"
+#import "base/callback_helpers.h"
+#import "base/memory/ptr_util.h"
+#import "base/strings/utf_string_conversions.h"
+#import "base/values.h"
+#import "build/branding_buildflags.h"
+#import "components/flags_ui/flags_ui_constants.h"
+#import "components/flags_ui/flags_ui_pref_names.h"
+#import "components/flags_ui/pref_service_flags_storage.h"
+#import "components/grit/components_resources.h"
+#import "components/prefs/pref_registry_simple.h"
+#import "components/prefs/pref_service.h"
+#import "components/strings/grit/components_chromium_strings.h"
+#import "components/strings/grit/components_strings.h"
+#import "components/version_info/version_info.h"
+#import "ios/chrome/browser/application_context/application_context.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/flags/about_flags.h"
+#import "ios/chrome/browser/url/chrome_url_constants.h"
+#import "ios/web/public/webui/web_ui_ios.h"
+#import "ios/web/public/webui/web_ui_ios_data_source.h"
+#import "ios/web/public/webui/web_ui_ios_message_handler.h"
+#import "ui/base/l10n/l10n_util.h"
+#import "ui/base/resource/resource_bundle.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -71,7 +71,7 @@ class FlagsDOMHandler : public web::WebUIIOSMessageHandler {
 
   // Initializes the DOM handler with the provided flags storage and flags
   // access. If there were flags experiments requested from javascript before
-  // this was called, it calls |HandleRequestExperimentalFeatures| again.
+  // this was called, it calls `HandleRequestExperimentalFeatures` again.
   void Init(std::unique_ptr<flags_ui::FlagsStorage> flags_storage,
             flags_ui::FlagAccess access);
 
@@ -128,24 +128,22 @@ void FlagsDOMHandler::HandleRequestExperimentalFeatures(
   DCHECK(!args.empty());
   const base::Value& callback_id = args[0];
 
-  std::vector<base::Value> supported_features;
-  std::vector<base::Value> unsupported_features;
+  base::Value::List supported_features;
+  base::Value::List unsupported_features;
   GetFlagFeatureEntries(flags_storage_.get(), access_, supported_features,
                         unsupported_features);
 
-  base::Value results(base::Value::Type::DICTIONARY);
-  results.SetKey(flags_ui::kSupportedFeatures,
-                 base::Value(std::move(supported_features)));
-  results.SetKey(flags_ui::kUnsupportedFeatures,
-                 base::Value(std::move(unsupported_features)));
+  base::Value::Dict results;
+  results.Set(flags_ui::kSupportedFeatures, std::move(supported_features));
+  results.Set(flags_ui::kUnsupportedFeatures, std::move(unsupported_features));
 
   // Cannot restart the browser on iOS.
-  results.SetBoolKey(flags_ui::kNeedsRestart, false);
-  results.SetBoolKey(flags_ui::kShowOwnerWarning,
-                     access_ == flags_ui::kGeneralAccessFlagsOnly);
+  results.Set(flags_ui::kNeedsRestart, false);
+  results.Set(flags_ui::kShowOwnerWarning,
+              access_ == flags_ui::kGeneralAccessFlagsOnly);
 
-  results.SetBoolKey(flags_ui::kShowBetaChannelPromotion, false);
-  results.SetBoolKey(flags_ui::kShowDevChannelPromotion, false);
+  results.Set(flags_ui::kShowBetaChannelPromotion, false);
+  results.Set(flags_ui::kShowDevChannelPromotion, false);
 
   web_ui()->ResolveJavascriptCallback(callback_id, results);
 }

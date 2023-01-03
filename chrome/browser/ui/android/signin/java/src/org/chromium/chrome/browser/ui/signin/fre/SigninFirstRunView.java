@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,6 +33,7 @@ public class SigninFirstRunView extends RelativeLayout {
     private ButtonCompat mDismissButton;
     private TextViewWithClickableSpans mFooter;
     private ProgressBar mSigninProgressSpinner;
+    private TextView mSigninProgressText;
 
     public SigninFirstRunView(Context context, @Nullable AttributeSet attrs) {
         super(context, attrs);
@@ -53,6 +54,7 @@ public class SigninFirstRunView extends RelativeLayout {
         mDismissButton = findViewById(R.id.signin_fre_dismiss_button);
         mFooter = findViewById(R.id.signin_fre_footer);
         mSigninProgressSpinner = findViewById(R.id.fre_signin_progress_spinner);
+        mSigninProgressText = findViewById(R.id.fre_signin_progress_text);
 
         if (FREMobileIdentityConsistencyFieldTrial.shouldHideTitleUntilPoliciesAreLoaded()) {
             mTitle.setVisibility(INVISIBLE);
@@ -91,8 +93,12 @@ public class SigninFirstRunView extends RelativeLayout {
         return mSigninProgressSpinner;
     }
 
+    TextView getSigninProgressText() {
+        return mSigninProgressText;
+    }
+
     /** Updates the title and the subtitle for UI variations on native and policy load. **/
-    void onNativeAndPoliciesLoaded() {
+    void applyVariationsExperiment() {
         Pair<Integer, Integer> titleAndSubtitleId =
                 FREMobileIdentityConsistencyFieldTrial.getVariationTitleAndSubtitle();
         mTitle.setText(titleAndSubtitleId.first);

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,7 +39,7 @@ class SingleClientSendTabToSelfSyncTest : public SyncTest {
   SingleClientSendTabToSelfSyncTest& operator=(
       const SingleClientSendTabToSelfSyncTest&) = delete;
 
-  ~SingleClientSendTabToSelfSyncTest() override {}
+  ~SingleClientSendTabToSelfSyncTest() override = default;
 
   void SetUpInProcessBrowserTestFixture() override {
     SyncTest::SetUpInProcessBrowserTestFixture();
@@ -94,10 +94,11 @@ IN_PROC_BROWSER_TEST_F(SingleClientSendTabToSelfSyncTest,
                    ->HasValidTargetDevice());
 }
 
-IN_PROC_BROWSER_TEST_F(SingleClientSendTabToSelfSyncTest, ShouldOfferFeature) {
+IN_PROC_BROWSER_TEST_F(SingleClientSendTabToSelfSyncTest,
+                       ShouldDisplayEntryPoint) {
   ASSERT_TRUE(SetupSync());
 
-  EXPECT_FALSE(send_tab_to_self::ShouldOfferFeature(
+  EXPECT_FALSE(send_tab_to_self::ShouldDisplayEntryPoint(
       GetBrowser(0)->tab_strip_model()->GetActiveWebContents()));
 }
 
@@ -189,7 +190,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientSendTabToSelfSyncTest,
 
   ASSERT_FALSE(model->AddEntry(kUrl, kTitle, kTargetDeviceSyncCacheGuid));
 
-  EXPECT_FALSE(send_tab_to_self::ShouldOfferFeature(
+  EXPECT_FALSE(send_tab_to_self::ShouldDisplayEntryPoint(
       GetBrowser(0)->tab_strip_model()->GetActiveWebContents()));
 
   // Clear the "Sync paused" state again.

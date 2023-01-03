@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,11 @@
 #include <string>
 #include <vector>
 
+#include "base/files/file.h"
+#include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/files/safe_base_name.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "build/chromeos_buildflags.h"
@@ -21,26 +26,25 @@
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
+#include "components/services/app_service/public/cpp/intent.h"
 #include "components/services/app_service/public/cpp/intent_util.h"
 #include "components/services/app_service/public/cpp/share_target.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
+#include "net/base/filename_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "services/network/public/cpp/resource_request_body.h"
 #include "ui/display/types/display_constants.h"
 #include "url/gurl.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "base/files/file.h"
-#include "base/files/file_path.h"
-#include "base/files/file_util.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/ash/file_manager/fileapi_util.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
-#include "chrome/browser/chromeos/fileapi/recent_file.h"
-#include "chrome/browser/chromeos/fileapi/recent_model.h"
+#include "chrome/browser/ash/fileapi/recent_file.h"
+#include "chrome/browser/ash/fileapi/recent_model.h"
 #include "chrome/browser/sharesheet/sharesheet_service.h"
 #include "storage/browser/file_system/file_system_context.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
@@ -73,6 +77,7 @@ void RemoveWebShareDirectory(const base::FilePath& directory) {
   base::ScopedAllowBlockingForTesting allow_blocking;
   EXPECT_TRUE(base::DeletePathRecursively(directory));
 }
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 base::FilePath StoreSharedFile(const base::FilePath& directory,
                                const base::StringPiece& name,
@@ -85,17 +90,15 @@ base::FilePath StoreSharedFile(const base::FilePath& directory,
             static_cast<int>(content.size()));
   return path;
 }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 content::WebContents* LaunchWebAppWithIntent(Profile* profile,
                                              const web_app::AppId& app_id,
-                                             apps::mojom::IntentPtr&& intent) {
+                                             apps::IntentPtr&& intent) {
   apps::AppLaunchParams params = apps::CreateAppLaunchParamsForIntent(
       app_id,
-      /*event_flags=*/0, apps::mojom::LaunchSource::kFromSharesheet,
-      display::kDefaultDisplayId,
-      apps::mojom::LaunchContainer::kLaunchContainerWindow, std::move(intent),
-      profile);
+      /*event_flags=*/0, apps::LaunchSource::kFromSharesheet,
+      display::kDefaultDisplayId, apps::LaunchContainer::kLaunchContainerWindow,
+      std::move(intent), profile);
 
   content::WebContents* const web_contents =
       apps::AppServiceProxyFactory::GetForProfile(profile)
@@ -135,7 +138,7 @@ class FakeSharesheet : public crosapi::mojom::Sharesheet {
       crosapi::mojom::Sharesheet::ShowBubbleCallback callback) override {
     LaunchWebAppWithIntent(
         profile_, selected_app_id_,
-        apps_util::ConvertCrosapiToAppServiceIntent(intent, profile_));
+        apps_util::CreateAppServiceIntentFromCrosapi(intent, profile_));
   }
   void ShowBubbleWithOnClosed(
       const std::string& window_id,
@@ -145,7 +148,7 @@ class FakeSharesheet : public crosapi::mojom::Sharesheet {
       override {}
   void CloseBubble(const std::string& window_id) override {}
 
-  Profile* profile_ = nullptr;
+  raw_ptr<Profile, DanglingUntriaged> profile_ = nullptr;
   web_app::AppId selected_app_id_;
 };
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -161,8 +164,9 @@ class WebShareTargetBrowserTest : public WebAppControllerBrowserTest {
   }
 
   content::WebContents* LaunchAppWithIntent(const AppId& app_id,
-                                            apps::mojom::IntentPtr&& intent,
+                                            apps::IntentPtr&& intent,
                                             const GURL& expected_url) {
+    DCHECK(intent);
     ui_test_utils::UrlLoadObserver url_observer(
         expected_url, content::NotificationService::AllSources());
 
@@ -180,14 +184,14 @@ class WebShareTargetBrowserTest : public WebAppControllerBrowserTest {
 
     const scoped_refptr<storage::FileSystemContext> file_system_context =
         file_manager::util::GetFileSystemContextForRenderFrameHost(
-            profile(), contents->GetMainFrame());
-    chromeos::RecentModel::GetForProfile(profile())->GetRecentFiles(
+            profile(), contents->GetPrimaryMainFrame());
+    ash::RecentModel::GetForProfile(profile())->GetRecentFiles(
         file_system_context.get(),
         /*origin=*/GURL(),
-        /*file_type=*/chromeos::RecentModel::FileType::kAll,
+        /*file_type=*/ash::RecentModel::FileType::kAll,
+        /*invalidate_cache=*/false,
         base::BindLambdaForTesting(
-            [&result,
-             &run_loop](const std::vector<chromeos::RecentFile>& files) {
+            [&result, &run_loop](const std::vector<ash::RecentFile>& files) {
               result = files.size();
               run_loop.Quit();
             }));
@@ -197,25 +201,9 @@ class WebShareTargetBrowserTest : public WebAppControllerBrowserTest {
   }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-  // Lacros tests may be run with an old version of ash-chrome where the lacros
-  // service or the sharesheet interface are not available.
-  bool IsServiceAvailable() {
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-    auto* const service = chromeos::LacrosService::Get();
-    return service && service->IsAvailable<crosapi::mojom::Sharesheet>();
-#else
-    return true;
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
-  }
-
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   void SetUpOnMainThread() override {
     WebAppControllerBrowserTest::SetUpOnMainThread();
-
-    // If the lacros service or the sharesheet interface are not
-    // available on this version of ash-chrome, this test suite will no-op.
-    if (!IsServiceAvailable())
-      return;
 
     // Replace the production sharesheet with a fake for testing.
     mojo::Remote<crosapi::mojom::Sharesheet>& remote =
@@ -231,36 +219,45 @@ class WebShareTargetBrowserTest : public WebAppControllerBrowserTest {
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 };
 
-// TODO(crbug.com/1225825): Support file sharing from Lacros.
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, ShareTextFiles) {
+IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, ShareUsingFileURL) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL app_url =
       embedded_test_server()->GetURL("/web_share_target/charts.html");
   const AppId app_id = web_app::InstallWebAppFromManifest(browser(), app_url);
-  const base::FilePath directory = PrepareWebShareDirectory(profile());
 
-  apps::mojom::IntentPtr intent;
+  base::ScopedAllowBlockingForTesting allow_blocking;
+  base::ScopedTempDir scoped_temp_dir;
+  ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
+
+  auto intent =
+      std::make_unique<apps::Intent>(apps_util::kIntentActionSendMultiple);
   {
     const base::FilePath first_csv =
-        StoreSharedFile(directory, "first.csv", "1,2,3,4,5");
+        StoreSharedFile(scoped_temp_dir.GetPath(), "first.csv", "1,2,3,4,5");
     const base::FilePath second_csv =
-        StoreSharedFile(directory, "second.csv", "6,7,8,9,0");
+        StoreSharedFile(scoped_temp_dir.GetPath(), "second.csv", "6,7,8,9,0");
 
     std::vector<base::FilePath> file_paths({first_csv, second_csv});
-    std::vector<std::string> content_types(2, "text/csv");
-    intent = apps_util::CreateShareIntentFromFiles(
-        profile(), std::move(file_paths), std::move(content_types));
+
+    intent->mime_type = "text/csv";
+    for (const base::FilePath& file_path : file_paths) {
+      int64_t file_size = 0;
+      base::GetFileSize(file_path, &file_size);
+      auto file =
+          std::make_unique<apps::IntentFile>(net::FilePathToFileURL(file_path));
+      file->file_name = base::SafeBaseName::Create(file_path);
+      file->file_size = file_size;
+      file->mime_type = "text/csv";
+      intent->files.push_back(std::move(file));
+    }
   }
 
   content::WebContents* const web_contents =
       LaunchAppWithIntent(app_id, std::move(intent), share_target_url());
   EXPECT_EQ("1,2,3,4,5 6,7,8,9,0", ReadTextContent(web_contents, "records"));
-  EXPECT_EQ(NumRecentFiles(web_contents), 0U);
-
-  RemoveWebShareDirectory(directory);
 }
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
 IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, ShareImageWithText) {
   ASSERT_TRUE(embedded_test_server()->Start());
   const GURL app_url =
@@ -268,7 +265,7 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, ShareImageWithText) {
   const AppId app_id = web_app::InstallWebAppFromManifest(browser(), app_url);
   const base::FilePath directory = PrepareWebShareDirectory(profile());
 
-  apps::mojom::IntentPtr intent;
+  apps::IntentPtr intent;
   {
     const base::FilePath first_svg =
         StoreSharedFile(directory, "first.svg", "picture");
@@ -300,7 +297,7 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, ShareAudio) {
   const AppId app_id = web_app::InstallWebAppFromManifest(browser(), app_url);
   const base::FilePath directory = PrepareWebShareDirectory(profile());
 
-  apps::mojom::IntentPtr intent;
+  apps::IntentPtr intent;
   {
     const base::FilePath first_weba =
         StoreSharedFile(directory, "first.weba", "a");
@@ -333,9 +330,9 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, PostBlank) {
       embedded_test_server()->GetURL("/web_share_target/poster.html");
   const AppId app_id = web_app::InstallWebAppFromManifest(browser(), app_url);
 
-  apps::mojom::IntentPtr intent = apps_util::CreateShareIntentFromText(
-      /*share_text=*/std::string(),
-      /*share_title=*/std::string());
+  apps::IntentPtr intent = apps_util::MakeShareIntent(
+      /*text=*/std::string(),
+      /*title=*/std::string());
 
   content::WebContents* const web_contents =
       LaunchAppWithIntent(app_id, std::move(intent), share_target_url());
@@ -352,7 +349,7 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, PostLink) {
   const AppId app_id = web_app::InstallWebAppFromManifest(browser(), app_url);
   const apps::ShareTarget* share_target =
       WebAppProvider::GetForTest(browser()->profile())
-          ->registrar()
+          ->registrar_unsafe()
           .GetAppShareTarget(app_id);
   EXPECT_EQ(share_target->method, apps::ShareTarget::Method::kPost);
   EXPECT_EQ(share_target->enctype, apps::ShareTarget::Enctype::kFormUrlEncoded);
@@ -360,9 +357,9 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, PostLink) {
   const std::string shared_title = "Hyperlink";
   const std::string shared_link = "https://example.org/a?b=c&d=e%20#f";
 
-  apps::mojom::IntentPtr intent = apps_util::CreateShareIntentFromText(
-      /*share_text=*/shared_link,
-      /*share_title=*/shared_title);
+  apps::IntentPtr intent = apps_util::MakeShareIntent(
+      /*text=*/shared_link,
+      /*title=*/shared_title);
 
   content::WebContents* const web_contents =
       LaunchAppWithIntent(app_id, std::move(intent), share_target_url());
@@ -383,7 +380,7 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, GetLink) {
   const AppId app_id = web_app::InstallWebAppFromManifest(browser(), app_url);
   const apps::ShareTarget* share_target =
       WebAppProvider::GetForTest(browser()->profile())
-          ->registrar()
+          ->registrar_unsafe()
           .GetAppShareTarget(app_id);
   EXPECT_EQ(share_target->method, apps::ShareTarget::Method::kGet);
   EXPECT_EQ(share_target->enctype, apps::ShareTarget::Enctype::kFormUrlEncoded);
@@ -393,9 +390,9 @@ IN_PROC_BROWSER_TEST_F(WebShareTargetBrowserTest, GetLink) {
   const GURL expected_url(share_target_url().spec() +
                           "?headline=My+News&link=http://example.com/news");
 
-  apps::mojom::IntentPtr intent = apps_util::CreateShareIntentFromText(
-      /*share_text=*/shared_link,
-      /*share_title=*/shared_title);
+  apps::IntentPtr intent = apps_util::MakeShareIntent(
+      /*text=*/shared_link,
+      /*title=*/shared_title);
 
   content::WebContents* const web_contents =
       LaunchAppWithIntent(app_id, std::move(intent), expected_url);

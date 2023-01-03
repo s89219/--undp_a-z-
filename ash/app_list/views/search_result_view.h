@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,13 +84,25 @@ class SearchResultPageDialogController;
 class ASH_EXPORT SearchResultView : public SearchResultBaseView,
                                     public SearchResultActionsViewDelegate {
  public:
-  class LabelAndTag;
+  class LabelAndTag {
+   public:
+    LabelAndTag(views::Label* label, SearchResult::Tags tags);
+
+    LabelAndTag(const LabelAndTag& other);
+    LabelAndTag& operator=(const LabelAndTag& other);
+    ~LabelAndTag();
+
+    views::Label* GetLabel() const { return label_; }
+    SearchResult::Tags GetTags() const { return tags_; }
+
+   private:
+    views::Label* label_;  // Owned by views hierarchy.
+    SearchResult::Tags tags_;
+  };
+
   enum class SearchResultViewType {
-    // The default vew type used for the majority of search results.
+    // The default view type used for the majority of search results.
     kDefault,
-    // The classic view type continues support for pre-BubbleView launcher's
-    // search UI.
-    kClassic,
     // Inline Answer views are used to directly answer questions posed by the
     // search query.
     kAnswerCard,
@@ -118,7 +130,6 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
   ~SearchResultView() override;
 
   // Sets/gets SearchResult displayed by this view.
-  void OnResultChanging(SearchResult* new_result) override;
   void OnResultChanged() override;
 
   void SetSearchResultViewType(SearchResultViewType type);
@@ -126,11 +137,6 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
   SearchResultViewType view_type() { return view_type_; }
 
   views::LayoutOrientation TitleAndDetailsOrientationForTest();
-
-  // Returns whether the result has changed since this method was last called.
-  // Used to determine whether the result should be animated when the result
-  // list changes.
-  bool GetAndResetResultChanged();
 
   // Calculates the width of the `title_container_` and 'details_container_'
   // for SearchResultView's custom eliding behavior.
@@ -151,14 +157,34 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
       views::FlexLayoutView* title_container,
       views::FlexLayoutView* details_container);
 
+  void set_multi_line_details_height_for_test(int height) {
+    multi_line_details_height_ = height;
+  }
+
+  void set_multi_line_title_height_for_test(int height) {
+    multi_line_title_height_ = height;
+  }
+
+  views::FlexLayoutView* get_keyboard_shortcut_container_for_test() {
+    return keyboard_shortcut_container_;
+  }
+
+  views::FlexLayoutView* get_title_container_for_test() {
+    return title_container_;
+  }
+
+  views::FlexLayoutView* get_details_container_for_test() {
+    return details_container_;
+  }
+
+  views::Label* get_result_text_separator_label_for_test() {
+    return result_text_separator_label_;
+  }
+
  private:
   friend class test::SearchResultListViewTest;
   friend class SearchResultListView;
   friend class SearchResultViewWidgetTest;
-
-  void set_multi_line_label_height_for_test(int height) {
-    multi_line_label_height_ = height;
-  }
 
   int PreferredHeight() const;
   int PrimaryTextHeight() const;
@@ -179,9 +205,7 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
   void UpdateKeyboardShortcutContainer();
   void UpdateRating();
 
-  void StyleLabel(views::Label* label,
-                  bool is_title_label,
-                  const SearchResult::Tags& tags);
+  void StyleLabel(views::Label* label, const SearchResult::Tags& tags);
   void StyleBigTitleContainer();
   void StyleBigTitleSuperscriptContainer();
   void StyleTitleContainer();
@@ -190,6 +214,9 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
 
   // Callback for query suggstion removal confirmation.
   void OnQueryRemovalAccepted(bool accepted);
+
+  // Called when the result selection controller selects a new result.
+  void OnSelectedResultChanged();
 
   // views::View overrides:
   const char* GetClassName() const override;
@@ -260,11 +287,6 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
   views::Label* rating_ = nullptr;           // Owned by views hierarchy.
   views::ImageView* rating_star_ = nullptr;  // Owned by views hierarchy.
 
-  // Whether a result change was detected. This will be set only if the ID of
-  // the result shown by the view changes. Result will be considered unchanged
-  // if its metadata (e.g. icon, or text style tags) changes.
-  bool result_changed_ = false;
-
   // Whether the removal confirmation dialog is invoked by long press touch.
   bool confirm_remove_by_long_press_ = false;
 
@@ -281,9 +303,13 @@ class ASH_EXPORT SearchResultView : public SearchResultBaseView,
   // layout weight calculations.
   int non_elided_details_label_width_ = 0;
 
-  // Search result view can have one multi-line label. Cache its height for
-  // calculating PreferredHeight() and SecondaryTextHeight().
-  int multi_line_label_height_ = 0;
+  // Search result view can have one multi-line title label. Cache its height
+  // for calculating PreferredHeight() and PrimaryTextHeight().
+  int multi_line_title_height_ = 0;
+
+  // Search result view can have one multi-line details label. Cache its height
+  // for calculating PreferredHeight() and SecondaryTextHeight().
+  int multi_line_details_height_ = 0;
 
   base::WeakPtrFactory<SearchResultView> weak_ptr_factory_{this};
 };

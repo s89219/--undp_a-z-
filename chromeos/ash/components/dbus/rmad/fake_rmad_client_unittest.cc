@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,6 +89,8 @@ class TestObserver : public RmadClient::Observer {
   }
   int num_power_cable_state() { return num_power_cable_state_; }
   bool last_power_cable_state() { return last_power_cable_state_; }
+  int num_external_disk_state() const { return num_external_disk_state_; }
+  bool last_external_disk_state() const { return last_external_disk_state_; }
   int num_hardware_verification_result() const {
     return num_hardware_verification_result_;
   }
@@ -142,6 +144,12 @@ class TestObserver : public RmadClient::Observer {
     last_power_cable_state_ = plugged_in;
   }
 
+  // Called when external disk is plugged in or removed.
+  void ExternalDiskState(bool detected) override {
+    num_external_disk_state_++;
+    last_external_disk_state_ = detected;
+  }
+
   // Called when hardware verification completes.
   void HardwareVerificationResult(
       const rmad::HardwareVerificationResult& last_hardware_verification_result)
@@ -171,6 +179,8 @@ class TestObserver : public RmadClient::Observer {
   bool last_hardware_write_protection_state_ = true;
   int num_power_cable_state_ = 0;
   bool last_power_cable_state_ = true;
+  int num_external_disk_state_ = 0;
+  bool last_external_disk_state_ = true;
   int num_hardware_verification_result_ = 0;
   rmad::HardwareVerificationResult last_hardware_verification_result_;
   int num_ro_firmware_update_progress_ = 0;
@@ -495,6 +505,39 @@ TEST_F(FakeRmadClientTest, GetLog) {
   run_loop.RunUntilIdle();
 }
 
+TEST_F(FakeRmadClientTest, SaveLog) {
+  const std::string expected_save_path = "fake save path for testing";
+  fake_client_()->SetSaveLogReply(expected_save_path, rmad::RMAD_ERROR_OK);
+  base::RunLoop run_loop;
+  client_->SaveLog(base::BindLambdaForTesting(
+      [&](absl::optional<rmad::SaveLogReply> response) {
+        EXPECT_TRUE(response.has_value());
+        EXPECT_EQ(response->save_path(), expected_save_path);
+        EXPECT_EQ(response->error(), rmad::RMAD_ERROR_OK);
+        run_loop.Quit();
+      }));
+  run_loop.RunUntilIdle();
+}
+
+TEST_F(FakeRmadClientTest, RecordBrowserActionMetric) {
+  fake_client_()->SetRecordBrowserActionMetricReply(rmad::RMAD_ERROR_OK);
+  base::RunLoop run_loop;
+
+  rmad::RecordBrowserActionMetricRequest request;
+  request.set_diagnostics(true);
+  request.set_os_update(false);
+
+  client_->RecordBrowserActionMetric(
+      request,
+      base::BindLambdaForTesting(
+          [&](absl::optional<rmad::RecordBrowserActionMetricReply> response) {
+            EXPECT_TRUE(response.has_value());
+            EXPECT_EQ(response->error(), rmad::RMAD_ERROR_OK);
+            run_loop.Quit();
+          }));
+  run_loop.RunUntilIdle();
+}
+
 // Tests that synchronous observers are notified about errors that occur outside
 // of state transitions.
 TEST_F(FakeRmadClientTest, ErrorObservation) {
@@ -552,7 +595,8 @@ TEST_F(FakeRmadClientTest, ProvisioningProgressObservation) {
             rmad::ProvisionStatus::RMAD_PROVISION_ERROR_WP_ENABLED);
 }
 
-// Tests that synchronous observers are notified about provisioning progress.
+// Tests that synchronous observers are notified about hardware write protection
+// state.
 TEST_F(FakeRmadClientTest, HardwareWriteProtectionStateObservation) {
   TestObserver observer_1(client_);
 
@@ -565,7 +609,7 @@ TEST_F(FakeRmadClientTest, HardwareWriteProtectionStateObservation) {
   EXPECT_TRUE(observer_1.last_hardware_write_protection_state());
 }
 
-// Tests that synchronous observers are notified about provisioning progress.
+// Tests that synchronous observers are notified about power cable state.
 TEST_F(FakeRmadClientTest, PowerCableStateObservation) {
   TestObserver observer_1(client_);
 
@@ -576,6 +620,19 @@ TEST_F(FakeRmadClientTest, PowerCableStateObservation) {
   fake_client_()->TriggerPowerCableStateObservation(true);
   EXPECT_EQ(observer_1.num_power_cable_state(), 2);
   EXPECT_TRUE(observer_1.last_power_cable_state());
+}
+
+// Tests that synchronous observers are notified about external disk state.
+TEST_F(FakeRmadClientTest, ExternalDiskStateObservation) {
+  TestObserver observer_1(client_);
+
+  fake_client_()->TriggerExternalDiskStateObservation(false);
+  EXPECT_EQ(observer_1.num_external_disk_state(), 1);
+  EXPECT_FALSE(observer_1.last_external_disk_state());
+
+  fake_client_()->TriggerExternalDiskStateObservation(true);
+  EXPECT_EQ(observer_1.num_external_disk_state(), 2);
+  EXPECT_TRUE(observer_1.last_external_disk_state());
 }
 
 // Tests that synchronous observers are notified about hardware verification

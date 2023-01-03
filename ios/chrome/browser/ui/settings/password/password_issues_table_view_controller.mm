@@ -1,21 +1,19 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/settings/password/password_issues_table_view_controller.h"
 
 #import <UIKit/UIKit.h>
-#include "base/mac/foundation_util.h"
-#include "components/password_manager/core/common/password_manager_features.h"
-#import "ios/chrome/browser/ui/settings/password/legacy_password_issue_content_item.h"
+#import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/settings/password/password_issue_content_item.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_consumer.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_presenter.h"
 #import "ios/chrome/browser/ui/settings/password/passwords_table_view_constants.h"
 #import "ios/chrome/browser/ui/table_view/table_view_favicon_data_source.h"
 #import "ios/chrome/common/ui/favicon/favicon_view.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util_mac.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -31,14 +29,6 @@ typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypeHeader = kItemTypeEnumZero,
   ItemTypePassword,  // This is a repeated item type.
 };
-
-// Return if the feature flag for the favicon is enabled.
-// TODO(crbug.com/1300569): Remove this when kEnableFaviconForPasswords flag is
-// removed.
-bool IsFaviconEnabled() {
-  return base::FeatureList::IsEnabled(
-      password_manager::features::kEnableFaviconForPasswords);
-}
 
 }  // namespace
 
@@ -78,17 +68,10 @@ bool IsFaviconEnabled() {
   [model setHeader:[self compromisedPasswordsDescriptionItem]
       forSectionWithIdentifier:SectionIdentifierContent];
 
-  if (IsFaviconEnabled()) {
-    for (id<PasswordIssue> password in self.passwords) {
+    for (PasswordIssue* password in self.passwords) {
       [model addItem:[self passwordIssueItem:password]
           toSectionWithIdentifier:SectionIdentifierContent];
     }
-  } else {
-    for (id<PasswordIssue> password in self.passwords) {
-      [model addItem:[self legacyPasswordIssueItem:password]
-          toSectionWithIdentifier:SectionIdentifierContent];
-    }
-  }
 }
 
 #pragma mark - Items
@@ -100,20 +83,9 @@ bool IsFaviconEnabled() {
   return footerItem;
 }
 
-- (PasswordIssueContentItem*)passwordIssueItem:(id<PasswordIssue>)password {
+- (PasswordIssueContentItem*)passwordIssueItem:(PasswordIssue*)password {
   PasswordIssueContentItem* passwordItem =
       [[PasswordIssueContentItem alloc] initWithType:ItemTypePassword];
-  passwordItem.password = password;
-  passwordItem.accessibilityTraits |= UIAccessibilityTraitButton;
-  passwordItem.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-  return passwordItem;
-}
-
-- (LegacyPasswordIssueContentItem*)legacyPasswordIssueItem:
-    (id<PasswordIssue>)password {
-  DCHECK(!IsFaviconEnabled());
-  LegacyPasswordIssueContentItem* passwordItem =
-      [[LegacyPasswordIssueContentItem alloc] initWithType:ItemTypePassword];
   passwordItem.password = password;
   passwordItem.accessibilityTraits |= UIAccessibilityTraitButton;
   passwordItem.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -133,17 +105,10 @@ bool IsFaviconEnabled() {
     case ItemTypeHeader:
       break;
     case ItemTypePassword: {
-      if (IsFaviconEnabled()) {
-        PasswordIssueContentItem* passwordIssue =
-            base::mac::ObjCCastStrict<PasswordIssueContentItem>(
-                [model itemAtIndexPath:indexPath]);
-        [self.presenter presentPasswordIssueDetails:passwordIssue.password];
-      } else {
-        LegacyPasswordIssueContentItem* passwordIssue =
-            base::mac::ObjCCastStrict<LegacyPasswordIssueContentItem>(
-                [model itemAtIndexPath:indexPath]);
-        [self.presenter presentPasswordIssueDetails:passwordIssue.password];
-      }
+      PasswordIssueContentItem* passwordIssue =
+          base::mac::ObjCCastStrict<PasswordIssueContentItem>(
+              [model itemAtIndexPath:indexPath]);
+      [self.presenter presentPasswordIssueDetails:passwordIssue.password];
       break;
     }
   }
@@ -157,17 +122,11 @@ bool IsFaviconEnabled() {
                      cellForRowAtIndexPath:indexPath];
   switch ([self.tableViewModel itemTypeForIndexPath:indexPath]) {
     case ItemTypePassword: {
-      if (IsFaviconEnabled()) {
-        TableViewURLCell* urlCell =
-            base::mac::ObjCCastStrict<TableViewURLCell>(cell);
-        urlCell.textLabel.lineBreakMode = NSLineBreakByTruncatingHead;
-        // Load the favicon from cache.
-        [self loadFaviconAtIndexPath:indexPath forCell:cell];
-      } else {
-        TableViewDetailTextCell* textCell =
-            base::mac::ObjCCastStrict<TableViewDetailTextCell>(cell);
-        textCell.textLabel.lineBreakMode = NSLineBreakByTruncatingHead;
-      }
+      TableViewURLCell* urlCell =
+          base::mac::ObjCCastStrict<TableViewURLCell>(cell);
+      urlCell.textLabel.lineBreakMode = NSLineBreakByTruncatingHead;
+      // Load the favicon from cache.
+      [self loadFaviconAtIndexPath:indexPath forCell:cell];
       break;
     }
   }

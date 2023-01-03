@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -83,7 +83,7 @@ int SpdyHeadersToHttpResponse(const spdy::Http2HeaderBlock& headers,
     } while (end != value.npos);
   }
 
-  response->headers = new HttpResponseHeaders(raw_headers);
+  response->headers = base::MakeRefCounted<HttpResponseHeaders>(raw_headers);
 
   // When there are multiple location headers the response is a potential
   // response smuggling attack.

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -70,7 +70,7 @@ void ConfigSource::LoadConfigForUser(const user_manager::User* user) {
   const base::Value* old_configs_value =
       dictionary->FindKeyOfType(kOldConfigsDictKey, base::Value::Type::LIST);
   if (old_configs_value) {
-    for (const auto& config_value : old_configs_value->GetListDeprecated())
+    for (const auto& config_value : old_configs_value->GetList())
       AddAuthenticator(config_value, user);
   }
 }
@@ -81,8 +81,7 @@ void ConfigSource::AddAuthenticator(const base::Value& dict,
     return;
 
   absl::optional<AccessCodeConfig> code_config =
-      AccessCodeConfig::FromDictionary(
-          static_cast<const base::DictionaryValue&>(dict));
+      AccessCodeConfig::FromDictionary(dict);
   if (code_config) {
     config_map_[user->GetAccountId()].push_back(
         std::make_unique<Authenticator>(std::move(code_config.value())));

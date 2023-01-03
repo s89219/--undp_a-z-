@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "chrome/browser/browsing_data/access_context_audit_service.h"
 #include "components/content_settings/browser/page_specific_content_settings.h"
 #include "components/custom_handlers/protocol_handler.h"
+#include "content/public/browser/web_contents_observer.h"
 
 namespace chrome {
 
@@ -74,8 +75,6 @@ class PageSpecificContentSettingsDelegate
   void SetDefaultRendererContentSettingRules(
       content::RenderFrameHost* rfh,
       RendererContentSettingRules* rules) override;
-  ContentSetting GetEmbargoSetting(const GURL& request_origin,
-                                   ContentSettingsType permission) override;
   std::vector<storage::FileSystemType> GetAdditionalFileSystemTypes() override;
   browsing_data::CookieHelper::IsDeletionDisabledCallback
   GetIsDeletionDisabledCallback() override;
@@ -86,6 +85,8 @@ class PageSpecificContentSettingsDelegate
       const std::string& media_stream_selected_video_device) override;
   content_settings::PageSpecificContentSettings::MicrophoneCameraState
   GetMicrophoneCameraState() override;
+  content::WebContents* MaybeGetSyncedWebContentsForPictureInPicture(
+      content::WebContents* web_contents) override;
   void OnContentAllowed(ContentSettingsType type) override;
   void OnContentBlocked(ContentSettingsType type) override;
   void OnStorageAccessAllowed(StorageType storage_type,

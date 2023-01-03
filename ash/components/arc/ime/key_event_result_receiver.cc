@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/events/base_event_utils.h"
@@ -31,7 +31,7 @@ KeyEventResultReceiver::KeyEventResultReceiver() = default;
 KeyEventResultReceiver::~KeyEventResultReceiver() = default;
 
 bool KeyEventResultReceiver::DispatchKeyEventPostIME(ui::KeyEvent* event) {
-  // This method is called by `ui::InputMethodAsh` when IME finishes
+  // This method is called by `ash::InputMethodAsh` when IME finishes
   // handling a key event coming from |ArcImeService::SendKeyEvent()|. If the
   // key event seems not to be consumed by IME, it's sent back to ARC to give it
   // to the focused View in ARC side.
@@ -80,7 +80,7 @@ void KeyEventResultReceiver::SetCallback(KeyEventDoneCallback callback,
   callback_ = std::move(callback);
   expected_key_event_ = *event;
   // Start expiring timer for the callback.
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&KeyEventResultReceiver::ExpireCallback,
                      weak_ptr_factory_.GetWeakPtr()),

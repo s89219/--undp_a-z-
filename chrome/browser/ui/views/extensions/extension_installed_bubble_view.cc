@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/signin/public/identity_manager/account_info.h"
 #include "extensions/common/extension.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_header_macros.h"
@@ -39,8 +40,8 @@
 #include "ui/views/controls/link.h"
 #include "ui/views/layout/box_layout.h"
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-#include "chrome/browser/ui/views/sync/dice_bubble_sync_promo_view.h"
+#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ui/views/sync/bubble_sync_promo_view.h"
 #endif
 
 namespace {
@@ -79,11 +80,11 @@ views::View* AnchorViewForBrowser(const ExtensionInstalledBubbleModel* model,
   return reference_view;
 }
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if !BUILDFLAG(IS_CHROMEOS_ASH)
 std::unique_ptr<views::View> CreateSigninPromoView(
     Profile* profile,
     BubbleSyncPromoDelegate* delegate) {
-  return std::make_unique<DiceBubbleSyncPromoView>(
+  return std::make_unique<BubbleSyncPromoView>(
       profile, delegate,
       signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE,
       IDS_EXTENSION_INSTALLED_DICE_PROMO_SYNC_MESSAGE,
@@ -169,12 +170,11 @@ ExtensionInstalledBubbleView::ExtensionInstalledBubbleView(
       model_(std::move(model)) {
   SetButtons(ui::DIALOG_BUTTON_NONE);
   if (model_->show_sign_in_promo()) {
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-    // Promo view requires DICE, so show it only if DICE support is enabled.
+#if !BUILDFLAG(IS_CHROMEOS_ASH)
     SetFootnoteView(CreateSigninPromoView(browser->profile(), this));
 #endif
   }
-  SetIcon(model_->MakeIconOfSize(kMaxIconSize));
+  SetIcon(ui::ImageModel::FromImageSkia(model_->MakeIconOfSize(kMaxIconSize)));
   SetShowIcon(true);
   SetShowCloseButton(true);
 
@@ -245,7 +245,7 @@ void ExtensionInstalledBubbleView::Init() {
 
 void ExtensionInstalledBubbleView::OnEnableSync(const AccountInfo& account) {
   signin_ui_util::EnableSyncFromSingleAccountPromo(
-      browser_, account,
+      browser_->profile(), account,
       signin_metrics::AccessPoint::ACCESS_POINT_EXTENSION_INSTALL_BUBBLE);
   GetWidget()->Close();
 }

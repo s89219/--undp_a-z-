@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,14 +17,14 @@ TargetLanguageComboboxModel::TargetLanguageComboboxModel(
 
 TargetLanguageComboboxModel::~TargetLanguageComboboxModel() = default;
 
-int TargetLanguageComboboxModel::GetItemCount() const {
+size_t TargetLanguageComboboxModel::GetItemCount() const {
   return model_->GetNumberOfTargetLanguages();
 }
 
-std::u16string TargetLanguageComboboxModel::GetItemAt(int index) const {
+std::u16string TargetLanguageComboboxModel::GetItemAt(size_t index) const {
   return model_->GetTargetLanguageNameAt(index);
 }
 
-int TargetLanguageComboboxModel::GetDefaultIndex() const {
+absl::optional<size_t> TargetLanguageComboboxModel::GetDefaultIndex() const {
   return default_index_;
 }

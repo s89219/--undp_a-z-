@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -209,7 +209,7 @@ class OnScreenKeyboardDisplayManagerInputPane::VirtualKeyboardInputPane
 OnScreenKeyboardDisplayManagerInputPane::
     OnScreenKeyboardDisplayManagerInputPane(HWND hwnd)
     : hwnd_(hwnd),
-      main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      main_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       background_task_runner_(
           base::ThreadPool::CreateCOMSTATaskRunner({base::MayBlock()})),
       virtual_keyboard_input_pane_(

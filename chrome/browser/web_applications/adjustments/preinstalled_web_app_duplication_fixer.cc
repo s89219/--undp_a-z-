@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,9 +11,13 @@
 #include "chrome/browser/web_applications/externally_installed_web_app_prefs.h"
 #include "chrome/browser/web_applications/preinstalled_app_install_features.h"
 #include "chrome/browser/web_applications/preinstalled_web_apps/preinstalled_web_apps.h"
+#include "chrome/browser/web_applications/user_uninstalled_preinstalled_web_app_prefs.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "chrome/browser/web_applications/web_app_registry_update.h"
+#include "chrome/browser/web_applications/web_app_sync_bridge.h"
+#include "chrome/common/chrome_features.h"
 #include "components/services/app_service/public/cpp/types_util.h"
 
 namespace web_app {
@@ -49,7 +53,7 @@ PreinstalledWebAppDuplicationFixer::PreinstalledWebAppDuplicationFixer(
     return;
   // WebAppAdjustmentsFactory guarantees that AppServiceProxy exists.
   apps::AppRegistryCache& app_registry_cache =
-      apps::AppServiceProxyFactory::GetForProfile(&profile_)
+      apps::AppServiceProxyFactory::GetForProfile(&*profile_)
           ->AppRegistryCache();
   web_apps_ready_ =
       app_registry_cache.IsAppTypeInitialized(apps::AppType::kWeb);
@@ -95,9 +99,9 @@ void PreinstalledWebAppDuplicationFixer::ScanForDuplicationForTesting() {
 void PreinstalledWebAppDuplicationFixer::ScanForDuplication() {
   std::vector<std::string> installed_web_apps;
   std::vector<std::string> installed_chrome_apps;
-  apps::AppServiceProxyFactory::GetForProfile(&profile_)
+  apps::AppServiceProxyFactory::GetForProfile(&*profile_)
       ->AppRegistryCache()
-      .ForAllApps([&installed_web_apps,
+      .ForEachApp([&installed_web_apps,
                    &installed_chrome_apps](const apps::AppUpdate& update) {
         if (update.Readiness() != apps::Readiness::kReady)
           return;
@@ -117,7 +121,7 @@ void PreinstalledWebAppDuplicationFixer::ScanForDuplication() {
   int installed_tally[2][2] = {};
 
   for (const PreinstalledWebAppMigration& migration :
-       GetPreinstalledWebAppMigrations(profile_)) {
+       GetPreinstalledWebAppMigrations(*profile_)) {
     bool web_app_installed =
         installed_web_apps_set.contains(migration.expected_web_app_id);
     bool chrome_app_installed =
@@ -127,8 +131,10 @@ void PreinstalledWebAppDuplicationFixer::ScanForDuplication() {
       // Remove evidence of web app installation causing
       // PreinstalledWebAppManager::Synchronize() to reinstall the web
       // app and re-trigger migration.
-      if (ExternallyInstalledWebAppPrefs(profile_.GetPrefs())
-              .Remove(migration.install_url)) {
+      if (RemoveInstallUrlForPreinstalledApp(migration.install_url)) {
+        UserUninstalledPreinstalledWebAppPrefs(profile_->GetPrefs())
+            .RemoveByInstallUrl(migration.expected_web_app_id,
+                                migration.install_url);
         ++fix_count;
       }
     }
@@ -146,6 +152,32 @@ void PreinstalledWebAppDuplicationFixer::ScanForDuplication() {
                               installed_tally[true][true]);
 
   base::UmaHistogramCounts100(kHistogramAppDuplicationFixApplied, fix_count);
+}
+
+bool PreinstalledWebAppDuplicationFixer::RemoveInstallUrlForPreinstalledApp(
+    GURL install_url) {
+  bool external_prefs_removed =
+      ExternallyInstalledWebAppPrefs(profile_->GetPrefs()).Remove(install_url);
+
+  // Get web_app by install_url and then remove the install_url.
+  WebAppProvider* provider =
+      WebAppProvider::GetForLocalAppsUnchecked(&*profile_);
+  absl::optional<AppId> preinstalled_app_id =
+      provider->registrar_unsafe().LookupExternalAppId(install_url);
+  if (!preinstalled_app_id.has_value())
+    return external_prefs_removed;
+
+  bool url_removed_from_database = false;
+  {
+    ScopedRegistryUpdate update(&provider->sync_bridge_unsafe());
+    WebApp* installed_app = update->UpdateApp(preinstalled_app_id.value());
+    if (installed_app) {
+      url_removed_from_database = installed_app->RemoveInstallUrlForSource(
+          WebAppManagement::kDefault, install_url);
+    }
+  }
+
+  return external_prefs_removed || url_removed_from_database;
 }
 
 }  // namespace web_app

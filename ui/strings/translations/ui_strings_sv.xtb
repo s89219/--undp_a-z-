@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{för 1 dag sedan}other{för # dagar sedan}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{1 minut sedan}other{# minuter sedan}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 min}other{# min}}</translation>
+<translation id="1181037720776840403">Ta bort</translation>
 <translation id="1243314992276662751">Ladda upp</translation>
 <translation id="1266864766717917324">Det gick inte att dela <ph name="CONTENT_TYPE" /></translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Använd hög densitet</translation>
 <translation id="2482878487686419369">Aviseringar</translation>
 <translation id="2497284189126895209">Alla filer</translation>
-<translation id="2498950423397131220">Flytande knapp</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Kalibreringen är slutförd</translation>
 <translation id="252373100621549798">Okänd visning</translation>

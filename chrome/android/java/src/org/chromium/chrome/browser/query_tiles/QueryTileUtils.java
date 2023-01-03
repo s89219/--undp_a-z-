@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,9 +18,9 @@ import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
 import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.segmentation_platform.SegmentationPlatformServiceFactory;
-import org.chromium.components.optimization_guide.proto.ModelsProto.OptimizationTarget;
 import org.chromium.components.segmentation_platform.SegmentSelectionResult;
 import org.chromium.components.segmentation_platform.SegmentationPlatformService;
+import org.chromium.components.segmentation_platform.proto.SegmentationProto.SegmentId;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -31,6 +31,7 @@ import java.lang.annotation.RetentionPolicy;
 @JNINamespace("query_tiles")
 public class QueryTileUtils {
     private static Boolean sShowQueryTilesOnNTP;
+    private static Boolean sShowQueryTilesOnStartSurface;
     private static final String BEHAVIOURAL_TARGETING_KEY = "behavioural_targeting";
     private static final String NUM_DAYS_KEEP_SHOWING_QUERY_TILES_KEY =
             "num_days_keep_showing_query_tiles";
@@ -97,6 +98,19 @@ public class QueryTileUtils {
     }
 
     /**
+     * Whether query tiles is enabled and should be shown on start surface.
+     * @return Whether the query tile feature is enabled on start surface.
+     */
+    public static boolean isQueryTilesEnabledOnStartSurface() {
+        // Cache the result so it will not change during the same browser session.
+        if (sShowQueryTilesOnStartSurface != null) return sShowQueryTilesOnStartSurface;
+        boolean queryTileEnabled = ChromeFeatureList.isEnabled(ChromeFeatureList.QUERY_TILES)
+                || QueryTileUtilsJni.get().isQueryTilesEnabled();
+        sShowQueryTilesOnStartSurface = queryTileEnabled && shouldShowQueryTiles();
+        return sShowQueryTilesOnStartSurface;
+    }
+
+    /**
      * Called to Check whether query tiles should be displayed. Here are the rules for showing query
      * tile: If user hasn't clicked on MV tiles for a while, query tiles will be shown for a period
      * of time. And the decision is reevaluated when it expires.
@@ -142,6 +156,7 @@ public class QueryTileUtils {
         if (noPreviousHistory) {
             // If this is the first time we make a decision, don't show query tiles.
             resultFromCode = false;
+            updateDisplayStatusAndNextDecisionTime(resultFromCode);
         } else if (nextDecisionTimestampReached) {
             int recentMVClicks = SharedPreferencesManager.getInstance().readInt(
                     ChromePreferenceKeys.QUERY_TILES_NUM_RECENT_MV_TILE_CLICKS, 0);
@@ -155,6 +170,7 @@ public class QueryTileUtils {
             // Otherwise, show it for a period of time.
             resultFromCode = (recentMVClicks <= mvTileClickThreshold
                     || recentMVClicks <= recentQueryTileClicks);
+            updateDisplayStatusAndNextDecisionTime(resultFromCode);
         } else {
             resultFromCode = SharedPreferencesManager.getInstance().readBoolean(
                     ChromePreferenceKeys.QUERY_TILES_SHOW_ON_NTP, false);
@@ -166,7 +182,6 @@ public class QueryTileUtils {
             recordSegmentationResultComparison(getSegmentationResult(), resultFromCode);
         }
 
-        updateDisplayStatusAndNextDecisionTime(resultFromCode);
         return resultFromCode;
     }
 
@@ -242,7 +257,7 @@ public class QueryTileUtils {
             if (!result.isReady) {
                 segmentationResult = ShowQueryTilesSegmentationResult.UNINITIALIZED;
             } else if (result.selectedSegment
-                    == OptimizationTarget.OPTIMIZATION_TARGET_SEGMENTATION_QUERY_TILES) {
+                    == SegmentId.OPTIMIZATION_TARGET_SEGMENTATION_QUERY_TILES) {
                 segmentationResult = ShowQueryTilesSegmentationResult.SHOW;
             } else {
                 segmentationResult = ShowQueryTilesSegmentationResult.DONT_SHOW;

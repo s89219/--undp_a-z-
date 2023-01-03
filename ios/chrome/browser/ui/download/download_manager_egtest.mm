@@ -1,11 +1,11 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/bind.h"
+#import "base/bind.h"
 #import "base/test/ios/wait_util.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
-#include "ios/chrome/grit/ios_strings.h"
+#import "ios/chrome/browser/url/chrome_url_constants.h"
+#import "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/earl_grey/chrome_actions.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey_ui.h"
@@ -14,13 +14,13 @@
 #import "ios/chrome/test/scoped_eg_synchronization_disabler.h"
 #import "ios/testing/earl_grey/app_launch_configuration.h"
 #import "ios/testing/earl_grey/earl_grey_test.h"
-#include "ios/testing/embedded_test_server_handlers.h"
-#include "ios/web/common/features.h"
-#include "ios/web/public/test/element_selector.h"
-#include "net/test/embedded_test_server/http_request.h"
-#include "net/test/embedded_test_server/http_response.h"
-#include "net/test/embedded_test_server/request_handler_util.h"
-#include "ui/base/l10n/l10n_util_mac.h"
+#import "ios/testing/embedded_test_server_handlers.h"
+#import "ios/web/common/features.h"
+#import "ios/web/public/test/element_selector.h"
+#import "net/test/embedded_test_server/http_request.h"
+#import "net/test/embedded_test_server/http_response.h"
+#import "net/test/embedded_test_server/request_handler_util.h"
+#import "ui/base/l10n/l10n_util_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -61,7 +61,7 @@ std::unique_ptr<net::test_server::HttpResponse> GetContentDispositionResponse(
 // Waits until Open in... button is shown.
 [[nodiscard]] bool WaitForOpenInButton() {
   // These downloads usually take longer and need a longer timeout.
-  const NSTimeInterval kLongDownloadTimeout = 60;
+  constexpr base::TimeDelta kLongDownloadTimeout = base::Minutes(1);
   return base::test::ios::WaitUntilConditionOrTimeout(kLongDownloadTimeout, ^{
     NSError* error = nil;
     [[EarlGrey selectElementWithMatcher:chrome_test_util::OpenInButton()]
@@ -307,9 +307,6 @@ std::unique_ptr<net::test_server::HttpResponse> GetContentDispositionResponse(
 
 - (AppLaunchConfiguration)appConfigurationForTestCase {
   AppLaunchConfiguration config;
-  if (@available(iOS 15.0, *)) {
-    config.features_enabled.push_back(web::features::kEnableNewDownloadAPI);
-  }
   return config;
 }
 
@@ -414,7 +411,8 @@ std::unique_ptr<net::test_server::HttpResponse> GetContentDispositionResponse(
 }
 
 // Tests accessibility on Download Manager UI when download is complete.
-- (void)testAccessibilityOnCompletedDownloadToolbar {
+// TODO(crbug.com/1352113): Re-enable
+- (void)DISABLED_testAccessibilityOnCompletedDownloadToolbar {
   [super testAccessibilityOnCompletedDownloadToolbar];
 }
 

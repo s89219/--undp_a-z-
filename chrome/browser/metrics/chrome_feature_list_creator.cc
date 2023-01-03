@@ -1,9 +1,10 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/metrics/chrome_feature_list_creator.h"
 
+#include <functional>
 #include <set>
 #include <vector>
 
@@ -30,6 +31,7 @@
 #include "chrome/browser/prefs/chrome_pref_service_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "components/flags_ui/flags_ui_pref_names.h"
@@ -44,28 +46,79 @@
 #include "components/prefs/pref_registry.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service_factory.h"
+#include "components/privacy_sandbox/privacy_sandbox_features.h"
 #include "components/variations/pref_names.h"
 #include "components/variations/service/variations_service.h"
 #include "components/variations/variations_crash_keys.h"
+#include "components/variations/variations_switches.h"
 #include "content/public/common/content_switch_dependent_feature_overrides.h"
+#include "content/public/common/content_switches.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/ash/settings/about_flags.h"
-#include "chromeos/dbus/dbus_thread_manager.h"  // nogncheck
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"  // nogncheck
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+namespace {
+
+// Returns a list of extra switch-dependent feature overrides to be applied
+// during FeatureList initialization. Combines the overrides defined at the
+// content layer with additional chrome layer overrides.
+std::vector<base::FeatureList::FeatureOverrideInfo>
+GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
+  std::vector<base::FeatureList::FeatureOverrideInfo> overrides =
+      content::GetSwitchDependentFeatureOverrides(command_line);
+
+  // Describes a switch-dependent override.
+  struct SwitchDependentFeatureOverrideInfo {
+    // Switch that the override depends upon. The override will be registered if
+    // this switch is present.
+    const char* switch_name;
+    // Feature to override.
+    const std::reference_wrapper<const base::Feature> feature;
+    // State to override the feature with.
+    base::FeatureList::OverrideState override_state;
+  } chrome_layer_override_info[] = {
+      // Override for --privacy-sandbox-ads-apis. See also content layer
+      // overrides.
+      {switches::kEnablePrivacySandboxAdsApis,
+       std::cref(privacy_sandbox::kOverridePrivacySandboxSettingsLocalTesting),
+       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
+  };
+
+  for (const auto& info : chrome_layer_override_info) {
+    if (command_line.HasSwitch(info.switch_name))
+      overrides.emplace_back(info.feature, info.override_state);
+  }
+  return overrides;
+}
+
+}  // namespace
 
 ChromeFeatureListCreator::ChromeFeatureListCreator() = default;
 
 ChromeFeatureListCreator::~ChromeFeatureListCreator() = default;
 
 void ChromeFeatureListCreator::CreateFeatureList() {
+  // Get the variation IDs passed through the command line. This is done early
+  // on because ConvertFlagsToSwitches() will append to the command line
+  // the variation IDs from flags (so that they are visible in about://version).
+  // This will be passed on to `VariationsService::SetUpFieldTrials()`, which
+  // will manually fetch the variation IDs from flags (hence the reason we do
+  // not pass the mutated command line, otherwise the IDs will be duplicated).
+  // It also distinguishes between variation IDs coming from the command line
+  // and from flags, so we cannot rely on simply putting them all in the
+  // command line.
+  const std::string command_line_variation_ids =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          variations::switches::kForceVariationIds);
   CreatePrefService();
   ConvertFlagsToSwitches();
   CreateMetricsServices();
   SetupInitialPrefs();
-  SetUpFieldTrials();
+  SetUpFieldTrials(command_line_variation_ids);
 }
 
 void ChromeFeatureListCreator::SetApplicationLocale(const std::string& locale) {
@@ -119,7 +172,7 @@ void ChromeFeatureListCreator::CreatePrefService() {
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   // DBus must be initialized before constructing the policy connector.
-  CHECK(chromeos::DBusThreadManager::IsInitialized());
+  CHECK(ash::DBusThreadManager::IsInitialized());
   browser_policy_connector_ =
       std::make_unique<policy::BrowserPolicyConnectorAsh>();
 #else
@@ -190,12 +243,12 @@ void ChromeFeatureListCreator::ConvertFlagsToSwitches() {
                                       flags_ui::kAddSentinels);
 }
 
-void ChromeFeatureListCreator::SetUpFieldTrials() {
+void ChromeFeatureListCreator::SetUpFieldTrials(
+    const std::string& command_line_variation_ids) {
   browser_field_trials_ =
       std::make_unique<ChromeBrowserFieldTrials>(local_state_.get());
 
-  metrics_services_manager_->InstantiateFieldTrialList(
-      cc::switches::kEnableGpuBenchmarking);
+  metrics_services_manager_->InstantiateFieldTrialList();
   auto feature_list = std::make_unique<base::FeatureList>();
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   // On Chrome OS, the platform needs to be able to access the
@@ -212,8 +265,8 @@ void ChromeFeatureListCreator::SetUpFieldTrials() {
   variations::VariationsService* variations_service =
       metrics_services_manager_->GetVariationsService();
   variations_service->SetUpFieldTrials(
-      variation_ids,
-      content::GetSwitchDependentFeatureOverrides(
+      variation_ids, command_line_variation_ids,
+      GetSwitchDependentFeatureOverrides(
           *base::CommandLine::ForCurrentProcess()),
       std::move(feature_list), browser_field_trials_.get());
   variations::InitCrashKeys();
@@ -235,8 +288,19 @@ void ChromeFeatureListCreator::SetupInitialPrefs() {
   // On first run, we need to process the predictor preferences before the
   // browser's profile_manager object is created, but after ResourceBundle
   // is initialized.
+  // If the user specifies an initial preferences file, it is assumed that
+  // they want to reset the preferences regardless of whether it's the
+  // first run.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  if (!first_run::IsChromeFirstRun() &&
+      !base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kInitialPreferencesFile)) {
+    return;
+  }
+#else
   if (!first_run::IsChromeFirstRun())
     return;
+#endif
 
   installer_initial_prefs_ = first_run::LoadInitialPrefs();
   if (!installer_initial_prefs_)

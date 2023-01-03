@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,8 +59,10 @@
 #include "components/viz/test/fake_skia_output_surface.h"
 #include "components/viz/test/mock_compositor_frame_sink_client.h"
 #include "components/viz/test/test_gles2_interface.h"
+#include "components/viz/test/test_surface_id_allocator.h"
 #include "components/viz/test/viz_test_suite.h"
 #include "gpu/GLES2/gl2extchromium.h"
+#include "gpu/command_buffer/common/swap_buffers_complete_params.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
@@ -68,7 +70,6 @@
 #include "ui/gfx/delegated_ink_point.h"
 #include "ui/gfx/mojom/delegated_ink_point_renderer.mojom.h"
 #include "ui/gfx/overlay_transform.h"
-#include "ui/gfx/presentation_feedback.h"
 
 using testing::_;
 using testing::AnyNumber;
@@ -124,6 +125,8 @@ class StubDisplayClient : public DisplayClient {
   void DisplayDidReceiveCALayerParams(
       const gfx::CALayerParams& ca_layer_params) override {}
   void DisplayDidCompleteSwapWithSize(const gfx::Size& pixel_size) override {}
+  void DisplayAddChildWindowToBrowser(
+      gpu::SurfaceHandle child_window) override {}
   void SetWideColorEnabled(bool enabled) override {}
   void SetPreferredFrameInterval(base::TimeDelta interval) override {}
   base::TimeDelta GetPreferredFrameIntervalForFrameSinkId(
@@ -169,10 +172,11 @@ class DisplayTest : public testing::Test {
   ~DisplayTest() override {}
 
   void SetUpSoftwareDisplay(const RendererSettings& settings) {
-    std::unique_ptr<FakeOutputSurface> output_surface;
+    std::unique_ptr<FakeSoftwareOutputSurface> output_surface;
     auto device = std::make_unique<TestSoftwareOutputDevice>();
     software_output_device_ = device.get();
-    output_surface = FakeOutputSurface::CreateSoftware(std::move(device));
+    output_surface =
+        std::make_unique<FakeSoftwareOutputSurface>(std::move(device));
     output_surface_ = output_surface.get();
 
     CreateDisplaySchedulerAndDisplay(settings, kArbitraryFrameSinkId,
@@ -181,7 +185,7 @@ class DisplayTest : public testing::Test {
 
   void SetUpGpuDisplay(const RendererSettings& settings) {
     scoped_refptr<TestContextProvider> provider = TestContextProvider::Create();
-    provider->BindToCurrentThread();
+    provider->BindToCurrentSequence();
     std::unique_ptr<FakeSkiaOutputSurface> skia_output_surface =
         FakeSkiaOutputSurface::Create3d(std::move(provider));
     skia_output_surface_ = skia_output_surface.get();
@@ -272,7 +276,7 @@ class DisplayTest : public testing::Test {
   std::unique_ptr<BeginFrameSource> begin_frame_source_;
   std::unique_ptr<Display> display_;
   raw_ptr<TestSoftwareOutputDevice> software_output_device_ = nullptr;
-  raw_ptr<FakeOutputSurface> output_surface_ = nullptr;
+  raw_ptr<FakeSoftwareOutputSurface> output_surface_ = nullptr;
   raw_ptr<FakeSkiaOutputSurface> skia_output_surface_ = nullptr;
   raw_ptr<TestDisplayScheduler> scheduler_ = nullptr;
 };
@@ -283,7 +287,7 @@ TEST_F(DisplayTest, DisplayDamaged) {
   settings.partial_swap_enabled = true;
   SetUpSoftwareDisplay(settings);
   gfx::ColorSpace color_space_1 = gfx::ColorSpace::CreateXYZD50();
-  gfx::ColorSpace color_space_2 = gfx::ColorSpace::CreateSCRGBLinear();
+  gfx::ColorSpace color_space_2 = gfx::ColorSpace::CreateSRGBLinear();
   gfx::DisplayColorSpaces color_spaces_1(color_space_1);
   gfx::DisplayColorSpaces color_spaces_2(color_space_2);
 
@@ -657,7 +661,10 @@ TEST_F(DisplayTest, DisableSwapUntilResize) {
       [&swap_callback_run]() { swap_callback_run = true; }));
   EXPECT_TRUE(scheduler_->swapped());
 
-  display_->DidReceiveSwapBuffersAck(GetTestSwapTimings(),
+  gpu::SwapBuffersCompleteParams params;
+  params.swap_response.timings = GetTestSwapTimings();
+  params.swap_response.result = gfx::SwapResult::SWAP_ACK;
+  display_->DidReceiveSwapBuffersAck(params,
                                      /*release_fence=*/gfx::GpuFenceHandle());
   EXPECT_TRUE(swap_callback_run);
 
@@ -748,8 +755,8 @@ TEST_F(DisplayTest, BackdropFilterTest) {
           render_pass_id_generator.GenerateNextId(), sub_surface_rect,
           no_damage, gfx::Transform(), cc::FilterOperations(), backdrop_filters,
           gfx::RRectF(gfx::RectF(sub_surface_rect), 0), SubtreeCaptureId(),
-          sub_surface_rect.size(), SharedElementResourceId(), false, false,
-          false, false, false);
+          sub_surface_rect.size(), ViewTransitionElementResourceId(), false,
+          false, false, false, false);
       pass_list.push_back(std::move(bd_pass));
 
       CompositorFrame frame = CompositorFrameBuilder()
@@ -793,7 +800,8 @@ TEST_F(DisplayTest, BackdropFilterTest) {
       auto* quad1 = pass->quad_list.AllocateAndConstruct<SurfaceDrawQuad>();
       quad1->SetNew(shared_quad_state1, /*rect=*/sub_surface_rect,
                     /*visible_rect=*/sub_surface_rect,
-                    SurfaceRange(absl::nullopt, sub_surface_id1), SK_ColorBLACK,
+                    SurfaceRange(absl::nullopt, sub_surface_id1),
+                    SkColors::kBlack,
                     /*stretch_content_to_fill_bounds=*/false);
       quad1->allow_merge = false;
 
@@ -810,7 +818,8 @@ TEST_F(DisplayTest, BackdropFilterTest) {
       auto* quad2 = pass->quad_list.AllocateAndConstruct<SurfaceDrawQuad>();
       quad2->SetNew(shared_quad_state2, /*rect=*/rect1,
                     /*visible_rect=*/rect1,
-                    SurfaceRange(absl::nullopt, sub_surface_id2), SK_ColorBLACK,
+                    SurfaceRange(absl::nullopt, sub_surface_id2),
+                    SkColors::kBlack,
                     /*stretch_content_to_fill_bounds=*/false);
       quad2->allow_merge = false;
 
@@ -862,7 +871,7 @@ TEST_F(DisplayTest, CompositorFrameDamagesCorrectDisplay) {
   TestDisplayScheduler* scheduler2 = scheduler_for_display2.get();
   auto display2 = CreateDisplay(
       settings, kAnotherFrameSinkId, std::move(scheduler_for_display2),
-      FakeOutputSurface::CreateSoftware(
+      std::make_unique<FakeSoftwareOutputSurface>(
           std::make_unique<TestSoftwareOutputDevice>()));
   manager_.RegisterBeginFrameSource(begin_frame_source2.get(),
                                     kAnotherFrameSinkId);
@@ -925,10 +934,10 @@ TEST_F(DisplayTest, DrawOcclusionWithBlending) {
         is_root_render_pass ? SkBlendMode::kSrcOver : SkBlendMode::kDstIn, 0);
     auto* src_quad =
         render_pass->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
-    src_quad->SetNew(src_sqs, src_rect, src_rect, SK_ColorBLACK, false);
+    src_quad->SetNew(src_sqs, src_rect, src_rect, SkColors::kBlack, false);
     auto* dest_quad =
         render_pass->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
-    dest_quad->SetNew(dest_sqs, dest_rect, dest_rect, SK_ColorRED, false);
+    dest_quad->SetNew(dest_sqs, dest_rect, dest_rect, SkColors::kRed, false);
   }
 
   EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
@@ -995,8 +1004,8 @@ TEST_F(DisplayTest, DrawOcclusionWithIntersectingBackdropFilter) {
     } else {
       auto* new_quad = root_render_pass->quad_list
                            .AllocateAndConstruct<SolidColorDrawQuad>();
-      new_quad->SetNew(shared_quad_states[i], rects[i], rects[i], SK_ColorBLACK,
-                       false);
+      new_quad->SetNew(shared_quad_states[i], rects[i], rects[i],
+                       SkColors::kBlack, false);
       quads[i] = new_quad;
     }
   }
@@ -1048,7 +1057,7 @@ TEST_F(DisplayTest, DrawOcclusionWithNonCoveringDrawQuad) {
         gfx::Transform(), rect1, rect1, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
     EXPECT_EQ(1u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // This is a base case, the compositor frame contains only one
@@ -1077,8 +1086,8 @@ TEST_F(DisplayTest, DrawOcclusionWithNonCoveringDrawQuad) {
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1112,8 +1121,8 @@ TEST_F(DisplayTest, DrawOcclusionWithNonCoveringDrawQuad) {
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1145,8 +1154,8 @@ TEST_F(DisplayTest, DrawOcclusionWithNonCoveringDrawQuad) {
         gfx::Transform(), rect6, rect6, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect7, rect7, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect6, rect6, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect7, rect7, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect6, rect6, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1178,8 +1187,8 @@ TEST_F(DisplayTest, DrawOcclusionWithNonCoveringDrawQuad) {
         gfx::Transform(), rect4, rect4, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect4, rect4, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect4, rect4, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1209,8 +1218,8 @@ TEST_F(DisplayTest, DrawOcclusionWithNonCoveringDrawQuad) {
         gfx::Transform(), rect5, rect5, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect5, rect5, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect5, rect5, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1261,7 +1270,7 @@ TEST_F(DisplayTest, DrawOcclusionWithSingleOverlapBehindDisjointedDrawQuads) {
     shared_quad_state->SetAll(
         gfx::Transform(), rect, rect, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
   }
 
   //              +-------+
@@ -1316,7 +1325,7 @@ TEST_F(DisplayTest, DrawOcclusionWithMultipleOverlapBehindDisjointedDrawQuads) {
     shared_quad_state->SetAll(
         gfx::Transform(), rect, rect, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
   }
 
   //              +-------+
@@ -1378,8 +1387,8 @@ TEST_F(DisplayTest, CompositorFrameWithOverlapDrawQuad) {
         gfx::Transform(), rect1, rect1, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect1, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect1, rect1, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |quad2| overlaps |quad1|, so |quad2| is removed from the |quad_list|.
@@ -1402,8 +1411,8 @@ TEST_F(DisplayTest, CompositorFrameWithOverlapDrawQuad) {
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |quad2| is hiding behind |quad1|, so |quad2| is removed from the
@@ -1428,8 +1437,8 @@ TEST_F(DisplayTest, CompositorFrameWithOverlapDrawQuad) {
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |quad2| is behind |quad1| and aligns with the edge of |quad1|, so |quad2|
@@ -1455,8 +1464,8 @@ TEST_F(DisplayTest, CompositorFrameWithOverlapDrawQuad) {
         gfx::Transform(), rect4, rect4, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect4, rect4, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect4, rect4, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1518,8 +1527,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |rect2| becomes (12, 12, 50x50) after applying half scale transform,
@@ -1541,8 +1550,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |rect3| becomes (25, 25, 50x25) after applying half scale transform,
@@ -1565,8 +1574,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect4, rect4, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect4, rect4, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1584,7 +1593,7 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
                               absl::nullopt, are_contents_opaque, opacity,
                               SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
     EXPECT_EQ(1u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // The compositor frame contains only one quad, so |quad_list| remains 1
@@ -1606,8 +1615,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
         double_scale, rect5, rect5, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect5, rect5, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect5, rect5, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1634,8 +1643,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
         double_scale, rect6, rect6, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect6, rect6, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect6, rect6, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1662,8 +1671,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
         double_scale, rect7, rect7, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect7, rect7, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect7, rect7, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1690,8 +1699,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
         double_scale, rect8, rect8, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect8, rect8, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect8, rect8, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1718,8 +1727,8 @@ TEST_F(DisplayTest, CompositorFrameWithTransformer) {
         double_scale, rect9, rect9, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect10, rect10, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect9, rect9, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect10, rect10, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect9, rect9, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -1776,8 +1785,8 @@ TEST_F(DisplayTest, CompositorFrameWithEpsilonScaleTransform) {
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect, rect, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // zero matrix transform is non-invertible, so |quad2| is not removed from
@@ -1800,8 +1809,8 @@ TEST_F(DisplayTest, CompositorFrameWithEpsilonScaleTransform) {
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 1);
 
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect, rect, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // This test verifies that the draw occlusion algorithm does not break when
@@ -1830,8 +1839,8 @@ TEST_F(DisplayTest, CompositorFrameWithEpsilonScaleTransform) {
         larger_epsilon_scale, rect, rect, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect, rect, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // This test verifies that the draw occlusion algorithm works well with
@@ -1878,8 +1887,8 @@ TEST_F(DisplayTest, CompositorFrameWithNegativeScaleTransform) {
         negative_scale, rect, rect, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect, rect, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since the x-axis is negated, |quad2| after applying transform does not
@@ -1910,8 +1919,8 @@ TEST_F(DisplayTest, CompositorFrameWithNegativeScaleTransform) {
         negative_scale, rect, rect, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect, rect, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since the y-axis is negated, |quad2| after applying transform does not
@@ -1942,8 +1951,8 @@ TEST_F(DisplayTest, CompositorFrameWithNegativeScaleTransform) {
         negative_scale, rect, rect, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect, rect, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect, rect, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect, rect, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect, rect, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since z-axis is missing in a 2d plane, negating the z-axis does not cause
@@ -2002,8 +2011,8 @@ TEST_F(DisplayTest, CompositorFrameWithRotation) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // In target space, |quad| becomes (0, 0, 71x100) (after applying rotation
@@ -2026,8 +2035,8 @@ TEST_F(DisplayTest, CompositorFrameWithRotation) {
     shared_quad_state2->SetAll(rotate, rect2, rect2, gfx::MaskFilterInfo(),
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // In target space, |quad| becomes (0, 0, 70x100) and |quad2| becomes
@@ -2048,8 +2057,8 @@ TEST_F(DisplayTest, CompositorFrameWithRotation) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // In target space, |quad| becomes (0, 0, 71x100) (after applying rotation
@@ -2074,8 +2083,8 @@ TEST_F(DisplayTest, CompositorFrameWithRotation) {
     shared_quad_state2->SetAll(rotate, rect3, rect3, gfx::MaskFilterInfo(),
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since both |quad| and |quad2| went through the same transform and |rect1|
@@ -2126,8 +2135,8 @@ TEST_F(DisplayTest, CompositorFrameWithPerspective) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect1, rect1, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect1, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect1, rect1, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // The transform used on |quad| is a combination of rotation and
@@ -2150,8 +2159,8 @@ TEST_F(DisplayTest, CompositorFrameWithPerspective) {
     shared_quad_state2->SetAll(perspective, rect2, rect2, gfx::MaskFilterInfo(),
                                absl::nullopt, are_contents_opaque, opacity,
                                SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // The transform used on |quad2| is a combination of rotation and
@@ -2195,8 +2204,8 @@ TEST_F(DisplayTest, CompositorFrameWithOpacityChange) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity1, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since the opacity of |rect2| is less than 1, |rect1| cannot occlude
@@ -2217,8 +2226,8 @@ TEST_F(DisplayTest, CompositorFrameWithOpacityChange) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity1, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Repeat the above test and set the opacity of |rect1| to 1.
@@ -2258,8 +2267,8 @@ TEST_F(DisplayTest, CompositorFrameWithOpaquenessChange) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since the opaqueness of |rect2| is false, |rect1| cannot occlude
@@ -2280,8 +2289,8 @@ TEST_F(DisplayTest, CompositorFrameWithOpaquenessChange) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Repeat the above test and set the opaqueness of |rect2| to true.
@@ -2329,8 +2338,8 @@ TEST_F(DisplayTest, CompositorFrameZTranslate) {
         gfx::Transform(), rect1, rect1, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 1);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect1, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Since both |quad| and |quad2| are inside of a 3d object, DrawOcclusion
@@ -2383,8 +2392,8 @@ TEST_F(DisplayTest, CompositorFrameWithTranslateTransformer) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |rect2| and |rect1| are disjoined as show in the first image. The size of
@@ -2412,8 +2421,8 @@ TEST_F(DisplayTest, CompositorFrameWithTranslateTransformer) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Move |quad| defind by |rect1| over |quad2| defind by |rect2| by applying
@@ -2442,8 +2451,8 @@ TEST_F(DisplayTest, CompositorFrameWithTranslateTransformer) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // Move |quad| defind by |rect1| over |quad2| defind by |rect3| by applying
@@ -2507,9 +2516,9 @@ TEST_F(DisplayTest, CompositorFrameWithCombinedSharedQuadState) {
     shared_quad_state3->SetAll(
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
-    quad3->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
+    quad3->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(3u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // The occlusion rect is enlarged horizontally after visiting |rect1| and
@@ -2536,7 +2545,7 @@ TEST_F(DisplayTest, CompositorFrameWithCombinedSharedQuadState) {
     shared_quad_state3->SetAll(
         gfx::Transform(), rect4, rect4, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad3->SetNew(shared_quad_state3, rect4, rect4, SK_ColorBLACK, false);
+    quad3->SetNew(shared_quad_state3, rect4, rect4, SkColors::kBlack, false);
     EXPECT_EQ(3u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // The occlusion rect, which is enlarged horizontally after visiting |rect1|
@@ -2564,7 +2573,7 @@ TEST_F(DisplayTest, CompositorFrameWithCombinedSharedQuadState) {
     shared_quad_state3->SetAll(
         gfx::Transform(), rect5, rect5, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad3->SetNew(shared_quad_state3, rect5, rect5, SK_ColorBLACK, false);
+    quad3->SetNew(shared_quad_state3, rect5, rect5, SkColors::kBlack, false);
     EXPECT_EQ(3u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // The occlusion rect, which is enlarged horizontally after visiting |rect1|
@@ -2613,8 +2622,8 @@ TEST_F(DisplayTest, DrawOcclusionWithMultipleRenderPass) {
         gfx::Transform(), rects[i], rects[i], gfx::MaskFilterInfo(),
         /*clip_rect=*/absl::nullopt, true /*are_contents_opaque*/,
         1.f /*opacity*/, SkBlendMode::kSrcOver, 0 /*sorting_context_id*/);
-    quads[i]->SetNew(shared_quad_states[i], rects[i], rects[i], SK_ColorBLACK,
-                     false /*force_anti_aliasing_off*/);
+    quads[i]->SetNew(shared_quad_states[i], rects[i], rects[i],
+                     SkColors::kBlack, false /*force_anti_aliasing_off*/);
   }
 
   auto& render_pass = frame.render_pass_list.front();
@@ -2681,9 +2690,9 @@ TEST_F(DisplayTest, CompositorFrameWithMultipleRenderPass) {
     shared_quad_state3->SetAll(
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
-    quad3->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
+    quad3->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, frame.render_pass_list.at(1)->quad_list.size());
     EXPECT_EQ(1u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -2750,7 +2759,7 @@ TEST_F(DisplayTest, CompositorFrameWithCoveredRenderPass) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect1, rect1, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
     quad1->SetNew(shared_quad_state2, rect1, rect1, render_pass_id,
                   mask_resource_id, gfx::RectF(), gfx::Size(),
                   gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false,
@@ -2809,8 +2818,8 @@ TEST_F(DisplayTest, CompositorFrameWithClip) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |rect1| covers |rect2| as shown in the figure above, So the size of
@@ -2836,8 +2845,8 @@ TEST_F(DisplayTest, CompositorFrameWithClip) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // In the target space, a clip is applied on |quad| (defined by |clip_rect|,
@@ -2865,8 +2874,8 @@ TEST_F(DisplayTest, CompositorFrameWithClip) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect3, rect3, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect3, rect3, SkColors::kBlack, false);
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // In the target space, a clip is applied on |quad| (defined by |rect3|,
@@ -2912,8 +2921,8 @@ TEST_F(DisplayTest, CompositorFrameWithCopyRequest) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect2, rect2, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
     frame.render_pass_list.front()->copy_requests.push_back(
         CopyOutputRequest::CreateStubForTesting());
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
@@ -2993,8 +3002,8 @@ TEST_F(DisplayTest, CompositorFrameWithRenderPass) {
     R2->SetNew(shared_quad_state, rect2, rect2, render_pass_id,
                mask_resource_id, gfx::RectF(), gfx::Size(),
                gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false, 1.0f);
-    D1->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
-    D2->SetNew(shared_quad_state4, rect4, rect4, SK_ColorBLACK, false);
+    D1->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
+    D2->SetNew(shared_quad_state4, rect4, rect4, SkColors::kBlack, false);
     EXPECT_EQ(4u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // As shown in the image above, the opaque region |d1| and |d2| does not
@@ -3041,8 +3050,8 @@ TEST_F(DisplayTest, CompositorFrameWithRenderPass) {
     R2->SetNew(shared_quad_state, rect1, rect1, render_pass_id,
                mask_resource_id, gfx::RectF(), gfx::Size(),
                gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false, 1.0f);
-    D1->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
-    D2->SetNew(shared_quad_state4, rect6, rect6, SK_ColorBLACK, false);
+    D1->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
+    D2->SetNew(shared_quad_state4, rect6, rect6, SkColors::kBlack, false);
     EXPECT_EQ(4u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // As shown in the image above, the opaque region |d1| and |d2| does not
@@ -3088,8 +3097,8 @@ TEST_F(DisplayTest, CompositorFrameWithRenderPass) {
     R2->SetNew(shared_quad_state, rect1, rect1, render_pass_id,
                mask_resource_id, gfx::RectF(), gfx::Size(),
                gfx::Vector2dF(1, 1), gfx::PointF(), gfx::RectF(), false, 1.0f);
-    D1->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
-    D2->SetNew(shared_quad_state4, rect7, rect7, SK_ColorBLACK, false);
+    D1->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
+    D2->SetNew(shared_quad_state4, rect7, rect7, SkColors::kBlack, false);
     EXPECT_EQ(4u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // As shown in the image above, the opaque region |d2| is contained in |d1|
@@ -3164,12 +3173,12 @@ TEST_F(DisplayTest, CompositorFrameWithMultipleDrawQuadInSharedQuadState) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect_in_rect1, rect_in_rect1, gfx::MaskFilterInfo(),
         absl::nullopt, opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad1->SetNew(shared_quad_state, rect1_1, rect1_1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state, rect1_2, rect1_2, SK_ColorBLACK, false);
-    quad3->SetNew(shared_quad_state, rect1_3, rect1_3, SK_ColorBLACK, false);
-    quad4->SetNew(shared_quad_state, rect1_4, rect1_4, SK_ColorBLACK, false);
+    quad1->SetNew(shared_quad_state, rect1_1, rect1_1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state, rect1_2, rect1_2, SkColors::kBlack, false);
+    quad3->SetNew(shared_quad_state, rect1_3, rect1_3, SkColors::kBlack, false);
+    quad4->SetNew(shared_quad_state, rect1_4, rect1_4, SkColors::kBlack, false);
     quad5->SetNew(shared_quad_state2, rect_in_rect1, rect_in_rect1,
-                  SK_ColorBLACK, false);
+                  SkColors::kBlack, false);
     EXPECT_EQ(5u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |visible_rect| of |shared_quad_state| is formed by 4 DrawQuads and it
@@ -3204,7 +3213,7 @@ TEST_F(DisplayTest, CompositorFrameWithMultipleDrawQuadInSharedQuadState) {
                                absl::nullopt, opaque_content, opacity,
                                SkBlendMode::kSrcOver, 0);
     quad5->SetNew(shared_quad_state2, rect_intersects_rect1,
-                  rect_intersects_rect1, SK_ColorBLACK, false);
+                  rect_intersects_rect1, SkColors::kBlack, false);
     EXPECT_EQ(5u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |visible_rect| of |shared_quad_state| is formed by 4 DrawQuads and it
@@ -3245,12 +3254,14 @@ TEST_F(DisplayTest, CompositorFrameWithMultipleDrawQuadInSharedQuadState) {
     shared_quad_state2->SetAll(
         gfx::Transform(), rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad1->SetNew(shared_quad_state, rect2_1, rect2_1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state, rect2_2, rect2_2, SK_ColorBLACK, false);
-    quad3->SetNew(shared_quad_state, rect2_3, rect2_3, SK_ColorBLACK, false);
-    quad4->SetNew(shared_quad_state, rect2_4, rect2_4, SK_ColorBLACK, false);
-    quad5->SetNew(shared_quad_state2, rect3_1, rect3_1, SK_ColorBLACK, false);
-    quad6->SetNew(shared_quad_state2, rect3_2, rect3_2, SK_ColorBLACK, false);
+    quad1->SetNew(shared_quad_state, rect2_1, rect2_1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state, rect2_2, rect2_2, SkColors::kBlack, false);
+    quad3->SetNew(shared_quad_state, rect2_3, rect2_3, SkColors::kBlack, false);
+    quad4->SetNew(shared_quad_state, rect2_4, rect2_4, SkColors::kBlack, false);
+    quad5->SetNew(shared_quad_state2, rect3_1, rect3_1, SkColors::kBlack,
+                  false);
+    quad6->SetNew(shared_quad_state2, rect3_2, rect3_2, SkColors::kBlack,
+                  false);
     EXPECT_EQ(6u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // |visible_rect| of |shared_quad_state| is formed by 4 DrawQuads and it
@@ -3291,10 +3302,10 @@ TEST_F(DisplayTest, CompositorFrameWithNonInvertibleTransform) {
   gfx::Rect rect3(0, 0, 10, 10);
 
   gfx::Transform invertible;
-  gfx::Transform non_invertible(10, 10, 0, 0,  // row 1
-                                10, 10, 0, 0,  // row 2
-                                0, 0, 1, 0,    // row 3
-                                0, 0, 0, 1);   // row 4
+  auto non_invertible = gfx::Transform::RowMajor(10, 10, 0, 0,  // row 1
+                                                 10, 10, 0, 0,  // row 2
+                                                 0, 0, 1, 0,    // row 3
+                                                 0, 0, 0, 1);   // row 4
   gfx::Transform non_invertible_miss_z;
   non_invertible_miss_z.Scale3d(1, 1, 0);
   bool opaque_content = true;
@@ -3335,9 +3346,9 @@ TEST_F(DisplayTest, CompositorFrameWithNonInvertibleTransform) {
     shared_quad_state3->SetAll(
         non_invertible, rect3, rect3, gfx::MaskFilterInfo(), absl::nullopt,
         opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad1->SetNew(shared_quad_state1, rect1, rect1, SK_ColorBLACK, false);
-    quad2->SetNew(shared_quad_state2, rect2, rect2, SK_ColorBLACK, false);
-    quad3->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
+    quad1->SetNew(shared_quad_state1, rect1, rect1, SkColors::kBlack, false);
+    quad2->SetNew(shared_quad_state2, rect2, rect2, SkColors::kBlack, false);
+    quad3->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
 
     EXPECT_EQ(3u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -3366,8 +3377,8 @@ TEST_F(DisplayTest, CompositorFrameWithNonInvertibleTransform) {
     shared_quad_state3->SetAll(
         non_invertible_miss_z, rect3, rect3, gfx::MaskFilterInfo(),
         absl::nullopt, opaque_content, opacity, SkBlendMode::kSrcOver, 0);
-    quad1->SetNew(shared_quad_state1, rect1, rect1, SK_ColorBLACK, false);
-    quad3->SetNew(shared_quad_state3, rect3, rect3, SK_ColorBLACK, false);
+    quad1->SetNew(shared_quad_state1, rect1, rect1, SkColors::kBlack, false);
+    quad3->SetNew(shared_quad_state3, rect3, rect3, SkColors::kBlack, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -3407,7 +3418,7 @@ TEST_F(DisplayTest, DrawOcclusionWithLargeDrawQuad) {
         gfx::Transform(), rect1, rect1, gfx::MaskFilterInfo(), absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
 
-    quad->SetNew(shared_quad_state, rect1, rect1, SK_ColorBLACK, false);
+    quad->SetNew(shared_quad_state, rect1, rect1, SkColors::kBlack, false);
     EXPECT_EQ(1u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
     // This is a base case, the compositor frame contains only one
@@ -3475,7 +3486,7 @@ TEST_F(DisplayTest, CompositorFrameWithPresentationToken) {
         0.5f /* opacity */, SkBlendMode::kSrcOver, 0 /* sorting_context_id */);
     auto* quad1 = pass->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
     quad1->SetNew(shared_quad_state1, rect1 /* rect */,
-                  rect1 /* visible_rect */, SK_ColorBLACK,
+                  rect1 /* visible_rect */, SkColors::kBlack,
                   false /* force_anti_aliasing_off */);
 
     auto* shared_quad_state2 = pass->CreateAndAppendSharedQuadState();
@@ -3489,7 +3500,7 @@ TEST_F(DisplayTest, CompositorFrameWithPresentationToken) {
     auto* quad2 = pass->quad_list.AllocateAndConstruct<SurfaceDrawQuad>();
     quad2->SetNew(shared_quad_state2, rect2 /* rect */,
                   rect2 /* visible_rect */,
-                  SurfaceRange(absl::nullopt, sub_surface_id), SK_ColorBLACK,
+                  SurfaceRange(absl::nullopt, sub_surface_id), SkColors::kBlack,
                   false /* stretch_content_to_fill_bounds */);
 
     pass_list.push_back(std::move(pass));
@@ -3751,137 +3762,6 @@ TEST_F(DisplayTest, DontThrottleWhenParentBlocked) {
   UpdateBeginFrameTime(sub_support.get(), frame_time);
 }
 
-TEST_F(DisplayTest, InvalidPresentationTimestamps) {
-  RendererSettings settings;
-  id_allocator_.GenerateId();
-  const LocalSurfaceId local_surface_id(
-      id_allocator_.GetCurrentLocalSurfaceId());
-
-  // Set up first display.
-  SetUpSoftwareDisplay(settings);
-  StubDisplayClient client;
-  display_->Initialize(&client, manager_.surface_manager());
-  display_->SetLocalSurfaceId(local_surface_id, 1.f);
-  display_->Resize(gfx::Size(25, 25));
-
-  {
-    // A regular presentation timestamp.
-    base::HistogramTester histograms;
-    CompositorFrame frame =
-        CompositorFrameBuilder()
-            .AddRenderPass(gfx::Rect(25, 25), gfx::Rect(25, 25))
-            .Build();
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
-    display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
-    display_->DidReceiveSwapBuffersAck(GetTestSwapTimings(),
-                                       /*release_fence=*/gfx::GpuFenceHandle());
-    display_->DidReceivePresentationFeedback({base::TimeTicks::Now(), {}, 0});
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidBeforeSwap"),
-                testing::IsEmpty());
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidFromFuture"),
-                testing::IsEmpty());
-  }
-
-  {
-    // A presentation-timestamp that is earlier than the swap time.
-    base::HistogramTester histograms;
-    CompositorFrame frame =
-        CompositorFrameBuilder()
-            .AddRenderPass(gfx::Rect(25, 25), gfx::Rect(25, 25))
-            .Build();
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
-    display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
-    display_->DidReceiveSwapBuffersAck(GetTestSwapTimings(),
-                                       /*release_fence=*/gfx::GpuFenceHandle());
-    display_->DidReceivePresentationFeedback(
-        {base::TimeTicks::Now() - base::Seconds(1), {}, 0});
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidFromFuture"),
-                testing::IsEmpty());
-    auto buckets = histograms.GetAllSamples(
-        "Graphics.PresentationTimestamp.InvalidBeforeSwap");
-    ASSERT_EQ(buckets.size(), 1u);
-    EXPECT_GT(buckets[0].min, 0);
-    EXPECT_LE(buckets[0].min, 1000);
-    EXPECT_EQ(buckets[0].count, 1);
-  }
-
-  {
-    // A presentation-timestamp that is in the near-future with hwclock: this
-    // should be valid.
-    base::HistogramTester histograms;
-    CompositorFrame frame =
-        CompositorFrameBuilder()
-            .AddRenderPass(gfx::Rect(25, 25), gfx::Rect(25, 25))
-            .Build();
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
-    display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
-    display_->DidReceiveSwapBuffersAck(GetTestSwapTimings(),
-                                       /*release_fence=*/gfx::GpuFenceHandle());
-    display_->DidReceivePresentationFeedback(
-        {base::TimeTicks::Now() + base::Milliseconds(1),
-         {},
-         gfx::PresentationFeedback::kHWClock});
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidBeforeSwap"),
-                testing::IsEmpty());
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidFromFuture"),
-                testing::IsEmpty());
-  }
-
-  {
-    // A presentation-timestamp that is in the near-future.
-    base::HistogramTester histograms;
-    CompositorFrame frame =
-        CompositorFrameBuilder()
-            .AddRenderPass(gfx::Rect(25, 25), gfx::Rect(25, 25))
-            .Build();
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
-    display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
-    display_->DidReceiveSwapBuffersAck(GetTestSwapTimings(),
-                                       /*release_fence=*/gfx::GpuFenceHandle());
-    display_->DidReceivePresentationFeedback(
-        {base::TimeTicks::Now() + base::Milliseconds(1), {}, 0});
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidBeforeSwap"),
-                testing::IsEmpty());
-    auto buckets = histograms.GetAllSamples(
-        "Graphics.PresentationTimestamp.InvalidFromFuture");
-    ASSERT_EQ(buckets.size(), 1u);
-    EXPECT_GE(buckets[0].min, 0);
-    EXPECT_LE(buckets[0].min, 1);
-    EXPECT_EQ(buckets[0].count, 1);
-  }
-
-  {
-    // A presentation-timestamp that is in the future.
-    base::HistogramTester histograms;
-    CompositorFrame frame =
-        CompositorFrameBuilder()
-            .AddRenderPass(gfx::Rect(25, 25), gfx::Rect(25, 25))
-            .Build();
-    support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
-    display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
-    display_->DidReceiveSwapBuffersAck(GetTestSwapTimings(),
-                                       /*release_fence=*/gfx::GpuFenceHandle());
-    display_->DidReceivePresentationFeedback(
-        {base::TimeTicks::Now() + base::Seconds(1), {}, 0});
-    EXPECT_THAT(histograms.GetAllSamples(
-                    "Graphics.PresentationTimestamp.InvalidBeforeSwap"),
-                testing::IsEmpty());
-
-    auto buckets = histograms.GetAllSamples(
-        "Graphics.PresentationTimestamp.InvalidFromFuture");
-    ASSERT_EQ(buckets.size(), 1u);
-    EXPECT_GT(buckets[0].min, 0);
-    EXPECT_LE(buckets[0].min, 1000);
-    EXPECT_EQ(buckets[0].count, 1);
-  }
-}
-
 TEST_F(DisplayTest, DrawOcclusionWithRoundedCornerDoesNotOcclude) {
   SetUpGpuDisplay(RendererSettings());
 
@@ -3915,13 +3795,13 @@ TEST_F(DisplayTest, DrawOcclusionWithRoundedCornerDoesNotOcclude) {
         gfx::Transform(), quad_rect, quad_rect, gfx::MaskFilterInfo(),
         absl::nullopt, are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
     occluded_quad->SetNew(shared_quad_state_occluded, quad_rect, quad_rect,
-                          SK_ColorRED, false);
+                          SkColors::kRed, false);
 
     shared_quad_state_with_rrect->SetAll(
         gfx::Transform(), quad_rect, quad_rect, mask_filter_info, absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
     rounded_corner_quad->SetNew(shared_quad_state_with_rrect, quad_rect,
-                                quad_rect, SK_ColorBLUE, false);
+                                quad_rect, SkColors::kBlue, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -3970,13 +3850,13 @@ TEST_F(DisplayTest, DrawOcclusionWithRoundedCornerDoesOcclude) {
         gfx::MaskFilterInfo(), absl::nullopt, are_contents_opaque, opacity,
         SkBlendMode::kSrcOver, 0);
     occluded_quad->SetNew(shared_quad_state_occluded, occluded_quad_rect,
-                          occluded_quad_rect, SK_ColorRED, false);
+                          occluded_quad_rect, SkColors::kRed, false);
 
     shared_quad_state_with_rrect->SetAll(
         gfx::Transform(), quad_rect, quad_rect, mask_filter_info, absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
     rounded_corner_quad->SetNew(shared_quad_state_with_rrect, quad_rect,
-                                quad_rect, SK_ColorBLUE, false);
+                                quad_rect, SkColors::kBlue, false);
 
     EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -4036,7 +3916,7 @@ TEST_F(DisplayTest, DrawOcclusionSplit) {
         gfx::Transform(), occluding_rect, occluding_rect, gfx::MaskFilterInfo(),
         absl::nullopt, are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
     quads[0]->SetNew(shared_quad_state_occluder, occluding_rect, occluding_rect,
-                     SK_ColorRED, false);
+                     SkColors::kRed, false);
 
     shared_quad_state_occluded->SetAll(gfx::Transform(), occluded_sqs_rect,
                                        occluded_sqs_rect, gfx::MaskFilterInfo(),
@@ -4044,7 +3924,7 @@ TEST_F(DisplayTest, DrawOcclusionSplit) {
                                        opacity, SkBlendMode::kSrcOver, 0);
     for (int i = 1; i < 4; i++) {
       quads[i]->SetNew(shared_quad_state_occluded, quad_rects[i - 1],
-                       quad_rects[i - 1], SK_ColorRED, false);
+                       quad_rects[i - 1], SkColors::kRed, false);
     }
 
     EXPECT_EQ(4u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
@@ -4140,7 +4020,7 @@ TEST_F(DisplayTest, FirstPassVisibleComplexityReduction) {
     SolidColorDrawQuad* quad =
         frame.render_pass_list.front()
             ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
-    quad->SetNew(shared_quad_state_occluder, r, r, SK_ColorRED, false);
+    quad->SetNew(shared_quad_state_occluder, r, r, SkColors::kRed, false);
   }
 
   const gfx::Rect occluded_rect(0, 0, 1350, 270);
@@ -4154,7 +4034,7 @@ TEST_F(DisplayTest, FirstPassVisibleComplexityReduction) {
         frame.render_pass_list.front()
             ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
     occluded_quad->SetNew(shared_quad_state_occluded, occluded_rect,
-                          occluded_rect, SK_ColorRED, false);
+                          occluded_rect, SkColors::kRed, false);
   }
 
   EXPECT_EQ(3u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
@@ -4217,7 +4097,7 @@ TEST_F(DisplayTest, DrawOcclusionSplitDeviceScaleFactorFractional) {
       gfx::Transform(), occluding_rect, occluding_rect, gfx::MaskFilterInfo(),
       absl::nullopt, are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
   occluding_quad->SetNew(shared_quad_state_occluding, occluding_rect,
-                         occluding_rect, SK_ColorRED, false);
+                         occluding_rect, SkColors::kRed, false);
   // Occluded quad.
   const gfx::Rect occluded_rect = gfx::Rect(0, 0, 1000, 1000);
   SharedQuadState* shared_quad_state_occluded =
@@ -4229,7 +4109,7 @@ TEST_F(DisplayTest, DrawOcclusionSplitDeviceScaleFactorFractional) {
       gfx::Transform(), occluded_rect, occluded_rect, gfx::MaskFilterInfo(),
       absl::nullopt, are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
   occluded_quad->SetNew(shared_quad_state_occluded, occluded_rect,
-                        occluded_rect, SK_ColorRED, false);
+                        occluded_rect, SkColors::kRed, false);
 
   EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
   display_->RemoveOverdrawQuads(&frame);
@@ -4302,19 +4182,19 @@ TEST_F(DisplayTest, DrawOcclusionWithRoundedCornerPartialOcclude) {
                                        absl::nullopt, are_contents_opaque,
                                        opacity, SkBlendMode::kSrcOver, 0);
     occluded_quad_1->SetNew(shared_quad_state_occluded, occluded_quad_rect_1,
-                            occluded_quad_rect_1, SK_ColorRED, false);
+                            occluded_quad_rect_1, SkColors::kRed, false);
     occluded_quad_2->SetNew(shared_quad_state_occluded, occluded_quad_rect_2,
-                            occluded_quad_rect_2, SK_ColorRED, false);
+                            occluded_quad_rect_2, SkColors::kRed, false);
     occluded_quad_3->SetNew(shared_quad_state_occluded, occluded_quad_rect_3,
-                            occluded_quad_rect_3, SK_ColorRED, false);
+                            occluded_quad_rect_3, SkColors::kRed, false);
     occluded_quad_4->SetNew(shared_quad_state_occluded, occluded_quad_rect_4,
-                            occluded_quad_rect_4, SK_ColorRED, false);
+                            occluded_quad_rect_4, SkColors::kRed, false);
 
     shared_quad_state_with_rrect->SetAll(
         gfx::Transform(), quad_rect, quad_rect, mask_filter_info, absl::nullopt,
         are_contents_opaque, opacity, SkBlendMode::kSrcOver, 0);
     rounded_corner_quad->SetNew(shared_quad_state_with_rrect, quad_rect,
-                                quad_rect, SK_ColorBLUE, false);
+                                quad_rect, SkColors::kBlue, false);
 
     EXPECT_EQ(5u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
     display_->RemoveOverdrawQuads(&frame);
@@ -4459,15 +4339,215 @@ TEST_F(DisplayTest, DisplaySizeMismatch) {
   }
 }
 
+TEST_F(DisplayTest, PixelMovingForegroundFilterTest) {
+  RendererSettings settings;
+  settings.partial_swap_enabled = true;
+  id_allocator_.GenerateId();
+  const LocalSurfaceId local_surface_id(
+      id_allocator_.GetCurrentLocalSurfaceId());
+
+  // Set up first display.
+  SetUpSoftwareDisplay(settings);
+  StubDisplayClient client;
+  display_->Initialize(&client, manager_.surface_manager());
+  display_->SetLocalSurfaceId(local_surface_id, 1.f);
+
+  // Create frame sink for a sub surface.
+  TestSurfaceIdAllocator sub_surface_id1(kAnotherFrameSinkId);
+  auto sub_support1 = std::make_unique<CompositorFrameSinkSupport>(
+      nullptr, &manager_, kAnotherFrameSinkId, /*is_root=*/false);
+
+  // Create frame sink for another sub surface.
+  TestSurfaceIdAllocator sub_surface_id2(kAnotherFrameSinkId2);
+  auto sub_support2 = std::make_unique<CompositorFrameSinkSupport>(
+      nullptr, &manager_, kAnotherFrameSinkId2, /*is_root=*/false);
+
+  // Main surface M, damage D, sub-surface B with foreground filter.
+  //   +-----------+
+  //   | +----+   M|
+  //   | |B +-|-+  |
+  //   | +--|-+ |  |
+  //   |    |  D|  |
+  //   |    +---+  |
+  //   +-----------+
+  const gfx::Size display_size(100, 100);
+  const gfx::Rect damage_rect(20, 20, 40, 40);
+  display_->Resize(display_size);
+  const gfx::Rect sub_surface_rect(5, 5, 25, 25);
+  const gfx::Rect no_damage;
+
+  CompositorRenderPassId::Generator render_pass_id_generator;
+  for (size_t frame_num = 1; frame_num <= 2; ++frame_num) {
+    bool first_frame = frame_num == 1;
+    ResetDamageForTest();
+    {
+      // Sub-surface with pixel-moving foreground filter - drop shadow filter
+      CompositorRenderPassList pass_list;
+      auto bd_pass = CompositorRenderPass::Create();
+      cc::FilterOperations foreground_filters;
+      foreground_filters.Append(cc::FilterOperation::CreateDropShadowFilter(
+          gfx::Point(5, 10), 2.f, SkColors::kTransparent));
+      bd_pass->SetAll(
+          render_pass_id_generator.GenerateNextId(), sub_surface_rect,
+          no_damage, gfx::Transform(), foreground_filters,
+          cc::FilterOperations(), gfx::RRectF(gfx::RectF(sub_surface_rect), 0),
+          SubtreeCaptureId(), sub_surface_rect.size(),
+          ViewTransitionElementResourceId(), false, false, false, false, false);
+      pass_list.push_back(std::move(bd_pass));
+
+      CompositorFrame frame = CompositorFrameBuilder()
+                                  .SetRenderPassList(std::move(pass_list))
+                                  .Build();
+      sub_support1->SubmitCompositorFrame(sub_surface_id1.local_surface_id(),
+                                          std::move(frame));
+    }
+
+    {
+      // Sub-surface with damage.
+      CompositorRenderPassList pass_list;
+      auto other_pass = CompositorRenderPass::Create();
+      other_pass->output_rect = gfx::Rect(display_size);
+      other_pass->damage_rect = damage_rect;
+      other_pass->id = render_pass_id_generator.GenerateNextId();
+      pass_list.push_back(std::move(other_pass));
+
+      CompositorFrame frame = CompositorFrameBuilder()
+                                  .SetRenderPassList(std::move(pass_list))
+                                  .Build();
+      sub_support2->SubmitCompositorFrame(sub_surface_id2.local_surface_id(),
+                                          std::move(frame));
+    }
+
+    {
+      auto frame = CompositorFrameBuilder()
+                       .AddRenderPass(
+                           RenderPassBuilder(display_size)
+                               .AddSurfaceQuad(
+                                   sub_surface_rect,
+                                   SurfaceRange(absl::nullopt, sub_surface_id1),
+                                   {.allow_merge = false})
+                               .AddSurfaceQuad(
+                                   gfx::Rect(display_size),
+                                   SurfaceRange(absl::nullopt, sub_surface_id2),
+                                   {.allow_merge = false})
+                               .SetDamageRect(damage_rect))
+                       .Build();
+      support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+
+      scheduler_->reset_swapped_for_test();
+      display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
+      EXPECT_TRUE(scheduler_->swapped());
+      EXPECT_EQ(frame_num, output_surface_->num_sent_frames());
+      EXPECT_EQ(display_size, software_output_device_->viewport_pixel_size());
+
+      auto expected_damage =
+          first_frame ? gfx::Rect(display_size) : damage_rect;
+      EXPECT_EQ(expected_damage, software_output_device_->damage_rect());
+      // The scissor rect is expanded by direct_renderer to include the
+      // overlapping pixel-moving foreground filter surface.
+      auto expected_scissor_rect =
+          first_frame ? gfx::Rect(display_size) : gfx::Rect(0, 0, 60, 60);
+      EXPECT_EQ(
+          expected_scissor_rect,
+          display_->renderer_for_testing()->GetLastRootScissorRectForTesting());
+    }
+  }
+}
+
+TEST_F(DisplayTest, CanSkipRenderPass) {
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kAllowUndamagedNonrootRenderPassToSkip);
+
+  id_allocator_.GenerateId();
+  const LocalSurfaceId local_surface_id(
+      id_allocator_.GetCurrentLocalSurfaceId());
+
+  // Set up first display.
+  SetUpSoftwareDisplay(RendererSettings());
+  StubDisplayClient client;
+  display_->Initialize(&client, manager_.surface_manager());
+  display_->SetLocalSurfaceId(local_surface_id, 1.f);
+
+  // Create frame sink for a sub surface.
+  TestSurfaceIdAllocator sub_surface_id1(kAnotherFrameSinkId);
+  auto sub_support1 = std::make_unique<CompositorFrameSinkSupport>(
+      nullptr, &manager_, kAnotherFrameSinkId, /*is_root=*/false);
+
+  // generate render pass id for the nonroot render pass.
+  CompositorRenderPassId::Generator render_pass_id_generator;
+  auto id_1 = render_pass_id_generator.GenerateNextId();
+
+  const gfx::Size display_size(100, 100);
+  const gfx::Rect root_damage_rect(20, 20, 40, 40);
+  display_->Resize(display_size);
+  const gfx::Rect sub_surface_rect(5, 5, 60, 60);
+  const gfx::Rect sub_surface_damage_rect(10, 10, 30, 30);
+
+  for (size_t frame_num = 1; frame_num <= 3; ++frame_num) {
+    ResetDamageForTest();
+
+    // Nonroot render pass with id_1. No update for frame #3.
+    if (frame_num != 3) {
+      CompositorRenderPassList pass_list;
+      auto bd_pass = CompositorRenderPass::Create();
+      bd_pass->output_rect = sub_surface_rect;
+      bd_pass->damage_rect = sub_surface_damage_rect;
+      bd_pass->has_damage_from_contributing_content = true;
+      bd_pass->id = id_1;
+      pass_list.push_back(std::move(bd_pass));
+
+      CompositorFrame frame = CompositorFrameBuilder()
+                                  .SetRenderPassList(std::move(pass_list))
+                                  .Build();
+
+      sub_support1->SubmitCompositorFrame(sub_surface_id1.local_surface_id(),
+                                          std::move(frame));
+    }
+
+    // Root render pass
+    {
+      auto frame =
+          CompositorFrameBuilder()
+              .AddRenderPass(RenderPassBuilder(display_size)
+                                 .AddSurfaceQuad(sub_surface_rect,
+                                                 SurfaceRange(absl::nullopt,
+                                                              sub_surface_id1),
+                                                 {.allow_merge = false})
+                                 .SetDamageRect(root_damage_rect))
+              .Build();
+      support_->SubmitCompositorFrame(local_surface_id, std::move(frame));
+
+      scheduler_->reset_swapped_for_test();
+      display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
+      EXPECT_TRUE(scheduler_->swapped());
+
+      // Number of skipped non-root render passes.
+      auto* skipped = display_->renderer_for_testing()
+                          ->GetLastSkippedRenderPassIdsForTesting();
+
+      if (frame_num != 3) {
+        // Whether the render pass can be skpped or not depends on the flag
+        // pass->has_damage_from_contributing_content and the render pass
+        // damage rect.
+        EXPECT_EQ(0u, skipped->size());
+      } else {
+        // No frame update for the sub surface. The nonroot render pass damage
+        // rect will be zero. pass->has_damage_from_contributing_content becomes
+        // false when there is no frame update. The associated non-render pass
+        // can be skipped.
+        EXPECT_EQ(1u, skipped->size());
+      }
+    }
+  }
+}
+
 class SkiaDelegatedInkRendererTest : public DisplayTest {
  public:
   void SetUp() override { EnablePrediction(); }
 
   void SetUpRenderers() {
-    // First set up the display to use the Skia renderer.
-    RendererSettings settings;
-    settings.use_skia_renderer = true;
-    SetUpGpuDisplay(settings);
+    SetUpGpuDisplay(RendererSettings());
 
     // Initialize the renderer and create an ink renderer.
     display_->Initialize(&client_, manager_.surface_manager());
@@ -4481,7 +4561,7 @@ class SkiaDelegatedInkRendererTest : public DisplayTest {
   void EnablePrediction() {
     base::FieldTrialParams params;
     params["predicted_points"] = ::features::kDraw1Point12Ms;
-    base::test::ScopedFeatureList::FeatureAndParams prediction_params = {
+    base::test::FeatureRefAndParams prediction_params = {
         features::kDrawPredictedInkPoint, params};
 
     feature_list_.Reset();
@@ -4550,7 +4630,7 @@ class SkiaDelegatedInkRendererTest : public DisplayTest {
   gfx::DelegatedInkMetadata MakeAndSendMetadataFromStoredInkPoint(
       int index,
       float diameter,
-      SkColor color,
+      SkColor4f color,
       const gfx::RectF& presentation_area) {
     DCHECK_EQ(static_cast<int>(ink_points_.size()), 1);
     return MakeAndSendMetadataFromStoredInkPoint(
@@ -4561,14 +4641,15 @@ class SkiaDelegatedInkRendererTest : public DisplayTest {
       int32_t pointer_id,
       int index,
       float diameter,
-      SkColor color,
+      SkColor4f color,
       const gfx::RectF& presentation_area) {
     DCHECK(ink_points_.find(pointer_id) != ink_points_.end());
     EXPECT_GE(index, 0);
     EXPECT_LT(index, ink_points_size(pointer_id));
 
+    // TODO(crbug.com/1308932): gfx::DelegatedInkMetadata to SkColor4f
     gfx::DelegatedInkMetadata metadata(
-        ink_points_[pointer_id][index].point(), diameter, color,
+        ink_points_[pointer_id][index].point(), diameter, color.toSkColor(),
         ink_points_[pointer_id][index].timestamp(), presentation_area,
         base::TimeTicks::Now(),
         /*hovering*/ false);
@@ -4693,7 +4774,7 @@ TEST_F(SkiaDelegatedInkRendererTest, SkiaDelegatedInkRendererFilteringPoints) {
   const int kInkPointForMetadata = 1;
   const float kDiameter = 1.f;
   gfx::DelegatedInkMetadata metadata = MakeAndSendMetadataFromStoredInkPoint(
-      kInkPointForMetadata, kDiameter, SK_ColorBLACK, gfx::RectF());
+      kInkPointForMetadata, kDiameter, SkColors::kBlack, gfx::RectF());
 
   // The histogram should count one in the bucket that is the difference between
   // the latest point stored and the metadata. No prediction should occur with
@@ -4723,10 +4804,10 @@ TEST_F(SkiaDelegatedInkRendererTest, SkiaDelegatedInkRendererFilteringPoints) {
   const int kPointsBeyondMaxAllowed = 2;
   StoreAlreadyCreatedDelegatedInkPoints();
   while (ink_points_size() <
-         kMaximumDelegatedInkPointsStored + kPointsBeyondMaxAllowed)
+         gfx::kMaximumNumberOfDelegatedInkPoints + kPointsBeyondMaxAllowed)
     CreateAndStoreDelegatedInkPointFromPreviousPoint(kPointerId);
 
-  EXPECT_EQ(kMaximumDelegatedInkPointsStored,
+  EXPECT_EQ(gfx::kMaximumNumberOfDelegatedInkPoints,
             StoredPointsForPointerId(kPointerId));
   EXPECT_EQ(ink_point(kPointsBeyondMaxAllowed).point(),
             GetPointsForPointerId(kPointerId).begin()->second);
@@ -4788,7 +4869,7 @@ TEST_F(SkiaDelegatedInkRendererTest,
   const int kInkPointForMetadata = 1;
   const float kDiameter = 1.f;
   gfx::DelegatedInkMetadata metadata = MakeAndSendMetadataFromStoredInkPoint(
-      kPointerIds[0], kInkPointForMetadata, kDiameter, SK_ColorBLACK,
+      kPointerIds[0], kInkPointForMetadata, kDiameter, SkColors::kBlack,
       gfx::RectF());
 
   // 3 points should be enough for prediction to work, so the histogram should
@@ -4871,8 +4952,8 @@ TEST_F(SkiaDelegatedInkRendererTest, LatencyHistograms) {
   // Provide a metadata so that points can be drawn, based on the first ink
   // point that was sent.
   const float kDiameter = 11.99f;
-  MakeAndSendMetadataFromStoredInkPoint(/*index*/ 0, kDiameter, SK_ColorBLACK,
-                                        gfx::RectF());
+  MakeAndSendMetadataFromStoredInkPoint(/*index*/ 0, kDiameter,
+                                        SkColors::kBlack, gfx::RectF());
 
   // *WithoutPrediction histogram should have one counted in the 24 ms bucket
   // because that's the difference between the latest point and the metadata.
@@ -4892,8 +4973,8 @@ TEST_F(SkiaDelegatedInkRendererTest, LatencyHistograms) {
   // everything earlier is filtered out. Then the *WithoutPrediction histogram
   // will count 1 in the 0 ms bucket and the *WithPrediction histogram will
   // still be able to predict points, so it should have counted one.
-  MakeAndSendMetadataFromStoredInkPoint(/*index*/ 3, kDiameter, SK_ColorBLACK,
-                                        gfx::RectF());
+  MakeAndSendMetadataFromStoredInkPoint(/*index*/ 3, kDiameter,
+                                        SkColors::kBlack, gfx::RectF());
   bucket_without_prediction = base::Milliseconds(0);
   FinalizePathAndCheckHistograms(
       bucket_without_prediction,
@@ -4970,7 +5051,7 @@ class DelegatedInkDisplayTest
  public:
   void SetUpGpuDisplaySkiaWithPlatformInk(const RendererSettings& settings) {
     scoped_refptr<TestContextProvider> provider = TestContextProvider::Create();
-    provider->BindToCurrentThread();
+    provider->BindToCurrentSequence();
     std::unique_ptr<FakeSkiaOutputSurface> skia_output_surface =
         FakeSkiaOutputSurface::Create3d(std::move(provider));
     // Set the delegated ink capability on the output surface to true so that
@@ -4990,9 +5071,7 @@ class DelegatedInkDisplayTest
           features::kUsePlatformDelegatedInk);
 
       // Set up the display to use the Skia renderer.
-      RendererSettings settings;
-      settings.use_skia_renderer = true;
-      SetUpGpuDisplaySkiaWithPlatformInk(settings);
+      SetUpGpuDisplaySkiaWithPlatformInk(RendererSettings());
 
       display_->Initialize(&client_, manager_.surface_manager());
     }

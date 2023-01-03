@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -164,7 +164,11 @@ void ResizeShadow::UpdateBounds(const gfx::Rect& window_bounds) {
 }
 
 void ResizeShadow::ReparentLayer() {
-  DCHECK(window_->layer()->parent());
+  // This shadow could belong to a window that has been removed from its parent.
+  // In that case, we should not try to access `window_`'s parent.
+  if (!window_->layer()->parent())
+    return;
+
   if (layer_->parent() != window_->layer()->parent())
     window_->layer()->parent()->Add(layer_.get());
   layer_->parent()->StackBelow(layer_.get(), window_->layer());

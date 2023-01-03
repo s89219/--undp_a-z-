@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,12 +12,14 @@
 #include "ash/webui/shortcut_customization_ui/backend/accelerator_configuration_provider.h"
 #include "ash/webui/shortcut_customization_ui/mojom/shortcut_customization.mojom.h"
 #include "ash/webui/shortcut_customization_ui/url_constants.h"
+#include "chromeos/strings/grit/chromeos_strings.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
-#include "ui/resources/grit/webui_generated_resources.h"
+#include "ui/base/ui_base_features.h"
+#include "ui/resources/grit/webui_resources.h"
 #include "ui/webui/mojo_web_ui_controller.h"
 
 namespace ash {
@@ -29,10 +31,52 @@ void SetUpWebUIDataSource(content::WebUIDataSource* source,
                           int default_resource) {
   source->AddResourcePaths(resources);
   source->SetDefaultResource(default_resource);
-  source->AddResourcePath("test_loader.html", IDR_WEBUI_HTML_TEST_LOADER_HTML);
+  source->AddResourcePath("test_loader.html", IDR_WEBUI_TEST_LOADER_HTML);
   source->AddResourcePath("test_loader.js", IDR_WEBUI_JS_TEST_LOADER_JS);
   source->AddResourcePath("test_loader_util.js",
                           IDR_WEBUI_JS_TEST_LOADER_UTIL_JS);
+}
+
+void AddLocalizedStrings(content::WebUIDataSource* source) {
+  static constexpr webui::LocalizedString kLocalizedStrings[] = {
+      {"appTitle", IDS_SHORTCUT_CUSTOMIZATION_APP_TITLE},
+      {"keyboardSettings", IDS_SHORTCUT_CUSTOMIZATION_KEYBOARD_SETTINGS},
+      {"addShortcut", IDS_SHORTCUT_CUSTOMIZATION_ADD_SHORTCUT},
+      {"restoreDefaults", IDS_SHORTCUT_CUSTOMIZATION_RESTORE_DEFAULTS},
+      {"editDialogDone", IDS_SHORTCUT_CUSTOMIZATION_EDIT_DIALOG_DONE},
+      {"cancel", IDS_SHORTCUT_CUSTOMIZATION_CANCEL},
+      {"editViewStatusMessage",
+       IDS_SHORTCUT_CUSTOMIZATION_EDIT_VIEW_STATUS_MESSAGE},
+      {"resetAllShortcuts", IDS_SHORTCUT_CUSTOMIZATION_RESET_ALL_SHORTCUTS},
+      {"confirmResetAllShortcutsTitle",
+       IDS_SHORTCUT_CUSTOMIZATION_CONFIRM_RESET_ALL_SHORTCUTS_TITLE},
+      {"confirmResetAllShortcutsButton",
+       IDS_SHORTCUT_CUSTOMIZATION_CONFIRM_RESET_SHORTCUTS_BUTTON},
+      {"categoryTabsAndWindows",
+       IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_TABS_AND_WINDOWS},
+      {"categoryPageAndWebBrowser",
+       IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_PAGE_AND_WEB_BROWSER},
+      {"categorySystemAndDisplaySettings",
+       IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_SYSTEM_AND_DISPLAY_SETTINGS},
+      {"categoryTextEditing", IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_TEXT_EDITING},
+      {"categoryAccessibility",
+       IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_ACCESSIBILITY},
+      {"categoryDebug", IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_DEBUG},
+      {"categoryDeveloper", IDS_SHORTCUT_CUSTOMIZATION_CATEGORY_DEVELOPER},
+      {"subcategoryGeneral", IDS_SHORTCUT_CUSTOMIZATION_SUBCATEGORY_GENERAL},
+      {"subcategorySystemApps",
+       IDS_SHORTCUT_CUSTOMIZATION_SUBCATEGORY_SYSTEM_APPS},
+      {"subcategorySystemControls",
+       IDS_SHORTCUT_CUSTOMIZATION_SUBCATEGORY_SYSTEM_CONTROLS},
+  };
+
+  source->AddLocalizedStrings(kLocalizedStrings);
+  source->UseStringsJs();
+}
+
+void AddFeatureFlags(content::WebUIDataSource* html_source) {
+  html_source->AddBoolean("isCustomizationEnabled",
+                          features::IsShortcutCustomizationEnabled());
 }
 
 }  // namespace
@@ -44,7 +88,9 @@ ShortcutCustomizationAppUI::ShortcutCustomizationAppUI(content::WebUI* web_ui)
       kChromeUIShortcutCustomizationAppHost);
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::ScriptSrc,
-      "script-src chrome://resources chrome://test 'self';");
+      "script-src chrome://resources chrome://test chrome://webui-test "
+      "'self';");
+
   source->DisableTrustedTypesCSP();
 
   const auto resources =
@@ -52,6 +98,9 @@ ShortcutCustomizationAppUI::ShortcutCustomizationAppUI(content::WebUI* web_ui)
                       kAshShortcutCustomizationAppResourcesSize);
   SetUpWebUIDataSource(source, resources,
                        IDR_ASH_SHORTCUT_CUSTOMIZATION_APP_INDEX_HTML);
+  AddLocalizedStrings(source);
+
+  AddFeatureFlags(source);
 
   provider_ = std::make_unique<shortcut_ui::AcceleratorConfigurationProvider>();
 }
@@ -65,4 +114,5 @@ void ShortcutCustomizationAppUI::BindInterface(
   provider_->BindInterface(std::move(receiver));
 }
 
+WEB_UI_CONTROLLER_TYPE_IMPL(ShortcutCustomizationAppUI)
 }  // namespace ash

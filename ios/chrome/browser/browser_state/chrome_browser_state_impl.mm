@@ -1,52 +1,49 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/browser_state/chrome_browser_state_impl.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state_impl.h"
 
-#include <utility>
+#import <utility>
 
-#include "base/check.h"
-#include "base/files/file_path.h"
-#include "base/files/file_util.h"
-#include "base/mac/backup_util.h"
-#include "base/task/sequenced_task_runner.h"
-#include "base/threading/thread_restrictions.h"
-#include "components/bookmarks/browser/bookmark_model.h"
-#include "components/keyed_service/ios/browser_state_dependency_manager.h"
-#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
-#include "components/policy/core/common/configuration_policy_provider.h"
-#include "components/policy/core/common/schema_registry.h"
-#include "components/pref_registry/pref_registry_syncable.h"
-#include "components/prefs/json_pref_store.h"
-#include "components/prefs/pref_service.h"
-#include "components/profile_metrics/browser_profile_type.h"
-#include "components/proxy_config/ios/proxy_service_factory.h"
-#include "components/proxy_config/pref_proxy_config_tracker.h"
-#include "components/sync_preferences/pref_service_syncable.h"
-#include "components/user_prefs/user_prefs.h"
-#include "ios/chrome/browser/application_context.h"
-#include "ios/chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "ios/chrome/browser/browser_state/bookmark_model_loaded_observer.h"
-#include "ios/chrome/browser/browser_state/off_the_record_chrome_browser_state_impl.h"
-#include "ios/chrome/browser/chrome_constants.h"
-#include "ios/chrome/browser/chrome_paths_internal.h"
-#include "ios/chrome/browser/net/ios_chrome_url_request_context_getter.h"
-#include "ios/chrome/browser/policy/browser_policy_connector_ios.h"
-#include "ios/chrome/browser/policy/browser_state_policy_connector.h"
-#include "ios/chrome/browser/policy/browser_state_policy_connector_factory.h"
-#include "ios/chrome/browser/policy/policy_features.h"
-#include "ios/chrome/browser/policy/schema_registry_factory.h"
-#include "ios/chrome/browser/pref_names.h"
-#include "ios/chrome/browser/prefs/browser_prefs.h"
-#include "ios/chrome/browser/prefs/ios_chrome_pref_service_factory.h"
-#include "ios/web/public/thread/web_thread.h"
+#import "base/check.h"
+#import "base/files/file_path.h"
+#import "base/files/file_util.h"
+#import "base/mac/backup_util.h"
+#import "base/task/sequenced_task_runner.h"
+#import "base/threading/thread_restrictions.h"
+#import "components/bookmarks/browser/bookmark_model.h"
+#import "components/keyed_service/ios/browser_state_dependency_manager.h"
+#import "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#import "components/policy/core/common/configuration_policy_provider.h"
+#import "components/policy/core/common/schema_registry.h"
+#import "components/pref_registry/pref_registry_syncable.h"
+#import "components/prefs/json_pref_store.h"
+#import "components/prefs/pref_service.h"
+#import "components/profile_metrics/browser_profile_type.h"
+#import "components/proxy_config/ios/proxy_service_factory.h"
+#import "components/proxy_config/pref_proxy_config_tracker.h"
+#import "components/sync_preferences/pref_service_syncable.h"
+#import "components/user_prefs/user_prefs.h"
+#import "ios/chrome/browser/application_context/application_context.h"
+#import "ios/chrome/browser/bookmarks/bookmark_model_factory.h"
+#import "ios/chrome/browser/browser_state/bookmark_model_loaded_observer.h"
+#import "ios/chrome/browser/browser_state/constants.h"
+#import "ios/chrome/browser/browser_state/off_the_record_chrome_browser_state_impl.h"
+#import "ios/chrome/browser/net/ios_chrome_url_request_context_getter.h"
+#import "ios/chrome/browser/paths/paths_internal.h"
+#import "ios/chrome/browser/policy/browser_policy_connector_ios.h"
+#import "ios/chrome/browser/policy/browser_state_policy_connector.h"
+#import "ios/chrome/browser/policy/browser_state_policy_connector_factory.h"
+#import "ios/chrome/browser/policy/schema_registry_factory.h"
+#import "ios/chrome/browser/prefs/browser_prefs.h"
+#import "ios/chrome/browser/prefs/ios_chrome_pref_service_factory.h"
+#import "ios/chrome/browser/prefs/pref_names.h"
+#import "ios/web/public/thread/web_thread.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
-
-namespace {
 
 // Returns a bool indicating whether the necessary directories were able to be
 // created (or already existed).
@@ -59,7 +56,7 @@ bool EnsureBrowserStateDirectoriesCreated(const base::FilePath& path,
   // lightweight I/O operation and avoiding the headache of sequencing all
   // otherwise unrelated I/O after this one justifies running it on the main
   // thread.
-  base::ThreadRestrictions::ScopedAllowIO allow_io_to_create_directory;
+  base::ScopedAllowBlocking allow_blocking_to_create_directory;
 
   if (!base::PathExists(path) && !base::CreateDirectory(path))
     return false;
@@ -74,6 +71,8 @@ bool EnsureBrowserStateDirectoriesCreated(const base::FilePath& path,
     return false;
   return true;
 }
+
+namespace {
 
 base::FilePath GetCachePath(const base::FilePath& base) {
   return base.Append(kIOSChromeCacheDirname);
@@ -103,26 +102,24 @@ ChromeBrowserStateImpl::ChromeBrowserStateImpl(
       state_path_, otr_state_path_, base_cache_path);
   DCHECK(directories_created);
 
-  // Bring up the policy system before creating |prefs_|.
-  if (IsEnterprisePolicyEnabled()) {
-    BrowserPolicyConnectorIOS* connector =
-        GetApplicationContext()->GetBrowserPolicyConnector();
-    DCHECK(connector);
-    policy_schema_registry_ = BuildSchemaRegistryForBrowserState(
-        this, connector->GetChromeSchema(), connector->GetSchemaRegistry());
+  // Bring up the policy system before creating `prefs_`.
+  BrowserPolicyConnectorIOS* connector =
+      GetApplicationContext()->GetBrowserPolicyConnector();
+  DCHECK(connector);
+  policy_schema_registry_ = BuildSchemaRegistryForBrowserState(
+      this, connector->GetChromeSchema(), connector->GetSchemaRegistry());
 
-    // Create the UserCloudPolicyManager and force it to load immediately since
-    // BrowserState is loaded synchronously.
-    user_cloud_policy_manager_ = policy::UserCloudPolicyManager::Create(
-        GetStatePath(), policy_schema_registry_.get(),
-        /*force_immediate_load=*/true, GetIOTaskRunner(),
-        base::BindRepeating(&ApplicationContext::GetNetworkConnectionTracker,
-                            base::Unretained(GetApplicationContext())));
+  // Create the UserCloudPolicyManager and force it to load immediately since
+  // BrowserState is loaded synchronously.
+  user_cloud_policy_manager_ = policy::UserCloudPolicyManager::Create(
+      GetStatePath(), policy_schema_registry_.get(),
+      /*force_immediate_load=*/true, GetIOTaskRunner(),
+      base::BindRepeating(&ApplicationContext::GetNetworkConnectionTracker,
+                          base::Unretained(GetApplicationContext())));
 
-    policy_connector_ = BuildBrowserStatePolicyConnector(
-        policy_schema_registry_.get(), connector,
-        user_cloud_policy_manager_.get());
-  }
+  policy_connector_ =
+      BuildBrowserStatePolicyConnector(policy_schema_registry_.get(), connector,
+                                       user_cloud_policy_manager_.get());
 
   RegisterBrowserStatePrefs(pref_registry_.get());
   BrowserStateDependencyManager::GetInstance()
@@ -203,11 +200,7 @@ void ChromeBrowserStateImpl::DestroyOffTheRecordChromeBrowserState() {
 }
 
 BrowserStatePolicyConnector* ChromeBrowserStateImpl::GetPolicyConnector() {
-  if (policy_connector_.get()) {
-    DCHECK(IsEnterprisePolicyEnabled());
-    return policy_connector_.get();
-  }
-  return nullptr;
+  return policy_connector_.get();
 }
 
 policy::UserCloudPolicyManager*
@@ -215,7 +208,8 @@ ChromeBrowserStateImpl::GetUserCloudPolicyManager() {
   return user_cloud_policy_manager_.get();
 }
 
-PrefService* ChromeBrowserStateImpl::GetPrefs() {
+sync_preferences::PrefServiceSyncable*
+ChromeBrowserStateImpl::GetSyncablePrefs() {
   DCHECK(prefs_);  // Should explicitly be initialized.
   return prefs_.get();
 }
@@ -246,6 +240,10 @@ net::URLRequestContextGetter* ChromeBrowserStateImpl::CreateRequestContext(
           protocol_handlers, application_context->GetLocalState(),
           application_context->GetIOSChromeIOThread())
       .get();
+}
+
+base::WeakPtr<ChromeBrowserState> ChromeBrowserStateImpl::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 void ChromeBrowserStateImpl::ClearNetworkingHistorySince(

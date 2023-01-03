@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -135,7 +135,6 @@ class ASH_EXPORT HoldingSpaceTray : public TrayBackgroundView,
 
   // views::WidgetObserver:
   void OnWidgetDragWillStart(views::Widget* widget) override;
-  void OnWidgetDestroying(views::Widget* widget) override;
 
   // Registers pref change registrars for preferences relevant to the holding
   // space tray state.

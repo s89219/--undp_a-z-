@@ -1,10 +1,10 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/first_run/legacy_signin/legacy_signin_screen_view_controller.h"
 
-#include "base/strings/sys_string_conversions.h"
+#import "base/strings/sys_string_conversions.h"
 #import "ios/chrome/browser/ui/authentication/views/identity_button_control.h"
 #import "ios/chrome/browser/ui/elements/activity_overlay_view.h"
 #import "ios/chrome/browser/ui/first_run/first_run_constants.h"
@@ -13,9 +13,10 @@
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/elements/popover_label_view_controller.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
-#include "ios/chrome/grit/ios_google_chrome_strings.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/common/ui/util/text_view_util.h"
+#import "ios/chrome/grit/ios_google_chrome_strings.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -25,7 +26,6 @@ namespace {
 
 // Width of the identity control if nothing is contraining it.
 const CGFloat kIdentityControlMaxWidth = 327;
-const CGFloat kIdentityTopMargin = 16;
 
 // URL for the learn more text.
 // Need to set a value so the delegate gets called.
@@ -65,7 +65,7 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
 
 - (void)viewDidLoad {
   self.view.accessibilityIdentifier =
-      first_run::kFirstRunSignInScreenAccessibilityIdentifier;
+      first_run::kFirstRunLegacySignInScreenAccessibilityIdentifier;
   self.isTallBanner = NO;
   self.scrollToEndMandatory = YES;
   self.readMoreString =
@@ -80,7 +80,7 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
         l10n_util::GetNSString(IDS_IOS_FIRST_RUN_SIGNIN_SUBTITLE_MANAGED);
   }
   if (!self.primaryActionString) {
-    // |primaryActionString| could already be set using the consumer methods.
+    // `primaryActionString` could already be set using the consumer methods.
     self.primaryActionString =
         l10n_util::GetNSString(IDS_IOS_FIRST_RUN_SIGNIN_SIGN_IN_ACTION);
   }
@@ -111,9 +111,8 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
   bool signinRestricted =
       self.enterpriseSignInRestrictions || forceSignInEnabled;
 
-  self.bannerImage = [UIImage
-      imageNamed:signinRestricted ? @"legacy_forced_signin_screen_banner"
-                                  : @"legacy_signin_screen_banner"];
+  self.bannerName = signinRestricted ? @"legacy_forced_signin_screen_banner"
+                                     : @"legacy_signin_screen_banner";
   // Only add "Don't Sign In" button when signin is not required.
   if (!forceSignInEnabled) {
     self.secondaryActionString =
@@ -126,8 +125,7 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
 
   [NSLayoutConstraint activateConstraints:@[
     [self.identityControl.topAnchor
-        constraintEqualToAnchor:self.specificContentView.topAnchor
-                       constant:kIdentityTopMargin],
+        constraintEqualToAnchor:self.specificContentView.topAnchor],
     [self.identityControl.centerXAnchor
         constraintEqualToAnchor:self.specificContentView.centerXAnchor],
     [self.identityControl.widthAnchor
@@ -141,6 +139,14 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
   // Call super after setting up the strings and others, as required per super
   // class.
   [super viewDidLoad];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  [self.delegate logScrollButtonVisible:!self.didReachBottom
+                     withIdentityPicker:!self.identityControl.hidden
+                              andFooter:self.enterpriseSignInRestrictions !=
+                                        kNoEnterpriseRestriction];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection*)previousTraitCollection {
@@ -185,7 +191,7 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
 
 - (UITextView*)learnMoreTextView {
   if (!_learnMoreTextView) {
-    _learnMoreTextView = [[UITextView alloc] init];
+    _learnMoreTextView = CreateUITextViewWithTextKit1();
     _learnMoreTextView.backgroundColor = UIColor.clearColor;
     _learnMoreTextView.scrollEnabled = NO;
     _learnMoreTextView.editable = NO;
@@ -253,13 +259,13 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
 
 #pragma mark - Private
 
-// Callback for |identityControl|.
+// Callback for `identityControl`.
 - (void)identityButtonControlTapped:(id)sender forEvent:(UIEvent*)event {
   UITouch* touch = event.allTouches.anyObject;
   [self.delegate showAccountPickerFromPoint:[touch locationInView:nil]];
 }
 
-// Updates the UI to adapt for |identityAvailable| or not.
+// Updates the UI to adapt for `identityAvailable` or not.
 - (void)updateUIForIdentityAvailable:(BOOL)identityAvailable {
   self.identityControl.hidden = !identityAvailable;
   if (identityAvailable) {
@@ -321,8 +327,8 @@ NSString* const kLearnMoreTextViewAccessibilityIdentifier =
 }
 
 - (void)textViewDidChangeSelection:(UITextView*)textView {
-  // Always force the |selectedTextRange| to |nil| to prevent users from
-  // selecting text. Setting the |selectable| property to |NO| doesn't help
+  // Always force the `selectedTextRange` to `nil` to prevent users from
+  // selecting text. Setting the `selectable` property to `NO` doesn't help
   // since it makes links inside the text view untappable.
   textView.selectedTextRange = nil;
 }

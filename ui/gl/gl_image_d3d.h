@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,6 @@ class GL_EXPORT GLImageD3D : public GLImage {
   GLImageD3D(const gfx::Size& size,
              unsigned internal_format,
              unsigned data_type,
-             const gfx::ColorSpace& color_space,
              Microsoft::WRL::ComPtr<ID3D11Texture2D> texture,
              size_t array_slice = 0,
              size_t plane_index = 0,
@@ -40,25 +39,19 @@ class GL_EXPORT GLImageD3D : public GLImage {
   GLImageD3D(const GLImageD3D&) = delete;
   GLImageD3D& operator=(const GLImageD3D&) = delete;
 
-  // Safe downcast. Returns nullptr on failure.
-  static GLImageD3D* FromGLImage(GLImage* image);
-
   bool Initialize();
 
   // GLImage implementation
   Type GetType() const override;
   void* GetEGLImage() const override;
-  BindOrCopy ShouldBindOrCopy() override;
   gfx::Size GetSize() override;
   unsigned GetInternalFormat() override;
   unsigned GetDataType() override;
   bool BindTexImage(unsigned target) override;
   void ReleaseTexImage(unsigned target) override {}
-  bool CopyTexImage(unsigned target) override;
   bool CopyTexSubImage(unsigned target,
                        const gfx::Point& offset,
                        const gfx::Rect& rect) override;
-  void Flush() override {}
   void OnMemoryDump(base::trace_event::ProcessMemoryDump* pmd,
                     uint64_t process_tracing_id,
                     const std::string& dump_name) override;

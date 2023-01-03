@@ -1,15 +1,15 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {EmojiPrefixSearch} from 'chrome://emoji-picker/prefix_search.js';
-import {assertArrayEquals, assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertArrayEquals, assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
 import {assertCloseTo} from './emoji_picker_test_util.js';
 
 const mockCollection1 = [
   {base: {string: '😹', name: 'cat with tears of joy'}},
   {base: {string: '🤠', name: 'cowboy hat face'}},
-  {base: {string: '🥲', name: 'smiling face with tear'}}
+  {base: {string: '🥲', name: 'smiling face with tear'}},
 ];
 
 const mockCollection2 = [

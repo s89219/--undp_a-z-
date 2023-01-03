@@ -1,10 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/modules/breakout_box/media_stream_track_generator.h"
 
-#include "third_party/blink/public/mojom/web_feature/web_feature.mojom-blink.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_stream_track_generator_init.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -20,9 +20,8 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
-#include "third_party/blink/renderer/platform/mediastream/media_stream_component.h"
+#include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
-#include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread.h"
 #include "third_party/blink/renderer/platform/wtf/uuid.h"
 
 namespace blink {
@@ -110,7 +109,7 @@ MediaStreamComponent* MediaStreamTrackGenerator::MakeMediaStreamComponent(
   }
 
   const String track_id = WTF::CreateCanonicalUUIDString();
-  return MakeGarbageCollected<MediaStreamComponent>(
+  return MakeGarbageCollected<MediaStreamComponentImpl>(
       MakeGarbageCollected<MediaStreamSource>(track_id, type, track_id,
                                               /*remote=*/false,
                                               std::move(platform_source)),
@@ -143,7 +142,7 @@ WritableStream* MediaStreamTrackGenerator::writable(ScriptState* script_state) {
 
 PushableMediaStreamVideoSource* MediaStreamTrackGenerator::PushableVideoSource()
     const {
-  DCHECK_EQ(Component()->Source()->GetType(), MediaStreamSource::kTypeVideo);
+  DCHECK_EQ(Component()->GetSourceType(), MediaStreamSource::kTypeVideo);
   return static_cast<PushableMediaStreamVideoSource*>(
       GetExecutionContext()->GetTaskRunner(TaskType::kInternalMediaRealTime),
       MediaStreamVideoSource::GetVideoSource(Component()->Source()));

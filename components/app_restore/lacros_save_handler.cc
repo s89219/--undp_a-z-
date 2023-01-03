@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -163,6 +163,13 @@ void LacrosSaveHandler::ModifyWindowInfo(
 std::string LacrosSaveHandler::GetAppId(aura::Window* window) {
   auto it = window_candidates_.find(app_restore::GetLacrosWindowId(window));
   return it != window_candidates_.end() ? it->second.app_id : std::string();
+}
+
+int LacrosSaveHandler::GetLacrosChromeAppWindowId(aura::Window* window) const {
+  auto it = window_candidates_.find(app_restore::GetLacrosWindowId(window));
+  // Window ids start at 0. If we cannot find a corresponding window, return -1
+  // so we don't fetch the wrong window data.
+  return it != window_candidates_.end() ? it->second.window_id : -1;
 }
 
 }  // namespace full_restore

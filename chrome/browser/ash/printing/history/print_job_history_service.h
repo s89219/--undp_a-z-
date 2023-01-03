@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,11 @@ class PrintJobHistoryService : public KeyedService {
    public:
     virtual void OnPrintJobFinished(
         const printing::proto::PrintJobInfo& print_job_info) = 0;
+
+    virtual void OnShutdown() {}
+
+   protected:
+    virtual ~Observer() = default;
   };
 
   PrintJobHistoryService();
@@ -42,6 +47,9 @@ class PrintJobHistoryService : public KeyedService {
 
   void AddObserver(PrintJobHistoryService::Observer* observer);
   void RemoveObserver(PrintJobHistoryService::Observer* observer);
+
+  // KeyedService:
+  void Shutdown() override;
 
  protected:
   base::ObserverList<PrintJobHistoryService::Observer>::Unchecked observers_;

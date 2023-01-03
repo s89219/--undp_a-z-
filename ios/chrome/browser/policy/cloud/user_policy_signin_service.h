@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@ class CloudPolicyClientRegistrationHelper;
 class UserPolicySigninService : public UserPolicySigninServiceBase,
                                 public signin::IdentityManager::Observer {
  public:
-  // Creates a UserPolicySigninService associated with the |browser_state|.
+  // Creates a UserPolicySigninService associated with the `browser_state`.
   UserPolicySigninService(
       PrefService* browser_state_prefs,
       PrefService* local_state,
@@ -40,6 +40,9 @@ class UserPolicySigninService : public UserPolicySigninServiceBase,
 
   // KeyedService implementation:
   void Shutdown() override;
+
+  // Notifies that the user has seen the notification about User Policy.
+  void OnUserPolicyNotificationSeen();
 
  private:
   // UserPolicySigninServiceBase implementation:

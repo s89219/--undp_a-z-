@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,8 +24,54 @@
 
 namespace blink {
 
-const double AudioParamHandler::kDefaultSmoothingConstant = 0.05;
-const double AudioParamHandler::kSnapThreshold = 0.001;
+namespace {
+
+// Replace NaN values in `values` with `default_value`.
+void HandleNaNValues(float* values,
+                     unsigned number_of_values,
+                     float default_value) {
+  unsigned k = 0;
+#if defined(ARCH_CPU_X86_FAMILY)
+  if (number_of_values >= 4) {
+    __m128 defaults = _mm_set1_ps(default_value);
+    for (k = 0; k < number_of_values; k += 4) {
+      __m128 v = _mm_loadu_ps(values + k);
+      // cmpuord returns all 1's if v is NaN for each elmeent of v.
+      __m128 isnan = _mm_cmpunord_ps(v, v);
+      // Replace NaN parts with default.
+      __m128 result = _mm_and_ps(isnan, defaults);
+      // Merge in the parts that aren't NaN
+      result = _mm_or_ps(_mm_andnot_ps(isnan, v), result);
+      _mm_storeu_ps(values + k, result);
+    }
+  }
+#elif defined(CPU_ARM_NEON)
+  if (number_of_values >= 4) {
+    uint32x4_t defaults =
+        reinterpret_cast<uint32x4_t>(vdupq_n_f32(default_value));
+    for (k = 0; k < number_of_values; k += 4) {
+      float32x4_t v = vld1q_f32(values + k);
+      // Returns true (all ones) if v is not NaN
+      uint32x4_t is_not_nan = vceqq_f32(v, v);
+      // Get the parts that are not NaN
+      uint32x4_t result =
+          vandq_u32(is_not_nan, reinterpret_cast<uint32x4_t>(v));
+      // Replace the parts that are NaN with the default and merge with previous
+      // result.  (Note: vbic_u32(x, y) = x and not y)
+      result = vorrq_u32(result, vbicq_u32(defaults, is_not_nan));
+      vst1q_f32(values + k, reinterpret_cast<float32x4_t>(result));
+    }
+  }
+#endif
+
+  for (; k < number_of_values; ++k) {
+    if (std::isnan(values[k])) {
+      values[k] = default_value;
+    }
+  }
+}
+
+}  // namespace
 
 AudioParamHandler::AudioParamHandler(BaseAudioContext& context,
                                      AudioParamType param_type,
@@ -54,8 +100,6 @@ AudioParamHandler::AudioParamHandler(BaseAudioContext& context,
   if (context.destination()) {
     destination_handler_ = &context.destination()->GetAudioDestinationHandler();
   }
-
-  timeline_.SetSmoothedValue(default_value);
 }
 
 AudioDestinationHandler& AudioParamHandler::DestinationHandler() const {
@@ -171,43 +215,6 @@ void AudioParamHandler::SetValue(float value) {
   SetIntrinsicValue(value);
 }
 
-float AudioParamHandler::SmoothedValue() {
-  return timeline_.SmoothedValue();
-}
-
-bool AudioParamHandler::Smooth() {
-  // If values have been explicitly scheduled on the timeline, then use the
-  // exact value.  Smoothing effectively is performed by the timeline.
-  auto [use_timeline_value, value] = timeline_.ValueForContextTime(
-      DestinationHandler(), IntrinsicValue(), MinValue(), MaxValue(),
-      GetDeferredTaskHandler().RenderQuantumFrames());
-
-  float smoothed_value = timeline_.SmoothedValue();
-  if (smoothed_value == value) {
-    // Smoothed value has already approached and snapped to value.
-    SetIntrinsicValue(value);
-    return true;
-  }
-
-  if (use_timeline_value) {
-    timeline_.SetSmoothedValue(value);
-  } else {
-    // Dezipper - exponential approach.
-    smoothed_value += (value - smoothed_value) * kDefaultSmoothingConstant;
-
-    // If we get close enough then snap to actual value.
-    // FIXME: the threshold needs to be adjustable depending on range - but
-    // this is OK general purpose value.
-    if (fabs(smoothed_value - value) < kSnapThreshold) {
-      smoothed_value = value;
-    }
-    timeline_.SetSmoothedValue(smoothed_value);
-  }
-
-  SetIntrinsicValue(value);
-  return false;
-}
-
 float AudioParamHandler::FinalValue() {
   float value = IntrinsicValue();
   CalculateFinalValues(&value, 1, false);
@@ -222,51 +229,6 @@ void AudioParamHandler::CalculateSampleAccurateValues(
   DCHECK_GT(number_of_values, 0u);
 
   CalculateFinalValues(values, number_of_values, IsAudioRate());
-}
-
-// Replace NaN values in |values| with |default_value|.
-static void HandleNaNValues(float* values,
-                            unsigned number_of_values,
-                            float default_value) {
-  unsigned k = 0;
-#if defined(ARCH_CPU_X86_FAMILY)
-  if (number_of_values >= 4) {
-    __m128 defaults = _mm_set1_ps(default_value);
-    for (k = 0; k < number_of_values; k += 4) {
-      __m128 v = _mm_loadu_ps(values + k);
-      // cmpuord returns all 1's if v is NaN for each elmeent of v.
-      __m128 isnan = _mm_cmpunord_ps(v, v);
-      // Replace NaN parts with default.
-      __m128 result = _mm_and_ps(isnan, defaults);
-      // Merge in the parts that aren't NaN
-      result = _mm_or_ps(_mm_andnot_ps(isnan, v), result);
-      _mm_storeu_ps(values + k, result);
-    }
-  }
-#elif defined(CPU_ARM_NEON)
-  if (number_of_values >= 4) {
-    uint32x4_t defaults =
-        reinterpret_cast<uint32x4_t>(vdupq_n_f32(default_value));
-    for (k = 0; k < number_of_values; k += 4) {
-      float32x4_t v = vld1q_f32(values + k);
-      // Returns true (all ones) if v is not NaN
-      uint32x4_t is_not_nan = vceqq_f32(v, v);
-      // Get the parts that are not NaN
-      uint32x4_t result =
-          vandq_u32(is_not_nan, reinterpret_cast<uint32x4_t>(v));
-      // Replace the parts that are NaN with the default and merge with previous
-      // result.  (Note: vbic_u32(x, y) = x and not y)
-      result = vorrq_u32(result, vbicq_u32(defaults, is_not_nan));
-      vst1q_f32(values + k, reinterpret_cast<float32x4_t>(result));
-    }
-  }
-#endif
-
-  for (; k < number_of_values; ++k) {
-    if (std::isnan(values[k])) {
-      values[k] = default_value;
-    }
-  }
 }
 
 void AudioParamHandler::CalculateFinalValues(float* values,
@@ -323,7 +285,7 @@ void AudioParamHandler::CalculateFinalValues(float* values,
       summing_bus_->SumFrom(*connection_bus);
     }
 
-    // If we're not sample accurate, duplicate the first element of |values| to
+    // If we're not sample accurate, duplicate the first element of `values` to
     // all of the elements.
     if (!sample_accurate) {
       for (unsigned k = 0; k < number_of_values; ++k) {
@@ -354,7 +316,7 @@ void AudioParamHandler::CalculateFinalValues(float* values,
 void AudioParamHandler::CalculateTimelineValues(float* values,
                                                 unsigned number_of_values) {
   // Calculate values for this render quantum.  Normally
-  // |numberOfValues| will equal to
+  // `number_of_values` will equal to
   // GetDeferredTaskHandler().RenderQuantumFrames() (the render quantum size).
   double sample_rate = DestinationHandler().SampleRate();
   size_t start_frame = DestinationHandler().CurrentSampleFrame();

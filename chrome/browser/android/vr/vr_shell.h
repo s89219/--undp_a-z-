@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/device/public/mojom/geolocation_config.mojom.h"
 #include "third_party/gvr-android-sdk/src/libraries/headers/vr/gvr/capi/include/gvr_types.h"
+#include "ui/gl/android/scoped_a_native_window.h"
 
 namespace base {
 class Version;
@@ -243,7 +244,6 @@ class VrShell : VoiceResultDelegate,
                    const base::android::JavaParamRef<jobject>& obj);
 
   void ConnectPresentingService(
-      device::mojom::VRDisplayInfoPtr display_info,
       device::mojom::XRRuntimeSessionOptionsPtr options);
 
   // ChromeLocationBarModelDelegate implementation.
@@ -378,7 +378,7 @@ class VrShell : VoiceResultDelegate,
   bool ui_finished_loading_ = false;
 
   base::WaitableEvent gl_surface_created_event_;
-  gfx::AcceleratedWidget surface_window_ = nullptr;
+  gl::ScopedANativeWindow surface_window_;
 
   std::set<int> regular_tab_ids_;
   std::set<int> incognito_tab_ids_;

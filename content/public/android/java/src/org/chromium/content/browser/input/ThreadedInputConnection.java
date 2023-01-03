@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,13 +68,6 @@ class ThreadedInputConnection extends BaseInputConnection implements ChromiumBas
         public void run() {
             boolean result = mImeAdapter.requestTextInputStateUpdate();
             if (!result) unblockOnUiThread();
-        }
-    };
-
-    private final Runnable mNotifyUserActionRunnable = new Runnable() {
-        @Override
-        public void run() {
-            mImeAdapter.notifyUserAction();
         }
     };
 
@@ -288,10 +281,6 @@ class ThreadedInputConnection extends BaseInputConnection implements ChromiumBas
         }
     }
 
-    private void notifyUserAction() {
-        PostTask.postTask(UiThreadTaskTraits.DEFAULT, mNotifyUserActionRunnable);
-    }
-
     /**
      * @see InputConnection#setComposingText(java.lang.CharSequence, int)
      */
@@ -314,7 +303,6 @@ class ThreadedInputConnection extends BaseInputConnection implements ChromiumBas
                 updateComposingTextOnUiThread(text, newCursorPosition, isPendingAccent);
             }
         });
-        notifyUserAction();
         return true;
     }
 
@@ -356,7 +344,6 @@ class ThreadedInputConnection extends BaseInputConnection implements ChromiumBas
                 commitTextOnUiThread(text, newCursorPosition);
             }
         });
-        notifyUserAction();
         return true;
     }
 
@@ -503,7 +490,6 @@ class ThreadedInputConnection extends BaseInputConnection implements ChromiumBas
                 mImeAdapter.sendKeyEvent(event);
             }
         });
-        notifyUserAction();
         return true;
     }
 

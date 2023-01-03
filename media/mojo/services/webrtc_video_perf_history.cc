@@ -1,8 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "media/mojo/services/webrtc_video_perf_history.h"
+
+#include <math.h>
 
 #include "base/bind.h"
 #include "base/callback.h"
@@ -13,7 +15,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/stringprintf.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/media_switches.h"
@@ -167,6 +169,7 @@ bool AreVideoStatsInvalid(const media::mojom::WebrtcVideoStats& video_stats) {
          video_stats.frames_processed >
              WebrtcVideoStatsDB::kFramesProcessedMaxValue ||
          video_stats.key_frames_processed > video_stats.frames_processed ||
+         isnan(video_stats.p99_processing_time_ms) ||
          video_stats.p99_processing_time_ms <
              WebrtcVideoStatsDB::kP99ProcessingTimeMinValueMs ||
          video_stats.p99_processing_time_ms >
@@ -206,9 +209,9 @@ void WebrtcVideoPerfHistory::InitDatabase() {
   // initialized during their lifetime.
   DCHECK_EQ(db_init_status_, UNINITIALIZED);
 
+  db_init_status_ = PENDING;
   db_->Initialize(base::BindOnce(&WebrtcVideoPerfHistory::OnDatabaseInit,
                                  weak_ptr_factory_.GetWeakPtr()));
-  db_init_status_ = PENDING;
 }
 
 void WebrtcVideoPerfHistory::OnDatabaseInit(bool success) {
@@ -220,8 +223,8 @@ void WebrtcVideoPerfHistory::OnDatabaseInit(bool success) {
 
   // Post all the deferred API calls as if they're just now coming in.
   for (auto& deferred_call : init_deferred_api_calls_) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                  std::move(deferred_call));
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(deferred_call));
   }
   init_deferred_api_calls_.clear();
 }
@@ -310,16 +313,16 @@ void WebrtcVideoPerfHistory::OnGotStatsCollectionForRequest(
     // inserted as a placeholder.
     std::vector<absl::optional<bool>> smooth_per_pixel;
     absl::optional<size_t> specific_key_index;
-    for (auto const& stats : *stats_collection) {
-      if (stats.first >= video_key.pixels && !specific_key_index) {
+    for (auto const& [key_index, video_stats_entry] : *stats_collection) {
+      if (key_index >= video_key.pixels && !specific_key_index) {
         specific_key_index = smooth_per_pixel.size();
-        if (stats.first > video_key.pixels) {
+        if (key_index > video_key.pixels) {
           // No exact match found, insert a nullopt.
           smooth_per_pixel.push_back(absl::nullopt);
         }
       }
       smooth_per_pixel.push_back(PredictSmooth(
-          video_key.is_decode_stats, stats.second, frames_per_second));
+          video_key.is_decode_stats, video_stats_entry, frames_per_second));
     }
     if (!specific_key_index) {
       // Pixels for the specific key is higher than any pixels number that

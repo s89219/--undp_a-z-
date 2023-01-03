@@ -1,14 +1,13 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "weblayer/browser/browser_impl.h"
 
-#include <algorithm>
-
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/memory/ptr_util.h"
 #include "base/path_service.h"
+#include "base/ranges/algorithm.h"
 #include "build/build_config.h"
 #include "components/base32/base32.h"
 #include "components/prefs/pref_service.h"
@@ -19,7 +18,6 @@
 #include "weblayer/browser/feature_list_creator.h"
 #include "weblayer/browser/persistence/browser_persister.h"
 #include "weblayer/browser/persistence/browser_persister_file_utils.h"
-#include "weblayer/browser/persistence/minimal_browser_persister.h"
 #include "weblayer/browser/profile_impl.h"
 #include "weblayer/browser/tab_impl.h"
 #include "weblayer/common/weblayer_paths.h"
@@ -144,28 +142,12 @@ void BrowserImpl::PrepareForShutdown(JNIEnv* env) {
   PrepareForShutdown();
 }
 
-ScopedJavaLocalRef<jstring> BrowserImpl::GetPersistenceId(JNIEnv* env) {
-  return ScopedJavaLocalRef<jstring>(
-      base::android::ConvertUTF8ToJavaString(env, GetPersistenceId()));
-}
-
-void BrowserImpl::SaveBrowserPersisterIfNecessary(JNIEnv* env) {
-  browser_persister_->SaveIfNecessary();
-}
-
 ScopedJavaLocalRef<jbyteArray> BrowserImpl::GetBrowserPersisterCryptoKey(
     JNIEnv* env) {
   std::vector<uint8_t> key;
   if (browser_persister_)
     key = browser_persister_->GetCryptoKey();
   return base::android::ToJavaByteArray(env, key);
-}
-
-ScopedJavaLocalRef<jbyteArray> BrowserImpl::GetMinimalPersistenceState(
-    JNIEnv* env,
-    int max_navigations_per_tab) {
-  return base::android::ToJavaByteArray(
-      env, GetMinimalPersistenceState(max_navigations_per_tab, 0));
 }
 
 void BrowserImpl::RestoreStateIfNecessary(
@@ -188,19 +170,6 @@ void BrowserImpl::RestoreStateIfNecessary(
   RestoreStateIfNecessary(persistence_info);
 }
 
-void BrowserImpl::RestoreMinimalState(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jbyteArray>&
-        j_minimal_persistence_state) {
-  if (!j_minimal_persistence_state.obj())
-    return;
-
-  std::vector<uint8_t> minimal_state;
-  base::android::JavaByteArrayToByteVector(env, j_minimal_persistence_state,
-                                           &minimal_state);
-  RestoreMinimalStateForBrowser(this, minimal_state);
-}
-
 void BrowserImpl::WebPreferencesChanged(JNIEnv* env) {
   OnWebPreferenceChanged(std::string());
 }
@@ -220,12 +189,6 @@ void BrowserImpl::OnFragmentPause(JNIEnv* env) {
 }
 
 #endif
-
-std::vector<uint8_t> BrowserImpl::GetMinimalPersistenceState(
-    int max_navigations_per_tab,
-    int max_size_in_bytes) {
-  return PersistMinimalState(this, max_navigations_per_tab, max_size_in_bytes);
-}
 
 void BrowserImpl::SetWebPreferences(blink::web_pref::WebPreferences* prefs) {
 #if BUILDFLAG(IS_ANDROID)
@@ -352,14 +315,8 @@ std::string BrowserImpl::GetPersistenceId() {
   return persistence_id_;
 }
 
-std::vector<uint8_t> BrowserImpl::GetMinimalPersistenceState() {
-  // 0 means use the default max.
-  return GetMinimalPersistenceState(0, 0);
-}
-
 bool BrowserImpl::IsRestoringPreviousState() {
-  return is_minimal_restore_in_progress_ ||
-         (browser_persister_ && browser_persister_->is_restore_in_progress());
+  return browser_persister_ && browser_persister_->is_restore_in_progress();
 }
 
 void BrowserImpl::AddObserver(BrowserObserver* observer) {
@@ -431,8 +388,7 @@ std::unique_ptr<Tab> BrowserImpl::RemoveTab(Tab* tab) {
   TabImpl* tab_impl = static_cast<TabImpl*>(tab);
   DCHECK_EQ(this, tab_impl->browser());
   static_cast<TabImpl*>(tab)->set_browser(nullptr);
-  auto iter =
-      std::find_if(tabs_.begin(), tabs_.end(), base::MatchesUniquePtr(tab));
+  auto iter = base::ranges::find_if(tabs_, base::MatchesUniquePtr(tab));
   DCHECK(iter != tabs_.end());
   std::unique_ptr<Tab> owned_tab = std::move(*iter);
   tabs_.erase(iter);

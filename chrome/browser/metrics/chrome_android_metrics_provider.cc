@@ -1,13 +1,16 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/metrics/chrome_android_metrics_provider.h"
 
 #include "base/feature_list.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "chrome/browser/android/customtabs/custom_tab_session_state_tracker.h"
 #include "chrome/browser/android/locale/locale_manager.h"
 #include "chrome/browser/android/metrics/uma_session_stats.h"
+#include "chrome/browser/flags/android/chrome_feature_list.h"
 #include "chrome/browser/flags/android/chrome_session_state.h"
 #include "chrome/browser/notifications/jni_headers/NotificationSystemStatusUtil_jni.h"
 #include "components/prefs/pref_registry_simple.h"
@@ -27,6 +30,14 @@ void EmitAppNotificationStatusHistogram() {
       base::android::AttachCurrentThread());
   UMA_HISTOGRAM_ENUMERATION("Android.AppNotificationStatus", status,
                             kAppNotificationStatusBoundary);
+}
+
+void EmitMultipleUserProfilesHistogram() {
+  const chrome::android::MultipleUserProfilesState
+      multiple_user_profiles_state =
+          chrome::android::GetMultipleUserProfilesState();
+  base::UmaHistogramEnumeration("Android.MultipleUserProfilesState",
+                                multiple_user_profiles_state);
 }
 
 metrics::SystemProfileProto::OS::DarkModeState ToProtoDarkModeState(
@@ -80,6 +91,10 @@ void ChromeAndroidMetricsProvider::ProvidePreviousSessionData(
       chrome::android::GetActivityTypeFromLocalState(local_state_);
   if (activity_type.has_value())
     chrome::android::EmitActivityTypeHistograms(activity_type.value());
+
+  // Save whether multiple user profiles are present in Android. This is
+  // unlikely to change across sessions.
+  EmitMultipleUserProfilesHistogram();
 }
 
 void ChromeAndroidMetricsProvider::ProvideCurrentSessionData(
@@ -93,7 +108,17 @@ void ChromeAndroidMetricsProvider::ProvideCurrentSessionData(
   os_proto->set_dark_mode_state(
       ToProtoDarkModeState(chrome::android::GetDarkModeState()));
 
+  if (base::FeatureList::IsEnabled(chrome::android::kCCTPackageNameRecording) &&
+      chrome::android::CustomTabSessionStateTracker::GetInstance()
+          .HasCustomTabSessionState()) {
+    uma_proto->mutable_custom_tab_session()->Swap(
+        chrome::android::CustomTabSessionStateTracker::GetInstance()
+            .GetSession()
+            .get());
+  }
+
   UmaSessionStats::GetInstance()->ProvideCurrentSessionData();
   EmitAppNotificationStatusHistogram();
+  EmitMultipleUserProfilesHistogram();
   LocaleManager::RecordUserTypeMetrics();
 }

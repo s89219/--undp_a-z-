@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -24,14 +23,16 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
-#include "chrome/browser/ui/views/chrome_view_class_properties.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
+#include "components/user_education/common/user_education_class_properties.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/base/menu_source_utils.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/models/image_model.h"
 #include "ui/base/models/menu_model.h"
+#include "ui/color/color_provider.h"
 #include "ui/compositor/paint_recorder.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
@@ -268,9 +269,9 @@ void ToolbarButton::UpdateColorsAndInsets() {
     label()->SetBackgroundColor(*background_color);
   } else {
     SetBackground(nullptr);
-    const auto* tp = GetThemeProvider();
-    if (tp)
-      label()->SetBackgroundColor(tp->GetColor(ThemeProperties::COLOR_TOOLBAR));
+    const auto* cp = GetColorProvider();
+    if (cp)
+      label()->SetBackgroundColor(cp->GetColor(kColorToolbar));
   }
 
   // Apply new border with target insets.
@@ -467,7 +468,7 @@ bool ToolbarButton::OnMousePressed(const ui::MouseEvent& event) {
     y_position_on_lbuttondown_ = event.y();
 
     // Schedule a task that will show the menu.
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&ToolbarButton::ShowDropDownMenu,
                        show_menu_factory_.GetWeakPtr(),
@@ -548,8 +549,9 @@ void ToolbarButton::ShowContextMenuForViewImpl(View* source,
 
 void ToolbarButton::AfterPropertyChange(const void* key, int64_t old_value) {
   View::AfterPropertyChange(key, old_value);
-  if (key == kHasInProductHelpPromoKey)
-    SetHasInProductHelpPromo(GetProperty(kHasInProductHelpPromoKey));
+  if (key == user_education::kHasInProductHelpPromoKey)
+    SetHasInProductHelpPromo(
+        GetProperty(user_education::kHasInProductHelpPromoKey));
 }
 
 void ToolbarButton::SetHasInProductHelpPromo(bool has_in_product_help_promo) {
@@ -708,21 +710,20 @@ void ToolbarButton::HighlightColorAnimation::Hide() {
 
 absl::optional<SkColor> ToolbarButton::HighlightColorAnimation::GetTextColor()
     const {
-  if (!IsShown() || !parent_->GetThemeProvider())
+  if (!IsShown() || !parent_->GetColorProvider())
     return absl::nullopt;
   SkColor text_color;
   if (highlight_color_) {
     text_color = *highlight_color_;
   } else {
-    text_color = parent_->GetThemeProvider()->GetColor(
-        ThemeProperties::COLOR_TOOLBAR_BUTTON_TEXT);
+    text_color = parent_->GetColorProvider()->GetColor(kColorToolbarButtonText);
   }
   return FadeWithAnimation(text_color, highlight_color_animation_);
 }
 
 absl::optional<SkColor> ToolbarButton::HighlightColorAnimation::GetBorderColor()
     const {
-  if (!IsShown() || !parent_->GetThemeProvider()) {
+  if (!IsShown() || !parent_->GetColorProvider()) {
     return absl::nullopt;
   }
 
@@ -730,8 +731,8 @@ absl::optional<SkColor> ToolbarButton::HighlightColorAnimation::GetBorderColor()
   if (highlight_color_) {
     border_color = *highlight_color_;
   } else {
-    border_color = parent_->GetThemeProvider()->GetColor(
-        ThemeProperties::COLOR_TOOLBAR_BUTTON_BORDER);
+    border_color =
+        parent_->GetColorProvider()->GetColor(kColorToolbarButtonBorder);
   }
   return FadeWithAnimation(border_color, highlight_color_animation_);
 }

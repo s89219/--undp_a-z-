@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@ import android.os.Message;
 import android.os.Parcel;
 import android.os.ParcelUuid;
 import android.os.Parcelable;
+import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.ViewStructure;
 
@@ -21,6 +22,7 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.Log;
+import org.chromium.base.ObserverList;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.UserData;
 import org.chromium.base.UserDataHost;
@@ -50,6 +52,7 @@ import org.chromium.content_public.browser.MessagePayload;
 import org.chromium.content_public.browser.MessagePort;
 import org.chromium.content_public.browser.NavigationController;
 import org.chromium.content_public.browser.RenderFrameHost;
+import org.chromium.content_public.browser.StylusWritingHandler;
 import org.chromium.content_public.browser.ViewEventSink.InternalAccessDelegate;
 import org.chromium.content_public.browser.Visibility;
 import org.chromium.content_public.browser.WebContents;
@@ -59,11 +62,13 @@ import org.chromium.ui.OverscrollRefreshHandler;
 import org.chromium.ui.base.EventForwarder;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
+import org.chromium.ui.mojom.VirtualKeyboardMode;
 import org.chromium.url.GURL;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
@@ -190,6 +195,8 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
 
     private EventForwarder mEventForwarder;
 
+    private StylusWritingHandler mStylusWritingHandler;
+
     // Cached copy of all positions and scales as reported by the renderer.
     private RenderCoordinatesImpl mRenderCoordinates;
 
@@ -201,6 +208,8 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
 
     // Remember the stack for clearing native the native stack for debugging use after destroy.
     private Throwable mNativeDestroyThrowable;
+
+    private ObserverList<Runnable> mTearDownDialogOverlaysHandlers;
 
     private static class WebContentsInternalsImpl implements WebContentsInternals {
         public UserDataHost userDataHost;
@@ -215,7 +224,8 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
     }
 
     @CalledByNative
-    private static WebContentsImpl create(
+    @VisibleForTesting
+    static WebContentsImpl create(
             long nativeWebContentsAndroid, NavigationController navigationController) {
         return new WebContentsImpl(nativeWebContentsAndroid, navigationController);
     }
@@ -283,7 +293,8 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
     }
 
     @CalledByNative
-    private void clearNativePtr() {
+    @VisibleForTesting
+    void clearNativePtr() {
         mNativeDestroyThrowable = new RuntimeException("clearNativePtr");
         mNativeWebContentsAndroid = 0;
         mNavigationController = null;
@@ -469,6 +480,13 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
     public GURL getVisibleUrl() {
         checkNotDestroyed();
         return WebContentsImplJni.get().getVisibleURL(mNativeWebContentsAndroid);
+    }
+
+    @Override
+    @VirtualKeyboardMode.EnumType
+    public int getVirtualKeyboardMode() {
+        checkNotDestroyed();
+        return WebContentsImplJni.get().getVirtualKeyboardMode(mNativeWebContentsAndroid);
     }
 
     @Override
@@ -707,16 +725,8 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
         if (targetOrigin.equals("*")) {
             targetOrigin = "";
         }
-        WebContentsImplJni.get().postMessageToMainFrame(mNativeWebContentsAndroid,
-                messagePayload.getAsString(), sourceOrigin, targetOrigin,
-                ports);
-    }
-
-    @Deprecated
-    @Override
-    public void postMessageToMainFrame(final String message, final String sourceOrigin,
-            final String targetOrigin, @Nullable final MessagePort[] ports) {
-        postMessageToMainFrame(new MessagePayload(message), sourceOrigin, targetOrigin, ports);
+        WebContentsImplJni.get().postMessageToMainFrame(
+                mNativeWebContentsAndroid, messagePayload, sourceOrigin, targetOrigin, ports);
     }
 
     @Override
@@ -798,12 +808,40 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
     }
 
     @Override
+    public void setStylusWritingHandler(StylusWritingHandler stylusWritingHandler) {
+        mStylusWritingHandler = stylusWritingHandler;
+        if (mNativeWebContentsAndroid == 0) return;
+        WebContentsImplJni.get().setStylusHandwritingEnabled(
+                mNativeWebContentsAndroid, mStylusWritingHandler != null);
+    }
+
+    public StylusWritingHandler getStylusWritingHandler() {
+        return mStylusWritingHandler;
+    }
+
+    @Override
     public EventForwarder getEventForwarder() {
         assert mNativeWebContentsAndroid != 0;
         if (mEventForwarder == null) {
             checkNotDestroyed();
             mEventForwarder =
                     WebContentsImplJni.get().getOrCreateEventForwarder(mNativeWebContentsAndroid);
+            mEventForwarder.setStylusWritingDelegate(new EventForwarder.StylusWritingDelegate() {
+                @Override
+                public boolean handleTouchEvent(MotionEvent motionEvent) {
+                    return mStylusWritingHandler != null
+                            && mStylusWritingHandler.handleTouchEvent(
+                                    motionEvent, getViewAndroidDelegate().getContainerView());
+                }
+
+                @Override
+                public void handleHoverEvent(MotionEvent motionEvent) {
+                    if (mStylusWritingHandler != null) {
+                        mStylusWritingHandler.handleHoverEvent(
+                                motionEvent, getViewAndroidDelegate().getContainerView());
+                    }
+                }
+            });
         }
         return mEventForwarder;
     }
@@ -1040,6 +1078,32 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
         WebContentsImplJni.get().notifyBrowserControlsHeightChanged(mNativeWebContentsAndroid);
     }
 
+    @Override
+    public void tearDownDialogOverlays() {
+        if (mTearDownDialogOverlaysHandlers == null) return;
+        Iterator<Runnable> it = mTearDownDialogOverlaysHandlers.iterator();
+        while (it.hasNext()) {
+            Runnable handler = it.next();
+            handler.run();
+        }
+    }
+
+    public void addTearDownDialogOverlaysHandler(Runnable handler) {
+        if (mTearDownDialogOverlaysHandlers == null) {
+            mTearDownDialogOverlaysHandlers = new ObserverList<>();
+        }
+
+        assert !mTearDownDialogOverlaysHandlers.hasObserver(handler);
+        mTearDownDialogOverlaysHandlers.addObserver(handler);
+    }
+
+    public void removeTearDownDialogOverlaysHandler(Runnable handler) {
+        assert mTearDownDialogOverlaysHandlers != null;
+        assert mTearDownDialogOverlaysHandlers.hasObserver(handler);
+
+        mTearDownDialogOverlaysHandlers.removeObserver(handler);
+    }
+
     private void checkNotDestroyed() {
         if (mNativeWebContentsAndroid != 0) return;
         throw new IllegalStateException(
@@ -1067,6 +1131,7 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
         int getVisibility(long nativeWebContentsAndroid);
         String getTitle(long nativeWebContentsAndroid);
         GURL getVisibleURL(long nativeWebContentsAndroid);
+        int getVirtualKeyboardMode(long nativeWebContentsAndroid);
         String getEncoding(long nativeWebContentsAndroid);
         boolean isLoading(long nativeWebContentsAndroid);
         boolean shouldShowLoadingUI(long nativeWebContentsAndroid);
@@ -1100,7 +1165,7 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
         void evaluateJavaScriptForTests(
                 long nativeWebContentsAndroid, String script, JavaScriptCallback callback);
         void addMessageToDevToolsConsole(long nativeWebContentsAndroid, int level, String message);
-        void postMessageToMainFrame(long nativeWebContentsAndroid, String message,
+        void postMessageToMainFrame(long nativeWebContentsAndroid, MessagePayload payload,
                 String sourceOrigin, String targetOrigin, MessagePort[] ports);
         boolean hasAccessedInitialDocument(long nativeWebContentsAndroid);
         int getThemeColor(long nativeWebContentsAndroid);
@@ -1113,6 +1178,7 @@ public class WebContentsImpl implements WebContents, RenderFrameHostDelegate, Wi
         void setOverscrollRefreshHandler(long nativeWebContentsAndroid,
                 OverscrollRefreshHandler nativeOverscrollRefreshHandler);
         void setSpatialNavigationDisabled(long nativeWebContentsAndroid, boolean disabled);
+        void setStylusHandwritingEnabled(long nativeWebContentsAndroid, boolean enabled);
         int downloadImage(long nativeWebContentsAndroid, GURL url, boolean isFavicon,
                 int maxBitmapSize, boolean bypassCache, ImageDownloadCallback callback);
         void setHasPersistentVideo(long nativeWebContentsAndroid, boolean value);

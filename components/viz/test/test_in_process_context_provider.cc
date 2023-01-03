@@ -1,85 +1,30 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/viz/test/test_in_process_context_provider.h"
 
 #include <stdint.h>
+
 #include <memory>
 #include <utility>
 
-#include "base/lazy_instance.h"
-#include "base/stl_util.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
+#include "base/types/optional_util.h"
 #include "components/viz/common/gpu/context_cache_controller.h"
-#include "components/viz/common/resources/platform_color.h"
-#include "components/viz/service/display/display_compositor_memory_and_task_controller.h"
 #include "components/viz/service/gl/gpu_service_impl.h"
 #include "components/viz/test/test_gpu_service_holder.h"
-#include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/raster_implementation_gles.h"
 #include "gpu/command_buffer/client/shared_memory_limits.h"
 #include "gpu/command_buffer/common/context_creation_attribs.h"
 #include "gpu/config/skia_limits.h"
 #include "gpu/ipc/gl_in_process_context.h"
-#include "gpu/ipc/gpu_task_scheduler_helper.h"
 #include "gpu/ipc/raster_in_process_context.h"
-#include "gpu/ipc/test_gpu_thread_holder.h"
 #include "gpu/skia_bindings/grcontext_for_gles2_interface.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#include "third_party/khronos/GLES2/gl2ext.h"
 #include "third_party/skia/include/gpu/GrDirectContext.h"
-#include "third_party/skia/include/gpu/gl/GrGLInterface.h"
-#include "ui/gfx/native_widget_types.h"
 
 namespace viz {
-
-namespace {
-
-std::unique_ptr<gpu::GLInProcessContext> CreateGLInProcessContext(
-    TestGpuMemoryBufferManager* gpu_memory_buffer_manager,
-    TestImageFactory* image_factory,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    DisplayCompositorMemoryAndTaskController* display_controller) {
-  const bool is_offscreen = true;
-  gpu::ContextCreationAttribs attribs;
-  attribs.alpha_size = -1;
-  attribs.depth_size = 24;
-  attribs.stencil_size = 8;
-  attribs.samples = 0;
-  attribs.sample_buffers = 0;
-  attribs.fail_if_major_perf_caveat = false;
-  attribs.bind_generates_resource = false;
-  attribs.enable_oop_rasterization = false;
-
-  auto context = std::make_unique<gpu::GLInProcessContext>();
-  if (display_controller) {
-    auto result = context->Initialize(
-        TestGpuServiceHolder::GetInstance()->task_executor(), nullptr,
-        is_offscreen, gpu::kNullSurfaceHandle, attribs,
-        gpu::SharedMemoryLimits(), gpu_memory_buffer_manager, image_factory,
-        display_controller->gpu_task_scheduler(),
-        display_controller->controller_on_gpu(), std::move(task_runner));
-
-    DCHECK_EQ(result, gpu::ContextResult::kSuccess);
-  } else {
-    auto result = context->Initialize(
-        TestGpuServiceHolder::GetInstance()->task_executor(), nullptr,
-        is_offscreen, gpu::kNullSurfaceHandle, attribs,
-        gpu::SharedMemoryLimits(), gpu_memory_buffer_manager, image_factory,
-        nullptr, nullptr, std::move(task_runner));
-    DCHECK_EQ(result, gpu::ContextResult::kSuccess);
-  }
-  return context;
-}
-
-}  // namespace
-
-std::unique_ptr<gpu::GLInProcessContext> CreateTestInProcessContext() {
-  return CreateGLInProcessContext(nullptr, nullptr,
-                                  base::ThreadTaskRunnerHandle::Get(), nullptr);
-}
 
 TestInProcessContextProvider::TestInProcessContextProvider(
     TestContextType type,
@@ -87,11 +32,18 @@ TestInProcessContextProvider::TestInProcessContextProvider(
     gpu::raster::GrShaderCache* gr_shader_cache,
     gpu::GpuProcessActivityFlags* activity_flags)
     : type_(type), activity_flags_(activity_flags) {
-  if (support_locking)
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  context_thread_checker_.DetachFromThread();
+
+  if (support_locking) {
     context_lock_.emplace();
+  }
 }
 
-TestInProcessContextProvider::~TestInProcessContextProvider() = default;
+TestInProcessContextProvider::~TestInProcessContextProvider() {
+  DCHECK(main_thread_checker_.CalledOnValidThread() ||
+         context_thread_checker_.CalledOnValidThread());
+}
 
 void TestInProcessContextProvider::AddRef() const {
   base::RefCountedThreadSafe<TestInProcessContextProvider>::AddRef();
@@ -101,33 +53,44 @@ void TestInProcessContextProvider::Release() const {
   base::RefCountedThreadSafe<TestInProcessContextProvider>::Release();
 }
 
-gpu::ContextResult TestInProcessContextProvider::BindToCurrentThread() {
+gpu::ContextResult TestInProcessContextProvider::BindToCurrentSequence() {
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
   auto* holder = TestGpuServiceHolder::GetInstance();
 
-  if (type_ == TestContextType::kGLES2) {
-    display_controller_ =
-        std::make_unique<DisplayCompositorMemoryAndTaskController>(
-            holder->task_executor(), &image_factory_);
+  gpu::ContextCreationAttribs attribs;
+  attribs.alpha_size = 8;
+  attribs.blue_size = 8;
+  attribs.green_size = 8;
+  attribs.red_size = 8;
+  attribs.depth_size = 0;
+  attribs.stencil_size = 8;
+  attribs.samples = 0;
+  attribs.sample_buffers = 0;
+  attribs.bind_generates_resource = false;
 
-    gles2_context_ = CreateGLInProcessContext(
-        &gpu_memory_buffer_manager_, &image_factory_,
-        base::ThreadTaskRunnerHandle::Get(), display_controller_.get());
+  if (type_ == TestContextType::kGLES2) {
+    attribs.enable_gles2_interface = true;
+    attribs.enable_raster_interface = false;
+    attribs.enable_oop_rasterization = false;
+
+    gles2_context_ = std::make_unique<gpu::GLInProcessContext>();
+    auto result = gles2_context_->Initialize(
+        TestGpuServiceHolder::GetInstance()->task_executor(), attribs,
+        gpu::SharedMemoryLimits());
+    DCHECK_EQ(result, gpu::ContextResult::kSuccess);
 
     caps_ = gles2_context_->GetCapabilities();
   } else {
     bool is_gpu_raster = type_ == TestContextType::kGpuRaster;
 
-    gpu::ContextCreationAttribs attribs;
-    attribs.bind_generates_resource = false;
-    attribs.enable_oop_rasterization = is_gpu_raster;
-    attribs.enable_raster_interface = true;
     attribs.enable_gles2_interface = false;
+    attribs.enable_raster_interface = true;
+    attribs.enable_oop_rasterization = is_gpu_raster;
 
     raster_context_ = std::make_unique<gpu::RasterInProcessContext>();
     auto result = raster_context_->Initialize(
         holder->task_executor(), attribs, gpu::SharedMemoryLimits(),
-        &gpu_memory_buffer_manager_, &image_factory_,
-        /*gpu_channel_manager_delegate=*/nullptr,
         holder->gpu_service()->gr_shader_cache(), activity_flags_);
     DCHECK_EQ(result, gpu::ContextResult::kSuccess);
 
@@ -140,18 +103,20 @@ gpu::ContextResult TestInProcessContextProvider::BindToCurrentThread() {
   }
 
   cache_controller_ = std::make_unique<ContextCacheController>(
-      ContextSupport(), base::ThreadTaskRunnerHandle::Get());
+      ContextSupport(), base::SingleThreadTaskRunner::GetCurrentDefault());
   cache_controller_->SetLock(GetLock());
 
   return gpu::ContextResult::kSuccess;
 }
 
 gpu::gles2::GLES2Interface* TestInProcessContextProvider::ContextGL() {
+  CheckValidThreadOrLockAcquired();
   DCHECK_EQ(type_, TestContextType::kGLES2);
   return gles2_context_->GetImplementation();
 }
 
 gpu::raster::RasterInterface* TestInProcessContextProvider::RasterInterface() {
+  CheckValidThreadOrLockAcquired();
   DCHECK_NE(type_, TestContextType::kGLES2);
   return raster_context_->GetImplementation();
 }
@@ -165,6 +130,7 @@ gpu::ContextSupport* TestInProcessContextProvider::ContextSupport() {
 }
 
 class GrDirectContext* TestInProcessContextProvider::GrContext() {
+  CheckValidThreadOrLockAcquired();
   if (gr_context_)
     return gr_context_->get();
 
@@ -193,21 +159,38 @@ TestInProcessContextProvider::SharedImageInterface() {
 }
 
 ContextCacheController* TestInProcessContextProvider::CacheController() {
+  CheckValidThreadOrLockAcquired();
   return cache_controller_.get();
 }
 
 base::Lock* TestInProcessContextProvider::GetLock() {
-  return base::OptionalOrNullptr(context_lock_);
+  return base::OptionalToPtr(context_lock_);
 }
 
 const gpu::Capabilities& TestInProcessContextProvider::ContextCapabilities()
     const {
+  CheckValidThreadOrLockAcquired();
   return caps_;
 }
 
 const gpu::GpuFeatureInfo& TestInProcessContextProvider::GetGpuFeatureInfo()
     const {
+  CheckValidThreadOrLockAcquired();
   return gpu_feature_info_;
+}
+
+void TestInProcessContextProvider::AddObserver(ContextLostObserver* obs) {
+  observers_.AddObserver(obs);
+}
+
+void TestInProcessContextProvider::RemoveObserver(ContextLostObserver* obs) {
+  observers_.RemoveObserver(obs);
+}
+
+void TestInProcessContextProvider::SendOnContextLost() {
+  for (auto& observer : observers_) {
+    observer.OnContextLost();
+  }
 }
 
 void TestInProcessContextProvider::ExecuteOnGpuThread(base::OnceClosure task) {
@@ -215,6 +198,16 @@ void TestInProcessContextProvider::ExecuteOnGpuThread(base::OnceClosure task) {
   raster_context_->GetCommandBufferForTest()
       ->service_for_testing()
       ->ScheduleOutOfOrderTask(std::move(task));
+}
+
+void TestInProcessContextProvider::CheckValidThreadOrLockAcquired() const {
+#if DCHECK_IS_ON()
+  if (context_lock_) {
+    context_lock_->AssertAcquired();
+  } else {
+    DCHECK(context_thread_checker_.CalledOnValidThread());
+  }
+#endif
 }
 
 }  // namespace viz

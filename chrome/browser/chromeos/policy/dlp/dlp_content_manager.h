@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "content/public/browser/desktop_media_id.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_stream_request.h"
 #include "ui/views/widget/widget.h"
 #include "url/gurl.h"
@@ -65,6 +66,7 @@ class DlpContentManager : public DlpContentObserver,
   // Depending on the result, calls |callback| and passes an indicator whether
   // to proceed or not.
   void CheckPrintingRestriction(content::WebContents* web_contents,
+                                content::GlobalRenderFrameHostId rfh_id,
                                 OnDlpRestrictionCheckedCallback callback);
 
   // Returns whether screenshots should be restricted for extensions API.
@@ -170,6 +172,11 @@ class DlpContentManager : public DlpContentObserver,
     const std::u16string& application_title() const;
     State state() const;
     base::WeakPtr<content::WebContents> web_contents() const;
+    // Saves the |dialog_widget| as the current dialog handle.
+    // Assumes that the previous widget is closed or not set. It's
+    // responsibility of the called to ensure that the restriction level is
+    // WARN.
+    void set_dialog_widget(base::WeakPtr<views::Widget> dialog_widget);
     void set_latest_confidential_contents_info(
         ConfidentialContentsInfo confidential_contents_info);
     // Returns the restriction information that was the last enforced on this
@@ -193,6 +200,8 @@ class DlpContentManager : public DlpContentObserver,
     void ChangeStateBeforeSourceChange();
     // Stops the screen share. Can only be called once.
     void Stop();
+    // Start the screen share after source change if pending.
+    void StartIfPending();
 
     // If necessary, hides or shows the paused/resumed notification for this
     // screen share. The notification should be updated after changing the state
@@ -205,11 +214,9 @@ class DlpContentManager : public DlpContentObserver,
 
     // If currently opened, closes the associated DlpWarnDialog widget.
     void MaybeCloseDialogWidget();
-    // Saves the |dialog_widget| as the current dialog handle.
-    // Assumes that the previous widget is closed or not set. It's
-    // responsibility of the called to ensure that the restriction level is
-    // WARN.
-    void SetDialogWidget(base::WeakPtr<views::Widget> dialog_widget);
+    // Returns true if there is an associated DlpWarnDialog object, false
+    // otherwise.
+    bool HasOpenDialogWidget();
 
     base::WeakPtr<ScreenShareInfo> GetWeakPtr();
 
@@ -244,6 +251,8 @@ class DlpContentManager : public DlpContentObserver,
     // Pointer to the associated DlpWarnDialog widget.
     // Not null only while the dialog is opened.
     base::WeakPtr<views::Widget> dialog_widget_ = nullptr;
+    // Remembers that it should be restarted after source update.
+    bool pending_start_on_source_change_ = false;
 
     // Set only for tab shares.
     base::WeakPtr<content::WebContents> web_contents_;
@@ -302,7 +311,8 @@ class DlpContentManager : public DlpContentObserver,
   // Returns which level and url of printing restriction is currently enforced
   // for |web_contents|.
   RestrictionLevelAndUrl GetPrintingRestrictionInfo(
-      content::WebContents* web_contents) const;
+      content::WebContents* web_contents,
+      content::GlobalRenderFrameHostId rfh_id) const;
 
   // Returns confidential info for screen share of a single |web_contents|.
   ConfidentialContentsInfo GetScreenShareConfidentialContentsInfoForWebContents(
@@ -378,6 +388,10 @@ class DlpContentManager : public DlpContentObserver,
   void RemoveAllowedContents(DlpConfidentialContents& contents,
                              DlpRulesManager::Restriction restriction);
 
+  // Updates confidentiality for |web_contents| with the |restriction_set|.
+  void UpdateConfidentiality(content::WebContents* web_contents,
+                             const DlpContentRestrictionSet& restriction_set);
+
   // Notifies observers if the restrictions they are listening to changed.
   void NotifyOnConfidentialityChanged(
       const DlpContentRestrictionSet& old_restriction_set,
@@ -396,7 +410,7 @@ class DlpContentManager : public DlpContentObserver,
   // List of the currently running screen shares.
   std::vector<std::unique_ptr<ScreenShareInfo>> running_screen_shares_;
 
-  raw_ptr<DlpReportingManager> reporting_manager_{nullptr};
+  raw_ptr<DlpReportingManager, DanglingUntriaged> reporting_manager_{nullptr};
 
   std::unique_ptr<DlpWarnNotifier> warn_notifier_;
 

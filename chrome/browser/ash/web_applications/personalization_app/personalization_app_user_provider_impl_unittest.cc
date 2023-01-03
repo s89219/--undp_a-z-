@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,12 @@
 
 #include <memory>
 
-#include "ash/constants/ash_features.h"
+#include "ash/public/cpp/default_user_image.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/containers/span.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -27,6 +26,7 @@
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/policy/policy_constants.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/user_manager/scoped_user_manager.h"
@@ -39,14 +39,14 @@
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
 #include "url/gurl.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 
@@ -100,6 +100,10 @@ class TestUserImageObserver
 
   void OnCameraPresenceCheckDone(bool is_camera_present) override {}
 
+  void OnIsEnterpriseManagedChanged(bool is_enterprise_managed) override {
+    is_enterprise_managed_ = is_enterprise_managed;
+  }
+
   mojo::PendingRemote<ash::personalization_app::mojom::UserImageObserver>
   pending_remote() {
     DCHECK(!user_image_observer_receiver_.is_bound());
@@ -118,12 +122,19 @@ class TestUserImageObserver
     return current_profile_image_;
   }
 
+  bool is_enterprise_managed() {
+    if (user_image_observer_receiver_.is_bound())
+      user_image_observer_receiver_.FlushForTesting();
+    return is_enterprise_managed_;
+  }
+
  private:
   mojo::Receiver<ash::personalization_app::mojom::UserImageObserver>
       user_image_observer_receiver_{this};
 
   ash::personalization_app::mojom::UserImagePtr current_user_image_;
   GURL current_profile_image_;
+  bool is_enterprise_managed_ = false;
 };
 
 }  // namespace
@@ -144,10 +155,7 @@ class PersonalizationAppUserProviderImplTest : public testing::Test {
  public:
   PersonalizationAppUserProviderImplTest()
       : scoped_user_manager_(std::make_unique<ash::FakeChromeUserManager>()),
-        profile_manager_(TestingBrowserProcess::GetGlobal()) {
-    scoped_feature_list_.InitAndEnableFeature(
-        ash::features::kPersonalizationHub);
-  }
+        profile_manager_(TestingBrowserProcess::GetGlobal()) {}
   PersonalizationAppUserProviderImplTest(
       const PersonalizationAppUserProviderImplTest&) = delete;
   PersonalizationAppUserProviderImplTest& operator=(
@@ -222,6 +230,13 @@ class PersonalizationAppUserProviderImplTest : public testing::Test {
     if (user_provider_remote_.is_bound())
       user_provider_remote_.FlushForTesting();
     return test_user_image_observer_.current_profile_image();
+  }
+
+  bool is_enterprise_managed() {
+    if (user_provider_remote_.is_bound()) {
+      user_provider_remote_.FlushForTesting();
+    }
+    return test_user_image_observer_.is_enterprise_managed();
   }
 
   const base::HistogramTester& histogram_tester() { return histogram_tester_; }
@@ -339,11 +354,8 @@ TEST_F(PersonalizationAppUserProviderImplTest, EncodesUserImageToPngBuffer) {
 
   // The BigBuffer data received from the observer should be equal to the test
   // image encoded to png.
-  ASSERT_EQ(expected_data.size(), encoded_png->size());
-  ASSERT_GT(expected_data.size(), 0);
-  for (auto i = 0; i < expected_data.size(); i++) {
-    EXPECT_EQ(expected_data.at(i), encoded_png->data().at(i));
-  }
+  ASSERT_GT(expected_data.size(), 0u);
+  EXPECT_EQ(expected_data, encoded_png->data());
 }
 
 TEST_F(PersonalizationAppUserProviderImplTest,
@@ -461,6 +473,48 @@ TEST_F(PersonalizationAppUserProviderImplTest,
       ash::default_user_image::kHistogramImageExternal, 1);
 }
 
+TEST_F(PersonalizationAppUserProviderImplTest, SetsUserImageManagedByPolicy) {
+  base::SequenceCheckerImpl::EnableStackLogging();
+  // Make sure image does not start managed.
+  ASSERT_FALSE(user_image_manager()->IsUserImageManaged());
+
+  SetUserImageObserver();
+  ASSERT_FALSE(is_enterprise_managed());
+
+  user_image_manager()->OnExternalDataSet(policy::key::kUserAvatarImage);
+  EXPECT_TRUE(is_enterprise_managed());
+
+  user_image_manager()->OnExternalDataCleared(policy::key::kUserAvatarImage);
+  EXPECT_FALSE(is_enterprise_managed());
+
+  // Changes back to enterprise managed.
+  user_image_manager()->OnExternalDataSet(policy::key::kUserAvatarImage);
+  EXPECT_TRUE(is_enterprise_managed());
+}
+
+TEST_F(PersonalizationAppUserProviderImplTest,
+       SendsDeprecatedAuthorAndWebsite) {
+  constexpr int kDeprecatedImageWithSourceInfoIndex = 19;
+  user_image_manager()->SaveUserDefaultImageIndex(
+      kDeprecatedImageWithSourceInfoIndex);
+  SetUserImageObserver();
+
+  absl::optional<default_user_image::DeprecatedSourceInfo>
+      expected_source_info =
+          default_user_image::GetDeprecatedDefaultImageSourceInfo(
+              kDeprecatedImageWithSourceInfoIndex);
+  ASSERT_TRUE(expected_source_info.has_value())
+      << "Image index " << kDeprecatedImageWithSourceInfoIndex
+      << " must have associated source info";
+
+  EXPECT_TRUE(current_user_image()->is_default_image());
+
+  EXPECT_EQ(expected_source_info->author,
+            current_user_image()->get_default_image().source_info->author);
+  EXPECT_EQ(expected_source_info->website,
+            current_user_image()->get_default_image().source_info->website);
+}
+
 class PersonalizationAppUserProviderImplWithMockTest
     : public PersonalizationAppUserProviderImplTest {
  protected:
@@ -524,5 +578,4 @@ TEST_F(PersonalizationAppUserProviderImplWithMockTest,
       ash::default_user_image::kHistogramImageExternal, 2);
 }
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app

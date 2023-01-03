@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,17 +9,19 @@
 #include <string>
 #include <vector>
 
-#include "ash/components/audio/cras_audio_handler.h"
 #include "ash/constants/ash_features.h"
 #include "ash/projector/model/projector_session_impl.h"
 #include "ash/projector/projector_metadata_controller.h"
 #include "ash/projector/projector_metrics.h"
-#include "ash/projector/test/mock_projector_client.h"
 #include "ash/projector/test/mock_projector_metadata_controller.h"
 #include "ash/projector/test/mock_projector_ui_controller.h"
 #include "ash/public/cpp/projector/projector_new_screencast_precondition.h"
 #include "ash/public/cpp/projector/projector_session.h"
+#include "ash/public/cpp/projector/speech_recognition_availability.h"
+#include "ash/public/cpp/test/mock_projector_client.h"
+#include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/webui/projector_app/public/cpp/projector_app_constants.h"
 #include "base/bind.h"
 #include "base/callback_forward.h"
 #include "base/files/file.h"
@@ -33,11 +35,15 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chromeos/dbus/audio/audio_node.h"
-#include "chromeos/dbus/audio/fake_cras_audio_client.h"
+#include "build/branding_buildflags.h"
+#include "chromeos/ash/components/audio/cras_audio_handler.h"
+#include "chromeos/ash/components/dbus/audio/audio_node.h"
+#include "chromeos/ash/components/dbus/audio/fake_cras_audio_client.h"
 #include "media/mojo/mojom/speech_recognition_result.h"
 #include "media/mojo/mojom/speech_recognition_service.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/icu/source/common/unicode/locid.h"
+#include "third_party/icu/source/common/unicode/utypes.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
@@ -122,16 +128,14 @@ class ProjectorMetadataControllerForTest : public ProjectorMetadataController {
 class ProjectorControllerTest : public AshTestBase {
  public:
   ProjectorControllerTest()
-      : AshTestBase(base::test::TaskEnvironment::TimeSource::MOCK_TIME) {
-    scoped_feature_list_.InitWithFeatures(
-        {features::kProjector, features::kProjectorAnnotator}, {});
-  }
+      : AshTestBase(base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
 
   ProjectorControllerTest(const ProjectorControllerTest&) = delete;
   ProjectorControllerTest& operator=(const ProjectorControllerTest&) = delete;
 
   // AshTestBase:
   void SetUp() override {
+    InitFeatureFlags();
     AshTestBase::SetUp();
 
     controller_ =
@@ -148,9 +152,12 @@ class ProjectorControllerTest : public AshTestBase {
     controller_->SetProjectorMetadataControllerForTest(
         std::move(mock_metadata_controller));
 
+    SpeechRecognitionAvailability availability;
+    availability.on_device_availability =
+        OnDeviceRecognitionAvailability::kAvailable;
+    ON_CALL(mock_client_, GetSpeechRecognitionAvailability)
+        .WillByDefault(testing::Return(availability));
     controller_->SetClient(&mock_client_);
-    controller_->OnSpeechRecognitionAvailabilityChanged(
-        SpeechRecognitionAvailability::kAvailable);
   }
 
   void InitializeRealMetadataController() {
@@ -163,6 +170,31 @@ class ProjectorControllerTest : public AshTestBase {
   }
 
  protected:
+  virtual void InitFeatureFlags() {
+    scoped_feature_list_.InitWithFeatures(
+        {features::kProjector, features::kProjectorAnnotator}, {});
+  }
+
+  void InitFakeMic(bool mic_present) {
+    if (!mic_present) {
+      CrasAudioHandler::Get()->SetActiveInputNodes({});
+      return;
+    }
+
+    const AudioNodeInfo kInternalMic[] = {
+        {true, 55555, "Fake Mic", "INTERNAL_MIC", "Internal Mic"}};
+    const AudioNode audio_node =
+        AudioNode(kInternalMic->is_input, kInternalMic->id,
+                  /*has_v2_stable_device_id=*/false, kInternalMic->id,
+                  /*stable_device_id_v2=*/0, kInternalMic->device_name,
+                  kInternalMic->type, kInternalMic->name, /*active=*/false,
+                  /*plugged_time=*/0, /*max_supported_channels=*/1,
+                  /*audio_effect=*/1, /*number_of_volume_steps=*/25);
+    FakeCrasAudioClient::Get()->SetAudioNodesForTesting({audio_node});
+
+    CrasAudioHandler::Get()->SetActiveInputNodes({kInternalMic->id});
+  }
+
   MockProjectorUiController* mock_ui_controller_ = nullptr;
   MockProjectorMetadataController* mock_metadata_controller_ = nullptr;
   ProjectorMetadataControllerForTest* metadata_controller_;
@@ -171,7 +203,6 @@ class ProjectorControllerTest : public AshTestBase {
   base::HistogramTester histogram_tester_;
   base::ScopedTempDir temp_dir_;
 
- private:
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
@@ -194,23 +225,14 @@ TEST_F(ProjectorControllerTest, OnAudioNodesChanged) {
   ON_CALL(mock_client_, IsDriveFsMounted())
       .WillByDefault(testing::Return(true));
 
-  const AudioNodeInfo kInternalMic[] = {
-      {true, 55555, "Fake Mic", "INTERNAL_MIC", "Internal Mic"}};
-  const chromeos::AudioNode audio_node = chromeos::AudioNode(
-      kInternalMic->is_input, kInternalMic->id,
-      /*has_v2_stable_device_id=*/false, kInternalMic->id,
-      /*stable_device_id_v2=*/0, kInternalMic->device_name, kInternalMic->type,
-      kInternalMic->name, /*active=*/false,
-      /*plugged_time=*/0, /*max_supported_channels=*/1, /*audio_effect=*/1);
-  chromeos::FakeCrasAudioClient::Get()->SetAudioNodesForTesting({audio_node});
-
-  CrasAudioHandler::Get()->SetActiveInputNodes({kInternalMic->id});
+  InitFakeMic(/*mic_present=*/true);
   EXPECT_CALL(mock_client_,
               OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
-                  NewScreencastPreconditionState::kEnabled, {})));
+                  NewScreencastPreconditionState::kEnabled,
+                  {NewScreencastPreconditionReason::kEnabledBySoda})));
   controller_->OnAudioNodesChanged();
 
-  CrasAudioHandler::Get()->SetActiveInputNodes({});
+  InitFakeMic(/*mic_present=*/false);
   EXPECT_CALL(mock_client_,
               OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
                   NewScreencastPreconditionState::kDisabled,
@@ -219,19 +241,52 @@ TEST_F(ProjectorControllerTest, OnAudioNodesChanged) {
 }
 
 TEST_F(ProjectorControllerTest, OnSpeechRecognitionAvailabilityChanged) {
-  controller_->OnSpeechRecognitionAvailabilityChanged(
-      SpeechRecognitionAvailability::kAvailable);
-  EXPECT_TRUE(controller_->IsEligible());
+  SpeechRecognitionAvailability availability;
 
-  controller_->OnSpeechRecognitionAvailabilityChanged(
-      SpeechRecognitionAvailability::kOnDeviceSpeechRecognitionNotSupported);
-  EXPECT_FALSE(controller_->IsEligible());
+  // Soda is not available.
+  availability.use_on_device = true;
+  availability.on_device_availability =
+      OnDeviceRecognitionAvailability::kSodaNotAvailable;
+  ON_CALL(mock_client_, GetSpeechRecognitionAvailability)
+      .WillByDefault(testing::Return(availability));
+  ON_CALL(mock_client_, IsDriveFsMounted())
+      .WillByDefault(testing::Return(true));
+  EXPECT_CALL(mock_client_,
+              OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
+                  NewScreencastPreconditionState::kDisabled,
+                  {NewScreencastPreconditionReason::
+                       kOnDeviceSpeechRecognitionNotSupported})));
+  controller_->OnSpeechRecognitionAvailabilityChanged();
+
+  // Soda is available.
+  availability.on_device_availability =
+      OnDeviceRecognitionAvailability::kAvailable;
+  ON_CALL(mock_client_, GetSpeechRecognitionAvailability)
+      .WillByDefault(testing::Return(availability));
+  EXPECT_CALL(mock_client_,
+              OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
+                  NewScreencastPreconditionState::kEnabled,
+                  {NewScreencastPreconditionReason::kEnabledBySoda})));
+  controller_->OnSpeechRecognitionAvailabilityChanged();
+
+  // Server based available.
+  availability.use_on_device = false;
+  availability.server_based_availability =
+      ServerBasedRecognitionAvailability::kAvailable;
+  ON_CALL(mock_client_, GetSpeechRecognitionAvailability)
+      .WillByDefault(testing::Return(availability));
+  EXPECT_CALL(mock_client_,
+              OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
+                  NewScreencastPreconditionState::kEnabled,
+                  {NewScreencastPreconditionReason::
+                       kEnabledByServerSideSpeechRecognition})));
+  controller_->OnSpeechRecognitionAvailabilityChanged();
 }
 
-TEST_F(ProjectorControllerTest, OnMarkerPressed) {
+TEST_F(ProjectorControllerTest, EnableAnnotatorTool) {
   // Verify that |OnMarkerPressed| in |ProjectorUiController| is called.
-  EXPECT_CALL(*mock_ui_controller_, OnMarkerPressed());
-  controller_->OnMarkerPressed();
+  EXPECT_CALL(*mock_ui_controller_, EnableAnnotatorTool());
+  controller_->EnableAnnotatorTool();
 }
 
 TEST_F(ProjectorControllerTest, SetAnnotatorTool) {
@@ -244,10 +299,11 @@ TEST_F(ProjectorControllerTest, SetAnnotatorTool) {
 TEST_F(ProjectorControllerTest, RecordingStarted) {
   EXPECT_CALL(mock_client_, StartSpeechRecognition());
   EXPECT_CALL(*mock_metadata_controller_, OnRecordingStarted());
-  // Verify that |CloseToolbar| in |ProjectorUiController| is called.
-  EXPECT_CALL(*mock_ui_controller_, ShowToolbar()).Times(1);
+  // Verify that |ShowAnnotationTray| in |ProjectorUiController| is called.
+  auto* root = Shell::GetPrimaryRootWindow();
+  EXPECT_CALL(*mock_ui_controller_, ShowAnnotationTray(root)).Times(1);
 
-  controller_->OnRecordingStarted(/*is_in_projector_mode=*/true);
+  controller_->OnRecordingStarted(root, /*is_in_projector_mode=*/true);
   histogram_tester_.ExpectUniqueSample(
       kProjectorCreationFlowHistogramName,
       /*sample=*/ProjectorCreationFlow::kRecordingStarted, /*count=*/1);
@@ -255,13 +311,13 @@ TEST_F(ProjectorControllerTest, RecordingStarted) {
 
 TEST_F(ProjectorControllerTest, RecordingEnded) {
   base::FilePath screencast_container_path;
-  ASSERT_TRUE(
-      mock_client_.GetDriveFsMountPointPath(&screencast_container_path));
+  ASSERT_TRUE(mock_client_.GetBaseStoragePath(&screencast_container_path));
   ON_CALL(mock_client_, IsDriveFsMounted())
       .WillByDefault(testing::Return(true));
 
-  // Verify that |CloseToolbar| in |ProjectorUiController| is called.
-  EXPECT_CALL(*mock_ui_controller_, CloseToolbar()).Times(1);
+  // Verify that |HideAnnotationTray| in |ProjectorUiController| is
+  // called.
+  EXPECT_CALL(*mock_ui_controller_, HideAnnotationTray()).Times(1);
   EXPECT_CALL(mock_client_, OpenProjectorApp()).Times(0);
   EXPECT_CALL(mock_client_,
               OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
@@ -273,7 +329,8 @@ TEST_F(ProjectorControllerTest, RecordingEnded) {
       kProjectorCreationFlowHistogramName,
       /*sample=*/ProjectorCreationFlow::kSessionStarted, /*count=*/1);
 
-  controller_->OnRecordingStarted(/*is_in_projector_mode=*/true);
+  controller_->OnRecordingStarted(Shell::GetPrimaryRootWindow(),
+                                  /*is_in_projector_mode=*/true);
   histogram_tester_.ExpectBucketCount(
       kProjectorCreationFlowHistogramName,
       /*sample=*/ProjectorCreationFlow::kRecordingStarted, /*count=*/1);
@@ -281,10 +338,14 @@ TEST_F(ProjectorControllerTest, RecordingEnded) {
   base::RunLoop runLoop;
   controller_->CreateScreencastContainerFolder(base::BindLambdaForTesting(
       [&](const base::FilePath& screencast_file_path_no_extension) {
+        // Expects screencast files name equals to it's parent folder name:
+        EXPECT_EQ(screencast_file_path_no_extension.BaseName(),
+                  screencast_file_path_no_extension.DirName().BaseName());
         EXPECT_CALL(
             mock_client_,
             OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
-                NewScreencastPreconditionState::kEnabled, {})))
+                NewScreencastPreconditionState::kEnabled,
+                {NewScreencastPreconditionReason::kEnabledBySoda})))
             .Times(0);
         EXPECT_CALL(mock_client_, StopSpeechRecognition())
             .WillOnce(testing::Invoke(
@@ -321,8 +382,7 @@ TEST_P(ProjectorOnDlpRestrictionCheckedAtVideoEndTest, WrapUpRecordingOnce) {
   bool user_deleted_video_file = std::get<1>(GetParam());
 
   base::FilePath screencast_container_path;
-  ASSERT_TRUE(
-      mock_client_.GetDriveFsMountPointPath(&screencast_container_path));
+  ASSERT_TRUE(mock_client_.GetBaseStoragePath(&screencast_container_path));
   ON_CALL(mock_client_, IsDriveFsMounted())
       .WillByDefault(testing::Return(true));
 
@@ -343,7 +403,8 @@ TEST_P(ProjectorOnDlpRestrictionCheckedAtVideoEndTest, WrapUpRecordingOnce) {
       kProjectorCreationFlowHistogramName,
       /*sample=*/ProjectorCreationFlow::kSessionStarted, /*count=*/1);
 
-  controller_->OnRecordingStarted(/*is_in_projector_mode=*/true);
+  controller_->OnRecordingStarted(Shell::GetPrimaryRootWindow(),
+                                  /*is_in_projector_mode=*/true);
   histogram_tester_.ExpectBucketCount(
       kProjectorCreationFlowHistogramName,
       /*sample=*/ProjectorCreationFlow::kRecordingStarted, /*count=*/1);
@@ -354,22 +415,25 @@ TEST_P(ProjectorOnDlpRestrictionCheckedAtVideoEndTest, WrapUpRecordingOnce) {
         EXPECT_CALL(
             mock_client_,
             OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
-                NewScreencastPreconditionState::kEnabled, {})));
+                NewScreencastPreconditionState::kEnabled,
+                {NewScreencastPreconditionReason::kEnabledBySoda})));
 
+        const std::string expected_screencast_name =
+            "Screencast 2021-01-02 20.02.10";
+        const base::FilePath expected_path =
+            screencast_container_path.Append("root")
+                .Append("projector_data")
+                // Screencast container folder.
+                .Append(expected_screencast_name)
+                // Screencast file name without extension.
+                .Append(expected_screencast_name);
         if (!user_deleted_video_file) {
           // Verify that |SaveMetadata| in |ProjectorMetadataController| is
           // called with the expected path.
-          const std::string expected_screencast_name =
-              "Recording 2021-01-02 20.02.10";
-          const base::FilePath expected_path =
-              screencast_container_path.Append("root")
-                  .Append("projector_data")
-                  // Screencast container folder.
-                  .Append(expected_screencast_name)
-                  // Screencast file name without extension.
-                  .Append(expected_screencast_name);
           EXPECT_EQ(screencast_file_path_no_extension, expected_path);
-          // Verify that save metadata only triggered once.
+          // Verify that save metadata only triggered once. The path will not
+          // change as the clock advances.
+          task_environment()->AdvanceClock(base::Minutes(1));
           EXPECT_CALL(*mock_metadata_controller_, SaveMetadata(expected_path))
               .Times(1);
           // Verify that thumbnail file is saved.
@@ -381,6 +445,14 @@ TEST_P(ProjectorOnDlpRestrictionCheckedAtVideoEndTest, WrapUpRecordingOnce) {
         } else {
           // Verify that save metadata is not triggered.
           EXPECT_CALL(*mock_metadata_controller_, SaveMetadata(_)).Times(0);
+          // Expects notification gets resumed if recording deleted.
+          const std::vector<base::FilePath> screencast_files = {
+              expected_path.AddExtension(kProjectorMetadataFileExtension),
+              expected_path.AddExtension(kProjectorMediaFileExtension),
+              expected_path.DirName().Append(
+                  kScreencastDefaultThumbnailFileName)};
+          EXPECT_CALL(mock_client_, ToggleFileSyncingNotificationForPaths(
+                                        screencast_files, /*suppress=*/false));
           // Verify that Projector Folder is cleaned up.
           controller_->SetOnPathDeletedCallbackForTest(
               base::BindLambdaForTesting(
@@ -481,6 +553,52 @@ TEST_F(ProjectorControllerTest, OnDriveMountFailed) {
                 NewScreencastPreconditionState::kDisabled,
                 {NewScreencastPreconditionReason::kDriveFsMountFailed}),
             controller_->GetNewScreencastPrecondition());
+}
+
+TEST_F(ProjectorControllerTest, SuppressDriveNotification) {
+  ON_CALL(mock_client_, IsDriveFsMounted())
+      .WillByDefault(testing::Return(true));
+
+  base::FilePath mounted_path;
+  ASSERT_TRUE(mock_client_.GetBaseStoragePath(&mounted_path));
+
+  // The screencast name, which is used to form the screencast folder/files
+  // paths, is generated on projector session starts
+  auto* projector_session = controller_->projector_session();
+  projector_session->Start("projector_data");
+  const base::FilePath expect_container_path =
+      mounted_path.Append("root")
+          .Append(projector_session->storage_dir())
+          .Append(projector_session->screencast_name());
+
+  const base::FilePath expected_path_with_no_extension =
+      expect_container_path.Append(projector_session->screencast_name());
+
+  const std::vector<base::FilePath> screencast_files = {
+      expected_path_with_no_extension.AddExtension(
+          kProjectorMetadataFileExtension),
+      expected_path_with_no_extension.AddExtension(
+          kProjectorMediaFileExtension),
+      expect_container_path.Append(kScreencastDefaultThumbnailFileName)};
+
+  // Expects notification gets suppressed when creating screencast folder.
+  EXPECT_CALL(mock_client_, ToggleFileSyncingNotificationForPaths(
+                                screencast_files, /*suppress=*/true))
+      .Times(1);
+  base::RunLoop run_loop;
+  controller_->CreateScreencastContainerFolder(base::BindLambdaForTesting(
+      [&](const base::FilePath& screencast_file_path_no_extension) {
+        EXPECT_EQ(expected_path_with_no_extension,
+                  screencast_file_path_no_extension);
+        // Expects notification gets resumed if recording is aborted.
+        EXPECT_CALL(mock_client_, ToggleFileSyncingNotificationForPaths(
+                                      screencast_files, /*suppress=*/false))
+            .Times(1);
+        // Simulates starting abort called by capture mode.
+        controller_->OnRecordingStartAborted();
+        run_loop.Quit();
+      }));
+  run_loop.Run();
 }
 
 }  // namespace ash

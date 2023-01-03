@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/segmentation_platform/internal/database/ukm_database_backend.h"
 
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/rand_util.h"
 #include "components/segmentation_platform/internal/database/ukm_metrics_table.h"
 #include "components/segmentation_platform/internal/database/ukm_types.h"
@@ -46,6 +47,9 @@ void BindValuesToStatement(
         break;
       case processing::ProcessedValue::Type::INT64:
         statement.BindInt64(i, value.int64_val);
+        break;
+      case processing::ProcessedValue::Type::URL:
+        statement.BindString(i, UkmUrlTable::GetDatabaseUrlString(*value.url));
         break;
       case processing::ProcessedValue::Type::UNKNOWN:
         NOTREACHED();
@@ -147,12 +151,14 @@ void UkmDatabaseBackend::UpdateUrlForUkmSource(ukm::SourceId source_id,
 
   if (!url_table_.IsUrlInTable(url_id)) {
     if (is_validated) {
-      url_table_.WriteUrl(url, url_id);
+      url_table_.WriteUrl(url, url_id, base::Time::Now());
       // Remove from list so we don't add the URL again to table later.
       urls_not_validated_.erase(url_id);
     } else {
       urls_not_validated_.insert(url_id);
     }
+  } else {
+    url_table_.UpdateUrlTimestamp(url_id, base::Time::Now());
   }
   // Keep track of source to URL ID mapping for future metrics.
   source_to_url_[source_id] = url_id;
@@ -169,7 +175,7 @@ void UkmDatabaseBackend::OnUrlValidated(const GURL& url) {
   UrlId url_id = UkmUrlTable::GenerateUrlId(url);
   // Write URL to table only if it's needed and it's not already added.
   if (urls_not_validated_.count(url_id) && SanityCheckUrl(url, url_id)) {
-    url_table_.WriteUrl(url, url_id);
+    url_table_.WriteUrl(url, url_id, base::Time::Now());
     urls_not_validated_.erase(url_id);
   }
 }
@@ -219,11 +225,13 @@ void UkmDatabaseBackend::RunReadonlyQueries(QueryList&& queries,
     BindValuesToStatement(query.bind_values, statement);
 
     if (!statement.is_valid() || !statement.Step()) {
+      VLOG(1) << "Failed to run SQL query " << query.query;
       success = false;
       break;
     }
 
     float output = GetSingleFloatOutput(statement);
+    VLOG(1) << "Output from SQL query " << query.query << " Result: " << output;
     result[index].push_back(processing::ProcessedValue(output));
   }
   callback_task_runner_->PostTask(
@@ -236,6 +244,7 @@ void UkmDatabaseBackend::DeleteEntriesOlderThan(base::Time time) {
   std::vector<UrlId> deleted_urls =
       metrics_table_.DeleteEventsBeforeTimestamp(time);
   url_table_.RemoveUrls(deleted_urls);
+  url_table_.DeleteUrlsBeforeTimestamp(time);
 }
 
 void UkmDatabaseBackend::DeleteAllUrls() {

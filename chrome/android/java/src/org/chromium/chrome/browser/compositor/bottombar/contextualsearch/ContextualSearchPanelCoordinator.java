@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -141,7 +141,7 @@ public class ContextualSearchPanelCoordinator implements ContextualSearchPanelIn
     }
 
     @Override
-    public void setIsPromoActive(boolean show, boolean isMandatory) {}
+    public void setIsPromoActive(boolean show) {}
 
     @Override
     public boolean wasPromoInteractive() {
@@ -164,15 +164,13 @@ public class ContextualSearchPanelCoordinator implements ContextualSearchPanelIn
     @Override
     public void onSearchTermResolved(String searchTerm, String thumbnailUrl, String quickActionUri,
             int quickActionCategory, int cardTagEnum, @Nullable List<String> inBarRelatedSearches,
-            boolean showDefaultSearchInBar, @Nullable List<String> inContentRelatedSearches,
-            boolean showDefaultSearchInContent) {}
+            boolean showDefaultSearchInBar) {}
 
     @Override
     public void onSearchTermResolved(String searchTerm, @Nullable String pronunciation,
             String thumbnailUrl, String quickActionUri, int quickActionCategory, int cardTagEnum,
             @Nullable List<String> inBarRelatedSearches, boolean showDefaultSearchInBar,
-            int defaultQueryInBarTextMaxWidthPx, @Nullable List<String> inContentRelatedSearches,
-            boolean showDefaultSearchInContent, int defaultQueryInContentTextMaxWidthPx) {}
+            int defaultQueryInBarTextMaxWidthPx) {}
 
     @Override
     public void setCaption(String caption) {}
@@ -190,9 +188,6 @@ public class ContextualSearchPanelCoordinator implements ContextualSearchPanelIn
 
     @Override
     public void onContextualSearchPrefChanged(boolean isEnabled) {}
-
-    @Override
-    public void onPanelNavigatedToPrefetchedSearch(boolean didResolve) {}
 
     @Override
     public void setWasSearchContentViewSeen() {}
@@ -303,6 +298,9 @@ public class ContextualSearchPanelCoordinator implements ContextualSearchPanelIn
     }
 
     @Override
+    public void setCanHideAndroidBrowserControls(boolean canHideAndroidBrowserControls) {}
+
+    @Override
     public boolean isPanelOpened() {
         return mBottomSheetController.isSheetOpen();
     }
@@ -330,6 +328,12 @@ public class ContextualSearchPanelCoordinator implements ContextualSearchPanelIn
     @Override
     public @PanelState int getPanelState() {
         return PanelState.UNDEFINED;
+    }
+
+    @Override
+    @VisibleForTesting
+    public boolean getCanHideAndroidBrowserControls() {
+        return false;
     }
 
     // ---------------------------------------------------------------------------------------------

@@ -74,7 +74,8 @@ class CORE_EXPORT ImageResource final
 
   void DidAddClient(ResourceClient*) override;
 
-  ResourcePriority PriorityFromObservers() override;
+  std::pair<ResourcePriority, ResourcePriority> PriorityFromObservers()
+      override;
 
   void AllClientsAndObserversRemoved() override;
 
@@ -135,10 +136,10 @@ class CORE_EXPORT ImageResource final
   Member<ImageResourceContent> content_;
 
   Member<MultipartImageResourceParser> multipart_parser_;
+  base::TimeTicks last_flush_time_;
+
   MultipartParsingState multipart_parsing_state_ =
       MultipartParsingState::kWaitingForFirstPart;
-
-  base::TimeTicks last_flush_time_;
 
   bool is_during_finish_as_error_ = false;
 

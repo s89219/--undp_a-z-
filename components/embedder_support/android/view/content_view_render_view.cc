@@ -1,10 +1,9 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/embedder_support/android/view/content_view_render_view.h"
 #include <android/bitmap.h>
-#include <android/native_window_jni.h>
 
 #include <memory>
 

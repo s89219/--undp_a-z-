@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_ASH_CHROME_SHELL_DELEGATE_H_
 
 #include <memory>
+#include <string>
 
 #include "ash/shell_delegate.h"
 #include "base/callback_forward.h"
@@ -24,6 +25,8 @@ class ChromeShellDelegate : public ash::ShellDelegate {
   bool CanShowWindowForUser(const aura::Window* window) const override;
   std::unique_ptr<ash::CaptureModeDelegate> CreateCaptureModeDelegate()
       const override;
+  std::unique_ptr<ash::GlanceablesDelegate> CreateGlanceablesDelegate(
+      ash::GlanceablesController* controller) const override;
   ash::AccessibilityDelegate* CreateAccessibilityDelegate() override;
   std::unique_ptr<ash::BackGestureContextualNudgeDelegate>
   CreateBackGestureContextualNudgeDelegate(
@@ -31,6 +34,8 @@ class ChromeShellDelegate : public ash::ShellDelegate {
   std::unique_ptr<ash::NearbyShareDelegate> CreateNearbyShareDelegate(
       ash::NearbyShareController* controller) const override;
   std::unique_ptr<ash::DesksTemplatesDelegate> CreateDesksTemplatesDelegate()
+      const override;
+  std::unique_ptr<ash::SystemSoundsDelegate> CreateSystemSoundsDelegate()
       const override;
   scoped_refptr<network::SharedURLLoaderFactory>
   GetGeolocationUrlLoaderFactory() const override;
@@ -41,14 +46,14 @@ class ChromeShellDelegate : public ash::ShellDelegate {
   bool ShouldWaitForTouchPressAck(gfx::NativeWindow window) override;
   bool IsTabDrag(const ui::OSExchangeData& drop_data) override;
   int GetBrowserWebUITabStripHeight() override;
-  void BindBluetoothSystemFactory(
-      mojo::PendingReceiver<device::mojom::BluetoothSystemFactory> receiver)
-      override;
   void BindFingerprint(
       mojo::PendingReceiver<device::mojom::Fingerprint> receiver) override;
   void BindMultiDeviceSetup(
       mojo::PendingReceiver<ash::multidevice_setup::mojom::MultiDeviceSetup>
           receiver) override;
+  void BindMultiCaptureService(
+      mojo::PendingReceiver<video_capture::mojom::MultiCaptureService> receiver)
+      override;
   media_session::MediaSessionService* GetMediaSessionService() override;
   bool IsSessionRestoreInProgress() const override;
   void SetUpEnvironmentForLockedFullscreen(bool locked) override;
@@ -62,6 +67,12 @@ class ChromeShellDelegate : public ash::ShellDelegate {
   static void SetDisableLoggingRedirectForTesting(bool value);
   static void ResetDisableLoggingRedirectForTesting();
   const GURL& GetLastCommittedURLForWindowIfAny(aura::Window* window) override;
+  version_info::Channel GetChannel() override;
+  void ForceSkipWarningUserOnClose(
+      const std::vector<aura::Window*>& windows) override;
+  std::string GetVersionString() override;
+  void ShouldExitFullscreenBeforeLock(
+      ShouldExitFullscreenCallback callback) override;
 };
 
 #endif  // CHROME_BROWSER_UI_ASH_CHROME_SHELL_DELEGATE_H_

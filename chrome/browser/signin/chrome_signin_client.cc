@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,7 @@
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/cookie_settings_util.h"
 #include "components/signin/public/base/signin_buildflags.h"
+#include "components/signin/public/base/signin_client.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -55,13 +56,13 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/net/delay_network_call.h"
-#include "chromeos/network/network_handler.h"
+#include "chromeos/ash/components/network/network_handler.h"
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/lacros/account_manager/account_manager_util.h"
 #include "chromeos/crosapi/mojom/account_manager.mojom.h"
-#include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #include "components/account_manager_core/account.h"
 #include "components/account_manager_core/account_manager_util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -94,27 +95,46 @@ signin_metrics::ProfileSignout kAlwaysAllowedSignoutSources[] = {
     signin_metrics::ProfileSignout::FORCE_SIGNOUT_ALWAYS_ALLOWED_FOR_TEST,
     // Allowed, because access to this entry point is controlled to only be
     // enabled if the user may turn off sync.
-    signin_metrics::ProfileSignout::USER_CLICKED_REVOKE_SYNC_CONSENT_SETTINGS};
+    signin_metrics::ProfileSignout::USER_CLICKED_REVOKE_SYNC_CONSENT_SETTINGS,
+    // Allowed, because the dialog offers the option to the user to sign out.
+    // Note that the dialog is only shown on iOS and isn't planned to be shown
+    // on the other platforms since they already support user policies (no need
+    // for a notification in that case). Still, the metric is added to the
+    // kAlwaysAllowedSignoutSources for coherence.
+    signin_metrics::ProfileSignout::
+        USER_CLICKED_SIGNOUT_FROM_USER_POLICY_NOTIFICATION_DIALOG,
+};
+
+SigninClient::SignoutDecision UserSignoutSettingToSignoutDecision(
+    Profile* profile) {
+  signin_util::UserSignoutSetting* setting =
+      signin_util::UserSignoutSetting::GetForProfile(profile);
+
+  if (!setting->IsRevokeSyncConsentAllowed())
+    return SigninClient::SignoutDecision::REVOKE_SYNC_DISALLOWED;
+
+  return setting->IsClearPrimaryAccountAllowed()
+             ? SigninClient::SignoutDecision::ALLOW
+             : SigninClient::SignoutDecision::CLEAR_PRIMARY_ACCOUNT_DISALLOWED;
+}
 
 SigninClient::SignoutDecision IsSignoutAllowed(
     Profile* profile,
     const signin_metrics::ProfileSignout signout_source) {
-  if (signin_util::IsUserSignoutAllowedForProfile(profile))
-    return SigninClient::SignoutDecision::ALLOW_SIGNOUT;
+  SigninClient::SignoutDecision signout_decision =
+      UserSignoutSettingToSignoutDecision(profile);
 
-  auto* identity_manager =
-      IdentityManagerFactory::GetForProfileIfExists(profile);
-  if (identity_manager &&
-      !identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
-    return SigninClient::SignoutDecision::ALLOW_SIGNOUT;
-  }
+  if (signout_decision == SigninClient::SignoutDecision::ALLOW)
+    return signout_decision;
 
+  // TODO(crbug.com/1366360): Revisit |kAlwaysAllowedSignoutSources| in general
+  // and for Lacros main profile.
   for (const auto& always_allowed_source : kAlwaysAllowedSignoutSources) {
     if (signout_source == always_allowed_source)
-      return SigninClient::SignoutDecision::ALLOW_SIGNOUT;
+      return SigninClient::SignoutDecision::ALLOW;
   }
 
-  return SigninClient::SignoutDecision::DISALLOW_SIGNOUT;
+  return signout_decision;
 }
 
 }  // namespace
@@ -178,6 +198,11 @@ void ChromeSigninClient::RemoveContentSettingsObserver(
     content_settings::Observer* observer) {
   HostContentSettingsMapFactory::GetForProfile(profile_)
       ->RemoveObserver(observer);
+}
+
+bool ChromeSigninClient::IsClearPrimaryAccountAllowed() const {
+  return UserSignoutSettingToSignoutDecision(profile_) ==
+         SigninClient::SignoutDecision::ALLOW;
 }
 
 void ChromeSigninClient::PreSignOut(
@@ -248,10 +273,10 @@ void ChromeSigninClient::OnConnectionChanged(
 
 void ChromeSigninClient::DelayNetworkCall(base::OnceClosure callback) {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  // Do not make network requests in unit tests. chromeos::NetworkHandler should
+  // Do not make network requests in unit tests. ash::NetworkHandler should
   // not be used and is not expected to have been initialized in unit tests.
   if (url_loader_factory_for_testing_ &&
-      !chromeos::NetworkHandler::IsInitialized()) {
+      !ash::NetworkHandler::IsInitialized()) {
     std::move(callback).Run();
     return;
   }
@@ -289,10 +314,6 @@ void ChromeSigninClient::VerifySyncToken() {
 #endif
 }
 
-bool ChromeSigninClient::IsNonEnterpriseUser(const std::string& username) {
-  return policy::BrowserPolicyConnector::IsNonEnterpriseUser(username);
-}
-
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 // Returns the account that must be auto-signed-in to the Main Profile in
 // Lacros.
@@ -313,7 +334,7 @@ ChromeSigninClient::GetInitialPrimaryAccount() {
     return absl::nullopt;
 
   const crosapi::mojom::AccountPtr& device_account =
-      chromeos::LacrosService::Get()->init_params()->device_account;
+      chromeos::BrowserParamsProxy::Get()->DeviceAccount();
   if (!device_account)
     return absl::nullopt;
 
@@ -329,9 +350,8 @@ absl::optional<bool> ChromeSigninClient::IsInitialPrimaryAccountChild() const {
   if (!profile_->IsMainProfile())
     return absl::nullopt;
 
-  DCHECK(chromeos::LacrosService::Get());
   const bool is_child_session =
-      chromeos::LacrosService::Get()->init_params()->session_type ==
+      chromeos::BrowserParamsProxy::Get()->SessionType() ==
       crosapi::mojom::SessionType::kChildSession;
   return is_child_session;
 }
@@ -396,7 +416,7 @@ void ChromeSigninClient::OnCloseBrowsersAborted(
 
   // Disallow sign-out (aborted).
   std::move(on_signout_decision_reached_)
-      .Run(SignoutDecision::DISALLOW_SIGNOUT);
+      .Run(SignoutDecision::REVOKE_SYNC_DISALLOWED);
 }
 
 void ChromeSigninClient::LockForceSigninProfile(

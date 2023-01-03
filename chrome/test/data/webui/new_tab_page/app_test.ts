@@ -1,37 +1,38 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://webui-test/mojo_webui_test_support.js';
 
-import {counterfactualLoad, Module, ModuleDescriptor, ModuleRegistry} from 'chrome://new-tab-page/lazy_load.js';
+import {counterfactualLoad, LensUploadDialogElement, Module, ModuleDescriptor, ModuleRegistry} from 'chrome://new-tab-page/lazy_load.js';
 import {$$, AppElement, BackgroundManager, BrowserCommandProxy, CustomizeDialogPage, NewTabPageProxy, NtpElement, VoiceAction, WindowProxy} from 'chrome://new-tab-page/new_tab_page.js';
-import {PageCallbackRouter, PageHandlerRemote, PageInterface} from 'chrome://new-tab-page/new_tab_page.mojom-webui.js';
+import {PageCallbackRouter, PageHandlerRemote, PageRemote} from 'chrome://new-tab-page/new_tab_page.mojom-webui.js';
 import {Command, CommandHandlerRemote} from 'chrome://resources/js/browser_command/browser_command.mojom-webui.js';
-import {isMac} from 'chrome://resources/js/cr.m.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
-import {assertDeepEquals, assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+import {isMac} from 'chrome://resources/js/platform.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
+import {assertDeepEquals, assertEquals, assertFalse, assertGE, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {eventToPromise, flushTasks} from 'chrome://webui-test/test_util.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-import {fakeMetricsPrivate, MetricsTracker} from './metrics_test_support.js';
+import {fakeMetricsPrivate, MetricsTracker} from './../metrics_test_support.js';
 import {assertNotStyle, assertStyle, createBackgroundImage, createTheme, installMock} from './test_support.js';
 
 suite('NewTabPageAppTest', () => {
   let app: AppElement;
-  let windowProxy: TestBrowserProxy;
-  let handler: TestBrowserProxy;
-  let callbackRouterRemote: PageHandlerRemote&PageInterface;
+  let windowProxy: TestBrowserProxy<WindowProxy>;
+  let handler: TestBrowserProxy<PageHandlerRemote>;
+  let callbackRouterRemote: PageRemote;
   let metrics: MetricsTracker;
-  let moduleRegistry: TestBrowserProxy;
-  let backgroundManager: TestBrowserProxy;
+  let moduleRegistry: TestBrowserProxy<ModuleRegistry>;
+  let backgroundManager: TestBrowserProxy<BackgroundManager>;
   let moduleResolver: PromiseResolver<Module[]>;
 
   const url: URL = new URL(location.href);
 
   setup(async () => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     windowProxy = installMock(WindowProxy);
     handler = installMock(
@@ -47,7 +48,7 @@ suite('NewTabPageAppTest', () => {
     handler.setResultFor('getDoodle', Promise.resolve({
       doodle: null,
     }));
-    handler.setResultFor('getPromo', Promise.resolve({promo: null}));
+    handler.setResultFor('getModulesIdNames', Promise.resolve({data: []}));
     windowProxy.setResultMapperFor('matchMedia', () => ({
                                                    addListener() {},
                                                    removeListener() {},
@@ -96,18 +97,6 @@ suite('NewTabPageAppTest', () => {
               Math.floor(document.documentElement.clientHeight)));
     });
 
-    test('realbox is not visible by default', async () => {
-      // Assert.
-      assertStyle($$(app, '#realbox')!, 'visibility', 'hidden');
-
-      // Act.
-      callbackRouterRemote.setTheme(createTheme());
-      await callbackRouterRemote.$.flushForTesting();
-
-      // Assert.
-      assertStyle($$(app, '#realbox')!, 'visibility', 'visible');
-    });
-
     test('open voice search event opens voice search overlay', async () => {
       // Act.
       $$(app, '#realbox')!.dispatchEvent(new Event('open-voice-search'));
@@ -119,7 +108,7 @@ suite('NewTabPageAppTest', () => {
       assertEquals(
           1,
           metrics.count(
-              'NewTabPage.VoiceActions', VoiceAction.kActivateSearchBox));
+              'NewTabPage.VoiceActions', VoiceAction.ACTIVATE_SEARCH_BOX));
     });
 
     test('voice search keyboard shortcut', async () => {
@@ -138,7 +127,7 @@ suite('NewTabPageAppTest', () => {
       assertEquals(
           1,
           metrics.count(
-              'NewTabPage.VoiceActions', VoiceAction.kActivateKeyboard));
+              'NewTabPage.VoiceActions', VoiceAction.ACTIVATE_KEYBOARD));
 
       // Test other shortcut doesn't close voice search.
       // Act
@@ -167,6 +156,45 @@ suite('NewTabPageAppTest', () => {
         assertTrue(!!app.shadowRoot!.querySelector('ntp-voice-search-overlay'));
       });
     }
+  });
+
+  [true, false].forEach((removeScrim) => {
+    suite(`ogb theming removeScrim is ${removeScrim}`, () => {
+      suiteSetup(() => {
+        loadTimeData.overrideValues({removeScrim});
+      });
+
+      test('Ogb updates on ntp load', async () => {
+        // Act.
+
+        // Create a dark mode theme with a custom background.
+        const theme = createTheme(true);
+        theme.backgroundImage = createBackgroundImage('https://foo.com');
+        callbackRouterRemote.setTheme(theme);
+        await callbackRouterRemote.$.flushForTesting();
+
+        // Notify the NTP that the ogb has loaded.
+        window.dispatchEvent(new MessageEvent('message', {
+          data: {
+            frameType: 'one-google-bar',
+            messageType: 'loaded',
+          },
+          source: window,
+          origin: window.origin,
+        }));
+
+        // Assert.
+
+        // Dark mode themes with background images and removeScrim set should
+        // apply background protection to the ogb.
+        assertEquals(1, windowProxy.getCallCount('postMessage'));
+        const [_, {type, applyLightTheme, applyBackgroundProtection}] =
+            windowProxy.getArgs('postMessage')[0];
+        assertEquals('updateAppearance', type);
+        assertEquals(true, applyLightTheme);
+        assertEquals(removeScrim, applyBackgroundProtection);
+      });
+    });
   });
 
   suite('theming', () => {
@@ -207,7 +235,8 @@ suite('NewTabPageAppTest', () => {
           0xffff0000 /* red */,
           (await backgroundManager.whenCalled('setBackgroundColor')).value);
       assertStyle(
-          $$(app, '#content')!, '--ntp-theme-text-color', 'rgba(0, 0, 255, 1)');
+          $$(app, '#content')!, '--color-new-tab-page-attribution-foreground',
+          'rgba(0, 0, 255, 1)');
       assertEquals(1, backgroundManager.getCallCount('setShowBackgroundImage'));
       assertFalse(await backgroundManager.whenCalled('setShowBackgroundImage'));
       assertStyle($$(app, '#backgroundImageAttribution')!, 'display', 'none');
@@ -246,8 +275,23 @@ suite('NewTabPageAppTest', () => {
       // Assert.
       assertEquals(1, backgroundManager.getCallCount('setShowBackgroundImage'));
       assertTrue(await backgroundManager.whenCalled('setShowBackgroundImage'));
-      assertNotStyle(
-          $$(app, '#backgroundImageAttribution')!, 'text-shadow', 'none');
+
+      // Scrim removal will remove text shadows as background protection is
+      // applied to the background element instead.
+      if (loadTimeData.getBoolean('removeScrim')) {
+        assertNotStyle(
+            $$(app, '#backgroundImageAttribution')!, 'background-color',
+            'rgba(0, 0, 0, 0)');
+        assertStyle(
+            $$(app, '#backgroundImageAttribution')!, 'text-shadow', 'none');
+      } else {
+        assertStyle(
+            $$(app, '#backgroundImageAttribution')!, 'background-color',
+            'rgba(0, 0, 0, 0)');
+        assertNotStyle(
+            $$(app, '#backgroundImageAttribution')!, 'text-shadow', 'none');
+      }
+
       assertEquals(1, backgroundManager.getCallCount('setBackgroundImage'));
       assertEquals(
           'https://img.png',
@@ -325,6 +369,38 @@ suite('NewTabPageAppTest', () => {
       assertFalse(mostVisited.hasAttribute('is-dark_'));
       await callbackRouterRemote.$.flushForTesting();
       assertTrue(mostVisited.hasAttribute('is-dark_'));
+    });
+
+    [true, false].forEach((isDark) => {
+      test(
+          `OGB light mode whenever background image
+          (ignoring dark mode) isDark: ${isDark}`,
+          async () => {
+            // Act.
+
+            // Create a theme with a custom background.
+            const theme = createTheme(isDark);
+            theme.backgroundImage = createBackgroundImage('https://foo.com');
+            callbackRouterRemote.setTheme(theme);
+            await callbackRouterRemote.$.flushForTesting();
+
+            // Notify the NTP that the ogb has loaded.
+            window.dispatchEvent(new MessageEvent('message', {
+              data: {
+                frameType: 'one-google-bar',
+                messageType: 'loaded',
+              },
+              source: window,
+              origin: window.origin,
+            }));
+
+            // Assert.
+            assertEquals(1, windowProxy.getCallCount('postMessage'));
+            const [_, {type, applyLightTheme}] =
+                windowProxy.getArgs('postMessage')[0];
+            assertEquals('updateAppearance', type);
+            assertEquals(true, applyLightTheme);
+          });
     });
   });
 
@@ -405,13 +481,13 @@ suite('NewTabPageAppTest', () => {
     });
 
     ([
-      ['#content', NtpElement.kBackground],
-      ['ntp-logo', NtpElement.kLogo],
-      ['ntp-realbox', NtpElement.kRealbox],
-      ['cr-most-visited', NtpElement.kMostVisited],
-      ['ntp-middle-slot-promo', NtpElement.kMiddleSlotPromo],
-      ['ntp-modules', NtpElement.kModule],
-    ] as [string, NtpElement][])
+      ['#content', NtpElement.BACKGROUND],
+      ['ntp-logo', NtpElement.LOGO],
+      ['ntp-realbox', NtpElement.REALBOX],
+      ['cr-most-visited', NtpElement.MOST_VISITED],
+      ['ntp-middle-slot-promo', NtpElement.MIDDLE_SLOT_PROMO],
+      ['ntp-modules', NtpElement.MODULE],
+    ] as Array<[string, NtpElement]>)
         .forEach(([selector, element]) => {
           test(`clicking '${selector}' records click`, () => {
             // Act.
@@ -431,7 +507,7 @@ suite('NewTabPageAppTest', () => {
 
       // Assert.
       assertEquals(2, metrics.count('NewTabPage.Click'));
-      assertEquals(2, metrics.count('NewTabPage.Click', NtpElement.kCustomize));
+      assertEquals(2, metrics.count('NewTabPage.Click', NtpElement.CUSTOMIZE));
     });
 
     test('clicking OGB records click', () => {
@@ -440,13 +516,13 @@ suite('NewTabPageAppTest', () => {
         data: {
           frameType: 'one-google-bar',
           messageType: 'click',
-        }
+        },
       }));
 
       // Assert.
       assertEquals(1, metrics.count('NewTabPage.Click'));
       assertEquals(
-          1, metrics.count('NewTabPage.Click', NtpElement.kOneGoogleBar));
+          1, metrics.count('NewTabPage.Click', NtpElement.ONE_GOOGLE_BAR));
     });
   });
 
@@ -514,15 +590,15 @@ suite('NewTabPageAppTest', () => {
       const barElement = document.createElement('div');
       moduleResolver.resolve([
         {
-          descriptor: new ModuleDescriptor(
-              'foo', 'foo', () => Promise.resolve(fooElement)),
+          descriptor:
+              new ModuleDescriptor('foo', () => Promise.resolve(fooElement)),
           element: fooElement,
         },
         {
-          descriptor: new ModuleDescriptor(
-              'bar', 'bar', () => Promise.resolve(barElement)),
+          descriptor:
+              new ModuleDescriptor('bar', () => Promise.resolve(barElement)),
           element: barElement,
-        }
+        },
       ]);
       await counterfactualLoad();
       await flushTasks();
@@ -551,6 +627,99 @@ suite('NewTabPageAppTest', () => {
       assertEquals(
           CustomizeDialogPage.THEMES,
           $$(app, 'ntp-customize-dialog')!.selectedPage);
+    });
+  });
+
+  suite('customize chrome side panel', () => {
+    suiteSetup(() => {
+      loadTimeData.overrideValues({
+        customizeChromeEnabled: true,
+      });
+    });
+
+    test('clicking customize button opens side panel', () => {
+      // Act.
+      $$<HTMLElement>(app, '#customizeButton')!.click();
+
+      // Assert.
+      const args = handler.getArgs('setCustomizeChromeSidePanelVisible');
+      assertGE(args.length, 1);
+      assertTrue(args.at(-1));
+    });
+
+    test('clicking customize button hides side panel', async () => {
+      // Act.
+      callbackRouterRemote.customizeChromeSidePanelVisibilityChanged(true);
+      await callbackRouterRemote.$.flushForTesting();
+      $$<HTMLElement>(app, '#customizeButton')!.click();
+
+      // Assert.
+      const args = handler.getArgs('setCustomizeChromeSidePanelVisible');
+      assertGE(args.length, 1);
+      assertFalse(args.at(-1));
+    });
+
+    suite('modules', () => {
+      suiteSetup(() => {
+        loadTimeData.overrideValues({
+          modulesEnabled: true,
+        });
+      });
+
+      test('modules can open side panel', async () => {
+        // Act.
+        $$(app, 'ntp-modules')!.dispatchEvent(new Event('customize-module'));
+
+        // Assert.
+        const args = handler.getArgs('setCustomizeChromeSidePanelVisible');
+        assertGE(args.length, 1);
+        assertTrue(args.at(-1));
+      });
+    });
+
+    suite('customize URL', () => {
+      suiteSetup(() => {
+        // We inject the URL param in this suite setup so that the URL is
+        // updated before the app element gets created.
+        url.searchParams.append('customize', CustomizeDialogPage.THEMES);
+      });
+
+      test('URL opens side panel', () => {
+        // Assert.
+        const args = handler.getArgs('setCustomizeChromeSidePanelVisible');
+        assertGE(args.length, 1);
+        assertTrue(args.at(-1));
+      });
+    });
+  });
+
+  suite('Lens upload dialog', () => {
+    suiteSetup(() => {
+      loadTimeData.overrideValues({
+        realboxLensSearch: true,
+      });
+    });
+
+    test('realbox is not visible when Lens upload dialog is open', async () => {
+      // Arrange.
+      callbackRouterRemote.setTheme(createTheme());
+      await callbackRouterRemote.$.flushForTesting();
+
+      // Act.
+      $$(app, '#realbox')!.dispatchEvent(new Event('open-lens-search'));
+      await flushTasks();
+
+      // Assert.
+      assertStyle($$(app, '#realbox')!, 'visibility', 'hidden');
+
+      // Act.
+      (app.shadowRoot!.querySelector(LensUploadDialogElement.is) as
+       LensUploadDialogElement)
+          .closeDialog();
+      await flushTasks();
+
+      // Assert.
+      assertStyle($$(app, '#realbox')!, 'visibility', 'visible');
     });
   });
 });

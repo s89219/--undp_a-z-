@@ -1,10 +1,8 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "services/device/generic_sensor/platform_sensor_fusion.h"
-
-#include <algorithm>
 
 #include "base/bind.h"
 #include "base/check.h"
@@ -47,7 +45,7 @@ class PlatformSensorFusion::Factory : public base::RefCounted<Factory> {
     const auto& types = fusion_algorithm_->source_types();
     DCHECK(!types.empty());
     // Make sure there are no dups.
-    DCHECK(std::adjacent_find(types.begin(), types.end()) == types.end());
+    DCHECK(base::ranges::adjacent_find(types) == types.end());
     DCHECK(result_callback_);
     DCHECK(reading_buffer_);
     DCHECK(provider_);
@@ -201,8 +199,7 @@ void PlatformSensorFusion::OnSensorReadingChanged(mojom::SensorType type) {
   if (!fusion_algorithm_->GetFusedData(type, &reading))
     return;
 
-  reading_ = reading;
-  UpdateSharedBufferAndNotifyClients(reading_);
+  UpdateSharedBufferAndNotifyClients(reading);
 }
 
 void PlatformSensorFusion::OnSensorError() {

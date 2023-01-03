@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,7 +50,7 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
 
   // ContentBrowserClient overrides.
   std::unique_ptr<content::BrowserMainParts> CreateBrowserMainParts(
-      content::MainFunctionParams parameters) override;
+      bool is_integration_test) override;
   std::string GetApplicationLocale() override;
   std::string GetAcceptLangs(content::BrowserContext* context) override;
   content::AllowServiceWorkerResult AllowServiceWorker(
@@ -174,8 +174,6 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
       content::RenderProcessHost* render_process_host,
       mojo::GenericPendingReceiver receiver) override;
   void RenderProcessWillLaunch(content::RenderProcessHost* host) override;
-  scoped_refptr<content::QuotaPermissionContext> CreateQuotaPermissionContext()
-      override;
 // TODO(crbug.com/1052397): Revisit once build flag switch of lacros-chrome is
 // complete.
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS) || \
@@ -220,6 +218,7 @@ class ContentBrowserClientImpl : public content::ContentBrowserClient {
 #endif  // BUILDFLAG(IS_ANDROID)
   content::SpeechRecognitionManagerDelegate*
   CreateSpeechRecognitionManagerDelegate() override;
+  bool ShouldSandboxNetworkService() override;
 #if BUILDFLAG(ENABLE_ARCORE)
   content::XrIntegrationClient* GetXrIntegrationClient() override;
 #endif  // BUILDFLAG(ENABLE_ARCORE)

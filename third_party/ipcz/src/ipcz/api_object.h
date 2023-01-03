@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,7 @@ class APIObject : public RefCounted {
     kPortal,
     kBox,
     kTransport,
+    kParcel,
   };
 
   explicit APIObject(ObjectType type);
@@ -39,6 +40,10 @@ class APIObject : public RefCounted {
     return AdoptRef(
         reinterpret_cast<APIObject*>(static_cast<uintptr_t>(handle)));
   }
+
+  // Returns an IpczHandle which can be used to reference this object. The
+  // reference is not owned by the caller.
+  IpczHandle handle() const { return reinterpret_cast<uintptr_t>(this); }
 
   // Releases ownership of a Ref<APIObject> to produce a new IpczHandle which
   // implicilty owns the released reference.

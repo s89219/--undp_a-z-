@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/site_instance.h"
@@ -119,7 +118,7 @@ class IsolatedAppTest : public ExtensionBrowserTest {
     std::set<std::string> extension_ids =
         ProcessMap::Get(browser_context)
             ->GetExtensionsInProcess(
-                contents->GetMainFrame()->GetProcess()->GetID());
+                contents->GetPrimaryMainFrame()->GetProcess()->GetID());
     for (auto iter = extension_ids.begin(); iter != extension_ids.end();
          ++iter) {
       const Extension* installed_app =
@@ -127,7 +126,7 @@ class IsolatedAppTest : public ExtensionBrowserTest {
       if (installed_app && installed_app->is_app())
         return installed_app;
     }
-    return NULL;
+    return nullptr;
   }
 
  private:
@@ -403,13 +402,10 @@ IN_PROC_BROWSER_TEST_F(IsolatedAppTest, SubresourceCookieIsolation) {
   //  - One will set app1{Media,Image}=1 cookies if app1=3 is set.
   // We expect only the app's cookies to be present.
   // We must wait for the onload event, to allow the subresources to finish.
-  content::WindowedNotificationObserver observer(
-      content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
-      content::Source<WebContents>(
-          browser()->tab_strip_model()->GetActiveWebContents()));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(
-      browser(), base_url.Resolve("app1/app_subresources.html")));
-  observer.Wait();
+  ASSERT_TRUE(ui_test_utils::NavigateToURLWithDisposition(
+      browser(), base_url.Resolve("app1/app_subresources.html"),
+      WindowOpenDisposition::CURRENT_TAB,
+      ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP));
   EXPECT_FALSE(HasCookie(tab1, "nonAppMedia=1"));
   EXPECT_TRUE(HasCookie(tab1, "app1Media=1"));
   EXPECT_FALSE(HasCookie(tab1, "nonAppImage=1"));
@@ -477,26 +473,26 @@ IN_PROC_BROWSER_TEST_F(IsolatedAppTest, IsolatedAppProcessModel) {
   int process_id_0 = browser()
                          ->tab_strip_model()
                          ->GetWebContentsAt(0)
-                         ->GetMainFrame()
+                         ->GetPrimaryMainFrame()
                          ->GetProcess()
                          ->GetID();
   int process_id_1 = browser()
                          ->tab_strip_model()
                          ->GetWebContentsAt(1)
-                         ->GetMainFrame()
+                         ->GetPrimaryMainFrame()
                          ->GetProcess()
                          ->GetID();
   EXPECT_NE(process_id_0, process_id_1);
   EXPECT_EQ(process_id_0, browser()
                               ->tab_strip_model()
                               ->GetWebContentsAt(2)
-                              ->GetMainFrame()
+                              ->GetPrimaryMainFrame()
                               ->GetProcess()
                               ->GetID());
   EXPECT_EQ(process_id_0, browser()
                               ->tab_strip_model()
                               ->GetWebContentsAt(3)
-                              ->GetMainFrame()
+                              ->GetPrimaryMainFrame()
                               ->GetProcess()
                               ->GetID());
 
@@ -507,7 +503,7 @@ IN_PROC_BROWSER_TEST_F(IsolatedAppTest, IsolatedAppProcessModel) {
   EXPECT_NE(process_id_1, browser()
                               ->tab_strip_model()
                               ->GetWebContentsAt(1)
-                              ->GetMainFrame()
+                              ->GetPrimaryMainFrame()
                               ->GetProcess()
                               ->GetID());
 }

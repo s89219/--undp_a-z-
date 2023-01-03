@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@ namespace ash {
 class MockUserImageManager : public UserImageManager {
  public:
   explicit MockUserImageManager(const AccountId& account_id);
-  virtual ~MockUserImageManager();
+  ~MockUserImageManager() override;
 
   MOCK_METHOD(void, LoadUserImage, (), (override));
   MOCK_METHOD(void,
@@ -43,6 +43,7 @@ class MockUserImageManager : public UserImageManager {
               (const, override));
   MOCK_METHOD(UserImageSyncObserver*, GetSyncObserver, (), (const, override));
   MOCK_METHOD(void, Shutdown, (), (override));
+  MOCK_METHOD(bool, IsUserImageManaged, (), (const, override));
   MOCK_METHOD(void, OnExternalDataSet, (const std::string& policy), (override));
   MOCK_METHOD(void,
               OnExternalDataCleared,

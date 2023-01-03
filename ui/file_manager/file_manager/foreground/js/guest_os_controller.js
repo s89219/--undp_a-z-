@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@ import {DirectoryModel} from './directory_model.js';
 import {NavigationModelFakeItem, NavigationModelItemType} from './navigation_list_model.js';
 import {DirectoryTree} from './ui/directory_tree.js';
 
+
 /**
  * GuestOsController handles the foreground UI relating to Guest OSs.
  */
@@ -17,8 +18,10 @@ export class GuestOsController {
   /**
    * @param {!DirectoryModel} directoryModel DirectoryModel.
    * @param {!DirectoryTree} directoryTree DirectoryTree.
+   * @param {boolean} disabled Whether the Guest OS item should be disabled.
+   *     Defaults to false.
    */
-  constructor(directoryModel, directoryTree) {
+  constructor(directoryModel, directoryTree, disabled = false) {
     if (!util.isGuestOsEnabled()) {
       console.warn('Created a guest os controller when it\'s not enabled');
     }
@@ -27,6 +30,9 @@ export class GuestOsController {
 
     /** @private @const */
     this.directoryTree_ = directoryTree;
+
+    /** @private @const {boolean} */
+    this.disabled_ = disabled;
 
     chrome.fileManagerPrivate.onMountableGuestsChanged.addListener(
         this.onMountableGuestsChanged.bind(this));
@@ -49,9 +55,11 @@ export class GuestOsController {
    */
   async onMountableGuestsChanged(guests) {
     this.directoryTree_.dataModel.guestOsPlaceholders = guests.map(guest => {
-      return new NavigationModelFakeItem(
+      const navigationModelItem = new NavigationModelFakeItem(
           guest.displayName, NavigationModelItemType.GUEST_OS,
-          new GuestOsPlaceholder(guest.displayName, guest.id));
+          new GuestOsPlaceholder(guest.displayName, guest.id, guest.vmType));
+      navigationModelItem.disabled = this.disabled_;
+      return navigationModelItem;
     });
 
     // Redraw the tree to ensure any newly added/removed roots are updated.

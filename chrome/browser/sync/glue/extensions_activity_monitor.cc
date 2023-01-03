@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,8 +41,9 @@ void ExtensionsActivityMonitor::OnBookmarksApiInvoked(
     const extensions::Extension* extension,
     const extensions::BookmarksFunction* func) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (!extension)
+  if (!extension) {
     return;
+  }
 
   switch (func->histogram_value()) {
     case extensions::functions::BOOKMARKS_UPDATE:

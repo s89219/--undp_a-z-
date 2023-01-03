@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -131,6 +131,16 @@ struct WebFeedListContentsDiscoverApi {
   using Response = feedwire::Response;
   static constexpr NetworkRequestType kRequestType =
       NetworkRequestType::kWebFeedListContents;
+  static base::StringPiece Method() { return "POST"; }
+  static base::StringPiece RequestPath(const Request&) { return "v1/contents"; }
+  static bool SendRequestMetadata() { return false; }
+};
+
+struct SingleWebFeedListContentsDiscoverApi {
+  using Request = feedwire::Request;
+  using Response = feedwire::Response;
+  static constexpr NetworkRequestType kRequestType =
+      NetworkRequestType::kSingleWebFeedListContents;
   static base::StringPiece Method() { return "POST"; }
   static base::StringPiece RequestPath(const Request&) { return "v1/contents"; }
   static bool SendRequestMetadata() { return false; }

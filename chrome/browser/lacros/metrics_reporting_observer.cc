@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,11 @@
 
 #include "base/bind.h"
 #include "base/check.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #include "components/metrics/metrics_pref_names.h"
 #include "components/metrics/metrics_service.h"
 #include "components/metrics/metrics_state_manager.h"
@@ -38,7 +40,7 @@ class MetricsServiceProxyImpl
   }
 
  private:
-  metrics::MetricsService* metrics_service_;
+  raw_ptr<metrics::MetricsService, DanglingUntriaged> metrics_service_;
 };
 
 std::unique_ptr<MetricsReportingObserver>
@@ -73,7 +75,7 @@ void MetricsReportingObserver::InitSettingsFromAsh() {
 
   // Set the initial state.
   ChangeMetricsReportingState(
-      lacros_service->init_params()->ash_metrics_enabled);
+      chromeos::BrowserParamsProxy::Get()->AshMetricsEnabled());
 }
 
 void MetricsReportingObserver::OnMetricsReportingChanged(

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,8 @@
 #include "components/grit/download_internals_resources.h"
 #include "components/grit/download_internals_resources_map.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
 #include "ios/chrome/browser/download/background_service/background_download_service_factory.h"
+#include "ios/chrome/browser/url/chrome_url_constants.h"
 #include "ios/web/public/webui/web_ui_ios.h"
 #include "ios/web/public/webui/web_ui_ios_data_source.h"
 #include "ios/web/public/webui/web_ui_ios_message_handler.h"
@@ -65,35 +65,29 @@ class DownloadInternalsUIMessageHandler : public web::WebUIIOSMessageHandler,
   }
 
   // download::Logger::Observer implementation.
-  void OnServiceStatusChanged(const base::Value& service_status) override {
-    std::vector<const base::Value*> args;
-    args.push_back(&service_status);
-    web_ui()->FireWebUIListener("service-status-changed", args);
+  void OnServiceStatusChanged(
+      const base::Value::Dict& service_status) override {
+    web_ui()->FireWebUIListener("service-status-changed", service_status);
   }
 
   void OnServiceDownloadsAvailable(
-      const base::Value& service_downloads) override {
-    std::vector<const base::Value*> args;
-    args.push_back(&service_downloads);
-    web_ui()->FireWebUIListener("service-downloads-available", args);
+      const base::Value::List& service_downloads) override {
+    web_ui()->FireWebUIListener("service-downloads-available",
+                                service_downloads);
   }
 
-  void OnServiceDownloadChanged(const base::Value& service_download) override {
-    std::vector<const base::Value*> args;
-    args.push_back(&service_download);
-    web_ui()->FireWebUIListener("service-download-changed", args);
+  void OnServiceDownloadChanged(
+      const base::Value::Dict& service_download) override {
+    web_ui()->FireWebUIListener("service-download-changed", service_download);
   }
 
-  void OnServiceDownloadFailed(const base::Value& service_download) override {
-    std::vector<const base::Value*> args;
-    args.push_back(&service_download);
-    web_ui()->FireWebUIListener("service-download-failed", args);
+  void OnServiceDownloadFailed(
+      const base::Value::Dict& service_download) override {
+    web_ui()->FireWebUIListener("service-download-failed", service_download);
   }
 
-  void OnServiceRequestMade(const base::Value& service_request) override {
-    std::vector<const base::Value*> args;
-    args.push_back(&service_request);
-    web_ui()->FireWebUIListener("service-request-made", args);
+  void OnServiceRequestMade(const base::Value::Dict& service_request) override {
+    web_ui()->FireWebUIListener("service-request-made", service_request);
   }
 
   void HandleGetServiceStatus(const base::Value::List& args) {

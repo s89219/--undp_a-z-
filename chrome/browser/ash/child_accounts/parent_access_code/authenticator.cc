@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,18 +32,19 @@ constexpr char kClockDriftDictKey[] = "clock_drift_tolerance";
 
 // static
 absl::optional<AccessCodeConfig> AccessCodeConfig::FromDictionary(
-    const base::DictionaryValue& dict) {
-  const std::string* secret = dict.FindStringKey(kSharedSecretDictKey);
+    const base::Value& value) {
+  const base::Value::Dict& dict = value.GetDict();
+  const std::string* secret = dict.FindString(kSharedSecretDictKey);
   if (!secret || secret->empty())
     return absl::nullopt;
 
-  absl::optional<int> validity = dict.FindIntKey(kCodeValidityDictKey);
+  absl::optional<int> validity = dict.FindInt(kCodeValidityDictKey);
   if (!(validity.has_value() && *validity >= kMinCodeValidity.InSeconds() &&
         *validity <= kMaxCodeValidity.InSeconds())) {
     return absl::nullopt;
   }
 
-  absl::optional<int> clock_drift = dict.FindIntKey(kClockDriftDictKey);
+  absl::optional<int> clock_drift = dict.FindInt(kClockDriftDictKey);
   if (!(clock_drift.has_value() &&
         *clock_drift >= kMinClockDriftTolerance.InSeconds() &&
         *clock_drift <= kMaxClockDriftTolerance.InSeconds())) {

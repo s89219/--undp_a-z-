@@ -1,16 +1,15 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/bubble/bubble_view.h"
 
-#include "base/ios/ios_util.h"
-#include "base/mac/foundation_util.h"
+#import "base/ios/ios_util.h"
+#import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/bubble/bubble_unittest_util.h"
-#include "ios/chrome/browser/ui/util/ui_util.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "testing/gtest_mac.h"
-#include "testing/platform_test.h"
+#import "testing/gtest/include/gtest/gtest.h"
+#import "testing/gtest_mac.h"
+#import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -65,7 +64,7 @@ class BubbleViewTest : public PlatformTest {
   const BubbleAlignment alignment_;
   // Distance between the arrow's centerX and the (leading or trailing) edge of
   // the bubble, depending on the BubbleAlignment. If BubbleAlignment is center,
-  // then |alignmentOffset| is ignored.
+  // then `alignmentOffset` is ignored.
   const CGFloat alignmentOffset_;
   // Text that is shorter than the minimum line width.
   NSString* shortText_;
@@ -76,7 +75,7 @@ class BubbleViewTest : public PlatformTest {
   NSTextAlignment textAlignment_;
 };
 
-// Test |sizeThatFits| given short text.
+// Test `sizeThatFits` given short text.
 TEST_F(BubbleViewTest, BubbleSizeShortText) {
   BubbleView* bubble = [[BubbleView alloc] initWithText:shortText_
                                          arrowDirection:arrowDirection_
@@ -96,7 +95,7 @@ TEST_F(BubbleViewTest, Accessibility) {
   UIView* superview = [[UIView alloc] initWithFrame:CGRectZero];
   // Add the bubble view to the view hierarchy.
   [superview addSubview:bubble];
-  EXPECT_NSEQ(longText_, bubble.accessibilityLabel);
+  EXPECT_NSEQ(longText_, bubble.accessibilityValue);
 }
 
 // Tests that the close button is not showed when the option is set to hidden.
@@ -263,7 +262,7 @@ TEST_F(BubbleViewTest, ArrowViewLeadingAligned) {
   [bubble layoutIfNeeded];
   UIView* arrowView = GetArrowViewFromBubbleView(bubble);
   ASSERT_TRUE(arrowView);
-  // The center of the arrow must be at a distance of |alignmentOffset_| to the
+  // The center of the arrow must be at a distance of `alignmentOffset_` to the
   // leading edge of the bubble.
   EXPECT_EQ(CGRectGetMidX(arrowView.frame), alignmentOffset_);
 }
@@ -279,7 +278,7 @@ TEST_F(BubbleViewTest, ArrowViewCenterAligned) {
   [bubble layoutIfNeeded];
   UIView* arrowView = GetArrowViewFromBubbleView(bubble);
   ASSERT_TRUE(arrowView);
-  // |alignmentOffset| should be ignored with BubbleAlignmentCenter.
+  // `alignmentOffset` should be ignored with BubbleAlignmentCenter.
   EXPECT_EQ(CGRectGetMidX(arrowView.frame), CGRectGetMidX(bubble.frame));
 }
 
@@ -295,7 +294,7 @@ TEST_F(BubbleViewTest, ArrowViewTrailingAligned) {
   [bubble layoutIfNeeded];
   UIView* arrowView = GetArrowViewFromBubbleView(bubble);
   ASSERT_TRUE(arrowView);
-  // The center of the arrow must be at a distance of |alignmentOffset_| to the
+  // The center of the arrow must be at a distance of `alignmentOffset_` to the
   // trailing edge of the bubble.
   EXPECT_EQ(CGRectGetMidX(arrowView.frame),
             bubble.frame.size.width - alignmentOffset_);

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,9 +37,8 @@ void DownloadItemImplDelegate::DetermineDownloadTarget(
   std::move(callback).Run(
       target_path, DownloadItem::TARGET_DISPOSITION_OVERWRITE,
       DOWNLOAD_DANGER_TYPE_NOT_DANGEROUS,
-      DownloadItem::MixedContentStatus::UNKNOWN, target_path, base::FilePath(),
-      std::string(), absl::nullopt /*download_schedule*/,
-      DOWNLOAD_INTERRUPT_REASON_NONE);
+      DownloadItem::InsecureDownloadStatus::UNKNOWN, target_path,
+      base::FilePath(), std::string(), DOWNLOAD_INTERRUPT_REASON_NONE);
 }
 
 bool DownloadItemImplDelegate::ShouldCompleteDownload(

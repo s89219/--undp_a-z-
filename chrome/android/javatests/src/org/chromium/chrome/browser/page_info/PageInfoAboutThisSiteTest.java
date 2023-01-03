@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,6 @@ package org.chromium.chrome.browser.page_info;
 
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
-import static androidx.test.espresso.action.ViewActions.swipeRight;
-import static androidx.test.espresso.assertion.ViewAssertions.doesNotExist;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
@@ -15,12 +13,11 @@ import static androidx.test.espresso.matcher.ViewMatchers.withText;
 
 import static org.hamcrest.CoreMatchers.allOf;
 import static org.hamcrest.CoreMatchers.containsString;
-import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.CoreMatchers.not;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verify;
 
 import static org.chromium.ui.test.util.ViewUtils.onViewWaiting;
 
@@ -43,13 +40,11 @@ import org.chromium.base.test.metrics.HistogramTestRule;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
-import org.chromium.base.test.util.Criteria;
-import org.chromium.base.test.util.CriteriaHelper;
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.JniMocker;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
+import org.chromium.chrome.browser.compositor.bottombar.ephemeraltab.EphemeralTabCoordinator;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.tab.Tab;
@@ -92,7 +87,6 @@ Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE, ChromeSwitches.DISABLE_STARTUP
 public class PageInfoAboutThisSiteTest {
     private static final String sSimpleHtml = "/chrome/test/data/android/simple.html";
     private static final String sAboutHtml = "/chrome/test/data/android/about.html";
-    private static final String sBannerText = "This is an example website";
 
     @ClassRule
     public static final ChromeTabbedActivityTestRule sActivityTestRule =
@@ -120,6 +114,9 @@ public class PageInfoAboutThisSiteTest {
     @Mock
     private PageInfoAboutThisSiteController.Natives mMockAboutThisSiteJni;
 
+    @Mock
+    private EphemeralTabCoordinator mMockEphemeralTabCoordinator;
+
     @Before
     public void setUp() {
         MockitoAnnotations.initMocks(this);
@@ -134,7 +131,8 @@ public class PageInfoAboutThisSiteTest {
         Tab tab = activity.getActivityTab();
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             new ChromePageInfo(activity.getModalDialogManagerSupplier(), null,
-                    PageInfoController.OpenedFromSource.TOOLBAR, null)
+                    PageInfoController.OpenedFromSource.TOOLBAR, null,
+                    () -> mMockEphemeralTabCoordinator)
                     .show(tab, ChromePageInfoHighlight.noHighlight());
         });
         onViewWaiting(allOf(withId(org.chromium.chrome.R.id.page_info_url_wrapper), isDisplayed()));
@@ -162,14 +160,14 @@ public class PageInfoAboutThisSiteTest {
         };
     }
 
-    private void mockResponse(byte[] bytes) {
-        doReturn(bytes)
+    private void mockResponse(SiteInfo.Builder builder) {
+        doReturn(builder != null ? builder.build().toByteArray() : null)
                 .when(mMockAboutThisSiteJni)
                 .getSiteInfo(
                         any(BrowserContextHandle.class), any(GURL.class), any(WebContents.class));
     }
 
-    private byte[] createDescription() {
+    private SiteInfo.Builder createDescription() {
         String url = mTestServerRule.getServer().getURL(sSimpleHtml);
         String moreAboutUrl = mTestServerRule.getServer().getURL(sAboutHtml);
         SiteDescription.Builder description =
@@ -177,11 +175,7 @@ public class PageInfoAboutThisSiteTest {
                         .setDescription("Some description about example.com for testing purposes")
                         .setSource(Hyperlink.newBuilder().setUrl(url).setLabel("Example Source"));
         MoreAbout.Builder moreAbout = MoreAbout.newBuilder().setUrl(moreAboutUrl);
-        return SiteInfo.newBuilder()
-                .setDescription(description)
-                .setMoreAbout(moreAbout)
-                .build()
-                .toByteArray();
+        return SiteInfo.newBuilder().setDescription(description).setMoreAbout(moreAbout);
     }
 
     @Test
@@ -215,6 +209,15 @@ public class PageInfoAboutThisSiteTest {
 
     @Test
     @MediumTest
+    public void testAboutThisSiteRowWithoutDescription() throws TimeoutException {
+        mockResponse(createDescription().clearDescription());
+        openPageInfo();
+        onView(withId(PageInfoAboutThisSiteController.ROW_ID)).check(matches(isDisplayed()));
+        dismissPageInfo();
+    }
+
+    @Test
+    @MediumTest
     @Feature({"RenderTest"})
     public void testAboutThisSiteRowRendering() {
         mockResponse(createDescription());
@@ -226,6 +229,7 @@ public class PageInfoAboutThisSiteTest {
     @Test
     @MediumTest
     @Feature({"RenderTest"})
+    @Features.DisableFeatures(ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_MORE_INFO)
     public void testAboutThisSiteSubPageRendering() {
         mockResponse(createDescription());
         openPageInfo();
@@ -236,6 +240,7 @@ public class PageInfoAboutThisSiteTest {
 
     @Test
     @MediumTest
+    @Features.DisableFeatures(ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_MORE_INFO)
     public void testAboutThisSiteSubPageSourceClicked()
             throws ExecutionException, TimeoutException {
         assertEquals(0, mHistogramTester.getHistogramTotalCount("WebsiteSettings.Action"));
@@ -251,6 +256,30 @@ public class PageInfoAboutThisSiteTest {
         assertEquals(1,
                 mHistogramTester.getHistogramValueCount("WebsiteSettings.Action",
                         PageInfoAction.PAGE_INFO_ABOUT_THIS_SITE_PAGE_OPENED));
+
+        onView(withText(containsString("Example Source"))).perform(click());
+        String sourceUrl = mTestServerRule.getServer().getURL(sSimpleHtml);
+        verify(mMockEphemeralTabCoordinator)
+                .requestOpenSheetWithFullPageUrl(/*url=*/new GURL(sourceUrl),
+                        /*fullPageUrl=*/new GURL(sourceUrl), /*title=*/"From the web",
+                        /*isIncognito=*/false);
+        assertEquals(3, mHistogramTester.getHistogramTotalCount("WebsiteSettings.Action"));
+        assertEquals(1,
+                mHistogramTester.getHistogramValueCount("WebsiteSettings.Action",
+                        PageInfoAction.PAGE_INFO_ABOUT_THIS_SITE_SOURCE_LINK_CLICKED));
+    }
+
+    @Test
+    @MediumTest
+    @Features.DisableFeatures(ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_MORE_INFO)
+    public void testAboutThisSiteSubPageSourceClickedWithoutEphemeralTabCreator()
+            throws ExecutionException, TimeoutException {
+        // Test the path without ephemeralTabCreator.
+        mMockEphemeralTabCoordinator = null;
+        mockResponse(createDescription());
+        openPageInfo();
+        onView(withId(PageInfoAboutThisSiteController.ROW_ID)).perform(click());
+
         final CallbackHelper onTabAdded = new CallbackHelper();
         final TabModelObserver observer = new TabModelObserver() {
             @Override
@@ -265,10 +294,6 @@ public class PageInfoAboutThisSiteTest {
         onView(withText(containsString("Example Source"))).perform(click());
         onTabAdded.waitForCallback(callCount);
         TestThreadUtils.runOnUiThreadBlocking(() -> tabModel.removeObserver(observer));
-        assertEquals(3, mHistogramTester.getHistogramTotalCount("WebsiteSettings.Action"));
-        assertEquals(1,
-                mHistogramTester.getHistogramValueCount("WebsiteSettings.Action",
-                        PageInfoAction.PAGE_INFO_ABOUT_THIS_SITE_SOURCE_LINK_CLICKED));
     }
 
     @Test
@@ -277,58 +302,29 @@ public class PageInfoAboutThisSiteTest {
             ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_NON_EN,
             ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_MORE_INFO})
     public void
-    testAboutThisSiteMoreInfoShown() {
+    testAboutThisSiteOpensEphemeralTab() throws Exception {
         mockResponse(createDescription());
         openPageInfo();
+
         onView(withId(PageInfoAboutThisSiteController.ROW_ID)).perform(click());
-        onView(withText(R.string.page_info_more_about_this_page)).check(matches(isDisplayed()));
+        String moreAboutUrl = mTestServerRule.getServer().getURL(sAboutHtml);
+        verify(mMockEphemeralTabCoordinator)
+                .requestOpenSheetWithFullPageUrl(/*url=*/new GURL(moreAboutUrl + "?ilrm=minimal"),
+                        /*fullPageUrl=*/new GURL(moreAboutUrl), /*title=*/"About this page",
+                        /*isIncognito=*/false);
+        verify(mMockAboutThisSiteJni).onAboutThisSiteRowClicked(true);
     }
 
     @Test
     @MediumTest
     @Features.EnableFeatures({ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_EN,
             ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_NON_EN,
-            ChromeFeatureList.ABOUT_THIS_SITE_BANNER})
-    @DisabledTest(message = "https://crbug.com/1311192")
+            ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_MORE_INFO})
     public void
-    testAboutThisSiteBanner() throws Exception {
-        String bannerUrl = mTestServerRule.getServer().getURLWithHostName(
-                "example.com", sSimpleHtml + "#banner");
-        sActivityTestRule.loadUrl(bannerUrl);
-        onView(withText(sBannerText)).check(matches(isDisplayed()));
-
-        // Check that bannerUrl is loaded.
-        final Tab tab = sActivityTestRule.getActivity().getActivityTab();
-        TestThreadUtils.runOnUiThreadBlocking(
-                () -> assertThat("Initial URL state", tab.getUrl().getSpec(), equalTo(bannerUrl)));
-
-        // Expect that we navigate to a different page when Message link is clicked.
-        onView(withText("Example URL")).perform(click());
-        CriteriaHelper.pollUiThread(() -> {
-            Criteria.checkThat("Opened URL", sActivityTestRule.getActivity().getActivityTab(),
-                    not(equalTo(tab)));
-        });
-    }
-
-    @Test
-    @MediumTest
-    @Features.EnableFeatures({ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_EN,
-            ChromeFeatureList.PAGE_INFO_ABOUT_THIS_SITE_NON_EN,
-            ChromeFeatureList.ABOUT_THIS_SITE_BANNER})
-    @DisabledTest(message = "https://crbug.com/1311192")
-    public void
-    testAboutThisSiteBannerDismissed() {
-        String bannerUrl = mTestServerRule.getServer().getURLWithHostName(
-                "example.com", sSimpleHtml + "#banner");
-        sActivityTestRule.loadUrl(bannerUrl);
-        onView(withText(sBannerText)).check(matches(isDisplayed()));
-
-        // Swipe banner away.
-        onView(withText(sBannerText)).perform(swipeRight());
-        onView(withText(sBannerText)).check(doesNotExist());
-
-        // Banner does not show again after dismissal.
-        sActivityTestRule.loadUrl(bannerUrl);
-        onView(withText(sBannerText)).check(doesNotExist());
+    testAboutThisSiteWithoutDescription() throws Exception {
+        mockResponse(createDescription().clearDescription());
+        openPageInfo();
+        onView(withId(PageInfoAboutThisSiteController.ROW_ID)).perform(click());
+        verify(mMockAboutThisSiteJni).onAboutThisSiteRowClicked(false);
     }
 }

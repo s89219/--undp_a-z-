@@ -1,11 +1,16 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/signin/signin_manager.h"
 
+#include <memory>
+
 #include "base/bind.h"
+#include "base/callback.h"
+#include "base/task/sequenced_task_runner.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/signin/public/identity_manager/accounts_in_cookie_jar_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -16,6 +21,31 @@
 #include "components/signin/public/base/signin_client.h"
 #include "google_apis/gaia/core_account_id.h"
 #endif
+
+namespace {
+
+class AccountSelectionInProgressHandleInternal
+    : public AccountSelectionInProgressHandle {
+ public:
+  explicit AccountSelectionInProgressHandleInternal(
+      base::OnceClosure on_destroy)
+      : on_destroy_(std::move(on_destroy)) {
+    DCHECK(on_destroy_);
+  }
+
+  AccountSelectionInProgressHandleInternal(
+      const AccountSelectionInProgressHandleInternal&) = delete;
+  AccountSelectionInProgressHandleInternal& operator=(
+      const AccountSelectionInProgressHandleInternal&) = delete;
+
+  ~AccountSelectionInProgressHandleInternal() override {
+    std::move(on_destroy_).Run();
+  }
+
+ private:
+  base::OnceClosure on_destroy_;
+};
+}  // namespace
 
 SigninManager::SigninManager(PrefService* prefs,
                              signin::IdentityManager* identity_manager,
@@ -43,13 +73,8 @@ void SigninManager::StartLacrosSigninFlow(
     signin::ConsistencyCookieManager* consistency_cookie_manager,
     account_manager::AccountManagerFacade::AccountAdditionSource source,
     base::OnceCallback<void(const CoreAccountId&)> on_completion_callback) {
-  if (signin_helper_lacros_) {
-    // There is already a signin flow in progress.
-    // TODO(https://crbug.com/1260291): Activate the profile picker if it's
-    // already open.
-    std::move(on_completion_callback).Run(CoreAccountId());
-    return;
-  }
+  // If there is already a flow in progress, cancel it.
+  signin_helper_lacros_.reset();
 
   signin_helper_lacros_ = std::make_unique<SigninHelperLacros>(
       profile_path, account_profile_mapper, identity_manager_,
@@ -61,7 +86,22 @@ void SigninManager::StartLacrosSigninFlow(
 }
 #endif
 
+std::unique_ptr<AccountSelectionInProgressHandle>
+SigninManager::CreateAccountSelectionInProgressHandle() {
+  ++live_account_selection_handles_count_;
+  return std::make_unique<AccountSelectionInProgressHandleInternal>(
+      base::BindOnce(
+          &SigninManager::OnAccountSelectionInProgressHandleDestroyed,
+          weak_ptr_factory_.GetWeakPtr()));
+}
+
 void SigninManager::UpdateUnconsentedPrimaryAccount() {
+  if (live_account_selection_handles_count_ > 0) {
+    // Don't update the unconsented primary account while some UI flow is also
+    // manipulating it.
+    return;
+  }
+
   // Only update the unconsented primary account only after accounts are loaded.
   if (!identity_manager_->AreRefreshTokensLoaded()) {
     return;
@@ -75,7 +115,9 @@ void SigninManager::UpdateUnconsentedPrimaryAccount() {
       DCHECK(
           !identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSync));
       identity_manager_->GetPrimaryAccountMutator()->SetPrimaryAccount(
-          account.account_id, signin::ConsentLevel::kSignin);
+          account.account_id, signin::ConsentLevel::kSignin,
+          // TODO(crbug.com/1261772): Attribute this to actual access points.
+          signin_metrics::AccessPoint::ACCESS_POINT_DESKTOP_SIGNIN_MANAGER);
     }
   } else if (identity_manager_->HasPrimaryAccount(
                  signin::ConsentLevel::kSignin)) {
@@ -194,6 +236,8 @@ void SigninManager::Shutdown() {
   identity_manager_ = nullptr;
 }
 
+// Lacros does not use cookies to compute the unconsented primary account.
+#if !BUILDFLAG(IS_CHROMEOS_LACROS)
 void SigninManager::OnPrimaryAccountChanged(
     const signin::PrimaryAccountChangeEvent& event_details) {
   // This is needed for the case where the user chooses to start syncing
@@ -211,10 +255,11 @@ void SigninManager::OnPrimaryAccountChanged(
   // the current OnPrimaryAccountChanged() as all observers should see the same
   // value for the unconsented primary account. Schedule the potential update
   // on the next run loop.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&SigninManager::UpdateUnconsentedPrimaryAccount,
                                 weak_ptr_factory_.GetWeakPtr()));
 }
+#endif  // !BUILDFLAG(IS_CHROMEOS_LACROS)
 
 void SigninManager::OnEndBatchOfRefreshTokenStateChanges() {
   UpdateUnconsentedPrimaryAccount();
@@ -253,6 +298,14 @@ void SigninManager::OnErrorStateOfRefreshTokenUpdatedForAccount(
 }
 
 void SigninManager::OnSigninAllowedPrefChanged() {
+  UpdateUnconsentedPrimaryAccount();
+}
+
+void SigninManager::OnAccountSelectionInProgressHandleDestroyed() {
+  DCHECK_GT(live_account_selection_handles_count_, 0);
+  --live_account_selection_handles_count_;
+
+  // We should reset the primary account in case we missed some relevant events.
   UpdateUnconsentedPrimaryAccount();
 }
 

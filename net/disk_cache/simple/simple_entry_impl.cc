@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,9 +18,8 @@
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_runner.h"
-#include "base/task/task_runner_util.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_usage_estimator.h"
 #include "net/base/io_buffer.h"
@@ -91,7 +90,7 @@ int PostToCallbackIfNeeded(bool sync_possible,
                            net::CompletionOnceCallback callback,
                            int rv) {
   if (!sync_possible && !callback.is_null()) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), rv));
     return net::ERR_IO_PENDING;
   } else {
@@ -628,7 +627,7 @@ void SimpleEntryImpl::PostClientCallback(net::CompletionOnceCallback callback,
     return;
   // Note that the callback is posted rather than directly invoked to avoid
   // reentrancy issues.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&InvokeCallbackIfBackendIsAlive, backend_,
                                 std::move(callback), result));
 }
@@ -639,7 +638,7 @@ void SimpleEntryImpl::PostClientCallback(EntryResultCallback callback,
     return;
   // Note that the callback is posted rather than directly invoked to avoid
   // reentrancy issues.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&InvokeEntryResultCallbackIfBackendIsAlive, backend_,
                      std::move(callback), std::move(result)));
@@ -672,7 +671,7 @@ void SimpleEntryImpl::ReturnEntryToCallerAsync(bool is_open,
 
   // Note that the callback is posted rather than directly invoked to avoid
   // reentrancy issues.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&SimpleEntryImpl::FinishReturnEntryToCallerAsync, this,
                      is_open, std::move(callback)));
@@ -788,9 +787,8 @@ void SimpleEntryImpl::OpenEntryInternal(
   DCHECK(!synchronous_entry_);
   state_ = STATE_IO_PENDING;
   const base::TimeTicks start_time = base::TimeTicks::Now();
-  std::unique_ptr<SimpleEntryCreationResults> results(
-      new SimpleEntryCreationResults(SimpleEntryStat(
-          last_used_, last_modified_, data_size_, sparse_data_size_)));
+  auto results = std::make_unique<SimpleEntryCreationResults>(SimpleEntryStat(
+      last_used_, last_modified_, data_size_, sparse_data_size_));
 
   int32_t trailer_prefetch_size = -1;
   base::Time last_used_time;
@@ -846,9 +844,8 @@ void SimpleEntryImpl::CreateEntryInternal(
   last_used_ = last_modified_ = base::Time::Now();
 
   const base::TimeTicks start_time = base::TimeTicks::Now();
-  std::unique_ptr<SimpleEntryCreationResults> results(
-      new SimpleEntryCreationResults(SimpleEntryStat(
-          last_used_, last_modified_, data_size_, sparse_data_size_)));
+  auto results = std::make_unique<SimpleEntryCreationResults>(SimpleEntryStat(
+      last_used_, last_modified_, data_size_, sparse_data_size_));
 
   OnceClosure task =
       base::BindOnce(&SimpleSynchronousEntry::CreateEntry, cache_type_, path_,
@@ -897,9 +894,8 @@ void SimpleEntryImpl::OpenOrCreateEntryInternal(
   DCHECK(!synchronous_entry_);
   state_ = STATE_IO_PENDING;
   const base::TimeTicks start_time = base::TimeTicks::Now();
-  std::unique_ptr<SimpleEntryCreationResults> results(
-      new SimpleEntryCreationResults(SimpleEntryStat(
-          last_used_, last_modified_, data_size_, sparse_data_size_)));
+  auto results = std::make_unique<SimpleEntryCreationResults>(SimpleEntryStat(
+      last_used_, last_modified_, data_size_, sparse_data_size_));
 
   int32_t trailer_prefetch_size = -1;
   base::Time last_used_time;
@@ -937,8 +933,7 @@ void SimpleEntryImpl::CloseInternal() {
   }
 
   typedef SimpleSynchronousEntry::CRCRecord CRCRecord;
-  std::unique_ptr<std::vector<CRCRecord>> crc32s_to_write(
-      new std::vector<CRCRecord>());
+  auto crc32s_to_write = std::make_unique<std::vector<CRCRecord>>();
 
   net_log_.AddEvent(net::NetLogEventType::SIMPLE_CACHE_ENTRY_CLOSE_BEGIN);
 
@@ -959,8 +954,7 @@ void SimpleEntryImpl::CloseInternal() {
     DCHECK(STATE_UNINITIALIZED == state_ || STATE_FAILURE == state_);
   }
 
-  std::unique_ptr<SimpleEntryCloseResults> results =
-      std::make_unique<SimpleEntryCloseResults>();
+  auto results = std::make_unique<SimpleEntryCloseResults>();
   if (synchronous_entry_) {
     OnceClosure task = base::BindOnce(
         &SimpleSynchronousEntry::Close, base::Unretained(synchronous_entry_),
@@ -1049,10 +1043,9 @@ int SimpleEntryImpl::ReadDataInternal(bool sync_possible,
     read_req.request_verify_crc = !have_written_[stream_index];
   }
 
-  std::unique_ptr<SimpleSynchronousEntry::ReadResult> result =
-      std::make_unique<SimpleSynchronousEntry::ReadResult>();
-  std::unique_ptr<SimpleEntryStat> entry_stat(new SimpleEntryStat(
-      last_used_, last_modified_, data_size_, sparse_data_size_));
+  auto result = std::make_unique<SimpleSynchronousEntry::ReadResult>();
+  auto entry_stat = std::make_unique<SimpleEntryStat>(
+      last_used_, last_modified_, data_size_, sparse_data_size_);
   OnceClosure task = base::BindOnce(
       &SimpleSynchronousEntry::ReadData, base::Unretained(synchronous_entry_),
       read_req, entry_stat.get(), base::RetainedRef(buf), result.get());
@@ -1086,7 +1079,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
           net::NetLogEventPhase::NONE, net::ERR_FAILED);
     }
     if (!callback.is_null()) {
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), net::ERR_FAILED));
     }
     // |this| may be destroyed after return here.
@@ -1099,7 +1092,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   if (stream_index == 0) {
     int ret_value = SetStream0Data(buf, offset, buf_len, truncate);
     if (!callback.is_null()) {
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), ret_value));
     }
     return;
@@ -1110,7 +1103,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
     int32_t data_size = data_size_[stream_index];
     if (truncate ? (offset == data_size) : (offset <= data_size)) {
       if (!callback.is_null()) {
-        base::SequencedTaskRunnerHandle::Get()->PostTask(
+        base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
             FROM_HERE, base::BindOnce(std::move(callback), 0));
       }
       return;
@@ -1139,8 +1132,8 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   }
 
   // |entry_stat| needs to be initialized before modifying |data_size_|.
-  std::unique_ptr<SimpleEntryStat> entry_stat(new SimpleEntryStat(
-      last_used_, last_modified_, data_size_, sparse_data_size_));
+  auto entry_stat = std::make_unique<SimpleEntryStat>(
+      last_used_, last_modified_, data_size_, sparse_data_size_);
   if (truncate) {
     data_size_[stream_index] = offset + buf_len;
   } else {
@@ -1148,8 +1141,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
                                         GetDataSize(stream_index));
   }
 
-  std::unique_ptr<SimpleSynchronousEntry::WriteResult> write_result =
-      std::make_unique<SimpleSynchronousEntry::WriteResult>();
+  auto write_result = std::make_unique<SimpleSynchronousEntry::WriteResult>();
 
   // Since we don't know the correct values for |last_used_| and
   // |last_modified_| yet, we make this approximation.
@@ -1202,7 +1194,7 @@ void SimpleEntryImpl::ReadSparseDataInternal(
           net::NetLogEventPhase::NONE, net::ERR_FAILED);
     }
     if (!callback.is_null()) {
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), net::ERR_FAILED));
     }
     // |this| may be destroyed after return here.
@@ -1212,8 +1204,8 @@ void SimpleEntryImpl::ReadSparseDataInternal(
   DCHECK_EQ(STATE_READY, state_);
   state_ = STATE_IO_PENDING;
 
-  std::unique_ptr<int> result(new int());
-  std::unique_ptr<base::Time> last_used(new base::Time());
+  auto result = std::make_unique<int>();
+  auto last_used = std::make_unique<base::Time>();
   OnceClosure task = base::BindOnce(
       &SimpleSynchronousEntry::ReadSparseData,
       base::Unretained(synchronous_entry_),
@@ -1247,7 +1239,7 @@ void SimpleEntryImpl::WriteSparseDataInternal(
           net::NetLogEventPhase::NONE, net::ERR_FAILED);
     }
     if (!callback.is_null()) {
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), net::ERR_FAILED));
     }
     // |this| may be destroyed after return here.
@@ -1263,12 +1255,12 @@ void SimpleEntryImpl::WriteSparseDataInternal(
     max_sparse_data_size = max_cache_size / kMaxSparseDataSizeDivisor;
   }
 
-  std::unique_ptr<SimpleEntryStat> entry_stat(new SimpleEntryStat(
-      last_used_, last_modified_, data_size_, sparse_data_size_));
+  auto entry_stat = std::make_unique<SimpleEntryStat>(
+      last_used_, last_modified_, data_size_, sparse_data_size_);
 
   last_used_ = last_modified_ = base::Time::Now();
 
-  std::unique_ptr<int> result(new int());
+  auto result = std::make_unique<int>();
   OnceClosure task = base::BindOnce(
       &SimpleSynchronousEntry::WriteSparseData,
       base::Unretained(synchronous_entry_),
@@ -1290,7 +1282,7 @@ void SimpleEntryImpl::GetAvailableRangeInternal(int64_t sparse_offset,
 
   if (state_ == STATE_FAILURE || state_ == STATE_UNINITIALIZED) {
     if (!callback.is_null()) {
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(std::move(callback), RangeResult(net::ERR_FAILED)));
     }
@@ -1405,8 +1397,8 @@ void SimpleEntryImpl::CreationOperationComplete(
   // If this is a successful creation (rather than open), mark all streams to be
   // saved on close.
   if (in_results->created) {
-    for (int i = 0; i < kSimpleEntryStreamCount; ++i)
-      have_written_[i] = true;
+    for (bool& have_written : have_written_)
+      have_written = true;
   }
 
   // Make sure to keep the index up-to-date. We likely already did this when
@@ -1460,9 +1452,15 @@ void SimpleEntryImpl::CreationOperationComplete(
 
   net_log_.AddEvent(end_event_type);
 
+  const bool created = in_results->created;
+
+  // We need to release `in_results` before going out of scope, because
+  // `operation_runner` destruction might call a close operation, that will
+  // ultimately release `in_results->sync_entry`, and thus leading to having a
+  // dangling pointer here.
+  in_results = nullptr;
   if (result_state == SimpleEntryOperation::ENTRY_NEEDS_CALLBACK) {
-    ReturnEntryToCallerAsync(!in_results->created,
-                             std::move(completion_callback));
+    ReturnEntryToCallerAsync(!created, std::move(completion_callback));
   }
 }
 
@@ -1487,7 +1485,7 @@ void SimpleEntryImpl::EntryOperationComplete(
     int result) {
   UpdateStateAfterOperationComplete(entry_stat, result);
   if (!completion_callback.is_null()) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(completion_callback), result));
   }
   RunNextOperationIfNeeded();
@@ -1597,7 +1595,7 @@ void SimpleEntryImpl::GetAvailableRangeOperationComplete(
                              sparse_data_size_);
   UpdateStateAfterOperationComplete(entry_stat, result->net_error);
   if (!completion_callback.is_null()) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(completion_callback), *result));
   }
   RunNextOperationIfNeeded();
@@ -1657,9 +1655,8 @@ void SimpleEntryImpl::UpdateDataFromEntryStat(
 
 int64_t SimpleEntryImpl::GetDiskUsage() const {
   int64_t file_size = 0;
-  for (int i = 0; i < kSimpleEntryStreamCount; ++i) {
-    file_size +=
-        simple_util::GetFileSizeFromDataSize(key_.size(), data_size_[i]);
+  for (int data_size : data_size_) {
+    file_size += simple_util::GetFileSizeFromDataSize(key_.size(), data_size);
   }
   file_size += sparse_data_size_;
   return file_size;

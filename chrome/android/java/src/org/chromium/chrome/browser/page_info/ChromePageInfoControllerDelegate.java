@@ -1,11 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.page_info;
 
 import android.content.Context;
-import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
@@ -19,12 +18,11 @@ import androidx.fragment.app.FragmentActivity;
 import androidx.fragment.app.FragmentManager;
 
 import org.chromium.base.Callback;
-import org.chromium.base.Consumer;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.compositor.bottombar.ephemeraltab.EphemeralTabCoordinator;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.instantapps.InstantAppsHandler;
 import org.chromium.chrome.browser.merchant_viewer.PageInfoStoreInfoController;
 import org.chromium.chrome.browser.merchant_viewer.PageInfoStoreInfoController.StoreInfoActionHandler;
 import org.chromium.chrome.browser.offlinepages.OfflinePageItem;
@@ -65,6 +63,7 @@ import java.text.DateFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.function.Consumer;
 
 /**
  * Chrome's customization of PageInfoControllerDelegate. This class provides Chrome-specific info to
@@ -73,18 +72,20 @@ import java.util.Date;
  */
 public class ChromePageInfoControllerDelegate extends PageInfoControllerDelegate {
     private final WebContents mWebContents;
-    private Supplier<ModalDialogManager> mModalDialogManagerSupplier;
+    private final Supplier<ModalDialogManager> mModalDialogManagerSupplier;
+    private final Supplier<EphemeralTabCoordinator> mEphemeralTabCoordinatorSupplier;
     private final Context mContext;
     private final Profile mProfile;
     private final Supplier<StoreInfoActionHandler> mStoreInfoActionHandlerSupplier;
     private final ChromePageInfoHighlight mPageInfoHighlight;
+    private final OfflinePageLoadUrlDelegate mOfflinePageLoadUrlDelegate;
     private String mOfflinePageCreationDate;
-    private OfflinePageLoadUrlDelegate mOfflinePageLoadUrlDelegate;
 
     public ChromePageInfoControllerDelegate(Context context, WebContents webContents,
             Supplier<ModalDialogManager> modalDialogManagerSupplier,
             OfflinePageLoadUrlDelegate offlinePageLoadUrlDelegate,
             @Nullable Supplier<StoreInfoActionHandler> storeInfoActionHandlerSupplier,
+            Supplier<EphemeralTabCoordinator> ephemeralTabCoordinatorSupplier,
             ChromePageInfoHighlight pageInfoHighlight) {
         super(new ChromeAutocompleteSchemeClassifier(Profile.fromWebContents(webContents)),
                 VrModuleProvider.getDelegate(),
@@ -95,6 +96,7 @@ public class ChromePageInfoControllerDelegate extends PageInfoControllerDelegate
         mContext = context;
         mWebContents = webContents;
         mModalDialogManagerSupplier = modalDialogManagerSupplier;
+        mEphemeralTabCoordinatorSupplier = ephemeralTabCoordinatorSupplier;
         mProfile = Profile.fromWebContents(mWebContents);
         mStoreInfoActionHandlerSupplier = storeInfoActionHandlerSupplier;
         mPageInfoHighlight = pageInfoHighlight;
@@ -134,25 +136,6 @@ public class ChromePageInfoControllerDelegate extends PageInfoControllerDelegate
     @Override
     public ModalDialogManager getModalDialogManager() {
         return mModalDialogManagerSupplier.get();
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public boolean isInstantAppAvailable(String url) {
-        InstantAppsHandler instantAppsHandler = InstantAppsHandler.getInstance();
-        return instantAppsHandler.isInstantAppAvailable(
-                url, false /* checkHoldback */, false /* includeUserPrefersBrowser */);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public Intent getInstantAppIntentForUrl(String url) {
-        InstantAppsHandler instantAppsHandler = InstantAppsHandler.getInstance();
-        return instantAppsHandler.getInstantAppIntentForUrl(url);
     }
 
     /**
@@ -241,21 +224,22 @@ public class ChromePageInfoControllerDelegate extends PageInfoControllerDelegate
             controllers.add(new PageInfoAdPersonalizationController(
                     mainController, adPersonalizationRow, this));
         }
-        if (PageInfoFeatures.PAGE_INFO_HISTORY.isEnabled()) {
-            final Tab tab = TabUtils.fromWebContents(mWebContents);
-            final PageInfoRowView historyRow = new PageInfoRowView(rowWrapper.getContext(), null);
-            historyRow.setId(PageInfoHistoryController.HISTORY_ROW_ID);
-            rowWrapper.addView(historyRow);
-            controllers.add(new PageInfoHistoryController(
-                    mainController, historyRow, this, () -> { return tab; }));
-        }
+
+        // Add history row.
+        final Tab tab = TabUtils.fromWebContents(mWebContents);
+        final PageInfoRowView historyRow = new PageInfoRowView(rowWrapper.getContext(), null);
+        historyRow.setId(PageInfoHistoryController.HISTORY_ROW_ID);
+        rowWrapper.addView(historyRow);
+        controllers.add(new PageInfoHistoryController(
+                mainController, historyRow, this, () -> { return tab; }));
+
         if (PageInfoAboutThisSiteController.isFeatureEnabled()) {
             final PageInfoRowView aboutThisSiteRow =
                     new PageInfoRowView(rowWrapper.getContext(), null);
             aboutThisSiteRow.setId(PageInfoAboutThisSiteController.ROW_ID);
             rowWrapper.addView(aboutThisSiteRow);
-            controllers.add(new PageInfoAboutThisSiteController(
-                    mainController, aboutThisSiteRow, this, mWebContents));
+            controllers.add(new PageInfoAboutThisSiteController(mainController,
+                    mEphemeralTabCoordinatorSupplier, aboutThisSiteRow, this, mWebContents));
         }
         if (PageInfoFeatures.PAGE_INFO_STORE_INFO.isEnabled() && !isIncognito()) {
             final PageInfoRowView storeInfoRow = new PageInfoRowView(rowWrapper.getContext(), null);
@@ -263,7 +247,7 @@ public class ChromePageInfoControllerDelegate extends PageInfoControllerDelegate
             rowWrapper.addView(storeInfoRow);
             controllers.add(new PageInfoStoreInfoController(mainController, storeInfoRow,
                     mStoreInfoActionHandlerSupplier, mPageInfoHighlight.shouldHighlightStoreInfo(),
-                    mWebContents));
+                    mWebContents, mProfile));
         }
         return controllers;
     }

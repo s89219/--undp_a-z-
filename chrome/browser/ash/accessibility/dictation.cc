@@ -1,31 +1,22 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/accessibility/dictation.h"
 
-#include "ash/constants/ash_pref_names.h"
 #include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/containers/flat_map.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/timer/timer.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/language/core/common/locale_util.h"
 #include "components/prefs/pref_service.h"
 #include "components/soda/soda_installer.h"
-#include "content/public/browser/browser_task_traits.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/browser/storage_partition.h"
-#include "services/audio/public/cpp/sounds/sounds_manager.h"
-#include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/accessibility/accessibility_features.h"
-#include "ui/base/ime/ash/extension_ime_util.h"
 #include "ui/base/ime/ash/input_method_manager.h"
 #include "ui/base/ime/ash/input_method_util.h"
 
@@ -56,18 +47,6 @@ std::string GetUserLangOrLocaleFromSystem(Profile* profile) {
     user_language = g_browser_process->GetApplicationLocale();
 
   return user_language.empty() ? kDefaultProfileLocale : user_language;
-}
-
-std::string GetUserLocale(Profile* profile) {
-  // Get the user's chosen dictation locale from their preference in settings.
-  // This is guaranteed to be a supported locale and won't be empty, since
-  // the pref is set using DetermineDefaultSupportedLocale() as soon as
-  // Dictation is enabled, assuming that supported languages are never removed
-  // from this list.
-  std::string locale =
-      profile->GetPrefs()->GetString(prefs::kAccessibilityDictationLocale);
-  DCHECK(!locale.empty());
-  return locale;
 }
 
 std::string GetSupportedLocale(const std::string& lang_or_locale) {

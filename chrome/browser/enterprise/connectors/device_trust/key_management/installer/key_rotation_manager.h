@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@
 
 #include <memory>
 #include <string>
+
+#include "base/callback_forward.h"
 
 class GURL;
 
@@ -19,6 +21,13 @@ class KeyNetworkDelegate;
 // installer.
 class KeyRotationManager {
  public:
+  //  Status of the key rotation.
+  enum class Result {
+    SUCCEEDED,
+    FAILED,
+    FAILED_KEY_CONFLICT,
+  };
+
   virtual ~KeyRotationManager() = default;
 
   static std::unique_ptr<KeyRotationManager> Create(
@@ -28,18 +37,20 @@ class KeyRotationManager {
       std::unique_ptr<KeyNetworkDelegate> network_delegate,
       std::unique_ptr<KeyPersistenceDelegate> persistence_delegate);
 
-  // Rotates the key pair.  If no key pair already exists, simply creates a
-  // new one.  `dm_token` the DM token to use when sending the new public key to
-  // the DM server.  This function will fail if not called with admin rights.
-  //
-  // This function makes network requests and will block until those requests
-  // complete successfully or fail (after some retrying). This function is
-  // not meant to be called from the chrome browser but from a background
-  // utility process that does not block the user in the browser.
-  [[nodiscard]] virtual bool RotateWithAdminRights(
-      const GURL& dm_server_url,
-      const std::string& dm_token,
-      const std::string& nonce) = 0;
+  static void SetForTesting(
+      std::unique_ptr<KeyRotationManager> key_rotation_manager);
+
+  // Rotates the key pair and returns the result of the key rotation to the
+  // callback. If no key pair already exists, simply creates a new one.
+  // `dm_token` is the DM token to use when sending the new public key to the
+  // DM server at `dm_server_url`. The `nonce` is an opaque binary blob and is
+  // used when building the upload request result of the rotation is
+  // returned via the `result_callback`. This function will fail on linux
+  // and windows if not called with admin rights.
+  virtual void Rotate(const GURL& dm_server_url,
+                      const std::string& dm_token,
+                      const std::string& nonce,
+                      base::OnceCallback<void(Result)> result_callback) = 0;
 };
 
 }  // namespace enterprise_connectors

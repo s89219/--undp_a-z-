@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,23 +7,11 @@
 
 #import <UIKit/UIKit.h>
 
-@protocol UserAccountImageUpdateDelegate;
-
 // Delegate for the ContentSuggestionsHeaderViewController.
 @protocol ContentSuggestionsHeaderViewControllerDelegate
 
-// Returns whether the collection is scrolled to the omnibox.
+// Returns whether the scrollview is scrolled to the omnibox.
 - (BOOL)isScrolledToMinimumHeight;
-
-// Register |imageUpdater| object as delegate to refresh UI when user account
-// avatar is changed.
-- (void)registerImageUpdater:(id<UserAccountImageUpdateDelegate>)imageUpdater;
-
-// Returns whether calls that may trigger a URL load are allowed, such as a
-// voice search or focusing the omnibox via the fakebox.
-// See: crbug.com/925304 for more context.  Remove this when ios/web supports
-// queueing multiple loads during this state.
-- (BOOL)ignoreLoadRequests;
 
 @end
 

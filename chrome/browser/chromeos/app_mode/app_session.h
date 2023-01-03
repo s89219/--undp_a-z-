@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,12 @@
 #include <string>
 
 #include "base/callback.h"
-#include "chrome/browser/chromeos/app_mode/kiosk_session_plugin_handler_delegate.h"
+#include "base/callback_forward.h"
+#include "base/memory/raw_ptr.h"
+#include "base/time/time.h"
+#include "chrome/browser/chromeos/app_mode/app_session_browser_window_handler.h"
+#include "chrome/browser/chromeos/app_mode/app_session_metrics_service.h"
+#include "ppapi/buildflags/buildflags.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -26,45 +31,36 @@ class AppWindow;
 
 namespace chromeos {
 
-// Kiosk histogram metrics-related constants.
-extern const char kKioskMetrics[];
-extern const char kKioskSessionStateHistogram[];
-extern const char kKioskSessionCountPerDayHistogram[];
-extern const char kKioskSessionLastDayList[];
-
 class KioskSessionPluginHandler;
-class AppSessionMetricsService;
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-// Keep in sync with respective enum in tools/metrics/histograms/enums.xml
-enum class KioskSessionState {
-  kStarted = 0,
-  kWebStarted = 1,
-  kCrashed = 2,
-  kStopped = 3,
-  kPluginCrashed = 4,
-  kPluginHung = 5,
-  kMaxValue = kPluginHung,
-};
+class KioskSessionPluginHandlerDelegate;
 
 // AppSession maintains a kiosk session and handles its lifetime.
-class AppSession : public KioskSessionPluginHandlerDelegate {
+class AppSession {
  public:
-  AppSession();
-  explicit AppSession(base::OnceClosure attempt_user_exit,
-                      PrefService* local_state);
+  explicit AppSession(Profile* profile);
+  AppSession(Profile* profile,
+             base::OnceClosure attempt_user_exit,
+             PrefService* local_state);
   AppSession(const AppSession&) = delete;
   AppSession& operator=(const AppSession&) = delete;
-  ~AppSession() override;
+  virtual ~AppSession();
 
-  static void RegisterPrefs(PrefRegistrySimple* registry);
+  static std::unique_ptr<AppSession> CreateForTesting(
+      Profile* profile,
+      base::OnceClosure attempt_user_exit,
+      PrefService* local_state,
+      const std::vector<std::string>& crash_dirs);
 
-  // Initializes an app session.
-  virtual void Init(Profile* profile, const std::string& app_id);
+  static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
+
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Initializes an app session for Chrome App Kiosk.
+  virtual void Init(const std::string& app_id);
 
   // Initializes an app session for Web kiosk.
-  virtual void InitForWebKiosk(Browser* browser);
+  // |web_app_name| is absl::nullopt for ash-side of the web kiosk with Lacros.
+  virtual void InitForWebKiosk(const absl::optional<std::string>& web_app_name);
 
   // Invoked when GuestViewManager adds a guest web contents.
   void OnGuestAdded(content::WebContents* guest_web_contents);
@@ -72,52 +68,57 @@ class AppSession : public KioskSessionPluginHandlerDelegate {
   // Replaces chrome::AttemptUserExit() by |closure|.
   void SetAttemptUserExitForTesting(base::OnceClosure closure);
 
-  Browser* GetSettingsBrowserForTesting() { return settings_browser_; }
-  void SetOnHandleBrowserCallbackForTesting(base::RepeatingClosure closure);
+  Browser* GetSettingsBrowserForTesting();
+  void SetOnHandleBrowserCallbackForTesting(
+      base::RepeatingCallback<void(bool is_closing)> callback);
+
+  KioskSessionPluginHandlerDelegate* GetPluginHandlerDelegateForTesting();
+
+  bool is_shutting_down() const { return is_shutting_down_; }
 
  protected:
-  // Set the |profile_| object.
-  void SetProfile(Profile* profile);
+  AppSession(Profile* profile,
+             base::OnceClosure attempt_user_exit,
+             std::unique_ptr<AppSessionMetricsService> metrics_service);
 
   // Create a |browser_window_handler_| object.
-  void CreateBrowserWindowHandler(Browser* browser);
+  void CreateBrowserWindowHandler(
+      const absl::optional<std::string>& web_app_name);
+
+  Profile* profile() const { return profile_; }
 
  private:
   // AppWindowHandler watches for app window and exits the session when the
-  // last window of a given app is closed.
+  // last window of a given app is closed. This class is only used for Chrome
+  // App Kiosk.
   class AppWindowHandler;
 
-  // BrowserWindowHandler monitors Browser object being created during
-  // a kiosk session, log info such as URL so that the code path could be
-  // fixed and closes the just opened browser window.
-  class BrowserWindowHandler;
+  // PluginHandlerDelegateImpl handles callbacks from `plugin_handler_`.
+  class PluginHandlerDelegateImpl;
 
+  void OnHandledNewBrowserWindow(bool is_closing);
   void OnAppWindowAdded(extensions::AppWindow* app_window);
   void OnLastAppWindowClosed();
-
-  // KioskSessionPluginHandlerDelegate
-  bool ShouldHandlePlugin(const base::FilePath& plugin_path) const override;
-  void OnPluginCrashed(const base::FilePath& plugin_path) override;
-  void OnPluginHung(const std::set<int>& hung_plugins) override;
 
   bool is_shutting_down_ = false;
 
   std::unique_ptr<AppWindowHandler> app_window_handler_;
-  std::unique_ptr<BrowserWindowHandler> browser_window_handler_;
+  std::unique_ptr<AppSessionBrowserWindowHandler> browser_window_handler_;
+#if BUILDFLAG(ENABLE_PLUGINS)
+  std::unique_ptr<PluginHandlerDelegateImpl> plugin_handler_delegate_;
   std::unique_ptr<KioskSessionPluginHandler> plugin_handler_;
+#endif
 
-  // Browser in which settings are shown, restricted by
-  // KioskSettingsNavigationThrottle.
-  Browser* settings_browser_ = nullptr;
-
-  Profile* profile_ = nullptr;
+  raw_ptr<Profile, DanglingUntriaged> profile_ = nullptr;
 
   base::OnceClosure attempt_user_exit_;
   const std::unique_ptr<AppSessionMetricsService> metrics_service_;
 
   // Is called whenever a new browser creation was handled by the
   // BrowserWindowHandler.
-  base::RepeatingClosure on_handle_browser_callback_;
+  base::RepeatingCallback<void(bool is_closing)> on_handle_browser_callback_;
+
+  base::WeakPtrFactory<AppSession> weak_ptr_factory_{this};
 };
 
 }  // namespace chromeos

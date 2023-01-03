@@ -1,16 +1,15 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/webui/eche_app_ui/eche_notification_click_handler.h"
 
-#include "ash/components/multidevice/logging/logging.h"
-#include "ash/components/phonehub/phone_hub_manager.h"
-#include "ash/constants/ash_features.h"
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
-#include "ash/system/eche/eche_tray.h"
 #include "ash/webui/eche_app_ui/launch_app_helper.h"
+#include "base/metrics/histogram_functions.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
+#include "chromeos/ash/components/phonehub/phone_hub_manager.h"
 
 namespace ash {
 namespace eche_app {
@@ -22,6 +21,7 @@ EcheNotificationClickHandler::EcheNotificationClickHandler(
     : feature_status_provider_(feature_status_provider),
       launch_app_helper_(launch_app_helper) {
   handler_ = phone_hub_manager->GetNotificationInteractionHandler();
+  phone_model_ = phone_hub_manager->GetPhoneModel();
   feature_status_provider_->AddObserver(this);
   if (handler_ && IsClickable(feature_status_provider_->GetStatus())) {
     handler_->AddNotificationClickHandler(this);
@@ -46,10 +46,14 @@ void EcheNotificationClickHandler::HandleNotificationClick(
           feature_status_provider_->GetStatus());
   switch (prohibited_reason) {
     case LaunchAppHelper::AppLaunchProhibitedReason::kNotProhibited:
+      base::UmaHistogramEnumeration(
+          "Eche.AppStream.LaunchAttempt",
+          mojom::AppStreamLaunchEntryPoint::NOTIFICATION);
       launch_app_helper_->LaunchEcheApp(
           notification_id, app_metadata.package_name,
           app_metadata.visible_app_name, app_metadata.user_id,
-          app_metadata.icon);
+          app_metadata.icon,
+          phone_model_->phone_name().value_or(std::u16string()));
       break;
     case LaunchAppHelper::AppLaunchProhibitedReason::kDisabledByScreenLock:
       launch_app_helper_->ShowNotification(
@@ -77,12 +81,6 @@ void EcheNotificationClickHandler::OnFeatureStatusChanged() {
     handler_->RemoveNotificationClickHandler(this);
     is_click_handler_set_ = false;
   }
-
-  if (NeedClose(feature_status_provider_->GetStatus()) &&
-      !base::FeatureList::IsEnabled(features::kEcheSWADebugMode)) {
-    PA_LOG(INFO) << "Close Eche app window";
-    launch_app_helper_->CloseEcheApp();
-  }
 }
 
 bool EcheNotificationClickHandler::IsClickable(FeatureStatus status) {
@@ -91,11 +89,5 @@ bool EcheNotificationClickHandler::IsClickable(FeatureStatus status) {
          status == FeatureStatus::kConnected;
 }
 
-// Checks FeatureStatus that eche feature is not able to use.
-bool EcheNotificationClickHandler::NeedClose(FeatureStatus status) {
-  return status == FeatureStatus::kIneligible ||
-         status == FeatureStatus::kDisabled ||
-         status == FeatureStatus::kDependentFeature;
-}
 }  // namespace eche_app
 }  // namespace ash

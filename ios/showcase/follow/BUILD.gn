@@ -1,4 +1,4 @@
-# Copyright 2022 The Chromium Authors. All rights reserved.
+# Copyright 2022 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,6 +11,7 @@ source_set("follow") {
     "//ios/chrome/browser/net:crurl",
     "//ios/chrome/browser/ui/follow",
     "//ios/chrome/browser/ui/follow:first_follow_ui",
+    "//ios/chrome/browser/ui/icons:symbols",
     "//ios/chrome/browser/ui/ntp/feed_management:feed_management_ui",
     "//ios/chrome/browser/ui/ntp/feed_management:follow_management_ui",
     "//ios/chrome/browser/ui/ntp/feed_management:navigation_delegate",

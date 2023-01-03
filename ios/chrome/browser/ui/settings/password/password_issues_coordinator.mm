@@ -1,25 +1,26 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/settings/password/password_issues_coordinator.h"
 
-#include "base/mac/foundation_util.h"
+#import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/favicon/favicon_loader.h"
-#include "ios/chrome/browser/favicon/ios_chrome_favicon_loader_factory.h"
+#import "ios/chrome/browser/favicon/ios_chrome_favicon_loader_factory.h"
 #import "ios/chrome/browser/main/browser.h"
+#import "ios/chrome/browser/sync/sync_service_factory.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
 #import "ios/chrome/browser/ui/settings/password/password_details/password_details_coordinator.h"
 #import "ios/chrome/browser/ui/settings/password/password_details/password_details_coordinator_delegate.h"
-#import "ios/chrome/browser/ui/settings/password/password_issue_with_form.h"
+#import "ios/chrome/browser/ui/settings/password/password_issue.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_consumer.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_mediator.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_presenter.h"
 #import "ios/chrome/browser/ui/settings/password/password_issues_table_view_controller.h"
 #import "ios/chrome/browser/ui/table_view/table_view_utils.h"
 #import "ios/chrome/common/ui/reauthentication/reauthentication_module.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -67,13 +68,16 @@
   // To start, a password check manager should be ready.
   DCHECK(_manager);
 
+  ChromeBrowserState* browserState = self.browser->GetBrowserState();
   FaviconLoader* faviconLoader =
-      IOSChromeFaviconLoaderFactory::GetForBrowserState(
-          self.browser->GetBrowserState());
+      IOSChromeFaviconLoaderFactory::GetForBrowserState(browserState);
+  syncer::SyncService* syncService =
+      SyncServiceFactory::GetForBrowserState(browserState);
 
-  self.mediator = [[PasswordIssuesMediator alloc]
-      initWithPasswordCheckManager:_manager
-                     faviconLoader:faviconLoader];
+  self.mediator =
+      [[PasswordIssuesMediator alloc] initWithPasswordCheckManager:_manager
+                                                     faviconLoader:faviconLoader
+                                                       syncService:syncService];
 
   PasswordIssuesTableViewController* passwordIssuesTableViewController =
       [[PasswordIssuesTableViewController alloc]
@@ -110,15 +114,12 @@
   [self.delegate passwordIssuesCoordinatorDidRemove:self];
 }
 
-- (void)presentPasswordIssueDetails:(id<PasswordIssue>)password {
-  password_manager::PasswordForm form =
-      base::mac::ObjCCastStrict<PasswordIssueWithForm>(password).form;
-
+- (void)presentPasswordIssueDetails:(PasswordIssue*)password {
   DCHECK(!self.passwordDetails);
   self.passwordDetails = [[PasswordDetailsCoordinator alloc]
       initWithBaseNavigationController:self.baseNavigationController
                                browser:self.browser
-                              password:form
+                            credential:password.credential
                           reauthModule:self.reauthModule
                   passwordCheckManager:_manager];
   self.passwordDetails.delegate = self;
@@ -136,10 +137,11 @@
 }
 
 - (void)passwordDetailsCoordinator:(PasswordDetailsCoordinator*)coordinator
-                    deletePassword:
-                        (const password_manager::PasswordForm&)password {
-  if (![self.delegate willHandlePasswordDeletion:password]) {
-    [self.mediator deletePassword:password];
+                  deleteCredential:
+                      (const password_manager::CredentialUIEntry&)credential
+                 shouldDismissView:(BOOL)shouldDismiss {
+  if (![self.delegate willHandlePasswordDeletion:credential]) {
+    [self.mediator deleteCredential:credential];
   }
   [self.baseNavigationController popViewControllerAnimated:YES];
 }

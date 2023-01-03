@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -154,7 +154,7 @@ public class ContextualSearchInstrumentationBase {
                 String selection, boolean isExactResolve, ContextualSearchContext searchContext) {
             // Skip native calls and immediately "resolve" the search term.
             onSearchTermResolutionResponse(true, 200, selection, selection, "", "", false, 0, 10,
-                    "", "", "", "", QuickActionCategory.NONE, 0, "", "", 0, "");
+                    "", "", "", "", QuickActionCategory.NONE, "", "", 0, "");
         }
 
         /**
@@ -176,8 +176,7 @@ public class ContextualSearchInstrumentationBase {
 
         public MockCSSelectionController(
                 ChromeActivity activity, ContextualSearchSelectionHandler handler) {
-            super(activity, handler, activity.getActivityTabProvider(),
-                    activity.getBrowserControlsManager());
+            super(activity, handler, activity.getActivityTabProvider());
             mPopupController = new StubbedSelectionPopupController();
         }
 
@@ -238,7 +237,7 @@ public class ContextualSearchInstrumentationBase {
         mContextualSearchManager.getBaseSelectionPopupController().setSelectedText(text);
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             mContextualSearchManager.getGestureStateListener().onTouchDown();
-            mContextualSearchManager.onShowUnhandledTapUIIfNeeded(0, 0, 12, 100);
+            mContextualSearchManager.onShowUnhandledTapUIIfNeeded(0, 0);
         });
     }
 
@@ -247,7 +246,7 @@ public class ContextualSearchInstrumentationBase {
      */
     protected void mockTapEmptySpace() {
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            mContextualSearchManager.onShowUnhandledTapUIIfNeeded(0, 0, 0, 0);
+            mContextualSearchManager.onShowUnhandledTapUIIfNeeded(0, 0);
             mContextualSearchClient.onSelectionEvent(
                     SelectionEventType.SELECTION_HANDLES_CLEARED, 0, 0);
         });
@@ -281,13 +280,15 @@ public class ContextualSearchInstrumentationBase {
     /**
      * Parameter provider for enabling/disabling triggering-related Features.
      */
-    public static class BaseFeatureParamProvider implements ParameterProvider {
+    public static class FeatureParamProvider implements ParameterProvider {
         @Override
         public Iterable<ParameterSet> getParameters() {
             return Arrays.asList(new ParameterSet().value(EnabledFeature.NONE).name("default"),
+                    new ParameterSet().value(EnabledFeature.RELATED_SEARCHES).name("rsearches"),
+                    new ParameterSet().value(EnabledFeature.FORCE_CAPTION).name("caption"),
                     new ParameterSet()
-                            .value(EnabledFeature.TRANSLATIONS)
-                            .name("enableTranslations"));
+                            .value(EnabledFeature.FORCE_CAPTION_WITH_RELATED_SEARCHES)
+                            .name("rs+caption"));
         }
     }
 
@@ -305,11 +306,13 @@ public class ContextualSearchInstrumentationBase {
     protected static final String RELATED_SEARCHES_NODE = "intelligence";
 
     private static final String TAG = "CSIBase";
-    private static final int TEST_TIMEOUT = 15000;
+    private static final int TEST_TIMEOUT = 1500;
     private static final int TEST_EXPECTED_FAILURE_TIMEOUT = 1000;
 
     private static final int PANEL_INTERACTION_MAX_RETRIES = 3;
     private static final int PANEL_INTERACTION_RETRY_DELAY_MS = 200;
+
+    private static final int DOUBLE_TAP_DELAY_MULTIPLIER = 3;
 
     // Search request URL paths and CGI parameters.
     private static final String LOW_PRIORITY_SEARCH_ENDPOINT = "/s?";
@@ -317,48 +320,50 @@ public class ContextualSearchInstrumentationBase {
     private static final String LOW_PRIORITY_INVALID_SEARCH_ENDPOINT = "/s/invalid";
     private static final String CONTEXTUAL_SEARCH_PREFETCH_PARAM = "&pf=c";
 
+    protected static final String EXTERNAL_APP_URL =
+            "intent://test/#Intent;scheme=externalappscheme;end";
+
     //--------------------------------------------------------------------------------------------
     // Feature maps that we use for parameterized tests.
+    // NOTE: We want to test all Features under development both on and off, regardless of whether
+    // they are enabled in fieldtrial_testing_config.json, to catch regressions during rollout.
     //--------------------------------------------------------------------------------------------
 
-    /** This represents the current fully-launched configuration, with no other Features. */
-    protected static final ImmutableMap<String, Boolean> ENABLE_NONE = ImmutableMap.of();
-
-    /** This is the Translations Feature addition. */
-    private static final ImmutableMap<String, Boolean> ENABLE_TRANSLATIONS =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_TRANSLATIONS, true);
-
-    /** This is the privacy-neutral-engagement feature set. */
-    private static final ImmutableMap<String, Boolean> ENABLE_PRIVACY_NEUTRAL =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, true);
-
-    /** This is the privacy-neutral-engagement feature set, plus Related Searches. */
-    private static final ImmutableMap<String, Boolean>
-            ENABLE_PRIVACY_NEUTRAL_WITH_RELATED_SEARCHES =
-                    ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, true,
-                            ChromeFeatureList.RELATED_SEARCHES, true,
-                            ChromeFeatureList.RELATED_SEARCHES_IN_BAR, true,
-                            ChromeFeatureList.RELATED_SEARCHES_UI, true);
-
-    /** This is the contextual triggers feature set that alters tap to show selection handles. */
-    private static final ImmutableMap<String, Boolean> ENABLE_CONTEXTUAL_TRIGGERS =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_TRIGGERS_SELECTION_HANDLES, true);
-
     /**
-     * This is the contextual triggers feature set that alters tap to show handles and shows the
-     * context menu.
+     * This represents the current fully-launched configuration, with no other Features.
      */
-    private static final ImmutableMap<String, Boolean> ENABLE_CONTEXTUAL_TRIGGERS_MENU =
-            ImmutableMap.of(ChromeFeatureList.CONTEXTUAL_TRIGGERS_SELECTION_HANDLES, true,
-                    ChromeFeatureList.CONTEXTUAL_TRIGGERS_SELECTION_MENU, true);
+    protected static final ImmutableMap<String, Boolean> ENABLE_NONE = ImmutableMap.of(
+            // All false
+            ChromeFeatureList.RELATED_SEARCHES, false, ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
+            false, ChromeFeatureList.RELATED_SEARCHES_UI, false,
+            ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, false);
+
+    /** This is the Related Searches Feature in the MVP configuration. */
+    private static final ImmutableMap<String, Boolean> ENABLE_RELATED_SEARCHES = ImmutableMap.of(
+            // Related Searches needs these 3:
+            ChromeFeatureList.RELATED_SEARCHES, true, ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
+            true, ChromeFeatureList.RELATED_SEARCHES_UI, true,
+            ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, false);
+
+    /** This is the helper-text Feature. */
+    private static final ImmutableMap<String, Boolean> ENABLE_FORCE_CAPTION = ImmutableMap.of(
+            ChromeFeatureList.RELATED_SEARCHES, false, ChromeFeatureList.RELATED_SEARCHES_IN_BAR,
+            false, ChromeFeatureList.RELATED_SEARCHES_UI, false,
+            // Just this one enabled:
+            ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, true);
+
+    /** This is the helper-text Feature with Related Searches */
+    private static final ImmutableMap<String, Boolean> ENABLE_FORCE_CAPTION_WITH_RELATED_SEARCHES =
+            ImmutableMap.of(ChromeFeatureList.RELATED_SEARCHES, true,
+                    ChromeFeatureList.RELATED_SEARCHES_IN_BAR, true,
+                    ChromeFeatureList.RELATED_SEARCHES_UI, true,
+                    ChromeFeatureList.CONTEXTUAL_SEARCH_FORCE_CAPTION, true);
 
     //--------------------------------------------------------------------------------------------
     // Feature maps that we use for individual tests.
     //--------------------------------------------------------------------------------------------
     protected static final ImmutableMap<String, Boolean> ENABLE_RELATED_SEARCHES_IN_BAR =
-            ImmutableMap.of(ChromeFeatureList.RELATED_SEARCHES, true,
-                    ChromeFeatureList.RELATED_SEARCHES_UI, true,
-                    ChromeFeatureList.RELATED_SEARCHES_IN_BAR, true);
+            ENABLE_RELATED_SEARCHES;
 
     protected ContextualSearchManager mManager;
     protected ContextualSearchPolicy mPolicy;
@@ -382,23 +387,20 @@ public class ContextualSearchInstrumentationBase {
     // State for an individual test.
     private FakeSlowResolveSearch mLatestSlowResolveSearch;
 
-    @IntDef({EnabledFeature.NONE, EnabledFeature.TRANSLATIONS, EnabledFeature.PRIVACY_NEUTRAL,
-            EnabledFeature.PRIVACY_NEUTRAL_WITH_RELATED_SEARCHES,
-            EnabledFeature.CONTEXTUAL_TRIGGERS, EnabledFeature.CONTEXTUAL_TRIGGERS_MENU})
+    @IntDef({EnabledFeature.NONE, EnabledFeature.RELATED_SEARCHES, EnabledFeature.FORCE_CAPTION,
+            EnabledFeature.FORCE_CAPTION_WITH_RELATED_SEARCHES})
     @Retention(RetentionPolicy.SOURCE)
     @interface EnabledFeature {
         int NONE = 0;
-        int TRANSLATIONS = 1;
-        int PRIVACY_NEUTRAL = 2;
-        int PRIVACY_NEUTRAL_WITH_RELATED_SEARCHES = 3;
-        int CONTEXTUAL_TRIGGERS = 4;
-        int CONTEXTUAL_TRIGGERS_MENU = 5;
+        int RELATED_SEARCHES = 1;
+        int FORCE_CAPTION = 2;
+        int FORCE_CAPTION_WITH_RELATED_SEARCHES = 3;
     }
 
     // Tracks whether a long-press triggering experiment is active.
     private @EnabledFeature int mEnabledFeature;
 
-    @ParameterAnnotations.UseMethodParameterBefore(BaseFeatureParamProvider.class)
+    @ParameterAnnotations.UseMethodParameterBefore(FeatureParamProvider.class)
     public void setFeatureParameterForTest(@EnabledFeature int enabledFeature) {
         mEnabledFeature = enabledFeature;
     }
@@ -425,6 +427,9 @@ public class ContextualSearchInstrumentationBase {
         mTestServer = sActivityTestRule.getTestServer();
 
         sActivityTestRule.loadUrl(mTestServer.getURL(mTestPage));
+        // DOMUtils sometimes hits the wrong node due to an incorrect page scale factor,
+        // so wait until that is set. https://crbug.com/1327063
+        sActivityTestRule.assertWaitForPageScaleFactorMatch(1.0f);
 
         mManager = sActivityTestRule.getActivity().getContextualSearchManagerSupplier().get();
         mTestHost = new ContextualSearchInstrumentationTestHost();
@@ -450,7 +455,7 @@ public class ContextualSearchInstrumentationBase {
 
         IntentFilter filter = new IntentFilter(Intent.ACTION_VIEW);
         filter.addCategory(Intent.CATEGORY_BROWSABLE);
-        filter.addDataScheme("market");
+        filter.addDataScheme("externalappscheme");
         mActivityMonitor = InstrumentationRegistry.getInstrumentation().addMonitor(
                 filter, new Instrumentation.ActivityResult(Activity.RESULT_OK, null), true);
 
@@ -464,20 +469,14 @@ public class ContextualSearchInstrumentationBase {
             case EnabledFeature.NONE:
                 whichFeature = ENABLE_NONE;
                 break;
-            case EnabledFeature.TRANSLATIONS:
-                whichFeature = ENABLE_TRANSLATIONS;
+            case EnabledFeature.RELATED_SEARCHES:
+                whichFeature = ENABLE_RELATED_SEARCHES;
                 break;
-            case EnabledFeature.PRIVACY_NEUTRAL:
-                whichFeature = ENABLE_PRIVACY_NEUTRAL;
+            case EnabledFeature.FORCE_CAPTION:
+                whichFeature = ENABLE_FORCE_CAPTION;
                 break;
-            case EnabledFeature.PRIVACY_NEUTRAL_WITH_RELATED_SEARCHES:
-                whichFeature = ENABLE_PRIVACY_NEUTRAL_WITH_RELATED_SEARCHES;
-                break;
-            case EnabledFeature.CONTEXTUAL_TRIGGERS:
-                whichFeature = ENABLE_CONTEXTUAL_TRIGGERS;
-                break;
-            case EnabledFeature.CONTEXTUAL_TRIGGERS_MENU:
-                whichFeature = ENABLE_CONTEXTUAL_TRIGGERS_MENU;
+            case EnabledFeature.FORCE_CAPTION_WITH_RELATED_SEARCHES:
+                whichFeature = ENABLE_FORCE_CAPTION_WITH_RELATED_SEARCHES;
                 break;
         }
         Assert.assertNotNull(
@@ -485,7 +484,8 @@ public class ContextualSearchInstrumentationBase {
         FeatureList.setTestFeatures(whichFeature);
         // If Related Searches is enabled we need to also set that it's OK to send page content.
         // TODO(donnd): Find a better way to discern if we need to establish sendingUrlOK is needed.
-        if (mEnabledFeature == EnabledFeature.PRIVACY_NEUTRAL_WITH_RELATED_SEARCHES) {
+        if (mEnabledFeature == EnabledFeature.RELATED_SEARCHES
+                || mEnabledFeature == EnabledFeature.FORCE_CAPTION_WITH_RELATED_SEARCHES) {
             mPolicy.overrideAllowSendingPageUrlForTesting(true);
         }
     }
@@ -564,47 +564,6 @@ public class ContextualSearchInstrumentationBase {
         simulateResolveSearch(SEARCH_NODE);
     }
 
-    /**
-     * Gets the name of the given outcome when it's expected to be logged.
-     *
-     * @param feature A feature whose name we want.
-     * @return The name of the outcome if the give parameter is an outcome, or {@code null} if it's
-     * not.
-     */
-    private static final String expectedOutcomeName(
-            @ContextualSearchInteractionRecorder.Feature int feature) {
-        switch (feature) {
-            // We don't log whether the quick action was clicked unless we actually have a
-            // quick action.
-            case ContextualSearchInteractionRecorder.Feature.OUTCOME_WAS_QUICK_ACTION_CLICKED:
-                return null;
-            default:
-                return ContextualSearchRankerLoggerImpl.outcomeName(feature);
-        }
-    }
-
-    /**
-     * Gets the name of the given feature when it's expected to be logged.
-     *
-     * @param feature An outcome that might have been expected to be logged.
-     * @return The name of the outcome if it's expected to be logged, or {@code null} if it's not
-     * expected to be logged.
-     */
-    private static final String expectedFeatureName(
-            @ContextualSearchInteractionRecorder.Feature int feature) {
-        switch (feature) {
-            // We don't log previous user impressions and CTR if not available for the
-            // current user.
-            case ContextualSearchInteractionRecorder.Feature.PREVIOUS_WEEK_CTR_PERCENT:
-            case ContextualSearchInteractionRecorder.Feature.PREVIOUS_WEEK_IMPRESSIONS_COUNT:
-            case ContextualSearchInteractionRecorder.Feature.PREVIOUS_28DAY_CTR_PERCENT:
-            case ContextualSearchInteractionRecorder.Feature.PREVIOUS_28DAY_IMPRESSIONS_COUNT:
-                return null;
-            default:
-                return ContextualSearchRankerLoggerImpl.featureName(feature);
-        }
-    }
-
     protected interface ThrowingRunnable {
         void run() throws TimeoutException;
     }
@@ -623,6 +582,8 @@ public class ContextualSearchInstrumentationBase {
                 success = true;
             } catch (AssertionError | TimeoutException e) {
                 if (tries > PANEL_INTERACTION_MAX_RETRIES) {
+                    Log.e(TAG, "ctxs Failed interactions and giving up.", e);
+                    Thread.dumpStack();
                     throw e;
                 } else {
                     Log.e(TAG, "Failed to peek panel bar, trying again.", e);
@@ -636,7 +597,7 @@ public class ContextualSearchInstrumentationBase {
         }
     }
 
-    private void clearSelection() {
+    protected void clearSelection() {
         ThreadUtils.runOnUiThreadBlocking(() -> {
             SelectionPopupController.fromWebContents(sActivityTestRule.getWebContents())
                     .clearSelection();
@@ -1014,11 +975,7 @@ public class ContextualSearchInstrumentationBase {
      * @param nodeId A string containing the node ID.
      */
     public void triggerNode(Tab tab, String nodeId) throws TimeoutException {
-        if (mPolicy.canResolveLongpress()) {
-            DOMUtils.longPressNode(tab.getWebContents(), nodeId);
-        } else {
-            DOMUtils.clickNode(tab.getWebContents(), nodeId);
-        }
+        DOMUtils.longPressNode(tab.getWebContents(), nodeId);
     }
 
     /**
@@ -1284,7 +1241,7 @@ public class ContextualSearchInstrumentationBase {
         // refinement from nearby taps. The double-tap timeout is sufficiently
         // short that this shouldn't conflict with tap refinement by the user.
         int doubleTapTimeout = ViewConfiguration.getDoubleTapTimeout();
-        Thread.sleep(doubleTapTimeout);
+        Thread.sleep(doubleTapTimeout * DOUBLE_TAP_DELAY_MULTIPLIER);
     }
 
     /**
@@ -1382,27 +1339,23 @@ public class ContextualSearchInstrumentationBase {
      */
     protected void clickToExpandAndClosePanel() throws TimeoutException {
         clickWordNode("states");
-        tapBarToExpandAndClosePanel();
+        expandAndClosePanel();
         waitForSelectionEmpty();
     }
 
     /**
-     * Simple sequence useful for checking if a Search Request is prefetched.
-     * Resets the fake server and clicks near to cause a search, then closes the panel,
-     * which takes us back to the starting state except that the fake server knows
-     * if a prefetch occurred.
+     * Expand the panel and then close it.
      */
-    protected void clickToTriggerPrefetch() throws Exception {
-        mFakeServer.reset();
-        simulateResolveSearch("search");
+    protected void expandAndClosePanel() throws TimeoutException {
+        expandPanelAndAssert();
         closePanel();
-        waitForPanelToCloseAndSelectionEmpty();
     }
 
     /**
      * Tap on the peeking Bar to expand the panel, then close it.
      */
-    private void tapBarToExpandAndClosePanel() throws TimeoutException {
+    @Deprecated
+    protected void tapBarToExpandAndClosePanel() throws TimeoutException {
         tapPeekingBarToExpandAndAssert();
         closePanel();
     }
@@ -1422,11 +1375,38 @@ public class ContextualSearchInstrumentationBase {
     /**
      * Taps the peeking bar to expand the panel
      */
+    @Deprecated
     protected void tapPeekingBarToExpandAndAssert() throws TimeoutException {
         retryPanelBarInteractions(() -> {
             clickPanelBar();
             waitForPanelToExpand();
         }, false);
+    }
+
+    /**
+     * Expands the panel and asserts that it did actually expand.
+     */
+    protected void expandPanelAndAssert() throws TimeoutException {
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            mPanel.notifyBarTouched(0);
+            mFakeServer.getContentsObserver().wasShown();
+            mPanel.animatePanelToState(PanelState.EXPANDED, StateChangeReason.UNKNOWN,
+                    PANEL_INTERACTION_RETRY_DELAY_MS);
+        });
+        waitForPanelToExpand();
+    }
+
+    /**
+     * Simple sequence useful for checking if a Search Request is prefetched.
+     * Resets the fake server and clicks near to cause a search, then closes the panel,
+     * which takes us back to the starting state except that the fake server knows
+     * if a prefetch occurred.
+     */
+    protected void clickToTriggerPrefetch() throws Exception {
+        mFakeServer.reset();
+        simulateResolveSearch("search");
+        closePanel();
+        waitForPanelToCloseAndSelectionEmpty();
     }
 
     /**
@@ -1495,52 +1475,5 @@ public class ContextualSearchInstrumentationBase {
      */
     protected void waitForSelectActionBarVisible() {
         assertWaitForSelectActionBarVisible(true);
-    }
-
-    /**
-     * Gets the Ranker Logger and asserts if we can't.
-     **/
-    private ContextualSearchRankerLoggerImpl getRankerLogger() {
-        ContextualSearchRankerLoggerImpl rankerLogger =
-                (ContextualSearchRankerLoggerImpl) mManager.getRankerLogger();
-        Assert.assertNotNull(rankerLogger);
-        return rankerLogger;
-    }
-
-    /**
-     * @return The value of the given logged feature, or {@code null} if not logged.
-     */
-    protected Object loggedToRanker(@ContextualSearchInteractionRecorder.Feature int feature) {
-        return getRankerLogger().getFeaturesLogged().get(feature);
-    }
-
-    /** Asserts that all the expected features have been logged to Ranker. **/
-    protected void assertLoggedAllExpectedFeaturesToRanker() {
-        for (int feature = 0; feature < ContextualSearchInteractionRecorder.Feature.NUM_ENTRIES;
-                feature++) {
-            if (expectedFeatureName(feature) != null) Assert.assertNotNull(loggedToRanker(feature));
-        }
-    }
-
-    /** Asserts that all the expected outcomes have been logged to Ranker. **/
-    protected void assertLoggedAllExpectedOutcomesToRanker() {
-        for (int feature = 0; feature < ContextualSearchInteractionRecorder.Feature.NUM_ENTRIES;
-                feature++) {
-            if (expectedOutcomeName(feature) != null) {
-                Assert.assertNotNull("Expected this outcome to be logged: " + feature,
-                        getRankerLogger().getOutcomesLogged().get(feature));
-            }
-        }
-    }
-
-    /**
-     * Returns whether all the supported gestures for opted-in users trigger a Resolve request,
-     * aka intelligent search.
-     */
-    protected boolean isConfigurationForResolvingGesturesOnly() {
-        // The current interpretation of the ability to resolve Longpress (which is forced by the
-        // Translations Feature as well as the LongpressResolve Feature) preserves a resolving Tap
-        // so there is no non-resolving gesture for opted-in users.
-        return mPolicy.canResolveLongpress();
     }
 }

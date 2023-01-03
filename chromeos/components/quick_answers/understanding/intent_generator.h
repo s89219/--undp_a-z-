@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +54,8 @@ class IntentGenerator {
 
   void MaybeLoadTextClassifier(const QuickAnswersRequest& request);
   void CheckSpellingCallback(const QuickAnswersRequest& request,
-                             bool correctness);
+                             bool correctness,
+                             const std::string& language);
 
   void LoadModelCallback(
       const QuickAnswersRequest& request,

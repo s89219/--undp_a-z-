@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/public/cpp/style/color_mode_observer.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
 
@@ -41,7 +41,7 @@ class ASH_EXPORT AmbientAnimationShieldController : public ColorModeObserver {
 
   const std::unique_ptr<views::View> shield_view_;
   const base::raw_ptr<views::View> parent_view_;
-  base::ScopedObservation<AshColorProvider, ColorModeObserver>
+  base::ScopedObservation<DarkLightModeControllerImpl, ColorModeObserver>
       color_provider_observer_{this};
 };
 

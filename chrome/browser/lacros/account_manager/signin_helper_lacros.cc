@@ -1,15 +1,13 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/lacros/account_manager/signin_helper_lacros.h"
 
 #include "base/callback.h"
-#include "base/feature_list.h"
 #include "base/ranges/algorithm.h"
 #include "chrome/browser/lacros/account_manager/account_manager_util.h"
 #include "chrome/browser/ui/profile_picker.h"
-#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "google_apis/gaia/core_account_id.h"
 
@@ -25,14 +23,12 @@ SigninHelperLacros::SigninHelperLacros(
       account_profile_mapper_(account_profile_mapper),
       source_(source),
       identity_manager_(identity_manager) {
-  if (base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles)) {
-    DCHECK(consistency_cookie_manager);
-    scoped_account_update_ =
-        std::make_unique<signin::ConsistencyCookieManager::ScopedAccountUpdate>(
-            consistency_cookie_manager->CreateScopedAccountUpdate());
-  }
+  DCHECK(consistency_cookie_manager);
+  scoped_account_update_ =
+      std::make_unique<signin::ConsistencyCookieManager::ScopedAccountUpdate>(
+          consistency_cookie_manager->CreateScopedAccountUpdate());
 
-  GetAccountsAvailableAsSecondary(
+  GetAllAvailableAccounts(
       account_profile_mapper, profile_path,
       base::BindOnce(&SigninHelperLacros::OnAccountsAvailableAsSecondaryFetched,
                      weak_factory_.GetWeakPtr()));
@@ -87,7 +83,7 @@ void SigninHelperLacros::OnAccountPicked(const std::string& gaia_id) {
 
   // Wait for account to be in tokens.
   account_added_to_mapping_ = gaia_id;
-  identity_manager_observervation_.Observe(identity_manager_);
+  identity_manager_observervation_.Observe(identity_manager_.get());
 }
 
 void SigninHelperLacros::Finalize(const CoreAccountId& account_id) {

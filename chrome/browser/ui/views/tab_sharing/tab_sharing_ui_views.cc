@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,9 @@
 #include <string>
 #include <utility>
 
+#include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -20,7 +22,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/sad_tab_helper.h"
-#include "chrome/browser/ui/tab_sharing/tab_sharing_infobar_delegate.h"
 #include "chrome/browser/ui/views/tab_sharing/tab_capture_contents_border_helper.h"
 #include "components/infobars/content/content_infobar_manager.h"
 #include "components/infobars/core/infobar.h"
@@ -33,6 +34,7 @@
 #include "extensions/common/constants.h"
 #include "net/base/url_util.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
+#include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/views/border.h"
 
@@ -52,6 +54,13 @@ using content::GlobalRenderFrameHostId;
 using content::RenderFrameHost;
 using content::WebContents;
 
+// Killswitch for removing the "share this tab instead" button for self-capture,
+// in those special circumstances where it was recently allowed.
+// TODO(crbug.com/1395477): Remove this.
+BASE_FEATURE(kShareThisTabInsteadSelfCapture,
+             "ShareThisTabInsteadSelfCapture",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_CHROMEOS)
 bool g_apply_dlp_for_all_users_for_testing_ = false;
 #endif
@@ -59,7 +68,7 @@ bool g_apply_dlp_for_all_users_for_testing_ = false;
 std::u16string GetTabName(WebContents* tab) {
   const std::u16string formatted_origin =
       url_formatter::FormatOriginForSecurityDisplay(
-          tab->GetMainFrame()->GetLastCommittedOrigin());
+          tab->GetPrimaryMainFrame()->GetLastCommittedOrigin());
   return formatted_origin.empty() ? tab->GetTitle() : formatted_origin;
 }
 
@@ -67,7 +76,7 @@ GlobalRenderFrameHostId GetGlobalId(WebContents* web_contents) {
   if (!web_contents) {
     return GlobalRenderFrameHostId();
   }
-  auto* const main_frame = web_contents->GetMainFrame();
+  auto* const main_frame = web_contents->GetPrimaryMainFrame();
   return main_frame ? main_frame->GetGlobalId() : GlobalRenderFrameHostId();
 }
 
@@ -118,16 +127,21 @@ std::unique_ptr<TabSharingUI> TabSharingUI::Create(
     GlobalRenderFrameHostId capturer,
     const content::DesktopMediaID& media_id,
     std::u16string app_name,
-    bool favicons_used_for_switch_to_tab_button) {
+    bool favicons_used_for_switch_to_tab_button,
+    bool app_preferred_current_tab,
+    TabSharingInfoBarDelegate::TabShareType capture_type) {
   return std::make_unique<TabSharingUIViews>(
-      capturer, media_id, app_name, favicons_used_for_switch_to_tab_button);
+      capturer, media_id, app_name, favicons_used_for_switch_to_tab_button,
+      app_preferred_current_tab, capture_type);
 }
 
 TabSharingUIViews::TabSharingUIViews(
     GlobalRenderFrameHostId capturer,
     const content::DesktopMediaID& media_id,
     std::u16string app_name,
-    bool favicons_used_for_switch_to_tab_button)
+    bool favicons_used_for_switch_to_tab_button,
+    bool app_preferred_current_tab,
+    TabSharingInfoBarDelegate::TabShareType capture_type)
     : capture_session_id_(next_capture_session_id_++),
       capturer_(capturer),
       capturer_origin_(GetOriginFromId(capturer)),
@@ -141,7 +155,9 @@ TabSharingUIViews::TabSharingUIViews(
           media_id.web_contents_id.render_process_id,
           media_id.web_contents_id.main_render_frame_id))),
       favicons_used_for_switch_to_tab_button_(
-          favicons_used_for_switch_to_tab_button) {
+          favicons_used_for_switch_to_tab_button),
+      app_preferred_current_tab_(app_preferred_current_tab),
+      capture_type_(capture_type) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   Observe(shared_tab_);
@@ -191,7 +207,7 @@ void TabSharingUIViews::StartSharing(infobars::InfoBar* infobar) {
   DCHECK(shared_tab);
   DCHECK_EQ(infobars_[shared_tab], infobar);
 
-  RenderFrameHost* main_frame = shared_tab->GetMainFrame();
+  RenderFrameHost* main_frame = shared_tab->GetPrimaryMainFrame();
   DCHECK(main_frame);
   source_callback_.Run(content::DesktopMediaID(
       content::DesktopMediaID::TYPE_WEB_CONTENTS,
@@ -267,10 +283,8 @@ void TabSharingUIViews::TabChangedAt(WebContents* contents,
 
 void TabSharingUIViews::OnInfoBarRemoved(infobars::InfoBar* infobar,
                                          bool animate) {
-  auto infobars_entry = std::find_if(infobars_.begin(), infobars_.end(),
-                                     [infobar](const auto& infobars_entry) {
-                                       return infobars_entry.second == infobar;
-                                     });
+  auto infobars_entry =
+      base::ranges::find(infobars_, infobar, &InfoBars::value_type::second);
   if (infobars_entry == infobars_.end())
     return;
 
@@ -374,12 +388,8 @@ void TabSharingUIViews::CreateInfobarForWebContents(WebContents* contents) {
 
   const bool is_capturing_tab = (GetGlobalId(contents) == capturer_);
   const bool is_captured_tab = (contents == shared_tab_);
-
-  // We may want to show the "Share this tab instead" button, but we can only do
-  // so if we have a |source_callback_| and if this tab is neither the capturing
-  // nor captured tab.
   const bool is_share_instead_button_possible =
-      !source_callback_.is_null() && !is_capturing_tab && !is_captured_tab;
+      IsShareInsteadButtonPossible(contents);
 
   // If sharing this tab instead of the currently captured tab is possible, it
   // may still be blocked by enterprise policy. If the enterprise policy is
@@ -414,7 +424,7 @@ void TabSharingUIViews::CreateInfobarForWebContents(WebContents* contents) {
   bool is_sharing_allowed_by_policy =
       !capturer_restricted_to_same_origin_ ||
       capturer_origin_.IsSameOriginWith(
-          contents->GetMainFrame()->GetLastCommittedOrigin());
+          contents->GetPrimaryMainFrame()->GetLastCommittedOrigin());
 
 #if BUILDFLAG(IS_CHROMEOS)
   // Check if dlp policies allow sharing.
@@ -440,7 +450,7 @@ void TabSharingUIViews::CreateInfobarForWebContents(WebContents* contents) {
   infobars_[contents] = TabSharingInfoBarDelegate::Create(
       infobar_manager, shared_tab_name_, app_name_,
       shared_tab_ == contents /*shared_tab*/,
-      share_this_tab_instead_button_state, focus_target, this,
+      share_this_tab_instead_button_state, focus_target, this, capture_type_,
       favicons_used_for_switch_to_tab_button_);
 }
 
@@ -464,9 +474,11 @@ void TabSharingUIViews::CreateTabCaptureIndicator() {
   if (!shared_tab_)
     return;
 
+  blink::mojom::StreamDevices devices;
+  devices.video_device = device;
   tab_capture_indicator_ui_ = MediaCaptureDevicesDispatcher::GetInstance()
                                   ->GetMediaStreamCaptureIndicator()
-                                  ->RegisterMediaStream(shared_tab_, {device});
+                                  ->RegisterMediaStream(shared_tab_, devices);
   tab_capture_indicator_ui_->OnStarted(
       base::RepeatingClosure(), content::MediaStreamUI::SourceCallback(),
       /*label=*/std::string(), /*screen_capture_ids=*/{},
@@ -580,4 +592,34 @@ void TabSharingUIViews::UpdateTabCaptureData(WebContents* contents,
       helper->VisibilityUpdated();
       break;
   }
+}
+
+bool TabSharingUIViews::IsShareInsteadButtonPossible(
+    content::WebContents* web_contents) const {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  if (source_callback_.is_null()) {
+    // No callback to support share-this-tab-instead.
+    // This can happen, for instance, if the application specifies
+    // {surfaceSwitching: "exclude"}.
+    return false;
+  }
+
+  if (web_contents == shared_tab_) {
+    return false;  // |web_contents| is already the shared tab.
+  }
+
+  if (GetGlobalId(web_contents) != capturer_) {
+    return true;  // Any tab other than the capturing/captured tab is eligible.
+  }
+
+  // If the application specified {preferCurrentTab: true}, we detect that
+  // the current tab is a reasonable choice. We therefore expose the button
+  // that lets the user switch to sharing the current tab.
+  //
+  // Note that for many applications, choosing the current tab is undesirable.
+  // For example, in the context of video-conferencing applications, it would
+  // often produce a "hall of mirrors" effect.
+  return base::FeatureList::IsEnabled(kShareThisTabInsteadSelfCapture) &&
+         app_preferred_current_tab_;
 }

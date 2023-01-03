@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -138,8 +138,7 @@ TabContentManager::TabContentManager(JNIEnv* env,
   thumbnail_cache_->AddThumbnailCacheObserver(this);
 }
 
-TabContentManager::~TabContentManager() {
-}
+TabContentManager::~TabContentManager() {}
 
 void TabContentManager::Destroy(JNIEnv* env) {
   thumbnail_cache_->RemoveThumbnailCacheObserver(this);
@@ -215,13 +214,6 @@ void TabContentManager::DetachTab(JNIEnv* env,
       (layer.get() == current_layer.get() || !layer.get())) {
     live_layer_list_.erase(tab_id);
   }
-}
-
-jboolean TabContentManager::HasFullCachedThumbnail(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    jint tab_id) {
-  return thumbnail_cache_->Get(tab_id, false, false) != nullptr;
 }
 
 content::RenderWidgetHostView* TabContentManager::GetRwhvForTab(

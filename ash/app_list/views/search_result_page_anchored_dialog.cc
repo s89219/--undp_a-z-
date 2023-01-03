@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,13 +95,6 @@ float SearchResultPageAnchoredDialog::AdjustVerticalTransformOffset(
   const float parent_offset =
       host_view_->GetWidget()->GetLayer()->transform().To2dTranslation().y();
   return default_offset + parent_offset;
-}
-
-void SearchResultPageAnchoredDialog::OnWidgetClosing(views::Widget* widget) {
-  widget_ = nullptr;
-  widget_observations_.RemoveAllObservations();
-  if (callback_)
-    std::move(callback_).Run();
 }
 
 void SearchResultPageAnchoredDialog::OnWidgetDestroying(views::Widget* widget) {

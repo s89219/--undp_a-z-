@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -83,9 +83,11 @@ class TestManagePasswordsUIController : public ManagePasswordsUIController {
   MOCK_METHOD0(OnDialogClosed, void());
 
  private:
-  raw_ptr<AccountChooserPrompt> current_account_chooser_;
-  raw_ptr<AutoSigninFirstRunPrompt> current_autosignin_prompt_;
-  raw_ptr<CredentialLeakPrompt> current_credential_leak_prompt_;
+  raw_ptr<AccountChooserPrompt, DanglingUntriaged> current_account_chooser_;
+  raw_ptr<AutoSigninFirstRunPrompt, DanglingUntriaged>
+      current_autosignin_prompt_;
+  raw_ptr<CredentialLeakPrompt, DanglingUntriaged>
+      current_credential_leak_prompt_;
 };
 
 TestManagePasswordsUIController::TestManagePasswordsUIController(
@@ -172,7 +174,7 @@ class PasswordDialogViewTest : public DialogBrowserTest {
   }
 
  private:
-  raw_ptr<TestManagePasswordsUIController> controller_;
+  raw_ptr<TestManagePasswordsUIController, DanglingUntriaged> controller_;
 };
 
 void PasswordDialogViewTest::SetUpOnMainThread() {
@@ -470,7 +472,8 @@ IN_PROC_BROWSER_TEST_F(PasswordDialogViewTest, PopupCredentialsLeakedPrompt) {
   CredentialLeakType leak_type = CredentialLeakFlags::kPasswordSaved |
                                  CredentialLeakFlags::kPasswordUsedOnOtherSites;
   GURL origin("https://example.com");
-  controller()->OnCredentialLeak(leak_type, origin);
+  std::u16string username(u"Eve");
+  controller()->OnCredentialLeak(leak_type, origin, username);
   ASSERT_TRUE(controller()->current_credential_leak_prompt());
   EXPECT_EQ(password_manager::ui::INACTIVE_STATE, controller()->GetState());
   CredentialLeakDialogView* dialog =
@@ -536,11 +539,12 @@ void PasswordDialogViewTest::ShowUi(const std::string& name) {
   }
 
   GURL origin("https://example.com");
+  std::u16string username(u"Eve");
   if (name == "CredentialLeak") {
     CredentialLeakType leak_type =
         CredentialLeakFlags::kPasswordSaved |
         CredentialLeakFlags::kPasswordUsedOnOtherSites;
-    controller()->OnCredentialLeak(leak_type, origin);
+    controller()->OnCredentialLeak(leak_type, origin, username);
     return;
   }
 

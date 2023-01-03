@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/services/qrcode_generator/public/cpp/qrcode_generator_service.h"
 #include "chrome/services/qrcode_generator/public/mojom/qrcode_generator.mojom.h"
@@ -51,14 +52,20 @@ class AuthenticatorQRViewCentered : public views::View {
         qrcode_generator::mojom::GenerateQRCodeRequest::New();
     request->data = qr_string;
     request->should_render = true;
-    request->render_dino =
-        !base::FeatureList::IsEnabled(device::kWebAuthPasskeysUI) &&
-        !base::FeatureList::IsEnabled(device::kWebAuthPasskeysUIExperiment);
+    request->center_image =
+        base::FeatureList::IsEnabled(
+            device::kWebAuthnNewDiscoverableCredentialsUi) ||
+                base::FeatureList::IsEnabled(device::kWebAuthPasskeysUI)
+            ? qrcode_generator::mojom::CenterImage::PASSKEY_ICON
+            : qrcode_generator::mojom::CenterImage::CHROME_DINO;
 
     request->render_module_style =
         qrcode_generator::mojom::ModuleStyle::CIRCLES;
     request->render_locator_style =
-        qrcode_generator::mojom::LocatorStyle::DEFAULT_SQUARE;
+        base::FeatureList::IsEnabled(
+            device::kWebAuthnNewDiscoverableCredentialsUi)
+            ? qrcode_generator::mojom::LocatorStyle::ROUNDED
+            : qrcode_generator::mojom::LocatorStyle::DEFAULT_SQUARE;
 
     // Deleting the view will close the channel so base::Unretained is safe
     // here.
@@ -81,9 +88,12 @@ class AuthenticatorQRViewCentered : public views::View {
         views::LayoutProvider::Get()->GetCornerRadiusMetric(
             views::Emphasis::kHigh);
     const auto* color_provider = GetColorProvider();
-    qr_code_image_->SetBorder(views::CreateRoundedRectBorder(
-        /*thickness=*/2, border_radius,
-        color_provider->GetColor(kColorQrCodeBorder)));
+    if (!base::FeatureList::IsEnabled(
+            device::kWebAuthnNewDiscoverableCredentialsUi)) {
+      qr_code_image_->SetBorder(views::CreateRoundedRectBorder(
+          /*thickness=*/2, border_radius,
+          color_provider->GetColor(kColorQrCodeBorder)));
+    }
     qr_code_image_->SetBackground(views::CreateRoundedRectBackground(
         color_provider->GetColor(kColorQrCodeBackground), border_radius, 2));
   }
@@ -110,7 +120,7 @@ class AuthenticatorQRViewCentered : public views::View {
   }
 
   std::string qr_string_;
-  views::ImageView* qr_code_image_;
+  raw_ptr<views::ImageView> qr_code_image_;
 
   // Service instance for QR code image generation.
   mojo::Remote<qrcode_generator::mojom::QRCodeGeneratorService>

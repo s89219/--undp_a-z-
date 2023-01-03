@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "dbus/object_path.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -147,7 +146,7 @@ bool FakeBiodClient::HasObserver(const Observer* observer) const {
 
 void FakeBiodClient::StartEnrollSession(const std::string& user_id,
                                         const std::string& label,
-                                        ObjectPathCallback callback) {
+                                        chromeos::ObjectPathCallback callback) {
   DCHECK_EQ(current_session_, FingerprintSession::NONE);
 
   // Create the enrollment with |user_id|, |label| and a empty fake fingerprint.
@@ -158,7 +157,7 @@ void FakeBiodClient::StartEnrollSession(const std::string& user_id,
   current_record_->label = label;
   current_session_ = FingerprintSession::ENROLL;
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback),
                                 dbus::ObjectPath(kEnrollSessionObjectPath)));
 }
@@ -171,33 +170,35 @@ void FakeBiodClient::GetRecordsForUser(const std::string& user_id,
       records_object_paths.push_back(record.first);
   }
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), records_object_paths));
 }
 
-void FakeBiodClient::DestroyAllRecords(VoidDBusMethodCallback callback) {
+void FakeBiodClient::DestroyAllRecords(
+    chromeos::VoidDBusMethodCallback callback) {
   records_.clear();
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 
-void FakeBiodClient::StartAuthSession(ObjectPathCallback callback) {
+void FakeBiodClient::StartAuthSession(chromeos::ObjectPathCallback callback) {
   DCHECK_EQ(current_session_, FingerprintSession::NONE);
 
   current_session_ = FingerprintSession::AUTH;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback),
                                 dbus::ObjectPath(kAuthSessionObjectPath)));
 }
 
 void FakeBiodClient::RequestType(BiometricTypeCallback callback) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), biod::BIOMETRIC_TYPE_FINGERPRINT));
 }
 
-void FakeBiodClient::CancelEnrollSession(VoidDBusMethodCallback callback) {
+void FakeBiodClient::CancelEnrollSession(
+    chromeos::VoidDBusMethodCallback callback) {
   DCHECK_EQ(current_session_, FingerprintSession::ENROLL);
 
   // Clean up the in progress enrollment.
@@ -205,31 +206,31 @@ void FakeBiodClient::CancelEnrollSession(VoidDBusMethodCallback callback) {
   current_record_path_ = dbus::ObjectPath();
   current_session_ = FingerprintSession::NONE;
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 
-void FakeBiodClient::EndAuthSession(VoidDBusMethodCallback callback) {
+void FakeBiodClient::EndAuthSession(chromeos::VoidDBusMethodCallback callback) {
   current_session_ = FingerprintSession::NONE;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 
 void FakeBiodClient::SetRecordLabel(const dbus::ObjectPath& record_path,
                                     const std::string& label,
-                                    VoidDBusMethodCallback callback) {
+                                    chromeos::VoidDBusMethodCallback callback) {
   if (records_.find(record_path) != records_.end())
     records_[record_path]->label = label;
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 
 void FakeBiodClient::RemoveRecord(const dbus::ObjectPath& record_path,
-                                  VoidDBusMethodCallback callback) {
+                                  chromeos::VoidDBusMethodCallback callback) {
   records_.erase(record_path);
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 
@@ -239,7 +240,7 @@ void FakeBiodClient::RequestRecordLabel(const dbus::ObjectPath& record_path,
   if (records_.find(record_path) != records_.end())
     record_label = records_[record_path]->label;
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), record_label));
 }
 

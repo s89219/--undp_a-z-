@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/metrics/user_metrics.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -159,23 +160,23 @@ const ModifierRemapping* GetRemappedKey(
 // be remapped separately.
 const ModifierRemapping* GetSearchRemappedKey(
     EventRewriterChromeOS::Delegate* delegate,
-    EventRewriterChromeOS::DeviceType keyboard_type) {
+    KeyboardCapability::DeviceType keyboard_type) {
   std::string pref_name;
   switch (keyboard_type) {
-    case EventRewriterChromeOS::kDeviceExternalAppleKeyboard:
+    case KeyboardCapability::DeviceType::kDeviceExternalAppleKeyboard:
       pref_name = prefs::kLanguageRemapExternalCommandKeyTo;
       break;
 
-    case EventRewriterChromeOS::kDeviceExternalGenericKeyboard:
-    case EventRewriterChromeOS::kDeviceExternalUnknown:
+    case KeyboardCapability::DeviceType::kDeviceExternalGenericKeyboard:
+    case KeyboardCapability::DeviceType::kDeviceExternalUnknown:
       pref_name = prefs::kLanguageRemapExternalMetaKeyTo;
       break;
 
-    case EventRewriterChromeOS::kDeviceExternalChromeOsKeyboard:
-    case EventRewriterChromeOS::kDeviceInternalKeyboard:
-    case EventRewriterChromeOS::kDeviceHotrodRemote:
-    case EventRewriterChromeOS::kDeviceVirtualCoreKeyboard:
-    case EventRewriterChromeOS::kDeviceUnknown:
+    case KeyboardCapability::DeviceType::kDeviceExternalChromeOsKeyboard:
+    case KeyboardCapability::DeviceType::kDeviceInternalKeyboard:
+    case KeyboardCapability::DeviceType::kDeviceHotrodRemote:
+    case KeyboardCapability::DeviceType::kDeviceVirtualCoreKeyboard:
+    case KeyboardCapability::DeviceType::kDeviceUnknown:
       // Use the preference for internal Search key remapping.
       pref_name = prefs::kLanguageRemapSearchKeyTo;
       break;
@@ -368,9 +369,10 @@ bool GetTopRowLayoutProperty(const InputDevice& keyboard_device,
 // Parses keyboard to row layout string. Returns true if data is valid.
 bool ParseKeyboardTopRowLayout(
     const std::string& layout_string,
-    EventRewriterChromeOS::KeyboardTopRowLayout* out_layout) {
+    KeyboardCapability::KeyboardTopRowLayout* out_layout) {
   if (layout_string.empty()) {
-    *out_layout = EventRewriterChromeOS::kKbdTopRowLayoutDefault;
+    *out_layout =
+        KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault;
     return true;
   }
 
@@ -380,14 +382,18 @@ bool ParseKeyboardTopRowLayout(
                  << layout_string << "'";
     return false;
   }
-  if (layout_id < EventRewriterChromeOS::kKbdTopRowLayoutMin ||
-      layout_id > EventRewriterChromeOS::kKbdTopRowLayoutMax) {
+  if (layout_id <
+          static_cast<int>(
+              KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutMin) ||
+      layout_id >
+          static_cast<int>(
+              KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutMax)) {
     LOG(WARNING) << "Invalid " << kLayoutProperty << " '" << layout_string
                  << "'";
     return false;
   }
   *out_layout =
-      static_cast<EventRewriterChromeOS::KeyboardTopRowLayout>(layout_id);
+      static_cast<KeyboardCapability::KeyboardTopRowLayout>(layout_id);
   return true;
 }
 
@@ -483,27 +489,27 @@ bool AreFlagsSet(int flags, int flag_mask) {
 // |has_chromeos_top_row| argument indicates that the keyboard's top
 // row has "action" keys (such as back, refresh, etc.) instead of the
 // standard F1-F12 keys.
-EventRewriterChromeOS::DeviceType IdentifyKeyboardType(
+KeyboardCapability::DeviceType IdentifyKeyboardType(
     const InputDevice& keyboard_device,
     bool has_chromeos_top_row) {
   if (keyboard_device.vendor_id == kHotrodRemoteVendorId &&
       keyboard_device.product_id == kHotrodRemoteProductId) {
     VLOG(1) << "Hotrod remote '" << keyboard_device.name
             << "' connected: id=" << keyboard_device.id;
-    return EventRewriterChromeOS::kDeviceHotrodRemote;
+    return KeyboardCapability::DeviceType::kDeviceHotrodRemote;
   }
 
-  if (base::LowerCaseEqualsASCII(keyboard_device.name,
-                                 "virtual core keyboard")) {
+  if (base::EqualsCaseInsensitiveASCII(keyboard_device.name,
+                                       "virtual core keyboard")) {
     VLOG(1) << "Xorg virtual '" << keyboard_device.name
             << "' connected: id=" << keyboard_device.id;
-    return EventRewriterChromeOS::kDeviceVirtualCoreKeyboard;
+    return KeyboardCapability::DeviceType::kDeviceVirtualCoreKeyboard;
   }
 
   if (keyboard_device.type == INPUT_DEVICE_INTERNAL) {
     VLOG(1) << "Internal keyboard '" << keyboard_device.name
             << "' connected: id=" << keyboard_device.id;
-    return EventRewriterChromeOS::kDeviceInternalKeyboard;
+    return KeyboardCapability::DeviceType::kDeviceInternalKeyboard;
   }
 
   // This is an external device.
@@ -512,7 +518,7 @@ EventRewriterChromeOS::DeviceType IdentifyKeyboardType(
     // Chrome OS keyboard.
     VLOG(1) << "External Chrome OS keyboard '" << keyboard_device.name
             << "' connected: id=" << keyboard_device.id;
-    return EventRewriterChromeOS::kDeviceExternalChromeOsKeyboard;
+    return KeyboardCapability::DeviceType::kDeviceExternalChromeOsKeyboard;
   }
 
   const std::vector<std::string> tokens =
@@ -523,9 +529,10 @@ EventRewriterChromeOS::DeviceType IdentifyKeyboardType(
   bool found_apple = false;
   bool found_keyboard = false;
   for (size_t i = 0; i < tokens.size(); ++i) {
-    if (!found_apple && base::LowerCaseEqualsASCII(tokens[i], "apple"))
+    if (!found_apple && base::EqualsCaseInsensitiveASCII(tokens[i], "apple"))
       found_apple = true;
-    if (!found_keyboard && base::LowerCaseEqualsASCII(tokens[i], "keyboard"))
+    if (!found_keyboard &&
+        base::EqualsCaseInsensitiveASCII(tokens[i], "keyboard"))
       found_keyboard = true;
   }
   if (found_apple) {
@@ -534,20 +541,20 @@ EventRewriterChromeOS::DeviceType IdentifyKeyboardType(
     if (found_keyboard) {
       VLOG(1) << "Apple keyboard '" << keyboard_device.name
               << "' connected: id=" << keyboard_device.id;
-      return EventRewriterChromeOS::kDeviceExternalAppleKeyboard;
+      return KeyboardCapability::DeviceType::kDeviceExternalAppleKeyboard;
     } else {
       VLOG(1) << "Apple device '" << keyboard_device.name
               << "' connected: id=" << keyboard_device.id;
-      return EventRewriterChromeOS::kDeviceExternalUnknown;
+      return KeyboardCapability::DeviceType::kDeviceExternalUnknown;
     }
   } else if (found_keyboard) {
     VLOG(1) << "External keyboard '" << keyboard_device.name
             << "' connected: id=" << keyboard_device.id;
-    return EventRewriterChromeOS::kDeviceExternalGenericKeyboard;
+    return KeyboardCapability::DeviceType::kDeviceExternalGenericKeyboard;
   } else {
     VLOG(1) << "External device '" << keyboard_device.name
             << "' connected: id=" << keyboard_device.id;
-    return EventRewriterChromeOS::kDeviceExternalUnknown;
+    return KeyboardCapability::DeviceType::kDeviceExternalUnknown;
   }
 }
 
@@ -786,26 +793,26 @@ void EventRewriterChromeOS::BuildRewrittenKeyEvent(
 }
 
 // static
-EventRewriterChromeOS::DeviceType EventRewriterChromeOS::GetDeviceType(
+KeyboardCapability::DeviceType EventRewriterChromeOS::GetDeviceType(
     const InputDevice& keyboard_device) {
-  DeviceType type;
-  KeyboardTopRowLayout layout;
+  KeyboardCapability::DeviceType type;
+  KeyboardCapability::KeyboardTopRowLayout layout;
   if (IdentifyKeyboard(keyboard_device, &type, &layout, nullptr))
     return type;
 
-  return EventRewriterChromeOS::kDeviceUnknown;
+  return KeyboardCapability::DeviceType::kDeviceUnknown;
 }
 
 // static
-EventRewriterChromeOS::KeyboardTopRowLayout
+KeyboardCapability::KeyboardTopRowLayout
 EventRewriterChromeOS::GetKeyboardTopRowLayout(
     const InputDevice& keyboard_device) {
-  DeviceType type;
-  KeyboardTopRowLayout layout;
+  KeyboardCapability::DeviceType type;
+  KeyboardCapability::KeyboardTopRowLayout layout;
   if (IdentifyKeyboard(keyboard_device, &type, &layout, nullptr))
     return layout;
 
-  return kKbdTopRowLayoutDefault;
+  return KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault;
 }
 
 // static
@@ -840,20 +847,21 @@ bool EventRewriterChromeOS::HasAssistantKeyOnKeyboard(
 // static
 bool EventRewriterChromeOS::IdentifyKeyboard(
     const InputDevice& keyboard_device,
-    EventRewriterChromeOS::DeviceType* out_type,
-    EventRewriterChromeOS::KeyboardTopRowLayout* out_layout,
+    KeyboardCapability::DeviceType* out_type,
+    KeyboardCapability::KeyboardTopRowLayout* out_layout,
     base::flat_map<uint32_t, EventRewriterChromeOS::MutableKeyState>*
         out_scan_code_map) {
   std::string layout_string;
-  EventRewriterChromeOS::KeyboardTopRowLayout layout;
+  KeyboardCapability::KeyboardTopRowLayout layout;
   const bool has_custom_top_row =
       HasCustomTopRowLayout(keyboard_device, out_scan_code_map);
   if (has_custom_top_row) {
-    layout = EventRewriterChromeOS::kKbdTopRowLayoutCustom;
+    layout = KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutCustom;
   } else if (!GetTopRowLayoutProperty(keyboard_device, &layout_string) ||
              !ParseKeyboardTopRowLayout(layout_string, &layout)) {
-    *out_type = EventRewriterChromeOS::kDeviceUnknown;
-    *out_layout = EventRewriterChromeOS::kKbdTopRowLayoutDefault;
+    *out_type = KeyboardCapability::DeviceType::kDeviceUnknown;
+    *out_layout =
+        KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault;
     return false;
   }
 
@@ -1010,12 +1018,26 @@ bool EventRewriterChromeOS::RewriteModifierKeys(const KeyEvent& key_event,
       KeycodeConverter::IsDomKeyForModifier(state->key);
   if (key_event.type() == ET_KEY_PRESSED) {
     state->flags |= characteristic_flag;
-    if (non_modifier_to_modifier)
+    if (non_modifier_to_modifier) {
+      // Edge case: User remaps key while still holding it. Remove the
+      // previously mapped latch.
+      if (previous_non_modifier_latches_.contains(incoming.code)) {
+        pressed_modifier_latches_ &=
+            ~previous_non_modifier_latches_[incoming.code];
+      }
       pressed_modifier_latches_ |= characteristic_flag;
+      previous_non_modifier_latches_[incoming.code] = characteristic_flag;
+    }
   } else {
     state->flags &= ~characteristic_flag;
-    if (non_modifier_to_modifier)
+    if (non_modifier_to_modifier) {
       pressed_modifier_latches_ &= ~characteristic_flag;
+    }
+    if (previous_non_modifier_latches_.contains(incoming.code)) {
+      pressed_modifier_latches_ &=
+          ~previous_non_modifier_latches_[incoming.code];
+      previous_non_modifier_latches_.erase(incoming.code);
+    }
   }
 
   if (key_event.type() == ET_KEY_PRESSED) {
@@ -1036,7 +1058,7 @@ bool EventRewriterChromeOS::RewriteModifierKeys(const KeyEvent& key_event,
 
 void EventRewriterChromeOS::DeviceKeyPressedOrReleased(int device_id) {
   const auto iter = device_id_to_info_.find(device_id);
-  DeviceType type;
+  KeyboardCapability::DeviceType type;
   if (iter != device_id_to_info_.end())
     type = iter->second.type;
   else
@@ -1045,31 +1067,34 @@ void EventRewriterChromeOS::DeviceKeyPressedOrReleased(int device_id) {
   // Ignore virtual Xorg keyboard (magic that generates key repeat
   // events). Pretend that the previous real keyboard is the one that is still
   // in use.
-  if (type == kDeviceVirtualCoreKeyboard)
+  if (type == KeyboardCapability::DeviceType::kDeviceVirtualCoreKeyboard) {
     return;
+  }
 
   last_keyboard_device_id_ = device_id;
 }
 
 bool EventRewriterChromeOS::IsHotrodRemote() const {
-  return IsLastKeyboardOfType(kDeviceHotrodRemote);
+  return IsLastKeyboardOfType(
+      KeyboardCapability::DeviceType::kDeviceHotrodRemote);
 }
 
-bool EventRewriterChromeOS::IsLastKeyboardOfType(DeviceType device_type) const {
+bool EventRewriterChromeOS::IsLastKeyboardOfType(
+    KeyboardCapability::DeviceType device_type) const {
   return GetLastKeyboardType() == device_type;
 }
 
-EventRewriterChromeOS::DeviceType EventRewriterChromeOS::GetLastKeyboardType()
+KeyboardCapability::DeviceType EventRewriterChromeOS::GetLastKeyboardType()
     const {
   if ((last_keyboard_device_id_ == ED_UNKNOWN_DEVICE) ||
       (last_keyboard_device_id_ == ED_REMOTE_INPUT_DEVICE)) {
-    return kDeviceUnknown;
+    return KeyboardCapability::DeviceType::kDeviceUnknown;
   }
 
   const auto iter = device_id_to_info_.find(last_keyboard_device_id_);
   if (iter == device_id_to_info_.end()) {
     LOG(ERROR) << "Device ID " << last_keyboard_device_id_ << " is unknown.";
-    return kDeviceUnknown;
+    return KeyboardCapability::DeviceType::kDeviceUnknown;
   }
 
   return iter->second.type;
@@ -1133,7 +1158,7 @@ bool EventRewriterChromeOS::ShouldRemapToRightClick(
   // should be able to override it.
   const bool use_search_key =
       base::FeatureList::IsEnabled(
-          ::chromeos::features::kUseSearchClickForRightClick) ||
+          ::ash::features::kUseSearchClickForRightClick) ||
       ::features::IsDeprecateAltClickEnabled();
   if (use_search_key) {
     if (AreFlagsSet(flags, kSearchLeftButton)) {
@@ -1275,7 +1300,7 @@ EventDispatchDetails EventRewriterChromeOS::RewriteMouseButtonEvent(
     return SendEvent(continuation, &mouse_event);
   }
 
-  std::unique_ptr<Event> rewritten_event = Event::Clone(mouse_event);
+  std::unique_ptr<Event> rewritten_event = mouse_event.Clone();
   rewritten_event->set_flags(flags);
   if (changed_button != EF_NONE) {
     static_cast<MouseEvent*>(rewritten_event.get())
@@ -1568,19 +1593,23 @@ void EventRewriterChromeOS::RewriteFunctionKeys(const KeyEvent& key_event,
   }
 
   const auto iter = device_id_to_info_.find(key_event.source_device_id());
-  KeyboardTopRowLayout layout = kKbdTopRowLayoutDefault;
+  KeyboardCapability::KeyboardTopRowLayout layout =
+      KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault;
   if (iter != device_id_to_info_.end()) {
     layout = iter->second.top_row_layout;
   }
 
   const bool search_is_pressed = (state->flags & EF_COMMAND_DOWN) != 0;
-  if (layout == kKbdTopRowLayoutCustom) {
+  if (layout ==
+      KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutCustom) {
     if (RewriteTopRowKeysForCustomLayout(key_event.source_device_id(),
                                          key_event, search_is_pressed, state)) {
       return;
     }
-  } else if (layout == kKbdTopRowLayoutWilco ||
-             layout == kKbdTopRowLayoutDrallion) {
+  } else if (layout == KeyboardCapability::KeyboardTopRowLayout::
+                           kKbdTopRowLayoutWilco ||
+             layout == KeyboardCapability::KeyboardTopRowLayout::
+                           kKbdTopRowLayoutDrallion) {
     if (RewriteTopRowKeysForLayoutWilco(key_event, search_is_pressed, state,
                                         layout)) {
       return;
@@ -1662,11 +1691,11 @@ void EventRewriterChromeOS::RewriteFunctionKeys(const KeyEvent& key_event,
       const KeyboardRemapping* mapping = nullptr;
       size_t mappingSize = 0u;
       switch (layout) {
-        case kKbdTopRowLayout2:
+        case KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayout2:
           mapping = kFkeysToSystemKeys2;
           mappingSize = std::size(kFkeysToSystemKeys2);
           break;
-        case kKbdTopRowLayout1:
+        case KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayout1:
         default:
           mapping = kFkeysToSystemKeys1;
           mappingSize = std::size(kFkeysToSystemKeys1);
@@ -1733,19 +1762,6 @@ void EventRewriterChromeOS::RewriteFunctionKeys(const KeyEvent& key_event,
             state->flags &= ~EF_COMMAND_DOWN;
             ApplyRemapping(map.result, state);
             RecordSearchPlusDigitFKeyRewrite(key_event.type(), state->key_code);
-          } else {
-            // Only trigger the notification for F1-F10.
-            //
-            // Because of this legacy remapping 2 virtual desk shortcuts
-            // implicitly used F11 and F12 because the shortcut included
-            // Search and either minus or equal. Do not trigger a
-            // notification for this case because it wasn't the users intent.
-            if (static_cast<int>(map.result.code) <=
-                static_cast<int>(DomCode::F10)) {
-              DCHECK_GE(static_cast<int>(map.result.code),
-                        static_cast<int>(DomCode::F1));
-              delegate_->NotifyDeprecatedFKeyRewrite();
-            }
           }
           return;
         }
@@ -1820,8 +1836,8 @@ EventDispatchDetails EventRewriterChromeOS::RewriteKeyEventInContext(
         rewritten_event ? static_cast<const KeyEvent*>(rewritten_event.get())
                         : &key_event);
     MutableKeyState original_key_state(&key_event);
-    auto iter = std::find_if(pressed_key_states_.begin(),
-                             pressed_key_states_.end(), key_state_comparator);
+    auto iter =
+        base::ranges::find_if(pressed_key_states_, key_state_comparator);
 
     // When a key is pressed, store |current_key_state| if it is not stored
     // before.
@@ -1896,8 +1912,7 @@ EventDispatchDetails EventRewriterChromeOS::RewriteKeyEventInContext(
   current_key_state = MutableKeyState(
       rewritten_event ? static_cast<const KeyEvent*>(rewritten_event.get())
                       : &key_event);
-  auto iter = std::find_if(pressed_key_states_.begin(),
-                           pressed_key_states_.end(), key_state_comparator);
+  auto iter = base::ranges::find_if(pressed_key_states_, key_state_comparator);
   if (iter != pressed_key_states_.end()) {
     pressed_key_states_.erase(iter);
 
@@ -2015,7 +2030,7 @@ bool EventRewriterChromeOS::RewriteTopRowKeysForLayoutWilco(
     const KeyEvent& key_event,
     bool search_is_pressed,
     MutableKeyState* state,
-    KeyboardTopRowLayout layout) {
+    KeyboardCapability::KeyboardTopRowLayout layout) {
   // When the kernel issues an function key (Fn modifier help down) and the
   // search key is pressed, the function key needs to be mapped to its
   // corresponding action key. This table defines those function-to-action
@@ -2097,7 +2112,9 @@ bool EventRewriterChromeOS::RewriteTopRowKeysForLayoutWilco(
     if (search_is_pressed) {
       // On some Drallion devices, F12 shares a key with privacy screen toggle.
       // Account for this before rewriting for Wilco 1.0 layout.
-      if (layout == kKbdTopRowLayoutDrallion && state->key_code == VKEY_F12) {
+      if (layout == KeyboardCapability::KeyboardTopRowLayout::
+                        kKbdTopRowLayoutDrallion &&
+          state->key_code == VKEY_F12) {
         if (privacy_screen_supported_) {
           state->key_code = VKEY_PRIVACY_SCREEN_TOGGLE;
           state->code = DomCode::PRIVACY_SCREEN_TOGGLE;
@@ -2117,7 +2134,8 @@ bool EventRewriterChromeOS::RewriteTopRowKeysForLayoutWilco(
     // to its corresponding function key.
     if (search_is_pressed != ForceTopRowAsFunctionKeys()) {
       // On Drallion, mirror mode toggle is on its own key so don't remap it.
-      if (layout == kKbdTopRowLayoutDrallion &&
+      if (layout == KeyboardCapability::KeyboardTopRowLayout::
+                        kKbdTopRowLayoutDrallion &&
           MatchKeyboardRemapping(*state, {EF_CONTROL_DOWN, VKEY_ZOOM})) {
         // Clear command flag before returning
         state->flags = (state->flags & ~EF_COMMAND_DOWN);
@@ -2129,7 +2147,9 @@ bool EventRewriterChromeOS::RewriteTopRowKeysForLayoutWilco(
     }
     // Remap Privacy Screen Toggle to F12 on Drallion devices that do not have
     // privacy screens.
-    if (layout == kKbdTopRowLayoutDrallion && !privacy_screen_supported_ &&
+    if (layout == KeyboardCapability::KeyboardTopRowLayout::
+                      kKbdTopRowLayoutDrallion &&
+        !privacy_screen_supported_ &&
         MatchKeyboardRemapping(*state, {EF_NONE, VKEY_PRIVACY_SCREEN_TOGGLE})) {
       state->key_code = VKEY_F12;
       state->code = DomCode::F12;
@@ -2150,18 +2170,18 @@ bool EventRewriterChromeOS::ForceTopRowAsFunctionKeys() const {
   return delegate_ && delegate_->TopRowKeysAreFunctionKeys();
 }
 
-EventRewriterChromeOS::DeviceType EventRewriterChromeOS::KeyboardDeviceAdded(
+KeyboardCapability::DeviceType EventRewriterChromeOS::KeyboardDeviceAdded(
     int device_id) {
   if (!DeviceDataManager::HasInstance())
-    return kDeviceUnknown;
+    return KeyboardCapability::DeviceType::kDeviceUnknown;
   const std::vector<InputDevice>& keyboard_devices =
       DeviceDataManager::GetInstance()->GetKeyboardDevices();
   for (const auto& keyboard : keyboard_devices) {
     if (keyboard.id != device_id)
       continue;
 
-    DeviceType type;
-    KeyboardTopRowLayout layout;
+    KeyboardCapability::DeviceType type;
+    KeyboardCapability::KeyboardTopRowLayout layout;
     base::flat_map<uint32_t, EventRewriterChromeOS::MutableKeyState>
         top_row_map;
 
@@ -2174,7 +2194,8 @@ EventRewriterChromeOS::DeviceType EventRewriterChromeOS::KeyboardDeviceAdded(
     }
 
     // For custom layouts, parse and save the top row mapping.
-    if (layout == EventRewriterChromeOS::kKbdTopRowLayoutCustom) {
+    if (layout ==
+        KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutCustom) {
       if (!StoreCustomTopRowMapping(keyboard, std::move(top_row_map))) {
         return type;
       }
@@ -2185,7 +2206,7 @@ EventRewriterChromeOS::DeviceType EventRewriterChromeOS::KeyboardDeviceAdded(
     device_id_to_info_[keyboard.id] = {type, layout};
     return type;
   }
-  return kDeviceUnknown;
+  return KeyboardCapability::DeviceType::kDeviceUnknown;
 }
 
 EventDispatchDetails EventRewriterChromeOS::SendStickyKeysReleaseEvents(

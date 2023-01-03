@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 
 #include "components/feed/core/proto/v2/store.pb.h"
 #include "components/feed/core/proto/v2/ui.pb.h"
+#include "components/feed/core/proto/v2/wire/info_card.pb.h"
 #include "components/feed/core/proto/v2/wire/upload_actions_request.pb.h"
 #include "components/feed/core/proto/v2/wire/upload_actions_response.pb.h"
 #include "components/feed/core/proto/v2/wire/web_feed_matcher.pb.h"
@@ -58,6 +59,7 @@ DECLARE_PRINTER(feedwire, ContentId)
 DECLARE_PRINTER(feedwire, DisplayInfo)
 DECLARE_PRINTER(feedwire, Version)
 DECLARE_PRINTER(feedwire, FeedAction)
+DECLARE_PRINTER(feedwire, InfoCardTrackingState)
 DECLARE_PRINTER(feedwire, UploadActionsRequest)
 DECLARE_PRINTER(feedwire, UploadActionsResponse)
 DECLARE_PRINTER(feedwire::webfeed, ListRecommendedWebFeedsRequest)

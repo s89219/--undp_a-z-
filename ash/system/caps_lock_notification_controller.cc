@@ -1,11 +1,11 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/caps_lock_notification_controller.h"
 
 #include "ash/accessibility/accessibility_controller_impl.h"
-#include "ash/constants/ash_features.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/root_window_controller.h"
@@ -40,13 +40,14 @@ std::unique_ptr<Notification> CreateNotification() {
       CapsLockNotificationController::IsSearchKeyMappedToCapsLock()
           ? IDS_ASH_STATUS_TRAY_CAPS_LOCK_CANCEL_BY_SEARCH
           : IDS_ASH_STATUS_TRAY_CAPS_LOCK_CANCEL_BY_ALT_SEARCH;
-  std::unique_ptr<Notification> notification = ash::CreateSystemNotification(
+  std::unique_ptr<Notification> notification = ash::CreateSystemNotificationPtr(
       message_center::NOTIFICATION_TYPE_SIMPLE, kCapsLockNotificationId,
       l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_CAPS_LOCK_ENABLED),
       l10n_util::GetStringUTF16(string_id),
       std::u16string() /* display_source */, GURL(),
       message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
-                                 kNotifierCapsLock),
+                                 kNotifierCapsLock,
+                                 NotificationCatalogName::kCapsLock),
       message_center::RichNotificationData(), nullptr,
       kNotificationCapslockIcon,
       message_center::SystemNotificationWarningLevel::NORMAL);
@@ -58,13 +59,12 @@ std::unique_ptr<Notification> CreateNotification() {
           ->unified_system_tray()
           ->model()
           ->GetSystemTrayButtonSize();
-  if (ash::features::IsScalableStatusAreaEnabled() &&
-      primary_tray_button_size != SystemTrayButtonSize::kSmall) {
-    // Set the priority to low to prevent the notification showing as a popup in
-    // medium or large size tray button because we already show an icon in tray
-    // for this in the feature.
+
+  // Set the priority to low to prevent the notification showing as a popup in
+  // medium or large size tray button because we already show an icon in tray
+  // for this in the feature.
+  if (primary_tray_button_size != SystemTrayButtonSize::kSmall)
     notification->set_priority(message_center::LOW_PRIORITY);
-  }
 
   return notification;
 }

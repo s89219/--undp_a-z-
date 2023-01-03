@@ -1,15 +1,15 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/tab_grid_empty_state_view.h"
 
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/tab_grid_constants.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -20,7 +20,7 @@ const CGFloat kVerticalMargin = 16.0;
 const CGFloat kImageHeight = 150.0;
 const CGFloat kImageWidth = 150.0;
 
-// Returns the image to display for the given grid |page|.
+// Returns the image to display for the given grid `page`.
 UIImage* ImageForPage(TabGridPage page) {
   switch (page) {
     case TabGridPageIncognitoTabs:
@@ -34,7 +34,7 @@ UIImage* ImageForPage(TabGridPage page) {
   return nil;
 }
 
-// Returns the title to display for the given grid |page| and |mode|.
+// Returns the title to display for the given grid `page` and `mode`.
 NSString* TitleForPageAndMode(TabGridPage page, TabGridMode mode) {
   if (mode == TabGridModeSearch) {
     return l10n_util::GetNSString(IDS_IOS_TAB_GRID_SEARCH_RESULTS_EMPTY_TITLE);
@@ -54,7 +54,7 @@ NSString* TitleForPageAndMode(TabGridPage page, TabGridMode mode) {
   return nil;
 }
 
-// Returns the message to display for the given grid |page| and |mode|.
+// Returns the message to display for the given grid `page` and `mode`.
 NSString* BodyTextForPageAndMode(TabGridPage page, TabGridMode mode) {
   if (mode == TabGridModeSearch) {
     return nil;

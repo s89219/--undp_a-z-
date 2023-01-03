@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,6 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 
-import org.chromium.base.Consumer;
-import org.chromium.base.Function;
 import org.chromium.base.Log;
 
 import java.lang.reflect.Field;
@@ -25,6 +23,8 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * StrictMode whitelist installer.
@@ -107,7 +107,7 @@ final class ReflectiveThreadStrictModeInterceptor implements ThreadStrictModeInt
     }
 
     /** @param o {@code android.os.StrictMode.ViolationInfo} */
-    @SuppressWarnings({"unchecked", "DiscouragedPrivateApi", "PrivateApi"})
+    @SuppressWarnings({"unchecked", "DiscouragedPrivateApi", "PrivateApi", "BlockedPrivateApi"})
     private int getViolationType(Object violationInfo) {
         try {
             Class<?> violationInfoClass = Class.forName("android.os.StrictMode$ViolationInfo");

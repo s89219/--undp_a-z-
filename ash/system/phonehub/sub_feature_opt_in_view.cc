@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "ash/constants/ash_features.h"
 #include "ash/style/ash_color_provider.h"
 #include "ash/style/pill_button.h"
 #include "ash/system/phonehub/phone_hub_view_ids.h"
@@ -49,9 +50,20 @@ SubFeatureOptInView::SubFeatureOptInView(PhoneHubViewID view_id,
 
 SubFeatureOptInView::~SubFeatureOptInView() = default;
 
+void SubFeatureOptInView::RefreshDescription(int description_string_id) {
+  description_string_id_ = description_string_id;
+  text_label_->SetText(l10n_util::GetStringFUTF16(description_string_id_,
+                                                  ui::GetChromeOSDeviceName()));
+}
+
 void SubFeatureOptInView::InitLayout() {
-  SetPaintToLayer();
-  layer()->SetFillsBoundsOpaquely(false);
+  // The dark light mode, we switch TrayBubbleView to use a textured layer
+  // instead of solid color layer, so no need to create an extra layer here.
+  if (!features::IsDarkLightModeEnabled()) {
+    SetPaintToLayer();
+    layer()->SetFillsBoundsOpaquely(false);
+  }
+
   const SkColor border_color = AshColorProvider::Get()->GetContentLayerColor(
       AshColorProvider::ContentLayerType::kSeparatorColor);
   SetBorder(views::CreateRoundedRectBorder(
@@ -98,13 +110,13 @@ void SubFeatureOptInView::InitLayout() {
                           base::Unretained(this)),
       l10n_util::GetStringUTF16(
           IDS_ASH_PHONE_HUB_SUB_FEATURE_OPT_IN_DISMISS_BUTTON),
-      PillButton::Type::kIconlessFloating, /*icon=*/nullptr));
+      PillButton::Type::kFloatingWithoutIcon, /*icon=*/nullptr));
   dismiss_button_->SetID(kSubFeatureOptInDismissButton);
   set_up_button_ = button_container->AddChildView(std::make_unique<PillButton>(
       base::BindRepeating(&SubFeatureOptInView::SetUpButtonPressed,
                           base::Unretained(this)),
       l10n_util::GetStringUTF16(set_up_button_string_id_),
-      PillButton::Type::kIconless, /*icon=*/nullptr));
+      PillButton::Type::kDefaultWithoutIcon, /*icon=*/nullptr));
   set_up_button_->SetID(kSubFeatureOptInConfirmButton);
 }
 

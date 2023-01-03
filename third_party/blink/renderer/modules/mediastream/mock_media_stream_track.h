@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,6 +52,15 @@ class MockMediaStreamTrack : public blink::MediaStreamTrack {
   void SetConstraints(MediaTrackConstraints* constraints) {
     constraints_ = constraints;
   }
+  ScriptPromise applyConstraints(
+      ScriptState* state,
+      const MediaTrackConstraints* constraints) override {
+    return applyConstraintsScriptState(state, constraints);
+  }
+  void applyConstraints(ScriptPromiseResolver* resolver,
+                        const MediaTrackConstraints* constraints) override {
+    applyConstraintsResolver(resolver, constraints);
+  }
 
   MediaTrackSettings* getSettings() const override { return settings_; }
   void SetSettings(MediaTrackSettings* settings) { settings_ = settings; }
@@ -76,8 +85,8 @@ class MockMediaStreamTrack : public blink::MediaStreamTrack {
 
   const AtomicString& InterfaceName() const override;
 
-  ExecutionContext* GetExecutionContext() const override { return context_; };
-  void SetExecutionContext(ExecutionContext* context) { context_ = context; };
+  ExecutionContext* GetExecutionContext() const override { return context_; }
+  void SetExecutionContext(ExecutionContext* context) { context_ = context; }
 
   bool HasPendingActivity() const override { return false; }
 
@@ -88,24 +97,24 @@ class MockMediaStreamTrack : public blink::MediaStreamTrack {
 
   ImageCapture* GetImageCapture() override { return nullptr; }
 
-  absl::optional<base::UnguessableToken> serializable_session_id()
-      const override {
-    return serializable_session_id_;
+  absl::optional<const MediaStreamDevice> device() const override {
+    return device_;
   }
-  void SetSerializableSessionId(
-      absl::optional<base::UnguessableToken> serializable_session_id) {
-    serializable_session_id_ = serializable_session_id;
-  }
+  void SetDevice(const MediaStreamDevice& device) { device_ = device; }
 
   MOCK_METHOD1(stopTrack, void(ExecutionContext*));
-  MOCK_METHOD1(clone, MediaStreamTrack*(ScriptState*));
-  MOCK_METHOD2(applyConstraints,
+  MOCK_METHOD1(clone, MediaStreamTrack*(ExecutionContext*));
+  MOCK_METHOD2(applyConstraintsScriptState,
                ScriptPromise(ScriptState*, const MediaTrackConstraints*));
+  MOCK_METHOD2(applyConstraintsResolver,
+               void(ScriptPromiseResolver*, const MediaTrackConstraints*));
+  MOCK_METHOD1(SetInitialConstraints, void(const MediaConstraints&));
   MOCK_METHOD1(SetConstraints, void(const MediaConstraints&));
   MOCK_METHOD1(RegisterMediaStream, void(MediaStream*));
   MOCK_METHOD1(UnregisterMediaStream, void(MediaStream*));
   MOCK_METHOD2(AddedEventListener,
                void(const AtomicString&, RegisteredEventListener&));
+  MOCK_METHOD1(BeingTransferred, void(const base::UnguessableToken&));
 
 #if !BUILDFLAG(IS_ANDROID)
   MOCK_METHOD0(CloseFocusWindowOfOpportunity, void());
@@ -138,7 +147,7 @@ class MockMediaStreamTrack : public blink::MediaStreamTrack {
   MediaStreamSource::ReadyState ready_state_enum_;
   Member<MediaStreamComponent> component_;
   bool ended_;
-  absl::optional<base::UnguessableToken> serializable_session_id_;
+  absl::optional<MediaStreamDevice> device_;
   WeakMember<ExecutionContext> context_;
 };
 

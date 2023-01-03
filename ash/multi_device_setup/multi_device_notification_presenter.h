@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,10 @@
 
 #include "ash/ash_export.h"
 #include "ash/public/cpp/session/session_observer.h"
-#include "ash/services/multidevice_setup/public/mojom/multidevice_setup.mojom.h"
+#include "base/auto_reset.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "chromeos/ash/services/multidevice_setup/public/mojom/multidevice_setup.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "ui/message_center/message_center_observer.h"
@@ -53,6 +54,10 @@ class ASH_EXPORT MultiDeviceNotificationPresenter
       const MultiDeviceNotificationPresenter&) = delete;
 
   ~MultiDeviceNotificationPresenter() override;
+
+  // Disables notifications for tests.
+  static std::unique_ptr<base::AutoReset<bool>>
+  DisableNotificationsForTesting();
 
   // Removes the notification created by NotifyPotentialHostExists() or does
   // nothing if that notification is not currently displayed.

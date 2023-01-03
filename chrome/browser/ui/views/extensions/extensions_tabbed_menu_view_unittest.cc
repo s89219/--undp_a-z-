@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,23 +7,23 @@
 #include <string>
 
 #include "base/feature_list.h"
+#include "base/memory/raw_ptr.h"
 #include "base/test/metrics/user_action_tester.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/site_permissions_helper.h"
-#include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/extensions/extensions_menu_button.h"
 #include "chrome/browser/ui/views/extensions/extensions_menu_item_view.h"
+#include "chrome/browser/ui/views/extensions/extensions_tabbed_menu_coordinator.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_container.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_unittest.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/url_formatter/url_formatter.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
-#include "extensions/browser/notification_types.h"
 #include "extensions/browser/test_extension_registry_observer.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/test/permissions_manager_waiter.h"
 #include "extensions/test/test_extension_dir.h"
@@ -38,9 +38,9 @@
 namespace {
 
 // Combobox option's indexes for site access menu items.
-constexpr int kOnClickComboboxIndex = 0;
-constexpr int kOnSiteComboboxIndex = 1;
-constexpr int kOnAllSitesComboboxIndex = 2;
+constexpr size_t kOnClickComboboxIndex = 0;
+constexpr size_t kOnSiteComboboxIndex = 1;
+constexpr size_t kOnAllSitesComboboxIndex = 2;
 // Button's indexes for site access settings
 constexpr int kGrantAllExtensionsIndex = 0;
 constexpr int kBlockAllExtensionsIndex = 1;
@@ -66,7 +66,7 @@ class AdditionalBrowser {
 
  private:
   std::unique_ptr<Browser> browser_;
-  BrowserView* browser_view_;
+  raw_ptr<BrowserView> browser_view_;
 };
 
 std::vector<std::string> GetNamesFromMenuItems(
@@ -115,29 +115,34 @@ class ExtensionsTabbedMenuViewUnitTest : public ExtensionsToolbarUnitTest {
         ->GetExtensionsToolbarControls()
         ->extensions_button();
   }
-  ExtensionsToolbarButton* site_access_button() {
-    return extensions_container()
-        ->GetExtensionsToolbarControls()
-        ->site_access_button_for_testing();
+  ExtensionsTabbedMenuCoordinator* extensions_coordinator() {
+    // If we create our own ExtensionsTabbedMenuCoordinator in the test, use
+    // that one. Otherwise use the ExtensionsTabbedMenuCoordinator created by
+    // the ExtensionsToolbarContainer.
+    return test_extensions_coordinator_
+               ? test_extensions_coordinator_.get()
+               : extensions_container()
+                     ->GetExtensionsTabbedMenuCoordinatorForTesting();
   }
+
+  // This should only be called after the menu is visible.
   ExtensionsTabbedMenuView* extensions_tabbed_menu() {
-    return ExtensionsTabbedMenuView::GetExtensionsTabbedMenuViewForTesting();
+    ExtensionsTabbedMenuView* menu =
+        extensions_coordinator()->GetExtensionsTabbedMenuView();
+    EXPECT_TRUE(menu);
+    return menu;
   }
   std::vector<InstalledExtensionMenuItemView*> installed_items() {
-    return ExtensionsTabbedMenuView::GetExtensionsTabbedMenuViewForTesting()
-        ->GetInstalledItemsForTesting();
+    return extensions_tabbed_menu()->GetInstalledItemsForTesting();
   }
   std::vector<SiteAccessMenuItemView*> has_access_items() {
-    return ExtensionsTabbedMenuView::GetExtensionsTabbedMenuViewForTesting()
-        ->GetVisibleHasAccessItemsForTesting();
+    return extensions_tabbed_menu()->GetVisibleHasAccessItemsForTesting();
   }
   std::vector<SiteAccessMenuItemView*> requests_access_items() {
-    return ExtensionsTabbedMenuView::GetExtensionsTabbedMenuViewForTesting()
-        ->GetVisibleRequestsAccessItemsForTesting();
+    return extensions_tabbed_menu()->GetVisibleRequestsAccessItemsForTesting();
   }
   views::Label* site_access_message() {
-    return ExtensionsTabbedMenuView::GetExtensionsTabbedMenuViewForTesting()
-        ->GetSiteAccessMessageForTesting();
+    return extensions_tabbed_menu()->GetSiteAccessMessageForTesting();
   }
 
   // Asserts there is exactly one installed menu item and then returns it.
@@ -152,13 +157,14 @@ class ExtensionsTabbedMenuViewUnitTest : public ExtensionsToolbarUnitTest {
   // Returns whether the requests access section is displayed on the site access
   // tab.
   bool IsRequestsAccessSectionDisplayed();
+  // Returns whether the site settings button is displayed on the site access
+  // tab.
+  bool IsSiteSettingsButtonDisplayed();
 
-  // Opens the tabbed menu in the installed tab.
-  void ShowInstalledTabInMenu();
-  // Opens the tabbed menu in the site access tab.
-  void ShowSiteAccessTabInMenu();
+  // Opens the menu. Tab opened is not important, since both are populated at
+  // construction.
+  void ShowMenu();
 
-  void ClickSiteAccessButton();
   void ClickExtensionsButton();
 
   void ClickPrimaryActionButton(InstalledExtensionMenuItemView* item);
@@ -178,12 +184,13 @@ class ExtensionsTabbedMenuViewUnitTest : public ExtensionsToolbarUnitTest {
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
-  content::WebContentsTester* web_contents_tester_;
+  raw_ptr<content::WebContentsTester> web_contents_tester_;
+  std::unique_ptr<ExtensionsTabbedMenuCoordinator> test_extensions_coordinator_;
 };
 
 ExtensionsTabbedMenuViewUnitTest::ExtensionsTabbedMenuViewUnitTest() {
   scoped_feature_list_.InitAndEnableFeature(
-      features::kExtensionsMenuAccessControl);
+      extensions_features::kExtensionsMenuAccessControl);
 }
 
 void ExtensionsTabbedMenuViewUnitTest::SetUp() {
@@ -231,21 +238,17 @@ bool ExtensionsTabbedMenuViewUnitTest::IsRequestsAccessSectionDisplayed() {
   return requests_access_items().size() != 0;
 }
 
-void ExtensionsTabbedMenuViewUnitTest::ShowInstalledTabInMenu() {
-  ExtensionsTabbedMenuView::ShowBubble(
-      extensions_button(), browser(), extensions_container(),
-      ExtensionsToolbarButton::ButtonType::kExtensions, true);
+bool ExtensionsTabbedMenuViewUnitTest::IsSiteSettingsButtonDisplayed() {
+  return extensions_tabbed_menu()
+      ->GetSiteSettingsButtonForTesting()
+      ->GetVisible();
 }
 
-void ExtensionsTabbedMenuViewUnitTest::ShowSiteAccessTabInMenu() {
-  ExtensionsTabbedMenuView::ShowBubble(
-      extensions_button(), browser(), extensions_container(),
-      ExtensionsToolbarButton::ButtonType::kSiteAccess, true);
-}
-
-void ExtensionsTabbedMenuViewUnitTest::ClickSiteAccessButton() {
-  ClickButton(site_access_button());
-  LayoutContainerIfNecessary();
+void ExtensionsTabbedMenuViewUnitTest::ShowMenu() {
+  test_extensions_coordinator_ =
+      std::make_unique<ExtensionsTabbedMenuCoordinator>(
+          browser(), extensions_container(), true);
+  test_extensions_coordinator_->Show(extensions_button());
 }
 
 void ExtensionsTabbedMenuViewUnitTest::ClickExtensionsButton() {
@@ -279,11 +282,10 @@ void ExtensionsTabbedMenuViewUnitTest::ClickContextMenuButton(
 void ExtensionsTabbedMenuViewUnitTest::SelectSiteAccessInCombobox(
     SiteAccessMenuItemView* site_access_item,
     int index) {
-  content::WindowedNotificationObserver permissions_observer(
-      extensions::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-      content::NotificationService::AllSources());
+  extensions::PermissionsManagerWaiter waiter(
+      extensions::PermissionsManager::Get(profile()));
   site_access_item->site_access_combobox_for_testing()->SetSelectedRow(index);
-  permissions_observer.Wait();
+  waiter.WaitForExtensionPermissionsUpdate();
   LayoutMenuIfNecessary();
 }
 
@@ -297,7 +299,7 @@ void ExtensionsTabbedMenuViewUnitTest::SelectSiteSetting(int index) {
                                gfx::PointF(), ui::EventTimeForNow(),
                                ui::EF_LEFT_MOUSE_BUTTON, 0);
   site_setting->NotifyClick(release_event);
-  manager_waiter.WaitForPermissionsChange();
+  manager_waiter.WaitForUserPermissionsSettingsChange();
   LayoutMenuIfNecessary();
 }
 
@@ -310,79 +312,30 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest, ButtonOpensAndClosesCorrespondingTab) {
   const GURL url("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url);
   WaitForAnimation();
-  EXPECT_TRUE(site_access_button()->GetVisible());
-  EXPECT_FALSE(ExtensionsTabbedMenuView::IsShowing());
+  EXPECT_FALSE(extensions_coordinator()->IsShowing());
 
   // Click on the extensions button when the menu is closed. Extensions menu
   // should open in the installed extensions tab.
   ClickExtensionsButton();
-  EXPECT_TRUE(ExtensionsTabbedMenuView::IsShowing());
+  EXPECT_TRUE(extensions_coordinator()->IsShowing());
   EXPECT_EQ(extensions_tabbed_menu()->GetSelectedTabIndex(), 1u);
 
   // Click on the extensions button when the menu is open. Extensions menu
   // should be closed.
   ClickExtensionsButton();
-  EXPECT_FALSE(ExtensionsTabbedMenuView::IsShowing());
-
-  // Click on the site access button when the menu is closed. Extensions menu
-  // should open in the site access tab.
-  ClickSiteAccessButton();
-  EXPECT_TRUE(ExtensionsTabbedMenuView::IsShowing());
-  EXPECT_EQ(extensions_tabbed_menu()->GetSelectedTabIndex(), 0u);
-
-  // Click on the site access button when the menu is open. Extensions menu
-  // should close.
-  ClickSiteAccessButton();
-  EXPECT_FALSE(ExtensionsTabbedMenuView::IsShowing());
-}
-
-TEST_F(ExtensionsTabbedMenuViewUnitTest, TogglingButtonsClosesMenu) {
-  // Load an extension with all urls permissions so the site access button is
-  // visible.
-  InstallExtensionWithHostPermissions("all_urls", {"<all_urls>"});
-
-  // Navigate to an url where the extension should have access to.
-  const GURL url("http://www.a.com");
-  web_contents_tester()->NavigateAndCommit(url);
-  WaitForAnimation();
-  EXPECT_TRUE(site_access_button()->GetVisible());
-  EXPECT_FALSE(ExtensionsTabbedMenuView::IsShowing());
-
-  // Click on the extensions button when the menu is closed. Extensions menu
-  // should open.
-  ClickExtensionsButton();
-  EXPECT_TRUE(ExtensionsTabbedMenuView::IsShowing());
-
-  // Click on the site access button when the menu is open. Extensions menu
-  // should close since the button click is treated as a click outside the menu,
-  // and therefore closing the menu, instead of triggering the button's click
-  // action.
-  // TODO(crbug.com/1263311): Toggle to the corresponding tab when clicking on
-  // the other control when the menu is open.
-  ClickSiteAccessButton();
-  EXPECT_FALSE(ExtensionsTabbedMenuView::IsShowing());
-
-  // Click on the site access button when the menu is closed. Extensions menu
-  // should open.
-  ClickSiteAccessButton();
-  EXPECT_TRUE(ExtensionsTabbedMenuView::IsShowing());
-
-  // Click on the extensions button when the menu is open. Extensions menu
-  // should close, as explained previously.
-  ClickExtensionsButton();
-  EXPECT_FALSE(ExtensionsTabbedMenuView::IsShowing());
+  EXPECT_FALSE(extensions_coordinator()->IsShowing());
 }
 
 TEST_F(ExtensionsTabbedMenuViewUnitTest,
        InstalledTab_InstalledExtensionsAreShownInInstalledTab) {
+  ShowMenu();
+
   // To start, there should be no extensions in the menu.
   EXPECT_EQ(installed_items().size(), 0u);
 
   // Add an extension, and verify that it's added to the menu.
   constexpr char kExtensionName[] = "Test 1";
   InstallExtension(kExtensionName);
-
-  ShowInstalledTabInMenu();
 
   ASSERT_EQ(installed_items().size(), 1u);
   EXPECT_EQ(base::UTF16ToUTF8((*installed_items().begin())
@@ -402,7 +355,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   constexpr char kExtensionCName[] = "C Extension";
   InstallExtension(kExtensionCName);
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   std::vector<InstalledExtensionMenuItemView*> items = installed_items();
   ASSERT_EQ(items.size(), 4u);
@@ -418,7 +371,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   constexpr char kName[] = "Test Name";
   InstallExtension(kName);
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   InstalledExtensionMenuItemView* installed_item = GetOnlyInstalledMenuItem();
   ASSERT_TRUE(installed_item);
@@ -447,7 +400,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   constexpr char kExtensionC[] = "C Extension";
   InstallExtension(kExtensionC);
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   std::vector<InstalledExtensionMenuItemView*> items = installed_items();
 
@@ -506,7 +459,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
        InstalledTab_PinnedExtensionAppearsInAnotherWindow) {
   InstallExtension("Test Name");
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   AdditionalBrowser browser2(
       CreateBrowser(browser()->profile(), browser()->type(),
@@ -529,7 +482,6 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
       installed_item->view_controller()));
 }
 
-// TODO(crbug.com/1304959): Test is flaky.
 TEST_F(ExtensionsTabbedMenuViewUnitTest,
        InstalledTab_AddAndRemoveExtensionWhenMenuIsOpen) {
   constexpr char kExtensionA[] = "A Extension";
@@ -537,7 +489,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   InstallExtension(kExtensionA);
   InstallExtension(kExtensionC);
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   // Verify the order of the extensions is A,C.
   {
@@ -580,7 +532,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   constexpr char kName[] = "Test Extension";
   auto extension_id = InstallExtension(kName)->id();
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   InstalledExtensionMenuItemView* menu_item = GetOnlyInstalledMenuItem();
   EXPECT_EQ(installed_items().size(), 1u);
@@ -616,7 +568,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest, InstalledTab_ReloadExtension) {
   scoped_refptr<const extensions::Extension> extension =
       loader.LoadExtension(extension_directory.UnpackedPath());
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   InstalledExtensionMenuItemView* installed_item = GetOnlyInstalledMenuItem();
   EXPECT_EQ(installed_items().size(), 1u);
@@ -654,7 +606,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest, InstalledTab_ReloadExtensionFailed) {
   scoped_refptr<const extensions::Extension> extension =
       loader.LoadExtension(extension_directory.UnpackedPath());
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   InstalledExtensionMenuItemView* installed_item = GetOnlyInstalledMenuItem();
   EXPECT_EQ(installed_items().size(), 1u);
@@ -687,8 +639,8 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
        InstalledTab_DiscoverMoreButtonOpenWebstorePage) {
   InstallExtension("Test Extension");
 
-  ShowInstalledTabInMenu();
-  EXPECT_TRUE(ExtensionsTabbedMenuView::IsShowing());
+  ShowMenu();
+  EXPECT_TRUE(extensions_coordinator()->IsShowing());
 
   ClickButton(extensions_tabbed_menu()->GetDiscoverMoreButtonForTesting());
 
@@ -697,24 +649,47 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
       browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL());
 }
 
-TEST_F(ExtensionsTabbedMenuViewUnitTest, SiteAccessTab_NoExtensionsHaveAccess) {
+TEST_F(ExtensionsTabbedMenuViewUnitTest,
+       SiteAccessTab_NoExtensionsRequestOrHaveAccess) {
   InstallExtension("Test Extension A");
   InstallExtension("Test Extension B");
 
   const GURL url("http://www.url.com");
   web_contents_tester()->NavigateAndCommit(url);
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   auto no_extensions_have_access_text = l10n_util::GetStringFUTF16(
       IDS_EXTENSIONS_MENU_SITE_ACCESS_TAB_NO_EXTENSIONS_HAVE_ACCESS_TEXT,
       url_formatter::IDNToUnicode(url_formatter::StripWWW(url.host())));
 
-  // Verify only the correct message is displayed when no extensions have access
-  // to the current site.
+  // Verify the correct message and site settings button are displayed when no
+  // extensions request or have access to the current site.
   EXPECT_TRUE(site_access_message()->GetVisible());
   EXPECT_EQ(site_access_message()->GetText(), no_extensions_have_access_text);
   EXPECT_FALSE(IsHasAccessSectionDisplayed());
   EXPECT_FALSE(IsRequestsAccessSectionDisplayed());
+  EXPECT_TRUE(IsSiteSettingsButtonDisplayed());
+}
+
+TEST_F(ExtensionsTabbedMenuViewUnitTest, SiteAccessTab_RestrictedSite) {
+  InstallExtension("Test Extension A");
+  InstallExtension("Test Extension B");
+
+  std::u16string restricted_url_text(u"chrome://extensions");
+  web_contents_tester()->NavigateAndCommit(GURL(restricted_url_text));
+  ShowMenu();
+
+  auto restricted_site_text = l10n_util::GetStringFUTF16(
+      IDS_EXTENSIONS_MENU_SITE_ACCESS_TAB_RESTRICTED_SITE_TEXT,
+      restricted_url_text);
+
+  // Verify only the correct message is displayed on a restricted site,
+  // regardless of extensions and site settings access,
+  EXPECT_TRUE(site_access_message()->GetVisible());
+  EXPECT_EQ(site_access_message()->GetText(), restricted_site_text);
+  EXPECT_FALSE(IsHasAccessSectionDisplayed());
+  EXPECT_FALSE(IsRequestsAccessSectionDisplayed());
+  EXPECT_FALSE(IsSiteSettingsButtonDisplayed());
 }
 
 TEST_F(ExtensionsTabbedMenuViewUnitTest,
@@ -726,7 +701,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
 
   const GURL url_a("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url_a);
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Site access message should not be displayed since there is at least one
   // extension with host permissions.
@@ -743,18 +718,22 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   // Extension with no host permissions does not have site access, and it should
   // not be in any site access section.
   EXPECT_EQ(requests_access_items().size(), 0u);
+
+  // Site settings button should always be displayed, except for restricted
+  // sites.
+  EXPECT_TRUE(IsSiteSettingsButtonDisplayed());
 }
 
 // TODO(crbug.com/1304951): Test is flaky.
 TEST_F(
     ExtensionsTabbedMenuViewUnitTest,
-    SiteAccessTab_ExtensionInCorrectSiteAccessSectionAfterChangingSiteAccessUsingCombobox) {
+    DISABLED_SiteAccessTab_ExtensionInCorrectSiteAccessSectionAfterChangingSiteAccessUsingCombobox) {
   constexpr char kExtensionName[] = "Has Access Extension";
   InstallExtensionWithHostPermissions(kExtensionName, {"<all_urls>"});
 
   const GURL url_a("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url_a);
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Verify extension is in the "has access" section with "on all sites" access.
   ASSERT_EQ(has_access_items().size(), 1u);
@@ -798,7 +777,7 @@ TEST_F(
 
   const GURL url_a("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url_a);
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   extensions::ExtensionContextMenuModel menu(
       extension.get(), browser(), extensions::ExtensionContextMenuModel::PINNED,
@@ -815,12 +794,11 @@ TEST_F(
 
   // Change extension's site access to run "on site" using the context menu.
   {
-    content::WindowedNotificationObserver permissions_observer(
-        extensions::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-        content::NotificationService::AllSources());
+    extensions::PermissionsManagerWaiter waiter(
+        extensions::PermissionsManager::Get(profile()));
     menu.ExecuteCommand(
         extensions::ExtensionContextMenuModel::PAGE_ACCESS_RUN_ON_SITE, 0);
-    permissions_observer.Wait();
+    waiter.WaitForExtensionPermissionsUpdate();
     LayoutMenuIfNecessary();
   }
 
@@ -834,12 +812,11 @@ TEST_F(
 
   // Change extension's site access to run "on click" using the context menu.
   {
-    content::WindowedNotificationObserver permissions_observer(
-        extensions::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-        content::NotificationService::AllSources());
+    extensions::PermissionsManagerWaiter waiter(
+        extensions::PermissionsManager::Get(profile()));
     menu.ExecuteCommand(
         extensions::ExtensionContextMenuModel::PAGE_ACCESS_RUN_ON_CLICK, 0);
-    permissions_observer.Wait();
+    waiter.WaitForExtensionPermissionsUpdate();
     LayoutMenuIfNecessary();
   }
 
@@ -862,7 +839,7 @@ TEST_F(
 
   const GURL url_a("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url_a);
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Change extension's site access to run "on click" using the combobox. By
   // default, extension has site access.
@@ -878,11 +855,10 @@ TEST_F(
             kOnClickComboboxIndex);
 
   // Run extensions action by clicking on it.
-  content::WindowedNotificationObserver permissions_observer(
-      extensions::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-      content::NotificationService::AllSources());
+  extensions::PermissionsManagerWaiter waiter(
+      extensions::PermissionsManager::Get(profile()));
   ClickPrimaryActionButton(GetOnlyRequestsAccessMenuItem());
-  permissions_observer.Wait();
+  waiter.WaitForExtensionPermissionsUpdate();
   LayoutMenuIfNecessary();
 
   // Verify extension is in the "has access" section with "on click" access.
@@ -894,9 +870,8 @@ TEST_F(
             kOnClickComboboxIndex);
 }
 
-// TODO(crbug.com/1304959): Test is flaky.
 TEST_F(ExtensionsTabbedMenuViewUnitTest,
-       DISABLED_SiteAccessTab_AddAndRemoveExtensionWhenMenuIsOpen) {
+       SiteAccessTab_AddAndRemoveExtensionWhenMenuIsOpen) {
   constexpr char kExtensionA[] = "A Extension";
   constexpr char kExtensionC[] = "C Extension";
   InstallExtensionWithHostPermissions(kExtensionA, {"<all_urls>"});
@@ -904,7 +879,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
 
   const GURL url_a("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url_a);
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Verify the order of the extensions is A,C under the has access section.
   // Note that extensions installed with all urls permissions have access by
@@ -953,13 +928,13 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
 
   InstallExtensionWithHostPermissions(
       kExtension, {url_a.spec(), url_b.spec(), url_c.spec()});
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Navigate to a url where the extension does not want access.
   const GURL url_no_access("http://www.noaccess.com");
   web_contents_tester()->NavigateAndCommit(url_no_access);
   LayoutMenuIfNecessary();
-  ASSERT_TRUE(ExtensionsTabbedMenuView::IsShowing());
+  ASSERT_TRUE(extensions_coordinator()->IsShowing());
 
   // Verify site access sections are empty.
   {
@@ -972,7 +947,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   // Navigate to a url where the extension wants access.
   web_contents_tester()->NavigateAndCommit(url_a);
   LayoutMenuIfNecessary();
-  ASSERT_TRUE(ExtensionsTabbedMenuView::IsShowing());
+  ASSERT_TRUE(extensions_coordinator()->IsShowing());
 
   // Verify the extension is in the "has access" section with "on site"
   // access.
@@ -990,7 +965,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   // Navigate to a url where the extension keeps its current access.
   web_contents_tester()->NavigateAndCommit(url_b);
   LayoutMenuIfNecessary();
-  ASSERT_TRUE(ExtensionsTabbedMenuView::IsShowing());
+  ASSERT_TRUE(extensions_coordinator()->IsShowing());
 
   // Verify the extension is still in "has access" section with "on site"
   // access.
@@ -1009,7 +984,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   const GURL chrome_url("chrome://extensions");
   web_contents_tester()->NavigateAndCommit(chrome_url);
   LayoutMenuIfNecessary();
-  ASSERT_TRUE(ExtensionsTabbedMenuView::IsShowing());
+  ASSERT_TRUE(extensions_coordinator()->IsShowing());
 
   // Verify site access sections are empty.
   {
@@ -1031,7 +1006,7 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   const GURL url("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url);
   WaitForAnimation();
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Verify the site settings are hidden by default
   auto* site_settings = extensions_tabbed_menu()->GetSiteSettingsForTesting();
@@ -1046,7 +1021,9 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest,
   EXPECT_FALSE(site_settings->GetVisible());
 }
 
-TEST_F(ExtensionsTabbedMenuViewUnitTest, SiteAccessTab_SelectSiteSetting) {
+// TODO(crbug.com/1304959): Test is flaky.
+TEST_F(ExtensionsTabbedMenuViewUnitTest,
+       DISABLED_SiteAccessTab_SelectSiteSetting) {
   auto extensionA =
       InstallExtensionWithHostPermissions("Extension A", {"<all_urls>"});
   auto extensionB =
@@ -1056,15 +1033,14 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest, SiteAccessTab_SelectSiteSetting) {
   // in one of the extensions to be able to test both site access sections.
   const GURL url("http://www.a.com");
   web_contents_tester()->NavigateAndCommit(url);
-  content::WindowedNotificationObserver permissions_observer(
-      extensions::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-      content::NotificationService::AllSources());
+  extensions::PermissionsManagerWaiter waiter(
+      extensions::PermissionsManager::Get(profile()));
   extensions::SitePermissionsHelper(profile()).UpdateSiteAccess(
       *extensionA, browser()->tab_strip_model()->GetActiveWebContents(),
       /*new_access=*/extensions::SitePermissionsHelper::SiteAccess::kOnClick);
-  permissions_observer.Wait();
+  waiter.WaitForExtensionPermissionsUpdate();
   WaitForAnimation();
-  ShowSiteAccessTabInMenu();
+  ShowMenu();
 
   // Verify site has "customize by extensions" site setting by default, and
   // items with dropdowns are displayed in both site access sections.
@@ -1131,10 +1107,46 @@ TEST_F(ExtensionsTabbedMenuViewUnitTest, SiteAccessTab_SelectSiteSetting) {
   EXPECT_FALSE(site_access_message()->GetVisible());
 }
 
+// Test extensions with activeTab are placed in the correct site access section.
+// TODO(crbug.com/1343895): Fix and re-enable.
+TEST_F(ExtensionsTabbedMenuViewUnitTest,
+       DISABLED_SiteAccessTab_ActiveTabExtension) {
+  InstallExtensionWithPermissions("Extension", {"activeTab"});
+
+  const GURL url("http://www.url.com");
+  web_contents_tester()->NavigateAndCommit(url);
+
+  ShowMenu();
+  ASSERT_EQ(
+      GetUserSiteSetting(url),
+      extensions::PermissionsManager::UserSiteSetting::kCustomizeByExtension);
+
+  // activeTab extensions are labeled as requesting access since they still need
+  // a click to run.
+  EXPECT_FALSE(IsHasAccessSectionDisplayed());
+  EXPECT_TRUE(IsRequestsAccessSectionDisplayed());
+  EXPECT_FALSE(site_access_message()->GetVisible());
+
+  SelectSiteSetting(kGrantAllExtensionsIndex);
+
+  // activeTab extensions are labeled as having access but  will only run when
+  // clicked.
+  EXPECT_TRUE(IsHasAccessSectionDisplayed());
+  EXPECT_FALSE(IsRequestsAccessSectionDisplayed());
+  EXPECT_FALSE(site_access_message()->GetVisible());
+
+  SelectSiteSetting(kBlockAllExtensionsIndex);
+
+  // activeTab extensions are labeled as blocked as the rest of extensions.
+  EXPECT_FALSE(IsHasAccessSectionDisplayed());
+  EXPECT_FALSE(IsRequestsAccessSectionDisplayed());
+  EXPECT_TRUE(site_access_message()->GetVisible());
+}
+
 TEST_F(ExtensionsTabbedMenuViewUnitTest, WindowTitle) {
   InstallExtension("Test Extension");
 
-  ShowInstalledTabInMenu();
+  ShowMenu();
 
   ExtensionsTabbedMenuView* menu = extensions_tabbed_menu();
   EXPECT_FALSE(menu->GetWindowTitle().empty());

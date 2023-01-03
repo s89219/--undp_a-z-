@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/task/task_runner_util.h"
 #include "base/task/thread_pool.h"
 #include "components/webapps/browser/android/shortcut_info.h"
 #include "components/webapps/browser/android/webapk/webapk_icon_hasher.h"
@@ -91,10 +90,10 @@ void WebApkInstallScheduler::OnGotIconMurmur2HashesBuildProto(
   }
 
   webapps::BuildProto(
-      *shortcut_info_.get(), std::string() /* primary_icon_data */,
-      is_primary_icon_maskable_, std::string() /* splash_icon_data */,
-      "" /* package_name */, "" /* version */, std::move(*hashes),
-      false /* is_manifest_stale */,
+      *shortcut_info_.get(), shortcut_info_->manifest_id,
+      std::string() /* primary_icon_data */, is_primary_icon_maskable_,
+      std::string() /* splash_icon_data */, "" /* package_name */,
+      "" /* version */, std::move(*hashes), false /* is_manifest_stale */,
       false /* is_app_identity_update_supported */,
       base::BindOnce(&WebApkInstallScheduler::ScheduleWithChrome,
                      weak_ptr_factory_.GetWeakPtr()));
@@ -114,7 +113,8 @@ void WebApkInstallScheduler::OnResult(webapps::WebApkInstallResult result) {
   // triggered by the Chrome-service, is invoked on the UI thread.
   webapps::WebappsUtils::ShowWebApkInstallResultToast(result);
 
-  std::move(webapps_client_callback_).Run(shortcut_info_->manifest_url);
+  std::move(webapps_client_callback_)
+      .Run(shortcut_info_->manifest_url, shortcut_info_->manifest_id);
   delete this;
 }
 

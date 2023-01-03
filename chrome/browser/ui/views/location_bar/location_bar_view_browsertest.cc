@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/path_service.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -44,6 +45,7 @@
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "ui/base/pointer/touch_ui_controller.h"
+#include "ui/views/test/views_test_utils.h"
 
 class LocationBarViewBrowserTest : public InProcessBrowserTest {
  public:
@@ -155,7 +157,7 @@ IN_PROC_BROWSER_TEST_F(TouchLocationBarViewBrowserTest, OmniboxViewViewsSize) {
       child->SetVisible(false);
   }
 
-  GetLocationBarView()->Layout();
+  views::test::RunScheduledLayout(GetLocationBarView());
   // Check |omnibox_view_views| is not wider than the LocationBarView with its
   // rounded ends removed.
   EXPECT_LE(omnibox_view_views->width(),
@@ -238,7 +240,7 @@ IN_PROC_BROWSER_TEST_F(SecurityIndicatorTest, CheckIndicatorText) {
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), kMockNonsecureURL));
   EXPECT_EQ(security_state::WARNING, helper->GetSecurityLevel());
   EXPECT_TRUE(location_bar_view->location_icon_view()->ShouldShowLabel());
-  EXPECT_TRUE(base::LowerCaseEqualsASCII(
+  EXPECT_TRUE(base::EqualsCaseInsensitiveASCII(
       location_bar_view->location_icon_view()->GetText(), "not secure"));
 }
 
@@ -268,12 +270,9 @@ class LocationBarViewGeolocationBackForwardCacheBrowserTest
       ContentSettingImageModel::ImageType image_type) {
     LocationBarView* location_bar_view =
         BrowserView::GetBrowserViewForBrowser(browser())->GetLocationBarView();
-    return **std::find_if(
-        location_bar_view->GetContentSettingViewsForTest().begin(),
-        location_bar_view->GetContentSettingViewsForTest().end(),
-        [image_type](ContentSettingImageView* view) {
-          return view->GetTypeForTesting() == image_type;
-        });
+    return **base::ranges::find(
+        location_bar_view->GetContentSettingViewsForTest(), image_type,
+        &ContentSettingImageView::GetTypeForTesting);
   }
 
  private:
@@ -309,7 +308,7 @@ IN_PROC_BROWSER_TEST_F(LocationBarViewGeolocationBackForwardCacheBrowserTest,
   EXPECT_FALSE(geolocation_icon.GetVisible());
 
   // Query current position, and wait for the query to complete.
-  content::RenderFrameHost* rfh_a = web_contents()->GetMainFrame();
+  content::RenderFrameHost* rfh_a = web_contents()->GetPrimaryMainFrame();
   EXPECT_EQ("received", EvalJs(rfh_a, R"(
       new Promise(resolve => {
         navigator.geolocation.getCurrentPosition(() => resolve('received'));
@@ -324,7 +323,7 @@ IN_PROC_BROWSER_TEST_F(LocationBarViewGeolocationBackForwardCacheBrowserTest,
   // 2) Navigate away to B.
   EXPECT_TRUE(content::NavigateToURL(web_contents(), url_b));
   EXPECT_TRUE(content::WaitForLoadStop(web_contents()));
-  content::RenderFrameHost* rfh_b = web_contents()->GetMainFrame();
+  content::RenderFrameHost* rfh_b = web_contents()->GetPrimaryMainFrame();
 
   // Geolocation icon should be off after navigation.
   EXPECT_FALSE(geolocation_icon.GetVisible());
@@ -335,10 +334,10 @@ IN_PROC_BROWSER_TEST_F(LocationBarViewGeolocationBackForwardCacheBrowserTest,
             content::RenderFrameHost::LifecycleState::kInBackForwardCache);
 
   // 3) Navigate back to A. |RenderFrameHost| have to be restored from
-  // BackForwardCache. And |RenderFrameHost| have to be matched with |rfh_a|.
+  // BackForwardCache and be the primary main frame.
   web_contents()->GetController().GoBack();
   EXPECT_TRUE(content::WaitForLoadStop(web_contents()));
-  EXPECT_EQ(web_contents()->GetMainFrame(), rfh_a);
+  EXPECT_TRUE(rfh_a->IsInPrimaryMainFrame());
   EXPECT_EQ(rfh_b->GetLifecycleState(),
             content::RenderFrameHost::LifecycleState::kInBackForwardCache);
 
@@ -346,10 +345,10 @@ IN_PROC_BROWSER_TEST_F(LocationBarViewGeolocationBackForwardCacheBrowserTest,
   EXPECT_TRUE(geolocation_icon.GetVisible());
 
   // 4) Navigate forward to B. |RenderFrameHost| have to be restored from
-  // BackForwardCache. And |RenderFrameHost| have to be matched with |rfh_b|.
+  // BackForwardCache and be the primary main frame.
   web_contents()->GetController().GoForward();
   EXPECT_TRUE(content::WaitForLoadStop(web_contents()));
-  EXPECT_EQ(web_contents()->GetMainFrame(), rfh_b);
+  EXPECT_TRUE(rfh_b->IsInPrimaryMainFrame());
 
   // Geolocation icon should be off.
   EXPECT_FALSE(geolocation_icon.GetVisible());

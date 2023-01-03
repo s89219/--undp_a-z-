@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,17 @@
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/hotseat_widget.h"
+#include "ash/shelf/shelf.h"
 #include "ash/shell.h"
 #include "ash/style/ash_color_provider.h"
 #include "base/i18n/rtl.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/chromeos/events/keyboard_layout_util.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/gfx/color_palette.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/accessibility/view_accessibility.h"
-#include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
+#include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
 
@@ -40,53 +39,110 @@ constexpr int kNudgeMargin = 8;
 
 constexpr base::TimeDelta kNudgeBoundsAnimationTime = base::Milliseconds(250);
 
+// Calculates the expected bounds of nudge widget based on shelf alignment,
+// hotseat state, RTL and whether to anchor to status area.
+gfx::Rect CalculateWidgetBounds(const gfx::Rect& display_bounds,
+                                Shelf* shelf,
+                                int nudge_width,
+                                int nudge_height) {
+  bool shelf_hidden = shelf->GetVisibilityState() != SHELF_VISIBLE &&
+                      shelf->GetAutoHideState() == SHELF_AUTO_HIDE_HIDDEN;
+  int x;
+  if (base::i18n::IsRTL()) {
+    x = display_bounds.right() - nudge_width - kNudgeMargin;
+    if (shelf->alignment() == ShelfAlignment::kRight && !shelf_hidden)
+      x -= ShelfConfig::Get()->shelf_size();
+  } else {
+    x = display_bounds.x() + kNudgeMargin;
+    if (shelf->alignment() == ShelfAlignment::kLeft && !shelf_hidden)
+      x += ShelfConfig::Get()->shelf_size();
+  }
+
+  int y;
+  HotseatWidget* hotseat_widget = shelf->hotseat_widget();
+  // Set the nudge's bounds above the hotseat when it is extended.
+  if (hotseat_widget->state() == HotseatState::kExtended) {
+    y = hotseat_widget->GetTargetBounds().y() - nudge_height - kNudgeMargin;
+  } else {
+    y = display_bounds.bottom() - nudge_height - kNudgeMargin;
+    if ((shelf->alignment() == ShelfAlignment::kBottom ||
+         shelf->alignment() == ShelfAlignment::kBottomLocked) &&
+        !shelf_hidden) {
+      y -= ShelfConfig::Get()->shelf_size();
+    }
+  }
+
+  return gfx::Rect(x, y, nudge_width, nudge_height);
+}
+
 }  // namespace
 
 class SystemNudge::SystemNudgeView : public views::View {
  public:
-  explicit SystemNudgeView(std::unique_ptr<views::View> label_view,
-                           const gfx::VectorIcon& icon_img,
-                           const SystemNudgeParams& params) {
+  explicit SystemNudgeView(base::WeakPtr<SystemNudge> nudge) {
+    DCHECK(nudge);
+    auto layout = std::make_unique<views::BoxLayout>(
+        views::BoxLayout::Orientation::kHorizontal,
+        /*inside_border_insect=*/gfx::Insets(nudge->params_.nudge_padding),
+        /*between_child_spacing=*/nudge->params_.icon_label_spacing);
+    layout->set_cross_axis_alignment(
+        views::BoxLayout::CrossAxisAlignment::kStart);
+    SetLayoutManager(std::move(layout));
     SetPaintToLayer(ui::LAYER_SOLID_COLOR);
-    layer()->SetColor(ShelfConfig::Get()->GetDefaultShelfColor());
     if (features::IsBackgroundBlurEnabled())
       layer()->SetBackgroundBlur(kNudgeBlurRadius);
     layer()->SetRoundedCornerRadius({kNudgeCornerRadius, kNudgeCornerRadius,
                                      kNudgeCornerRadius, kNudgeCornerRadius});
 
-    SkColor icon_color = AshColorProvider::Get()->GetContentLayerColor(
-        AshColorProvider::ContentLayerType::kIconColorPrimary);
-
     icon_ = AddChildView(std::make_unique<views::ImageView>());
     icon_->SetPaintToLayer();
     icon_->layer()->SetFillsBoundsOpaquely(false);
-    icon_->SetBounds(params.nudge_padding, params.nudge_padding,
-                     params.icon_size, params.icon_size);
-    icon_->SetImage(gfx::CreateVectorIcon(icon_img, icon_color));
+    icon_->SetSize({nudge->params_.icon_size, nudge->params_.icon_size});
+    icon_->SetImage(ui::ImageModel::FromImageGenerator(
+        base::BindRepeating(
+            [](base::WeakPtr<SystemNudge> nudge, const ui::ColorProvider*) {
+              // If `nudge` does not exist anymore, no image will be displayed.
+              if (!nudge)
+                return gfx::ImageSkia();
 
-    label_ = AddChildView(std::move(label_view));
+              return gfx::CreateVectorIcon(
+                  nudge->GetIcon(),
+                  AshColorProvider::Get()->GetContentLayerColor(
+                      nudge->params_.icon_color_layer_type));
+            },
+            nudge),
+        gfx::Size(nudge->params_.icon_size, nudge->params_.icon_size)));
+    label_ = AddChildView(nudge->CreateLabelView());
     label_->SetPaintToLayer();
     label_->layer()->SetFillsBoundsOpaquely(false);
-    label_->SetPosition(gfx::Point(
-        params.nudge_padding + params.icon_size + params.icon_label_spacing,
-        params.nudge_padding));
   }
 
   ~SystemNudgeView() override = default;
+
+  // views::View:
+  void OnThemeChanged() override {
+    views::View::OnThemeChanged();
+    layer()->SetColor(ShelfConfig::Get()->GetDefaultShelfColor(GetWidget()));
+  }
 
   views::View* label_ = nullptr;
   views::ImageView* icon_ = nullptr;
 };
 
-SystemNudge::SystemNudge(const std::string& name,
-                         int icon_size,
-                         int icon_label_spacing,
-                         int nudge_padding)
+SystemNudge::SystemNudge(
+    const std::string& name,
+    NudgeCatalogName catalog_name,
+    int icon_size,
+    int icon_label_spacing,
+    int nudge_padding,
+    AshColorProvider::ContentLayerType icon_color_layer_type)
     : root_window_(Shell::GetRootWindowForNewWindows()) {
   params_.name = name;
+  params_.catalog_name = catalog_name;
   params_.icon_size = icon_size;
   params_.icon_label_spacing = icon_label_spacing;
   params_.nudge_padding = nudge_padding;
+  params_.icon_color_layer_type = icon_color_layer_type;
 }
 
 SystemNudge::~SystemNudge() = default;
@@ -100,12 +156,18 @@ void SystemNudge::OnHotseatStateChanged(HotseatState old_state,
   CalculateAndSetWidgetBounds();
 }
 
+void SystemNudge::OnShelfAlignmentChanged(aura::Window* root_window,
+                                          ShelfAlignment old_alignment) {
+  CalculateAndSetWidgetBounds();
+}
+
 void SystemNudge::Show() {
   if (!widget_) {
     widget_ = std::make_unique<views::Widget>();
 
     shelf_observation_.Observe(
         RootWindowController::ForWindow(root_window_)->shelf());
+    shell_observation_.Observe(Shell::Get());
 
     views::Widget::InitParams params(
         views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
@@ -120,7 +182,7 @@ void SystemNudge::Show() {
   }
 
   nudge_view_ = widget_->SetContentsView(
-      std::make_unique<SystemNudgeView>(CreateLabelView(), GetIcon(), params_));
+      std::make_unique<SystemNudgeView>(/*nudge=*/weak_factory_.GetWeakPtr()));
   CalculateAndSetWidgetBounds();
   widget_->Show();
 
@@ -141,53 +203,11 @@ void SystemNudge::CalculateAndSetWidgetBounds() {
 
   gfx::Rect display_bounds = root_window_->bounds();
   ::wm::ConvertRectToScreen(root_window_, &display_bounds);
-  gfx::Rect widget_bounds;
 
-  // Calculate the nudge's size to ensure the label text and the icon accurately
-  // fit.
-  const int nudge_height =
-      2 * params_.nudge_padding +
-      std::max(nudge_view_->label_->bounds().height(), params_.icon_size);
-  const int nudge_width = 2 * params_.nudge_padding + params_.icon_size +
-                          params_.icon_label_spacing +
-                          nudge_view_->label_->bounds().width();
-
-  widget_bounds =
-      gfx::Rect(display_bounds.x() + kNudgeMargin,
-                display_bounds.bottom() - ShelfConfig::Get()->shelf_size() -
-                    nudge_height - kNudgeMargin,
-                nudge_width, nudge_height);
-
+  gfx::Size nudge_size = nudge_view_->GetPreferredSize();
   Shelf* shelf = RootWindowController::ForWindow(root_window_)->shelf();
-  bool shelf_hidden = shelf->GetVisibilityState() != SHELF_VISIBLE &&
-                      shelf->GetAutoHideState() == SHELF_AUTO_HIDE_HIDDEN;
-
-  if (base::i18n::IsRTL()) {
-    if (shelf->alignment() == ShelfAlignment::kRight && !shelf_hidden) {
-      widget_bounds.set_x(display_bounds.right() - nudge_width - kNudgeMargin -
-                          ShelfConfig::Get()->shelf_size());
-    } else {
-      widget_bounds.set_x(display_bounds.right() - nudge_width - kNudgeMargin);
-    }
-  } else {
-    if (shelf->alignment() == ShelfAlignment::kLeft && !shelf_hidden) {
-      widget_bounds.set_x(display_bounds.x() +
-                          ShelfConfig::Get()->shelf_size() + kNudgeMargin);
-    }
-  }
-
-  if ((shelf->alignment() == ShelfAlignment::kBottom && shelf_hidden) ||
-      shelf->alignment() == ShelfAlignment::kLeft ||
-      shelf->alignment() == ShelfAlignment::kRight) {
-    widget_bounds.set_y(display_bounds.bottom() - nudge_height - kNudgeMargin);
-  }
-
-  // Set the nudge's bounds above the hotseat when it is extended.
-  HotseatWidget* hotseat_widget = shelf->hotseat_widget();
-  if (hotseat_widget->state() == HotseatState::kExtended) {
-    widget_bounds.set_y(hotseat_widget->GetTargetBounds().y() - nudge_height -
-                        kNudgeMargin);
-  }
+  gfx::Rect widget_bounds = CalculateWidgetBounds(
+      display_bounds, shelf, nudge_size.width(), nudge_size.height());
 
   // Only run the widget bounds animation if the widget's bounds have already
   // been initialized.

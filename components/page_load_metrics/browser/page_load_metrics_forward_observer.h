@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define COMPONENTS_PAGE_LOAD_METRICS_BROWSER_PAGE_LOAD_METRICS_FORWARD_OBSERVER_H_
 
 #include "base/memory/weak_ptr.h"
+#include "components/page_load_metrics/browser/page_load_metrics_observer_delegate.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer_interface.h"
 
 namespace page_load_metrics {
@@ -34,6 +35,8 @@ class PageLoadMetricsForwardObserver final
  private:
   // PageLoadMetricsObserverInterface implementation:
   const char* GetObserverName() const override;
+  const PageLoadMetricsObserverDelegate& GetDelegate() const override;
+  void SetDelegate(PageLoadMetricsObserverDelegate*) override;
   ObservePolicy OnStart(content::NavigationHandle* navigation_handle,
                         const GURL& currently_committed_url,
                         bool started_in_foreground) override;
@@ -64,11 +67,14 @@ class PageLoadMetricsForwardObserver final
       const std::string& mime_type) const override;
   void OnTimingUpdate(content::RenderFrameHost* subframe_rfh,
                       const mojom::PageLoadTiming& timing) override;
-  void OnMobileFriendlinessUpdate(
-      const blink::MobileFriendliness& mobile_friendliness) override;
+  void OnSoftNavigationCountUpdated() override;
   void OnInputTimingUpdate(
       content::RenderFrameHost* subframe_rfh,
       const mojom::InputTiming& input_timing_delta) override;
+  void OnPageInputTimingUpdate(uint64_t num_interactions,
+                               uint64_t num_input_events) override;
+  void OnPageRenderDataUpdate(const mojom::FrameRenderDataUpdate& render_data,
+                              bool is_main_frame) override;
   void OnSubFrameRenderDataUpdate(
       content::RenderFrameHost* subframe_rfh,
       const mojom::FrameRenderDataUpdate& render_data) override;
@@ -79,7 +85,6 @@ class PageLoadMetricsForwardObserver final
   void OnDomContentLoadedEventStart(
       const mojom::PageLoadTiming& timing) override;
   void OnLoadEventStart(const mojom::PageLoadTiming& timing) override;
-  void OnFirstLayout(const mojom::PageLoadTiming& timing) override;
   void OnParseStart(const mojom::PageLoadTiming& timing) override;
   void OnParseStop(const mojom::PageLoadTiming& timing) override;
   void OnFirstPaintInPage(const mojom::PageLoadTiming& timing) override;
@@ -114,6 +119,10 @@ class PageLoadMetricsForwardObserver final
   void OnMainFrameIntersectionRectChanged(
       content::RenderFrameHost* rfh,
       const gfx::Rect& main_frame_intersection_rect) override;
+  void OnMainFrameViewportRectChanged(
+      const gfx::Rect& main_frame_viewport_rect) override;
+  void OnMainFrameImageAdRectsChanged(
+      const base::flat_map<int, gfx::Rect>& main_frame_image_ad_rects) override;
   ObservePolicy FlushMetricsOnAppEnterBackground(
       const mojom::PageLoadTiming& timing) override;
   void OnComplete(const mojom::PageLoadTiming& timing) override;
@@ -148,6 +157,7 @@ class PageLoadMetricsForwardObserver final
       content::NavigationHandle* navigation_handle) override;
   void OnV8MemoryChanged(
       const std::vector<MemoryUpdate>& memory_updates) override;
+  void OnSharedStorageWorkletHostCreated() override;
 
   // Holds the forward target observer running in the parent PageLoadTracker.
   base::WeakPtr<PageLoadMetricsObserverInterface> parent_observer_;

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
 #include "ash/constants/devicetype.h"
+#include "ash/wallpaper/wallpaper_utils/wallpaper_language.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom.h"
 #include "ash/webui/personalization_app/proto/backdrop_wallpaper.pb.h"
 #include "base/bind.h"
@@ -28,7 +29,6 @@
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
-#include "chrome/common/extensions/api/wallpaper_private.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
 #include "components/signin/public/identity_manager/primary_account_access_token_fetcher.h"
@@ -77,6 +77,11 @@ constexpr char kGooglePhotosAlbumUrl[] =
     "https://photosfirstparty-pa.googleapis.com/v1/chromeos/"
     "collectionById:read";
 
+// The collectionById endpoint accepts a "return_order" parameter that
+// determines what order the photos are returned in, using these values.
+constexpr char kGooglePhotosAlbumCollectionOrder[] = "1";
+constexpr char kGooglePhotosAlbumShuffledOrder[] = "2";
+
 // The URL to download the albums in a user's Google Photos library.
 constexpr char kGooglePhotosAlbumsUrl[] =
     "https://photosfirstparty-pa.googleapis.com/v1/chromeos/"
@@ -95,30 +100,6 @@ constexpr net::NetworkTrafficAnnotationTag
           "within an album. This query fetches those albums."
         trigger: "When the user accesses the Google Photos tile within the "
                  "ChromeOS Wallpaper Picker app."
-        data: "OAuth credentials for the user's Google Photos account."
-        destination: GOOGLE_OWNED_SERVICE
-      }
-      policy {
-        cookies_allowed: NO
-        setting: "N/A"
-        policy_exception_justification:
-          "Not implemented, considered not necessary."
-      })");
-
-// The URL to download the number of photos in a user's Google Photos library.
-constexpr char kGooglePhotosCountUrl[] =
-    "https://photosfirstparty-pa.googleapis.com/v1/chromeos/user:read";
-
-constexpr net::NetworkTrafficAnnotationTag kGooglePhotosCountTrafficAnnotation =
-    net::DefineNetworkTrafficAnnotation("wallpaper_google_photos_count",
-                                        R"(
-      semantics {
-        sender: "ChromeOS Wallpaper Picker"
-        description:
-          "The ChromeOS Wallpaper Picker displays a tile to view and pick from "
-          "a user's Google Photos library. The tile shows the library's number "
-          "of photos, which this query fetches."
-        trigger: "When the user opens the ChromeOS Wallpaper Picker app."
         data: "OAuth credentials for the user's Google Photos account."
         destination: GOOGLE_OWNED_SERVICE
       }
@@ -196,12 +177,10 @@ constexpr net::NetworkTrafficAnnotationTag
 std::string MaybeConvertToTestUrl(std::string url) {
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
           ash::switches::kTestWallpaperServer)) {
-    base::ReplaceFirstSubstringAfterOffset(&url, 0, "clients3",
-                                           "chromecast-dev.sandbox");
+    base::ReplaceFirstSubstringAfterOffset(&url, 0, "clients3", "clients1");
   } else if (base::FeatureList::IsEnabled(
-                 chromeos::features::kUseWallpaperStagingUrl)) {
-    base::ReplaceFirstSubstringAfterOffset(&url, 0, "clients3",
-                                           "chromecast-staging.sandbox");
+                 ash::features::kUseWallpaperStagingUrl)) {
+    base::ReplaceFirstSubstringAfterOffset(&url, 0, "clients3", "clients2");
   }
   return url;
 }
@@ -216,6 +195,7 @@ void AddGooglePhotosPhotoIfValid(
     return;
 
   const auto* id = photo->FindStringByDottedPath("itemId.mediaKey");
+  const auto* dedup_key = photo->FindString("dedupKey");
   const auto* filename = photo->FindString("filename");
   const auto* timestamp_string = photo->FindString("creationTimestamp");
   const auto* url = photo->FindStringByDottedPath("photo.servingUrl");
@@ -241,7 +221,8 @@ void AddGooglePhotosPhotoIfValid(
   // A photo from Google Photos may or may not have a location set.
   parsed_response->photos->push_back(
       ash::personalization_app::mojom::GooglePhotosPhoto::New(
-          *id, name, date, GURL(*url),
+          *id, dedup_key ? absl::make_optional(*dedup_key) : absl::nullopt,
+          name, date, GURL(*url),
           location ? absl::make_optional(*location) : absl::nullopt));
 }
 
@@ -258,8 +239,6 @@ absl::optional<GooglePhotosApi> ToGooglePhotosApi(const GURL& url) {
     return GooglePhotosApi::kGetPhoto;
   if (base::StartsWith(spec, kGooglePhotosPhotosUrl))
     return GooglePhotosApi::kGetPhotos;
-  if (base::StartsWith(spec, kGooglePhotosCountUrl))
-    return GooglePhotosApi::kGetPhotosCount;
   return absl::nullopt;
 }
 
@@ -359,8 +338,9 @@ void BackdropCollectionInfoFetcher::Start(OnCollectionsInfoFetched callback) {
   // The language field may include the country code (e.g. "en-US").
   request.set_language(g_browser_process->GetApplicationLocale());
   request.add_filtering_label(kFilteringLabel);
-  if (chromeos::IsGoogleBrandedDevice())
+  if (ash::IsGoogleBrandedDevice()) {
     request.add_filtering_label(kGoogleDeviceFilteringLabel);
+  }
   std::string serialized_proto;
   request.SerializeToString(&serialized_proto);
 
@@ -431,8 +411,9 @@ void BackdropImageInfoFetcher::Start(OnImagesInfoFetched callback) {
   request.set_language(g_browser_process->GetApplicationLocale());
   request.set_collection_id(collection_id_);
   request.add_filtering_label(kFilteringLabel);
-  if (chromeos::IsGoogleBrandedDevice())
+  if (ash::IsGoogleBrandedDevice()) {
     request.add_filtering_label(kGoogleDeviceFilteringLabel);
+  }
   std::string serialized_proto;
   request.SerializeToString(&serialized_proto);
 
@@ -504,8 +485,9 @@ void BackdropSurpriseMeImageFetcher::Start(OnSurpriseMeImageFetched callback) {
   request.set_language(g_browser_process->GetApplicationLocale());
   request.add_collection_ids(collection_id_);
   request.add_filtering_label(kFilteringLabel);
-  if (chromeos::IsGoogleBrandedDevice())
+  if (ash::IsGoogleBrandedDevice()) {
     request.add_filtering_label(kGoogleDeviceFilteringLabel);
+  }
   if (!resume_token_.empty())
     request.set_resume_token(resume_token_);
   std::string serialized_proto;
@@ -593,7 +575,7 @@ void GooglePhotosFetcher<T>::AddRequestAndStartIfNecessary(
 
   auto fetcher = std::make_unique<signin::PrimaryAccountAccessTokenFetcher>(
       "wallpaper_google_photos_fetcher", identity_manager_, scopes,
-      signin::PrimaryAccountAccessTokenFetcher::Mode::kImmediate,
+      signin::PrimaryAccountAccessTokenFetcher::Mode::kWaitUntilAvailable,
       signin::ConsentLevel::kSignin);
   auto* fetcher_ptr = fetcher.get();
   fetcher_ptr->Start(base::BindOnce(
@@ -623,7 +605,16 @@ void GooglePhotosFetcher<T>::OnTokenReceived(
 
   auto resource_request = std::make_unique<network::ResourceRequest>();
   resource_request->method = "GET";
-  resource_request->url = service_url;
+
+  // By default, the server will not serialize repeated proto fields if they are
+  // empty. This makes it impossible for us to tell if the server has broken
+  // compatibility with the client or just has nothing to return. Append a
+  // special parameter to request that the server always serializes repeated
+  // proto fields and any other fields which might otherwise be omitted by
+  // default (https://cloud.google.com/apis/docs/system-parameters#definitions).
+  resource_request->url = net::AppendOrReplaceQueryParameter(
+      service_url, "$outputDefaults", "true");
+
   // Cookies should not be allowed.
   resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
   resource_request->load_flags = net::LOAD_DISABLE_CACHE;
@@ -631,6 +622,11 @@ void GooglePhotosFetcher<T>::OnTokenReceived(
                                       "application/json");
   resource_request->headers.SetHeader(net::HttpRequestHeaders::kAuthorization,
                                       "Bearer " + token_info.token);
+  auto language_tag = ash::GetLanguageTag();
+  if (!language_tag.empty()) {
+    resource_request->headers.SetHeader(
+        net::HttpRequestHeaders::kAcceptLanguage, language_tag);
+  }
 
   auto loader = network::SimpleURLLoader::Create(std::move(resource_request),
                                                  traffic_annotation_);
@@ -668,14 +664,16 @@ void GooglePhotosFetcher<T>::OnJsonReceived(
       *response_body,
       base::BindOnce(
           [](const GURL& service_url,
-             data_decoder::DataDecoder::ValueOrError result) {
-            if (result.error.has_value()) {
+             data_decoder::DataDecoder::ValueOrError result)
+              -> absl::optional<base::Value> {
+            if (!result.has_value()) {
               LOG(ERROR) << "Failed to parse JSON response from Google Photos "
                             "API request to "
                          << service_url.spec()
-                         << ". Error message: " << result.error.value();
+                         << ". Error message: " << result.error();
+              return absl::nullopt;
             }
-            return std::move(result.value);
+            return std::move(*result);
           },
           service_url)
           .Then(base::BindOnce(&GooglePhotosFetcher::OnResponseReady,
@@ -773,40 +771,6 @@ absl::optional<size_t> GooglePhotosAlbumsFetcher::GetResultCount(
                                   : absl::nullopt;
 }
 
-GooglePhotosCountFetcher::GooglePhotosCountFetcher(Profile* profile)
-    : GooglePhotosFetcher(profile, kGooglePhotosCountTrafficAnnotation) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-}
-
-GooglePhotosCountFetcher::~GooglePhotosCountFetcher() = default;
-
-void GooglePhotosCountFetcher::AddRequestAndStartIfNecessary(
-    base::OnceCallback<void(int)> callback) {
-  GooglePhotosFetcher::AddRequestAndStartIfNecessary(
-      GURL(kGooglePhotosCountUrl), std::move(callback));
-}
-
-int GooglePhotosCountFetcher::ParseResponse(const base::Value::Dict* response) {
-  if (!response)
-    return -1;
-
-  const auto* count_string = response->FindStringByDottedPath("user.numPhotos");
-
-  int64_t count;
-  if (!count_string || !base::StringToInt64(*count_string, &count) ||
-      count < 0) {
-    LOG(ERROR) << "Failed to parse Google Photos count response.";
-    return -1;
-  }
-
-  return base::saturated_cast<int>(count);
-}
-
-absl::optional<size_t> GooglePhotosCountFetcher::GetResultCount(
-    const int& result) {
-  return result >= 0 ? absl::make_optional(1u) : absl::nullopt;
-}
-
 GooglePhotosEnabledFetcher::GooglePhotosEnabledFetcher(Profile* profile)
     : GooglePhotosFetcher(profile, kGooglePhotosEnabledTrafficAnnotation) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -856,16 +820,22 @@ void GooglePhotosPhotosFetcher::AddRequestAndStartIfNecessary(
     const absl::optional<std::string>& item_id,
     const absl::optional<std::string>& album_id,
     const absl::optional<std::string>& resume_token,
+    bool shuffle,
     base::OnceCallback<void(GooglePhotosPhotosCbkArgs)> callback) {
   GURL service_url;
   if (item_id.has_value()) {
-    DCHECK(!album_id.has_value() && !resume_token.has_value());
+    DCHECK(!album_id.has_value() && !resume_token.has_value() && !shuffle);
     service_url = net::AppendQueryParameter(GURL(kGooglePhotosPhotoUrl),
                                             "item_id", item_id.value());
   } else if (album_id.has_value()) {
     service_url = net::AppendQueryParameter(GURL(kGooglePhotosAlbumUrl),
                                             "collection_id", album_id.value());
+    service_url =
+        net::AppendQueryParameter(service_url, "return_order",
+                                  shuffle ? kGooglePhotosAlbumShuffledOrder
+                                          : kGooglePhotosAlbumCollectionOrder);
   } else {
+    DCHECK(!shuffle);
     service_url = GURL(kGooglePhotosPhotosUrl);
   }
 

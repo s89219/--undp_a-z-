@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,8 @@ import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ApplicationStatus.ActivityStateListener;
 import org.chromium.base.UnownedUserData;
 import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.supplier.ObservableSupplier;
+import org.chromium.base.supplier.ObservableSupplierImpl;
 import org.chromium.chrome.browser.util.ChromeAccessibilityUtil;
 import org.chromium.ui.base.WindowAndroid;
 
@@ -90,6 +92,8 @@ public class SnackbarManager implements OnClickListener, ActivityStateListener, 
             updateView();
         }
     };
+    private final ObservableSupplierImpl<Boolean> mIsShowingSupplier =
+            new ObservableSupplierImpl<>();
 
     /**
      * Constructs a SnackbarManager to show snackbars in the given window.
@@ -110,6 +114,8 @@ public class SnackbarManager implements OnClickListener, ActivityStateListener, 
                 || ApplicationStatus.getStateForActivity(mActivity) == ActivityState.RESUMED) {
             onStart();
         }
+
+        mIsShowingSupplier.set(isShowing());
     }
 
     @Override
@@ -239,6 +245,13 @@ public class SnackbarManager implements OnClickListener, ActivityStateListener, 
     }
 
     /**
+     * @return Supplier of whether the snackbar is showing
+     */
+    public ObservableSupplier<Boolean> isShowingSupplier() {
+        return mIsShowingSupplier;
+    }
+
+    /**
      * @return Whether there is a snackbar on screen.
      */
     public boolean isShowing() {
@@ -284,6 +297,8 @@ public class SnackbarManager implements OnClickListener, ActivityStateListener, 
                 mView.announceforAccessibility();
             }
         }
+
+        mIsShowingSupplier.set(isShowing());
     }
 
     @VisibleForTesting
@@ -324,6 +339,15 @@ public class SnackbarManager implements OnClickListener, ActivityStateListener, 
         sAccessibilitySnackbarDurationMs = durationMs;
     }
 
+    /**
+     * Clears any overrides set for testing.
+     */
+    @VisibleForTesting
+    public static void restDurationForTesting() {
+        sSnackbarDurationMs = DEFAULT_SNACKBAR_DURATION_MS;
+        sAccessibilitySnackbarDurationMs = ACCESSIBILITY_MODE_SNACKBAR_DURATION_MS;
+    }
+
     @VisibleForTesting
     static int getDefaultDurationForTesting() {
         return sSnackbarDurationMs;
@@ -340,5 +364,13 @@ public class SnackbarManager implements OnClickListener, ActivityStateListener, 
     @VisibleForTesting
     public Snackbar getCurrentSnackbarForTesting() {
         return mSnackbars.getCurrent();
+    }
+
+    /**
+     * @return The currently showing snackbar view. For testing only.
+     */
+    @VisibleForTesting
+    public SnackbarView getCurrentSnackbarViewForTesting() {
+        return mView;
     }
 }

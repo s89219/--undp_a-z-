@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "ash/system/tray/tray_popup_utils.h"
 #include "ash/system/tray/tray_toggle_button.h"
 #include "ash/system/tray/tri_view.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/views/view.h"
 
 namespace ash {
@@ -22,18 +23,29 @@ NetworkListNetworkHeaderView::NetworkListNetworkHeaderView(Delegate* delegate,
     : NetworkListHeaderView(label_id),
       model_(Shell::Get()->system_tray_model()->network_state_model()),
       delegate_(delegate) {
-  toggle_ = new TrayToggleButton(
+  std::unique_ptr<TrayToggleButton> toggle = std::make_unique<TrayToggleButton>(
       base::BindRepeating(&NetworkListNetworkHeaderView::ToggleButtonPressed,
-                          base::Unretained(this)),
+                          weak_factory_.GetWeakPtr()),
       label_id);
-  toggle_->SetID(kToggleButtonId);
-  container()->AddView(TriView::Container::END, toggle_);
+  toggle->SetID(kToggleButtonId);
+  toggle_ = toggle.get();
+  container()->AddView(TriView::Container::END, toggle.release());
 }
 
-void NetworkListNetworkHeaderView::SetToggleState(bool enabled, bool is_on) {
+NetworkListNetworkHeaderView::~NetworkListNetworkHeaderView() = default;
+
+void NetworkListNetworkHeaderView::SetToggleState(bool enabled,
+                                                  bool is_on,
+                                                  bool animate_toggle) {
   toggle_->SetEnabled(enabled);
   toggle_->SetAcceptsEvents(enabled);
-  toggle_->AnimateIsOn(is_on);
+
+  if (animate_toggle) {
+    toggle_->AnimateIsOn(is_on);
+    return;
+  }
+
+  toggle_->SetIsOn(is_on);
 }
 
 void NetworkListNetworkHeaderView::AddExtraButtons() {}

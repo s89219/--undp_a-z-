@@ -81,15 +81,15 @@ DedicatedWorkerGlobalScope* DedicatedWorkerGlobalScope::Create(
       creation_params->referrer_policy;
   const bool parent_cross_origin_isolated_capability =
       creation_params->parent_cross_origin_isolated_capability;
-  const bool parent_direct_socket_capability =
-      creation_params->parent_direct_socket_capability;
+  const bool parent_is_isolated_context =
+      creation_params->parent_is_isolated_context;
 
   Vector<network::mojom::blink::ContentSecurityPolicyPtr> response_csp =
       std::move(creation_params->response_content_security_policies);
   auto* global_scope = MakeGarbageCollected<DedicatedWorkerGlobalScope>(
       std::move(creation_params), thread, time_origin,
       std::move(inherited_trial_features), begin_frame_provider_params,
-      parent_cross_origin_isolated_capability, parent_direct_socket_capability,
+      parent_cross_origin_isolated_capability, parent_is_isolated_context,
       std::move(dedicated_worker_host),
       std::move(back_forward_cache_controller_host));
 
@@ -118,13 +118,6 @@ DedicatedWorkerGlobalScope::ParseCreationParams(
   // WorkerGlobalScope.
   parsed_creation_params.parent_context_token =
       creation_params->parent_context_token.value();
-  parsed_creation_params.starter_secure_context =
-      creation_params->starter_secure_context;
-
-  if (!RuntimeEnabledFeatures::SecureContextFixForWorkersEnabled()) {
-    // Preserve incorrect behavior when the fix is not enabled.
-    creation_params->starter_secure_context = true;
-  }
 
   parsed_creation_params.creation_params = std::move(creation_params);
   return parsed_creation_params;
@@ -137,7 +130,7 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
     std::unique_ptr<Vector<OriginTrialFeature>> inherited_trial_features,
     const BeginFrameProviderParams& begin_frame_provider_params,
     bool parent_cross_origin_isolated_capability,
-    bool parent_direct_socket_capability,
+    bool parent_is_isolated_context,
     mojo::PendingRemote<mojom::blink::DedicatedWorkerHost>
         dedicated_worker_host,
     mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
@@ -149,7 +142,7 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
           std::move(inherited_trial_features),
           begin_frame_provider_params,
           parent_cross_origin_isolated_capability,
-          parent_direct_socket_capability,
+          parent_is_isolated_context,
           std::move(dedicated_worker_host),
           std::move(back_forward_cache_controller_host)) {}
 
@@ -160,7 +153,7 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
     std::unique_ptr<Vector<OriginTrialFeature>> inherited_trial_features,
     const BeginFrameProviderParams& begin_frame_provider_params,
     bool parent_cross_origin_isolated_capability,
-    bool parent_direct_socket_capability,
+    bool parent_is_isolated_context,
     mojo::PendingRemote<mojom::blink::DedicatedWorkerHost>
         dedicated_worker_host,
     mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
@@ -172,18 +165,11 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
       token_(thread->WorkerObjectProxy().token()),
       parent_token_(parsed_creation_params.parent_context_token),
       cross_origin_isolated_capability_(Agent::IsCrossOriginIsolated()),
-      direct_socket_capability_(Agent::IsDirectSocketEnabled()),
+      is_isolated_context_(Agent::IsIsolatedContext()),
       animation_frame_provider_(
           MakeGarbageCollected<WorkerAnimationFrameProvider>(
               this,
               begin_frame_provider_params)) {
-  // TODO(https://crbug.com/780031): When the right blink feature is disabled,
-  // we can incorrectly compute the secure context bit for this worker. It
-  // should never be true when the creator context was non-secure.
-  if (IsSecureContext() && !parsed_creation_params.starter_secure_context) {
-    CountUse(mojom::blink::WebFeature::kSecureContextIncorrectForWorker);
-  }
-
   // https://html.spec.whatwg.org/C/#run-a-worker
   // Step 14.10 "If shared is false and owner's cross-origin isolated
   // capability is false, then set worker global scope's cross-origin isolated
@@ -193,8 +179,8 @@ DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(
   }
 
   // TODO(mkwst): This needs a specification.
-  if (!parent_direct_socket_capability) {
-    direct_socket_capability_ = false;
+  if (!parent_is_isolated_context) {
+    is_isolated_context_ = false;
   }
 
   // Dedicated workers don't need to pause after script fetch.
@@ -268,7 +254,7 @@ void DedicatedWorkerGlobalScope::Initialize(
     cross_origin_isolated_capability_ = false;
 
     // TODO(mkwst): This needs a spec.
-    direct_socket_capability_ = false;
+    is_isolated_context_ = false;
   }
 }
 
@@ -277,11 +263,15 @@ void DedicatedWorkerGlobalScope::FetchAndRunClassicScript(
     const KURL& script_url,
     std::unique_ptr<WorkerMainScriptLoadParameters>
         worker_main_script_load_params,
+    std::unique_ptr<PolicyContainer> policy_container,
     const FetchClientSettingsObjectSnapshot& outside_settings_object,
     WorkerResourceTimingNotifier& outside_resource_timing_notifier,
     const v8_inspector::V8StackTraceId& stack_id) {
   DCHECK(base::FeatureList::IsEnabled(features::kPlzDedicatedWorker));
   DCHECK(!IsContextPaused());
+
+  // TODO(crbug.com/1177199): SetPolicyContainer once we passed down policy
+  // container from DedicatedWorkerHost
 
   // Step 12. "Fetch a classic worker script given url, outside settings,
   // destination, and inside settings."
@@ -304,12 +294,12 @@ void DedicatedWorkerGlobalScope::FetchAndRunClassicScript(
       script_url, std::move(worker_main_script_load_params), context_type,
       destination, network::mojom::RequestMode::kSameOrigin,
       network::mojom::CredentialsMode::kSameOrigin,
-      WTF::Bind(&DedicatedWorkerGlobalScope::DidReceiveResponseForClassicScript,
-                WrapWeakPersistent(this),
-                WrapPersistent(classic_script_loader)),
-      WTF::Bind(&DedicatedWorkerGlobalScope::DidFetchClassicScript,
-                WrapWeakPersistent(this), WrapPersistent(classic_script_loader),
-                stack_id));
+      WTF::BindOnce(
+          &DedicatedWorkerGlobalScope::DidReceiveResponseForClassicScript,
+          WrapWeakPersistent(this), WrapPersistent(classic_script_loader)),
+      WTF::BindOnce(&DedicatedWorkerGlobalScope::DidFetchClassicScript,
+                    WrapWeakPersistent(this),
+                    WrapPersistent(classic_script_loader), stack_id));
 }
 
 // https://html.spec.whatwg.org/C/#worker-processing-model
@@ -317,10 +307,14 @@ void DedicatedWorkerGlobalScope::FetchAndRunModuleScript(
     const KURL& module_url_record,
     std::unique_ptr<WorkerMainScriptLoadParameters>
         worker_main_script_load_params,
+    std::unique_ptr<PolicyContainer> policy_container,
     const FetchClientSettingsObjectSnapshot& outside_settings_object,
     WorkerResourceTimingNotifier& outside_resource_timing_notifier,
     network::mojom::CredentialsMode credentials_mode,
     RejectCoepUnsafeNone reject_coep_unsafe_none) {
+  // TODO(crbug.com/1177199): SetPolicyContainer once we passed down policy
+  // container from DedicatedWorkerHost
+
   reject_coep_unsafe_none_ = reject_coep_unsafe_none;
 
   if (worker_main_script_load_params) {
@@ -365,7 +359,7 @@ void DedicatedWorkerGlobalScope::postMessage(ScriptState* script_state,
                                              HeapVector<ScriptValue>& transfer,
                                              ExceptionState& exception_state) {
   PostMessageOptions* options = PostMessageOptions::Create();
-  if (!transfer.IsEmpty())
+  if (!transfer.empty())
     options->setTransfer(transfer);
   postMessage(script_state, message, options, exception_state);
 }
@@ -485,7 +479,11 @@ DedicatedWorkerObjectProxy& DedicatedWorkerGlobalScope::WorkerObjectProxy()
 }
 
 void DedicatedWorkerGlobalScope::UpdateBackForwardCacheDisablingFeatures(
-    uint64_t features_mask) {
+    uint64_t features_mask,
+    const BFCacheBlockingFeatureAndLocations&
+        non_sticky_features_and_js_locations,
+    const BFCacheBlockingFeatureAndLocations&
+        sticky_features_and_js_locations) {
   // `back_forward_cache_controller_host_` might not be bound when non-
   // PlzDedicatedWorker is used. Non-PlzDedicatedWorker will be removed in near
   // future.

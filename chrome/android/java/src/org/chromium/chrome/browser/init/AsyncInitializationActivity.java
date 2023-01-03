@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,16 +10,14 @@ import android.content.Intent;
 import android.content.res.Configuration;
 import android.graphics.Rect;
 import android.os.Build;
+import android.os.Build.VERSION;
+import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
-import android.provider.Settings;
-import android.provider.Settings.SettingNotFoundException;
 import android.view.Display;
 import android.view.Menu;
 import android.view.View;
-import android.view.ViewTreeObserver;
-import android.view.ViewTreeObserver.OnPreDrawListener;
 import android.view.WindowManager;
 
 import androidx.annotation.CallSuper;
@@ -29,6 +27,7 @@ import androidx.annotation.VisibleForTesting;
 import org.chromium.base.StrictModeContext;
 import org.chromium.base.SysUtils;
 import org.chromium.base.TraceEvent;
+import org.chromium.base.compat.ApiHelperForR;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.LoaderErrors;
 import org.chromium.base.library_loader.ProcessInitException;
@@ -38,12 +37,15 @@ import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.LaunchIntentDispatcher;
 import org.chromium.chrome.browser.WarmupManager;
 import org.chromium.chrome.browser.firstrun.FirstRunFlowSequencer;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
+import org.chromium.chrome.browser.metrics.SimpleStartupForegroundSessionDetector;
 import org.chromium.chrome.browser.multiwindow.MultiWindowModeStateDispatcher;
 import org.chromium.chrome.browser.multiwindow.MultiWindowModeStateDispatcherImpl;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tasks.tab_management.TabUiFeatureUtilities;
 import org.chromium.chrome.features.start_surface.StartSurfaceConfiguration;
+import org.chromium.components.browser_ui.util.FirstDrawDetector;
 import org.chromium.ui.base.ActivityIntentRequestTrackerDelegate;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.DeviceFormFactor;
@@ -51,8 +53,6 @@ import org.chromium.ui.base.IntentRequestTracker;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.display.DisplayAndroid;
 import org.chromium.ui.display.DisplayUtil;
-
-import java.lang.reflect.Field;
 
 /**
  * An activity that talks with application and activity level delegates for async initialization.
@@ -187,7 +187,6 @@ public abstract class AsyncInitializationActivity
         if (!enableInstantStart) {
             triggerLayoutInflation();
         }
-        if (mLaunchBehindWorkaround != null) mLaunchBehindWorkaround.onSetContentView();
     }
 
     /** Controls the parameter of {@link NativeInitializationController#startBackgroundTasks}.*/
@@ -511,16 +510,16 @@ public abstract class AsyncInitializationActivity
         mIsWarmOnResume = !mFirstResumePending || hadWarmStart();
         mFirstResumePending = false;
 
+        SimpleStartupForegroundSessionDetector.onTransitionToForeground();
         mNativeInitializationController.onResume();
-        if (mLaunchBehindWorkaround != null) mLaunchBehindWorkaround.onResume();
     }
 
     @CallSuper
     @Override
     public void onPause() {
+        SimpleStartupForegroundSessionDetector.discardSession();
         mNativeInitializationController.onPause();
         super.onPause();
-        if (mLaunchBehindWorkaround != null) mLaunchBehindWorkaround.onPause();
     }
 
     @CallSuper
@@ -615,7 +614,12 @@ public abstract class AsyncInitializationActivity
         if (mWindowAndroid != null) mWindowAndroid.onContextMenuClosed();
     }
 
-    private void onFirstDrawComplete() {
+    /**
+     * Called when the content view gets drawn for the first time. See {@link FirstDrawDetector} for
+     * details on the exact signals used to call this.
+     */
+    @CallSuper
+    protected void onFirstDrawComplete() {
         assert mFirstDrawComplete;
         assert !mStartupDelayed;
         TraceEvent.instant("onFirstDrawComplete");
@@ -725,19 +729,25 @@ public abstract class AsyncInitializationActivity
      */
     protected int getCurrentSmallestScreenWidth(Context context) {
         DisplayAndroid display = DisplayAndroid.getNonMultiDisplay(context);
+        // Android T does not receive updated width upon foldable unfold from window context.
+        // Continue to rely on context on this case.
+        Context windowManagerContext = (ChromeFeatureList.sFoldableJankFix.isEnabled()
+                                               && VERSION.SDK_INT >= VERSION_CODES.R
+                                               && VERSION.SDK_INT < VERSION_CODES.TIRAMISU)
+                ? (display.getWindowContext() != null ? display.getWindowContext() : context)
+                : context;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             // Context#getSystemService(Context.WINDOW_SERVICE) is preferred over
             // Activity#getWindowManager, because during #attachBaseContext, #getWindowManager
             // is not ready yet and always returns null. See crbug.com/1252150.
             WindowManager manager =
-                    (WindowManager) context.getSystemService(Context.WINDOW_SERVICE);
+                    (WindowManager) windowManagerContext.getSystemService(Context.WINDOW_SERVICE);
             assert manager != null;
-            Rect bounds = manager.getMaximumWindowMetrics().getBounds();
+            Rect bounds = ApiHelperForR.getMaximumWindowMetricsBounds(manager);
             return DisplayUtil.pxToDp(
                     display, Math.min(bounds.right - bounds.left, bounds.bottom - bounds.top));
-        } else {
-            return DisplayUtil.pxToDp(display, DisplayUtil.getSmallestWidth(display));
         }
+        return DisplayUtil.pxToDp(display, DisplayUtil.getSmallestWidth(display));
     }
 
     /**
@@ -795,33 +805,6 @@ public abstract class AsyncInitializationActivity
     }
 
     /**
-     * Removes the window background.
-     */
-    protected void removeWindowBackground() {
-        boolean removeWindowBackground = true;
-        try {
-            Field field = Settings.Secure.class.getField(
-                    "ACCESSIBILITY_DISPLAY_MAGNIFICATION_ENABLED");
-            field.setAccessible(true);
-
-            if (field.getType() == String.class) {
-                String accessibilityMagnificationSetting = (String) field.get(null);
-                // When Accessibility magnification is turned on, setting a null window
-                // background causes the overlaid android views to stretch when panning.
-                // (crbug/332994)
-                if (Settings.Secure.getInt(
-                        getContentResolver(), accessibilityMagnificationSetting) == 1) {
-                    removeWindowBackground = false;
-                }
-            }
-        } catch (SettingNotFoundException | NoSuchFieldException | IllegalAccessException
-                | IllegalArgumentException ignore) {
-            // Window background is removed if an exception occurs.
-        }
-        if (removeWindowBackground) getWindow().setBackgroundDrawable(null);
-    }
-
-    /**
      * Extending classes should implement this, inflate the layout, set the content view and then
      * call {@link #onInitialLayoutInflationComplete}.
      */
@@ -858,65 +841,6 @@ public abstract class AsyncInitializationActivity
      */
     public MultiWindowModeStateDispatcher getMultiWindowModeStateDispatcher() {
         return mMultiWindowModeStateDispatcher;
-    }
-
-    /**
-     * Lollipop (pre-MR1) makeTaskLaunchBehind() workaround.
-     *
-     * Our activity's surface is destroyed at the end of the new activity animation
-     * when ActivityOptions.makeTaskLaunchBehind() is used, which causes a crash.
-     * Making everything invisible when paused prevents the crash, since view changes
-     * will not trigger draws to the missing surface. However, we need to wait until
-     * after the first draw to make everything invisible, as the activity launch
-     * animation needs a full frame (or it will delay the animation excessively).
-     */
-    private final LaunchBehindWorkaround mLaunchBehindWorkaround =
-            (Build.VERSION.SDK_INT == Build.VERSION_CODES.LOLLIPOP)
-                    ? new LaunchBehindWorkaround()
-                    : null;
-
-    private class LaunchBehindWorkaround {
-        private boolean mPaused;
-
-        private View getDecorView() {
-            return getWindow().getDecorView();
-        }
-
-        private ViewTreeObserver getViewTreeObserver() {
-            return getDecorView().getViewTreeObserver();
-        }
-
-        private void onPause() {
-            mPaused = true;
-        }
-
-        public void onResume() {
-            mPaused = false;
-            getDecorView().setVisibility(View.VISIBLE);
-        }
-
-        public void onSetContentView() {
-            getViewTreeObserver().addOnPreDrawListener(mPreDrawListener);
-        }
-
-        // Note, we probably want onDrawListener here, but it isn't being called
-        // when I add this to the decorView. However, it should be the same for
-        // this purpose as long as no other pre-draw listener returns false.
-        private final OnPreDrawListener mPreDrawListener = new OnPreDrawListener() {
-            @Override
-            public boolean onPreDraw() {
-                mHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (mPaused) {
-                            getDecorView().setVisibility(View.GONE);
-                        }
-                        getViewTreeObserver().removeOnPreDrawListener(mPreDrawListener);
-                    }
-                });
-                return true;
-            }
-        };
     }
 
     @Override

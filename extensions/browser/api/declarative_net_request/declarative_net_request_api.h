@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -111,6 +111,23 @@ class DeclarativeNetRequestGetEnabledRulesetsFunction
   ExtensionFunction::ResponseAction Run() override;
 };
 
+class DeclarativeNetRequestUpdateStaticRulesFunction
+    : public ExtensionFunction {
+ public:
+  DeclarativeNetRequestUpdateStaticRulesFunction();
+  DECLARE_EXTENSION_FUNCTION("declarativeNetRequest.updateStaticRules",
+                             DECLARATIVENETREQUEST_UPDATESTATICRULES)
+
+ protected:
+  ~DeclarativeNetRequestUpdateStaticRulesFunction() override;
+
+ private:
+  void OnStaticRulesUpdated(absl::optional<std::string> error);
+
+  // ExtensionFunction override:
+  ExtensionFunction::ResponseAction Run() override;
+};
+
 class DeclarativeNetRequestGetMatchedRulesFunction : public ExtensionFunction {
  public:
   DeclarativeNetRequestGetMatchedRulesFunction();
@@ -170,6 +187,19 @@ class DeclarativeNetRequestGetAvailableStaticRuleCountFunction
 
  protected:
   ~DeclarativeNetRequestGetAvailableStaticRuleCountFunction() override;
+
+  // ExtensionFunction override:
+  ExtensionFunction::ResponseAction Run() override;
+};
+
+class DeclarativeNetRequestTestMatchOutcomeFunction : public ExtensionFunction {
+ public:
+  DeclarativeNetRequestTestMatchOutcomeFunction();
+  DECLARE_EXTENSION_FUNCTION("declarativeNetRequest.testMatchOutcome",
+                             DECLARATIVENETREQUEST_TESTMATCHOUTCOME)
+
+ protected:
+  ~DeclarativeNetRequestTestMatchOutcomeFunction() override;
 
   // ExtensionFunction override:
   ExtensionFunction::ResponseAction Run() override;

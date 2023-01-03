@@ -1,20 +1,20 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
 import 'chrome://resources/polymer/v3_0/paper-tooltip/paper-tooltip.js';
 import './base_page.js';
 import './shimless_rma_fonts_css.js';
 import './shimless_rma_shared_css.js';
 
-import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/ash/common/i18n_behavior.js';
 import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getShimlessRmaService} from './mojo_interface_provider.js';
-import {PowerCableStateObserverInterface, PowerCableStateObserverReceiver, ShimlessRmaServiceInterface, ShutdownMethod} from './shimless_rma_types.js';
-import {executeThenTransitionState} from './shimless_rma_util.js';
+import {PowerCableStateObserverInterface, PowerCableStateObserverReceiver, RmadErrorCode, ShimlessRmaServiceInterface, ShutdownMethod} from './shimless_rma_types.js';
+import {executeThenTransitionState, focusPageTitle} from './shimless_rma_util.js';
 
 /**
  * @fileoverview
@@ -55,7 +55,10 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
        * Set by shimless_rma.js.
        * @type {boolean}
        */
-      allButtonsDisabled: Boolean,
+      allButtonsDisabled: {
+        reflectToAttribute: true,
+        type: Boolean,
+      },
 
       /**
        * Keeps the shutdown and reboot buttons disabled after the response from
@@ -65,12 +68,6 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
       shutdownButtonsDisabled_: {
         type: Boolean,
         value: false,
-      },
-
-      /** @protected */
-      log_: {
-        type: String,
-        value: '',
       },
 
       /**
@@ -120,6 +117,13 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
 
     this.shimlessRmaService_.observePowerCableState(
         this.powerCableStateReceiver_.$.bindNewPipeAndPassRemote());
+  }
+
+  /** @override */
+  ready() {
+    super.ready();
+
+    focusPageTitle(this);
   }
 
   /** @protected */
@@ -179,13 +183,16 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
    */
   getPowerwashDescriptionString_() {
     return this.selectedFinishRmaOption_ === FinishRmaOption.SHUTDOWN ?
-        this.i18n('repairCompletedPowerwashShutdownDescription') :
-        this.i18n('repairCompletedPowerwashRebootDescription');
+        this.i18n('powerwashDialogShutdownDescription') :
+        this.i18n('powerwashDialogRebootDescription');
   }
 
   /** @protected */
   onPowerwashButtonClick_(e) {
     e.preventDefault();
+    const dialog = /** @type {!CrDialogElement} */ (
+      this.shadowRoot.querySelector('#powerwashDialog'));
+    dialog.close();
     this.shutDownOrReboot_();
   }
 
@@ -209,12 +216,10 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
 
   /** @protected */
   onRmaLogButtonClick_() {
-    this.shimlessRmaService_.getLog().then((res) => this.log_ = res.log);
-    const dialog = /** @type {!CrDialogElement} */ (
-        this.shadowRoot.querySelector('#logsDialog'));
-    if (!dialog.open) {
-      dialog.showModal();
-    }
+    this.dispatchEvent(new CustomEvent('open-logs-dialog', {
+      bubbles: true,
+      composed: true,
+    }));
   }
 
   /** @protected */
@@ -228,6 +233,8 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
     // This is necessary because after the timeout "this" will be the window,
     // and not WrapupRepairCompletePage.
     const cutoffBattery = function(wrapupRepairCompletePage) {
+      wrapupRepairCompletePage.shadowRoot.querySelector('#batteryCutoffDialog')
+          .close();
       executeThenTransitionState(
           wrapupRepairCompletePage,
           () => wrapupRepairCompletePage.shimlessRmaService_.endRma(
@@ -242,6 +249,7 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
 
   /** @private */
   cutoffBattery_() {
+    this.shadowRoot.querySelector('#batteryCutoffDialog').close();
     executeThenTransitionState(
         this,
         () => this.shimlessRmaService_.endRma(ShutdownMethod.kBatteryCutoff));
@@ -253,12 +261,8 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
   }
 
   /** @protected */
-  onCancelClick_() {
-    const dialogs = /** @type {!NodeList<!CrDialogElement>} */ (
-        this.shadowRoot.querySelectorAll('cr-dialog'));
-    Array.from(dialogs).map((dialog) => {
-      dialog.close();
-    });
+  closePowerwashDialog_() {
+    this.shadowRoot.querySelector('#powerwashDialog').close();
   }
 
   /** @protected */
@@ -306,11 +310,48 @@ export class WrapupRepairCompletePage extends WrapupRepairCompletePageBase {
   }
 
   /**
+   * @return {string}
+   * @protected
+   */
+  getDiagnosticsIcon_() {
+    return this.allButtonsDisabled ? 'shimless-icon:diagnostics-disabled' :
+                                     'shimless-icon:diagnostics';
+  }
+
+  /**
+   * @return {string}
+   * @protected
+   */
+  getRmaLogIcon_() {
+    return this.allButtonsDisabled ? 'shimless-icon:rma-log-disabled' :
+                                     'shimless-icon:rma-log';
+  }
+
+  /**
+   * @return {string}
+   * @protected
+   */
+  getBatteryCutoffIcon_() {
+    return this.allButtonsDisabled ? 'shimless-icon:battery-cutoff-disabled' :
+                                     'shimless-icon:battery-cutoff';
+  }
+
+  /**
    * @return {boolean}
    * @protected
    */
   disableShutdownButtons_() {
     return this.shutdownButtonsDisabled_ || this.allButtonsDisabled;
+  }
+
+  /**
+   * @return {string}
+   * @protected
+   */
+  getRepairCompletedShutoffText_() {
+    return this.pluggedIn_ ?
+        this.i18n('repairCompletedShutoffInstructionsText') :
+        this.i18n('repairCompletedShutoffDescriptionText');
   }
 }
 

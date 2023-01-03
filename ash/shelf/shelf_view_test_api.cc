@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,7 @@ ShelfViewTestAPI::ShelfViewTestAPI(ShelfView* shelf_view)
 
 ShelfViewTestAPI::~ShelfViewTestAPI() = default;
 
-int ShelfViewTestAPI::GetButtonCount() {
+size_t ShelfViewTestAPI::GetButtonCount() {
   return shelf_view_->view_model_->view_size();
 }
 
@@ -159,7 +159,7 @@ void ShelfViewTestAPI::SetShelfContextMenuCallback(
   shelf_view_->context_menu_shown_callback_ = std::move(closure);
 }
 
-int ShelfViewTestAPI::GetSeparatorIndex() const {
+absl::optional<size_t> ShelfViewTestAPI::GetSeparatorIndex() const {
   return shelf_view_->separator_index_;
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,17 +12,18 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/test/fake_os_integration_manager.h"
 #include "chrome/browser/web_applications/test/fake_web_app_origin_association_manager.h"
-#include "chrome/browser/web_applications/test/fake_web_app_registry_controller.h"
+#include "chrome/browser/web_applications/test/fake_web_app_provider.h"
+#include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/test/web_app_test.h"
 #include "chrome/browser/web_applications/url_handler_prefs.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
+#include "chrome/browser/web_applications/web_app_registry_update.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/test/base/scoped_testing_local_state.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/services/app_service/public/cpp/url_handler_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,8 +41,7 @@ constexpr char kOriginUrl2[] = "https://origin-2.com/abc";
 
 class UrlHandlerManagerImplTest : public WebAppTest {
  public:
-  UrlHandlerManagerImplTest()
-      : local_state_(TestingBrowserProcess::GetGlobal()) {
+  UrlHandlerManagerImplTest() {
     features_.InitAndEnableFeature(blink::features::kWebAppEnableUrlHandlers);
   }
   ~UrlHandlerManagerImplTest() override = default;
@@ -49,14 +49,16 @@ class UrlHandlerManagerImplTest : public WebAppTest {
  protected:
   void SetUp() override {
     WebAppTest::SetUp();
-    fake_registry_controller_ =
-        std::make_unique<FakeWebAppRegistryController>();
-    fake_registry_controller_->SetUp(profile());
 
+    provider_ = web_app::FakeWebAppProvider::Get(profile());
+    web_app::test::AwaitStartWebAppProviderAndSubsystems(profile());
+
+    // This is not a WebAppProvider subsystem, so this can be
+    // set after the WebAppProvider has been initialized.
     auto url_handler_manager =
         std::make_unique<UrlHandlerManagerImpl>(profile());
     url_handler_manager_ = url_handler_manager.get();
-    url_handler_manager->SetSubsystems(&fake_registry_controller_->registrar());
+    url_handler_manager->SetSubsystems(&provider_->registrar_unsafe());
 
     auto association_manager =
         std::make_unique<FakeWebAppOriginAssociationManager>();
@@ -72,18 +74,16 @@ class UrlHandlerManagerImplTest : public WebAppTest {
 
     fake_os_integration_manager().SetUrlHandlerManager(
         std::move(url_handler_manager));
-    fake_registry_controller_->Init();
   }
 
   void TearDown() override { WebAppTest::TearDown(); }
 
   FakeOsIntegrationManager& fake_os_integration_manager() {
-    return fake_registry_controller_->os_integration_manager();
+    return static_cast<FakeOsIntegrationManager&>(
+        provider_->os_integration_manager());
   }
 
-  FakeWebAppRegistryController& controller() {
-    return *fake_registry_controller_;
-  }
+  WebAppSyncBridge& sync_bridge() { return provider_->sync_bridge_unsafe(); }
 
   UrlHandlerManagerImpl& url_handler_manager() { return *url_handler_manager_; }
 
@@ -95,7 +95,7 @@ class UrlHandlerManagerImplTest : public WebAppTest {
     auto web_app = std::make_unique<WebApp>(app_id);
     web_app->AddSource(WebAppManagement::kDefault);
     web_app->SetDisplayMode(DisplayMode::kStandalone);
-    web_app->SetUserDisplayMode(UserDisplayMode::kStandalone);
+    web_app->SetUserDisplayMode(mojom::UserDisplayMode::kStandalone);
     web_app->SetName("Name");
     web_app->SetStartUrl(app_url);
     web_app->SetUrlHandlers(url_handlers);
@@ -107,7 +107,10 @@ class UrlHandlerManagerImplTest : public WebAppTest {
         app_url_1_, {apps::UrlHandlerInfo(origin_1_)});
     const AppId& app_id = web_app->app_id();
 
-    controller().RegisterApp(std::move(web_app));
+    {
+      ScopedRegistryUpdate update(&sync_bridge());
+      update->CreateApp(std::move(web_app));
+    }
 
     base::RunLoop run_loop;
     url_handler_manager().RegisterUrlHandlers(
@@ -123,10 +126,14 @@ class UrlHandlerManagerImplTest : public WebAppTest {
     auto web_app = CreateWebAppWithUrlHandlers(
         app_url_1_, {apps::UrlHandlerInfo(origin_2_)});
     const AppId& app_id = web_app->app_id();
-
-    controller().UnregisterApp(app_id);
-    controller().RegisterApp(std::move(web_app));
-
+    {
+      ScopedRegistryUpdate update(&sync_bridge());
+      update->DeleteApp(app_id);
+    }
+    {
+      ScopedRegistryUpdate update(&sync_bridge());
+      update->CreateApp(std::move(web_app));
+    }
     base::RunLoop run_loop;
     url_handler_manager().UpdateUrlHandlers(
         app_id, base::BindLambdaForTesting([&](bool success) {
@@ -144,10 +151,9 @@ class UrlHandlerManagerImplTest : public WebAppTest {
   const url::Origin origin_2_ = url::Origin::Create(origin_url_2_);
 
  private:
-  base::test::ScopedFeatureList features_;
-  std::unique_ptr<FakeWebAppRegistryController> fake_registry_controller_;
+  raw_ptr<FakeWebAppProvider> provider_;
   raw_ptr<UrlHandlerManagerImpl> url_handler_manager_;
-  ScopedTestingLocalState local_state_;
+  base::test::ScopedFeatureList features_;
 };
 
 TEST_F(UrlHandlerManagerImplTest, RegisterAndUnregisterApp) {
@@ -166,7 +172,10 @@ TEST_F(UrlHandlerManagerImplTest, RegisterAndUnregisterApp) {
 
   // Unregister URL handlers, remove app.
   url_handler_manager().UnregisterUrlHandlers(app_id);
-  controller().UnregisterApp(app_id);
+  {
+    ScopedRegistryUpdate update(&sync_bridge());
+    update->DeleteApp(app_id);
+  }
 
   // Confirm there is no matching URL handler now.
   matches = UrlHandlerManagerImpl::GetUrlHandlerMatches(cmd);

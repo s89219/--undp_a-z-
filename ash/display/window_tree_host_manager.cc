@@ -1,10 +1,9 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/display/window_tree_host_manager.h"
 
-#include <algorithm>
 #include <cmath>
 #include <map>
 #include <memory>
@@ -27,12 +26,13 @@
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/wm/window_util.h"
 #include "base/bind.h"
+#include "base/containers/contains.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/client/screen_position_client.h"
@@ -45,7 +45,9 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/compositor/compositor.h"
+#include "ui/compositor/layer.h"
 #include "ui/display/display.h"
+#include "ui/display/display_features.h"
 #include "ui/display/display_layout.h"
 #include "ui/display/display_transform.h"
 #include "ui/display/manager/display_configurator.h"
@@ -54,6 +56,7 @@
 #include "ui/display/screen.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/util/display_util.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/wm/core/coordinate_conversion.h"
 #include "ui/wm/public/activation_client.h"
 
@@ -94,6 +97,19 @@ void SetDisplayPropertiesOnHost(AshWindowTreeHost* ash_host,
 
   host->SetDisplayTransformHint(
       display::DisplayRotationToOverlayTransform(effective_rotation));
+
+  const display::ManagedDisplayInfo& display_info =
+      GetDisplayManager()->GetDisplayInfo(display.id());
+  if (display::features::IsRoundedDisplayEnabled()) {
+    // Set/Update rounded corners on the display.
+    ui::Layer* root_layer = host->window()->layer();
+    DCHECK(root_layer);
+    root_layer->SetRoundedCornerRadius(display_info.rounded_corners_radii());
+    // If root_layer does not have rounded corners, setting the fast rounded
+    // corner optimization on does not have any effect.
+    root_layer->SetIsFastRoundedCorner(
+        !display_info.rounded_corners_radii().IsEmpty());
+  }
 
   // Just moving the display requires the full redraw.
   // chrome-os-partner:33558.
@@ -320,19 +336,6 @@ void WindowTreeHostManager::InitHosts() {
     }
   }
 
-  // Record display zoom for the primary display for https://crbug.com/955071.
-  // This can be removed after M79.
-  const display::ManagedDisplayInfo& display_info =
-      display_manager->GetDisplayInfo(primary_display_id);
-  int zoom_percent = std::round(display_info.zoom_factor() * 100);
-  constexpr int kMaxValue = 300;
-  constexpr int kBucketSize = 5;
-  constexpr int kBucketCount = kMaxValue / kBucketSize + 1;
-  base::LinearHistogram::FactoryGet(
-      "Ash.Display.PrimaryDisplayZoomAtStartup", kBucketSize, kMaxValue,
-      kBucketCount, base::HistogramBase::kUmaTargetedHistogramFlag)
-      ->Add(zoom_percent);
-
   for (auto& observer : observers_)
     observer.OnDisplaysInitialized();
 }
@@ -445,7 +448,6 @@ void WindowTreeHostManager::UpdateMouseLocationAfterDisplayChange() {
     int64_t distance_squared = (center - point_in_screen).LengthSquared();
     if (closest_distance_squared < 0 ||
         closest_distance_squared > distance_squared) {
-      aura::Window* root_window = GetRootWindowForDisplayId(display.id());
       ::wm::ConvertPointFromScreen(root_window, &center);
       root_window->GetHost()->ConvertDIPToScreenInPixels(&center);
       dst_root_window = root_window;
@@ -557,11 +559,8 @@ void WindowTreeHostManager::OnDisplayAdded(const display::Display& display) {
     }
 
     // |to_delete| has already been removed from |window_tree_hosts_|.
-    DCHECK(std::none_of(
-        window_tree_hosts_.cbegin(), window_tree_hosts_.cend(),
-        [to_delete](const std::pair<int64_t, AshWindowTreeHost*>& pair) {
-          return pair.second == to_delete;
-        }));
+    DCHECK(!base::Contains(window_tree_hosts_, to_delete,
+                           &WindowTreeHostMap::value_type::second));
 
     DeleteHost(to_delete);
     DCHECK(!primary_tree_host_for_replace_);
@@ -596,6 +595,8 @@ void WindowTreeHostManager::DeleteHost(AshWindowTreeHost* host_to_delete) {
   RootWindowController* controller =
       RootWindowController::ForWindow(root_being_deleted);
   DCHECK(controller);
+  // Some code relies on this being called before MoveWindowsTo().
+  Shell::Get()->OnRootWindowWillShutdown(root_being_deleted);
   aura::Window* primary_root_after_host_deletion =
       GetRootWindowForDisplayId(GetPrimaryDisplayId());
   controller->MoveWindowsTo(primary_root_after_host_deletion);
@@ -609,7 +610,8 @@ void WindowTreeHostManager::DeleteHost(AshWindowTreeHost* host_to_delete) {
     Shell::SetRootWindowForNewWindows(primary_root_after_host_deletion);
   }
   // NOTE: ShelfWidget is gone, but Shelf still exists until this task runs.
-  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(FROM_HERE, controller);
+  base::SingleThreadTaskRunner::GetCurrentDefault()->DeleteSoon(FROM_HERE,
+                                                                controller);
 }
 
 void WindowTreeHostManager::OnDisplayRemoved(const display::Display& display) {

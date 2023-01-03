@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,12 +10,11 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/observer_list.h"
 #include "base/rand_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/platform_thread.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "components/sync/base/features.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/engine/backoff_delay_provider.h"
@@ -226,6 +225,11 @@ ModelTypeSet SyncSchedulerImpl::GetEnabledAndUnblockedTypes() {
   return Difference(enabled_protocol_types, blocked_types);
 }
 
+void SyncSchedulerImpl::SetHasPendingInvalidations(ModelType type,
+                                                   bool has_invalidation) {
+  nudge_tracker_.SetHasPendingInvalidations(type, has_invalidation);
+}
+
 void SyncSchedulerImpl::SendInitialSnapshot() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -326,16 +330,14 @@ void SyncSchedulerImpl::ScheduleLocalRefreshRequest(ModelTypeSet types) {
   ScheduleNudgeImpl(nudge_delay);
 }
 
-void SyncSchedulerImpl::ScheduleInvalidationNudge(
-    ModelType model_type,
-    std::unique_ptr<SyncInvalidation> invalidation) {
+void SyncSchedulerImpl::ScheduleInvalidationNudge(ModelType model_type) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!syncer_->IsSyncing());
 
   SDVLOG(2) << "Scheduling sync because we received invalidation for "
             << ModelTypeToDebugString(model_type);
-  base::TimeDelta nudge_delay = nudge_tracker_.RecordRemoteInvalidation(
-      model_type, std::move(invalidation));
+  base::TimeDelta nudge_delay =
+      nudge_tracker_.GetRemoteInvalidationDelay(model_type);
   ScheduleNudgeImpl(nudge_delay);
 }
 
@@ -431,9 +433,7 @@ void SyncSchedulerImpl::DoNudgeSyncCycleJob(JobPriority priority) {
     // Note that some types might have become blocked (throttled) during the
     // cycle. NudgeTracker knows of that, and won't clear any "outstanding work"
     // flags for these types.
-    // TODO(crbug.com/930074): Consider renaming this method to
-    // RecordSuccessfulSyncCycleIfNotBlocked.
-    nudge_tracker_.RecordSuccessfulSyncCycle(types);
+    nudge_tracker_.RecordSuccessfulSyncCycleIfNotBlocked(types);
     HandleSuccess();
 
     // If this was a canary, we may need to restart the poll timer (the poll
@@ -643,7 +643,7 @@ void SyncSchedulerImpl::TryCanaryJob() {
 void SyncSchedulerImpl::TrySyncCycleJob() {
   // Post call to TrySyncCycleJobImpl on current sequence. Later request for
   // access token will be here.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&SyncSchedulerImpl::TrySyncCycleJobImpl,
                                 weak_ptr_factory_.GetWeakPtr()));
 }
@@ -781,6 +781,7 @@ bool SyncSchedulerImpl::IsGlobalBackoff() const {
 
 void SyncSchedulerImpl::OnThrottled(const base::TimeDelta& throttle_duration) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  base::UmaHistogramBoolean("Sync.ThrottledAllModelTypes", true);
   wait_interval_ = std::make_unique<WaitInterval>(
       WaitInterval::BlockingMode::kThrottled, throttle_duration);
   for (SyncEngineEventListener& observer : *cycle_context_->listeners()) {
@@ -795,6 +796,10 @@ void SyncSchedulerImpl::OnTypesThrottled(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   SDVLOG(1) << "Throttling " << ModelTypeSetToDebugString(types) << " for "
             << throttle_duration.InSeconds() << " seconds.";
+  for (ModelType type : types) {
+    base::UmaHistogramEnumeration("Sync.ThrottledSomeModelTypes",
+                                  ModelTypeHistogramValue(type));
+  }
   nudge_tracker_.SetTypesThrottledUntil(types, throttle_duration,
                                         TimeTicks::Now());
   RestartWaiting();
@@ -803,6 +808,8 @@ void SyncSchedulerImpl::OnTypesThrottled(
 void SyncSchedulerImpl::OnTypesBackedOff(ModelTypeSet types) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   for (ModelType type : types) {
+    base::UmaHistogramEnumeration("Sync.BackedOffModelType",
+                                  ModelTypeHistogramValue(type));
     base::TimeDelta last_backoff_time = kInitialBackoffRetryTime;
     if (nudge_tracker_.GetTypeBlockingMode(type) ==
         WaitInterval::BlockingMode::kExponentialBackoffRetrying) {
@@ -843,15 +850,6 @@ void SyncSchedulerImpl::OnReceivedCustomNudgeDelays(
   for (const auto& [type, delay] : nudge_delays) {
     nudge_tracker_.UpdateLocalChangeDelay(type, delay);
   }
-}
-
-void SyncSchedulerImpl::OnReceivedClientInvalidationHintBufferSize(int size) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  if (size > 0)
-    nudge_tracker_.SetHintBufferSize(size);
-  else
-    NOTREACHED() << "Hint buffer size should be > 0.";
 }
 
 void SyncSchedulerImpl::OnSyncProtocolError(

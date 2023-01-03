@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "build/chromeos_buildflags.h"
 #include "components/account_manager_core/account.h"
 #include "components/account_manager_core/account_addition_result.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 
 class OAuth2AccessTokenFetcher;
 class OAuth2AccessTokenConsumer;
@@ -42,6 +43,13 @@ class COMPONENT_EXPORT(ACCOUNT_MANAGER_CORE) AccountManagerFacade {
     virtual void OnAccountUpserted(const Account& account) = 0;
     // Invoked when an account is removed.
     virtual void OnAccountRemoved(const Account& account) = 0;
+    // Invoked when the error state associated with an account changes.
+    virtual void OnAuthErrorChanged(const AccountKey& account,
+                                    const GoogleServiceAuthError& error) = 0;
+    // Invoked when the account signin dialog is closed on the OS side. Check
+    // `AccountManagerObserver::OnSigninDialogClosed()` Mojo API in
+    // account_manager.mojom for details.
+    virtual void OnSigninDialogClosed();
   };
 
   // The source UI surface used for launching the account addition /
@@ -127,7 +135,8 @@ class COMPONENT_EXPORT(ACCOUNT_MANAGER_CORE) AccountManagerFacade {
 
   // Launches account reauthentication dialog for provided `email`.
   virtual void ShowReauthAccountDialog(AccountAdditionSource source,
-                                       const std::string& email) = 0;
+                                       const std::string& email,
+                                       base::OnceClosure callback) = 0;
 
   // Launches OS Settings > Accounts.
   virtual void ShowManageAccountsSettings() = 0;
@@ -137,8 +146,13 @@ class COMPONENT_EXPORT(ACCOUNT_MANAGER_CORE) AccountManagerFacade {
   // The returned object should not outlive `AccountManagerFacade` itself.
   virtual std::unique_ptr<OAuth2AccessTokenFetcher> CreateAccessTokenFetcher(
       const AccountKey& account,
-      const std::string& oauth_consumer_name,
       OAuth2AccessTokenConsumer* consumer) = 0;
+
+  // Reports an `error` for `account`.
+  // `account` must be a valid Gaia account known to Account Manager.
+  // Setting the error `state` as `kNone` resets the error state for `account`.
+  virtual void ReportAuthError(const AccountKey& account,
+                               const GoogleServiceAuthError& error) = 0;
 
   // Adds or updates an account programmatically without user interaction.
   // Should only be used in tests.

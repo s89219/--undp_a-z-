@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,6 +54,12 @@ void JourneyLoggerAndroid::SetHasEnrolledInstrumentValue(
     const base::android::JavaParamRef<jobject>& jcaller,
     jboolean jvalue) {
   journey_logger_.SetHasEnrolledInstrumentValue(jvalue);
+}
+
+void JourneyLoggerAndroid::SetOptOutOffered(
+    JNIEnv* env,
+    const base::android::JavaParamRef<jobject>& jcaller) {
+  journey_logger_.SetOptOutOffered();
 }
 
 void JourneyLoggerAndroid::SetSkippedShow(
@@ -156,15 +162,10 @@ void JourneyLoggerAndroid::SetNotShown(
       static_cast<JourneyLogger::NotShownReason>(jreason));
 }
 
-void JourneyLoggerAndroid::RecordTransactionAmount(
+void JourneyLoggerAndroid::SetNoMatchingCredentialsShown(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& jcaller,
-    const base::android::JavaParamRef<jstring>& jcurrency,
-    const base::android::JavaParamRef<jstring>& jvalue,
-    jboolean jcompleted) {
-  journey_logger_.RecordTransactionAmount(
-      ConvertJavaStringToUTF8(env, jcurrency),
-      ConvertJavaStringToUTF8(env, jvalue), jcompleted);
+    const base::android::JavaParamRef<jobject>& jcaller) {
+  journey_logger_.SetNoMatchingCredentialsShown();
 }
 
 void JourneyLoggerAndroid::RecordCheckoutStep(
@@ -173,12 +174,6 @@ void JourneyLoggerAndroid::RecordCheckoutStep(
     jint jstep) {
   journey_logger_.RecordCheckoutStep(
       static_cast<JourneyLogger::CheckoutFunnelStep>(jstep));
-}
-
-void JourneyLoggerAndroid::SetTriggerTime(
-    JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& jcaller) {
-  journey_logger_.SetTriggerTime();
 }
 
 void JourneyLoggerAndroid::SetPaymentAppUkmSourceId(
@@ -197,7 +192,8 @@ static jlong JNI_JourneyLogger_InitJourneyLoggerAndroid(
       content::WebContents::FromJavaWebContents(jweb_contents);
   DCHECK(web_contents);  // Verified in Java before invoking this function.
   return reinterpret_cast<jlong>(new JourneyLoggerAndroid(
-      jis_incognito, web_contents->GetMainFrame()->GetPageUkmSourceId()));
+      jis_incognito,
+      web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId()));
 }
 
 }  // namespace payments

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,14 +20,14 @@
 class SidePanelComboboxModel : public ui::ComboboxModel {
  public:
   struct Item {
-    Item(SidePanelEntry::Id id, std::u16string text, ui::ImageModel icon);
+    Item(SidePanelEntry::Key key, std::u16string text, ui::ImageModel icon);
     Item(const Item& other);
     Item& operator=(const Item& other);
     Item(Item&& other);
     Item& operator=(Item&& other);
     ~Item();
 
-    SidePanelEntry::Id id;
+    SidePanelEntry::Key key;
     std::u16string text;
     ui::ImageModel icon;
   };
@@ -38,19 +38,29 @@ class SidePanelComboboxModel : public ui::ComboboxModel {
   ~SidePanelComboboxModel() override;
 
   void AddItem(SidePanelEntry* entry);
-  void RemoveItem(SidePanelEntry::Id entry_id);
+  void RemoveItem(const SidePanelEntry::Key& entry_key);
   void AddItems(const std::vector<std::unique_ptr<SidePanelEntry>>& entries);
-  void RemoveItems(const std::vector<std::unique_ptr<SidePanelEntry>>& entries);
-  SidePanelEntry::Id GetIdAt(int index) const;
+  void RemoveItems(const std::vector<SidePanelEntry::Key>& keys);
+  SidePanelEntry::Key GetKeyAt(int index) const;
 
-  // Returns the index for the given side panel entry id, if the id doesn't
-  // exist in entries_ then default to 0.
-  int GetIndexForId(SidePanelEntry::Id id);
+  // If the entry is in |entries_|, update the icon.
+  void UpdateIconForEntry(SidePanelEntry* entry);
+
+  // Returns the index for the given side panel entry key, if the key doesn't
+  // exist in `entries_` then default to 0.
+  int GetIndexForKey(const SidePanelEntry::Key& key);
+
+  // Returns if the given side panel entry key exists in `entries_`.
+  bool HasKey(const SidePanelEntry::Key& key) const;
+
+  // Returns the number of `entries` with the given `key`. This should only be
+  // used to sanity check that a given extension key occurs at most once.
+  int GetKeyCountForTesting(const SidePanelEntry::Key& key) const;
 
   // ui::ComboboxModel:
-  int GetItemCount() const override;
-  std::u16string GetItemAt(int index) const override;
-  ui::ImageModel GetIconAt(int index) const override;
+  size_t GetItemCount() const override;
+  std::u16string GetItemAt(size_t index) const override;
+  ui::ImageModel GetIconAt(size_t index) const override;
 
  private:
   std::vector<Item> entries_;

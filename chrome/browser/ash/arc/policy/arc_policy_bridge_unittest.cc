@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "ash/components/arc/test/connection_holder_util.h"
 #include "ash/components/arc/test/fake_arc_session.h"
 #include "ash/components/arc/test/fake_policy_instance.h"
+#include "ash/constants/ash_switches.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/json/json_reader.h"
@@ -23,6 +24,7 @@
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/scoped_command_line.h"
 #include "base/values.h"
 #include "chrome/browser/ash/arc/enterprise/arc_data_snapshotd_delegate.h"
 #include "chrome/browser/ash/arc/enterprise/cert_store/cert_store_service.h"
@@ -35,10 +37,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "chromeos/ash/components/dbus/concierge/concierge_client.h"
 #include "chromeos/ash/components/dbus/upstart/fake_upstart_client.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/policy/core/common/mock_policy_service.h"
@@ -103,48 +104,23 @@ constexpr char kChoosePrivateKeyRulesFormat[] =
     "{\"packageNames\":[\"%s\"],"
     "\"privateKeyAlias\":\"%s\"}]";
 
+constexpr char kMountPhysicalMediaDisabledPolicySetting[] =
+    "\"mountPhysicalMediaDisabled\":false";
+
 constexpr char kSupervisedUserPlayStoreModePolicySetting[] =
     "\"playStoreMode\":\"SUPERVISED\"";
-
-constexpr char kPlayStoreManagedRestriction[] =
-    "\"managedConfiguration\":{"
-    "\"allowed_accounts\":\"%s\"},";
-
-constexpr char kApplicationsPolicy[] =
-    "\"applications\":["
-    "{"
-    "\"disabled\":false,"
-    "\"installType\":\"OPTIONAL\","
-    "%s"
-    "\"packageName\":\"com.android.vending\""
-    "},"
-    "{"
-    "\"disabled\":false,"
-    "\"installType\":\"OPTIONAL\","
-    "\"packageName\":\"com.a.b\""
-    "}]";
 
 constexpr char kTestUserEmail[] = "user@gmail.com";
 
 constexpr char kChromeAppId[] = "chromeappid";
 constexpr char kAndroidAppId[] = "android.app.id";
 
-std::string GetSupervisedUserPlayStoreApplicationPolicy(
-    bool include_playstore_restriction,
-    const std::string& user_email) {
-  std::string restriction_used =
-      include_playstore_restriction
-          ? base::StringPrintf(kPlayStoreManagedRestriction, user_email.c_str())
-          : "";
-  return base::StringPrintf(kApplicationsPolicy, restriction_used.c_str());
-}
-
-void AddKeyPermissionForAppId(base::Value* key_permissions,
+void AddKeyPermissionForAppId(base::Value::Dict& key_permissions,
                               const std::string& app_id,
                               bool allowed) {
-  base::Value cert_key_permission(base::Value::Type::DICTIONARY);
-  cert_key_permission.SetKey("allowCorporateKeyUsage", base::Value(allowed));
-  key_permissions->SetKey(app_id, std::move(cert_key_permission));
+  base::Value::Dict cert_key_permission;
+  cert_key_permission.Set("allowCorporateKeyUsage", base::Value(allowed));
+  key_permissions.Set(app_id, std::move(cert_key_permission));
 }
 
 MATCHER_P(ValueEquals, expected, "value matches") {
@@ -163,6 +139,7 @@ class MockArcPolicyBridgeObserver : public ArcPolicyBridge::Observer {
 
   MOCK_METHOD1(OnPolicySent, void(const std::string&));
   MOCK_METHOD1(OnComplianceReportReceived, void(const base::Value*));
+  MOCK_METHOD1(OnReportDPCVersion, void(const std::string&));
 };
 
 // Helper class to define callbacks that verify that they were run.
@@ -206,11 +183,10 @@ arc::ArcPolicyBridge::GetPoliciesCallback PolicyStringCallback(
 }
 
 arc::ArcPolicyBridge::ReportComplianceCallback PolicyComplianceCallback(
-    base::OnceClosure quit_closure,
-    const std::string& expected) {
+    base::OnceClosure quit_closure) {
   auto was_run = std::make_unique<CheckedBoolean>();
   return base::BindOnce(&ExpectStringWithClosure, std::move(quit_closure),
-                        std::move(was_run), expected);
+                        std::move(was_run), kPolicyCompliantResponse);
 }
 
 }  // namespace
@@ -224,8 +200,7 @@ class ArcPolicyBridgeTestBase {
 
   void DoSetUp(bool is_affiliated) {
     // Set up fake StatisticsProvider.
-    chromeos::system::StatisticsProvider::SetTestProvider(
-        &statistics_provider_);
+    ash::system::StatisticsProvider::SetTestProvider(&statistics_provider_);
 
     // Set up ArcBridgeService.
     bridge_service_ = std::make_unique<ArcBridgeService>();
@@ -292,26 +267,35 @@ class ArcPolicyBridgeTestBase {
     Mock::VerifyAndClearExpectations(&observer_);
   }
 
+  void ReportDPCVersionAndVerifyObserverCallback(const std::string& version) {
+    Mock::VerifyAndClearExpectations(&observer_);
+    EXPECT_CALL(observer_, OnReportDPCVersion(version));
+
+    policy_bridge()->ReportDPCVersion(version);
+
+    EXPECT_EQ(version, policy_bridge()->get_arc_dpc_version());
+    Mock::VerifyAndClearExpectations(&observer_);
+  }
+
   void ReportComplianceAndVerifyObserverCallback(
       const std::string& compliance_report) {
     Mock::VerifyAndClearExpectations(&observer_);
-    std::unique_ptr<base::Value> compliance_report_value =
-        base::JSONReader::ReadDeprecated(compliance_report);
+    absl::optional<base::Value> compliance_report_value =
+        base::JSONReader::Read(compliance_report);
     if (compliance_report_value && compliance_report_value->is_dict()) {
       EXPECT_CALL(observer_, OnComplianceReportReceived(
-                                 ValueEquals(compliance_report_value.get())));
+                                 ValueEquals(&*compliance_report_value)));
     } else {
       EXPECT_CALL(observer_, OnComplianceReportReceived(_)).Times(0);
     }
     policy_bridge()->ReportCompliance(
-        compliance_report, PolicyComplianceCallback(run_loop().QuitClosure(),
-                                                    kPolicyCompliantResponse));
+        compliance_report, PolicyComplianceCallback(run_loop().QuitClosure()));
     run_loop().Run();
     Mock::VerifyAndClearExpectations(&observer_);
 
     if (compliance_report_value) {
-      std::unique_ptr<base::Value> saved_compliance_report_value =
-          base::JSONReader::ReadDeprecated(
+      absl::optional<base::Value> saved_compliance_report_value =
+          base::JSONReader::Read(
               policy_bridge()->get_arc_policy_compliance_report());
       ASSERT_TRUE(saved_compliance_report_value);
       EXPECT_EQ(*compliance_report_value, *saved_compliance_report_value);
@@ -340,7 +324,7 @@ class ArcPolicyBridgeTestBase {
   TestingProfile* profile() { return profile_; }
   ArcBridgeService* bridge_service() { return bridge_service_.get(); }
   CertStoreService* cert_store_service() { return cert_store_service_; }
-  chromeos::system::FakeStatisticsProvider statistics_provider_;
+  ash::system::FakeStatisticsProvider statistics_provider_;
 
  private:
   content::BrowserTaskEnvironment task_environment_;
@@ -413,7 +397,8 @@ TEST_F(ArcPolicyBridgeTest, UnmanagedTest) {
 TEST_F(ArcPolicyBridgeTest, EmptyPolicyTest) {
   // No policy is set, result should be empty except for the instance GUID.
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() + "\"}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, DISABLED_ArcPolicyTest) {
@@ -439,7 +424,7 @@ TEST_F(ArcPolicyBridgeTest, DISABLED_ArcPolicyTest) {
       "}],"
       "\"defaultPermissionPolicy\":\"GRANT\","
       "\"guid\":\"" +
-      instance_guid() + "\"}");
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, HompageLocationTest) {
@@ -450,7 +435,8 @@ TEST_F(ArcPolicyBridgeTest, HompageLocationTest) {
                    policy::POLICY_SOURCE_CLOUD,
                    base::Value("http://chromium.org"), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() + "\"}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, DisableScreenshotsTest) {
@@ -458,8 +444,9 @@ TEST_F(ArcPolicyBridgeTest, DisableScreenshotsTest) {
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(true), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"screenCaptureDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"screenCaptureDisabled\":true}");
 }
 
 TEST_F(ArcPolicyBridgeTest, DisablePrintingTest) {
@@ -467,7 +454,9 @@ TEST_F(ArcPolicyBridgeTest, DisablePrintingTest) {
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(false), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() + "\",\"printingDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"printingDisabled\":true}");
 }
 
 TEST_F(ArcPolicyBridgeTest, VideoCaptureAllowedTest) {
@@ -476,7 +465,7 @@ TEST_F(ArcPolicyBridgeTest, VideoCaptureAllowedTest) {
                    policy::POLICY_SOURCE_CLOUD, base::Value(false), nullptr);
   GetPoliciesAndVerifyResult(
       "{\"apkCacheEnabled\":true,\"cameraDisabled\":true,\"guid\":\"" +
-      instance_guid() + "\"}");
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, AudioCaptureAllowedTest) {
@@ -484,8 +473,9 @@ TEST_F(ArcPolicyBridgeTest, AudioCaptureAllowedTest) {
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(false), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"unmuteMicrophoneDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"unmuteMicrophoneDisabled\":true}");
 }
 
 TEST_F(ArcPolicyBridgeTest, DefaultGeolocationSettingTest) {
@@ -493,20 +483,23 @@ TEST_F(ArcPolicyBridgeTest, DefaultGeolocationSettingTest) {
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(1), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"shareLocationDisabled\":false}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"shareLocationDisabled\":false}");
   policy_map().Set(policy::key::kDefaultGeolocationSetting,
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(2), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"shareLocationDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"shareLocationDisabled\":true}");
   policy_map().Set(policy::key::kDefaultGeolocationSetting,
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(3), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"shareLocationDisabled\":false}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"shareLocationDisabled\":false}");
 }
 
 TEST_F(ArcPolicyBridgeTest, ExternalStorageDisabledTest) {
@@ -514,31 +507,33 @@ TEST_F(ArcPolicyBridgeTest, ExternalStorageDisabledTest) {
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(true), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"mountPhysicalMediaDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, WallpaperImageSetTest) {
-  base::DictionaryValue dict;
-  dict.SetStringKey("url", "https://example.com/wallpaper.jpg");
-  dict.SetStringKey("hash", "somehash");
+  base::Value::Dict dict;
+  dict.Set("url", "https://example.com/wallpaper.jpg");
+  dict.Set("hash", "somehash");
   policy_map().Set(policy::key::kWallpaperImage, policy::POLICY_LEVEL_MANDATORY,
                    policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                   dict.Clone(), nullptr);
+                   base::Value(std::move(dict)).Clone(), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"setWallpaperDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "," +
+                             "\"setWallpaperDisabled\":true}");
 }
 
 TEST_F(ArcPolicyBridgeTest, WallpaperImageSet_NotCompletePolicyTest) {
-  base::DictionaryValue dict;
-  dict.SetString("url", "https://example.com/wallpaper.jpg");
+  base::Value::Dict dict;
+  dict.Set("url", "https://example.com/wallpaper.jpg");
   // "hash" attribute is missing, so the policy shouldn't be set
   policy_map().Set(policy::key::kWallpaperImage, policy::POLICY_LEVEL_MANDATORY,
                    policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                   dict.Clone(), nullptr);
+                   base::Value(std::move(dict)).Clone(), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() + "\"}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, CaCertificateTest) {
@@ -562,7 +557,7 @@ TEST_F(ArcPolicyBridgeTest, CaCertificateTest) {
       "],"
       "\"credentialsConfigDisabled\":true,"
       "\"guid\":\"" +
-      instance_guid() + "\"}");
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 
   // Disable CA certificates sync.
   policy_map().Set(policy::key::kArcCertificatesSyncMode,
@@ -570,7 +565,8 @@ TEST_F(ArcPolicyBridgeTest, CaCertificateTest) {
                    policy::POLICY_SOURCE_CLOUD,
                    base::Value(ArcCertsSyncMode::SYNC_DISABLED), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() + "\"}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, DeveloperToolsPolicyAllowedTest) {
@@ -579,9 +575,9 @@ TEST_F(ArcPolicyBridgeTest, DeveloperToolsPolicyAllowedTest) {
       std::make_unique<base::Value>(static_cast<int>(
           policy::DeveloperToolsPolicyHandler::Availability::kAllowed)));
   GetPoliciesAndVerifyResult(
-      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":false,\"guid\":"
-      "\"" +
-      instance_guid() + "\"}");
+      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":false,"
+      "\"guid\":\"" +
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest,
@@ -592,9 +588,9 @@ TEST_F(ArcPolicyBridgeTest,
           static_cast<int>(policy::DeveloperToolsPolicyHandler::Availability::
                                kDisallowedForForceInstalledExtensions)));
   GetPoliciesAndVerifyResult(
-      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":false,\"guid\":"
-      "\"" +
-      instance_guid() + "\"}");
+      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":false,"
+      "\"guid\":\"" +
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, DeveloperToolsPolicyDisallowedTest) {
@@ -603,9 +599,25 @@ TEST_F(ArcPolicyBridgeTest, DeveloperToolsPolicyDisallowedTest) {
       std::make_unique<base::Value>(static_cast<int>(
           policy::DeveloperToolsPolicyHandler::Availability::kDisallowed)));
   GetPoliciesAndVerifyResult(
-      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":true,\"guid\":"
-      "\"" +
-      instance_guid() + "\"}");
+      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":true,"
+      "\"guid\":\"" +
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
+}
+
+TEST_F(ArcPolicyBridgeTest, ForceDevToolsAvailabilityTest) {
+  profile()->GetTestingPrefService()->SetManagedPref(
+      ::prefs::kDevToolsAvailability,
+      std::make_unique<base::Value>(static_cast<int>(
+          policy::DeveloperToolsPolicyHandler::Availability::kDisallowed)));
+  base::test::ScopedCommandLine command_line;
+  command_line.GetProcessCommandLine()->AppendSwitch(
+      ash::switches::kForceDevToolsAvailable);
+  GetPoliciesAndVerifyResult(
+      "{\"apkCacheEnabled\":true,\"debuggingFeaturesDisabled\":false,"
+      "\"guid\":\"" +
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
+  command_line.GetProcessCommandLine()->RemoveSwitch(
+      ash::switches::kForceDevToolsAvailable);
 }
 
 TEST_F(ArcPolicyBridgeTest, ManagedConfigurationVariablesTest) {
@@ -634,7 +646,7 @@ TEST_F(ArcPolicyBridgeTest, ManagedConfigurationVariablesTest) {
       "}],"
       "\"defaultPermissionPolicy\":\"GRANT\","
       "\"guid\":\"" +
-      instance_guid() + "\"}");
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, MultiplePoliciesTest) {
@@ -666,7 +678,7 @@ TEST_F(ArcPolicyBridgeTest, MultiplePoliciesTest) {
       "\"cameraDisabled\":true,"
       "\"defaultPermissionPolicy\":\"GRANT\","
       "\"guid\":\"" +
-      instance_guid() + "\"}");
+      instance_guid() + "\"," + kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, EmptyReportComplianceTest) {
@@ -706,6 +718,10 @@ TEST_F(ArcPolicyBridgeTest, ReportComplianceTest_WithNonCompliantDetails) {
       profile()->GetPrefs()->GetBoolean(prefs::kArcPolicyComplianceReported));
 }
 
+TEST_F(ArcPolicyBridgeTest, ReportDPCVersionTest) {
+  ReportDPCVersionAndVerifyObserverCallback("100");
+}
+
 // This and the following test send the policies through a mojo connection
 // between a PolicyInstance and the PolicyBridge.
 TEST_F(ArcPolicyBridgeTest, PolicyInstanceUnmanagedTest) {
@@ -715,7 +731,8 @@ TEST_F(ArcPolicyBridgeTest, PolicyInstanceUnmanagedTest) {
 
 TEST_F(ArcPolicyBridgeTest, PolicyInstanceManagedTest) {
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() + "\"}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting + "}");
 }
 
 TEST_F(ArcPolicyBridgeTest, VpnConfigAllowedTest) {
@@ -723,8 +740,9 @@ TEST_F(ArcPolicyBridgeTest, VpnConfigAllowedTest) {
                    policy::POLICY_LEVEL_MANDATORY, policy::POLICY_SCOPE_USER,
                    policy::POLICY_SOURCE_CLOUD, base::Value(false), nullptr);
   GetPoliciesAndVerifyResult("{\"apkCacheEnabled\":true,\"guid\":\"" +
-                             instance_guid() +
-                             "\",\"vpnConfigDisabled\":true}");
+                             instance_guid() + "\"," +
+                             kMountPhysicalMediaDisabledPolicySetting +
+                             ",\"vpnConfigDisabled\":true}");
 }
 
 TEST_F(ArcPolicyBridgeTest, ManualChildUserPoliciesSet) {
@@ -739,28 +757,8 @@ TEST_F(ArcPolicyBridgeTest, ManualChildUserPoliciesSet) {
   // Applications policy is not present so only playStoreMode policy is set.
   GetPoliciesAndVerifyResult(
       base::StrCat({"{\"apkCacheEnabled\":true,\"guid\":\"", instance_guid(),
-                    "\",", kSupervisedUserPlayStoreModePolicySetting, "}"}));
-
-  // ARC policy with applications policy:
-  // The  managedConfiguration for Play Store should be set in this case.
-  // PlayStoreMode policy should also be set in this case.
-  const std::string arc_policy =
-      base::StrCat({"{",
-                    GetSupervisedUserPlayStoreApplicationPolicy(
-                        /* include_playstore_restriction */ false, ""),
-                    "}"});
-
-  policy_map().Set(policy::key::kArcPolicy, policy::POLICY_LEVEL_MANDATORY,
-                   policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                   base::Value(arc_policy),
-                   /* external_data_fetcher */ nullptr);
-  const std::string expected_policy_result = base::StrCat(
-      {"{\"apkCacheEnabled\":true,",
-       GetSupervisedUserPlayStoreApplicationPolicy(
-           /* include_playstore_restriction */ true, kTestUserEmail),
-       ",\"guid\":\"", instance_guid(), "\",",
-       kSupervisedUserPlayStoreModePolicySetting, "}"});
-  GetPoliciesAndVerifyResult(expected_policy_result);
+                    "\",", kMountPhysicalMediaDisabledPolicySetting, ",",
+                    kSupervisedUserPlayStoreModePolicySetting, "}"}));
 }
 
 // Test that required and force-installed apps get disabled during ARC data
@@ -788,8 +786,7 @@ TEST_F(ArcPolicyBridgeTest, DisableAppsInSnapshot) {
   constexpr char kFalse[] = "false";
   constexpr char kTrue[] = "true";
 
-  chromeos::DBusThreadManager::Initialize();
-  chromeos::ConciergeClient::InitializeFake(/*fake_cicerone_client=*/nullptr);
+  ash::ConciergeClient::InitializeFake(/*fake_cicerone_client=*/nullptr);
 
   auto upstart_client = std::make_unique<ash::FakeUpstartClient>();
   arc::prefs::RegisterLocalStatePrefs(
@@ -814,24 +811,27 @@ TEST_F(ArcPolicyBridgeTest, DisableAppsInSnapshot) {
                                            kFalse, kFalse, kFalse),
                         "}"})),
                    nullptr);
-  GetPoliciesAndVerifyResult(base::StrCat(
-      {"{\"apkCacheEnabled\":true,",
-       base::StringPrintf(kDisabledApplicationsPolicyFormat, kTrue, kTrue,
-                          kFalse),
-       ",\"guid\":\"", instance_guid(), "\",\"resetAndroidIdEnabled\":true}"}));
+  GetPoliciesAndVerifyResult(
+      base::StrCat({"{\"apkCacheEnabled\":true,",
+                    base::StringPrintf(kDisabledApplicationsPolicyFormat, kTrue,
+                                       kTrue, kFalse),
+                    ",\"guid\":\"", instance_guid(), "\",",
+                    kMountPhysicalMediaDisabledPolicySetting, ",",
+                    "\"resetAndroidIdEnabled\":true}"}));
 
   manager.reset();
   upstart_client.reset();
   arc_session_manager.reset();
-  chromeos::ConciergeClient::Shutdown();
-  chromeos::DBusThreadManager::Shutdown();
+  ash::ConciergeClient::Shutdown();
 }
 
 TEST_P(ArcPolicyBridgeAffiliatedTest, ApkCacheEnabledTest) {
   const std::string expected_apk_cache_enabled_result(
-      "{\"apkCacheEnabled\":true,\"guid\":\"" + instance_guid() + "\"}");
+      "{\"apkCacheEnabled\":true,\"guid\":\"" + instance_guid() + "\"," +
+      kMountPhysicalMediaDisabledPolicySetting + "}");
   const std::string expected_apk_cache_disabled_result(
-      "{\"apkCacheEnabled\":false,\"guid\":\"" + instance_guid() + "\"}");
+      "{\"apkCacheEnabled\":false,\"guid\":\"" + instance_guid() + "\"," +
+      kMountPhysicalMediaDisabledPolicySetting + "}");
 
   const std::string arc_apk_cache_enabled_policy("{\"apkCacheEnabled\":true}");
   policy_map().Set(policy::key::kArcPolicy, policy::POLICY_LEVEL_MANDATORY,
@@ -877,13 +877,15 @@ TEST_F(ArcPolicyBridgeCertStoreTest, RequiredKeyPairsBasicTest) {
   cert_store_service()->set_required_cert_names_for_testing({kFakeCertName});
   GetPoliciesAndVerifyResult(base::StrCat(
       {"{\"apkCacheEnabled\":true,\"guid\":\"", instance_guid(), "\",",
+       kMountPhysicalMediaDisabledPolicySetting, ",",
        base::StringPrintf(kRequiredKeyPairsFormat, kFakeCertName), "}"}));
 
   // An empty list is required to be installed.
   cert_store_service()->set_required_cert_names_for_testing({});
   GetPoliciesAndVerifyResult(
       base::StrCat({"{\"apkCacheEnabled\":true,\"guid\":\"", instance_guid(),
-                    "\",", kRequiredKeyPairsEmpty, "}"}));
+                    "\",", kMountPhysicalMediaDisabledPolicySetting, ",",
+                    kRequiredKeyPairsEmpty, "}"}));
 }
 
 // Tests that if cert store service is non-null, corporate usage key exists and
@@ -894,40 +896,41 @@ TEST_F(ArcPolicyBridgeCertStoreTest, KeyPermissionsBasicTest) {
   // One certificate is required to be installed.
   cert_store_service()->set_required_cert_names_for_testing({kFakeCertName});
 
-  base::Value key_permissions(base::Value::Type::DICTIONARY);
-  AddKeyPermissionForAppId(&key_permissions, kAndroidAppId, true /* allowed */);
-  AddKeyPermissionForAppId(&key_permissions, kChromeAppId, true /* allowed */);
+  base::Value::Dict key_permissions;
+  AddKeyPermissionForAppId(key_permissions, kAndroidAppId, true /* allowed */);
+  AddKeyPermissionForAppId(key_permissions, kChromeAppId, true /* allowed */);
 
   policy_map().Set(policy::key::kKeyPermissions, policy::POLICY_LEVEL_MANDATORY,
                    policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                   std::move(key_permissions),
+                   base::Value(std::move(key_permissions)),
                    /* external_data_fetcher */ nullptr);
   GetPoliciesAndVerifyResult(base::StrCat(
       {"{\"apkCacheEnabled\":true,",
        base::StringPrintf(kChoosePrivateKeyRulesFormat, kAndroidAppId,
                           kFakeCertName),
-       ",\"guid\":\"", instance_guid(),
-       "\",\"privateKeySelectionEnabled\":true,",
+       ",\"guid\":\"", instance_guid(), "\",",
+       kMountPhysicalMediaDisabledPolicySetting, ",",
+       "\"privateKeySelectionEnabled\":true,",
        base::StringPrintf(kRequiredKeyPairsFormat, kFakeCertName), "}"}));
 }
 
 // Tests that if cert store service is non-null, corporate usage key exists and
 // not to any ARC apps, ChoosePrivateKeyRules policy is not set.
 TEST_F(ArcPolicyBridgeCertStoreTest, KeyPermissionsEmptyTest) {
-  base::Value key_permissions(base::Value::Type::DICTIONARY);
-  AddKeyPermissionForAppId(&key_permissions, kAndroidAppId,
-                           false /* allowed */);
-  AddKeyPermissionForAppId(&key_permissions, kChromeAppId, true /* allowed */);
+  base::Value::Dict key_permissions;
+  AddKeyPermissionForAppId(key_permissions, kAndroidAppId, false /* allowed */);
+  AddKeyPermissionForAppId(key_permissions, kChromeAppId, true /* allowed */);
 
   // One certificate is required to be installed.
   cert_store_service()->set_required_cert_names_for_testing({kFakeCertName});
 
   policy_map().Set(policy::key::kKeyPermissions, policy::POLICY_LEVEL_MANDATORY,
                    policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                   std::move(key_permissions),
+                   base::Value(std::move(key_permissions)),
                    /* external_data_fetcher */ nullptr);
   GetPoliciesAndVerifyResult(base::StrCat(
       {"{\"apkCacheEnabled\":true,\"guid\":\"", instance_guid(), "\",",
+       kMountPhysicalMediaDisabledPolicySetting, ",",
        base::StringPrintf(kRequiredKeyPairsFormat, kFakeCertName), "}"}));
 }
 
@@ -935,19 +938,20 @@ TEST_F(ArcPolicyBridgeCertStoreTest, KeyPermissionsEmptyTest) {
 // exist, but in theory are available to ARC apps, ChoosePrivateKeyRules policy
 // is not set.
 TEST_F(ArcPolicyBridgeCertStoreTest, KeyPermissionsNoCertsTest) {
-  base::Value key_permissions(base::Value::Type::DICTIONARY);
-  AddKeyPermissionForAppId(&key_permissions, kAndroidAppId, true /* allowed */);
-  AddKeyPermissionForAppId(&key_permissions, kChromeAppId, true /* allowed */);
+  base::Value::Dict key_permissions;
+  AddKeyPermissionForAppId(key_permissions, kAndroidAppId, true /* allowed */);
+  AddKeyPermissionForAppId(key_permissions, kChromeAppId, true /* allowed */);
 
   cert_store_service()->set_required_cert_names_for_testing({});
 
   policy_map().Set(policy::key::kKeyPermissions, policy::POLICY_LEVEL_MANDATORY,
                    policy::POLICY_SCOPE_USER, policy::POLICY_SOURCE_CLOUD,
-                   std::move(key_permissions),
+                   base::Value(std::move(key_permissions)),
                    /* external_data_fetcher */ nullptr);
   GetPoliciesAndVerifyResult(
       base::StrCat({"{\"apkCacheEnabled\":true,\"guid\":\"", instance_guid(),
-                    "\",", kRequiredKeyPairsEmpty, "}"}));
+                    "\",", kMountPhysicalMediaDisabledPolicySetting, ",",
+                    kRequiredKeyPairsEmpty, "}"}));
 }
 
 }  // namespace arc

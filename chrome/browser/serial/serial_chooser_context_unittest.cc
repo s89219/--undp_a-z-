@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -168,9 +168,7 @@ class SerialChooserContextTestBase {
       scoped_permission_observation_{&permission_observer_};
   NiceMock<MockPortObserver> port_observer_;
   base::ScopedObservation<SerialChooserContext,
-                          SerialChooserContext::PortObserver,
-                          &SerialChooserContext::AddPortObserver,
-                          &SerialChooserContext::RemovePortObserver>
+                          SerialChooserContext::PortObserver>
       scoped_port_observation_{&port_observer_};
 };
 

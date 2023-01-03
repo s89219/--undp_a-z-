@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/strings/sys_string_conversions.h"
-#include "base/values.h"
-#include "ios/web/common/referrer_util.h"
-#include "ios/web/js_features/context_menu/context_menu_constants.h"
+#import "base/strings/sys_string_conversions.h"
+#import "base/values.h"
+#import "ios/web/common/referrer_util.h"
+#import "ios/web/js_features/context_menu/context_menu_constants.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -17,29 +17,10 @@
 
 namespace web {
 
-CGRect BoundingBoxFromBoundingBoxDictionary(const base::Value* boundingBox) {
-  absl::optional<double> x =
-      boundingBox->FindDoubleKey(kContextMenuElementBoundingBoxX);
-  absl::optional<double> y =
-      boundingBox->FindDoubleKey(kContextMenuElementBoundingBoxY);
-  absl::optional<double> width =
-      boundingBox->FindDoubleKey(kContextMenuElementBoundingBoxWidth);
-  absl::optional<double> height =
-      boundingBox->FindDoubleKey(kContextMenuElementBoundingBoxHeight);
-
-  if (x && y && width && height && width > 0.0 && height > 0.0) {
-    const double elementSize = *height * *width;
-    if (elementSize < kContextMenuMaxScreenshotSize) {
-      return CGRectMake(*x, *y, *width, *height);
-    }
-  }
-  return CGRectZero;
-}
-
 ContextMenuParams ContextMenuParamsFromElementDictionary(base::Value* element) {
   ContextMenuParams params;
   if (!element || !element->is_dict()) {
-    // Invalid |element|.
+    // Invalid `element`.
     return params;
   }
 
@@ -87,22 +68,16 @@ ContextMenuParams ContextMenuParamsFromElementDictionary(base::Value* element) {
     params.text_offset = *text_offset;
   }
 
-  absl::optional<double> natural_width =
-      element->FindDoubleKey(web::kContextMenuElementNaturalWidth);
-  if (natural_width.has_value()) {
-    params.natural_width = *natural_width;
+  std::string* surrounding_text =
+      element->FindStringKey(kContextMenuElementSurroundingText);
+  if (surrounding_text && !surrounding_text->empty()) {
+    params.surrounding_text = base::SysUTF8ToNSString(*surrounding_text);
   }
 
-  absl::optional<double> natural_height =
-      element->FindDoubleKey(web::kContextMenuElementNaturalHeight);
-  if (natural_height.has_value()) {
-    params.natural_height = *natural_height;
-  }
-
-  base::Value* bounding_box =
-      element->FindDictKey(web::kContextMenuElementBoundingBox);
-  if (bounding_box) {
-    params.bounding_box = BoundingBoxFromBoundingBoxDictionary(bounding_box);
+  absl::optional<double> surrounding_text_offset =
+      element->FindDoubleKey(web::kContextMenuElementSurroundingTextOffset);
+  if (surrounding_text_offset.has_value()) {
+    params.surrounding_text_offset = *surrounding_text_offset;
   }
 
   return params;

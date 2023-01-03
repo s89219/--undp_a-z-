@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,10 +20,7 @@ import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.Callback;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.bookmarks.PowerBookmarkMetrics.PriceTrackingState;
-import org.chromium.chrome.browser.power_bookmarks.PowerBookmarkMeta;
-import org.chromium.chrome.browser.power_bookmarks.ProductPrice;
 import org.chromium.chrome.browser.subscriptions.CommerceSubscription;
-import org.chromium.chrome.browser.subscriptions.SubscriptionsManager;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.components.bookmarks.BookmarkId;
 import org.chromium.components.bookmarks.BookmarkItem;
@@ -31,8 +28,10 @@ import org.chromium.components.browser_ui.widget.RoundedCornerOutlineProvider;
 import org.chromium.components.browser_ui.widget.chips.ChipView;
 import org.chromium.components.image_fetcher.ImageFetcher;
 import org.chromium.components.payments.CurrencyFormatter;
+import org.chromium.components.power_bookmarks.PowerBookmarkMeta;
+import org.chromium.components.power_bookmarks.ProductPrice;
+import org.chromium.components.power_bookmarks.ShoppingSpecifics;
 
-import java.util.Arrays;
 import java.util.Locale;
 
 /** A row view that shows shopping info in the bookmarks UI. */
@@ -41,7 +40,6 @@ public class PowerBookmarkShoppingItemRow extends BookmarkItemRow {
 
     private ImageFetcher mImageFetcher;
     private BookmarkModel mBookmarkModel;
-    private SubscriptionsManager mSubscriptionsManager;
 
     private boolean mIsPriceTrackingEnabled;
     private CurrencyFormatter mCurrencyFormatter;
@@ -60,13 +58,11 @@ public class PowerBookmarkShoppingItemRow extends BookmarkItemRow {
      * Initialize properties for the item row.
      * @param imageFetcher {@link ImageFetcher} used to fetch shopping images.
      * @param bookmarkModel The {@link BookmarkModel} used to query power bookmark metadata.
-     * @param subscriptionsManager Used to manage the price-tracking subscriptions.
      */
     void init(ImageFetcher imageFetcher, BookmarkModel bookmarkModel,
-            SubscriptionsManager subscriptionsManager, SnackbarManager snackbarManager) {
+            SnackbarManager snackbarManager) {
         mImageFetcher = imageFetcher;
         mBookmarkModel = bookmarkModel;
-        mSubscriptionsManager = subscriptionsManager;
         mSnackbarManager = snackbarManager;
     }
 
@@ -78,33 +74,17 @@ public class PowerBookmarkShoppingItemRow extends BookmarkItemRow {
         PowerBookmarkMeta meta = mBookmarkModel.getPowerBookmarkMeta(bookmarkId);
         assert meta != null;
 
-        // TODO(crbug.com/1243383): Pull price updates once they're available.
-        ProductPrice originalPrice = meta.getShoppingSpecifics().getCurrentPrice();
+        ShoppingSpecifics specifics = meta.getShoppingSpecifics();
+        ProductPrice currentPrice = specifics.getCurrentPrice();
+        ProductPrice previousPrice = specifics.getPreviousPrice();
         mSubscription = PowerBookmarkUtils.createCommerceSubscriptionForPowerBookmarkMeta(meta);
         mCurrencyFormatter =
-                new CurrencyFormatter(originalPrice.getCurrencyCode(), Locale.getDefault());
+                new CurrencyFormatter(currentPrice.getCurrencyCode(), Locale.getDefault());
 
-        boolean mIsPriceTrackingEnabled =
-                meta != null && meta.getShoppingSpecifics().getIsPriceTracked();
+        boolean mIsPriceTrackingEnabled = specifics.getIsPriceTracked();
         initPriceTrackingUI(meta.getLeadImage().getUrl(), mIsPriceTrackingEnabled,
-                originalPrice.getAmountMicros(), originalPrice.getAmountMicros());
-        // Request an updated price then push updates to the UI.
-        mBookmarkModel.getUpdatedProductPrices(
-                Arrays.asList(bookmarkId), (id, url, updatedPrice) -> {
-                    if (!mBookmarkId.equals(id)
-                            || !originalPrice.getCurrencyCode().equals(
-                                    updatedPrice.getCurrencyCode())) {
-                        return;
-                    }
+                previousPrice.getAmountMicros(), currentPrice.getAmountMicros());
 
-                    if (updatedPrice.getAmountMicros() > originalPrice.getAmountMicros()) {
-                        PowerBookmarkUtils.updatePriceForBookmarkId(
-                                mBookmarkModel, bookmarkId, updatedPrice);
-                    }
-
-                    setPriceInfoChip(
-                            originalPrice.getAmountMicros(), updatedPrice.getAmountMicros());
-                });
         return bookmarkItem;
     }
 
@@ -193,10 +173,10 @@ public class PowerBookmarkShoppingItemRow extends BookmarkItemRow {
                                      : R.string.enable_price_tracking_menu_item));
         mEndStartButtonView.setVisibility(View.VISIBLE);
         updatePriceTrackingImageForCurrentState();
-        Callback<Integer> subscriptionCallback = (status) -> {
+        Callback<Boolean> subscriptionCallback = (success) -> {
             mSubscriptionChangeInProgress = false;
             // TODO(crbug.com/1243383): Handle the failure edge case.
-            if (status != SubscriptionsManager.StatusCode.OK) return;
+            if (!success) return;
             mIsPriceTrackingEnabled = !mIsPriceTrackingEnabled;
             updatePriceTrackingImageForCurrentState();
         };
@@ -207,9 +187,9 @@ public class PowerBookmarkShoppingItemRow extends BookmarkItemRow {
             PowerBookmarkMetrics.reportBookmarkShoppingItemRowPriceTrackingState(
                     !mIsPriceTrackingEnabled ? PriceTrackingState.PRICE_TRACKING_ENABLED
                                              : PriceTrackingState.PRICE_TRACKING_DISABLED);
-            PowerBookmarkUtils.setPriceTrackingEnabledWithSnackbars(mSubscriptionsManager,
-                    mBookmarkModel, mBookmarkId, !mIsPriceTrackingEnabled, mSnackbarManager,
-                    getContext().getResources(), subscriptionCallback);
+            PowerBookmarkUtils.setPriceTrackingEnabledWithSnackbars(mBookmarkModel, mBookmarkId,
+                    !mIsPriceTrackingEnabled, mSnackbarManager, getContext().getResources(),
+                    subscriptionCallback);
         });
     }
 

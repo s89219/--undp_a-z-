@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@ import {FakeHelpContentProvider} from 'chrome://os-feedback/fake_help_content_pr
 import {HelpContentList, SearchResponse} from 'chrome://os-feedback/feedback_types.js';
 import {mojoString16ToString} from 'chrome://resources/ash/common/mojo_utils.js';
 
-import {assertDeepEquals, assertEquals} from '../../chai_assert.js';
+import {assertDeepEquals, assertEquals} from 'chrome://webui-test/chromeos/chai_assert.js';
 
 export function fakeHelpContentProviderTestSuite() {
   /** @type {?FakeHelpContentProvider} */

@@ -50,18 +50,15 @@ namespace blink {
 namespace {
 
 class FormDataIterationSource final
-    : public PairIterable<String,
-                          IDLString,
-                          Member<V8FormDataEntryValue>,
-                          V8FormDataEntryValue>::IterationSource {
+    : public PairSyncIterable<FormData>::IterationSource {
  public:
   FormDataIterationSource(FormData* form_data)
       : form_data_(form_data), current_(0) {}
 
-  bool Next(ScriptState* script_state,
-            String& name,
-            Member<V8FormDataEntryValue>& value,
-            ExceptionState& exception_state) override {
+  bool FetchNextItem(ScriptState* script_state,
+                     String& name,
+                     V8FormDataEntryValue*& value,
+                     ExceptionState& exception_state) override {
     if (current_ >= form_data_->size())
       return false;
 
@@ -78,8 +75,7 @@ class FormDataIterationSource final
 
   void Trace(Visitor* visitor) const override {
     visitor->Trace(form_data_);
-    PairIterable<String, IDLString, Member<V8FormDataEntryValue>,
-                 V8FormDataEntryValue>::IterationSource::Trace(visitor);
+    PairSyncIterable<FormData>::IterationSource::Trace(visitor);
   }
 
  private:
@@ -264,9 +260,8 @@ scoped_refptr<EncodedFormData> FormData::EncodeMultiPartFormData() {
       if (auto* file = DynamicTo<File>(entry->GetBlob())) {
         // For file blob, use the filename (or relative path if it is
         // present) as the name.
-        name = file->webkitRelativePath().IsEmpty()
-                   ? file->name()
-                   : file->webkitRelativePath();
+        name = file->webkitRelativePath().empty() ? file->name()
+                                                  : file->webkitRelativePath();
 
         // If a filename is passed in FormData.append(), use it instead
         // of the file blob's name.
@@ -288,7 +283,7 @@ scoped_refptr<EncodedFormData> FormData::EncodeMultiPartFormData() {
       // Add the content type if available, or "application/octet-stream"
       // otherwise (RFC 1867).
       String content_type;
-      if (entry->GetBlob()->type().IsEmpty())
+      if (entry->GetBlob()->type().empty())
         content_type = "application/octet-stream";
       else
         content_type = entry->GetBlob()->type();
@@ -303,7 +298,7 @@ scoped_refptr<EncodedFormData> FormData::EncodeMultiPartFormData() {
       if (entry->GetBlob()->HasBackingFile()) {
         auto* file = To<File>(entry->GetBlob());
         // Do not add the file if the path is empty.
-        if (!file->GetPath().IsEmpty())
+        if (!file->GetPath().empty())
           form_data->AppendFile(file->GetPath(), file->LastModifiedTime());
       } else {
         form_data->AppendBlob(entry->GetBlob()->Uuid(),
@@ -324,11 +319,9 @@ scoped_refptr<EncodedFormData> FormData::EncodeMultiPartFormData() {
   return form_data;
 }
 
-PairIterable<String,
-             IDLString,
-             Member<V8FormDataEntryValue>,
-             V8FormDataEntryValue>::IterationSource*
-FormData::StartIteration(ScriptState*, ExceptionState&) {
+PairSyncIterable<FormData>::IterationSource* FormData::CreateIterationSource(
+    ScriptState*,
+    ExceptionState&) {
   return MakeGarbageCollected<FormDataIterationSource>(this);
 }
 

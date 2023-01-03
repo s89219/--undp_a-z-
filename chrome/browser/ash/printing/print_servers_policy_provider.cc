@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,12 @@ PrintServersPolicyProvider::PrintServersPolicyProvider(
   device_policy_provider_->AddObserver(this);
 }
 
-PrintServersPolicyProvider::~PrintServersPolicyProvider() = default;
+PrintServersPolicyProvider::~PrintServersPolicyProvider() {
+  if (device_policy_provider_)
+    device_policy_provider_->RemoveObserver(this);
+  if (user_policy_provider_)
+    user_policy_provider_->RemoveObserver(this);
+}
 
 // static
 std::unique_ptr<PrintServersPolicyProvider> PrintServersPolicyProvider::Create(

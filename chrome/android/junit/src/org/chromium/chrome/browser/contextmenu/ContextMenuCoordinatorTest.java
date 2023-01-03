@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@ package org.chromium.chrome.browser.contextmenu;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.when;
 
 import static org.chromium.chrome.browser.contextmenu.ContextMenuItemProperties.MENU_ID;
 import static org.chromium.chrome.browser.contextmenu.ContextMenuItemProperties.TEXT;
@@ -18,6 +17,7 @@ import android.util.Pair;
 import android.view.View;
 
 import androidx.annotation.Nullable;
+import androidx.test.ext.junit.rules.ActivityScenarioRule;
 
 import org.junit.Assert;
 import org.junit.Before;
@@ -28,7 +28,6 @@ import org.junit.runner.RunWith;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
-import org.robolectric.Robolectric;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
@@ -43,15 +42,13 @@ import org.chromium.chrome.browser.contextmenu.ChromeContextMenuItem.Item;
 import org.chromium.chrome.browser.contextmenu.ChromeContextMenuPopulator.ContextMenuGroup;
 import org.chromium.chrome.browser.contextmenu.ContextMenuCoordinator.ListItemType;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.performance_hints.PerformanceHintsObserver;
-import org.chromium.chrome.browser.performance_hints.PerformanceHintsObserver.PerformanceClass;
-import org.chromium.chrome.browser.performance_hints.PerformanceHintsObserverJni;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.components.browser_ui.widget.ContextMenuDialog;
 import org.chromium.components.embedder_support.contextmenu.ContextMenuParams;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.common.ContentFeatures;
+import org.chromium.ui.base.TestActivity;
 import org.chromium.ui.base.ViewAndroidDelegate;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.dragdrop.DragStateTracker;
@@ -69,8 +66,8 @@ import java.util.List;
  * Unit tests for the context menu. Use density=mdpi so the screen density is 1.
  */
 @RunWith(BaseRobolectricTestRunner.class)
-@Features.DisableFeatures(
-        {ChromeFeatureList.CONTEXT_MENU_POPUP_STYLE, ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU})
+@Features.DisableFeatures({ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU,
+        ChromeFeatureList.CONTEXT_MENU_POPUP_FOR_ALL_SCREEN_SIZES})
 public class ContextMenuCoordinatorTest {
     private static final int TOP_CONTENT_OFFSET_PX = 17;
     /**
@@ -100,6 +97,10 @@ public class ContextMenuCoordinatorTest {
         @Override
         @Implementation
         public void show() {}
+
+        @Override
+        @Implementation
+        public void dismiss() {}
     }
 
     /** No-op constructor for test cases that does not care of creation of real object. */
@@ -108,8 +109,7 @@ public class ContextMenuCoordinatorTest {
         public ShadowContextMenuHeaderCoordinator() {}
 
         @Implementation
-        public void __constructor__(Activity activity, @PerformanceClass int performanceClass,
-                ContextMenuParams params, Profile profile,
+        public void __constructor__(Activity activity, ContextMenuParams params, Profile profile,
                 ContextMenuNativeDelegate nativeDelegate) {}
     }
 
@@ -128,9 +128,10 @@ public class ContextMenuCoordinatorTest {
     public TestRule mProcessor = new Features.JUnitProcessor();
     @Rule
     public JniMocker mocker = new JniMocker();
+    @Rule
+    public ActivityScenarioRule<TestActivity> mActivityScenarioRule =
+            new ActivityScenarioRule<>(TestActivity.class);
 
-    @Mock
-    PerformanceHintsObserver.Natives mNativeMock;
     @Mock
     ContextMenuNativeDelegate mNativeDelegate;
     @Mock
@@ -142,12 +143,9 @@ public class ContextMenuCoordinatorTest {
 
     @Before
     public void setUpTest() {
-        mActivity = Robolectric.buildActivity(Activity.class).setup().get();
-        mActivity.setTheme(R.style.Theme_BrowserUI_DayNight);
+        mActivityScenarioRule.getScenario().onActivity((activity) -> mActivity = activity);
         mCoordinator = new ContextMenuCoordinator(TOP_CONTENT_OFFSET_PX, mNativeDelegate);
         MockitoAnnotations.initMocks(this);
-        mocker.mock(PerformanceHintsObserverJni.TEST_HOOKS, mNativeMock);
-        when(mNativeMock.isContextMenuPerformanceInfoEnabled()).thenReturn(false);
         ShadowProfile.sProfileFromWebContents = mProfile;
     }
 
@@ -247,9 +245,11 @@ public class ContextMenuCoordinatorTest {
     }
 
     @Test
-    @Features.EnableFeatures(ChromeFeatureList.CONTEXT_MENU_POPUP_STYLE)
+    @Features.EnableFeatures({ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU,
+            ChromeFeatureList.CONTEXT_MENU_POPUP_FOR_ALL_SCREEN_SIZES})
     @Config(shadows = {ShadowContextMenuDialog.class}, qualifiers = "mdpi")
-    public void testCreateContextMenuDialog_PopupStyle() {
+    public void
+    testCreateContextMenuDialog_PopupStyle() {
         ContextMenuDialog dialog = createContextMenuDialogForTest(/*isPopup=*/true);
         ShadowContextMenuDialog shadowDialog = (ShadowContextMenuDialog) Shadow.extract(dialog);
 
@@ -336,7 +336,8 @@ public class ContextMenuCoordinatorTest {
     }
 
     @Test
-    @Features.EnableFeatures(ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU)
+    @Features.EnableFeatures({ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU,
+            ChromeFeatureList.CONTEXT_MENU_POPUP_FOR_ALL_SCREEN_SIZES})
     @Config(shadows = {ShadowContextMenuDialog.class, ShadowContextMenuHeaderCoordinator.class,
                     ShadowProfile.class},
             qualifiers = "mdpi")

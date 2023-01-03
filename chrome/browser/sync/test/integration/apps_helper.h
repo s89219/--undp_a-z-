@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,9 +58,6 @@ void UninstallApp(Profile* profile, int index);
 // App Service to settle.
 void InstallAppsPendingForSync(Profile* profile);
 
-// Waits for the App Service state for |profile| to settle.
-void WaitForAppService(Profile* profile);
-
 // Enables the app for the given index on |profile|.
 void EnableApp(Profile* profile, int index);
 
@@ -110,8 +107,9 @@ void CopyNTPOrdinals(Profile* source, Profile* destination, int index);
 // Fix any NTP icon collisions that are currently in |profile|.
 void FixNTPOrdinalCollisions(Profile* profile);
 
-// Wait for all the web app install and uninstall tasks to finish.
-void AwaitWebAppQuiescence(std::vector<Profile*> profiles);
+// Flushes pending changes and verifies that the profiles have no pending
+// installs or uninstalls afterwards.
+bool AwaitWebAppQuiescence(std::vector<Profile*> profiles);
 }  // namespace apps_helper
 
 // An app specific version of StatusChangeChecker which checks the exit

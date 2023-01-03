@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,14 +12,14 @@
 #include "chrome/browser/ash/login/test/embedded_test_server_setup_mixin.h"
 #include "chrome/browser/ash/login/test/js_checker.h"
 #include "chrome/test/base/mixin_based_in_process_browser_test.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chromeos/dbus/update_engine/fake_update_engine_client.h"
 
 namespace content {
 class WebUI;
 }  // namespace content
 
 namespace ash {
+
+class FakeUpdateEngineClient;
 class LoginOrLockScreenVisibleWaiter;
 
 // Base class for OOBE, login, SAML and Kiosk tests.
@@ -92,11 +92,5 @@ class OobeBaseTest : public MixinBasedInProcessBrowserTest {
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::OobeBaseTest;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_TEST_OOBE_BASE_TEST_H_

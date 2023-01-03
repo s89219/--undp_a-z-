@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -360,7 +360,7 @@ bool ParseFolderNameFromLine(const std::string& lineDt,
   }
 
   if (GetAttribute(attribute_list, kToolbarFolderAttribute, &value) &&
-      base::LowerCaseEqualsASCII(value, "true"))
+      base::EqualsCaseInsensitiveASCII(value, "true"))
     *is_toolbar_folder = true;
   else
     *is_toolbar_folder = false;

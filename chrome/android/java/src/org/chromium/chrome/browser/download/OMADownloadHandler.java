@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -636,9 +636,8 @@ public class OMADownloadHandler extends BroadcastReceiver {
                     && !type.equalsIgnoreCase(MimeUtils.OMA_DOWNLOAD_DESCRIPTOR_MIME)
                     && !type.equalsIgnoreCase(MimeUtils.OMA_DRM_RIGHTS_MIME)) {
                 intent.setDataAndType(uri, type);
-                if (!PackageManagerUtils
-                                .queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY)
-                                .isEmpty()) {
+                if (PackageManagerUtils.canResolveActivity(
+                            intent, PackageManager.MATCH_DEFAULT_ONLY)) {
                     return type;
                 }
             }
@@ -763,7 +762,7 @@ public class OMADownloadHandler extends BroadcastReceiver {
         enqueueRequest.mimeType = mimeType;
         enqueueRequest.description = omaInfo.getValue(OMA_DESCRIPTION);
         enqueueRequest.cookie = newInfo.getCookie();
-        enqueueRequest.referrer = newInfo.getReferrer();
+        enqueueRequest.referrer = newInfo.getReferrer().getSpec();
         enqueueRequest.userAgent = newInfo.getUserAgent();
         enqueueRequest.notifyCompleted = omaInfo.isValueEmpty(OMA_INSTALL_NOTIFY_URI);
         DownloadManagerBridge.enqueueNewDownload(
@@ -1018,8 +1017,8 @@ public class OMADownloadHandler extends BroadcastReceiver {
                         String pendingUri =
                                 DownloadCollectionBridge.createIntermediateUriForPublish(
                                         mDownloadInfo.getFileName(), mDownloadInfo.getMimeType(),
-                                        mDownloadInfo.getOriginalUrl(),
-                                        mDownloadInfo.getReferrer());
+                                        mDownloadInfo.getOriginalUrl().getSpec(),
+                                        mDownloadInfo.getReferrer().getSpec());
                         success = DownloadCollectionBridge.copyFileToIntermediateUri(
                                 path, pendingUri);
                         if (success) {

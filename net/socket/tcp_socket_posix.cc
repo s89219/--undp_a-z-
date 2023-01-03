@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -162,7 +162,6 @@ TCPSocketPosix::TCPSocketPosix(
     NetLog* net_log,
     const NetLogSource& source)
     : socket_performance_watcher_(std::move(socket_performance_watcher)),
-      logging_multiple_connect_attempts_(false),
       net_log_(NetLogWithSource::Make(net_log, NetLogSourceType::SOCKET)) {
   net_log_.BeginEventReferencingSource(NetLogEventType::SOCKET_ALIVE, source);
 }
@@ -183,8 +182,7 @@ int TCPSocketPosix::Open(AddressFamily family) {
   return rv;
 }
 
-int TCPSocketPosix::BindToNetwork(
-    NetworkChangeNotifier::NetworkHandle network) {
+int TCPSocketPosix::BindToNetwork(handles::NetworkHandle network) {
   DCHECK(IsValid());
   DCHECK(!IsConnected());
 #if BUILDFLAG(IS_ANDROID)
@@ -475,7 +473,7 @@ void TCPSocketPosix::Close() {
 }
 
 bool TCPSocketPosix::IsValid() const {
-  return socket_ != NULL && socket_->socket_fd() != kInvalidSocket;
+  return socket_ != nullptr && socket_->socket_fd() != kInvalidSocket;
 }
 
 void TCPSocketPosix::DetachFromThread() {

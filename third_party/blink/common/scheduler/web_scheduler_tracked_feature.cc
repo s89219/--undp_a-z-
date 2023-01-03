@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <atomic>
 #include <map>
+#include <vector>
 
 namespace blink {
 namespace scheduler {
@@ -60,9 +61,6 @@ FeatureNames FeatureToNames(WebSchedulerTrackedFeature feature) {
     case WebSchedulerTrackedFeature::kOutstandingIndexedDBTransaction:
       return {"OutstandingIndexedDBTransaction",
               "outstanding IndexedDB transaction"};
-    case WebSchedulerTrackedFeature::kRequestedNotificationsPermission:
-      return {"RequestedNotificationsPermission",
-              "requested notifications permission"};
     case WebSchedulerTrackedFeature::kRequestedMIDIPermission:
       return {"RequestedMIDIPermission", "requested midi permission"};
     case WebSchedulerTrackedFeature::kRequestedAudioCapturePermission:
@@ -94,8 +92,6 @@ FeatureNames FeatureToNames(WebSchedulerTrackedFeature feature) {
               "requested storage access permission"};
     case WebSchedulerTrackedFeature::kWebNfc:
       return {"WebNfc", "WebNfc"};
-    case WebSchedulerTrackedFeature::kAppBanner:
-      return {"AppBanner", "AppBanner"};
     case WebSchedulerTrackedFeature::kPrinting:
       return {"Printing", "Printing"};
     case WebSchedulerTrackedFeature::kWebDatabase:
@@ -123,8 +119,14 @@ FeatureNames FeatureToNames(WebSchedulerTrackedFeature feature) {
       return {"InjectedJavascript", "External javascript injected"};
     case WebSchedulerTrackedFeature::kInjectedStyleSheet:
       return {"InjectedStyleSheet", "External systesheet injected"};
+    case WebSchedulerTrackedFeature::kKeepaliveRequest:
+      return {"KeepaliveRequest", "requests with keepalive set"};
     case WebSchedulerTrackedFeature::kDummy:
       return {"Dummy", "Dummy for testing"};
+    case WebSchedulerTrackedFeature::kAuthorizationHeader:
+      return {"AuthorizationHeader", "Authorization header used"};
+    case WebSchedulerTrackedFeature::kIndexedDBEvent:
+      return {"IndexedDBEvent", "IndexedDB event is pending"};
   }
   return {};
 }
@@ -155,6 +157,10 @@ std::string FeatureToHumanReadableString(WebSchedulerTrackedFeature feature) {
   return FeatureToNames(feature).human_readable;
 }
 
+std::string FeatureToShortString(WebSchedulerTrackedFeature feature) {
+  return FeatureToNames(feature).short_name;
+}
+
 absl::optional<WebSchedulerTrackedFeature> StringToFeature(
     const std::string& str) {
   auto map = ShortStringToFeatureMap();
@@ -163,6 +169,20 @@ absl::optional<WebSchedulerTrackedFeature> StringToFeature(
     return absl::nullopt;
   }
   return it->second;
+}
+
+bool IsRemovedFeature(const std::string& feature) {
+  // This is an incomplete list. It only contains features that were
+  // BFCache-enabled via finch. It does not contain all those that were removed.
+  // This function is simple, not efficient because it is called once during
+  // finch param parsing.
+  const char* removed_features[] = {"MediaSessionImplOnServiceCreated"};
+  for (const char* removed_feature : removed_features) {
+    if (feature == removed_feature) {
+      return true;
+    }
+  }
+  return false;
 }
 
 bool IsFeatureSticky(WebSchedulerTrackedFeature feature) {
@@ -177,7 +197,6 @@ WebSchedulerTrackedFeatures StickyFeatures() {
       WebSchedulerTrackedFeature::kSubresourceHasCacheControlNoCache,
       WebSchedulerTrackedFeature::kContainsPlugins,
       WebSchedulerTrackedFeature::kDocumentLoaded,
-      WebSchedulerTrackedFeature::kRequestedNotificationsPermission,
       WebSchedulerTrackedFeature::kRequestedMIDIPermission,
       WebSchedulerTrackedFeature::kRequestedAudioCapturePermission,
       WebSchedulerTrackedFeature::kRequestedVideoCapturePermission,
@@ -186,7 +205,6 @@ WebSchedulerTrackedFeatures StickyFeatures() {
       WebSchedulerTrackedFeature::kWebLocks,
       WebSchedulerTrackedFeature::kRequestedStorageAccessGrant,
       WebSchedulerTrackedFeature::kWebNfc,
-      WebSchedulerTrackedFeature::kAppBanner,
       WebSchedulerTrackedFeature::kPrinting,
       WebSchedulerTrackedFeature::kPictureInPicture,
       WebSchedulerTrackedFeature::kIdleManager,
@@ -194,7 +212,9 @@ WebSchedulerTrackedFeatures StickyFeatures() {
       WebSchedulerTrackedFeature::kWebOTPService,
       WebSchedulerTrackedFeature::kInjectedJavascript,
       WebSchedulerTrackedFeature::kInjectedStyleSheet,
-      WebSchedulerTrackedFeature::kDummy);
+      WebSchedulerTrackedFeature::kKeepaliveRequest,
+      WebSchedulerTrackedFeature::kDummy,
+      WebSchedulerTrackedFeature::kAuthorizationHeader);
   return features;
 }
 

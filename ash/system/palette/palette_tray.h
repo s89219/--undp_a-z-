@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/projector/projector_session.h"
 #include "ash/public/cpp/session/session_observer.h"
+#include "ash/shelf/shelf_observer.h"
 #include "ash/shell_observer.h"
 #include "ash/system/palette/palette_tool_manager.h"
 #include "ash/system/palette/stylus_battery_delegate.h"
@@ -27,17 +28,25 @@ namespace gfx {
 class Point;
 }
 
+namespace ui {
+class Event;
+class EventHandler;
+class TouchEvent;
+}  // namespace ui
+
 namespace views {
 class ImageView;
-}
+class Widget;
+}  // namespace views
 
 namespace ash {
 
 class PaletteTrayTestApi;
 class PaletteToolManager;
 class PaletteWelcomeBubble;
+class Shelf;
+class TrayBubbleView;
 class TrayBubbleWrapper;
-class SystemShadow;
 
 // The PaletteTray shows the palette in the bottom area of the screen. This
 // class also controls the lifetime for all of the tools available in the
@@ -45,6 +54,7 @@ class SystemShadow;
 // the display has stylus hardware.
 class ASH_EXPORT PaletteTray : public TrayBackgroundView,
                                public SessionObserver,
+                               public ShelfObserver,
                                public ShellObserver,
                                public WindowTreeHostManager::Observer,
                                public PaletteToolManager::Delegate,
@@ -92,7 +102,6 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
   void HideBubbleWithView(const TrayBubbleView* bubble_view) override;
   void AnchorUpdated() override;
   void Initialize() override;
-  bool PerformAction(const ui::Event& event) override;
   void CloseBubble() override;
   void ShowBubble() override;
   TrayBubbleView* GetBubbleView() override;
@@ -146,6 +155,9 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
   // Called when the palette enabled pref has changed.
   void OnPaletteEnabledPrefChanged();
 
+  // Callback called when this TrayBackgroundView is pressed.
+  void OnPaletteTrayPressed(const ui::Event& event);
+
   // Called when the has seen stylus pref has changed.
   void OnHasSeenStylusPrefChanged();
 
@@ -160,10 +172,12 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
   // testing purposes.
   void SetDisplayHasStylusForTesting();
 
+  // ShelfObserver:
+  void OnAutoHideStateChanged(ShelfAutoHideState new_state) override;
+
   std::unique_ptr<PaletteToolManager> palette_tool_manager_;
   std::unique_ptr<PaletteWelcomeBubble> welcome_bubble_;
   std::unique_ptr<TrayBubbleWrapper> bubble_;
-  std::unique_ptr<SystemShadow> shadow_;
 
   // A Shell pre-target handler that notifies PaletteTray of stylus events.
   std::unique_ptr<ui::EventHandler> stylus_event_handler_;
@@ -174,7 +188,7 @@ class ASH_EXPORT PaletteTray : public TrayBackgroundView,
   std::unique_ptr<PrefChangeRegistrar> pref_change_registrar_user_;
 
   // Weak pointer, will be parented by TrayContainer for its lifetime.
-  views::ImageView* icon_;
+  views::ImageView* icon_ = nullptr;
 
   // Cached palette pref value.
   bool is_palette_enabled_ = true;

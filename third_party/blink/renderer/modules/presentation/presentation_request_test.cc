@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,13 +10,30 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_presentationsource_usvstring.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 
 namespace blink {
 namespace {
 
-HeapVector<Member<V8UnionPresentationSourceOrUSVString>> CreateSources(
+Member<V8UnionPresentationSourceOrUSVString> CreatePresentationSource(
+    const String& url) {
+  PresentationSource* source = PresentationSource::Create();
+  source->setType(V8PresentationSourceType::Enum::kUrl);
+  source->setUrl(url);
+  return MakeGarbageCollected<V8UnionPresentationSourceOrUSVString>(source);
+}
+
+Member<V8UnionPresentationSourceOrUSVString> CreateMirroringSource() {
+  PresentationSource* source = PresentationSource::Create();
+  source->setType(V8PresentationSourceType::Enum::kMirroring);
+  source->setAudioPlayback(V8AudioPlaybackDestination::Enum::kReceiver);
+  source->setLatencyHint(V8CaptureLatency::Enum::kDefault);
+  return MakeGarbageCollected<V8UnionPresentationSourceOrUSVString>(source);
+}
+
+HeapVector<Member<V8UnionPresentationSourceOrUSVString>> CreateUrlSources(
     const WTF::Vector<String>& urls) {
   HeapVector<Member<V8UnionPresentationSourceOrUSVString>> sources;
   for (const String& url : urls) {
@@ -42,7 +59,7 @@ TEST(PresentationRequestTest, TestSingleUrlConstructor) {
 TEST(PresentationRequestTest, TestMultipleUrlConstructor) {
   V8TestingScope scope;
   HeapVector<Member<V8UnionPresentationSourceOrUSVString>> sources =
-      CreateSources({"https://example.com", "cast://deadbeef?param=foo"});
+      CreateUrlSources({"https://example.com", "cast://deadbeef?param=foo"});
 
   PresentationRequest* request = PresentationRequest::Create(
       scope.GetExecutionContext(), sources, scope.GetExceptionState());
@@ -59,7 +76,7 @@ TEST(PresentationRequestTest, TestMultipleUrlConstructor) {
 TEST(PresentationRequestTest, TestMultipleUrlConstructorInvalidUrl) {
   V8TestingScope scope;
   HeapVector<Member<V8UnionPresentationSourceOrUSVString>> sources =
-      CreateSources({"https://example.com", ""});
+      CreateUrlSources({"https://example.com", ""});
 
   PresentationRequest::Create(scope.GetExecutionContext(), sources,
                               scope.GetExceptionState());
@@ -96,7 +113,7 @@ TEST(PresentationRequestTest, TestMultipleUrlConstructorMixedContent) {
   V8TestingScope scope(KURL("https://example.test"));
 
   HeapVector<Member<V8UnionPresentationSourceOrUSVString>> sources =
-      CreateSources({"http://example.com", "https://example1.com"});
+      CreateUrlSources({"http://example.com", "https://example1.com"});
 
   PresentationRequest::Create(scope.GetExecutionContext(), sources,
                               scope.GetExceptionState());
@@ -128,8 +145,8 @@ TEST(PresentationRequestTest, TestSingleUrlConstructorUnknownScheme) {
 TEST(PresentationRequestTest, TestMultipleUrlConstructorSomeUnknownSchemes) {
   V8TestingScope scope;
   HeapVector<Member<V8UnionPresentationSourceOrUSVString>> sources =
-      CreateSources({"foobar:unknown", "https://example.com",
-                     "cast://deadbeef?param=foo", "deadbeef:random"});
+      CreateUrlSources({"foobar:unknown", "https://example.com",
+                        "cast://deadbeef?param=foo", "deadbeef:random"});
 
   PresentationRequest* request = PresentationRequest::Create(
       scope.GetExecutionContext(), sources, scope.GetExceptionState());
@@ -146,9 +163,56 @@ TEST(PresentationRequestTest, TestMultipleUrlConstructorSomeUnknownSchemes) {
 TEST(PresentationRequestTest, TestMultipleUrlConstructorAllUnknownSchemes) {
   V8TestingScope scope;
   HeapVector<Member<V8UnionPresentationSourceOrUSVString>> sources =
-      CreateSources({"foobar:unknown", "deadbeef:random"});
+      CreateUrlSources({"foobar:unknown", "deadbeef:random"});
 
   PresentationRequest::Create(scope.GetExecutionContext(), sources,
+                              scope.GetExceptionState());
+  EXPECT_TRUE(scope.GetExceptionState().HadException());
+  EXPECT_EQ(DOMExceptionCode::kNotSupportedError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
+}
+
+// If the site-initiated mirroring feature is disabled, then we do not allow
+// the PresentationSource specialization of V8UnionPresentationSourceOrUSVString
+// to be used to create a PresentationRequest.
+TEST(PresentationRequestTest, TestPresentationSourceNotAllowed) {
+  ScopedSiteInitiatedMirroringForTest site_initiated_mirroring_enabled{false};
+  V8TestingScope scope;
+  PresentationRequest::Create(scope.GetExecutionContext(),
+                              {CreatePresentationSource("https://example.com")},
+                              scope.GetExceptionState());
+  EXPECT_TRUE(scope.GetExceptionState().HadException());
+  EXPECT_EQ(DOMExceptionCode::kNotSupportedError,
+            scope.GetExceptionState().CodeAs<DOMExceptionCode>());
+}
+
+TEST(PresentationRequestTest, TestPresentationSourcesInConstructor) {
+  ScopedSiteInitiatedMirroringForTest site_initiated_mirroring_enabled{true};
+  V8TestingScope scope;
+  PresentationRequest* request = PresentationRequest::Create(
+      scope.GetExecutionContext(),
+      {CreatePresentationSource("https://example.com"),
+       CreateMirroringSource()},
+      scope.GetExceptionState());
+  CHECK(request);
+  ASSERT_FALSE(scope.GetExceptionState().HadException());
+  EXPECT_EQ(static_cast<size_t>(2), request->Urls().size());
+  EXPECT_TRUE(request->Urls()[0].IsValid());
+  EXPECT_EQ("https://example.com/", request->Urls()[0].GetString());
+  EXPECT_TRUE(request->Urls()[1].IsValid());
+  // TODO(crbug.com/1267372): This makes a lot of assumptions about the
+  // hardcoded URL in presentation_request.cc that should be removed.
+  EXPECT_EQ(
+      "cast:0F5096E8?streamingCaptureAudio=1&streamingTargetPlayoutDelayMillis="
+      "400",
+      request->Urls()[1].GetString());
+}
+
+TEST(PresentationRequestTest, TestInvalidPresentationSource) {
+  ScopedSiteInitiatedMirroringForTest site_initiated_mirroring_enabled{true};
+  V8TestingScope scope;
+  PresentationRequest::Create(scope.GetExecutionContext(),
+                              {CreatePresentationSource("invalid_url")},
                               scope.GetExceptionState());
   EXPECT_TRUE(scope.GetExceptionState().HadException());
   EXPECT_EQ(DOMExceptionCode::kNotSupportedError,

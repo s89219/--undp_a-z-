@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -122,17 +122,17 @@ class COMPONENT_EXPORT(DBUS_POWER) PowerPolicyController
     int adaptive_charging_hold_percent = -1;
   };
 
-  // Converts |base::DictionaryValue| to |std::vector<PeakShiftDayConfig>| and
+  // Converts |base::Value::Dict| to |std::vector<PeakShiftDayConfig>| and
   // returns true if there are no missing fields and errors.
   static bool GetPeakShiftDayConfigs(
-      const base::DictionaryValue& value,
+      const base::Value::Dict& value,
       std::vector<PeakShiftDayConfig>* configs_out);
 
-  // Converts |base::DictionaryValue| to
+  // Converts |base::Value::Dict| to
   // |std::vector<AdvancedBatteryChargeModeDayConfig>| and returns true if there
   // are no missing fields and errors.
   static bool GetAdvancedBatteryChargeModeDayConfigs(
-      const base::DictionaryValue& value,
+      const base::Value::Dict& value,
       std::vector<AdvancedBatteryChargeModeDayConfig>* configs_out);
 
   // Saves appropriate value to |mode_out| and returns true if there is mapping
@@ -298,11 +298,5 @@ class COMPONENT_EXPORT(DBUS_POWER) PowerPolicyController
 };
 
 }  // namespace chromeos
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace ash {
-using ::chromeos::PowerPolicyController;
-}
 
 #endif  // CHROMEOS_DBUS_POWER_POWER_POLICY_CONTROLLER_H_

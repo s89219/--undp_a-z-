@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include "base/callback_forward.h"
 #include "base/cancelable_callback.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/waitable_event_watcher.h"
 #include "base/task/cancelable_task_tracker.h"
@@ -146,11 +145,12 @@ class ChromeBrowsingDataRemoverDelegate
     kSecurePaymentConfirmationCredentials = 41,
     kWebAppHistory = 42,
     kWebAuthnCredentials = 43,
+    kWebrtcVideoPerfHistory = 44,
 
     // Please update ChromeBrowsingDataRemoverTasks in enums.xml and
     // History.ClearBrowsingData.Duration.ChromeTask.{Task}
     // in histograms/metadata/history/histograms.xml when adding entries!
-    kMaxValue = kWebAuthnCredentials,
+    kMaxValue = kWebrtcVideoPerfHistory,
   };
 
   // Returns the suffix for the

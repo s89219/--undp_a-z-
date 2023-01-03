@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,7 +72,6 @@ class FuzzedSocket : public TransportClientSocket {
 
   // TransportClientSocket implementation:
   int Bind(const net::IPEndPoint& local_addr) override;
-  ConnectionAttempts GetConnectionAttempts() const override;
   // StreamSocket implementation:
   int Connect(CompletionOnceCallback callback) override;
   void Disconnect() override;

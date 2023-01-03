@@ -18,14 +18,14 @@ import numpy as np
 from tensorflow_lite_support.python.task.audio.core import audio_record
 from tensorflow_lite_support.python.task.audio.core.pybinds import _pywrap_audio_buffer
 
-_CppAudioFormat = _pywrap_audio_buffer.AudioFormat
 _LoadAudioBufferFromFile = _pywrap_audio_buffer.LoadAudioBufferFromFile
+AudioFormat = _pywrap_audio_buffer.AudioFormat
 
 
 class TensorAudio(object):
   """A wrapper class to store the input audio."""
 
-  def __init__(self, audio_format: _CppAudioFormat, buffer_size: int) -> None:
+  def __init__(self, audio_format: AudioFormat, buffer_size: int) -> None:
     """Initializes the `TensorAudio` object.
 
     Args:
@@ -42,8 +42,10 @@ class TensorAudio(object):
     self._buffer.fill(0)
 
   @classmethod
-  def create_from_wav_file(cls, file_name: str,
-                           sample_count: int) -> "TensorAudio":
+  def create_from_wav_file(cls,
+                           file_name: str,
+                           sample_count: int,
+                           offset: int = 0) -> "TensorAudio":
     """Creates `TensorAudio` object from the WAV file.
 
     Args:
@@ -53,15 +55,20 @@ class TensorAudio(object):
         will consume the created TensorAudio object. If the WAV file contains
         more samples than sample_count, only the samples at the beginning of the
         WAV file will be loaded.
+      offset: An optional offset for allowing the user to skip a certain number
+        samples at the beginning.
 
     Returns:
       `TensorAudio` object.
 
     Raises:
-      ValueError: If the audio file is invalid.
+      ValueError: If an input parameter, such as the audio file, is invalid.
       RuntimeError: If other types of error occurred.
     """
-    audio = _LoadAudioBufferFromFile(file_name, sample_count,
+    if offset < 0:
+      raise ValueError("offset cannot be negative")
+
+    audio = _LoadAudioBufferFromFile(file_name, sample_count, offset,
                                      np.zeros([sample_count]))
     tensor = TensorAudio(audio.audio_format, audio.buffer_size)
     tensor.load_from_array(np.array(audio.float_buffer, copy=False))
@@ -137,7 +144,7 @@ class TensorAudio(object):
       self._buffer[-shift:, :] = src[offset:offset + size].copy()
 
   @property
-  def format(self) -> _CppAudioFormat:
+  def format(self) -> AudioFormat:
     """Gets the audio format of the audio."""
     return self._format
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,4 +50,9 @@ public interface AccessibilitySettingsDelegate {
      * @param fragment the fragment to add the preferences to.
      */
     void addExtraPreferences(@NonNull PreferenceFragmentCompat fragment);
+
+    /**
+     * Returns whether or not the 'Zoom' feature specific UI should be shown in Settings.
+     */
+    boolean showPageZoomSettingsUI();
 }

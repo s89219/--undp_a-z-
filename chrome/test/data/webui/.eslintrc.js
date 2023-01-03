@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,9 +19,8 @@ module.exports = {
         'message': 'test.only() silently disables other tests in the same ' +
             'suite(). Did you forget deleting it before uploading? Use ' +
             'test.skip() instead to explicitly disable certain test() cases.',
-      }
+      },
     ],
-    'no-var': 'off',
     'eqeqeq': ['error', 'always', {'null': 'ignore'}],
   },
 };

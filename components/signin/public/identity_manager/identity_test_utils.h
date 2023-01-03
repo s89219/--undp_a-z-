@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 
 #include "base/bind.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/account_info.h"
 
@@ -17,7 +16,7 @@ namespace network {
 class TestURLLoaderFactory;
 }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS)
 namespace account_manager {
 class AccountManagerFacade;
 }
@@ -45,6 +44,11 @@ class IdentityManager;
 // Blocks until `LoadCredentials` is complete and `OnRefreshTokensLoaded` is
 // invoked.
 void WaitForRefreshTokensLoaded(IdentityManager* identity_manager);
+
+// Returns the current exact consent level for the primary account, or
+// `absl::nullopt` if there is no primary account set.
+absl::optional<signin::ConsentLevel> GetPrimaryAccountConsentLevel(
+    IdentityManager* identity_manager);
 
 // Sets the primary account (which must not already be set) to the given email
 // address with corresponding consent level, generating a GAIA ID that
@@ -216,7 +220,7 @@ void SimulateSuccessfulFetchOfAccountInfo(IdentityManager* identity_manager,
                                           const std::string& locale,
                                           const std::string& picture_url);
 
-#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS)
 account_manager::AccountManagerFacade* GetAccountManagerFacade(
     IdentityManager* identity_manager);
 #endif

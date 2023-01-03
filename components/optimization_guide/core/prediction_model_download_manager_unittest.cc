@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,7 +42,8 @@ class TestPredictionModelDownloadObserver
   TestPredictionModelDownloadObserver() = default;
   ~TestPredictionModelDownloadObserver() override = default;
 
-  void OnModelReady(const proto::PredictionModel& model) override {
+  void OnModelReady(const base::FilePath& base_model_dir,
+                    const proto::PredictionModel& model) override {
     last_ready_model_ = model;
   }
 
@@ -81,6 +82,7 @@ class PredictionModelDownloadManagerTest : public testing::Test {
         std::make_unique<download::test::MockDownloadService>();
     download_manager_ = std::make_unique<PredictionModelDownloadManager>(
         mock_download_service_.get(), temp_models_dir_.GetPath(),
+        /*prediction_model_store=*/nullptr, proto::ModelCacheKey(),
         task_environment_.GetMainThreadTaskRunner());
 
 #if !BUILDFLAG(IS_IOS)

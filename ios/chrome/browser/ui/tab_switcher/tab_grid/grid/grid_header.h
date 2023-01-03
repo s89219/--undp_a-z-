@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 // Text added on the leading side of the header.
 @property(nonatomic, copy) NSString* title;
 // Text added on the trailing side of the header. if it's nil or empty string -
-// Only the |title| will be rendered.
+// Only the `title` will be rendered.
 @property(nonatomic, copy) NSString* value;
 @end
 

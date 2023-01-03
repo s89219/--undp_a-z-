@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -109,7 +109,9 @@ VideoCaptureServiceImpl::VideoCaptureServiceImpl(
       ui_task_runner_(std::move(ui_task_runner)) {}
 
 VideoCaptureServiceImpl::~VideoCaptureServiceImpl() {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
   factory_receivers_.Clear();
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   device_factory_.reset();
 
   if (gpu_dependencies_context_) {
@@ -134,13 +136,13 @@ void VideoCaptureServiceImpl::ConnectToCameraAppDeviceBridge(
   media::CameraAppDeviceBridgeImpl::GetInstance()->BindReceiver(
       std::move(receiver));
 }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 void VideoCaptureServiceImpl::ConnectToDeviceFactory(
     mojo::PendingReceiver<mojom::DeviceFactory> receiver) {
   LazyInitializeDeviceFactory();
   factory_receivers_.Add(device_factory_.get(), std::move(receiver));
 }
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 void VideoCaptureServiceImpl::ConnectToVideoSourceProvider(
     mojo::PendingReceiver<mojom::VideoSourceProvider> receiver) {
@@ -234,5 +236,12 @@ void VideoCaptureServiceImpl::LazyInitializeVideoSourceProvider() {
 void VideoCaptureServiceImpl::OnLastSourceProviderClientDisconnected() {
   video_source_provider_.reset();
 }
+
+#if BUILDFLAG(IS_WIN)
+void VideoCaptureServiceImpl::OnGpuInfoUpdate(const CHROME_LUID& luid) {
+  LazyInitializeDeviceFactory();
+  device_factory_->OnGpuInfoUpdate(luid);
+}
+#endif
 
 }  // namespace video_capture

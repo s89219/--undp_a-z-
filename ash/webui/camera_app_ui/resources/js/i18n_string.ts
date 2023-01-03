@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
  * All string resources in resources.h.
  */
 export enum I18nString {
+  ADD_NEW_PAGE_BUTTON = 'add_new_page_button',
   ARIA_ASPECT_RATIO_16_TO_9 = 'aria_aspect_ratio_16_to_9',
   ARIA_ASPECT_RATIO_4_TO_3 = 'aria_aspect_ratio_4_to_3',
   ARIA_CAMERA_MODE_GROUP = 'aria_camera_mode_group',
@@ -14,6 +15,8 @@ export enum I18nString {
   ARIA_GRID_OFF = 'aria_grid_off',
   ARIA_MIRROR_OFF = 'aria_mirror_off',
   ARIA_MIRROR_ON = 'aria_mirror_on',
+  ARIA_MUTE_OFF = 'aria_mute_off',
+  ARIA_MUTE_ON = 'aria_mute_on',
   ARIA_RECORD_TYPE_GROUP = 'aria_record_type_group',
   ARIA_SCAN_TYPE_GROUP = 'aria_scan_type_group',
   ARIA_TIMER_10S = 'aria_timer_10s',
@@ -30,6 +33,8 @@ export enum I18nString {
   DELETE_BUTTON = 'delete_button',
   DELETE_CONFIRMATION_MSG = 'delete_confirmation_msg',
   DELETE_MULTI_CONFIRMATION_MSG = 'delete_multi_confirmation_msg',
+  DELETE_PAGE_BUTTON = 'delete_page_button',
+  DELETE_PAGE_MESSAGE = 'delete_page_message',
   DESCRIPTION = 'description',
   DIALOG_CANCEL_BUTTON = 'dialog_cancel_button',
   DIALOG_OK_BUTTON = 'dialog_ok_button',
@@ -37,6 +42,9 @@ export enum I18nString {
   DOCUMENT_MODE_DIALOG_GOT_IT = 'document_mode_dialog_got_it',
   DOCUMENT_MODE_DIALOG_MSG = 'document_mode_dialog_msg',
   DOCUMENT_MODE_DIALOG_INTRO_TITLE = 'document_mode_dialog_intro_title',
+  DOCUMENT_MODE_MULTI_PAGE_TOAST = 'document_mode_multi_page_toast',
+  DOWNLOADING_DOCUMENT_SCANNING_FEATURE =
+      'downloading_document_scanning_feature',
   ERROR_MSG_CAMERA_PAUSED = 'error_msg_camera_paused',
   ERROR_MSG_EMPTY_RECORDING = 'error_msg_empty_recording',
   ERROR_MSG_FILE_SYSTEM_FAILED = 'error_msg_file_system_failed',
@@ -50,17 +58,21 @@ export enum I18nString {
   ERROR_MSG_VIDEO_TOO_SHORT = 'error_msg_video_too_short',
   EXPERT_CUSTOM_VIDEO_PARAMETERS = 'expert_custom_video_parameters',
   EXPERT_ENABLE_EXPERT_MODE = 'expert_enable_expert_mode',
+  EXPERT_ENABLE_FPS_PICKER_FOR_BUILTIN = 'expert_enable_fps_picker_for_builtin',
   EXPERT_ENABLE_FULL_SIZED_VIDEO_SNAPSHOT =
       'expert_enable_full_sized_video_snapshot',
+  EXPERT_ENABLE_PTZ_FOR_BUILTIN = 'expert_enable_ptz_for_builtin',
   EXPERT_MODE_BUTTON = 'expert_mode_button',
   EXPERT_MULTISTREAM_RECORDING = 'expert_multistream_recording',
   EXPERT_PREVIEW_METADATA = 'expert_preview_metadata',
   EXPERT_PRINT_PERFORMANCE_LOGS = 'expert_print_performance_logs',
   EXPERT_SAVE_METADATA = 'expert_save_metadata',
   EXPERT_SCAN_BARCODE = 'expert_scan_barcode',
+  EXPERT_SHOW_ALL_RESOLUTIONS = 'expert_show_all_resolutions',
   EXPORT_BUTTON = 'export_button',
   FEEDBACK_BUTTON = 'feedback_button',
   FEEDBACK_DESCRIPTION_PLACEHOLDER = 'feedback_description_placeholder',
+  FIX_PAGE_BUTTON = 'fix_page_button',
   GALLERY_BUTTON = 'gallery_button',
   GALLERY_IMAGES = 'gallery_images',
   GRID_TYPE_BUTTON = 'grid_type_button',
@@ -109,10 +121,18 @@ export enum I18nString {
   LABEL_TIMER_3S = 'label_timer_3s',
   LABEL_OTHER_ASPECT_RATIO = 'label_other_aspect_ratio',
   LABEL_VIDEO_RESOLUTION = 'label_video_resolution',
+  LABEL_VIDEO_RESOLUTION_360P = 'label_video_resolution_360p',
   LABEL_VIDEO_RESOLUTION_4K = 'label_video_resolution_4k',
   LABEL_VIDEO_RESOLUTION_FULL_HD = 'label_video_resolution_full_hd',
   LABEL_VIDEO_RESOLUTION_HD = 'label_video_resolution_hd',
   LABEL_VIDEO_RESOLUTION_QUAD_HD = 'label_video_resolution_quad_hd',
+  LOW_STORAGE_DIALOG_AUTO_STOP_DESC = 'low_storage_dialog_auto_stop_desc',
+  LOW_STORAGE_DIALOG_AUTO_STOP_TITLE = 'low_storage_dialog_auto_stop_title',
+  LOW_STORAGE_DIALOG_CANNOT_START_DESC = 'low_storage_dialog_cannot_start_desc',
+  LOW_STORAGE_DIALOG_CANNOT_START_TITLE =
+      'low_storage_dialog_cannot_start_title',
+  LOW_STORAGE_DIALOG_STORAGE_BUTTON = 'low_storage_dialog_storage_button',
+  LOW_STORAGE_NUDGE_WARNING_MSG = 'low_storage_nudge_warning_msg',
   MIGRATE_PICTURES_MSG = 'migrate_pictures_msg',
   MOVING_IN_BOTTOM_DIRECTION = 'moving_in_bottom_direction',
   MOVING_IN_BOTTOM_LEFT_DIRECTION = 'moving_in_bottom_left_direction',
@@ -128,6 +148,7 @@ export enum I18nString {
   NEW_CONTROL_NAVIGATION = 'new_control_navigation',
   NEW_CONTROL_TOAST = 'new_control_toast',
   NEW_DOCUMENT_SCAN_TOAST = 'new_document_scan_toast',
+  NEXT_PAGE_COUNT = 'next_page_count',
   NO_DOCUMENT_GUIDE_MSG = 'no_document_guide_msg',
   OPEN_GRID_PANEL_BUTTON = 'open_grid_panel_button',
   OPEN_MIRROR_PANEL_BUTTON = 'open_mirror_panel_button',
@@ -149,8 +170,10 @@ export enum I18nString {
   RECORD_VIDEO_STOP_BUTTON = 'record_video_stop_button',
   ROTATE_CLOCKWISE_BUTTON = 'rotate_clockwise_button',
   ROTATE_COUNTERCLOCKWISE_BUTTON = 'rotate_counterclockwise_button',
+  SCAN_BUTTON = 'scan_button',
   SCAN_DOCUMENT_OPTION = 'scan_document_option',
   SCAN_QRCODE_OPTION = 'scan_qrcode_option',
+  SELECT_PAGE_BUTTON = 'select_page_button',
   SETTINGS_BUTTON = 'settings_button',
   SNACKBAR_LINK_COPIED = 'snackbar_link_copied',
   SNACKBAR_TEXT_COPIED = 'snackbar_text_copied',

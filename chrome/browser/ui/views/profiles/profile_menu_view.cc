@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,6 +28,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_error_controller_factory.h"
 #include "chrome/browser/signin/signin_ui_util.h"
+#include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -44,7 +45,7 @@
 #include "chrome/browser/ui/views/accessibility/non_accessible_image_view.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
-#include "chrome/browser/ui/views/hover_button.h"
+#include "chrome/browser/ui/views/controls/hover_button.h"
 #include "chrome/browser/ui/views/profiles/badged_profile_photo.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -54,7 +55,6 @@
 #include "components/signin/core/browser/signin_error_controller.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_pref_names.h"
-#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
@@ -169,7 +169,7 @@ void ProfileMenuView::BuildMenu() {
   if (!(profile->IsGuestSession())) {
     SetProfileManagementHeading(
         l10n_util::GetStringUTF16(IDS_PROFILES_LIST_PROFILES_TITLE));
-    BuildSelectableProfiles();
+    BuildAvailableProfiles();
     BuildProfileManagementFeatureButtons();
   }
 #endif
@@ -288,25 +288,28 @@ void ProfileMenuView::OnSyncErrorButtonClicked(AvatarSyncErrorType error) {
     case AvatarSyncErrorType::kManagedUserUnrecoverableError:
       chrome::ShowSettingsSubPage(browser(), chrome::kSignOutSubPage);
       break;
-    case AvatarSyncErrorType::kUnrecoverableError:
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
-      IdentityManagerFactory::GetForProfile(browser()->profile())
-          ->GetPrimaryAccountMutator()
-          ->RevokeSyncConsent(signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS,
-                              signin_metrics::SignoutDelete::kIgnoreMetric);
-      Hide();
-      browser()->signin_view_controller()->ShowSignin(
-          profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN,
+    case AvatarSyncErrorType::kUnrecoverableError: {
+      Profile* profile = browser()->profile();
+      signin::IdentityManager* identity_manager =
+          IdentityManagerFactory::GetForProfile(profile);
+      // This error means that the Sync engine failed to initialize. Shutdown
+      // Sync engine by revoking sync consent.
+      identity_manager->GetPrimaryAccountMutator()->RevokeSyncConsent(
+          signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS,
+          signin_metrics::SignoutDelete::kIgnoreMetric);
+      GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
+      // Re-enable sync with the same primary account.
+      signin_ui_util::EnableSyncFromSingleAccountPromo(
+          profile,
+          identity_manager->GetPrimaryAccountInfo(
+              signin::ConsentLevel::kSignin),
           signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN);
-#else
-      // TODO(https://crbug.com/1260291): Add support for Lacros.
-      NOTIMPLEMENTED();
-#endif
       break;
+    }
     case AvatarSyncErrorType::kAuthError:
-      Hide();
+      GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
       signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(
-          browser(),
+          browser()->profile(),
           signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN);
       break;
     case AvatarSyncErrorType::kUpgradeClientError:
@@ -332,22 +335,27 @@ void ProfileMenuView::OnSyncErrorButtonClicked(AvatarSyncErrorType error) {
 #endif
 }
 
-void ProfileMenuView::OnSigninAccountButtonClicked(AccountInfo account) {
+void ProfileMenuView::OnSigninAccountButtonClicked(CoreAccountInfo account) {
   RecordClick(ActionableItem::kSigninAccountButton);
   if (!perform_menu_actions())
     return;
-  Hide();
+  GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
   signin_ui_util::EnableSyncFromSingleAccountPromo(
-      browser(), account,
+      browser()->profile(), account,
       signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN);
 }
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 void ProfileMenuView::OnSignoutButtonClicked() {
+  DCHECK(signin_util::UserSignoutSetting::GetForProfile(browser()->profile())
+             ->IsClearPrimaryAccountAllowed())
+      << "Clear primary account is not allowed. Signout should not be offered "
+         "in the UI.";
+
   RecordClick(ActionableItem::kSignoutButton);
   if (!perform_menu_actions())
     return;
-  Hide();
+  GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   // Sign out from all accounts.
   browser()->signin_view_controller()->ShowGaiaLogoutTab(
@@ -366,20 +374,13 @@ void ProfileMenuView::OnSignoutButtonClicked() {
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
 void ProfileMenuView::OnSigninButtonClicked() {
   RecordClick(ActionableItem::kSigninButton);
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-  signin_ui_util::ShowSigninPromptAndMaybeEnableSync(
-      browser(), browser()->profile(), /*enable_sync=*/true,
-      signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN,
-      signin_metrics::PromoAction::
-          PROMO_ACTION_NEW_ACCOUNT_NO_EXISTING_ACCOUNT);
-#else
   if (!perform_menu_actions())
     return;
-  Hide();
-  browser()->signin_view_controller()->ShowSignin(
-      profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN,
+  GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
+
+  signin_ui_util::EnableSyncFromSingleAccountPromo(
+      browser()->profile(), AccountInfo(),
       signin_metrics::AccessPoint::ACCESS_POINT_AVATAR_BUBBLE_SIGN_IN);
-#endif
 }
 
 void ProfileMenuView::OnOtherProfileSelected(
@@ -387,7 +388,7 @@ void ProfileMenuView::OnOtherProfileSelected(
   RecordClick(ActionableItem::kOtherProfileButton);
   if (!perform_menu_actions())
     return;
-  Hide();
+  GetWidget()->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
   profiles::SwitchToProfile(profile_path, /*always_create=*/false);
 }
 
@@ -557,8 +558,8 @@ void ProfileMenuView::BuildSyncInfo() {
   // If there's no error and sync-the-feature is disabled, show a sync promo.
   // For a signed-in user, the promo just opens the "turn on sync" dialog.
   // For a signed-out user, it prompts for sign-in first.
-  AccountInfo account_info = identity_manager->FindExtendedAccountInfo(
-      identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin));
+  CoreAccountInfo account_info =
+      identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSignin);
   if (!account_info.IsEmpty()) {
     BuildSyncInfoWithCallToAction(
         l10n_util::GetStringUTF16(IDS_PROFILES_DICE_NOT_SYNCING_TITLE),
@@ -600,7 +601,7 @@ void ProfileMenuView::BuildFeatureButtons() {
         base::BindRepeating(
             &ProfileMenuView::OnManageGoogleAccountButtonClicked,
             base::Unretained(this)),
-        kGoogleGLogoIcon,
+        vector_icons::kGoogleGLogoIcon,
         /*icon_to_image_ratio=*/0.75f);
 #else
     AddFeatureButton(
@@ -638,9 +639,7 @@ void ProfileMenuView::BuildFeatureButtons() {
   bool add_sign_out_button = has_unconsented_account && !has_primary_account;
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   // Clearing the primary account is not allowed in the main profile.
-  add_sign_out_button &=
-      (!profile->IsMainProfile() &&
-       base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles));
+  add_sign_out_button &= !profile->IsMainProfile();
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
   // The sign-out button is always at the bottom.
   if (add_sign_out_button) {
@@ -654,7 +653,12 @@ void ProfileMenuView::BuildFeatureButtons() {
 }
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
-void ProfileMenuView::BuildSelectableProfiles() {
+void ProfileMenuView::BuildAvailableProfiles() {
+  bool profiles_selectable = true;
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  profiles_selectable = profiles::AreSecondaryProfilesAllowed();
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
   auto profile_entries = g_browser_process->profile_manager()
                              ->GetProfileAttributesStorage()
                              .GetAllProfilesAttributesSortedByName();
@@ -665,11 +669,12 @@ void ProfileMenuView::BuildSelectableProfiles() {
     if (profile_entry->IsOmitted())
       continue;
 
-    AddSelectableProfile(
+    AddAvailableProfile(
         ui::ImageModel::FromImage(
             profile_entry->GetAvatarIcon(profiles::kMenuAvatarIconSize)),
         profile_entry->GetName(),
         /*is_guest=*/false,
+        /*is_enabled=*/profiles_selectable,
         base::BindRepeating(&ProfileMenuView::OnOtherProfileSelected,
                             base::Unretained(this), profile_entry->GetPath()));
   }
@@ -678,22 +683,34 @@ void ProfileMenuView::BuildSelectableProfiles() {
 
   if (!browser()->profile()->IsGuestSession() &&
       profiles::IsGuestModeEnabled()) {
-    AddSelectableProfile(
+    AddAvailableProfile(
         profiles::GetGuestAvatar(),
         l10n_util::GetStringUTF16(IDS_GUEST_PROFILE_NAME),
         /*is_guest=*/true,
+        /*is_enabled=*/true,
         base::BindRepeating(&ProfileMenuView::OnGuestProfileButtonClicked,
                             base::Unretained(this)));
   }
 }
 
 void ProfileMenuView::BuildProfileManagementFeatureButtons() {
-  AddProfileManagementShortcutFeatureButton(
-      vector_icons::kSettingsIcon,
-      l10n_util::GetStringUTF16(IDS_PROFILES_MANAGE_PROFILES_BUTTON_TOOLTIP),
-      base::BindRepeating(&ProfileMenuView::OnManageProfilesButtonClicked,
-                          base::Unretained(this)));
+  bool profiles_selectable = true;
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  profiles_selectable = profiles::AreSecondaryProfilesAllowed();
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
+  if (profiles_selectable) {
+    AddProfileManagementShortcutFeatureButton(
+        vector_icons::kSettingsIcon,
+        l10n_util::GetStringUTF16(IDS_PROFILES_MANAGE_PROFILES_BUTTON_TOOLTIP),
+        base::BindRepeating(&ProfileMenuView::OnManageProfilesButtonClicked,
+                            base::Unretained(this)));
+  } else {
+    AddProfileManagementManagedHint(
+        vector_icons::kBusinessIcon,
+        l10n_util::GetStringUTF16(
+            IDS_PROFILES_MANAGE_PROFILES_MANAGED_TOOLTIP));
+  }
   if (profiles::IsProfileCreationAllowed()) {
     AddProfileManagementFeatureButton(
         kAddIcon, l10n_util::GetStringUTF16(IDS_ADD),

@@ -1,7 +1,7 @@
 # Placeholder for internal Python strict test compatibility macro.
 
 package(
-    default_visibility = ["//tensorflow_lite_support:internal"],
+    default_applicable_licenses = ["//tensorflow_lite_support:license"],
     licenses = ["notice"],  # Apache 2.0
 )
 
@@ -10,6 +10,7 @@ py_test(
     srcs = ["audio_record_test.py"],
     deps = [
         # build rule placeholder: numpy dep,
+        # build rule placeholder: tensorflow dep,
         "//tensorflow_lite_support/python/task/audio/core:audio_record",
     ],
 )
@@ -22,6 +23,7 @@ py_test(
     ],
     deps = [
         # build rule placeholder: numpy dep,
+        # build rule placeholder: tensorflow dep,
         "//tensorflow_lite_support/python/task/audio/core:audio_record",
         "//tensorflow_lite_support/python/task/audio/core:tensor_audio",
         "//tensorflow_lite_support/python/task/audio/core/pybinds:_pywrap_audio_buffer",

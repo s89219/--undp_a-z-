@@ -31,6 +31,7 @@
 
 #include "base/dcheck_is_on.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker.h"
+#include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 
@@ -110,6 +111,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   bool IsSpinButton() const override;
   bool IsNativeSlider() const override;
   bool IsNativeSpinButton() const override;
+  bool IsChildTreeOwner() const override;
 
   // Check object state.
   bool IsClickable() const final;
@@ -167,6 +169,7 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
   // Properties of interactive elements.
   ax::mojom::blink::AriaCurrentState GetAriaCurrentState() const final;
   ax::mojom::blink::InvalidState GetInvalidState() const final;
+  bool IsValidFormControl(ListedElement* form_control) const;
   bool ValueForRange(float* out_value) const override;
   bool MaxValueForRange(float* out_value) const override;
   bool MinValueForRange(float* out_value) const override;
@@ -259,7 +262,6 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
 
   // Notifications that this object may have changed.
   void ChildrenChangedWithCleanLayout() override;
-  void SelectionChanged() final;
   void HandleAriaExpandedChanged() override;
   void HandleActiveDescendantChanged() override;
 
@@ -293,6 +295,11 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
                                             const QualifiedName&) const;
 
   bool IsNativeCheckboxInMixedState() const;
+  String TextAlternativeFromTitleAttribute(
+      const AtomicString& title,
+      ax::mojom::blink::NameFrom& name_from,
+      NameSources* name_sources,
+      bool* found_text_alternative) const;
   String NativeTextAlternative(AXObjectSet& visited,
                                ax::mojom::blink::NameFrom&,
                                AXRelatedObjectVector*,
@@ -300,13 +307,13 @@ class MODULES_EXPORT AXNodeObject : public AXObject {
                                bool* found_text_alternative) const;
   bool IsDescendantOfElementType(HashSet<QualifiedName>& tag_names) const;
   String PlaceholderFromNativeAttribute() const;
-  String GetValueContributionToName() const;
+  String GetValueContributionToName(AXObjectSet& visited) const;
   bool UseNameFromSelectedOption() const;
   virtual bool IsTabItemSelected() const;
 
   void AddChildrenImpl();
   void AddNodeChildren();
-  void AddLayoutChildren();
+  void AddPseudoElementChildrenFromLayoutTree();
   bool CanAddLayoutChild(LayoutObject& child);
   // Add inline textbox children, if either force == true or
   // AXObjectCache().InlineTextBoxAccessibilityEnabled().

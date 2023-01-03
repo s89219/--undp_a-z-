@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,12 @@
 #include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "chrome/browser/sync_file_system/file_change.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
@@ -99,7 +100,7 @@ void OnGetFileMetadata(const base::Location& where,
 struct PostStatusFunctor {
   explicit PostStatusFunctor(SyncStatusCode status) : status_(status) {}
   void operator()(SyncStatusCallback callback) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), status_));
   }
 
@@ -112,14 +113,14 @@ struct PostStatusAndRecordChangeFunctor {
                                    std::vector<FileChange>* changes)
       : status_(status), changes_(changes) {}
   void operator()(FileChange change, SyncStatusCallback callback) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), status_));
     changes_->push_back(change);
   }
 
  private:
   SyncStatusCode status_;
-  std::vector<FileChange>* changes_;
+  raw_ptr<std::vector<FileChange>> changes_;
 };
 
 }  // namespace
@@ -143,7 +144,7 @@ class LocalFileSyncServiceTest
     local_service_ = LocalFileSyncService::CreateForTesting(
         &profile_, in_memory_env_.get());
 
-    file_system_->SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+    file_system_->SetUp();
 
     base::RunLoop run_loop;
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
@@ -321,7 +322,7 @@ TEST_F(LocalFileSyncServiceTest, MAYBE_LocalChangeObserverMultipleContexts) {
   CannedSyncableFileSystem file_system2(
       GURL(kOrigin2), in_memory_env_.get(), content::GetIOThreadTaskRunner({}),
       base::ThreadPool::CreateSingleThreadTaskRunner({base::MayBlock()}));
-  file_system2.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system2.SetUp();
 
   base::RunLoop run_loop;
   SyncStatusCode status = SYNC_STATUS_UNKNOWN;

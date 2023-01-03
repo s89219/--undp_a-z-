@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,20 +49,20 @@ void SearchResponseParser::OnJsonParsed(
     data_decoder::DataDecoder::ValueOrError result) {
   DCHECK(complete_callback_);
 
-  if (!result.value) {
-    LOG(ERROR) << "JSON parsing failed: " << *result.error;
+  if (!result.has_value()) {
+    LOG(ERROR) << "JSON parsing failed: " << result.error();
     std::move(complete_callback_).Run(nullptr);
     return;
   }
 
   // Get the first result.
-  const Value* entries = result.value->FindListPath("results");
+  const Value* entries = result->FindListPath("results");
   if (!entries) {
     std::move(complete_callback_).Run(nullptr);
     return;
   }
 
-  for (const auto& entry : entries->GetListDeprecated()) {
+  for (const auto& entry : entries->GetList()) {
     auto quick_answer = std::make_unique<QuickAnswer>();
     if (ProcessResult(&entry, quick_answer.get())) {
       std::move(complete_callback_).Run(std::move(quick_answer));

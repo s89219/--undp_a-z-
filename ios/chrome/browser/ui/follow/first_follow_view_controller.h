@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,22 +7,28 @@
 
 #import <UIKit/UIKit.h>
 
-@protocol FirstFollowViewDelegate;
-@protocol FirstFollowFaviconDataSource;
-@class FollowedWebChannel;
+#import "ios/chrome/common/ui/confirmation_alert/confirmation_alert_view_controller.h"
 
-// The UI that informs the user about the feed and following channels the
-// first few times the user follows any channel.
-@interface FirstFollowViewController : UIViewController
+// Used to asynchronously fetch favicon to use. Needs to be invoked with a
+// block as parameter that will be invoked with the fetched favicon.
+using FirstFollowFaviconSource = void (^)(void (^completion)(UIImage* favicon));
 
-// The web channel that was recently followed.
-@property(nonatomic, strong) FollowedWebChannel* followedWebChannel;
+// The UI that informs the user about the feed and following websites the
+// first few times the user follows any website.
+@interface FirstFollowViewController : ConfirmationAlertViewController
 
-// Delegate to execute actions triggered in this UI.
-@property(nonatomic, weak) id<FirstFollowViewDelegate> delegate;
+// Convenience initializer.
+- (instancetype)initWithTitle:(NSString*)title
+                    available:(BOOL)available
+                faviconSource:(FirstFollowFaviconSource)faviconSource
+    NS_DESIGNATED_INITIALIZER;
 
-// Data source for favicons.
-@property(nonatomic, weak) id<FirstFollowFaviconDataSource> faviconDataSource;
+- (instancetype)initWithNibName:(NSString*)nibName
+                         bundle:(NSBundle*)bundle NS_UNAVAILABLE;
+
+- (instancetype)initWithCoder:(NSCoder*)coder NS_UNAVAILABLE;
+
+- (instancetype)init NS_UNAVAILABLE;
 
 @end
 

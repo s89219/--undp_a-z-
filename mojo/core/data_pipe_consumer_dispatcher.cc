@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -389,14 +389,19 @@ DataPipeConsumerDispatcher::Deserialize(const void* data,
     return nullptr;
   }
 
+  auto buffer_guid = base::UnguessableToken::Deserialize(
+      state->buffer_guid_high, state->buffer_guid_low);
+  if (buffer_guid.is_empty()) {
+    AssertNotExtractingHandlesFromMessage();
+    return nullptr;
+  }
+
   auto region_handle = CreateSharedMemoryRegionHandleFromPlatformHandles(
       std::move(handles[0]), PlatformHandle());
   auto region = base::subtle::PlatformSharedMemoryRegion::Take(
       std::move(region_handle),
       base::subtle::PlatformSharedMemoryRegion::Mode::kUnsafe,
-      state->options.capacity_num_bytes,
-      base::UnguessableToken::Deserialize(state->buffer_guid_high,
-                                          state->buffer_guid_low));
+      state->options.capacity_num_bytes, std::move(buffer_guid));
   auto ring_buffer =
       base::UnsafeSharedMemoryRegion::Deserialize(std::move(region));
   if (!ring_buffer.IsValid()) {
@@ -459,6 +464,7 @@ bool DataPipeConsumerDispatcher::InitializeNoLock() {
   if (!ring_buffer_mapping_.IsValid()) {
     DLOG(ERROR) << "Failed to map shared buffer.";
     shared_ring_buffer_ = base::UnsafeSharedMemoryRegion();
+    is_closed_ = true;
     return false;
   }
 

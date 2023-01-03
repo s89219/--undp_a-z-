@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_refptr.h"
@@ -29,8 +30,8 @@
 // As a consequence, the inner pointer should never be cached, and only touched
 // through a string returned by the |ToString()| method.
 //
-// As with WTF::AtomicString, this class is *not* thread-safe, and strings
-// created on a thread must always be used on the same thread.
+// This class is *not* thread-safe, and strings created on a thread must always
+// be used on the same thread.
 
 namespace blink {
 

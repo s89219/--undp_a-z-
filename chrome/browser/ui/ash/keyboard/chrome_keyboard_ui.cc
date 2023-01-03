@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,7 +74,7 @@ ui::GestureConsumer* ChromeKeyboardUI::GetGestureConsumer() const {
 }
 
 ui::InputMethod* ChromeKeyboardUI::GetInputMethod() {
-  ui::IMEBridge* bridge = ui::IMEBridge::Get();
+  ash::IMEBridge* bridge = ash::IMEBridge::Get();
   if (!bridge || !bridge->GetInputContextHandler()) {
     // Needed by a handful of browser tests that use MockInputMethod.
     return ash::Shell::GetRootWindowForNewWindows()

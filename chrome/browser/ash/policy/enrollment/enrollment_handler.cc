@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,11 @@
 
 #include <utility>
 
-#include "ash/components/attestation/attestation_flow.h"
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
 #include "base/base64.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/files/file_util.h"
 #include "base/guid.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -19,7 +18,6 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/browser/ash/attestation/certificate_util.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash.h"
@@ -28,16 +26,19 @@
 #include "chrome/browser/ash/policy/core/dm_token_storage.h"
 #include "chrome/browser/ash/policy/dev_mode/dev_mode_policy_util.h"
 #include "chrome/browser/ash/policy/enrollment/auto_enrollment_type_checker.h"
+#include "chrome/browser/ash/policy/enrollment/enrollment_config.h"
+#include "chrome/browser/ash/policy/enrollment/enrollment_status.h"
 #include "chrome/browser/ash/policy/enrollment/tpm_enrollment_key_signing_service.h"
 #include "chrome/browser/ash/policy/server_backed_state/server_backed_state_keys_broker.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/policy/enrollment_status.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/ash/components/attestation/attestation_flow.h"
 #include "chromeos/ash/components/dbus/authpolicy/authpolicy_client.h"
+#include "chromeos/ash/components/dbus/constants/attestation_constants.h"
+#include "chromeos/ash/components/dbus/cryptohome/rpc.pb.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "chromeos/ash/components/dbus/upstart/upstart_client.h"
-#include "chromeos/dbus/cryptohome/rpc.pb.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/policy/core/common/cloud/dm_auth.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
 #include "components/policy/proto/device_management_backend.pb.h"
@@ -47,6 +48,7 @@
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/http/http_status_code.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace policy {
 
@@ -98,8 +100,8 @@ em::DeviceRegisterRequest::Flavor EnrollmentModeToRegistrationFlavor(
     EnrollmentConfig::Mode mode) {
   switch (mode) {
     case EnrollmentConfig::MODE_NONE:
-    case EnrollmentConfig::MODE_OFFLINE_DEMO:
     case EnrollmentConfig::OBSOLETE_MODE_ENROLLED_ROLLBACK:
+    case EnrollmentConfig::MODE_OFFLINE_DEMO_DEPRECATED:
       break;
     case EnrollmentConfig::MODE_MANUAL:
       return em::DeviceRegisterRequest::FLAVOR_ENROLLMENT_MANUAL;
@@ -134,22 +136,16 @@ em::DeviceRegisterRequest::Flavor EnrollmentModeToRegistrationFlavor(
     case EnrollmentConfig::MODE_ATTESTATION_INITIAL_MANUAL_FALLBACK:
       return em::DeviceRegisterRequest::
           FLAVOR_ENROLLMENT_ATTESTATION_INITIAL_MANUAL_FALLBACK;
+    case EnrollmentConfig::MODE_ATTESTATION_ROLLBACK_FORCED:
+      return em::DeviceRegisterRequest::
+          FLAVOR_ENROLLMENT_ATTESTATION_ROLLBACK_FORCED;
+    case EnrollmentConfig::MODE_ATTESTATION_ROLLBACK_MANUAL_FALLBACK:
+      return em::DeviceRegisterRequest::
+          FLAVOR_ENROLLMENT_ATTESTATION_ROLLBACK_MANUAL_FALLBACK;
   }
 
   NOTREACHED() << "Bad enrollment mode: " << mode;
   return em::DeviceRegisterRequest::FLAVOR_ENROLLMENT_MANUAL;
-}
-
-// A utility function of base::ReadFileToString which returns an optional
-// string.
-// TODO(mukai): move this to base/files.
-absl::optional<std::string> ReadFileToOptionalString(
-    const base::FilePath& file_path) {
-  std::string content;
-  absl::optional<std::string> result;
-  if (base::ReadFileToString(file_path, &content))
-    result = std::move(content);
-  return result;
 }
 
 // Returns the PSM protocol execution result if prefs::kEnrollmentPsmResult is
@@ -206,15 +202,15 @@ absl::optional<int64_t> GetPsmDeterminationTimestamp(
 // Returns binary config which is encrypted by a password that the joining user
 // has to enter.
 std::string GetActiveDirectoryDomainJoinConfig(
-    const base::DictionaryValue* config) {
+    const base::Value::Dict* config) {
   if (!config)
     return std::string();
-  const base::Value* base64_value = config->FindKeyOfType(
-      "active_directory_domain_join_config", base::Value::Type::STRING);
+  const std::string* base64_value =
+      config->FindString("active_directory_domain_join_config");
   if (!base64_value)
     return std::string();
   std::string result;
-  if (!base::Base64Decode(base64_value->GetString(), &result)) {
+  if (!base::Base64Decode(*base64_value, &result)) {
     LOG(ERROR) << "Active Directory config is not base64";
     return std::string();
   }
@@ -268,36 +264,27 @@ EnrollmentHandler::EnrollmentHandler(
       enrollment_step_(STEP_PENDING) {
   dm_auth_ = std::move(dm_auth);
   CHECK(!client_->is_registered());
-  CHECK_EQ(DM_STATUS_SUCCESS, client_->status());
-  if (enrollment_config_.is_mode_attestation() ||
-      enrollment_config.mode == EnrollmentConfig::MODE_OFFLINE_DEMO) {
-    CHECK(dm_auth_.empty());
-  } else {
-    CHECK(!dm_auth_.empty());
-  }
-  CHECK_NE(enrollment_config.mode == EnrollmentConfig::MODE_OFFLINE_DEMO,
-           enrollment_config.offline_policy_path.empty());
+  CHECK_EQ(DM_STATUS_SUCCESS, client_->last_dm_status());
+  CHECK_EQ(dm_auth_.empty(), enrollment_config_.is_mode_attestation());
   CHECK(enrollment_config_.auth_mechanism !=
             EnrollmentConfig::AUTH_MECHANISM_ATTESTATION ||
         attestation_flow_);
-  if (enrollment_config.mode != EnrollmentConfig::MODE_OFFLINE_DEMO) {
-    register_params_ =
-        std::make_unique<CloudPolicyClient::RegistrationParameters>(
-            em::DeviceRegisterRequest::DEVICE,
-            EnrollmentModeToRegistrationFlavor(enrollment_config.mode));
-    register_params_->SetPsmExecutionResult(
-        GetPsmExecutionResult(*g_browser_process->local_state()));
-    register_params_->SetPsmDeterminationTimestamp(
-        GetPsmDeterminationTimestamp(*g_browser_process->local_state()));
-    // License type is set only if terminal license is used. Unset field is
-    // treated as enterprise license.
-    if (license_type == LicenseType::kTerminal) {
-      register_params_->SetLicenseType(
-          em::LicenseType_LicenseTypeEnum::LicenseType_LicenseTypeEnum_KIOSK);
-    }
-
-    register_params_->requisition = requisition;
+  register_params_ =
+      std::make_unique<CloudPolicyClient::RegistrationParameters>(
+          em::DeviceRegisterRequest::DEVICE,
+          EnrollmentModeToRegistrationFlavor(enrollment_config.mode));
+  register_params_->psm_execution_result =
+      GetPsmExecutionResult(*g_browser_process->local_state());
+  register_params_->psm_determination_timestamp =
+      GetPsmDeterminationTimestamp(*g_browser_process->local_state());
+  // License type is set only if terminal license is used. Unset field is
+  // treated as enterprise license.
+  if (license_type == LicenseType::kTerminal) {
+    register_params_->license_type =
+        em::LicenseType_LicenseTypeEnum::LicenseType_LicenseTypeEnum_KIOSK;
   }
+
+  register_params_->requisition = requisition;
 
   store_->AddObserver(this);
   client_->AddObserver(this);
@@ -317,15 +304,6 @@ void EnrollmentHandler::SetSigningServiceProviderForTesting(
 
 void EnrollmentHandler::StartEnrollment() {
   CHECK_EQ(STEP_PENDING, enrollment_step_);
-
-  if (enrollment_config_.skip_state_keys_request()) {
-    // TODO(crbug.com/1271134): Logging as "WARNING" to make sure it's preserved
-    // in the logs.
-    LOG(WARNING) << "Skipping state keys request.";
-    SetStep(STEP_LOADING_STORE);
-    StartRegistration();
-    return;
-  }
 
   SetStep(STEP_STATE_KEYS);
 
@@ -406,6 +384,14 @@ void EnrollmentHandler::OnRegistrationStateChanged(CloudPolicyClient* client) {
   }
 
   device_mode_ = client_->device_mode();
+
+  // If Chromad features are disabled and the management mode setting from DM
+  // Server is Active Directory, we override this setting to cloud management.
+  if (!ash::features::IsChromadAvailableEnabled() &&
+      device_mode_ == DEVICE_MODE_ENTERPRISE_AD) {
+    device_mode_ = DEVICE_MODE_ENTERPRISE;
+  }
+
   switch (device_mode_) {
     case DEVICE_MODE_ENTERPRISE:
     case DEVICE_MODE_DEMO:
@@ -436,9 +422,10 @@ void EnrollmentHandler::OnClientError(CloudPolicyClient* client) {
   }
 
   if (enrollment_step_ < STEP_POLICY_FETCH) {
-    ReportResult(EnrollmentStatus::ForRegistrationError(client_->status()));
+    ReportResult(
+        EnrollmentStatus::ForRegistrationError(client_->last_dm_status()));
   } else {
-    ReportResult(EnrollmentStatus::ForFetchError(client_->status()));
+    ReportResult(EnrollmentStatus::ForFetchError(client_->last_dm_status()));
   }
 }
 
@@ -517,8 +504,6 @@ void EnrollmentHandler::StartRegistration() {
     // First attempt to register with enrollment certificate. Do not force new
     // key and fresh enrollment certificate.
     StartAttestationBasedEnrollmentFlow(/*is_initial_attempt=*/true);
-  } else if (enrollment_config_.mode == EnrollmentConfig::MODE_OFFLINE_DEMO) {
-    StartOfflineDemoEnrollmentFlow();
   } else {
     client_->Register(*register_params_, client_id_, dm_auth_.oauth_token());
   }
@@ -531,16 +516,21 @@ void EnrollmentHandler::StartAttestationBasedEnrollmentFlow(
       base::BindOnce(&EnrollmentHandler::HandleRegistrationCertificateResult,
                      weak_ptr_factory_.GetWeakPtr(), is_initial_attempt);
   attestation_flow_->GetCertificate(
-      chromeos::attestation::PROFILE_ENTERPRISE_ENROLLMENT_CERTIFICATE,
-      EmptyAccountId(), /*request_origin=*/std::string(), force_new_key,
-      /*=key_name=*/std::string(), std::move(callback));
+      /*certificate_profile=*/ash::attestation::
+          PROFILE_ENTERPRISE_ENROLLMENT_CERTIFICATE,
+      /*account_id=*/EmptyAccountId(), /*request_origin=*/std::string(),
+      /*force_new_key=*/force_new_key,
+      /*key_crypto_type=*/::attestation::KEY_TYPE_RSA,
+      /*key_name=*/ash::attestation::kEnterpriseEnrollmentKey,
+      /*profile_specific_data=*/absl::nullopt,
+      /*callback=*/std::move(callback));
 }
 
 void EnrollmentHandler::HandleRegistrationCertificateResult(
     bool is_initial_attempt,
-    chromeos::attestation::AttestationStatus status,
+    ash::attestation::AttestationStatus status,
     const std::string& pem_certificate_chain) {
-  if (status != chromeos::attestation::ATTESTATION_SUCCESS) {
+  if (status != ash::attestation::ATTESTATION_SUCCESS) {
     ReportResult(EnrollmentStatus::ForStatus(
         EnrollmentStatus::REGISTRATION_CERT_FETCH_FAILED));
     return;
@@ -594,73 +584,6 @@ void EnrollmentHandler::HandleRegistrationCertificateResult(
   client_->RegisterWithCertificate(
       *register_params_, client_id_, pem_certificate_chain, sub_organization_,
       signing_service_provider_->CreateSigningService());
-}
-
-void EnrollmentHandler::StartOfflineDemoEnrollmentFlow() {
-  DCHECK(!enrollment_config_.offline_policy_path.empty());
-
-  device_mode_ = DeviceMode::DEVICE_MODE_DEMO;
-  domain_ = enrollment_config_.management_domain;
-  skip_robot_auth_ = true;
-  SetStep(STEP_POLICY_FETCH);
-
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE,
-      {base::MayBlock(), base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN},
-      base::BindOnce(&ReadFileToOptionalString,
-                     enrollment_config_.offline_policy_path),
-      base::BindOnce(&EnrollmentHandler::OnOfflinePolicyBlobLoaded,
-                     weak_ptr_factory_.GetWeakPtr()));
-}
-
-void EnrollmentHandler::OnOfflinePolicyBlobLoaded(
-    absl::optional<std::string> blob) {
-  DCHECK_EQ(EnrollmentConfig::MODE_OFFLINE_DEMO, enrollment_config_.mode);
-  DCHECK_EQ(STEP_POLICY_FETCH, enrollment_step_);
-
-  if (!blob.has_value()) {
-    ReportResult(EnrollmentStatus::ForStatus(
-        EnrollmentStatus::OFFLINE_POLICY_LOAD_FAILED));
-    return;
-  }
-
-  SetStep(STEP_VALIDATION);
-
-  // Validate the policy.
-  auto policy = std::make_unique<em::PolicyFetchResponse>();
-  if (!policy->ParseFromString(blob.value())) {
-    ReportResult(EnrollmentStatus::ForStatus(
-        EnrollmentStatus::OFFLINE_POLICY_DECODING_FAILED));
-    return;
-  }
-
-  // Validate the device policy for the offline demo mode.
-  auto validator = CreateValidator(std::move(policy), domain_);
-  validator->ValidateDomain(domain_);
-  DeviceCloudPolicyValidator::StartValidation(
-      std::move(validator),
-      base::BindOnce(&EnrollmentHandler::OnOfflinePolicyValidated,
-                     weak_ptr_factory_.GetWeakPtr()));
-}
-
-void EnrollmentHandler::OnOfflinePolicyValidated(
-    DeviceCloudPolicyValidator* validator) {
-  DCHECK_EQ(enrollment_config_.mode, EnrollmentConfig::MODE_OFFLINE_DEMO);
-  DCHECK_EQ(STEP_VALIDATION, enrollment_step_);
-
-  if (!validator->success()) {
-    ReportResult(EnrollmentStatus::ForValidationError(validator->status()));
-    return;
-  }
-
-  // Don't use the device ID within the validated policy -- it's common among
-  // all of the offline-enrolled devices.
-  device_id_ = base::GenerateGUID();
-  policy_ = std::move(validator->policy());
-
-  // The steps for OAuth2 token fetching is skipped for the OFFLINE_DEMO_MODE.
-  SetStep(STEP_SET_FWMP_DATA);
-  SetFirmwareManagementParametersData();
 }
 
 std::unique_ptr<DeviceCloudPolicyValidator> EnrollmentHandler::CreateValidator(
@@ -721,10 +644,21 @@ void EnrollmentHandler::OnDeviceAccountTokenFetched(bool empty_token) {
   StartJoinAdDomain();
 }
 
-void EnrollmentHandler::OnDeviceAccountTokenError(EnrollmentStatus status) {
-  CHECK(enrollment_step_ == STEP_ROBOT_AUTH_FETCH ||
-        enrollment_step_ == STEP_STORE_ROBOT_AUTH);
-  ReportResult(status);
+void EnrollmentHandler::OnDeviceAccountTokenFetchError(
+    absl::optional<DeviceManagementStatus> dm_status) {
+  CHECK_EQ(enrollment_step_, STEP_ROBOT_AUTH_FETCH);
+  if (dm_status.has_value()) {
+    ReportResult(EnrollmentStatus::ForRobotAuthFetchError(dm_status.value()));
+  } else {
+    ReportResult(EnrollmentStatus::ForStatus(
+        EnrollmentStatus::ROBOT_REFRESH_FETCH_FAILED));
+  }
+}
+
+void EnrollmentHandler::OnDeviceAccountTokenStoreError() {
+  CHECK_EQ(enrollment_step_, STEP_STORE_ROBOT_AUTH);
+  ReportResult(EnrollmentStatus::ForStatus(
+      EnrollmentStatus::ROBOT_REFRESH_STORE_FAILED));
 }
 
 void EnrollmentHandler::OnDeviceAccountClientError(
@@ -850,7 +784,7 @@ void EnrollmentHandler::HandleLockDeviceResult(
         // InstallAttributes not ready yet, retry later.
         LOG(WARNING) << "Install Attributes not ready yet will retry in "
                      << kLockRetryIntervalMs << "ms.";
-        base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+        base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
             FROM_HERE,
             base::BindOnce(&EnrollmentHandler::StartLockDevice,
                            weak_ptr_factory_.GetWeakPtr()),

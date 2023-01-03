@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,10 @@
 
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/views/side_panel/side_panel_content_proxy.h"
 #include "chrome/browser/ui/views/side_panel/side_panel_entry.h"
 #include "chrome/browser/ui/views/side_panel/side_panel_registry.h"
+#include "chrome/browser/ui/views/side_panel/side_panel_util.h"
 #include "chrome/browser/ui/views/side_panel/side_panel_web_ui_view.h"
 #include "chrome/browser/ui/webui/feed/feed_ui.h"
 #include "chrome/common/webui_url_constants.h"
@@ -35,7 +37,7 @@ void FeedSidePanelCoordinator::CreateAndRegisterEntry(
 
 std::unique_ptr<views::View> FeedSidePanelCoordinator::CreateFeedWebUIView() {
   auto view = std::make_unique<SidePanelWebUIViewT<FeedUI>>(
-      &GetBrowser(), base::RepeatingClosure(), base::RepeatingClosure(),
+      base::RepeatingClosure(), base::RepeatingClosure(),
       std::make_unique<BubbleContentsWrapperT<FeedUI>>(
           GURL(chrome::kChromeUIUntrustedFeedURL), GetBrowser().profile(),
           IDS_FEED_TITLE,
@@ -44,6 +46,7 @@ std::unique_ptr<views::View> FeedSidePanelCoordinator::CreateFeedWebUIView() {
   // Show the feed page immediately. The loading spinner will show up in the
   // page if we need to wait for the feed content coming from the server.
   view->SetVisible(true);
+  SidePanelUtil::GetSidePanelContentProxy(view.get())->SetAvailable(true);
   return view;
 }
 

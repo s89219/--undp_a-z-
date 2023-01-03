@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "ash/shelf/scrollable_shelf_view.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_app_button.h"
+#include "ash/shelf/shelf_controller.h"
 #include "ash/shelf/shelf_focus_cycler.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_metrics.h"
@@ -46,7 +47,7 @@
 #include "base/test/icu_test_util.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
-#include "chromeos/services/assistant/public/cpp/assistant_service.h"
+#include "chromeos/ash/services/assistant/public/cpp/assistant_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/compositor/presentation_time_recorder.h"
@@ -85,14 +86,15 @@ class HotseatWidgetTest
     if (is_assistant_enabled_)
       assistant_test_api_ = AssistantTestApi::Create();
 
-    std::vector<base::Feature> enabled_features;
-    std::vector<base::Feature> disabled_features;
+    std::vector<base::test::FeatureRef> enabled_features;
+    std::vector<base::test::FeatureRef> disabled_features;
 
     if (navigation_buttons_shown_in_tablet_mode_) {
       disabled_features.push_back(features::kHideShelfControlsInTabletMode);
     } else {
       enabled_features.push_back(features::kHideShelfControlsInTabletMode);
     }
+    enabled_features.push_back(features::kShelfPalmRejectionSwipeOffset);
     scoped_feature_list_.InitWithFeatures(enabled_features, disabled_features);
   }
 
@@ -103,9 +105,9 @@ class HotseatWidgetTest
     if (is_assistant_enabled_) {
       assistant_test_api_->SetAssistantEnabled(true);
       assistant_test_api_->GetAssistantState()->NotifyFeatureAllowed(
-          chromeos::assistant::AssistantAllowedState::ALLOWED);
+          assistant::AssistantAllowedState::ALLOWED);
       assistant_test_api_->GetAssistantState()->NotifyStatusChanged(
-          chromeos::assistant::AssistantStatus::READY);
+          assistant::AssistantStatus::READY);
 
       assistant_test_api_->WaitUntilIdle();
     }
@@ -136,7 +138,7 @@ class HotseatWidgetTest
     if (!navigation_buttons_shown_in_tablet_mode_ &&
         Shell::Get()->tablet_mode_controller()->InTabletMode()) {
       AssistantUiController::Get()->ShowUi(
-          chromeos::assistant::AssistantEntryPoint::kLongPressLauncher);
+          assistant::AssistantEntryPoint::kLongPressLauncher);
       return;
     }
 
@@ -465,7 +467,7 @@ TEST_P(HotseatWidgetTest, InAppShelfShowingContextMenu) {
   const int long_press_delay_ms = gesture_config->long_press_time_in_ms() +
                                   gesture_config->show_press_delay_in_ms();
   base::RunLoop run_loop;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, run_loop.QuitClosure(),
       base::Milliseconds(long_press_delay_ms));
   run_loop.Run();
@@ -516,7 +518,7 @@ TEST_P(HotseatWidgetTest, DragItemOffExtendedHotseat) {
                               ->hotseat_widget()
                               ->scrollable_shelf_view()
                               ->shelf_view();
-  EXPECT_EQ(2, shelf_view->view_model_for_test()->view_size());
+  EXPECT_EQ(2u, shelf_view->view_model_for_test()->view_size());
 
   // Show the in-app shelf.
   SwipeUpOnShelf();
@@ -539,7 +541,7 @@ TEST_P(HotseatWidgetTest, DragItemOffExtendedHotseat) {
   // 1. Shelf item count decreases by one; and
   // 2. Hotseat is still extended.
   GetEventGenerator()->ReleaseLeftButton();
-  EXPECT_EQ(1, shelf_view->view_model_for_test()->view_size());
+  EXPECT_EQ(1u, shelf_view->view_model_for_test()->view_size());
   EXPECT_EQ(HotseatState::kExtended, GetShelfLayoutManager()->hotseat_state());
 }
 
@@ -815,6 +817,8 @@ TEST_P(HotseatWidgetTest, SwipeUpOnShelfShowsHotseatInSplitView) {
   std::unique_ptr<aura::Window> window =
       AshTestBase::CreateTestWindow(gfx::Rect(0, 0, 400, 400));
   wm::ActivateWindow(window.get());
+  std::unique_ptr<aura::Window> window2 =
+      AshTestBase::CreateTestWindow(gfx::Rect(0, 0, 400, 400));
 
   base::HistogramTester histogram_tester;
   histogram_tester.ExpectBucketCount(kHotseatGestureHistogramName,
@@ -827,8 +831,11 @@ TEST_P(HotseatWidgetTest, SwipeUpOnShelfShowsHotseatInSplitView) {
   EnterOverview();
   SplitViewController* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(window.get(), SplitViewController::LEFT);
-  EXPECT_TRUE(split_view_controller->InSplitViewMode());
+  split_view_controller->SnapWindow(
+      window.get(), SplitViewController::SnapPosition::kPrimary);
+  split_view_controller->SnapWindow(
+      window2.get(), SplitViewController::SnapPosition::kSecondary);
+  EXPECT_TRUE(split_view_controller->BothSnapped());
 
   // We should still be able to drag up the hotseat.
   SwipeUpOnShelf();
@@ -985,6 +992,62 @@ TEST_P(HotseatWidgetTest, ReleasingSlowDragAboveThreshold) {
                                              kNumScrollSteps);
 
   EXPECT_EQ(HotseatState::kExtended, GetShelfLayoutManager()->hotseat_state());
+  if (shelf_auto_hide_behavior() == ShelfAutoHideBehavior::kAlways)
+    EXPECT_EQ(SHELF_AUTO_HIDE_SHOWN, GetPrimaryShelf()->GetAutoHideState());
+  histogram_tester.ExpectBucketCount(kHotseatGestureHistogramName,
+                                     InAppShelfGestures::kSwipeDownToHide, 0);
+  histogram_tester.ExpectBucketCount(kHotseatGestureHistogramName,
+                                     InAppShelfGestures::kSwipeUpToShow, 1);
+}
+
+// Tests that releasing the hotseat gesture when a stylus app is active has a
+// bigger thresehold than normal apps.
+TEST_P(HotseatWidgetTest, HotseatDragGestureForStylusApp) {
+  GetPrimaryShelf()->SetAutoHideBehavior(shelf_auto_hide_behavior());
+  TabletModeControllerTestApi().EnterTabletMode();
+
+  // Taken from ShelfLayoutManager.
+  const int kShelfPalmRejectionSwipeOffset = 80;
+  const std::string stylus_app = "fhapgmpiiiigioilnjmkiohjhlegnceb";
+
+  ShelfModel* model = Shell::Get()->shelf_controller()->model();
+  const ShelfID test_stylus_app_id(stylus_app);
+
+  std::unique_ptr<aura::Window> window =
+      AshTestBase::CreateTestWindow(gfx::Rect(0, 0, 400, 400));
+  window->SetProperty(kShelfIDKey, test_stylus_app_id.Serialize());
+  wm::ActivateWindow(window.get());
+
+  EXPECT_EQ(test_stylus_app_id, model->active_shelf_id());
+
+  base::HistogramTester histogram_tester;
+  histogram_tester.ExpectBucketCount(kHotseatGestureHistogramName,
+                                     InAppShelfGestures::kSwipeDownToHide, 0);
+  histogram_tester.ExpectBucketCount(kHotseatGestureHistogramName,
+                                     InAppShelfGestures::kSwipeUpToShow, 0);
+
+  gfx::Rect display_bounds =
+      display::Screen::GetScreen()->GetPrimaryDisplay().bounds();
+  const gfx::Point start(display_bounds.bottom_center());
+  const int hotseat_size = GetPrimaryShelf()
+                               ->shelf_widget()
+                               ->hotseat_widget()
+                               ->GetWindowBoundsInScreen()
+                               .height();
+  const gfx::Point normal_thereshold(
+      start + gfx::Vector2d(0, -hotseat_size * 3.0f / 2.0f));
+  const base::TimeDelta kTimeDelta = base::Milliseconds(1000);
+  const int kNumScrollSteps = 4;
+  GetEventGenerator()->GestureScrollSequence(start, normal_thereshold,
+                                             kTimeDelta, kNumScrollSteps);
+  EXPECT_EQ(HotseatState::kHidden, GetShelfLayoutManager()->hotseat_state());
+
+  const gfx::Point offset_thereshold(
+      normal_thereshold + gfx::Vector2d(0, -kShelfPalmRejectionSwipeOffset));
+  GetEventGenerator()->GestureScrollSequence(start, offset_thereshold,
+                                             kTimeDelta, kNumScrollSteps);
+  EXPECT_EQ(HotseatState::kExtended, GetShelfLayoutManager()->hotseat_state());
+
   if (shelf_auto_hide_behavior() == ShelfAutoHideBehavior::kAlways)
     EXPECT_EQ(SHELF_AUTO_HIDE_SHOWN, GetPrimaryShelf()->GetAutoHideState());
   histogram_tester.ExpectBucketCount(kHotseatGestureHistogramName,
@@ -1739,16 +1802,16 @@ TEST_P(HotseatWidgetTest, ExitingOverviewHidesHotseat) {
   StartScroll(bottom_shelf_bounds.CenterPoint());
   // Ensure swipe goes past the top of the hotseat first to activate the window
   // drag controller.
-  UpdateScroll(
-      -GetPrimaryShelf()->hotseat_widget()->GetHotseatFullDragAmount());
+  UpdateScroll(gfx::Vector2d(
+      0, -GetPrimaryShelf()->hotseat_widget()->GetHotseatFullDragAmount()));
   // Drag upward, to the center of the screen, and release (this should enter
   // the overview).
   const gfx::Rect display_bounds =
       display::Screen::GetScreen()->GetPrimaryDisplay().bounds();
-  UpdateScroll(display_bounds.CenterPoint().y() -
-               bottom_shelf_bounds.CenterPoint().y());
+  UpdateScroll(gfx::Vector2d(0, display_bounds.CenterPoint().y() -
+                                    bottom_shelf_bounds.CenterPoint().y()));
   // Small scroll update, to simulate the user holding the pointer.
-  UpdateScroll(2);
+  UpdateScroll(gfx::Vector2d(0, 2));
   DragWindowFromShelfController* window_drag_controller =
       GetShelfLayoutManager()->window_drag_controller_for_testing();
   ASSERT_TRUE(window_drag_controller);
@@ -1801,11 +1864,13 @@ TEST_P(HotseatWidgetTest, FailingOverviewDragResultsInExtendedHotseat) {
     // Drag upward, a bit below the hotseat extended height, to ensure that the
     // bottom of the dragged window doesn't go past the top of the hotseat, so
     // that it doesn't go into overview.
-    UpdateScroll(-extended_hotseat_distance_from_top_of_shelf + 20);
+    UpdateScroll(
+        gfx::Vector2d(0, -extended_hotseat_distance_from_top_of_shelf + 20));
   } else {
     // Drag upward, a bit past the hotseat extended height so that the window
     // drag controller is activated, but not enough to go to overview.
-    UpdateScroll(-extended_hotseat_distance_from_top_of_shelf - 30);
+    UpdateScroll(
+        gfx::Vector2d(0, -extended_hotseat_distance_from_top_of_shelf - 30));
   }
   EndScroll(/*is_fling=*/false, 0.f);
 
@@ -1878,7 +1943,8 @@ TEST_P(HotseatWidgetTest, SwipeOnHotseatInSplitViewWithOverview) {
 
   SplitViewController* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(window.get(), SplitViewController::LEFT);
+  split_view_controller->SnapWindow(
+      window.get(), SplitViewController::SnapPosition::kPrimary);
 
   SwipeUpOnShelf();
 
@@ -1930,8 +1996,10 @@ TEST_P(HotseatWidgetTest, SwipeOnHotseatInSplitView) {
 
   SplitViewController* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(window1.get(), SplitViewController::LEFT);
-  split_view_controller->SnapWindow(window2.get(), SplitViewController::RIGHT);
+  split_view_controller->SnapWindow(
+      window1.get(), SplitViewController::SnapPosition::kPrimary);
+  split_view_controller->SnapWindow(
+      window2.get(), SplitViewController::SnapPosition::kSecondary);
   EXPECT_TRUE(split_view_controller->InSplitViewMode());
 
   SwipeUpOnShelf();
@@ -2232,7 +2300,8 @@ TEST_P(HotseatWidgetTest, AnimationAfterDrag) {
             .GetViewAt(0)
             ->GetBoundsInScreen()
             .origin();
-    hotseat_widget->GetLayer()->transform().TransformPoint(&app_views_position);
+    app_views_position =
+        hotseat_widget->GetLayer()->transform().MapPoint(app_views_position);
     const bool position_changed = app_views_position != last_app_views_position;
     last_app_views_position = app_views_position;
     return position_changed;
@@ -2303,9 +2372,7 @@ TEST_P(HotseatWidgetTest, AnimationAfterDrag) {
 
 // Tests that hotseat bounds don't jump when the hotseat widget is translated
 // when a transitionj animation starts.
-// Flaky https://crbug.com/1292675
-TEST_P(HotseatWidgetTest,
-       DISABLED_InitialAnimationPositionWithNonIdentityTransform) {
+TEST_P(HotseatWidgetTest, InitialAnimationPositionWithNonIdentityTransform) {
   TabletModeControllerTestApi().EnterTabletMode();
   // Add an app to shelf - the app will be used to track the shelf view position
   // throughout the test.
@@ -2315,6 +2382,12 @@ TEST_P(HotseatWidgetTest,
   std::unique_ptr<aura::Window> window =
       AshTestBase::CreateTestWindow(gfx::Rect(0, 0, 400, 400));
   wm::ActivateWindow(window.get());
+
+  // Make sure that all shelf item views complete their bounds animations
+  // before starting the test (tests depend on the first item bounds within the
+  // shelf view).
+  auto* shelf_view = GetPrimaryShelf()->GetShelfViewForTesting();
+  ShelfViewTestAPI(shelf_view).RunMessageLoopUntilAnimationsDone();
 
   HotseatWidget* const hotseat_widget = GetPrimaryShelf()->hotseat_widget();
   gfx::Point last_app_views_position =
@@ -2329,7 +2402,8 @@ TEST_P(HotseatWidgetTest,
             .GetViewAt(0)
             ->GetBoundsInScreen()
             .origin();
-    hotseat_widget->GetLayer()->transform().TransformPoint(&app_views_position);
+    app_views_position =
+        hotseat_widget->GetLayer()->transform().MapPoint(app_views_position);
     const bool position_changed = app_views_position != last_app_views_position;
     last_app_views_position = app_views_position;
     return position_changed;
@@ -2583,9 +2657,11 @@ TEST_P(HotseatWidgetTest, PresentationTimeMetricDuringDrag) {
 TEST_P(HotseatWidgetTest, DISABLED_OverviewToHomeAnimationAndBackIsSmooth) {
   // Go into tablet mode and make sure animations are over.
   HotseatWidget* hotseat = GetPrimaryShelf()->hotseat_widget();
-  views::WidgetAnimationWaiter waiter(hotseat);
-  TabletModeControllerTestApi().EnterTabletMode();
-  waiter.WaitForAnimation();
+  {
+    views::WidgetAnimationWaiter waiter(hotseat);
+    TabletModeControllerTestApi().EnterTabletMode();
+    waiter.WaitForAnimation();
+  }
 
   ui::ScopedAnimationDurationScaleMode regular_animations(
       ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);

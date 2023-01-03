@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,10 +22,12 @@ import android.widget.PopupWindow;
 import android.widget.PopupWindow.OnDismissListener;
 
 import androidx.annotation.IntDef;
+import androidx.annotation.StyleRes;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.ObserverList;
 import org.chromium.base.metrics.RecordUserAction;
+import org.chromium.ui.R;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -138,9 +140,6 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
         public void onDismiss() {
             if (mIgnoreDismissal) return;
 
-            mPopupWindow.getContentView().removeOnLayoutChangeListener(
-                    mContentViewOnLayoutChangeListener);
-
             mHandler.removeCallbacks(mDismissRunnable);
             for (OnDismissListener listener : mDismissListeners) listener.onDismiss();
 
@@ -189,14 +188,8 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
     private boolean mUpdateOrientationOnChange;
     private boolean mSmartAnchorWithMaxWidth;
 
-    private final View.OnLayoutChangeListener mContentViewOnLayoutChangeListener =
-            new View.OnLayoutChangeListener() {
-                @Override
-                public void onLayoutChange(View v, int left, int top, int right, int bottom,
-                        int oldLeft, int oldTop, int oldRight, int oldBottom) {
-                    if (mPopupWindow.isShowing()) updatePopupLayout();
-                }
-            };
+    private @StyleRes int mAnimationStyleId;
+    private boolean mAnimateFromAnchor;
 
     /**
      * Constructs an {@link AnchoredPopupWindow} instance.
@@ -234,8 +227,6 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
 
         updatePopupLayout();
         showPopupWindow();
-
-        mPopupWindow.getContentView().addOnLayoutChangeListener(mContentViewOnLayoutChangeListener);
     }
 
     /**
@@ -327,15 +318,27 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
     }
 
     /**
-     * Sets the animation style for the popup.  This should be called before the popup is shown.
+     * Sets the animation style for the popup. This should be called before the popup is shown.
+     * Setting this style will take precedence over {@link #setAnimateFromAnchor(boolean)}.
      * @param animationStyleId The id of the animation style.
      */
     public void setAnimationStyle(int animationStyleId) {
+        mAnimationStyleId = animationStyleId;
         mPopupWindow.setAnimationStyle(animationStyleId);
     }
 
     /**
-     * If set to true, orientation will be updated everytime that the {@link OnRectChanged} is
+     * Set whether the popup should enter from / exit to the anchor point. This should be
+     * called before the popup is shown. If an animation style is specified by
+     * {@link #setAnimationStyle(int)}, this method will have no effect.
+     * @param animateFromAnchor Whether the popup should animator from anchor point.
+     */
+    public void setAnimateFromAnchor(boolean animateFromAnchor) {
+        mAnimateFromAnchor = animateFromAnchor;
+    }
+
+    /**
+     * If set to true, orientation will be updated every time that the {@link OnRectChanged} is
      * called.
      */
     public void setUpdateOrientationOnChange(boolean updateOrientationOnChange) {
@@ -742,7 +745,35 @@ public class AnchoredPopupWindow implements OnTouchListener, RectProvider.Observ
         return value;
     }
 
-    private void showPopupWindow() {
+    /**
+     * Calculate the style Id to use when showing the popup window,
+     * when {@link #setAnimateFromAnchor(true)}.
+     * @param isPositionBelow Whether the popup is positioned below the anchor rect.
+     * @param isPositionToLeft Whether the popup is positioned below the anchor rect.
+     * @return The style resource Id to use for {@link PopupWindow#setAnimationStyle}
+     */
+    @VisibleForTesting
+    static @StyleRes int calculateAnimationStyle(
+            boolean isPositionBelow, boolean isPositionToLeft) {
+        if (isPositionToLeft) {
+            return isPositionBelow
+                    ? R.style.AnchoredPopupAnimEndTop // Left + below -> enter top right (end)
+                    : R.style.AnchoredPopupAnimEndBottom; // Left + above -> enter bottom right
+                                                          // (end)
+        }
+        return isPositionBelow
+                ? R.style.AnchoredPopupAnimStartTop // Right & below -> enter top left (start)
+                : R.style.AnchoredPopupAnimStartBottom; // Right & above -> enter bottom left
+                                                        // (start)
+    }
+
+    @VisibleForTesting
+    void showPopupWindow() {
+        if (mAnimateFromAnchor && mAnimationStyleId == 0) {
+            int animationStyle = calculateAnimationStyle(
+                    mPopupSpec.isPositionBelow, mPopupSpec.isPositionToLeft);
+            mPopupWindow.setAnimationStyle(animationStyle);
+        }
         try {
             mPopupWindow.showAtLocation(mRootView, Gravity.TOP | Gravity.START,
                     mPopupSpec.popupRect.left, mPopupSpec.popupRect.top);

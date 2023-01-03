@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,18 +19,16 @@ CSSContainerRule::~CSSContainerRule() = default;
 
 String CSSContainerRule::cssText() const {
   StringBuilder result;
-  result.Append("@container ");
+  result.Append("@container");
 
   String name = ContainerQuery().Selector().Name();
-  if (!name.IsEmpty()) {
-    SerializeIdentifier(name, result);
+  if (!name.empty()) {
     result.Append(' ');
+    SerializeIdentifier(name, result);
   }
-  result.Append(ContainerQuery().ToString());
   result.Append(' ');
-  result.Append("{\n");
+  result.Append(ContainerQuery().ToString());
   AppendCSSTextForItems(result);
-  result.Append('}');
   return result.ReleaseString();
 }
 

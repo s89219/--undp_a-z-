@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,9 @@
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
+#include "components/prefs/scoped_user_pref_update.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
 #include "content/public/browser/browser_thread.h"
-#include "services/preferences/public/cpp/dictionary_value_update.h"
-#include "services/preferences/public/cpp/scoped_pref_update.h"
 
 namespace web_app {
 
@@ -26,34 +25,20 @@ namespace {
 
 const char kLatestWebAppInstallSource[] = "latest_web_app_install_source";
 
-const base::DictionaryValue* GetWebAppDictionary(
-    const PrefService* pref_service,
-    const AppId& app_id) {
+const base::Value::Dict* GetWebAppDictionary(const PrefService* pref_service,
+                                             const AppId& app_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  const base::Value* web_apps_prefs =
-      pref_service->GetDictionary(prefs::kWebAppsPreferences);
-  if (!web_apps_prefs)
-    return nullptr;
+  const base::Value::Dict& web_apps_prefs =
+      pref_service->GetDict(prefs::kWebAppsPreferences);
 
-  const base::Value* web_app_prefs = web_apps_prefs->FindDictKey(app_id);
-  if (!web_app_prefs)
-    return nullptr;
-
-  return &base::Value::AsDictionaryValue(*web_app_prefs);
+  return web_apps_prefs.FindDict(app_id);
 }
 
-std::unique_ptr<prefs::DictionaryValueUpdate> UpdateWebAppDictionary(
-    std::unique_ptr<prefs::DictionaryValueUpdate> web_apps_prefs_update,
+base::Value::Dict& UpdateWebAppDictionary(
+    ScopedDictPrefUpdate& web_apps_prefs_update,
     const AppId& app_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  std::unique_ptr<prefs::DictionaryValueUpdate> web_app_prefs_update;
-  if (!web_apps_prefs_update->GetDictionaryWithoutPathExpansion(
-          app_id, &web_app_prefs_update)) {
-    web_app_prefs_update =
-        web_apps_prefs_update->SetDictionaryWithoutPathExpansion(
-            app_id, std::make_unique<base::DictionaryValue>());
-  }
-  return web_app_prefs_update;
+  return *web_apps_prefs_update->EnsureDict(app_id);
 }
 
 // Returns whether the time occurred within X days.
@@ -75,19 +60,16 @@ bool TimeOccurredWithinDays(absl::optional<base::Time> time, int days) {
 //     "<app_id_2>": { "foo": true }
 //   }
 void RemoveEmptyWebAppPrefs(PrefService* pref_service) {
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsPreferences);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsPreferences);
 
   std::vector<AppId> apps_to_remove;
-  for (auto item : update.Get()->AsDictionary()->DictItems()) {
-    const AppId& app_id = item.first;
-    const base::Value& dict = item.second;
-    if (dict.is_dict() && dict.DictEmpty())
+  for (const auto [app_id, dict] : *update) {
+    if (dict.is_dict() && dict.GetDict().empty())
       apps_to_remove.push_back(app_id);
   }
 
   for (const AppId& app_id : apps_to_remove)
-    update.Get()->Remove(app_id);
+    update->Remove(app_id);
 }
 
 }  // namespace
@@ -104,9 +86,6 @@ void RemoveEmptyWebAppPrefs(PrefService* pref_service) {
 //       microseconds since the Windows epoch, using base::TimeToValue().
 //       "IPH_last_ignore_time": "13249617864945580",
 //     },
-//     "<app_id_N>": {
-//       "was_external_app_uninstalled_by_user": false,
-//     }
 //   },
 //   "app_agnostic_iph_state": {
 //     "IPH_num_of_consecutive_ignore": 3,
@@ -121,8 +100,6 @@ void RemoveEmptyWebAppPrefs(PrefService* pref_service) {
 //     },
 //   }
 //
-const char kWasExternalAppUninstalledByUser[] =
-    "was_external_app_uninstalled_by_user";
 
 const char kIphIgnoreCount[] = "IPH_num_of_consecutive_ignore";
 
@@ -137,9 +114,9 @@ void WebAppPrefsUtilsRegisterProfilePrefs(
 bool GetBoolWebAppPref(const PrefService* pref_service,
                        const AppId& app_id,
                        base::StringPiece path) {
-  if (const base::DictionaryValue* web_app_prefs =
+  if (const base::Value::Dict* web_app_prefs =
           GetWebAppDictionary(pref_service, app_id)) {
-    return web_app_prefs->FindBoolPath(path).value_or(false);
+    return web_app_prefs->FindBoolByDottedPath(path).value_or(false);
   }
   return false;
 }
@@ -148,21 +125,19 @@ void UpdateBoolWebAppPref(PrefService* pref_service,
                           const AppId& app_id,
                           base::StringPiece path,
                           bool value) {
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsPreferences);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsPreferences);
 
-  std::unique_ptr<prefs::DictionaryValueUpdate> web_app_prefs =
-      UpdateWebAppDictionary(update.Get(), app_id);
-  web_app_prefs->SetBoolean(path, value);
+  base::Value::Dict& web_app_prefs = UpdateWebAppDictionary(update, app_id);
+  web_app_prefs.SetByDottedPath(path, value);
 }
 
 absl::optional<int> GetIntWebAppPref(const PrefService* pref_service,
                                      const AppId& app_id,
                                      base::StringPiece path) {
-  const base::DictionaryValue* web_app_prefs =
+  const base::Value::Dict* web_app_prefs =
       GetWebAppDictionary(pref_service, app_id);
   if (web_app_prefs)
-    return web_app_prefs->FindIntPath(path);
+    return web_app_prefs->FindIntByDottedPath(path);
   return absl::nullopt;
 }
 
@@ -170,21 +145,19 @@ void UpdateIntWebAppPref(PrefService* pref_service,
                          const AppId& app_id,
                          base::StringPiece path,
                          int value) {
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsPreferences);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsPreferences);
 
-  std::unique_ptr<prefs::DictionaryValueUpdate> web_app_prefs =
-      UpdateWebAppDictionary(update.Get(), app_id);
-  web_app_prefs->SetInteger(path, value);
+  base::Value::Dict& web_app_prefs = UpdateWebAppDictionary(update, app_id);
+  web_app_prefs.SetByDottedPath(path, value);
 }
 
 absl::optional<double> GetDoubleWebAppPref(const PrefService* pref_service,
                                            const AppId& app_id,
                                            base::StringPiece path) {
-  const base::DictionaryValue* web_app_prefs =
+  const base::Value::Dict* web_app_prefs =
       GetWebAppDictionary(pref_service, app_id);
   if (web_app_prefs)
-    return web_app_prefs->FindDoublePath(path);
+    return web_app_prefs->FindDoubleByDottedPath(path);
   return absl::nullopt;
 }
 
@@ -192,19 +165,17 @@ void UpdateDoubleWebAppPref(PrefService* pref_service,
                             const AppId& app_id,
                             base::StringPiece path,
                             double value) {
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsPreferences);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsPreferences);
 
-  std::unique_ptr<prefs::DictionaryValueUpdate> web_app_prefs =
-      UpdateWebAppDictionary(update.Get(), app_id);
-  web_app_prefs->SetDouble(path, value);
+  base::Value::Dict& web_app_prefs = UpdateWebAppDictionary(update, app_id);
+  web_app_prefs.SetByDottedPath(path, value);
 }
 
 absl::optional<base::Time> GetTimeWebAppPref(const PrefService* pref_service,
                                              const AppId& app_id,
                                              base::StringPiece path) {
   if (const auto* web_app_prefs = GetWebAppDictionary(pref_service, app_id)) {
-    if (auto* value = web_app_prefs->FindPath(path))
+    if (auto* value = web_app_prefs->FindByDottedPath(path))
       return base::ValueToTime(value);
   }
 
@@ -215,23 +186,19 @@ void UpdateTimeWebAppPref(PrefService* pref_service,
                           const AppId& app_id,
                           base::StringPiece path,
                           base::Time value) {
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsPreferences);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsPreferences);
 
-  auto web_app_prefs = UpdateWebAppDictionary(update.Get(), app_id);
-  web_app_prefs->Set(path,
-                     std::make_unique<base::Value>(base::TimeToValue(value)));
+  auto& web_app_prefs = UpdateWebAppDictionary(update, app_id);
+  web_app_prefs.SetByDottedPath(path, base::TimeToValue(value));
 }
 
 void RemoveWebAppPref(PrefService* pref_service,
                       const AppId& app_id,
                       base::StringPiece path) {
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsPreferences);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsPreferences);
 
-  std::unique_ptr<prefs::DictionaryValueUpdate> web_app_prefs =
-      UpdateWebAppDictionary(update.Get(), app_id);
-  web_app_prefs->Remove(path);
+  base::Value::Dict& web_app_prefs = UpdateWebAppDictionary(update, app_id);
+  web_app_prefs.RemoveByDottedPath(path);
 }
 
 absl::optional<int> GetWebAppInstallSourceDeprecated(PrefService* prefs,
@@ -275,14 +242,10 @@ void RecordInstallIphIgnored(PrefService* pref_service,
   UpdateIntWebAppPref(pref_service, app_id, kIphIgnoreCount, new_count);
   UpdateTimeWebAppPref(pref_service, app_id, kIphLastIgnoreTime, time);
 
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsAppAgnosticIphState);
-  int global_count = 0;
-  update->GetInteger(kIphIgnoreCount, &global_count);
-  update->SetInteger(kIphIgnoreCount,
-                     base::saturated_cast<int>(global_count + 1));
-  update->Set(kIphLastIgnoreTime,
-              std::make_unique<base::Value>(base::TimeToValue(time)));
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsAppAgnosticIphState);
+  int global_count = update->FindInt(kIphIgnoreCount).value_or(0);
+  update->Set(kIphIgnoreCount, base::saturated_cast<int>(global_count + 1));
+  update->Set(kIphLastIgnoreTime, base::TimeToValue(time));
 }
 
 void RecordInstallIphInstalled(PrefService* pref_service, const AppId& app_id) {
@@ -291,9 +254,8 @@ void RecordInstallIphInstalled(PrefService* pref_service, const AppId& app_id) {
   // resetting ignored count on successful install.
   UpdateIntWebAppPref(pref_service, app_id, kIphIgnoreCount, 0);
 
-  prefs::ScopedDictionaryPrefUpdate update(pref_service,
-                                           prefs::kWebAppsAppAgnosticIphState);
-  update->SetInteger(kIphIgnoreCount, 0);
+  ScopedDictPrefUpdate update(pref_service, prefs::kWebAppsAppAgnosticIphState);
+  update->Set(kIphIgnoreCount, 0);
 }
 
 bool ShouldShowIph(PrefService* pref_service, const AppId& app_id) {
@@ -310,15 +272,15 @@ bool ShouldShowIph(PrefService* pref_service, const AppId& app_id) {
     return false;
   }
 
-  auto* dict = pref_service->GetDictionary(prefs::kWebAppsAppAgnosticIphState);
+  const base::Value::Dict& dict =
+      pref_service->GetDict(prefs::kWebAppsAppAgnosticIphState);
 
   // Do not show IPH if the user ignored the last N+ promos for any app.
-  int global_ignored_count = dict->FindIntKey(kIphIgnoreCount).value_or(0);
+  int global_ignored_count = dict.FindInt(kIphIgnoreCount).value_or(0);
   if (global_ignored_count >= kIphMuteAfterConsecutiveAppAgnosticIgnores)
     return false;
   // Do not show IPH if the user ignored a promo for any app within N days.
-  auto global_last_ignore =
-      base::ValueToTime(dict->FindKey(kIphLastIgnoreTime));
+  auto global_last_ignore = base::ValueToTime(dict.Find(kIphLastIgnoreTime));
   if (TimeOccurredWithinDays(global_last_ignore,
                              kIphAppAgnosticMuteTimeSpanDays)) {
     return false;

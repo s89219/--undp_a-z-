@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,11 @@ namespace content {
 class BrowserContext;
 class RenderFrameHost;
 }  // namespace content
+
+namespace device {
+class PublicKeyCredentialDescriptor;
+class PublicKeyCredentialUserEntity;
+}  // namespace device
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -61,6 +66,9 @@ class ChromeWebAuthenticationDelegate
       const std::string& relying_party_id) override;
   bool OriginMayUseRemoteDesktopClientOverride(
       content::BrowserContext* browser_context,
+      const url::Origin& caller_origin) override;
+  bool IsSecurityLevelAcceptableForWebAuthn(
+      content::RenderFrameHost* rfh,
       const url::Origin& caller_origin) override;
   absl::optional<std::string> MaybeGetRelyingPartyIdOverride(
       const std::string& claimed_relying_party_id,
@@ -113,7 +121,15 @@ class ChromeAuthenticatorRequestDelegate
 
     virtual void CableV2ExtensionSeen(
         base::span<const uint8_t> server_link_data,
-        base::span<const uint8_t> experiments) = 0;
+        base::span<const uint8_t> experiments,
+        AuthenticatorRequestDialogModel::ExperimentServerLinkSheet,
+        AuthenticatorRequestDialogModel::ExperimentServerLinkTitle) = 0;
+
+    virtual void ConfiguringCable(device::CableRequestType request_type) {}
+
+    virtual void AccountSelectorShown(
+        const std::vector<device::AuthenticatorGetAssertionResponse>&
+            responses) {}
   };
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
@@ -137,7 +153,7 @@ class ChromeAuthenticatorRequestDelegate
   base::WeakPtr<ChromeAuthenticatorRequestDelegate> AsWeakPtr();
 
   AuthenticatorRequestDialogModel* dialog_model() const {
-    return weak_dialog_model_;
+    return dialog_model_.get();
   }
 
   // content::AuthenticatorRequestClientDelegate:
@@ -146,6 +162,7 @@ class ChromeAuthenticatorRequestDelegate
   void RegisterActionCallbacks(
       base::OnceClosure cancel_callback,
       base::RepeatingClosure start_over_callback,
+      AccountPreselectedCallback account_preselected_callback,
       device::FidoRequestHandlerBase::RequestCallback request_callback,
       base::RepeatingClosure bluetooth_adapter_power_on_callback) override;
   void ShouldReturnAttestation(
@@ -155,7 +172,8 @@ class ChromeAuthenticatorRequestDelegate
       base::OnceCallback<void(bool)> callback) override;
   void ConfigureCable(
       const url::Origin& origin,
-      device::FidoRequestType request_type,
+      device::CableRequestType request_type,
+      absl::optional<device::ResidentKeyRequirement> resident_key_requirement,
       base::span<const device::CableDiscoveryData> pairings_from_extension,
       device::FidoDiscoveryFactory* discovery_factory) override;
   void SelectAccount(
@@ -165,6 +183,10 @@ class ChromeAuthenticatorRequestDelegate
   void DisableUI() override;
   bool IsWebAuthnUIEnabled() override;
   void SetConditionalRequest(bool is_conditional) override;
+  void SetCredentialIdFilter(std::vector<device::PublicKeyCredentialDescriptor>
+                                 credential_list) override;
+  void SetUserEntityForMakeCredentialRequest(
+      const device::PublicKeyCredentialUserEntity& user_entity) override;
 
   // device::FidoRequestHandlerBase::Observer:
   void OnTransportAvailabilityEnumerated(
@@ -222,16 +244,10 @@ class ChromeAuthenticatorRequestDelegate
   void OnInvalidatedCablePairing(size_t failed_contact_index);
 
   const content::GlobalRenderFrameHostId render_frame_host_id_;
-  // Holds ownership of AuthenticatorRequestDialogModel until
-  // OnTransportAvailabilityEnumerated() is invoked, at which point the
-  // ownership of the model is transferred to AuthenticatorRequestDialogView and
-  // |this| instead holds weak pointer of the model via above
-  // |weak_dialog_model_|.
-  std::unique_ptr<AuthenticatorRequestDialogModel>
-      transient_dialog_model_holder_;
-  raw_ptr<AuthenticatorRequestDialogModel> weak_dialog_model_ = nullptr;
+  const std::unique_ptr<AuthenticatorRequestDialogModel> dialog_model_;
   base::OnceClosure cancel_callback_;
   base::RepeatingClosure start_over_callback_;
+  AccountPreselectedCallback account_preselected_callback_;
   device::FidoRequestHandlerBase::RequestCallback request_callback_;
 
   // The next two fields are the same length and contain the names and public
@@ -247,6 +263,11 @@ class ChromeAuthenticatorRequestDelegate
   // If true, show a more subtle UI unless the user has platform discoverable
   // credentials on the device.
   bool is_conditional_ = false;
+
+  // A list of credentials used to filter passkeys by ID. When non-empty,
+  // non-matching passkeys will not be displayed during conditional mediation
+  // requests. When empty, no filter is applied and all passkeys are displayed.
+  std::vector<device::PublicKeyCredentialDescriptor> credential_filter_;
 
   // See `SetPassEmptyUsbDeviceManagerForTesting`.
   bool pass_empty_usb_device_manager_ = false;

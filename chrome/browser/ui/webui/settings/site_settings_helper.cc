@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,9 @@
 #include "base/containers/adapters.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
+#include "base/json/values_util.h"
 #include "base/no_destructor.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -21,16 +23,19 @@
 #include "chrome/browser/bluetooth/bluetooth_chooser_context_factory.h"
 #include "chrome/browser/content_settings/chrome_content_settings_utils.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#include "chrome/browser/file_system_access/chrome_file_system_access_permission_context.h"
+#include "chrome/browser/file_system_access/file_system_access_permission_context_factory.h"
 #include "chrome/browser/hid/hid_chooser_context.h"
 #include "chrome/browser/hid/hid_chooser_context_factory.h"
-#include "chrome/browser/permissions/permission_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/serial/serial_chooser_context.h"
 #include "chrome/browser/serial/serial_chooser_context_factory.h"
 #include "chrome/browser/subresource_filter/subresource_filter_profile_context_factory.h"
 #include "chrome/browser/usb/usb_chooser_context.h"
 #include "chrome/browser/usb/usb_chooser_context_factory.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/content_settings/core/common/content_settings.h"
@@ -39,7 +44,6 @@
 #include "components/permissions/contexts/bluetooth_chooser_context.h"
 #include "components/permissions/object_permission_context_base.h"
 #include "components/permissions/permission_decision_auto_blocker.h"
-#include "components/permissions/permission_manager.h"
 #include "components/permissions/permission_result.h"
 #include "components/permissions/permission_util.h"
 #include "components/permissions/permissions_client.h"
@@ -48,11 +52,15 @@
 #include "components/subresource_filter/content/browser/subresource_filter_profile_context.h"
 #include "components/subresource_filter/core/browser/subresource_filter_features.h"
 #include "components/url_formatter/url_formatter.h"
+#include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_result.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_utils.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/constants.h"
+#include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "url/origin.h"
 
 namespace site_settings {
@@ -61,17 +69,6 @@ constexpr char kAppName[] = "appName";
 constexpr char kAppId[] = "appId";
 
 namespace {
-
-// Maps from the UI string to the object it represents (for sorting purposes).
-typedef std::multimap<std::string, const base::DictionaryValue*> SortedObjects;
-
-// Maps from a secondary URL to the set of objects it has permission to access.
-typedef std::map<GURL, SortedObjects> OneOriginObjects;
-
-// Maps from a primary URL/source pair to a OneOriginObjects. All the mappings
-// in OneOriginObjects share the given primary URL and source.
-typedef std::map<std::pair<GURL, std::string>, OneOriginObjects>
-    AllOriginObjects;
 
 // Chooser data group names.
 const char kUsbChooserDataGroupType[] = "usb-devices-data";
@@ -94,7 +91,6 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::MEDIASTREAM_MIC, "media-stream-mic"},
     {ContentSettingsType::MEDIASTREAM_CAMERA, "media-stream-camera"},
     {ContentSettingsType::PROTOCOL_HANDLERS, "register-protocol-handler"},
-    {ContentSettingsType::PPAPI_BROKER, "ppapi-broker"},
     {ContentSettingsType::AUTOMATIC_DOWNLOADS, "multiple-automatic-downloads"},
     {ContentSettingsType::MIDI_SYSEX, "midi-sysex"},
     {ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER, "protected-content"},
@@ -119,10 +115,14 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::BLUETOOTH_GUARD, "bluetooth-devices"},
     {ContentSettingsType::BLUETOOTH_CHOOSER_DATA,
      kBluetoothChooserDataGroupType},
-    {ContentSettingsType::WINDOW_PLACEMENT, "window-placement"},
+    {ContentSettingsType::WINDOW_MANAGEMENT, "window-placement"},
     {ContentSettingsType::LOCAL_FONTS, "local-fonts"},
     {ContentSettingsType::FILE_SYSTEM_ACCESS_CHOOSER_DATA,
      "file-system-access-handles-data"},
+    {ContentSettingsType::FEDERATED_IDENTITY_API, "federated-identity-api"},
+    {ContentSettingsType::PRIVATE_NETWORK_GUARD, "private-network-devices"},
+    {ContentSettingsType::PRIVATE_NETWORK_CHOOSER_DATA,
+     "private-network-devices-data"},
 
     // Add new content settings here if a corresponding Javascript string
     // representation for it is not required, for example if the content setting
@@ -150,7 +150,6 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::WAKE_LOCK_SCREEN, nullptr},
     {ContentSettingsType::WAKE_LOCK_SYSTEM, nullptr},
     {ContentSettingsType::LEGACY_COOKIE_ACCESS, nullptr},
-    {ContentSettingsType::INSTALLED_WEB_APP_METADATA, nullptr},
     {ContentSettingsType::NFC, nullptr},
     {ContentSettingsType::SAFE_BROWSING_URL_CHECK_DATA, nullptr},
     {ContentSettingsType::FILE_SYSTEM_READ_GUARD, nullptr},
@@ -165,10 +164,18 @@ const ContentSettingsTypeNameEntry kContentSettingsTypeGroupNames[] = {
     {ContentSettingsType::HTTP_ALLOWED, nullptr},
     {ContentSettingsType::FORMFILL_METADATA, nullptr},
     {ContentSettingsType::FEDERATED_IDENTITY_ACTIVE_SESSION, nullptr},
-    {ContentSettingsType::FEDERATED_IDENTITY_API, nullptr},
     {ContentSettingsType::AUTO_DARK_WEB_CONTENT, nullptr},
     {ContentSettingsType::REQUEST_DESKTOP_SITE, nullptr},
     {ContentSettingsType::GET_DISPLAY_MEDIA_SET_SELECT_ALL_SCREENS, nullptr},
+    {ContentSettingsType::NOTIFICATION_INTERACTIONS, nullptr},
+    {ContentSettingsType::REDUCED_ACCEPT_LANGUAGE, nullptr},
+    {ContentSettingsType::NOTIFICATION_PERMISSION_REVIEW, nullptr},
+    {ContentSettingsType::FEDERATED_IDENTITY_IDENTITY_PROVIDER_SIGNIN_STATUS,
+     nullptr},
+    // PPAPI_BROKER has been deprecated. The content setting is not used or
+    // called from UI, so we don't need a representation JS string.
+    {ContentSettingsType::DEPRECATED_PPAPI_BROKER, nullptr},
+    {ContentSettingsType::REVOKED_UNUSED_SITE_PERMISSIONS, nullptr},
 };
 
 static_assert(std::size(kContentSettingsTypeGroupNames) ==
@@ -198,28 +205,6 @@ static_assert(std::size(kSiteSettingSourceStringMapping) ==
                   static_cast<int>(SiteSettingSource::kNumSources),
               "kSiteSettingSourceStringMapping should have "
               "SiteSettingSource::kNumSources elements");
-
-struct PolicyIndicatorTypeStringMapping {
-  PolicyIndicatorType source;
-  const char* indicator_str;
-};
-
-// Converts a policy indicator type to its JS usable string representation.
-const PolicyIndicatorTypeStringMapping kPolicyIndicatorTypeStringMapping[] = {
-    {PolicyIndicatorType::kDevicePolicy, "devicePolicy"},
-    {PolicyIndicatorType::kExtension, "extension"},
-    {PolicyIndicatorType::kNone, "none"},
-    {PolicyIndicatorType::kOwner, "owner"},
-    {PolicyIndicatorType::kPrimaryUser, "primary_user"},
-    {PolicyIndicatorType::kRecommended, "recommended"},
-    {PolicyIndicatorType::kUserPolicy, "userPolicy"},
-    {PolicyIndicatorType::kParent, "parent"},
-    {PolicyIndicatorType::kChildRestriction, "childRestriction"},
-};
-static_assert(std::size(kPolicyIndicatorTypeStringMapping) ==
-                  static_cast<int>(PolicyIndicatorType::kNumIndicators),
-              "kPolicyIndicatorStringMapping should have "
-              "PolicyIndicatorType::kNumIndicators elements");
 
 // Retrieves the corresponding string, according to the following precedence
 // order from highest to lowest priority:
@@ -293,20 +278,6 @@ SiteSettingSource CalculateSiteSettingSource(
 
   NOTREACHED();
   return SiteSettingSource::kPreference;
-}
-
-// Whether |pattern| applies to a single origin.
-bool PatternAppliesToSingleOrigin(const ContentSettingPatternSource& pattern) {
-  const GURL url(pattern.primary_pattern.ToString());
-  // Default settings and other patterns apply to multiple origins.
-  if (url::Origin::Create(url).opaque())
-    return false;
-  // Embedded content settings only match when |url| is embedded in another
-  // origin, so ignore non-wildcard secondary patterns.
-  if (pattern.secondary_pattern != ContentSettingsPattern::Wildcard()) {
-    return false;
-  }
-  return true;
 }
 
 bool PatternAppliesToWebUISchemes(const ContentSettingPatternSource& pattern) {
@@ -447,7 +418,7 @@ const std::vector<ContentSettingsType>& GetVisiblePermissionCategories() {
       ContentSettingsType::SOUND,
       ContentSettingsType::USB_GUARD,
       ContentSettingsType::VR,
-      ContentSettingsType::WINDOW_PLACEMENT,
+      ContentSettingsType::WINDOW_MANAGEMENT,
   }};
   static bool initialized = false;
   if (!initialized) {
@@ -461,6 +432,10 @@ const std::vector<ContentSettingsType>& GetVisiblePermissionCategories() {
     if (base::FeatureList::IsEnabled(::features::kServiceWorkerPaymentApps))
       base_types->push_back(ContentSettingsType::PAYMENT_HANDLER);
 
+    if (base::FeatureList::IsEnabled(features::kFedCm)) {
+      base_types->push_back(ContentSettingsType::FEDERATED_IDENTITY_API);
+    }
+
     if (base::FeatureList::IsEnabled(
             features::kWebBluetoothNewPermissionsBackend)) {
       base_types->push_back(ContentSettingsType::BLUETOOTH_GUARD);
@@ -469,6 +444,11 @@ const std::vector<ContentSettingsType>& GetVisiblePermissionCategories() {
     if (base::FeatureList::IsEnabled(
             subresource_filter::kSafeBrowsingSubresourceFilter)) {
       base_types->push_back(ContentSettingsType::ADS);
+    }
+
+    if (base::FeatureList::IsEnabled(
+            blink::features::kPrivateNetworkAccessPermissionPrompt)) {
+      base_types->push_back(ContentSettingsType::PRIVATE_NETWORK_GUARD);
     }
 
     initialized = true;
@@ -481,20 +461,11 @@ std::string SiteSettingSourceToString(const SiteSettingSource source) {
   return kSiteSettingSourceStringMapping[static_cast<int>(source)].source_str;
 }
 
-base::Value GetValueForManagedState(const site_settings::ManagedState& state) {
-  base::Value value(base::Value::Type::DICTIONARY);
-  value.SetKey(site_settings::kDisabled, base::Value(state.disabled));
-  value.SetKey(
-      site_settings::kPolicyIndicator,
-      base::Value(site_settings::PolicyIndicatorTypeToString(state.indicator)));
-  return value;
-}
-
 // Add an "Allow"-entry to the list of |exceptions| for a |url_pattern| from
 // the web extent of a hosted |app|.
 void AddExceptionForHostedApp(const std::string& url_pattern,
                               const extensions::Extension& app,
-                              base::ListValue* exceptions) {
+                              base::Value::List* exceptions) {
   base::Value::Dict exception;
 
   std::string setting_string =
@@ -510,12 +481,44 @@ void AddExceptionForHostedApp(const std::string& url_pattern,
   exception.Set(kIncognito, false);
   exception.Set(kAppName, app.name());
   exception.Set(kAppId, app.id());
-  exceptions->Append(base::Value(std::move(exception)));
+  exceptions->Append(std::move(exception));
 }
 
-// Create a DictionaryValue* that will act as a data source for a single row
+// Create a base::Value::Dict that will act as a data source for a single row
+// for a File System Access permission grant.
+base::Value::Dict GetFileSystemExceptionForPage(
+    ContentSettingsType content_type,
+    Profile* profile,
+    const std::string& origin,
+    const base::FilePath& file_path,
+    const ContentSetting& setting,
+    const std::string& provider_name,
+    bool incognito,
+    bool is_embargoed) {
+  base::Value::Dict exception;
+  exception.Set(kOrigin, origin);
+  // TODO(crbug.com/1373962): Replace `LossyDisplayName` method with a
+  // new method that returns the full file path in a human-readable format.
+  exception.Set(kDisplayName, file_path.LossyDisplayName());
+  std::string setting_string =
+      content_settings::ContentSettingToString(setting);
+  DCHECK(!setting_string.empty());
+  exception.Set(kSetting, setting_string);
+
+  exception.Set(kSource, provider_name);
+  exception.Set(kIncognito, incognito);
+  exception.Set(kIsEmbargoed, is_embargoed);
+  absl::optional<std::string> isolated_web_app_name =
+      GetIsolatedWebAppName(profile, GURL(origin));
+  if (isolated_web_app_name.has_value()) {
+    exception.Set(kIsolatedWebAppName, isolated_web_app_name.value());
+  }
+  return exception;
+}
+
+// Create a base::Value::Dict that will act as a data source for a single row
 // in a HostContentSettingsMap-controlled exceptions table (e.g., cookies).
-std::unique_ptr<base::DictionaryValue> GetExceptionForPage(
+base::Value::Dict GetExceptionForPage(
     ContentSettingsType content_type,
     Profile* profile,
     const ContentSettingsPattern& pattern,
@@ -525,22 +528,27 @@ std::unique_ptr<base::DictionaryValue> GetExceptionForPage(
     const std::string& provider_name,
     bool incognito,
     bool is_embargoed) {
-  auto exception = std::make_unique<base::DictionaryValue>();
-  exception->SetStringKey(kOrigin, pattern.ToString());
-  exception->SetStringKey(kDisplayName, display_name);
-  exception->SetStringKey(
-      kEmbeddingOrigin, secondary_pattern == ContentSettingsPattern::Wildcard()
-                            ? std::string()
-                            : secondary_pattern.ToString());
+  base::Value::Dict exception;
+  exception.Set(kOrigin, pattern.ToString());
+  exception.Set(kDisplayName, display_name);
+  exception.Set(kEmbeddingOrigin,
+                secondary_pattern == ContentSettingsPattern::Wildcard()
+                    ? std::string()
+                    : secondary_pattern.ToString());
 
   std::string setting_string =
       content_settings::ContentSettingToString(setting);
   DCHECK(!setting_string.empty());
-  exception->SetStringKey(kSetting, setting_string);
+  exception.Set(kSetting, setting_string);
 
-  exception->SetStringKey(kSource, provider_name);
-  exception->SetBoolKey(kIncognito, incognito);
-  exception->SetBoolKey(kIsEmbargoed, is_embargoed);
+  exception.Set(kSource, provider_name);
+  exception.Set(kIncognito, incognito);
+  exception.Set(kIsEmbargoed, is_embargoed);
+  absl::optional<std::string> isolated_web_app_name =
+      GetIsolatedWebAppName(profile, GURL(pattern.ToString()));
+  if (isolated_web_app_name.has_value()) {
+    exception.Set(kIsolatedWebAppName, isolated_web_app_name.value());
+  }
   return exception;
 }
 
@@ -602,7 +610,7 @@ void GetExceptionsForContentType(
     const extensions::ExtensionRegistry* extension_registry,
     content::WebUI* web_ui,
     bool incognito,
-    base::ListValue* exceptions) {
+    base::Value::List* exceptions) {
   ContentSettingsForOneType all_settings;
   HostContentSettingsMap* map =
       HostContentSettingsMapFactory::GetForProfile(profile);
@@ -653,12 +661,13 @@ void GetExceptionsForContentType(
     if (map->IsOffTheRecord() && !setting.incognito)
       continue;
 
-    if (!permissions::PermissionUtil::IsPermission(type))
+    if (!permissions::PermissionDecisionAutoBlocker::IsEnabledForContentSetting(
+            type)) {
       continue;
+    }
 
-    if (auto_blocker
-            ->GetEmbargoResult(GURL(setting.primary_pattern.ToString()), type)
-            .content_setting == CONTENT_SETTING_BLOCK) {
+    if (auto_blocker->IsEmbargoed(GURL(setting.primary_pattern.ToString()),
+                                  type)) {
       origins_under_embargo.insert(setting.primary_pattern);
       all_patterns_settings[std::make_pair(
           setting.primary_pattern, setting.source)][setting.secondary_pattern] =
@@ -668,7 +677,7 @@ void GetExceptionsForContentType(
 
   // Keep the exceptions sorted by provider so they will be displayed in
   // precedence order.
-  std::vector<std::unique_ptr<base::DictionaryValue>>
+  std::vector<base::Value::Dict>
       all_provider_exceptions[HostContentSettingsMap::NUM_PROVIDER_TYPES];
 
   // |all_patterns_settings| is sorted from the lowest precedence pattern to
@@ -727,23 +736,35 @@ void GetExceptionsForContentType(
                          incognito);
   }
 
+  // Display the URLs with File System entries that are granted
+  // permissions via File System Access Persistent Permissions.
+  if (base::FeatureList::IsEnabled(
+          features::kFileSystemAccessPersistentPermissions) &&
+      (type == ContentSettingsType::FILE_SYSTEM_READ_GUARD ||
+       type == ContentSettingsType::FILE_SYSTEM_WRITE_GUARD)) {
+    auto& urls_with_granted_entries = all_provider_exceptions
+        [HostContentSettingsMap::GetProviderTypeFromSource(
+            SiteSettingSourceToString(SiteSettingSource::kDefault))];
+    GetFileSystemGrantedEntries(&urls_with_granted_entries, profile, incognito);
+  }
+
   for (auto& one_provider_exceptions : all_provider_exceptions) {
     for (auto& exception : one_provider_exceptions)
-      exceptions->Append(base::Value::FromUniquePtrValue(std::move(exception)));
+      exceptions->Append(std::move(exception));
   }
 }
 
 void GetContentCategorySetting(const HostContentSettingsMap* map,
                                ContentSettingsType content_type,
-                               base::DictionaryValue* object) {
+                               base::Value::Dict* object) {
   std::string provider;
   std::string setting = content_settings::ContentSettingToString(
       map->GetDefaultContentSetting(content_type, &provider));
   DCHECK(!setting.empty());
 
-  object->SetStringKey(kSetting, setting);
+  object->Set(kSetting, setting);
   if (provider != SiteSettingSourceToString(SiteSettingSource::kDefault))
-    object->SetStringKey(kSource, provider);
+    object->Set(kSource, provider);
 }
 
 ContentSetting GetContentSettingForOrigin(
@@ -763,15 +784,28 @@ ContentSetting GetContentSettingForOrigin(
 
   // Retrieve the content setting.
   permissions::PermissionResult result(
-      CONTENT_SETTING_DEFAULT,
+      content_settings::ValueToContentSetting(value),
       permissions::PermissionStatusSource::UNSPECIFIED);
-  if (permissions::PermissionUtil::IsPermission(content_type)) {
-    result =
-        PermissionManagerFactory::GetForProfile(profile)
-            ->GetPermissionStatusForDisplayOnSettingsUI(content_type, origin);
-  } else {
-    DCHECK_EQ(base::Value::Type::INTEGER, value.type());
-    result.content_setting = content_settings::ValueToContentSetting(value);
+  if (permissions::PermissionDecisionAutoBlocker::IsEnabledForContentSetting(
+          content_type)) {
+    if (permissions::PermissionUtil::IsPermission(content_type)) {
+      content::PermissionResult permission_result =
+          profile->GetPermissionController()
+              ->GetPermissionResultForOriginWithoutContext(
+                  permissions::PermissionUtil::
+                      ContentSettingTypeToPermissionType(content_type),
+                  url::Origin::Create(origin));
+      result =
+          permissions::PermissionUtil::ToPermissionResult(permission_result);
+    } else {
+      permissions::PermissionDecisionAutoBlocker* auto_blocker =
+          permissions::PermissionsClient::Get()
+              ->GetPermissionDecisionAutoBlocker(profile);
+      absl::optional<permissions::PermissionResult> embargo_result =
+          auto_blocker->GetEmbargoResult(origin, content_type);
+      if (embargo_result)
+        result = *embargo_result;
+    }
   }
 
   // Retrieve the source of the content setting.
@@ -779,7 +813,7 @@ ContentSetting GetContentSettingForOrigin(
       CalculateSiteSettingSource(profile, content_type, origin, info, result));
   *display_name = GetDisplayNameForGURL(origin, extension_registry);
 
-  if (info.session_model == content_settings::SessionModel::OneTime) {
+  if (info.metadata.session_model == content_settings::SessionModel::OneTime) {
     DCHECK_EQ(content_type, ContentSettingsType::GEOLOCATION);
     DCHECK_EQ(result.content_setting, CONTENT_SETTING_ALLOW);
     return CONTENT_SETTING_DEFAULT;
@@ -792,18 +826,48 @@ std::vector<ContentSettingPatternSource> GetSiteExceptionsForContentType(
     ContentSettingsType content_type) {
   ContentSettingsForOneType entries;
   map->GetSettingsForOneType(content_type, &entries);
-  entries.erase(std::remove_if(entries.begin(), entries.end(),
-                               [](const ContentSettingPatternSource& e) {
-                                 return !PatternAppliesToSingleOrigin(e) ||
-                                        PatternAppliesToWebUISchemes(e);
-                               }),
-                entries.end());
+  // Exclude any entries that don't represent a single webby top-frame origin.
+  base::EraseIf(entries, [](const ContentSettingPatternSource& e) {
+    return !content_settings::PatternAppliesToSingleOrigin(
+               e.primary_pattern, e.secondary_pattern) ||
+           PatternAppliesToWebUISchemes(e);
+  });
   return entries;
+}
+
+void GetFileSystemGrantedEntries(std::vector<base::Value::Dict>* exceptions,
+                                 Profile* profile,
+                                 bool incognito) {
+  ChromeFileSystemAccessPermissionContext* permission_context =
+      FileSystemAccessPermissionContextFactory::GetForProfile(profile);
+  std::vector<std::unique_ptr<permissions::ObjectPermissionContextBase::Object>>
+      grants = permission_context->GetAllGrantedObjects();
+
+  for (const auto& grant : grants) {
+    const std::string url = grant->origin.spec();
+    auto* const optional_path = grant->value.GetDict().Find(
+        ChromeFileSystemAccessPermissionContext::kPermissionPathKey);
+
+    // Ensure that the file path is found for the given kPermissionPathKey.
+    if (optional_path) {
+      const base::FilePath file_path =
+          base::ValueToFilePath(optional_path).value();
+      exceptions->push_back(GetFileSystemExceptionForPage(
+          ContentSettingsType::FILE_SYSTEM_WRITE_GUARD, profile, url, file_path,
+          CONTENT_SETTING_ALLOW,
+          SiteSettingSourceToString(SiteSettingSource::kDefault), incognito));
+    }
+  }
+  // Sort exceptions by origin name, alphabetically.
+  base::ranges::sort(*exceptions, [](const base::Value::Dict& lhs,
+                                     const base::Value::Dict& rhs) {
+    return lhs.Find(kOrigin)->GetString() < rhs.Find(kOrigin)->GetString();
+  });
 }
 
 void GetPolicyAllowedUrls(
     ContentSettingsType type,
-    std::vector<std::unique_ptr<base::DictionaryValue>>* exceptions,
+    std::vector<base::Value::Dict>* exceptions,
     const extensions::ExtensionRegistry* extension_registry,
     content::WebUI* web_ui,
     bool incognito) {
@@ -812,14 +876,14 @@ void GetPolicyAllowedUrls(
 
   Profile* profile = Profile::FromWebUI(web_ui);
   PrefService* prefs = profile->GetPrefs();
-  const base::Value* policy_urls =
+  const base::Value::List& policy_urls =
       prefs->GetList(type == ContentSettingsType::MEDIASTREAM_MIC
                          ? prefs::kAudioCaptureAllowedUrls
                          : prefs::kVideoCaptureAllowedUrls);
 
   // Convert the URLs to |ContentSettingsPattern|s. Ignore any invalid ones.
   std::vector<ContentSettingsPattern> patterns;
-  for (const auto& entry : policy_urls->GetListDeprecated()) {
+  for (const auto& entry : policy_urls) {
     const std::string* url = entry.GetIfString();
     if (!url)
       continue;
@@ -846,7 +910,7 @@ void GetPolicyAllowedUrls(
   }
 }
 
-const ChooserTypeNameEntry* ChooserTypeFromGroupName(const std::string& name) {
+const ChooserTypeNameEntry* ChooserTypeFromGroupName(base::StringPiece name) {
   for (const auto& chooser_type : kChooserTypeGroupNames) {
     if (chooser_type.name == name)
       return &chooser_type;
@@ -854,67 +918,78 @@ const ChooserTypeNameEntry* ChooserTypeFromGroupName(const std::string& name) {
   return nullptr;
 }
 
-// Create a DictionaryValue* that will act as a data source for a single row
+// Create a base::Value::Dict that will act as a data source for a single row
 // in a chooser permission exceptions table. The chooser permission will contain
 // a list of site exceptions that correspond to the exception.
-base::Value CreateChooserExceptionObject(
+base::Value::Dict CreateChooserExceptionObject(
     const std::u16string& display_name,
     const base::Value& object,
     const std::string& chooser_type,
-    const ChooserExceptionDetails& chooser_exception_details) {
-  base::Value exception(base::Value::Type::DICTIONARY);
+    const ChooserExceptionDetails& chooser_exception_details,
+    Profile* profile) {
+  base::Value::Dict exception;
 
   std::string setting_string =
       content_settings::ContentSettingToString(CONTENT_SETTING_DEFAULT);
   DCHECK(!setting_string.empty());
 
-  exception.SetStringKey(kDisplayName, display_name);
-  exception.SetKey(kObject, object.Clone());
-  exception.SetStringKey(kChooserType, chooser_type);
+  exception.Set(kDisplayName, display_name);
+  exception.Set(kObject, object.Clone());
+  exception.Set(kChooserType, chooser_type);
 
   // Order the sites by the provider precedence order.
-  std::vector<base::Value>
+  std::vector<base::Value::Dict>
       all_provider_sites[HostContentSettingsMap::NUM_PROVIDER_TYPES];
   for (const auto& details : chooser_exception_details) {
-    const GURL& requesting_origin = details.first.first;
-    const std::string& source = details.first.second;
+    const GURL& origin = std::get<0>(details);
+    const std::string& source = std::get<1>(details);
+    const bool incognito = std::get<2>(details);
+
+    std::string site_display_name = origin.spec();
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+    // Set the |site_display_name| to the extension's name which is more clear
+    // to the user if the |origin| is for an extension and the extension name
+    // can be found in the |profile|.
+    if (origin.SchemeIs(extensions::kExtensionScheme)) {
+      DCHECK(profile);
+      const auto* extension_registry =
+          extensions::ExtensionRegistry::Get(profile);
+      const extensions::Extension* extension =
+          extension_registry->GetExtensionById(
+              origin.host(), extensions::ExtensionRegistry::EVERYTHING);
+      if (extension) {
+        site_display_name = extension->name();
+      }
+    }
+#endif
 
     auto& this_provider_sites =
         all_provider_sites[HostContentSettingsMap::GetProviderTypeFromSource(
             source)];
-
-    for (const auto& embedding_origin_incognito_pair : details.second) {
-      const GURL& embedding_origin = embedding_origin_incognito_pair.first;
-      const bool incognito = embedding_origin_incognito_pair.second;
-      base::Value site(base::Value::Type::DICTIONARY);
-
-      site.SetStringKey(kOrigin, requesting_origin.spec());
-      site.SetStringKey(kDisplayName, requesting_origin.spec());
-      site.SetStringKey(kEmbeddingOrigin, embedding_origin.is_empty()
-                                              ? std::string()
-                                              : embedding_origin.spec());
-      site.SetStringKey(kSetting, setting_string);
-      site.SetStringKey(kSource, source);
-      site.SetBoolKey(kIncognito, incognito);
-      this_provider_sites.push_back(std::move(site));
-    }
+    base::Value::Dict site;
+    site.Set(kOrigin, origin.spec());
+    site.Set(kDisplayName, site_display_name);
+    site.Set(kSetting, setting_string);
+    site.Set(kSource, source);
+    site.Set(kIncognito, incognito);
+    this_provider_sites.push_back(std::move(site));
   }
 
-  base::Value sites(base::Value::Type::LIST);
+  base::Value::List sites;
   for (auto& one_provider_sites : all_provider_sites) {
     for (auto& site : one_provider_sites) {
       sites.Append(std::move(site));
     }
   }
 
-  exception.SetKey(kSites, std::move(sites));
+  exception.Set(kSites, std::move(sites));
   return exception;
 }
 
-base::Value GetChooserExceptionListFromProfile(
+base::Value::List GetChooserExceptionListFromProfile(
     Profile* profile,
     const ChooserTypeNameEntry& chooser_type) {
-  base::Value exceptions(base::Value::Type::LIST);
+  base::Value::List exceptions;
   ContentSettingsType content_type =
       ContentSettingsTypeFromGroupName(std::string(chooser_type.name));
 
@@ -960,13 +1035,8 @@ base::Value GetChooserExceptionListFromProfile(
     std::string source = GetSourceStringForChooserException(
         profile, content_type, object->source);
 
-    const auto origin_source_pair = std::make_pair(object->origin, source);
-    auto& origin_incognito_pair_set =
-        chooser_exception_details[origin_source_pair];
-
-    const auto origin_incognito_pair =
-        std::make_pair(object->origin, object->incognito);
-    origin_incognito_pair_set.insert(origin_incognito_pair);
+    chooser_exception_details.insert(
+        {object->origin, source, object->incognito});
   }
 
   for (const auto& all_chooser_objects_entry : all_chooser_objects) {
@@ -975,35 +1045,25 @@ base::Value GetChooserExceptionListFromProfile(
     const ChooserExceptionDetails& chooser_exception_details =
         all_chooser_objects_entry.second;
     exceptions.Append(CreateChooserExceptionObject(
-        name, object, chooser_type.name, chooser_exception_details));
+        name, object, chooser_type.name, chooser_exception_details, profile));
   }
 
   return exceptions;
 }
 
-std::string PolicyIndicatorTypeToString(const PolicyIndicatorType type) {
-  return kPolicyIndicatorTypeStringMapping[static_cast<int>(type)]
-      .indicator_str;
-}
-
-PolicyIndicatorType GetPolicyIndicatorFromPref(
-    const PrefService::Preference* pref) {
-  if (!pref) {
-    return PolicyIndicatorType::kNone;
+absl::optional<std::string> GetIsolatedWebAppName(Profile* profile,
+                                                  GURL origin) {
+  absl::optional<std::string> app_name;
+  if (auto* provider = web_app::WebAppProvider::GetForWebApps(profile)) {
+    if (absl::optional<web_app::AppId> app_id =
+            provider->registrar_unsafe().FindAppWithUrlInScope(origin)) {
+      if (!provider->registrar_unsafe().IsIsolated(*app_id)) {
+        return app_name;
+      }
+      app_name = provider->registrar_unsafe().GetAppShortName(*app_id);
+    }
   }
-  if (pref->IsExtensionControlled()) {
-    return PolicyIndicatorType::kExtension;
-  }
-  if (pref->IsManagedByCustodian()) {
-    return PolicyIndicatorType::kParent;
-  }
-  if (pref->IsManaged()) {
-    return PolicyIndicatorType::kDevicePolicy;
-  }
-  if (pref->GetRecommendedValue()) {
-    return PolicyIndicatorType::kRecommended;
-  }
-  return PolicyIndicatorType::kNone;
+  return app_name;
 }
 
 }  // namespace site_settings

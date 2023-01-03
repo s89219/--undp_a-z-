@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,21 +12,23 @@
 #include "base/containers/flat_map.h"
 #include "components/segmentation_platform/internal/database/ukm_database.h"
 #include "components/segmentation_platform/internal/execution/processing/query_processor.h"
-#include "components/segmentation_platform/internal/proto/model_metadata.pb.h"
+#include "components/segmentation_platform/public/proto/model_metadata.pb.h"
 
 namespace segmentation_platform::processing {
 class CustomInputProcessor;
 class FeatureProcessorState;
+class InputDelegateHolder;
 
 // SqlFeatureProcessor takes a list of SqlFeature type of input, fetches samples
 // from the UKMDatabase, and computes an input tensor to use when executing the
 // ML model.
 class SqlFeatureProcessor : public QueryProcessor {
  public:
-  using QueryList = base::flat_map<FeatureIndex, proto::SqlFeature>;
+  using QueryList = base::flat_map<FeatureIndex, Data>;
 
   SqlFeatureProcessor(QueryList&& queries,
                       base::Time prediction_time,
+                      InputDelegateHolder* input_delegate_holder,
                       UkmDatabase* ukm_database);
   ~SqlFeatureProcessor() override;
 
@@ -56,6 +58,8 @@ class SqlFeatureProcessor : public QueryProcessor {
 
   // Time at which we expect the model execution to run.
   const base::Time prediction_time_;
+
+  const raw_ptr<InputDelegateHolder> input_delegate_holder_;
 
   // Main database for fetching data.
   const raw_ptr<UkmDatabase> ukm_database_;

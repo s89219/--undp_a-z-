@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,12 @@
 
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
-#include "components/page_info/core/proto/about_this_site_metadata.pb.h"
 #include "components/page_info/page_info_ui_delegate.h"
 #include "url/gurl.h"
+
+#if !BUILDFLAG(IS_ANDROID)
+#include "components/page_info/core/proto/about_this_site_metadata.pb.h"
+#endif
 
 class Profile;
 
@@ -39,6 +42,7 @@ class ChromePageInfoUiDelegate : public PageInfoUiDelegate {
   // If "allow" option is not available, return the reason why.
   std::u16string GetAutomaticallyBlockedReason(ContentSettingsType type);
 
+#if !BUILDFLAG(IS_ANDROID)
   // Returns "About this site" info for the active page.
   absl::optional<page_info::proto::SiteInfo> GetAboutThisSiteInfo();
 
@@ -48,7 +52,6 @@ class ChromePageInfoUiDelegate : public PageInfoUiDelegate {
   // Handles opening the "More about this page" URL in a new tab.
   void OpenMoreAboutThisPageUrl(const GURL& url, const ui::Event& event);
 
-#if !BUILDFLAG(IS_ANDROID)
   // If PageInfo should show a link to the site or app's settings page, this
   // will return true and set the params to the appropriate resource IDs (IDS_*).
   // Otherwise, it will return false.
@@ -65,13 +68,15 @@ class ChromePageInfoUiDelegate : public PageInfoUiDelegate {
   bool IsBlockAutoPlayEnabled() override;
   bool IsMultipleTabsOpen() override;
 #endif  // !BUILDFLAG(IS_ANDROID)
-  permissions::PermissionResult GetPermissionStatus(
+  permissions::PermissionResult GetPermissionResult(
+      blink::PermissionType permission) override;
+  absl::optional<permissions::PermissionResult> GetEmbargoResult(
       ContentSettingsType type) override;
 
  private:
   Profile* GetProfile() const;
 
-  raw_ptr<content::WebContents> web_contents_;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_;
   GURL site_url_;
 };
 

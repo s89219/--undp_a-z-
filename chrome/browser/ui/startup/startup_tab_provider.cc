@@ -1,15 +1,15 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/startup/startup_tab_provider.h"
 
-#include <algorithm>
 #include <string>
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
@@ -53,7 +53,7 @@
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chromeos/crosapi/mojom/crosapi.mojom.h"
-#include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #endif
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -69,18 +69,20 @@ namespace {
 
 // Attempts to find an existing, non-empty tabbed browser for this profile.
 bool ProfileHasOtherTabbedBrowser(Profile* profile) {
-  BrowserList* browser_list = BrowserList::GetInstance();
-  auto other_tabbed_browser = std::find_if(
-      browser_list->begin(), browser_list->end(), [profile](Browser* browser) {
+  return base::ranges::any_of(
+      *BrowserList::GetInstance(), [profile](Browser* browser) {
         return browser->profile() == profile && browser->is_type_normal() &&
                !browser->tab_strip_model()->empty();
       });
-  return other_tabbed_browser != browser_list->end();
 }
 
-// Validates the URL whether it is allowed to be opened at launching.
+// Validates the URL whether it is allowed to be opened at launching. Dangerous
+// schemes are excluded to prevent untrusted external applications from opening
+// them except on Lacros where URLs coming from untrusted applications are
+// checked in a different layer (such as the dbus UrlHandlerService and the
+// ArcIntentHelperBridge). Thus, chrome:// URLs are allowed on Lacros so that
+// trusted calls in Ash can open them.
 bool ValidateUrl(const GURL& url) {
-  // Exclude dangerous schemes.
   if (!url.is_valid())
     return false;
 
@@ -109,6 +111,9 @@ bool ValidateUrl(const GURL& url) {
   auto* policy = content::ChildProcessSecurityPolicy::GetInstance();
   return policy->IsWebSafeScheme(url.scheme()) ||
          url.SchemeIs(url::kFileScheme) ||
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+         url.SchemeIs(content::kChromeUIScheme) ||
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
          url_points_to_an_approved_settings_page ||
          url.spec() == url::kAboutBlankURL;
 }
@@ -278,15 +283,15 @@ CommandLineTabsPresent StartupTabProviderImpl::HasCommandLineTabs(
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 StartupTabs StartupTabProviderImpl::GetCrosapiTabs() const {
-  auto* init_params = chromeos::LacrosService::Get()->init_params();
-  if (init_params->initial_browser_action !=
+  auto* init_params = chromeos::BrowserParamsProxy::Get();
+  if (init_params->InitialBrowserAction() !=
           crosapi::mojom::InitialBrowserAction::kOpenWindowWithUrls ||
-      !init_params->startup_urls.has_value()) {
+      !init_params->StartupUrls().has_value()) {
     return {};
   }
 
   StartupTabs result;
-  for (const GURL& url : *init_params->startup_urls) {
+  for (const GURL& url : *init_params->StartupUrls()) {
     if (ValidateUrl(url))
       result.emplace_back(url);
   }
@@ -428,7 +433,7 @@ StartupTabs StartupTabProviderImpl::GetPrivacySandboxTabsForState(
     extensions::ExtensionRegistry* extension_registry,
     const GURL& ntp_url,
     const StartupTabs& other_startup_tabs) {
-  // There may already be a tab appropriate for the Privacy Sandbox dialog
+  // There may already be a tab appropriate for the Privacy Sandbox prompt
   // available in |other_startup_tabs|.
   StartupTabs tabs;
   const bool suitable_tab_available =
@@ -439,7 +444,7 @@ StartupTabs StartupTabProviderImpl::GetPrivacySandboxTabsForState(
           return !HasExtensionNtpOverride(extension_registry) &&
                  IsChromeControlledNtpUrl(ntp_url);
         }
-        return PrivacySandboxService::IsUrlSuitableForDialog(tab.url);
+        return PrivacySandboxService::IsUrlSuitableForPrompt(tab.url);
       });
 
   if (suitable_tab_available)

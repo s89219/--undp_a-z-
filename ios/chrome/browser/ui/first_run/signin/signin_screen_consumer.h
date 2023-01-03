@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,7 @@ typedef NS_ENUM(NSUInteger, SigninScreenConsumerScreenIntent) {
 
 // Shows details (an icon and a footer) that Chrome is managed.
 // This property needs to be set before the view is loaded.
-@property(nonatomic, assign) BOOL managedEnabled;
+@property(nonatomic, assign) BOOL isManaged;
 // Sets if the screen intent see SigninScreenConsumerScreenIntent.
 // This property needs to be set before the view is loaded.
 @property(nonatomic, assign) SigninScreenConsumerScreenIntent screenIntent;
@@ -42,8 +42,8 @@ typedef NS_ENUM(NSUInteger, SigninScreenConsumerScreenIntent) {
 // This property needs to be set before the view is loaded.
 @property(nonatomic, assign) SigninScreenConsumerSigninStatus signinStatus;
 
-// Sets the |userName|, |email|, |givenName| and |avatar| of the selected
-// identity. The |userName| and |givenName| can be nil. Notifies the UI that an
+// Sets the `userName`, `email`, `givenName` and `avatar` of the selected
+// identity. The `userName` and `givenName` can be nil. Notifies the UI that an
 // identity is available.
 - (void)setSelectedIdentityUserName:(NSString*)userName
                               email:(NSString*)email

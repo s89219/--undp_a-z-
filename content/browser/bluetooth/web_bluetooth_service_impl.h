@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -125,7 +125,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // |render_frame_host|: The RFH that owns this instance.
   // |receiver|: The instance will be bound to this receiver's pipe.
   WebBluetoothServiceImpl(
-      RenderFrameHost* render_frame_host,
+      RenderFrameHost& render_frame_host,
       mojo::PendingReceiver<blink::mojom::WebBluetoothService> receiver);
 
   ~WebBluetoothServiceImpl() override;
@@ -155,9 +155,9 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            DeviceGattServicesDiscoveryTimeout);
 #if PAIR_BLUETOOTH_ON_DEMAND()
-  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplBondingTest,
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            ReadCharacteristicValueNotAuthorized);
-  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplBondingTest,
+  FRIEND_TEST_ALL_PREFIXES(WebBluetoothServiceImplTest,
                            IncompletePairingOnShutdown);
 #endif  // PAIR_BLUETOOTH_ON_DEMAND()
 
@@ -337,7 +337,6 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   // Callbacks for BluetoothDevice::CreateGattConnection.
   void OnCreateGATTConnection(
       const blink::WebBluetoothDeviceId& device_id,
-      base::TimeTicks start_time,
       mojo::AssociatedRemote<blink::mojom::WebBluetoothServerClient> client,
       RemoteServerConnectCallback callback,
       std::unique_ptr<device::BluetoothGattConnection> connection,
@@ -461,10 +460,12 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
   void CancelPairing(const blink::WebBluetoothDeviceId& device_id) override;
   void SetPinCode(const blink::WebBluetoothDeviceId& device_id,
                   const std::string& pincode) override;
-  void PromptForBluetoothCredentials(
+  void PromptForBluetoothPairing(
       const std::u16string& device_identifier,
-      BluetoothCredentialsCallback callback) override;
-
+      BluetoothDelegate::PairPromptCallback callback,
+      BluetoothDelegate::PairingKind pairing_kind,
+      const absl::optional<std::u16string>& pin) override;
+  void PairConfirmed(const blink::WebBluetoothDeviceId& device_id) override;
   // Used to open a BluetoothChooser and start a device discovery session.
   std::unique_ptr<BluetoothDeviceChooserController> device_chooser_controller_;
 
@@ -534,9 +535,7 @@ class CONTENT_EXPORT WebBluetoothServiceImpl
 #endif
 
   base::ScopedObservation<BluetoothDelegate,
-                          BluetoothDelegate::FramePermissionObserver,
-                          &BluetoothDelegate::AddFramePermissionObserver,
-                          &BluetoothDelegate::RemoveFramePermissionObserver>
+                          BluetoothDelegate::FramePermissionObserver>
       observer_{this};
 
   base::WeakPtrFactory<WebBluetoothServiceImpl> weak_ptr_factory_{this};

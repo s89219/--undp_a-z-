@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,11 @@
 #include "base/scoped_observation.h"
 #include "base/sequence_checker.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/ash/printing/automatic_usb_printer_configurer.h"
 #include "chrome/browser/ash/printing/cups_printer_status_creator.h"
 #include "chrome/browser/ash/printing/enterprise_printers_provider.h"
+#include "chrome/browser/ash/printing/oauth2/client_ids_database.h"
 #include "chrome/browser/ash/printing/ppd_provider_factory.h"
 #include "chrome/browser/ash/printing/ppd_resolution_tracker.h"
 #include "chrome/browser/ash/printing/print_servers_policy_provider.h"
@@ -39,7 +41,7 @@
 #include "chromeos/printing/cups_printer_status.h"
 #include "chromeos/printing/printing_constants.h"
 #include "chromeos/printing/uri.h"
-#include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
+#include "chromeos/services/network_config/public/cpp/cros_network_config_observer.h"
 #include "components/device_event_log/device_event_log.h"
 #include "components/policy/policy_constants.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -74,14 +76,14 @@ using ::chromeos::CupsPrinterStatus;
 using ::chromeos::PpdProvider;
 using ::chromeos::Printer;
 using ::chromeos::PrinterClass;
-using printing::PrinterQueryResult;
+using ::printing::PrinterQueryResult;
 
 class CupsPrintersManagerImpl
     : public CupsPrintersManager,
       public EnterprisePrintersProvider::Observer,
       public PrintServersManager::Observer,
       public SyncedPrintersManager::Observer,
-      public chromeos::network_config::mojom::CrosNetworkConfigObserver {
+      public chromeos::network_config::CrosNetworkConfigObserver {
  public:
   // Identifiers for each of the underlying PrinterDetectors this
   // class observes.
@@ -144,7 +146,7 @@ class CupsPrintersManagerImpl
     // TODO(b/192467856) Remove this metric gathering by M99
     // Creates a ZeroconfScannerDetector, then logs the number of scanners
     // detected after 5 minutes.
-    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&SendScannerCountToUMA,
                        ZeroconfScannerDetector::Create()),
@@ -282,7 +284,7 @@ class CupsPrintersManagerImpl
     NotifyObservers({PrinterClass::kEnterprise});
   }
 
-  // mojom::CrosNetworkConfigObserver implementation.
+  // CrosNetworkConfigObserver implementation.
   void OnActiveNetworksChanged(
       std::vector<chromeos::network_config::mojom::NetworkStatePropertiesPtr>
           networks) override {
@@ -302,15 +304,6 @@ class CupsPrintersManagerImpl
     // Notify observers that the printer list has changed.
     RebuildDetectedLists();
   }
-
-  void OnNetworkStateChanged(
-      chromeos::network_config::mojom::NetworkStatePropertiesPtr /* network */)
-      override {}
-  void OnNetworkStateListChanged() override {}
-  void OnDeviceStateListChanged() override {}
-  void OnVpnProvidersChanged() override {}
-  void OnNetworkCertificatesChanged() override {}
-  void OnPoliciesApplied(const std::string& userhash) override {}
 
   // Callback for PrinterDetectors.
   void OnPrintersFound(
@@ -419,20 +412,26 @@ class CupsPrintersManagerImpl
   }
 
   // Callback for FetchPrinterStatus
-  void OnPrinterInfoFetched(const std::string& printer_id,
-                            PrinterStatusCallback cb,
-                            PrinterQueryResult result,
-                            const ::printing::PrinterStatus& printer_status,
-                            const std::string& make_and_model,
-                            const std::vector<std::string>& document_formats,
-                            bool ipp_everywhere) {
-    SendPrinterStatus(printer_id, std::move(cb), result, printer_status);
+  void OnPrinterInfoFetched(
+      const std::string& printer_id,
+      PrinterStatusCallback cb,
+      PrinterQueryResult result,
+      const ::printing::PrinterStatus& printer_status,
+      const std::string& make_and_model,
+      const std::vector<std::string>& document_formats,
+      bool ipp_everywhere,
+      const chromeos::PrinterAuthenticationInfo& auth_info,
+      bool client_info_supported) {
+    SendPrinterStatus(printer_id, std::move(cb), result, printer_status,
+                      auth_info, client_info_supported);
   }
 
   void SendPrinterStatus(const std::string& printer_id,
                          PrinterStatusCallback cb,
                          PrinterQueryResult result,
-                         const ::printing::PrinterStatus& printer_status) {
+                         const ::printing::PrinterStatus& printer_status,
+                         const chromeos::PrinterAuthenticationInfo& auth_info,
+                         bool client_info_supported) {
     base::UmaHistogramEnumeration("Printing.CUPS.PrinterStatusQueryResult",
                                   result);
     switch (result) {
@@ -471,7 +470,8 @@ class CupsPrintersManagerImpl
 
         // Convert printing::PrinterStatus to printing::CupsPrinterStatus
         CupsPrinterStatus cups_printers_status =
-            PrinterStatusToCupsPrinterStatus(printer_id, printer_status);
+            PrinterStatusToCupsPrinterStatus(printer_id, printer_status,
+                                             auth_info, client_info_supported);
 
         // Save the PrinterStatus so it can be attached along side future
         // Printer retrievals.
@@ -850,7 +850,10 @@ void CupsPrintersManager::RegisterProfilePrefs(
 // static
 void CupsPrintersManager::RegisterLocalStatePrefs(
     PrefRegistrySimple* registry) {
+  registry->RegisterStringPref(prefs::kPrintingClientNameTemplate,
+                               std::string());
   PrintServersProvider::RegisterLocalStatePrefs(registry);
+  printing::oauth2::ClientIdsDatabase::RegisterLocalStatePrefs(registry);
 }
 
 }  // namespace ash

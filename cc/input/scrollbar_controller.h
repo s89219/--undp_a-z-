@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -166,6 +166,8 @@ class CC_EXPORT ScrollbarController {
                            AbortAnimatedScrollBeforeStartingAutoscroll);
   FRIEND_TEST_ALL_PREFIXES(ScrollUnifiedLayerTreeHostImplTest,
                            AutoscrollOnDeletedScrollbar);
+  FRIEND_TEST_ALL_PREFIXES(ScrollUnifiedLayerTreeHostImplTest,
+                           ScrollOnLargeThumb);
 
   // "Autoscroll" here means the continuous scrolling that occurs when the
   // pointer is held down on a hit-testable area of the scrollbar such as an
@@ -273,8 +275,13 @@ class CC_EXPORT ScrollbarController {
   gfx::PointF GetScrollbarRelativePosition(const gfx::PointF position_in_widget,
                                            bool* clipped) const;
 
-  // Decides if the scroller should snap to the offset that it was originally at
-  // (i.e the offset before the thumb drag).
+  // Computes an aritificial drag origin for jump clicks, to give the scrollbar
+  // a proper place to snap back to on a jump click then drag
+  gfx::PointF DragOriginForJumpClick(
+      const ScrollbarLayerImplBase* scrollbar) const;
+
+  // Decides if the scroller should snap to the offset that it was
+  // originally at (i.e the offset before the thumb drag).
   bool SnapToDragOrigin(const gfx::PointF pointer_position_in_widget) const;
 
   // Decides whether a track autoscroll should be aborted (or restarted) due to

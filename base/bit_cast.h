@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,8 @@
 #if !HAS_BUILTIN(__builtin_bit_cast)
 #include <string.h>  // memcpy
 #endif
+
+namespace base {
 
 // This is C++20's std::bit_cast<>(). It morally does what
 // `*reinterpret_cast<Dest*>(&source)` does, but the cast/deref pair is
@@ -40,5 +42,7 @@ inline
   return dest;
 #endif
 }
+
+}  // namespace base
 
 #endif  // BASE_BIT_CAST_H_

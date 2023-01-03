@@ -1,14 +1,12 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.net.test;
 
 import android.content.Context;
-import android.net.Network;
 
 import androidx.annotation.GuardedBy;
-import androidx.annotation.Nullable;
 
 import org.chromium.net.BidirectionalStream;
 import org.chromium.net.CronetEngine;
@@ -188,7 +186,7 @@ final class FakeCronetEngine extends CronetEngineBase {
     }
 
     @Override
-    public void bindToNetwork(@Nullable Network network) {
+    public void bindToNetwork(long networkHandle) {
         throw new UnsupportedOperationException(
                 "The multi-network API is not supported by the Fake implementation "
                 + "of Cronet Engine");
@@ -245,8 +243,8 @@ final class FakeCronetEngine extends CronetEngineBase {
             boolean disableCache, boolean disableConnectionMigration, boolean allowDirectExecutor,
             boolean trafficStatsTagSet, int trafficStatsTag, boolean trafficStatsUidSet,
             int trafficStatsUid, RequestFinishedInfo.Listener requestFinishedListener,
-            int idempotency, @Nullable Network network) {
-        if (network != null) {
+            int idempotency, long networkHandle) {
+        if (networkHandle != DEFAULT_NETWORK_HANDLE) {
             throw new UnsupportedOperationException(
                     "The multi-network API is not supported by the Fake implementation "
                     + "of Cronet Engine");
@@ -265,13 +263,20 @@ final class FakeCronetEngine extends CronetEngineBase {
     }
 
     @Override
+    public int getActiveRequestCount() {
+        synchronized (mLock) {
+            return mActiveRequestCount;
+        }
+    }
+
+    @Override
     protected ExperimentalBidirectionalStream createBidirectionalStream(String url,
             BidirectionalStream.Callback callback, Executor executor, String httpMethod,
             List<Map.Entry<String, String>> requestHeaders, @StreamPriority int priority,
             boolean delayRequestHeadersUntilFirstFlush, Collection<Object> connectionAnnotations,
             boolean trafficStatsTagSet, int trafficStatsTag, boolean trafficStatsUidSet,
-            int trafficStatsUid, @Nullable Network network) {
-        if (network != null) {
+            int trafficStatsUid, long networkHandle) {
+        if (networkHandle != DEFAULT_NETWORK_HANDLE) {
             throw new UnsupportedOperationException(
                     "The multi-network API is not supported by the Fake implementation "
                     + "of Cronet Engine");

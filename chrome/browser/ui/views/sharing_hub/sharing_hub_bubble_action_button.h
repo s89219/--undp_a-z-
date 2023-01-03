@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_SHARING_HUB_SHARING_HUB_BUBBLE_ACTION_BUTTON_H_
 
 #include "base/bind.h"
+#include "base/memory/raw_ptr.h"
 #include "ui/views/controls/button/button.h"
 
 namespace views {
@@ -48,8 +49,8 @@ class SharingHubBubbleActionButton : public views::Button {
   const bool action_is_first_party_;
   const std::string action_name_for_metrics_;
 
-  views::Label* title_;
-  views::ImageView* image_;
+  raw_ptr<views::Label> title_;
+  raw_ptr<views::ImageView> image_;
 
   void UpdateColors();
 };

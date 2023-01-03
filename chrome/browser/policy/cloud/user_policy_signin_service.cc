@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,18 +46,19 @@ ProfileManagerObserverBridge::ProfileManagerObserverBridge(
     : user_policy_signin_service_(user_policy_signin_service) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   if (profile_manager)
-    profile_manager->AddObserver(this);
+    profile_manager_observation_.Observe(profile_manager);
 }
 
 void ProfileManagerObserverBridge::OnProfileAdded(Profile* profile) {
   user_policy_signin_service_->OnProfileReady(profile);
 }
 
-ProfileManagerObserverBridge::~ProfileManagerObserverBridge() {
-  ProfileManager* profile_manager = g_browser_process->profile_manager();
-  if (profile_manager)
-    profile_manager->RemoveObserver(this);
+void ProfileManagerObserverBridge::OnProfileManagerDestroying() {
+  profile_manager_observation_.Reset();
+  user_policy_signin_service_->OnProfileAttributesStorageDestroying();
 }
+
+ProfileManagerObserverBridge::~ProfileManagerObserverBridge() = default;
 
 UserPolicySigninService::UserPolicySigninService(
     Profile* profile,
@@ -101,7 +102,8 @@ void UserPolicySigninService::OnPrimaryAccountChanged(
   if (profile_manager && IsSignoutEvent(event)) {
     UpdateProfileAttributesWhenSignout(profile_, profile_manager);
     ShutdownUserCloudPolicyManager();
-  } else if (IsTurnOffSyncEvent(event)) {
+  } else if (IsTurnOffSyncEvent(event) &&
+             !CanApplyPolicies(/*check_for_refresh_token=*/true)) {
     ShutdownUserCloudPolicyManager();
   }
 
@@ -167,8 +169,10 @@ void UserPolicySigninService::Shutdown() {
 void UserPolicySigninService::ShutdownUserCloudPolicyManager() {
   UserCloudPolicyManager* manager = policy_manager();
   // Allow the user to signout again.
-  if (manager)
-    signin_util::SetUserSignoutAllowedForProfile(profile_, true);
+  if (manager) {
+    signin_util::UserSignoutSetting::GetForProfile(profile_)
+        ->ResetSignoutSetting();
+  }
 
   UserPolicySigninServiceBase::ShutdownUserCloudPolicyManager();
 }
@@ -180,16 +184,32 @@ void UserPolicySigninService::OnProfileUserManagementAcceptanceChanged(
 }
 
 void UserPolicySigninService::ProhibitSignoutIfNeeded() {
-  if (policy_manager()->IsClientRegistered() ||
-      internal::g_force_prohibit_signout_for_tests) {
-    DVLOG(1) << "User is registered for policy - prohibiting signout";
-    signin_util::SetUserSignoutAllowedForProfile(profile_, false);
+  if (!policy_manager()->IsClientRegistered() &&
+      !internal::g_force_prohibit_signout_for_tests) {
+    return;
+  }
+
+  DVLOG(1) << "User is registered for policy - prohibiting signout";
+
+  if (!chrome::enterprise_util::UserAcceptedAccountManagement(profile_) &&
+      identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
+    // Ensure user accepted management bit is set.
+    chrome::enterprise_util::SetUserAcceptedAccountManagement(profile_, true);
+  }
+
+  if (identity_manager()->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
+    signin_util::UserSignoutSetting::GetForProfile(profile_)
+        ->SetRevokeSyncConsentAllowed(false);
   }
 }
 
 void UserPolicySigninService::OnProfileReady(Profile* profile) {
   if (profile && profile == profile_)
     InitializeOnProfileReady(profile);
+}
+
+void UserPolicySigninService::OnProfileAttributesStorageDestroying() {
+  observed_profile_.Reset();
 }
 
 void UserPolicySigninService::InitializeOnProfileReady(Profile* profile) {

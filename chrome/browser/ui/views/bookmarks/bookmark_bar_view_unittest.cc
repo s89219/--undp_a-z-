@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,11 @@
 #include <memory>
 
 #include "base/bind.h"
+#include "base/guid.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -22,11 +24,10 @@
 #include "chrome/browser/ui/app_list/app_list_util.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group.h"
+#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_keyed_service.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_service_factory.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view_test_helper.h"
-#include "chrome/browser/ui/views/bookmarks/saved_tab_groups/saved_tab_group_button.h"
 #include "chrome/browser/ui/views/native_widget_factory.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/test_browser_window.h"
@@ -40,13 +41,13 @@
 #include "components/search_engines/template_url_service.h"
 #include "components/search_engines/template_url_service_client.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
-#include "components/tab_groups/tab_group_color.h"
-#include "components/tab_groups/tab_group_id.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
+#include "ui/views/test/views_test_utils.h"
 #include "ui/views/view_utils.h"
 #include "url/gurl.h"
 
@@ -74,7 +75,6 @@ class BookmarkBarViewBaseTest : public ChromeViewsTestBase {
     Browser::CreateParams params(profile(), true);
     params.window = &browser_window_;
     browser_ = std::unique_ptr<Browser>(Browser::Create(params));
-    feature_list_.InitAndEnableFeature(features::kTabGroupsSave);
   }
 
   virtual BookmarkBarView* bookmark_bar_view() = 0;
@@ -110,16 +110,12 @@ class BookmarkBarViewBaseTest : public ChromeViewsTestBase {
                      !test_helper_->GetBookmarkButton(count - 1)->GetVisible());
          ++i) {
       bookmark_bar_view()->SetBounds(0, 0, start_width + i * 10, height);
-      bookmark_bar_view()->Layout();
+      views::test::RunScheduledLayout(bookmark_bar_view());
     }
   }
 
   BookmarkModel* model() {
     return BookmarkModelFactory::GetForBrowserContext(profile());
-  }
-
-  SavedTabGroupModel* stg_model() {
-    return SavedTabGroupServiceFactory::GetForProfile(profile())->model();
   }
 
   void WaitForBookmarkModelToLoad() {
@@ -131,74 +127,6 @@ class BookmarkBarViewBaseTest : public ChromeViewsTestBase {
   void AddNodesToBookmarkBarFromModelString(const std::string& string) {
     bookmarks::test::AddNodesFromModelString(
         model(), model()->bookmark_bar_node(), string);
-  }
-
-  void AddGroupsToSTGModel() {
-    size_t initial_button_count = test_helper_->GetTabGroupButtonCount();
-    const std::u16string title_1 = u"First Group";
-    const std::u16string title_2 = u"Second Group";
-    const std::u16string title_3 = u"The Third Group";
-
-    const tab_groups::TabGroupColorId& color_1 =
-        tab_groups::TabGroupColorId::kGrey;
-    const tab_groups::TabGroupColorId& color_2 =
-        tab_groups::TabGroupColorId::kRed;
-    const tab_groups::TabGroupColorId& color_3 =
-        tab_groups::TabGroupColorId::kGreen;
-
-    std::vector<SavedTabGroupTab> group_1_tabs = {
-        CreateSavedTabGroupTab("A_Link", u"A Link")};
-    std::vector<SavedTabGroupTab> group_2_tabs = {
-        CreateSavedTabGroupTab("B_Link", u"B Link"),
-        CreateSavedTabGroupTab("Not A Link", u"Not A Link")};
-    std::vector<SavedTabGroupTab> group_3_tabs = {
-        CreateSavedTabGroupTab("Mickey", u"Mickey"),
-        CreateSavedTabGroupTab("Donald", u"Donald"),
-        CreateSavedTabGroupTab("Goofy", u"Goofy")};
-
-    SavedTabGroup group_1(id_1_, title_1, color_1, group_1_tabs);
-    SavedTabGroup group_2(id_2_, title_2, color_2, group_2_tabs);
-    SavedTabGroup group_3(id_3_, title_3, color_3, group_3_tabs);
-
-    stg_model()->Add(
-        CreateSavedTabGroup(id_1_, title_1, color_1, group_1_tabs));
-    stg_model()->Add(
-        CreateSavedTabGroup(id_2_, title_2, color_2, group_2_tabs));
-    stg_model()->Add(
-        CreateSavedTabGroup(id_3_, title_3, color_3, group_3_tabs));
-
-    size_t current_button_count = test_helper_->GetTabGroupButtonCount();
-    EXPECT_EQ(3u, current_button_count - initial_button_count);
-    EXPECT_EQ(
-        title_1,
-        test_helper_->GetTabGroupButton(current_button_count - 3)->GetText());
-    EXPECT_EQ(
-        title_2,
-        test_helper_->GetTabGroupButton(current_button_count - 2)->GetText());
-    EXPECT_EQ(
-        title_3,
-        test_helper_->GetTabGroupButton(current_button_count - 1)->GetText());
-  }
-
-  std::vector<GURL> CreateGURL(std::vector<std::string> paths) {
-    std::vector<GURL> gurls;
-    gurls.reserve(paths.size());
-    for (std::string path : paths)
-      gurls.emplace_back(GURL(base_path_ + path));
-    return gurls;
-  }
-
-  SavedTabGroupTab CreateSavedTabGroupTab(std::string url,
-                                          std::u16string title) {
-    return SavedTabGroupTab(GURL(base_path_ + url), title,
-                            favicon::GetDefaultFavicon());
-  }
-
-  SavedTabGroup CreateSavedTabGroup(tab_groups::TabGroupId id,
-                                    std::u16string group_title,
-                                    tab_groups::TabGroupColorId color,
-                                    std::vector<SavedTabGroupTab> group_tabs) {
-    return SavedTabGroup(id, group_title, color, group_tabs);
   }
 
   // Creates the model, blocking until it loads, then creates the
@@ -218,10 +146,6 @@ class BookmarkBarViewBaseTest : public ChromeViewsTestBase {
   TestBrowserWindow browser_window_;
   std::unique_ptr<Browser> browser_;
   std::unique_ptr<BookmarkBarViewTestHelper> test_helper_;
-  std::string base_path_ = "file:///c:/tmp/";
-  tab_groups::TabGroupId id_1_ = tab_groups::TabGroupId::GenerateNew();
-  tab_groups::TabGroupId id_2_ = tab_groups::TabGroupId::GenerateNew();
-  tab_groups::TabGroupId id_3_ = tab_groups::TabGroupId::GenerateNew();
 
  private:
   static std::unique_ptr<KeyedService> CreateTemplateURLService(
@@ -295,72 +219,6 @@ class BookmarkBarViewInWidgetTest : public BookmarkBarViewBaseTest {
   raw_ptr<BookmarkBarView> bookmark_bar_view_ = nullptr;
 };
 
-// Verify that adding a single tab group button adds only 1 button and it is
-// appended to the end of the list.
-TEST_F(BookmarkBarViewTest, AddAdditionalTabGroupButton) {
-  // Adds 3 buttons to our model.
-  AddGroupsToSTGModel();
-
-  // Create a new SavedTabGroup and add it to our model.
-  tab_groups::TabGroupId group_id(tab_groups::TabGroupId::GenerateNew());
-  const std::u16string group_title = u"Additional Group";
-  const tab_groups::TabGroupColorId& group_color =
-      tab_groups::TabGroupColorId::kBlue;
-
-  std::vector<SavedTabGroupTab> group_tabs = {
-      CreateSavedTabGroupTab("Additional_Link", u"Additional Link")};
-  stg_model()->Add(
-      CreateSavedTabGroup(group_id, group_title, group_color, group_tabs));
-
-  // Verify we have 4 buttons and the title of the group is the same.
-  EXPECT_EQ(4u, test_helper_->GetTabGroupButtonCount());
-  EXPECT_EQ(group_title, test_helper_->GetTabGroupButton(3)->GetText());
-}
-
-// Verify that removing a tab group from the model removes the correct button.
-TEST_F(BookmarkBarViewTest, RemoveTabGroupButton) {
-  // Adds 3 buttons to our model.
-  AddGroupsToSTGModel();
-
-  // Removes the second tab group button.
-  stg_model()->Remove(id_2_);
-
-  // Verify we have 2 buttons and do not have the title of the second tab group.
-  EXPECT_EQ(2u, test_helper_->GetTabGroupButtonCount());
-  EXPECT_EQ(u"First Group", test_helper_->GetTabGroupButton(0)->GetText());
-  EXPECT_EQ(u"The Third Group", test_helper_->GetTabGroupButton(1)->GetText());
-}
-
-// Verify that Closing a group affects a tab group buttons outline.
-TEST_F(BookmarkBarViewTest, TabGroupButtonOutline) {
-  // Adds 3 buttons to our model.
-  AddGroupsToSTGModel();
-
-  // Expect all buttons to hide outlines.
-  SavedTabGroupButton* button1 = views::AsViewClass<SavedTabGroupButton>(
-      test_helper_->GetTabGroupButton(0));
-  SavedTabGroupButton* button2 = views::AsViewClass<SavedTabGroupButton>(
-      test_helper_->GetTabGroupButton(1));
-  SavedTabGroupButton* button3 = views::AsViewClass<SavedTabGroupButton>(
-      test_helper_->GetTabGroupButton(2));
-  ASSERT_NE(button1, nullptr);
-  ASSERT_NE(button2, nullptr);
-  ASSERT_NE(button3, nullptr);
-
-  EXPECT_FALSE(button1->HasButtonOutline());
-  EXPECT_FALSE(button2->HasButtonOutline());
-  EXPECT_FALSE(button3->HasButtonOutline());
-
-  // Notify that the the second tab group button has been removed from all
-  // tabstrips.
-  stg_model()->GroupClosed(id_2_);
-
-  // Verify all buttons still have no button outlines.
-  EXPECT_FALSE(button1->HasButtonOutline());
-  EXPECT_FALSE(button2->HasButtonOutline());
-  EXPECT_FALSE(button3->HasButtonOutline());
-}
-
 // Verify that in instant extended mode the visibility of the apps shortcut
 // button properly follows the pref value.
 TEST_F(BookmarkBarViewTest, AppsShortcutVisibility) {
@@ -399,13 +257,13 @@ TEST_F(BookmarkBarViewTest, OverflowVisibility) {
   // Go really big, which should force all buttons to be added.
   bookmark_bar_view()->SetBounds(0, 0, 5000,
                                  bookmark_bar_view()->bounds().height());
-  bookmark_bar_view()->Layout();
+  views::test::RunScheduledLayout(bookmark_bar_view());
   EXPECT_EQ(6u, test_helper_->GetBookmarkButtonCount());
   EXPECT_FALSE(test_helper_->overflow_button()->GetVisible());
 
   bookmark_bar_view()->SetBounds(0, 0, width_for_one,
                                  bookmark_bar_view()->bounds().height());
-  bookmark_bar_view()->Layout();
+  views::test::RunScheduledLayout(bookmark_bar_view());
   EXPECT_TRUE(test_helper_->overflow_button()->GetVisible());
 }
 
@@ -421,12 +279,12 @@ TEST_F(BookmarkBarViewTest, ButtonsDynamicallyAddedAfterModelHasNodes) {
   // Go really big, which should force all buttons to be added.
   bookmark_bar_view()->SetBounds(0, 0, 5000,
                                  bookmark_bar_view()->bounds().height());
-  bookmark_bar_view()->Layout();
+  views::test::RunScheduledLayout(bookmark_bar_view());
   EXPECT_EQ(6u, test_helper_->GetBookmarkButtonCount());
 
   // Ensure buttons were added in the correct place.
   auto button_iter =
-      bookmark_bar_view()->FindChild(test_helper_->managed_bookmarks_button());
+      bookmark_bar_view()->FindChild(test_helper_->saved_tab_group_bar());
   for (size_t i = 0; i < test_helper_->GetBookmarkButtonCount(); ++i) {
     ++button_iter;
     ASSERT_NE(bookmark_bar_view()->children().cend(), button_iter);
@@ -444,11 +302,11 @@ TEST_F(BookmarkBarViewTest, ButtonsDynamicallyAdded) {
   // Go really big, which should force all buttons to be added.
   bookmark_bar_view()->SetBounds(0, 0, 5000,
                                  bookmark_bar_view()->bounds().height());
-  bookmark_bar_view()->Layout();
+  views::test::RunScheduledLayout(bookmark_bar_view());
   EXPECT_EQ(6u, test_helper_->GetBookmarkButtonCount());
   // Ensure buttons were added in the correct place.
   auto button_iter =
-      bookmark_bar_view()->FindChild(test_helper_->managed_bookmarks_button());
+      bookmark_bar_view()->FindChild(test_helper_->saved_tab_group_bar());
   for (size_t i = 0; i < test_helper_->GetBookmarkButtonCount(); ++i) {
     ++button_iter;
     ASSERT_NE(bookmark_bar_view()->children().cend(), button_iter);
@@ -460,7 +318,7 @@ TEST_F(BookmarkBarViewTest, AddNodesWhenBarAlreadySized) {
   bookmark_bar_view()->SetBounds(0, 0, 5000,
                                  bookmark_bar_view()->bounds().height());
   AddNodesToBookmarkBarFromModelString("a b c d e f ");
-  bookmark_bar_view()->Layout();
+  views::test::RunScheduledLayout(bookmark_bar_view());
   EXPECT_EQ("a b c d e f", GetStringForVisibleButtons());
 }
 
@@ -517,40 +375,46 @@ TEST_F(BookmarkBarViewTest, ChangeTitle) {
   AddNodesToBookmarkBarFromModelString("a b c d e f ");
   EXPECT_EQ(0u, test_helper_->GetBookmarkButtonCount());
 
-  model()->SetTitle(bookmark_bar_node->children()[0].get(), u"a1");
+  model()->SetTitle(bookmark_bar_node->children()[0].get(), u"a1",
+                    bookmarks::metrics::BookmarkEditSource::kUser);
   EXPECT_EQ(0u, test_helper_->GetBookmarkButtonCount());
 
   // Make enough room for 1 node.
   SizeUntilButtonsVisible(1);
   EXPECT_EQ("a1", GetStringForVisibleButtons());
 
-  model()->SetTitle(bookmark_bar_node->children()[1].get(), u"b1");
+  model()->SetTitle(bookmark_bar_node->children()[1].get(), u"b1",
+                    bookmarks::metrics::BookmarkEditSource::kUser);
   EXPECT_EQ("a1", GetStringForVisibleButtons());
 
-  model()->SetTitle(bookmark_bar_node->children()[5].get(), u"f1");
+  model()->SetTitle(bookmark_bar_node->children()[5].get(), u"f1",
+                    bookmarks::metrics::BookmarkEditSource::kUser);
   EXPECT_EQ("a1", GetStringForVisibleButtons());
 
-  model()->SetTitle(bookmark_bar_node->children()[3].get(), u"d1");
+  model()->SetTitle(bookmark_bar_node->children()[3].get(), u"d1",
+                    bookmarks::metrics::BookmarkEditSource::kUser);
 
   // Make the second button visible, changes the title of the first to something
   // really long and make sure the second button hides.
   SizeUntilButtonsVisible(2);
   EXPECT_EQ("a1 b1", GetStringForVisibleButtons());
   model()->SetTitle(bookmark_bar_node->children()[0].get(),
-                    u"a_really_long_title");
+                    u"a_really_long_title",
+                    bookmarks::metrics::BookmarkEditSource::kUser);
   EXPECT_LE(1u, test_helper_->GetBookmarkButtonCount());
 
   // Change the title back and make sure the 2nd button is visible again. Don't
   // use GetStringForVisibleButtons() here as more buttons may have been
   // created.
-  model()->SetTitle(bookmark_bar_node->children()[0].get(), u"a1");
+  model()->SetTitle(bookmark_bar_node->children()[0].get(), u"a1",
+                    bookmarks::metrics::BookmarkEditSource::kUser);
   ASSERT_LE(2u, test_helper_->GetBookmarkButtonCount());
   EXPECT_TRUE(test_helper_->GetBookmarkButton(0)->GetVisible());
   EXPECT_TRUE(test_helper_->GetBookmarkButton(1)->GetVisible());
 
   bookmark_bar_view()->SetBounds(0, 0, 5000,
                                  bookmark_bar_view()->bounds().height());
-  bookmark_bar_view()->Layout();
+  views::test::RunScheduledLayout(bookmark_bar_view());
   EXPECT_EQ("a1 b1 c d1 e f1", GetStringForVisibleButtons());
 }
 
@@ -645,6 +509,54 @@ TEST_F(BookmarkBarViewTest, ManagedShowAppsShortcutInBookmarksBar) {
   EXPECT_FALSE(test_helper_->apps_page_shortcut()->GetVisible());
 }
 #endif
+
+// Verifies the SavedTabGroupBar's page navigator is set when the
+// bookmarkbarview's page navigator is set.
+TEST_F(BookmarkBarViewTest, PageNavigatorSet) {
+  // Expect SavedTabGroupBar to have a page navigator when BookmarkBarView
+  // does.
+  EXPECT_FALSE(test_helper_->saved_tab_group_bar()->page_navigator());
+  bookmark_bar_view()->SetPageNavigator(browser());
+  EXPECT_TRUE(test_helper_->saved_tab_group_bar()->page_navigator());
+
+  // Reset both page navigators.
+  bookmark_bar_view()->SetPageNavigator(nullptr);
+
+  // Expect we can set the SaveTabGroupBar's page navigator without affecting
+  // BookmarkBarView.
+  test_helper_->saved_tab_group_bar()->SetPageNavigator(browser());
+  EXPECT_TRUE(test_helper_->saved_tab_group_bar()->page_navigator());
+}
+
+TEST_F(BookmarkBarViewTest, OnSavedTabGroupUpdateBookmarkBarCallsLayout) {
+  SavedTabGroupKeyedService* keyed_service =
+      SavedTabGroupServiceFactory::GetForProfile(browser()->profile());
+  ASSERT_TRUE(keyed_service);
+  ASSERT_TRUE(keyed_service->model());
+
+  // Add 3 saved tab groups.
+  keyed_service->model()->Add(SavedTabGroup(
+      std::u16string(u"tab group 1"), tab_groups::TabGroupColorId::kGrey, {}));
+
+  base::GUID button_2_id = base::GUID::GenerateRandomV4();
+  keyed_service->model()->Add(SavedTabGroup(std::u16string(u"tab group 2"),
+                                            tab_groups::TabGroupColorId::kGrey,
+                                            {}, button_2_id));
+
+  keyed_service->model()->Add(SavedTabGroup(
+      std::u16string(u"tab group 3"), tab_groups::TabGroupColorId::kGrey, {}));
+
+  // Save the position of the 3rd button.
+  ASSERT_EQ(3u, test_helper_->saved_tab_group_bar()->children().size());
+  const auto* button_3 = test_helper_->saved_tab_group_bar()->children()[2];
+  gfx::Rect bounds_in_screen = button_3->GetBoundsInScreen();
+
+  // Remove the middle tab group.
+  keyed_service->model()->Remove(button_2_id);
+
+  // Make sure the positions of the buttons were updated.
+  EXPECT_EQ(bounds_in_screen, button_3->GetBoundsInScreen());
+}
 
 TEST_F(BookmarkBarViewInWidgetTest, UpdateTooltipText) {
   widget()->Show();

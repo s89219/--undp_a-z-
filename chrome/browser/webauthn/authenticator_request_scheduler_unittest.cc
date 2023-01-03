@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "chrome/browser/webauthn/chrome_authenticator_request_delegate.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/test/prerender_test_util.h"
 #include "content/public/test/web_contents_tester.h"
 #include "third_party/blink/public/common/features.h"
 
@@ -27,25 +28,25 @@ class AuthenticatorRequestSchedulerTest
 TEST_F(AuthenticatorRequestSchedulerTest,
        SingleWebContents_AtMostOneSimultaneousRequest) {
   auto first_request = AuthenticatorRequestScheduler::CreateRequestDelegate(
-      web_contents()->GetMainFrame());
+      web_contents()->GetPrimaryMainFrame());
   ASSERT_TRUE(first_request);
 
   ASSERT_FALSE(AuthenticatorRequestScheduler::CreateRequestDelegate(
-      web_contents()->GetMainFrame()));
+      web_contents()->GetPrimaryMainFrame()));
 
   first_request.reset();
   ASSERT_TRUE(AuthenticatorRequestScheduler::CreateRequestDelegate(
-      web_contents()->GetMainFrame()));
+      web_contents()->GetPrimaryMainFrame()));
 }
 
 TEST_F(AuthenticatorRequestSchedulerTest,
        TwoWebContents_TwoSimultaneousRequests) {
   auto first_request = AuthenticatorRequestScheduler::CreateRequestDelegate(
-      web_contents()->GetMainFrame());
+      web_contents()->GetPrimaryMainFrame());
 
   auto second_web_contents = CreateTestWebContents();
   auto second_request = AuthenticatorRequestScheduler::CreateRequestDelegate(
-      second_web_contents->GetMainFrame());
+      second_web_contents->GetPrimaryMainFrame());
 
   ASSERT_TRUE(first_request);
   ASSERT_TRUE(second_request);
@@ -70,7 +71,7 @@ TEST_F(AuthenticatorRequestSchedulerFencedFramesTest,
   NavigateAndCommit(GURL("https://example.com"));
 
   auto first_request = AuthenticatorRequestScheduler::CreateRequestDelegate(
-      web_contents()->GetMainFrame());
+      web_contents()->GetPrimaryMainFrame());
 
   content::RenderFrameHost* fenced_frame_root =
       content::RenderFrameHostTester::For(main_rfh())->AppendFencedFrame();
@@ -84,21 +85,17 @@ TEST_F(AuthenticatorRequestSchedulerFencedFramesTest,
 class AuthenticatorRequestSchedulerPrerenderTest
     : public AuthenticatorRequestSchedulerTest {
  public:
-  AuthenticatorRequestSchedulerPrerenderTest() {
-    scoped_feature_list_.InitWithFeatures(
-        {blink::features::kPrerender2},
-        // Disable the memory requirement of Prerender2 so the test can run on
-        // any bot.
-        {blink::features::kPrerender2MemoryControls});
-  }
-  ~AuthenticatorRequestSchedulerPrerenderTest() override = default;
+  AuthenticatorRequestSchedulerPrerenderTest() = default;
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_;
+  content::test::ScopedPrerenderFeatureList prerender_feature_list_;
 };
 
 TEST_F(AuthenticatorRequestSchedulerPrerenderTest,
        SingleWebContents_OneRequestInPrerendering) {
+  content::test::ScopedPrerenderWebContentsDelegate web_contents_delegate(
+      *web_contents());
+
   // Navigate to an initial page.
   NavigateAndCommit(GURL("https://example.com"));
 

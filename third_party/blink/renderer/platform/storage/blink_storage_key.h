@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,18 +37,6 @@ class PLATFORM_EXPORT BlinkStorageKey {
   // constructors and factory methods.
   explicit BlinkStorageKey(scoped_refptr<const SecurityOrigin> origin);
 
-  // Creates a BlinkStorageKey with the given origin and top-level site.
-  // `origin` must not be null. `origin` can be opaque.
-  BlinkStorageKey(scoped_refptr<const SecurityOrigin> origin,
-                  const BlinkSchemefulSite& top_level_site);
-
-  // Creates a BlinkStorageKey with the given origin, top-level site and nonce.
-  // `origin` must not be null. `origin` can be opaque.
-  // `nonce` can be null to create a key without a nonce.
-  BlinkStorageKey(scoped_refptr<const SecurityOrigin> origin,
-                  const BlinkSchemefulSite& top_level_site,
-                  const base::UnguessableToken* nonce);
-
   // Creates a BlinkStorageKey with the given origin, top-level site and nonce.
   // `origin` must not be null. `origin` can be opaque.
   // `nonce` can be null to create a key without a nonce.
@@ -60,10 +48,12 @@ class PLATFORM_EXPORT BlinkStorageKey {
                   mojom::blink::AncestorChainBit ancestor_chain_bit);
 
   // Creates a BlinkStorageKey converting the given StorageKey `storage_key`.
-  BlinkStorageKey(const blink::StorageKey& storage_key);
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  BlinkStorageKey(const StorageKey& storage_key);
 
   // Converts this BlinkStorageKey into a StorageKey.
-  operator blink::StorageKey() const;
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  operator StorageKey() const;
 
   ~BlinkStorageKey() = default;
 
@@ -77,6 +67,20 @@ class PLATFORM_EXPORT BlinkStorageKey {
       const base::UnguessableToken& nonce);
 
   static BlinkStorageKey CreateFromStringForTesting(const WTF::String& origin);
+
+  // Takes in a SecurityOrigin `origin` and a BlinkSchemefulSite
+  // `top_level_site` and returns a BlinkStorageKey with a nullptr nonce and an
+  // AncestorChainBit set based on whether `origin` and `top_level_site` are
+  // schemeful-same-site. NOTE: The approach used by this method for calculating
+  // the AncestorChainBit is different than what's done in production code,
+  // where the whole frame tree is used. In other words, this method cannot be
+  // used to create a StorageKey corresponding to a first-party iframe with a
+  // cross-site ancestor (e.g., "a.com" -> "b.com" -> "a.com"). To create a
+  // BlinkStorageKey for that scenario, use the BlinkStorageKey constructor that
+  // has an AncestorChainBit parameter.
+  static BlinkStorageKey CreateForTesting(
+      scoped_refptr<const SecurityOrigin> origin,
+      const BlinkSchemefulSite& top_level_site);
 
   const scoped_refptr<const SecurityOrigin>& GetSecurityOrigin() const {
     return origin_;
@@ -94,14 +98,39 @@ class PLATFORM_EXPORT BlinkStorageKey {
 
   String ToDebugString() const;
 
+  // Returns a copy of what this storage key would have been if
+  // `kThirdPartyStoragePartitioning` were enabled. This is a convenience
+  // function for callsites that benefit from future functionality.
+  // TODO(crbug.com/1159586): Remove when no longer needed.
+  BlinkStorageKey CopyWithForceEnabledThirdPartyStoragePartitioning() const {
+    BlinkStorageKey storage_key = *this;
+    storage_key.top_level_site_ =
+        storage_key.top_level_site_if_third_party_enabled_;
+    storage_key.ancestor_chain_bit_ =
+        storage_key.ancestor_chain_bit_if_third_party_enabled_;
+    return storage_key;
+  }
+
  private:
   BlinkStorageKey(scoped_refptr<const SecurityOrigin> origin,
                   const base::UnguessableToken* nonce);
 
   scoped_refptr<const SecurityOrigin> origin_;
   BlinkSchemefulSite top_level_site_;
+  // Stores the value `top_level_site_` would have had if
+  // `kThirdPartyStoragePartitioning` were enabled. This isn't used in
+  // serialization or comparison.
+  // TODO(crbug.com/1159586): Remove when no longer needed.
+  BlinkSchemefulSite top_level_site_if_third_party_enabled_;
   absl::optional<base::UnguessableToken> nonce_;
-  mojom::blink::AncestorChainBit ancestor_chain_bit_;
+  mojom::blink::AncestorChainBit ancestor_chain_bit_{
+      mojom::blink::AncestorChainBit::kSameSite};
+  // Stores the value `ancestor_chain_bit_` would have had if
+  // `kThirdPartyStoragePartitioning` were enabled. This isn't used in
+  // serialization or comparison.
+  // TODO(crbug.com/1159586): Remove when no longer needed.
+  mojom::blink::AncestorChainBit ancestor_chain_bit_if_third_party_enabled_{
+      mojom::blink::AncestorChainBit::kSameSite};
 };
 
 PLATFORM_EXPORT

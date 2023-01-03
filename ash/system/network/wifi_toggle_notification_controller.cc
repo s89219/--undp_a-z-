@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,7 +39,8 @@ std::unique_ptr<Notification> CreateNotification(bool wifi_enabled) {
           network_icon::GetImageForWiFiEnabledState(wifi_enabled)),
       std::u16string() /* display_source */, GURL(),
       message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
-                                 kNotifierWifiToggle),
+                                 kNotifierWifiToggle,
+                                 NotificationCatalogName::kWifiToggle),
       message_center::RichNotificationData(), nullptr);
   return notification;
 }

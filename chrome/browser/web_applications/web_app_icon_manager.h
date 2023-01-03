@@ -1,34 +1,43 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_WEB_APPLICATIONS_WEB_APP_ICON_MANAGER_H_
 #define CHROME_BROWSER_WEB_APPLICATIONS_WEB_APP_ICON_MANAGER_H_
 
+#include <stddef.h>
+#include <stdint.h>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
-#include "base/task/sequenced_task_runner.h"
-#include "chrome/browser/web_applications/app_registrar_observer.h"
+#include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_install_manager.h"
 #include "chrome/browser/web_applications/web_app_install_manager_observer.h"
-#include "chrome/browser/web_applications/web_app_registrar.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/image/image_skia.h"
 
 class Profile;
 
+namespace base {
+class SequencedTaskRunner;
+class Time;
+}  // namespace base
+
 namespace web_app {
 
 class FileUtilsWrapper;
+class WebAppRegistrar;
 
 using SquareSizeDip = int;
 
@@ -89,15 +98,21 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
   void ReadIcons(const AppId& app_id,
                  IconPurpose purpose,
                  const SortedSizesPx& icon_sizes,
-                 ReadIconsCallback callback) const;
+                 ReadIconsCallback callback);
+
+  using ReadIconsUpdateTimeCallback = base::OnceCallback<void(
+      base::flat_map<SquareSizePx, base::Time> time_map)>;
+  // Reads all the last updated time for all icons in the app. Returns empty map
+  // in |callback| if IO error.
+  void ReadIconsLastUpdateTime(const AppId& app_id,
+                               ReadIconsUpdateTimeCallback callback);
 
   // TODO (crbug.com/1102701): Callback with const ref instead of value.
   using ReadIconBitmapsCallback =
       base::OnceCallback<void(IconBitmaps icon_bitmaps)>;
   // Reads all icon bitmaps for an app. Returns empty |icon_bitmaps| in
   // |callback| if IO error.
-  void ReadAllIcons(const AppId& app_id,
-                    ReadIconBitmapsCallback callback) const;
+  void ReadAllIcons(const AppId& app_id, ReadIconBitmapsCallback callback);
 
   using ReadShortcutsMenuIconsCallback = base::OnceCallback<void(
       ShortcutsMenuIconBitmaps shortcuts_menu_icon_bitmaps)>;
@@ -106,7 +121,7 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
   // as that of its corresponding shortcut in the manifest's shortcuts vector.
   // Returns empty vector in |callback| if we hit any error.
   void ReadAllShortcutsMenuIcons(const AppId& app_id,
-                                 ReadShortcutsMenuIconsCallback callback) const;
+                                 ReadShortcutsMenuIconsCallback callback);
 
   using ReadIconWithPurposeCallback =
       base::OnceCallback<void(IconPurpose, SkBitmap)>;
@@ -116,7 +131,7 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
   void ReadSmallestIcon(const AppId& app_id,
                         const std::vector<IconPurpose>& purposes,
                         SquareSizePx min_size_in_px,
-                        ReadIconWithPurposeCallback callback) const;
+                        ReadIconWithPurposeCallback callback);
 
   using ReadCompressedIconWithPurposeCallback =
       base::OnceCallback<void(IconPurpose, std::vector<uint8_t> data)>;
@@ -127,21 +142,7 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
       const AppId& app_id,
       const std::vector<IconPurpose>& purposes,
       SquareSizePx min_size_in_px,
-      ReadCompressedIconWithPurposeCallback callback) const;
-
-  using ReadIconCallback = base::OnceCallback<void(SkBitmap)>;
-  // Convenience method for |ReadSmallestIcon| with IconPurpose::ANY only.
-  void ReadSmallestIconAny(const AppId& app_id,
-                           SquareSizePx min_icon_size,
-                           ReadIconCallback callback) const;
-
-  using ReadCompressedIconCallback =
-      base::OnceCallback<void(std::vector<uint8_t> data)>;
-  // Convenience method for |ReadSmallestCompressedIcon| with IconPurpose::ANY
-  // only.
-  void ReadSmallestCompressedIconAny(const AppId& app_id,
-                                     SquareSizePx min_icon_size,
-                                     ReadCompressedIconCallback callback) const;
+      ReadCompressedIconWithPurposeCallback callback);
 
   // Returns a square icon of gfx::kFaviconSize px, or an empty bitmap if not
   // found.
@@ -161,7 +162,7 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
   void ReadIconAndResize(const AppId& app_id,
                          IconPurpose purpose,
                          SquareSizePx desired_icon_size,
-                         ReadIconsCallback callback) const;
+                         ReadIconsCallback callback);
 
   // Reads multiple densities of the icon for each supported UI scale factor.
   // See ui/base/layout.h. Returns null image in |callback| if no icons found
@@ -172,8 +173,20 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
                                SquareSizeDip size_in_dip,
                                ReadImageSkiaCallback callback);
 
+  struct IconFilesCheck {
+    size_t empty = 0;
+    size_t missing = 0;
+  };
+  void CheckForEmptyOrMissingIconFiles(
+      const AppId& app_id,
+      base::OnceCallback<void(IconFilesCheck)> callback) const;
+
   void SetFaviconReadCallbackForTesting(FaviconReadCallback callback);
   void SetFaviconMonochromeReadCallbackForTesting(FaviconReadCallback callback);
+
+  base::FilePath GetIconFilePathForTesting(const AppId& app_id,
+                                           IconPurpose purpose,
+                                           SquareSizePx size);
 
   // Collects icon read/write errors (unbounded) if the |kRecordWebAppDebugInfo|
   // flag is enabled to be used by: chrome://web-app-internals
@@ -181,10 +194,8 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
   std::vector<std::string>* error_log() { return error_log_.get(); }
 
  private:
-  static void WrapReadIconWithPurposeCallback(
-      ReadIconWithPurposeCallback callback,
-      IconPurpose purpose,
-      SkBitmap bitmap);
+  base::WeakPtr<const WebAppIconManager> GetWeakPtr() const;
+  base::WeakPtr<WebAppIconManager> GetWeakPtr();
 
   absl::optional<IconSizeAndPurpose> FindIconMatchSmaller(
       const AppId& app_id,
@@ -204,8 +215,8 @@ class WebAppIconManager : public WebAppInstallManagerObserver {
   void OnMonochromeIconConverted(const AppId& app_id,
                                  gfx::ImageSkia converted_image);
 
-  raw_ptr<WebAppRegistrar> registrar_;
-  raw_ptr<WebAppInstallManager> install_manager_;
+  raw_ptr<WebAppRegistrar, DanglingUntriaged> registrar_;
+  raw_ptr<WebAppInstallManager, DanglingUntriaged> install_manager_;
   base::FilePath web_apps_directory_;
   scoped_refptr<FileUtilsWrapper> utils_;
   scoped_refptr<base::SequencedTaskRunner> icon_task_runner_;

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,6 @@
 #include "base/metrics/field_trial_params.h"
 #include "base/notreached.h"
 #include "components/safe_browsing/core/common/features.h"
-#include "content/public/common/content_features.h"
-#include "third_party/blink/public/common/features.h"
 
 using base::android::ConvertJavaStringToUTF8;
 using base::android::JavaParamRef;
@@ -25,7 +23,6 @@ namespace {
 // this array may either refer to features defined in the header of this file or
 // in other locations in the code base (e.g. content/, components/, etc).
 const base::Feature* const kFeaturesExposedToJava[] = {
-    &blink::features::kInitialNavigationEntry,
     &features::kWebViewConnectionlessSafeBrowsing,
     &features::kWebViewDisplayCutout,
     &features::kWebViewMixedContentAutoupgrades,
@@ -33,8 +30,8 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kWebViewMeasureScreenCoverage,
     &features::kWebViewJavaJsBridgeMojo,
     &features::kWebViewUseMetricsUploadService,
-    &features::kWebViewXRequestedWithHeader,
-    &features::kWebViewSynthesizePageLoadOnlyOnInitialMainDocumentAccess,
+    &features::kWebViewXRequestedWithHeaderControl,
+    &features::kWebViewXRequestedWithHeaderManifestAllowList,
 };
 
 const base::Feature* FindFeatureExposedToJava(const std::string& feature_name) {

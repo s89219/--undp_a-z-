@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,9 +26,6 @@ import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.support.test.InstrumentationRegistry;
-import android.support.test.uiautomator.UiDevice;
-import android.support.test.uiautomator.UiObject;
-import android.support.test.uiautomator.UiSelector;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.TextView;
@@ -37,6 +34,9 @@ import androidx.test.espresso.ViewInteraction;
 import androidx.test.espresso.matcher.RootMatchers;
 import androidx.test.filters.MediumTest;
 import androidx.test.filters.SmallTest;
+import androidx.test.uiautomator.UiDevice;
+import androidx.test.uiautomator.UiObject;
+import androidx.test.uiautomator.UiSelector;
 
 import org.hamcrest.Matcher;
 import org.hamcrest.Matchers;
@@ -65,7 +65,7 @@ import org.chromium.chrome.browser.ShortcutHelper;
 import org.chromium.chrome.browser.app.ChromeActivity;
 import org.chromium.chrome.browser.browserservices.intents.BitmapHelper;
 import org.chromium.chrome.browser.customtabs.CustomTabActivityTestRule;
-import org.chromium.chrome.browser.customtabs.CustomTabsTestUtils;
+import org.chromium.chrome.browser.customtabs.CustomTabsIntentTestUtils;
 import org.chromium.chrome.browser.feature_engagement.TrackerFactory;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
@@ -125,6 +125,7 @@ import java.util.List;
  */
 @RunWith(ChromeJUnit4ClassRunner.class)
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
+@Features.EnableFeatures(ChromeFeatureList.ENABLE_IPH)
 public class AppBannerManagerTest {
     @Rule
     public ChromeTabbedActivityTestRule mTabbedActivityTestRule =
@@ -155,7 +156,7 @@ public class AppBannerManagerTest {
             "/chrome/test/data/banners/manifest_prefer_related_chrome_app.json";
 
     private static final String WEB_APP_MANIFEST_FOR_BOTTOM_SHEET_INSTALL =
-            "/chrome/test/data/banners/manifest_bottom_sheet_install.json";
+            "/chrome/test/data/banners/manifest_with_screenshots.json";
 
     private static final String NATIVE_ICON_PATH = "/chrome/test/data/banners/launcher-icon-4x.png";
 
@@ -528,7 +529,7 @@ public class AppBannerManagerTest {
         WebappDataStorage.setFactoryForTests(dataStorageFactory);
 
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
-                CustomTabsTestUtils.createMinimalCustomTabIntent(
+                CustomTabsIntentTestUtils.createMinimalCustomTabIntent(
                         InstrumentationRegistry.getTargetContext(),
                         ContentUrlConstants.ABOUT_BLANK_DISPLAY_URL));
         triggerModalWebAppBanner(mCustomTabActivityTestRule,
@@ -609,7 +610,7 @@ public class AppBannerManagerTest {
     @Feature({"AppBanners"})
     public void testAppInstalledModalNativeAppBannerCustomTab() throws Exception {
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
-                CustomTabsTestUtils.createMinimalCustomTabIntent(
+                CustomTabsIntentTestUtils.createMinimalCustomTabIntent(
                         InstrumentationRegistry.getTargetContext(),
                         ContentUrlConstants.ABOUT_BLANK_DISPLAY_URL));
 
@@ -689,7 +690,7 @@ public class AppBannerManagerTest {
     @Feature({"AppBanners"})
     public void testModalNativeAppBannerCanBeTriggeredMultipleTimesCustomTab() throws Exception {
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
-                CustomTabsTestUtils.createMinimalCustomTabIntent(
+                CustomTabsIntentTestUtils.createMinimalCustomTabIntent(
                         InstrumentationRegistry.getTargetContext(),
                         ContentUrlConstants.ABOUT_BLANK_DISPLAY_URL));
 
@@ -720,7 +721,7 @@ public class AppBannerManagerTest {
     @Feature({"AppBanners"})
     public void testModalWebAppBannerCanBeTriggeredMultipleTimesCustomTab() throws Exception {
         mCustomTabActivityTestRule.startCustomTabActivityWithIntent(
-                CustomTabsTestUtils.createMinimalCustomTabIntent(
+                CustomTabsIntentTestUtils.createMinimalCustomTabIntent(
                         InstrumentationRegistry.getTargetContext(),
                         ContentUrlConstants.ABOUT_BLANK_DISPLAY_URL));
 
@@ -781,7 +782,11 @@ public class AppBannerManagerTest {
     @Test
     @MediumTest
     @Feature({"AppBanners"})
-    @CommandLineFlags.Add({"enable-features=" + ChromeFeatureList.INSTALLABLE_AMBIENT_BADGE_MESSAGE,
+    @CommandLineFlags.
+    Add({"enable-features=" + ChromeFeatureList.INSTALLABLE_AMBIENT_BADGE_MESSAGE + "<Study",
+            "force-fieldtrials=Study/Group",
+            "force-fieldtrial-params="
+                    + "Study.Group:installable_ambient_badge_message_throttle_domains_capacity/0",
             "disable-features=" + ChromeFeatureList.INSTALLABLE_AMBIENT_BADGE_INFOBAR})
     public void
     testBlockedAmbientBadgeDoesNotAppearAgainForMonths_Message() throws Exception {
@@ -847,7 +852,6 @@ public class AppBannerManagerTest {
     @MediumTest
     @Feature({"AppBanners"})
     @CommandLineFlags.Add("enable-features=" + ChromeFeatureList.INSTALLABLE_AMBIENT_BADGE_INFOBAR)
-    @DisabledTest(message = "Test is flaky, see crbug.com/1054196")
     public void testAmbientBadgeDoesNotAppearWhenEventCanceled() throws Exception {
         String webBannerUrl = WebappTestPage.getServiceWorkerUrlWithAction(
                 mTestServer, "stash_event_and_prevent_default");
@@ -980,7 +984,6 @@ public class AppBannerManagerTest {
     @Test
     @MediumTest
     @Feature({"AppBanners"})
-    @DisabledTest(message = "crbug.com/1238320 test is flaky")
     public void testDismissBottomSheetResolvesUserChoice() throws Exception {
         triggerBottomSheet(mTabbedActivityTestRule,
                 WebappTestPage.getServiceWorkerUrlWithManifestAndAction(mTestServer,
@@ -1059,7 +1062,7 @@ public class AppBannerManagerTest {
         TestThreadUtils.runOnUiThreadBlocking(
                 () -> { backgroundTab.loadUrl(new LoadUrlParams(url)); });
 
-        waitForAppBannerPipelineStatus(backgroundTab, /* PENDING_PROMPT */ 8);
+        waitForAppBannerPipelineStatus(backgroundTab, /* PENDING_PROMPT */ 9);
 
         ThreadUtils.runOnUiThreadBlocking(() -> {
             Assert.assertEquals(BottomSheetController.SheetState.HIDDEN,
@@ -1178,8 +1181,51 @@ public class AppBannerManagerTest {
         TestThreadUtils.runOnUiThreadBlocking(
                 () -> { backgroundTab.loadUrl(new LoadUrlParams(url)); });
 
-        waitForAppBannerPipelineStatus(backgroundTab, /* PENDING_PROMPT */ 8);
+        waitForAppBannerPipelineStatus(backgroundTab, /* PENDING_PROMPT */ 9);
 
         assertNoHelpBubble(withText(R.string.iph_pwa_install_available_text));
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"AppBanners"})
+    @Features.EnableFeatures({ChromeFeatureList.INSTALLABLE_AMBIENT_BADGE_INFOBAR,
+            ChromeFeatureList.SKIP_SERVICE_WORKER_FOR_INSTALL_PROMPT})
+    public void
+    testAmbientBadgeDoesNotAppearWhenNoServiceWorker() throws Exception {
+        String webBannerUrl = WebappTestPage.getNonServiceWorkerUrlWithAction(
+                mTestServer, "call_stashed_prompt_on_click");
+        resetEngagementForUrl(webBannerUrl, 10);
+        navigateToUrlAndWaitForBannerManager(mTabbedActivityTestRule, webBannerUrl);
+
+        // As the page doesn't have service worker, we do not expect to
+        // see an ambient badge.
+        InfoBarUtil.waitUntilNoInfoBarsExist(mTabbedActivityTestRule.getInfoBars());
+
+        // Even after waiting for three months, there should not be no ambient badge.
+        AppBannerManager.setTimeDeltaForTesting(91);
+        navigateToUrlAndWaitForBannerManager(mTabbedActivityTestRule, webBannerUrl);
+        InfoBarUtil.waitUntilNoInfoBarsExist(mTabbedActivityTestRule.getInfoBars());
+
+        // Calls prompt() on the beforeinstallprompt event, we expect to see the modal banner.
+        Tab tab = mTabbedActivityTestRule.getActivity().getActivityTab();
+        tapAndWaitForModalBanner(tab);
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"AppBanners"})
+    @Features.EnableFeatures({ChromeFeatureList.SKIP_SERVICE_WORKER_FOR_INSTALL_PROMPT})
+    public void testAmbientBadgeAppearWithServiceWorkerPage() throws Exception {
+        String webBannerUrl = WebappTestPage.getServiceWorkerUrlWithAction(
+                mTestServer, "call_stashed_prompt_on_click");
+        resetEngagementForUrl(webBannerUrl, 10);
+        navigateToUrlAndWaitForBannerManager(mTabbedActivityTestRule, webBannerUrl);
+
+        waitUntilAmbientBadgePromptAppears(mTabbedActivityTestRule);
+
+        // Calls prompt() on the beforeinstallprompt event, we expect to see the modal banner.
+        Tab tab = mTabbedActivityTestRule.getActivity().getActivityTab();
+        tapAndWaitForModalBanner(tab);
     }
 }

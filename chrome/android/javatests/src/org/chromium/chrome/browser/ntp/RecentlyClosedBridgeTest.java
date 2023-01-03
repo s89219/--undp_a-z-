@@ -1,9 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.ntp;
 
+import androidx.test.filters.LargeTest;
 import androidx.test.filters.MediumTest;
 
 import org.junit.After;
@@ -16,6 +17,8 @@ import org.junit.runner.RunWith;
 
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
+import org.chromium.base.test.util.CriteriaHelper;
+import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
@@ -84,7 +87,7 @@ public class RecentlyClosedBridgeTest {
                     mActivity.getTabModelSelectorSupplier().get());
             mRecentlyClosedBridge.clearRecentlyClosedEntries();
             Assert.assertEquals(
-                    0, mRecentlyClosedBridge.getRecentlyClosedTabs(MAX_ENTRY_COUNT).size());
+                    0, mRecentlyClosedBridge.getRecentlyClosedEntries(MAX_ENTRY_COUNT).size());
         });
         mActivity = sActivityTestRule.getActivity();
         mTabModelSelector = mActivity.getTabModelSelectorSupplier().get();
@@ -105,14 +108,13 @@ public class RecentlyClosedBridgeTest {
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             mRecentlyClosedBridge.clearRecentlyClosedEntries();
             Assert.assertEquals(
-                    0, mRecentlyClosedBridge.getRecentlyClosedTabs(MAX_ENTRY_COUNT).size());
+                    0, mRecentlyClosedBridge.getRecentlyClosedEntries(MAX_ENTRY_COUNT).size());
             mRecentlyClosedBridge.destroy();
         });
     }
 
     /**
-     * Tests opening the most recently closed tab in the background. This is a legacy test prior to
-     * {@link ChromeFeatureList.BULK_TAB_RESTORE}.
+     * Tests opening the most recently closed tab in the background.
      */
     @Test
     @MediumTest
@@ -134,7 +136,9 @@ public class RecentlyClosedBridgeTest {
         final int[] tabCount = new int[1];
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             tabCount[0] = mTabModel.getCount();
-            recentTabs.addAll(mRecentlyClosedBridge.getRecentlyClosedTabs(MAX_ENTRY_COUNT));
+            recentTabs.addAll(
+                    (List<RecentlyClosedTab>) (List<? extends RecentlyClosedEntry>)
+                            mRecentlyClosedBridge.getRecentlyClosedEntries(MAX_ENTRY_COUNT));
             mRecentlyClosedBridge.openMostRecentlyClosedEntry(mTabModel);
         });
         // 1. Blank Tab
@@ -155,9 +159,7 @@ public class RecentlyClosedBridgeTest {
     }
 
     /**
-     * Tests opening a specific closed {@link Tab} as a new background tab. This is a legacy test
-     * prior to
-     * {@link ChromeFeatureList.BULK_TAB_RESTORE}.
+     * Tests opening a specific closed {@link Tab} as a new background tab.
      */
     @Test
     @MediumTest
@@ -173,14 +175,17 @@ public class RecentlyClosedBridgeTest {
             mTabModel.setIndex(mTabModel.indexOf(tabC), TabSelectionType.FROM_USER, false);
             titles[0] = tabA.getTitle();
             titles[1] = tabB.getTitle();
-            mTabModel.closeMultipleTabs(Arrays.asList(new Tab[] {tabB, tabA}), false);
+            mTabModel.closeTab(tabB);
+            mTabModel.closeTab(tabA);
         });
 
         final List<RecentlyClosedTab> recentTabs = new ArrayList<>();
         final int[] tabCount = new int[1];
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             tabCount[0] = mTabModel.getCount();
-            recentTabs.addAll(mRecentlyClosedBridge.getRecentlyClosedTabs(MAX_ENTRY_COUNT));
+            recentTabs.addAll(
+                    (List<RecentlyClosedTab>) (List<? extends RecentlyClosedEntry>)
+                            mRecentlyClosedBridge.getRecentlyClosedEntries(MAX_ENTRY_COUNT));
             mRecentlyClosedBridge.openRecentlyClosedTab(
                     mTabModel, recentTabs.get(1), WindowOpenDisposition.CURRENT_TAB);
         });
@@ -213,9 +218,7 @@ public class RecentlyClosedBridgeTest {
     }
 
     /**
-     * Tests opening a specific closed {@link Tab} that was frozen as a new background tab. This is
-     * a legacy test prior to
-     * {@link ChromeFeatureList.BULK_TAB_RESTORE}.
+     * Tests opening a specific closed {@link Tab} that was frozen as a new background tab.
      */
     @Test
     @MediumTest
@@ -239,7 +242,9 @@ public class RecentlyClosedBridgeTest {
         final int[] tabCount = new int[1];
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             tabCount[0] = mTabModel.getCount();
-            recentTabs.addAll(mRecentlyClosedBridge.getRecentlyClosedTabs(MAX_ENTRY_COUNT));
+            recentTabs.addAll(
+                    (List<RecentlyClosedTab>) (List<? extends RecentlyClosedEntry>)
+                            mRecentlyClosedBridge.getRecentlyClosedEntries(MAX_ENTRY_COUNT));
             mRecentlyClosedBridge.openRecentlyClosedTab(
                     mTabModel, recentTabs.get(0), WindowOpenDisposition.NEW_BACKGROUND_TAB);
         });
@@ -264,7 +269,6 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE})
     public void testOpenRecentlyClosedTab_FromBulkClosure_InNewTab() {
         // Tab order is inverted in RecentlyClosedEntry as most recent comes first so log data in
         // reverse.
@@ -306,7 +310,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedTab_FromGroupInBulkClosure_InBackgroundTab() {
         if (mTabGroupModelFilter == null) return;
@@ -361,7 +365,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedTab_FromGroupClosure_InCurrentTab() {
         if (mTabGroupModelFilter == null) return;
@@ -423,7 +427,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedEntry_Tab_FromMultipleTabs() {
         if (mTabGroupModelFilter == null) return;
@@ -487,7 +491,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedEntry_Tab_FromGroupClosure() {
         if (mTabGroupModelFilter == null) return;
@@ -538,7 +542,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedEntry_Group_FromGroupClosure() {
         if (mTabGroupModelFilter == null) return;
@@ -587,11 +591,110 @@ public class RecentlyClosedBridgeTest {
     }
 
     /**
+     * Tests opening a specific closed group and that it persists across restarts.
+     */
+    @Test
+    @LargeTest
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
+    @DisabledTest(message = "https://crbug.com/1403661")
+    public void testOpenRecentlyClosedEntry_Group_FromGroupClosure_WithRestart() {
+        if (mTabGroupModelFilter == null) return;
+
+        // Tab order is inverted in RecentlyClosedEntry as most recent comes first so log data in
+        // reverse.
+        final String urls[] =
+                new String[] {getUrl(TEST_PAGE_C), getUrl(TEST_PAGE_B), getUrl(TEST_PAGE_A)};
+        final Tab tabA = sActivityTestRule.loadUrlInNewTab(urls[2], /*incognito=*/false);
+        final Tab tabB = sActivityTestRule.loadUrlInNewTab(urls[1], /*incognito=*/false);
+        final Tab tabC = sActivityTestRule.loadUrlInNewTab(urls[0], /*incognito=*/false);
+
+        final String[] titles = new String[3];
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            mTabGroupModelFilter.mergeTabsToGroup(tabB.getId(), tabA.getId());
+            mTabGroupModelFilter.mergeTabsToGroup(tabC.getId(), tabA.getId());
+            TabGroupTitleUtils.storeTabGroupTitle(tabA.getId(), "Bar");
+            titles[2] = tabA.getTitle();
+            titles[1] = tabB.getTitle();
+            titles[0] = tabC.getTitle();
+            mTabModel.closeMultipleTabs(Arrays.asList(new Tab[] {tabA, tabB, tabC}), false);
+        });
+
+        final List<RecentlyClosedEntry> recentEntries = new ArrayList<>();
+        final int tabCount = getRecentEntriesAndReturnActiveTabCount(recentEntries);
+        Assert.assertEquals(1, tabCount);
+        Assert.assertEquals(1, recentEntries.size());
+        assertEntryIs(recentEntries.get(0), RecentlyClosedGroup.class, new String[] {"Bar"}, titles,
+                urls);
+
+        final RecentlyClosedGroup group = (RecentlyClosedGroup) recentEntries.get(0);
+        TestThreadUtils.runOnUiThreadBlocking(
+                () -> { mRecentlyClosedBridge.openRecentlyClosedEntry(mTabModel, group); });
+
+        // 1. Blank tab
+        // 2. tabA restored in new tab.
+        // 3. tabB restored in new tab.
+        // 4. tabC restored in new tab.
+        final List<Tab> tabs = getAllTabs();
+        Assert.assertEquals(4, tabs.size());
+        Assert.assertEquals(titles[2], ChromeTabUtils.getTitleOnUiThread(tabs.get(1)));
+        Assert.assertEquals(urls[2], ChromeTabUtils.getUrlOnUiThread(tabs.get(1)).getSpec());
+        Assert.assertEquals(titles[1], ChromeTabUtils.getTitleOnUiThread(tabs.get(2)));
+        Assert.assertEquals(urls[1], ChromeTabUtils.getUrlOnUiThread(tabs.get(2)).getSpec());
+        Assert.assertEquals(titles[0], ChromeTabUtils.getTitleOnUiThread(tabs.get(3)));
+        Assert.assertEquals(urls[0], ChromeTabUtils.getUrlOnUiThread(tabs.get(3)).getSpec());
+        final int tabIds[] =
+                new int[] {tabs.get(1).getId(), tabs.get(2).getId(), tabs.get(3).getId()};
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            Assert.assertEquals("Bar", TabGroupTitleUtils.getTabGroupTitle(tabs.get(1).getId()));
+            Assert.assertTrue(mTabGroupModelFilter.hasOtherRelatedTabs(tabs.get(1)));
+            Assert.assertTrue(mTabGroupModelFilter.hasOtherRelatedTabs(tabs.get(2)));
+            Assert.assertTrue(mTabGroupModelFilter.hasOtherRelatedTabs(tabs.get(3)));
+            Assert.assertEquals(Arrays.asList(new Tab[] {tabs.get(1), tabs.get(2), tabs.get(3)}),
+                    mTabGroupModelFilter.getRelatedTabList(tabs.get(1).getId()));
+        });
+
+        // Restart activity.
+        TestThreadUtils.runOnUiThreadBlocking(() -> { mActivity.saveState(); });
+        sActivityTestRule.recreateActivity();
+        mActivity = sActivityTestRule.getActivity();
+        mTabModelSelector = mActivity.getTabModelSelectorSupplier().get();
+        CriteriaHelper.pollUiThread(mTabModelSelector::isTabStateInitialized);
+        mTabModel = mTabModelSelector.getModel(false);
+        TabModelFilter filter =
+                mTabModelSelector.getTabModelFilterProvider().getTabModelFilter(false);
+        assert filter instanceof TabGroupModelFilter;
+        mTabGroupModelFilter = (TabGroupModelFilter) filter;
+
+        // Confirm the same tabs are present with the same group structure.
+        tabs.clear();
+        tabs.addAll(getAllTabs());
+        Assert.assertEquals(4, tabs.size());
+        Assert.assertEquals(tabIds[0], tabs.get(1).getId());
+        Assert.assertEquals(titles[2], ChromeTabUtils.getTitleOnUiThread(tabs.get(1)));
+        Assert.assertEquals(urls[2], ChromeTabUtils.getUrlOnUiThread(tabs.get(1)).getSpec());
+        Assert.assertEquals(tabIds[1], tabs.get(2).getId());
+        Assert.assertEquals(titles[1], ChromeTabUtils.getTitleOnUiThread(tabs.get(2)));
+        Assert.assertEquals(urls[1], ChromeTabUtils.getUrlOnUiThread(tabs.get(2)).getSpec());
+        Assert.assertEquals(tabIds[2], tabs.get(3).getId());
+        Assert.assertEquals(titles[0], ChromeTabUtils.getTitleOnUiThread(tabs.get(3)));
+        Assert.assertEquals(urls[0], ChromeTabUtils.getUrlOnUiThread(tabs.get(3)).getSpec());
+        TestThreadUtils.runOnUiThreadBlocking(() -> {
+            Assert.assertEquals("Bar", TabGroupTitleUtils.getTabGroupTitle(tabs.get(1).getId()));
+            Assert.assertTrue(mTabGroupModelFilter.hasOtherRelatedTabs(tabs.get(1)));
+            Assert.assertTrue(mTabGroupModelFilter.hasOtherRelatedTabs(tabs.get(2)));
+            Assert.assertTrue(mTabGroupModelFilter.hasOtherRelatedTabs(tabs.get(3)));
+            Assert.assertEquals(Arrays.asList(new Tab[] {tabs.get(1), tabs.get(2), tabs.get(3)}),
+                    mTabGroupModelFilter.getRelatedTabList(tabs.get(1).getId()));
+        });
+    }
+
+    /**
      * Tests opening a specific closed {@link Tab} that was closed as part of a bulk closure.
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedEntry_Tab_FromBulkClosure() {
         if (mTabGroupModelFilter == null) return;
@@ -641,7 +744,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenRecentlyClosedEntry_Bulk_FromBulkClosure() {
         if (mTabGroupModelFilter == null) return;
@@ -701,7 +804,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenMostRecentlyClosedEntry_Group() {
         if (mTabGroupModelFilter == null) return;
@@ -781,7 +884,7 @@ public class RecentlyClosedBridgeTest {
      */
     @Test
     @MediumTest
-    @EnableFeatures({ChromeFeatureList.BULK_TAB_RESTORE, ChromeFeatureList.TAB_GROUPS_ANDROID})
+    @EnableFeatures({ChromeFeatureList.TAB_GROUPS_ANDROID})
     @Restriction({Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE})
     public void testOpenMostRecentlyClosedEntry_Bulk() {
         if (mTabGroupModelFilter == null) return;

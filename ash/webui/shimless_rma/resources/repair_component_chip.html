@@ -1,6 +1,6 @@
 <style include="cr-shared-style shimless-rma-shared shimless-fonts">
   :host {
-    padding: 1px;
+    padding: 2px;
   }
 
   :host([checked]) #componentButton {
@@ -19,10 +19,15 @@
     color: var(--cros-text-color-disabled);
   }
 
+  :focus {
+    outline: rgba(var(--google-blue-600-rgb), .4) solid 2px;
+  }
+
   #componentButton {
     --vertical-padding: 24px;
+    border: none;
     border-radius: 8px;
-    box-shadow: var(--cros-elevation-1-shadow);
+    box-shadow: var(--cros-elevation-2-shadow);
     height: calc((2 * var(--vertical-padding)) +
         var(--shimless-component-line-height) +
         var(--shimless-component-description-line-height));
@@ -35,6 +40,11 @@
     inset-inline-start: 0;
     padding-inline-start: 24px;
     position: absolute;
+  }
+
+  :host([checked]) #componentName,
+  :host([checked]) #componentIdentifier {
+    color: var(--google-blue-700);
   }
 
   #componentName {
@@ -51,10 +61,6 @@
     font-size: var(--shimless-component-description-font-size);
     font-weight: var(--shimless-regular-font-weight);
     line-height: var(--shimless-component-description-line-height);
-  }
-
-  :host([checked]) #labelDiv {
-    color: var(--google-blue-700);
   }
 
   iron-icon {
@@ -75,8 +81,10 @@
 
 <div id="componentButtonWrapper">
   <cr-button id="componentButton" disabled="[[disabled]]"
-      on-click="onComponentButtonClicked_">
-    <div id="labelDiv">
+      on-click="onComponentButtonClicked_"
+      aria-labelledby="componentName componentIdentifier"
+      aria-pressed$="[[isAriaPressed_(checked)]]">
+    <div id="labelDiv" aria-hidden="true">
       <span id="componentName">[[componentName]]</span>
       <div id="componentIdentifier">[[componentIdentifier]]</div>
     </div>
@@ -88,6 +96,7 @@
     </iron-icon>
   </cr-button>
 </div>
-<paper-tooltip for="componentButtonWrapper" hidden="[[!disabled]]">
+<paper-tooltip for="componentButtonWrapper" hidden="[[!disabled]]"
+    aria-hidden="true">
   [[i18n('undetectedComponentText')]]
 </paper-tooltip>

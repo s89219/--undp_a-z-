@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -230,6 +230,9 @@ class FakeFileSystemInstance : public mojom::FileSystemInstance {
 
   // Adds a recent document accessible by document provider based methods.
   void AddRecentDocument(const std::string& root_id, const Document& document);
+
+  // Removes a recent document accessible by document provider based methods.
+  void RemoveRecentDocument(const Document& document);
 
   // Adds a root accessible by document provider based methods.
   void AddRoot(const Root& root);

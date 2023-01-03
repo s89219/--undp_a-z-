@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,7 +76,9 @@ class ScreenshotCapturedBubble : public LocationBarBubbleDelegateView {
   // for use as background, or empty to start with a blank canvas.
   void NavigateToImageEditor(const base::FilePath& screenshot_file_path);
 
-  const gfx::Image& image_;
+  // Makes a copy of the image to use in button callbacks without worry of
+  // dereferencing
+  const gfx::Image image_;
 
   base::WeakPtr<content::WebContents> web_contents_;
 

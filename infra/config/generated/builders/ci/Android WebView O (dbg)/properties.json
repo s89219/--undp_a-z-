@@ -65,8 +65,7 @@
               },
               "legacy_gclient_config": {
                 "apply_configs": [
-                  "android",
-                  "enable_reclient"
+                  "android"
                 ],
                 "config": "chromium"
               }
@@ -88,6 +87,10 @@
         },
         {
           "builder": "android_arm64_dbg_recipe",
+          "group": "tryserver.chromium.android"
+        },
+        {
+          "builder": "android_compile_dbg",
           "group": "tryserver.chromium.android"
         }
       ]

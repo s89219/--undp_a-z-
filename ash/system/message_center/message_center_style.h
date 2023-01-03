@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@ constexpr SkColor kScrollShadowColor = SkColorSetARGB(0x24, 0x0, 0x0, 0x0);
 // TODO(crbug.com/1309551): Get the colors from AshColorProvider once
 // notification supports dark/light mode.
 constexpr SkColor kCountLabelColor = gfx::kGoogleGrey900;
-constexpr SkColor kSeperatorColor = SkColorSetA(SK_ColorBLACK, 0x24);  // 14%
+constexpr SkColor kSeparatorColor = SkColorSetA(SK_ColorBLACK, 0x24);  // 14%
 constexpr SkColor kNotificationBackgroundColor = SK_ColorWHITE;
 constexpr SkColor kUnifiedMenuButtonColorActive =
     SkColorSetRGB(0x25, 0x81, 0xDF);

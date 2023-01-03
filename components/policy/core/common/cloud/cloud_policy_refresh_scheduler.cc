@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -192,7 +192,7 @@ void CloudPolicyRefreshScheduler::OnRegistrationStateChanged(
 
 void CloudPolicyRefreshScheduler::OnClientError(CloudPolicyClient* client) {
   // Save the status for below.
-  DeviceManagementStatus status = client_->status();
+  DeviceManagementStatus status = client_->last_dm_status();
 
   // Schedule an error retry if applicable.
   UpdateLastRefresh();
@@ -227,7 +227,7 @@ void CloudPolicyRefreshScheduler::OnConnectionChanged(
   if (type == network::mojom::ConnectionType::CONNECTION_NONE)
     return;
 
-  if (client_->status() == DM_STATUS_REQUEST_FAILED) {
+  if (client_->last_dm_status() == DM_STATUS_REQUEST_FAILED) {
     RefreshSoon();
     return;
   }
@@ -259,7 +259,7 @@ void CloudPolicyRefreshScheduler::UpdateLastRefreshFromPolicy() {
   // If the client has already fetched policy, assume that happened recently. If
   // that assumption ever breaks, the proper thing to do probably is to move the
   // |last_refresh_| bookkeeping to CloudPolicyClient.
-  if (!client_->responses().empty()) {
+  if (!client_->last_policy_fetch_responses().empty()) {
     UpdateLastRefresh();
     return;
   }
@@ -295,7 +295,7 @@ void CloudPolicyRefreshScheduler::ScheduleRefresh() {
 
   // If there is a registration, go by the client's status. That will tell us
   // what the appropriate refresh delay should be.
-  switch (client_->status()) {
+  switch (client_->last_dm_status()) {
     case DM_STATUS_SUCCESS:
       if (store_->is_managed())
         RefreshAfter(GetActualRefreshDelay());
@@ -326,10 +326,12 @@ void CloudPolicyRefreshScheduler::ScheduleRefresh() {
     case DM_STATUS_SERVICE_MISSING_LICENSES:
     case DM_STATUS_SERVICE_DEPROVISIONED:
     case DM_STATUS_SERVICE_DOMAIN_MISMATCH:
+    case DM_STATUS_SERVICE_DEVICE_NEEDS_RESET:
     case DM_STATUS_SERVICE_CONSUMER_ACCOUNT_WITH_PACKAGED_LICENSE:
     case DM_STATUS_SERVICE_ENTERPRISE_ACCOUNT_IS_NOT_ELIGIBLE_TO_ENROLL:
     case DM_STATUS_SERVICE_ENTERPRISE_TOS_HAS_NOT_BEEN_ACCEPTED:
     case DM_STATUS_SERVICE_ILLEGAL_ACCOUNT_FOR_PACKAGED_EDU_LICENSE:
+    case DM_STATUS_SERVICE_INVALID_PACKAGED_DEVICE_FOR_KIOSK:
       // Need a re-registration, no use in retrying.
       CancelRefresh();
       return;
@@ -338,7 +340,7 @@ void CloudPolicyRefreshScheduler::ScheduleRefresh() {
       return;
   }
 
-  NOTREACHED() << "Invalid client status " << client_->status();
+  NOTREACHED() << "Invalid client status " << client_->last_dm_status();
   RefreshAfter(kUnmanagedRefreshDelayMs);
 }
 

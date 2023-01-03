@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "components/tracing/common/tracing_switches.h"
@@ -60,22 +61,21 @@ GetBackgroundTracingConfigFromFile(const base::FilePath& config_file) {
     return nullptr;
   }
 
-  base::JSONReader::ValueWithError value_with_error =
-      base::JSONReader::ReadAndReturnValueWithError(
-          config_text, base::JSON_ALLOW_TRAILING_COMMAS);
-  if (!value_with_error.value) {
+  auto value_with_error = base::JSONReader::ReadAndReturnValueWithError(
+      config_text, base::JSON_ALLOW_TRAILING_COMMAS);
+  if (!value_with_error.has_value()) {
     LOG(ERROR) << "Background tracing has incorrect config: "
-               << value_with_error.error_message;
+               << value_with_error.error().message;
     return nullptr;
   }
 
-  if (!value_with_error.value->is_dict()) {
+  if (!value_with_error->is_dict()) {
     LOG(ERROR) << "Background tracing config is not a dict";
     return nullptr;
   }
 
   auto config = content::BackgroundTracingConfig::FromDict(
-      std::move(*(value_with_error.value)));
+      std::move(*value_with_error).TakeDict());
 
   if (!config) {
     LOG(ERROR) << "Background tracing config dict has invalid contents";
@@ -86,6 +86,11 @@ GetBackgroundTracingConfigFromFile(const base::FilePath& config_file) {
 }
 
 }  // namespace
+
+void RecordDisallowedMetric(TracingFinalizationDisallowedReason reason) {
+  UMA_HISTOGRAM_ENUMERATION("Tracing.Background.FinalizationDisallowedReason",
+                            reason);
+}
 
 void SetupBackgroundTracingWithOutputFile(
     std::unique_ptr<content::BackgroundTracingConfig> config,
@@ -100,7 +105,7 @@ void SetupBackgroundTracingWithOutputFile(
   // instead of being uploaded to a metrics server, so there are no PII
   // concerns.
   content::BackgroundTracingManager::GetInstance()
-      ->SetActiveScenarioWithReceiveCallback(
+      .SetActiveScenarioWithReceiveCallback(
           std::move(config), std::move(receive_callback),
           content::BackgroundTracingManager::NO_DATA_FILTERING);
 }
@@ -118,10 +123,9 @@ void SetupBackgroundTracingFromConfigFile(const base::FilePath& config_file,
 
 bool SetupBackgroundTracingFromCommandLine(
     const std::string& field_trial_name) {
-  auto* manager = content::BackgroundTracingManager::GetInstance();
-  DCHECK(manager);
-
+  auto& manager = content::BackgroundTracingManager::GetInstance();
   auto* command_line = base::CommandLine::ForCurrentProcess();
+
   switch (GetBackgroundTracingSetupMode()) {
     case BackgroundTracingSetupMode::kDisabledInvalidCommandLine:
       return false;
@@ -133,7 +137,7 @@ bool SetupBackgroundTracingFromCommandLine(
       return true;
     case BackgroundTracingSetupMode::kFromFieldTrialLocalOutput:
       SetupBackgroundTracingWithOutputFile(
-          manager->GetBackgroundTracingConfig(field_trial_name),
+          manager.GetBackgroundTracingConfig(field_trial_name),
           command_line->GetSwitchValuePath(
               switches::kBackgroundTracingOutputFile));
       return true;

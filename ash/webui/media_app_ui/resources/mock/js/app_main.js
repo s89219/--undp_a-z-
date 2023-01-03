@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -252,7 +252,7 @@ self.addEventListener('error', (event) => {
     url: window.location.href,
     product: 'ChromeOS_MediaAppMock',
     lineNumber: errorEvent.lineno,
-    columnNumber: errorEvent.colno
+    columnNumber: errorEvent.colno,
   });
 });
 self.addEventListener('unhandledrejection', (event) => {

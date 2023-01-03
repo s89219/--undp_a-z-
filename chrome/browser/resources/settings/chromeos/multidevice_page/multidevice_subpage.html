@@ -24,7 +24,9 @@
   </div>
     <template is="dom-if" if="[[shouldShowVerifyButton_(pageContentData)]]"
         restamp>
-      <cr-button on-click="handleVerifyButtonClick_">
+      <cr-button
+        aria-label="$i18n{multideviceVerifyButtonA11yLabel}"
+        on-click="handleVerifyButtonClick_">
         $i18n{multideviceVerifyButton}
       </cr-button>
     </template>
@@ -49,7 +51,6 @@
       <settings-multidevice-feature-item id="smartLockItem"
           feature="[[MultiDeviceFeature.SMART_LOCK]]"
           page-content-data="[[pageContentData]]"
-          subpage-route="[[getSmartLockSubpageRoute_()]]"
           deep-link-focus-id$="[[Setting.kSmartLockOnOff]]">
       </settings-multidevice-feature-item>
     </template>
@@ -114,7 +115,7 @@
         <template is="dom-if"
             if="[[isPhoneHubCameraRollSetupRequired(pageContentData)]]"
             restamp>
-          <cr-button on-click="handlePhoneHubSetupClick_"
+          <cr-button on-click="handleCameraRollSetupClicked_"
               slot="feature-controller"
               disabled="[[isPhoneHubDisabled_(pageContentData)]]">
             $i18n{multideviceSetupButton}
@@ -135,7 +136,7 @@
         <template is="dom-if"
             if="[[isPhoneHubNotificationsSetupRequired(pageContentData)]]"
             restamp>
-          <cr-button on-click="handlePhoneHubSetupClick_"
+          <cr-button on-click="handleNotificationSetupClicked_"
               slot="feature-controller"
               disabled="[[isPhoneHubDisabled_(pageContentData)]]">
             $i18n{multideviceSetupButton}
@@ -148,12 +149,15 @@
         restamp>
       <settings-multidevice-feature-item id="phoneHubAppsItem"
           feature="[[MultiDeviceFeature.ECHE]]"
+          icon-tooltip="[[getPhoneHubAppsTooltip_(
+                              pageContentData)]]"
+          icon="cr:domain"
           page-content-data="[[pageContentData]]" is-sub-feature
           deep-link-focus-id$="[[Setting.kPhoneHubAppsOnOff]]">
         <template is="dom-if"
             if="[[isPhoneHubAppsSetupRequired(pageContentData)]]"
             restamp>
-          <cr-button on-click="handlePhoneHubSetupClick_"
+          <cr-button on-click="handleMessagingAppSetupClicked_"
               slot="feature-controller"
               disabled="[[isPhoneHubDisabled_(pageContentData)]]">
             $i18n{multideviceSetupButton}

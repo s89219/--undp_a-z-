@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@
 #include "base/bind.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "components/session_manager/session_manager_types.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/wm/core/window_util.h"
@@ -70,7 +70,7 @@ class ShelfTest : public AshTestBase {
 // Confirms that ShelfItem reflects the appropriated state.
 TEST_F(ShelfTest, StatusReflection) {
   // Initially we have the app list.
-  int button_count = test_api()->GetButtonCount();
+  size_t button_count = test_api()->GetButtonCount();
 
   // Add a running app.
   ShelfItem item;
@@ -92,7 +92,7 @@ TEST_F(ShelfTest, StatusReflection) {
 // browser test we check this here.
 TEST_F(ShelfTest, CheckHoverAfterMenu) {
   // Initially we have the app list.
-  int button_count = test_api()->GetButtonCount();
+  size_t button_count = test_api()->GetButtonCount();
 
   // Add a running app.
   ShelfItem item;
@@ -167,7 +167,7 @@ TEST_F(NoSessionShelfTest, SetAlignmentDuringDisplayDisconnect) {
   base::RunLoop().RunUntilIdle();
 
   // The task indirectly triggers Shelf::SetAlignment() via a SessionObserver.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
           [](TestSessionControllerClient* session) {

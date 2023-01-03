@@ -1,10 +1,9 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.tasks.tab_management;
 
-import static org.chromium.chrome.browser.tasks.ConditionalTabStripUtils.CONDITIONAL_TAB_STRIP_DISMISS_COUNTER_ABANDONED;
 import static org.chromium.chrome.browser.tasks.ConditionalTabStripUtils.UNDO_DISMISS_SNACKBAR_DURATION;
 
 import android.content.Context;
@@ -20,7 +19,6 @@ import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.base.supplier.OneshotSupplier;
-import org.chromium.chrome.browser.infobar.InfoBarIdentifier;
 import org.chromium.chrome.browser.layouts.FilterLayoutStateObserver;
 import org.chromium.chrome.browser.layouts.LayoutStateProvider;
 import org.chromium.chrome.browser.layouts.LayoutStateProvider.LayoutStateObserver;
@@ -46,10 +44,10 @@ import org.chromium.chrome.browser.tasks.ReturnToChromeUtil;
 import org.chromium.chrome.browser.tasks.tab_groups.EmptyTabGroupModelFilterObserver;
 import org.chromium.chrome.browser.tasks.tab_groups.TabGroupModelFilter;
 import org.chromium.chrome.browser.toolbar.bottom.BottomControlsCoordinator;
-import org.chromium.chrome.browser.ui.messages.infobar.SimpleConfirmInfoBarBuilder;
 import org.chromium.chrome.browser.ui.messages.snackbar.Snackbar;
 import org.chromium.chrome.browser.ui.messages.snackbar.SnackbarManager;
 import org.chromium.chrome.tab_ui.R;
+import org.chromium.components.browser_ui.widget.gesture.BackPressHandler;
 import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.content_public.browser.LoadUrlParams;
 import org.chromium.ui.base.WindowAndroid;
@@ -62,7 +60,7 @@ import java.util.List;
 /**
  * A mediator for the TabGroupUi. Responsible for managing the internal state of the component.
  */
-public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
+public class TabGroupUiMediator implements SnackbarManager.SnackbarController, BackPressHandler {
     /**
      * An interface to control the TabGroupUi component.
      */
@@ -191,7 +189,6 @@ public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
                         maybeActivateConditionalTabStrip(ReasonToShow.TAB_SWITCHED);
                     }
                 }
-                if (type == TabSelectionType.FROM_CLOSE) return;
                 if (TabUiFeatureUtilities.isTabGroupsAndroidEnabled(mContext)
                         && getTabsToShowForId(lastId).contains(tab)) {
                     return;
@@ -206,7 +203,7 @@ public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
             }
 
             @Override
-            public void willCloseTab(Tab tab, boolean animate) {
+            public void willCloseTab(Tab tab, boolean animate, boolean didCloseAlone) {
                 if (!mIsTabGroupUiVisible) return;
                 // The strip should hide when users close the second-to-last tab in strip. The
                 // tabCountToHide for group is 1 because tab group status is updated with this
@@ -266,7 +263,8 @@ public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
             @Override
             public void tabClosureUndone(Tab tab) {
                 if (!mIsTabGroupUiVisible) {
-                    resetTabStripWithRelatedTabsForId(tab.getId());
+                    // Reset with the current tab as the undone tab may be in the background.
+                    resetTabStripWithRelatedTabsForId(mTabModelSelector.getCurrentTab().getId());
                 }
             }
         };
@@ -425,8 +423,6 @@ public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
                 RecordUserAction.record("TabStrip.UserDismissed");
                 if (ConditionalTabStripUtils.shouldShowSnackbarForDismissal()) {
                     mSnackbarManager.showSnackbar(mUndoClosureSnackBar);
-                } else {
-                    showOptOutInfoBarForTab(mTabModelSelector.getCurrentTab());
                 }
             };
             mModel.set(TabGroupUiProperties.LEFT_BUTTON_DRAWABLE_ID, R.drawable.btn_close);
@@ -542,6 +538,19 @@ public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
         return mTabGridDialogController != null && mTabGridDialogController.handleBackPressed();
     }
 
+    @Override
+    public void handleBackPress() {
+        if (mTabGridDialogController != null) mTabGridDialogController.handleBackPress();
+    }
+
+    @Override
+    public ObservableSupplier<Boolean> getHandleBackPressChangedSupplier() {
+        if (mTabGridDialogController == null) {
+            return BackPressHandler.super.getHandleBackPressChangedSupplier();
+        }
+        return mTabGridDialogController.getHandleBackPressChangedSupplier();
+    }
+
     public void destroy() {
         if (mTabModelSelector != null) {
             mTabModelSelector.getTabModelFilterProvider().removeTabModelFilterObserver(
@@ -583,38 +592,6 @@ public class TabGroupUiMediator implements SnackbarManager.SnackbarController {
             RecordHistogram.recordEnumeratedHistogram("TabStrip.ReasonToShow", reason,
                     ConditionalTabStripUtils.ReasonToShow.NUM_ENTRIES);
         }
-    }
-
-    private void showOptOutInfoBarForTab(Tab tab) {
-        // TODO(yuezhanggg): The simple confirmation info bar cannot live across different tabs. Use
-        // a customized info bar since the opt-out info bar should always show until users'
-        // reactions.
-        SimpleConfirmInfoBarBuilder.Listener listener = new SimpleConfirmInfoBarBuilder.Listener() {
-            @Override
-            public void onInfoBarDismissed() {}
-
-            @Override
-            public boolean onInfoBarButtonClicked(boolean isPrimary) {
-                if (!isPrimary) {
-                    ConditionalTabStripUtils.setOptOutIndicator(true);
-                }
-                // When user has reacted to the info bar, the dismiss counter is no longer needed.
-                ConditionalTabStripUtils.setContinuousDismissCount(
-                        CONDITIONAL_TAB_STRIP_DISMISS_COUNTER_ABANDONED);
-                return false;
-            }
-
-            @Override
-            public boolean onInfoBarLinkClicked() {
-                return false;
-            }
-        };
-        String message = mContext.getString(R.string.tab_strip_info_bar_question);
-        String primaryText = mContext.getString(R.string.tab_strip_info_bar_reshow);
-        String secondaryText = mContext.getString(R.string.tab_strip_info_bar_no_reshow);
-        SimpleConfirmInfoBarBuilder.create(tab.getWebContents(), listener,
-                InfoBarIdentifier.CONDITIONAL_TAB_STRIP_INFOBAR_ANDROID, mContext, 0, message,
-                primaryText, secondaryText, null, true);
     }
 
     // SnackbarManager.SnackbarController implementation.

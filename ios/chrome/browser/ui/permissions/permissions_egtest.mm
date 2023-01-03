@@ -1,10 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <XCTest/XCTest.h>
 
-#include "base/logging.h"
+#import "base/logging.h"
 #import "base/test/ios/wait_util.h"
 #import "ios/chrome/browser/ui/badges/badge_constants.h"
 #import "ios/chrome/browser/ui/infobars/banners/infobar_banner_constants.h"
@@ -16,11 +16,12 @@
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
+#import "ios/testing/earl_grey/disabled_test_macros.h"
 #import "ios/testing/earl_grey/earl_grey_test.h"
-#include "ios/web/common/features.h"
-#include "ios/web/public/permissions/permissions.h"
-#include "net/test/embedded_test_server/embedded_test_server.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/web/common/features.h"
+#import "ios/web/public/permissions/permissions.h"
+#import "net/test/embedded_test_server/embedded_test_server.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -64,7 +65,7 @@ id<GREYMatcher> InfobarBannerEditButton() {
   return grey_accessibilityID(kInfobarBannerAcceptButtonIdentifier);
 }
 
-// Matcher for camera infobar badge with acceptance state |accepted|;
+// Matcher for camera infobar badge with acceptance state `accepted`;
 id<GREYMatcher> CameraBadge(BOOL accepted) {
   NSString* axid =
       accepted ? kBadgeButtonPermissionsCameraAcceptedAccessibilityIdentifier
@@ -72,7 +73,7 @@ id<GREYMatcher> CameraBadge(BOOL accepted) {
   return grey_accessibilityID(axid);
 }
 
-// Matcher for microphone infobar badge with acceptance state |accepted|;
+// Matcher for microphone infobar badge with acceptance state `accepted`;
 id<GREYMatcher> MicrophoneBadge(BOOL accepted) {
   NSString* axid =
       accepted
@@ -143,7 +144,7 @@ void TapDoneButtonOnInfobarModal() {
   [button tap];
 }
 
-// Checks that the visibility of the infobar matches |shouldShow|.
+// Checks that the visibility of the infobar matches `shouldShow`.
 - (void)waitUntilInfobarBannerVisibleOrTimeout:(BOOL)shouldShow {
   GREYCondition* infobarShown = [GREYCondition
       conditionWithName:@"Infobar shown"
@@ -157,8 +158,8 @@ void TapDoneButtonOnInfobarModal() {
                     return error == nil;
                   }];
   // Wait for infobar to be shown or timeout after kWaitForUIElementTimeout.
-  BOOL success =
-      [infobarShown waitWithTimeout:base::test::ios::kWaitForUIElementTimeout];
+  BOOL success = [infobarShown
+      waitWithTimeout:base::test::ios::kWaitForUIElementTimeout.InSecondsF()];
   if (shouldShow) {
     GREYAssertTrue(success, @"Infobar does not appear.");
   } else {
@@ -167,7 +168,7 @@ void TapDoneButtonOnInfobarModal() {
   }
 }
 
-// Checks |expectedStatesForPermissions| matches the actual states for
+// Checks `expectedStatesForPermissions` matches the actual states for
 // permissions of the active web state; checks will fail if there is no active
 // web state.
 - (void)checkStatesForPermissions:
@@ -389,7 +390,7 @@ void TapDoneButtonOnInfobarModal() {
     [ChromeEarlGrey goBack];
 
     // Note: There's currently an existing WebKit bug that WKUIDelegate method
-    // |requestMediaCapturePermissionForOrigin:| would not be invoked when the
+    // `requestMediaCapturePermissionForOrigin:` would not be invoked when the
     // user hits backward/forward; therefore, the alert and banner would not
     // show again, and the checks for the alert and the infobar banner are
     // commented out. Once this issue is fixed, these checks should be
@@ -441,7 +442,7 @@ void TapDoneButtonOnInfobarModal() {
                     }];
     // Wait for infobar to be shown or timeout after kWaitForUIElementTimeout.
     BOOL success = [microphoneAcceptedBadgeShown
-        waitWithTimeout:base::test::ios::kWaitForUIElementTimeout];
+        waitWithTimeout:base::test::ios::kWaitForUIElementTimeout.InSecondsF()];
     GREYAssertTrue(success, @"Did not find accepted microphone badge.");
     [self checkStatesForPermissions:@{
       @(web::PermissionCamera) : @(web::PermissionStateBlocked),
@@ -476,7 +477,7 @@ void TapDoneButtonOnInfobarModal() {
                           isEqualToNumber:@(web::PermissionStateNotAccessible)];
                     }];
     BOOL success = [permissionReset
-        waitWithTimeout:base::test::ios::kWaitForPageLoadTimeout];
+        waitWithTimeout:base::test::ios::kWaitForPageLoadTimeout.InSecondsF()];
     GREYAssertTrue(success,
                    @"Camera permission state is not reset after reload.");
     [self checkAndDismissPermissionAlerts:YES];

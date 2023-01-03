@@ -9,6 +9,7 @@ include_rules = [
   "+components/browsing_data/core",
   "+components/captive_portal",
   "+components/commerce/core",
+  "+components/commerce/ios",
   "+components/component_updater",
   "+components/content_settings/core",
   "+components/cookie_config",
@@ -27,6 +28,7 @@ include_rules = [
   "+components/favicon/ios",
   "+components/favicon_base",
   "+components/feature_engagement",
+  "+components/feed/core/shared_prefs",
   "+components/feed/core/v2/public",
   "+components/feed/feed_feature_list.h",
   "+components/flags_ui",
@@ -46,6 +48,7 @@ include_rules = [
   "+components/keyed_service/ios",
   "+components/language",
   "+components/leveldb_proto",
+  "+components/local_state",
   "+components/lookalikes/core",
   "+components/metrics",
   "+components/user_prefs",
@@ -86,6 +89,7 @@ include_rules = [
   "+components/search_provider_logos",
   "+components/security_interstitials",
   "+components/security_state",
+  "+components/segmentation_platform/public",
   "+components/send_tab_to_self",
   "+components/services/patch",
   "+components/services/unzip",
@@ -141,6 +145,7 @@ include_rules = [
   "+services/network/network_context.h",
   "+services/network/public/mojom",
   "+services/network/public/cpp",
+  "+third_party/crashpad/crashpad/client",
   "+third_party/breakpad/breakpad/src/client/ios",
   "+third_party/breakpad/breakpad/src/common",
   "+third_party/libaddressinput",
@@ -152,9 +157,11 @@ include_rules = [
   "-components/metrics/gpu",
   "-components/sessions/content",
 
-  # ios/chrome/browser should not depend on ios/chrome/browser/ui
+  # ios/chrome/browser should not depend on ios/chrome/browser/ui except
+  # on commands.
   "-ios/chrome/browser/ui",
   "-ios/common/ui",
+  "+ios/chrome/browser/ui/commands",
 
   # For tests.
   "+ios/chrome/test",
@@ -173,19 +180,4 @@ specific_include_rules = {
     # blanket exception for tests.
     "+ios/chrome/browser/ui",
   ],
-
-  # TODO(crbug.com/1294160): Remove these dependencies.
-  "^browser_about_rewriter.cc": [
-    "+ios/chrome/browser/ui/ui_feature_flags.h",
-  ],
-  "^chrome_root_coordinator.h": [
-    "+ios/chrome/browser/ui/coordinators/chrome_coordinator.h",
-  ],
-  "^ios_chrome_field_trials.mm": [
-    "+ios/chrome/browser/ui/first_run/fre_field_trial.h",
-  ],
-  "^system_flags.mm": [
-    "+ios/chrome/browser/ui/ui_feature_flags.h",
-  ],
-
 }

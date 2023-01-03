@@ -1,8 +1,10 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.password_manager;
+
+import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.ObserverList;
 import org.chromium.base.annotations.CalledByNative;
@@ -75,8 +77,9 @@ public class PasswordStoreBridge {
     /**
      * Inserts new credential into the password store.
      */
+    @VisibleForTesting
     public void insertPasswordCredential(PasswordStoreCredential credential) {
-        PasswordStoreBridgeJni.get().insertPasswordCredential(
+        PasswordStoreBridgeJni.get().insertPasswordCredentialForTesting(
                 mNativePasswordStoreBridge, credential);
     }
 
@@ -111,6 +114,7 @@ public class PasswordStoreBridge {
     /**
      * Empties the password store.
      */
+    @VisibleForTesting
     public void clearAllPasswords() {
         PasswordStoreBridgeJni.get().clearAllPasswords(mNativePasswordStoreBridge);
     }
@@ -152,7 +156,7 @@ public class PasswordStoreBridge {
     @NativeMethods
     interface Natives {
         long init(PasswordStoreBridge passwordStoreBridge);
-        void insertPasswordCredential(
+        void insertPasswordCredentialForTesting(
                 long nativePasswordStoreBridge, PasswordStoreCredential credential);
         boolean editPassword(long nativePasswordStoreBridge, PasswordStoreCredential credential,
                 String newPassword);

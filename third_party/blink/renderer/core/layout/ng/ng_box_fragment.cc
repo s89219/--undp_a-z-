@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,11 +15,32 @@ FontHeight NGBoxFragment::BaselineMetrics(const NGLineBoxStrut& margins,
                                           FontBaseline baseline_type) const {
   // For checkbox and radio controls, we always use the border edge instead of
   // the margin edge.
-  if (physical_fragment_.Style().IsCheckboxOrRadioPart()) {
+  if (physical_fragment_.Style().IsCheckboxOrRadioPart())
     return FontHeight(margins.line_over + BlockSize(), margins.line_under);
+
+  absl::optional<LayoutUnit> baseline;
+  switch (physical_fragment_.Style().BaselineSource()) {
+    case EBaselineSource::kAuto:
+      baseline = PhysicalBoxFragment().UseLastBaselineForInlineBaseline()
+                     ? LastBaseline()
+                     : FirstBaseline();
+
+      // Some blocks force the baseline to be the block-end margin edge.
+      if (PhysicalBoxFragment().UseBlockEndMarginEdgeForInlineBaseline()) {
+        baseline = BlockSize() + (writing_direction_.IsFlippedLines()
+                                      ? margins.line_over
+                                      : margins.line_under);
+      }
+      break;
+    case EBaselineSource::kFirst:
+      baseline = FirstBaseline();
+      break;
+    case EBaselineSource::kLast:
+      baseline = LastBaseline();
+      break;
   }
 
-  if (const absl::optional<LayoutUnit> baseline = Baseline()) {
+  if (baseline) {
     FontHeight metrics = writing_direction_.IsFlippedLines()
                              ? FontHeight(BlockSize() - *baseline, *baseline)
                              : FontHeight(*baseline, BlockSize() - *baseline);

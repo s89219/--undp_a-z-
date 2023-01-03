@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace {
 
@@ -43,6 +44,16 @@ apps::IconKeyPtr StructTraits<crosapi::mojom::AppDataView,
                                                r->icon_key.value().resource_id,
                                                r->icon_key.value().icon_effects)
              : nullptr;
+}
+
+// static
+absl::optional<std::string>
+StructTraits<crosapi::mojom::AppDataView, apps::AppPtr>::deprecated_policy_id(
+    const apps::AppPtr& r) {
+  if (!r->policy_ids.empty()) {
+    return r->policy_ids[0];
+  }
+  return {};
 }
 
 // static
@@ -177,8 +188,12 @@ bool StructTraits<crosapi::mojom::AppDataView, apps::AppPtr>::Read(
   if (!data.ReadInstallReason(&install_reason))
     return false;
 
-  absl::optional<std::string> policy_id;
-  if (!data.ReadPolicyId(&policy_id))
+  absl::optional<std::string> deprecated_policy_id;
+  if (!data.ReadDeprecatedPolicyId(&deprecated_policy_id))
+    return false;
+
+  std::vector<std::string> policy_ids;
+  if (!data.ReadPolicyIds(&policy_ids))
     return false;
 
   crosapi::mojom::OptionalBool recommendable;
@@ -248,13 +263,19 @@ bool StructTraits<crosapi::mojom::AppDataView, apps::AppPtr>::Read(
   app->publisher_id = publisher_id;
   app->description = description;
   app->version = version;
-  app->additional_search_terms = additional_search_terms;
+  app->additional_search_terms = std::move(additional_search_terms);
   if (icon_key)
     app->icon_key = std::move(*icon_key);
   app->last_launch_time = last_launch_time;
   app->install_time = install_time;
   app->install_reason = install_reason;
-  app->policy_id = policy_id;
+
+  if (!policy_ids.empty()) {
+    app->policy_ids = std::move(policy_ids);
+  } else if (deprecated_policy_id) {
+    app->policy_ids = {std::move(*deprecated_policy_id)};
+  }
+
   app->recommendable = ConvertMojomOptionalBoolToOptionalBool(recommendable);
   app->searchable = ConvertMojomOptionalBoolToOptionalBool(searchable);
   app->show_in_launcher =
@@ -304,6 +325,7 @@ EnumTraits<crosapi::mojom::AppType, apps::AppType>::ToMojom(
     case apps::AppType::kStandaloneBrowser:
     case apps::AppType::kRemote:
     case apps::AppType::kBorealis:
+    case apps::AppType::kBruschetta:
       NOTREACHED();
       return crosapi::mojom::AppType::kUnknown;
   }
@@ -429,6 +451,10 @@ EnumTraits<crosapi::mojom::InstallReason, apps::InstallReason>::ToMojom(
       return crosapi::mojom::InstallReason::kSync;
     case apps::InstallReason::kUser:
       return crosapi::mojom::InstallReason::kUser;
+    case apps::InstallReason::kKiosk:
+      return crosapi::mojom::InstallReason::kKiosk;
+    case apps::InstallReason::kCommandLine:
+      return crosapi::mojom::InstallReason::kCommandLine;
   }
 
   NOTREACHED();
@@ -461,6 +487,12 @@ bool EnumTraits<crosapi::mojom::InstallReason, apps::InstallReason>::FromMojom(
       return true;
     case crosapi::mojom::InstallReason::kSubApp:
       *output = apps::InstallReason::kSubApp;
+      return true;
+    case crosapi::mojom::InstallReason::kKiosk:
+      *output = apps::InstallReason::kKiosk;
+      return true;
+    case crosapi::mojom::InstallReason::kCommandLine:
+      *output = apps::InstallReason::kCommandLine;
       return true;
   }
 
@@ -547,8 +579,8 @@ EnumTraits<crosapi::mojom::ConditionType, apps::ConditionType>::ToMojom(
       return crosapi::mojom::ConditionType::kScheme;
     case apps::ConditionType::kHost:
       return crosapi::mojom::ConditionType::kHost;
-    case apps::ConditionType::kPattern:
-      return crosapi::mojom::ConditionType::kPattern;
+    case apps::ConditionType::kPath:
+      return crosapi::mojom::ConditionType::kPath;
     case apps::ConditionType::kAction:
       return crosapi::mojom::ConditionType::kAction;
     case apps::ConditionType::kMimeType:
@@ -585,8 +617,8 @@ bool EnumTraits<crosapi::mojom::ConditionType, apps::ConditionType>::FromMojom(
     case crosapi::mojom::ConditionType::kHost:
       *output = apps::ConditionType::kHost;
       return true;
-    case crosapi::mojom::ConditionType::kPattern:
-      *output = apps::ConditionType::kPattern;
+    case crosapi::mojom::ConditionType::kPath:
+      *output = apps::ConditionType::kPath;
       return true;
     case crosapi::mojom::ConditionType::kAction:
       *output = apps::ConditionType::kAction;
@@ -608,8 +640,6 @@ crosapi::mojom::PatternMatchType
 EnumTraits<crosapi::mojom::PatternMatchType, apps::PatternMatchType>::ToMojom(
     apps::PatternMatchType input) {
   switch (input) {
-    case apps::PatternMatchType::kNone:
-      return crosapi::mojom::PatternMatchType::kNone;
     case apps::PatternMatchType::kLiteral:
       return crosapi::mojom::PatternMatchType::kLiteral;
     case apps::PatternMatchType::kPrefix:
@@ -634,8 +664,6 @@ bool EnumTraits<crosapi::mojom::PatternMatchType, apps::PatternMatchType>::
               apps::PatternMatchType* output) {
   switch (input) {
     case crosapi::mojom::PatternMatchType::kNone:
-      *output = apps::PatternMatchType::kNone;
-      return true;
     case crosapi::mojom::PatternMatchType::kLiteral:
       *output = apps::PatternMatchType::kLiteral;
       return true;
@@ -663,43 +691,43 @@ bool EnumTraits<crosapi::mojom::PatternMatchType, apps::PatternMatchType>::
   return false;
 }
 
-crosapi::mojom::UninstallSource EnumTraits<
-    crosapi::mojom::UninstallSource,
-    apps::mojom::UninstallSource>::ToMojom(apps::mojom::UninstallSource input) {
+crosapi::mojom::UninstallSource
+EnumTraits<crosapi::mojom::UninstallSource, apps::UninstallSource>::ToMojom(
+    apps::UninstallSource input) {
   switch (input) {
-    case apps::mojom::UninstallSource::kUnknown:
+    case apps::UninstallSource::kUnknown:
       return crosapi::mojom::UninstallSource::kUnknown;
-    case apps::mojom::UninstallSource::kAppList:
+    case apps::UninstallSource::kAppList:
       return crosapi::mojom::UninstallSource::kAppList;
-    case apps::mojom::UninstallSource::kAppManagement:
+    case apps::UninstallSource::kAppManagement:
       return crosapi::mojom::UninstallSource::kAppManagement;
-    case apps::mojom::UninstallSource::kShelf:
+    case apps::UninstallSource::kShelf:
       return crosapi::mojom::UninstallSource::kShelf;
-    case apps::mojom::UninstallSource::kMigration:
+    case apps::UninstallSource::kMigration:
       return crosapi::mojom::UninstallSource::kMigration;
   }
 
   NOTREACHED();
 }
 
-bool EnumTraits<crosapi::mojom::UninstallSource, apps::mojom::UninstallSource>::
+bool EnumTraits<crosapi::mojom::UninstallSource, apps::UninstallSource>::
     FromMojom(crosapi::mojom::UninstallSource input,
-              apps::mojom::UninstallSource* output) {
+              apps::UninstallSource* output) {
   switch (input) {
     case crosapi::mojom::UninstallSource::kUnknown:
-      *output = apps::mojom::UninstallSource::kUnknown;
+      *output = apps::UninstallSource::kUnknown;
       return true;
     case crosapi::mojom::UninstallSource::kAppList:
-      *output = apps::mojom::UninstallSource::kAppList;
+      *output = apps::UninstallSource::kAppList;
       return true;
     case crosapi::mojom::UninstallSource::kAppManagement:
-      *output = apps::mojom::UninstallSource::kAppManagement;
+      *output = apps::UninstallSource::kAppManagement;
       return true;
     case crosapi::mojom::UninstallSource::kShelf:
-      *output = apps::mojom::UninstallSource::kShelf;
+      *output = apps::UninstallSource::kShelf;
       return true;
     case crosapi::mojom::UninstallSource::kMigration:
-      *output = apps::mojom::UninstallSource::kMigration;
+      *output = apps::UninstallSource::kMigration;
       return true;
   }
 
@@ -707,26 +735,40 @@ bool EnumTraits<crosapi::mojom::UninstallSource, apps::mojom::UninstallSource>::
   return false;
 }
 
+// static
+crosapi::mojom::OptionalBool StructTraits<
+    crosapi::mojom::CapabilityAccessDataView,
+    apps::CapabilityAccessPtr>::camera(const apps::CapabilityAccessPtr& r) {
+  return ConvertOptionalBoolToMojomOptionalBool(r->camera);
+}
+
+// static
+crosapi::mojom::OptionalBool StructTraits<
+    crosapi::mojom::CapabilityAccessDataView,
+    apps::CapabilityAccessPtr>::microphone(const apps::CapabilityAccessPtr& r) {
+  return ConvertOptionalBoolToMojomOptionalBool(r->microphone);
+}
+
 bool StructTraits<crosapi::mojom::CapabilityAccessDataView,
-                  apps::mojom::CapabilityAccessPtr>::
+                  apps::CapabilityAccessPtr>::
     Read(crosapi::mojom::CapabilityAccessDataView data,
-         apps::mojom::CapabilityAccessPtr* out) {
+         apps::CapabilityAccessPtr* out) {
   std::string app_id;
   if (!data.ReadAppId(&app_id))
     return false;
 
-  apps::mojom::OptionalBool camera;
+  crosapi::mojom::OptionalBool camera;
   if (!data.ReadCamera(&camera))
     return false;
 
-  apps::mojom::OptionalBool microphone;
+  crosapi::mojom::OptionalBool microphone;
   if (!data.ReadMicrophone(&microphone))
     return false;
 
-  auto capability_access = apps::mojom::CapabilityAccess::New();
-  capability_access->app_id = std::move(app_id);
-  capability_access->camera = std::move(camera);
-  capability_access->microphone = std::move(microphone);
+  auto capability_access = std::make_unique<apps::CapabilityAccess>(app_id);
+  capability_access->camera = ConvertMojomOptionalBoolToOptionalBool(camera);
+  capability_access->microphone =
+      ConvertMojomOptionalBoolToOptionalBool(microphone);
   *out = std::move(capability_access);
   return true;
 }
@@ -790,6 +832,7 @@ bool StructTraits<crosapi::mojom::IconValueDataView, apps::IconValuePtr>::Read(
   icon_value->uncompressed = std::move(uncompressed);
   icon_value->compressed = std::move(compressed);
   icon_value->is_placeholder_icon = data.is_placeholder_icon();
+  icon_value->is_maskable_icon = data.is_maskable_icon();
   *out = std::move(icon_value);
   return true;
 }
@@ -834,170 +877,172 @@ bool EnumTraits<crosapi::mojom::WindowMode, apps::WindowMode>::FromMojom(
 }
 
 crosapi::mojom::LaunchSource
-EnumTraits<crosapi::mojom::LaunchSource, apps::mojom::LaunchSource>::ToMojom(
-    apps::mojom::LaunchSource input) {
+EnumTraits<crosapi::mojom::LaunchSource, apps::LaunchSource>::ToMojom(
+    apps::LaunchSource input) {
   switch (input) {
-    case apps::mojom::LaunchSource::kUnknown:
+    case apps::LaunchSource::kUnknown:
       return crosapi::mojom::LaunchSource::kUnknown;
-    case apps::mojom::LaunchSource::kFromAppListGrid:
+    case apps::LaunchSource::kFromAppListGrid:
       return crosapi::mojom::LaunchSource::kFromAppListGrid;
-    case apps::mojom::LaunchSource::kFromAppListGridContextMenu:
+    case apps::LaunchSource::kFromAppListGridContextMenu:
       return crosapi::mojom::LaunchSource::kFromAppListGridContextMenu;
-    case apps::mojom::LaunchSource::kFromAppListQuery:
+    case apps::LaunchSource::kFromAppListQuery:
       return crosapi::mojom::LaunchSource::kFromAppListQuery;
-    case apps::mojom::LaunchSource::kFromAppListQueryContextMenu:
+    case apps::LaunchSource::kFromAppListQueryContextMenu:
       return crosapi::mojom::LaunchSource::kFromAppListQueryContextMenu;
-    case apps::mojom::LaunchSource::kFromAppListRecommendation:
+    case apps::LaunchSource::kFromAppListRecommendation:
       return crosapi::mojom::LaunchSource::kFromAppListRecommendation;
-    case apps::mojom::LaunchSource::kFromParentalControls:
+    case apps::LaunchSource::kFromParentalControls:
       return crosapi::mojom::LaunchSource::kFromParentalControls;
-    case apps::mojom::LaunchSource::kFromShelf:
+    case apps::LaunchSource::kFromShelf:
       return crosapi::mojom::LaunchSource::kFromShelf;
-    case apps::mojom::LaunchSource::kFromFileManager:
+    case apps::LaunchSource::kFromFileManager:
       return crosapi::mojom::LaunchSource::kFromFileManager;
-    case apps::mojom::LaunchSource::kFromLink:
+    case apps::LaunchSource::kFromLink:
       return crosapi::mojom::LaunchSource::kFromLink;
-    case apps::mojom::LaunchSource::kFromOmnibox:
+    case apps::LaunchSource::kFromOmnibox:
       return crosapi::mojom::LaunchSource::kFromOmnibox;
-    case apps::mojom::LaunchSource::kFromChromeInternal:
+    case apps::LaunchSource::kFromChromeInternal:
       return crosapi::mojom::LaunchSource::kFromChromeInternal;
-    case apps::mojom::LaunchSource::kFromKeyboard:
+    case apps::LaunchSource::kFromKeyboard:
       return crosapi::mojom::LaunchSource::kFromKeyboard;
-    case apps::mojom::LaunchSource::kFromOtherApp:
+    case apps::LaunchSource::kFromOtherApp:
       return crosapi::mojom::LaunchSource::kFromOtherApp;
-    case apps::mojom::LaunchSource::kFromMenu:
+    case apps::LaunchSource::kFromMenu:
       return crosapi::mojom::LaunchSource::kFromMenu;
-    case apps::mojom::LaunchSource::kFromInstalledNotification:
+    case apps::LaunchSource::kFromInstalledNotification:
       return crosapi::mojom::LaunchSource::kFromInstalledNotification;
-    case apps::mojom::LaunchSource::kFromTest:
+    case apps::LaunchSource::kFromTest:
       return crosapi::mojom::LaunchSource::kFromTest;
-    case apps::mojom::LaunchSource::kFromArc:
+    case apps::LaunchSource::kFromArc:
       return crosapi::mojom::LaunchSource::kFromArc;
-    case apps::mojom::LaunchSource::kFromSharesheet:
+    case apps::LaunchSource::kFromSharesheet:
       return crosapi::mojom::LaunchSource::kFromSharesheet;
-    case apps::mojom::LaunchSource::kFromReleaseNotesNotification:
+    case apps::LaunchSource::kFromReleaseNotesNotification:
       return crosapi::mojom::LaunchSource::kFromReleaseNotesNotification;
-    case apps::mojom::LaunchSource::kFromFullRestore:
+    case apps::LaunchSource::kFromFullRestore:
       return crosapi::mojom::LaunchSource::kFromFullRestore;
-    case apps::mojom::LaunchSource::kFromSmartTextContextMenu:
+    case apps::LaunchSource::kFromSmartTextContextMenu:
       return crosapi::mojom::LaunchSource::kFromSmartTextContextMenu;
-    case apps::mojom::LaunchSource::kFromDiscoverTabNotification:
+    case apps::LaunchSource::kFromDiscoverTabNotification:
       return crosapi::mojom::LaunchSource::kFromDiscoverTabNotification;
-    case apps::mojom::LaunchSource::kFromManagementApi:
+    case apps::LaunchSource::kFromManagementApi:
       return crosapi::mojom::LaunchSource::kFromManagementApi;
-    case apps::mojom::LaunchSource::kFromKiosk:
+    case apps::LaunchSource::kFromKiosk:
       return crosapi::mojom::LaunchSource::kFromKiosk;
-    case apps::mojom::LaunchSource::kFromNewTabPage:
+    case apps::LaunchSource::kFromNewTabPage:
       return crosapi::mojom::LaunchSource::kFromNewTabPage;
-    case apps::mojom::LaunchSource::kFromIntentUrl:
+    case apps::LaunchSource::kFromIntentUrl:
       return crosapi::mojom::LaunchSource::kFromIntentUrl;
-    case apps::mojom::LaunchSource::kFromOsLogin:
+    case apps::LaunchSource::kFromOsLogin:
       return crosapi::mojom::LaunchSource::kFromOsLogin;
-    case apps::mojom::LaunchSource::kFromProtocolHandler:
+    case apps::LaunchSource::kFromProtocolHandler:
       return crosapi::mojom::LaunchSource::kFromProtocolHandler;
-    case apps::mojom::LaunchSource::kFromUrlHandler:
+    case apps::LaunchSource::kFromUrlHandler:
       return crosapi::mojom::LaunchSource::kFromUrlHandler;
-    case apps::mojom::LaunchSource::kFromCommandLine:
-    case apps::mojom::LaunchSource::kFromBackgroundMode:
+    // TODO(crbug.com/1343692): Make lock screen apps use lacros browser.
+    case apps::LaunchSource::kFromLockScreen:
+    case apps::LaunchSource::kFromCommandLine:
+    case apps::LaunchSource::kFromBackgroundMode:
       NOTREACHED();
       return crosapi::mojom::LaunchSource::kUnknown;
   }
   NOTREACHED();
 }
 
-bool EnumTraits<crosapi::mojom::LaunchSource, apps::mojom::LaunchSource>::
-    FromMojom(crosapi::mojom::LaunchSource input,
-              apps::mojom::LaunchSource* output) {
+bool EnumTraits<crosapi::mojom::LaunchSource, apps::LaunchSource>::FromMojom(
+    crosapi::mojom::LaunchSource input,
+    apps::LaunchSource* output) {
   switch (input) {
     case crosapi::mojom::LaunchSource::kUnknown:
-      *output = apps::mojom::LaunchSource::kUnknown;
+      *output = apps::LaunchSource::kUnknown;
       return true;
     case crosapi::mojom::LaunchSource::kFromAppListGrid:
-      *output = apps::mojom::LaunchSource::kFromAppListGrid;
+      *output = apps::LaunchSource::kFromAppListGrid;
       return true;
     case crosapi::mojom::LaunchSource::kFromAppListGridContextMenu:
-      *output = apps::mojom::LaunchSource::kFromAppListGridContextMenu;
+      *output = apps::LaunchSource::kFromAppListGridContextMenu;
       return true;
     case crosapi::mojom::LaunchSource::kFromAppListQuery:
-      *output = apps::mojom::LaunchSource::kFromAppListQuery;
+      *output = apps::LaunchSource::kFromAppListQuery;
       return true;
     case crosapi::mojom::LaunchSource::kFromAppListQueryContextMenu:
-      *output = apps::mojom::LaunchSource::kFromAppListQueryContextMenu;
+      *output = apps::LaunchSource::kFromAppListQueryContextMenu;
       return true;
     case crosapi::mojom::LaunchSource::kFromAppListRecommendation:
-      *output = apps::mojom::LaunchSource::kFromAppListRecommendation;
+      *output = apps::LaunchSource::kFromAppListRecommendation;
       return true;
     case crosapi::mojom::LaunchSource::kFromParentalControls:
-      *output = apps::mojom::LaunchSource::kFromParentalControls;
+      *output = apps::LaunchSource::kFromParentalControls;
       return true;
     case crosapi::mojom::LaunchSource::kFromShelf:
-      *output = apps::mojom::LaunchSource::kFromShelf;
+      *output = apps::LaunchSource::kFromShelf;
       return true;
     case crosapi::mojom::LaunchSource::kFromFileManager:
-      *output = apps::mojom::LaunchSource::kFromFileManager;
+      *output = apps::LaunchSource::kFromFileManager;
       return true;
     case crosapi::mojom::LaunchSource::kFromLink:
-      *output = apps::mojom::LaunchSource::kFromLink;
+      *output = apps::LaunchSource::kFromLink;
       return true;
     case crosapi::mojom::LaunchSource::kFromOmnibox:
-      *output = apps::mojom::LaunchSource::kFromOmnibox;
+      *output = apps::LaunchSource::kFromOmnibox;
       return true;
     case crosapi::mojom::LaunchSource::kFromChromeInternal:
-      *output = apps::mojom::LaunchSource::kFromChromeInternal;
+      *output = apps::LaunchSource::kFromChromeInternal;
       return true;
     case crosapi::mojom::LaunchSource::kFromKeyboard:
-      *output = apps::mojom::LaunchSource::kFromKeyboard;
+      *output = apps::LaunchSource::kFromKeyboard;
       return true;
     case crosapi::mojom::LaunchSource::kFromOtherApp:
-      *output = apps::mojom::LaunchSource::kFromOtherApp;
+      *output = apps::LaunchSource::kFromOtherApp;
       return true;
     case crosapi::mojom::LaunchSource::kFromMenu:
-      *output = apps::mojom::LaunchSource::kFromMenu;
+      *output = apps::LaunchSource::kFromMenu;
       return true;
     case crosapi::mojom::LaunchSource::kFromInstalledNotification:
-      *output = apps::mojom::LaunchSource::kFromInstalledNotification;
+      *output = apps::LaunchSource::kFromInstalledNotification;
       return true;
     case crosapi::mojom::LaunchSource::kFromTest:
-      *output = apps::mojom::LaunchSource::kFromTest;
+      *output = apps::LaunchSource::kFromTest;
       return true;
     case crosapi::mojom::LaunchSource::kFromArc:
-      *output = apps::mojom::LaunchSource::kFromArc;
+      *output = apps::LaunchSource::kFromArc;
       return true;
     case crosapi::mojom::LaunchSource::kFromSharesheet:
-      *output = apps::mojom::LaunchSource::kFromSharesheet;
+      *output = apps::LaunchSource::kFromSharesheet;
       return true;
     case crosapi::mojom::LaunchSource::kFromReleaseNotesNotification:
-      *output = apps::mojom::LaunchSource::kFromReleaseNotesNotification;
+      *output = apps::LaunchSource::kFromReleaseNotesNotification;
       return true;
     case crosapi::mojom::LaunchSource::kFromFullRestore:
-      *output = apps::mojom::LaunchSource::kFromFullRestore;
+      *output = apps::LaunchSource::kFromFullRestore;
       return true;
     case crosapi::mojom::LaunchSource::kFromSmartTextContextMenu:
-      *output = apps::mojom::LaunchSource::kFromSmartTextContextMenu;
+      *output = apps::LaunchSource::kFromSmartTextContextMenu;
       return true;
     case crosapi::mojom::LaunchSource::kFromDiscoverTabNotification:
-      *output = apps::mojom::LaunchSource::kFromDiscoverTabNotification;
+      *output = apps::LaunchSource::kFromDiscoverTabNotification;
       return true;
     case crosapi::mojom::LaunchSource::kFromManagementApi:
-      *output = apps::mojom::LaunchSource::kFromManagementApi;
+      *output = apps::LaunchSource::kFromManagementApi;
       return true;
     case crosapi::mojom::LaunchSource::kFromKiosk:
-      *output = apps::mojom::LaunchSource::kFromKiosk;
+      *output = apps::LaunchSource::kFromKiosk;
       return true;
     case crosapi::mojom::LaunchSource::kFromNewTabPage:
-      *output = apps::mojom::LaunchSource::kFromNewTabPage;
+      *output = apps::LaunchSource::kFromNewTabPage;
       return true;
     case crosapi::mojom::LaunchSource::kFromIntentUrl:
-      *output = apps::mojom::LaunchSource::kFromIntentUrl;
+      *output = apps::LaunchSource::kFromIntentUrl;
       return true;
     case crosapi::mojom::LaunchSource::kFromOsLogin:
-      *output = apps::mojom::LaunchSource::kFromOsLogin;
+      *output = apps::LaunchSource::kFromOsLogin;
       return true;
     case crosapi::mojom::LaunchSource::kFromProtocolHandler:
-      *output = apps::mojom::LaunchSource::kFromProtocolHandler;
+      *output = apps::LaunchSource::kFromProtocolHandler;
       return true;
     case crosapi::mojom::LaunchSource::kFromUrlHandler:
-      *output = apps::mojom::LaunchSource::kFromUrlHandler;
+      *output = apps::LaunchSource::kFromUrlHandler;
       return true;
   }
 
@@ -1038,6 +1083,8 @@ EnumTraits<crosapi::mojom::PermissionType, apps::PermissionType>::ToMojom(
       return crosapi::mojom::PermissionType::kContacts;
     case apps::PermissionType::kStorage:
       return crosapi::mojom::PermissionType::kStorage;
+    case apps::PermissionType::kFileHandling:
+      return crosapi::mojom::PermissionType::kFileHandling;
     case apps::PermissionType::kPrinting:
       NOTREACHED();
       return crosapi::mojom::PermissionType::kUnknown;
@@ -1069,6 +1116,9 @@ bool EnumTraits<crosapi::mojom::PermissionType,
       return true;
     case crosapi::mojom::PermissionType::kStorage:
       *output = apps::PermissionType::kStorage;
+      return true;
+    case crosapi::mojom::PermissionType::kFileHandling:
+      *output = apps::PermissionType::kFileHandling;
       return true;
   }
 
@@ -1113,10 +1163,10 @@ bool EnumTraits<crosapi::mojom::TriState, apps::TriState>::FromMojom(
 crosapi::mojom::PermissionValueDataView::Tag UnionTraits<
     crosapi::mojom::PermissionValueDataView,
     apps::PermissionValuePtr>::GetTag(const apps::PermissionValuePtr& r) {
-  if (r->bool_value.has_value()) {
+  if (absl::holds_alternative<bool>(r->value)) {
     return crosapi::mojom::PermissionValueDataView::Tag::kBoolValue;
   }
-  if (r->tristate_value.has_value()) {
+  if (absl::holds_alternative<apps::TriState>(r->value)) {
     return crosapi::mojom::PermissionValueDataView::Tag::kTristateValue;
   }
   NOTREACHED();

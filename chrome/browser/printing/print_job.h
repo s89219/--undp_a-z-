@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/observer_list_types.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "content/public/browser/global_routing_id.h"
 #include "printing/print_settings.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -54,6 +55,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
     virtual void OnDocDone(int job_id, PrintedDocument* document) {}
     virtual void OnJobDone() {}
     virtual void OnFailed() {}
+    virtual void OnDestruction() {}
   };
 
 #if BUILDFLAG(IS_CHROMEOS)
@@ -67,7 +69,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // post-constructor initialization must be done with Initialize().
   // If PrintJob is created on Chrome OS, call SetSource() to set which
   // component initiated this print job.
-  // |print_job_manager| must outlive this object.
+  // `print_job_manager` must outlive this object.
   explicit PrintJob(PrintJobManager* print_job_manager);
 
   PrintJob(const PrintJob&) = delete;
@@ -232,9 +234,11 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // worker thread per print job.
   std::unique_ptr<PrintJobWorker> worker_;
 
+  content::GlobalRenderFrameHostId rfh_id_;
+
   // The global PrintJobManager. May be null in testing contexts
   // only. Otherwise guaranteed to outlive this object.
-  raw_ptr<PrintJobManager> print_job_manager_ = nullptr;
+  raw_ptr<PrintJobManager, DanglingUntriaged> print_job_manager_ = nullptr;
 
   // The printed document.
   scoped_refptr<PrintedDocument> document_;

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -189,6 +189,12 @@ class TextProtoPrinter {
     EndMessage();
     return *this;
   }
+  TextProtoPrinter& operator<<(const feedstore::StreamContentHashList& v) {
+    BeginMessage();
+    PRINT_FIELD(hashes);
+    EndMessage();
+    return *this;
+  }
   TextProtoPrinter& operator<<(const feedstore::StreamData& v) {
     BeginMessage();
     PRINT_FIELD(content_id);
@@ -197,7 +203,7 @@ class TextProtoPrinter {
     PRINT_FIELD(last_added_time_millis);
     PRINT_FIELD(shared_state_ids);
     PRINT_FIELD(stream_id);
-    PRINT_FIELD(content_ids);
+    PRINT_FIELD(content_hashes);
     EndMessage();
     return *this;
   }
@@ -257,6 +263,7 @@ class TextProtoPrinter {
     PRINT_FIELD(kind);
     PRINT_FIELD(web_feed_id);
     PRINT_FIELD(attempts);
+    PRINT_FIELD(change_reason);
     EndMessage();
     return *this;
   }
@@ -484,6 +491,17 @@ class TextProtoPrinter {
     EndMessage();
     return *this;
   }
+  TextProtoPrinter& operator<<(const feedwire::InfoCardTrackingState& v) {
+    BeginMessage();
+    PRINT_FIELD(type);
+    PRINT_FIELD(explicitly_dismissed_count);
+    PRINT_FIELD(view_count);
+    PRINT_FIELD(click_count);
+    PRINT_FIELD(first_view_timestamp);
+    PRINT_FIELD(last_view_timestamp);
+    EndMessage();
+    return *this;
+  }
 
   template <typename T>
   void Field(const std::string& name, const T& value) {
@@ -521,6 +539,7 @@ DECLARE_PRINTER(feedstore, Metadata)
 DECLARE_PRINTER(feedstore, RecommendedWebFeedIndex)
 DECLARE_PRINTER(feedstore, Record)
 DECLARE_PRINTER(feedstore, StoredAction)
+DECLARE_PRINTER(feedstore, StreamContentHashList)
 DECLARE_PRINTER(feedstore, StreamData)
 DECLARE_PRINTER(feedstore, StreamSharedState)
 DECLARE_PRINTER(feedstore, StreamStructure)
@@ -533,6 +552,7 @@ DECLARE_PRINTER(feedwire, ActionPayload)
 DECLARE_PRINTER(feedwire, ClientInfo)
 DECLARE_PRINTER(feedwire, ContentId)
 DECLARE_PRINTER(feedwire, DisplayInfo)
+DECLARE_PRINTER(feedwire, InfoCardTrackingState)
 DECLARE_PRINTER(feedwire, UploadActionsRequest)
 DECLARE_PRINTER(feedwire, UploadActionsResponse)
 DECLARE_PRINTER(feedwire, Version)

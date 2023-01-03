@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,9 @@ class LabelButton;
 
 namespace ash {
 
+class ScopedA11yOverrideWindowSetter;
+class SystemShadow;
+
 // A view that has rounded corner with label and button inside. The label shows
 // the information. The button inside is optional and has certain functionality
 // e.g. dismiss the view or retry. A managed icon will be put ahead of the label
@@ -36,6 +39,14 @@ class ASH_EXPORT SystemToastStyle : public views::View {
   SystemToastStyle& operator=(const SystemToastStyle&) = delete;
   ~SystemToastStyle() override;
 
+  bool is_dismiss_button_highlighted() const {
+    return is_dismiss_button_highlighted_;
+  }
+
+  // Returns true if the toast has a dismiss button and was highlighted for
+  // accessibility, false otherwise.
+  bool ToggleA11yFocus();
+
   // Updates the toast label text.
   void SetText(const std::u16string& text);
 
@@ -43,11 +54,21 @@ class ASH_EXPORT SystemToastStyle : public views::View {
 
  private:
   // views::View:
+  void AddedToWidget() override;
   void OnThemeChanged() override;
 
   views::Label* label_ = nullptr;
   views::LabelButton* button_ = nullptr;
   views::ImageView* managed_icon_ = nullptr;
+
+  // Tells the toast if the dismiss button is already highlighted if one exists.
+  bool is_dismiss_button_highlighted_ = false;
+
+  std::unique_ptr<SystemShadow> shadow_;
+
+  // Updates the current a11y override window when the dismiss button is being
+  // highlighted.
+  std::unique_ptr<ScopedA11yOverrideWindowSetter> scoped_a11y_overrider_;
 };
 
 }  // namespace ash

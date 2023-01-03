@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
-#include "base/task/task_runner_util.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/timer/elapsed_timer.h"
@@ -220,6 +219,7 @@ void WebApkInstaller::OnInstallFinished(
 void WebApkInstaller::StoreUpdateRequestToFile(
     const base::FilePath& update_request_path,
     const webapps::ShortcutInfo& shortcut_info,
+    const GURL& app_key,
     const std::string& primary_icon_data,
     bool is_primary_icon_maskable,
     const std::string& splash_icon_data,
@@ -231,14 +231,14 @@ void WebApkInstaller::StoreUpdateRequestToFile(
     bool is_app_identity_update_supported,
     std::vector<webapps::WebApkUpdateReason> update_reasons,
     base::OnceCallback<void(bool)> callback) {
-  base::PostTaskAndReplyWithResult(
-      GetBackgroundTaskRunner().get(), FROM_HERE,
-      base::BindOnce(&webapps::StoreUpdateRequestToFileInBackground,
-                     update_request_path, shortcut_info, primary_icon_data,
-                     is_primary_icon_maskable, splash_icon_data, package_name,
-                     version, std::move(icon_url_to_murmur2_hash),
-                     is_manifest_stale, is_app_identity_update_supported,
-                     std::move(update_reasons)),
+  GetBackgroundTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE,
+      base::BindOnce(
+          &webapps::StoreUpdateRequestToFileInBackground, update_request_path,
+          shortcut_info, app_key, primary_icon_data, is_primary_icon_maskable,
+          splash_icon_data, package_name, version,
+          std::move(icon_url_to_murmur2_hash), is_manifest_stale,
+          is_app_identity_update_supported, std::move(update_reasons)),
       std::move(callback));
 }
 
@@ -281,7 +281,7 @@ void WebApkInstaller::OnResult(webapps::WebApkInstallResult result) {
       DVLOG(1) << "The WebAPK installation failed.";
       webapk::TrackInstallEvent(webapk::INSTALL_FAILED);
       if (web_contents_ && !web_contents_->IsBeingDestroyed()) {
-        web_contents_->GetMainFrame()->AddMessageToConsole(
+        web_contents_->GetPrimaryMainFrame()->AddMessageToConsole(
             blink::mojom::ConsoleMessageLevel::kError,
             base::StringPrintf(kWebApkFailureMessageTemplate,
                                manifest_url_.spec().c_str()));
@@ -407,9 +407,8 @@ void WebApkInstaller::UpdateAsync(const base::FilePath& update_request_path,
     return;
   }
 
-  base::PostTaskAndReplyWithResult(
-      GetBackgroundTaskRunner().get(), FROM_HERE,
-      base::BindOnce(&ReadFileInBackground, update_request_path),
+  GetBackgroundTaskRunner()->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadFileInBackground, update_request_path),
       base::BindOnce(&WebApkInstaller::OnReadUpdateRequest,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -652,10 +651,10 @@ void WebApkInstaller::OnGotIconMurmur2Hashes(
   // Using empty string for |primary_icon_data| and |splash_icon_data| here
   // because in WebApk installs, we are using the icon data from |hashes|.
   webapps::BuildProto(
-      *install_shortcut_info_, std::string() /* primary_icon_data */,
-      is_primary_icon_maskable_, std::string() /* splash_icon_data */,
-      "" /* package_name */, "" /* version */, std::move(*hashes),
-      false /* is_manifest_stale */,
+      *install_shortcut_info_, install_shortcut_info_->manifest_id,
+      std::string() /* primary_icon_data */, is_primary_icon_maskable_,
+      std::string() /* splash_icon_data */, "" /* package_name */,
+      "" /* version */, std::move(*hashes), false /* is_manifest_stale */,
       false /* is_app_identity_update_supported */,
       base::BindOnce(&WebApkInstaller::SendRequest,
                      weak_ptr_factory_.GetWeakPtr(),

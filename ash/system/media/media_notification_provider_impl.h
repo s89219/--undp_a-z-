@@ -1,11 +1,9 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef ASH_SYSTEM_MEDIA_MEDIA_NOTIFICATION_PROVIDER_IMPL_H_
 #define ASH_SYSTEM_MEDIA_MEDIA_NOTIFICATION_PROVIDER_IMPL_H_
-
-#include <map>
 
 #include "ash/ash_export.h"
 #include "ash/system/media/media_notification_provider.h"
@@ -14,6 +12,7 @@
 #include "components/global_media_controls/public/media_dialog_delegate.h"
 #include "components/global_media_controls/public/media_item_manager_observer.h"
 #include "components/global_media_controls/public/media_item_ui_observer.h"
+#include "components/global_media_controls/public/media_item_ui_observer_set.h"
 #include "components/media_message_center/media_notification_view_impl.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -45,7 +44,8 @@ class ASH_EXPORT MediaNotificationProviderImpl
   bool HasActiveNotifications() override;
   bool HasFrozenNotifications() override;
   std::unique_ptr<views::View> GetMediaNotificationListView(
-      int separator_thickness) override;
+      int separator_thickness,
+      bool should_clip_height) override;
   std::unique_ptr<views::View> GetActiveMediaNotificationView() override;
   void OnBubbleClosing() override;
   void SetColorTheme(
@@ -56,6 +56,10 @@ class ASH_EXPORT MediaNotificationProviderImpl
       const std::string& id,
       base::WeakPtr<media_message_center::MediaNotificationItem> item) override;
   void HideMediaItem(const std::string& id) override;
+  void RefreshMediaItem(
+      const std::string& id,
+      base::WeakPtr<media_message_center::MediaNotificationItem> item)
+      override {}
   void HideMediaDialog() override {}
   void Focus() override {}
 
@@ -67,6 +71,10 @@ class ASH_EXPORT MediaNotificationProviderImpl
   // global_media_controls::MediaItemUIObserver:
   void OnMediaItemUISizeChanged() override;
   void OnMediaItemUIDestroyed(const std::string& id) override;
+
+  global_media_controls::MediaItemManager* item_manager() {
+    return item_manager_.get();
+  }
 
   global_media_controls::MediaSessionItemProducer*
   media_session_item_producer_for_testing() {
@@ -84,10 +92,9 @@ class ASH_EXPORT MediaNotificationProviderImpl
   std::unique_ptr<global_media_controls::MediaSessionItemProducer>
       media_session_item_producer_;
 
-  std::map<const std::string, global_media_controls::MediaItemUI*>
-      observed_item_uis_;
-
   absl::optional<media_message_center::NotificationTheme> color_theme_;
+
+  global_media_controls::MediaItemUIObserverSet item_ui_observer_set_{this};
 };
 
 }  // namespace ash

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,8 @@
 #include <utility>
 
 #include "ash/accelerators/accelerator_controller_impl.h"
+#include "ash/accelerators/accelerator_tracker.h"
+#include "ash/accelerators/ash_accelerator_configuration.h"
 #include "ash/accelerators/ash_focus_manager_factory.h"
 #include "ash/accelerators/magnifier_key_scroller.h"
 #include "ash/accelerators/pre_target_accelerator_handler.h"
@@ -33,7 +35,11 @@
 #include "ash/child_accounts/parent_access_controller_impl.h"
 #include "ash/clipboard/clipboard_history_controller_impl.h"
 #include "ash/clipboard/control_v_histogram_recorder.h"
+#include "ash/color_enhancement/color_enhancement_controller.h"
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
+#include "ash/controls/contextual_tooltip.h"
+#include "ash/curtain/security_curtain_controller_impl.h"
 #include "ash/dbus/ash_dbus_services.h"
 #include "ash/detachable_base/detachable_base_handler.h"
 #include "ash/detachable_base/detachable_base_notification_controller.h"
@@ -52,6 +58,7 @@
 #include "ash/display/persistent_window_controller.h"
 #include "ash/display/privacy_screen_controller.h"
 #include "ash/display/projecting_observer.h"
+#include "ash/display/refresh_rate_throttle_controller.h"
 #include "ash/display/resolution_notification_controller.h"
 #include "ash/display/screen_ash.h"
 #include "ash/display/screen_orientation_controller.h"
@@ -64,12 +71,14 @@
 #include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/frame/snap_controller_impl.h"
 #include "ash/frame_throttler/frame_throttling_controller.h"
-#include "ash/high_contrast/high_contrast_controller.h"
+#include "ash/glanceables/glanceables_controller.h"
+#include "ash/glanceables/glanceables_delegate.h"
 #include "ash/highlighter/highlighter_controller.h"
 #include "ash/host/ash_window_tree_host_init_params.h"
 #include "ash/hud_display/hud_display.h"
 #include "ash/ime/ime_controller_impl.h"
 #include "ash/in_session_auth/in_session_auth_dialog_controller_impl.h"
+#include "ash/in_session_auth/webauthn_dialog_controller_impl.h"
 #include "ash/keyboard/keyboard_controller_impl.h"
 #include "ash/keyboard/ui/keyboard_ui_factory.h"
 #include "ash/login/login_screen_controller.h"
@@ -78,6 +87,7 @@
 #include "ash/metrics/feature_discovery_duration_reporter_impl.h"
 #include "ash/metrics/login_unlock_throughput_recorder.h"
 #include "ash/metrics/user_metrics_recorder.h"
+#include "ash/multi_capture/multi_capture_service_client.h"
 #include "ash/multi_device_setup/multi_device_notification_presenter.h"
 #include "ash/policy/policy_recommendation_restorer.h"
 #include "ash/projector/projector_controller_impl.h"
@@ -88,13 +98,13 @@
 #include "ash/public/cpp/shelf_config.h"
 #include "ash/public/cpp/shelf_model.h"
 #include "ash/public/cpp/shell_window_ids.h"
+#include "ash/public/cpp/system_sounds_delegate.h"
 #include "ash/public/cpp/tab_cluster/tab_cluster_ui_controller.h"
-#include "ash/public/cpp/views_text_services_context_menu_impl.h"
+#include "ash/public/cpp/views_text_services_context_menu_ash.h"
 #include "ash/quick_pair/keyed_service/quick_pair_mediator.h"
 #include "ash/rgb_keyboard/rgb_keyboard_manager.h"
 #include "ash/root_window_controller.h"
 #include "ash/session/session_controller_impl.h"
-#include "ash/shelf/contextual_tooltip.h"
 #include "ash/shelf/shelf_controller.h"
 #include "ash/shelf/shelf_window_watcher.h"
 #include "ash/shell_delegate.h"
@@ -104,20 +114,22 @@
 #include "ash/shutdown_controller_impl.h"
 #include "ash/style/ash_color_mixer.h"
 #include "ash/style/ash_color_provider.h"
-#include "ash/style/dark_mode_controller.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "ash/system/audio/display_speaker_controller.h"
 #include "ash/system/bluetooth/bluetooth_device_status_ui_handler.h"
 #include "ash/system/bluetooth/bluetooth_notification_controller.h"
-#include "ash/system/bluetooth/bluetooth_power_controller.h"
-#include "ash/system/bluetooth/tray_bluetooth_helper_experimental.h"
-#include "ash/system/bluetooth/tray_bluetooth_helper_legacy.h"
 #include "ash/system/brightness/brightness_controller_chromeos.h"
 #include "ash/system/brightness_control_delegate.h"
+#include "ash/system/camera/autozoom_controller_impl.h"
+#include "ash/system/camera/camera_effects_controller.h"
 #include "ash/system/caps_lock_notification_controller.h"
 #include "ash/system/diagnostics/diagnostics_log_controller.h"
+#include "ash/system/federated/federated_service_controller.h"
 #include "ash/system/firmware_update/firmware_update_notification_controller.h"
 #include "ash/system/geolocation/geolocation_controller.h"
 #include "ash/system/human_presence/human_presence_orientation_controller.h"
+#include "ash/system/human_presence/snooping_protection_controller.h"
+#include "ash/system/keyboard_brightness/keyboard_backlight_color_controller.h"
 #include "ash/system/keyboard_brightness/keyboard_brightness_controller.h"
 #include "ash/system/keyboard_brightness_control_delegate.h"
 #include "ash/system/locale/locale_update_controller_impl.h"
@@ -139,17 +151,19 @@
 #include "ash/system/power/power_prefs.h"
 #include "ash/system/power/power_status.h"
 #include "ash/system/power/video_activity_notifier.h"
+#include "ash/system/privacy/screen_switch_check_controller.h"
+#include "ash/system/privacy_hub/privacy_hub_controller.h"
 #include "ash/system/screen_layout_observer.h"
-#include "ash/system/screen_security/screen_switch_check_controller.h"
 #include "ash/system/session/logout_confirmation_controller.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/system_notification_controller.h"
 #include "ash/system/toast/toast_manager_impl.h"
 #include "ash/system/tray/system_tray_notifier.h"
-#include "ash/system/unified/snooping_protection_controller.h"
 #include "ash/system/usb_peripheral/usb_peripheral_notification_controller.h"
+#include "ash/system/video_conference/fake_video_conference_tray_controller.h"
 #include "ash/touch/ash_touch_transform_controller.h"
 #include "ash/touch/touch_devices_controller.h"
+#include "ash/touch/touch_selection_magnifier_runner_ash.h"
 #include "ash/tray_action/tray_action.h"
 #include "ash/utility/occlusion_tracker_pauser.h"
 #include "ash/wallpaper/wallpaper_controller_impl.h"
@@ -157,13 +171,14 @@
 #include "ash/wm/container_finder.h"
 #include "ash/wm/cursor_manager_chromeos.h"
 #include "ash/wm/desks/desks_controller.h"
-#include "ash/wm/desks/persistent_desks_bar_controller.h"
+#include "ash/wm/desks/persistent_desks_bar/persistent_desks_bar_controller.h"
 #include "ash/wm/event_client_impl.h"
 #include "ash/wm/float/float_controller.h"
 #include "ash/wm/gestures/back_gesture/back_gesture_event_handler.h"
 #include "ash/wm/immersive_context_ash.h"
 #include "ash/wm/lock_state_controller.h"
 #include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/multitask_menu_nudge_controller.h"
 #include "ash/wm/native_cursor_manager_ash.h"
 #include "ash/wm/overlay_event_filter.h"
 #include "ash/wm/overview/overview_controller.h"
@@ -184,6 +199,7 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/wm_shadow_controller_delegate.h"
 #include "ash/wm/workspace_controller.h"
+#include "ash/wm_mode/wm_mode_controller.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/check.h"
@@ -192,16 +208,21 @@
 #include "base/notreached.h"
 #include "base/system/sys_info.h"
 #include "base/trace_event/trace_event.h"
+#include "chromeos/ash/components/dbus/fwupd/fwupd_client.h"
 #include "chromeos/ash/components/dbus/usb/usbguard_client.h"
+#include "chromeos/ash/components/fwupd/firmware_update_manager.h"
+#include "chromeos/ash/components/peripheral_notification/peripheral_notification_manager.h"
+#include "chromeos/ash/components/system/devicemode.h"
+#include "chromeos/ash/services/assistant/public/cpp/features.h"
 #include "chromeos/dbus/init/initialize_dbus_client.h"
 #include "chromeos/dbus/power/power_policy_controller.h"
-#include "chromeos/services/assistant/public/cpp/features.h"
-#include "chromeos/system/devicemode.h"
 #include "chromeos/ui/wm/features.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/viz/host/host_frame_sink_manager.h"
 #include "dbus/bus.h"
+#include "media/capture/video/chromeos/video_capture_features_chromeos.h"
+#include "services/video_capture/public/mojom/multi_capture_service.mojom.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/layout_manager.h"
@@ -210,6 +231,7 @@
 #include "ui/base/cursor/mojom/cursor_type.mojom-shared.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/user_activity/user_activity_detector.h"
+#include "ui/chromeos/events/keyboard_capability.h"
 #include "ui/chromeos/user_activity_power_manager_notifier.h"
 #include "ui/color/color_provider_manager.h"
 #include "ui/compositor/layer.h"
@@ -417,12 +439,6 @@ Shell::CreateDefaultNonClientFrameView(views::Widget* widget) {
   return std::make_unique<NonClientFrameViewAsh>(widget);
 }
 
-void Shell::SetDisplayWorkAreaInsets(Window* contains,
-                                     const gfx::Insets& insets) {
-  window_tree_host_manager_->UpdateWorkAreaOfDisplayNearestWindow(contains,
-                                                                  insets);
-}
-
 void Shell::OnCastingSessionStartedOrStopped(bool started) {
   for (auto& observer : shell_observers_)
     observer.OnCastingSessionStartedOrStopped(started);
@@ -431,6 +447,11 @@ void Shell::OnCastingSessionStartedOrStopped(bool started) {
 void Shell::OnRootWindowAdded(aura::Window* root_window) {
   for (auto& observer : shell_observers_)
     observer.OnRootWindowAdded(root_window);
+}
+
+void Shell::OnRootWindowWillShutdown(aura::Window* root_window) {
+  for (auto& observer : shell_observers_)
+    observer.OnRootWindowWillShutdown(root_window);
 }
 
 void Shell::OnDictationStarted() {
@@ -555,6 +576,27 @@ void Shell::NotifyShelfAlignmentChanged(aura::Window* root_window,
     observer.OnShelfAlignmentChanged(root_window, old_alignment);
 }
 
+void Shell::NotifyDisplayForNewWindowsChanged() {
+  for (auto& observer : shell_observers_)
+    observer.OnDisplayForNewWindowsChanged();
+}
+
+void Shell::AddAccessibilityEventHandler(
+    ui::EventHandler* handler,
+    AccessibilityEventHandlerManager::HandlerType type) {
+  if (!accessibility_event_handler_manager_) {
+    accessibility_event_handler_manager_ =
+        std::make_unique<AccessibilityEventHandlerManager>();
+  }
+
+  accessibility_event_handler_manager_->AddAccessibilityEventHandler(handler,
+                                                                     type);
+}
+void Shell::RemoveAccessibilityEventHandler(ui::EventHandler* handler) {
+  accessibility_event_handler_manager_->RemoveAccessibilityEventHandler(
+      handler);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Shell, private:
 
@@ -564,6 +606,8 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate)
       focus_cycler_(std::make_unique<FocusCycler>()),
       ime_controller_(std::make_unique<ImeControllerImpl>()),
       immersive_context_(std::make_unique<ImmersiveContextAsh>()),
+      webauthn_dialog_controller_(
+          std::make_unique<WebAuthNDialogControllerImpl>()),
       in_session_auth_dialog_controller_(
           std::make_unique<InSessionAuthDialogControllerImpl>()),
       keyboard_brightness_control_delegate_(
@@ -588,20 +632,6 @@ Shell::Shell(std::unique_ptr<ShellDelegate> shell_delegate)
   keyboard_controller_ =
       std::make_unique<KeyboardControllerImpl>(session_controller_.get());
 
-  if (!ash::features::IsBluetoothRevampEnabled()) {
-    if (base::FeatureList::IsEnabled(features::kUseBluetoothSystemInAsh)) {
-      mojo::PendingRemote<device::mojom::BluetoothSystemFactory>
-          bluetooth_system_factory;
-      shell_delegate_->BindBluetoothSystemFactory(
-          bluetooth_system_factory.InitWithNewPipeAndPassReceiver());
-      tray_bluetooth_helper_ =
-          std::make_unique<TrayBluetoothHelperExperimental>(
-              std::move(bluetooth_system_factory));
-    } else {
-      tray_bluetooth_helper_ = std::make_unique<TrayBluetoothHelperLegacy>();
-    }
-  }
-
   PowerStatus::Initialize();
 
   session_controller_->AddObserver(this);
@@ -619,6 +649,9 @@ Shell::~Shell() {
 
   hud_display::HUDDisplayView::Destroy();
 
+  // Observes `SessionController` and must be destroyed before it.
+  privacy_hub_controller_.reset();
+
   for (auto& observer : shell_observers_)
     observer.OnShellDestroying();
 
@@ -633,6 +666,7 @@ Shell::~Shell() {
   display_configuration_observer_.reset();
   display_prefs_.reset();
   display_alignment_controller_.reset();
+  refresh_rate_throttle_controller_.reset();
 
   // Remove the focus from any window. This will prevent overhead and side
   // effects (e.g. crashes) from changing focus during shutdown.
@@ -656,6 +690,7 @@ Shell::~Shell() {
   overlay_filter_.reset();
 
   RemovePreTargetHandler(control_v_histogram_recorder_.get());
+  RemovePreTargetHandler(accelerator_tracker_.get());
   RemovePreTargetHandler(accelerator_filter_.get());
   RemovePreTargetHandler(event_transformation_handler_.get());
   if (back_gesture_event_handler_)
@@ -663,13 +698,15 @@ Shell::~Shell() {
   RemovePreTargetHandler(toplevel_window_event_handler_.get());
   RemovePostTargetHandler(toplevel_window_event_handler_.get());
   RemovePreTargetHandler(system_gesture_filter_.get());
-  RemovePreTargetHandler(mouse_cursor_filter_.get());
+  RemoveAccessibilityEventHandler(mouse_cursor_filter_.get());
   RemovePreTargetHandler(modality_filter_.get());
   RemovePreTargetHandler(tooltip_controller_.get());
 
   // Resets the text context menu implementation factory.
   views::ViewsTextServicesContextMenuChromeos::SetImplFactory(
       base::NullCallback());
+
+  wm_mode_controller_.reset();
 
   event_rewriter_controller_.reset();
 
@@ -701,6 +738,11 @@ Shell::~Shell() {
   // Accelerometer file reader stops listening to tablet mode controller.
   AccelerometerReader::GetInstance()->StopListenToTabletModeController();
 
+  if (features::AreGlanceablesEnabled()) {
+    // Close all glanceables so that all widgets are destroyed.
+    glanceables_controller_->DestroyUi();
+  }
+
   // Destroy |ambient_controller_| before |assistant_controller_|.
   ambient_controller_.reset();
 
@@ -713,17 +755,13 @@ Shell::~Shell() {
   // it before destroying |tablet_mode_controller_|.
   accessibility_controller_->Shutdown();
 
-  // Because this function will call |SessionController::RemoveObserver|, do it
-  // before destroying |session_controller_|.
-  accelerator_controller_->Shutdown();
-
-  // Must be destructed before hps_orientation_controller_.
+  // Must be destructed before human_presence_orientation_controller_.
   power_prefs_.reset();
 
   // Must be destructed before the tablet mode and message center controllers,
   // both of which these rely on.
-  hps_notify_controller_.reset();
-  hps_orientation_controller_.reset();
+  snooping_protection_controller_.reset();
+  human_presence_orientation_controller_.reset();
 
   // Shutdown tablet mode controller early on since it has some observers which
   // need to be removed. It will be destroyed later after all windows are closed
@@ -739,8 +777,6 @@ Shell::~Shell() {
   ml::UserSettingsEventLogger::DeleteInstance();
 
   toast_manager_.reset();
-
-  tray_bluetooth_helper_.reset();
 
   // Accesses root window containers.
   logout_confirmation_controller_.reset();
@@ -761,7 +797,7 @@ Shell::~Shell() {
   // VideoDetector::Observer interface.
   video_activity_notifier_.reset();
   video_detector_.reset();
-  high_contrast_controller_.reset();
+  color_enhancement_controller_.reset();
 
   shadow_controller_.reset();
   resize_shadow_controller_.reset();
@@ -770,15 +806,26 @@ Shell::~Shell() {
   window_cycle_controller_.reset();
   overview_controller_.reset();
 
+  // This must be destroyed before deleting all the windows below in
+  // `CloseAllRootWindowChildWindows()`, since shutting down the session will
+  // need to access those windows and it will be a UAF.
+  // https://crbug.com/1350711.
+  capture_mode_controller_.reset();
+
   // Close all widgets (including the shelf) and destroy all window containers.
   CloseAllRootWindowChildWindows();
 
-  capture_mode_controller_.reset();
+  // Glanceables has a dependency on `tablet_mode_controller_`. Should be
+  // destroyed first to remove the tablet mode observer.
+  glanceables_controller_.reset();
+
+  multitask_menu_nudge_controller_.reset();
   tablet_mode_controller_.reset();
   login_screen_controller_.reset();
   system_notification_controller_.reset();
   // Should be destroyed after Shelf and |system_notification_controller_|.
   system_tray_model_.reset();
+  system_sounds_delegate_.reset();
 
   // MruWindowTracker must be destroyed after all windows have been deleted to
   // avoid a possible crash when Shell is destroyed from a non-normal shutdown
@@ -820,7 +867,15 @@ Shell::~Shell() {
   display_configuration_controller_.reset();
 
   // Needs to be destructed before `ime_controler_`.
+  keyboard_backlight_color_controller_.reset();
   rgb_keyboard_manager_.reset();
+
+  ash_color_provider_.reset();
+
+  // Depends on `geolocation_controller_` and `wallpaper_controller_`, so it
+  // must be destructed before the geolocation controller and wallpaper
+  // controller.
+  dark_light_mode_controller_.reset();
 
   // These members access Shell in their destructors.
   wallpaper_controller_.reset();
@@ -848,10 +903,8 @@ Shell::~Shell() {
   docked_magnifier_controller_ = nullptr;
   // Similarly for PrivacyScreenController.
   privacy_screen_controller_ = nullptr;
-
-  // Depends on `geolocation_controller_`, so it must be destructed before the
-  // geolocation controller.
-  dark_mode_controller_.reset();
+  // Similarly for AutozoomControllerImpl
+  autozoom_controller_ = nullptr;
 
   geolocation_controller_.reset();
 
@@ -893,6 +946,8 @@ Shell::~Shell() {
 
   partial_magnifier_controller_.reset();
 
+  touch_selection_magnifier_runner_ash_.reset();
+
   laser_pointer_controller_.reset();
 
   if (display_change_observer_)
@@ -911,9 +966,6 @@ Shell::~Shell() {
   power_event_observer_.reset();
 
   session_controller_->RemoveObserver(this);
-  // BluetoothPowerController depends on the PrefService and must be destructed
-  // before it.
-  bluetooth_power_controller_ = nullptr;
   // TouchDevicesController depends on the PrefService and must be destructed
   // before it.
   touch_devices_controller_ = nullptr;
@@ -928,9 +980,13 @@ Shell::~Shell() {
 
   firmware_update_notification_controller_.reset();
 
+  firmware_update_manager_.reset();
+
   pcie_peripheral_notification_controller_.reset();
 
   usb_peripheral_notification_controller_.reset();
+
+  keyboard_capability_.reset();
 
   message_center_ash_impl_.reset();
 
@@ -945,14 +1001,22 @@ Shell::~Shell() {
   // before it.
   calendar_controller_.reset();
 
-  ash_color_provider_.reset();
+  camera_effects_controller_.reset();
 
   shell_delegate_.reset();
+
+  multi_capture_service_client_.reset();
+
+  // Observes `SessionController` and must be destroyed before it.
+  federated_service_controller_.reset();
 
   UsbguardClient::Shutdown();
 
   // Must be shut down after detachable_base_handler_.
   HammerdClient::Shutdown();
+
+  if (FwupdClient::Get())
+    FwupdClient::Shutdown();
 
   for (auto& observer : shell_observers_)
     observer.OnShellDestroyed();
@@ -982,13 +1046,12 @@ void Shell::Init(
 
   message_center_ash_impl_ = std::make_unique<MessageCenterAshImpl>();
 
+  // Initialized early since it is used by some other objects.
+  keyboard_capability_ = std::make_unique<ui::KeyboardCapability>();
+
   // These controllers call Shell::Get() in their constructors, so they cannot
   // be in the member initialization list.
   touch_devices_controller_ = std::make_unique<TouchDevicesController>();
-  if (!ash::features::IsBluetoothRevampEnabled()) {
-    bluetooth_power_controller_ =
-        std::make_unique<BluetoothPowerController>(local_state_);
-  }
   detachable_base_handler_ =
       std::make_unique<DetachableBaseHandler>(local_state_);
   detachable_base_notification_controller_ =
@@ -1017,13 +1080,15 @@ void Shell::Init(
   // Observes the tablet mode controller if any hps feature is enabled.
   if (features::IsSnoopingProtectionEnabled() ||
       features::IsQuickDimEnabled()) {
-    hps_orientation_controller_ = std::make_unique<HpsOrientationController>();
+    human_presence_orientation_controller_ =
+        std::make_unique<HumanPresenceOrientationController>();
   }
 
-  // Construct HpsNotifyController, must be constructed after
-  // HpsOrientationController.
+  // Construct SnoopingProtectionController, must be constructed after
+  // HumanPresenceOrientationController.
   if (features::IsSnoopingProtectionEnabled()) {
-    hps_notify_controller_ = std::make_unique<HpsNotifyController>();
+    snooping_protection_controller_ =
+        std::make_unique<SnoopingProtectionController>();
   }
 
   // Manages lifetime of DiagnosticApp logs.
@@ -1031,10 +1096,6 @@ void Shell::Init(
     diagnostics_log_controller_ =
         std::make_unique<diagnostics::DiagnosticsLogController>();
   }
-
-  firmware_update_notification_controller_ =
-      std::make_unique<FirmwareUpdateNotificationController>(
-          message_center::MessageCenter::Get());
 
   pcie_peripheral_notification_controller_ =
       std::make_unique<PciePeripheralNotificationController>(
@@ -1056,6 +1117,8 @@ void Shell::Init(
       peripheral_battery_listener_.get());
   power_event_observer_ = std::make_unique<PowerEventObserver>();
   window_cycle_controller_ = std::make_unique<WindowCycleController>();
+  multitask_menu_nudge_controller_ =
+      std::make_unique<MultitaskMenuNudgeController>();
 
   capture_mode_controller_ = std::make_unique<CaptureModeController>(
       shell_delegate_->CreateCaptureModeDelegate());
@@ -1068,6 +1131,14 @@ void Shell::Init(
   views::FocusManagerFactory::Install(new AshFocusManagerFactory);
 
   wallpaper_controller_ = WallpaperControllerImpl::Create(local_state_);
+
+  if (features::IsRgbKeyboardEnabled()) {
+    // Initialized after |rgb_keyboard_manager_| to observe the state of rgb
+    // keyboard and |wallpaper_controller_| because we will need to observe when
+    // the extracted wallpaper color changes.
+    keyboard_backlight_color_controller_ =
+        std::make_unique<KeyboardBacklightColorController>(local_state_);
+  }
 
   window_positioner_ = std::make_unique<WindowPositioner>();
 
@@ -1087,7 +1158,8 @@ void Shell::Init(
     env->set_context_factory(context_factory);
 
   ash_color_provider_ = std::make_unique<AshColorProvider>();
-
+  ui::ColorProviderManager::Get().AppendColorProviderInitializer(
+      base::BindRepeating(AddCrosStylesColorMixer));
   ui::ColorProviderManager::Get().AppendColorProviderInitializer(
       base::BindRepeating(AddAshColorMixer));
 
@@ -1103,11 +1175,14 @@ void Shell::Init(
   // been initialized.
   night_light_controller_ = std::make_unique<NightLightControllerImpl>();
 
-  dark_mode_controller_ = std::make_unique<DarkModeController>();
+  dark_light_mode_controller_ = std::make_unique<DarkLightModeControllerImpl>();
 
   // Privacy Screen depends on the display manager, so initialize it after
   // display manager was properly initialized.
   privacy_screen_controller_ = std::make_unique<PrivacyScreenController>();
+
+  if (media::ShouldEnableAutoFraming())
+    autozoom_controller_ = std::make_unique<AutozoomControllerImpl>();
 
   // Fast Pair depends on the display manager, so initialize it after
   // display manager was properly initialized.
@@ -1135,8 +1210,8 @@ void Shell::Init(
 
   screen_position_controller_ = std::make_unique<ScreenPositionController>();
 
-  frame_throttling_controller_ =
-      std::make_unique<FrameThrottlingController>(context_factory);
+  frame_throttling_controller_ = std::make_unique<FrameThrottlingController>(
+      context_factory->GetHostFrameSinkManager());
 
   if (features::IsTabClusterUIEnabled())
     tab_cluster_ui_controller_ = std::make_unique<TabClusterUIController>();
@@ -1162,16 +1237,23 @@ void Shell::Init(
   cursor_manager_->SetDisplay(
       display::Screen::GetScreen()->GetPrimaryDisplay());
 
-  accelerator_controller_ = std::make_unique<AcceleratorControllerImpl>();
-  if (chromeos::features::IsClipboardHistoryEnabled()) {
-    clipboard_history_controller_ =
-        std::make_unique<ClipboardHistoryControllerImpl>();
-  }
+  ash_accelerator_configuration_ =
+      std::make_unique<AshAcceleratorConfiguration>();
+  ash_accelerator_configuration_->Initialize();
+  accelerator_controller_ = std::make_unique<AcceleratorControllerImpl>(
+      ash_accelerator_configuration_.get());
+
+  clipboard_history_controller_ =
+      std::make_unique<ClipboardHistoryControllerImpl>();
 
   // `HoldingSpaceController` must be instantiated before the shelf.
   holding_space_controller_ = std::make_unique<HoldingSpaceController>();
 
   calendar_controller_ = std::make_unique<CalendarController>();
+
+  if (CameraEffectsController::IsCameraEffectsSupported()) {
+    camera_effects_controller_ = std::make_unique<CameraEffectsController>();
+  }
 
   shelf_config_ = std::make_unique<ShelfConfig>();
   shelf_controller_ = std::make_unique<ShelfController>();
@@ -1194,6 +1276,12 @@ void Shell::Init(
 
   control_v_histogram_recorder_ = std::make_unique<ControlVHistogramRecorder>();
   AddPreTargetHandler(control_v_histogram_recorder_.get());
+
+  // AcceleratorTracker should be placed before AcceleratorFilter to make sure
+  // the accelerators won't be filtered out before getting AcceleratorTracker.
+  accelerator_tracker_ = std::make_unique<AcceleratorTracker>(
+      base::make_span(kAcceleratorTrackerList, kAcceleratorTrackerListLength));
+  AddPreTargetHandler(accelerator_tracker_.get());
 
   accelerator_filter_ = std::make_unique<::wm::AcceleratorFilter>(
       std::make_unique<PreTargetAcceleratorHandler>());
@@ -1235,8 +1323,9 @@ void Shell::Init(
   drag_drop_controller_ = std::make_unique<DragDropController>();
 
   mouse_cursor_filter_ = std::make_unique<MouseCursorEventFilter>();
-  AddPreTargetHandler(mouse_cursor_filter_.get(),
-                      ui::EventTarget::Priority::kAccessibility);
+  AddAccessibilityEventHandler(
+      mouse_cursor_filter_.get(),
+      AccessibilityEventHandlerManager::HandlerType::kCursor);
 
   if (features::IsAdaptiveChargingEnabled()) {
     adaptive_charging_controller_ =
@@ -1252,6 +1341,10 @@ void Shell::Init(
   partial_magnifier_controller_ =
       std::make_unique<PartialMagnifierController>();
   highlighter_controller_ = std::make_unique<HighlighterController>();
+  if (::features::IsTouchTextEditingRedesignEnabled()) {
+    touch_selection_magnifier_runner_ash_ =
+        std::make_unique<TouchSelectionMagnifierRunnerAsh>();
+  }
 
   fullscreen_magnifier_controller_ =
       std::make_unique<FullscreenMagnifierController>();
@@ -1260,13 +1353,20 @@ void Shell::Init(
 
   // |assistant_controller_| is put before |ambient_controller_| as it will be
   // used by the latter.
-  if (chromeos::features::IsAmbientModeEnabled()) {
+  if (features::IsAmbientModeEnabled()) {
     mojo::PendingRemote<device::mojom::Fingerprint> fingerprint;
     shell_delegate_->BindFingerprint(
         fingerprint.InitWithNewPipeAndPassReceiver());
     ambient_controller_ =
         std::make_unique<AmbientController>(std::move(fingerprint));
   }
+
+  mojo::PendingRemote<video_capture::mojom::MultiCaptureService>
+      multi_capture_service;
+  shell_delegate_->BindMultiCaptureService(
+      multi_capture_service.InitWithNewPipeAndPassReceiver());
+  multi_capture_service_client_ = std::make_unique<MultiCaptureServiceClient>(
+      std::move(multi_capture_service));
 
   // |tablet_mode_controller_| |mru_window_tracker_|, and
   // |assistant_controller_| are put before |app_list_controller_| as they are
@@ -1283,7 +1383,11 @@ void Shell::Init(
 
   autoclick_controller_ = std::make_unique<AutoclickController>();
 
-  high_contrast_controller_ = std::make_unique<HighContrastController>();
+  color_enhancement_controller_ =
+      std::make_unique<ColorEnhancementController>();
+
+  security_curtain_controller_ =
+      std::make_unique<curtain::SecurityCurtainControllerImpl>(this);
 
   docked_magnifier_controller_ = std::make_unique<DockedMagnifierController>();
 
@@ -1305,11 +1409,6 @@ void Shell::Init(
 
   logout_confirmation_controller_ =
       std::make_unique<LogoutConfirmationController>();
-
-  if (!ash::features::IsBluetoothRevampEnabled()) {
-    // May trigger initialization of the Bluetooth adapter.
-    tray_bluetooth_helper_->Initialize();
-  }
 
   // Create AshTouchTransformController before
   // WindowTreeHostManager::InitDisplays()
@@ -1336,8 +1435,28 @@ void Shell::Init(
   nearby_share_delegate_ = shell_delegate_->CreateNearbyShareDelegate(
       nearby_share_controller_.get());
 
+  // System sounds delegate should be initialized before
+  // `SystemNotificationController` is created, because
+  // `SystemNotificationController` ctor will creat an instance of
+  // `PowerSoundsController`, which will access and play the initialized sounds.
+  if (features::AreSystemSoundsEnabled()) {
+    system_sounds_delegate_ = shell_delegate_->CreateSystemSoundsDelegate();
+    system_sounds_delegate_->Init();
+  }
+
   system_notification_controller_ =
       std::make_unique<SystemNotificationController>();
+
+  if (features::IsCrosPrivacyHubEnabled()) {
+    // One of the subcontrollers accesses the SystemNotificationController.
+    privacy_hub_controller_ = std::make_unique<PrivacyHubController>();
+  }
+
+  // WmModeController should be created before initializing the window tree
+  // hosts, since the latter will initialize the shelf on each display, which
+  // hosts the WM mode tray button.
+  if (features::IsWmModeEnabled())
+    wm_mode_controller_ = std::make_unique<WmModeController>();
 
   window_tree_host_manager_->InitHosts();
 
@@ -1350,8 +1469,7 @@ void Shell::Init(
   // since it may need to add observers to root windows.
   window_restore_controller_ = std::make_unique<WindowRestoreController>();
 
-  cursor_manager_->HideCursor();  // Hide the mouse cursor on startup.
-  cursor_manager_->SetCursor(ui::mojom::CursorType::kPointer);
+  static_cast<CursorManager*>(cursor_manager_.get())->Init();
 
   mojo::PendingRemote<device::mojom::Fingerprint> fingerprint;
   shell_delegate_->BindFingerprint(
@@ -1361,12 +1479,8 @@ void Shell::Init(
           user_activity_detector_.get(), std::move(fingerprint));
   video_activity_notifier_ =
       std::make_unique<VideoActivityNotifier>(video_detector_.get());
-
-  if (ash::features::IsBluetoothRevampEnabled()) {
-    bluetooth_device_status_ui_handler_ =
-        std::make_unique<BluetoothDeviceStatusUiHandler>();
-  }
-
+  bluetooth_device_status_ui_handler_ =
+      std::make_unique<BluetoothDeviceStatusUiHandler>();
   bluetooth_notification_controller_ =
       std::make_unique<BluetoothNotificationController>(
           message_center::MessageCenter::Get());
@@ -1399,11 +1513,22 @@ void Shell::Init(
         std::make_unique<DisplayAlignmentController>();
   }
 
-  if (chromeos::features::IsProjectorEnabled())
+  if (features::AreGlanceablesEnabled()) {
+    glanceables_controller_ = std::make_unique<GlanceablesController>();
+    glanceables_controller_->Init(shell_delegate_->CreateGlanceablesDelegate(
+        glanceables_controller_.get()));
+  }
+
+  if (features::IsProjectorEnabled())
     projector_controller_ = std::make_unique<ProjectorControllerImpl>();
 
   if (chromeos::wm::features::IsFloatWindowEnabled())
     float_controller_ = std::make_unique<FloatController>();
+
+  if (features::IsFederatedServiceEnabled()) {
+    federated_service_controller_ =
+        std::make_unique<federated::FederatedServiceController>();
+  }
 
   // Injects the factory which fulfills the implementation of the text context
   // menu exclusive to CrOS.
@@ -1411,8 +1536,8 @@ void Shell::Init(
       base::BindRepeating(
           [](ui::SimpleMenuModel* menu_model, views::Textfield* textfield)
               -> std::unique_ptr<views::ViewsTextServicesContextMenu> {
-            return std::make_unique<ViewsTextServicesContextMenuImpl>(
-                menu_model, textfield);
+            return std::make_unique<ViewsTextServicesContextMenuAsh>(menu_model,
+                                                                     textfield);
           }));
 
   for (auto& observer : shell_observers_)
@@ -1425,10 +1550,6 @@ void Shell::Init(
   // Initialize the D-Bus bus and services for ash.
   dbus_bus_ = dbus_bus;
   ash_dbus_services_ = std::make_unique<AshDBusServices>(dbus_bus.get());
-
-  // By this point ash shell should have initialized its D-Bus signal
-  // listeners, so inform the session manager that Ash is initialized.
-  session_controller_->EmitAshInitialized();
 }
 
 void Shell::InitializeDisplayManager() {
@@ -1445,6 +1566,12 @@ void Shell::InitializeDisplayManager() {
 
   projecting_observer_ =
       std::make_unique<ProjectingObserver>(display_manager_->configurator());
+
+  if (base::FeatureList::IsEnabled(features::kSeamlessRefreshRateSwitching)) {
+    refresh_rate_throttle_controller_ =
+        std::make_unique<RefreshRateThrottleController>(
+            display_manager_->configurator(), PowerStatus::Get());
+  }
 
   display_prefs_ = std::make_unique<DisplayPrefs>(local_state_);
 
@@ -1571,6 +1698,24 @@ void Shell::OnSessionStateChanged(session_manager::SessionState state) {
   if (is_session_active && !shelf_window_watcher_) {
     shelf_window_watcher_ =
         std::make_unique<ShelfWindowWatcher>(shelf_controller()->model());
+  }
+
+  // Initialize the fwupd (firmware updater) DBus client only when the user
+  // session is active. Since the fwupd service is only relevant during an
+  // active user session, this prevents a bug in which the service would start
+  // up earlier than expected and causes a delay during boot.
+  // See b/250002264 for more details.
+  if (is_session_active && !FwupdClient::Get() &&
+      !firmware_update_notification_controller_) {
+    chromeos::InitializeDBusClient<FwupdClient>(dbus_bus_.get());
+    firmware_update_manager_ = std::make_unique<FirmwareUpdateManager>();
+    // The notification controller is registered as an observer before
+    // requesting updates to allow a notification to be shown if a critical
+    // firmware update is found.
+    firmware_update_notification_controller_ =
+        std::make_unique<FirmwareUpdateNotificationController>(
+            message_center::MessageCenter::Get());
+    firmware_update_manager_->RequestAllUpdates();
   }
 
   // Disable drag-and-drop during OOBE and GAIA login screens by only enabling

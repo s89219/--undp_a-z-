@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/location.h"
 #include "base/test/scoped_feature_list.h"
 
-#include "base/base64.h"
+#include "base/base64url.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
@@ -24,7 +24,6 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/test/values_test_util.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "components/omnibox/browser/autocomplete_controller.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match.h"
@@ -37,7 +36,6 @@
 #include "components/omnibox/common/omnibox_features.h"
 #include "components/open_from_clipboard/fake_clipboard_recent_content.h"
 #include "components/prefs/testing_pref_service.h"
-#include "components/search_engines/omnibox_focus_type.h"
 #include "components/search_engines/search_engines_switches.h"
 #include "components/search_engines/template_url.h"
 #include "components/search_engines/template_url_service.h"
@@ -45,6 +43,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
+#include "third_party/metrics_proto/omnibox_focus_type.pb.h"
+#include "third_party/omnibox_proto/types.pb.h"
 #include "ui/gfx/image/image_unittest_util.h"
 #include "ui/gfx/image/image_util.h"
 #include "url/url_constants.h"
@@ -56,7 +56,7 @@ const char16_t kTestTemplateURLKeyword[] = u"t";
 
 class TestingSchemeClassifier : public AutocompleteSchemeClassifier {
  public:
-  TestingSchemeClassifier() {}
+  TestingSchemeClassifier() = default;
   TestingSchemeClassifier(const TestingSchemeClassifier&) = delete;
   TestingSchemeClassifier& operator=(const TestingSchemeClassifier&) = delete;
 
@@ -69,15 +69,17 @@ class TestingSchemeClassifier : public AutocompleteSchemeClassifier {
   }
 };
 
-class TestAutocompleteProviderObserver
+// AutocompleteController::Observer implementation that runs the provided
+// closure, when the controller is done.
+class TestAutocompleteControllerObserver
     : public AutocompleteController::Observer {
  public:
-  TestAutocompleteProviderObserver() = default;
-  ~TestAutocompleteProviderObserver() override = default;
-  TestAutocompleteProviderObserver(const TestAutocompleteProviderObserver&) =
-      delete;
-  TestAutocompleteProviderObserver& operator=(
-      const TestAutocompleteProviderObserver&) = delete;
+  TestAutocompleteControllerObserver() = default;
+  ~TestAutocompleteControllerObserver() override = default;
+  TestAutocompleteControllerObserver(
+      const TestAutocompleteControllerObserver&) = delete;
+  TestAutocompleteControllerObserver& operator=(
+      const TestAutocompleteControllerObserver&) = delete;
 
   void set_closure(const base::RepeatingClosure& closure) {
     closure_ = closure;
@@ -98,6 +100,41 @@ class TestAutocompleteProviderObserver
   bool is_observing_ = false;
 };
 
+// AutocompleteProviderListener implementation that runs the provided closure,
+// when the provider is done. Informs the controller for non-prefetch requests.
+class TestAutocompleteProviderListener : public AutocompleteProviderListener {
+ public:
+  explicit TestAutocompleteProviderListener(AutocompleteController* controller)
+      : controller_(controller) {}
+  ~TestAutocompleteProviderListener() override = default;
+  TestAutocompleteProviderListener(const TestAutocompleteProviderListener&) =
+      delete;
+  TestAutocompleteProviderListener& operator=(
+      const TestAutocompleteProviderListener&) = delete;
+
+  void set_closure(const base::RepeatingClosure& closure) {
+    closure_ = closure;
+  }
+
+  // TestAutocompleteProviderListener:
+  void OnProviderUpdate(bool updated_matches,
+                        const AutocompleteProvider* provider) override {
+    controller_->OnProviderUpdate(updated_matches, provider);
+    if (closure_)
+      closure_.Run();
+  }
+
+  // Used by TestProvider to notify it is done with a prefetch request.
+  void OnProviderFinishedPrefetch() {
+    if (closure_)
+      closure_.Run();
+  }
+
+ private:
+  raw_ptr<AutocompleteController> controller_;
+  base::RepeatingClosure closure_;
+};
+
 }  // namespace
 
 // Autocomplete provider that provides known results. Note that this is
@@ -109,7 +146,6 @@ class TestProvider : public AutocompleteProvider {
                const std::u16string& match_keyword,
                AutocompleteProviderClient* client)
       : AutocompleteProvider(AutocompleteProvider::TYPE_SEARCH),
-        listener_(nullptr),
         relevance_(relevance),
         prefix_(prefix),
         match_keyword_(match_keyword),
@@ -117,18 +153,25 @@ class TestProvider : public AutocompleteProvider {
   TestProvider(const TestProvider&) = delete;
   TestProvider& operator=(const TestProvider&) = delete;
 
+  // AutocompleteProvider:
+  void StartPrefetch(const AutocompleteInput& input) override;
   void Start(const AutocompleteInput& input, bool minimal_changes) override;
 
-  void set_listener(AutocompleteProviderListener* listener) {
-    listener_ = listener;
+  void set_supports_prefetch(const bool supports_prefetch) {
+    supports_prefetch_ = supports_prefetch;
   }
 
-  virtual AutocompleteProviderListener* listener() { return listener_; }
+  bool prefetch_done() { return prefetch_done_; }
+
+  void set_closure(const base::RepeatingClosure& closure) {
+    closure_ = closure;
+  }
 
  protected:
   ~TestProvider() override = default;
 
-  void Run();
+  void OnNonPrefetchRequestDone();
+  void OnPrefetchRequestDone();
 
   void AddResults(int start_at, int num);
   void AddResultsWithSearchTermsArgs(
@@ -137,12 +180,43 @@ class TestProvider : public AutocompleteProvider {
       AutocompleteMatch::Type type,
       const TemplateURLRef::SearchTermsArgs& search_terms_args);
 
-  raw_ptr<AutocompleteProviderListener> listener_;
   int relevance_;
   const std::u16string prefix_;
   const std::u16string match_keyword_;
   raw_ptr<AutocompleteProviderClient> client_;
+  bool supports_prefetch_{false};
+  bool prefetch_done_{true};
+  base::RepeatingClosure closure_;
 };
+
+void TestProvider::StartPrefetch(const AutocompleteInput& input) {
+  if (!supports_prefetch_) {
+    return;
+  }
+
+  matches_.clear();
+  prefetch_done_ = false;
+  if (closure_) {
+    closure_.Run();
+  }
+
+  if (!input.omit_asynchronous_matches()) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&TestProvider::OnPrefetchRequestDone,
+                                  base::Unretained(this)));
+  } else {
+    OnPrefetchRequestDone();
+  }
+}
+
+void TestProvider::OnPrefetchRequestDone() {
+  AddResults(0, kResultsPerProvider);
+  prefetch_done_ = true;
+  for (auto* listener : listeners_) {
+    static_cast<TestAutocompleteProviderListener*>(listener)
+        ->OnProviderFinishedPrefetch();
+  }
+}
 
 void TestProvider::Start(const AutocompleteInput& input, bool minimal_changes) {
   if (minimal_changes)
@@ -150,7 +224,7 @@ void TestProvider::Start(const AutocompleteInput& input, bool minimal_changes) {
 
   matches_.clear();
 
-  if (input.focus_type() != OmniboxFocusType::DEFAULT)
+  if (input.focus_type() != metrics::OmniboxFocusType::INTERACTION_DEFAULT)
     return;
 
   // Generate 4 results synchronously, the rest later.
@@ -163,17 +237,18 @@ void TestProvider::Start(const AutocompleteInput& input, bool minimal_changes) {
   AddResultsWithSearchTermsArgs(3, 1, AutocompleteMatchType::SEARCH_SUGGEST,
                                 TemplateURLRef::SearchTermsArgs(u"query"));
 
-  if (input.want_asynchronous_matches()) {
+  if (!input.omit_asynchronous_matches()) {
     done_ = false;
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::BindOnce(&TestProvider::Run, this));
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(&TestProvider::OnNonPrefetchRequestDone,
+                                  base::Unretained(this)));
   }
 }
 
-void TestProvider::Run() {
+void TestProvider::OnNonPrefetchRequestDone() {
   AddResults(1, kResultsPerProvider);
   done_ = true;
-  listener()->OnProviderUpdate(true);
+  NotifyListeners(true);
 }
 
 void TestProvider::AddResults(int start_at, int num) {
@@ -212,90 +287,6 @@ void TestProvider::AddResultsWithSearchTermsArgs(
   }
 }
 
-// AutocompleteProviderListener implementation that calls the specified closure
-// when the provider is done and informs the controller, if applicable.
-class AutocompleteProviderListenerWithClosure
-    : public AutocompleteProviderListener {
- public:
-  explicit AutocompleteProviderListenerWithClosure(
-      AutocompleteController* controller)
-      : controller_(controller) {}
-  ~AutocompleteProviderListenerWithClosure() override = default;
-  AutocompleteProviderListenerWithClosure(
-      const AutocompleteProviderListenerWithClosure&) = delete;
-  AutocompleteProviderListenerWithClosure& operator=(
-      const AutocompleteProviderListenerWithClosure&) = delete;
-
-  void set_closure(const base::RepeatingClosure& closure) {
-    closure_ = closure;
-  }
-
-  // Used by TestPrefetchProvider to notify it is done with a prefetch request.
-  void OnProviderFinishedPrefetch() {
-    if (closure_)
-      closure_.Run();
-  }
-
-  // AutocompleteProviderListener:
-  void OnProviderUpdate(bool updated_matches) override {
-    controller_->OnProviderUpdate(updated_matches);
-    if (closure_)
-      closure_.Run();
-  }
-
- private:
-  AutocompleteController* controller_;
-  base::RepeatingClosure closure_;
-};
-
-// Extends TestProvider to handle prefetch requests. It notifies its instance of
-// AutocompleteProviderListenerWithClosure when is done with a prefetch request.
-class TestPrefetchProvider : public TestProvider {
- public:
-  TestPrefetchProvider(int relevance,
-                       const std::u16string& prefix,
-                       const std::u16string& match_keyword,
-                       AutocompleteProviderClient* client)
-      : TestProvider(relevance, prefix, match_keyword, client) {}
-  TestPrefetchProvider(const TestPrefetchProvider&) = delete;
-  TestPrefetchProvider& operator=(const TestPrefetchProvider&) = delete;
-
-  // TestProvider:
-  AutocompleteProviderListener* listener() override { return listener_; }
-
-  // AutocompleteProvider:
-  void StartPrefetch(const AutocompleteInput& input) override;
-
-  void set_listener(AutocompleteProviderListenerWithClosure* listener) {
-    listener_ = listener;
-  }
-
- private:
-  ~TestPrefetchProvider() override = default;
-
-  void RunPrefetch();
-
-  raw_ptr<AutocompleteProviderListenerWithClosure> listener_;
-};
-
-void TestPrefetchProvider::StartPrefetch(const AutocompleteInput& input) {
-  matches_.clear();
-  done_ = false;
-
-  if (input.want_asynchronous_matches()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::BindOnce(&TestPrefetchProvider::RunPrefetch, this));
-  } else {
-    RunPrefetch();
-  }
-}
-
-void TestPrefetchProvider::RunPrefetch() {
-  AddResults(0, kResultsPerProvider);
-  done_ = true;
-  listener_->OnProviderFinishedPrefetch();
-}
-
 // Helper class to make running tests of ClassifyAllMatchesInString() more
 // convenient.
 class ClassifyTest {
@@ -318,7 +309,7 @@ ClassifyTest::ClassifyTest(const std::u16string& text,
                            ACMatchClassifications matches)
     : text_(text), text_is_query_(text_is_query), matches_(matches) {}
 
-ClassifyTest::~ClassifyTest() {}
+ClassifyTest::~ClassifyTest() = default;
 
 ACMatchClassifications ClassifyTest::RunTest(const std::u16string& find_text) {
   return AutocompleteProvider::ClassifyAllMatchesInString(
@@ -332,6 +323,8 @@ class AutocompleteProviderTest : public testing::Test {
   AutocompleteProviderTest(const AutocompleteProviderTest&) = delete;
   AutocompleteProviderTest& operator=(const AutocompleteProviderTest&) = delete;
 
+  void CopyResults();
+
  protected:
   struct KeywordTestData {
     const std::u16string fill_into_edit;
@@ -339,16 +332,16 @@ class AutocompleteProviderTest : public testing::Test {
     const std::u16string expected_associated_keyword;
   };
 
-  struct HeaderTestData {
-    SearchSuggestionParser::HeadersMap headers_map;
-    std::vector<absl::optional<int>> suggestion_group_ids;
+  struct SuggestionGroupsTestData {
+    omnibox::GroupConfigMap suggestion_groups_map;
+    std::vector<absl::optional<omnibox::GroupId>> suggestion_group_ids;
   };
 
   struct AssistedQueryStatsTestData {
     const AutocompleteMatch::Type match_type;
     const std::string expected_aqs;
     const metrics::ChromeSearchboxStats expected_searchbox_stats;
-    base::flat_set<int> subtypes;
+    base::flat_set<omnibox::SuggestSubtype> subtypes;
   };
 
   // Registers a test TemplateURL under the given keyword.
@@ -375,7 +368,8 @@ class AutocompleteProviderTest : public testing::Test {
                       const KeywordTestData* match_data,
                       size_t size);
 
-  void UpdateResultsWithHeaderTestData(const HeaderTestData& headers_data);
+  void UpdateResultsWithSuggestionGroupsTestData(
+      const SuggestionGroupsTestData& test_data);
 
   void RunAssistedQueryStatsTest(
       const AssistedQueryStatsTestData* aqs_test_data,
@@ -387,16 +381,10 @@ class AutocompleteProviderTest : public testing::Test {
   void ResetControllerWithKeywordProvider();
   void RunExactKeymatchTest(bool allow_exact_keyword_match);
 
-  void CopyResults();
-
   // Returns match.destination_url as it would be set by
   // AutocompleteController::UpdateMatchDestinationURL().
   GURL GetDestinationURL(AutocompleteMatch& match,
                          base::TimeDelta query_formulation_time) const;
-
-  // Returns the image from the clipboard as it would be from
-  // AutocompleteController::GetImageFromClipboard().
-  absl::optional<gfx::Image> GetImageFromClipboard() const;
 
   void set_search_provider_field_trial_triggered_in_session(bool val) {
     controller_->search_provider_->set_field_trial_triggered_in_session(val);
@@ -408,19 +396,13 @@ class AutocompleteProviderTest : public testing::Test {
       metrics::OmniboxEventProto::PageClassification classification) {
     controller_->input_.current_page_classification_ = classification;
   }
-  void add_zero_suggest_provider_experiment_stat(
-      const base::Value& experiment_stat) {
-    auto& experiment_stats =
-        const_cast<SearchSuggestionParser::ExperimentStats&>(
-            controller_->zero_suggest_provider_->experiment_stats());
-    experiment_stats.push_back(experiment_stat.Clone());
-  }
-  void add_zero_suggest_provider_headers_map(
-      const SearchSuggestionParser::HeadersMap& headers_map) {
-    auto& provider_headers_map =
-        const_cast<SearchSuggestionParser::HeadersMap&>(
-            controller_->zero_suggest_provider_->headers_map());
-    provider_headers_map = headers_map;
+  void add_zero_suggest_provider_experiment_stats_v2(
+      const metrics::ChromeSearchboxStats::ExperimentStatsV2&
+          experiment_stat_v2) {
+    auto& experiment_stats_v2s =
+        const_cast<SearchSuggestionParser::ExperimentStatsV2s&>(
+            controller_->zero_suggest_provider_->experiment_stats_v2s());
+    experiment_stats_v2s.push_back(experiment_stat_v2);
   }
 
   TestingPrefServiceSimple* GetPrefs() { return &pref_service_; }
@@ -433,17 +415,17 @@ class AutocompleteProviderTest : public testing::Test {
   AutocompleteResult result_;
   base::test::TaskEnvironment task_environment_;
   TestingPrefServiceSimple pref_service_;
-  TestAutocompleteProviderObserver autocomplete_provider_observer_;
+  TestAutocompleteControllerObserver autocomplete_controller_observer_;
   std::unique_ptr<AutocompleteController> controller_;
   // Owned by |controller_|.
   raw_ptr<MockAutocompleteProviderClient> client_;
   // Used to ensure that |client_| ownership has been passed to |controller_|
   // exactly once.
-  bool client_owned_;
+  bool client_owned_{};
 };
 
 AutocompleteProviderTest::AutocompleteProviderTest()
-    : client_(new MockAutocompleteProviderClient()), client_owned_(false) {
+    : client_(new MockAutocompleteProviderClient()) {
   client_->set_template_url_service(
       std::make_unique<TemplateURLService>(nullptr, 0));
 }
@@ -487,8 +469,7 @@ void AutocompleteProviderTest::ResetControllerWithTestProviders(
   //       don't rely on kResultsPerProvided and default relevance ordering
   //       (B > A).
   RegisterTemplateURL(kTestTemplateURLKeyword,
-                      "http://aqs/{searchTerms}/"
-                      "{google:assistedQueryStats}{google:searchboxStats}");
+                      "http://aqs/{searchTerms}/{google:assistedQueryStats}");
 
   AutocompleteController::Providers providers;
 
@@ -509,8 +490,8 @@ void AutocompleteProviderTest::ResetControllerWithTestProviders(
   // empty so no elements need to be freed at this point.
   EXPECT_TRUE(controller_->providers_.empty());
   controller_->providers_.swap(providers);
-  provider1->set_listener(controller_.get());
-  provider2->set_listener(controller_.get());
+  provider1->AddListener(controller_.get());
+  provider2->AddListener(controller_.get());
 
   if (provider1_ptr)
     *provider1_ptr = provider1;
@@ -610,7 +591,7 @@ void AutocompleteProviderTest::RunKeywordTest(const std::u16string& input,
   autocomplete_input.set_prefer_keyword(true);
   controller_->input_ = autocomplete_input;
   AutocompleteResult result;
-  result.AppendMatches(controller_->input_, matches);
+  result.AppendMatches(matches);
   controller_->UpdateAssociatedKeywords(&result);
   for (size_t j = 0; j < result.size(); ++j) {
     EXPECT_EQ(match_data[j].expected_associated_keyword,
@@ -620,27 +601,26 @@ void AutocompleteProviderTest::RunKeywordTest(const std::u16string& input,
   }
 }
 
-void AutocompleteProviderTest::UpdateResultsWithHeaderTestData(
-    const HeaderTestData& headers_data) {
-  // Prepare.
+void AutocompleteProviderTest::UpdateResultsWithSuggestionGroupsTestData(
+    const SuggestionGroupsTestData& test_data) {
+  // Create new matches and add to the result.
   size_t relevance = 1000;
   ACMatches matches;
-  for (auto suggestion_group_id : headers_data.suggestion_group_ids) {
+  for (auto suggestion_group_id : test_data.suggestion_group_ids) {
     AutocompleteMatch match(nullptr, relevance--, false,
                             AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED);
-    match.suggestion_group_id = suggestion_group_id;
+    if (suggestion_group_id.has_value()) {
+      match.suggestion_group_id = suggestion_group_id.value();
+    }
     matches.push_back(match);
   }
-
-  add_zero_suggest_provider_headers_map(headers_data.headers_map);
-
   result_.Reset();
-  result_.AppendMatches(AutocompleteInput(), matches);
+  result_.AppendMatches(matches);
 
-  // Update the result with the header information.
-  controller_->UpdateHeaderInfoFromZeroSuggestProvider(&result_);
-  // Group matches with headers and move them to the bottom of the result set.
-  result_.GroupAndDemoteMatchesWithHeaders();
+  // Update the result with the suggestion groups information.
+  result_.MergeSuggestionGroupsMap(test_data.suggestion_groups_map);
+  // Group matches with group IDs and move them to the bottom of the result set.
+  result_.GroupAndDemoteMatchesInGroups();
 }
 
 void AutocompleteProviderTest::RunAssistedQueryStatsTest(
@@ -660,7 +640,7 @@ void AutocompleteProviderTest::RunAssistedQueryStatsTest(
     matches.push_back(match);
   }
   result_.Reset();
-  result_.AppendMatches(AutocompleteInput(), matches);
+  result_.AppendMatches(matches);
 
   // Update AQS.
   controller_->UpdateAssistedQueryStats(&result_);
@@ -674,13 +654,17 @@ void AutocompleteProviderTest::RunAssistedQueryStatsTest(
     result_.match_at(i)->search_terms_args->searchbox_stats.SerializeToString(
         &serialized_searchbox_stats);
     std::string encoded_searchbox_stats;
-    base::Base64Encode(serialized_searchbox_stats, &encoded_searchbox_stats);
+    base::Base64UrlEncode(serialized_searchbox_stats,
+                          base::Base64UrlEncodePolicy::OMIT_PADDING,
+                          &encoded_searchbox_stats);
     std::string expected_serialized_searchbox_stats;
     aqs_test_data[i].expected_searchbox_stats.SerializeToString(
         &expected_serialized_searchbox_stats);
     std::string expected_encoded_searchbox_stats;
-    base::Base64Encode(expected_serialized_searchbox_stats,
-                       &expected_encoded_searchbox_stats);
+    base::Base64UrlEncode(expected_serialized_searchbox_stats,
+                          base::Base64UrlEncodePolicy::OMIT_PADDING,
+
+                          &expected_encoded_searchbox_stats);
     EXPECT_EQ(expected_encoded_searchbox_stats, encoded_searchbox_stats);
   }
 }
@@ -695,12 +679,12 @@ void AutocompleteProviderTest::RunQuery(const std::string& query,
   input.set_allow_exact_keyword_match(allow_exact_keyword_match);
 
   base::RunLoop run_loop;
-  autocomplete_provider_observer_.set_closure(
+  autocomplete_controller_observer_.set_closure(
       run_loop.QuitClosure().Then(base::BindRepeating(
           &AutocompleteProviderTest::CopyResults, base::Unretained(this))));
-  if (!autocomplete_provider_observer_.is_observing()) {
-    controller_->AddObserver(&autocomplete_provider_observer_);
-    autocomplete_provider_observer_.set_is_observing();
+  if (!autocomplete_controller_observer_.is_observing()) {
+    controller_->AddObserver(&autocomplete_controller_observer_);
+    autocomplete_controller_observer_.set_is_observing();
   }
   controller_->Start(input);
   if (!controller_->done())
@@ -870,86 +854,146 @@ TEST_F(AutocompleteProviderTest, ExactMatchKeywords) {
   }
 }
 
-// Tests that the AutocompleteResult is updated with the header information and
-// matches with headers are grouped and demoted correctly.
-TEST_F(AutocompleteProviderTest, Headers) {
+// Tests that the AutocompleteResult is updated with the suggestion group
+// information and matches with group IDs are grouped and demoted correctly.
+// Also verifies that:
+// 1) headers are optional for suggestion groups.
+// 2) suggestion groups are ordered based on their priories.
+// 3) suggestion group IDs without associated suggestion group information are
+//    stripped away.
+TEST_F(AutocompleteProviderTest, SuggestionGroups) {
   ResetControllerWithKeywordAndSearchProviders();
 
-  const int kRecommendedForYouGroupId = 1;
-  const char16_t kRecommendedForYouHeader[] = u"Recommended for you";
-  const int kRecentSearchesGroupId = 2;
-  const char16_t kRecentSearchesHeader[] = u"Recent Searches";
+  const auto kRecommendedGroupId = omnibox::GROUP_PREVIOUS_SEARCH_RELATED;
+  const std::string kRecommended = "Recommended for you";
+  const auto kRecentSearchesGroupId =
+      omnibox::GROUP_PREVIOUS_SEARCH_RELATED_ENTITY_CHIPS;
+  const std::string kRecentSearches = "Recent Searches";
 
-  // This exists to verify that we ignore group IDs without associated header
-  // text when sorting results.
-  const int kGroupIdWithoutHeaderText = 99;
-
-  SearchSuggestionParser::HeadersMap headers_map = {
-      {kRecommendedForYouGroupId, kRecommendedForYouHeader},
-      {kRecentSearchesGroupId, kRecentSearchesHeader}};
+  const auto kBadGroupId = omnibox::GROUP_INVALID;
 
   {
-    HeaderTestData test_data = {headers_map,
-                                {{absl::nullopt},
-                                 {absl::nullopt},
-                                 {absl::nullopt},
-                                 {kRecentSearchesGroupId},
-                                 {kRecommendedForYouGroupId}}};
-    UpdateResultsWithHeaderTestData(test_data);
-    EXPECT_FALSE(result_.match_at(0)->suggestion_group_id.has_value());
-    EXPECT_FALSE(result_.match_at(1)->suggestion_group_id.has_value());
-    EXPECT_FALSE(result_.match_at(2)->suggestion_group_id.has_value());
-    EXPECT_EQ(kRecentSearchesGroupId,
-              result_.match_at(3)->suggestion_group_id.value());
-    EXPECT_EQ(kRecommendedForYouGroupId,
-              result_.match_at(4)->suggestion_group_id.value());
+    // AutocompleteResult::GetHeaderForSuggestionGroup() returns an empty string
+    // for unknown suggestion group IDs.
+    EXPECT_EQ(u"", result_.GetHeaderForSuggestionGroup(kBadGroupId));
 
-    // Verify that AutocompleteResult is updated with the header information.
-    EXPECT_EQ(kRecommendedForYouHeader,
-              result_.GetHeaderForGroupId(kRecommendedForYouGroupId));
-    EXPECT_EQ(kRecentSearchesHeader,
-              result_.GetHeaderForGroupId(kRecentSearchesGroupId));
-    EXPECT_EQ(std::u16string(), result_.GetHeaderForGroupId(-1));
+    // AutocompleteResult::IsSuggestionGroupHidden() returns false for unknown
+    // suggestion group IDs.
+    EXPECT_FALSE(result_.IsSuggestionGroupHidden(GetPrefs(), kBadGroupId));
+
+    // AutocompleteResult::SetSuggestionGroupHidden() does nothing for unknown
+    // suggestion group IDs.
+    result_.SetSuggestionGroupHidden(GetPrefs(), kBadGroupId, /*hidden=*/true);
+    EXPECT_FALSE(result_.IsSuggestionGroupHidden(GetPrefs(), kBadGroupId));
+
+    // AutocompleteResult::GetSectionForSuggestionGroup() returns
+    // omnibox::SECTION_DEFAULT for unknown suggestion group IDs.
+    EXPECT_EQ(omnibox::SECTION_DEFAULT,
+              result_.GetSectionForSuggestionGroup(kBadGroupId));
   }
   {
-    HeaderTestData test_data = {headers_map,
-                                {
-                                    {absl::nullopt},
-                                    {kRecentSearchesGroupId},
-                                    {absl::nullopt},
-                                    {kRecommendedForYouGroupId},
-                                    {kRecentSearchesGroupId},
-                                }};
-    UpdateResultsWithHeaderTestData(test_data);
+    // Headers are optional for suggestion groups.
+    omnibox::GroupConfigMap suggestion_groups_map;
+    suggestion_groups_map[kRecommendedGroupId].set_header_text(kRecommended);
+    suggestion_groups_map[kRecommendedGroupId].set_section(
+        omnibox::SECTION_REMOTE_ZPS_4);
 
-    // Verifies that matches with group IDs are grouped and sink to the bottom.
+    suggestion_groups_map[kRecentSearchesGroupId].set_section(
+        omnibox::SECTION_REMOTE_ZPS_3);
+
+    UpdateResultsWithSuggestionGroupsTestData({std::move(suggestion_groups_map),
+                                               {
+                                                   {},
+                                                   {},
+                                                   {},
+                                                   {kRecentSearchesGroupId},
+                                                   {kRecommendedGroupId},
+                                               }});
+
     EXPECT_FALSE(result_.match_at(0)->suggestion_group_id.has_value());
+
     EXPECT_FALSE(result_.match_at(1)->suggestion_group_id.has_value());
+
+    EXPECT_FALSE(result_.match_at(2)->suggestion_group_id.has_value());
+
     EXPECT_EQ(kRecentSearchesGroupId,
+              result_.match_at(3)->suggestion_group_id.value());
+    EXPECT_EQ(u"", result_.GetHeaderForSuggestionGroup(kRecentSearchesGroupId));
+
+    EXPECT_EQ(kRecommendedGroupId,
+              result_.match_at(4)->suggestion_group_id.value());
+    EXPECT_EQ(base::UTF8ToUTF16(kRecommended),
+              result_.GetHeaderForSuggestionGroup(kRecommendedGroupId));
+  }
+  {
+    // Suggestion groups are ordered based on their priories.
+    omnibox::GroupConfigMap suggestion_groups_map;
+    suggestion_groups_map[kRecommendedGroupId].set_header_text(kRecommended);
+    suggestion_groups_map[kRecommendedGroupId].set_section(
+        omnibox::SECTION_REMOTE_ZPS_3);
+    suggestion_groups_map[kRecentSearchesGroupId].set_header_text(
+        kRecentSearches);
+    suggestion_groups_map[kRecentSearchesGroupId].set_section(
+        omnibox::SECTION_REMOTE_ZPS_4);
+    UpdateResultsWithSuggestionGroupsTestData({std::move(suggestion_groups_map),
+                                               {
+                                                   {},
+                                                   {kRecentSearchesGroupId},
+                                                   {},
+                                                   {kRecommendedGroupId},
+                                                   {kRecentSearchesGroupId},
+                                               }});
+
+    EXPECT_FALSE(result_.match_at(0)->suggestion_group_id.has_value());
+
+    EXPECT_FALSE(result_.match_at(1)->suggestion_group_id.has_value());
+
+    EXPECT_EQ(kRecommendedGroupId,
               result_.match_at(2)->suggestion_group_id.value());
+    EXPECT_EQ(base::UTF8ToUTF16(kRecommended),
+              result_.GetHeaderForSuggestionGroup(kRecommendedGroupId));
+
     EXPECT_EQ(kRecentSearchesGroupId,
               result_.match_at(3)->suggestion_group_id.value());
-    EXPECT_EQ(kRecommendedForYouGroupId,
+    EXPECT_EQ(base::UTF8ToUTF16(kRecentSearches),
+              result_.GetHeaderForSuggestionGroup(kRecentSearchesGroupId));
+
+    EXPECT_EQ(kRecentSearchesGroupId,
               result_.match_at(4)->suggestion_group_id.value());
+    EXPECT_EQ(base::UTF8ToUTF16(kRecentSearches),
+              result_.GetHeaderForSuggestionGroup(kRecentSearchesGroupId));
   }
   {
-    HeaderTestData test_data = {headers_map,
-                                {{kGroupIdWithoutHeaderText},
-                                 {kRecentSearchesGroupId},
-                                 {kRecommendedForYouGroupId},
-                                 {kGroupIdWithoutHeaderText},
-                                 {kGroupIdWithoutHeaderText}}};
-    UpdateResultsWithHeaderTestData(test_data);
+    // suggestion group IDs without associated suggestion group information are
+    // stripped away.
+    omnibox::GroupConfigMap suggestion_groups_map;
+    suggestion_groups_map[kRecommendedGroupId].set_header_text(kRecommended);
+    suggestion_groups_map[kRecentSearchesGroupId].set_header_text(
+        kRecentSearches);
+    UpdateResultsWithSuggestionGroupsTestData({std::move(suggestion_groups_map),
+                                               {
+                                                   {kBadGroupId},
+                                                   {kRecentSearchesGroupId},
+                                                   {kRecommendedGroupId},
+                                                   {kBadGroupId},
+                                                   {kBadGroupId},
+                                               }});
 
-    // Verifies that group IDs without associated header text are stripped out,
-    // and those matches float to the top.
     EXPECT_FALSE(result_.match_at(0)->suggestion_group_id.has_value());
+
     EXPECT_FALSE(result_.match_at(1)->suggestion_group_id.has_value());
+
     EXPECT_FALSE(result_.match_at(2)->suggestion_group_id.has_value());
+
     EXPECT_EQ(kRecentSearchesGroupId,
               result_.match_at(3)->suggestion_group_id.value());
-    EXPECT_EQ(kRecommendedForYouGroupId,
+    EXPECT_EQ(base::UTF8ToUTF16(kRecentSearches),
+              result_.GetHeaderForSuggestionGroup(kRecentSearchesGroupId));
+
+    EXPECT_EQ(kRecommendedGroupId,
               result_.match_at(4)->suggestion_group_id.value());
+    EXPECT_EQ(base::UTF8ToUTF16(kRecommended),
+              result_.GetHeaderForSuggestionGroup(kRecommendedGroupId));
   }
 }
 
@@ -975,8 +1019,8 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
     searchbox_stats.set_zero_prefix_enabled(false);
     auto* available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(0);
-    available_suggestion->set_type(69);      // NATIVE_CHROME
-    available_suggestion->add_subtypes(57);  // SUBTYPE_OMNIBOX_ECHO_SEARCH
+    available_suggestion->set_type(omnibox::TYPE_NATIVE_CHROME);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_OMNIBOX_ECHO_SEARCH);
 
     AssistedQueryStatsTestData test_data[] = {
         {AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED, "chrome..69i57",
@@ -992,16 +1036,16 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
     searchbox_stats.set_zero_prefix_enabled(false);
     auto* available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(0);
-    available_suggestion->set_type(46);  // ENTITY
-    available_suggestion->add_subtypes(131);
+    available_suggestion->set_type(omnibox::TYPE_ENTITY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_PERSONAL);
     auto* assisted_query_info = searchbox_stats.mutable_assisted_query_info();
     assisted_query_info->MergeFrom(searchbox_stats.available_suggestions(0));
 
     AssistedQueryStatsTestData test_data[] = {
         {AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
-         "chrome.0.46i131",
+         "chrome.0.46i39",
          searchbox_stats,
-         {131}}};
+         {omnibox::SUBTYPE_PERSONAL}}};
     SCOPED_TRACE("One match with provider populated subtypes");
     RunAssistedQueryStatsTest(test_data, std::size(test_data));
   }
@@ -1009,35 +1053,35 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
   {
     metrics::ChromeSearchboxStats searchbox_stats;
     searchbox_stats.set_client_name("chrome");
-    searchbox_stats.set_num_zero_prefix_suggestions_shown(0);
-    searchbox_stats.set_zero_prefix_enabled(false);
+    searchbox_stats.set_num_zero_prefix_suggestions_shown(2);
+    searchbox_stats.set_zero_prefix_enabled(true);
     auto* available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(0);
-    available_suggestion->set_type(0);  // QUERY
-    available_suggestion->add_subtypes(13);
-    available_suggestion->add_subtypes(22);
-    available_suggestion->add_subtypes(99);
+    available_suggestion->set_type(omnibox::TYPE_QUERY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_PERSONAL);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_TRENDS);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_ZERO_PREFIX);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(1);
-    available_suggestion->set_type(46);  // ENTITY
-    available_suggestion->add_subtypes(27);
-    available_suggestion->add_subtypes(31);
+    available_suggestion->set_type(omnibox::TYPE_ENTITY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_PERSONAL);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_TRENDS);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(2);
-    available_suggestion->set_type(46);  // ENTITY
-    available_suggestion->add_subtypes(27);
-    available_suggestion->add_subtypes(31);
+    available_suggestion->set_type(omnibox::TYPE_ENTITY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_PERSONAL);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_TRENDS);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(3);
-    available_suggestion->set_type(46);  // ENTITY
-    available_suggestion->add_subtypes(27);
-    available_suggestion->add_subtypes(31);
-    available_suggestion->add_subtypes(42);
+    available_suggestion->set_type(omnibox::TYPE_ENTITY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_PERSONAL);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_TRENDS);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_ZERO_PREFIX);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(4);
-    available_suggestion->set_type(46);  // ENTITY
-    available_suggestion->add_subtypes(27);
-    available_suggestion->add_subtypes(31);
+    available_suggestion->set_type(omnibox::TYPE_ENTITY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_PERSONAL);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_TRENDS);
 
     metrics::ChromeSearchboxStats searchbox_stats_0;
     searchbox_stats_0.MergeFrom(searchbox_stats);
@@ -1068,31 +1112,34 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
     // properly handled and reported as the same suggestion type.
     AssistedQueryStatsTestData test_data[] = {
         {AutocompleteMatchType::SEARCH_SUGGEST,
-         "chrome.0.0i13i22i99j46i27i31l2j46i27i31i42j46i27i31",
+         "chrome.0.0i39i143i362j46i39i143l2j46i39i143i362j46i39i143",
          searchbox_stats_0,
-         {22, 99, 13, 99}},
+         {omnibox::SUBTYPE_PERSONAL, omnibox::SUBTYPE_TRENDS,
+          omnibox::SUBTYPE_ZERO_PREFIX, omnibox::SUBTYPE_TRENDS}},
         // The next two matches should be detected as the same type, despite
         // repeated subtype match.
         {AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
-         "chrome.1.0i13i22i99j46i27i31l2j46i27i31i42j46i27i31",
+         "chrome.1.0i39i143i362j46i39i143l2j46i39i143i362j46i39i143",
          searchbox_stats_1,
-         {27, 31}},
+         {omnibox::SUBTYPE_PERSONAL, omnibox::SUBTYPE_TRENDS}},
         {AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
-         "chrome.2.0i13i22i99j46i27i31l2j46i27i31i42j46i27i31",
+         "chrome.2.0i39i143i362j46i39i143l2j46i39i143i362j46i39i143",
          searchbox_stats_2,
-         {27, 31, 27}},
+         {omnibox::SUBTYPE_PERSONAL, omnibox::SUBTYPE_TRENDS,
+          omnibox::SUBTYPE_PERSONAL}},
         // This match should not be bundled together with previous two, because
         // it comes with additional subtype information (42).
         {AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
-         "chrome.3.0i13i22i99j46i27i31l2j46i27i31i42j46i27i31",
+         "chrome.3.0i39i143i362j46i39i143l2j46i39i143i362j46i39i143",
          searchbox_stats_3,
-         {27, 31, 42}},
+         {omnibox::SUBTYPE_PERSONAL, omnibox::SUBTYPE_TRENDS,
+          omnibox::SUBTYPE_ZERO_PREFIX}},
         // This match should not be bundled together with the group before,
         // because these items are not adjacent.
         {AutocompleteMatchType::SEARCH_SUGGEST_ENTITY,
-         "chrome.4.0i13i22i99j46i27i31l2j46i27i31i42j46i27i31",
+         "chrome.4.0i39i143i362j46i39i143l2j46i39i143i362j46i39i143",
          searchbox_stats_4,
-         {27, 31}},
+         {omnibox::SUBTYPE_PERSONAL, omnibox::SUBTYPE_TRENDS}},
     };
     SCOPED_TRACE("Complex set of matches with repetitive subtypes");
     RunAssistedQueryStatsTest(test_data, std::size(test_data));
@@ -1108,38 +1155,38 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
     searchbox_stats.set_zero_prefix_enabled(true);
     auto* available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(0);
-    available_suggestion->set_type(69);      // NATIVE_CHROME
-    available_suggestion->add_subtypes(57);  // SUBTYPE_OMNIBOX_ECHO_SEARCH
+    available_suggestion->set_type(omnibox::TYPE_NATIVE_CHROME);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_OMNIBOX_ECHO_SEARCH);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(1);
-    available_suggestion->set_type(69);      // NATIVE_CHROME
-    available_suggestion->add_subtypes(58);  // SUBTYPE_OMNIBOX_ECHO_URL
+    available_suggestion->set_type(omnibox::TYPE_NATIVE_CHROME);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_OMNIBOX_ECHO_URL);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(2);
-    available_suggestion->set_type(5);  // NAVIGATION
+    available_suggestion->set_type(omnibox::TYPE_NAVIGATION);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(3);
-    available_suggestion->set_type(5);  // NAVIGATION
+    available_suggestion->set_type(omnibox::TYPE_NAVIGATION);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(4);
-    available_suggestion->set_type(0);        // QUERY
-    available_suggestion->add_subtypes(362);  // SUBTYPE_ZERO_PREFIX
+    available_suggestion->set_type(omnibox::TYPE_QUERY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_ZERO_PREFIX);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(5);
-    available_suggestion->set_type(0);        // QUERY
-    available_suggestion->add_subtypes(362);  // SUBTYPE_ZERO_PREFIX
+    available_suggestion->set_type(omnibox::TYPE_QUERY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_ZERO_PREFIX);
     available_suggestion->add_subtypes(
-        450);  // SUBTYPE_ZERO_PREFIX_LOCAL_HISTORY
+        omnibox::SUBTYPE_ZERO_PREFIX_LOCAL_HISTORY);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(6);
-    available_suggestion->set_type(0);        // QUERY
-    available_suggestion->add_subtypes(362);  // SUBTYPE_ZERO_PREFIX
+    available_suggestion->set_type(omnibox::TYPE_QUERY);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_ZERO_PREFIX);
     available_suggestion->add_subtypes(
-        451);  // SUBTYPE_ZERO_PREFIX_LOCAL_FREQUENT_URL
+        omnibox::SUBTYPE_ZERO_PREFIX_LOCAL_FREQUENT_URLS);
     available_suggestion = searchbox_stats.add_available_suggestions();
     available_suggestion->set_index(7);
-    available_suggestion->set_type(69);      // NATIVE_CHROME
-    available_suggestion->add_subtypes(59);  // SUBTYPE_OMNIBOX_HISTORY_SEARCH
+    available_suggestion->set_type(omnibox::TYPE_NATIVE_CHROME);
+    available_suggestion->add_subtypes(omnibox::SUBTYPE_OMNIBOX_HISTORY_SEARCH);
 
     metrics::ChromeSearchboxStats searchbox_stats_0;
     searchbox_stats_0.MergeFrom(searchbox_stats);
@@ -1193,15 +1240,17 @@ TEST_F(AutocompleteProviderTest, UpdateAssistedQueryStats) {
         {AutocompleteMatchType::SEARCH_SUGGEST,
          "chrome.4.69i57j69i58j5l2j0i362j0i362i450j0i362i451j69i59",
          searchbox_stats_4,
-         {362}},
+         {omnibox::SUBTYPE_ZERO_PREFIX}},
         {AutocompleteMatchType::SEARCH_SUGGEST,
          "chrome.5.69i57j69i58j5l2j0i362j0i362i450j0i362i451j69i59",
          searchbox_stats_5,
-         {362, 450}},
+         {omnibox::SUBTYPE_ZERO_PREFIX,
+          omnibox::SUBTYPE_ZERO_PREFIX_LOCAL_HISTORY}},
         {AutocompleteMatchType::SEARCH_SUGGEST,
          "chrome.6.69i57j69i58j5l2j0i362j0i362i450j0i362i451j69i59",
          searchbox_stats_6,
-         {362, 451}},
+         {omnibox::SUBTYPE_ZERO_PREFIX,
+          omnibox::SUBTYPE_ZERO_PREFIX_LOCAL_FREQUENT_URLS}},
         {AutocompleteMatchType::SEARCH_HISTORY,
          "chrome.7.69i57j69i58j5l2j0i362j0i362i450j0i362i451j69i59",
          searchbox_stats_7},
@@ -1227,8 +1276,7 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_AssistedQueryStatsOnly) {
 
   // The protocol needs to be https.
   RegisterTemplateURL(kTestTemplateURLKeyword,
-                      "https://aqs/{searchTerms}/"
-                      "{google:assistedQueryStats}{google:searchboxStats}");
+                      "https://aqs/{searchTerms}/{google:assistedQueryStats}");
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_TRUE(url.path().empty());
 
@@ -1278,16 +1326,19 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_AssistedQueryStatsOnly) {
   // Test experiment stats set.
   match.search_terms_args->assisted_query_stats =
       "chrome.0.69i57j69i58j5l2j0l3j69i59";
-  add_zero_suggest_provider_experiment_stat(
-      base::test::ParseJson(R"json({"2":"0:67","4":10001})json"));
+  metrics::ChromeSearchboxStats::ExperimentStatsV2 experiment_stats_v2;
+  experiment_stats_v2.set_type_int(10001);
+  experiment_stats_v2.set_string_value("0:67");
+  add_zero_suggest_provider_experiment_stats_v2(experiment_stats_v2);
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_EQ("//aqs=chrome.0.69i57j69i58j5l2j0l3j69i59.2456j1j4.10001i0,67&",
             url.path());
 
   match.search_terms_args->assisted_query_stats =
       "chrome.0.69i57j69i58j5l2j0l3j69i59";
-  add_zero_suggest_provider_experiment_stat(
-      base::test::ParseJson(R"json({"2":"54:67","4":10001})json"));
+  experiment_stats_v2.set_type_int(10001);
+  experiment_stats_v2.set_string_value("54:67");
+  add_zero_suggest_provider_experiment_stats_v2(experiment_stats_v2);
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_EQ(
       "//"
@@ -1311,8 +1362,7 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_SearchboxStatsOnly) {
 
   // The protocol needs to be https.
   RegisterTemplateURL(kTestTemplateURLKeyword,
-                      "https://foo/{searchTerms}/"
-                      "{google:assistedQueryStats}{google:searchboxStats}");
+                      "https://foo/{searchTerms}/{google:assistedQueryStats}");
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_TRUE(url.path().empty());
 
@@ -1332,11 +1382,13 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_SearchboxStatsOnly) {
       "chrome.0.69i57j69i58j5l2j0l3j69i59";
   match.search_terms_args->searchbox_stats.set_client_name("chrome");
   url = GetDestinationURL(match, base::Milliseconds(2456));
-  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajBqMA==&", url.path());
+  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajBqMA&", url.path());
   // Make sure searchbox_stats is serialized and encoded correctly.
   {
     std::string serialized_proto;
-    base::Base64Decode("EgZjaHJvbWXSAQgyNDU2ajBqMA==", &serialized_proto);
+    EXPECT_TRUE(base::Base64UrlDecode(
+        "EgZjaHJvbWXSAQgyNDU2ajBqMA",
+        base::Base64UrlDecodePolicy::DISALLOW_PADDING, &serialized_proto));
     metrics::ChromeSearchboxStats expected;
     expected.ParseFromString(serialized_proto);
     EXPECT_EQ("chrome", expected.client_name());
@@ -1345,11 +1397,13 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_SearchboxStatsOnly) {
   // Test field trial triggered bit set.
   set_search_provider_field_trial_triggered_in_session(true);
   url = GetDestinationURL(match, base::Milliseconds(2456));
-  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajFqMA==&", url.path());
+  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajFqMA&", url.path());
   // Make sure searchbox_stats is serialized and encoded correctly.
   {
     std::string serialized_proto;
-    base::Base64Decode("EgZjaHJvbWXSAQgyNDU2ajFqMA==", &serialized_proto);
+    EXPECT_TRUE(base::Base64UrlDecode(
+        "EgZjaHJvbWXSAQgyNDU2ajFqMA",
+        base::Base64UrlDecodePolicy::DISALLOW_PADDING, &serialized_proto));
     metrics::ChromeSearchboxStats expected;
     expected.ParseFromString(serialized_proto);
     EXPECT_EQ("2456j1j0", expected.experiment_stats());
@@ -1359,11 +1413,13 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_SearchboxStatsOnly) {
   set_search_provider_field_trial_triggered_in_session(false);
   set_current_page_classification(metrics::OmniboxEventProto::OTHER);
   url = GetDestinationURL(match, base::Milliseconds(2456));
-  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajBqNA==&", url.path());
+  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajBqNA&", url.path());
   // Make sure searchbox_stats is serialized and encoded correctly.
   {
     std::string serialized_proto;
-    base::Base64Decode("EgZjaHJvbWXSAQgyNDU2ajBqNA==", &serialized_proto);
+    EXPECT_TRUE(base::Base64UrlDecode(
+        "EgZjaHJvbWXSAQgyNDU2ajBqNA",
+        base::Base64UrlDecodePolicy::DISALLOW_PADDING, &serialized_proto));
     metrics::ChromeSearchboxStats expected;
     expected.ParseFromString(serialized_proto);
     EXPECT_EQ("2456j0j4", expected.experiment_stats());
@@ -1373,27 +1429,32 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL_SearchboxStatsOnly) {
   set_search_provider_field_trial_triggered_in_session(true);
   set_current_page_classification(metrics::OmniboxEventProto::OTHER);
   url = GetDestinationURL(match, base::Milliseconds(2456));
-  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajFqNA==&", url.path());
+  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajFqNA&", url.path());
   // Make sure searchbox_stats is serialized and encoded correctly.
   {
     std::string serialized_proto;
-    base::Base64Decode("EgZjaHJvbWXSAQgyNDU2ajFqNA==", &serialized_proto);
+    EXPECT_TRUE(base::Base64UrlDecode(
+        "EgZjaHJvbWXSAQgyNDU2ajFqNA",
+        base::Base64UrlDecodePolicy::DISALLOW_PADDING, &serialized_proto));
     metrics::ChromeSearchboxStats expected;
     expected.ParseFromString(serialized_proto);
     EXPECT_EQ("2456j1j4", expected.experiment_stats());
   }
 
   // Test experiment stats v2 set.
-  add_zero_suggest_provider_experiment_stat(
-      base::test::ParseJson(R"json({"2":"0:67","4":10001})json"));
+  metrics::ChromeSearchboxStats::ExperimentStatsV2 experiment_stats_v2;
+  experiment_stats_v2.set_type_int(10001);
+  experiment_stats_v2.set_string_value("0:67");
+  add_zero_suggest_provider_experiment_stats_v2(experiment_stats_v2);
   url = GetDestinationURL(match, base::Milliseconds(2456));
-  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajFqNOIDCRIEMCw2NyCRTg==&",
+  EXPECT_EQ("//gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajFqNOIDCRIEMCw2NyCRTg&",
             url.path());
   // Make sure searchbox_stats is serialized and encoded correctly.
   {
     std::string serialized_proto;
-    base::Base64Decode("EgZjaHJvbWXSAQgyNDU2ajFqNOIDCRIEMCw2NyCRTg==",
-                       &serialized_proto);
+    EXPECT_TRUE(base::Base64UrlDecode(
+        "EgZjaHJvbWXSAQgyNDU2ajFqNOIDCRIEMCw2NyCRTg",
+        base::Base64UrlDecodePolicy::DISALLOW_PADDING, &serialized_proto));
     metrics::ChromeSearchboxStats expected;
     expected.ParseFromString(serialized_proto);
     EXPECT_EQ(1, expected.experiment_stats_v2_size());
@@ -1419,8 +1480,7 @@ TEST_F(AutocompleteProviderTest,
 
   // The protocol needs to be https.
   RegisterTemplateURL(kTestTemplateURLKeyword,
-                      "https://foo/{searchTerms}/"
-                      "{google:assistedQueryStats}{google:searchboxStats}");
+                      "https://foo/{searchTerms}/{google:assistedQueryStats}");
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_TRUE(url.path().empty());
 
@@ -1440,20 +1500,14 @@ TEST_F(AutocompleteProviderTest,
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_TRUE(url.path().empty());
 
-  // If searchbox_stats is not set, assisted_query_stats is not reported either.
+  // Both assisted_query_stats and searchbox_stats need to have been set.
   match.search_terms_args->assisted_query_stats =
       "chrome.0.69i57j69i58j5l2j0l3j69i59";
-  match.search_terms_args->searchbox_stats.clear_client_name();
-  url = GetDestinationURL(match, base::Milliseconds(2456));
-  EXPECT_TRUE(url.path().empty());
-
-  // Both assisted_query_stats and searchbox_stats need to have been set.
-  match.search_terms_args->searchbox_stats.set_client_name("chrome");
   url = GetDestinationURL(match, base::Milliseconds(2456));
   EXPECT_EQ(
       "//"
-      "aqs=chrome.0.69i57j69i58j5l2j0l3j69i59.2456j0j0&gs_lcrp="
-      "EgZjaHJvbWXSAQgyNDU2ajBqMA==&",
+      "gs_lcrp=EgZjaHJvbWXSAQgyNDU2ajBqMA&aqs=chrome.0."
+      "69i57j69i58j5l2j0l3j69i59.2456j0j0&",
       url.path());
 }
 
@@ -1640,8 +1694,7 @@ class AutocompleteProviderPrefetchTest : public AutocompleteProviderTest {
     // Create an empty controller.
     ResetControllerWithType(0);
     provider_listener_ =
-        std::make_unique<AutocompleteProviderListenerWithClosure>(
-            controller_.get());
+        std::make_unique<TestAutocompleteProviderListener>(controller_.get());
   }
   ~AutocompleteProviderPrefetchTest() override = default;
   AutocompleteProviderPrefetchTest(const AutocompleteProviderPrefetchTest&) =
@@ -1650,18 +1703,21 @@ class AutocompleteProviderPrefetchTest : public AutocompleteProviderTest {
       const AutocompleteProviderPrefetchTest&) = delete;
 
  protected:
-  std::unique_ptr<AutocompleteProviderListenerWithClosure> provider_listener_;
+  std::unique_ptr<TestAutocompleteProviderListener> provider_listener_;
 };
 
 TEST_F(AutocompleteProviderPrefetchTest, SupportedProvider_NonPrefetch) {
   // Add a test provider that supports prefetch requests.
-  TestPrefetchProvider* provider = new TestPrefetchProvider(
-      kResultsPerProvider, u"http://a", kTestTemplateURLKeyword, client_);
+  TestProvider* provider = new TestProvider(kResultsPerProvider, u"http://a",
+                                            kTestTemplateURLKeyword, client_);
+  provider->set_supports_prefetch(true);
   controller_->providers_.push_back(provider);
 
-  base::RunLoop run_loop;
-  provider_listener_->set_closure(run_loop.QuitClosure());
-  provider->set_listener(provider_listener_.get());
+  base::RunLoop listener_run_loop;
+  provider_listener_->set_closure(
+      listener_run_loop.QuitClosure().Then(base::BindRepeating(
+          &AutocompleteProviderTest::CopyResults, base::Unretained(this))));
+  provider->AddListener(provider_listener_.get());
 
   AutocompleteInput input(u"foo", metrics::OmniboxEventProto::OTHER,
                           TestingSchemeClassifier());
@@ -1671,58 +1727,73 @@ TEST_F(AutocompleteProviderPrefetchTest, SupportedProvider_NonPrefetch) {
   ASSERT_FALSE(controller_->done());
 
   // Wait for the provider to finish asynchronously.
-  run_loop.Run();
+  listener_run_loop.Run();
   ASSERT_TRUE(provider->done());
   ASSERT_TRUE(controller_->done());
 
   // The results are expected to be non-empty as the provider did notify the
   // controller of the non-prefetch request results.
-  CopyResults();
   EXPECT_EQ(kResultsPerProvider, result_.size());
 }
 
 TEST_F(AutocompleteProviderPrefetchTest, SupportedProvider_Prefetch) {
   // Add a test provider that supports prefetch requests.
-  TestPrefetchProvider* provider = new TestPrefetchProvider(
-      kResultsPerProvider, u"http://a", kTestTemplateURLKeyword, client_);
+  TestProvider* provider = new TestProvider(kResultsPerProvider, u"http://a",
+                                            kTestTemplateURLKeyword, client_);
+  provider->set_supports_prefetch(true);
   controller_->providers_.push_back(provider);
 
-  base::RunLoop run_loop;
-  provider_listener_->set_closure(run_loop.QuitClosure());
-  provider->set_listener(provider_listener_.get());
+  base::RunLoop provider_run_loop;
+  provider->set_closure(provider_run_loop.QuitClosure());
+
+  base::RunLoop listener_run_loop;
+  provider_listener_->set_closure(
+      listener_run_loop.QuitClosure().Then(base::BindRepeating(
+          &AutocompleteProviderTest::CopyResults, base::Unretained(this))));
+  provider->AddListener(provider_listener_.get());
 
   AutocompleteInput input(u"", metrics::OmniboxEventProto::OTHER,
                           TestingSchemeClassifier());
   controller_->StartPrefetch(input);
+  // Wait for StartPrefetch() to be called on the provider.
+  provider_run_loop.Run();
 
-  ASSERT_FALSE(provider->done());
-  // Prefetch requests do not affect the state of the controller.
+  // StartPrefetch() doesn't affect the state of the provider or the controller.
+  ASSERT_FALSE(provider->prefetch_done());
+  ASSERT_TRUE(provider->done());
   ASSERT_TRUE(controller_->done());
 
   // Wait for the provider to finish asynchronously.
-  run_loop.Run();
-  ASSERT_TRUE(provider->done());
+  listener_run_loop.Run();
+  ASSERT_TRUE(provider->prefetch_done());
+  ASSERT_TRUE(controller_->done());
 
   // The results are expected to be empty as the provider did not notify the
   // controller of the prefetch request results.
-  CopyResults();
   EXPECT_TRUE(result_.empty());
 }
 
 TEST_F(AutocompleteProviderPrefetchTest, SupportedProvider_OngoingNonPrefetch) {
   // Add a test provider that supports prefetch requests.
-  TestPrefetchProvider* provider = new TestPrefetchProvider(
-      kResultsPerProvider, u"http://a", kTestTemplateURLKeyword, client_);
+  TestProvider* provider = new TestProvider(kResultsPerProvider, u"http://a",
+                                            kTestTemplateURLKeyword, client_);
+  provider->set_supports_prefetch(true);
   controller_->providers_.push_back(provider);
 
-  base::RunLoop run_loop;
-  provider_listener_->set_closure(run_loop.QuitClosure());
-  provider->set_listener(provider_listener_.get());
+  base::RunLoop provider_run_loop;
+  provider->set_closure(provider_run_loop.QuitClosure());
+
+  base::RunLoop listener_run_loop;
+  provider_listener_->set_closure(
+      listener_run_loop.QuitClosure().Then(base::BindRepeating(
+          &AutocompleteProviderTest::CopyResults, base::Unretained(this))));
+  provider->AddListener(provider_listener_.get());
 
   AutocompleteInput input(u"bar", metrics::OmniboxEventProto::OTHER,
                           TestingSchemeClassifier());
   controller_->Start(input);
 
+  ASSERT_TRUE(provider->prefetch_done());
   ASSERT_FALSE(provider->done());
   ASSERT_FALSE(controller_->done());
 
@@ -1733,17 +1804,19 @@ TEST_F(AutocompleteProviderPrefetchTest, SupportedProvider_OngoingNonPrefetch) {
   // closure of `run_loop` before `run_loop` is run. This prevents the provider
   // from being able to notify the controller of finishing the non-prefetch
   // request resulting in the controller to remain in an invalid state.
-  input.set_want_asynchronous_matches(false);
+  input.set_omit_asynchronous_matches(true);
   controller_->StartPrefetch(input);
 
-  // Wait for the provider to finish asynchronously.
-  run_loop.Run();
+  ASSERT_FALSE(provider_run_loop.running());
+  ASSERT_TRUE(provider->prefetch_done());
+
+  // Wait for the provider to finish the non-prefetch request asynchronously.
+  listener_run_loop.Run();
   ASSERT_TRUE(provider->done());
   ASSERT_TRUE(controller_->done());
 
   // The results are expected to be non-empty as the provider did notify the
   // controller of the non-prefetch request results.
-  CopyResults();
   EXPECT_EQ(kResultsPerProvider, result_.size());
 }
 
@@ -1753,16 +1826,16 @@ TEST_F(AutocompleteProviderPrefetchTest, UnsupportedProvider_Prefetch) {
                                             kTestTemplateURLKeyword, client_);
   controller_->providers_.push_back(provider);
 
+  base::RunLoop provider_run_loop;
+  provider->set_closure(provider_run_loop.QuitClosure());
+
   AutocompleteInput input(u"", metrics::OmniboxEventProto::OTHER,
                           TestingSchemeClassifier());
   controller_->StartPrefetch(input);
 
-  // The provider is expected to finish synchronously.
+  // We expect this not to call StartPrefetch() on the provider.
+  ASSERT_FALSE(provider_run_loop.running());
+  ASSERT_TRUE(provider->prefetch_done());
   ASSERT_TRUE(provider->done());
   ASSERT_TRUE(controller_->done());
-
-  // The results are expected to be empty since the provider did a no-op for the
-  // prefetch request.
-  CopyResults();
-  EXPECT_TRUE(result_.empty());
 }

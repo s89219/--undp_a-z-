@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,11 @@ namespace {
 
 bool StoreDmTokenInSharedPreferences(const std::string& dm_token) {
   android::SaveDmTokenInSharedPreferences(dm_token);
+  return true;
+}
+
+bool DeleteDmTokenFromSharedPreferences() {
+  android::DeleteDmTokenFromSharedPreferences();
   return true;
 }
 
@@ -69,6 +74,11 @@ BrowserDMTokenStorage::StoreTask BrowserDMTokenStorageAndroid::SaveDMTokenTask(
     const std::string& token,
     const std::string& client_id) {
   return base::BindOnce(&StoreDmTokenInSharedPreferences, token);
+}
+
+BrowserDMTokenStorage::StoreTask
+BrowserDMTokenStorageAndroid::DeleteDMTokenTask(const std::string& client_id) {
+  return base::BindOnce(&DeleteDmTokenFromSharedPreferences);
 }
 
 scoped_refptr<base::TaskRunner>

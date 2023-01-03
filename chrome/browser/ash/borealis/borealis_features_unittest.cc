@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <limits>
 
-#include "ash/components/settings/cros_settings_names.h"
 #include "base/containers/flat_set.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
@@ -21,8 +20,9 @@
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/system/fake_statistics_provider.h"
-#include "chromeos/system/statistics_provider.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "components/prefs/pref_service.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/user_manager/scoped_user_manager.h"
@@ -135,20 +135,20 @@ TEST(BorealisFeaturesUtilTest, TokenHardwareCheckerWorks) {
   EXPECT_TRUE(checker.CpuRegexMatches("cp"));
   EXPECT_TRUE(checker.CpuRegexMatches("^[a-z]*$"));
 
-  EXPECT_TRUE(checker.HasMemory(-1));
+  EXPECT_TRUE(checker.HasMemory(0));
   EXPECT_TRUE(checker.HasMemory(41));
   EXPECT_TRUE(checker.HasMemory(42));
   EXPECT_FALSE(checker.HasMemory(43));
-  EXPECT_FALSE(checker.HasMemory(std::numeric_limits<int64_t>::max()));
+  EXPECT_FALSE(checker.HasMemory(std::numeric_limits<uint64_t>::max()));
 }
 
 TEST(BorealisFeaturesUtilTest, DataCanBeBuilt) {
   content::BrowserTaskEnvironment task_environment_;
   base::test::ScopedChromeOSVersionInfo version(
       "CHROMEOS_RELEASE_BOARD=board\n", base::Time());
-  chromeos::system::FakeStatisticsProvider fsp;
-  fsp.SetMachineStatistic(chromeos::system::kCustomizationIdKey, "model");
-  chromeos::system::StatisticsProvider::SetTestProvider(&fsp);
+  ash::system::FakeStatisticsProvider fsp;
+  fsp.SetMachineStatistic(ash::system::kCustomizationIdKey, "model");
+  ash::system::StatisticsProvider::SetTestProvider(&fsp);
 
   base::RunLoop loop;
   TokenHardwareChecker::GetData(
@@ -160,7 +160,7 @@ TEST(BorealisFeaturesUtilTest, DataCanBeBuilt) {
         // Faking CPU and RAM are not supported, so just assert they have some
         // trivial values.
         EXPECT_NE(data.cpu, "");
-        EXPECT_GT(data.memory, 0);
+        EXPECT_GT(data.memory, 0u);
         loop.Quit();
       }));
   loop.Run();

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,8 @@ bool FileHandlingIconsSupportedByOs();
 void RegisterFileHandlersWithOs(const AppId& app_id,
                                 const std::string& app_name,
                                 Profile* profile,
-                                const apps::FileHandlers& file_handlers);
+                                const apps::FileHandlers& file_handlers,
+                                ResultCallback callback);
 
 // Undo the file extensions registration for the PWA with specified |app_id|.
 // If a shim app was required, also removes the shim app.
@@ -53,8 +54,9 @@ void InstallMimeInfoOnLinux(const AppId& app_id,
                             const apps::FileHandlers& file_handlers);
 
 using UpdateMimeInfoDatabaseOnLinuxCallback =
-    base::OnceCallback<bool(base::FilePath profile_path,
-                            std::string file_contents)>;
+    base::RepeatingCallback<bool(base::FilePath profile_path,
+                                 std::string xdg_command,
+                                 std::string file_contents)>;
 
 // Override the |callback| used to handle updating the Linux MIME-info database
 // (the default is to use xdg-mime).

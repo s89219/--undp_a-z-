@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_clipboard_bubble_constants.h"
+#include "chrome/browser/chromeos/policy/dlp/dlp_policy_constants.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -26,7 +27,9 @@
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-#include "chrome/browser/lacros/browser_service_lacros.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/browser_navigator.h"
+#include "chrome/browser/ui/browser_navigator_params.h"
 #include "ui/chromeos/styles/cros_styles.h"
 #include "ui/native_theme/native_theme_aura.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -130,18 +133,19 @@ class Button : public views::LabelButton {
 void OnLearnMoreLinkClicked() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   ash::NewWindowDelegate::GetPrimary()->OpenUrl(
-      GURL(kDlpLearnMoreUrl),
-      ash::NewWindowDelegate::OpenUrlFrom::kUserInteraction);
+      GURL(dlp::kDlpLearnMoreUrl),
+      ash::NewWindowDelegate::OpenUrlFrom::kUserInteraction,
+      ash::NewWindowDelegate::Disposition::kNewForegroundTab);
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
-  // TODO(hidehiko): Instantiating BrowserServiceLacros here is an unexpected
-  // use case. Get rid of this by replacing with Navigate() API invocation
-  // directly.
-  auto browser_service = std::make_unique<BrowserServiceLacros>();
-  using OpenUrlParams = crosapi::mojom::OpenUrlParams;
-  auto params = OpenUrlParams::New();
-  params->disposition = OpenUrlParams::WindowOpenDisposition::kNewForegroundTab;
-  browser_service->OpenUrl(GURL(kDlpLearnMoreUrl), std::move(params),
-                           base::DoNothing());
+  // The dlp policy applies to the main profile, so use the main profile for
+  // opening the page.
+  NavigateParams navigate_params(
+      ProfileManager::GetPrimaryUserProfile(), GURL(dlp::kDlpLearnMoreUrl),
+      ui::PageTransitionFromInt(ui::PAGE_TRANSITION_LINK |
+                                ui::PAGE_TRANSITION_FROM_API));
+  navigate_params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  navigate_params.window_action = NavigateParams::SHOW_WINDOW;
+  Navigate(&navigate_params);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
@@ -311,7 +315,7 @@ ClipboardWarnBubble::ClipboardWarnBubble(const std::u16string& text)
 
   // Add cancel button.
   std::u16string cancel_label =
-      l10n_util::GetStringUTF16(IDS_POLICY_DLP_CLIPBOARD_WARN_DISMISS_BUTTON);
+      l10n_util::GetStringUTF16(IDS_POLICY_DLP_WARN_CANCEL_BUTTON);
   cancel_button_ = AddChildView(std::make_unique<Button>(cancel_label));
   cancel_button_->SetPaintToLayer();
   cancel_button_->layer()->SetFillsBoundsOpaquely(false);
@@ -323,7 +327,10 @@ ClipboardWarnBubble::ClipboardWarnBubble(const std::u16string& text)
   UpdateBorderSize(GetBubbleSize());
 }
 
-ClipboardWarnBubble::~ClipboardWarnBubble() = default;
+ClipboardWarnBubble::~ClipboardWarnBubble() {
+  if (paste_cb_)
+    std::move(paste_cb_).Run(false);
+}
 
 gfx::Size ClipboardWarnBubble::GetBubbleSize() const {
   DCHECK(label_);

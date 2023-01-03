@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -116,6 +116,11 @@ sure the section ID is correct (matches the section's ID in the RC file). \
 Also note that you may need to specify the RC file's encoding (using the \
 encoding="" attribute) if it is not in the default Windows-1252 encoding. \
 '''
+  pass
+
+
+class IdRangeOverflow(Base):
+  '''ID range overflow.'''
   pass
 
 

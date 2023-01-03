@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -199,8 +199,8 @@ ClientMapEntryUpdater::ClientMapEntryUpdater(JNIEnv* env,
   DCHECK(web_contents);
   DCHECK(jdelegate);
 
-  if (web_contents->GetMainFrame())
-    RenderFrameCreated(web_contents->GetMainFrame());
+  if (web_contents->GetPrimaryMainFrame())
+    RenderFrameCreated(web_contents->GetPrimaryMainFrame());
 }
 
 void ClientMapEntryUpdater::RenderFrameCreated(RenderFrameHost* rfh) {
@@ -372,8 +372,9 @@ std::unique_ptr<AwWebResourceInterceptResponse> RunShouldInterceptRequest(
       "shouldInterceptRequest");
   ScopedJavaLocalRef<jobject> java_ref =
       Java_AwContentsBackgroundThreadClient_shouldInterceptRequestFromNative(
-          env, obj, java_web_resource_request.jurl, request.is_main_frame,
-          request.has_user_gesture, java_web_resource_request.jmethod,
+          env, obj, java_web_resource_request.jurl,
+          request.is_outermost_main_frame, request.has_user_gesture,
+          java_web_resource_request.jmethod,
           java_web_resource_request.jheader_names,
           java_web_resource_request.jheader_values);
 
@@ -406,9 +407,8 @@ void AwContentsIoThreadClient::ShouldInterceptRequestAsync(
         &RunShouldInterceptRequest, std::move(request),
         JavaObjectWeakGlobalRef(env, bg_thread_client_object_.obj()));
   }
-  base::PostTaskAndReplyWithResult(sequenced_task_runner_.get(), FROM_HERE,
-                                   std::move(get_response),
-                                   std::move(callback));
+  sequenced_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, std::move(get_response), std::move(callback));
 }
 
 bool AwContentsIoThreadClient::ShouldBlockContentUrls() const {
@@ -448,16 +448,6 @@ bool AwContentsIoThreadClient::ShouldBlockNetworkLoads() const {
   JNIEnv* env = AttachCurrentThread();
   return Java_AwContentsIoThreadClient_shouldBlockNetworkLoads(env,
                                                                java_object_);
-}
-
-AwSettings::RequestedWithHeaderMode
-AwContentsIoThreadClient::GetRequestedWithHeaderMode() const {
-  DCHECK_CURRENTLY_ON(BrowserThread::IO);
-
-  JNIEnv* env = AttachCurrentThread();
-  return static_cast<AwSettings::RequestedWithHeaderMode>(
-      Java_AwContentsIoThreadClient_getRequestedWithHeaderMode(env,
-                                                               java_object_));
 }
 
 }  // namespace android_webview

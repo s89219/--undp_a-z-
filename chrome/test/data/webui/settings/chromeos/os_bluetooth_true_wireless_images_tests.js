@@ -1,16 +1,16 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://os-settings/chromeos/os_settings.js';
 import 'chrome://os-settings/strings.m.js';
 
-import {BatteryType} from 'chrome://resources/cr_components/chromeos/bluetooth/bluetooth_types.js';
-import {BluetoothDeviceProperties, DeviceConnectionState} from 'chrome://resources/mojo/chromeos/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
+import {BatteryType} from 'chrome://resources/ash/common/bluetooth/bluetooth_types.js';
+import {BluetoothDeviceProperties, DeviceConnectionState} from 'chrome://resources/mojo/chromeos/ash/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {createDefaultBluetoothDevice} from 'chrome://test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
+import {createDefaultBluetoothDevice} from 'chrome://webui-test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('OsBluetoothTrueWirelessImagesElementTest', function() {
   /** @type {SettingsBluetoothTrueWirelessImagesElement} */
@@ -45,19 +45,19 @@ suite('OsBluetoothTrueWirelessImagesElementTest', function() {
     }
     if (batteryType === BatteryType.DEFAULT) {
       bluetoothTrueWirelessImages.device.batteryInfo.defaultProperties = {
-        batteryPercentage: batteryPercentage
+        batteryPercentage: batteryPercentage,
       };
     } else if (batteryType === BatteryType.LEFT_BUD) {
       bluetoothTrueWirelessImages.device.batteryInfo.leftBudInfo = {
-        batteryPercentage: batteryPercentage
+        batteryPercentage: batteryPercentage,
       };
     } else if (batteryType === BatteryType.CASE) {
       bluetoothTrueWirelessImages.device.batteryInfo.caseInfo = {
-        batteryPercentage: batteryPercentage
+        batteryPercentage: batteryPercentage,
       };
     } else if (batteryType === BatteryType.RIGHT_BUD) {
       bluetoothTrueWirelessImages.device.batteryInfo.rightBudInfo = {
-        batteryPercentage: batteryPercentage
+        batteryPercentage: batteryPercentage,
       };
     }
     bluetoothTrueWirelessImages.batteryType = batteryType;
@@ -74,11 +74,11 @@ suite('OsBluetoothTrueWirelessImagesElementTest', function() {
     const trueWireless = {
       leftBudImageUrl: fakeUrl,
       caseImageUrl: fakeUrl,
-      rightBudImageUrl: fakeUrl
+      rightBudImageUrl: fakeUrl,
     };
     bluetoothTrueWirelessImages.device.imageInfo = {
       defaultImageUrl: fakeUrl,
-      trueWirelessImages: trueWireless
+      trueWirelessImages: trueWireless,
     };
 
     bluetoothTrueWirelessImages.device =

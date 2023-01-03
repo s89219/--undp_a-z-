@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -363,10 +363,7 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev,
             stylus_button_accelerated_longpress_enabled_ &&
             (ev.GetFlags() & ui::EF_LEFT_MOUSE_BUTTON)) {
           // This will generate a ET_GESTURE_LONG_PRESS event with
-          // EF_LEFT_MOUSE_BUTTON, which is consumed by MetalayerMode if that
-          // feature is enabled, because MetalayerMode is also activated by a
-          // stylus button press and has precedence over this press acceleration
-          // feature.
+          // EF_LEFT_MOUSE_BUTTON.
           ActivateShortPressGesture(ev);
           ActivateLongPressGesture(ev);
         } else if (ev.GetToolType(0) == MotionEvent::ToolType::FINGER &&

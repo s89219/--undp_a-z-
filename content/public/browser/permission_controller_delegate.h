@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,14 @@
 
 #include "base/types/id_type.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/devtools_permission_overrides.h"
+#include "content/public/browser/permission_result.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 
 class GURL;
+
+namespace url {
+class Origin;
+}
 
 namespace blink {
 enum class PermissionType;
@@ -22,8 +26,6 @@ class RenderProcessHost;
 
 class CONTENT_EXPORT PermissionControllerDelegate {
  public:
-  using PermissionOverrides = DevToolsPermissionOverrides::PermissionOverrides;
-
   // Identifier for an active subscription.
   using SubscriptionId = base::IdType64<PermissionControllerDelegate>;
 
@@ -54,34 +56,45 @@ class CONTENT_EXPORT PermissionControllerDelegate {
       base::OnceCallback<void(
           const std::vector<blink::mojom::PermissionStatus>&)> callback) = 0;
 
+  // Requests permissions from the current document in the given
+  // RenderFrameHost. Use this over `RequestPermission` whenever possible as
+  // this API takes into account the lifecycle state of a given document (i.e.
+  // whether it's in back-forward cache or being prerendered) in addition to its
+  // origin.
+  virtual void RequestPermissionsFromCurrentDocument(
+      const std::vector<blink::PermissionType>& permissions,
+      RenderFrameHost* render_frame_host,
+      bool user_gesture,
+      base::OnceCallback<void(
+          const std::vector<blink::mojom::PermissionStatus>&)> callback) = 0;
+
   // Returns the permission status of a given requesting_origin/embedding_origin
   // tuple. This is not taking a RenderFrameHost because the call might happen
-  // outside of a frame context. Prefer GetPermissionStatusForFrame (below)
-  // whenever possible.
+  // outside of a frame context. Prefer GetPermissionStatusForCurrentDocument
+  // (below) whenever possible.
   virtual blink::mojom::PermissionStatus GetPermissionStatus(
       blink::PermissionType permission,
       const GURL& requesting_origin,
       const GURL& embedding_origin) = 0;
 
-  // Returns the permission status for a given frame. Use this over
-  // GetPermissionStatus whenever possible.
-  // TODO(raymes): Currently we still pass the |requesting_origin| as a separate
-  // parameter because we can't yet guarantee that it matches the last committed
-  // origin of the RenderFrameHost. See https://crbug.com/698985.
-  // Deprecated. Use `GetPermissionStatusForCurrentDocument` instead.
-  virtual blink::mojom::PermissionStatus GetPermissionStatusForFrame(
+  virtual PermissionResult GetPermissionResultForOriginWithoutContext(
       blink::PermissionType permission,
-      RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin) = 0;
+      const url::Origin& origin) = 0;
 
   // Returns the permission status for the current document in the given
-  // RenderFrameHost. Use this over `GetPermissionStatusForFrame` and
-  // `GetPermissionStatus` whenever possible as this API takes into account the
-  // lifecycle state of a given document (i.e. whether it's in back-forward
-  // cache or being prerendered) in addition to its origin.
+  // RenderFrameHost. Use this over `GetPermissionStatus` whenever possible as
+  // this API takes into account the lifecycle state of a given document (i.e.
+  // whether it's in back-forward cache or being prerendered) in addition to its
+  // origin.
   virtual blink::mojom::PermissionStatus GetPermissionStatusForCurrentDocument(
       blink::PermissionType permission,
       RenderFrameHost* render_frame_host) = 0;
+
+  // The method does the same as `GetPermissionStatusForCurrentDocument` but
+  // additionally returns a source or reason for the permission status.
+  virtual PermissionResult GetPermissionResultForCurrentDocument(
+      blink::PermissionType permission,
+      RenderFrameHost* render_frame_host);
 
   // Returns the status of the given `permission` for a worker on
   // `worker_origin` running in `render_process_host`, also performing
@@ -119,20 +132,8 @@ class CONTENT_EXPORT PermissionControllerDelegate {
   virtual void UnsubscribePermissionStatusChange(
       SubscriptionId subscription_id) = 0;
 
-  // Manually overrides default permission settings of delegate, if overrides
-  // are tracked by the delegate. This method should only be called by the
-  // PermissionController owning the delegate.
-  virtual void SetPermissionOverridesForDevTools(
-      const absl::optional<url::Origin>& origin,
-      const PermissionOverrides& overrides) {}
-
-  // Removes overrides that have been set, if any, for all origins. If delegate
-  // does not maintain own permission set, then nothing happens.
-  virtual void ResetPermissionOverridesForDevTools() {}
-
-  // Returns whether permission can be overridden by
-  // DevToolsPermissionOverrides.
-  virtual bool IsPermissionOverridableByDevTools(
+  // Returns whether permission can be overridden.
+  virtual bool IsPermissionOverridable(
       blink::PermissionType permission,
       const absl::optional<url::Origin>& origin);
 };

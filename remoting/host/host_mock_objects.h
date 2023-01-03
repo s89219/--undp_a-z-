@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@
 #include "remoting/host/mojom/chromoting_host_services.mojom.h"
 #include "remoting/host/remote_open_url/url_forwarder_configurator.h"
 #include "remoting/host/security_key/security_key_auth_handler.h"
+#include "remoting/host/webauthn/remote_webauthn_state_change_notifier.h"
 #include "remoting/proto/control.pb.h"
 #include "remoting/proto/event.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -63,12 +64,12 @@ class MockDesktopEnvironment : public DesktopEnvironment {
               CreateScreenControls,
               (),
               (override));
-  MOCK_METHOD(std::unique_ptr<webrtc::DesktopCapturer>,
+  MOCK_METHOD(std::unique_ptr<DesktopCapturer>,
               CreateVideoCapturer,
-              (std::unique_ptr<DesktopDisplayInfoMonitor>),
+              (),
               (override));
-  MOCK_METHOD(std::unique_ptr<DesktopDisplayInfoMonitor>,
-              CreateDisplayInfoMonitor,
+  MOCK_METHOD(DesktopDisplayInfoMonitor*,
+              GetDisplayInfoMonitor,
               (),
               (override));
   MOCK_METHOD(std::unique_ptr<webrtc::MouseCursorMonitor>,
@@ -87,9 +88,9 @@ class MockDesktopEnvironment : public DesktopEnvironment {
               CreateUrlForwarderConfigurator,
               (),
               (override));
-  MOCK_METHOD(std::unique_ptr<DesktopAndCursorConditionalComposer>,
-              CreateComposingVideoCapturer,
-              (std::unique_ptr<DesktopDisplayInfoMonitor> monitor),
+  MOCK_METHOD(std::unique_ptr<RemoteWebAuthnStateChangeNotifier>,
+              CreateRemoteWebAuthnStateChangeNotifier,
+              (),
               (override));
   MOCK_METHOD(std::string, GetCapabilities, (), (const, override));
   MOCK_METHOD(void, SetCapabilities, (const std::string&), (override));

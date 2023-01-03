@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,13 +38,17 @@ class SigninFirstRunProperties {
             new ReadableObjectPropertyKey<>("on_dismiss_clicked");
 
     // Is not initialized in #createModel(...) to avoid conflicting view changes with
-    // ARE_NATIVE_AND_POLICY_LOADED. Will be set when |Continue as ...| or dismiss button is
-    // pressed.
+    // ARE_NATIVE_AND_POLICY_LOADED. Will be set when |Continue as ...| is pressed.
+    static final WritableBooleanPropertyKey SHOW_SIGNIN_PROGRESS_SPINNER_WITH_TEXT =
+            new WritableBooleanPropertyKey("show_signin_progress_spinner_with_text");
+
+    // Is not initialized in #createModel(...) to avoid conflicting view changes with
+    // ARE_NATIVE_AND_POLICY_LOADED. Will be set when dismiss button is pressed.
     static final WritableBooleanPropertyKey SHOW_SIGNIN_PROGRESS_SPINNER =
             new WritableBooleanPropertyKey("show_signin_progress_spinner");
 
-    static final WritableBooleanPropertyKey ARE_NATIVE_AND_POLICY_LOADED =
-            new WritableBooleanPropertyKey("are_native_and_policy_loaded");
+    static final WritableBooleanPropertyKey SHOW_INITIAL_LOAD_PROGRESS_SPINNER =
+            new WritableBooleanPropertyKey("show_initial_load_progress_spinner");
 
     static final WritableObjectPropertyKey<FrePolicy> FRE_POLICY =
             new WritableObjectPropertyKey<>("fre_policy");
@@ -61,8 +65,9 @@ class SigninFirstRunProperties {
             IS_SELECTED_ACCOUNT_SUPERVISED,
             ON_CONTINUE_AS_CLICKED,
             ON_DISMISS_CLICKED,
+            SHOW_SIGNIN_PROGRESS_SPINNER_WITH_TEXT,
             SHOW_SIGNIN_PROGRESS_SPINNER,
-            ARE_NATIVE_AND_POLICY_LOADED,
+            SHOW_INITIAL_LOAD_PROGRESS_SPINNER,
             FRE_POLICY,
             IS_SIGNIN_SUPPORTED,
             FOOTER_STRING,
@@ -80,7 +85,7 @@ class SigninFirstRunProperties {
                 .with(IS_SELECTED_ACCOUNT_SUPERVISED, false)
                 .with(ON_CONTINUE_AS_CLICKED, v -> onContinueAsClicked.run())
                 .with(ON_DISMISS_CLICKED, v -> onDismissClicked.run())
-                .with(ARE_NATIVE_AND_POLICY_LOADED, false)
+                .with(SHOW_INITIAL_LOAD_PROGRESS_SPINNER, true)
                 .with(FRE_POLICY, null)
                 .with(IS_SIGNIN_SUPPORTED, isSigninSupported)
                 .with(FOOTER_STRING, footerString)

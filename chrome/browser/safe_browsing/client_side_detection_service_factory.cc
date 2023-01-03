@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,11 +20,6 @@ namespace safe_browsing {
 // static
 ClientSideDetectionService* ClientSideDetectionServiceFactory::GetForProfile(
     Profile* profile) {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kDisableClientSidePhishingDetection)) {
-    return nullptr;
-  }
-
   return static_cast<ClientSideDetectionService*>(
       GetInstance()->GetServiceForBrowserContext(profile, /* create= */
                                                  true));
@@ -37,21 +32,13 @@ ClientSideDetectionServiceFactory::GetInstance() {
 }
 
 ClientSideDetectionServiceFactory::ClientSideDetectionServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "ClientSideDetectionService",
-          BrowserContextDependencyManager::GetInstance()) {}
+    : ProfileKeyedServiceFactory("ClientSideDetectionService") {}
 
 KeyedService* ClientSideDetectionServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = Profile::FromBrowserContext(context);
   return new ClientSideDetectionService(
       std::make_unique<ChromeClientSideDetectionServiceDelegate>(profile));
-}
-
-content::BrowserContext*
-ClientSideDetectionServiceFactory::GetBrowserContextToUse(
-    content::BrowserContext* context) const {
-  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }
 
 }  // namespace safe_browsing

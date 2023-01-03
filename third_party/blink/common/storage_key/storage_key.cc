@@ -1,10 +1,9 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
-#include <algorithm>
 #include <cctype>
 #include <memory>
 #include <ostream>
@@ -13,11 +12,11 @@
 
 #include "base/feature_list.h"
 #include "base/ranges/algorithm.h"
-#include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/types/optional_util.h"
+#include "net/base/features.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "third_party/blink/public/common/features.h"
 #include "url/gurl.h"
 
 namespace {
@@ -54,7 +53,7 @@ absl::optional<StorageKey> StorageKey::Deserialize(base::StringPiece in) {
 
   // More than two encoded attributes (delimited by carets) indicates a
   // malformed input.
-  if (std::count(in.begin(), in.end(), '^') > 2)
+  if (base::ranges::count(in, '^') > 2)
     return absl::nullopt;
 
   size_t pos_first_caret = in.find_first_of('^');
@@ -87,12 +86,12 @@ absl::optional<StorageKey> StorageKey::Deserialize(base::StringPiece in) {
     return absl::nullopt;
 
   // Otherwise the key is partitioned, let's see what it's partitioned by.
-  absl::optional<EncodedAttribute> encoded_attribute =
+  absl::optional<EncodedAttribute> first_attribute =
       DeserializeAttributeSeparator(in.substr(pos_first_caret, 2));
-  if (!encoded_attribute.has_value())
+  if (!first_attribute.has_value())
     return absl::nullopt;
 
-  switch (encoded_attribute.value()) {
+  switch (first_attribute.value()) {
     case EncodedAttribute::kTopLevelSite: {
       // A top-level site is serialized.
 
@@ -113,10 +112,10 @@ absl::optional<StorageKey> StorageKey::Deserialize(base::StringPiece in) {
           !ValidSeparatorWithData(in, pos_last_caret))
         return absl::nullopt;
 
-      absl::optional<EncodedAttribute> encoded_attribute =
+      absl::optional<EncodedAttribute> last_attribute =
           DeserializeAttributeSeparator(in.substr(pos_last_caret, 2));
-      if (!encoded_attribute.has_value() ||
-          encoded_attribute.value() != EncodedAttribute::kAncestorChainBit)
+      if (!last_attribute.has_value() ||
+          last_attribute.value() != EncodedAttribute::kAncestorChainBit)
         return absl::nullopt;
 
       // The ancestor_chain_bit is the portion beyond the last separator.
@@ -157,10 +156,10 @@ absl::optional<StorageKey> StorageKey::Deserialize(base::StringPiece in) {
           !ValidSeparatorWithData(in, pos_second_caret))
         return absl::nullopt;
 
-      absl::optional<EncodedAttribute> encoded_attribute =
+      absl::optional<EncodedAttribute> second_attribute =
           DeserializeAttributeSeparator(in.substr(pos_second_caret, 2));
-      if (!encoded_attribute.has_value() ||
-          encoded_attribute.value() != EncodedAttribute::kNonceLow)
+      if (!second_attribute.has_value() ||
+          second_attribute.value() != EncodedAttribute::kNonceLow)
         return absl::nullopt;
 
       // The origin is the portion up to, but not including, the first
@@ -209,8 +208,29 @@ StorageKey StorageKey::CreateFromStringForTesting(const std::string& origin) {
 }
 
 // static
+StorageKey StorageKey::CreateForTesting(const url::Origin& origin,
+                                        const url::Origin& top_level_origin) {
+  auto top_level_site = net::SchemefulSite(top_level_origin);
+  return StorageKey(origin, std::move(top_level_site), nullptr,
+                    top_level_site == net::SchemefulSite(origin)
+                        ? blink::mojom::AncestorChainBit::kSameSite
+                        : blink::mojom::AncestorChainBit::kCrossSite);
+}
+
+// static
+StorageKey StorageKey::CreateForTesting(
+    const url::Origin& origin,
+    const net::SchemefulSite& top_level_site) {
+  return StorageKey(origin, top_level_site, nullptr,
+                    top_level_site == net::SchemefulSite(origin)
+                        ? blink::mojom::AncestorChainBit::kSameSite
+                        : blink::mojom::AncestorChainBit::kCrossSite);
+}
+
+// static
 bool StorageKey::IsThirdPartyStoragePartitioningEnabled() {
-  return base::FeatureList::IsEnabled(features::kThirdPartyStoragePartitioning);
+  return base::FeatureList::IsEnabled(
+      net::features::kThirdPartyStoragePartitioning);
 }
 
 // static
@@ -231,6 +251,24 @@ StorageKey StorageKey::CreateWithOptionalNonce(
     blink::mojom::AncestorChainBit ancestor_chain_bit) {
   DCHECK(!nonce || !nonce->is_empty());
   return StorageKey(origin, top_level_site, nonce, ancestor_chain_bit);
+}
+
+// static
+StorageKey StorageKey::CreateFromOriginAndIsolationInfo(
+    const url::Origin& origin,
+    const net::IsolationInfo& isolation_info) {
+  return CreateWithOptionalNonce(
+      origin, net::SchemefulSite(isolation_info.top_frame_origin().value()),
+      base::OptionalToPtr(isolation_info.nonce()),
+      isolation_info.site_for_cookies().IsNull()
+          ? blink::mojom::AncestorChainBit::kCrossSite
+          : blink::mojom::AncestorChainBit::kSameSite);
+}
+
+StorageKey StorageKey::WithOrigin(const url::Origin& origin) const {
+  return CreateWithOptionalNonce(origin, top_level_site_,
+                                 base::OptionalToPtr(nonce_),
+                                 ancestor_chain_bit_);
 }
 
 std::string StorageKey::Serialize() const {
@@ -284,12 +322,9 @@ std::string StorageKey::SerializeForLocalStorage() const {
   DCHECK(!origin_.opaque());
 
   // If this is a third-party StorageKey we'll use the standard serialization
-  // scheme.
-  if (nonce_.has_value())
-    return Serialize();
-
-  if (IsThirdPartyStoragePartitioningEnabled() &&
-      top_level_site_ != net::SchemefulSite(origin_)) {
+  // scheme when partitioning is enabled or if there is a nonce.
+  if (nonce_.has_value() ||
+      (IsThirdPartyContext() && IsThirdPartyStoragePartitioningEnabled())) {
     return Serialize();
   }
 
@@ -343,14 +378,18 @@ std::string StorageKey::GetMemoryDumpString(size_t max_length) const {
 }
 
 const net::SiteForCookies StorageKey::ToNetSiteForCookies() const {
-  if (!nonce_ &&
-      ancestor_chain_bit_ == blink::mojom::AncestorChainBit::kSameSite &&
-      net::registry_controlled_domains::SameDomainOrHost(
-          origin_, url::Origin::Create(top_level_site_.GetURL()),
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES)) {
-    return net::SiteForCookies::FromUrl(top_level_site_.GetURL());
+  if (nonce_ ||
+      ancestor_chain_bit_ == blink::mojom::AncestorChainBit::kCrossSite) {
+    // If any of the ancestor frames are cross-site to `origin_` then the
+    // SiteForCookies should be null. The existence of `nonce_` means the same
+    // thing.
+    return net::SiteForCookies();
   }
-  return net::SiteForCookies();
+
+  // The `ancestor_chain_bit_` being kSameSite should already indicate that the
+  // `top_level_site_` and `origin_` are same-site.
+  DCHECK(top_level_site_ == net::SchemefulSite(origin_));
+  return net::SiteForCookies(top_level_site_);
 }
 
 // static
@@ -398,6 +437,23 @@ bool StorageKey::ShouldSkipKeyDueToPartitioning(
   }
   // If otherwise first-party, nonce, or corrupted, don't skip.
   return false;
+}
+
+const absl::optional<net::CookiePartitionKey> StorageKey::ToCookiePartitionKey()
+    const {
+  return net::CookiePartitionKey::FromStorageKeyComponents(top_level_site_,
+                                                           nonce_);
+}
+
+bool StorageKey::MatchesOriginForTrustedStorageDeletion(
+    const url::Origin& origin) const {
+  if (!IsThirdPartyStoragePartitioningEnabled())
+    return origin_ == origin;
+  // TODO(crbug.com/1382138): Address wss:// and https:// resulting in different
+  // SchemefulSites.
+  return (ancestor_chain_bit_ == blink::mojom::AncestorChainBit::kSameSite)
+             ? (origin_ == origin)
+             : (top_level_site_ == net::SchemefulSite(origin));
 }
 
 bool operator==(const StorageKey& lhs, const StorageKey& rhs) {

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,20 +18,16 @@ ChromeVoxNextE2ETest = class extends ChromeVoxE2ETest {
     this.isCommonClass = opt_isCommonClass || false;
 
     if (this.runtimeDeps.length > 0) {
-      chrome.extension.getViews().forEach(function(w) {
-        this.runtimeDeps.forEach(function(dep) {
-          if (w[dep]) {
-            window[dep] = w[dep];
+      chrome.extension.getViews().forEach(view => {
+        this.runtimeDeps.forEach(dep => {
+          if (view[dep]) {
+            window[dep] = view[dep];
           }
-        }.bind(this));
-      }.bind(this));
+        });
+      });
     }
 
     this.originalOutputContextValues_ = {};
-    for (const role in OutputRoleInfo) {
-      this.originalOutputContextValues_[role] =
-          OutputRoleInfo[role]['contextOrder'];
-    }
   }
 
   /** @override */
@@ -73,8 +69,8 @@ ChromeVoxNextE2ETest = class extends ChromeVoxE2ETest {
     for (const key in modifiers) {
       keyEvent[key] = modifiers[key];
     }
-    keyEvent.preventDefault = _ => {};
-    keyEvent.stopPropagation = _ => {};
+    keyEvent.preventDefault = () => {};
+    keyEvent.stopPropagation = () => {};
     return keyEvent;
   }
 
@@ -97,9 +93,8 @@ ChromeVoxNextE2ETest = class extends ChromeVoxE2ETest {
    * @return {function(): void}
    */
   doGesture(gesture, opt_x, opt_y) {
-    return () => {
-      GestureCommandHandler.onAccessibilityGesture_(gesture, opt_x, opt_y);
-    };
+    return () => GestureCommandHandler.instance_.onAccessibilityGesture_(
+               gesture, opt_x, opt_y);
   }
 
   /**
@@ -114,17 +109,30 @@ ChromeVoxNextE2ETest = class extends ChromeVoxE2ETest {
   async setUpDeferred() {
     await super.setUpDeferred();
     if (!this.isCommonClass) {
+      // Alphabetical based on file path.
       await importModule(
           'BaseAutomationHandler',
           '/chromevox/background/base_automation_handler.js');
       await importModule(
           'CommandHandler', '/chromevox/background/command_handler.js');
       await importModule(
+          'CommandHandlerInterface',
+          '/chromevox/background/command_handler_interface.js');
+      await importModule(
           'GestureCommandHandler',
           '/chromevox/background/gesture_command_handler.js');
+      await importModule(
+          'OutputRoleInfo', '/chromevox/background/output/output_role_info.js');
+      await importModule(
+          'OutputContextOrder', '/chromevox/background/output/output_types.js');
 
       // For tests, enable announcement of events we trigger via automation.
       BaseAutomationHandler.announceActions = true;
+
+      for (const role in OutputRoleInfo) {
+        this.originalOutputContextValues_[role] =
+            OutputRoleInfo[role]['contextOrder'];
+      }
     }
   }
 

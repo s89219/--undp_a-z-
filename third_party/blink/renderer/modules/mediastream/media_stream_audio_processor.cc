@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 
 #include "base/feature_list.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "media/base/audio_parameters.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -58,7 +57,7 @@ MediaStreamAudioProcessor::MediaStreamAudioProcessor(
           media::AudioProcessor::GetDefaultOutputFormat(
               capture_data_source_params,
               settings))),
-      main_thread_runner_(base::ThreadTaskRunnerHandle::Get()),
+      main_thread_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       aec_dump_agent_impl_(AecDumpAgentImpl::Create(this)),
       stopped_(false) {
   DCHECK(main_thread_runner_);

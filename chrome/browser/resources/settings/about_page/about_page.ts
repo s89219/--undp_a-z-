@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,26 +7,26 @@
  * information.
  */
 
-import '../icons.js';
+import '../icons.html.js';
 import '../prefs/prefs.js';
 // <if expr="not chromeos_ash">
 import '../relaunch_confirmation_dialog.js';
 // </if>
 import '../settings_page/settings_section.js';
-import '../settings_page_css.js';
-import '../settings_shared_css.js';
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
+import '../settings_page_styles.css.js';
+import '../settings_shared.css.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_link_row/cr_link_row.js';
-import 'chrome://resources/cr_elements/icons.m.js';
-import 'chrome://resources/cr_elements/shared_style_css.m.js';
+import 'chrome://resources/cr_elements/icons.html.js';
+import 'chrome://resources/cr_elements/cr_shared_style.css.js';
 import 'chrome://resources/polymer/v3_0/iron-flex-layout/iron-flex-layout-classes.js';
 import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 
+import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
+import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
-import {parseHtmlSubset} from 'chrome://resources/js/parse_html_subset.m.js';
-import {WebUIListenerMixin} from 'chrome://resources/js/web_ui_listener_mixin.js';
+import {sanitizeInnerHtml} from 'chrome://resources/js/parse_html_subset.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {loadTimeData} from '../i18n_setup.js';
@@ -40,7 +40,7 @@ import {PromoteUpdaterStatus} from './about_page_browser_proxy.js';
 // </if>
 
 const SettingsAboutPageElementBase =
-    RelaunchMixin(WebUIListenerMixin(I18nMixin(PolymerElement)));
+    RelaunchMixin(WebUiListenerMixin(I18nMixin(PolymerElement)));
 
 export class SettingsAboutPageElement extends SettingsAboutPageElementBase {
   static get is() {
@@ -59,7 +59,7 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase {
           message: '',
           progress: 0,
           rollback: false,
-          status: UpdateStatus.DISABLED
+          status: UpdateStatus.DISABLED,
         },
       },
 
@@ -154,10 +154,10 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase {
 
   // <if expr="not chromeos_ash">
   private startListening_() {
-    this.addWebUIListener(
+    this.addWebUiListener(
         'update-status-changed', this.onUpdateStatusChanged_.bind(this));
     // <if expr="_google_chrome and is_macosx">
-    this.addWebUIListener(
+    this.addWebUiListener(
         'promotion-state-changed',
         this.onPromoteUpdaterStatusChanged_.bind(this));
     // </if>
@@ -227,7 +227,7 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase {
     return this.currentUpdateStatusEvent_!.status === UpdateStatus.FAILED;
   }
 
-  private getUpdateStatusMessage_(): string {
+  private getUpdateStatusMessage_(): TrustedHTML {
     switch (this.currentUpdateStatusEvent_!.status) {
       case UpdateStatus.CHECKING:
       case UpdateStatus.NEED_PERMISSION_TO_UPDATE:
@@ -252,21 +252,17 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase {
         }
         return this.i18nAdvanced('aboutUpgradeUpdating');
       default:
-        function formatMessage(msg: string) {
-          return (parseHtmlSubset('<b>' + msg + '</b>', ['br', 'pre'])
-                      .firstChild as HTMLElement)
-              .innerHTML;
-        }
         let result = '';
         const message = this.currentUpdateStatusEvent_!.message;
         if (message) {
-          result += formatMessage(message);
+          result += message;
         }
         const connectMessage = this.currentUpdateStatusEvent_!.connectionTypes;
         if (connectMessage) {
-          result += '<div>' + formatMessage(connectMessage) + '</div>';
+          result += `<div>${connectMessage}</div>`;
         }
-        return result;
+
+        return sanitizeInnerHtml(result, {tags: ['br', 'pre']});
     }
   }
 
@@ -312,16 +308,6 @@ export class SettingsAboutPageElement extends SettingsAboutPageElementBase {
   private onManagementPageTap_() {
     window.location.href = 'chrome://management';
   }
-
-  // <if expr="chromeos_ash">
-  private getUpdateOsSettingsLink_(): string {
-    // Note: This string contains raw HTML and thus requires i18nAdvanced().
-    // Since the i18n template syntax (e.g., $i18n{}) does not include an
-    // "advanced" version, it's not possible to inline this link directly in the
-    // HTML.
-    return this.i18nAdvanced('aboutUpdateOsSettingsLink');
-  }
-  // </if>
 
   private onProductLogoTap_() {
     this.$['product-logo'].animate(

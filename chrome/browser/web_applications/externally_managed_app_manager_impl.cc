@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,12 +12,15 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/feature_list.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/functional/bind.h"
+#include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/web_applications/externally_managed_app_manager.h"
 #include "chrome/browser/web_applications/externally_managed_app_registration_task.h"
+#include "chrome/browser/web_applications/locks/full_system_lock.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_command_scheduler.h"
 #include "chrome/browser/web_applications/web_app_install_finalizer.h"
-#include "chrome/browser/web_applications/web_app_install_manager.h"
 #include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
@@ -43,9 +46,7 @@ struct ExternallyManagedAppManagerImpl::TaskAndCallback {
 
 ExternallyManagedAppManagerImpl::ExternallyManagedAppManagerImpl(
     Profile* profile)
-    : profile_(profile),
-      externally_installed_app_prefs_(profile->GetPrefs()),
-      url_loader_(std::make_unique<WebAppUrlLoader>()) {}
+    : profile_(profile), url_loader_(std::make_unique<WebAppUrlLoader>()) {}
 
 ExternallyManagedAppManagerImpl::~ExternallyManagedAppManagerImpl() = default;
 
@@ -97,9 +98,11 @@ void ExternallyManagedAppManagerImpl::UninstallApps(
 }
 
 void ExternallyManagedAppManagerImpl::Shutdown() {
+  is_in_shutdown_ = true;
   pending_registrations_.clear();
   current_registration_.reset();
   pending_installs_.clear();
+  url_loader_.reset();
   // `current_install_` keeps a pointer to `web_contents_` so destroy it before
   // releasing the WebContents.
   current_install_.reset();
@@ -124,8 +127,8 @@ std::unique_ptr<ExternallyManagedAppInstallTask>
 ExternallyManagedAppManagerImpl::CreateInstallationTask(
     ExternalInstallOptions install_options) {
   return std::make_unique<ExternallyManagedAppInstallTask>(
-      profile_, url_loader_.get(), registrar(), ui_manager(), finalizer(),
-      install_manager(), std::move(install_options));
+      profile_, url_loader_.get(), ui_manager(), finalizer(),
+      command_scheduler(), std::move(install_options));
 }
 
 std::unique_ptr<ExternallyManagedAppRegistrationTaskBase>
@@ -149,15 +152,28 @@ void ExternallyManagedAppManagerImpl::OnRegistrationFinished(
 }
 
 void ExternallyManagedAppManagerImpl::PostMaybeStartNext() {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&ExternallyManagedAppManagerImpl::MaybeStartNext,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void ExternallyManagedAppManagerImpl::MaybeStartNext() {
-  if (current_install_)
+  if (current_install_ || is_in_shutdown_)
     return;
+  command_scheduler()->ScheduleCallbackWithLock<FullSystemLock>(
+      "ExternallyManagedAppManagerImpl::MaybeStartNext",
+      std::make_unique<FullSystemLockDescription>(),
+      base::BindOnce(
+          &ExternallyManagedAppManagerImpl::MaybeStartNextOnLockAcquired,
+          weak_ptr_factory_.GetWeakPtr()));
+}
+
+void ExternallyManagedAppManagerImpl::MaybeStartNextOnLockAcquired(
+    FullSystemLock& lock) {
+  if (current_install_ || is_in_shutdown_) {
+    return;
+  }
 
   while (!pending_installs_.empty()) {
     std::unique_ptr<TaskAndCallback> front =
@@ -172,20 +188,20 @@ void ExternallyManagedAppManagerImpl::MaybeStartNext() {
       return;
     }
 
-    absl::optional<AppId> app_id = externally_installed_app_prefs_.LookupAppId(
-        install_options.install_url);
+    absl::optional<AppId> app_id =
+        lock.registrar().LookupExternalAppId(install_options.install_url);
 
-    // If the URL is not in ExternallyInstalledWebAppPrefs, then no external
-    // source has installed it.
+    // If the URL is not in web_app registrar,
+    // then no external source has installed it.
     if (!app_id.has_value()) {
       StartInstallationTask(std::move(front));
       return;
     }
 
-    if (registrar()->IsInstalled(app_id.value())) {
+    if (lock.registrar().IsInstalled(app_id.value())) {
       if (install_options.wait_for_windows_closed &&
-          ui_manager()->GetNumWindowsForApp(app_id.value()) != 0) {
-        ui_manager()->NotifyOnAllAppWindowsClosed(
+          lock.ui_manager().GetNumWindowsForApp(app_id.value()) != 0) {
+        lock.ui_manager().NotifyOnAllAppWindowsClosed(
             app_id.value(),
             base::BindOnce(&ExternallyManagedAppManagerImpl::Install,
                            weak_ptr_factory_.GetWeakPtr(), install_options,
@@ -196,18 +212,22 @@ void ExternallyManagedAppManagerImpl::MaybeStartNext() {
       // If the app is already installed, only reinstall it if the app is a
       // placeholder app and the client asked for it to be reinstalled.
       if (install_options.reinstall_placeholder &&
-          externally_installed_app_prefs_
-              .LookupPlaceholderAppId(install_options.install_url)
-              .has_value()) {
+          lock.registrar().IsPlaceholderApp(
+              app_id.value(), ConvertExternalInstallSourceToSource(
+                                  install_options.install_source))) {
         StartInstallationTask(std::move(front));
         return;
       }
 
-      // Otherwise add install source before returning the result.
-      // TODO: Investigate re-install of the app instead at all times.
-      // https://crbug.com/1300321
-      {
-        ScopedRegistryUpdate update(sync_bridge());
+      // TODO(crbug.com/1300321): Investigate re-install of the app for all
+      // WebAppManagement sources.
+      if (ConvertExternalInstallSourceToSource(
+              install_options.install_source) == WebAppManagement::kPolicy) {
+        StartInstallationTask(std::move(front));
+        return;
+      } else {
+        // Add install source before returning the result.
+        ScopedRegistryUpdate update(&lock.sync_bridge());
         WebApp* app_to_update = update->UpdateApp(app_id.value());
         app_to_update->AddSource(ConvertExternalInstallSourceToSource(
             install_options.install_source));
@@ -221,18 +241,6 @@ void ExternallyManagedAppManagerImpl::MaybeStartNext() {
                ExternallyManagedAppManager::InstallResult(
                    webapps::InstallResultCode::kSuccessAlreadyInstalled,
                    app_id));
-      continue;
-    }
-
-    // The app is not installed, but it might have been previously uninstalled
-    // by the user. If that's the case, don't install it again unless
-    // |override_previous_user_uninstall| is true.
-    if (finalizer()->WasPreinstalledWebAppUninstalled(app_id.value()) &&
-        !install_options.override_previous_user_uninstall) {
-      std::move(front->callback)
-          .Run(install_options.install_url,
-               ExternallyManagedAppManager::InstallResult(
-                   webapps::InstallResultCode::kPreviouslyUninstalled, app_id));
       continue;
     }
 
@@ -253,6 +261,7 @@ void ExternallyManagedAppManagerImpl::MaybeStartNext() {
 void ExternallyManagedAppManagerImpl::StartInstallationTask(
     std::unique_ptr<TaskAndCallback> task) {
   DCHECK(!current_install_);
+  DCHECK(!is_in_shutdown_);
   if (current_registration_) {
     // Preempt current registration.
     pending_registrations_.push_front(current_registration_->install_url());
@@ -281,6 +290,7 @@ bool ExternallyManagedAppManagerImpl::RunNextRegistration() {
 }
 
 void ExternallyManagedAppManagerImpl::CreateWebContentsIfNecessary() {
+  DCHECK(!is_in_shutdown_);
   if (web_contents_)
     return;
 

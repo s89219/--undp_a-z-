@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,8 +37,7 @@ class SyncEngineBackend : public base::RefCountedThreadSafe<SyncEngineBackend>,
                           public SyncManager::Observer {
  public:
   using AllNodesCallback =
-      base::OnceCallback<void(const ModelType,
-                              std::unique_ptr<base::ListValue>)>;
+      base::OnceCallback<void(const ModelType, base::Value::List)>;
 
   // Struct that allows passing back data upon init, for data previously
   // produced by SyncEngineBackend (which doesn't itself have the ability to
@@ -181,7 +180,7 @@ class SyncEngineBackend : public base::RefCountedThreadSafe<SyncEngineBackend>,
       const std::string& payload,
       const ModelTypeSet& interested_data_types);
 
-  // Returns a ListValue representing Nigori node.
+  // Returns a Value::List representing Nigori node.
   void GetNigoriNodeForDebugging(AllNodesCallback callback);
 
   bool HasUnsyncedItemsForTest() const;

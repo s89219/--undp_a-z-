@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 #include <algorithm>
 #include <limits>
 
-#include "base/check.h"
+#include "base/allocator/partition_allocator/partition_alloc_check.h"
 
 namespace partition_alloc::internal::base {
 
@@ -29,7 +29,7 @@ void RandBytes(void* output, size_t output_length) {
         output_length, static_cast<size_t>(std::numeric_limits<ULONG>::max())));
     const bool success =
         RtlGenRandom(output_ptr, output_bytes_this_pass) != FALSE;
-    CHECK(success);
+    PA_CHECK(success);
     output_length -= output_bytes_this_pass;
     output_ptr += output_bytes_this_pass;
   }

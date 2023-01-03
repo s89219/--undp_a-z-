@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,8 @@
 
 import {AppManagementStore, updateSelectedAppId} from 'chrome://os-settings/chromeos/os_settings.js';
 import {setupFakeHandler, replaceStore, replaceBody} from './test_util.js';
-import {flushTasks} from 'chrome://test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {AppType} from 'chrome://resources/cr_components/app_management/app_management.mojom-webui.js';
 
 suite('<app-management-file-handling-item>', () => {
   let fileHandlingItem;
@@ -28,7 +29,7 @@ suite('<app-management-file-handling-item>', () => {
   // app_management tests.
   test('PWA - basic file handling test', async function() {
     const pwaOptions = {
-      type: appManagement.mojom.AppType.kWeb,
+      type: AppType.kWeb,
       fileHandlingState: {
         enabled: false,
         isManaged: false,

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,7 +59,8 @@ LoginDetectionTabHelper::LoginDetectionTabHelper(
     : content::WebContentsObserver(web_contents),
       content::WebContentsUserData<LoginDetectionTabHelper>(*web_contents),
       oauth_login_detector_(std::make_unique<OAuthLoginDetector>()),
-      ukm_source_id_(web_contents->GetMainFrame()->GetPageUkmSourceId()) {
+      ukm_source_id_(
+          web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId()) {
   DCHECK(IsLoginDetectionFeatureEnabled());
 }
 

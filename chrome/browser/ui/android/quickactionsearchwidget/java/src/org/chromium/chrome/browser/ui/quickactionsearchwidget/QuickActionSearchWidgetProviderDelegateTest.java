@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -179,18 +179,13 @@ public class QuickActionSearchWidgetProviderDelegateTest {
         float density = res.getDisplayMetrics().density;
 
         mWidgetView = mDelegate
-                              .createSearchWidgetRemoteViews(mContext, prefs,
-                                      // Simulate optimally sized rectangular screen:
-                                      // Portrait mode dimensions:
-                                      mDefaultWidgetWidthDp, mMediumWidgetMinHeightDp,
-                                      // Landscape mode dimensions:
-                                      mDefaultWidgetWidthDp, mMediumWidgetMinHeightDp)
+                              .createSearchWidgetRemoteViews(mContext, prefs, mDefaultWidgetWidthDp,
+                                      mMediumWidgetMinHeightDp)
                               .apply(mContext, null);
-        mDinoWidgetView =
-                mDelegate
-                        .createDinoWidgetRemoteViews(mContext, prefs, mDinoWidgetEdgeSizeDp,
-                                mDinoWidgetEdgeSizeDp, mDinoWidgetEdgeSizeDp, mDinoWidgetEdgeSizeDp)
-                        .apply(mContext, null);
+        mDinoWidgetView = mDelegate
+                                  .createDinoWidgetRemoteViews(mContext, prefs,
+                                          mDinoWidgetEdgeSizeDp, mDinoWidgetEdgeSizeDp)
+                                  .apply(mContext, null);
     }
 
     /**

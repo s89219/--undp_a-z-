@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/webui/projector_app/public/cpp/projector_app_constants.h"
+#include "base/feature_list.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/projector/projector_utils.h"
@@ -13,6 +14,7 @@
 #include "chrome/common/webui_url_constants.h"
 #include "components/version_info/channel.h"
 #include "content/public/browser/web_ui_data_source.h"
+#include "third_party/blink/public/common/features.h"
 
 ChromeUntrustedProjectorUIDelegate::ChromeUntrustedProjectorUIDelegate() =
     default;
@@ -30,6 +32,31 @@ void ChromeUntrustedProjectorUIDelegate::PopulateLoadTimeData(
                      ash::features::IsProjectorCustomThumbnailEnabled());
   source->AddBoolean("isShowShortPseudoTranscriptEnabled",
                      ash::features::IsProjectorShowShortPseudoTranscript());
+  source->AddBoolean("isAnnotatorEnabled",
+                     ash::features::IsProjectorAnnotatorEnabled());
+  source->AddBoolean(
+      "isUseOAuthForGetVideoInfoEnabled",
+      ash::features::IsProjectorUseOAuthForGetVideoInfoEnabled());
+  source->AddBoolean(
+      "isLocalPlaybackEnabled",
+      ash::features::IsProjectorLocalPlaybackEnabled() &&
+          // The local playback feature depends on the file handling API.
+          base::FeatureList::IsEnabled(blink::features::kFileHandlingAPI));
+  source->AddBoolean("isReportToCrash2Enabled",
+                     ash::features::IsProjectorWebReportCrashEnabled());
+  source->AddBoolean(
+      "isUseApiKeyForTranslationEnabled",
+      ash::features::IsProjectorUseApiKeyForTranslationEnabled());
+  source->AddBoolean(
+      "isViewerUseSecondaryAccountEnabled",
+      ash::features::IsProjectorViewerUseSecondaryAccountEnabled());
+  source->AddBoolean(
+      "isAccountSwitchNotificationEnabled",
+      ash::features::IsProjectorAccountSwitchNotificationEnabled());
+
+  source->AddBoolean(
+      "isInternalServerSideSpeechRecognitionEnabled",
+      ash::features::IsInternalServerSideSpeechRecognitionEnabled());
   source->AddString("appLocale", g_browser_process->GetApplicationLocale());
 }
 

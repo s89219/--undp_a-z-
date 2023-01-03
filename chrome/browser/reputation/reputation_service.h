@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,20 +21,6 @@
 class Profile;
 struct DomainInfo;
 
-// All potential heuristics that can trigger. Used temporarily to keep track of
-// which heuristics trigger during a reputation check, and later used to decide
-// which metrics get recorded.
-struct TriggeredHeuristics {
-  bool blocklist_heuristic_triggered = false;
-  bool lookalike_heuristic_triggered = false;
-  bool keywords_heuristic_triggered = false;
-
-  inline bool triggered_any() const {
-    return blocklist_heuristic_triggered || lookalike_heuristic_triggered ||
-           keywords_heuristic_triggered;
-  }
-};
-
 // Wrapper used to store the results of a reputation check. Specifically, this
 // is passed to the callback given to GetReputationStatus.  |url| is the URL
 // applicable for this result.
@@ -46,7 +32,10 @@ struct ReputationCheckResult {
       security_state::SafetyTipStatus::kNone;
   GURL url;
   GURL suggested_url;
-  TriggeredHeuristics triggered_heuristics;
+  // True if a lookalike heuristic was triggered. Used temporarily to keep track
+  // of whether a heuristic triggers during a reputation check, and later used
+  // to decide whether metrics get recorded.
+  bool lookalike_heuristic_triggered = false;
 };
 
 // Callback type used for retrieving reputation status. The results of the
@@ -89,12 +78,9 @@ class ReputationService : public KeyedService {
   // seen as flagged in metrics. This only impacts metrics for control groups.
   void OnUIDisabledFirstVisit(const GURL& url);
 
-  // Used to help mock the generated keywords for the sensitive keywords
-  // heuristic for testing. The keywords passed to this function MUST be in
-  // sorted order, and must have a lifetime at least as long as this service.
-  void SetSensitiveKeywordsForTesting(const char* const* new_keywords,
-                                      size_t num_new_keywords);
-  void ResetSensitiveKeywordsForTesting();
+  // Reset set of eTLD+1s to forget the user action that ignores warning. Only
+  // for testing.
+  void ResetWarningDismissedETLDPlusOnesForTesting();
 
  private:
   // Callback once we have up-to-date |engaged_sites|. Performs checks on the
@@ -111,10 +97,7 @@ class ReputationService : public KeyedService {
   // ignored.  Used to avoid re-warning the user.
   std::set<std::string> warning_dismissed_etld1s_;
 
-  raw_ptr<Profile> profile_;
-
-  raw_ptr<const char* const> sensitive_keywords_;
-  size_t num_sensitive_keywords_;
+  raw_ptr<Profile, DanglingUntriaged> profile_;
 
   base::WeakPtrFactory<ReputationService> weak_factory_{this};
 };

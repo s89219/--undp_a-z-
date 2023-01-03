@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -260,19 +260,10 @@ AutofillBubbleBase* AutofillBubbleHandlerImpl::ShowVirtualCardEnrollBubble(
   return bubble;
 }
 
-void AutofillBubbleHandlerImpl::OnPasswordSaved() {
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillCreditCardUploadFeedback)) {
-    ShowAvatarHighlightAnimation();
-  }
-}
+void AutofillBubbleHandlerImpl::OnPasswordSaved() {}
 
 void AutofillBubbleHandlerImpl::OnCreditCardSaved(
-    bool should_show_sign_in_promo_if_applicable) {
-  should_show_sign_in_promo_if_applicable_ =
-      should_show_sign_in_promo_if_applicable;
-  ShowAvatarHighlightAnimation();
-}
+    bool should_show_sign_in_promo_if_applicable) {}
 
 void AutofillBubbleHandlerImpl::OnAvatarHighlightAnimationFinished() {
   if (should_show_sign_in_promo_if_applicable_) {

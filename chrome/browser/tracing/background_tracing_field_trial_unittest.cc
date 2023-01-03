@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@ class BackgroundTracingTest : public testing::Test {
   BackgroundTracingTest() = default;
 
   void TearDown() override {
-    content::BackgroundTracingManager::GetInstance()->AbortScenarioForTesting();
+    content::BackgroundTracingManager::GetInstance().AbortScenarioForTesting();
   }
 
  private:
@@ -76,7 +76,7 @@ TEST_F(BackgroundTracingTest, SetupBackgroundTracingFieldTrial) {
   g_test_config_loaded = false;
 
   content::BackgroundTracingManager::GetInstance()
-      ->SetConfigTextFilterForTesting(base::BindRepeating(&CheckConfig));
+      .SetConfigTextFilterForTesting(base::BindRepeating(&CheckConfig));
 
   ASSERT_EQ(tracing::GetBackgroundTracingSetupMode(),
             BackgroundTracingSetupMode::kFromFieldTrial);
@@ -106,7 +106,7 @@ TEST_F(BackgroundTracingTest, SetupBackgroundTracingFromConfigFile) {
             BackgroundTracingSetupMode::kFromConfigFile);
   tracing::SetupBackgroundTracingFieldTrial();
   EXPECT_TRUE(
-      content::BackgroundTracingManager::GetInstance()->HasActiveScenario());
+      content::BackgroundTracingManager::GetInstance().HasActiveScenario());
 }
 
 TEST_F(BackgroundTracingTest, SetupBackgroundTracingFieldTrialOutputFile) {
@@ -121,7 +121,7 @@ TEST_F(BackgroundTracingTest, SetupBackgroundTracingFieldTrialOutputFile) {
   ASSERT_TRUE(testing_profile_manager.SetUp());
 
   EXPECT_FALSE(
-      content::BackgroundTracingManager::GetInstance()->HasActiveScenario());
+      content::BackgroundTracingManager::GetInstance().HasActiveScenario());
 
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
@@ -137,5 +137,5 @@ TEST_F(BackgroundTracingTest, SetupBackgroundTracingFieldTrialOutputFile) {
   tracing::SetupBackgroundTracingFieldTrial();
 
   EXPECT_TRUE(
-      content::BackgroundTracingManager::GetInstance()->HasActiveScenario());
+      content::BackgroundTracingManager::GetInstance().HasActiveScenario());
 }

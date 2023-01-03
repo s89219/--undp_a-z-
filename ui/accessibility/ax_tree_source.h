@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,12 +76,6 @@ class AXTreeSource {
     SerializeNode(node, &node_data);
     return node_data.ToString();
   }
-
-  // This is called by AXTreeSerializer when it serializes a tree and
-  // discovers that a node previously in the tree is no longer part of
-  // the tree. It can be used to allow an AXTreeSource to keep a cache
-  // indexed by node ID and delete nodes when they're no longer needed.
-  virtual void SerializerClearedNode(AXNodeID node_id) {}
 
   // The following methods should be overridden in order to add or remove an
   // `AXTreeSourceObserver`, which is notified when nodes are added, removed or

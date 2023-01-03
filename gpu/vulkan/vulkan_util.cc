@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -198,9 +198,14 @@ bool CheckVulkanCompabilities(const VulkanInfo& vulkan_info,
         return false;
     }
   }
-#endif  // !BUILDFLAG(IS_ANDROID)
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_LINUX) && !defined(OZONE_PLATFORM_IS_X11)
+  // Vulkan is only supported with X11 on Linux for now.
+  return false;
+#else
+  return true;
+#endif
+#else   // BUILDFLAG(IS_ANDROID)
   if (vulkan_info.physical_devices.empty())
     return false;
 
@@ -255,9 +260,9 @@ bool CheckVulkanCompabilities(const VulkanInfo& vulkan_info,
   // Imagination GPUs.
   if (device_info.properties.vendorID == kVendorImagination)
     return false;
-#endif  // BUILDFLAG(IS_ANDROID)
 
   return true;
+#endif  // BUILDFLAG(IS_ANDROID)
 }
 
 VkImageLayout GLImageLayoutToVkImageLayout(uint32_t layout) {

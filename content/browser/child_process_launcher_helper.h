@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,12 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "content/public/browser/browser_child_process_host.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/zygote/zygote_buildflags.h"
 #include "mojo/public/cpp/platform/platform_channel.h"
 #include "mojo/public/cpp/system/invitation.h"
+#include "ppapi/buildflags/buildflags.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 #if !BUILDFLAG(IS_FUCHSIA)
@@ -38,7 +40,13 @@
 
 #if BUILDFLAG(IS_MAC)
 #include "sandbox/mac/seatbelt_exec.h"
-#endif
+
+#if BUILDFLAG(ENABLE_PPAPI)
+#include <vector>
+
+#include "content/public/common/webplugininfo.h"
+#endif  // BUILDFLAG(ENABLE_PPAPI)
+#endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_FUCHSIA)
 #include "sandbox/policy/fuchsia/sandbox_policy_fuchsia.h"
@@ -56,8 +64,9 @@ namespace content {
 
 class ChildProcessLauncher;
 class SandboxedProcessLauncherDelegate;
-struct ChildProcessLauncherPriority;
+struct ChildProcessLauncherFileData;
 struct ChildProcessTerminationInfo;
+struct RenderProcessPriority;
 
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 class PosixFileDescriptorInfo;
@@ -75,15 +84,15 @@ using FileMappedForLaunch = base::HandlesToInheritVector;
 // process. Since ChildProcessLauncher can be deleted by its client at any time,
 // this class is used to keep state as the process is started asynchronously.
 // It also contains the platform specific pieces.
-class ChildProcessLauncherHelper :
-    public base::RefCountedThreadSafe<ChildProcessLauncherHelper> {
+class ChildProcessLauncherHelper
+    : public base::RefCountedThreadSafe<ChildProcessLauncherHelper> {
  public:
   // Abstraction around a process required to deal in a platform independent way
   // between Linux (which can use zygotes) and the other platforms.
   struct Process {
-    Process() {}
+    Process();
     Process(Process&& other);
-    ~Process() {}
+    ~Process();
     Process& operator=(Process&& other);
 
     base::Process process;
@@ -91,6 +100,12 @@ class ChildProcessLauncherHelper :
 #if BUILDFLAG(USE_ZYGOTE_HANDLE)
     ZygoteHandle zygote = nullptr;
 #endif  // BUILDFLAG(USE_ZYGOTE_HANDLE)
+
+#if BUILDFLAG(IS_FUCHSIA)
+    // Store `sandbox_policy` within `Process` to ensure that the sandbox policy
+    // isn't removed before the process is terminated.
+    std::unique_ptr<sandbox::policy::SandboxPolicyFuchsia> sandbox_policy;
+#endif
   };
 
   ChildProcessLauncherHelper(
@@ -104,7 +119,7 @@ class ChildProcessLauncherHelper :
 #endif
       mojo::OutgoingInvitation mojo_invitation,
       const mojo::ProcessErrorCallback& process_error_callback,
-      std::map<std::string, base::FilePath> files_to_preload);
+      std::unique_ptr<ChildProcessLauncherFileData> file_data);
 
   // The methods below are defined in the order they are called.
 
@@ -184,17 +199,21 @@ class ChildProcessLauncherHelper :
   static void ForceNormalProcessTerminationAsync(
       ChildProcessLauncherHelper::Process process);
 
-  void SetProcessPriorityOnLauncherThread(
-      base::Process process,
-      const ChildProcessLauncherPriority& priority);
-
 #if BUILDFLAG(IS_ANDROID)
-  void OnChildProcessStarted(JNIEnv* env,
-                             jint handle);
+  void OnChildProcessStarted(JNIEnv* env, jint handle);
+
+  base::android::ChildBindingState GetEffectiveChildBindingState();
 
   // Dumps the stack of the child process without crashing it.
   void DumpProcessStack(const base::Process& process);
-#endif  // BUILDFLAG(IS_ANDROID)
+
+  void SetRenderProcessPriorityOnLauncherThread(
+      base::Process process,
+      const RenderProcessPriority& priority);
+#else   // !BUILDFLAG(IS_ANDROID)
+  void SetProcessBackgroundedOnLauncherThread(base::Process process,
+                                              bool is_background);
+#endif  // !BUILDFLAG(IS_ANDROID)
 
   std::string GetProcessType();
 
@@ -224,6 +243,12 @@ class ChildProcessLauncherHelper :
   std::unique_ptr<SandboxedProcessLauncherDelegate> delegate_;
   base::WeakPtr<ChildProcessLauncher> child_process_launcher_;
 
+#if BUILDFLAG(IS_WIN)
+  // Whether the child process is backgrounded, the state is stored to avoid
+  // setting the process priority repeatedly.
+  bool is_process_backgrounded_ = false;
+#endif
+
   // The PlatformChannel that will be used to transmit an invitation to the
   // child process in most cases. Only used if the platform's helper
   // implementation doesn't return a server endpoint from
@@ -240,10 +265,15 @@ class ChildProcessLauncherHelper :
   bool terminate_on_shutdown_;
   mojo::OutgoingInvitation mojo_invitation_;
   const mojo::ProcessErrorCallback process_error_callback_;
-  const std::map<std::string, base::FilePath> files_to_preload_;
+  std::unique_ptr<ChildProcessLauncherFileData> file_data_;
 
 #if BUILDFLAG(IS_MAC)
   std::unique_ptr<sandbox::SeatbeltExecClient> seatbelt_exec_client_;
+  sandbox::mac::SandboxPolicy policy_;
+
+#if BUILDFLAG(ENABLE_PPAPI)
+  std::vector<content::WebPluginInfo> plugins_;
+#endif  // BUILDFLAG(ENABLE_PPAPI)
 #endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_ANDROID)

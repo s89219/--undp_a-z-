@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,8 +21,10 @@
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/flags/android/chrome_feature_list.h"
+#include "chrome/browser/share/core/crow/crow_configuration.h"
 #include "components/component_updater/component_installer.h"
 #include "components/component_updater/component_updater_paths.h"
+#include "components/feed/feed_feature_list.h"
 
 using component_updater::ComponentUpdateService;
 
@@ -53,7 +55,7 @@ void LoadCrowConfigFromDisk(const base::FilePath& pb_path) {
     return;
   }
 
-  // TODO(crbug.com/1320476): Update a config class.
+  crow::CrowConfiguration::GetInstance()->PopulateFromBinaryPb(binary_pb);
 }
 
 }  // namespace
@@ -71,7 +73,7 @@ bool CrowDomainListComponentInstallerPolicy::RequiresNetworkEncryption() const {
 
 update_client::CrxInstaller::Result
 CrowDomainListComponentInstallerPolicy::OnCustomInstall(
-    const base::Value& manifest,
+    const base::Value::Dict& manifest,
     const base::FilePath& install_dir) {
   return update_client::CrxInstaller::Result(0);  // No custom steps.
 }
@@ -86,7 +88,7 @@ base::FilePath CrowDomainListComponentInstallerPolicy::GetInstalledPath(
 void CrowDomainListComponentInstallerPolicy::ComponentReady(
     const base::Version& version,
     const base::FilePath& install_dir,
-    base::Value manifest) {
+    base::Value::Dict manifest) {
   VLOG(1) << "Component ready, version " << version.GetString() << " in "
           << install_dir.value();
 
@@ -97,7 +99,7 @@ void CrowDomainListComponentInstallerPolicy::ComponentReady(
 
 // Called during startup and installation before ComponentReady().
 bool CrowDomainListComponentInstallerPolicy::VerifyInstallation(
-    const base::Value& manifest,
+    const base::Value::Dict& manifest,
     const base::FilePath& install_dir) const {
   // Checking the component downloaded successfully is sufficient here;
   // the config parser will validate later.
@@ -125,7 +127,7 @@ CrowDomainListComponentInstallerPolicy::GetInstallerAttributes() const {
 }
 
 void RegisterCrowDomainListComponent(ComponentUpdateService* cus) {
-  if (!base::FeatureList::IsEnabled(chrome::android::kShareCrowButton)) {
+  if (!base::FeatureList::IsEnabled(feed::kShareCrowButton)) {
     return;
   }
 

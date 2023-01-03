@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@
 #include "components/grit/components_resources.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
+#include "ios/chrome/browser/url/chrome_url_constants.h"
 #include "ios/web/public/webui/url_data_source_ios.h"
 #include "ui/base/device_form_factor.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -34,7 +34,7 @@ const char kStringsJsPath[] = "strings.js";
 
 class AboutUIHTMLSource : public web::URLDataSourceIOS {
  public:
-  // Construct a data source for the specified |source_name|.
+  // Construct a data source for the specified `source_name`.
   explicit AboutUIHTMLSource(const std::string& source_name);
 
   AboutUIHTMLSource(const AboutUIHTMLSource&) = delete;
@@ -139,9 +139,9 @@ void AboutUIHTMLSource::StartDataRequest(
       if (histogram_name.find(path) == std::string::npos) {
         continue;
       }
-      base::Value histogram_dict = histogram->ToGraphDict();
-      std::string* header = histogram_dict.FindStringKey("header");
-      std::string* body = histogram_dict.FindStringKey("body");
+      base::Value::Dict histogram_dict = histogram->ToGraphDict();
+      std::string* header = histogram_dict.FindString("header");
+      std::string* body = histogram_dict.FindString("body");
 
       response.append("<PRE>");
       response.append("<h4>");
@@ -159,8 +159,7 @@ void AboutUIHTMLSource::StartDataRequest(
 void AboutUIHTMLSource::FinishDataRequest(
     const std::string& html,
     web::URLDataSourceIOS::GotDataCallback callback) {
-  std::string html_copy(html);
-  std::move(callback).Run(base::RefCountedString::TakeString(&html_copy));
+  std::move(callback).Run(base::MakeRefCounted<base::RefCountedString>(html));
 }
 
 std::string AboutUIHTMLSource::GetMimeType(const std::string& path) const {

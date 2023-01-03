@@ -1,12 +1,15 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/media_router/media_route_starter.h"
 
 #include "base/containers/contains.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
+#include "build/build_config.h"
+#include "build/buildflag.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/media_router/media_cast_mode.h"
 #include "chrome/browser/ui/media_router/media_router_ui_helper.h"
@@ -47,23 +50,36 @@ void RunRouteResponseCallbacks(
     std::move(callback).Run(result);
 }
 
+// Gets the profile to use for the `MediaRouteStarter` when there is no
+// `WebContents` initiator. On ChromeOS, this happens for example when the
+// `MediaRouteStarter` is called from the OS system tray.
+Profile* GetDefaultProfileForMediaRouteStarter() {
+// Use the main profile on ChromeOS. Desktop platforms don't have the concept
+// of a "main" profile, so pick the "last used" profile instead.
+#if BUILDFLAG(IS_CHROMEOS)
+  return ProfileManager::GetActiveUserProfile();
+#else
+  return ProfileManager::GetLastUsedProfile();
+#endif
+}
+
 }  // namespace
 
-MediaRouteStarter::MediaRouteStarter(
-    const CastModeSet& initial_modes,
-    content::WebContents* web_contents,
-    std::unique_ptr<StartPresentationContext> start_presentation_context)
-    : web_contents_(web_contents),
-      start_presentation_context_(std::move(start_presentation_context)),
+MediaRouteStarter::MediaRouteStarter(MediaRouterUIParameters params)
+    : web_contents_(params.initiator),
+      start_presentation_context_(std::move(params.start_presentation_context)),
       presentation_manager_(
-          web_contents ? WebContentsPresentationManager::Get(web_contents)
-                       : nullptr),
+          params.initiator
+              ? WebContentsPresentationManager::Get(params.initiator)
+              : nullptr),
       query_result_manager_(
           std::make_unique<QueryResultManager>(GetMediaRouter())) {
   if (presentation_manager_)
     presentation_manager_->AddObserver(this);
-  InitPresentationSources(initial_modes);
-  InitMirroringSources(initial_modes);
+  InitPresentationSources(params.initial_modes);
+  InitMirroringSources(params.initial_modes);
+  InitRemotePlaybackSources(params.initial_modes, params.video_codec,
+                            params.audio_codec);
 }
 
 MediaRouteStarter::~MediaRouteStarter() {
@@ -74,10 +90,9 @@ MediaRouteStarter::~MediaRouteStarter() {
   // If |start_presentation_context_| still exists, then it means presentation
   // route request was never attempted.
   if (start_presentation_context_) {
-    std::vector<MediaSinkWithCastModes> sinks =
-        GetQueryResultManager()->GetSinksWithCastModes();
-    bool presentation_sinks_available = std::any_of(
-        sinks.begin(), sinks.end(), [](const MediaSinkWithCastModes& sink) {
+    bool presentation_sinks_available = base::ranges::any_of(
+        GetQueryResultManager()->GetSinksWithCastModes(),
+        [](const MediaSinkWithCastModes& sink) {
           return base::Contains(sink.cast_modes, MediaCastMode::PRESENTATION);
         });
     if (presentation_sinks_available) {
@@ -122,7 +137,7 @@ Profile* MediaRouteStarter::GetProfile() const {
   return GetWebContents() && GetWebContents()->GetBrowserContext()
              ? Profile::FromBrowserContext(
                    GetWebContents()->GetBrowserContext())
-             : ProfileManager::GetActiveUserProfile();
+             : GetDefaultProfileForMediaRouteStarter();
 }
 
 MediaRouter* MediaRouteStarter::GetMediaRouter() const {
@@ -282,9 +297,29 @@ void MediaRouteStarter::InitMirroringSources(const CastModeSet& initial_modes) {
   }
 }
 
+void MediaRouteStarter::InitRemotePlaybackSources(
+    const CastModeSet& initial_modes,
+    media::VideoCodec video_codec,
+    media::AudioCodec audio_codec) {
+  if (!IsCastModeAvailable(initial_modes, MediaCastMode::REMOTE_PLAYBACK)) {
+    return;
+  }
+  DCHECK(video_codec != media::VideoCodec::kUnknown) << "Unknown video codec.";
+  DCHECK(audio_codec != media::AudioCodec::kUnknown) << "Unknown audio codec.";
+
+  // Use a placeholder URL as origin for Remote Playback.
+  url::Origin origin = url::Origin::Create(GURL());
+  SessionID::id_type tab_id =
+      sessions::SessionTabHelper::IdForTab(web_contents_).id();
+  GetQueryResultManager()->SetSourcesForCastMode(
+      MediaCastMode::REMOTE_PLAYBACK,
+      {MediaSource::ForRemotePlayback(tab_id, video_codec, audio_codec)},
+      origin);
+}
+
 content::BrowserContext* MediaRouteStarter::GetBrowserContext() const {
   return GetWebContents() ? GetWebContents()->GetBrowserContext()
-                          : ProfileManager::GetActiveUserProfile();
+                          : GetDefaultProfileForMediaRouteStarter();
 }
 
 url::Origin MediaRouteStarter::GetFrameOrigin() const {

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,8 +73,6 @@ class HelpAppNotificationControllerTest : public BrowserWithTestWindowTest {
     scoped_refptr<user_prefs::PrefRegistrySyncable> registry(
         new user_prefs::PrefRegistrySyncable());
     HelpAppNotificationController::RegisterProfilePrefs(registry.get());
-    HelpAppNotificationController::RegisterObsoletePrefsForMigration(
-        registry.get());
     PrefServiceFactory factory;
     factory.set_user_prefs(base::MakeRefCounted<TestingPrefStore>());
     return factory.Create(registry);
@@ -93,8 +91,7 @@ class HelpAppNotificationControllerTest : public BrowserWithTestWindowTest {
         base::Unretained(this)));
     scoped_feature_list_.InitWithFeatures(
         /*enabled_features=*/
-        {features::kHelpAppDiscoverTab,
-         features::kHelpAppDiscoverTabNotificationAllChannels,
+        {features::kHelpAppDiscoverTabNotificationAllChannels,
          features::kReleaseNotesNotificationAllChannels},
         /*disabled_features=*/{});
     pref_service_ = CreatePrefServiceAndRegisterPrefs();
@@ -144,111 +141,6 @@ class HelpAppNotificationControllerTest : public BrowserWithTestWindowTest {
   base::test::ScopedFeatureList scoped_feature_list_;
   std::unique_ptr<PrefService> pref_service_;
 };
-
-// Tests for pref migration.
-TEST_F(HelpAppNotificationControllerTest,
-       PrefMigrationCopiesLatestMilestoneWhenNotificationLastShown) {
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     prefs::kHelpAppNotificationLastShownMilestone));
-
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteReleaseNotesLastShownMilestone, 80);
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone, 90);
-
-  HelpAppNotificationController::MigrateObsoleteNotificationPrefs(
-      pref_service());
-
-  ASSERT_EQ(90, pref_service()->GetInteger(
-                    prefs::kHelpAppNotificationLastShownMilestone));
-}
-
-TEST_F(HelpAppNotificationControllerTest,
-       PrefMigrationWhenOnlyReleaseNotesPrefWasSet) {
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     prefs::kHelpAppNotificationLastShownMilestone));
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     help_app::prefs::kObsoleteReleaseNotesLastShownMilestone));
-  ASSERT_EQ(
-      -10,
-      pref_service()->GetInteger(
-          help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone));
-
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteReleaseNotesLastShownMilestone, 80);
-
-  HelpAppNotificationController::MigrateObsoleteNotificationPrefs(
-      pref_service());
-
-  ASSERT_EQ(80, pref_service()->GetInteger(
-                    prefs::kHelpAppNotificationLastShownMilestone));
-}
-
-TEST_F(HelpAppNotificationControllerTest,
-       PrefMigrationWhenOnlyDiscoverTabPrefWasSet) {
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     prefs::kHelpAppNotificationLastShownMilestone));
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     help_app::prefs::kObsoleteReleaseNotesLastShownMilestone));
-  ASSERT_EQ(
-      -10,
-      pref_service()->GetInteger(
-          help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone));
-
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone, 90);
-
-  HelpAppNotificationController::MigrateObsoleteNotificationPrefs(
-      pref_service());
-
-  ASSERT_EQ(90, pref_service()->GetInteger(
-                    prefs::kHelpAppNotificationLastShownMilestone));
-}
-
-TEST_F(HelpAppNotificationControllerTest,
-       PrefMigrationWhenNoObsoletePrefWasSet) {
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     prefs::kHelpAppNotificationLastShownMilestone));
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     help_app::prefs::kObsoleteReleaseNotesLastShownMilestone));
-  ASSERT_EQ(
-      -10,
-      pref_service()->GetInteger(
-          help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone));
-
-  HelpAppNotificationController::MigrateObsoleteNotificationPrefs(
-      pref_service());
-
-  ASSERT_EQ(-10, pref_service()->GetInteger(
-                     prefs::kHelpAppNotificationLastShownMilestone));
-  ASSERT_EQ(pref_service()->GetUserPrefValue(
-                prefs::kHelpAppNotificationLastShownMilestone),
-            nullptr);
-}
-
-TEST_F(HelpAppNotificationControllerTest, PrefMigrationHappensOnlyOnce) {
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteReleaseNotesLastShownMilestone, 20);
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone, 30);
-
-  HelpAppNotificationController::MigrateObsoleteNotificationPrefs(
-      pref_service());
-
-  ASSERT_EQ(30, pref_service()->GetInteger(
-                    prefs::kHelpAppNotificationLastShownMilestone));
-
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteReleaseNotesLastShownMilestone, 80);
-  pref_service()->SetInteger(
-      help_app::prefs::kObsoleteDiscoverTabNotificationLastShownMilestone, 90);
-
-  HelpAppNotificationController::MigrateObsoleteNotificationPrefs(
-      pref_service());
-
-  ASSERT_EQ(30, pref_service()->GetInteger(
-                    prefs::kHelpAppNotificationLastShownMilestone));
-}
 
 // Tests for regular profiles.
 TEST_F(HelpAppNotificationControllerTest,

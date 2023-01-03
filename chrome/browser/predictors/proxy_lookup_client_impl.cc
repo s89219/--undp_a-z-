@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,16 +19,14 @@ namespace predictors {
 
 ProxyLookupClientImpl::ProxyLookupClientImpl(
     const GURL& url,
-    const net::NetworkIsolationKey& network_isolation_key,
+    const net::NetworkAnonymizationKey& network_anonymization_key,
     ProxyLookupCallback callback,
     network::mojom::NetworkContext* network_context)
     : callback_(std::move(callback)) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   proxy_lookup_start_time_ = base::TimeTicks::Now();
-  network_context->LookUpProxyForURL(
-      url, network_isolation_key,
-      receiver_.BindNewPipeAndPassRemote(content::GetUIThreadTaskRunner(
-          {content::BrowserTaskType::kPreconnect})));
+  network_context->LookUpProxyForURL(url, network_anonymization_key,
+                                     receiver_.BindNewPipeAndPassRemote());
   receiver_.set_disconnect_handler(
       base::BindOnce(&ProxyLookupClientImpl::OnProxyLookupComplete,
                      base::Unretained(this), net::ERR_ABORTED, absl::nullopt));

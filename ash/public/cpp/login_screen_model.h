@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,6 +65,11 @@ class ASH_PUBLIC_EXPORT LoginScreenModel {
   // should be shown to the user.
   virtual void NotifyFingerprintAuthResult(const AccountId& account_id,
                                            bool successful) = 0;
+
+  // Reset the fingerprint state after an aborted unlock. This returns
+  // fingerprint elements that were affected by a successful scan to their state
+  // prior to the scan.
+  virtual void ResetFingerprintUIState(const AccountId& account_id) = 0;
 
   // Update the status of Smart Lock for |account_id|.
   virtual void SetSmartLockState(const AccountId& account_id,

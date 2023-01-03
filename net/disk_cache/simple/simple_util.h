@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,9 +17,7 @@ namespace base {
 class FilePath;
 }
 
-namespace disk_cache {
-
-namespace simple_util {
+namespace disk_cache::simple_util {
 
 NET_EXPORT_PRIVATE std::string ConvertEntryHashKeyToHexString(
     uint64_t hash_key);
@@ -35,9 +33,8 @@ NET_EXPORT_PRIVATE uint64_t GetEntryHashKey(const std::string& key);
 
 // Parses the |hash_key| string into a uint64_t buffer.
 // |hash_key| string must be of the form: FFFFFFFFFFFFFFFF .
-NET_EXPORT_PRIVATE bool GetEntryHashKeyFromHexString(
-    const base::StringPiece& hash_key,
-    uint64_t* hash_key_out);
+NET_EXPORT_PRIVATE bool GetEntryHashKeyFromHexString(base::StringPiece hash_key,
+                                                     uint64_t* hash_key_out);
 
 // Given a |key| for a (potential) entry in the simple backend and the |index|
 // of a stream on that entry, returns the filename in which that stream would be
@@ -83,8 +80,6 @@ uint32_t Crc32(const char* data, int length);
 
 uint32_t IncrementalCrc32(uint32_t previous_crc, const char* data, int length);
 
-}  // namespace simple_util
-
-}  // namespace disk_cache
+}  // namespace disk_cache::simple_util
 
 #endif  // NET_DISK_CACHE_SIMPLE_SIMPLE_UTIL_H_

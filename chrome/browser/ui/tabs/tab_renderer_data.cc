@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,41 +14,14 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #include "chrome/browser/ui/thumbnails/thumbnail_tab_helper.h"
-#include "chrome/common/webui_url_constants.h"
 #include "components/security_interstitials/content/security_interstitial_tab_helper.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 
-namespace {
-
-bool ShouldThemifyFaviconForEntryUrl(const GURL& url) {
-  // Themify favicon for the default NTP and incognito NTP.
-  if (url.SchemeIs(content::kChromeUIScheme)) {
-    return url.host_piece() == chrome::kChromeUINewTabPageHost ||
-           url.host_piece() == chrome::kChromeUINewTabHost;
-  }
-
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  // Themify menu favicon for CrOS Terminal home page.
-  if (url.SchemeIs(content::kChromeUIUntrustedScheme)) {
-    return url.host_piece() == chrome::kChromeUIUntrustedTerminalHost;
-  }
+#include "base/feature_list.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-
-  return false;
-}
-
-bool ShouldThemifyFaviconForVisibleUrl(const GURL& visible_url) {
-  return visible_url.SchemeIs(content::kChromeUIScheme) &&
-         visible_url.host_piece() != chrome::kChromeUIAppLauncherPageHost &&
-         visible_url.host_piece() != chrome::kChromeUIHelpHost &&
-         visible_url.host_piece() != chrome::kChromeUIVersionHost &&
-         visible_url.host_piece() != chrome::kChromeUINetExportHost &&
-         visible_url.host_piece() != chrome::kChromeUINewTabHost;
-}
-
-}  // namespace
 
 // static
 TabRendererData TabRendererData::FromTabInModel(TabStripModel* model,
@@ -69,8 +42,10 @@ TabRendererData TabRendererData::FromTabInModel(TabStripModel* model,
   data.favicon = tab_ui_helper->GetFavicon().AsImageSkia();
   ThumbnailTabHelper* const thumbnail_tab_helper =
       ThumbnailTabHelper::FromWebContents(contents);
-  if (thumbnail_tab_helper)
+  if (thumbnail_tab_helper) {
     data.thumbnail = thumbnail_tab_helper->thumbnail();
+    data.is_tab_discarded = thumbnail_tab_helper->is_tab_discarded();
+  }
   data.network_state = TabNetworkStateForWebContents(contents);
   data.title = tab_ui_helper->GetTitle();
   data.visible_url = contents->GetVisibleURL();
@@ -93,8 +68,7 @@ TabRendererData TabRendererData::FromTabInModel(TabStripModel* model,
   content::NavigationEntry* entry =
       contents->GetController().GetLastCommittedEntry();
   data.should_themify_favicon =
-      (entry && ShouldThemifyFaviconForEntryUrl(entry->GetURL())) ||
-      ShouldThemifyFaviconForVisibleUrl(contents->GetVisibleURL());
+      entry && favicon::ShouldThemifyFaviconForEntry(entry);
 
   return data;
 }

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,7 +65,7 @@ void ForceInstalledTestBase::SetupForceList(ExtensionOrigin origin) {
                                      : kOffStoreUpdateUrl;
   list.Append(base::StrCat({kExtensionId1, ";", update_url}));
   list.Append(base::StrCat({kExtensionId2, ";", update_url}));
-  std::unique_ptr<base::Value> dict =
+  base::Value::Dict dict =
       DictionaryBuilder()
           .Set(kExtensionId1,
                DictionaryBuilder()
@@ -92,7 +92,7 @@ void ForceInstalledTestBase::SetupForceList(ExtensionOrigin origin) {
 }
 
 void ForceInstalledTestBase::SetupEmptyForceList() {
-  std::unique_ptr<base::Value> dict = DictionaryBuilder().Build();
+  base::Value::Dict dict = DictionaryBuilder().Build();
   prefs_->SetManagedPref(pref_names::kInstallForceList, std::move(dict));
 
   EXPECT_CALL(policy_provider_, IsInitializationComplete(testing::_))

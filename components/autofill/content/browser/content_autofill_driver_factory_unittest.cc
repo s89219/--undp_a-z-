@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "components/autofill/core/browser/test_autofill_driver.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/test_renderer_host.h"
@@ -49,9 +50,7 @@ class MockAutofillAgent : public mojom::AutofillAgent {
   MOCK_METHOD(void, TriggerReparse, (), (override));
   MOCK_METHOD(void,
               FillOrPreviewForm,
-              (int32_t id,
-               const FormData& form,
-               mojom::RendererFormDataAction action),
+              (const FormData& form, mojom::RendererFormDataAction action),
               (override));
   MOCK_METHOD(void,
               FieldTypePredictionsAvailable,
@@ -85,6 +84,10 @@ class MockAutofillAgent : public mojom::AutofillAgent {
               (const ::std::u16string& username,
                const ::std::u16string& password),
               (override));
+  MOCK_METHOD(void,
+              PreviewPasswordGenerationSuggestion,
+              (const ::std::u16string& password),
+              (override));
   MOCK_METHOD(void, SetUserGestureRequired, (bool required), (override));
   MOCK_METHOD(void, SetSecureContextRequired, (bool required), (override));
   MOCK_METHOD(void, SetFocusRequiresScroll, (bool require), (override));
@@ -93,10 +96,6 @@ class MockAutofillAgent : public mojom::AutofillAgent {
               GetElementFormAndFieldDataForDevToolsNodeId,
               (int32_t backend_node_id,
                GetElementFormAndFieldDataForDevToolsNodeIdCallback callback),
-              (override));
-  MOCK_METHOD(void,
-              SetAssistantKeyboardSuppressState,
-              (bool suppress),
               (override));
   MOCK_METHOD(void, EnableHeavyFormDataScraping, (), (override));
   MOCK_METHOD(void,
@@ -126,7 +125,7 @@ class ContentAutofillDriverFactoryTest
 
     agent_ = std::make_unique<MockAutofillAgent>();
     blink::AssociatedInterfaceProvider* remote_interfaces =
-        web_contents()->GetMainFrame()->GetRemoteAssociatedInterfaces();
+        web_contents()->GetPrimaryMainFrame()->GetRemoteAssociatedInterfaces();
     remote_interfaces->OverrideBinderForTesting(
         mojom::AutofillAgent::Name_,
         base::BindRepeating(&MockAutofillAgent::BindPendingReceiver,
@@ -266,9 +265,9 @@ class ContentAutofillDriverFactoryTest_WithOrWithoutBfCacheAndIframes
       public ::testing::WithParamInterface<std::tuple<bool, bool>> {
  public:
   ContentAutofillDriverFactoryTest_WithOrWithoutBfCacheAndIframes() {
-    std::vector<base::Feature> enabled;
+    std::vector<base::test::FeatureRef> enabled;
     // Allow BackForwardCache for all devices regardless of their memory.
-    std::vector<base::Feature> disabled{
+    std::vector<base::test::FeatureRef> disabled{
         ::features::kBackForwardCacheMemoryControls};
     (autofill_across_iframes() ? enabled : disabled)
         .push_back(features::kAutofillAcrossIframes);
@@ -363,8 +362,8 @@ class ContentAutofillDriverFactoryTest_FencedFrames
       public ::testing::WithParamInterface<bool> {
  public:
   ContentAutofillDriverFactoryTest_FencedFrames() {
-    std::vector<base::test::ScopedFeatureList::FeatureAndParams> enabled;
-    std::vector<base::Feature> disabled;
+    std::vector<base::test::FeatureRefAndParams> enabled;
+    std::vector<base::test::FeatureRef> disabled;
     enabled.push_back(
         {blink::features::kFencedFrames, {{"implementation_type", "mparch"}}});
     if (autofill_enabled_in_fencedframe()) {

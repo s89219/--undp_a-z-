@@ -1,8 +1,10 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.share.send_tab_to_self;
+
+import static org.chromium.url.JUnitTestGURLs.HTTP_URL;
 
 import android.view.View;
 
@@ -21,19 +23,20 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.ChromeTabbedActivity;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
-import org.chromium.chrome.browser.sync.SyncService;
+import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.sync.SyncTestRule;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
 import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetControllerProvider;
-import org.chromium.components.sync.ModelType;
 import org.chromium.components.sync.protocol.DeviceInfoSpecifics;
 import org.chromium.components.sync.protocol.EntitySpecifics;
 import org.chromium.components.sync.protocol.FeatureSpecificFields;
 import org.chromium.components.sync.protocol.SyncEnums.DeviceType;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.ui.base.WindowAndroid;
+
+import java.util.Optional;
 
 /** Tests for SendTabToSelfCoordinator */
 @RunWith(ChromeJUnit4ClassRunner.class)
@@ -53,8 +56,11 @@ public class SendTabToSelfCoordinatorTest {
     public void testShowDeviceListIfSignedIn() {
         // Sign in and wait for the device list to be downloaded.
         mSyncTestRule.setUpAccountAndSignInForTesting();
-        CriteriaHelper.pollUiThread(
-                () -> SyncService.get().getActiveDataTypes().contains(ModelType.DEVICE_INFO));
+        CriteriaHelper.pollUiThread(() -> {
+            return SendTabToSelfAndroidBridge
+                    .getEntryPointDisplayReason(Profile.getLastUsedRegularProfile(), HTTP_URL)
+                    .equals(Optional.of(EntryPointDisplayReason.OFFER_FEATURE));
+        });
 
         buildAndShowCoordinator();
 
@@ -122,8 +128,9 @@ public class SendTabToSelfCoordinatorTest {
         WindowAndroid windowAndroid = activity.getWindowAndroid();
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             SendTabToSelfCoordinator coordinator =
-                    new SendTabToSelfCoordinator(activity, windowAndroid, "page-to-share.com",
-                            "Page", BottomSheetControllerProvider.from(windowAndroid));
+                    new SendTabToSelfCoordinator(activity, windowAndroid, HTTP_URL, "Page",
+                            BottomSheetControllerProvider.from(windowAndroid),
+                            Profile.getLastUsedRegularProfile());
             coordinator.show();
         });
     }

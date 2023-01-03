@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -104,5 +104,31 @@ public class FeedReliabilityLoggerTest {
         when(mLaunchLogger.isLaunchInProgress()).thenReturn(false);
         mFeedReliabilityLogger.onUrlFocusChange(/*hasFocus=*/false);
         verify(mLaunchLogger, never()).cancelPendingFinished();
+    }
+
+    @Test
+    public void testOnPageLoadStarted() {
+        when(mLaunchLogger.isLaunchInProgress()).thenReturn(true);
+        mFeedReliabilityLogger.onPageLoadStarted();
+        verify(mLaunchLogger)
+                .logLaunchFinished(
+                        anyLong(), eq(DiscoverLaunchResult.NAVIGATED_AWAY_IN_APP.getNumber()));
+    }
+
+    @Test
+    public void testOnNavigateBack() {
+        when(mLaunchLogger.isLaunchInProgress()).thenReturn(true);
+        mFeedReliabilityLogger.onNavigateBack();
+        verify(mLaunchLogger)
+                .logLaunchFinished(anyLong(), eq(DiscoverLaunchResult.NAVIGATED_BACK.getNumber()));
+    }
+
+    @Test
+    public void testOnSwitchTabs() {
+        when(mLaunchLogger.isLaunchInProgress()).thenReturn(true);
+        mFeedReliabilityLogger.onSwitchTabs();
+        verify(mLaunchLogger)
+                .logLaunchFinished(
+                        anyLong(), eq(DiscoverLaunchResult.NAVIGATED_TO_ANOTHER_TAB.getNumber()));
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,13 @@ GEN_INCLUDE(['../../common/testing/accessibility_test_base.js']);
  */
 ChromeVoxPhoneticDataTest = class extends AccessibilityTestBase {
   /** @override */
-  setUp() {
-    super.setUp();
+  async setUpDeferred() {
+    await super.setUpDeferred();
+
+    // Alphabetical based on file path.
+    await importModule(
+        'PhoneticData', '/chromevox/background/phonetic_data.js');
+
     JaPhoneticData.init(JA_TEST_MAP);
   }
 };
@@ -19,7 +24,6 @@ ChromeVoxPhoneticDataTest = class extends AccessibilityTestBase {
 ChromeVoxPhoneticDataTest.prototype.extraLibraries = [
   '../../common/testing/assert_additions.js',
   '../testing/fake_dom.js',
-  'phonetic_data.js',
   '../third_party/tamachiyomi/ja_phonetic_data.js',
 ];
 

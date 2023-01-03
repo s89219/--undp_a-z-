@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@ import org.chromium.content_public.browser.WebContents;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -64,9 +63,13 @@ public class TranslateBridge {
      * Sets the language that the contents of the tab needs to be translated to.
      * No-op in case target language is invalid or not supported.
      * @param targetLanguage language code in ISO 639 format.
+     * @param shouldAutoTranslate If true, the page should be automatically translated immediately
+     *                            to targetLanguage.
      */
-    public static void setPredefinedTargetLanguage(Tab tab, String targetLanguage) {
-        TranslateBridgeJni.get().setPredefinedTargetLanguage(tab.getWebContents(), targetLanguage);
+    public static void setPredefinedTargetLanguage(
+            Tab tab, String targetLanguage, boolean shouldAutoTranslate) {
+        TranslateBridgeJni.get().setPredefinedTargetLanguage(
+                tab.getWebContents(), targetLanguage, shouldAutoTranslate);
     }
 
     /**
@@ -128,14 +131,6 @@ public class TranslateBridge {
      */
     public static void setDefaultTargetLanguage(String targetLanguage) {
         TranslateBridgeJni.get().setDefaultTargetLanguage(targetLanguage);
-    }
-
-    /**
-     * @return The ordered set of all languages that the user's knows, ordered by how well they know
-     *         them with the most familiar listed first.
-     */
-    public static LinkedHashSet<String> getModelLanguages() {
-        return new LinkedHashSet<>(Arrays.asList(TranslateBridgeJni.get().getModelLanguages()));
     }
 
     @CalledByNative
@@ -270,12 +265,12 @@ public class TranslateBridge {
         void translateToLanguage(WebContents webContents, String targetLanguageCode);
         boolean canManuallyTranslate(WebContents webContents, boolean menuLogging);
         boolean shouldShowManualTranslateIPH(WebContents webContents);
-        void setPredefinedTargetLanguage(WebContents webContents, String targetLanguage);
+        void setPredefinedTargetLanguage(
+                WebContents webContents, String targetLanguage, boolean shouldAutoTranslate);
         String getSourceLanguage(WebContents webContents);
         String getCurrentLanguage(WebContents webContents);
         String getTargetLanguage();
         void setDefaultTargetLanguage(String targetLanguage);
-        String[] getModelLanguages();
         void resetAcceptLanguages(String defaultLocale);
         void getChromeAcceptLanguages(List<LanguageItem> list);
         String[] getUserAcceptLanguages();

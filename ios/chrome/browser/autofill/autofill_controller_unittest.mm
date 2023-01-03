@@ -1,48 +1,52 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <memory>
-#include <vector>
+#import <memory>
+#import <vector>
 
 #import <UIKit/UIKit.h>
 
-#include "base/guid.h"
-#include "base/ios/ios_util.h"
-#include "base/mac/foundation_util.h"
-#include "base/memory/ptr_util.h"
-#include "base/strings/utf_string_conversions.h"
-#include "base/task/thread_pool/thread_pool_instance.h"
+#import "base/guid.h"
+#import "base/ios/ios_util.h"
+#import "base/mac/foundation_util.h"
+#import "base/memory/ptr_util.h"
+#import "base/strings/utf_string_conversions.h"
+#import "base/task/thread_pool/thread_pool_instance.h"
 #import "base/test/ios/wait_util.h"
-#include "base/test/metrics/histogram_tester.h"
-#include "components/autofill/core/browser/browser_autofill_manager.h"
-#include "components/autofill/core/browser/form_structure.h"
-#include "components/autofill/core/browser/metrics/autofill_metrics.h"
-#include "components/autofill/core/browser/personal_data_manager.h"
-#include "components/autofill/core/browser/webdata/autofill_entry.h"
-#include "components/autofill/core/common/autofill_clock.h"
+#import "base/test/metrics/histogram_tester.h"
+#import "components/autofill/core/browser/browser_autofill_manager.h"
+#import "components/autofill/core/browser/form_structure.h"
+#import "components/autofill/core/browser/metrics/autofill_metrics.h"
+#import "components/autofill/core/browser/personal_data_manager.h"
+#import "components/autofill/core/browser/test_autofill_manager_waiter.h"
+#import "components/autofill/core/browser/webdata/autofill_entry.h"
+#import "components/autofill/core/common/autofill_clock.h"
+#import "components/autofill/core/common/autofill_features.h"
 #import "components/autofill/ios/browser/autofill_agent.h"
-#include "components/autofill/ios/browser/autofill_driver_ios.h"
+#import "components/autofill/ios/browser/autofill_driver_ios.h"
 #import "components/autofill/ios/browser/form_suggestion.h"
-#include "components/autofill/ios/form_util/unique_id_data_tab_helper.h"
-#include "components/infobars/core/confirm_infobar_delegate.h"
-#include "components/infobars/core/infobar.h"
-#include "components/infobars/core/infobar_manager.h"
-#include "components/keyed_service/core/service_access_type.h"
-#include "components/password_manager/core/browser/mock_password_store_interface.h"
-#include "components/password_manager/core/browser/password_manager_test_utils.h"
+#import "components/autofill/ios/browser/test_autofill_manager_injector.h"
+#import "components/autofill/ios/form_util/unique_id_data_tab_helper.h"
+#import "components/infobars/core/confirm_infobar_delegate.h"
+#import "components/infobars/core/infobar.h"
+#import "components/infobars/core/infobar_manager.h"
+#import "components/keyed_service/core/service_access_type.h"
+#import "components/password_manager/core/browser/mock_password_store_interface.h"
+#import "components/password_manager/core/browser/password_manager_test_utils.h"
 #import "ios/chrome/browser/autofill/form_suggestion_controller.h"
-#include "ios/chrome/browser/autofill/personal_data_manager_factory.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#include "ios/chrome/browser/infobars/infobar_manager_impl.h"
-#include "ios/chrome/browser/passwords/ios_chrome_password_store_factory.h"
+#import "ios/chrome/browser/autofill/personal_data_manager_factory.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/infobars/infobar_manager_impl.h"
+#import "ios/chrome/browser/passwords/ios_chrome_password_store_factory.h"
 #import "ios/chrome/browser/passwords/password_controller.h"
 #import "ios/chrome/browser/ui/autofill/chrome_autofill_client_ios.h"
 #import "ios/chrome/browser/ui/autofill/form_input_accessory/form_input_accessory_mediator.h"
-#include "ios/chrome/browser/ui/settings/personal_data_manager_finished_profile_tasks_waiter.h"
+#import "ios/chrome/browser/ui/settings/personal_data_manager_finished_profile_tasks_waiter.h"
 #import "ios/chrome/browser/web/chrome_web_client.h"
-#include "ios/chrome/browser/webdata_services/web_data_service_factory.h"
-#include "ios/web/public/js_messaging/web_frame.h"
+#import "ios/chrome/browser/webdata_services/web_data_service_factory.h"
+#import "ios/chrome/test/ios_chrome_scoped_testing_local_state.h"
+#import "ios/web/public/js_messaging/web_frame.h"
 #import "ios/web/public/js_messaging/web_frames_manager.h"
 #import "ios/web/public/navigation/navigation_item.h"
 #import "ios/web/public/navigation/navigation_manager.h"
@@ -52,7 +56,7 @@
 #import "ios/web/public/test/web_task_environment.h"
 #import "ios/web/public/web_state.h"
 #import "testing/gtest_mac.h"
-#include "testing/platform_test.h"
+#import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -138,8 +142,12 @@ static NSString* kNoCreditCardFormHtml =
 NSString* const kCreditCardAutofocusFormHtml =
     @"<form><input type=\"text\" autofocus autocomplete=\"cc-number\"></form>";
 
-// FAIL if a field with the supplied |name| and |fieldType| is not present on
-// the |form|.
+using ::testing::AssertionFailure;
+using ::testing::AssertionResult;
+using ::testing::AssertionSuccess;
+
+// FAIL if a field with the supplied `name` and `fieldType` is not present on
+// the `form`.
 void CheckField(const FormStructure& form,
                 ServerFieldType fieldType,
                 const char* name) {
@@ -198,6 +206,11 @@ class AutofillControllerTest : public PlatformTest {
         base::BindRepeating(&password_manager::BuildPasswordStoreInterface<
                             web::BrowserState,
                             password_manager::MockPasswordStoreInterface>));
+    // Profile import requires a PersonalDataManager which itself needs the
+    // WebDataService; this is not initialized on a TestChromeBrowserState by
+    // default.
+    builder.AddTestingFactory(ios::WebDataServiceFactory::GetInstance(),
+                              ios::WebDataServiceFactory::GetDefaultFactory());
     browser_state_ = builder.Build();
 
     web::WebState::CreateParams params(browser_state_.get());
@@ -212,6 +225,22 @@ class AutofillControllerTest : public PlatformTest {
   ~AutofillControllerTest() override {}
 
  protected:
+  class TestAutofillManager : public BrowserAutofillManager {
+   public:
+    TestAutofillManager(AutofillDriverIOS* driver, AutofillClient* client)
+        : BrowserAutofillManager(driver,
+                                 client,
+                                 "en-US",
+                                 EnableDownloadManager(false)) {}
+
+    TestAutofillManagerWaiter& waiter() { return waiter_; }
+
+   private:
+    TestAutofillManagerWaiter waiter_{
+        *this,
+        {&AutofillManager::Observer::OnAfterFormsSeen}};
+  };
+
   void SetUp() override;
   void TearDown() override;
 
@@ -221,16 +250,12 @@ class AutofillControllerTest : public PlatformTest {
   void SetUpKeyValueData();
 
   // Blocks until suggestion retrieval has completed.
-  // If |wait_for_trigger| is yes, wait for the call to
-  // |retrieveSuggestionsForForm| to avoid considering a former call.
+  // If `wait_for_trigger` is yes, wait for the call to
+  // `retrieveSuggestionsForForm` to avoid considering a former call.
   void WaitForSuggestionRetrieval(BOOL wait_for_trigger);
 
-  // Blocks until |expected_size| forms have been fecthed.
-  [[nodiscard]] bool WaitForFormFetched(BrowserAutofillManager* manager,
-                                        size_t expected_number_of_forms);
-
   // Loads the page and wait until the initial form processing has been done.
-  // This processing must find |expected_size| forms.
+  // This processing must find `expected_size` forms.
   [[nodiscard]] bool LoadHtmlAndWaitForFormFetched(
       NSString* html,
       size_t expected_number_of_forms);
@@ -254,6 +279,7 @@ class AutofillControllerTest : public PlatformTest {
 
   web::ScopedTestingWebClient web_client_;
   web::WebTaskEnvironment task_environment_;
+  IOSChromeScopedTestingLocalState local_state_;
   std::unique_ptr<TestChromeBrowserState> browser_state_;
   std::unique_ptr<web::WebState> web_state_;
   bool processed_a_task_ = false;
@@ -266,6 +292,9 @@ class AutofillControllerTest : public PlatformTest {
 
   AutofillAgent* autofill_agent_;
 
+  std::unique_ptr<TestAutofillManagerInjector<TestAutofillManager>>
+      autofill_manager_injector_;
+
   // Retrieves suggestions according to form events.
   TestSuggestionController* suggestion_controller_;
 
@@ -277,11 +306,6 @@ class AutofillControllerTest : public PlatformTest {
 
 void AutofillControllerTest::SetUp() {
   PlatformTest::SetUp();
-
-  // Profile import requires a PersonalDataManager which itself needs the
-  // WebDataService; this is not initialized on a TestChromeBrowserState by
-  // default.
-  browser_state_->CreateWebDataService();
 
   // Create a PasswordController instance that will handle set up for renderer
   // ids.
@@ -303,10 +327,22 @@ void AutofillControllerTest::SetUp() {
       browser_state_.get(), web_state(), infobar_manager, autofill_agent_,
       /*password_generation_manager=*/nullptr));
 
+  if (base::FeatureList::IsEnabled(
+          autofill::features::kAutofillUseAlternativeStateNameMap)) {
+    autofill_client_->GetPersonalDataManager()
+        ->personal_data_manager_cleaner_for_testing()
+        ->alternative_state_name_map_updater_for_testing()
+        ->set_local_state_for_testing(local_state_.Get());
+  }
+
   std::string locale("en");
   autofill::AutofillDriverIOS::PrepareForWebStateWebFrameAndDelegate(
       web_state(), autofill_client_.get(), /*autofill_agent=*/nil, locale,
       autofill::AutofillManager::EnableDownloadManager(false));
+
+  autofill_manager_injector_ =
+      std::make_unique<TestAutofillManagerInjector<TestAutofillManager>>(
+          web_state());
 
   accessory_mediator_ =
       [[FormInputAccessoryMediator alloc] initWithConsumer:nil
@@ -345,25 +381,14 @@ void AutofillControllerTest::WaitForSuggestionRetrieval(BOOL wait_for_trigger) {
   });
 }
 
-bool AutofillControllerTest::WaitForFormFetched(
-    BrowserAutofillManager* manager,
-    size_t expected_number_of_forms) {
-  return base::test::ios::WaitUntilConditionOrTimeout(
-      base::test::ios::kWaitForPageLoadTimeout, ^bool {
-        return manager->form_structures().size() == expected_number_of_forms;
-      });
-}
-
 bool AutofillControllerTest::LoadHtmlAndWaitForFormFetched(
     NSString* html,
     size_t expected_number_of_forms) {
   web::test::LoadHtml(html, web_state());
-  web::WebFrame* main_frame =
-      web_state()->GetWebFramesManager()->GetMainWebFrame();
-  BrowserAutofillManager* autofill_manager =
-      AutofillDriverIOS::FromWebStateAndWebFrame(web_state(), main_frame)
-          ->autofill_manager();
-  return WaitForFormFetched(autofill_manager, expected_number_of_forms);
+  TestAutofillManager* autofill_manager =
+      autofill_manager_injector_->GetForMainFrame();
+  return autofill_manager->waiter().Wait(1) &&
+         autofill_manager->form_structures().size() == expected_number_of_forms;
 }
 
 void AutofillControllerTest::ExpectMetric(const std::string& histogram_name,
@@ -580,9 +605,9 @@ TEST_F(AutofillControllerTest, KeyValueImport) {
   // No value should be returned before anything is loaded via form submission.
   ASSERT_EQ(0U, consumer.result_.size());
   web::test::ExecuteJavaScript(@"submit.click()", web_state());
-  // We can't make |consumer| a __block variable because TestConsumer lacks copy
+  // We can't make `consumer` a __block variable because TestConsumer lacks copy
   // construction. We just pass a pointer instead as we know that the callback
-  // is executed within the life-cyle of |consumer|.
+  // is executed within the life-cyle of `consumer`.
   TestConsumer* consumer_ptr = &consumer;
   WaitForCondition(^bool {
     web_data_service->GetFormValuesForElementName(u"greeting", std::u16string(),

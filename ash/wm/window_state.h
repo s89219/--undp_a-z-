@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,10 +56,6 @@ class WMEvent;
 // accessing the window using |window()| is cheap.
 class ASH_EXPORT WindowState : public aura::WindowObserver {
  public:
-  // The default duration for an animation between two sets of bounds.
-  static constexpr base::TimeDelta kBoundsChangeSlideDuration =
-      base::Milliseconds(120);
-
   // A subclass of State class represents one of the window's states
   // that corresponds to chromeos::WindowStateType in Ash environment, e.g.
   // maximized, minimized or side snapped, as subclass.
@@ -93,13 +89,26 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
 
     // Called when the window is being destroyed.
     virtual void OnWindowDestroying(WindowState* window_state) {}
-
-#if DCHECK_IS_ON()
-    // Check if the window state satisfies the maximizable condition.
-    virtual void CheckMaximizableCondition(
-        const WindowState* window_state) const;
-#endif  // DCHECK_IS_ON()
   };
+
+  // Type of animation type to be applied when changing bounds locally.
+  // TODO(oshima): Use transform animation for snapping.
+  enum class BoundsChangeAnimationType {
+    // No animation (`SetBoundsDirect()`).
+    kNone,
+    // Cross fade animation. Copies old layer, and fades it out while fading the
+    // new layer in.
+    kCrossFade,
+    // Bounds animation.
+    kAnimate,
+    // Bounds animation with zero tween. Updates the bounds once at the end of
+    // the animation.
+    kAnimateZero,
+  };
+
+  // The default duration for an animation between two sets of bounds.
+  static constexpr base::TimeDelta kBoundsChangeSlideDuration =
+      base::Milliseconds(120);
 
   // Returns the WindowState for |window|. Creates WindowState if it doesn't
   // exist. The returned value is owned by |window| (you should not delete it).
@@ -135,6 +144,7 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool IsPinned() const;
   bool IsTrustedPinned() const;
   bool IsPip() const;
+  bool IsFloated() const;
 
   // True if the window's state type is chromeos::WindowStateType::kMaximized,
   // chromeos::WindowStateType::kFullscreen or
@@ -151,6 +161,13 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
 
   // Returns true if the window's location can be controlled by the user.
   bool IsUserPositionable() const;
+
+  bool is_moving_to_another_display() const {
+    return is_moving_to_another_display_;
+  }
+  void set_is_moving_to_another_display(bool moving) {
+    is_moving_to_another_display_ = moving;
+  }
 
   // Checks if the window can change its state accordingly.
   bool CanMaximize() const;
@@ -230,13 +247,20 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   // keyboard position changes.
   void UpdatePipBounds();
 
+  // Updates the window bounds. This may get called when a window is resized in
+  // splitview (i.e. a snapped window and overview). Side-by-side snapped
+  // windows will get resized by WorkspaceWindowResizer normally.
+  void UpdateSnappedBounds();
+
   // Replace the State object of a window with a state handler which can
   // implement a new window manager type. The passed object will be owned
   // by this object and the returned object will be owned by the caller.
   std::unique_ptr<State> SetStateObject(std::unique_ptr<State> new_state);
 
-  // Updates |snap_ratio_| based on |event|.
-  void UpdateSnapRatio(const WMEvent* event);
+  // Updates |snap_ratio_| with the current snapped window to screen ratio.
+  // Should be called by snap events and bound events, or when resizing a
+  // snapped window.
+  void UpdateSnapRatio();
   absl::optional<float> snap_ratio() const { return snap_ratio_; }
 
   // True if the window should be unminimized to the restore bounds, as
@@ -404,20 +428,13 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   friend class ClientControlledState;
   friend class DefaultState;
   friend class LockWindowState;
-  friend class TabletModeWindowState;
   friend class ScopedBoundsChangeAnimation;
+  friend class TabletModeWindowState;
   friend class WorkspaceWindowResizerTest;
   FRIEND_TEST_ALL_PREFIXES(WindowAnimationsTest, CrossFadeToBounds);
   FRIEND_TEST_ALL_PREFIXES(WindowAnimationsTest, CrossFadeHistograms);
   FRIEND_TEST_ALL_PREFIXES(WindowAnimationsTest,
                            CrossFadeToBoundsFromTransform);
-  FRIEND_TEST_ALL_PREFIXES(WindowStateTest, PipWindowMaskRecreated);
-  FRIEND_TEST_ALL_PREFIXES(WindowStateTest, PipWindowHasMaskLayer);
-
-  // Animation type of updating window bounds. "IMMEDIATE" means update bounds
-  // directly without animation. "STEP_END" means update bounds at the end of
-  // the animation.
-  enum class BoundsChangeAnimationType { DEFAULT, IMMEDIATE, STEP_END };
 
   // A class can temporarily change the window bounds change animation type.
   class ScopedBoundsChangeAnimation : public aura::WindowObserver {
@@ -446,8 +463,6 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
     return bounds_animation_type_;
   }
 
-  bool HasMaximumWidthOrHeight() const;
-
   // Returns the window's current z-ordering state.
   ui::ZOrderLevel GetZOrdering() const;
 
@@ -460,7 +475,7 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   // Adjusts the |bounds| so that they are flush with the edge of the
   // workspace in clamshell mode if the window represented by |window_state|
   // is side snapped. It is called for workspace events.
-  void AdjustSnappedBounds(gfx::Rect* bounds);
+  void AdjustSnappedBoundsForDisplayWorkspaceChange(gfx::Rect* bounds);
 
   // Updates the window properties(show state, pin type) according to the
   // current window state type.
@@ -546,12 +561,16 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   // `CheckAndRecordDragToMaximizeMisTriggers` to record number of mis-triggers.
   base::OneShotTimer drag_to_maximize_mis_trigger_timer_;
 
+  // Will be set to true if `window_` has been dragged to maximized. Only when
+  // it's true, we will record the number of mis-triggers of drag to maximize
+  // behavior for `window_` while `this` is being destroyed.
+  bool has_ever_been_dragged_to_maximized_ = false;
+
   // The owner of this window settings.
   aura::Window* window_;
   std::unique_ptr<WindowStateDelegate> delegate_;
 
   bool bounds_changed_by_user_;
-  bool can_consume_system_keys_;
   std::unique_ptr<DragDetails> drag_details_;
 
   bool unminimize_to_restore_bounds_;
@@ -560,11 +579,14 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
   bool autohide_shelf_when_maximized_or_fullscreen_;
   ui::ZOrderLevel cached_z_order_;
   bool allow_set_bounds_direct_ = false;
+  bool is_moving_to_another_display_ = false;
 
-  // A property to save the ratio between snapped window width (or height
-  // for vertical layout) and display workarea width (or height). It is used
-  // to update snapped window width (or height) on AdjustSnappedBounds() when
-  // handling workspace events.
+  // Contains the window's target snap ratio if it's going to be snapped by a
+  // WMEvent, and the updated window snap ratio if the snapped window's bounds
+  // are changed while it remains snapped. It will be used to calculate the
+  // desired snapped window bounds for a WMEvent, or adjust the window's bounds
+  // when display or workarea changes, or decide what the window bounds should
+  // be if restoring the window back to a snapped window state, etc.
   absl::optional<float> snap_ratio_;
 
   // A property to remember the window position which was set before the
@@ -601,7 +623,7 @@ class ASH_EXPORT WindowState : public aura::WindowObserver {
 
   // The animation type for the bounds change.
   BoundsChangeAnimationType bounds_animation_type_ =
-      BoundsChangeAnimationType::DEFAULT;
+      BoundsChangeAnimationType::kAnimate;
 
   // When the current (or last) PIP session started.
   base::TimeTicks pip_start_time_;

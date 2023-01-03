@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -164,7 +164,7 @@ public class PartnerHomepageIntegrationTest {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(() -> {
             tabModel.addObserver(new TabModelObserver() {
                 @Override
-                public void didCloseTab(Tab tab) {
+                public void onFinishingTabClosure(Tab tab) {
                     if (tabModel.getCount() == 0) tabClosed.notifyCalled();
                 }
             });

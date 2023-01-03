@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration_linux.h"
 #include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
@@ -110,6 +111,12 @@ void OnMimeInfoDatabaseUpdated(bool install, bool registration_succeeded) {
   }
 }
 
+UpdateMimeInfoDatabaseOnLinuxCallback&
+GetUpdateMimeInfoDatabaseCallbackForTesting() {
+  static base::NoDestructor<UpdateMimeInfoDatabaseOnLinuxCallback> instance;
+  return *instance;
+}
+
 bool UpdateMimeInfoDatabase(bool install,
                             base::FilePath filename,
                             std::string file_contents) {
@@ -134,30 +141,21 @@ bool UpdateMimeInfoDatabase(bool install,
                                                 temp_file_path.value()};
 
   int exit_code;
-  shell_integration_linux::LaunchXdgUtility(
-      install ? install_argv : uninstall_argv, &exit_code);
-  bool success = exit_code == 0;
-  RecordRegistration(success ? RegistrationResult::kSuccess
-                             : RegistrationResult::kXdgReturnNonZeroCode,
-                     install);
+  bool success = false;
+  const std::vector<std::string>& argv =
+      install ? install_argv : uninstall_argv;
+  if (!GetUpdateMimeInfoDatabaseCallbackForTesting()) {
+    shell_integration_linux::LaunchXdgUtility(argv, &exit_code);
+    success = exit_code == 0;
+    RecordRegistration(success ? RegistrationResult::kSuccess
+                               : RegistrationResult::kXdgReturnNonZeroCode,
+                       install);
+  } else {
+    GetUpdateMimeInfoDatabaseCallbackForTesting().Run(
+        filename, base::JoinString(argv, " "), file_contents);
+    success = true;
+  }
   return success;
-}
-
-UpdateMimeInfoDatabaseOnLinuxCallback&
-GetUpdateMimeInfoDatabaseCallbackForTesting() {
-  static base::NoDestructor<UpdateMimeInfoDatabaseOnLinuxCallback> instance;
-  return *instance;
-}
-
-// Returns the callback to use for updating MIME info.
-UpdateMimeInfoDatabaseOnLinuxCallback GetUpdateMimeInfoDatabaseCallback(
-    bool install) {
-  auto callback =
-      std::move(GetUpdateMimeInfoDatabaseCallbackForTesting());  // IN-TEST
-  if (callback)
-    return callback;
-
-  return base::BindOnce(&UpdateMimeInfoDatabase, install);
 }
 
 void UninstallMimeInfoOnLinux(const AppId& app_id, Profile* profile) {
@@ -171,7 +169,7 @@ void UninstallMimeInfoOnLinux(const AppId& app_id, Profile* profile) {
   std::string file_contents;
   internals::GetShortcutIOTaskRunner()->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(GetUpdateMimeInfoDatabaseCallback(/*install=*/false),
+      base::BindOnce(base::BindOnce(&UpdateMimeInfoDatabase, /*install=*/false),
                      std::move(filename), std::move(file_contents)),
       base::BindOnce(&OnMimeInfoDatabaseUpdated, /*install=*/false));
 }
@@ -190,11 +188,12 @@ bool FileHandlingIconsSupportedByOs() {
 void RegisterFileHandlersWithOs(const AppId& app_id,
                                 const std::string& app_name,
                                 Profile* profile,
-                                const apps::FileHandlers& file_handlers) {
+                                const apps::FileHandlers& file_handlers,
+                                ResultCallback callback) {
   DCHECK(!file_handlers.empty());
   InstallMimeInfoOnLinux(app_id, profile, file_handlers);
 
-  UpdateFileHandlerRegistrationInOs(app_id, profile, base::DoNothing());
+  UpdateFileHandlerRegistrationInOs(app_id, profile, std::move(callback));
 }
 
 void UnregisterFileHandlersWithOs(const AppId& app_id,
@@ -206,11 +205,11 @@ void UnregisterFileHandlersWithOs(const AppId& app_id,
   // is needed. Uninstalling already cleans up shortcuts (and thus, file
   // handlers).
   auto* provider = WebAppProvider::GetForWebApps(profile);
-  if (provider->registrar().IsUninstalling(app_id)) {
+  if (provider->registrar_unsafe().IsUninstalling(app_id)) {
     std::move(callback).Run(Result::kOk);
     return;
   }
-  DCHECK(provider->registrar().IsInstalled(app_id));
+  DCHECK(provider->registrar_unsafe().IsInstalled(app_id));
 
   // Otherwise, simply recreate the .desktop file.
   UpdateFileHandlerRegistrationInOs(app_id, profile, std::move(callback));
@@ -230,7 +229,7 @@ void InstallMimeInfoOnLinux(const AppId& app_id,
 
   internals::GetShortcutIOTaskRunner()->PostTaskAndReplyWithResult(
       FROM_HERE,
-      base::BindOnce(GetUpdateMimeInfoDatabaseCallback(/*install=*/true),
+      base::BindOnce(base::BindOnce(&UpdateMimeInfoDatabase, /*install=*/true),
                      std::move(filename), std::move(file_contents)),
       base::BindOnce(&OnMimeInfoDatabaseUpdated, /*install=*/true));
 }

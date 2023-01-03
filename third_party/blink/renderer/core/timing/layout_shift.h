@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,17 +30,21 @@ class CORE_EXPORT LayoutShift final : public PerformanceEntry {
                              double value,
                              bool input_detected,
                              double input_timestamp,
-                             AttributionList sources);
+                             AttributionList sources,
+                             uint32_t navigation_id,
+                             DOMWindow* source);
 
   explicit LayoutShift(double start_time,
                        double value,
                        bool input_detected,
                        double input_timestamp,
-                       AttributionList sources);
+                       AttributionList sources,
+                       uint32_t navigation_id,
+                       DOMWindow* source);
 
   ~LayoutShift() override;
 
-  AtomicString entryType() const override;
+  const AtomicString& entryType() const override;
   PerformanceEntryType EntryTypeEnum() const override;
 
   double value() const { return value_; }

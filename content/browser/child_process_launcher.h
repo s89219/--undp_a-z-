@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,11 +14,11 @@
 #include "base/process/kill.h"
 #include "base/process/process.h"
 #include "base/process/process_metrics.h"
-#include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/child_process_launcher_helper.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/browser_child_process_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_termination_info.h"
 #include "content/public/common/result_codes.h"
@@ -33,9 +33,18 @@
 #include "base/win/windows_types.h"
 #endif
 
+#if BUILDFLAG(IS_POSIX)
+#include "base/files/scoped_file.h"
+#endif
+
 namespace base {
 class CommandLine;
+#if BUILDFLAG(IS_ANDROID)
+namespace android {
+enum class ChildBindingState;
 }
+#endif
+}  // namespace base
 
 namespace perfetto {
 namespace protos {
@@ -68,18 +77,18 @@ static_assert(static_cast<int>(LAUNCH_RESULT_START) >
               "LaunchResultCode must not overlap with sandbox::ResultCode");
 #endif
 
-struct ChildProcessLauncherPriority {
-  ChildProcessLauncherPriority(bool visible,
-                               bool has_media_stream,
-                               bool has_foreground_service_worker,
-                               unsigned int frame_depth,
-                               bool intersects_viewport,
-                               bool boost_for_pending_views
+struct RenderProcessPriority {
+  RenderProcessPriority(bool visible,
+                        bool has_media_stream,
+                        bool has_foreground_service_worker,
+                        unsigned int frame_depth,
+                        bool intersects_viewport,
+                        bool boost_for_pending_views
 #if BUILDFLAG(IS_ANDROID)
-                               ,
-                               ChildProcessImportance importance
+                        ,
+                        ChildProcessImportance importance
 #endif
-                               )
+                        )
       : visible(visible),
         has_media_stream(has_media_stream),
         has_foreground_service_worker(has_foreground_service_worker),
@@ -96,8 +105,8 @@ struct ChildProcessLauncherPriority {
   // Returns true if the child process is backgrounded.
   bool is_background() const;
 
-  bool operator==(const ChildProcessLauncherPriority& other) const;
-  bool operator!=(const ChildProcessLauncherPriority& other) const {
+  bool operator==(const RenderProcessPriority& other) const;
+  bool operator!=(const RenderProcessPriority& other) const {
     return !(*this == other);
   }
 
@@ -124,14 +133,14 @@ struct ChildProcessLauncherPriority {
 
   // |frame_depth| is the depth of the shallowest frame this process is
   // responsible for which has |visible| visibility. It only makes sense to
-  // compare this property for two ChildProcessLauncherPriority instances with
-  // matching |visible| properties.
+  // compare this property for two RenderProcessPriority instances with matching
+  // |visible| properties.
   unsigned int frame_depth;
 
   // |intersects_viewport| is true if this process is responsible for a frame
   // which intersects a viewport which has |visible| visibility. It only makes
-  // sense to compare this property for two ChildProcessLauncherPriority
-  // instances with matching |visible| properties.
+  // sense to compare this property for two RenderProcessPriority instances
+  // with matching |visible| properties.
   bool intersects_viewport;
 
   // |boost_for_pending_views| is true if this process is responsible for a
@@ -142,6 +151,29 @@ struct ChildProcessLauncherPriority {
 
 #if BUILDFLAG(IS_ANDROID)
   ChildProcessImportance importance;
+#endif
+};
+
+// Data to pass as file descriptors.
+struct ChildProcessLauncherFileData {
+  ChildProcessLauncherFileData();
+  ChildProcessLauncherFileData(const ChildProcessLauncherFileData& others) =
+      delete;
+  ChildProcessLauncherFileData& operator=(const ChildProcessLauncherFileData&) =
+      delete;
+  ~ChildProcessLauncherFileData();
+
+#if BUILDFLAG(IS_POSIX)
+  // Files opened by the browser and passed as corresponding file descriptors
+  // in the child process.
+  // Currently only supported on Linux, ChromeOS and Android platforms.
+  std::map<std::string, base::FilePath> files_to_preload;
+
+  // Map of file descriptors to pass. This is used instead of
+  // `files_to_preload` when the data is already contained as a file
+  // descriptor.
+  // Currently only supported on POSIX platforms.
+  std::map<int, base::ScopedFD> additional_remapped_fds;
 #endif
 };
 
@@ -172,15 +204,19 @@ class CONTENT_EXPORT ChildProcessLauncher {
   // this object destructs, it will be terminated.
   // Takes ownership of cmd_line.
   //
-  // If |process_error_callback| is provided, it will be called if a Mojo error
+  // If `process_error_callback` is provided, it will be called if a Mojo error
   // is encountered when processing messages from the child process. This
   // callback must be safe to call from any thread.
   //
-  // |files_to_preload| is a map of key names to file paths. These files will be
+  // `file_data` consists of 2 members:
+  // files_to_preload: a map of key names to file paths. These files will be
   // opened by the browser process and corresponding file descriptors inherited
   // by the new child process, accessible using the corresponding key via some
   // platform-specific mechanism (such as base::FileDescriptorStore on POSIX).
-  // Currently only supported on POSIX platforms.
+  // Currently only supported on Linux, ChromeOS and Android platforms.
+  // additional_remapped_fds: is a map of file descriptors to pass. This is
+  // used instead of files_to_preload when the data is already contained as a
+  // file descriptor. Currently only supported on POSIX platforms.
   ChildProcessLauncher(
       std::unique_ptr<SandboxedProcessLauncherDelegate> delegate,
       std::unique_ptr<base::CommandLine> cmd_line,
@@ -188,7 +224,7 @@ class CONTENT_EXPORT ChildProcessLauncher {
       Client* client,
       mojo::OutgoingInvitation mojo_invitation,
       const mojo::ProcessErrorCallback& process_error_callback,
-      std::map<std::string, base::FilePath> files_to_preload,
+      std::unique_ptr<ChildProcessLauncherFileData> file_data,
       bool terminate_on_shutdown = true);
 
   ChildProcessLauncher(const ChildProcessLauncher&) = delete;
@@ -212,13 +248,15 @@ class CONTENT_EXPORT ChildProcessLauncher {
   // more discussion of Linux implementation details.
   ChildProcessTerminationInfo GetChildTerminationInfo(bool known_dead);
 
-  // Gather the lifetime process metrics and save them to histograms. Call
-  // right before the process is about to go away.
-  void RecordProcessLifetimeMetrics();
-
+#if BUILDFLAG(IS_ANDROID)
+  // Changes whether the render process runs in the background or not.  Only
+  // call this after the process has started.
+  void SetRenderProcessPriority(const RenderProcessPriority& priority);
+#else
   // Changes whether the process runs in the background or not.  Only call
   // this after the process has started.
-  void SetProcessPriority(const ChildProcessLauncherPriority& priority);
+  void SetProcessBackgrounded(bool is_background);
+#endif  // BUILDFLAG(IS_ANDROID)
 
   // Terminates the process associated with this ChildProcessLauncher.
   // Returns true if the process was stopped, false if the process had not been
@@ -236,6 +274,9 @@ class CONTENT_EXPORT ChildProcessLauncher {
   Client* ReplaceClientForTest(Client* client);
 
 #if BUILDFLAG(IS_ANDROID)
+  // Returns the highest binding state for the ChildProcessConnection.
+  base::android::ChildBindingState GetEffectiveChildBindingState();
+
   // Dumps the stack of the child process without crashing it.
   void DumpProcessStack();
 #endif
@@ -263,9 +304,11 @@ class CONTENT_EXPORT ChildProcessLauncher {
   // shutdown. Default behavior is to terminate the child.
   const bool terminate_child_on_shutdown_;
 
-  scoped_refptr<internal::ChildProcessLauncherHelper> helper_;
+  // Indicates if the child process should be launched with elevated privileges.
+  // Can only be true on Windows.
+  bool should_launch_elevated_ = false;
 
-  SEQUENCE_CHECKER(sequence_checker_);
+  scoped_refptr<internal::ChildProcessLauncherHelper> helper_;
 
   base::WeakPtrFactory<ChildProcessLauncher> weak_factory_{this};
 };

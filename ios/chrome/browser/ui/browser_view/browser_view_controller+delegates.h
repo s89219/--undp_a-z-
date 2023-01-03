@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,10 +21,6 @@
 @interface BrowserViewController (Delegates) <CommonTabHelperDelegate>
 
 @property(nonatomic, strong, readonly) SideSwipeController* sideSwipeController;
-
-// TODO(crbug.com/1272495): Move this to BrowserCoordinator.
-@property(nonatomic, strong, readonly)
-    DownloadManagerCoordinator* downloadManagerCoordinator;
 
 @end
 

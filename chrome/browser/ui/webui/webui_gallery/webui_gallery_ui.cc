@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,32 +15,27 @@
 
 namespace {
 
-content::WebUIDataSource* CreateWebuiGalleryUIHtmlSource(Profile* profile) {
-  content::WebUIDataSource* source =
-      content::WebUIDataSource::Create(chrome::kChromeUIWebuiGalleryHost);
+void CreateAndAddWebuiGalleryUIHtmlSource(Profile* profile) {
+  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+      profile, chrome::kChromeUIWebuiGalleryHost);
 
   webui::SetupWebUIDataSource(
       source,
       base::make_span(kWebuiGalleryResources, kWebuiGalleryResourcesSize),
       IDR_WEBUI_GALLERY_WEBUI_GALLERY_HTML);
 
-  source->DisableTrustedTypesCSP();
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::FrameSrc, "frame-src 'self';");
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::FrameAncestors,
       "frame-ancestors 'self';");
-
-  return source;
 }
 
 }  // namespace
 
 WebuiGalleryUI::WebuiGalleryUI(content::WebUI* web_ui)
     : WebUIController(web_ui) {
-  content::WebUIDataSource* source =
-      CreateWebuiGalleryUIHtmlSource(Profile::FromWebUI(web_ui));
-  content::WebUIDataSource::Add(Profile::FromWebUI(web_ui), source);
+  CreateAndAddWebuiGalleryUIHtmlSource(Profile::FromWebUI(web_ui));
 }
 
 WebuiGalleryUI::~WebuiGalleryUI() = default;

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -364,6 +364,16 @@ void NtpBackgroundService::OnNextImageInfoFetchComplete(
   next_image_resume_token_ = image_response.resume_token();
 
   NotifyObservers(FetchComplete::NEXT_IMAGE_INFO);
+}
+
+const std::vector<CollectionInfo>& NtpBackgroundService::collection_info()
+    const {
+  return collection_info_;
+}
+
+const std::vector<CollectionImage>& NtpBackgroundService::collection_images()
+    const {
+  return collection_images_;
 }
 
 void NtpBackgroundService::AddObserver(NtpBackgroundServiceObserver* observer) {

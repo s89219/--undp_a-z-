@@ -1,10 +1,11 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "android_webview/browser/aw_browser_process.h"
 
 #include "android_webview/browser/aw_browser_context.h"
+#include "android_webview/browser/aw_enterprise_authentication_app_link_manager.h"
 #include "android_webview/browser/component_updater/registration.h"
 #include "android_webview/browser/lifecycle/aw_contents_lifecycle_notifier.h"
 #include "android_webview/browser/metrics/visibility_metrics_logger.h"
@@ -58,6 +59,9 @@ AwBrowserProcess::AwBrowserProcess(
   aw_contents_lifecycle_notifier_ =
       std::make_unique<AwContentsLifecycleNotifier>(base::BindRepeating(
           &AwBrowserProcess::OnLoseForeground, base::Unretained(this)));
+
+  app_link_manager_ =
+      absl::make_unique<EnterpriseAuthenticationAppLinkManager>(local_state());
 }
 
 AwBrowserProcess::~AwBrowserProcess() {
@@ -214,6 +218,11 @@ AwBrowserProcess::CreateHttpAuthDynamicParams() {
 void AwBrowserProcess::OnAuthPrefsChanged() {
   content::GetNetworkService()->ConfigureHttpAuthPrefs(
       CreateHttpAuthDynamicParams());
+}
+
+EnterpriseAuthenticationAppLinkManager*
+AwBrowserProcess::GetEnterpriseAuthenticationAppLinkManager() {
+  return app_link_manager_.get();
 }
 
 // static

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,7 @@ class ShellContentBrowserClient : public ContentBrowserClient {
 
   // ContentBrowserClient overrides.
   std::unique_ptr<BrowserMainParts> CreateBrowserMainParts(
-      MainFunctionParams parameters) override;
+      bool is_integration_test) override;
   bool IsHandledURL(const GURL& url) override;
   bool HasCustomSchemeHandler(content::BrowserContext* browser_context,
                               const std::string& scheme) override;
@@ -64,10 +64,8 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   std::string GetDefaultDownloadName() override;
   std::unique_ptr<WebContentsViewDelegate> GetWebContentsViewDelegate(
       WebContents* web_contents) override;
-  bool ShouldUrlUseApplicationIsolationLevel(BrowserContext* browser_context,
-                                             const GURL& url) override;
-  scoped_refptr<content::QuotaPermissionContext> CreateQuotaPermissionContext()
-      override;
+  bool IsIsolatedContextAllowedForUrl(BrowserContext* browser_context,
+                                      const GURL& lock_url) override;
   GeneratedCodeCacheSettings GetGeneratedCodeCacheSettings(
       content::BrowserContext* context) override;
   base::OnceClosure SelectClientCertificate(
@@ -105,7 +103,7 @@ class ShellContentBrowserClient : public ContentBrowserClient {
       scoped_refptr<net::HttpResponseHeaders> response_headers,
       bool first_auth_attempt,
       LoginAuthRequiredCallback auth_required_callback) override;
-  base::DictionaryValue GetNetLogConstants() override;
+  base::Value::Dict GetNetLogConstants() override;
   base::FilePath GetSandboxedStorageServiceDataDirectory() override;
   base::FilePath GetFirstPartySetsDirectory() override;
   std::string GetUserAgent() override;
@@ -137,8 +135,13 @@ class ShellContentBrowserClient : public ContentBrowserClient {
   void GetHyphenationDictionary(
       base::OnceCallback<void(const base::FilePath&)>) override;
   bool HasErrorPage(int http_status_code) override;
-  void OnNetworkServiceCreated(
-      network::mojom::NetworkService* network_service) override;
+
+  // Turns on features via permissions policy for Isolated App
+  // Web Platform Tests.
+  absl::optional<blink::ParsedPermissionsPolicy>
+  GetPermissionsPolicyForIsolatedWebApp(
+      content::BrowserContext* browser_context,
+      const url::Origin& app_origin) override;
 
   void CreateFeatureListAndFieldTrials();
 
@@ -186,13 +189,6 @@ class ShellContentBrowserClient : public ContentBrowserClient {
     override_web_preferences_callback_ = std::move(callback);
   }
 
-  // Sets a global that enables certificate transparency. Uses a global because
-  // test fixtures don't otherwise have a chance to set this between when the
-  // ShellContentBrowserClient is created and when the StoragePartition creates
-  // the NetworkContext.
-  static void set_enable_expect_ct_for_testing(
-      bool enable_expect_ct_for_testing);
-
  protected:
   // Call this if CreateBrowserMainParts() is overridden in a subclass.
   void set_browser_main_parts(ShellBrowserMainParts* parts) {
@@ -208,8 +204,6 @@ class ShellContentBrowserClient : public ContentBrowserClient {
           cert_verifier_creation_params);
 
  private:
-  class ShellFieldTrials;
-
   std::unique_ptr<PrefService> CreateLocalState();
   // Needed so that content_shell can use fieldtrial_testing_config.
   void SetUpFieldTrials();
@@ -232,10 +226,10 @@ class ShellContentBrowserClient : public ContentBrowserClient {
 #endif
 
   // Owned by content::BrowserMainLoop.
-  raw_ptr<ShellBrowserMainParts> shell_browser_main_parts_ = nullptr;
+  raw_ptr<ShellBrowserMainParts, DanglingUntriaged> shell_browser_main_parts_ =
+      nullptr;
 
   std::unique_ptr<PrefService> local_state_;
-  std::unique_ptr<ShellFieldTrials> field_trials_;
 };
 
 // The delay for sending reports when running with --run-web-tests

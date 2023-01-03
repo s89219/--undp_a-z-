@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,14 +7,17 @@
  * list of insecure passwords.
  */
 
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
-import 'chrome://resources/cr_elements/cr_icons_css.m.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import 'chrome://resources/cr_elements/cr_icons.css.js';
 import 'chrome://resources/js/action_link.js';
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 import '../site_favicon.js';
-import './passwords_shared_css.js';
+// <if expr="is_chromeos">
+import '../controls/password_prompt_dialog.js';
+// </if>
+import './passwords_shared.css.js';
 
-import {CrIconButtonElement} from 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
+import {CrIconButtonElement} from 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import {assert, assertNotReached} from 'chrome://resources/js/assert_ts.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
@@ -53,6 +56,8 @@ export class PasswordCheckListItemElement extends
        */
       item: Object,
 
+      showDetails: Boolean,
+
       isPasswordVisible: {
         type: Boolean,
         computed: 'computePasswordVisibility_(item.password)',
@@ -70,64 +75,43 @@ export class PasswordCheckListItemElement extends
 
       buttonClass_: {
         type: String,
-        computed: 'computeButtonClass_(item.compromisedInfo)',
+        computed: 'computeButtonClass_(showDetails)',
       },
 
       iconClass_: {
         type: String,
-        computed: 'computeIconClass_(item.compromisedInfo)',
+        computed: 'computeIconClass_(showDetails)',
       },
-
-      mutingEnabled: {
-        type: Boolean,
-        value() {
-          return loadTimeData.getBoolean(
-              'showDismissCompromisedPasswordOption');
-        }
-      }
     };
   }
 
-  item: chrome.passwordsPrivate.InsecureCredential;
+  item: chrome.passwordsPrivate.PasswordUiEntry;
+  showDetails: boolean = false;
   isPasswordVisible: boolean;
   private password_: string;
   clickedChangePassword: boolean;
   private buttonClass_: string;
   private iconClass_: string;
-  mutingEnabled: boolean;
   private passwordManager_: PasswordManagerProxy =
       PasswordManagerImpl.getInstance();
 
-  /**
-   * @return Whether |item| is compromised credential.
-   */
-  private isCompromisedItem_(): boolean {
-    return !!this.item.compromisedInfo;
-  }
-
-  /**
-   * @return Whether |item| is compromised credential but not muted. When muting
-   * is not enabled all compromised items are non muted.
-   */
-  private isNonMutedCompromisedItem_(): boolean {
-    return this.isCompromisedItem_() &&
-        (!this.mutingEnabled ||
-         (this.mutingEnabled && !this.item.compromisedInfo!.isMuted));
-  }
-
   private getCompromiseType_(): string {
-    switch (this.item.compromisedInfo!.compromiseType) {
-      case chrome.passwordsPrivate.CompromiseType.PHISHED:
-        return loadTimeData.getString('phishedPassword');
-      case chrome.passwordsPrivate.CompromiseType.LEAKED:
-        return loadTimeData.getString('leakedPassword');
-      case chrome.passwordsPrivate.CompromiseType.PHISHED_AND_LEAKED:
-        return loadTimeData.getString('phishedAndLeakedPassword');
-      default:
-        assertNotReached(
-            'Can\'t find a string for type: ' +
-            this.item.compromisedInfo!.compromiseType);
+    const isLeaked = this.item.compromisedInfo!.compromiseTypes.some(
+        type => type === chrome.passwordsPrivate.CompromiseType.LEAKED);
+    const isPhished = this.item.compromisedInfo!.compromiseTypes.some(
+        type => type === chrome.passwordsPrivate.CompromiseType.PHISHED);
+    if (isLeaked && isPhished) {
+      return loadTimeData.getString('phishedAndLeakedPassword');
     }
+    if (isPhished) {
+      return loadTimeData.getString('phishedPassword');
+    }
+    if (isLeaked) {
+      return loadTimeData.getString('leakedPassword');
+    }
+
+    assertNotReached(
+        'Can\'t find a string for type: ' + this.item.compromisedInfo!);
   }
 
   private fire_(eventName: string, detail?: any) {
@@ -139,9 +123,9 @@ export class PasswordCheckListItemElement extends
     this.fire_('change-password-clicked', {id: this.item.id});
 
     assert(this.item.changePasswordUrl);
-    OpenWindowProxyImpl.getInstance().openURL(this.item.changePasswordUrl);
+    OpenWindowProxyImpl.getInstance().openUrl(this.item.changePasswordUrl);
     PasswordManagerImpl.getInstance().recordChangePasswordFlowStarted(
-        this.item, /*is_manual_flow=*/ true);
+        this.item);
     PasswordManagerImpl.getInstance().recordPasswordCheckInteraction(
         PasswordCheckInteraction.CHANGE_PASSWORD);
   }
@@ -159,7 +143,7 @@ export class PasswordCheckListItemElement extends
   }
 
   private computeButtonClass_(): string {
-    if (this.isNonMutedCompromisedItem_()) {
+    if (this.showDetails) {
       // Strong CTA.
       return 'action-button';
     }
@@ -168,7 +152,7 @@ export class PasswordCheckListItemElement extends
   }
 
   private computeIconClass_(): string {
-    if (this.isNonMutedCompromisedItem_()) {
+    if (this.showDetails) {
       // Strong CTA, white icon.
       return '';
     }
@@ -188,9 +172,9 @@ export class PasswordCheckListItemElement extends
   showPassword() {
     this.passwordManager_.recordPasswordCheckInteraction(
         PasswordCheckInteraction.SHOW_PASSWORD);
-    this.getPlaintextInsecurePassword(
-            this.item, chrome.passwordsPrivate.PlaintextReason.VIEW)
-        .then(insecureCredential => this.item = insecureCredential);
+    this.requestPlaintextPassword(
+            this.item.id, chrome.passwordsPrivate.PlaintextReason.VIEW)
+        .then(password => this.set('item.password', password), _error => {});
   }
 
   private onReadonlyInputTap_() {

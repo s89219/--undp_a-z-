@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/path_service.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "build/buildflag.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/test_model_info_builder.h"
 #include "components/optimization_guide/core/test_optimization_guide_model_provider.h"
@@ -69,25 +70,14 @@ class BertModelExecutorTest : public testing::Test {
   std::unique_ptr<BertModelHandler> model_handler_;
 };
 
+// TODO(crbug.com/1337687): Running the model is slow and times out tests on
+// many platforms. Ideally, we can schedule this to run infrequently but for
+// now we will only load the model.
 TEST_F(BertModelExecutorTest, ValidBertModel) {
   CreateModelHandler();
 
   PushModelFileToModelExecutor(/*is_valid=*/true);
   EXPECT_TRUE(model_handler()->ModelAvailable());
-
-  std::string input = "some text";
-  std::unique_ptr<base::RunLoop> run_loop = std::make_unique<base::RunLoop>();
-  model_handler()->ExecuteModelWithInput(
-      base::BindOnce(
-          [](base::RunLoop* run_loop,
-             const absl::optional<std::vector<tflite::task::core::Category>>&
-                 output) {
-            EXPECT_TRUE(output.has_value());
-            run_loop->Quit();
-          },
-          run_loop.get()),
-      input);
-  run_loop->Run();
 }
 
 TEST_F(BertModelExecutorTest, InvalidBertModel) {

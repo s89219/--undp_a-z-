@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,13 @@
 #include <memory>
 #include <utility>
 
-#include "ash/components/tpm/buildflags.h"
-#include "ash/components/tpm/tpm_token_loader.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/sequence_checker.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "build/branding_buildflags.h"
 #include "build/buildflag.h"
@@ -25,12 +23,14 @@
 #include "chrome/browser/ash/crosapi/crosapi_ash.h"
 #include "chrome/browser/ash/crosapi/crosapi_manager.h"
 #include "chrome/browser/ash/login/startup_utils.h"
+#include "chromeos/ash/components/dbus/userdataauth/userdataauth_client.h"
+#include "chromeos/ash/components/network/network_cert_loader.h"
+#include "chromeos/ash/components/network/system_token_cert_db_storage.h"
+#include "chromeos/ash/components/tpm/buildflags.h"
+#include "chromeos/ash/components/tpm/tpm_token_loader.h"
 #include "chromeos/dbus/common/dbus_method_call_status.h"
 #include "chromeos/dbus/tpm_manager/tpm_manager.pb.h"
 #include "chromeos/dbus/tpm_manager/tpm_manager_client.h"
-#include "chromeos/dbus/userdataauth/userdataauth_client.h"
-#include "chromeos/network/network_cert_loader.h"
-#include "chromeos/network/system_token_cert_db_storage.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/nss_util_internal.h"
@@ -120,7 +120,7 @@ SystemTokenCertDBInitializer::~SystemTokenCertDBInitializer() {
 
   // Note that the observer could potentially not be added yet, but
   // the operation is a no-op in that case.
-  TpmManagerClient::Get()->RemoveObserver(this);
+  chromeos::TpmManagerClient::Get()->RemoveObserver(this);
 
   // Notify consumers of SystemTokenCertDbStorage that the database is not
   // usable anymore.
@@ -152,20 +152,20 @@ void SystemTokenCertDBInitializer::OnCryptohomeAvailable(bool available) {
   }
 
   VLOG(1) << "SystemTokenCertDBInitializer: Cryptohome available.";
-  TpmManagerClient::Get()->AddObserver(this);
+  chromeos::TpmManagerClient::Get()->AddObserver(this);
 
   CheckTpm();
 }
 
 void SystemTokenCertDBInitializer::CheckTpm() {
-  TpmManagerClient::Get()->GetTpmNonsensitiveStatus(
+  chromeos::TpmManagerClient::Get()->GetTpmNonsensitiveStatus(
       ::tpm_manager::GetTpmNonsensitiveStatusRequest(),
       base::BindOnce(&SystemTokenCertDBInitializer::OnGetTpmNonsensitiveStatus,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void SystemTokenCertDBInitializer::RetryCheckTpmLater() {
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&SystemTokenCertDBInitializer::CheckTpm,
                      weak_ptr_factory_.GetWeakPtr()),
@@ -207,7 +207,7 @@ void SystemTokenCertDBInitializer::OnGetTpmNonsensitiveStatus(
       // initialization was interrupted. We don't care about the result, and
       // don't block waiting for it.
       LOG(WARNING) << "Request taking TPM ownership.";
-      TpmManagerClient::Get()->TakeOwnership(
+      chromeos::TpmManagerClient::Get()->TakeOwnership(
           ::tpm_manager::TakeOwnershipRequest(), base::DoNothing());
     }
     return;

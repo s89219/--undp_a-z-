@@ -1,4 +1,4 @@
-/* Copyright 2017 The Chromium Authors. All rights reserved.
+/* Copyright 2017 The Chromium Authors
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -55,7 +55,7 @@ const ProximityAuth = {
     ProximityAuth.remoteDevicesController_ = new DeviceListController(
         document.querySelector('#remote-devices-control'));
     WebUI.getLocalState();
-  }
+  },
 };
 
 /**
@@ -351,7 +351,7 @@ const LocalStateInterface = {
   /** @param {!Array<!RemoteDevice>} remoteDevices */
   onRemoteDevicesChanged: function(remoteDevices) {
     ProximityAuth.remoteDevicesController_.updateRemoteDevices(remoteDevices);
-  }
+  },
 };
 
 document.addEventListener('DOMContentLoaded', function() {

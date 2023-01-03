@@ -1,11 +1,11 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/list_model/list_model.h"
 
-#include "base/check_op.h"
-#include "base/notreached.h"
+#import "base/check_op.h"
+#import "base/notreached.h"
 #import "base/numerics/safe_conversions.h"
 #import "ios/chrome/browser/ui/list_model/list_item.h"
 
@@ -379,7 +379,7 @@ typedef NSMutableArray<ListItem*> SectionItems;
   return [self.collapsableMediator sectionKeyIsCollapsed:sectionKey];
 }
 
-// |_collapsedKeys| lazy instantiation.
+// `_collapsedKeys` lazy instantiation.
 - (NSMutableDictionary*)collapsedKeys {
   if (!_collapsedKeys) {
     _collapsedKeys = [[NSMutableDictionary alloc] init];
@@ -416,8 +416,8 @@ typedef NSMutableArray<ListItem*> SectionItems;
   return item;
 }
 
-// Returns |item|'s index among all the items of the same type in the given
-// section items.  |item| must belong to |sectionItems|.
+// Returns `item`'s index among all the items of the same type in the given
+// section items.  `item` must belong to `sectionItems`.
 - (NSUInteger)indexInItemTypeForItem:(ListItem*)item
                       inSectionItems:(SectionItems*)sectionItems {
   DCHECK([sectionItems containsObject:item]);

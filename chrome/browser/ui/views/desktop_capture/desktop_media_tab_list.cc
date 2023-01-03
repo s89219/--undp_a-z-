@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/media/webrtc/desktop_media_list_layout_config.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/grit/generated_resources.h"
@@ -26,7 +27,6 @@
 #include "ui/views/controls/table/table_view_observer.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/fill_layout.h"
-#include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
 
 using content::BrowserThread;
@@ -56,9 +56,9 @@ class TabListModel : public ui::TableModel,
       base::RepeatingCallback<void(size_t)> preview_updated_callback);
 
   // ui::TableModel:
-  int RowCount() override;
-  std::u16string GetText(int row, int column) override;
-  ui::ImageModel GetIcon(int row) override;
+  size_t RowCount() override;
+  std::u16string GetText(size_t row, int column) override;
+  ui::ImageModel GetIcon(size_t row) override;
   void SetObserver(ui::TableModelObserver* observer) override;
 
   // DesktopMediaListController::SourceListListener:
@@ -68,12 +68,13 @@ class TabListModel : public ui::TableModel,
   void OnSourceNameChanged(size_t index) override;
   void OnSourceThumbnailChanged(size_t index) override;
   void OnSourcePreviewChanged(size_t index) override;
+  void OnDelegatedSourceListSelection() override;
 
  private:
   TabListModel(const TabListModel&) = delete;
   TabListModel operator=(const TabListModel&) = delete;
 
-  raw_ptr<DesktopMediaListController> controller_;
+  raw_ptr<DesktopMediaListController, DanglingUntriaged> controller_;
   raw_ptr<ui::TableModelObserver> observer_ = nullptr;
   base::RepeatingCallback<void(size_t)> preview_updated_callback_;
 };
@@ -86,17 +87,17 @@ TabListModel::TabListModel(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
-int TabListModel::RowCount() {
+size_t TabListModel::RowCount() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  return base::checked_cast<int>(controller_->GetSourceCount());
+  return controller_->GetSourceCount();
 }
 
-std::u16string TabListModel::GetText(int row, int column) {
+std::u16string TabListModel::GetText(size_t row, int column) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return controller_->GetSource(row).name;
 }
 
-ui::ImageModel TabListModel::GetIcon(int row) {
+ui::ImageModel TabListModel::GetIcon(size_t row) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return ui::ImageModel::FromImageSkia(controller_->GetSource(row).thumbnail);
 }
@@ -139,6 +140,12 @@ void TabListModel::OnSourcePreviewChanged(size_t index) {
   preview_updated_callback_.Run(index);
 }
 
+void TabListModel::OnDelegatedSourceListSelection() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  NOTREACHED()
+      << "Tab Lists are not delegated, so should not get a selection event.";
+}
+
 // TableViewObserver implementation that bridges between the actual TableView
 // listing tabs and the DesktopMediaTabList.
 class TabListViewObserver : public views::TableViewObserver {
@@ -153,7 +160,7 @@ class TabListViewObserver : public views::TableViewObserver {
   TabListViewObserver(const TabListViewObserver&) = delete;
   TabListViewObserver operator=(const TabListViewObserver&) = delete;
 
-  const raw_ptr<DesktopMediaListController> controller_;
+  const raw_ptr<DesktopMediaListController, DanglingUntriaged> controller_;
   base::RepeatingClosure selection_changed_callback_;
 };
 
@@ -306,16 +313,22 @@ void DesktopMediaTabList::OnThemeChanged() {
 
 absl::optional<content::DesktopMediaID> DesktopMediaTabList::GetSelection() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  int row = list_->GetFirstSelectedRow();
-  if (row == -1)
+  absl::optional<size_t> row = list_->GetFirstSelectedRow();
+  if (!row.has_value())
     return absl::nullopt;
-  return controller_->GetSource(row).id;
+  return controller_->GetSource(row.value()).id;
 }
 
 DesktopMediaListController::SourceListListener*
 DesktopMediaTabList::GetSourceListListener() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return model_.get();
+}
+
+void DesktopMediaTabList::ClearSelection() {
+  // Changing the selection in the list will ensure that all appropriate change
+  // events are fired.
+  list_->Select(absl::nullopt);
 }
 
 void DesktopMediaTabList::ClearPreview() {
@@ -329,13 +342,13 @@ void DesktopMediaTabList::ClearPreview() {
 void DesktopMediaTabList::OnSelectionChanged() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  const int row = list_->GetFirstSelectedRow();
-  if (row == -1) {
+  absl::optional<size_t> row = list_->GetFirstSelectedRow();
+  if (!row.has_value()) {
     ClearPreview();
     controller_->SetPreviewedSource(absl::nullopt);
     return;
   }
-  const DesktopMediaList::Source& source = controller_->GetSource(row);
+  const DesktopMediaList::Source& source = controller_->GetSource(row.value());
 
   const std::u16string truncated_title =
       source.name.substr(0, kMaxPreviewTitleLength);
@@ -343,7 +356,7 @@ void DesktopMediaTabList::OnSelectionChanged() {
 
   // Trigger a preview update to either show a previous snapshot for this source
   // if we have one, or clear it if we don't.
-  OnPreviewUpdated(base::checked_cast<size_t>(row));
+  OnPreviewUpdated(row.value());
 
   // Update the source for which previews are generated.
   controller_->SetPreviewedSource(source.id);
@@ -365,7 +378,7 @@ void DesktopMediaTabList::ClearPreviewImageIfUnchanged(
 
 void DesktopMediaTabList::OnPreviewUpdated(size_t index) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  if (base::checked_cast<int>(index) != list_->GetFirstSelectedRow()) {
+  if (index != list_->GetFirstSelectedRow()) {
     return;
   }
 
@@ -375,7 +388,7 @@ void DesktopMediaTabList::OnPreviewUpdated(size_t index) {
     ++preview_set_count_;
   } else {
     // Clear the preview after a short time.
-    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&DesktopMediaTabList::ClearPreviewImageIfUnchanged,
                        weak_factory_.GetWeakPtr(), preview_set_count_),

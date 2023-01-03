@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,17 @@
 #include <vector>
 
 #include "base/base64.h"
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/raw_ptr.h"
+#include "base/path_service.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/test/trace_event_analyzer.h"
 #include "base/time/default_tick_clock.h"
@@ -36,7 +39,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/tracing.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/cast_channel/cast_message_handler.h"
+#include "components/media_router/common/providers/cast/channel/cast_message_handler.h"
 #include "components/mirroring/mojom/cast_message_channel.mojom.h"
 #include "components/mirroring/mojom/mirroring_service_host.mojom.h"
 #include "components/mirroring/mojom/session_observer.mojom.h"
@@ -72,6 +75,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_result_reporter.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/jsoncpp/source/include/json/reader.h"
 #include "third_party/jsoncpp/source/include/json/value.h"
 #include "third_party/jsoncpp/source/include/json/writer.h"
@@ -156,6 +160,13 @@ std::string VectorToString(const std::vector<double>& values) {
   return csv;
 }
 
+// Utility to get the generated test data directory.
+base::FilePath GetGeneratedTestDataDir() {
+  base::FilePath exe_dir;
+  base::PathService::Get(base::DIR_EXE, &exe_dir);
+  return exe_dir.AppendASCII("gen/chrome/test/data/").NormalizePathSeparators();
+}
+
 void MaybeAddResultList(const perf_test::PerfResultReporter& reporter,
                         const std::string& metric,
                         const std::vector<double>& values) {
@@ -216,7 +227,7 @@ media::cast::FrameReceiverConfig WithSharedConfig(
 
 void ContinueBrowserFor(base::TimeDelta duration) {
   base::RunLoop run_loop;
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, run_loop.QuitClosure(), duration);
   run_loop.Run();
 }
@@ -628,7 +639,7 @@ class CastV2PerformanceTest : public InProcessBrowserTest,
     host_resolver()->AddRule("*", "127.0.0.1");
     https_server_ = std::make_unique<net::EmbeddedTestServer>(
         net::EmbeddedTestServer::TYPE_HTTPS);
-    https_server_->AddDefaultHandlers(GetChromeTestDataDir());
+    https_server_->ServeFilesFromDirectory(GetGeneratedTestDataDir());
     ASSERT_TRUE(https_server_->Start());
   }
 
@@ -880,11 +891,12 @@ class TestTabMirroringSession : public mirroring::mojom::SessionObserver,
     mojo::PendingRemote<mirroring::mojom::CastMessageChannel> channel_remote;
     channel_receiver_.Bind(channel_remote.InitWithNewPipeAndPassReceiver());
 
-    const std::string receiver_model_name{};
     auto session_params = mirroring::mojom::SessionParameters::New(
         mirroring::mojom::SessionType::AUDIO_AND_VIDEO, endpoint.address(),
-        receiver_model_name, base::Milliseconds(kTargetPlayoutDelayMs));
-
+        "model_name", "friendly_name", "sender-123", "receiver-456",
+        base::Milliseconds(kTargetPlayoutDelayMs),
+        false /* is_remote_playback */, absl::nullopt /** refresh_interval */,
+        false /** force_letterboxing */);
     host_->Start(std::move(session_params), std::move(observer_remote),
                  std::move(channel_remote),
                  channel_to_service_.BindNewPipeAndPassReceiver());
@@ -899,9 +911,10 @@ class TestTabMirroringSession : public mirroring::mojom::SessionObserver,
   void DidStop() override {}
   void LogInfoMessage(const std::string& message) override {}
   void LogErrorMessage(const std::string& message) override {}
+  void OnSourceChanged() override {}
 
-  // CastMessageChannel implementation
-  void Send(mirroring::mojom::CastMessagePtr message) override {
+  // CastMessageChannel implementation (inbound).
+  void OnMessage(mirroring::mojom::CastMessagePtr message) override {
     Json::CharReaderBuilder rb;
     auto reader = std::unique_ptr<Json::CharReader>(rb.newCharReader());
     Json::Value root;
@@ -986,7 +999,7 @@ class TestTabMirroringSession : public mirroring::mojom::SessionObserver,
 
     VLOG(1) << "Sending ANSWER";
     offer_message->json_format_data = ssb.str();
-    channel_to_service_->Send(std::move(offer_message));
+    channel_to_service_->OnMessage(std::move(offer_message));
   }
 
   mojo::Remote<mirroring::mojom::MirroringServiceHost> host_;

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@ InterceptablePrefFilter::~InterceptablePrefFilter() {}
 
 void InterceptablePrefFilter::FilterOnLoad(
     PostFilterOnLoadCallback post_filter_on_load_callback,
-    std::unique_ptr<base::DictionaryValue> pref_store_contents) {
+    base::Value::Dict pref_store_contents) {
   if (filter_on_load_interceptor_.is_null()) {
     FinalizeFilterOnLoad(std::move(post_filter_on_load_callback),
                          std::move(pref_store_contents), false);

@@ -1,10 +1,9 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/crosapi/environment_provider.h"
 
-#include "ash/components/tpm/install_attributes.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/system/sys_info.h"
@@ -13,9 +12,11 @@
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/web_applications/preinstalled_web_app_config_utils.h"
+#include "chromeos/ash/components/dbus/cros_disks/cros_disks_client.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
 #include "chromeos/crosapi/mojom/crosapi.mojom.h"
 #include "chromeos/crosapi/mojom/policy_namespace.mojom.h"
-#include "chromeos/dbus/cros_disks/cros_disks_client.h"
 #include "components/account_id/account_id.h"
 #include "components/account_manager_core/account.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
@@ -102,7 +103,7 @@ mojom::DefaultPathsPtr EnvironmentProvider::GetDefaultPaths() {
       default_paths->drivefs = integration_service->GetMountPointPath();
     }
     default_paths->android_files =
-        base::FilePath(file_manager::util::kAndroidFilesPath);
+        base::FilePath(file_manager::util::GetAndroidFilesPath());
     default_paths->linux_files =
         file_manager::util::GetCrostiniMountDirectory(profile);
     base::FilePath ash_resources;
@@ -124,11 +125,16 @@ mojom::DefaultPathsPtr EnvironmentProvider::GetDefaultPaths() {
   // CrosDisksClient already has a convention for its removable media directory
   // when running on Linux workstations.
   default_paths->removable_media =
-      chromeos::CrosDisksClient::GetRemovableDiskMountPoint();
+      ash::CrosDisksClient::GetRemovableDiskMountPoint();
 
   // Ash expects to find shared files in the share cache.
   default_paths->share_cache =
       file_manager::util::GetShareCacheFilePath(profile);
+
+  default_paths->preinstalled_web_app_config =
+      web_app::GetPreinstalledWebAppConfigDirFromCommandLine(profile);
+  default_paths->preinstalled_web_app_extra_config =
+      web_app::GetPreinstalledWebAppExtraConfigDirFromCommandLine(profile);
 
   return default_paths;
 }
@@ -182,12 +188,13 @@ std::string EnvironmentProvider::GetDeviceAccountPolicy() {
   return device_account_policy_blob_;
 }
 
-const MojoPolicyMap& EnvironmentProvider::GetDeviceAccountComponentPolicy() {
+const policy::ComponentPolicyMap&
+EnvironmentProvider::GetDeviceAccountComponentPolicy() {
   return component_policy_;
 }
 
 void EnvironmentProvider::SetDeviceAccountComponentPolicy(
-    MojoPolicyMap component_policy) {
+    policy::ComponentPolicyMap component_policy) {
   component_policy_ = std::move(component_policy);
 }
 

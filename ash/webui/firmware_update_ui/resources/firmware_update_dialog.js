@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,12 @@ import './firmware_shared_css.js';
 import './firmware_shared_fonts.js';
 import './mojom/firmware_update.mojom-lite.js';
 import './strings.m.js';
-
-import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
 import 'chrome://resources/polymer/v3_0/paper-progress/paper-progress.js';
-import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/ash/common/i18n_behavior.js';
 import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
 import {DialogContent, FirmwareUpdate, InstallationProgress, InstallControllerRemote, UpdateProgressObserverInterface, UpdateProgressObserverReceiver, UpdateProviderInterface, UpdateState} from './firmware_update_types.js';
 import {getUpdateProvider} from './mojo_interface_provider.js';
 import {mojoString16ToString} from './mojo_utils.js';
@@ -26,7 +27,7 @@ const inactiveDialogStates = [UpdateState.kUnknown, UpdateState.kIdle];
 const initialDialogContent = {
   title: '',
   body: '',
-  footer: ''
+  footer: '',
 };
 
 /**
@@ -64,7 +65,7 @@ export class FirmwareUpdateDialogElement extends
       installationProgress: {
         type: Object,
         value: {percentage: 0, state: UpdateState.kIdle},
-        observer: 'progressChanged_',
+        observer: FirmwareUpdateDialogElement.prototype.progressChanged_,
       },
 
       /** @private {boolean} */

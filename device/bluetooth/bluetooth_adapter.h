@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -160,9 +160,17 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
         const BluetoothDevice::ServiceDataMap& service_data_map,
         const BluetoothDevice::ManufacturerDataMap& manufacturer_data_map) {}
 
+#if BUILDFLAG(IS_CHROMEOS)
+    // Called when the bonded property of the device |device| known to the
+    // adapter |adapter| changed.
+    virtual void DeviceBondedChanged(BluetoothAdapter* adapter,
+                                     BluetoothDevice* device,
+                                     bool new_bonded_status) {}
+#endif
+
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
-    // Called when paired property of the device |device| known to the adapter
-    // |adapter| changed.
+    // Called when the paired property of the device |device| known to the
+    // adapter |adapter| changed.
     virtual void DevicePairedChanged(BluetoothAdapter* adapter,
                                      BluetoothDevice* device,
                                      bool new_paired_status) {}
@@ -373,6 +381,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
       base::OnceCallback<void(scoped_refptr<BluetoothAdvertisement>)>;
   using AdvertisementErrorCallback = BluetoothAdvertisement::ErrorCallback;
   using ConnectDeviceCallback = base::OnceCallback<void(BluetoothDevice*)>;
+  using ConnectDeviceErrorCallback =
+      base::OnceCallback<void(const std::string& error_message)>;
   using DiscoverySessionErrorCallback =
       base::OnceCallback<void(UMABluetoothDiscoverySessionOutcome)>;
   // The is_error bool is a flag to indicate if the result is an error(true)
@@ -639,7 +649,7 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
       const std::string& address,
       const absl::optional<BluetoothDevice::AddressType>& address_type,
       ConnectDeviceCallback callback,
-      ErrorCallback error_callback) = 0;
+      ConnectDeviceErrorCallback error_callback) = 0;
 #endif
 
   // Returns the list of pending advertisements that are not registered yet.
@@ -670,6 +680,8 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS)
+  void NotifyDeviceBondedChanged(BluetoothDevice* device,
+                                 bool new_bonded_status);
   void NotifyDeviceIsBlockedByPolicyChanged(BluetoothDevice* device,
                                             bool new_blocked_status);
 #endif
@@ -734,9 +746,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothAdapter
   // an identical scanning session, it should discard its newly invalidated
   // BluetoothLowEnergyScanSession and create a new one by calling
   // StartLowEnergyScanSession() again.
-  //
-  // Returns a nullptr if the BluetoothAdvertisementMonitoring chrome flag is
-  // not enabled.
   virtual std::unique_ptr<BluetoothLowEnergyScanSession>
   StartLowEnergyScanSession(
       std::unique_ptr<BluetoothLowEnergyScanFilter> filter,

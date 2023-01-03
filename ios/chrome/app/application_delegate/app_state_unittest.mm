@@ -1,41 +1,37 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/app/application_delegate/app_state.h"
 
-#include <memory>
+#import <memory>
 
-#include "base/bind.h"
-#include "base/ios/block_types.h"
+#import "base/bind.h"
+#import "base/ios/block_types.h"
 #import "base/ios/ios_util.h"
-#include "base/mac/foundation_util.h"
+#import "base/mac/foundation_util.h"
 #import "base/test/task_environment.h"
 #import "ios/chrome/app/app_startup_parameters.h"
+#import "ios/chrome/app/application_delegate/app_state+private.h"
 #import "ios/chrome/app/application_delegate/app_state_observer.h"
-#import "ios/chrome/app/application_delegate/app_state_testing.h"
 #import "ios/chrome/app/application_delegate/browser_launcher.h"
 #import "ios/chrome/app/application_delegate/fake_startup_information.h"
 #import "ios/chrome/app/application_delegate/memory_warning_helper.h"
 #import "ios/chrome/app/application_delegate/metrics_mediator.h"
 #import "ios/chrome/app/application_delegate/mock_tab_opener.h"
 #import "ios/chrome/app/application_delegate/startup_information.h"
-#import "ios/chrome/app/application_delegate/tab_switching.h"
 #import "ios/chrome/app/application_delegate/user_activity_handler.h"
 #import "ios/chrome/app/enterprise_app_agent.h"
 #import "ios/chrome/app/main_application_delegate.h"
+#import "ios/chrome/app/safe_mode_app_state_agent+private.h"
 #import "ios/chrome/app/safe_mode_app_state_agent.h"
-#include "ios/chrome/app/safe_mode_app_state_agent.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #import "ios/chrome/browser/crash_report/crash_helper.h"
 #import "ios/chrome/browser/device_sharing/device_sharing_manager.h"
+#import "ios/chrome/browser/flags/system_flags.h"
 #import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/main/test_browser.h"
-#include "ios/chrome/browser/ntp_snippets/ios_chrome_content_suggestions_service_factory.h"
-#import "ios/chrome/browser/signin/authentication_service_factory.h"
-#import "ios/chrome/browser/signin/authentication_service_fake.h"
-#include "ios/chrome/browser/system_flags.h"
+#import "ios/chrome/browser/ntp_snippets/ios_chrome_content_suggestions_service_factory.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/browser_commands.h"
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
@@ -47,52 +43,63 @@
 #import "ios/chrome/browser/ui/main/test/stub_browser_interface_provider.h"
 #import "ios/chrome/browser/ui/safe_mode/safe_mode_coordinator.h"
 #import "ios/chrome/browser/ui/settings/settings_navigation_controller.h"
-#include "ios/chrome/test/block_cleanup_test.h"
-#include "ios/chrome/test/providers/app_distribution/test_app_distribution.h"
+#import "ios/chrome/browser/url/chrome_url_constants.h"
+#import "ios/chrome/common/crash_report/crash_helper.h"
+#import "ios/chrome/test/block_cleanup_test.h"
+#import "ios/chrome/test/providers/app_distribution/test_app_distribution.h"
 #import "ios/chrome/test/scoped_key_window.h"
-#include "ios/public/provider/chrome/browser/app_distribution/app_distribution_api.h"
-#include "ios/public/provider/chrome/browser/test_chrome_browser_provider.h"
-#include "ios/public/provider/chrome/browser/user_feedback/test_user_feedback_provider.h"
+#import "ios/public/provider/chrome/browser/app_distribution/app_distribution_api.h"
+#import "ios/public/provider/chrome/browser/test_chrome_browser_provider.h"
 #import "ios/testing/ocmock_complex_type_helper.h"
 #import "ios/testing/scoped_block_swizzler.h"
-#include "ios/web/public/test/web_task_environment.h"
-#include "ios/web/public/thread/web_task_traits.h"
+#import "ios/web/public/test/web_task_environment.h"
+#import "ios/web/public/thread/web_task_traits.h"
 #import "third_party/breakpad/breakpad/src/client/ios/BreakpadController.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
-#include "third_party/ocmock/gtest_support.h"
+#import "third_party/ocmock/gtest_support.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
-// Exposes private safe mode start/stop methods.
-@interface AppState (Private)
-
-- (void)queueTransitionToFirstInitStage;
-- (void)completeUIInitialization;
-@end
-
+// Subclass of AppState that allow returning a fake list of connected scenes.
 @interface TestAppState : AppState
-// Override |connectedScenes| with a lazily instantiated mutable array.
-@property(nonatomic, strong, readwrite)
-    NSMutableArray<SceneState*>* connectedScenes;
+
+- (instancetype)
+    initWithBrowserLauncher:(id<BrowserLauncher>)browserLauncher
+         startupInformation:(id<StartupInformation>)startupInformation
+        applicationDelegate:(MainApplicationDelegate*)applicationDelegate
+            connectedScenes:(NSArray<SceneState*>*)connectedScenes
+    NS_DESIGNATED_INITIALIZER;
+
+- (instancetype)
+    initWithBrowserLauncher:(id<BrowserLauncher>)browserLauncher
+         startupInformation:(id<StartupInformation>)startupInformation
+        applicationDelegate:(MainApplicationDelegate*)applicationDelegate
+    NS_UNAVAILABLE;
+
 @end
 
-@implementation TestAppState
-
-- (NSMutableArray<SceneState*>*)connectedScenes {
-  if (!_connectedScenes) {
-    _connectedScenes = [[NSMutableArray alloc] init];
-  }
-  return _connectedScenes;
+@implementation TestAppState {
+  NSArray<SceneState*>* _connectedScenes;
 }
 
-@end
+- (instancetype)
+    initWithBrowserLauncher:(id<BrowserLauncher>)browserLauncher
+         startupInformation:(id<StartupInformation>)startupInformation
+        applicationDelegate:(MainApplicationDelegate*)applicationDelegate
+            connectedScenes:(NSArray<SceneState*>*)connectedScenes {
+  if ((self = [super initWithBrowserLauncher:browserLauncher
+                          startupInformation:startupInformation
+                         applicationDelegate:applicationDelegate])) {
+    _connectedScenes = connectedScenes ? [connectedScenes copy] : @[];
+  }
+  return self;
+}
 
-@interface SafeModeAppAgent (Private) <SceneStateObserver, AppStateObserver>
-
-- (SafeModeCoordinator*)safeModeCoordinator;
-- (void)appState:(AppState*)appState sceneConnected:(SceneState*)sceneState;
+- (NSArray<SceneState*>*)connectedScenes {
+  return _connectedScenes;
+}
 
 @end
 
@@ -110,6 +117,9 @@
     case InitStageBrowserBasic:
       break;
     case InitStageSafeMode:
+      break;
+    case InitStageVariationsSeed:
+      [appState queueTransitionToNextInitStage];
       break;
     case InitStageBrowserObjectsForBackgroundHandlers:
       [appState queueTransitionToNextInitStage];
@@ -148,7 +158,7 @@ typedef void (^HandleStartupParam)(
 // A block ths returns values of AppState connectedScenes.
 typedef NSArray<SceneState*>* (^ScenesBlock)(id self);
 
-// Sets init stage expected transition calls from |start| to |end|.
+// Sets init stage expected transition calls from `start` to `end`.
 void SetInitStageTransitionExpectations(id mock,
                                         AppState* app_state,
                                         InitStage start,
@@ -244,10 +254,6 @@ class AppStateTest : public BlockCleanupTest {
     test_cbs_builder.AddTestingFactory(
         IOSChromeContentSuggestionsServiceFactory::GetInstance(),
         IOSChromeContentSuggestionsServiceFactory::GetDefaultFactory());
-    test_cbs_builder.AddTestingFactory(
-        AuthenticationServiceFactory::GetInstance(),
-        base::BindRepeating(
-            &AuthenticationServiceFake::CreateAuthenticationService));
     browser_state_ = test_cbs_builder.Build();
   }
 
@@ -364,8 +370,8 @@ class AppStateTest : public BlockCleanupTest {
       app_state_ = [[TestAppState alloc]
           initWithBrowserLauncher:browser_launcher_mock_
                startupInformation:startup_information_mock_
-              applicationDelegate:main_application_delegate_];
-      [app_state_.connectedScenes addObject:main_scene_state_];
+              applicationDelegate:main_application_delegate_
+                  connectedScenes:@[ main_scene_state_ ]];
 
       main_scene_state_ =
           [main_scene_state_ initWithAppState:app_state_
@@ -406,8 +412,8 @@ class AppStateTest : public BlockCleanupTest {
       app_state_ = [[TestAppState alloc]
           initWithBrowserLauncher:browser_launcher_mock_
                startupInformation:startup_information_mock_
-              applicationDelegate:main_application_delegate_];
-      [app_state_.connectedScenes addObject:main_scene_state_];
+              applicationDelegate:main_application_delegate_
+                  connectedScenes:@[ main_scene_state_ ]];
 
       main_scene_state_ =
           [main_scene_state_ initWithAppState:app_state_
@@ -548,7 +554,9 @@ TEST_F(AppStateTest, requiresHandlingAfterLaunchWithOptionsForegroundSafeMode) {
 
   // Action.
   BOOL result = [appState requiresHandlingAfterLaunchWithOptions:launchOptions
-                                                 stateBackground:NO];
+                                                 stateBackground:YES];
+
+  [appState queueTransitionToNextInitStage];
 
   // Start the safe mode by transitioning the scene to foreground again after
   // #requiresHandlingAfterLaunchWithOptions which starts the safe mode.
@@ -600,7 +608,9 @@ TEST_F(AppStateTest, requiresHandlingAfterLaunchWithOptionsForeground) {
 
   // Action.
   BOOL result = [appState requiresHandlingAfterLaunchWithOptions:launchOptions
-                                                 stateBackground:NO];
+                                                 stateBackground:YES];
+
+  [appState queueTransitionToNextInitStage];
 
   // Test.
   EXPECT_TRUE(result);
@@ -715,10 +725,6 @@ TEST_F(AppStateTest, applicationWillEnterForeground) {
   [[[getStartupInformationMock() stub] andReturnValue:@YES] isFirstRun];
 
   // Setup.
-  ios::TestChromeBrowserProvider::GetTestProvider()
-      .GetUserFeedbackProvider()
-      ->ResetSynchronizeCalled();
-
   id application = [OCMockObject mockForClass:[UIApplication class]];
   id metricsMediator = [OCMockObject mockForClass:[MetricsMediator class]];
   id memoryHelper = [OCMockObject mockForClass:[MemoryWarningHelper class]];
@@ -766,9 +772,6 @@ TEST_F(AppStateTest, applicationWillEnterForeground) {
   EXPECT_OCMOCK_VERIFY(metricsMediator);
   EXPECT_OCMOCK_VERIFY(memoryHelper);
   EXPECT_OCMOCK_VERIFY(getStartupInformationMock());
-  EXPECT_TRUE(ios::TestChromeBrowserProvider::GetTestProvider()
-                  .GetUserFeedbackProvider()
-                  ->SynchronizeCalled());
 }
 
 // Tests that -applicationWillEnterForeground starts the browser if the
@@ -786,6 +789,10 @@ TEST_F(AppStateTest, applicationWillEnterForegroundFromBackground) {
   [[getStartupInformationMock() stub] setIsFirstRun:YES];
   [[[getStartupInformationMock() stub] andReturnValue:@YES] isFirstRun];
 
+  // Simulate finishing the initialization before going to background.
+  [getAppStateWithMock() queueTransitionToFirstInitStage];
+  [getAppStateWithMock() queueTransitionToNextInitStage];
+
   // Actions.
   [getAppStateWithMock() applicationWillEnterForeground:application
                                         metricsMediator:metricsMediator
@@ -797,6 +804,10 @@ TEST_F(AppStateTest, applicationWillEnterForegroundFromBackground) {
 
 // Tests that -applicationDidEnterBackground calls the metrics mediator.
 TEST_F(AppStateTest, applicationDidEnterBackgroundIncognito) {
+  // This is a breakpad only test and can be deprecated once Breakpad is
+  // removed.
+  if (crash_helper::common::CanUseCrashpad())
+    return;
   swizzleSafeModeShouldStart(NO);
   [[getStartupInformationMock() stub] setIsFirstRun:YES];
   [[[getStartupInformationMock() stub] andReturnValue:@YES] isFirstRun];
@@ -829,8 +840,8 @@ TEST_F(AppStateTest, applicationDidEnterBackgroundIncognito) {
   NSDictionary* launchOptions = @{};
   id browserLauncherMock = getBrowserLauncherMock();
   [[browserLauncherMock expect] setLaunchOptions:launchOptions];
-  [appState requiresHandlingAfterLaunchWithOptions:launchOptions
-                                   stateBackground:NO];
+  [appState queueTransitionToFirstInitStage];
+  [appState queueTransitionToNextInitStage];
 
   // Action.
   [appState applicationDidEnterBackground:application

@@ -1,14 +1,14 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from '../../assert.js';
 import {CameraManager} from '../../device/index.js';
 import {
   PhotoResolutionOption,
   PhotoResolutionOptionGroup,
 } from '../../device/type.js';
 import * as dom from '../../dom.js';
+import * as expert from '../../expert.js';
 import {I18nString} from '../../i18n_string.js';
 import * as loadTimeData from '../../models/load_time_data.js';
 import {Facing, Resolution, ViewName} from '../../type.js';
@@ -24,6 +24,8 @@ export class PhotoResolutionSettings extends BaseSettings {
   private readonly menu: HTMLElement;
 
   private focusedDeviceId: string|null = null;
+
+  private menuScrollTop = 0;
 
   constructor(readonly cameraManager: CameraManager) {
     super(ViewName.PHOTO_RESOLUTION_SETTINGS);
@@ -59,13 +61,13 @@ export class PhotoResolutionSettings extends BaseSettings {
             this.menu, '#resolution-text-template',
             I18nString.LABEL_NO_RESOLUTION_OPTION);
       } else {
-        assert(options.length === 2);
         for (const option of options) {
           this.addResolutionItem(deviceId, facing, option);
         }
       }
     }
     setupI18nElements(this.menu);
+    this.menu.scrollTop = this.menuScrollTop;
   }
 
   private addResolutionItem(
@@ -75,7 +77,7 @@ export class PhotoResolutionSettings extends BaseSettings {
     const label = util.toPhotoResolutionOptionLabel(option.resolutionLevel);
     const resolution = option.resolutions[0];
     let megaPixels = resolution.mp;
-    if (this.cameraManager.preferSquarePhoto()) {
+    if (this.cameraManager.useSquareResolution()) {
       const croppedEdge = Math.min(resolution.width, resolution.height);
       megaPixels = (new Resolution(croppedEdge, croppedEdge)).mp;
     }
@@ -98,8 +100,13 @@ export class PhotoResolutionSettings extends BaseSettings {
     if (!input.checked) {
       input.addEventListener('click', (event) => {
         this.focusedDeviceId = deviceId;
-        this.cameraManager.setPrefPhotoResolutionLevel(
-            deviceId, option.resolutionLevel);
+        this.menuScrollTop = this.menu.scrollTop;
+        if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+          this.cameraManager.setPrefPhotoResolution(deviceId, resolution);
+        } else {
+          this.cameraManager.setPrefPhotoResolutionLevel(
+              deviceId, option.resolutionLevel);
+        }
         event.preventDefault();
       });
     }

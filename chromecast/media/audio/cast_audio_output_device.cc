@@ -1,10 +1,12 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chromecast/media/audio/cast_audio_output_device.h"
 
+#include <cstdint>
 #include <limits>
+#include <string>
 #include <utility>
 
 #include "base/bind.h"
@@ -18,6 +20,7 @@
 #include "chromecast/media/audio/audio_output_service/output_stream_connection.h"
 #include "chromecast/media/base/default_monotonic_clock.h"
 #include "media/base/audio_bus.h"
+#include "media/base/audio_glitch_info.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "media/base/bind_to_current_loop.h"
@@ -61,8 +64,6 @@ class CastAudioOutputDevice::Internal
         &Internal::OnApplicationMediaInfoReceived, base::Unretained(this)));
   }
 
-  void InvalidateOutputDevice() { output_device_.reset(); }
-
   void Start() {
     playback_started_ = true;
     media_pos_frames_ = 0;
@@ -103,7 +104,7 @@ class CastAudioOutputDevice::Internal
     media_pos_frames_ = 0;
     playback_started_ = false;
     paused_ = false;
-    push_timer_.AbandonAndStop();
+    push_timer_.Stop();
     output_connection_->StopPlayback();
   }
 
@@ -233,8 +234,9 @@ class CastAudioOutputDevice::Internal
     }
 
     // No frames filled, schedule read immediately with a small delay.
-    push_timer_.Start(FROM_HERE, kNoBufferReadDelay, this,
-                      &Internal::TryPushBuffer);
+    push_timer_.Start(FROM_HERE, base::TimeTicks::Now() + kNoBufferReadDelay,
+                      this, &Internal::TryPushBuffer,
+                      base::subtle::DelayPolicy::kPrecise);
   }
 
   scoped_refptr<CastAudioOutputDevice> output_device_;
@@ -252,7 +254,7 @@ class CastAudioOutputDevice::Internal
   bool paused_ = false;
   bool playback_started_ = false;
   bool backend_initialized_ = false;
-  base::OneShotTimer push_timer_;
+  base::DeadlineTimer push_timer_;
   std::unique_ptr<::media::AudioBus> audio_bus_;
 };
 
@@ -279,26 +281,31 @@ CastAudioOutputDevice::~CastAudioOutputDevice() = default;
 void CastAudioOutputDevice::Initialize(const ::media::AudioParameters& params,
                                        RenderCallback* callback) {
   DCHECK(callback);
+  DCHECK(!render_callback_);
   {
     base::AutoLock lock(callback_lock_);
-    render_callback_ = callback;
+    active_render_callback_ = callback;
   }
+  render_callback_ = callback;
   internal_.AsyncCall(&Internal::Initialize)
       .WithArgs(scoped_refptr<CastAudioOutputDevice>(this), params);
 }
 
 void CastAudioOutputDevice::Start() {
+  {
+    base::AutoLock lock(callback_lock_);
+    active_render_callback_ = render_callback_;
+  }
   internal_.AsyncCall(&Internal::Start);
 }
 
 void CastAudioOutputDevice::Stop() {
   {
     base::AutoLock lock(callback_lock_);
-    render_callback_ = nullptr;
+    active_render_callback_ = nullptr;
   }
 
   Flush();
-  internal_.AsyncCall(&Internal::InvalidateOutputDevice);
 }
 
 void CastAudioOutputDevice::Pause() {
@@ -324,7 +331,8 @@ bool CastAudioOutputDevice::SetVolume(double volume) {
   return ::media::OutputDeviceInfo(
       std::string(), ::media::OUTPUT_DEVICE_STATUS_OK,
       ::media::AudioParameters(::media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                               ::media::CHANNEL_LAYOUT_STEREO, 48000, 480));
+                               ::media::ChannelLayoutConfig::Stereo(), 48000,
+                               480));
 }
 
 void CastAudioOutputDevice::GetOutputDeviceInfoAsync(
@@ -345,19 +353,19 @@ bool CastAudioOutputDevice::CurrentThreadIsRenderingThread() {
 
 void CastAudioOutputDevice::OnBackendError() {
   base::AutoLock lock(callback_lock_);
-  if (render_callback_)
-    render_callback_->OnRenderError();
+  if (active_render_callback_)
+    active_render_callback_->OnRenderError();
 }
 
 int CastAudioOutputDevice::ReadBuffer(base::TimeDelta delay,
                                       ::media::AudioBus* audio_bus) {
   DCHECK(audio_bus);
   base::AutoLock lock(callback_lock_);
-  if (!render_callback_) {
+  if (!active_render_callback_) {
     return 0;
   }
-  return render_callback_->Render(delay, base::TimeTicks(),
-                                  /*frames_skipped=*/0, audio_bus);
+  return active_render_callback_->Render(delay, base::TimeTicks(),
+                                         /*glitch_info=*/{}, audio_bus);
 }
 
 }  // namespace media

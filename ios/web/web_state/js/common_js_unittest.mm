@@ -1,13 +1,13 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <Foundation/Foundation.h>
-#include <stddef.h>
+#import <stddef.h>
 
-#include "base/strings/sys_string_conversions.h"
+#import "base/strings/sys_string_conversions.h"
 #import "ios/web/public/test/web_test_with_web_state.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#import "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -132,7 +132,7 @@ TEST_F(CommonJsTest, Stringify) {
   for (size_t i = 0; i < std::size(test_data); i++) {
     TestScriptAndExpectedValue& data = test_data[i];
     // Load a sample HTML page. As a side-effect, loading HTML via
-    // |webController_| will also inject web_bundle.js.
+    // `webController_` will also inject web_bundle.js.
     LoadHtml(@"<p>");
     id result = ExecuteJavaScript(data.test_script);
     EXPECT_NSEQ(data.expected_value, result)
@@ -169,29 +169,6 @@ TEST_F(CommonJsTest, RemoveQueryAndReferenceFromURL) {
                       data.input_url]);
     EXPECT_NSEQ(data.expected_output, result)
         << " in test " << i << ": " << base::SysNSStringToUTF8(data.input_url);
-  }
-}
-
-TEST_F(CommonJsTest, IsSameOrigin) {
-  TestScriptAndExpectedValue test_data[] = {
-      {@"'', ''", @NO},
-      {@"'http://abc.com', ''", @NO},
-      {@"'', 'http://abc.com'", @NO},
-      {@"'http://abc.com', 'http://abc.com'", @YES},
-      {@"'http://abc.com',  'https://abc.com'", @NO},
-      {@"'http://abc.com', 'http://abc.com:123'", @NO},
-      {@"'http://abc.com', 'http://def.com'", @NO},
-      {@"'http://abc.com/def', 'http://abc.com/xyz'", @YES}};
-
-  for (size_t i = 0; i < std::size(test_data); i++) {
-    TestScriptAndExpectedValue& data = test_data[i];
-    LoadHtml(@"<p>");
-    id result = ExecuteJavaScript(
-        [NSString stringWithFormat:@"__gCrWeb.common.isSameOrigin(%@)",
-                                   data.test_script]);
-    EXPECT_NSEQ(data.expected_value, result)
-        << " in test " << i << ": "
-        << base::SysNSStringToUTF8(data.test_script);
   }
 }
 

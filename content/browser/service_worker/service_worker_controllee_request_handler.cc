@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,10 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/feature_list.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/no_destructor.h"
+#include "base/strings/string_split.h"
 #include "base/trace_event/trace_event.h"
 #include "components/offline_pages/buildflags/buildflags.h"
 #include "content/browser/loader/navigation_url_loader_impl.h"
@@ -24,6 +28,7 @@
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/content_features.h"
 #include "net/base/load_flags.h"
 #include "net/base/url_util.h"
 #include "services/network/public/cpp/resource_request_body.h"
@@ -61,6 +66,105 @@ bool ShouldFallbackToLoadOfflinePage(
              offline_pages::OfflinePageHeader::Reason::RELOAD;
 }
 #endif  // BUILDFLAG(ENABLE_OFFLINE_PAGES)
+
+void RecordSkipReason(
+    ServiceWorkerControlleeRequestHandler::FetchHandlerSkipReason skip_reason) {
+  base::UmaHistogramEnumeration("ServiceWorker.FetchHandler.SkipReason",
+                                skip_reason);
+}
+
+const char* FetchHandlerTypeToString(
+    ServiceWorkerVersion::FetchHandlerType type) {
+  switch (type) {
+    case ServiceWorkerVersion::FetchHandlerType::kNoHandler:
+      return "no handler";
+    case ServiceWorkerVersion::FetchHandlerType::kNotSkippable:
+      return "not skippable";
+    case ServiceWorkerVersion::FetchHandlerType::kEmptyFetchHandler:
+      return "empty fetch handler";
+  }
+}
+
+// Returns the list of origins in which fetch handlers are bypassed.
+const std::vector<url::Origin> FetchHandlerBypassedOrigins() {
+  std::vector<url::Origin> origins;
+  std::vector<std::string> parsed_params = base::SplitString(
+      features::kServiceWorkerBypassFetchHandlerBypassedOrigins.Get(), ",",
+      base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  for (const auto& it : parsed_params) {
+    const GURL url = GURL(it);
+    if (url.is_valid()) {
+      origins.push_back(url::Origin::Create(url));
+    }
+  }
+
+  return origins;
+}
+
+bool ShouldBypassFetchHandlerForMainResource(const GURL& stripped_url) {
+  if (!base::FeatureList::IsEnabled(
+          features::kServiceWorkerBypassFetchHandler)) {
+    return false;
+  }
+
+  if (features::kServiceWorkerBypassFetchHandlerTarget.Get() !=
+      features::ServiceWorkerBypassFetchHandlerTarget::kMainResource) {
+    return false;
+  }
+
+  // If the feature is enabled, the main resource request bypasses ServiceWorker
+  // and starts the worker in parallel for subsequent subresources.
+  switch (features::kServiceWorkerBypassFetchHandlerStrategy.Get()) {
+    // kFeatureOptIn means that the feature relies on the manual feature
+    // toggle from about://flags etc, which is triggered by developers. We
+    // bypass fetch handler regardless of the url matching in this case.
+    case features::ServiceWorkerBypassFetchHandlerStrategy::kFeatureOptIn:
+      RecordSkipReason(
+          ServiceWorkerControlleeRequestHandler::FetchHandlerSkipReason::
+              kMainResourceSkippedDueToFeatureFlag);
+      return true;
+    // If kAllowList, the allowlist should be specified. In this case, main
+    // resource fetch handlers are bypassed only when the url's origin is in
+    // the allowlist.
+    case features::ServiceWorkerBypassFetchHandlerStrategy::kAllowList:
+      const static base::NoDestructor<std::vector<url::Origin>>
+          bypassed_origins(FetchHandlerBypassedOrigins());
+      for (const auto& it : *bypassed_origins) {
+        // Skip comparing port numbers because some tests run the mock HTTP
+        // server with a random port number.
+        if (it.scheme() == stripped_url.scheme() &&
+            it.host() == stripped_url.host()) {
+          RecordSkipReason(
+              ServiceWorkerControlleeRequestHandler::FetchHandlerSkipReason::
+                  kMainResourceSkippedBecauseMatchedWithAllowedOriginList);
+          return true;
+        }
+      }
+      return false;
+  }
+
+  NOTREACHED();
+  return false;
+}
+
+bool ShouldBypassFetchHandlerForMainResourceByOriginTrial(
+    ServiceWorkerVersion* version) {
+  if (version->origin_trial_tokens() &&
+      version->origin_trial_tokens()->contains(
+          "ServiceWorkerBypassFetchHandlerForMainResource")) {
+    RecordSkipReason(
+        ServiceWorkerControlleeRequestHandler::FetchHandlerSkipReason::
+            kMainResourceSkippedDueToOriginTrial);
+    // The UseCounter for kServiceWorkerBypassFetchHandlerForMainResource should
+    // only capture the usage of this feature invoked by the Origin Trial for
+    // the OT measurement purpose.
+    version->CountFeature(blink::mojom::WebFeature::
+                              kServiceWorkerBypassFetchHandlerForMainResource);
+    return true;
+  }
+
+  return false;
+}
 
 }  // namespace
 
@@ -138,13 +242,11 @@ void ServiceWorkerControlleeRequestHandler::MaybeCreateLoader(
   // request interception, or if the context is gone so we have to bypass
   // anyway.
   if (skip_service_worker_ || !context_) {
-    ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigationOnBrowserStartup(
-        true);
+    ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigation(true);
     std::move(loader_callback).Run({});
     return;
   }
-  ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigationOnBrowserStartup(
-      false);
+  ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigation(false);
 
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
   // Fall back for the subsequent offline page interceptor to load the offline
@@ -195,7 +297,6 @@ void ServiceWorkerControlleeRequestHandler::InitializeContainerHost(
   storage_key_ = storage_key;
 
   container_host_->UpdateUrls(stripped_url_,
-                              tentative_resource_request.site_for_cookies,
                               // TODO(1199077): Use top_frame_origin from
                               // `storage_key_` instead, since that is populated
                               // also for workers.
@@ -211,9 +312,8 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithRegistration(
     blink::ServiceWorkerStatusCode status,
     scoped_refptr<ServiceWorkerRegistration> registration) {
   if (!start_time.is_null()) {
-    ServiceWorkerMetrics::
-        RecordFirstFindRegistrationForClientUrlTimeOnBrowserStartup(
-            base::TimeTicks::Now() - start_time);
+    ServiceWorkerMetrics::RecordFindRegistrationForClientUrlTime(
+        base::TimeTicks::Now() - start_time);
   }
 
   if (status != blink::ServiceWorkerStatusCode::kOk) {
@@ -406,18 +506,74 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
   DCHECK_NE(active_version->fetch_handler_existence(),
             ServiceWorkerVersion::FetchHandlerExistence::UNKNOWN);
 
+  base::UmaHistogramEnumeration(
+      "ServiceWorker.FetchHandler."
+      "TypeAtContinueWithActivatedVersion",
+      active_version->fetch_handler_type());
+
   if (blink::IsRequestDestinationFrame(destination_))
     container_host_->AddServiceWorkerToUpdate(active_version);
 
-  if (active_version->fetch_handler_existence() !=
-      ServiceWorkerVersion::FetchHandlerExistence::EXISTS) {
-    TRACE_EVENT_WITH_FLOW1(
-        "ServiceWorker",
-        "ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion",
-        TRACE_ID_LOCAL(this),
-        TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "Info",
-        "Skipped the ServiceWorker which has no fetch handler");
+  switch (active_version->EffectiveFetchHandlerType()) {
+    case ServiceWorkerVersion::FetchHandlerType::kNoHandler: {
+      RecordSkipReason(FetchHandlerSkipReason::kNoFetchHandler);
+      TRACE_EVENT_WITH_FLOW1(
+          "ServiceWorker",
+          "ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion",
+          TRACE_ID_LOCAL(this),
+          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "Info",
+          "Skipping the ServiceWorker which has no fetch handler");
+      CompleteWithoutLoader();
+      return;
+    }
+    case ServiceWorkerVersion::FetchHandlerType::kEmptyFetchHandler: {
+      RecordSkipReason(FetchHandlerSkipReason::kSkippedForEmptyFetchHandler);
+      TRACE_EVENT_WITH_FLOW2(
+          "ServiceWorker",
+          "ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion",
+          TRACE_ID_LOCAL(this),
+          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "Info",
+          "The fetch handler is skippable. Falling back to network",
+          "FetchHandlerType",
+          FetchHandlerTypeToString(
+              active_version->EffectiveFetchHandlerType()));
+      registration->active_version()->CountFeature(
+          blink::mojom::WebFeature::kServiceWorkerSkippedForEmptyFetchHandler);
+      CompleteWithoutLoader();
+      return;
+    }
+    case ServiceWorkerVersion::FetchHandlerType::kNotSkippable: {
+      RecordSkipReason(FetchHandlerSkipReason::kNotSkipped);
+      TRACE_EVENT_WITH_FLOW1(
+          "ServiceWorker",
+          "ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion",
+          TRACE_ID_LOCAL(this),
+          TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "Info",
+          "Forwarding to the ServiceWorker");
+      break;
+    }
+  }
+
+  // Check if the fetch handler should bypassed or not.
+  // First, check the origin trial token. If there is no valid origin trial
+  // token, then check the eligibility based on the feature flag and the url.
+  if (ShouldBypassFetchHandlerForMainResourceByOriginTrial(
+          registration->active_version()) ||
+      ShouldBypassFetchHandlerForMainResource(stripped_url_)) {
+    // If true, the main resource request bypasses ServiceWorker and starts the
+    // worker in parallel for subsequent subresources.
     CompleteWithoutLoader();
+    if (registration->active_version()->running_status() ==
+            EmbeddedWorkerStatus::STARTING ||
+        registration->active_version()->running_status() ==
+            EmbeddedWorkerStatus::RUNNING) {
+      return;
+    }
+    registration->active_version()->StartWorker(
+        ServiceWorkerMetrics::EventType::BYPASS_MAIN_RESOURCE,
+        base::BindOnce(&ServiceWorkerControlleeRequestHandler::
+                           DidStartWorkerForSubresources,
+                       weak_factory_.GetWeakPtr()));
     return;
   }
 
@@ -427,16 +583,20 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion(
       std::make_unique<ServiceWorkerMainResourceLoader>(
           std::move(fallback_callback_), container_host_, frame_tree_node_id_));
 
-  TRACE_EVENT_WITH_FLOW1(
-      "ServiceWorker",
-      "ServiceWorkerControlleeRequestHandler::ContinueWithActivatedVersion",
-      TRACE_ID_LOCAL(this),
-      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "Info",
-      "Forwarded to the ServiceWorker");
   std::move(loader_callback_)
-      .Run(base::MakeRefCounted<SingleRequestURLLoaderFactory>(
+      .Run(base::MakeRefCounted<network::SingleRequestURLLoaderFactory>(
           base::BindOnce(&ServiceWorkerMainResourceLoader::StartRequest,
                          loader_wrapper_->get()->AsWeakPtr())));
+}
+
+void ServiceWorkerControlleeRequestHandler::DidStartWorkerForSubresources(
+    blink::ServiceWorkerStatusCode status) {
+  TRACE_EVENT_WITH_FLOW1(
+      "ServiceWorker",
+      "ServiceWorkerControlleeRequestHandler::DidStartWorkerForSubresources",
+      TRACE_ID_LOCAL(this),
+      TRACE_EVENT_FLAG_FLOW_IN | TRACE_EVENT_FLAG_FLOW_OUT, "Status",
+      blink::ServiceWorkerStatusToString(status));
 }
 
 void ServiceWorkerControlleeRequestHandler::DidUpdateRegistration(

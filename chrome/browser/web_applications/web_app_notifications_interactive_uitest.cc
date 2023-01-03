@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,7 +60,7 @@ class WebAppNotificationsBrowserTest : public WebAppControllerBrowserTest {
 
   content::EvalJsResult AwaitScript(const std::string& script) {
     content::EvalJsResult js_result =
-        content::EvalJs(GetActiveWebContents()->GetMainFrame(), script,
+        content::EvalJs(GetActiveWebContents()->GetPrimaryMainFrame(), script,
                         content::EXECUTE_SCRIPT_DEFAULT_OPTIONS);
 
     // Purges all pending messages to propagate them to notification views.
@@ -98,7 +98,7 @@ class WebAppNotificationsBrowserTest : public WebAppControllerBrowserTest {
   std::unique_ptr<NotificationDisplayServiceTester> display_service_tester_;
 
   // Can be different from browser();
-  raw_ptr<Browser> app_browser_ = nullptr;
+  raw_ptr<Browser, DanglingUntriaged> app_browser_ = nullptr;
 };
 
 #if BUILDFLAG(IS_CHROMEOS)

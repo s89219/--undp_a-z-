@@ -1,14 +1,13 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {Destination, DestinationOrigin, DuplexMode, makeRecentDestination, MarginsType, PrinterType, PrintPreviewModelElement, PrintTicket, RecentDestination, ScalingType, Size} from 'chrome://print/print_preview.js';
-// <if expr="chromeos_ash or chromeos_lacros">
+// <if expr="is_chromeos">
 import {GooglePromotedDestinationId} from 'chrome://print/print_preview.js';
 // </if>
-import {assert} from 'chrome://resources/js/assert.m.js';
-// <if expr="chromeos_ash or chromeos_lacros">
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+// <if expr="is_chromeos">
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 // </if>
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
@@ -37,7 +36,7 @@ suite(model_test.suiteName, function() {
   let model: PrintPreviewModelElement;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     model = document.createElement('print-preview-model');
     document.body.appendChild(model);
   });
@@ -46,7 +45,7 @@ suite(model_test.suiteName, function() {
    * Tests state restoration with all boolean settings set to true, scaling =
    * 90, dpi = 100, custom square paper, and custom margins.
    */
-  test(assert(model_test.TestNames.SetStickySettings), function() {
+  test(model_test.TestNames.SetStickySettings, function() {
     // Default state of the model.
     const stickySettingsDefault: {[key: string]: any} = {
       version: 2,
@@ -65,7 +64,7 @@ suite(model_test.suiteName, function() {
       isLandscapeEnabled: false,
       isColorEnabled: true,
       vendorOptions: {},
-      // <if expr="chromeos_ash or chromeos_lacros">
+      // <if expr="is_chromeos">
       isPinEnabled: false,
       pinValue: '',
       // </if>
@@ -92,7 +91,7 @@ suite(model_test.suiteName, function() {
         paperType: 1,
         printArea: 6,
       },
-      // <if expr="chromeos_ash or chromeos_lacros">
+      // <if expr="is_chromeos">
       isPinEnabled: true,
       pinValue: '0000',
       // </if>
@@ -157,7 +156,7 @@ suite(model_test.suiteName, function() {
             .then(() => testStickySetting('scalingType', 'scalingType'))
             .then(() => testStickySetting('scalingTypePdf', 'scalingTypePdf'))
             .then(() => testStickySetting('vendorItems', 'vendorOptions'));
-    // <if expr="chromeos_ash or chromeos_lacros">
+    // <if expr="is_chromeos">
     promise = promise.then(() => testStickySetting('pin', 'isPinEnabled'))
                   .then(() => testStickySetting('pinValue', 'pinValue'));
     // </if>
@@ -168,7 +167,7 @@ suite(model_test.suiteName, function() {
    * Tests that setSetting() won't change the value if there is already a
    * policy for that setting.
    */
-  test(assert(model_test.TestNames.SetPolicySettings), function() {
+  test(model_test.TestNames.SetPolicySettings, function() {
     model.setSetting('headerFooter', false);
     assertFalse(model.settings.headerFooter.value as boolean);
 
@@ -226,7 +225,7 @@ suite(model_test.suiteName, function() {
         paperType: 1,
       },
       ranges: [{from: 2, to: 2}],
-      // <if expr="chromeos_ash or chromeos_lacros">
+      // <if expr="is_chromeos">
       pin: true,
       pinValue: '0000',
       // </if>
@@ -267,18 +266,18 @@ suite(model_test.suiteName, function() {
    * Tests that toggling each setting results in the expected change to the
    * print ticket.
    */
-  test(assert(model_test.TestNames.GetPrintTicket), function() {
-    // <if expr="chromeos_ash or chromeos_lacros">
+  test(model_test.TestNames.GetPrintTicket, function() {
+    // <if expr="is_chromeos">
     const origin = DestinationOrigin.CROS;
     // </if>
-    // <if expr="not chromeos_ash and not chromeos_lacros">
+    // <if expr="not is_chromeos">
     const origin = DestinationOrigin.LOCAL;
     // </if>
     const testDestination = new Destination('FooDevice', origin, 'FooName');
     testDestination.capabilities =
         getCddTemplateWithAdvancedSettings(2, 'FooDevice').capabilities;
 
-    // <if expr="chromeos_ash or chromeos_lacros">
+    // <if expr="is_chromeos">
     // Make device managed. It's used for testing pin setting behavior.
     loadTimeData.overrideValues({isEnterpriseManaged: true});
     // </if>
@@ -312,7 +311,7 @@ suite(model_test.suiteName, function() {
       pageWidth: 612,
       pageHeight: 792,
       showSystemDialog: false,
-      // <if expr="chromeos_ash or chromeos_lacros">
+      // <if expr="is_chromeos">
       printToGoogleDrive: false,
       advancedSettings: {
         printArea: 4,
@@ -350,7 +349,7 @@ suite(model_test.suiteName, function() {
       pageWidth: 612,
       pageHeight: 792,
       showSystemDialog: false,
-      // <if expr="chromeos_ash or chromeos_lacros">
+      // <if expr="is_chromeos">
       printToGoogleDrive: false,
       // </if>
       marginsCustom: {
@@ -359,7 +358,7 @@ suite(model_test.suiteName, function() {
         marginBottom: 300,
         marginLeft: 400,
       },
-      // <if expr="chromeos_ash or chromeos_lacros">
+      // <if expr="is_chromeos">
       pinValue: '0000',
       advancedSettings: {
         printArea: 6,
@@ -375,7 +374,7 @@ suite(model_test.suiteName, function() {
    * Tests that toggling each setting results in the expected change to the
    * cloud job print ticket.
    */
-  test(assert(model_test.TestNames.GetCloudPrintTicket), function() {
+  test(model_test.TestNames.GetCloudPrintTicket, function() {
     initializeModel();
 
     // Create a test extension destination.
@@ -442,7 +441,7 @@ suite(model_test.suiteName, function() {
     assertEquals(expectedNewTicket, newTicket);
   });
 
-  test(assert(model_test.TestNames.RemoveUnsupportedDestinations), function() {
+  test(model_test.TestNames.RemoveUnsupportedDestinations, function() {
     const unsupportedPrivet =
         new Destination('PrivetDevice', DestinationOrigin.PRIVET, 'PrivetName');
     const unsupportedCloud =
@@ -480,7 +479,7 @@ suite(model_test.suiteName, function() {
     assertEquals('FooDevice', recentDestinations[0]!.id);
   });
 
-  test(assert(model_test.TestNames.ChangeDestination), function() {
+  test(model_test.TestNames.ChangeDestination, function() {
     const testDestination =
         new Destination('FooDevice', DestinationOrigin.LOCAL, 'FooName');
     testDestination.capabilities =
@@ -489,8 +488,8 @@ suite(model_test.suiteName, function() {
     testDestination.capabilities!.printer!.color = {
       option: [
         {type: 'STANDARD_COLOR'},
-        {type: 'STANDARD_MONOCHROME', is_default: true}
-      ]
+        {type: 'STANDARD_MONOCHROME', is_default: true},
+      ],
     };
 
     const testDestination2 =
@@ -547,23 +546,23 @@ suite(model_test.suiteName, function() {
           custom_display_name: 'A4',
           is_default: true,
         },
-      ]
+      ],
     };
     testDestination3.capabilities!.printer!.color = {
       option: [
         {type: 'STANDARD_MONOCHROME', is_default: true},
-      ]
+      ],
     };
     testDestination3.capabilities!.printer!.duplex = {
       option: [
         {type: 'NO_DUPLEX', is_default: true},
-      ]
+      ],
     };
     testDestination3.capabilities!.printer!.dpi = {
       option: [
         {horizontal_dpi: 400, vertical_dpi: 400, is_default: true},
         {horizontal_dpi: 800, vertical_dpi: 800},
-      ]
+      ],
     };
 
     model.destination = testDestination3;
@@ -578,10 +577,10 @@ suite(model_test.suiteName, function() {
     assertEquals(false, model.getSettingValue('duplex'));
   });
 
-  // <if expr="chromeos_ash or chromeos_lacros">
+  // <if expr="is_chromeos">
   // Tests that printToGoogleDrive is set correctly on the print ticket for Save
   // to Drive CrOS.
-  test(assert(model_test.TestNames.PrintToGoogleDriveCros), function() {
+  test(model_test.TestNames.PrintToGoogleDriveCros, function() {
     const driveDestination = new Destination(
         GooglePromotedDestinationId.SAVE_TO_DRIVE_CROS, DestinationOrigin.LOCAL,
         'Save to Google Drive');
@@ -601,7 +600,7 @@ suite(model_test.suiteName, function() {
    * - if `reset_to_default`=false, the value of the setting will always be read
    * from the sticky settings.
    */
-  test(assert(model_test.TestNames.CddResetToDefault), function() {
+  test(model_test.TestNames.CddResetToDefault, function() {
     const cddColorEnabled = true;
     const stickyColorEnabled = false;
     const cddDuplexEnabled = false;
@@ -624,16 +623,17 @@ suite(model_test.suiteName, function() {
           color: {
             option: [
               {type: 'STANDARD_COLOR', is_default: true},
-              {type: 'STANDARD_MONOCHROME'}
+              {type: 'STANDARD_MONOCHROME'},
             ],
-            reset_to_default: resetToDefault
+            reset_to_default: resetToDefault,
           },
           duplex: {
             option: [
-              {type: 'NO_DUPLEX', is_default: true}, {type: 'LONG_EDGE'},
-              {type: 'SHORT_EDGE'}
+              {type: 'NO_DUPLEX', is_default: true},
+              {type: 'LONG_EDGE'},
+              {type: 'SHORT_EDGE'},
             ],
-            reset_to_default: resetToDefault
+            reset_to_default: resetToDefault,
           },
           dpi: {
             option: [
@@ -644,7 +644,7 @@ suite(model_test.suiteName, function() {
               },
               {horizontal_dpi: stickyDpi, vertical_dpi: stickyDpi},
             ],
-            reset_to_default: resetToDefault
+            reset_to_default: resetToDefault,
           },
           media_size: {
             option: [
@@ -660,11 +660,11 @@ suite(model_test.suiteName, function() {
                 width_microns: 215900,
                 height_microns: 215900,
                 custom_display_name: stickyMediaSizeDisplayName,
-              }
+              },
             ],
-            reset_to_default: resetToDefault
-          }
-        }
+            reset_to_default: resetToDefault,
+          },
+        },
       };
     };
     // Sticky settings that contain different values from the default values

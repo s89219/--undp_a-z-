@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/sequence_bound.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -68,6 +69,15 @@ class ExtensionTelemetryService : public KeyedService {
 
   ~ExtensionTelemetryService() override;
 
+  // Records the signal type when a signal is:
+  // - created externally and passed to extension service using AddSignal OR
+  // - created internally by a signal processor from other signals received.
+  static void RecordSignalType(ExtensionSignalType signal_type);
+
+  // Recorded when a signal is discarded because it contains invalid data (e.g.,
+  // invalid extension id).
+  static void RecordSignalDiscarded(ExtensionSignalType signal_type);
+
   // Enables/disables the service.
   void SetEnabled(bool enable);
   bool enabled() const { return enabled_; }
@@ -106,13 +116,29 @@ class ExtensionTelemetryService : public KeyedService {
   std::unique_ptr<ExtensionTelemetryReportRequest_ExtensionInfo>
   GetExtensionInfoForReport(const extensions::Extension& extension);
 
-  void UploadPersistedFile(std::string report, bool success);
+  void UploadPersistedFile(std::string report);
 
   // Creates access token fetcher based on profile log-in status.
   // Returns nullptr when the user is not signed in.
   std::unique_ptr<SafeBrowsingTokenFetcher> GetTokenFetcher();
 
-  std::unique_ptr<safe_browsing::ExtensionTelemetryPersister> persister_;
+  // Called periodically based on the Telemetry Service timer. If time
+  // elapsed since last upload is less than the reporting interval, persists
+  // a new report, else uploads current report and any persisted reports.
+  void PersistOrUploadData();
+
+  // Uploads an extension telemetry report.
+  void UploadReport(std::unique_ptr<std::string> report);
+
+  // Checks the time of the last upload and if enough time has passed,
+  // uploads telemetry data. Runs on a delayed post task on startup.
+  void StartUploadCheck();
+
+  // The persister object is bound to the threadpool. This prevents the
+  // the read/write operations the `persister_` runs from blocking
+  // the UI thread. It also allows the `persister_` object to be
+  // destroyed cleanly while running tasks during Chrome shutdown.
+  base::SequenceBound<ExtensionTelemetryPersister> persister_;
 
   // The profile with which this instance of the service is associated.
   const raw_ptr<Profile> profile_;
@@ -152,6 +178,11 @@ class ExtensionTelemetryService : public KeyedService {
       base::flat_map<ExtensionSignalType,
                      std::unique_ptr<ExtensionSignalProcessor>>;
   SignalProcessors signal_processors_;
+
+  using SignalSubscribers =
+      base::flat_map<ExtensionSignalType,
+                     std::vector<ExtensionSignalProcessor*>>;
+  SignalSubscribers signal_subscribers_;
 
   friend class ExtensionTelemetryServiceTest;
   friend class ExtensionTelemetryServiceBrowserTest;

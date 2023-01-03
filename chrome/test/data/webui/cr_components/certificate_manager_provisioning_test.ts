@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@ import {CertificateProvisioningBrowserProxy, CertificateProvisioningBrowserProxy
 import {CertificateProvisioningDetailsDialogElement} from 'chrome://resources/cr_components/certificate_manager/certificate_provisioning_details_dialog.js';
 import {CertificateProvisioningEntryElement} from 'chrome://resources/cr_components/certificate_manager/certificate_provisioning_entry.js';
 import {CertificateProvisioningListElement} from 'chrome://resources/cr_components/certificate_manager/certificate_provisioning_list.js';
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
@@ -36,11 +36,9 @@ class TestCertificateProvisioningBrowserProxy extends TestBrowserProxy
     this.methodCalled('refreshCertificateProvisioningProcesses');
   }
 
-  triggerCertificateProvisioningProcessUpdate(
-      certProfileId: string, isDeviceWide: boolean) {
+  triggerCertificateProvisioningProcessUpdate(certProfileId: string) {
     this.methodCalled(
-        'triggerCertificateProvisioningProcessUpdate',
-        {certProfileId, isDeviceWide});
+        'triggerCertificateProvisioningProcessUpdate', certProfileId);
   }
 }
 
@@ -54,6 +52,7 @@ function createSampleCertificateProvisioningProcess(isUpdated: boolean):
     stateId: 8,
     status: isUpdated ? 'dummyStateName2' : 'dummyStateName',
     timeSinceLastUpdate: 'dummyTimeSinceLastUpdate',
+    lastUnsuccessfulMessage: 'dummyLastUnsuccessfulMessage',
   };
 }
 
@@ -127,6 +126,7 @@ suite('CertificateManagerProvisioningTests', function() {
 
     return browserProxy.whenCalled('refreshCertificateProvisioningProcesses')
         .then(function() {
+          browserProxy.resetResolver('refreshCertificateProvisioningProcesses');
           webUIListenerCallback(
               'certificate-provisioning-processes-changed',
               [createSampleCertificateProvisioningProcess(false)]);
@@ -151,8 +151,8 @@ suite('CertificateManagerProvisioningTests', function() {
           composed: true,
           detail: {
             model: createSampleCertificateProvisioningProcess(false),
-            anchor: anchorForTest
-          }
+            anchor: anchorForTest,
+          },
         }));
 
     return whenDialogOpen
@@ -171,6 +171,25 @@ suite('CertificateManagerProvisioningTests', function() {
           assertFalse(!!dialog);
         });
   });
+
+  test('OpensDialog_RefreshesData', async function() {
+    const dialogId = 'certificate-provisioning-details-dialog';
+    const anchorForTest = document.createElement('a');
+    document.body.appendChild(anchorForTest);
+    assertFalse(!!certProvisioningList.shadowRoot!.querySelector(dialogId));
+    certProvisioningList.dispatchEvent(
+        new CustomEvent(CertificateProvisioningViewDetailsActionEvent, {
+          bubbles: true,
+          composed: true,
+          detail: {
+            model: createSampleCertificateProvisioningProcess(false),
+            anchor: anchorForTest,
+          },
+        }));
+    const whenRefreshCalled =
+        browserProxy.whenCalled('refreshCertificateProvisioningProcesses');
+    await whenRefreshCalled;
+  });
 });
 
 suite('DetailsDialogTests', function() {
@@ -179,7 +198,7 @@ suite('DetailsDialogTests', function() {
   let dialog: CertificateProvisioningDetailsDialogElement;
 
   setup(async function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     browserProxy = new TestCertificateProvisioningBrowserProxy();
     CertificateProvisioningBrowserProxyImpl.setInstance(browserProxy);
@@ -202,8 +221,8 @@ suite('DetailsDialogTests', function() {
           composed: true,
           detail: {
             model: createSampleCertificateProvisioningProcess(false),
-            anchor: anchorForTest
-          }
+            anchor: anchorForTest,
+          },
         }));
     await whenDialogOpen;
     dialog = certProvisioningList.shadowRoot!.querySelector(dialogId)!;
@@ -216,11 +235,10 @@ suite('DetailsDialogTests', function() {
     // Simulate clicking 'Refresh'.
     dialog.$.refresh.click();
 
-    const {certProfileId, isDeviceWide} = await browserProxy.whenCalled(
+    const certProfileId = await browserProxy.whenCalled(
         'triggerCertificateProvisioningProcessUpdate');
     // Check if the parameters received by function are correct.
     assertEquals(dialog.model.certProfileId, certProfileId);
-    assertEquals(dialog.model.isDeviceWide, isDeviceWide);
     // Check that the dialog is still open.
     assertTrue(dialog.$.dialog.open);
   });

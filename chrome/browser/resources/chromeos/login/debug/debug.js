@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,76 @@
  * @fileoverview Root element of the OOBE UI Debugger.
  */
 
-// #import {addSingletonGetter} from 'chrome://resources/js/cr.m.js';
+// #import {addSingletonGetter} from 'chrome://resources/ash/common/cr_deprecated.js';
 // #import {loadTimeData} from '../i18n_setup.js';
-// #import {Oobe} from '../cr_ui.m.js'
-// #import {$} from 'chrome://resources/js/util.m.js';
-// #import './debug_util.js';
+// #import {Oobe} from '../cr_ui.js'
+// #import {$} from 'chrome://resources/ash/common/util.js';
+// #import {AssistantNativeIconType} from '../../assistant_optin/utils.js';
 
-// #import {MessageType, ProblemType} from 'chrome://resources/cr_components/chromeos/quick_unlock/setup_pin_keyboard.m.js';
+// #import {MessageType, ProblemType} from 'chrome://resources/ash/common/quick_unlock/setup_pin_keyboard.js';
+
+const createAssistantData = (isMinor) => {
+  const data = {};
+  data['valuePropTitle'] =
+      'Value ' + (isMinor ? 'minor ' : 'regular') + ' prop title';
+  data['valuePropNextButton'] = 'Value prop next button';
+  data['valuePropSkipButton'] = 'Value prop skip button';
+  data['valuePropFooter'] = 'Value prop footer';
+  data['equalWeightButtons'] = isMinor;
+  if (isMinor) {
+    data['childName'] = 'Child name';
+  }
+  return data;
+};
+
+const createAssistantZippy = (type, isMinor, isNativeIcons) => {
+  const zippy = {};
+  zippy['isMinorMode'] = isMinor;
+  zippy['title'] = 'Zippy ' + (isMinor ? 'minor ' : 'regular') + ' title';
+  zippy['identity'] = 'Zippy identity';
+  zippy['intro'] = 'Zippy intro';
+  zippy['name'] = 'Zippy ' + type + ' name';
+  zippy['description'] = 'Zippy ' + type + ' description';
+  if (isMinor) {
+    zippy['additionalInfo'] = 'Zippy additional info';
+  }
+  zippy['popupLink'] = 'Zippy popup link';
+  zippy['learnMoreDialogTitle'] = 'Zippy learn more dialog title';
+  zippy['learnMoreDialogContent'] = 'Zippy learn more dialog content';
+  zippy['learnMoreDialogButton'] = 'Zippy learn more dialog button';
+  zippy['useNativeIcons'] = !!isNativeIcons;
+
+  if (isNativeIcons) {
+    if (type === 'WAA') {
+      zippy['nativeIconType'] = AssistantNativeIconType.WAA;
+    } else if (type == 'DA') {
+      zippy['nativeIconType'] = AssistantNativeIconType.DA;
+    } else {
+      console.error('### Uknown zippy type ' + type);
+    }
+  } else {
+    if (type === 'WAA') {
+      if (isMinor) {
+        zippy['iconUri'] =
+            'https://www.gstatic.com/myactivity/icon/icon_fp_history_blue.svg';
+      } else {
+        zippy['iconUri'] =
+            'https://ssl.gstatic.com/identity/boq/consentflowtexts/icon_web_and_app_activity_grey600_72-fb2e66730dca510849d22bee9f0f29ba.png';
+      }
+    } else if (type === 'DA') {
+      if (isMinor) {
+        zippy['iconUri'] =
+            'https://www.gstatic.com/myactivity/icon/icon_fp_chromebook_blue.svg';
+      } else {
+        zippy['iconUri'] =
+            'https://ssl.gstatic.com/identity/boq/consentflowtexts/icon_device_information_vertical_grey600_72-be6f9c8691213019712cfa4106a509e0.png';
+      }
+    } else {
+      console.error('### Uknown zippy type ' + type);
+    }
+  }
+  return zippy;
+};
 
 cr.define('cr.ui.login.debug', function() {
   const DEBUG_BUTTON_STYLE = `
@@ -246,7 +309,7 @@ cr.define('cr.ui.login.debug', function() {
             screen.setError(
                 'ChromeOS was unable to connect to Public Wifi. ' +
                 'Please select another network or try again.');
-          }
+          },
         },
       ],
     },
@@ -293,20 +356,6 @@ cr.define('cr.ui.login.debug', function() {
     {
       id: 'oobe-update',
       kind: ScreenKind.NORMAL,
-      states: [
-        {
-          // Checking for update
-          id: 'check-update',
-        },
-        {
-          // Ask for permission to update over celluar
-          id: 'require-permission-celluar',
-          trigger: (screen) => {
-            screen.onBeforeShow();
-            screen.setUpdateState('cellular');
-          },
-        },
-      ],
     },
     {
       id: 'auto-enrollment-check',
@@ -368,6 +417,15 @@ cr.define('cr.ui.login.debug', function() {
           id: 'creds',
           trigger: (screen) => {
             screen.setUIStep('creds');
+            screen.isDomainJoin = false;
+          },
+          data: {},
+        },
+        {
+          id: 'creds(isDomainJoin)',
+          trigger: (screen) => {
+            screen.setUIStep('creds');
+            screen.isDomainJoin = true;
           },
           data: {},
         },
@@ -424,7 +482,7 @@ cr.define('cr.ui.login.debug', function() {
             screen.setErrorState(2);  // offline
             screen.allowGuestSignin(true);
             screen.allowOfflineLogin(true);
-          }
+          },
         },
       ],
     },
@@ -532,7 +590,7 @@ cr.define('cr.ui.login.debug', function() {
             helpLinkText: 'Learn more',
           },
         },
-      ]
+      ],
     },
     {
       id: 'smart-privacy-protection',
@@ -584,6 +642,13 @@ cr.define('cr.ui.login.debug', function() {
             screen.setShouldShowConfirmationDialog(true);
           },
         },
+        {
+          id: 'rollback-error',
+          trigger: (screen) => {
+            screen.reset();
+            screen.setScreenState(3);
+          },
+        },
       ],
     },
     {
@@ -618,14 +683,14 @@ cr.define('cr.ui.login.debug', function() {
         {
           id: 'default',
           trigger: (screen) => {
-            screen.loadParams({});
+            screen.onBeforeShow({});
           },
         },
         {
           // kAccountsPrefLoginScreenDomainAutoComplete value is set
           id: 'offline-gaia-domain',
           trigger: (screen) => {
-            screen.loadParams({
+            screen.onBeforeShow({
               emailDomain: 'somedomain.com',
             });
           },
@@ -634,7 +699,7 @@ cr.define('cr.ui.login.debug', function() {
           // Device is enterprise-managed.
           id: 'offline-gaia-enterprise',
           trigger: (screen) => {
-            screen.loadParams({
+            screen.onBeforeShow({
               enterpriseDomainManager: 'example.com',
             });
           },
@@ -732,7 +797,7 @@ cr.define('cr.ui.login.debug', function() {
           trigger: (screen) => {
             const error = 'Some error text';
             screen.showErrorDialog(error);
-          }
+          },
         },
       ],
     },
@@ -785,33 +850,33 @@ cr.define('cr.ui.login.debug', function() {
           // Password was scraped
           id: 'scraped',
           trigger: (screen) => {
-            screen.show(
-                'someone@example.com',
-                false,  // manualPasswordInput
-                0,      // attempt count
-                () => {});
+            screen.onBeforeShow({
+              email: 'someone@example.com',
+              manualPasswordInput: false,
+            });
+            screen.showPasswordStep(false);
           },
         },
         {
           // Password was scraped
           id: 'scraped-retry',
           trigger: (screen) => {
-            screen.show(
-                'someone@example.com',
-                false,  // manualPasswordInput
-                1,      // attempt count
-                () => {});
+            screen.onBeforeShow({
+              email: 'someone@example.com',
+              manualPasswordInput: false,
+            });
+            screen.showPasswordStep(true);
           },
         },
         {
           // No password was scraped
           id: 'manual',
           trigger: (screen) => {
-            screen.show(
-                'someone@example.com',
-                true,  // manualPasswordInput
-                0,     // attempt count
-                () => {});
+            screen.onBeforeShow({
+              email: 'someone@example.com',
+              manualPasswordInput: true,
+            });
+            screen.showPasswordStep(false);
           },
         },
       ],
@@ -841,7 +906,7 @@ cr.define('cr.ui.login.debug', function() {
             screen.setArcTransition(3);
             screen.setManagementEntity('example.com');
             screen.setUIStep('progress');
-          }
+          },
         },
         {
           id: 'add-management-unknown-admin',
@@ -849,21 +914,21 @@ cr.define('cr.ui.login.debug', function() {
             screen.setArcTransition(3);
             screen.setManagementEntity('');
             screen.setUIStep('progress');
-          }
+          },
         },
         {
           id: 'error-supervision',
           trigger: (screen) => {
             screen.setArcTransition(1);
             screen.setUIStep('error');
-          }
+          },
         },
         {
           id: 'error-management',
           trigger: (screen) => {
             screen.setArcTransition(3);
             screen.setUIStep('error');
-          }
+          },
         },
       ],
     },
@@ -876,8 +941,12 @@ cr.define('cr.ui.login.debug', function() {
         id: 'skip-revealed',
         trigger: (screen) => {
           screen.showSkipButton();
-        }
+        },
       }],
+    },
+    {
+      id: 'lacros-data-backward-migration',
+      kind: ScreenKind.OTHER,
     },
     {
       id: 'terms-of-service',
@@ -927,8 +996,8 @@ cr.define('cr.ui.login.debug', function() {
             isChildAccount: false,
             isArcRestricted: true,
           },
-        }
-      ]
+        },
+      ],
     },
     {
       id: 'consolidated-consent',
@@ -940,61 +1009,91 @@ cr.define('cr.ui.login.debug', function() {
         {
           id: 'regular-owner',
           trigger: (screen) => {
-            screen.setIsDeviceOwner(true);
+            screen.setUsageOptinHidden(false);
           },
           data: {
             isArcEnabled: true,
             isDemo: false,
             isChildAccount: false,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
           id: 'regular',
           trigger: (screen) => {
-            screen.setIsDeviceOwner(false);
+            screen.setUsageOptinHidden(true);
           },
           data: {
             isArcEnabled: true,
             isDemo: false,
             isChildAccount: false,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
+          },
+        },
+        {
+          id: 'regular-recovery',
+          trigger: (screen) => {
+            screen.setUsageOptinHidden(true);
+          },
+          data: {
+            isArcEnabled: true,
+            isDemo: false,
+            isChildAccount: false,
+            isTosHidden: false,
+            googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
+            crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: true,
+            recoveryOptionDefault: true,
           },
         },
         {
           id: 'child-owner',
           trigger: (screen) => {
-            screen.setIsDeviceOwner(true);
+            screen.setUsageOptinHidden(false);
           },
           data: {
             isArcEnabled: true,
             isDemo: false,
             isChildAccount: true,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
           id: 'child',
           trigger: (screen) => {
-            screen.setIsDeviceOwner(false);
+            screen.setUsageOptinHidden(true);
           },
           data: {
             isArcEnabled: true,
             isDemo: false,
             isChildAccount: true,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
@@ -1003,40 +1102,49 @@ cr.define('cr.ui.login.debug', function() {
             isArcEnabled: true,
             isDemo: true,
             isChildAccount: false,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
           id: 'arc-disabled-owner',
           trigger: (screen) => {
-            screen.setIsDeviceOwner(true);
+            screen.setUsageOptinHidden(false);
           },
           data: {
             isArcEnabled: false,
             isDemo: false,
             isChildAccount: false,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
           id: 'arc-disabled',
           trigger: (screen) => {
-            screen.setIsDeviceOwner(false);
+            screen.setUsageOptinHidden(true);
           },
           data: {
             isArcEnabled: false,
             isDemo: false,
             isChildAccount: false,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
@@ -1044,36 +1152,46 @@ cr.define('cr.ui.login.debug', function() {
           trigger: (screen) => {
             screen.setBackupMode(true, true);
             screen.setLocationMode(false, true);
-            screen.setIsDeviceOwner(false);
+            screen.setUsageOptinHidden(true);
           },
           data: {
             isArcEnabled: true,
             isDemo: false,
             isChildAccount: false,
-            isEnterpriseManagedAccount: true,
+            isTosHidden: true,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
         {
           id: 'error',
           trigger: (screen) => {
             screen.setUIStep('error');
-            screen.setIsDeviceOwner(true);
+            screen.setUsageOptinHidden(false);
           },
           data: {
             isArcEnabled: true,
             isDemo: false,
             isChildAccount: false,
-            isEnterpriseManagedAccount: false,
+            isTosHidden: false,
             googleEulaUrl: 'https://policies.google.com/terms/embedded?hl=en',
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
-            countryCode: 'us',
+            arcTosUrl: 'https://play.google.com/about/play-terms/embedded/',
+            privacyPolicyUrl: 'https://policies.google.com/privacy/embedded',
+            showRecoveryOption: false,
+            recoveryOptionDefault: false,
           },
         },
 
-      ]
+      ],
+    },
+    {
+      id: 'cryptohome-recovery-setup',
+      kind: ScreenKind.NORMAL,
     },
     {
       id: 'guest-tos',
@@ -1122,11 +1240,15 @@ cr.define('cr.ui.login.debug', function() {
             crosEulaUrl: 'https://www.google.com/intl/en/chrome/terms/',
           },
         },
-      ]
+      ],
     },
     {
       id: 'hw-data-collection',
       kind: ScreenKind.OTHER,
+    },
+    {
+      id: 'local-state-error',
+      kind: ScreenKind.ERROR,
     },
     {
       id: 'fingerprint-setup',
@@ -1171,23 +1293,23 @@ cr.define('cr.ui.login.debug', function() {
           id: 'clear-error',
           trigger: (screen) => {
             (screen.$).pinKeyboard.hideProblem_();
-          }
+          },
         },
         {
           id: 'error-warning',
           trigger: (screen) => {
             (screen.$).pinKeyboard.showProblem_(
                 MessageType.TOO_WEAK, ProblemType.WARNING);
-          }
+          },
         },
         {
           id: 'error-error',
           trigger: (screen) => {
             (screen.$).pinKeyboard.showProblem_(
                 MessageType.TOO_LONG, ProblemType.ERROR);
-          }
-        }
-      ]
+          },
+        },
+      ],
     },
     {
       id: 'arc-tos',
@@ -1209,50 +1331,8 @@ cr.define('cr.ui.login.debug', function() {
         },
       ],
     },
-    // TODO(crbug.com/1261902): Remove.
     {
-      id: 'recommend-apps-old',
-      kind: ScreenKind.NORMAL,
-      handledSteps: 'list',
-      // Known issue: reset() does not clear list of apps, so loadAppList
-      // will append apps instead of replacing.
-      states: [
-        {
-          id: '2-apps',
-          trigger: (screen) => {
-            screen.reset();
-            screen.setWebview(RECOMMENDED_APPS_OLD_CONTENT);
-            screen.loadAppList([
-              {
-                name: 'Test app 1',
-                package_name: 'test1.app',
-              },
-              {
-                name: 'Test app 2 with some really long name',
-                package_name: 'test2.app',
-              },
-            ]);
-          },
-        },
-        {
-          id: '21-apps',
-          trigger: (screen) => {
-            // There can be up to 21 apps: see recommend_apps_fetcher_impl
-            screen.reset();
-            screen.setWebview(RECOMMENDED_APPS_OLD_CONTENT);
-            const apps = [];
-            for (let i = 1; i <= 21; i++) {
-              apps.push({
-                name: 'Test app ' + i,
-                package_name: 'app.test' + i,
-              });
-            }
-            screen.loadAppList(apps);
-          },
-        },
-      ],
-    },
-    {
+      // TODO(https://crbug.com/1261902): update debug overlay
       id: 'recommend-apps',
       kind: ScreenKind.NORMAL,
       handledSteps: 'list',
@@ -1263,33 +1343,24 @@ cr.define('cr.ui.login.debug', function() {
           id: '2-apps',
           trigger: (screen) => {
             screen.reset();
-            screen.setWebview(RECOMMENDED_APPS_CONTENT);
             screen.loadAppList([
               {
-                name: 'Test app 1',
-                package_name: 'test1.app',
+                title: 'gApp',
+                icon_url: 'https://www.google.com/favicon.ico',
+                category: 'Games',
+                in_app_purchases: true,
+                was_installed: false,
+                content_rating: '',
               },
               {
-                name: 'Test app 2 with some really long name',
-                package_name: 'test2.app',
+                title: 'anotherGapp',
+                icon_url: 'https://www.google.com/favicon.ico',
+                category: 'Games',
+                in_app_purchases: true,
+                was_installed: false,
+                content_rating: '',
               },
             ]);
-          },
-        },
-        {
-          id: '21-apps',
-          trigger: (screen) => {
-            // There can be up to 21 apps: see recommend_apps_fetcher_impl
-            screen.reset();
-            screen.setWebview(RECOMMENDED_APPS_CONTENT);
-            const apps = [];
-            for (let i = 1; i <= 21; i++) {
-              apps.push({
-                name: 'Test app ' + i,
-                package_name: 'app.test' + i,
-              });
-            }
-            screen.loadAppList(apps);
           },
         },
       ],
@@ -1309,23 +1380,123 @@ cr.define('cr.ui.login.debug', function() {
           },
         },
         {
-          id: 'related_info skip_activity_control=true',
+          id: 'value_prop',
           trigger: (screen) => {
-            ((screen.$).card.$).relatedInfo.skipActivityControl_ = true;
+            (screen.$).card.onReload();
+            (screen.$).card.showStep('value-prop');
+            (screen.$).card.reloadContent(
+                createAssistantData(/*isMinor=*/ false));
+
+            const zippies = [[]];
+            zippies[0].push(createAssistantZippy(
+                'WAA', /*isMinor=*/ false, /*isNativeIcons=*/ false));
+            zippies[0].push(createAssistantZippy(
+                'DA', /*isMinor=*/ false, /*isNativeIcons=*/ false));
+
+            (screen.$).card.addSettingZippy('settings', zippies);
+          },
+        },
+        {
+          id: 'value_prop_minor',
+          trigger: (screen) => {
+            (screen.$).card.onReload();
+            (screen.$).card.showStep('value-prop');
+            (screen.$).card.reloadContent(
+                createAssistantData(/*isMinor=*/ true));
+
+            const zippies = [[]];
+            zippies[0].push(createAssistantZippy('WAA', /*isMinor=*/ true));
+            zippies[0].push(createAssistantZippy('DA', /*isMinor=*/ true));
+
+            (screen.$).card.addSettingZippy('settings', zippies);
+          },
+        },
+        {
+          id: 'value_prop_native_icons',
+          trigger: (screen) => {
+            (screen.$).card.onReload();
+            (screen.$).card.showStep('value-prop');
+            (screen.$).card.reloadContent(
+                createAssistantData(/*isMinor=*/ false));
+
+            const zippies = [[]];
+            zippies[0].push(createAssistantZippy(
+                'WAA', /*isMinor=*/ false, /*isNativeIcons=*/ true));
+            zippies[0].push(createAssistantZippy(
+                'DA', /*isMinor=*/ false, /*isNativeIcons=*/ true));
+
+            (screen.$).card.addSettingZippy('settings', zippies);
+          },
+        },
+        {
+          id: 'value_prop_minor_native_icons',
+          trigger: (screen) => {
+            (screen.$).card.onReload();
+            (screen.$).card.showStep('value-prop');
+            (screen.$).card.reloadContent(
+                createAssistantData(/*isMinor=*/ false));
+
+            const zippies = [[]];
+            zippies[0].push(createAssistantZippy(
+                'WAA', /*isMinor=*/ true, /*isNativeIcons=*/ true));
+            zippies[0].push(createAssistantZippy(
+                'DA', /*isMinor=*/ true, /*isNativeIcons=*/ true));
+
+            (screen.$).card.addSettingZippy('settings', zippies);
+          },
+        },
+        {
+          id: 'related_info',
+          trigger: (screen) => {
+            const data = createAssistantData(/*isMinor=*/ false);
+            data['activityControlNeeded'] = false;
+            (screen.$).card.reloadContent(data);
             (screen.$).card.showStep('related-info');
           },
         },
         {
-          id: 'related_info skip_activity_control=false',
+          id: 'related_info activityControlNeeded',
           trigger: (screen) => {
-            ((screen.$).card.$).relatedInfo.skipActivityControl_ = false;
+            const data = createAssistantData(/*isMinor=*/ false);
+            data['activityControlNeeded'] = true;
+            (screen.$).card.reloadContent(data);
             (screen.$).card.showStep('related-info');
           },
         },
         {
-          id: 'voice_match_begin',
+          id: 'related_info native icons',
+          trigger: (screen) => {
+            const data = createAssistantData(/*isMinor=*/ false);
+            data['activityControlNeeded'] = false;
+            data['useNativeIcons'] = true;
+            (screen.$).card.reloadContent(data);
+            (screen.$).card.showStep('related-info');
+          },
+        },
+        {
+          id: 'related_info isMinor nativeIcons',
+          trigger: (screen) => {
+            const data = createAssistantData(/*isMinor=*/ true);
+            data['activityControlNeeded'] = false;
+            data['useNativeIcons'] = true;
+            (screen.$).card.reloadContent(data);
+            (screen.$).card.showStep('related-info');
+          },
+        },
+        {
+          id: 'voice_match_begin laptop',
           trigger: (screen) => {
             (screen.$).card.showStep('voice-match');
+            ((screen.$).card.$).voiceMatch.setUIStep('intro');
+            ((screen.$).card.$).voiceMatch.isTabletMode_ = false;
+          },
+        },
+        {
+          id: 'voice_match_begin tablet',
+          trigger: (screen) => {
+            (screen.$).card.showStep('voice-match');
+            ((screen.$).card.$).voiceMatch.setUIStep('intro');
+            ((screen.$).card.$).voiceMatch.isTabletMode_ = true;
           },
         },
         {
@@ -1365,6 +1536,31 @@ cr.define('cr.ui.login.debug', function() {
       kind: ScreenKind.NORMAL,
     },
     {
+      id: 'kiosk-enable',
+      kind: ScreenKind.NORMAL,
+    },
+    {
+      id: 'choobe',
+      kind: ScreenKind.NORMAL,
+      handledSteps: 'overview',
+      states: [
+        {
+          id: 'overview',
+          data: {
+            screens: [
+              {
+                title: 'choobeThemeSelectionTileTitle',
+                icon: 'oobe-32:stars',
+                selected: false,
+                screenID: 'screenID',
+              },
+            ],
+          },
+        },
+      ],
+    },
+
+    {
       id: 'marketing-opt-in',
       kind: ScreenKind.NORMAL,
       handledSteps: 'overview',
@@ -1375,6 +1571,7 @@ cr.define('cr.ui.login.debug', function() {
             optInVisibility: true,
             optInDefaultState: true,
             legalFooterVisibility: false,
+            cloudGamingDevice: false,
           },
           trigger: (screen) => {
             screen.setUIStep('overview');
@@ -1387,6 +1584,7 @@ cr.define('cr.ui.login.debug', function() {
             optInVisibility: false,
             optInDefaultState: false,
             legalFooterVisibility: false,
+            cloudGamingDevice: false,
           },
           trigger: (screen) => {
             screen.setUIStep('overview');
@@ -1399,6 +1597,7 @@ cr.define('cr.ui.login.debug', function() {
             optInVisibility: true,
             optInDefaultState: true,
             legalFooterVisibility: true,
+            cloudGamingDevice: false,
           },
           trigger: (screen) => {
             screen.setUIStep('overview');
@@ -1411,6 +1610,7 @@ cr.define('cr.ui.login.debug', function() {
             optInVisibility: true,
             optInDefaultState: true,
             legalFooterVisibility: true,
+            cloudGamingDevice: false,
           },
           trigger: (screen) => {
             screen.setUIStep('overview');
@@ -1418,6 +1618,10 @@ cr.define('cr.ui.login.debug', function() {
           },
         },
       ],
+    },
+    {
+      id: 'cryptohome-recovery',
+      kind: ScreenKind.NORMAL,
     },
   ];
 
@@ -1566,7 +1770,7 @@ cr.define('cr.ui.login.debug', function() {
         () => {
           this.debuggerButton_.setAttribute('hidden', true);
         },
-        BUTTON_COMMAND_DELAY
+        BUTTON_COMMAND_DELAY,
       ];
     }
 
@@ -1575,7 +1779,7 @@ cr.define('cr.ui.login.debug', function() {
         () => {
           this.debuggerButton_.removeAttribute('hidden');
         },
-        BUTTON_COMMAND_DELAY
+        BUTTON_COMMAND_DELAY,
       ];
     }
 
@@ -1586,7 +1790,7 @@ cr.define('cr.ui.login.debug', function() {
         () => {
           this.triggerScreenState(screenId, stateId);
         },
-        SCREEN_LOADING_DELAY
+        SCREEN_LOADING_DELAY,
       ];
     }
 
@@ -1598,7 +1802,7 @@ cr.define('cr.ui.login.debug', function() {
           console.info('Making screenshot for ' + id);
           chrome.send('debug.captureScreenshot', [id]);
         },
-        SCREENSHOT_CAPTURE_DELAY
+        SCREENSHOT_CAPTURE_DELAY,
       ];
     }
 
@@ -1691,6 +1895,20 @@ cr.define('cr.ui.login.debug', function() {
       });
     }
 
+    toggleGameMode() {
+      KNOWN_SCREENS.forEach((screen, index) => {
+        if (screen.id == 'marketing-opt-in') {
+          for (const state of screen.states) {
+            if (state.data) {
+              state.data.cloudGamingDevice = !state.data.cloudGamingDevice;
+            }
+          }
+        }
+      });
+
+      this.triggerScreenState(this.currentScreenId_, this.lastScreenState_);
+    }
+
     createLanguagePanel(parent) {
       const langPanel = new ToolPanel(
           this.debuggerOverlay_, 'Language', 'DebuggerPanelLanguage');
@@ -1705,7 +1923,7 @@ cr.define('cr.ui.login.debug', function() {
       ];
       LANGUAGES.forEach(function(pair) {
         new DebugButton(langPanel.content, pair[0], function(locale) {
-          chrome.send('WelcomeScreen.setLocaleId', [locale]);
+          chrome.send('login.WelcomeScreen.userActed', ['setLocaleId', locale]);
         }.bind(null, pair[1]));
       });
     }
@@ -1724,6 +1942,10 @@ cr.define('cr.ui.login.debug', function() {
       new DebugButton(panel.content, 'Toggle color mode', function() {
         chrome.send('debug.toggleColorMode');
       });
+      var button = new DebugButton(
+          panel.content, 'Toggle gaming mode', this.toggleGameMode.bind(this));
+
+      button.element.classList.add('gametoggle-button');
     }
 
     createScreensPanel(parent) {
@@ -1868,6 +2090,14 @@ cr.define('cr.ui.login.debug', function() {
         if (state.id == this.lastScreenState_) {
           button.element.classList.add('debug-button-selected');
         }
+      }
+
+      if (this.currentScreenId_ == 'marketing-opt-in') {
+        document.getElementsByClassName('gametoggle-button')[0].removeAttribute(
+            'hidden');
+      } else {
+        document.getElementsByClassName('gametoggle-button')[0].setAttribute(
+            'hidden', true);
       }
 
       this.statesPanel.show();

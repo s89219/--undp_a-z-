@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,8 +22,6 @@
 #include "chrome/browser/ui/passwords/password_dialog_prompts.h"
 #include "chrome/browser/ui/passwords/passwords_model_delegate.h"
 #include "chrome/browser/ui/passwords/ui_utils.h"
-#include "chrome/browser/ui/user_education/feature_promo_specification.h"
-#include "chrome/browser/ui/user_education/help_bubble_params.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
 #include "chrome/browser/ui/views/passwords/credentials_item_view.h"
@@ -35,7 +33,8 @@
 #include "chrome/grit/theme_resources.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
-#include "components/password_manager/core/common/password_manager_features.h"
+#include "components/user_education/common/feature_promo_specification.h"
+#include "components/user_education/common/help_bubble_params.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/interaction/element_identifier.h"
@@ -349,11 +348,11 @@ PasswordSaveUpdateView::PasswordSaveUpdateView(
       AddChildView(std::move(destination_dropdown));
 
     const auto titles = GetCredentialLabelsForAccountChooser(password_form);
-    AddChildView(std::make_unique<CredentialsItemView>(
-                     views::Button::PressedCallback(), titles.first,
-                     titles.second, &password_form,
-                     GetURLLoaderForMainFrame(web_contents).get(),
-                     web_contents->GetMainFrame()->GetLastCommittedOrigin()))
+    AddChildView(
+        std::make_unique<CredentialsItemView>(
+            views::Button::PressedCallback(), titles.first, titles.second,
+            &password_form, GetURLLoaderForMainFrame(web_contents).get(),
+            web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin()))
         ->SetEnabled(false);
   } else {
     std::unique_ptr<views::EditableCombobox> username_dropdown =
@@ -439,8 +438,7 @@ PasswordSaveUpdateView::PasswordSaveUpdateView(
                           : &Controller::OnNeverForThisSiteClicked));
   }
 
-  SetShowIcon(base::FeatureList::IsEnabled(
-      password_manager::features::kUnifiedPasswordManagerDesktop));
+  SetShowIcon(true);
   SetFootnoteView(CreateFooterView());
 
   UpdateBubbleUIElements();
@@ -458,10 +456,6 @@ PasswordSaveUpdateView::~PasswordSaveUpdateView() {
   CloseIPHBubbleIfOpen();
 }
 
-views::View* PasswordSaveUpdateView::GetUsernameTextfieldForTest() const {
-  return username_dropdown_->GetTextfieldForTest();
-}
-
 PasswordBubbleControllerBase* PasswordSaveUpdateView::GetController() {
   return &controller_;
 }
@@ -473,7 +467,7 @@ const PasswordBubbleControllerBase* PasswordSaveUpdateView::GetController()
 
 void PasswordSaveUpdateView::DestinationChanged() {
   bool is_account_store_selected =
-      destination_dropdown_->GetSelectedIndex() == 0;
+      destination_dropdown_->GetSelectedIndex() == 0u;
   controller_.OnToggleAccountStore(is_account_store_selected);
   // Saving in account and local stores have action button text for non-opted-in
   // users (Next vs. Save).
@@ -514,10 +508,6 @@ bool PasswordSaveUpdateView::IsDialogButtonEnabled(
 }
 
 ui::ImageModel PasswordSaveUpdateView::GetWindowIcon() {
-  if (!base::FeatureList::IsEnabled(
-          password_manager::features::kUnifiedPasswordManagerDesktop)) {
-    return ui::ImageModel();
-  }
   return ui::ImageModel::FromVectorIcon(GooglePasswordManagerVectorIcon(),
                                         ui::kColorIcon);
 }
@@ -525,12 +515,7 @@ ui::ImageModel PasswordSaveUpdateView::GetWindowIcon() {
 void PasswordSaveUpdateView::AddedToWidget() {
   static_cast<views::Label*>(GetBubbleFrameView()->title())
       ->SetAllowCharacterBreak(true);
-  if (base::FeatureList::IsEnabled(
-          password_manager::features::kUnifiedPasswordManagerDesktop)) {
-    SetBubbleHeader(IDR_SAVE_PASSWORD_V2, IDR_SAVE_PASSWORD_V2_DARK);
-  } else {
-    SetBubbleHeader(IDR_SAVE_PASSWORD, IDR_SAVE_PASSWORD_DARK);
-  }
+  SetBubbleHeader(IDR_SAVE_PASSWORD, IDR_SAVE_PASSWORD_DARK);
   if (ShouldShowFailedReauthIPH())
     MaybeShowIPH(IPHType::kFailedReauth);
   else
@@ -633,18 +618,6 @@ void PasswordSaveUpdateView::UpdateBubbleUIElements() {
 }
 
 std::unique_ptr<views::View> PasswordSaveUpdateView::CreateFooterView() {
-  if (!base::FeatureList::IsEnabled(
-          password_manager::features::kUnifiedPasswordManagerDesktop)) {
-    if (!controller_.ShouldShowFooter())
-      return nullptr;
-    auto label = std::make_unique<views::Label>(
-        l10n_util::GetStringUTF16(IDS_SAVE_PASSWORD_FOOTER),
-        ChromeTextContext::CONTEXT_DIALOG_BODY_TEXT_SMALL,
-        views::style::STYLE_SECONDARY);
-    label->SetMultiLine(true);
-    label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    return label;
-  }
   base::RepeatingClosure open_password_manager_closure = base::BindRepeating(
       [](PasswordSaveUpdateView* dialog) {
         dialog->controller_.OnGooglePasswordManagerLinkClicked();
@@ -697,11 +670,11 @@ void PasswordSaveUpdateView::MaybeShowIPH(IPHType type) {
       }
       break;
     case IPHType::kFailedReauth: {
-      FeaturePromoSpecification promo_spec =
-          FeaturePromoSpecification::CreateForLegacyPromo(
+      auto promo_spec =
+          user_education::FeaturePromoSpecification::CreateForLegacyPromo(
               /* feature =*/nullptr, ui::ElementIdentifier(),
               IDS_PASSWORD_MANAGER_IPH_BODY_SAVE_REAUTH_FAIL);
-      promo_spec.SetBubbleArrow(HelpBubbleArrow::kRightCenter);
+      promo_spec.SetBubbleArrow(user_education::HelpBubbleArrow::kRightCenter);
 
       auto* const anchor_element =
           views::ElementTrackerViews::GetInstance()->GetElementForView(
@@ -727,7 +700,7 @@ void PasswordSaveUpdateView::CloseIPHBubbleIfOpen() {
   if (!promo_controller)
     return;
 
-  promo_controller->CloseBubble(
+  promo_controller->EndPromo(
       feature_engagement::kIPHPasswordsAccountStorageFeature);
 }
 
@@ -742,7 +715,7 @@ void PasswordSaveUpdateView::AnnounceSaveUpdateChange() {
     // For Save bubbles, if the `destination_dropdown_` exists (for account
     // store users), we use the labels in the `destination_dropdown_` instead.
     accessibility_alert_text = destination_dropdown_->GetTextForRow(
-        destination_dropdown_->GetSelectedIndex());
+        destination_dropdown_->GetSelectedIndex().value());
   }
 
   views::ViewAccessibility& ax = accessibility_alert_->GetViewAccessibility();
@@ -775,10 +748,6 @@ void PasswordSaveUpdateView::OnContentChanged() {
 }
 
 void PasswordSaveUpdateView::UpdateFootnote() {
-  if (!base::FeatureList::IsEnabled(
-          password_manager::features::kUnifiedPasswordManagerDesktop)) {
-    return;
-  }
   DCHECK(GetBubbleFrameView());
   GetBubbleFrameView()->SetFootnoteView(CreateFooterView());
 

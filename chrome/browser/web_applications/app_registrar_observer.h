@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_WEB_APPLICATIONS_APP_REGISTRAR_OBSERVER_H_
 
 #include "base/observer_list_types.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 
@@ -27,7 +27,7 @@ class AppRegistrarObserver : public base::CheckedObserver {
 
   virtual void OnWebAppProfileWillBeDeleted(const AppId& app_id) {}
 
-  virtual void OnAppRegistrarDestroyed() {}
+  virtual void OnAppRegistrarDestroyed() = 0;
 
   // Called after remembering the user choice to always launch an app via
   // a given protocol.
@@ -54,7 +54,7 @@ class AppRegistrarObserver : public base::CheckedObserver {
                                           const base::Time& time) {}
   virtual void OnWebAppUserDisplayModeChanged(
       const AppId& app_id,
-      UserDisplayMode user_display_mode) {}
+      mojom::UserDisplayMode user_display_mode) {}
   virtual void OnWebAppRunOnOsLoginModeChanged(
       const AppId& app_id,
       RunOnOsLoginMode run_on_os_login_mode) {}
@@ -63,6 +63,9 @@ class AppRegistrarObserver : public base::CheckedObserver {
   // this event is also fired during browser startup after the policy has been
   // applied.
   virtual void OnWebAppSettingsPolicyChanged() {}
+
+  virtual void OnAlwaysShowToolbarInFullscreenChanged(const AppId& app_id,
+                                                      bool show) {}
 };
 
 }  // namespace web_app

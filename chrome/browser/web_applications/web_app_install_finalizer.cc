@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,28 +6,32 @@
 
 #include <map>
 #include <utility>
-#include <vector>
 
+#include "base/barrier_callback.h"
 #include "base/bind.h"
-#include "base/callback.h"
-#include "base/callback_helpers.h"
 #include "base/containers/contains.h"
+#include "base/containers/flat_set.h"
+#include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/ash/system_web_apps/types/system_web_app_data.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/web_applications/commands/web_app_uninstall_command.h"
 #include "chrome/browser/web_applications/isolation_prefs_utils.h"
-#include "chrome/browser/web_applications/manifest_update_task.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/os_integration/web_app_shortcuts_menu.h"
 #include "chrome/browser/web_applications/policy/web_app_policy_manager.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_command_manager.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_icon_generator.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
@@ -38,19 +42,59 @@
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
 #include "chrome/browser/web_applications/web_app_sync_bridge.h"
-#include "chrome/browser/web_applications/web_app_system_web_app_data.h"
 #include "chrome/browser/web_applications/web_app_translation_manager.h"
 #include "chrome/browser/web_applications/web_app_ui_manager.h"
-#include "chrome/browser/web_applications/web_app_uninstall_job.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/webapps/browser/uninstall_result_code.h"
 #include "content/public/browser/browser_thread.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 namespace web_app {
+namespace {
+
+// Overwrite the user display mode if the install source indicates a
+// user-initiated installation
+bool ShouldInstallOverwriteUserDisplayMode(
+    webapps::WebappInstallSource source) {
+  using InstallSource = webapps::WebappInstallSource;
+  switch (source) {
+    case InstallSource::MENU_BROWSER_TAB:
+    case InstallSource::MENU_CUSTOM_TAB:
+    case InstallSource::AUTOMATIC_PROMPT_BROWSER_TAB:
+    case InstallSource::AUTOMATIC_PROMPT_CUSTOM_TAB:
+    case InstallSource::API_BROWSER_TAB:
+    case InstallSource::API_CUSTOM_TAB:
+    case InstallSource::AMBIENT_BADGE_BROWSER_TAB:
+    case InstallSource::AMBIENT_BADGE_CUSTOM_TAB:
+    case InstallSource::RICH_INSTALL_UI_WEBLAYER:
+    case InstallSource::ARC:
+    case InstallSource::CHROME_SERVICE:
+    case InstallSource::OMNIBOX_INSTALL_ICON:
+    case InstallSource::MENU_CREATE_SHORTCUT:
+      return true;
+    case InstallSource::DEVTOOLS:
+    case InstallSource::MANAGEMENT_API:
+    case InstallSource::INTERNAL_DEFAULT:
+    case InstallSource::ISOLATED_APP_DEV_INSTALL:
+    case InstallSource::EXTERNAL_DEFAULT:
+    case InstallSource::EXTERNAL_POLICY:
+    case InstallSource::EXTERNAL_LOCK_SCREEN:
+    case InstallSource::SYSTEM_DEFAULT:
+    case InstallSource::SYNC:
+    case InstallSource::SUB_APP:
+    case InstallSource::KIOSK:
+    case InstallSource::PRELOADED_OEM:
+    case InstallSource::MICROSOFT_365_SETUP:
+      return false;
+    case InstallSource::COUNT:
+      NOTREACHED();
+      return false;
+  }
+}
+
+}  // namespace
 
 WebAppInstallFinalizer::FinalizeOptions::FinalizeOptions(
     webapps::WebappInstallSource install_surface)
@@ -88,23 +132,11 @@ void WebAppInstallFinalizer::FinalizeInstall(
   AppId app_id =
       GenerateAppId(web_app_info.manifest_id, web_app_info.start_url);
   const WebApp* existing_web_app = GetWebAppRegistrar().GetAppById(app_id);
-  // A web app might be sync installed with id received from WebAppSpecifics
-  // that's different from start_url hash, in this case we look up the app by
-  // start_url and respect the app_id from the existing WebApp.
-  if (!base::FeatureList::IsEnabled(blink::features::kWebAppEnableManifestId) &&
-      !existing_web_app) {
-    existing_web_app =
-        GetWebAppRegistrar().GetAppByStartUrl(web_app_info.start_url);
-  }
   std::unique_ptr<WebApp> web_app;
   if (existing_web_app) {
     app_id = existing_web_app->app_id();
     // Prepare copy-on-write:
     // Allows changing manifest_id and start_url when manifest_id is enabled.
-    if (!base::FeatureList::IsEnabled(
-            blink::features::kWebAppEnableManifestId)) {
-      DCHECK_EQ(web_app_info.start_url, existing_web_app->start_url());
-    }
     web_app = std::make_unique<WebApp>(*existing_web_app);
 
     // The UI may initiate a full install to overwrite the existing
@@ -135,8 +167,7 @@ void WebAppInstallFinalizer::FinalizeInstall(
 
   // Set |user_display_mode| and any user-controllable fields here if this
   // install is user initiated or it's a new app.
-  if (webapps::InstallableMetrics::IsUserInitiatedInstallSource(
-          options.install_surface) ||
+  if (ShouldInstallOverwriteUserDisplayMode(options.install_surface) ||
       !existing_web_app) {
     DCHECK(web_app_info.user_display_mode.has_value());
     web_app->SetUserDisplayMode(*web_app_info.user_display_mode);
@@ -162,22 +193,18 @@ void WebAppInstallFinalizer::FinalizeInstall(
         options.system_web_app_data.value();
   }
 
+  if (options.isolation_data.has_value()) {
+    web_app->SetIsolationData(*options.isolation_data);
+  }
+
   web_app->SetAdditionalSearchTerms(web_app_info.additional_search_terms);
   web_app->AddSource(source);
   web_app->SetIsFromSyncAndPendingInstallation(false);
   web_app->SetParentAppId(options.parent_app_id);
   web_app->SetInstallSourceForMetrics(options.install_surface);
 
-  DCHECK(!(source == WebAppManagement::Type::kSync &&
-           web_app_info.is_placeholder));
-  if (source != WebAppManagement::Type::kSync) {
-    web_app->AddPlaceholderInfoToManagementExternalConfigMap(
-        source, web_app_info.is_placeholder);
-    if (web_app_info.install_url.is_valid()) {
-      web_app->AddInstallURLToManagementExternalConfigMap(
-          source, web_app_info.install_url);
-    }
-  }
+  WriteExternalConfigMapInfo(*web_app, source, web_app_info.is_placeholder,
+                             web_app_info.install_url);
 
   if (!options.locally_installed) {
     DCHECK(!(options.add_to_applications_menu || options.add_to_desktop ||
@@ -190,8 +217,9 @@ void WebAppInstallFinalizer::FinalizeInstall(
       weak_ptr_factory_.GetWeakPtr(), std::move(callback), app_id, options);
 
   if (options.overwrite_existing_manifest_fields || !existing_web_app) {
-    SetWebAppManifestFieldsAndWriteData(web_app_info, std::move(web_app),
-                                        std::move(commit_callback));
+    SetWebAppManifestFieldsAndWriteData(
+        web_app_info, std::move(web_app), std::move(commit_callback),
+        options.skip_icon_writes_on_download_failure);
   } else {
     // Updates the web app with an additional source.
     CommitToSyncBridge(std::move(web_app), std::move(commit_callback),
@@ -207,13 +235,14 @@ void WebAppInstallFinalizer::UninstallExternalWebApp(
   DCHECK(started_);
 
   DCHECK(external_install_source == WebAppManagement::Type::kSystem ||
+         external_install_source == WebAppManagement::Type::kKiosk ||
          external_install_source == WebAppManagement::Type::kPolicy ||
          external_install_source == WebAppManagement::Type::kSubApp ||
          external_install_source == WebAppManagement::Type::kWebAppStore ||
          external_install_source == WebAppManagement::Type::kDefault);
 
-  UninstallExternalWebAppOrRemoveSource(app_id, external_install_source,
-                                        uninstall_source, std::move(callback));
+  ScheduleUninstallCommand(app_id, external_install_source, uninstall_source,
+                           std::move(callback));
 }
 
 void WebAppInstallFinalizer::UninstallExternalWebAppByUrl(
@@ -226,7 +255,7 @@ void WebAppInstallFinalizer::UninstallExternalWebAppByUrl(
   if (!app_id.has_value()) {
     LOG(WARNING) << "Couldn't uninstall web app with url " << app_url
                  << "; No corresponding web app for url.";
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback),
                        webapps::UninstallResultCode::kNoAppToUninstall));
@@ -251,92 +280,10 @@ void WebAppInstallFinalizer::UninstallWebApp(
     webapps::WebappUninstallSource webapp_uninstall_source,
     UninstallWebAppCallback callback) {
   DCHECK(started_);
-
-  // Check that the source was from a known 'user' or allowed ones such
-  // as kMigration.
-  DCHECK(
-      webapp_uninstall_source == webapps::WebappUninstallSource::kUnknown ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kAppMenu ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kAppsPage ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kOsSettings ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kSync ||
-      webapp_uninstall_source ==
-          webapps::WebappUninstallSource::kAppManagement ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kMigration ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kAppList ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kShelf ||
-      webapp_uninstall_source == webapps::WebappUninstallSource::kSubApp);
-
-  const WebApp* app = GetWebAppRegistrar().GetAppById(app_id);
-  DCHECK(app);
-  DCHECK(app->CanUserUninstallWebApp());
-
-  if (app->IsPreinstalledApp()) {
-    UpdateBoolWebAppPref(profile_->GetPrefs(), app_id,
-                         kWasExternalAppUninstalledByUser, true);
-  }
-
-  // UninstallWebApp can wipe out an app with multiple sources. This
-  // is the behavior from the old bookmark-app based system, which does not
-  // support incremental AddSource/RemoveSource. Here we are preserving that
-  // behavior for now.
-  // TODO(loyso): Implement different uninstall flows in UI. For example, we
-  // should separate UninstallWebAppFromSyncByUser from
-  // UninstallWebApp.
-  UninstallWebAppInternal(app_id, webapp_uninstall_source, std::move(callback));
-}
-
-void WebAppInstallFinalizer::UninstallWithoutRegistryUpdateFromSync(
-    const std::vector<AppId>& web_apps,
-    RepeatingUninstallCallback callback) {
-  DCHECK(started_);
-
-  for (auto& app_id : web_apps) {
-    if (base::Contains(pending_uninstalls_, app_id)) {
-      pending_uninstalls_[app_id]->StopAppRegistryModification();
-      continue;
-    }
-    auto uninstall_task = std::make_unique<WebAppUninstallJob>(
-        os_integration_manager_, sync_bridge_, icon_manager_, registrar_,
-        install_manager_, this, translation_manager_, profile_->GetPrefs());
-    uninstall_task->Start(
-        app_id,
-        url::Origin::Create(registrar_->GetAppById(app_id)->start_url()),
-        webapps::WebappUninstallSource::kSync,
-        WebAppUninstallJob::ModifyAppRegistry::kNo,
-        base::BindOnce(&WebAppInstallFinalizer::OnUninstallComplete,
-                       weak_ptr_factory_.GetWeakPtr(), app_id,
-                       webapps::WebappUninstallSource::kStartupCleanup,
-                       base::BindOnce(callback, app_id)));
-    pending_uninstalls_[app_id] = std::move(uninstall_task);
-  }
-}
-
-void WebAppInstallFinalizer::RetryIncompleteUninstalls(
-    const std::vector<AppId>& apps_to_uninstall) {
-  for (const AppId& app_id : apps_to_uninstall) {
-    if (base::Contains(pending_uninstalls_, app_id))
-      continue;
-    auto uninstall_task = std::make_unique<WebAppUninstallJob>(
-        os_integration_manager_, sync_bridge_, icon_manager_, registrar_,
-        install_manager_, this, translation_manager_, profile_->GetPrefs());
-    uninstall_task->Start(
-        app_id,
-        url::Origin::Create(registrar_->GetAppById(app_id)->start_url()),
-        webapps::WebappUninstallSource::kStartupCleanup,
-        WebAppUninstallJob::ModifyAppRegistry::kYes,
-        base::BindOnce(&WebAppInstallFinalizer::OnUninstallComplete,
-                       weak_ptr_factory_.GetWeakPtr(), app_id,
-                       webapps::WebappUninstallSource::kStartupCleanup,
-                       base::DoNothing()));
-    pending_uninstalls_[app_id] = std::move(uninstall_task);
-  }
-}
-
-bool WebAppInstallFinalizer::WasPreinstalledWebAppUninstalled(
-    const AppId& app_id) const {
-  return GetBoolWebAppPref(profile_->GetPrefs(), app_id,
-                           kWasExternalAppUninstalledByUser);
+  // An external install source (or management type) is only required
+  // for apps that have been externally installed.
+  ScheduleUninstallCommand(app_id, /*external_install_source=*/absl::nullopt,
+                           webapp_uninstall_source, std::move(callback));
 }
 
 bool WebAppInstallFinalizer::CanReparentTab(const AppId& app_id,
@@ -344,8 +291,10 @@ bool WebAppInstallFinalizer::CanReparentTab(const AppId& app_id,
   // Reparent the web contents into its own window only if that is the
   // app's launch type.
   DCHECK(registrar_);
-  if (registrar_->GetAppUserDisplayMode(app_id) == UserDisplayMode::kBrowser)
+  if (registrar_->GetAppUserDisplayMode(app_id) ==
+      mojom::UserDisplayMode::kBrowser) {
     return false;
+  }
 
   return ui_manager_->CanReparentAppTabToWindow(app_id, shortcut_created);
 }
@@ -370,7 +319,7 @@ void WebAppInstallFinalizer::FinalizeUpdate(
   if (!existing_web_app ||
       existing_web_app->is_from_sync_and_pending_installation() ||
       app_id != existing_web_app->app_id()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), AppId(),
                                   webapps::InstallResultCode::kWebAppDisabled,
                                   OsHooksErrors()));
@@ -381,12 +330,16 @@ void WebAppInstallFinalizer::FinalizeUpdate(
       &WebAppInstallFinalizer::OnDatabaseCommitCompletedForUpdate,
       weak_ptr_factory_.GetWeakPtr(), std::move(callback), app_id,
       GetWebAppRegistrar().GetAppShortName(app_id),
-      GetFileHandlerUpdateAction(app_id, web_app_info), web_app_info);
+      GetFileHandlerUpdateAction(app_id, web_app_info), web_app_info.Clone());
 
   // Prepare copy-on-write to update existing app.
+  // This is not reached unless the data obtained from the manifest
+  // update process is valid, so an invariant of the system is that
+  // icons are valid here.
   SetWebAppManifestFieldsAndWriteData(
       web_app_info, std::make_unique<WebApp>(*existing_web_app),
-      std::move(commit_callback));
+      std::move(commit_callback),
+      /*skip_icon_writes_on_download_failure=*/false);
 }
 
 void WebAppInstallFinalizer::Start() {
@@ -395,13 +348,12 @@ void WebAppInstallFinalizer::Start() {
 }
 
 void WebAppInstallFinalizer::Shutdown() {
-  pending_uninstalls_.clear();
   started_ = false;
 }
 
-void WebAppInstallFinalizer::SetRemoveSourceCallbackForTesting(
+void WebAppInstallFinalizer::SetRemoveManagementTypeCallbackForTesting(
     base::RepeatingCallback<void(const AppId&)> callback) {
-  install_source_removed_callback_for_testing_ = std::move(callback);
+  management_type_removed_callback_for_testing_ = std::move(callback);
 }
 
 void WebAppInstallFinalizer::SetSubsystems(
@@ -412,7 +364,8 @@ void WebAppInstallFinalizer::SetSubsystems(
     OsIntegrationManager* os_integration_manager,
     WebAppIconManager* icon_manager,
     WebAppPolicyManager* policy_manager,
-    WebAppTranslationManager* translation_manager) {
+    WebAppTranslationManager* translation_manager,
+    WebAppCommandManager* command_manager) {
   install_manager_ = install_manager;
   registrar_ = registrar;
   ui_manager_ = ui_manager;
@@ -421,123 +374,51 @@ void WebAppInstallFinalizer::SetSubsystems(
   icon_manager_ = icon_manager;
   policy_manager_ = policy_manager;
   translation_manager_ = translation_manager;
-}
-
-void WebAppInstallFinalizer::UninstallWebAppInternal(
-    const AppId& app_id,
-    webapps::WebappUninstallSource uninstall_source,
-    UninstallWebAppCallback callback) {
-  if (registrar_->GetAppById(app_id) == nullptr ||
-      base::Contains(pending_uninstalls_, app_id)) {
-    std::move(callback).Run(webapps::UninstallResultCode::kNoAppToUninstall);
-    return;
-  }
-  auto uninstall_task = std::make_unique<WebAppUninstallJob>(
-      os_integration_manager_, sync_bridge_, icon_manager_, registrar_,
-      install_manager_, this, translation_manager_, profile_->GetPrefs());
-  uninstall_task->Start(
-      app_id, url::Origin::Create(registrar_->GetAppById(app_id)->start_url()),
-      uninstall_source, WebAppUninstallJob::ModifyAppRegistry::kYes,
-      base::BindOnce(&WebAppInstallFinalizer::OnUninstallComplete,
-                     weak_ptr_factory_.GetWeakPtr(), app_id, uninstall_source,
-                     std::move(callback)));
-  pending_uninstalls_[app_id] = std::move(uninstall_task);
-}
-
-void WebAppInstallFinalizer::OnUninstallComplete(
-    AppId app_id,
-    webapps::WebappUninstallSource source,
-    UninstallWebAppCallback callback,
-    webapps::UninstallResultCode code) {
-  DCHECK(base::Contains(pending_uninstalls_, app_id));
-  pending_uninstalls_.erase(app_id);
-  if (source == webapps::WebappUninstallSource::kSync) {
-    base::UmaHistogramBoolean("Webapp.SyncInitiatedUninstallResult",
-                              code == webapps::UninstallResultCode::kSuccess);
-  }
-  std::move(callback).Run(code);
-}
-
-void WebAppInstallFinalizer::UninstallExternalWebAppOrRemoveSource(
-    const AppId& app_id,
-    WebAppManagement::Type install_source,
-    webapps::WebappUninstallSource uninstall_source,
-    UninstallWebAppCallback callback) {
-  const WebApp* app = GetWebAppRegistrar().GetAppById(app_id);
-  if (!app) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE,
-        base::BindOnce(std::move(callback),
-                       webapps::UninstallResultCode::kNoAppToUninstall));
-    return;
-  }
-
-  if (app->HasOnlySource(install_source)) {
-    UninstallWebAppInternal(app_id, uninstall_source, std::move(callback));
-  } else {
-    // There is a chance that removed source type is NOT user uninstallable
-    // but the remaining source (after removal) types are user uninstallable.
-    // In this case, the following call will register os uninstallation.
-    MaybeRegisterOsUninstall(
-        app, install_source, *os_integration_manager_,
-        base::BindOnce(&WebAppInstallFinalizer::OnMaybeRegisterOsUninstall,
-                       weak_ptr_factory_.GetWeakPtr(), app_id, install_source,
-                       std::move(callback)));
-  }
-}
-
-void WebAppInstallFinalizer::OnMaybeRegisterOsUninstall(
-    const AppId& app_id,
-    WebAppManagement::Type source,
-    UninstallWebAppCallback callback,
-    OsHooksErrors os_hooks_errors) {
-  ScopedRegistryUpdate update(sync_bridge_);
-  WebApp* app_to_update = update->UpdateApp(app_id);
-  app_to_update->RemoveSource(source);
-  if (source == WebAppManagement::kSubApp) {
-    app_to_update->SetParentAppId(absl::nullopt);
-  }
-  if (install_source_removed_callback_for_testing_)
-    install_source_removed_callback_for_testing_.Run(app_id);
-
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
-      FROM_HERE, base::BindOnce(std::move(callback),
-                                webapps::UninstallResultCode::kSuccess));
+  command_manager_ = command_manager;
 }
 
 void WebAppInstallFinalizer::SetWebAppManifestFieldsAndWriteData(
     const WebAppInstallInfo& web_app_info,
     std::unique_ptr<WebApp> web_app,
-    CommitCallback commit_callback) {
-  SetWebAppManifestFields(web_app_info, *web_app);
+    CommitCallback commit_callback,
+    bool skip_icon_writes_on_download_failure) {
+  SetWebAppManifestFields(web_app_info, *web_app,
+                          skip_icon_writes_on_download_failure);
 
   AppId app_id = web_app->app_id();
-  IconBitmaps icon_bitmaps = web_app_info.icon_bitmaps;
-  ShortcutsMenuIconBitmaps shortcuts_menu_icon_bitmaps =
-      web_app_info.shortcuts_menu_icon_bitmaps;
-  IconsMap other_icon_bitmaps = web_app_info.other_icon_bitmaps;
-
-  auto write_icons_callback = base::BindOnce(
-      &WebAppIconManager::WriteData, icon_manager_, app_id,
-      std::move(icon_bitmaps), std::move(shortcuts_menu_icon_bitmaps),
-      std::move(other_icon_bitmaps));
   auto write_translations_callback = base::BindOnce(
       &WebAppInstallFinalizer::WriteTranslations,
-      weak_ptr_factory_.GetWeakPtr(), app_id, std::move(web_app_info));
+      weak_ptr_factory_.GetWeakPtr(), app_id, web_app_info.translations);
   auto commit_to_sync_bridge_callback =
       base::BindOnce(&WebAppInstallFinalizer::CommitToSyncBridge,
                      weak_ptr_factory_.GetWeakPtr(), std::move(web_app));
+  auto on_icon_write_complete_callback =
+      base::BindOnce(std::move(write_translations_callback),
+                     base::BindOnce(std::move(commit_to_sync_bridge_callback),
+                                    std::move(commit_callback)));
 
-  std::move(write_icons_callback)
-      .Run(base::BindOnce(
-          std::move(write_translations_callback),
-          base::BindOnce(std::move(commit_to_sync_bridge_callback),
-                         std::move(commit_callback))));
+  // Do not overwrite the icon data in the DB if icon downloading has failed. We
+  // skip directly to writing translations and then writing the app via the
+  // WebAppSyncBridge.
+  if (skip_icon_writes_on_download_failure) {
+    std::move(on_icon_write_complete_callback).Run(/*success=*/true);
+  } else {
+    IconBitmaps icon_bitmaps = web_app_info.icon_bitmaps;
+    ShortcutsMenuIconBitmaps shortcuts_menu_icon_bitmaps =
+        web_app_info.shortcuts_menu_icon_bitmaps;
+    IconsMap other_icon_bitmaps = web_app_info.other_icon_bitmaps;
+
+    icon_manager_->WriteData(app_id, std::move(icon_bitmaps),
+                             std::move(shortcuts_menu_icon_bitmaps),
+                             std::move(other_icon_bitmaps),
+                             std::move(on_icon_write_complete_callback));
+  }
 }
 
 void WebAppInstallFinalizer::WriteTranslations(
     const AppId& app_id,
-    const WebAppInstallInfo& web_app_info,
+    const base::flat_map<std::string, blink::Manifest::TranslationItem>&
+        translations,
     CommitCallback commit_callback,
     bool success) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -545,8 +426,7 @@ void WebAppInstallFinalizer::WriteTranslations(
     std::move(commit_callback).Run(success);
     return;
   }
-
-  translation_manager_->WriteTranslations(app_id, web_app_info.translations,
+  translation_manager_->WriteTranslations(app_id, translations,
                                           std::move(commit_callback));
 }
 
@@ -619,8 +499,7 @@ void WebAppInstallFinalizer::OnDatabaseCommitCompletedForInstall(
 
   InstallOsHooksOptions hooks_options;
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
-    (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS_LACROS))
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
   hooks_options.os_hooks[OsHookType::kUrlHandlers] = true;
 #else
   hooks_options.os_hooks[OsHookType::kUrlHandlers] = false;
@@ -632,7 +511,7 @@ void WebAppInstallFinalizer::OnDatabaseCommitCompletedForInstall(
       finalize_options.add_to_applications_menu;
 
   {
-    web_app::RunOnOsLoginMode current_mode =
+    RunOnOsLoginMode current_mode =
         registrar_->GetAppRunOnOsLoginMode(app_id).value;
     hooks_options.os_hooks[OsHookType::kRunOnOsLogin] =
         current_mode == RunOnOsLoginMode::kWindowed;
@@ -650,18 +529,47 @@ void WebAppInstallFinalizer::OnDatabaseCommitCompletedForInstall(
   hooks_options.os_hooks[OsHookType::kFileHandlers] = true;
   hooks_options.os_hooks[OsHookType::kProtocolHandlers] = true;
 
+  switch (finalize_options.source) {
+    case WebAppManagement::kSystem:
+    case WebAppManagement::kPolicy:
+    case WebAppManagement::kDefault:
+    case WebAppManagement::kOem:
+      hooks_options.reason = SHORTCUT_CREATION_AUTOMATED;
+      break;
+    case WebAppManagement::kKiosk:
+    case WebAppManagement::kSubApp:
+    case WebAppManagement::kWebAppStore:
+    case WebAppManagement::kOneDriveIntegration:
+    case WebAppManagement::kSync:
+    case WebAppManagement::kCommandLine:
+      hooks_options.reason = SHORTCUT_CREATION_BY_USER;
+      break;
+  }
+
+  auto os_hooks_barrier =
+      OsIntegrationManager::GetBarrierForSynchronize(base::BindOnce(
+          &WebAppInstallFinalizer::OnInstallHooksFinished,
+          weak_ptr_factory_.GetWeakPtr(), std::move(callback), app_id));
+
+  // TODO(crbug.com/1401125): Remove InstallOsHooks() once OS integration
+  // sub managers have been implemented.
   os_integration_manager_->InstallOsHooks(
-      app_id,
-      base::BindOnce(&WebAppInstallFinalizer::OnInstallHooksFinished,
-                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
-                     app_id),
-      /*web_app_info=*/nullptr, hooks_options);
+      app_id, os_hooks_barrier, /*web_app_info=*/nullptr, hooks_options);
+
+  SynchronizeOsOptions synchronize_options;
+  synchronize_options.add_shortcut_to_desktop = hooks_options.add_to_desktop;
+  synchronize_options.add_to_quick_launch_bar =
+      hooks_options.add_to_quick_launch_bar;
+  synchronize_options.reason = hooks_options.reason;
+  os_integration_manager_->Synchronize(
+      app_id, base::BindOnce(os_hooks_barrier, OsHooksErrors()),
+      synchronize_options);
 }
 
 void WebAppInstallFinalizer::OnInstallHooksFinished(
     InstallFinalizedCallback callback,
     AppId app_id,
-    web_app::OsHooksErrors os_hooks_errors) {
+    OsHooksErrors os_hooks_errors) {
   auto joined = std::move(callback).Then(
       base::BindOnce(&WebAppInstallFinalizer::NotifyWebAppInstalledWithOsHooks,
                      weak_ptr_factory_.GetWeakPtr(), app_id));
@@ -699,26 +607,33 @@ void WebAppInstallFinalizer::OnDatabaseCommitCompletedForUpdate(
     return;
   }
 
-  if (ShouldUpdateOsHooks(app_id)) {
-    os_integration_manager_->UpdateOsHooks(
-        app_id, old_name, file_handlers_need_os_update, web_app_info,
-        base::BindOnce(&WebAppInstallFinalizer::OnUpdateHooksFinished,
-                       weak_ptr_factory_.GetWeakPtr(), std::move(callback),
-                       app_id, old_name));
-  } else {
+  if (!ShouldUpdateOsHooks(app_id)) {
     std::move(callback).Run(
         app_id, webapps::InstallResultCode::kSuccessAlreadyInstalled,
         OsHooksErrors());
+    return;
   }
+
+  auto os_hooks_barrier = OsIntegrationManager::GetBarrierForSynchronize(
+      base::BindOnce(&WebAppInstallFinalizer::OnUpdateHooksFinished,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(callback),
+                     app_id, old_name));
+
+  // TODO(crbug.com/1401125): Remove UpdateOsHooks() once OS integration
+  // sub managers have been implemented.
+  os_integration_manager_->UpdateOsHooks(app_id, old_name,
+                                         file_handlers_need_os_update,
+                                         web_app_info, os_hooks_barrier);
+  os_integration_manager_->Synchronize(
+      app_id, base::BindOnce(os_hooks_barrier, OsHooksErrors()));
 }
 
 void WebAppInstallFinalizer::OnUpdateHooksFinished(
     InstallFinalizedCallback callback,
     AppId app_id,
     std::string old_name,
-    web_app::OsHooksErrors os_hooks_errors) {
+    OsHooksErrors os_hooks_errors) {
   install_manager_->NotifyWebAppManifestUpdated(app_id, old_name);
-
   std::move(callback).Run(
       app_id,
       os_hooks_errors.any()
@@ -729,6 +644,38 @@ void WebAppInstallFinalizer::OnUpdateHooksFinished(
 
 const WebAppRegistrar& WebAppInstallFinalizer::GetWebAppRegistrar() const {
   return *registrar_;
+}
+
+void WebAppInstallFinalizer::WriteExternalConfigMapInfo(
+    WebApp& web_app,
+    WebAppManagement::Type source,
+    bool is_placeholder,
+    GURL install_url) {
+  DCHECK(!(source == WebAppManagement::Type::kSync && is_placeholder));
+  if (source != WebAppManagement::Type::kSync) {
+    web_app.AddPlaceholderInfoToManagementExternalConfigMap(source,
+                                                            is_placeholder);
+    if (install_url.is_valid()) {
+      web_app.AddInstallURLToManagementExternalConfigMap(source, install_url);
+    }
+  }
+}
+
+void WebAppInstallFinalizer::ScheduleUninstallCommand(
+    const AppId& app_id,
+    absl::optional<WebAppManagement::Type> external_install_source,
+    webapps::WebappUninstallSource uninstall_source,
+    UninstallWebAppCallback callback) {
+  auto uninstall_command = std::make_unique<WebAppUninstallCommand>(
+      app_id, external_install_source, uninstall_source, std::move(callback),
+      profile_);
+
+  if (management_type_removed_callback_for_testing_) {
+    uninstall_command->SetRemoveManagementTypeCallbackForTesting(  // IN-TEST
+        management_type_removed_callback_for_testing_);
+  }
+
+  command_manager_->ScheduleCommand(std::move(uninstall_command));
 }
 
 FileHandlerUpdateAction WebAppInstallFinalizer::GetFileHandlerUpdateAction(
@@ -743,7 +690,7 @@ FileHandlerUpdateAction WebAppInstallFinalizer::GetFileHandlerUpdateAction(
   }
 
   // TODO(https://crbug.com/1197013): Consider trying to re-use the comparison
-  // results from the ManifestUpdateTask.
+  // results from the ManifestUpdateDataFetchCommand.
   const apps::FileHandlers* old_handlers =
       GetWebAppRegistrar().GetAppFileHandlers(app_id);
   DCHECK(old_handlers);

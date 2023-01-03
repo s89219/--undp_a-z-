@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 
 #include <algorithm>
 
+#include "base/barrier_closure.h"
+#include "base/functional/callback_helpers.h"
 #include "base/no_destructor.h"
 #include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
@@ -17,11 +19,13 @@
 #include "chrome/browser/web_applications/os_integration/web_app_file_handler_manager.h"
 #include "chrome/browser/web_applications/os_integration/web_app_shortcut_mac.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_command_scheduler.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "net/base/filename_util.h"
 #include "third_party/blink/public/common/custom_handlers/protocol_handler_utils.h"
 
@@ -35,13 +39,29 @@ web_app::BrowserAppLauncherForTesting& GetBrowserAppLauncherForTesting() {
   return *instance;
 }
 
+base::OnceClosure& GetMacShimStartupDoneCallbackForTesting() {
+  static base::NoDestructor<base::OnceClosure> instance;
+  return *instance;
+}
+
+void OnShimLaunchResolved() {
+  if (GetMacShimStartupDoneCallbackForTesting())
+    std::move(GetMacShimStartupDoneCallbackForTesting()).Run();
+}
+
 // Launches the app specified by `params` and `file_launches` in the given
 // `profile`.
 void LaunchAppWithParams(
     Profile* profile,
     apps::AppLaunchParams params,
     const WebAppFileHandlerManager::LaunchInfos& file_launches) {
+  auto callback =
+      GetMacShimStartupDoneCallbackForTesting()
+          ? std::move(GetMacShimStartupDoneCallbackForTesting())  // IN-TEST
+          : base::DoNothing();
   if (!file_launches.empty()) {
+    auto barrier_callback =
+        base::BarrierClosure(file_launches.size(), std::move(callback));
     for (const auto& [url, files] : file_launches) {
       apps::AppLaunchParams params_copy(params.app_id, params.container,
                                         params.disposition,
@@ -51,10 +71,13 @@ void LaunchAppWithParams(
 
       if (GetBrowserAppLauncherForTesting()) {
         GetBrowserAppLauncherForTesting().Run(params_copy);
+        barrier_callback.Run();
       } else {
         apps::AppServiceProxyFactory::GetForProfile(profile)
             ->BrowserAppLauncher()
-            ->LaunchAppWithParams(std::move(params_copy));
+            ->LaunchAppWithParams(
+                std::move(params_copy),
+                base::IgnoreArgs<content::WebContents*>(barrier_callback));
       }
     }
     return;
@@ -62,10 +85,13 @@ void LaunchAppWithParams(
 
   if (GetBrowserAppLauncherForTesting()) {
     GetBrowserAppLauncherForTesting().Run(params);
+    std::move(callback).Run();
   } else {
     apps::AppServiceProxyFactory::GetForProfile(profile)
         ->BrowserAppLauncher()
-        ->LaunchAppWithParams(std::move(params));
+        ->LaunchAppWithParams(
+            std::move(params),
+            base::IgnoreArgs<content::WebContents*>(std::move(callback)));
   }
 }
 
@@ -73,6 +99,7 @@ void LaunchAppWithParams(
 // in the app shim exiting.
 void CancelAppLaunch(Profile* profile, const web_app::AppId& app_id) {
   apps::AppShimManager::Get()->OnAppLaunchCancelled(profile, app_id);
+  OnShimLaunchResolved();
 }
 
 // Called after the user's preference has been persisted, and the OS
@@ -106,13 +133,17 @@ void UserChoiceDialogCompleted(
                      file_launches, profile, allowed);
 
   if (remember_user_choice) {
+    WebAppProvider* provider = WebAppProvider::GetForWebApps(profile);
+    ApiApprovalState approval_state =
+        allowed ? ApiApprovalState::kAllowed : ApiApprovalState::kDisallowed;
     if (protocol_url) {
-      PersistProtocolHandlersUserChoice(profile, app_id, *protocol_url, allowed,
-                                        std::move(persist_done));
+      provider->scheduler().UpdateProtocolHandlerUserApproval(
+          app_id, protocol_url->scheme(), approval_state,
+          std::move(persist_done));
     } else {
       DCHECK(is_file_launch);
-      PersistFileHandlersUserChoice(profile, app_id, allowed,
-                                    std::move(persist_done));
+      provider->scheduler().PersistFileHandlersUserChoice(
+          app_id, allowed, std::move(persist_done));
     }
   } else {
     std::move(persist_done).Run();
@@ -124,6 +155,10 @@ void UserChoiceDialogCompleted(
 void SetBrowserAppLauncherForTesting(
     const BrowserAppLauncherForTesting& launcher) {
   GetBrowserAppLauncherForTesting() = launcher;
+}
+
+void SetMacShimStartupDoneCallbackForTesting(base::OnceClosure callback) {
+  GetMacShimStartupDoneCallbackForTesting() = std::move(callback);  // IN-TEST
 }
 
 WebAppShimManagerDelegate::WebAppShimManagerDelegate(
@@ -156,7 +191,7 @@ bool WebAppShimManagerDelegate::AppIsInstalled(Profile* profile,
     return fallback_delegate_->AppIsInstalled(profile, app_id);
   }
   return profile &&
-         WebAppProvider::GetForWebApps(profile)->registrar().IsInstalled(
+         WebAppProvider::GetForWebApps(profile)->registrar_unsafe().IsInstalled(
              app_id);
 }
 
@@ -176,7 +211,7 @@ bool WebAppShimManagerDelegate::AppUsesRemoteCocoa(Profile* profile,
   // window) can attach to a host.
   if (!profile)
     return false;
-  auto& registrar = WebAppProvider::GetForWebApps(profile)->registrar();
+  auto& registrar = WebAppProvider::GetForWebApps(profile)->registrar_unsafe();
   return registrar.IsInstalled(app_id) &&
          registrar.GetAppEffectiveDisplayMode(app_id) !=
              web_app::DisplayMode::kBrowser;
@@ -216,16 +251,15 @@ void WebAppShimManagerDelegate::LaunchApp(
     return;
   }
   DisplayMode effective_display_mode = WebAppProvider::GetForWebApps(profile)
-                                           ->registrar()
+                                           ->registrar_unsafe()
                                            .GetAppEffectiveDisplayMode(app_id);
 
-  apps::mojom::LaunchContainer launch_container =
+  apps::LaunchContainer launch_container =
       web_app::ConvertDisplayModeToAppLaunchContainer(effective_display_mode);
-  apps::mojom::LaunchSource launch_source =
-      apps::mojom::LaunchSource::kFromCommandLine;
+  apps::LaunchSource launch_source = apps::LaunchSource::kFromCommandLine;
   if (login_item_restore_state !=
       chrome::mojom::AppShimLoginItemRestoreState::kNone) {
-    launch_source = apps::mojom::LaunchSource::kFromOsLogin;
+    launch_source = apps::LaunchSource::kFromOsLogin;
   }
 
   apps::AppLaunchParams params(app_id, launch_container,
@@ -269,7 +303,7 @@ void WebAppShimManagerDelegate::LaunchApp(
     }
 
     params.protocol_handler_launch_url = url;
-    params.launch_source = apps::mojom::LaunchSource::kFromProtocolHandler;
+    params.launch_source = apps::LaunchSource::kFromProtocolHandler;
   }
 
   WebAppProvider* const provider = WebAppProvider::GetForWebApps(profile);
@@ -291,14 +325,14 @@ void WebAppShimManagerDelegate::LaunchApp(
     // unless the user has granted or denied permission to this protocol scheme
     // previously.
     web_app::WebAppRegistrar& registrar =
-        WebAppProvider::GetForWebApps(profile)->registrar();
+        WebAppProvider::GetForWebApps(profile)->registrar_unsafe();
     if (registrar.IsDisallowedLaunchProtocol(app_id, protocol_url.scheme())) {
       CancelAppLaunch(profile, app_id);
       return;
     }
 
     if (!registrar.IsAllowedLaunchProtocol(app_id, protocol_url.scheme())) {
-      chrome::ShowWebAppProtocolHandlerIntentPicker(
+      chrome::ShowWebAppProtocolLaunchDialog(
           std::move(protocol_url), profile, app_id,
           base::BindOnce(&UserChoiceDialogCompleted, std::move(params),
                          WebAppFileHandlerManager::LaunchInfos(), profile));
@@ -309,7 +343,7 @@ void WebAppShimManagerDelegate::LaunchApp(
   // If there is no matching file handling URL (such as when the API has been
   // disabled), fall back to a normal app launch.
   if (!file_launches.empty()) {
-    const WebApp* web_app = provider->registrar().GetAppById(app_id);
+    const WebApp* web_app = provider->registrar_unsafe().GetAppById(app_id);
     DCHECK(web_app);
 
     if (web_app->file_handler_approval_state() ==
@@ -368,7 +402,7 @@ bool WebAppShimManagerDelegate::UseFallback(Profile* profile,
   // If |app_id| is installed via WebAppProvider, then use |this| as the
   // delegate.
   auto* provider = WebAppProvider::GetForWebApps(profile);
-  if (provider->registrar().IsInstalled(app_id))
+  if (provider->registrar_unsafe().IsInstalled(app_id))
     return false;
 
   // Use |fallback_delegate_| only if |app_id| is installed for |profile|
@@ -387,7 +421,7 @@ WebAppShimManagerDelegate::GetAppShortcutsMenuItemInfos(Profile* profile,
   DCHECK(profile);
 
   auto shortcuts_menu_item_infos = WebAppProvider::GetForWebApps(profile)
-                                       ->registrar()
+                                       ->registrar_unsafe()
                                        .GetAppShortcutsMenuItemInfos(app_id);
 
   DCHECK_LE(shortcuts_menu_item_infos.size(), kMaxApplicationDockMenuItems);

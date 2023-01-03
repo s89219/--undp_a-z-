@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -113,7 +113,7 @@ MakeUploadEncryptedReportAction::MakeUploadEncryptedReportAction(
 void MakeUploadEncryptedReportAction::operator()(
     base::Value::Dict request,
     absl::optional<base::Value::Dict> context,
-    policy::CloudPolicyClient::ResponseCallback callback) {
+    ::policy::CloudPolicyClient::ResponseCallback callback) {
   response_builder_.SetRequest(std::move(request));
   std::move(callback).Run(response_builder_.Build());
 }

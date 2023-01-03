@@ -1,9 +1,10 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "sandbox/win/src/target_process.h"
 
+#include <processenv.h>
 #include <windows.h>
 
 #include <stddef.h>
@@ -13,13 +14,14 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/memory/free_deleter.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/win/access_token.h"
 #include "base/win/current_module.h"
 #include "base/win/security_util.h"
 #include "base/win/startup_information.h"
-#include "base/win/windows_version.h"
 #include "sandbox/win/src/crosscall_client.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/policy_low_level.h"
@@ -34,6 +36,24 @@
 namespace sandbox {
 
 namespace {
+
+// Parses a null-terminated input string of an environment block. The key is
+// placed into the given string, and the total length of the line, including
+// the terminating null, is returned.
+size_t ParseEnvLine(const wchar_t* input, std::wstring* key) {
+  // Skip to the equals or end of the string, this is the key.
+  size_t cur = 0;
+  while (input[cur] && input[cur] != '=') {
+    cur++;
+  }
+  *key = std::wstring(&input[0], cur);
+
+  // Now just skip to the end of the string.
+  while (input[cur]) {
+    cur++;
+  }
+  return cur + 1;
+}
 
 void CopyPolicyToTarget(const void* source, size_t size, void* dest) {
   if (!source || !size)
@@ -83,15 +103,11 @@ SANDBOX_INTERCEPT DWORD g_sentinel_value_end = 0x424F5859;
 TargetProcess::TargetProcess(
     base::win::ScopedHandle initial_token,
     base::win::ScopedHandle lockdown_token,
-    HANDLE job,
     ThreadPool* thread_pool,
     const std::vector<base::win::Sid>& impersonation_capabilities)
-    // This object owns everything initialized here except thread_pool and
-    // the job_ handle. The Job handle is closed by BrokerServices and results
-    // eventually in a call to our dtor.
+    // This object owns everything initialized here except thread_pool.
     : lockdown_token_(std::move(lockdown_token)),
       initial_token_(std::move(initial_token)),
-      job_(job),
       thread_pool_(thread_pool),
       base_address_(nullptr),
       impersonation_capabilities_(
@@ -139,10 +155,31 @@ ResultCode TargetProcess::Create(
   if (startup_info->has_extended_startup_info())
     flags |= EXTENDED_STARTUPINFO_PRESENT;
 
-  if (job_ && base::win::GetVersion() < base::win::Version::WIN8) {
-    // Windows 8 implements nested jobs, but for older systems we need to
-    // break out of any job we're in to enforce our restrictions.
-    flags |= CREATE_BREAKAWAY_FROM_JOB;
+  std::wstring new_env;
+
+  if (startup_info_helper->IsEnvironmentFiltered()) {
+    wchar_t* old_environment = ::GetEnvironmentStringsW();
+    if (!old_environment) {
+      return SBOX_ERROR_CANNOT_OBTAIN_ENVIRONMENT;
+    }
+
+    // Only copy a limited list of variables to the target from the broker's
+    // environment. These are
+    //  * "Path", "SystemDrive", "SystemRoot", "TEMP", "TMP": Needed for normal
+    //    operation and tests.
+    //  * "LOCALAPPDATA": Needed for App Container processes.
+    //  * "CHROME_CRASHPAD_PIPE_NAME": Needed for crashpad.
+    static constexpr base::WStringPiece to_keep[] = {
+        L"Path",
+        L"SystemDrive",
+        L"SystemRoot",
+        L"TEMP",
+        L"TMP",
+        L"LOCALAPPDATA",
+        L"CHROME_CRASHPAD_PIPE_NAME"};
+
+    new_env = FilterEnvironment(old_environment, to_keep);
+    ::FreeEnvironmentStringsW(old_environment);
   }
 
   bool inherit_handles = startup_info_helper->ShouldInheritHandles();
@@ -151,7 +188,7 @@ ResultCode TargetProcess::Create(
                               nullptr,  // No security attribute.
                               nullptr,  // No thread attribute.
                               inherit_handles, flags,
-                              nullptr,  // Use the environment of the caller.
+                              new_env.empty() ? nullptr : std::data(new_env),
                               nullptr,  // Use current directory of the caller.
                               startup_info->startup_info(),
                               &temp_process_info)) {
@@ -159,17 +196,6 @@ ResultCode TargetProcess::Create(
     return SBOX_ERROR_CREATE_PROCESS;
   }
   base::win::ScopedProcessInformation process_info(temp_process_info);
-
-  if (job_ && !startup_info_helper->HasJobsToAssociate()) {
-    DCHECK(base::win::GetVersion() < base::win::Version::WIN10);
-    // Assign the suspended target to the windows job object. On Win 10
-    // this happens through PROC_THREAD_ATTRIBUTE_JOB_LIST.
-    if (!::AssignProcessToJobObject(job_, process_info.process_handle())) {
-      *win_error = ::GetLastError();
-      ::TerminateProcess(process_info.process_handle(), 0);
-      return SBOX_ERROR_ASSIGN_PROCESS_TO_JOB_OBJECT;
-    }
-  }
 
   if (initial_token_.IsValid()) {
     HANDLE impersonation_token = initial_token_.Get();
@@ -378,13 +404,37 @@ std::unique_ptr<TargetProcess> TargetProcess::MakeTargetProcessForTesting(
     HANDLE process,
     HMODULE base_address) {
   auto target = std::make_unique<TargetProcess>(
-      base::win::ScopedHandle(), base::win::ScopedHandle(), nullptr, nullptr,
+      base::win::ScopedHandle(), base::win::ScopedHandle(), nullptr,
       std::vector<base::win::Sid>());
   PROCESS_INFORMATION process_info = {};
   process_info.hProcess = process;
   target->sandbox_process_info_.Set(process_info);
   target->base_address_ = base_address;
   return target;
+}
+
+// static
+std::wstring TargetProcess::FilterEnvironment(
+    const wchar_t* env,
+    const base::span<const base::WStringPiece> to_keep) {
+  std::wstring result;
+
+  // Iterate all of the environment strings.
+  const wchar_t* ptr = env;
+  while (*ptr) {
+    std::wstring key;
+    size_t line_length = ParseEnvLine(ptr, &key);
+
+    // Keep only values specified in the keep vector.
+    if (std::find(to_keep.begin(), to_keep.end(), key) != to_keep.end()) {
+      result.append(ptr, line_length);
+    }
+    ptr += line_length;
+  }
+
+  // Add the terminating NUL.
+  result.push_back('\0');
+  return result;
 }
 
 }  // namespace sandbox

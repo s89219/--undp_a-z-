@@ -1,22 +1,21 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/badges/badge_popup_menu_item.h"
 
-#include <ostream>
+#import <ostream>
 
 #import "base/notreached.h"
-#include "components/password_manager/core/common/password_manager_features.h"
-#include "components/strings/grit/components_strings.h"
-#import "ios/chrome/browser/ui/icons/chrome_symbol.h"
-#import "ios/chrome/browser/ui/icons/infobar_icon.h"
+#import "components/password_manager/core/common/password_manager_features.h"
+#import "components/strings/grit/components_strings.h"
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/list_model/list_model.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -78,11 +77,6 @@ const CGFloat kBadgeCornerRadius = 5.0;
         _actionIdentifier = PopupMenuActionShowTranslateOptions;
         _title = l10n_util::GetNSString(IDS_IOS_TRANSLATE_INFOBAR_MODAL_TITLE);
         break;
-      case kBadgeTypeAddToReadingList:
-        _actionIdentifier = PopupMenuActionAddToReadingListOptions;
-        _title =
-            l10n_util::GetNSString(IDS_IOS_READING_LIST_MESSAGES_MODAL_TITLE);
-        break;
       case kBadgeTypePermissionsCamera:
         // Falls through.
       case kBadgeTypePermissionsMicrophone:
@@ -123,7 +117,7 @@ const CGFloat kBadgeCornerRadius = 5.0;
       break;
     case kBadgeTypeSaveAddressProfile:
       badgeImage = UseSymbols() ? DefaultSymbolWithPointSize(
-                                      kPinSymbol, kSymbolImagePointSize)
+                                      kPinFillSymbol, kInfobarSymbolPointSize)
                                 : [UIImage imageNamed:@"ic_place"];
       badgeImage = [badgeImage
           imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -131,7 +125,7 @@ const CGFloat kBadgeCornerRadius = 5.0;
     case kBadgeTypeSaveCard:
       badgeImage = UseSymbols()
                        ? DefaultSymbolWithPointSize(kCreditCardSymbol,
-                                                    kSymbolImagePointSize)
+                                                    kInfobarSymbolPointSize)
                        : [UIImage imageNamed:@"infobar_save_card_icon"];
       badgeImage = [badgeImage
           imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
@@ -140,22 +134,18 @@ const CGFloat kBadgeCornerRadius = 5.0;
     case kBadgeTypeTranslate:
       badgeImage = UseSymbols()
                        ? CustomSymbolWithPointSize(kTranslateSymbol,
-                                                   kSymbolImagePointSize)
+                                                   kInfobarSymbolPointSize)
                        : [UIImage imageNamed:@"infobar_translate_icon"];
       badgeImage = [badgeImage
           imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
       break;
-    case kBadgeTypeAddToReadingList:
-      badgeImage = [[UIImage imageNamed:@"infobar_reading_list"]
-          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
-      break;
     case kBadgeTypePermissionsCamera:
       badgeImage = CustomSymbolTemplateWithPointSize(kCameraSymbol,
-                                                     kSymbolImagePointSize);
+                                                     kInfobarSymbolPointSize);
       break;
     case kBadgeTypePermissionsMicrophone:
-      badgeImage = [[UIImage systemImageNamed:@"mic"]
-          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+      badgeImage = DefaultSymbolTemplateWithPointSize(kMicrophoneSymbol,
+                                                      kInfobarSymbolPointSize);
       break;
     case kBadgeTypeIncognito:
       NOTREACHED()

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,13 +15,14 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/web_applications/web_app_controller_browsertest.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/test/app_registry_cache_waiter.h"
+#include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "content/public/browser/browsing_data_filter_builder.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 
 using content::RenderFrameHost;
@@ -32,11 +33,6 @@ class WebAppBadgingBrowserTest : public WebAppControllerBrowserTest {
  public:
   WebAppBadgingBrowserTest()
       : cross_origin_https_server_(net::EmbeddedTestServer::TYPE_HTTPS) {}
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    WebAppControllerBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitchASCII(switches::kEnableBlinkFeatures, "Badging");
-  }
 
   void SetUpOnMainThread() override {
     WebAppControllerBrowserTest::SetUpOnMainThread();
@@ -58,8 +54,12 @@ class WebAppBadgingBrowserTest : public WebAppControllerBrowserTest {
     auto sub_app_info = std::make_unique<WebAppInstallInfo>();
     sub_app_info->start_url = sub_start_url;
     sub_app_info->scope = sub_start_url;
-    sub_app_info->user_display_mode = UserDisplayMode::kStandalone;
+    sub_app_info->user_display_mode = mojom::UserDisplayMode::kStandalone;
     sub_app_id_ = InstallWebApp(std::move(sub_app_info));
+
+    AppReadinessWaiter(profile(), cross_site_app_id_).Await();
+    AppReadinessWaiter(profile(), main_app_id_).Await();
+    AppReadinessWaiter(profile(), sub_app_id_).Await();
 
     content::WebContents* web_contents = OpenApplication(main_app_id_);
     // There should be exactly 4 frames:
@@ -70,7 +70,7 @@ class WebAppBadgingBrowserTest : public WebAppControllerBrowserTest {
     auto frames = CollectAllRenderFrameHosts(web_contents->GetPrimaryPage());
     ASSERT_EQ(4u, frames.size());
 
-    main_frame_ = web_contents->GetMainFrame();
+    main_frame_ = web_contents->GetPrimaryMainFrame();
     for (auto* frame : frames) {
       if (frame->GetLastCommittedURL() == sub_start_url) {
         sub_app_frame_ = frame;
@@ -119,6 +119,18 @@ class WebAppBadgingBrowserTest : public WebAppControllerBrowserTest {
     delegate_ = owned_delegate.get();
 
     badge_manager->SetDelegate(std::move(owned_delegate));
+  }
+
+  // WebAppControllerBrowserTest:
+  void TearDownOnMainThread() override {
+    WebAppRegistrar& registrar = provider().registrar_unsafe();
+    for (const auto& app_id : registrar.GetAppIds()) {
+      web_app::test::UninstallWebApp(profile(), app_id);
+      AppReadinessWaiter(profile(), app_id, apps::Readiness::kUninstalledByUser)
+          .Await();
+    }
+
+    WebAppControllerBrowserTest::TearDownOnMainThread();
   }
 
   void OnBadgeChanged() {
@@ -226,10 +238,10 @@ class WebAppBadgingBrowserTest : public WebAppControllerBrowserTest {
   const AppId& sub_app_id() { return sub_app_id_; }
   const AppId& cross_site_app_id() { return cross_site_app_id_; }
 
-  raw_ptr<RenderFrameHost> main_frame_;
-  raw_ptr<RenderFrameHost> sub_app_frame_;
-  raw_ptr<RenderFrameHost> in_scope_frame_;
-  raw_ptr<RenderFrameHost> cross_site_frame_;
+  raw_ptr<RenderFrameHost, DanglingUntriaged> main_frame_;
+  raw_ptr<RenderFrameHost, DanglingUntriaged> sub_app_frame_;
+  raw_ptr<RenderFrameHost, DanglingUntriaged> in_scope_frame_;
+  raw_ptr<RenderFrameHost, DanglingUntriaged> cross_site_frame_;
 
   // Use this script text with EvalJs() on |main_frame_| to register a service
   // worker.  Use ReplaceJs() to replace $1 with the service worker scope URL.
@@ -273,7 +285,7 @@ class WebAppBadgingBrowserTest : public WebAppControllerBrowserTest {
   AppId sub_app_id_;
   AppId cross_site_app_id_;
   std::unique_ptr<base::RunLoop> awaiter_;
-  raw_ptr<badging::TestBadgeManagerDelegate> delegate_;
+  raw_ptr<badging::TestBadgeManagerDelegate, DanglingUntriaged> delegate_;
   net::EmbeddedTestServer cross_origin_https_server_;
 };
 
@@ -476,7 +488,7 @@ IN_PROC_BROWSER_TEST_F(WebAppBadgingBrowserTest,
       OpenURLOffTheRecord(profile(), main_frame_->GetLastCommittedURL());
   RenderFrameHost* incognito_frame = incognito_browser->tab_strip_model()
                                          ->GetActiveWebContents()
-                                         ->GetMainFrame();
+                                         ->GetPrimaryMainFrame();
 
   ASSERT_TRUE(
       content::ExecuteScript(incognito_frame, "navigator.setAppBadge()"));
@@ -502,7 +514,7 @@ IN_PROC_BROWSER_TEST_F(WebAppBadgingBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(WebAppBadgingBrowserTest, ClearLastBadgingTime) {
   ExecuteScriptAndWaitForBadgeChange("navigator.setAppBadge()", main_frame_);
-  WebAppRegistrar& registrar = provider().registrar();
+  WebAppRegistrar& registrar = provider().registrar_unsafe();
   EXPECT_NE(registrar.GetAppLastBadgingTime(main_app_id()), base::Time());
   EXPECT_NE(registrar.GetAppLastLaunchTime(main_app_id()), base::Time());
 

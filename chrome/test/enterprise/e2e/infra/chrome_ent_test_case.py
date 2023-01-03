@@ -1,4 +1,4 @@
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -115,6 +115,8 @@ class ChromeEnterpriseTestCase(EnterpriseTestCase):
       self.clients[instance_name].RunPowershell(cmd)
 
   def InstallWebDriver(self, instance_name):
+    self.RunCommand(instance_name, r'md -Force c:\temp')
+    self.EnsurePythonInstalled(instance_name)
     self.InstallPipPackagesLatest(instance_name,
                                   ['selenium', 'absl-py', 'pywin32'])
 
@@ -143,13 +145,13 @@ class ChromeEnterpriseTestCase(EnterpriseTestCase):
 
     Returns:
       the output."""
-    self.EnsurePythonInstalled(instance_name)
-
     # upload the test
     file_name = self.UploadFile(instance_name, test_file, r'c:\temp')
 
     # run the test
     args = subprocess.list2cmdline(args)
+    self._pythonExecutablePath[instance_name] = (
+        r'C:\ProgramData\chocolatey\lib\python\tools\python.exe')
     cmd = r'%s %s %s' % (self._pythonExecutablePath[instance_name], file_name,
                          args)
     return self.RunCommand(instance_name, cmd).decode()
@@ -166,8 +168,6 @@ class ChromeEnterpriseTestCase(EnterpriseTestCase):
 
     Returns:
       the output."""
-    self.EnsurePythonInstalled(instance_name)
-
     # upload the test
     file_name = self.UploadFile(instance_name, test_file, r'c:\temp')
 
@@ -177,6 +177,8 @@ class ChromeEnterpriseTestCase(EnterpriseTestCase):
     # get any output from stdout because the output is buffered. When this
     # happens it makes debugging really hard.
     args = subprocess.list2cmdline(args)
+    self._pythonExecutablePath[instance_name] = (
+        r'C:\ProgramData\chocolatey\lib\python\tools\python.exe')
     ui_test_cmd = r'%s -u %s %s' % (self._pythonExecutablePath[instance_name],
                                     file_name, args)
     cmd = (r'%s c:\cel\supporting_files\run_ui_test.py --timeout %s -- %s') % (

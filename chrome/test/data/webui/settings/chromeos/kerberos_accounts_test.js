@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,12 @@
 
 import {TestKerberosAccountsBrowserProxy, TEST_KERBEROS_ACCOUNTS} from './test_kerberos_accounts_browser_proxy.js';
 import {Router, Route, routes, KerberosErrorType, KerberosConfigErrorCode, KerberosAccountsBrowserProxyImpl} from 'chrome://os-settings/chromeos/os_settings.js';
-import {assertEquals, assertFalse, assertNotEquals, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertFalse, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {flushTasks} from 'chrome://test/test_util.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
-import {waitAfterNextRender} from 'chrome://test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
+import {webUIListenerCallback} from 'chrome://resources/ash/common/cr.m.js';
 
 // Tests for the Kerberos Accounts settings page.
 suite('KerberosAccountsTests', function() {
@@ -41,14 +42,14 @@ suite('KerberosAccountsTests', function() {
     Router.resetInstanceForTesting(new Router(routes));
 
     browserProxy = new TestKerberosAccountsBrowserProxy();
-    KerberosAccountsBrowserProxyImpl.instance_ = browserProxy;
+    KerberosAccountsBrowserProxyImpl.setInstanceForTesting(browserProxy);
     PolymerTest.clearBody();
     createDialog();
   });
 
   teardown(function() {
     kerberosAccounts.remove();
-    KerberosAccountsBrowserProxyImpl.instance_ = undefined;
+    KerberosAccountsBrowserProxyImpl.setInstanceForTesting(undefined);
   });
 
   function createDialog() {
@@ -59,7 +60,7 @@ suite('KerberosAccountsTests', function() {
     kerberosAccounts = document.createElement('settings-kerberos-accounts');
     document.body.appendChild(kerberosAccounts);
 
-    accountList = kerberosAccounts.$$('#account-list');
+    accountList = kerberosAccounts.shadowRoot.querySelector('#account-list');
     assertTrue(!!accountList);
   }
 
@@ -68,7 +69,7 @@ suite('KerberosAccountsTests', function() {
     kerberosAccounts.shadowRoot.querySelectorAll('.more-actions')[accountIndex]
         .click();
     // Click on the given action.
-    kerberosAccounts.$$('cr-action-menu')
+    kerberosAccounts.shadowRoot.querySelector('cr-action-menu')
         .querySelectorAll('button')[moreActionsIndex]
         .click();
   }
@@ -119,12 +120,14 @@ suite('KerberosAccountsTests', function() {
 
   test('AddAccount', function() {
     // The kerberos-add-account-dialog shouldn't be open yet.
-    assertTrue(!kerberosAccounts.$$('kerberos-add-account-dialog'));
+    assertTrue(!kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog'));
 
-    kerberosAccounts.$$('#add-account-button').click();
+    kerberosAccounts.shadowRoot.querySelector('#add-account-button').click();
     flush();
 
-    const addDialog = kerberosAccounts.$$('kerberos-add-account-dialog');
+    const addDialog = kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog');
     assertTrue(!!addDialog);
     assertEquals('', addDialog.$.username.value);
   });
@@ -135,7 +138,8 @@ suite('KerberosAccountsTests', function() {
     flush();
 
     // The kerberos-add-account-dialog shouldn't be open yet.
-    assertTrue(!kerberosAccounts.$$('kerberos-add-account-dialog'));
+    assertTrue(!kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog'));
 
     // Click "Sign-In" on an existing account.
     // Note that both accounts have a reauth button, but the first one is
@@ -148,7 +152,8 @@ suite('KerberosAccountsTests', function() {
 
     // Now the kerberos-add-account-dialog should be open with preset
     // username.
-    const addDialog = kerberosAccounts.$$('kerberos-add-account-dialog');
+    const addDialog = kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog');
     assertTrue(!!addDialog);
     assertEquals(
         TEST_KERBEROS_ACCOUNTS[Account.SECOND].principalName,
@@ -168,7 +173,8 @@ suite('KerberosAccountsTests', function() {
     await browserProxy.whenCalled('getAccounts');
     await flushTasks();
     flush();
-    const addDialog = kerberosAccounts.$$('kerberos-add-account-dialog');
+    const addDialog = kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog');
     assertTrue(!!addDialog);
     assertEquals(principal_name, addDialog.$.username.value);
   });
@@ -179,7 +185,8 @@ suite('KerberosAccountsTests', function() {
     clickMoreActions(Account.FIRST, MoreActions.REFRESH_NOW);
     flush();
 
-    const addDialog = kerberosAccounts.$$('kerberos-add-account-dialog');
+    const addDialog = kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog');
     assertTrue(!!addDialog);
     assertEquals(
         TEST_KERBEROS_ACCOUNTS[Account.FIRST].principalName,
@@ -187,7 +194,7 @@ suite('KerberosAccountsTests', function() {
   });
 
   test('RefreshAccountShowsToast', async () => {
-    const toast = kerberosAccounts.$$('#account-toast');
+    const toast = kerberosAccounts.shadowRoot.querySelector('#account-toast');
     assertTrue(!!toast);
     assertFalse(toast.open);
 
@@ -196,16 +203,17 @@ suite('KerberosAccountsTests', function() {
     clickMoreActions(Account.FIRST, MoreActions.REFRESH_NOW);
     flush();
 
-    const addDialog = kerberosAccounts.$$('kerberos-add-account-dialog');
+    const addDialog = kerberosAccounts.shadowRoot.querySelector(
+        'kerberos-add-account-dialog');
     assertTrue(!!addDialog);
-    addDialog.$$('.action-button').click();
+    addDialog.shadowRoot.querySelector('.action-button').click();
     flush();
 
     await onEvent(addDialog, 'close');
     await flushTasks();
     flush();
     assertTrue(toast.open);
-    assertTrue(kerberosAccounts.$$('#account-toast-label')
+    assertTrue(kerberosAccounts.shadowRoot.querySelector('#account-toast-label')
                    .innerHTML.includes('refreshed'));
   });
 
@@ -238,7 +246,7 @@ suite('KerberosAccountsTests', function() {
   });
 
   test('RemoveAccountShowsToast', async () => {
-    const toast = kerberosAccounts.$$('#account-toast');
+    const toast = kerberosAccounts.shadowRoot.querySelector('#account-toast');
     assertTrue(!!toast);
     assertFalse(toast.open);
 
@@ -249,13 +257,13 @@ suite('KerberosAccountsTests', function() {
     await flushTasks();
     flush();
     assertTrue(toast.open);
-    assertTrue(kerberosAccounts.$$('#account-toast-label')
+    assertTrue(kerberosAccounts.shadowRoot.querySelector('#account-toast-label')
                    .innerHTML.includes('removed'));
   });
 
   test('AccountListIsUpdatedWhenKerberosAccountsUpdates', function() {
     assertEquals(1, browserProxy.getCallCount('getAccounts'));
-    cr.webUIListenerCallback('kerberos-accounts-changed');
+    webUIListenerCallback('kerberos-accounts-changed');
     assertEquals(2, browserProxy.getCallCount('getAccounts'));
   });
 
@@ -290,7 +298,8 @@ suite('KerberosAccountsTests', function() {
       // Assert 'Remove' button is disabled iff account is managed.
       accountList[i].querySelector('.more-actions').click();
       const moreActions =
-          kerberosAccounts.$$('cr-action-menu').querySelectorAll('button');
+          kerberosAccounts.shadowRoot.querySelector('cr-action-menu')
+              .querySelectorAll('button');
       const removeAccountButton = moreActions[MoreActions.REMOVE_ACCOUNT];
       assertEquals(
           TEST_KERBEROS_ACCOUNTS[i].isManaged, removeAccountButton.disabled);
@@ -302,23 +311,27 @@ suite('KerberosAccountsTests', function() {
       assertEquals(
           TEST_KERBEROS_ACCOUNTS[i].isManaged, hasRemovalPolicyIndicator);
 
-      kerberosAccounts.$$('cr-action-menu').close();
+      kerberosAccounts.shadowRoot.querySelector('cr-action-menu').close();
     }
   });
 
   test('AddAccountsAllowed', function() {
     assertTrue(loadTimeData.getBoolean('kerberosAddAccountsAllowed'));
     createDialog();
-    assertTrue(!kerberosAccounts.$$('#add-account-policy-indicator'));
-    assertFalse(kerberosAccounts.$$('#add-account-button').disabled);
+    assertTrue(!kerberosAccounts.shadowRoot.querySelector(
+        '#add-account-policy-indicator'));
+    assertFalse(kerberosAccounts.shadowRoot.querySelector('#add-account-button')
+                    .disabled);
   });
 
   test('AddAccountsNotAllowed', function() {
     loadTimeData.overrideValues({kerberosAddAccountsAllowed: false});
     createDialog();
     flush();
-    assertTrue(!!kerberosAccounts.$$('#add-account-policy-indicator'));
-    assertTrue(kerberosAccounts.$$('#add-account-button').disabled);
+    assertTrue(!!kerberosAccounts.shadowRoot.querySelector(
+        '#add-account-policy-indicator'));
+    assertTrue(kerberosAccounts.shadowRoot.querySelector('#add-account-button')
+                   .disabled);
 
     // Reset for further tests.
     loadTimeData.overrideValues({kerberosAddAccountsAllowed: true});
@@ -351,14 +364,14 @@ suite('KerberosAddAccountTests', function() {
 
   setup(function() {
     browserProxy = new TestKerberosAccountsBrowserProxy();
-    KerberosAccountsBrowserProxyImpl.instance_ = browserProxy;
+    KerberosAccountsBrowserProxyImpl.setInstanceForTesting(browserProxy);
     PolymerTest.clearBody();
     createDialog(null);
   });
 
   teardown(function() {
     dialog.remove();
-    KerberosAccountsBrowserProxyImpl.instance_ = undefined;
+    KerberosAccountsBrowserProxyImpl.setInstanceForTesting(undefined);
   });
 
   function createDialog(presetAccount) {
@@ -391,7 +404,7 @@ suite('KerberosAddAccountTests', function() {
     generalError = dialog.$['general-error-message'];
     assertTrue(!!generalError);
 
-    title = dialog.$$('[slot=title]').innerText;
+    title = dialog.shadowRoot.querySelector('[slot=title]').innerText;
     assertTrue(!!title);
   }
 
@@ -410,10 +423,12 @@ suite('KerberosAddAccountTests', function() {
 
   // Opens the Advanced Config dialog, sets |config| as Kerberos configuration
   // and clicks 'Save'. Returns a promise with the validation result.
-  function setConfig(config) {
+  async function setConfig(config) {
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     const configElement = advancedConfigDialog.querySelector('#config');
     assertFalse(configElement.disabled);
     configElement.value = config;
@@ -424,17 +439,19 @@ suite('KerberosAddAccountTests', function() {
 
   // Opens the Advanced Config dialog, asserts that |config| is set as
   // Kerberos configuration and clicks 'Cancel'.
-  function assertConfig(config) {
+  async function assertConfig(config) {
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     assertEquals(config, advancedConfigDialog.querySelector('#config').value);
     advancedConfigDialog.querySelector('.cancel-button').click();
     flush();
   }
 
   // Verifies expected states if no account is preset.
-  test('StatesWithoutPresetAccount', function() {
+  test('StatesWithoutPresetAccount', async () => {
     assertTrue(title.startsWith('Add'));
     assertEquals('Add', actionButton.innerText);
     assertFalse(username.disabled);
@@ -445,7 +462,7 @@ suite('KerberosAddAccountTests', function() {
   });
 
   // Verifies expected states if an account is preset.
-  test('StatesWithPresetAccount', function() {
+  test('StatesWithPresetAccount', async () => {
     createDialog(TEST_KERBEROS_ACCOUNTS[0]);
     assertTrue(title.startsWith('Refresh'));
     assertEquals('Refresh', actionButton.innerText);
@@ -479,7 +496,8 @@ suite('KerberosAddAccountTests', function() {
     assertTrue(TEST_KERBEROS_ACCOUNTS[1].passwordWasRemembered);
     createDialog(TEST_KERBEROS_ACCOUNTS[1]);
 
-    assertTrue(!dialog.$$('#rememberPasswordPolicyIndicator'));
+    assertTrue(
+        !dialog.shadowRoot.querySelector('#rememberPasswordPolicyIndicator'));
     assertFalse(rememberPassword.disabled);
     assertTrue(rememberPassword.checked);
     assertNotEquals('', password.value);
@@ -491,7 +509,8 @@ suite('KerberosAddAccountTests', function() {
     createDialog(TEST_KERBEROS_ACCOUNTS[1]);
     flush();
 
-    assertTrue(!!dialog.$$('#rememberPasswordPolicyIndicator'));
+    assertTrue(
+        !!dialog.shadowRoot.querySelector('#rememberPasswordPolicyIndicator'));
     assertTrue(rememberPassword.disabled);
     assertFalse(rememberPassword.checked);
     assertEquals('', password.value);
@@ -505,7 +524,8 @@ suite('KerberosAddAccountTests', function() {
     createDialog(null);
     flush();
 
-    assertFalse(dialog.$$('#rememberPasswordContainer').hidden);
+    assertFalse(
+        dialog.shadowRoot.querySelector('#rememberPasswordContainer').hidden);
   });
 
   test('RememberPasswordHiddenOnMgs', function() {
@@ -513,7 +533,8 @@ suite('KerberosAddAccountTests', function() {
     createDialog(null);
     flush();
 
-    assertTrue(dialog.$$('#rememberPasswordContainer').hidden);
+    assertTrue(
+        dialog.shadowRoot.querySelector('#rememberPasswordContainer').hidden);
 
     // Reset for further tests.
     loadTimeData.overrideValues({isGuest: false});
@@ -589,12 +610,14 @@ suite('KerberosAddAccountTests', function() {
   });
 
   test('AdvancedConfigOpenClose', async () => {
-    assertTrue(!dialog.$$('#advancedConfigDialog'));
+    assertTrue(!dialog.shadowRoot.querySelector('#advancedConfigDialog'));
     assertFalse(addDialog.hidden);
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
 
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     assertTrue(!!advancedConfigDialog);
     assertTrue(advancedConfigDialog.open);
     assertTrue(addDialog.hidden);
@@ -607,15 +630,17 @@ suite('KerberosAddAccountTests', function() {
     await browserProxy.whenCalled('validateConfig');
     flush();
     assertFalse(saveButton.disabled);
-    assertTrue(!dialog.$$('#advancedConfigDialog'));
+    assertTrue(!dialog.shadowRoot.querySelector('#advancedConfigDialog'));
     assertFalse(addDialog.hidden);
     assertTrue(addDialog.open);
   });
 
   test('AdvancedConfigurationSaveKeepsConfig', async () => {
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     assertTrue(!!advancedConfigDialog);
 
     // Change config and save.
@@ -629,10 +654,12 @@ suite('KerberosAddAccountTests', function() {
     assertConfig(modifiedConfig);
   });
 
-  test('AdvancedConfigurationCancelResetsConfig', function() {
+  test('AdvancedConfigurationCancelResetsConfig', async () => {
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     assertTrue(!!advancedConfigDialog);
 
     // Change config and cancel.
@@ -645,12 +672,14 @@ suite('KerberosAddAccountTests', function() {
     assertConfig(prevConfig);
   });
 
-  test('AdvancedConfigurationDisabledByPolicy', function() {
+  test('AdvancedConfigurationDisabledByPolicy', async () => {
     assertTrue(TEST_KERBEROS_ACCOUNTS[2].isManaged);
     createDialog(TEST_KERBEROS_ACCOUNTS[2]);
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     assertTrue(!!advancedConfigDialog);
     assertTrue(
         !!advancedConfigDialog.querySelector('#advancedConfigPolicyIndicator'));
@@ -659,14 +688,17 @@ suite('KerberosAddAccountTests', function() {
 
   test('AdvancedConfigurationValidationError', async () => {
     advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
     flush();
-    const advancedConfigDialog = dialog.$$('#advancedConfigDialog');
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
     assertTrue(!!advancedConfigDialog);
 
     // Cause a validation error.
     browserProxy.validateConfigResult = {
-      error: KerberosErrorType.kBadConfig,
-      errorInfo: {code: KerberosConfigErrorCode.kKeyNotSupported, lineIndex: 0}
+      error: KerberosErrorType.BAD_CONFIG,
+      errorInfo:
+          {code: KerberosConfigErrorCode.KEY_NOT_SUPPORTED, lineIndex: 0},
     };
 
     // Clicking the action button (aka 'Save') validates the config.
@@ -690,7 +722,7 @@ suite('KerberosAddAccountTests', function() {
     assertEquals(0, textArea.selectionStart);
     assertNotEquals(0, textArea.selectionEnd);
 
-    // Is the config dialog is still open?
+    // Is the config dialog still open?
     assertTrue(advancedConfigDialog.open);
     assertTrue(addDialog.hidden);
 
@@ -700,59 +732,128 @@ suite('KerberosAddAccountTests', function() {
     assertConfig(loadTimeData.getString('defaultKerberosConfig'));
   });
 
+  test('ValidateConfigurationOnAdvancedClick', async () => {
+    // Cause a validation error.
+    browserProxy.validateConfigResult = {
+      error: KerberosErrorType.BAD_CONFIG,
+      errorInfo:
+          {code: KerberosConfigErrorCode.KEY_NOT_SUPPORTED, lineIndex: 0},
+    };
+
+    // Validating happens on "Advanced" click.
+    advancedConfigButton.click();
+    await browserProxy.whenCalled('validateConfig');
+
+    // Wait for dialog to process the 'validateConfig' result (sets error
+    // message etc.).
+    await flushTasks();
+
+    const advancedConfigDialog =
+        dialog.shadowRoot.querySelector('#advancedConfigDialog');
+    assertTrue(!!advancedConfigDialog);
+
+    // Is some error text set?
+    const configError =
+        advancedConfigDialog.querySelector('#config-error-message');
+    assertTrue(!!configError);
+    assertNotEquals(0, configError.innerText.length);
+
+    // Is something selected?
+    const configElement = advancedConfigDialog.querySelector('#config');
+    const textArea = configElement.$.input;
+    assertEquals(0, textArea.selectionStart);
+    assertNotEquals(0, textArea.selectionEnd);
+  });
+
+  test('DomainAutocompleteEnabled', function() {
+    loadTimeData.overrideValues({kerberosDomainAutocomplete: 'domain.com'});
+    createDialog();
+    flush();
+
+    // '@' should be automatically added to the policy value.
+    assertEquals(
+        '@domain.com',
+        dialog.shadowRoot.querySelector('#kerberosDomain').innerText);
+
+    // Reset for further tests.
+    loadTimeData.overrideValues({kerberosDomainAutocomplete: ''});
+  });
+
+  test('DomainAutocompleteEnabledOverride', function() {
+    loadTimeData.overrideValues({kerberosDomainAutocomplete: 'domain.com'});
+    assertTrue(
+        TEST_KERBEROS_ACCOUNTS[0].principalName &&
+        TEST_KERBEROS_ACCOUNTS[0].principalName.indexOf('@') !== -1);
+    createDialog(TEST_KERBEROS_ACCOUNTS[0]);
+    flush();
+
+    // If inserted principal contains '@', nothing should be shown.
+    assertEquals(
+        '', dialog.shadowRoot.querySelector('#kerberosDomain').innerText);
+
+    // Reset for further tests.
+    loadTimeData.overrideValues({kerberosDomainAutocomplete: ''});
+  });
+
+  test('DomainAutocompleteDisabled', function() {
+    assertEquals('', loadTimeData.getString('kerberosDomainAutocomplete'));
+    assertEquals(
+        '', dialog.shadowRoot.querySelector('#kerberosDomain').innerText);
+  });
+
   // addAccount: KerberosErrorType.kNetworkProblem spawns a general error.
   test('AddAccountError_NetworkProblem', async () => {
-    await checkAddAccountError(KerberosErrorType.kNetworkProblem, generalError);
+    await checkAddAccountError(KerberosErrorType.NETWORK_PROBLEM, generalError);
   });
 
   // addAccount: KerberosErrorType.kParsePrincipalFailed spawns a username
   // error.
   test('AddAccountError_ParsePrincipalFailed', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kParsePrincipalFailed, username.$.error);
+        KerberosErrorType.PARSE_PRINCIPAL_FAILED, username.$.error);
   });
 
-  // addAccount: KerberosErrorType.kBadPrincipal spawns a username error.
+  // addAccount: KerberosErrorType.BAD_PRINCIPAL spawns a username error.
   test('AddAccountError_BadPrincipal', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kBadPrincipal, username.$.error);
+        KerberosErrorType.BAD_PRINCIPAL, username.$.error);
   });
 
-  // addAccount: KerberosErrorType.kDuplicatePrincipalName spawns a username
+  // addAccount: KerberosErrorType.DUPLICATE_PRINCIPAL_NAME spawns a username
   // error.
   test('AddAccountError_DuplicatePrincipalName', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kDuplicatePrincipalName, username.$.error);
+        KerberosErrorType.DUPLICATE_PRINCIPAL_NAME, username.$.error);
   });
 
-  // addAccount: KerberosErrorType.kContactingKdcFailed spawns a username
+  // addAccount: KerberosErrorType.CONTACTING_KDC_FAILED spawns a username
   // error.
   test('AddAccountError_ContactingKdcFailed', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kContactingKdcFailed, username.$.error);
+        KerberosErrorType.CONTACTING_KDC_FAILED, username.$.error);
   });
 
-  // addAccount: KerberosErrorType.kBadPassword spawns a password error.
+  // addAccount: KerberosErrorType.BAD_PASSWORD spawns a password error.
   test('AddAccountError_BadPassword', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kBadPassword, password.$.error);
+        KerberosErrorType.BAD_PASSWORD, password.$.error);
   });
 
-  // addAccount: KerberosErrorType.kPasswordExpired spawns a password error.
+  // addAccount: KerberosErrorType.PASSWORD_EXPIRED spawns a password error.
   test('AddAccountError_PasswordExpired', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kPasswordExpired, password.$.error);
+        KerberosErrorType.PASSWORD_EXPIRED, password.$.error);
   });
 
-  // addAccount: KerberosErrorType.kKdcDoesNotSupportEncryptionType spawns a
-  // general error.
+  // addAccount: KerberosErrorType.KDC_DOES_NOT_SUPPORT_ENCRYPTION_TYPE spawns
+  // a general error.
   test('AddAccountError_KdcDoesNotSupportEncryptionType', async () => {
     await checkAddAccountError(
-        KerberosErrorType.kKdcDoesNotSupportEncryptionType, generalError);
+        KerberosErrorType.KDC_DOES_NOT_SUPPORT_ENCRYPTION_TYPE, generalError);
   });
 
-  // addAccount: KerberosErrorType.kUnknown spawns a general error.
+  // addAccount: KerberosErrorType.UNKNOWN spawns a general error.
   test('AddAccountError_Unknown', async () => {
-    await checkAddAccountError(KerberosErrorType.kUnknown, generalError);
+    await checkAddAccountError(KerberosErrorType.UNKNOWN, generalError);
   });
 });

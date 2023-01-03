@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,9 @@
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chromeos/launcher_search/search_util.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/lacros/launcher_search/search_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chromeos/lacros/lacros_service.h"
 #include "components/bookmarks/browser/bookmark_model.h"
@@ -28,11 +28,11 @@ SearchControllerLacros::SearchControllerLacros()
     return;
   }
 
-  profile_observation_.Observe(profile_);
+  profile_observation_.Observe(profile_.get());
 
   autocomplete_controller_ = std::make_unique<AutocompleteController>(
       std::make_unique<ChromeAutocompleteProviderClient>(profile_),
-      ProviderTypes());
+      ProviderTypes(), /*is_cros_launcher=*/true);
   autocomplete_controller_->AddObserver(this);
 
   favicon_cache_ = std::make_unique<FaviconCache>(
@@ -52,7 +52,7 @@ SearchControllerLacros::~SearchControllerLacros() = default;
 
 void SearchControllerLacros::OnProfileWillBeDestroyed(Profile* profile) {
   DCHECK_EQ(profile, profile_);
-  DCHECK(profile_observation_.IsObservingSource(profile_));
+  DCHECK(profile_observation_.IsObservingSource(profile_.get()));
 
   // SearchControllerLacros must shut down before the Profile is destroyed,
   // otherwise there will be a use-after-free.
@@ -91,7 +91,7 @@ void SearchControllerLacros::Search(const std::u16string& query,
       AutocompleteInput(query, metrics::OmniboxEventProto::CHROMEOS_APP_LIST,
                         ChromeAutocompleteSchemeClassifier(profile_));
   if (input.text().empty())
-    input.set_focus_type(OmniboxFocusType::ON_FOCUS);
+    input.set_focus_type(metrics::OmniboxFocusType::INTERACTION_FOCUS);
 
   query_ = query;
   input_ = input;
@@ -104,13 +104,16 @@ void SearchControllerLacros::OnResultChanged(AutocompleteController* controller,
 
   std::vector<mojom::SearchResultPtr> results;
   for (AutocompleteMatch match : autocomplete_controller_->result()) {
+    // Calculator results are honorary answer results.
+    const bool is_answer = match.answer.has_value() ||
+                           match.type == AutocompleteMatchType::CALCULATOR;
     auto result =
-        match.answer.has_value()
-            ? CreateAnswerResult(match, autocomplete_controller_.get(), input_)
-            : CreateResult(match, autocomplete_controller_.get(),
-                           favicon_cache_.get(),
-                           BookmarkModelFactory::GetForBrowserContext(profile_),
-                           query_, input_);
+        is_answer
+            ? CreateAnswerResult(match, autocomplete_controller_.get(), query_,
+                                 input_)
+            : CreateResult(
+                  match, autocomplete_controller_.get(), favicon_cache_.get(),
+                  BookmarkModelFactory::GetForBrowserContext(profile_), input_);
 
     results.push_back(std::move(result));
   }

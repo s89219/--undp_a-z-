@@ -1,14 +1,15 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/optimization_guide/optimization_guide_service.h"
+#import "ios/chrome/browser/optimization_guide/optimization_guide_service.h"
 
-#include "base/command_line.h"
+#import "base/command_line.h"
 #import "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_command_line.h"
+#import "base/test/scoped_command_line.h"
 #import "base/test/scoped_feature_list.h"
 #import "components/optimization_guide/core/hints_component_util.h"
+#import "components/optimization_guide/core/hints_manager.h"
 #import "components/optimization_guide/core/optimization_guide_features.h"
 #import "components/optimization_guide/core/optimization_guide_navigation_data.h"
 #import "components/optimization_guide/core/optimization_guide_switches.h"
@@ -21,13 +22,12 @@
 #import "components/unified_consent/pref_names.h"
 #import "components/unified_consent/unified_consent_service.h"
 #import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#import "ios/chrome/browser/optimization_guide/ios_chrome_hints_manager.h"
 #import "ios/chrome/browser/optimization_guide/optimization_guide_service_factory.h"
 #import "ios/chrome/browser/optimization_guide/optimization_guide_test_utils.h"
 #import "ios/chrome/browser/prefs/browser_prefs.h"
 #import "ios/web/public/navigation/navigation_manager.h"
 #import "ios/web/public/test/fakes/fake_navigation_context.h"
-#include "ios/web/public/test/web_task_environment.h"
+#import "ios/web/public/test/web_task_environment.h"
 #import "services/metrics/public/cpp/ukm_builders.h"
 #import "services/metrics/public/cpp/ukm_source.h"
 #import "testing/gtest/include/gtest/gtest.h"
@@ -87,7 +87,7 @@ class OptimizationGuideServiceTest : public PlatformTest {
         std::make_unique<sync_preferences::TestingPrefServiceSyncable>();
     RegisterBrowserStatePrefs(testing_prefs->registry());
 
-    std::vector<base::Feature> enabled_features;
+    std::vector<base::test::FeatureRef> enabled_features;
     enabled_features.push_back(
         optimization_guide::features::kOptimizationHints);
     enabled_features.push_back(
@@ -112,7 +112,9 @@ class OptimizationGuideServiceTest : public PlatformTest {
         OptimizationGuideServiceFactory::GetForBrowserState(
             browser_state_.get());
     optimization_guide_service_->DoFinalInit();
+  }
 
+  void CreateOTRBrowserState() {
     ChromeBrowserState* otr_browser_state =
         browser_state_->CreateOffTheRecordBrowserStateWithTestingFactories(
             {std::make_pair(
@@ -123,6 +125,10 @@ class OptimizationGuideServiceTest : public PlatformTest {
   }
 
   void PushHintsComponentAndWaitForCompletion() {
+    RetryForHistogramUntilCountReached(
+        histogram_tester(),
+        "OptimizationGuide.HintsManager.HintCacheInitialized", 1);
+
     base::RunLoop run_loop;
     optimization_guide_service()
         ->GetHintsManager()
@@ -177,8 +183,8 @@ class OptimizationGuideServiceTest : public PlatformTest {
         {optimization_guide::proto::NOSCRIPT});
   }
 
-  // Calls the |CanApplyOptimizationAsync| and expects |expected_decision| when
-  // the decision is returned. |on_decision_callback| is called when the
+  // Calls the `CanApplyOptimizationAsync` and expects `expected_decision` when
+  // the decision is returned. `on_decision_callback` is called when the
   // decision is called.
   void VerifyCanApplyOptimizationAsyncDecision(
       NavigationContextAndData* context_and_data,
@@ -510,6 +516,7 @@ TEST_F(OptimizationGuideServiceTest, IncognitoCanStillReadFromComponentHints) {
 
   // Set up incognito browser state and incognito OptimizationGuideService
   // consumer.
+  CreateOTRBrowserState();
   ChromeBrowserState* otr_browser_state =
       browser_state_->GetOffTheRecordChromeBrowserState();
 
@@ -517,6 +524,8 @@ TEST_F(OptimizationGuideServiceTest, IncognitoCanStillReadFromComponentHints) {
   OptimizationGuideService* otr_ogs =
       OptimizationGuideServiceFactory::GetForBrowserState(otr_browser_state);
   otr_ogs->RegisterOptimizationTypes({optimization_guide::proto::NOSCRIPT});
+  // Wait until initialization has stabilized.
+  RunUntilIdle();
 
   // Navigate to a URL that has a hint from a component and wait for that hint
   // to have loaded.
@@ -536,6 +545,7 @@ TEST_F(OptimizationGuideServiceTest, IncognitoStillProcessesBloomFilter) {
 
   // Set up incognito browser and incognito OptimizationGuideService
   // consumer.
+  CreateOTRBrowserState();
   ChromeBrowserState* otr_browser_state =
       browser_state_->GetOffTheRecordChromeBrowserState();
 

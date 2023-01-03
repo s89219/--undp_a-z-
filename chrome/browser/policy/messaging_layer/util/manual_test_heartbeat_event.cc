@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,9 +20,9 @@
 namespace reporting {
 namespace {
 
-const base::Feature kEncryptedReportingManualTestHeartbeatEvent{
-    "EncryptedReportingManualTestHeartbeatEvent",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+BASE_FEATURE(kEncryptedReportingManualTestHeartbeatEvent,
+             "EncryptedReportingManualTestHeartbeatEvent",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace
 
@@ -43,13 +43,14 @@ void ManualTestHeartbeatEvent::StartHeartbeatEvent() const {
   }
 
   Start<ReportQueueManualTestContext>(
-      /*frequency=*/base::Seconds(1),
+      /*period=*/base::Seconds(1),
       /*number_of_messages_to_enqueue=*/10,
       /*destination=*/HEARTBEAT_EVENTS,
       /*priority=*/FAST_BATCH, base::BindOnce([](Status status) {
         LOG(WARNING) << "Heartbeat Event completed with status: " << status;
       }),
-      base::ThreadPool::CreateSequencedTaskRunner(base::TaskTraits()));
+      base::ThreadPool::CreateSequencedTaskRunner(
+          {base::TaskPriority::BEST_EFFORT, base::MayBlock()}));
 }
 
 }  // namespace reporting

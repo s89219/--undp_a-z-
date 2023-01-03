@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,8 +27,8 @@ class UkmDatabase {
   UkmDatabase() = default;
   virtual ~UkmDatabase() = default;
 
-  UkmDatabase(UkmDatabase&) = delete;
-  UkmDatabase& operator=(UkmDatabase&) = delete;
+  UkmDatabase(const UkmDatabase&) = delete;
+  UkmDatabase& operator=(const UkmDatabase&) = delete;
 
   using SuccessCallback = base::OnceCallback<void(bool)>;
 
@@ -89,8 +89,8 @@ class UkmDatabase {
   virtual void RunReadonlyQueries(QueryList&& queries,
                                   QueryCallback callback) = 0;
 
-  // Removes metrics older than the given time from the database. URLs are
-  // removed when there are no references to the metrics.
+  // Removes metrics older than or equal to the given `time` from the database.
+  // URLs are removed when there are no references to the metrics.
   virtual void DeleteEntriesOlderThan(base::Time time) = 0;
 };
 

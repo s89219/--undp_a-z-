@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,9 @@
 
 #include "ash/app_list/app_list_model_provider.h"
 #include "ash/app_list/model/app_list_item.h"
+#include "ash/public/cpp/app_list/app_list_controller.h"
 #include "base/bind.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "ui/base/models/simple_menu_model.h"
 
@@ -30,7 +31,7 @@ void TestAppListClient::StartZeroStateSearch(base::OnceClosure on_done,
     // Simulate production behavior, which collects the results asynchronously.
     // Bounce through OnZeroStateSearchDone() to count calls, so that tests can
     // assert that the callback happened.
-    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&TestAppListClient::OnZeroStateSearchDone,
                        weak_factory_.GetWeakPtr(), std::move(on_done)),
@@ -39,7 +40,9 @@ void TestAppListClient::StartZeroStateSearch(base::OnceClosure on_done,
 }
 
 void TestAppListClient::StartSearch(const std::u16string& trimmed_query) {
-  last_search_query_ = trimmed_query;
+  search_queries_.push_back(trimmed_query);
+  if (search_callback_)
+    search_callback_.Run(trimmed_query);
 }
 
 void TestAppListClient::OpenSearchResult(int profile_id,
@@ -56,12 +59,6 @@ void TestAppListClient::InvokeSearchResultAction(
     const std::string& result_id,
     SearchResultActionType action) {
   invoked_result_actions_.emplace_back(result_id, action);
-}
-
-void TestAppListClient::GetSearchResultContextMenuModel(
-    const std::string& result_id,
-    GetContextMenuModelCallback callback) {
-  std::move(callback).Run(nullptr);
 }
 
 void TestAppListClient::ActivateItem(int profile_id,
@@ -87,15 +84,28 @@ AppListNotifier* TestAppListClient::GetNotifier() {
 }
 
 std::vector<TestAppListClient::SearchResultActionId>
-TestAppListClient::GetAndClearInvokedResultActions() {
+TestAppListClient::GetAndResetInvokedResultActions() {
   std::vector<SearchResultActionId> result;
   result.swap(invoked_result_actions_);
+  return result;
+}
+
+std::vector<std::u16string> TestAppListClient::GetAndResetPastSearchQueries() {
+  std::vector<std::u16string> result;
+  result.swap(search_queries_);
   return result;
 }
 
 ash::AppListSortOrder TestAppListClient::GetPermanentSortingOrder() const {
   NOTIMPLEMENTED();
   return ash::AppListSortOrder::kCustom;
+}
+
+void TestAppListClient::CommitTemporarySortOrder() {
+  // Committing the temporary sort order should not introduce item reorder so
+  // reset the sort order without reorder animation.
+  AppListController::Get()->UpdateAppListWithNewTemporarySortOrder(
+      /*new_order=*/absl::nullopt, /*animate=*/false, base::NullCallback());
 }
 
 void TestAppListClient::OnZeroStateSearchDone(base::OnceClosure on_done) {

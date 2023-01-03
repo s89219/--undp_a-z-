@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -79,26 +79,7 @@ class DocumentProvider : public AutocompleteProvider {
   static const GURL GetURLForDeduping(const GURL& url);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, IsDocumentProviderAllowed);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, IsInputLikelyURL);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, ParseDocumentSearchResults);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest,
-                           ProductDescriptionStringsAndAccessibleLabels);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, MatchDescriptionString);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest,
-                           ParseDocumentSearchResultsBreakTies);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest,
-                           ParseDocumentSearchResultsBreakTiesCascade);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest,
-                           ParseDocumentSearchResultsBreakTiesZeroLimit);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest,
-                           ParseDocumentSearchResultsWithBadResponse);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, GenerateLastModifiedString);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, Scoring);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, CachingForAsyncMatches);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, CachingForSyncMatches);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, StartCallsStop);
-  FRIEND_TEST_ALL_PREFIXES(DocumentProviderTest, Logging);
+  friend class FakeDocumentProvider;
 
   using MatchesCache = base::LRUCache<GURL, AutocompleteMatch>;
 
@@ -192,9 +173,6 @@ class DocumentProvider : public AutocompleteProvider {
 
   // Client for accessing TemplateUrlService, prefs, etc.
   raw_ptr<AutocompleteProviderClient> client_;
-
-  // Listener to notify when results are available.
-  raw_ptr<AutocompleteProviderListener> listener_;
 
   // Saved when starting a new autocomplete request so that it can be retrieved
   // when responses return asynchronously.

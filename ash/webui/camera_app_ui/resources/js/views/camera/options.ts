@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,8 @@ import * as dom from '../../dom.js';
 import {I18nString} from '../../i18n_string.js';
 import * as localStorage from '../../models/local_storage.js';
 import * as nav from '../../nav.js';
-import * as newFeatureToast from '../../new_feature_toast.js';
 import * as state from '../../state.js';
-import {Facing, Mode, ViewName} from '../../type.js';
+import {Facing, LocalStorageKey, Mode, ViewName} from '../../type.js';
 import * as util from '../../util.js';
 import {OptionPanelOptions, PTZPanelOptions, StateOption} from '../view.js';
 
@@ -82,12 +81,18 @@ export class Options implements CameraUI {
     this.initOpenPTZPanel();
 
     // Restore saved mirroring states per video device.
-    this.mirroringToggles = localStorage.getObject('mirroringToggles');
-    // Remove the deprecated values.
-    localStorage.remove('effectIndex', 'toggleMulti', 'toggleMirror');
+    this.mirroringToggles =
+        localStorage.getObject(LocalStorageKey.MIRRORING_TOGGLES);
 
     state.addObserver(state.State.TAKING, () => {
       this.updateOptionAvailability();
+    });
+
+    util.bindElementAriaLabelWithState({
+      element: this.toggleMic,
+      state: state.State.MIC,
+      onLabel: I18nString.ARIA_MUTE_OFF,
+      offLabel: I18nString.ARIA_MUTE_ON,
     });
   }
 
@@ -228,37 +233,6 @@ export class Options implements CameraUI {
                  vidPid: this.cameraManager.getVidPid(),
                  resetPTZ: () => this.cameraManager.resetPTZ(),
                }));
-      highlight(false);
-    });
-
-    // Highlight effect for PTZ button.
-    let toastShown = false;
-    const highlight = (enabled: boolean) => {
-      if (!enabled) {
-        if (toastShown) {
-          newFeatureToast.hide();
-          toastShown = false;
-        }
-        return;
-      }
-      toastShown = true;
-      newFeatureToast.show(this.openPTZPanel);
-      newFeatureToast.focus();
-    };
-
-    this.cameraManager.registerCameraUI({
-      onUpdateConfig: () => {
-        const ptzToastKey = 'isPTZToastShown';
-        if (!state.get(state.State.ENABLE_PTZ) ||
-            state.get(state.State.IS_NEW_FEATURE_TOAST_SHOWN) ||
-            localStorage.getBool(ptzToastKey)) {
-          highlight(false);
-          return;
-        }
-        localStorage.set(ptzToastKey, true);
-        state.set(state.State.IS_NEW_FEATURE_TOAST_SHOWN, true);
-        highlight(true);
-      },
     });
   }
 
@@ -324,7 +298,8 @@ export class Options implements CameraUI {
   private saveMirroring(enabled: boolean) {
     if (this.currentConfig !== null) {
       this.mirroringToggles[this.currentConfig.deviceId] = enabled;
-      localStorage.set('mirroringToggles', this.mirroringToggles);
+      localStorage.set(
+          LocalStorageKey.MIRRORING_TOGGLES, this.mirroringToggles);
     }
   }
 

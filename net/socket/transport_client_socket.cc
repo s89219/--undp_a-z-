@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,12 +17,6 @@ bool TransportClientSocket::SetNoDelay(bool no_delay) {
 bool TransportClientSocket::SetKeepAlive(bool enable, int delay_secs) {
   NOTIMPLEMENTED();
   return false;
-}
-
-void TransportClientSocket::SetSocketCreatorForTesting(
-    base::RepeatingCallback<std::unique_ptr<net::TransportClientSocket>(void)>
-        socket_creator) {
-  NOTIMPLEMENTED();
 }
 
 }  // namespace net

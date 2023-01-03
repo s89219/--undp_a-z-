@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,7 @@ namespace views::examples {
 
 namespace {
 
-gfx::Range ClampRange(gfx::Range range, uint32_t max) {
+gfx::Range ClampRange(gfx::Range range, size_t max) {
   range.set_start(std::min(range.start(), max));
   range.set_end(std::min(range.end(), max));
   return range;

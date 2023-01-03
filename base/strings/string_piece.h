@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -33,7 +33,9 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
-#include "base/strings/string_piece_forward.h"
+#include "base/cxx20_is_constant_evaluated.h"
+#include "base/numerics/safe_math.h"
+#include "base/strings/string_piece_forward.h"  // IWYU pragma: export
 #include "build/build_config.h"
 
 namespace base {
@@ -116,8 +118,9 @@ class GSL_POINTER BasicStringPiece {
   constexpr BasicStringPiece(const BasicStringPiece& other) noexcept = default;
   constexpr BasicStringPiece& operator=(const BasicStringPiece& view) noexcept =
       default;
-  constexpr BasicStringPiece(const CharT* s, size_type count)
-      : ptr_(s), length_(count) {}
+  constexpr BasicStringPiece(const CharT* s, CheckedNumeric<size_t> count)
+      : ptr_(s), length_(count.ValueOrDie()) {}
+  // NOLINTNEXTLINE(google-explicit-constructor)
   constexpr BasicStringPiece(const CharT* s)
       : ptr_(s), length_(s ? traits_type::length(s) : 0) {
     // Intentional STL deviation: Null-check instead of UB.
@@ -607,10 +610,10 @@ struct StringPieceHashImpl {
   // This is a custom hash function. We don't use the ones already defined for
   // string and std::u16string directly because it would require the string
   // constructors to be called, which we don't want.
-  std::size_t operator()(StringPieceType sp) const {
-    std::size_t result = 0;
+  size_t operator()(StringPieceType sp) const {
+    size_t result = 0;
     for (auto c : sp)
-      result = (result * 131) + c;
+      result = (result * 131) + static_cast<size_t>(c);
     return result;
   }
 };

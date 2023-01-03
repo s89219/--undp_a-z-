@@ -1,14 +1,14 @@
 {
     "0": {
         "benchmarks": {
+            "ad_frames.fencedframe": {
+                "abridged": false
+            },
             "blink_perf.accessibility": {
                 "abridged": false
             },
             "blink_perf.bindings": {
-                "end": 48,
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 35,
                 "abridged": false
             },
             "jetstream2": {
@@ -17,35 +17,38 @@
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         },
         "executables": {
             "base_perftests": {
-                "path": "base_perftests",
                 "arguments": [
                     "--test-launcher-jobs=1",
                     "--test-launcher-retry-limit=0"
-                ]
+                ],
+                "path": "base_perftests"
             }
         }
     },
     "1": {
         "benchmarks": {
             "blink_perf.bindings": {
-                "begin": 48,
+                "begin": 35,
                 "abridged": false
             },
             "blink_perf.css": {
@@ -61,10 +64,7 @@
                 "abridged": false
             },
             "blink_perf.layout": {
-                "end": 23,
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 34,
                 "abridged": false
             },
             "jetstream2": {
@@ -73,18 +73,21 @@
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
@@ -92,7 +95,7 @@
     "2": {
         "benchmarks": {
             "blink_perf.layout": {
-                "begin": 23,
+                "begin": 34,
                 "abridged": false
             },
             "blink_perf.owp_storage": {
@@ -102,10 +105,7 @@
                 "abridged": false
             },
             "blink_perf.parser": {
-                "end": 4,
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 29,
                 "abridged": false
             },
             "jetstream2": {
@@ -114,18 +114,21 @@
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
@@ -133,7 +136,7 @@
     "3": {
         "benchmarks": {
             "blink_perf.parser": {
-                "begin": 4,
+                "begin": 29,
                 "abridged": false
             },
             "blink_perf.sanitizer-api": {
@@ -152,51 +155,13 @@
                 "abridged": false
             },
             "blink_perf.webgl": {
-                "end": 2,
-                "abridged": false
-            },
-            "speedometer2": {
-                "abridged": false
-            },
-            "jetstream2": {
-                "abridged": false
-            },
-            "system_health.common_desktop": {
-                "sections": [
-                    {
-                        "begin": 65,
-                        "end": 66
-                    },
-                    {
-                        "begin": 76,
-                        "end": 77
-                    },
-                    {
-                        "begin": 80,
-                        "end": 81
-                    }
-                ],
-                "abridged": false
-            }
-        }
-    },
-    "4": {
-        "benchmarks": {
-            "blink_perf.webgl": {
-                "begin": 2,
                 "abridged": false
             },
             "blink_perf.webgl_fast_call": {
                 "abridged": false
             },
             "desktop_ui": {
-                "abridged": false
-            },
-            "dromaeo": {
-                "end": 2,
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 1,
                 "abridged": false
             },
             "jetstream2": {
@@ -205,26 +170,29 @@
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
     },
-    "5": {
+    "4": {
         "benchmarks": {
-            "dromaeo": {
-                "begin": 2,
+            "desktop_ui": {
+                "begin": 1,
                 "abridged": false
             },
             "dummy_benchmark.noisy_benchmark_1": {
@@ -233,6 +201,33 @@
             "dummy_benchmark.stable_benchmark_1": {
                 "abridged": false
             },
+            "jetstream2": {
+                "abridged": false
+            },
+            "system_health.common_desktop": {
+                "sections": [
+                    {
+                        "begin": 64,
+                        "end": 65
+                    },
+                    {
+                        "begin": 75,
+                        "end": 76
+                    },
+                    {
+                        "begin": 79,
+                        "end": 80
+                    }
+                ],
+                "abridged": false
+            },
+            "speedometer2": {
+                "abridged": false
+            }
+        }
+    },
+    "5": {
+        "benchmarks": {
             "jetstream": {
                 "abridged": false
             },
@@ -243,27 +238,27 @@
                 "abridged": false
             },
             "loading.desktop": {
-                "end": 17,
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 20,
                 "abridged": false
             },
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         },
@@ -276,28 +271,28 @@
     "6": {
         "benchmarks": {
             "loading.desktop": {
-                "begin": 17,
+                "begin": 20,
                 "end": 44,
-                "abridged": false
-            },
-            "speedometer2": {
                 "abridged": false
             },
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
@@ -306,27 +301,27 @@
         "benchmarks": {
             "loading.desktop": {
                 "begin": 44,
-                "end": 70,
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 68,
                 "abridged": false
             },
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
@@ -334,28 +329,28 @@
     "8": {
         "benchmarks": {
             "loading.desktop": {
-                "begin": 70,
-                "end": 96,
-                "abridged": false
-            },
-            "speedometer2": {
+                "begin": 68,
+                "end": 89,
                 "abridged": false
             },
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
@@ -363,40 +358,62 @@
     "9": {
         "benchmarks": {
             "loading.desktop": {
-                "begin": 96,
+                "begin": 89,
                 "abridged": false
             },
             "media.desktop": {
-                "abridged": false
-            },
-            "speedometer2": {
+                "end": 11,
                 "abridged": false
             },
             "system_health.common_desktop": {
                 "sections": [
                     {
-                        "begin": 65,
-                        "end": 66
+                        "begin": 64,
+                        "end": 65
                     },
                     {
-                        "begin": 76,
-                        "end": 77
+                        "begin": 75,
+                        "end": 76
                     },
                     {
-                        "begin": 80,
-                        "end": 81
+                        "begin": 79,
+                        "end": 80
                     }
                 ],
+                "abridged": false
+            },
+            "speedometer2": {
                 "abridged": false
             }
         }
     },
     "10": {
         "benchmarks": {
+            "media.desktop": {
+                "begin": 11,
+                "abridged": false
+            },
             "memory.desktop": {
                 "abridged": false
             },
+            "speedometer2": {
+                "abridged": false
+            }
+        }
+    },
+    "11": {
+        "benchmarks": {
             "octane": {
+                "abridged": false
+            },
+            "power.desktop": {
+                "abridged": false
+            },
+            "rasterize_and_record_micro.top_25": {
+                "abridged": false
+            },
+            "rendering.desktop": {
+                "end": 6,
                 "abridged": false
             },
             "speedometer2": {
@@ -405,7 +422,6 @@
         },
         "executables": {
             "performance_browser_tests": {
-                "path": "browser_tests",
                 "arguments": [
                     "--full-performance-run",
                     "--test-launcher-jobs=1",
@@ -414,32 +430,16 @@
                     "--ui-test-action-max-timeout=60000",
                     "--test-launcher-timeout=60000",
                     "--gtest_filter=*/TabCapturePerformanceTest.*:*/CastV2PerformanceTest.*"
-                ]
-            }
-        }
-    },
-    "11": {
-        "benchmarks": {
-            "power.desktop": {
-                "abridged": false
-            },
-            "rasterize_and_record_micro.top_25": {
-                "abridged": false
-            },
-            "rendering.desktop": {
-                "end": 9,
-                "abridged": false
-            },
-            "speedometer2": {
-                "abridged": false
+                ],
+                "path": "browser_tests"
             }
         }
     },
     "12": {
         "benchmarks": {
             "rendering.desktop": {
-                "begin": 9,
-                "end": 62,
+                "begin": 6,
+                "end": 65,
                 "abridged": false
             },
             "speedometer2": {
@@ -450,8 +450,8 @@
     "13": {
         "benchmarks": {
             "rendering.desktop": {
-                "begin": 62,
-                "end": 120,
+                "begin": 65,
+                "end": 129,
                 "abridged": false
             },
             "speedometer2": {
@@ -462,8 +462,8 @@
     "14": {
         "benchmarks": {
             "rendering.desktop": {
-                "begin": 120,
-                "end": 175,
+                "begin": 129,
+                "end": 183,
                 "abridged": false
             },
             "speedometer2": {
@@ -474,8 +474,8 @@
     "15": {
         "benchmarks": {
             "rendering.desktop": {
-                "begin": 175,
-                "end": 242,
+                "begin": 183,
+                "end": 237,
                 "abridged": false
             },
             "speedometer2": {
@@ -486,8 +486,8 @@
     "16": {
         "benchmarks": {
             "rendering.desktop": {
-                "begin": 242,
-                "end": 286,
+                "begin": 237,
+                "end": 283,
                 "abridged": false
             },
             "speedometer2": {
@@ -498,7 +498,10 @@
     "17": {
         "benchmarks": {
             "rendering.desktop": {
-                "begin": 286,
+                "begin": 283,
+                "abridged": false
+            },
+            "rendering.desktop.notracing": {
                 "abridged": false
             },
             "speedometer": {
@@ -513,11 +516,14 @@
             "speedometer2-future": {
                 "abridged": false
             },
+            "speedometer2-minormc": {
+                "abridged": false
+            },
             "speedometer2-pcscan": {
                 "abridged": false
             },
             "system_health.common_desktop": {
-                "end": 7,
+                "end": 1,
                 "abridged": false
             }
         }
@@ -525,8 +531,8 @@
     "18": {
         "benchmarks": {
             "system_health.common_desktop": {
-                "begin": 7,
-                "end": 48,
+                "begin": 1,
+                "end": 52,
                 "abridged": false
             },
             "speedometer2": {
@@ -537,7 +543,7 @@
     "19": {
         "benchmarks": {
             "system_health.common_desktop": {
-                "begin": 48,
+                "begin": 52,
                 "abridged": false
             },
             "system_health.memory_desktop": {
@@ -553,7 +559,7 @@
         "benchmarks": {
             "system_health.memory_desktop": {
                 "begin": 7,
-                "end": 24,
+                "end": 22,
                 "abridged": false
             }
         }
@@ -561,8 +567,8 @@
     "21": {
         "benchmarks": {
             "system_health.memory_desktop": {
-                "begin": 24,
-                "end": 52,
+                "begin": 22,
+                "end": 49,
                 "abridged": false
             }
         }
@@ -570,8 +576,8 @@
     "22": {
         "benchmarks": {
             "system_health.memory_desktop": {
-                "begin": 52,
-                "end": 77,
+                "begin": 49,
+                "end": 74,
                 "abridged": false
             }
         }
@@ -579,7 +585,7 @@
     "23": {
         "benchmarks": {
             "system_health.memory_desktop": {
-                "begin": 77,
+                "begin": 74,
                 "abridged": false
             },
             "system_health.pcscan": {
@@ -592,7 +598,7 @@
                 "abridged": false
             },
             "v8.browsing_desktop": {
-                "end": 5,
+                "end": 3,
                 "abridged": false
             }
         },
@@ -605,11 +611,11 @@
     "24": {
         "benchmarks": {
             "v8.browsing_desktop": {
-                "begin": 5,
+                "begin": 3,
                 "abridged": false
             },
             "v8.browsing_desktop-future": {
-                "end": 5,
+                "end": 2,
                 "abridged": false
             }
         }
@@ -617,7 +623,7 @@
     "25": {
         "benchmarks": {
             "v8.browsing_desktop-future": {
-                "begin": 5,
+                "begin": 2,
                 "abridged": false
             },
             "wasmpspdfkit": {
@@ -629,36 +635,36 @@
         }
     },
     "extra_infos": {
-        "num_stories": 1258,
-        "predicted_min_shard_time": 1020.0,
-        "predicted_min_shard_index": 23,
-        "predicted_max_shard_time": 1306.0,
+        "num_stories": 1260,
+        "predicted_min_shard_time": 990.0,
+        "predicted_min_shard_index": 20,
+        "predicted_max_shard_time": 1319.0,
         "predicted_max_shard_index": 25,
-        "shard #0": 1056.0,
-        "shard #1": 1056.0,
-        "shard #2": 1056.0,
-        "shard #3": 1062.0,
-        "shard #4": 1036.0,
-        "shard #5": 1046.0,
-        "shard #6": 1047.0,
-        "shard #7": 1073.0,
-        "shard #8": 1071.0,
-        "shard #9": 1061.0,
-        "shard #10": 1048.0,
-        "shard #11": 1056.0,
-        "shard #12": 1049.0,
-        "shard #13": 1068.0,
-        "shard #14": 1076.0,
-        "shard #15": 1060.0,
-        "shard #16": 1064.0,
-        "shard #17": 1035.0,
-        "shard #18": 1061.0,
-        "shard #19": 1051.0,
-        "shard #20": 1093.0,
-        "shard #21": 1065.0,
-        "shard #22": 1088.0,
-        "shard #23": 1020.0,
-        "shard #24": 1068.0,
-        "shard #25": 1306.0
+        "shard #0": 1075.0,
+        "shard #1": 1072.0,
+        "shard #2": 1074.0,
+        "shard #3": 1086.0,
+        "shard #4": 996.0,
+        "shard #5": 1096.0,
+        "shard #6": 1084.0,
+        "shard #7": 1076.0,
+        "shard #8": 1068.0,
+        "shard #9": 1107.0,
+        "shard #10": 1072.0,
+        "shard #11": 1082.0,
+        "shard #12": 1065.0,
+        "shard #13": 1069.0,
+        "shard #14": 1066.0,
+        "shard #15": 1073.0,
+        "shard #16": 1074.0,
+        "shard #17": 1069.0,
+        "shard #18": 1070.0,
+        "shard #19": 1060.0,
+        "shard #20": 990.0,
+        "shard #21": 1107.0,
+        "shard #22": 1116.0,
+        "shard #23": 1071.0,
+        "shard #24": 1075.0,
+        "shard #25": 1319.0
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,9 @@ namespace webauthn::pref_names {
 // Maps to the WebAuthenticationRemoteProxiedRequestsAllowed enterprise
 // policy.
 extern const char kRemoteProxiedRequestsAllowed[];
+
+// Maps to the AllowWebAuthnWithBrokenCerts enterprise policy.
+extern const char kAllowWithBrokenCerts[];
 
 }  // namespace webauthn::pref_names
 

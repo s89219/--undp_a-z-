@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,11 @@ import 'chrome://webui-test/mojo_webui_test_support.js';
 import {$$, IframeElement, LogoElement, NewTabPageProxy, WindowProxy} from 'chrome://new-tab-page/new_tab_page.js';
 import {Doodle, DoodleImageType, DoodleShareChannel, PageCallbackRouter, PageHandlerRemote} from 'chrome://new-tab-page/new_tab_page.mojom-webui.js';
 import {hexColorToSkColor, skColorToRgba} from 'chrome://resources/js/color_utils.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import {assertDeepEquals, assertEquals, assertFalse, assertGE, assertLE, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {eventToPromise, flushTasks} from 'chrome://webui-test/test_util.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
 import {assertNotStyle, assertStyle, installMock, keydown} from './test_support.js';
 
@@ -52,8 +53,6 @@ function createImageDoodle(width: number = 500, height: number = 200): Doodle {
         height,
         backgroundColor: {value: 0xffffffff},
         imageImpressionLogUrl: {url: 'https://log.com'},
-        animationUrl: undefined,
-        animationImpressionLogUrl: undefined,
       },
       dark: {
         imageUrl: {url: createImageDataUrl(width, height, 'blue')},
@@ -67,20 +66,17 @@ function createImageDoodle(width: number = 500, height: number = 200): Doodle {
         height,
         backgroundColor: {value: 0x000000ff},
         imageImpressionLogUrl: {url: 'https://dark_log.com'},
-        animationUrl: undefined,
-        animationImpressionLogUrl: undefined,
       },
       onClickUrl: {url: 'https://foo.com'},
       shareUrl: {url: 'https://foo.com'},
     },
-    interactive: undefined,
     description: '',
   };
 }
 
 suite('NewTabPageLogoTest', () => {
-  let windowProxy: TestBrowserProxy;
-  let handler: TestBrowserProxy;
+  let windowProxy: TestBrowserProxy<WindowProxy>;
+  let handler: TestBrowserProxy<PageHandlerRemote>;
 
   async function createLogo(doodle: Doodle|null = null): Promise<LogoElement> {
     handler.setResultFor('getDoodle', Promise.resolve({
@@ -94,7 +90,7 @@ suite('NewTabPageLogoTest', () => {
   }
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     windowProxy = installMock(WindowProxy);
     windowProxy.setResultFor('createIframeSrc', '');
@@ -278,7 +274,6 @@ suite('NewTabPageLogoTest', () => {
         width: 200,
         height: 100,
       },
-      image: undefined,
       description: '',
     });
     logo.dark = false;
@@ -310,7 +305,6 @@ suite('NewTabPageLogoTest', () => {
         width: 200,
         height: 100,
       },
-      image: undefined,
       description: '',
     });
 
@@ -399,7 +393,6 @@ suite('NewTabPageLogoTest', () => {
         width: 1000,
         height: 500,
       },
-      image: undefined,
       description: '',
     });
 
@@ -418,7 +411,6 @@ suite('NewTabPageLogoTest', () => {
         width: 200,
         height: 100,
       },
-      image: undefined,
       description: '',
     });
     const transitionend = eventToPromise('transitionend', $$(logo, '#iframe')!);
@@ -457,7 +449,6 @@ suite('NewTabPageLogoTest', () => {
         width: 200,
         height: 100,
       },
-      image: undefined,
       description: '',
     });
     const height = $$<HTMLElement>(logo, '#iframe')!.offsetHeight;
@@ -487,7 +478,6 @@ suite('NewTabPageLogoTest', () => {
         width: 200,
         height: 100,
       },
-      image: undefined,
       description: '',
     });
     logo.dark = false;
@@ -685,7 +675,7 @@ suite('NewTabPageLogoTest', () => {
       await flushTasks();
       ($$(logo, 'ntp-doodle-share-dialog')!
        ).dispatchEvent(new CustomEvent('share', {
-        detail: DoodleShareChannel.kFacebook
+        detail: DoodleShareChannel.kFacebook,
       }));
 
       // Assert (share).
@@ -716,10 +706,10 @@ suite('NewTabPageLogoTest', () => {
       doodle.image.light.animationUrl = {url: 'https://animation.com'};
       doodle.image.dark.animationUrl = {url: 'https://dark_animation.com'};
       doodle.image.light.animationImpressionLogUrl = {
-        url: 'https://animation_log.com'
+        url: 'https://animation_log.com',
       };
       doodle.image.dark.animationImpressionLogUrl = {
-        url: 'https://dark_animation_log.com'
+        url: 'https://dark_animation_log.com',
       };
       const imageDoodle = dark ? doodle.image.dark : doodle.image.light;
 
@@ -770,7 +760,7 @@ suite('NewTabPageLogoTest', () => {
       await flushTasks();
       ($$(logo, 'ntp-doodle-share-dialog')!
        ).dispatchEvent(new CustomEvent('share', {
-        detail: DoodleShareChannel.kTwitter
+        detail: DoodleShareChannel.kTwitter,
       }));
 
       // Assert (share).

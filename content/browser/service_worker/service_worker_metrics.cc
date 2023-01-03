@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -124,6 +124,8 @@ const char* EventTypeToSuffix(ServiceWorkerMetrics::EventType event_type) {
       return "_PUSH_SUBSCRIPTION_CHANGE";
     case ServiceWorkerMetrics::EventType::FETCH_FENCED_FRAME:
       return "_FETCH_FENCED_FRAME";
+    case ServiceWorkerMetrics::EventType::BYPASS_MAIN_RESOURCE:
+      return "_BYPASS_MAIN_RESOURCE";
   }
   return "_UNKNOWN";
 }
@@ -186,6 +188,8 @@ const char* ServiceWorkerMetrics::EventTypeToString(EventType event_type) {
       return "Push Subscription Change";
     case EventType::FETCH_FENCED_FRAME:
       return "Fetch Fenced Frame";
+    case ServiceWorkerMetrics::EventType::BYPASS_MAIN_RESOURCE:
+      return "_BYPASS_MAIN_RESOURCE";
   }
   NOTREACHED() << "Got unexpected event type: " << static_cast<int>(event_type);
   return "error";
@@ -237,6 +241,18 @@ void ServiceWorkerMetrics::RecordStartInstalledWorkerStatus(
   }
 }
 
+void ServiceWorkerMetrics::RecordRunAfterStartWorkerStatus(
+    EmbeddedWorkerStatus running_status,
+    EventType purpose) {
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.MaybeStartWorker.RunningStatus",
+                            running_status);
+  base::UmaHistogramEnumeration(
+      base::StrCat({"ServiceWorker.MaybeStartWorker.RunningStatusByPurpose",
+                    EventTypeToSuffix(purpose)}),
+      running_status);
+  UMA_HISTOGRAM_ENUMERATION("ServiceWorker.MaybeStartWorker.Purpose", purpose);
+}
+
 void ServiceWorkerMetrics::RecordStartWorkerTime(base::TimeDelta time,
                                                  bool is_installed,
                                                  StartSituation start_situation,
@@ -251,6 +267,10 @@ void ServiceWorkerMetrics::RecordStartWorkerTime(base::TimeDelta time,
         base::StrCat({"ServiceWorker.StartWorker.Time",
                       StartSituationToDeprecatedSuffix(start_situation),
                       EventTypeToSuffix(purpose)}),
+        time);
+    base::UmaHistogramMediumTimes(
+        base::StrCat(
+            {"ServiceWorker.StartWorker.Time_Any", EventTypeToSuffix(purpose)}),
         time);
   } else {
     UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.StartNewWorker.Time", time);
@@ -365,7 +385,7 @@ void ServiceWorkerMetrics::RecordEventDuration(EventType event,
       UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.AbortPaymentEvent.Time", time);
       break;
     case EventType::COOKIE_CHANGE:
-      UMA_HISTOGRAM_MEDIUM_TIMES("ServiceWorker.CookieChangeEvent.Time", time);
+      // Do nothing: the histogram has been removed.
       break;
     case EventType::PERIODIC_SYNC:
       UMA_HISTOGRAM_MEDIUM_TIMES(
@@ -378,6 +398,8 @@ void ServiceWorkerMetrics::RecordEventDuration(EventType event,
       UMA_HISTOGRAM_MEDIUM_TIMES(
           "ServiceWorker.PushSubscriptionChangeEvent.Time", time);
       break;
+    case EventType::BYPASS_MAIN_RESOURCE:
+    // The bypass main resource should not be sent as an event.
     case EventType::NAVIGATION_HINT:
     // The navigation hint should not be sent as an event.
     case EventType::UNKNOWN:
@@ -463,7 +485,7 @@ void ServiceWorkerMetrics::RecordStartWorkerTimingClockConsistency(
   UMA_HISTOGRAM_ENUMERATION("ServiceWorker.StartTiming.ClockConsistency", type);
 }
 
-void ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigationOnBrowserStartup(
+void ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigation(
     bool skip_service_worker) {
   static bool is_first_call = true;
   if (is_first_call) {
@@ -473,12 +495,17 @@ void ServiceWorkerMetrics::RecordSkipServiceWorkerOnNavigationOnBrowserStartup(
           "ServiceWorker.OnBrowserStartup.SkipServiceWorkerOnFirstNavigation",
           skip_service_worker);
     }
+  } else {
+    if (GetContentClient()->browser()->IsBrowserStartupComplete()) {
+      base::UmaHistogramBoolean(
+          "ServiceWorker.SkipCallingFindRegistrationForClientUrl",
+          skip_service_worker);
+    }
   }
 }
 
-void ServiceWorkerMetrics::
-    RecordFirstFindRegistrationForClientUrlTimeOnBrowserStartup(
-        base::TimeDelta time) {
+void ServiceWorkerMetrics::RecordFindRegistrationForClientUrlTime(
+    base::TimeDelta time) {
   static bool is_first_call = true;
   if (is_first_call) {
     is_first_call = false;
@@ -487,6 +514,11 @@ void ServiceWorkerMetrics::
           "ServiceWorker.OnBrowserStartup.FirstFindRegistrationForClientUrl."
           "Time",
           time);
+    }
+  } else {
+    if (GetContentClient()->browser()->IsBrowserStartupComplete()) {
+      base::UmaHistogramMediumTimes(
+          "ServiceWorker.FindRegistrationForClientUrl.Time", time);
     }
   }
 }

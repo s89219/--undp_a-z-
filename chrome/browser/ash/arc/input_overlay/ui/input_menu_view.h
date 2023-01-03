@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,24 +24,23 @@ class ToggleButton;
 //
 // The class reports back to DisplayOverlayController, who owns this.
 //   +---------------------------------+
-//   | Game Control       [ o]    [x]  |
+//   | Game Controls |Alpha| [ o]  [x] |
 //   |                                 |
-//   | Key mapping        [Customize]  |
+//   | Key mapping             [Edit]  |
 //   |                                 |
-//   | Show hint overlay         [ o]  |
+//   | Show key mapping          [ o]  |
 //   |                                 |
 //   | Send feedback                   |
 //   +---------------------------------+
 
-namespace arc {
-
-namespace input_overlay {
+namespace arc::input_overlay {
 class DisplayOverlayController;
 class InputMenuView : public views::View {
  public:
   static std::unique_ptr<InputMenuView> BuildMenuView(
       DisplayOverlayController* display_overlay_controller,
-      views::View* entry_view);
+      views::View* entry_view,
+      const gfx::Size& parent_size);
 
   InputMenuView(DisplayOverlayController* display_overlay_controller,
                 views::View* entry_view);
@@ -50,27 +49,33 @@ class InputMenuView : public views::View {
   InputMenuView& operator=(const InputMenuView&) = delete;
   ~InputMenuView() override;
 
+  // views::View:
+  void OnThemeChanged() override;
+
  private:
   class FeedbackButton;
 
   void CloseMenu();
-  void Init();
+  void Init(const gfx::Size& parent_size);
   std::unique_ptr<views::View> BuildSeparator();
 
   void OnToggleGameControlPressed();
   void OnToggleShowHintPressed();
-  void OnButtonCustomizedPressed();
+  void OnEditButtonPressed();
   void OnButtonSendFeedbackPressed();
   // Calculate Insets for a given |view|, taking into account specs and hosted
   // views. This is a fix due to the lack of a justify option for FlexLayout.
   gfx::Insets CalculateInsets(views::View* view,
                               int left,
                               int right,
-                              int other_spacing) const;
+                              int other_spacing,
+                              int menu_width) const;
+  // Set |toggle| colors to spec.
+  void SetCustomToggleColor(views::ToggleButton* toggle);
 
   raw_ptr<views::ToggleButton> game_control_toggle_ = nullptr;
-  raw_ptr<views::ToggleButton> show_hint_toggle_ = nullptr;
-  raw_ptr<ash::PillButton> customize_button_ = nullptr;
+  raw_ptr<views::ToggleButton> show_mapping_toggle_ = nullptr;
+  raw_ptr<ash::PillButton> edit_button_ = nullptr;
   raw_ptr<views::ImageButton> close_button_ = nullptr;
 
   // Kept around to determine bounds(), not owned.
@@ -80,7 +85,6 @@ class InputMenuView : public views::View {
   const raw_ptr<DisplayOverlayController> display_overlay_controller_ = nullptr;
 };
 
-}  // namespace input_overlay
-}  // namespace arc
+}  // namespace arc::input_overlay
 
 #endif  // CHROME_BROWSER_ASH_ARC_INPUT_OVERLAY_UI_INPUT_MENU_VIEW_H_

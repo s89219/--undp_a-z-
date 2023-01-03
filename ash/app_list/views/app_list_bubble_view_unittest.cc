@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "ash/app_list/views/app_list_bubble_search_page.h"
 #include "ash/app_list/views/app_list_folder_view.h"
 #include "ash/app_list/views/app_list_toast_container_view.h"
+#include "ash/app_list/views/app_list_toast_view.h"
 #include "ash/app_list/views/assistant/app_list_bubble_assistant_page.h"
 #include "ash/app_list/views/continue_section_view.h"
 #include "ash/app_list/views/continue_task_view.h"
@@ -27,7 +28,6 @@
 #include "ash/app_list/views/scrollable_apps_grid_view.h"
 #include "ash/app_list/views/search_box_view.h"
 #include "ash/assistant/model/assistant_ui_model.h"
-#include "ash/constants/ash_features.h"
 #include "ash/controls/gradient_layer_delegate.h"
 #include "ash/controls/scroll_view_gradient_helper.h"
 #include "ash/public/cpp/assistant/controller/assistant_ui_controller.h"
@@ -38,14 +38,14 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/test/layer_animation_stopped_waiter.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_feature_list.h"
+#include "chromeos/ash/services/assistant/public/cpp/assistant_enums.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/compositor/test/layer_animation_stopped_waiter.h"
 #include "ui/compositor/test/test_utils.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes_posix.h"
@@ -103,9 +103,7 @@ bool IsAnimatingProperty(
 
 class AppListBubbleViewTest : public AshTestBase {
  public:
-  AppListBubbleViewTest() {
-    scoped_features_.InitAndEnableFeature(features::kProductivityLauncher);
-  }
+  AppListBubbleViewTest() = default;
   ~AppListBubbleViewTest() override = default;
 
   // testing::Test:
@@ -188,7 +186,6 @@ class AppListBubbleViewTest : public AshTestBase {
     return view ? view->GetClassName() : "none";
   }
 
-  base::test::ScopedFeatureList scoped_features_;
   std::unique_ptr<test::AppListTestModel> app_list_test_model_;
   std::unique_ptr<SearchModel> search_model_;
   std::unique_ptr<AssistantTestApi> assistant_test_api_;
@@ -219,7 +216,7 @@ TEST_F(AppListBubbleViewTest, Layout) {
   auto* search_icon = search_box_view->search_icon();
   gfx::Rect search_icon_bounds =
       search_icon->ConvertRectToWidget(search_icon->GetLocalBounds());
-  EXPECT_EQ("17,17 24x24", search_icon_bounds.ToString());
+  EXPECT_EQ("17,19 20x20", search_icon_bounds.ToString());
 
   // Check height of search box view.
   EXPECT_EQ(56, search_box_view->height());
@@ -378,7 +375,7 @@ TEST_F(AppListBubbleViewTest, ShowAnimationCreatesAndDestroysLayers) {
   EXPECT_TRUE(apps_grid_view->layer());
 
   // Finish the animation.
-  LayerAnimationStoppedWaiter().Wait(apps_grid_view->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(apps_grid_view->layer());
 
   // Temporary layers are cleaned up.
   EXPECT_FALSE(continue_section->layer());
@@ -388,28 +385,6 @@ TEST_F(AppListBubbleViewTest, ShowAnimationCreatesAndDestroysLayers) {
 
   // The apps grid view always has a layer, it still exists.
   EXPECT_TRUE(apps_grid_view->layer());
-}
-
-TEST_F(AppListBubbleViewTest, ShowAnimationDestroysAndRestoresGradientMask) {
-  // Enable animations.
-  ui::ScopedAnimationDurationScaleMode duration(
-      ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
-
-  // Show an app list with enough apps to fill the page and trigger a gradient
-  // at the bottom.
-  AddAppItems(50);
-  ShowAppList();
-
-  // Gradient mask layer is suppressed during show animation for performance.
-  auto* scroll_view = GetAppsPage()->scroll_view();
-  EXPECT_FALSE(scroll_view->layer()->layer_mask_layer());
-
-  // Finish the animation.
-  auto* apps_grid_view = GetAppsGridView();
-  LayerAnimationStoppedWaiter().Wait(apps_grid_view->layer());
-
-  // Gradient mask layer is restored.
-  EXPECT_TRUE(scroll_view->layer()->layer_mask_layer());
 }
 
 TEST_F(AppListBubbleViewTest, ShowAnimationDestroysAndRestoresShadow) {
@@ -426,7 +401,7 @@ TEST_F(AppListBubbleViewTest, ShowAnimationDestroysAndRestoresShadow) {
 
   // Finish the animation.
   auto* apps_grid_view = GetAppsGridView();
-  LayerAnimationStoppedWaiter().Wait(apps_grid_view->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(apps_grid_view->layer());
 
   // Shadow is restored.
   EXPECT_TRUE(app_list_bubble_view->view_shadow_for_test());
@@ -445,7 +420,7 @@ TEST_F(AppListBubbleViewTest, ShowAnimationRecordsSmoothnessHistogram) {
 
   // Wait for the animation to finish.
   ui::Layer* layer = GetAppsGridView()->layer();
-  LayerAnimationStoppedWaiter().Wait(layer);
+  ui::LayerAnimationStoppedWaiter().Wait(layer);
 
   // Ensure there is one more frame presented after animation finishes to allow
   // animation throughput data to be passed from cc to ui.
@@ -455,6 +430,8 @@ TEST_F(AppListBubbleViewTest, ShowAnimationRecordsSmoothnessHistogram) {
   // Smoothness was recorded.
   histograms.ExpectTotalCount(
       "Apps.ClamshellLauncher.AnimationSmoothness.OpenAppsPage", 1);
+  histograms.ExpectTotalCount("Apps.ClamshellLauncher.AnimationSmoothness.Open",
+                              1);
 }
 
 TEST_F(AppListBubbleViewTest, HideAnimationsRecordsSmoothnessHistogram) {
@@ -473,7 +450,7 @@ TEST_F(AppListBubbleViewTest, HideAnimationsRecordsSmoothnessHistogram) {
 
   // Run the hide animation and wait for it to finish.
   view->StartHideAnimation(/*is_side_shelf=*/false, base::DoNothing());
-  LayerAnimationStoppedWaiter().Wait(layer);
+  ui::LayerAnimationStoppedWaiter().Wait(layer);
 
   // Ensure there is one more frame presented after animation finishes to allow
   // animation throughput data to be passed from cc to ui.
@@ -483,6 +460,37 @@ TEST_F(AppListBubbleViewTest, HideAnimationsRecordsSmoothnessHistogram) {
   // Smoothness was recorded.
   histograms.ExpectTotalCount(
       "Apps.ClamshellLauncher.AnimationSmoothness.Close", 1);
+}
+
+TEST_F(AppListBubbleViewTest, AssistantScreenshotClosesBubbleWithoutAnimation) {
+  SimulateAssistantEnabled();
+  AddAppItems(5);
+
+  // Show the app list without animation.
+  ShowAppList();
+
+  // Switch to the assistant page.
+  LeftClickOn(GetSearchBoxView()->assistant_button());
+
+  // Enable animations.
+  ui::ScopedAnimationDurationScaleMode duration(
+      ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
+
+  // Simulate the app list being closed by taking a screenshot with assistant.
+  // This makes AppListControllerImpl::ShouldDismissImmediately() return true.
+  AssistantUiController::Get()->ToggleUi(
+      absl::nullopt, assistant::AssistantExitPoint::kScreenshot);
+
+  // The bubble dismissed immediately so it is not animating.
+  ui::Layer* bubble_layer = GetAppListTestHelper()->GetBubbleView()->layer();
+  ASSERT_TRUE(bubble_layer);
+  EXPECT_FALSE(IsAnimatingProperty(
+      bubble_layer, ui::LayerAnimationElement::AnimatableProperty::BOUNDS));
+  EXPECT_FALSE(IsAnimatingProperty(
+      bubble_layer, ui::LayerAnimationElement::AnimatableProperty::OPACITY));
+
+  // App list is closed.
+  EXPECT_FALSE(Shell::Get()->app_list_controller()->IsVisible());
 }
 
 TEST_F(AppListBubbleViewTest, ShutdownDuringHideAnimationDoesNotCrash) {
@@ -495,7 +503,7 @@ TEST_F(AppListBubbleViewTest, ShutdownDuringHideAnimationDoesNotCrash) {
   // Show the app list and wait for the show animation to finish.
   AddAppItems(5);
   ShowAppList();
-  LayerAnimationStoppedWaiter().Wait(GetAppsGridView()->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(GetAppsGridView()->layer());
 
   // Dismiss the app list, but don't wait for the animation to finish.
   GetAppListTestHelper()->Dismiss();
@@ -546,10 +554,13 @@ TEST_F(AppListBubbleViewTest, ClosingBubbleClearsSearch) {
   EXPECT_TRUE(search_box_input->HasFocus());
   EXPECT_EQ(u"a", search_box_input->GetText());
   TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-  EXPECT_EQ(u"a", client->last_search_query());
+  EXPECT_EQ(std::vector<std::u16string>({u"a"}),
+            client->GetAndResetPastSearchQueries());
 
   // The app list view and widget are cached after this close.
   DismissAppList();
+  EXPECT_EQ(std::vector<std::u16string>({u""}),
+            client->GetAndResetPastSearchQueries());
 
   // Search box is empty on next show.
   ShowAppList();
@@ -560,7 +571,6 @@ TEST_F(AppListBubbleViewTest, ClosingBubbleClearsSearch) {
   search_box_input = GetSearchBoxView()->search_box();
   EXPECT_TRUE(search_box_input->HasFocus());
   EXPECT_EQ(u"", search_box_input->GetText());
-  EXPECT_EQ(u"", client->last_search_query());
 }
 
 // Regression test for https://crbug.com/1313140
@@ -597,7 +607,7 @@ TEST_F(AppListBubbleViewTest, CanOpenMessageCenterWithKeyboardShortcut) {
 
   // Wait for the app list hide animation to finish.
   AppListBubbleView* view = GetBubblePresenter()->bubble_view_for_test();
-  LayerAnimationStoppedWaiter().Wait(view->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(view->layer());
 
   // Search box did not steal focus.
   EXPECT_FALSE(search_box_input->HasFocus());
@@ -668,6 +678,10 @@ TEST_F(AppListBubbleViewTest, AssistantPageLayout) {
 TEST_F(AppListBubbleViewTest, SearchBoxCloseButton) {
   ShowAppList();
   PressAndReleaseKey(ui::VKEY_A);
+  TestAppListClient* const app_list_client =
+      GetAppListTestHelper()->app_list_client();
+  EXPECT_EQ(std::vector<std::u16string>({u"a"}),
+            app_list_client->GetAndResetPastSearchQueries());
 
   // Close button is visible after typing text.
   SearchBoxView* search_box_view = GetSearchBoxView();
@@ -677,6 +691,8 @@ TEST_F(AppListBubbleViewTest, SearchBoxCloseButton) {
   // Clicking the close button clears the search, but the search box is still
   // focused/active.
   LeftClickOn(search_box_view->close_button());
+  EXPECT_EQ(std::vector<std::u16string>({u""}),
+            app_list_client->GetAndResetPastSearchQueries());
   EXPECT_FALSE(search_box_view->close_button()->GetVisible());
   EXPECT_TRUE(search_box_view->search_box()->GetText().empty());
   EXPECT_TRUE(search_box_view->search_box()->HasFocus());
@@ -713,15 +729,21 @@ TEST_F(AppListBubbleViewTest, TypingTextShowsSearchPage) {
 }
 
 TEST_F(AppListBubbleViewTest, TypingTextStartsSearch) {
-  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-
   ShowAppList();
 
   PressAndReleaseKey(ui::VKEY_A);
-  EXPECT_EQ(client->last_search_query(), u"a");
+
+  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
+  EXPECT_EQ(std::vector<std::u16string>({u"a"}),
+            client->GetAndResetPastSearchQueries());
 
   PressAndReleaseKey(ui::VKEY_B);
-  EXPECT_EQ(client->last_search_query(), u"ab");
+  EXPECT_EQ(std::vector<std::u16string>({u"ab"}),
+            client->GetAndResetPastSearchQueries());
+
+  PressAndReleaseKey(ui::VKEY_BACK);
+  EXPECT_EQ(std::vector<std::u16string>({u"a"}),
+            client->GetAndResetPastSearchQueries());
 }
 
 TEST_F(AppListBubbleViewTest, BackActionsClearSearch) {
@@ -955,7 +977,7 @@ TEST_F(AppListBubbleViewTest, DownArrowFromRecentsSelectsLastColumnInAppsGrid) {
 
   // There are only 2 folders, and hence 2 columns, in the top level apps grid.
   auto* apps_grid_view = GetAppsGridView();
-  ASSERT_EQ(2, apps_grid_view->view_model()->view_size());
+  ASSERT_EQ(2u, apps_grid_view->view_model()->view_size());
 
   // Focus the 5th recent app.
   auto* recent_apps_view = GetRecentAppsView();
@@ -1124,6 +1146,22 @@ TEST_F(AppListBubbleViewTest, FolderClosedOnAppListDismiss) {
   EXPECT_FALSE(GetAppListTestHelper()->GetBubbleFolderView()->GetVisible());
 }
 
+TEST_F(AppListBubbleViewTest, FolderClosedAfterInvokingAssistant) {
+  SimulateAssistantEnabled();
+  AddFolderWithApps(3);
+  ShowAppList();
+
+  AppListItemView* folder_item = GetAppsGridView()->GetItemViewAt(0);
+  LeftClickOn(folder_item);
+  ASSERT_TRUE(GetAppListTestHelper()->IsInFolderView());
+  ASSERT_TRUE(GetAppListTestHelper()->GetBubbleFolderView()->GetVisible());
+
+  PressAndReleaseKey(ui::VKEY_ASSISTANT);
+  EXPECT_TRUE(GetAssistantPage()->GetVisible());
+  EXPECT_FALSE(GetAppListTestHelper()->IsInFolderView());
+  EXPECT_FALSE(GetAppListTestHelper()->GetBubbleFolderView()->GetVisible());
+}
+
 TEST_F(AppListBubbleViewTest, LargeFolderViewFitsInsideMainBubble) {
   // Create more apps than fit in the default sized folder.
   AddFolderWithApps(30);
@@ -1233,10 +1271,24 @@ TEST_F(AppListBubbleViewTest, OpenFolderWithMouseDoesNotFocusItem) {
   EXPECT_FALSE(GetFocusedView()) << GetFocusedViewName();
 }
 
+// Verifies that keyboard focus stays inside an open folder. If this test breaks
+// then one of the DisableFocusForShowingActiveFolder() methods needs to be
+// updated to include the incorrectly focused view.
 TEST_F(AppListBubbleViewTest, PressingTabMovesFocusInsideFolder) {
+  // Ensure all sections are showing, so the test verifies that none of these
+  // sections (or the hide continue section button) take focus.
+  AddContinueSuggestionResult(4);
+  AddRecentApps(5);
   AddFolderWithApps(3);
   ShowAppList();
 
+  // Force the sorting toast to show.
+  AppListController::Get()->UpdateAppListWithNewTemporarySortOrder(
+      AppListSortOrder::kColor,
+      /*animate=*/false, /*update_position_closure=*/base::OnceClosure());
+  ASSERT_TRUE(GetToastContainerView()->GetToastButton());
+
+  // Open the folder.
   AppListItemView* folder_item = GetAppsGridView()->GetItemViewAt(0);
   LeftClickOn(folder_item);
 
@@ -1257,11 +1309,46 @@ TEST_F(AppListBubbleViewTest, PressingTabMovesFocusInsideFolder) {
   }
 }
 
+// Verifies that focus does not move from a folder to the privacy notice. This
+// is a separate test from PressingTabMovesFocusInsideFolder because that test
+// verifies the sorting nudge, and the launcher only shows one nudge at a time.
+TEST_F(AppListBubbleViewTest, PressingTabInFolderDoesNotFocusPrivacyNotice) {
+  // Force the continue section privacy toast to show.
+  AppListNudgeController::SetPrivacyNoticeAcceptedForTest(false);
+  AddContinueSuggestionResult(4);
+  AddFolderWithApps(3);
+  ShowAppList();
+
+  // Privacy notice is visible.
+  auto* privacy_notice = GetContinueSectionView()->GetPrivacyNoticeForTest();
+  ASSERT_TRUE(privacy_notice);
+  ASSERT_TRUE(privacy_notice->GetVisible());
+
+  // Open the folder.
+  AppListItemView* folder_item = GetAppsGridView()->GetItemViewAt(0);
+  LeftClickOn(folder_item);
+
+  // Repeatedly pressing tab keeps focus inside the folder view. In particular,
+  // it does not focus the privacy toast.
+  auto* folder_view = GetAppListTestHelper()->GetBubbleFolderView();
+  for (int i = 0; i < 10; i++) {
+    PressAndReleaseKey(ui::VKEY_TAB);
+    EXPECT_TRUE(folder_view->Contains(GetFocusedView()))
+        << GetFocusedViewName();
+  }
+}
+
 TEST_F(AppListBubbleViewTest, OpeningFolderRemovesOtherViewsFromAccessibility) {
   AddContinueSuggestionResult(4);
   AddRecentApps(5);
   AddFolderWithApps(5);
   ShowAppList();
+
+  // Force the sorting toast to show.
+  AppListController::Get()->UpdateAppListWithNewTemporarySortOrder(
+      AppListSortOrder::kColor,
+      /*animate=*/false, /*update_position_closure=*/base::OnceClosure());
+  ASSERT_TRUE(GetToastContainerView()->GetToastButton());
 
   // Open the folder.
   AppListItemView* folder_item = GetAppsGridView()->GetItemViewAt(0);
@@ -1276,6 +1363,9 @@ TEST_F(AppListBubbleViewTest, OpeningFolderRemovesOtherViewsFromAccessibility) {
   auto* recent_apps = GetRecentAppsView();
   EXPECT_TRUE(recent_apps->GetViewAccessibility().IsIgnored());
   EXPECT_TRUE(recent_apps->GetViewAccessibility().IsLeaf());
+  auto* toast_container = GetToastContainerView();
+  EXPECT_TRUE(toast_container->GetViewAccessibility().IsIgnored());
+  EXPECT_TRUE(toast_container->GetViewAccessibility().IsLeaf());
   auto* apps_grid = GetAppsGridView();
   EXPECT_TRUE(apps_grid->GetViewAccessibility().IsIgnored());
   EXPECT_TRUE(apps_grid->GetViewAccessibility().IsLeaf());
@@ -1289,6 +1379,8 @@ TEST_F(AppListBubbleViewTest, OpeningFolderRemovesOtherViewsFromAccessibility) {
   EXPECT_FALSE(continue_section->GetViewAccessibility().IsLeaf());
   EXPECT_FALSE(recent_apps->GetViewAccessibility().IsIgnored());
   EXPECT_FALSE(recent_apps->GetViewAccessibility().IsLeaf());
+  EXPECT_FALSE(toast_container->GetViewAccessibility().IsIgnored());
+  EXPECT_FALSE(toast_container->GetViewAccessibility().IsLeaf());
   EXPECT_FALSE(apps_grid->GetViewAccessibility().IsIgnored());
   EXPECT_FALSE(apps_grid->GetViewAccessibility().IsLeaf());
 }
@@ -1373,6 +1465,39 @@ TEST_F(AppListBubbleViewTest, ScrollInFolderHeaderScrollsFolder) {
   EXPECT_GT(final_scroll_offset, initial_scroll_offset);
 }
 
+gfx::Rect GetStartFadeRect(const gfx::LinearGradient& gradient_mask,
+                           gfx::Rect layer_bounds) {
+  // Vertical gradient from top to bottom.
+  EXPECT_EQ(gradient_mask.angle(), -90);
+
+  // No top gradient
+  if (!cc::MathUtil::IsWithinEpsilon(gradient_mask.steps()[0].fraction, 0.f))
+    return gfx::Rect();
+
+  float fade_height = gradient_mask.steps()[1].fraction * layer_bounds.height();
+  return gfx::Rect(layer_bounds.origin(),
+                   gfx::Size(layer_bounds.width(), fade_height));
+}
+
+gfx::Rect GetEndFadeRect(const gfx::LinearGradient& gradient_mask,
+                         gfx::Rect layer_bounds) {
+  // Vertical gradient from top to bottom.
+  EXPECT_EQ(gradient_mask.angle(), -90);
+
+  // No bottom gradient
+  if (!cc::MathUtil::IsWithinEpsilon(
+          gradient_mask.steps()[gradient_mask.step_count() - 1].fraction,
+          1.f)) {
+    return gfx::Rect();
+  }
+
+  float fade_height =
+      (1.f - gradient_mask.steps()[gradient_mask.step_count() - 2].fraction) *
+      layer_bounds.height();
+  float fade_y = layer_bounds.bottom() - fade_height;
+  return gfx::Rect(layer_bounds.x(), fade_y, layer_bounds.width(), fade_height);
+}
+
 TEST_F(AppListBubbleViewTest, AutoScrollToFitViewOnFocus) {
   // Show an app list with enough apps to fill the page and trigger a gradient
   // at the bottom.
@@ -1381,7 +1506,7 @@ TEST_F(AppListBubbleViewTest, AutoScrollToFitViewOnFocus) {
 
   // Scroll view gradient mask layer is created.
   auto* scroll_view = GetAppsPage()->scroll_view();
-  EXPECT_TRUE(scroll_view->layer()->layer_mask_layer());
+  EXPECT_FALSE(scroll_view->layer()->gradient_mask().IsEmpty());
   const int rows = base::ClampFloor(50.0 / GetAppsGridView()->cols());
 
   // Focus the first item on the last row.
@@ -1392,11 +1517,12 @@ TEST_F(AppListBubbleViewTest, AutoScrollToFitViewOnFocus) {
                                   ->GetFocusManager()
                                   ->GetFocusedView()
                                   ->GetBoundsInScreen();
-  GradientLayerDelegate* gradient_layer =
-      GetAppsPage()->gradient_helper_for_test()->gradient_layer_for_test();
+  const gfx::LinearGradient& gradient_mask =
+      GetAppsPage()->gradient_helper_for_test()->gradient_mask_for_test();
   gfx::Rect gradient_mask_bounds_start =
-      gradient_layer->start_fade_zone_bounds();
-  gfx::Rect gradient_mask_bounds_end = gradient_layer->end_fade_zone_bounds();
+      GetStartFadeRect(gradient_mask, scroll_view->GetVisibleRect());
+  gfx::Rect gradient_mask_bounds_end =
+      GetEndFadeRect(gradient_mask, scroll_view->GetVisibleRect());
   views::View::ConvertRectToScreen(scroll_view, &gradient_mask_bounds_start);
   views::View::ConvertRectToScreen(scroll_view, &gradient_mask_bounds_end);
 
@@ -1414,8 +1540,10 @@ TEST_F(AppListBubbleViewTest, AutoScrollToFitViewOnFocus) {
                         ->GetFocusManager()
                         ->GetFocusedView()
                         ->GetBoundsInScreen();
-  gradient_mask_bounds_start = gradient_layer->start_fade_zone_bounds();
-  gradient_mask_bounds_end = gradient_layer->end_fade_zone_bounds();
+  gradient_mask_bounds_start =
+      GetStartFadeRect(gradient_mask, scroll_view->GetVisibleRect());
+  gradient_mask_bounds_end =
+      GetEndFadeRect(gradient_mask, scroll_view->GetVisibleRect());
   views::View::ConvertRectToScreen(scroll_view, &gradient_mask_bounds_start);
   views::View::ConvertRectToScreen(scroll_view, &gradient_mask_bounds_end);
 

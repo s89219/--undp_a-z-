@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,8 +76,6 @@ void GetArcProcessListOnUIThread(
 }  // namespace
 
 WorkingSetTrimmerPolicyChromeOS::WorkingSetTrimmerPolicyChromeOS() {
-  trim_on_memory_pressure_ =
-      base::FeatureList::IsEnabled(features::kTrimOnMemoryPressure);
   trim_on_freeze_ = base::FeatureList::IsEnabled(features::kTrimOnFreeze);
   trim_arc_on_memory_pressure_ =
       base::FeatureList::IsEnabled(features::kTrimArcOnMemoryPressure);
@@ -124,11 +122,9 @@ void WorkingSetTrimmerPolicyChromeOS::OnMemoryPressure(
   // Try not to walk the graph too frequently because we can receive moderate
   // memory pressure notifications every 10s.
 
-  if (trim_on_memory_pressure_) {
-    if (!last_graph_walk_ || (base::TimeTicks::Now() - *last_graph_walk_ >
-                              params_.graph_walk_backoff_time)) {
-      TrimNodesOnGraph();
-    }
+  if (!last_graph_walk_ || (base::TimeTicks::Now() - *last_graph_walk_ >
+                            params_.graph_walk_backoff_time)) {
+    TrimNodesOnGraph();
   }
 
   if (trim_arc_on_memory_pressure_) {
@@ -330,9 +326,7 @@ void WorkingSetTrimmerPolicyChromeOS::TrimArcVmProcessesOnUIThread(
       (level == base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL);
   const mechanism::ArcVmReclaimType trim_once_type_after_arcvm_boot =
       params.trim_arcvm_on_first_memory_pressure_after_arcvm_boot
-          ? (params.only_drop_caches_on_first_memory_pressure_after_arcvm_boot
-                 ? mechanism::ArcVmReclaimType::kReclaimGuestPageCaches
-                 : mechanism::ArcVmReclaimType::kReclaimAll)
+          ? mechanism::ArcVmReclaimType::kReclaimGuestPageCaches
           : mechanism::ArcVmReclaimType::kReclaimNone;
 
   bool is_first_trim_post_boot =
@@ -425,12 +419,14 @@ void WorkingSetTrimmerPolicyChromeOS::OnTrimArcVmWorkingSetOnUIThread(
     bool success,
     const std::string& failure_reason) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (reclaim_type == mechanism::ArcVmReclaimType::kReclaimAll) {
-    PerformanceManager::CallOnGraph(
-        FROM_HERE,
-        base::BindOnce(&WorkingSetTrimmerPolicyChromeOS::OnArcVmTrimEnded, ptr,
-                       success));
-  }
+
+  // NOTE: To ease unit test, we invoke OnArcVmTrimEnded even when
+  // |reclaim_type| is not kReclaimAll.
+  PerformanceManager::CallOnGraph(
+      FROM_HERE,
+      base::BindOnce(&WorkingSetTrimmerPolicyChromeOS::OnArcVmTrimEnded, ptr,
+                     reclaim_type, success));
+
   if (success) {
     VLOG(2) << "Reclaimed ARCVM memory";
     return;
@@ -443,7 +439,11 @@ void WorkingSetTrimmerPolicyChromeOS::OnArcVmTrimStarting() {
   ++arcvm_trim_count_;
 }
 
-void WorkingSetTrimmerPolicyChromeOS::OnArcVmTrimEnded(bool success) {
+void WorkingSetTrimmerPolicyChromeOS::OnArcVmTrimEnded(
+    mechanism::ArcVmReclaimType reclaim_type,
+    bool success) {
+  if (reclaim_type != mechanism::ArcVmReclaimType::kReclaimAll)
+    return;
   if (success)
     last_arcvm_trim_success_ = base::TimeTicks::Now();
   else
@@ -517,15 +517,14 @@ void WorkingSetTrimmerPolicyChromeOS::OnAllFramesInProcessFrozen(
 }
 
 void WorkingSetTrimmerPolicyChromeOS::OnPassedToGraph(Graph* graph) {
-  if (trim_on_memory_pressure_ || trim_arc_on_memory_pressure_) {
-    // We wait to register the memory pressure listener so we're on the
-    // right sequence.
-    params_ = features::TrimOnMemoryPressureParams::GetParams();
-    memory_pressure_listener_.emplace(
-        FROM_HERE,
-        base::BindRepeating(&WorkingSetTrimmerPolicyChromeOS::OnMemoryPressure,
-                            base::Unretained(this)));
-  }
+  // We wait to register the memory pressure listener so we're on the
+  // right sequence.
+  params_ = features::TrimOnMemoryPressureParams::GetParams();
+  memory_pressure_listener_.emplace(
+      FROM_HERE,
+      base::BindRepeating(&WorkingSetTrimmerPolicyChromeOS::OnMemoryPressure,
+                          base::Unretained(this)));
+
   if (trim_arcvm_on_memory_pressure_) {
     arcvm_trim_metric_report_timer_.Start(
         FROM_HERE, kArcVmTrimMetricReportDelay,

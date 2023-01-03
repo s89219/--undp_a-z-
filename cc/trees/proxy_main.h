@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -66,11 +66,15 @@ class CC_EXPORT ProxyMain : public Proxy {
   void DidCompleteCommit(CommitTimestamps);
   void DidPresentCompositorFrame(
       uint32_t frame_token,
-      std::vector<PresentationTimeCallbackBuffer::MainCallback> callbacks,
+      std::vector<PresentationTimeCallbackBuffer::Callback>
+          presentation_callbacks,
+      std::vector<PresentationTimeCallbackBuffer::SuccessfulCallback>
+          successful_presentation_callbacks,
       const gfx::PresentationFeedback& feedback);
   void NotifyThroughputTrackerResults(CustomTrackerResults results);
   void DidObserveFirstScrollDelay(base::TimeDelta first_scroll_delay,
                                   base::TimeTicks first_scroll_timestamp);
+  void NotifyTransitionRequestFinished(uint32_t sequence_id);
 
   CommitPipelineStage max_requested_pipeline_stage() const {
     return max_requested_pipeline_stage_;
@@ -96,6 +100,7 @@ class CC_EXPORT ProxyMain : public Proxy {
       const viz::LocalSurfaceId& target_local_surface_id) override;
   bool RequestedAnimatePending() override;
   void SetDeferMainFrameUpdate(bool defer_main_frame_update) override;
+  void SetPauseRendering(bool pause_rendering) override;
   bool StartDeferringCommits(base::TimeDelta timeout,
                              PaintHoldingReason reason) override;
   void StopDeferringCommits(PaintHoldingCommitTrigger) override;
@@ -117,7 +122,7 @@ class CC_EXPORT ProxyMain : public Proxy {
       base::WritableSharedMemoryMapping ukm_smoothness_data) override;
   void SetRenderFrameObserver(
       std::unique_ptr<RenderFrameMetadataObserver> observer) override;
-  uint32_t GetAverageThroughput() const override;
+  double GetPercentDroppedFrames() const override;
 
   // Returns |true| if the request was actually sent, |false| if one was
   // already outstanding.
@@ -162,11 +167,13 @@ class CC_EXPORT ProxyMain : public Proxy {
   bool defer_main_frame_update_;
   absl::optional<PaintHoldingReason> paint_holding_reason_;
 
+  bool pause_rendering_;
+
   // Only used when defer_commits_ is active and must be set in such cases.
   base::TimeTicks commits_restart_time_;
 
-  // TODO(paint-dev): it's not clear how devtools will handle interlacing of
-  // main thread tasks with commit tracing (crbug.com/1277952).
+  // TODO(paint-dev): It is not clear how to best show the interlacing of main
+  // thread tasks with commit (non-blocking commit) (crbug.com/1277952).
   std::unique_ptr<devtools_instrumentation::ScopedCommitTrace> commit_trace_;
 
   // ProxyImpl is created and destroyed on the impl thread, and should only be

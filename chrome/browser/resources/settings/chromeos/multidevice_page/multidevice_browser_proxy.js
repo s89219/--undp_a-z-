@@ -1,8 +1,8 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {addSingletonGetter, sendWithPromise} from 'chrome://resources/js/cr.m.js';
+import {sendWithPromise} from 'chrome://resources/ash/common/cr.m.js';
 
 import {MultiDeviceFeature, MultiDevicePageContentData, PhoneHubPermissionsSetupAction, PhoneHubPermissionsSetupFeatureCombination, PhoneHubPermissionsSetupFlowScreens} from './multidevice_constants.js';
 
@@ -104,6 +104,16 @@ export class MultiDeviceBrowserProxy {
   cancelCombinedFeatureSetup() {}
 
   /**
+   * Attempts to connect to the phone before setup.
+   */
+  attemptFeatureSetupConnection() {}
+
+  /**
+   * Cancel the connection flow.
+   */
+  cancelFeatureSetupConnection() {}
+
+  /**
    * Log [Cancel] button click event in phone hub combined feature access setup
    * flow.
    *  @param {!PhoneHubPermissionsSetupFlowScreens} screen
@@ -116,12 +126,39 @@ export class MultiDeviceBrowserProxy {
    *  @param {!PhoneHubPermissionsSetupFeatureCombination} setup_mode
    */
   logPhoneHubPermissionSetUpButtonClicked(setup_mode) {}
+
+  /**
+   * Log setup mode when multidevice permissions set up intro screen is
+   * displayed.
+   * @param {!PhoneHubPermissionsSetupFeatureCombination} setup_mode
+   */
+  logPhoneHubPermissionOnboardingSetupMode(setup_mode) {}
+
+  /**
+   * Log setup mode when multidevice permissions set up finished screen is
+   * displayed.
+   * @param {!PhoneHubPermissionsSetupFeatureCombination} completed_mode
+   */
+  logPhoneHubPermissionOnboardingSetupResult(completed_mode) {}
 }
+
+/** @type {?MultiDeviceBrowserProxy} */
+let instance = null;
 
 /**
  * @implements {MultiDeviceBrowserProxy}
  */
 export class MultiDeviceBrowserProxyImpl {
+  /** @return {!MultiDeviceBrowserProxy} */
+  static getInstance() {
+    return instance || (instance = new MultiDeviceBrowserProxyImpl());
+  }
+
+  /** @param {!MultiDeviceBrowserProxy} obj */
+  static setInstanceForTesting(obj) {
+    instance = obj;
+  }
+
   /** @override */
   showMultiDeviceSetupDialog() {
     chrome.send('showMultiDeviceSetupDialog');
@@ -204,6 +241,16 @@ export class MultiDeviceBrowserProxyImpl {
   }
 
   /** @override */
+  attemptFeatureSetupConnection() {
+    chrome.send('attemptFeatureSetupConnection');
+  }
+
+  /** @override */
+  cancelFeatureSetupConnection() {
+    chrome.send('cancelFeatureSetupConnection');
+  }
+
+  /** @override */
   logPhoneHubPermissionSetUpScreenAction(screen, action) {
     chrome.send('logPhoneHubPermissionSetUpScreenAction', [screen, action]);
   }
@@ -212,6 +259,14 @@ export class MultiDeviceBrowserProxyImpl {
   logPhoneHubPermissionSetUpButtonClicked(setup_mode) {
     chrome.send('logPhoneHubPermissionSetUpButtonClicked', [setup_mode]);
   }
-}
 
-addSingletonGetter(MultiDeviceBrowserProxyImpl);
+  /** @override */
+  logPhoneHubPermissionOnboardingSetupMode(setup_mode) {
+    chrome.send('logPhoneHubPermissionOnboardingSetupMode', [setup_mode]);
+  }
+
+  /** @override */
+  logPhoneHubPermissionOnboardingSetupResult(completed_mode) {
+    chrome.send('logPhoneHubPermissionOnboardingSetupResult', [completed_mode]);
+  }
+}

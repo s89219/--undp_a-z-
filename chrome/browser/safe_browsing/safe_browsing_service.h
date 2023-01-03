@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -27,6 +27,8 @@
 #include "components/safe_browsing/buildflags.h"
 #include "components/safe_browsing/content/browser/safe_browsing_service_interface.h"
 #include "components/safe_browsing/core/browser/db/util.h"
+#include "components/safe_browsing/core/browser/ping_manager.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -41,6 +43,10 @@ class PrefService;
 
 namespace content {
 class DownloadManager;
+}
+
+namespace download {
+class DownloadItem;
 }
 
 namespace network {
@@ -176,9 +182,15 @@ class SafeBrowsingService : public SafeBrowsingServiceInterface,
   virtual base::CallbackListSubscription RegisterStateCallback(
       const base::RepeatingClosure& callback);
 
-  // Sends serialized download report to backend.
-  virtual void SendSerializedDownloadReport(Profile* profile,
-                                            const std::string& report);
+#if BUILDFLAG(FULL_SAFE_BROWSING)
+  // Sends download report to backend. Returns true if the report is sent
+  // successfully.
+  virtual bool SendDownloadReport(
+      download::DownloadItem* download,
+      ClientSafeBrowsingReportRequest::ReportType report_type,
+      bool did_proceed,
+      absl::optional<bool> show_download_in_folder);
+#endif
 
   // Create the default v4 protocol config struct. This just calls into a helper
   // function, but it's still useful so that TestSafeBrowsingService can

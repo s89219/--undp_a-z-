@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,21 @@ export function getAllFrom<T extends Element>(
   // `elements`) is actually a `NodeListOf<T>`, so we need to manually cast it
   // here.
   return elements as NodeListOf<T>;
+}
+
+/**
+ * If an element matching CSS selector exists under the target, check its type
+ * and return, otherwise return null.
+ *
+ * @param target The target root element to execute the CSS selector from.
+ * @param selector The CSS selector.
+ * @param ctor The expected element type.
+ */
+export function getFromIfExists<T extends Element>(
+    target: ParentNode, selector: string,
+    ctor: new (...args: unknown[]) => T): T|null {
+  const element = target.querySelector(selector);
+  return element instanceof Element ? assertInstanceof(element, ctor) : null;
 }
 
 /**

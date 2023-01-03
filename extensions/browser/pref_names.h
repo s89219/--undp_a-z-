@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -85,6 +85,11 @@ extern const char kNativeMessagingUserLevelHosts[];
 // Time of the next scheduled extensions auto-update checks.
 extern const char kNextUpdateCheck[];
 
+// An integer indicates the availability of manifest v2 extensions. The value is
+// controlled by the ExtensionManifestV2Availability policy. More details can
+// be found at ExtensionManifestV2Availability.yaml.
+extern const char kManifestV2Availability[];
+
 // A preference that tracks extensions pinned to the toolbar. This is a list
 // object stored in the Preferences file. The extensions are stored by ID.
 extern const char kPinnedExtensions[];
@@ -92,10 +97,6 @@ extern const char kPinnedExtensions[];
 // Indicates on-disk data might have skeletal data that needs to be cleaned
 // on the next start of the browser.
 extern const char kStorageGarbageCollect[];
-
-// A preference that tracks browser action toolbar configuration. This is a list
-// object stored in the Preferences file. The extensions are stored by ID.
-extern const char kToolbar[];
 
 // A preference for a list of Component extensions that have been
 // uninstalled/removed and should not be reloaded.
@@ -108,14 +109,6 @@ extern const char kDeletedComponentExtensions[];
 // for Chrome Apps by enterprise policy.
 extern const char kChromeAppsEnabled[];
 #endif
-
-// A boolean indicating whether the deprecated U2F Security Key API, implemented
-// in the CryptoToken component extension, should be forcibly enabled, even if
-// it has been disabled via the `extensions_features::U2FSecurityKeyAPI` feature
-// flag.
-//
-// TODO(1224886): Delete together with CryptoToken code.
-extern const char kU2fSecurityKeyApiEnabled[];
 
 // Properties in kExtensions dictionaries --------------------------------------
 

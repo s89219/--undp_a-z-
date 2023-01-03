@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "ash/public/cpp/capture_mode/capture_mode_delegate.h"
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
-#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "chrome/browser/ash/policy/dlp/dlp_window_observer.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_confidential_contents.h"
@@ -52,6 +51,7 @@ class DlpContentManagerAsh : public DlpContentManager,
   // DlpWindowObserver::Delegate overrides:
   void OnWindowOcclusionChanged(aura::Window* window) override;
   void OnWindowDestroying(aura::Window* window) override;
+  void OnWindowTitleChanged(aura::Window* window) override;
 
   // Returns which restrictions are applied to the WebContents which are
   // currently visible.
@@ -102,11 +102,9 @@ class DlpContentManagerAsh : public DlpContentManager,
                                   const DlpContentRestrictionSet& restrictions);
 
  private:
-  friend class DlpContentManagerAshTestHelper;
   friend class DlpContentManagerTestHelper;
   friend class DlpContentObserver;
   friend class DlpContentTabHelper;
-  friend class MockDlpContentManagerAsh;
 
   // Structure to keep track of a running video capture.
   struct VideoCaptureInfo {

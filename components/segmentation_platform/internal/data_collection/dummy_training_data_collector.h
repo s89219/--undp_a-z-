@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,11 @@ class DummyTrainingDataCollector : public TrainingDataCollector {
   void OnModelMetadataUpdated() override;
   void OnServiceInitialized() override;
   void ReportCollectedContinuousTrainingData() override;
+  void OnDecisionTime(proto::SegmentId id,
+                      scoped_refptr<InputContext> input_context,
+                      DecisionType type) override;
+  void OnObservationTrigger(TrainingDataCache::RequestId request_id,
+                            const proto::SegmentInfo& segment_info) override;
 };
 
 }  // namespace segmentation_platform

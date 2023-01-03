@@ -1,19 +1,19 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/web_state_list/web_state_list_serialization.h"
 
-#include <stdint.h>
+#import <stdint.h>
 
-#include <algorithm>
-#include <memory>
-#include <unordered_map>
+#import <algorithm>
+#import <memory>
+#import <unordered_map>
 
-#include "base/callback.h"
-#include "base/check_op.h"
+#import "base/callback.h"
+#import "base/check_op.h"
 #import "base/mac/foundation_util.h"
-#include "base/strings/sys_string_conversions.h"
+#import "base/strings/sys_string_conversions.h"
 #import "ios/chrome/browser/sessions/session_features.h"
 #import "ios/chrome/browser/sessions/session_window_ios.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
@@ -23,7 +23,7 @@
 #import "ios/web/public/navigation/navigation_manager.h"
 #import "ios/web/public/session/serializable_user_data_manager.h"
 #import "ios/web/public/web_state.h"
-#include "net/base/mac/url_conversions.h"
+#import "net/base/mac/url_conversions.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -34,6 +34,10 @@ namespace {
 // the WebStates stored in the WebStateList.
 NSString* const kOpenerIndexKey = @"OpenerIndex";
 NSString* const kOpenerNavigationIndexKey = @"OpenerNavigationIndex";
+
+// Key used to store information about the pinned state of the WebStates stored
+// in the WebStateList.
+NSString* const kPinnedStateKey = @"PinnedState";
 
 // Some WebState may have no back/forward history. This can happen for
 // multiple reason (one is when opening a new tab on a slow network session,
@@ -105,6 +109,9 @@ SessionWindowIOS* SerializeWebStateList(WebStateList* web_state_list,
                                              kOpenerNavigationIndexKey);
     }
 
+    bool pinned_state = web_state_list->IsWebStatePinnedAt(index);
+    user_data_manager->AddSerializableData(@(pinned_state), kPinnedStateKey);
+
     CRWSessionStorage* session_storage = web_state->BuildSessionStorage();
     [serialized_session addObject:session_storage];
     if (sessions::ShouldSaveSessionTabsToSeparateFiles()) {
@@ -169,11 +176,15 @@ void DeserializeWebStateList(WebStateList* web_state_list,
         WebStateList::INSERT_FORCE_INDEX, WebStateOpener());
   }
 
-  // Restore the WebStates opener-opened relationship.
+  // Restore the WebStates pinned state and opener-opened relationship.
   for (int index = old_count; index < web_state_list->count(); ++index) {
     web::WebState* web_state = web_state_list->GetWebStateAt(index);
     web::SerializableUserDataManager* user_data_manager =
         web::SerializableUserDataManager::FromWebState(web_state);
+
+    NSNumber* pinned_state = base::mac::ObjCCast<NSNumber>(
+        user_data_manager->GetValueForSerializationKey(kPinnedStateKey));
+    web_state_list->SetWebStatePinnedAt(index, [pinned_state boolValue]);
 
     NSNumber* boxed_opener_index = base::mac::ObjCCast<NSNumber>(
         user_data_manager->GetValueForSerializationKey(kOpenerIndexKey));

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/lacros/account_manager/account_profile_mapper.h"
 #include "components/account_manager_core/account_manager_facade.h"
@@ -72,10 +73,10 @@ class SigninHelperLacros : public signin::IdentityManager::Observer {
 
   base::OnceCallback<void(const CoreAccountId&)> callback_;
   base::FilePath profile_path_;
-  AccountProfileMapper* const account_profile_mapper_;
+  const raw_ptr<AccountProfileMapper> account_profile_mapper_;
   account_manager::AccountManagerFacade::AccountAdditionSource source_;
 
-  signin::IdentityManager* const identity_manager_;
+  const raw_ptr<signin::IdentityManager> identity_manager_;
   base::ScopedObservation<signin::IdentityManager,
                           signin::IdentityManager::Observer>
       identity_manager_observervation_{this};

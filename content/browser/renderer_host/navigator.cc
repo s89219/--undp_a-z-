@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,10 @@
 #include "base/debug/dump_without_crashing.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
+#include "base/types/optional_util.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/process_lock.h"
 #include "content/browser/renderer_host/debug_urls.h"
@@ -68,6 +68,13 @@ using CrossOriginOpenerPolicyValue =
 using CrossOriginEmbedderPolicyValue =
     network::mojom::CrossOriginEmbedderPolicyValue;
 
+void LogNavigationStartToBeginWithAvoidUnnecessaryBeforeUnloadSync(
+    base::TimeDelta delta) {
+  base::UmaHistogramTimes(
+      "Navigation.NavigationStartToBeginWithAvoidUnnecessaryBeforeUnloadSync",
+      delta);
+}
+
 // Map Cross-Origin-Opener-Policy header value to its corresponding WebFeature.
 absl::optional<WebFeature> FeatureCoop(CrossOriginOpenerPolicyValue value) {
   switch (value) {
@@ -77,8 +84,10 @@ absl::optional<WebFeature> FeatureCoop(CrossOriginOpenerPolicyValue value) {
       return WebFeature::kCrossOriginOpenerPolicySameOrigin;
     case CrossOriginOpenerPolicyValue::kSameOriginAllowPopups:
       return WebFeature::kCrossOriginOpenerPolicySameOriginAllowPopups;
+    case CrossOriginOpenerPolicyValue::kRestrictProperties:
+      return WebFeature::kCrossOriginOpenerPolicyRestrictProperties;
     case CrossOriginOpenerPolicyValue::kSameOriginPlusCoep:
-    case CrossOriginOpenerPolicyValue::kSameOriginAllowPopupsPlusCoep:
+    case CrossOriginOpenerPolicyValue::kRestrictPropertiesPlusCoep:
       return WebFeature::kCoopAndCoepIsolated;
   }
 }
@@ -94,8 +103,10 @@ absl::optional<WebFeature> FeatureCoopRO(CrossOriginOpenerPolicyValue value) {
     case CrossOriginOpenerPolicyValue::kSameOriginAllowPopups:
       return WebFeature::
           kCrossOriginOpenerPolicySameOriginAllowPopupsReportOnly;
+    case CrossOriginOpenerPolicyValue::kRestrictProperties:
+      return WebFeature::kCrossOriginOpenerPolicyRestrictPropertiesReportOnly;
     case CrossOriginOpenerPolicyValue::kSameOriginPlusCoep:
-    case CrossOriginOpenerPolicyValue::kSameOriginAllowPopupsPlusCoep:
+    case CrossOriginOpenerPolicyValue::kRestrictPropertiesPlusCoep:
       return WebFeature::kCoopAndCoepIsolatedReportOnly;
   }
 }
@@ -153,6 +164,17 @@ void RecordWebPlatformSecurityMetrics(RenderFrameHostImpl* rfh,
   log(FeatureCoep(rfh->cross_origin_embedder_policy().value));
   log(FeatureCoepRO(rfh->cross_origin_embedder_policy().report_only_value));
 
+  // [Blob]
+  if (rfh->GetLastCommittedURL().SchemeIs(url::kBlobScheme)) {
+    base::UmaHistogramBoolean("Navigation.BlobUrl", true);
+    base::UmaHistogramBoolean("Navigation.BlobUrl.MainFrame",
+                              rfh->IsInPrimaryMainFrame());
+    base::UmaHistogramBoolean("Navigation.BlobUrl.Sandboxed",
+                              rfh->GetLastCommittedOrigin().opaque());
+  } else {
+    base::UmaHistogramBoolean("Navigation.BlobUrl", false);
+  }
+
   // Record iframes embedded in cross-origin contexts without a CSP
   // frame-ancestor directive.
   bool is_embedded_in_cross_origin_context = false;
@@ -176,6 +198,20 @@ void RecordWebPlatformSecurityMetrics(RenderFrameHostImpl* rfh,
         .Record(ukm::UkmRecorder::Get());
   }
 
+  // Record whether <iframe> with the credentialless attribute contains
+  // sandboxed document or not. Please note:
+  // - This is recorded once for every new document in the iframe.
+  // - It excludes nested document that are credentialless only by inheritance.
+  // - It would have been better to take a snapshot of the frame.credentialless
+  //   attribute at the beginning of the navigation, as opposed to when the
+  //   new document has been created, because it might have changed. Still, it
+  //   is good enough, a priori.
+  if (rfh->frame_tree_node()->credentialless()) {
+    base::UmaHistogramBoolean(
+        "Navigation.AnonymousIframeIsSandboxed",
+        rfh->active_sandbox_flags() != network::mojom::WebSandboxFlags::kNone);
+  }
+
   // Webview tag guests do not follow regular process model decisions. They
   // always stay in their original SiteInstance, regardless of COOP. Assumption
   // made below about COOP:same-origin and unsafe-none never being in the same
@@ -186,7 +222,7 @@ void RecordWebPlatformSecurityMetrics(RenderFrameHostImpl* rfh,
   // Check if the navigation resulted in having same-origin documents in pages
   // with different COOP status inside the browsing context group.
   RenderFrameHostImpl* top_level_document =
-      rfh->frame_tree_node()->frame_tree()->GetMainFrame();
+      rfh->frame_tree_node()->frame_tree().GetMainFrame();
   network::mojom::CrossOriginOpenerPolicyValue page_coop =
       top_level_document->cross_origin_opener_policy().value;
   for (RenderFrameHostImpl* other_tld :
@@ -202,7 +238,7 @@ void RecordWebPlatformSecurityMetrics(RenderFrameHostImpl* rfh,
            (page_coop == CoopValue::kUnsafeNone &&
             other_page_coop == CoopValue::kSameOriginAllowPopups));
     for (FrameTreeNode* frame_tree_node :
-         other_tld->frame_tree_node()->frame_tree()->Nodes()) {
+         other_tld->frame_tree_node()->frame_tree().Nodes()) {
       RenderFrameHostImpl* other_rfh = frame_tree_node->current_frame_host();
       if (other_rfh->lifecycle_state() ==
               RenderFrameHostImpl::LifecycleStateImpl::kActive &&
@@ -249,70 +285,26 @@ bool HasEmbeddingControl(NavigationRequest* navigation_request) {
   return false;
 }
 
-bool ValidateUnfencedTopNavigation(RenderFrameHostImpl* render_frame_host,
-                                   const GURL& url,
-                                   int initiator_process_id,
-                                   bool user_gesture) {
-  // It should only be possible to send this IPC with this flag from an
-  // MPArch opaque-ads fenced frame. Opaque-ads fenced frames should always
-  // have the sandbox flag `allow-top-navigation-by-user-activation`.
-  if (!render_frame_host->frame_tree_node()->IsInFencedFrameTree() ||
-      !blink::features::IsFencedFramesMPArchBased() ||
-      (render_frame_host->GetMainFrame()
-           ->frame_tree_node()
-           ->GetFencedFrameMode() !=
-       blink::mojom::FencedFrameMode::kOpaqueAds) ||
-      render_frame_host->IsSandboxed(
-          network::mojom::WebSandboxFlags::kTopNavigationByUserActivation)) {
-    // If we get the IPC elsewhere, assume the renderer is compromised.
-    bad_message::ReceivedBadMessage(
-        initiator_process_id,
-        bad_message::RFHI_UNFENCED_TOP_IPC_OUTSIDE_FENCED_FRAME);
-    return false;
+// Creates a WebBundleHandleTracker from the WebBundleHandles attached to the
+// current RenderFrameHost. There there are none, it is produced from the parent
+// or the opener.
+std::unique_ptr<WebBundleHandleTracker> MaybeCreateWebBundleHandleTracker(
+    FrameTreeNode* frame) {
+  std::unique_ptr<WebBundleHandleTracker> tracker =
+      frame->current_frame_host()->MaybeCreateWebBundleHandleTracker();
+  if (tracker)
+    return tracker;
+
+  if (frame->parent())
+    return frame->parent()->MaybeCreateWebBundleHandleTracker();
+
+  if (frame->opener()) {
+    return frame->opener()
+        ->current_frame_host()
+        ->MaybeCreateWebBundleHandleTracker();
   }
 
-  // Perform checks that normally would be performed in
-  // `blink::CanNavigateHelper` but that we skipped because the target
-  // frame wasn't available in the renderer.
-  // TODO(crbug.com/1123606): Clean this up (make it use a common code path
-  // for maintainability) after OT if possible.
-
-  // Javascript URLs are not allowed, because they can be used to
-  // communicate from the fenced frame to the embedder.
-  // TODO(crbug.com/1315802): It does not seem possible to reach this code
-  // with an uncompromised renderer, because javascript URLs don't reach
-  // the same IPC; instead they run inside the fenced frame as _self.
-  // It also seems that Javascript URLs would be caught earlier in this
-  // particular code path by VerifyOpenURLParams().
-  // In this code's final IPC resting place after the factor, make sure
-  // to check whether this code is redundant.
-  if (url.SchemeIs(url::kJavaScriptScheme)) {
-    render_frame_host->AddMessageToConsole(
-        blink::mojom::ConsoleMessageLevel::kError,
-        "The frame attempting navigation must be in the same fenced "
-        "frame tree as the target if navigating to a javascript: url");
-    return false;
-  }
-
-  // User activation is required, because fenced frames use the sandbox
-  // flag `allow-top-navigation-by-user-activation`.
-  // It would be better to instead check
-  // `render_frame_host->frame_tree_node()->HasTransientUserActivation()`,
-  // but it has already been consumed at this point.
-  // TODO(crbug.com/848778): use the browser's source of truth for user
-  // activation here (and elsewhere in this file) rather than trust the
-  // renderer.
-  if (!user_gesture) {
-    render_frame_host->AddMessageToConsole(
-        blink::mojom::ConsoleMessageLevel::kError,
-        "The frame attempting navigation of the top-level window is "
-        "sandboxed with the 'allow-top-navigation-by-user-activation' "
-        "flag, but has no user activation (aka gesture). See "
-        "https://www.chromestatus.com/feature/5629582019395584.");
-    return false;
-  }
-
-  return true;
+  return nullptr;
 }
 
 }  // namespace
@@ -433,14 +425,21 @@ bool Navigator::CheckWebUIRendererDoesNotDisplayNormalURL(
 
   // If `url` is one that is allowed in WebUI renderer process, ensure that its
   // origin is either opaque or its process lock matches the RFH process lock.
+  // As an example, the origin may be opaque if a WebUI navigation resulted in
+  // an error page.
+  //
+  // TODO(alexmos): Currently, `is_allowed_in_web_ui_renderer` is unexpectedly
+  // true for about:blank and renderer debug URLs, even when they commit with
+  // an origin that is not allowed into a WebUI renderer.  For now, these cases
+  // are also skipped via the origin opaqueness check, but
+  // `is_allowed_in_web_ui_renderer` should be strengthened to not be true in
+  // this case so that the checks above also apply.  See
+  // https://crbug.com/1320402.
   if (is_allowed_in_web_ui_renderer) {
-    url::Origin url_origin =
-        url::Origin::Create(url.DeprecatedGetOriginAsURL());
-
     // Verify `site_info`'s process lock matches the RFH's process lock, if one
     // is in place.
     if (should_lock_process) {
-      if (!url_origin.opaque() &&
+      if (!url::Origin::Create(url).opaque() &&
           process_lock != ProcessLock::FromSiteInfo(site_info)) {
         return false;
       }
@@ -471,12 +470,6 @@ NavigatorDelegate* Navigator::GetDelegate() {
   return delegate_;
 }
 
-void Navigator::DidFailLoadWithError(RenderFrameHostImpl* render_frame_host,
-                                     const GURL& url,
-                                     int error_code) {
-  delegate_->DidFailLoadWithError(render_frame_host, url, error_code);
-}
-
 bool Navigator::StartHistoryNavigationInNewSubframe(
     RenderFrameHostImpl* render_frame_host,
     mojo::PendingAssociatedRemote<mojom::NavigationClient>* navigation_client) {
@@ -491,15 +484,15 @@ void Navigator::DidNavigate(
     bool was_within_same_document) {
   DCHECK(navigation_request);
   FrameTreeNode* frame_tree_node = render_frame_host->frame_tree_node();
-  FrameTree* frame_tree = frame_tree_node->frame_tree();
-  DCHECK_EQ(frame_tree, &controller_.frame_tree());
+  FrameTree& frame_tree = frame_tree_node->frame_tree();
+  DCHECK_EQ(&frame_tree, &controller_.frame_tree());
   base::WeakPtr<RenderFrameHostImpl> old_frame_host =
       frame_tree_node->render_manager()->current_frame_host()->GetWeakPtr();
 
-  // At this point we have already chosen a SiteInstance for this navigation, so
-  // set OriginIsolationRequest to kNone in the conversion to UrlInfo below:
-  // this is done implicitly in the UrlInfoInit constructor.
-  const UrlInfo url_info(UrlInfoInit(params.url));
+  // Save the activation status of the previous page here before it gets reset
+  // in FrameTreeNode::ResetForNavigation.
+  bool previous_document_was_activated =
+      frame_tree.root()->HasStickyUserActivation();
 
   if (auto& old_page_info = navigation_request->commit_params().old_page_info) {
     // This is a same-site main-frame navigation where we did a proactive
@@ -546,24 +539,26 @@ void Navigator::DidNavigate(
   render_frame_host->browsing_context_state()->SetInsecureNavigationsSet(
       params.insecure_navigations_set);
 
-  // Save the activation status of the previous page here before it gets reset
-  // in FrameTreeNode::ResetForNavigation.
-  bool previous_document_was_activated =
-      frame_tree->root()->HasStickyUserActivation();
-
   if (!was_within_same_document) {
     // Navigating to a new location means a new, fresh set of http headers
     // and/or <meta> elements - we need to reset Permissions Policy.
     frame_tree_node->ResetForNavigation();
   }
 
-  // Update the site of the SiteInstance if it doesn't have one yet, unless
-  // assigning a site is not necessary for this URL. In that case, the
-  // SiteInstance can still be considered unused until a navigation to a real
-  // page.
+  // If the committing URL requires the SiteInstance's site to be assigned,
+  // that site assignment should've already happened at ReadyToCommit time. We
+  // should never get here with a SiteInstance that doesn't have a site
+  // assigned in that case.
   SiteInstanceImpl* site_instance = render_frame_host->GetSiteInstance();
   if (!site_instance->HasSite() &&
-      SiteInstanceImpl::ShouldAssignSiteForURL(url_info.url)) {
+      SiteInstanceImpl::ShouldAssignSiteForURL(params.url)) {
+    NOTREACHED() << "SiteInstance should have already set a site: "
+                 << params.url;
+    // TODO(alexmos): convert this to a CHECK and remove the fallback call to
+    // ConvertToDefaultOrSetSite() after verifying that this doesn't happen in
+    // practice.
+    base::debug::DumpWithoutCrashing();
+    const UrlInfo url_info(UrlInfoInit(params.url));
     site_instance->ConvertToDefaultOrSetSite(url_info);
   }
 
@@ -628,7 +623,7 @@ void Navigator::DidNavigate(
   if (old_entry_count != controller_.GetEntryCount() ||
       details.previous_entry_index !=
           controller_.GetLastCommittedEntryIndex()) {
-    frame_tree->root()->render_manager()->ExecutePageBroadcastMethod(
+    frame_tree.root()->render_manager()->ExecutePageBroadcastMethod(
         base::BindRepeating(
             [](int history_offset, int history_count, RenderViewHostImpl* rvh) {
               if (auto& broadcast = rvh->GetAssociatedPageBroadcast())
@@ -662,34 +657,29 @@ void Navigator::DidNavigate(
 
   // Send notification about committed provisional loads. This notification is
   // different from the NAV_ENTRY_COMMITTED notification which doesn't include
-  // the actual URL navigated to and isn't sent for AUTO_SUBFRAME navigations.
-  if (details.type != NAVIGATION_TYPE_NAV_IGNORE) {
-    DCHECK(delegate_);
-    DCHECK_EQ(!render_frame_host->GetParent(),
-              did_navigate ? details.is_main_frame : false);
-    navigation_request->DidCommitNavigation(
-        params, did_navigate, details.did_replace_entry,
-        details.previous_main_frame_url, details.type);
+  // the actual URL navigated to.
+  DCHECK(delegate_);
+  DCHECK_EQ(!render_frame_host->GetParent(),
+            did_navigate ? details.is_main_frame : false);
+  navigation_request->DidCommitNavigation(params, did_navigate,
+                                          details.did_replace_entry,
+                                          details.previous_main_frame_url);
 
-    // Dispatch PrimaryPageChanged notification when a main frame
-    // non-same-document navigation changes the current Page in the FrameTree.
-    //
-    // We do this here to ensure that this navigation has updated all relevant
-    // properties of RenderFrameHost / Page / Navigation Controller / Navigation
-    // Request (e.g. `RenderFrameHost::GetLastCommittedURL`,
-    // `NavigationRequest::GetHttpStatusCode`) before notifying the observers.
-    // TODO(crbug.com/1275933): Don't dispatch PrimaryPageChanged for initial
-    // empty document navigations.
-    if (!was_within_same_document && render_frame_host->is_main_frame()) {
-      navigation_request->frame_tree_node()
-          ->frame_tree()
-          ->delegate()
-          ->NotifyPageChanged(render_frame_host->GetPage());
+  // Dispatch PrimaryPageChanged notification when a main frame
+  // non-same-document navigation changes the current Page in the FrameTree.
+  //
+  // We do this here to ensure that this navigation has updated all relevant
+  // properties of RenderFrameHost / Page / Navigation Controller / Navigation
+  // Request (e.g. `RenderFrameHost::GetLastCommittedURL`,
+  // `NavigationRequest::GetHttpStatusCode`) before notifying the observers.
+  // TODO(crbug.com/1275933): Don't dispatch PrimaryPageChanged for initial
+  // empty document navigations.
+  if (!was_within_same_document && render_frame_host->is_main_frame()) {
+    render_frame_host->GetPage().NotifyPageBecameCurrent();
 
-      // Finally reset the `navigation_request` after navigation commit and all
-      // NavigationRequest usages.
-      navigation_request.reset();
-    }
+    // Finally reset the `navigation_request` after navigation commit and all
+    // NavigationRequest usages.
+    navigation_request.reset();
   }
 
   if (did_create_new_document) {
@@ -711,7 +701,7 @@ void Navigator::DidNavigate(
 
   // Now that something has committed, we don't need to track whether the
   // initial page has been accessed.
-  frame_tree->ResetHasAccessedInitialMainDocument();
+  frame_tree.ResetHasAccessedInitialMainDocument();
 
   // Run post-commit tasks.
   if (details.is_main_frame)
@@ -728,7 +718,7 @@ void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
       TRACE_EVENT_SCOPE_GLOBAL, request->common_params().navigation_start);
 
   FrameTreeNode* frame_tree_node = request->frame_tree_node();
-  DCHECK_EQ(frame_tree_node->frame_tree(), &controller_.frame_tree());
+  DCHECK_EQ(&(frame_tree_node->frame_tree()), &controller_.frame_tree());
 
   navigation_data_ = std::make_unique<NavigationMetricsData>(
       request->common_params().navigation_start, request->common_params().url,
@@ -744,18 +734,20 @@ void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
   // We don't want to dispatch a beforeunload handler if
   // is_history_navigation_in_new_child is true. This indicates a newly created
   // child frame which does not have a beforeunload handler.
+  bool no_dispatch_because_avoid_unnecessary_sync = false;
   bool should_dispatch_beforeunload =
       !NavigationTypeUtils::IsSameDocument(
           request->common_params().navigation_type) &&
       !request->common_params().is_history_navigation_in_new_child_frame &&
       frame_tree_node->current_frame_host()->ShouldDispatchBeforeUnload(
-          false /* check_subframes_only */);
+          false /* check_subframes_only */,
+          &no_dispatch_because_avoid_unnecessary_sync);
 
   int nav_entry_id = request->nav_entry_id();
   bool is_pending_entry =
       controller_.GetPendingEntry() &&
       (nav_entry_id == controller_.GetPendingEntry()->GetUniqueID());
-  frame_tree_node->CreatedNavigationRequest(std::move(request));
+  frame_tree_node->TakeNavigationRequest(std::move(request));
   DCHECK(frame_tree_node->navigation_request());
 
   // Have the current renderer execute its beforeunload event if needed. If it
@@ -767,6 +759,12 @@ void Navigator::Navigate(std::unique_ptr<NavigationRequest> request,
         RenderFrameHostImpl::BeforeUnloadType::BROWSER_INITIATED_NAVIGATION,
         reload_type != ReloadType::NONE);
   } else {
+    if (no_dispatch_because_avoid_unnecessary_sync) {
+      LogNavigationStartToBeginWithAvoidUnnecessaryBeforeUnloadSync(
+          base::TimeTicks::Now() - frame_tree_node->navigation_request()
+                                       ->common_params()
+                                       .navigation_start);
+    }
     frame_tree_node->navigation_request()->BeginNavigation();
     // WARNING: The NavigationRequest might have been destroyed in
     // BeginNavigation(). Do not use |frame_tree_node->navigation_request()|
@@ -784,13 +782,13 @@ void Navigator::RequestOpenURL(
     const blink::LocalFrameToken* initiator_frame_token,
     int initiator_process_id,
     const absl::optional<url::Origin>& initiator_origin,
+    const absl::optional<GURL>& initiator_base_url,
     const scoped_refptr<network::ResourceRequestBody>& post_body,
     const std::string& extra_headers,
     const Referrer& referrer,
     WindowOpenDisposition disposition,
     bool should_replace_current_entry,
     bool user_gesture,
-    bool is_unfenced_top_navigation,
     blink::mojom::TriggeringEventInfo triggering_event_info,
     const std::string& href_translate,
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
@@ -819,46 +817,8 @@ void Navigator::RequestOpenURL(
   // (possibly of a new or different WebContents) otherwise.
   if (disposition == WindowOpenDisposition::CURRENT_TAB &&
       render_frame_host->GetParentOrOuterDocument()) {
-    if (is_unfenced_top_navigation) {
-      // If the flag `is_unfenced_top_navigation` is set, this is a special code
-      // path for MPArch fenced frames. The target frame doesn't have a handle
-      // inside the MPArch renderer process, so we need to set it here.
-      // TODO(crbug.com/1315802): Refactor _unfencedTop handling.
-
-      // Check that the IPC parameters are valid and that the navigation
-      // is allowed.
-      if (!ValidateUnfencedTopNavigation(render_frame_host, url,
-                                         initiator_process_id, user_gesture)) {
-        return;
-      }
-
-      // Change the navigation target to the outermost frame.
-      // This escapes Portals but not GuestViews.
-      // - We don't especially care about Portals, because the frame won't be
-      //   user activated until it's no longer in a portal
-      // - We don't want _unfencedTop navigations to escape a GuestView
-      //   (<webview>) and affect their embedder.
-      // You can represent the primary NavigationController's FrameTree root
-      // with`RenderFrameHost::kNoFrameTreeNodeId`, but we will pick out the
-      // exact node to be safe.
-      frame_tree_node_id = render_frame_host->GetOutermostMainFrame()
-                               ->frame_tree_node()
-                               ->frame_tree_node_id();
-
-      // Fenced frames are enforced to have a history of length 1. Because the
-      // renderer thinks this navigation is to the fenced frame root, it sets
-      // `should_replace_current_entry` to true, but we do not want this
-      // restriction for navigations outside the fenced frame.
-      // TODO(crbug.com/1315802): Make sure that the browser doesn't rely on
-      // whether the renderer says we should replace the current entry, i.e.
-      // make sure there are no situations where we should actually replace the
-      // current entry but don't, due to this line.
-      should_replace_current_entry = false;
-    } else {
-      // Otherwise, proceed normally.
-      frame_tree_node_id =
-          render_frame_host->frame_tree_node()->frame_tree_node_id();
-    }
+    frame_tree_node_id =
+        render_frame_host->frame_tree_node()->frame_tree_node_id();
   }
 
   // Prerendering frames need to have an FTN id set, so OpenURL() can find
@@ -879,6 +839,7 @@ void Navigator::RequestOpenURL(
   params.user_gesture = user_gesture;
   params.triggering_event_info = triggering_event_info;
   params.initiator_origin = initiator_origin;
+  params.initiator_base_url = initiator_base_url;
   params.initiator_frame_token = base::OptionalFromPtr(initiator_frame_token);
   params.initiator_process_id = initiator_process_id;
 
@@ -915,6 +876,7 @@ void Navigator::NavigateFromFrameProxy(
     const blink::LocalFrameToken* initiator_frame_token,
     int initiator_process_id,
     const url::Origin& initiator_origin,
+    const GURL& initiator_base_url,
     SiteInstance* source_site_instance,
     const Referrer& referrer,
     ui::PageTransition page_transition,
@@ -926,9 +888,14 @@ void Navigator::NavigateFromFrameProxy(
     scoped_refptr<network::SharedURLLoaderFactory> blob_url_loader_factory,
     network::mojom::SourceLocationPtr source_location,
     bool has_user_gesture,
+    bool is_form_submission,
     const absl::optional<blink::Impression>& impression,
+    blink::mojom::NavigationInitiatorActivationAndAdStatus
+        initiator_activation_and_ad_status,
     base::TimeTicks navigation_start_time,
-    absl::optional<bool> is_fenced_frame_opaque_url) {
+    bool is_embedder_initiated_fenced_frame_navigation,
+    bool is_unfenced_top_navigation,
+    bool force_new_browsing_instance) {
   // |method != "POST"| should imply absence of |post_body|.
   if (method != "POST" && post_body) {
     NOTREACHED();
@@ -936,9 +903,8 @@ void Navigator::NavigateFromFrameProxy(
   }
 
   // Allow the delegate to cancel the cross-process navigation.
-  // TODO(crbug.com/1316388): With MPArch there may be multiple main frames and
-  // so is_main_frame should not be used to identify outermost main frames.
-  // Follow up to confirm correctness.
+  // With MPArch there may be multiple main frames and so is_main_frame should
+  // not be used to identify outermost main frames.
   if (!delegate_->ShouldAllowRendererInitiatedCrossProcessNavigation(
           render_frame_host->IsOutermostMainFrame()))
     return;
@@ -967,11 +933,14 @@ void Navigator::NavigateFromFrameProxy(
 
   controller_.NavigateFromFrameProxy(
       render_frame_host, url, initiator_frame_token, initiator_process_id,
-      initiator_origin, is_renderer_initiated, source_site_instance,
-      referrer_to_use, page_transition, should_replace_current_entry,
-      download_policy, method, post_body, extra_headers,
-      std::move(source_location), std::move(blob_url_loader_factory),
-      impression, navigation_start_time, is_fenced_frame_opaque_url);
+      initiator_origin, initiator_base_url, is_renderer_initiated,
+      source_site_instance, referrer_to_use, page_transition,
+      should_replace_current_entry, download_policy, method, post_body,
+      extra_headers, std::move(source_location),
+      std::move(blob_url_loader_factory), is_form_submission, impression,
+      initiator_activation_and_ad_status, navigation_start_time,
+      is_embedder_initiated_fenced_frame_navigation, is_unfenced_top_navigation,
+      force_new_browsing_instance);
 }
 
 void Navigator::BeforeUnloadCompleted(FrameTreeNode* frame_tree_node,
@@ -993,7 +962,7 @@ void Navigator::BeforeUnloadCompleted(FrameTreeNode* frame_tree_node,
   // after the navigation started. The last user input should be respected, and
   // the navigation cancelled anyway.
   if (!proceed) {
-    CancelNavigation(frame_tree_node);
+    CancelNavigation(frame_tree_node, NavigationDiscardReason::kCancelled);
     return;
   }
 
@@ -1029,12 +998,9 @@ void Navigator::OnBeginNavigation(
     mojo::PendingAssociatedRemote<mojom::NavigationClient> navigation_client,
     scoped_refptr<PrefetchedSignedExchangeCache>
         prefetched_signed_exchange_cache,
-    std::unique_ptr<WebBundleHandleTracker> web_bundle_handle_tracker) {
+    mojo::PendingReceiver<mojom::NavigationRendererCancellationListener>
+        renderer_cancellation_listener) {
   TRACE_EVENT0("navigation", "Navigator::OnBeginNavigation");
-  // TODO(clamy): the url sent by the renderer should be validated with
-  // FilterURL.
-  // This is a renderer-initiated navigation.
-  DCHECK(frame_tree_node);
 
   if (common_params->is_history_navigation_in_new_child_frame) {
     // Try to find a FrameNavigationEntry that matches this frame instead, based
@@ -1057,7 +1023,8 @@ void Navigator::OnBeginNavigation(
           .is_history_navigation_in_new_child_frame) {
     // Preemptively clear this local pointer before deleting the request.
     ongoing_navigation_request = nullptr;
-    frame_tree_node->ResetNavigationRequest(false);
+    frame_tree_node->ResetNavigationRequest(
+        NavigationDiscardReason::kNewNavigation);
   }
 
   // Verify this navigation has precedence.
@@ -1074,14 +1041,15 @@ void Navigator::OnBeginNavigation(
   if (navigation_entry)
     navigation_entry->SetIsOverridingUserAgent(override_user_agent);
 
-  frame_tree_node->CreatedNavigationRequest(
+  frame_tree_node->TakeNavigationRequest(
       NavigationRequest::CreateRendererInitiated(
           frame_tree_node, navigation_entry, std::move(common_params),
           std::move(begin_params), controller_.GetLastCommittedEntryIndex(),
           controller_.GetEntryCount(), override_user_agent,
           std::move(blob_url_loader_factory), std::move(navigation_client),
           std::move(prefetched_signed_exchange_cache),
-          std::move(web_bundle_handle_tracker)));
+          MaybeCreateWebBundleHandleTracker(frame_tree_node),
+          std::move(renderer_cancellation_listener)));
   NavigationRequest* navigation_request = frame_tree_node->navigation_request();
 
   navigation_data_ = std::make_unique<NavigationMetricsData>(
@@ -1100,9 +1068,11 @@ void Navigator::OnBeginNavigation(
   // those frames.
   DCHECK(!NavigationTypeUtils::IsSameDocument(
       navigation_request->common_params().navigation_type));
+  bool no_dispatch_because_avoid_unnecessary_sync = false;
   bool should_dispatch_beforeunload =
       frame_tree_node->current_frame_host()->ShouldDispatchBeforeUnload(
-          true /* check_subframes_only */);
+          true /* check_subframes_only */,
+          &no_dispatch_because_avoid_unnecessary_sync);
   if (should_dispatch_beforeunload) {
     frame_tree_node->navigation_request()->SetWaitingForRendererResponse();
     frame_tree_node->current_frame_host()->DispatchBeforeUnload(
@@ -1110,6 +1080,12 @@ void Navigator::OnBeginNavigation(
         NavigationTypeUtils::IsReload(
             navigation_request->common_params().navigation_type));
     return;
+  }
+
+  if (no_dispatch_because_avoid_unnecessary_sync) {
+    LogNavigationStartToBeginWithAvoidUnnecessaryBeforeUnloadSync(
+        base::TimeTicks::Now() -
+        navigation_request->common_params().navigation_start);
   }
 
   // For main frames, NavigationHandle will be created after the call to
@@ -1130,17 +1106,18 @@ void Navigator::RestartNavigationAsCrossDocument(
     return;
 
   navigation_request->ResetForCrossDocumentRestart();
-  frame_tree_node->CreatedNavigationRequest(std::move(navigation_request));
+  frame_tree_node->TakeNavigationRequest(std::move(navigation_request));
   frame_tree_node->navigation_request()->BeginNavigation();
   // DO NOT USE THE NAVIGATION REQUEST BEYOND THIS POINT. It might have been
   // destroyed in BeginNavigation().
   // See https://crbug.com/770157.
 }
 
-void Navigator::CancelNavigation(FrameTreeNode* frame_tree_node) {
+void Navigator::CancelNavigation(FrameTreeNode* frame_tree_node,
+                                 NavigationDiscardReason reason) {
   if (frame_tree_node->navigation_request())
     frame_tree_node->navigation_request()->set_net_error(net::ERR_ABORTED);
-  frame_tree_node->ResetNavigationRequest(false);
+  frame_tree_node->ResetNavigationRequest(reason);
   if (frame_tree_node->IsMainFrame())
     navigation_data_.reset();
 }
@@ -1293,6 +1270,10 @@ void Navigator::RecordNavigationMetrics(
       navigation_data_->commit_navigation_sent_) {
     base::TimeTicks unload_start = params.unload_start.value();
     base::TimeTicks unload_end = params.unload_end.value();
+    // Note: we expect `commit_navigation_end` to be later than `unload_end`.
+    // `unload_end` is recorded when the unload handlers finish running, which
+    // happens prior to the navigation committing and recording
+    // `commit_navigation_end` in this same-process case.
     base::TimeTicks commit_navigation_end =
         params.commit_navigation_end.value();
 
@@ -1303,7 +1284,7 @@ void Navigator::RecordNavigationMetrics(
           blink::LocalTimeTicks::FromTimeTicks(first_before_unload_start_time),
           blink::LocalTimeTicks::FromTimeTicks(base::TimeTicks::Now()),
           blink::RemoteTimeTicks::FromTimeTicks(unload_start),
-          blink::RemoteTimeTicks::FromTimeTicks(unload_end));
+          blink::RemoteTimeTicks::FromTimeTicks(commit_navigation_end));
       blink::LocalTimeTicks converted_unload_start = converter.ToLocalTimeTicks(
           blink::RemoteTimeTicks::FromTimeTicks(unload_start));
       blink::LocalTimeTicks converted_unload_end = converter.ToLocalTimeTicks(
@@ -1341,12 +1322,9 @@ NavigationEntryImpl*
 Navigator::GetNavigationEntryForRendererInitiatedNavigation(
     const blink::mojom::CommonNavigationParams& common_params,
     FrameTreeNode* frame_tree_node) {
-  // TODO(crbug.com/1314749): With MPArch there may be multiple main frames and
-  // so IsMainFrame should not be used to identify embedded frames. In this
-  // case, we use IsMainFrame since our only instance of embedded main frames
-  // (fenced frames) have their own NavigationController, and we will enforce
-  // main frame behavior at that level. Will need to follow up to confirm
-  // correctness.
+  // With MPArch, there may be multiple main frames, but each one has its own
+  // NavigationController. Thus, it's correct to check for NavigationEntries for
+  // each main frame, even if one is embedded (e.g., a fenced frame).
   if (!frame_tree_node->IsMainFrame())
     return nullptr;
 
@@ -1377,16 +1355,21 @@ Navigator::GetNavigationEntryForRendererInitiatedNavigation(
   SiteInstance* current_site_instance =
       frame_tree_node->current_frame_host()->GetSiteInstance();
   SiteInstance* source_site_instance = current_site_instance;
-
+  // If `frame_tree_node` is the outermost main frame, it rewrites a virtual
+  // url in order to adjust the original input url if needed. For inner frames
+  // such as fenced frames or subframes, they don't rewrite urls as the urls
+  // are not input urls by users.
+  bool rewrite_virtual_urls = frame_tree_node->IsOutermostMainFrame();
   std::unique_ptr<NavigationEntryImpl> entry =
       NavigationEntryImpl::FromNavigationEntry(
           NavigationControllerImpl::CreateNavigationEntry(
               common_params.url, content::Referrer(),
-              common_params.initiator_origin, source_site_instance,
-              ui::PAGE_TRANSITION_LINK, true /* is_renderer_initiated */,
+              common_params.initiator_origin, common_params.initiator_base_url,
+              source_site_instance, ui::PAGE_TRANSITION_LINK,
+              true /* is_renderer_initiated */,
               std::string() /* extra_headers */,
               controller_.GetBrowserContext(),
-              nullptr /* blob_url_loader_factory */));
+              nullptr /* blob_url_loader_factory */, rewrite_virtual_urls));
 
   entry->set_reload_type(NavigationRequest::NavigationTypeToReloadType(
       common_params.navigation_type));

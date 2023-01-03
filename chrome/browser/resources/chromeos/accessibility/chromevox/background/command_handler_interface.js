@@ -1,13 +1,15 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-goog.provide('CommandHandlerInterface');
+import {constants} from '../../common/constants.js';
+import {CursorRange} from '../../common/cursors/range.js';
+import {Command} from '../common/command_store.js';
 
-CommandHandlerInterface = class {
+export class CommandHandlerInterface {
   /**
    * Handles ChromeVox commands.
-   * @param {string} command
+   * @param {!Command} command
    * @return {boolean} True if the command should propagate.
    */
   onCommand(command) {}
@@ -15,12 +17,12 @@ CommandHandlerInterface = class {
   /**
    * A helper to object navigation to skip all static text nodes who have
    * label/description for on ancestor nodes.
-   * @param {cursors.Range} current
+   * @param {CursorRange} current
    * @param {constants.Dir} dir
-   * @return {cursors.Range} The resulting range.
+   * @return {CursorRange} The resulting range.
    */
   skipLabelOrDescriptionFor(current, dir) {}
-};
+}
 
 /**
  * @type {CommandHandlerInterface}

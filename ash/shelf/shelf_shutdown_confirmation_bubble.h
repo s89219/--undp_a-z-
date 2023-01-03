@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,17 +35,16 @@ class ASH_EXPORT ShelfShutdownConfirmationBubble : public ShelfBubble {
   // Enum used for UMA. Do NOT reorder or remove entry. Don't forget to
   // update ShutdownConfirmationBubbleAction enum in enums.xml when adding new
   // entries.
-  enum BubbleAction {
+  enum class BubbleAction {
     kOpened = 0,
     kCancelled = 1,
     kConfirmed = 2,
     kDismissed = 3,
-    kMaxValue
+    kMaxValue = kDismissed
   };
 
   ShelfShutdownConfirmationBubble(views::View* anchor,
                                   ShelfAlignment alignment,
-                                  SkColor background_color,
                                   base::OnceClosure on_confirm_callback,
                                   base::OnceClosure on_cancel_callback);
 
@@ -57,6 +56,8 @@ class ASH_EXPORT ShelfShutdownConfirmationBubble : public ShelfBubble {
 
   // views::View:
   void OnThemeChanged() override;
+  void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
+  std::u16string GetAccessibleWindowTitle() const override;
 
  protected:
   // ShelfBubble:
@@ -64,9 +65,6 @@ class ASH_EXPORT ShelfShutdownConfirmationBubble : public ShelfBubble {
   bool ShouldCloseOnMouseExit() override;
 
  private:
-  // BubbleDialogDelegateView overrides:
-  gfx::Size CalculatePreferredSize() const override;
-
   // Callback functions of cancel and confirm buttons
   void OnCancelled();
   void OnConfirmed();

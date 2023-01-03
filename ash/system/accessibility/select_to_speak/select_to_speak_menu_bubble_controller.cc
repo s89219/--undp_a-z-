@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,7 +42,7 @@ void SelectToSpeakMenuBubbleController::Show(const gfx::Rect& anchor,
   initial_speech_rate_ = initial_speech_rate;
   if (!bubble_widget_) {
     TrayBubbleView::InitParams init_params;
-    init_params.delegate = this;
+    init_params.delegate = GetWeakPtr();
     init_params.parent_window =
         Shell::GetContainer(Shell::GetPrimaryRootWindow(),
                             kShellWindowId_AccessibilityBubbleContainer);
@@ -50,7 +50,6 @@ void SelectToSpeakMenuBubbleController::Show(const gfx::Rect& anchor,
     init_params.is_anchored_to_status_area = false;
     init_params.insets =
         gfx::Insets::VH(kBubbleMenuPadding, kBubbleMenuPadding);
-    init_params.has_shadow = false;
     init_params.translucent = true;
     init_params.preferred_width = kPreferredWidth;
     init_params.close_on_deactivate = false;
@@ -63,8 +62,13 @@ void SelectToSpeakMenuBubbleController::Show(const gfx::Rect& anchor,
         gfx::Insets::TLBR(kUnifiedTopShortcutSpacing, 0, 0, 0)));
     bubble_view_->AddChildView(menu_view_);
     menu_view_->SetSpeedButtonToggled(false);
-    menu_view_->SetPaintToLayer();
-    menu_view_->layer()->SetFillsBoundsOpaquely(false);
+
+    // In dark light mode, we switch TrayBubbleView to use a textured layer
+    // instead of solid color layer, so no need to create an extra layer here.
+    if (!features::IsDarkLightModeEnabled()) {
+      menu_view_->SetPaintToLayer();
+      menu_view_->layer()->SetFillsBoundsOpaquely(false);
+    }
 
     bubble_widget_ =
         views::BubbleDialogDelegateView::CreateBubble(bubble_view_);

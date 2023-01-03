@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,9 @@
 
 #include "ash/components/arc/arc_util.h"
 #include "ash/components/arc/enterprise/arc_data_snapshotd_manager.h"
-#include "ash/components/cryptohome/cryptohome_parameters.h"
-#include "ash/components/cryptohome/cryptohome_util.h"
-#include "ash/components/login/auth/key.h"
-#include "ash/components/login/session/session_termination_manager.h"
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/constants/ash_switches.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/login_screen.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "base/barrier_closure.h"
@@ -32,7 +27,7 @@
 #include "base/scoped_observation.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -45,6 +40,7 @@
 #include "chrome/browser/ash/crosapi/browser_data_migrator.h"
 #include "chrome/browser/ash/customization/customization_document.h"
 #include "chrome/browser/ash/login/auth/chrome_login_performer.h"
+#include "chrome/browser/ash/login/demo_mode/demo_session.h"
 #include "chrome/browser/ash/login/easy_unlock/easy_unlock_service.h"
 #include "chrome/browser/ash/login/enterprise_user_session_metrics.h"
 #include "chrome/browser/ash/login/helper.h"
@@ -74,7 +70,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_chromeos.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/notifications/system_notification_helper.h"
@@ -85,26 +81,32 @@
 #include "chrome/browser/ui/ash/system_tray_client_impl.h"
 #include "chrome/browser/ui/aura/accessibility/automation_manager_aura.h"
 #include "chrome/browser/ui/managed_ui.h"
-#include "chrome/browser/ui/webui/chromeos/login/encryption_migration_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/kiosk_autolaunch_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/kiosk_enable_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/l10n_util.h"
-#include "chrome/browser/ui/webui/chromeos/login/tpm_error_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/update_required_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/encryption_migration_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/kiosk_autolaunch_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/kiosk_enable_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/l10n_util.h"
+#include "chrome/browser/ui/webui/ash/login/tpm_error_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/update_required_screen_handler.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
+#include "chromeos/ash/components/cryptohome/cryptohome_parameters.h"
+#include "chromeos/ash/components/cryptohome/cryptohome_util.h"
+#include "chromeos/ash/components/dbus/session_manager/session_manager_client.h"
+#include "chromeos/ash/components/dbus/userdataauth/userdataauth_client.h"
 #include "chromeos/ash/components/hibernate/buildflags.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
+#include "chromeos/ash/components/login/auth/public/auth_failure.h"
+#include "chromeos/ash/components/login/auth/public/key.h"
+#include "chromeos/ash/components/login/session/session_termination_manager.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
 #include "chromeos/dbus/power/power_manager_client.h"
-#include "chromeos/dbus/session_manager/session_manager_client.h"
-#include "chromeos/dbus/userdataauth/userdataauth_client.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "components/account_id/account_id.h"
 #include "components/google/core/common/google_util.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
-#include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_service.h"
@@ -135,6 +137,10 @@
 #if BUILDFLAG(ENABLE_HIBERNATE)
 #include "chromeos/ash/components/dbus/hiberman/hiberman_client.h"  // nogncheck
 #endif
+
+// Enable VLOG level 1.
+#undef ENABLED_VLOG_LEVEL
+#define ENABLED_VLOG_LEVEL 1
 
 namespace ash {
 namespace {
@@ -329,40 +335,48 @@ AccountId GetPublicSessionAutoLoginAccountId(
 
 }  // namespace
 
-// Utility class used to wait for a Public Session policy store load if public
-// session login is requested before the associated policy store is loaded.
-// When the store gets loaded, it will run the callback passed to the
+// Utility class used to wait for a Public Session policy to be available if
+// public session login is requested before the associated policy is loaded.
+// When the policy is available, it will run the callback passed to the
 // constructor.
-class ExistingUserController::PolicyStoreLoadWaiter
-    : public policy::CloudPolicyStore::Observer {
+class ExistingUserController::DeviceLocalAccountPolicyWaiter
+    : public policy::DeviceLocalAccountPolicyService::Observer {
  public:
-  PolicyStoreLoadWaiter(policy::CloudPolicyStore* store,
-                        base::OnceClosure callback)
-      : callback_(std::move(callback)) {
-    DCHECK(!store->is_initialized());
-    scoped_observation_.Observe(store);
+  DeviceLocalAccountPolicyWaiter(
+      policy::DeviceLocalAccountPolicyService* policy_service,
+      base::OnceClosure callback,
+      const std::string& user_id)
+      : policy_service_(policy_service),
+        callback_(std::move(callback)),
+        user_id_(user_id) {
+    scoped_observation_.Observe(policy_service);
   }
-  ~PolicyStoreLoadWaiter() override = default;
+  ~DeviceLocalAccountPolicyWaiter() override = default;
 
-  PolicyStoreLoadWaiter(const PolicyStoreLoadWaiter& other) = delete;
-  PolicyStoreLoadWaiter& operator=(const PolicyStoreLoadWaiter& other) = delete;
+  DeviceLocalAccountPolicyWaiter(const DeviceLocalAccountPolicyWaiter& other) =
+      delete;
+  DeviceLocalAccountPolicyWaiter& operator=(
+      const DeviceLocalAccountPolicyWaiter& other) = delete;
 
-  // policy::CloudPolicyStore::Observer:
-  void OnStoreLoaded(policy::CloudPolicyStore* store) override {
+  // policy::DeviceLocalAccountPolicyService::Observer:
+  void OnPolicyUpdated(const std::string& user_id) override {
+    if (user_id != user_id_ ||
+        !policy_service_->IsPolicyAvailableForUser(user_id)) {
+      return;
+    }
     scoped_observation_.Reset();
     std::move(callback_).Run();
   }
-  void OnStoreError(policy::CloudPolicyStore* store) override {
-    // If store load fails, run the callback to unblock public session login
-    // attempt, which will likely fail.
-    scoped_observation_.Reset();
-    std::move(callback_).Run();
-  }
+
+  void OnDeviceLocalAccountsChanged() override {}
 
  private:
+  base::raw_ptr<policy::DeviceLocalAccountPolicyService> policy_service_ =
+      nullptr;
   base::OnceClosure callback_;
-  base::ScopedObservation<policy::CloudPolicyStore,
-                          policy::CloudPolicyStore::Observer>
+  std::string user_id_;
+  base::ScopedObservation<policy::DeviceLocalAccountPolicyService,
+                          policy::DeviceLocalAccountPolicyService::Observer>
       scoped_observation_{this};
 };
 
@@ -431,11 +445,16 @@ void ExistingUserController::UpdateLoginDisplay(
     // use stored cryptohome powerwash state later
     policy::PowerwashRequirementsChecker::Initialize();
   }
-  bool show_users_on_signin;
+  bool show_users_on_signin = true;
   user_manager::UserList saml_users_for_password_sync;
 
   cros_settings_->GetBoolean(kAccountsPrefShowUserNamesOnSignIn,
                              &show_users_on_signin);
+  AuthMetricsRecorder::Get()->OnShowUsersOnSignin(show_users_on_signin);
+  bool enable_ephemeral_users = false;
+  cros_settings_->GetBoolean(kAccountsPrefEphemeralUsersEnabled,
+                             &enable_ephemeral_users);
+  AuthMetricsRecorder::Get()->OnEnableEphemeralUsers(enable_ephemeral_users);
   user_manager::UserManager* const user_manager =
       user_manager::UserManager::Get();
   // By default disable offline login from the error screen.
@@ -466,6 +485,7 @@ void ExistingUserController::UpdateLoginDisplay(
   // Records total number of users on the login screen.
   base::UmaHistogramCounts100("Login.NumberOfUsersOnLoginScreen",
                               regular_users_counter);
+  AuthMetricsRecorder::Get()->OnUserCount(regular_users_counter);
 
   auto login_users = ExtractLoginUsers(users);
 
@@ -510,7 +530,7 @@ void ExistingUserController::Observe(
   // has been updated before we copy it.
   // TODO(pmarko): Find a better way to do this, see https://crbug.com/796512.
   VLOG(1) << "Authentication was entered manually, possibly for proxyauth.";
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, base::BindOnce(&TransferHttpAuthCaches),
       kAuthCacheTransferDelayMs);
 }
@@ -518,12 +538,7 @@ void ExistingUserController::Observe(
 ////////////////////////////////////////////////////////////////////////////////
 // ExistingUserController, private:
 
-ExistingUserController::~ExistingUserController() {
-  if (browser_shutdown::IsTryingToQuit() || chrome::IsAttemptingShutdown())
-    return;
-  CHECK(UserSessionManager::GetInstance());
-  UserSessionManager::GetInstance()->DelegateDeleted(this);
-}
+ExistingUserController::~ExistingUserController() = default;
 
 ////////////////////////////////////////////////////////////////////////////////
 // ExistingUserController, LoginDisplay::Delegate implementation:
@@ -546,10 +561,6 @@ void ExistingUserController::CompleteLogin(const UserContext& user_context) {
 
 std::u16string ExistingUserController::GetConnectedNetworkName() const {
   return network_state_helper_->GetCurrentNetworkName();
-}
-
-bool ExistingUserController::IsSigninInProgress() const {
-  return is_login_in_progress_;
 }
 
 void ExistingUserController::Login(const UserContext& user_context,
@@ -590,7 +601,7 @@ void ExistingUserController::PerformLogin(
     // Only one instance of LoginPerformer should exist at a time.
     login_performer_.reset(nullptr);
     login_performer_ = std::make_unique<ChromeLoginPerformer>(
-        this, GetLoginDisplayHost()->metrics_recorder());
+        this, AuthMetricsRecorder::Get());
   }
   if (IsActiveDirectoryManaged() &&
       user_context.GetUserType() != user_manager::USER_TYPE_ACTIVE_DIRECTORY) {
@@ -658,16 +669,15 @@ void ExistingUserController::PerformLogin(
 
 void ExistingUserController::ContinuePerformLogin(
     LoginPerformer::AuthorizationMode auth_mode,
-    const UserContext& user_context) {
-  login_performer_->PerformLogin(user_context, auth_mode);
+    std::unique_ptr<UserContext> user_context) {
+  login_performer_->LoginAuthenticated(std::move(user_context));
 }
 
 void ExistingUserController::ContinuePerformLoginWithoutMigration(
     LoginPerformer::AuthorizationMode auth_mode,
-    const UserContext& user_context) {
-  UserContext user_context_ecryptfs = user_context;
-  user_context_ecryptfs.SetIsForcingDircrypto(false);
-  ContinuePerformLogin(auth_mode, user_context_ecryptfs);
+    std::unique_ptr<UserContext> user_context) {
+  user_context->SetIsForcingDircrypto(false);
+  ContinuePerformLogin(auth_mode, std::move(user_context));
 }
 
 void ExistingUserController::OnGaiaScreenReady() {
@@ -704,6 +714,14 @@ bool ExistingUserController::IsUserAllowlisted(
                                            &wildcard_match, user_type);
 }
 
+bool ExistingUserController::IsSigninInProgress() const {
+  return is_login_in_progress_;
+}
+
+bool ExistingUserController::IsUserSigninCompleted() const {
+  return is_signin_completed_;
+}
+
 void ExistingUserController::LocalStateChanged(
     user_manager::UserManager* user_manager) {
   DeviceSettingsChanged();
@@ -720,10 +738,10 @@ void ExistingUserController::ShowKioskEnableScreen() {
 }
 
 void ExistingUserController::ShowEncryptionMigrationScreen(
-    const UserContext& user_context,
+    std::unique_ptr<UserContext> user_context,
     EncryptionMigrationMode migration_mode) {
   GetLoginDisplayHost()->GetSigninUI()->StartEncryptionMigration(
-      user_context, migration_mode,
+      std::move(user_context), migration_mode,
       base::BindOnce(&ExistingUserController::ContinuePerformLogin,
                      weak_factory_.GetWeakPtr(),
                      login_performer_->auth_mode()));
@@ -786,7 +804,7 @@ void ExistingUserController::OnAuthFailure(const AuthFailure& failure) {
              failure.reason() == AuthFailure::MISSING_CRYPTOHOME) {
     ForceOnlineLoginForAccountId(last_login_attempt_account_id_);
     RecordReauthReason(last_login_attempt_account_id_,
-                       ReauthReason::MISSING_CRYPTOHOME);
+                       ReauthReason::kMissingCryptohome);
   } else if (is_known_user &&
              failure.reason() == AuthFailure::UNRECOVERABLE_CRYPTOHOME) {
     // TODO(chromium:1140868, dlunev): for now we route unrecoverable the same
@@ -795,7 +813,7 @@ void ExistingUserController::OnAuthFailure(const AuthFailure& failure) {
     // chromium level, including making the decision user-driven.
     ForceOnlineLoginForAccountId(last_login_attempt_account_id_);
     RecordReauthReason(last_login_attempt_account_id_,
-                       ReauthReason::UNRECOVERABLE_CRYPTOHOME);
+                       ReauthReason::kUnrecoverableCryptohome);
   } else {
     // Check networking after trying to login in case user is
     // cached locally or the local admin account.
@@ -826,7 +844,7 @@ void ExistingUserController::OnAuthFailure(const AuthFailure& failure) {
 
 void ExistingUserController::OnAuthSuccess(const UserContext& user_context) {
   is_login_in_progress_ = false;
-  GetLoginDisplay()->set_signin_completed(true);
+  is_signin_completed_ = true;
 
   // Login performer will be gone so cache this value to use
   // once profile is loaded.
@@ -839,40 +857,9 @@ void ExistingUserController::OnAuthSuccess(const UserContext& user_context) {
 
   StopAutoLoginTimer();
 
-  // If the hibernate service is supported, call it to initiate resume.
-#if BUILDFLAG(ENABLE_HIBERNATE)
-  if (features::IsHibernateEnabled()) {
-    HibermanClient::Get()->WaitForServiceToBeAvailable(
-        base::BindOnce(&ExistingUserController::OnHibernateServiceAvailable,
-                       weak_factory_.GetWeakPtr(), user_context));
-
-    return;
-  }
-#endif
-
   // The hibernate service is not supported, just continue directly.
   ContinueAuthSuccessAfterResumeAttempt(user_context, true);
-  return;
 }
-
-#if BUILDFLAG(ENABLE_HIBERNATE)
-void ExistingUserController::OnHibernateServiceAvailable(
-    const UserContext& user_context,
-    bool service_is_available) {
-  if (!service_is_available) {
-    LOG(ERROR) << "Hibernate service is unavailable";
-    ContinueAuthSuccessAfterResumeAttempt(user_context, false);
-  } else {
-    // In a successful resume case, this function never returns, as execution
-    // continues in the resumed hibernation image.
-    HibermanClient::Get()->ResumeFromHibernate(
-        user_context.GetAccountId().GetUserEmail(),
-        base::BindOnce(
-            &ExistingUserController::ContinueAuthSuccessAfterResumeAttempt,
-            weak_factory_.GetWeakPtr(), user_context));
-  }
-}
-#endif
 
 void ExistingUserController::ContinueAuthSuccessAfterResumeAttempt(
     const UserContext& user_context,
@@ -916,9 +903,9 @@ void ExistingUserController::ContinueAuthSuccessAfterResumeAttempt(
 
   // Mark device will be consumer owned if the device is not managed and this is
   // the first user on the device.
-  if (!is_enterprise_managed &&
-      user_manager::UserManager::Get()->GetUsers().empty()) {
+  if (!is_enterprise_managed && InstallAttributes::Get()->IsFirstSignIn()) {
     DeviceSettingsService::Get()->MarkWillEstablishConsumerOwnership();
+    user_manager::UserManager::Get()->RecordOwner(user_context.GetAccountId());
   }
 
   if (user_context.CanLockManagedGuestSession()) {
@@ -934,7 +921,8 @@ void ExistingUserController::ContinueAuthSuccessAfterResumeAttempt(
 
   if (BrowserDataMigratorImpl::MaybeForceResumeMoveMigration(
           g_browser_process->local_state(), user_context.GetAccountId(),
-          user_context.GetUserIDHash())) {
+          user_context.GetUserIDHash(),
+          crosapi::browser_util::PolicyInitState::kAfterInit)) {
     // TODO(crbug.com/1261730): Add an UMA.
     LOG(WARNING) << "Restarting Chrome to resume move migration.";
     return;
@@ -947,7 +935,7 @@ void ExistingUserController::ContinueAuthSuccessAfterResumeAttempt(
   UserSessionManager::GetInstance()->StartSession(
       user_context, start_session_type, has_auth_cookies,
       false,  // Start session for user.
-      this);
+      AsWeakPtr());
 
   // Update user's displayed email.
   if (!display_email_.empty()) {
@@ -1003,18 +991,17 @@ void ExistingUserController::ShowAutoLaunchManagedGuestSessionNotification() {
             DCHECK(button_index);
             SystemTrayClientImpl::Get()->ShowEnterpriseInfo();
           }));
-  std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
-          message_center::NOTIFICATION_TYPE_SIMPLE, kAutoLaunchNotificationId,
-          title, message, std::u16string(), GURL(),
-          message_center::NotifierId(
-              message_center::NotifierType::SYSTEM_COMPONENT,
-              kAutoLaunchNotifierId),
-          data, std::move(delegate), vector_icons::kBusinessIcon,
-          message_center::SystemNotificationWarningLevel::NORMAL);
-  notification->SetSystemPriority();
-  notification->set_pinned(true);
-  SystemNotificationHelper::GetInstance()->Display(*notification);
+  message_center::Notification notification = CreateSystemNotification(
+      message_center::NOTIFICATION_TYPE_SIMPLE, kAutoLaunchNotificationId,
+      title, message, std::u16string(), GURL(),
+      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
+                                 kAutoLaunchNotifierId,
+                                 NotificationCatalogName::kAutoLaunch),
+      data, std::move(delegate), vector_icons::kBusinessIcon,
+      message_center::SystemNotificationWarningLevel::NORMAL);
+  notification.SetSystemPriority();
+  notification.set_pinned(true);
+  SystemNotificationHelper::GetInstance()->Display(notification);
 }
 
 void ExistingUserController::OnProfilePrepared(Profile* profile,
@@ -1081,20 +1068,21 @@ void ExistingUserController::OnPasswordChangeDetected(
   for (auto& auth_status_consumer : auth_status_consumers_)
     auth_status_consumer.OnPasswordChangeDetected(user_context);
 
+  // TODO(b/239420386): Start Cryptohome recovery when feature is enabled.
   ShowPasswordChangedDialog(user_context);
 }
 
 void ExistingUserController::OnOldEncryptionDetected(
-    const UserContext& user_context,
+    std::unique_ptr<UserContext> user_context,
     bool has_incomplete_migration) {
   absl::optional<EncryptionMigrationMode> encryption_migration_mode =
-      GetEncryptionMigrationMode(user_context, has_incomplete_migration);
+      GetEncryptionMigrationMode(*user_context, has_incomplete_migration);
   if (!encryption_migration_mode.has_value()) {
     ContinuePerformLoginWithoutMigration(login_performer_->auth_mode(),
-                                         user_context);
+                                         std::move(user_context));
     return;
   }
-  ShowEncryptionMigrationScreen(user_context,
+  ShowEncryptionMigrationScreen(std::move(user_context),
                                 encryption_migration_mode.value());
 }
 
@@ -1142,8 +1130,7 @@ void ExistingUserController::PolicyLoadFailed() {
 void ExistingUserController::DeviceSettingsChanged() {
   // If login was already completed, we should avoid any signin screen
   // transitions, see http://crbug.com/461604 for example.
-  if (!profile_prepared_ && GetLoginDisplay() &&
-      !GetLoginDisplay()->is_signin_completed()) {
+  if (!profile_prepared_ && !is_signin_completed_) {
     // Signed settings or user list changed. Notify views and update them.
     const user_manager::UserList& users =
         UserAddingScreen::Get()->IsRunning()
@@ -1220,8 +1207,8 @@ void ExistingUserController::LoginAsGuest() {
 
   // Only one instance of LoginPerformer should exist at a time.
   login_performer_.reset(nullptr);
-  login_performer_ = std::make_unique<ChromeLoginPerformer>(
-      this, GetLoginDisplayHost()->metrics_recorder());
+  login_performer_ =
+      std::make_unique<ChromeLoginPerformer>(this, AuthMetricsRecorder::Get());
   login_performer_->LoginOffTheRecord();
   SendAccessibilityAlert(
       l10n_util::GetStringUTF8(IDS_CHROMEOS_ACC_LOGIN_SIGNIN_OFFRECORD));
@@ -1242,35 +1229,34 @@ void ExistingUserController::LoginAsPublicSession(
     return;
   }
 
-  // Public session login will fail if attempted if the associated policy store
-  // is not initialized - wait for the policy store load before starting the
+  // Public session login will fail if attempted if the associated policy
+  // is not ready - wait for the policy to become available before starting the
   // auto-login timer.
-  policy::CloudPolicyStore* policy_store =
-      g_browser_process->platform_part()
-          ->browser_policy_connector_ash()
-          ->GetDeviceLocalAccountPolicyService()
-          ->GetBrokerForUser(user->GetAccountId().GetUserEmail())
-          ->core()
-          ->store();
-
-  if (!policy_store->is_initialized()) {
-    VLOG(2) << "Public session policy store not yet initialized";
-    policy_store_waiter_ = std::make_unique<PolicyStoreLoadWaiter>(
-        policy_store,
+  policy::BrowserPolicyConnectorAsh* connector =
+      g_browser_process->platform_part()->browser_policy_connector_ash();
+  policy::DeviceLocalAccountPolicyService* policy_service =
+      connector->GetDeviceLocalAccountPolicyService();
+  const auto& user_id = user_context.GetAccountId().GetUserEmail();
+  DCHECK(policy_service);
+  if (!policy_service->IsPolicyAvailableForUser(user_id)) {
+    VLOG(2) << "Policies are not yet available for public session";
+    policy_waiter_ = std::make_unique<DeviceLocalAccountPolicyWaiter>(
+        policy_service,
         base::BindOnce(
-            &ExistingUserController::LoginAsPublicSessionWithPolicyStoreReady,
-            base::Unretained(this), user_context));
+            &ExistingUserController::LoginAsPublicSessionWhenPolicyAvailable,
+            base::Unretained(this), user_context),
+        user_id);
 
     return;
   }
 
-  LoginAsPublicSessionWithPolicyStoreReady(user_context);
+  LoginAsPublicSessionWhenPolicyAvailable(user_context);
 }
 
-void ExistingUserController::LoginAsPublicSessionWithPolicyStoreReady(
+void ExistingUserController::LoginAsPublicSessionWhenPolicyAvailable(
     const UserContext& user_context) {
-  VLOG(2) << "LoginAsPublicSessionWithPolicyStoreReady";
-  policy_store_waiter_.reset();
+  VLOG(2) << __func__;
+  policy_waiter_.reset();
 
   UserContext new_user_context = user_context;
   std::string locale = user_context.GetPublicSessionLocale();
@@ -1290,8 +1276,8 @@ void ExistingUserController::LoginAsPublicSessionWithPolicyStoreReady(
             .Get(policy::key::kSessionLocales);
     if (entry && entry->level == policy::POLICY_LEVEL_RECOMMENDED &&
         entry->value(base::Value::Type::LIST)) {
-      base::Value::ConstListView list =
-          entry->value(base::Value::Type::LIST)->GetListDeprecated();
+      const base::Value::List& list =
+          entry->value(base::Value::Type::LIST)->GetList();
       if (!list.empty() && list[0].is_string()) {
         locale = list[0].GetString();
         new_user_context.SetPublicSessionLocale(locale);
@@ -1431,12 +1417,18 @@ void ExistingUserController::ResyncUserData() {
 }
 
 void ExistingUserController::StartAutoLoginTimer() {
+  auto session_state = session_manager::SessionManager::Get()->session_state();
   if (is_login_in_progress_ ||
-      !public_session_auto_login_account_id_.is_valid()) {
+      !public_session_auto_login_account_id_.is_valid() ||
+      (session_state == session_manager::SessionState::OOBE &&
+       !DemoSession::IsDeviceInDemoMode())) {
     VLOG(2) << "Not starting autologin timer, because:";
     VLOG_IF(2, is_login_in_progress_) << "* Login is in process;";
     VLOG_IF(2, !public_session_auto_login_account_id_.is_valid())
         << "* No valid autologin account;";
+    VLOG_IF(2, session_state == session_manager::SessionState::OOBE &&
+                   !DemoSession::IsDeviceInDemoMode())
+        << "* OOBE isn't completed and device isn't in demo mode;";
     return;
   }
   VLOG(2) << "Starting autologin timer with delay: " << auto_login_delay_;
@@ -1491,11 +1483,10 @@ void ExistingUserController::SendAccessibilityAlert(
 
 void ExistingUserController::SetPublicSessionKeyboardLayoutAndLogin(
     const UserContext& user_context,
-    std::unique_ptr<base::ListValue> keyboard_layouts) {
+    base::Value::List keyboard_layouts) {
   UserContext new_user_context = user_context;
   std::string keyboard_layout;
-  for (size_t i = 0; i < keyboard_layouts->GetListDeprecated().size(); ++i) {
-    base::Value& entry = keyboard_layouts->GetListDeprecated()[i];
+  for (auto& entry : keyboard_layouts) {
     if (entry.FindBoolKey("selected").value_or(false)) {
       const std::string* keyboard_layout_ptr = entry.FindStringKey("value");
       if (keyboard_layout_ptr)
@@ -1515,8 +1506,8 @@ void ExistingUserController::LoginAsPublicSessionInternal(
   VLOG(2) << "LoginAsPublicSessionInternal for user: "
           << user_context.GetAccountId();
   login_performer_.reset(nullptr);
-  login_performer_ = std::make_unique<ChromeLoginPerformer>(
-      this, GetLoginDisplayHost()->metrics_recorder());
+  login_performer_ =
+      std::make_unique<ChromeLoginPerformer>(this, AuthMetricsRecorder::Get());
   login_performer_->LoginAsPublicSession(user_context);
   SendAccessibilityAlert(
       l10n_util::GetStringUTF8(IDS_CHROMEOS_ACC_LOGIN_SIGNIN_PUBLIC_ACCOUNT));

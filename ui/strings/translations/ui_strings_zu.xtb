@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{1 usuku oludlule}one{# izinsuku ezedlule}other{# izinsuku ezedlule}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{Iminithi elingu-1 eledlule}one{# amaminithi edlule}other{# amaminithi edlule}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1m}one{#m}other{#m}}</translation>
+<translation id="1181037720776840403">Susa</translation>
 <translation id="1243314992276662751">Layisha</translation>
 <translation id="1266864766717917324">Ayikwazanga ukwabelana nge-<ph name="CONTENT_TYPE" /></translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Sebenzisa ukuminyana okuphezulu</translation>
 <translation id="2482878487686419369">Izaziso</translation>
 <translation id="2497284189126895209">Wonke amafayela</translation>
-<translation id="2498950423397131220">Ukuntanta</translation>
 <translation id="2515586267016047495">I-Alt</translation>
 <translation id="2522350507219695259">Ukusika kuqediwe</translation>
 <translation id="252373100621549798">Ukubonisa okungaziwa</translation>

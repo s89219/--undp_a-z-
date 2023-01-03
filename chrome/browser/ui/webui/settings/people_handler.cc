@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,12 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/check_op.h"
 #include "base/compiler_specific.h"
 #include "base/i18n/time_formatting.h"
 #include "base/json/json_reader.h"
 #include "base/metrics/user_metrics.h"
+#include "base/notreached.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -43,6 +45,7 @@
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/accounts_mutator.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/primary_account_mutator.h"
@@ -68,13 +71,13 @@
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
-#include "components/signin/public/base/signin_switches.h"
 #endif
 
 using content::WebContents;
 using l10n_util::GetStringFUTF16;
 using l10n_util::GetStringUTF16;
 using signin::ConsentLevel;
+using signin_util::UserSignoutSetting;
 
 namespace {
 
@@ -115,8 +118,8 @@ bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
     return false;
   }
 
-  absl::optional<bool> sync_everything =
-      parsed_value->FindBoolKey("syncAllDataTypes");
+  const base::Value::Dict& root = parsed_value->GetDict();
+  absl::optional<bool> sync_everything = root.FindBool("syncAllDataTypes");
   if (!sync_everything.has_value()) {
     DLOG(ERROR) << "GetConfiguration() not passed a syncAllDataTypes value";
     return false;
@@ -124,7 +127,7 @@ bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   config->sync_everything = *sync_everything;
 
   absl::optional<bool> payments_integration_enabled =
-      parsed_value->FindBoolKey("paymentsIntegrationEnabled");
+      root.FindBool("paymentsIntegrationEnabled");
   if (!payments_integration_enabled.has_value()) {
     DLOG(ERROR) << "GetConfiguration() not passed a paymentsIntegrationEnabled "
                 << "value";
@@ -135,7 +138,7 @@ bool GetConfiguration(const std::string& json, SyncConfigInfo* config) {
   for (syncer::UserSelectableType type : syncer::UserSelectableTypeSet::All()) {
     std::string key_name =
         syncer::GetUserSelectableTypeName(type) + std::string("Synced");
-    absl::optional<bool> type_synced = parsed_value->FindBoolKey(key_name);
+    absl::optional<bool> type_synced = root.FindBool(key_name);
     if (!type_synced.has_value()) {
       DLOG(ERROR) << "GetConfiguration() not passed a value for " << key_name;
       return false;
@@ -181,20 +184,35 @@ std::string GetSyncErrorAction(SyncStatusActionType action_type) {
 
 // Returns the base::Value associated with the account, to use in the stored
 // accounts list.
-base::Value GetAccountValue(const AccountInfo& account) {
+base::Value::Dict GetAccountValue(const AccountInfo& account) {
   DCHECK(!account.IsEmpty());
-  base::Value dictionary(base::Value::Type::DICTIONARY);
-  dictionary.SetStringKey("email", account.email);
-  dictionary.SetStringKey("fullName", account.full_name);
-  dictionary.SetStringKey("givenName", account.given_name);
+  base::Value::Dict dict;
+  dict.Set("email", account.email);
+  dict.Set("fullName", account.full_name);
+  dict.Set("givenName", account.given_name);
   if (!account.account_image.IsEmpty()) {
-    dictionary.SetStringKey(
-        "avatarImage",
-        webui::GetBitmapDataUrl(account.account_image.AsBitmap()));
+    dict.Set("avatarImage",
+             webui::GetBitmapDataUrl(account.account_image.AsBitmap()));
   }
-  return dictionary;
+  return dict;
 }
 
+#if !BUILDFLAG(IS_CHROMEOS_ASH)
+bool IsChangePrimaryAccountAllowed(Profile* profile, const std::string& email) {
+  signin::IdentityManager* identity_manager =
+      IdentityManagerFactory::GetForProfile(profile);
+
+  if (UserSignoutSetting::GetForProfile(profile)
+          ->IsClearPrimaryAccountAllowed() ||
+      !identity_manager->HasPrimaryAccount(ConsentLevel::kSignin)) {
+    return true;
+  }
+
+  return gaia::AreEmailsSame(
+      email,
+      identity_manager->GetPrimaryAccountInfo(ConsentLevel::kSignin).email);
+}
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 }  // namespace
 
 namespace settings {
@@ -337,13 +355,7 @@ void PeopleHandler::DisplayGaiaLogin(signin_metrics::AccessPoint access_point) {
 
 void PeopleHandler::DisplayGaiaLoginInNewTabOrWindow(
     signin_metrics::AccessPoint access_point) {
-  Browser* browser =
-      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
-  if (!browser)
-    return;
-
-  auto* identity_manager =
-      IdentityManagerFactory::GetForProfile(browser->profile());
+  auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
 
   syncer::SyncService* service = GetSyncService();
   if (service && service->HasUnrecoverableError() &&
@@ -360,25 +372,13 @@ void PeopleHandler::DisplayGaiaLoginInNewTabOrWindow(
   // same email address.
   if (identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
     SigninErrorController* error_controller =
-        SigninErrorControllerFactory::GetForProfile(browser->profile());
+        SigninErrorControllerFactory::GetForProfile(profile_);
     DCHECK(error_controller->HasError());
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-    signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(browser,
+    signin_ui_util::ShowReauthForPrimaryAccountWithAuthError(profile_,
                                                              access_point);
-#else
-    browser->window()->ShowAvatarBubbleFromAvatarButton(
-        BrowserWindow::AVATAR_BUBBLE_MODE_REAUTH, access_point, false);
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
   } else {
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-    signin_ui_util::ShowSigninPromptAndMaybeEnableSync(
-        browser, browser->profile(), /*enable_sync=*/true, access_point,
-        signin_metrics::PromoAction::
-            PROMO_ACTION_NEW_ACCOUNT_NO_EXISTING_ACCOUNT);
-#else
-    browser->window()->ShowAvatarBubbleFromAvatarButton(
-        BrowserWindow::AVATAR_BUBBLE_MODE_SIGNIN, access_point, false);
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+    signin_ui_util::EnableSyncFromSingleAccountPromo(
+        profile_, CoreAccountInfo(), access_point);
   }
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
@@ -451,16 +451,14 @@ void PeopleHandler::OnExtendedAccountInfoRemoved(const AccountInfo& info) {
   FireWebUIListener("stored-accounts-updated", GetStoredAccountsList());
 }
 
-base::Value PeopleHandler::GetStoredAccountsList() {
-  base::Value accounts(base::Value::Type::LIST);
+base::Value::List PeopleHandler::GetStoredAccountsList() {
+  base::Value::List accounts;
   bool populate_accounts_list = false;
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   populate_accounts_list =
       AccountConsistencyModeManager::IsDiceEnabledForProfile(profile_);
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
-  populate_accounts_list =
-      base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles) &&
-      !profile_->IsMainProfile();
+  populate_accounts_list = !profile_->IsMainProfile();
 #endif
 
   if (populate_accounts_list) {
@@ -474,7 +472,7 @@ base::Value PeopleHandler::GetStoredAccountsList() {
 
   // Guest mode does not have a primary account (or an IdentityManager).
   if (profile_->IsGuestSession())
-    return base::Value(base::Value::Type::LIST);
+    return base::Value::List();
   // If DICE is disabled for this profile or unsupported on this platform (e.g.
   // Chrome OS) or Lacros main profile (sync with a different account than the
   // device account is not allowed), then show only the primary account,
@@ -494,15 +492,14 @@ void PeopleHandler::HandleStartSyncingWithEmail(const base::Value::List& args) {
   const base::Value& email = args[0];
   const base::Value& is_default_promo_account = args[1];
 
-  Browser* browser =
-      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
+  DCHECK(IsChangePrimaryAccountAllowed(profile_, email.GetString()))
+      << "Changing the primary account is not allowed!";
 
   AccountInfo maybe_account =
       IdentityManagerFactory::GetForProfile(profile_)
           ->FindExtendedAccountInfoByEmailAddress(email.GetString());
-
   signin_ui_util::EnableSyncFromMultiAccountPromo(
-      browser, maybe_account,
+      profile_, maybe_account,
       signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS,
       is_default_promo_account.GetBool());
 #else
@@ -625,7 +622,8 @@ void PeopleHandler::HandleTurnOnSync(const base::Value::List& args) {
 void PeopleHandler::HandleTurnOffSync(const base::Value::List& args) {
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
   DCHECK(identity_manager->HasPrimaryAccount(ConsentLevel::kSync));
-  DCHECK(signin_util::IsUserSignoutAllowedForProfile(profile_));
+  DCHECK(UserSignoutSetting::GetForProfile(profile_)
+             ->IsRevokeSyncConsentAllowed());
 
   identity_manager->GetPrimaryAccountMutator()->RevokeSyncConsent(
       signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS,
@@ -642,6 +640,8 @@ void PeopleHandler::HandleStartSignin(const base::Value::List& args) {
   syncer::SyncService* service = GetSyncService();
   DCHECK(IsProfileAuthNeededOrHasErrors() ||
          (service && service->HasUnrecoverableError()));
+  DCHECK(IsChangePrimaryAccountAllowed(profile_, /*email=*/std::string()))
+      << "Primary account already set and change is not allowed";
 
   DisplayGaiaLogin(signin_metrics::AccessPoint::ACCESS_POINT_SETTINGS);
 }
@@ -659,17 +659,36 @@ void PeopleHandler::HandleSignout(const base::Value::List& args) {
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
   bool is_syncing =
       identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync);
-  DCHECK(is_syncing || !delete_profile)
-      << "Deleting the profile should only be offered if the user is syncing.";
+  bool delete_profile_allowed = signin_util::IsProfileDeletionAllowed(profile_);
 
-  if (!signin_util::IsUserSignoutAllowedForProfile(profile_)) {
-    // If the user cannot signout, the profile must be destroyed.
-    if (delete_profile) {
+  DCHECK(!delete_profile || delete_profile_allowed)
+      << "Profile deletion is not allowed!";
+  DCHECK(is_syncing || !delete_profile)
+      << "Deleting the profile should only be offered if the user is "
+         "syncing.";
+
+  UserSignoutSetting* signout_setting =
+      UserSignoutSetting::GetForProfile(profile_);
+
+  if (!signout_setting->IsRevokeSyncConsentAllowed()) {
+    // If the user can't revoke sync the profile must be destroyed.
+    if (delete_profile && delete_profile_allowed) {
       webui::DeleteProfileAtPath(profile_path,
                                  ProfileMetrics::DELETE_PROFILE_SETTINGS);
     } else {
-      DCHECK(false) << "User signout requires profile destruction.";
+      DCHECK(delete_profile) << "User signout requires profile destruction.";
     }
+    return;
+  }
+
+  bool is_clear_primary_account_allowed =
+      signout_setting->IsClearPrimaryAccountAllowed();
+  if (!is_syncing && !is_clear_primary_account_allowed) {
+    // 'Signout' should not be offered in the UI if clear primary account is not
+    // allowed.
+    NOTREACHED()
+        << "Signout should not be offered if clear primary account is not "
+           "allowed.";
     return;
   }
 
@@ -677,21 +696,14 @@ void PeopleHandler::HandleSignout(const base::Value::List& args) {
       delete_profile ? signin_metrics::SignoutDelete::kDeleted
                      : signin_metrics::SignoutDelete::kKeeping;
 
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-  if (profile_->IsMainProfile()) {
-    if (!is_syncing) {
-      DLOG(ERROR) << "Signout form the main profile is not allowed.";
-      return;
-    }
-    DCHECK(!delete_profile) << "The main profile should never be deleted.";
+  if (is_syncing && !is_clear_primary_account_allowed) {
+    DCHECK(signout_setting->IsRevokeSyncConsentAllowed());
     identity_manager->GetPrimaryAccountMutator()->RevokeSyncConsent(
         signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS, delete_metric);
-    return;
-  }
-  // For secondary profiles 'Turn off' and 'Signout', clears the primary
-  // account and signout all.
-  identity_manager->GetPrimaryAccountMutator()->ClearPrimaryAccount(
-      signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS, delete_metric);
+  } else {
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+    identity_manager->GetPrimaryAccountMutator()->ClearPrimaryAccount(
+        signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS, delete_metric);
 #else
   Browser* browser =
       chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
@@ -714,9 +726,10 @@ void PeopleHandler::HandleSignout(const base::Value::List& args) {
         signin_metrics::USER_CLICKED_SIGNOUT_SETTINGS, delete_metric);
   }
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+  }
 
   // CAUTION: |this| may be deleted at this point.
-  if (delete_profile) {
+  if (delete_profile && delete_profile_allowed) {
     webui::DeleteProfileAtPath(profile_path,
                                ProfileMetrics::DELETE_PROFILE_SETTINGS);
   }
@@ -794,15 +807,9 @@ void PeopleHandler::CloseSyncSetup() {
           sync_service->StopAndClear();
 // ChromeOS ash doesn't support signing out.
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
-          bool should_revoke_sync_consent =
-              !sync_service->GetUserSettings()->IsFirstSetupComplete();
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-          should_revoke_sync_consent &=
-              base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles);
-#endif
           // Revoke sync consent on desktop Chrome if they click cancel during
           // initial setup or close sync setup without confirming sync.
-          if (should_revoke_sync_consent) {
+          if (!sync_service->GetUserSettings()->IsFirstSetupComplete()) {
             IdentityManagerFactory::GetForProfile(profile_)
                 ->GetPrimaryAccountMutator()
                 ->RevokeSyncConsent(
@@ -897,30 +904,37 @@ void PeopleHandler::BeforeUnloadDialogCancelled() {
       base::UserMetricsAction("Signin_Signin_CancelAbortAdvancedSyncSettings"));
 }
 
-base::Value PeopleHandler::GetSyncStatusDictionary() const {
-  base::Value sync_status(base::Value::Type::DICTIONARY);
+base::Value::Dict PeopleHandler::GetSyncStatusDictionary() const {
+  base::Value::Dict sync_status;
   if (profile_->IsGuestSession()) {
     // Cannot display signin status when running in guest mode on chromeos
     // because there is no IdentityManager.
     return sync_status;
   }
 
-  sync_status.SetBoolKey("supervisedUser", profile_->IsChild());
-  sync_status.SetBoolKey("childUser", profile_->IsChild());
+  sync_status.Set("supervisedUser", profile_->IsChild());
+  sync_status.Set("childUser", profile_->IsChild());
 
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile_);
   DCHECK(identity_manager);
 
-  // Signout is not allowed if the user has policy (crbug.com/172204).
-  if (!signin_util::IsUserSignoutAllowedForProfile(profile_)) {
-    std::string username =
-        identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSync)
-            .email;
+  // TODO(crbug.com/1369982): |domain| is used to show the profile deletion
+  // dialog on turn off sync. This is no longer needed since users are allowed
+  // to turn off sync. Enterprise team to decide whether to show the delete
+  // profile dialog on signout.
+  if (identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync)) {
+    CoreAccountInfo primary_account_info =
+        identity_manager->GetPrimaryAccountInfo(signin::ConsentLevel::kSync);
+
+    bool is_managed =
+        identity_manager->FindExtendedAccountInfo(primary_account_info)
+            .IsManaged();
 
     // If there is no one logged in or if the profile name is empty then the
     // domain name is empty. This happens in browser tests.
-    if (!username.empty())
-      sync_status.SetStringKey("domain", gaia::ExtractDomainName(username));
+    if (is_managed && !primary_account_info.email.empty())
+      sync_status.Set("domain",
+                      gaia::ExtractDomainName(primary_account_info.email));
   }
 
   // This is intentionally not using GetSyncService(), in order to access more
@@ -930,8 +944,8 @@ base::Value PeopleHandler::GetSyncStatusDictionary() const {
   bool disallowed_by_policy =
       service && service->HasDisableReason(
                      syncer::SyncService::DISABLE_REASON_ENTERPRISE_POLICY);
-  sync_status.SetBoolKey("syncSystemEnabled", (service != nullptr));
-  sync_status.SetBoolKey(
+  sync_status.Set("syncSystemEnabled", (service != nullptr));
+  sync_status.Set(
       "firstSetupInProgress",
       service && !disallowed_by_policy && service->IsSetupInProgress() &&
           !service->GetUserSettings()->IsFirstSetupComplete() &&
@@ -940,34 +954,34 @@ base::Value PeopleHandler::GetSyncStatusDictionary() const {
   const SyncStatusLabels status_labels = GetSyncStatusLabels(profile_);
   // TODO(crbug.com/1027467): Consider unifying some of the fields below to
   // avoid redundancy.
-  sync_status.SetStringKey(
-      "statusText", GetStringUTF16(status_labels.status_label_string_id));
-  sync_status.SetStringKey("statusActionText",
-                           GetStringUTF16(status_labels.button_string_id));
-  sync_status.SetBoolKey(
+  sync_status.Set("statusText",
+                  GetStringUTF16(status_labels.status_label_string_id));
+  sync_status.Set("statusActionText",
+                  GetStringUTF16(status_labels.button_string_id));
+  sync_status.Set(
       "hasError",
       status_labels.message_type == SyncStatusMessageType::kSyncError ||
           status_labels.message_type ==
               SyncStatusMessageType::kPasswordsOnlySyncError);
-  sync_status.SetBoolKey("hasPasswordsOnlyError",
-                         status_labels.message_type ==
-                             SyncStatusMessageType::kPasswordsOnlySyncError);
-  sync_status.SetStringKey("statusAction",
-                           GetSyncErrorAction(status_labels.action_type));
+  sync_status.Set("hasPasswordsOnlyError",
+                  status_labels.message_type ==
+                      SyncStatusMessageType::kPasswordsOnlySyncError);
+  sync_status.Set("statusAction",
+                  GetSyncErrorAction(status_labels.action_type));
 
-  sync_status.SetBoolKey("managed", disallowed_by_policy);
+  sync_status.Set("managed", disallowed_by_policy);
   // TODO(crbug.com/1171279): audit js usages of |disabled| and |signedIn|
   // fields, update it to use the right field, comments around and conditions
   // here. Perhaps removal of one of these to fields is possible.
-  sync_status.SetBoolKey("disabled", !service || disallowed_by_policy);
+  sync_status.Set("disabled", !service || disallowed_by_policy);
   // NOTE: This means signed-in for *sync*. It can be false when the user is
   // signed-in to the content area or to the browser.
-  sync_status.SetBoolKey("signedIn", identity_manager->HasPrimaryAccount(
-                                         signin::ConsentLevel::kSync));
-  sync_status.SetStringKey("signedInUsername",
-                           signin_ui_util::GetAuthenticatedUsername(profile_));
-  sync_status.SetBoolKey("hasUnrecoverableError",
-                         service && service->HasUnrecoverableError());
+  sync_status.Set("signedIn", identity_manager->HasPrimaryAccount(
+                                  signin::ConsentLevel::kSync));
+  sync_status.Set("signedInUsername",
+                  signin_ui_util::GetAuthenticatedUsername(profile_));
+  sync_status.Set("hasUnrecoverableError",
+                  service && service->HasUnrecoverableError());
   return sync_status;
 }
 
@@ -995,7 +1009,7 @@ void PeopleHandler::PushSyncPrefs() {
   //                   epoch); undefined if the time is unknown or no explicit
   //                   passphrase is set.
   //
-  base::Value args(base::Value::Type::DICTIONARY);
+  base::Value::Dict args;
 
   syncer::SyncUserSettings* sync_user_settings = service->GetUserSettings();
   // Tell the UI layer which data types are registered/enabled by the user.
@@ -1005,34 +1019,30 @@ void PeopleHandler::PushSyncPrefs() {
       sync_user_settings->GetSelectedTypes();
   for (syncer::UserSelectableType type : syncer::UserSelectableTypeSet::All()) {
     const std::string type_name = syncer::GetUserSelectableTypeName(type);
-    args.SetBoolKey(type_name + "Registered", registered_types.Has(type));
-    args.SetBoolKey(type_name + "Synced", selected_types.Has(type));
+    args.Set(type_name + "Registered", registered_types.Has(type));
+    args.Set(type_name + "Synced", selected_types.Has(type));
   }
-  args.SetBoolKey("syncAllDataTypes",
-                  sync_user_settings->IsSyncEverythingEnabled());
-  args.SetBoolKey(
-      "paymentsIntegrationEnabled",
-      autofill::prefs::IsPaymentsIntegrationEnabled(profile_->GetPrefs()));
-  args.SetBoolKey("encryptAllData",
-                  sync_user_settings->IsEncryptEverythingEnabled());
-  args.SetBoolKey("customPassphraseAllowed",
-                  sync_user_settings->IsCustomPassphraseAllowed());
+  args.Set("syncAllDataTypes", sync_user_settings->IsSyncEverythingEnabled());
+  args.Set("paymentsIntegrationEnabled",
+           autofill::prefs::IsPaymentsIntegrationEnabled(profile_->GetPrefs()));
+  args.Set("encryptAllData", sync_user_settings->IsEncryptEverythingEnabled());
+  args.Set("customPassphraseAllowed",
+           sync_user_settings->IsCustomPassphraseAllowed());
 
   // We call IsPassphraseRequired() here, instead of calling
   // IsPassphraseRequiredForPreferredDataTypes(), because we want to show the
   // passphrase UI even if no encrypted data types are enabled.
-  args.SetBoolKey("passphraseRequired",
-                  sync_user_settings->IsPassphraseRequired());
+  args.Set("passphraseRequired", sync_user_settings->IsPassphraseRequired());
 
   // Same as above, we call IsTrustedVaultKeyRequired() here instead of.
   // IsTrustedVaultKeyRequiredForPreferredDataTypes().
-  args.SetBoolKey("trustedVaultKeysRequired",
-                  sync_user_settings->IsTrustedVaultKeyRequired());
+  args.Set("trustedVaultKeysRequired",
+           sync_user_settings->IsTrustedVaultKeyRequired());
 
   base::Time passphrase_time = sync_user_settings->GetExplicitPassphraseTime();
   if (!passphrase_time.is_null()) {
-    args.SetStringKey("explicitPassphraseTime",
-                      base::TimeFormatShortDate(passphrase_time));
+    args.Set("explicitPassphraseTime",
+             base::TimeFormatShortDate(passphrase_time));
   }
 
   FireWebUIListener("sync-prefs-changed", args);

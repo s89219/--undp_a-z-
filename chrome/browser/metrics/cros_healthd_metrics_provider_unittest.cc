@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,13 +12,14 @@
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
-#include "chromeos/services/cros_healthd/public/cpp/fake_cros_healthd.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd_probe.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/cpp/fake_cros_healthd.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd_probe.mojom.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/metrics_proto/system_profile.pb.h"
 
 namespace {
+
 constexpr uint32_t kVendorId = 25;
 constexpr uint32_t kProductId = 17;
 constexpr uint32_t kRevision = 92;
@@ -30,9 +31,10 @@ constexpr char kSubsystem[] = "block:nvme:pcie";
 constexpr auto kType =
     metrics::SystemProfileProto::Hardware::InternalStorageDevice::TYPE_NVME;
 constexpr auto kMojoPurpose =
-    chromeos::cros_healthd::mojom::StorageDevicePurpose::kSwapDevice;
+    ash::cros_healthd::mojom::StorageDevicePurpose::kSwapDevice;
 constexpr auto kUmaPurpose =
     metrics::SystemProfileProto::Hardware::InternalStorageDevice::PURPOSE_SWAP;
+
 }  // namespace
 
 class CrosHealthdMetricsProviderTest : public testing::Test {
@@ -40,27 +42,28 @@ class CrosHealthdMetricsProviderTest : public testing::Test {
   CrosHealthdMetricsProviderTest() {
     ash::cros_healthd::FakeCrosHealthd::Initialize();
 
-    chromeos::cros_healthd::mojom::NonRemovableBlockDeviceInfo storage_info;
-    storage_info.vendor_id = chromeos::cros_healthd::mojom::BlockDeviceVendor::
-        NewNvmeSubsystemVendor(kVendorId);
-    storage_info.product_id = chromeos::cros_healthd::mojom::
-        BlockDeviceProduct::NewNvmeSubsystemDevice(kProductId);
+    ash::cros_healthd::mojom::NonRemovableBlockDeviceInfo storage_info;
+    storage_info.vendor_id =
+        ash::cros_healthd::mojom::BlockDeviceVendor::NewNvmeSubsystemVendor(
+            kVendorId);
+    storage_info.product_id =
+        ash::cros_healthd::mojom::BlockDeviceProduct::NewNvmeSubsystemDevice(
+            kProductId);
     storage_info.revision =
-        chromeos::cros_healthd::mojom::BlockDeviceRevision::NewNvmePcieRev(
+        ash::cros_healthd::mojom::BlockDeviceRevision::NewNvmePcieRev(
             kRevision);
     storage_info.firmware_version =
-        chromeos::cros_healthd::mojom::BlockDeviceFirmware::NewNvmeFirmwareRev(
+        ash::cros_healthd::mojom::BlockDeviceFirmware::NewNvmeFirmwareRev(
             kFwVersion);
     storage_info.size = kSize;
     storage_info.name = kModel;
     storage_info.type = kSubsystem;
     storage_info.purpose = kMojoPurpose;
 
-    std::vector<chromeos::cros_healthd::mojom::NonRemovableBlockDeviceInfoPtr>
-        devs;
+    std::vector<ash::cros_healthd::mojom::NonRemovableBlockDeviceInfoPtr> devs;
     devs.push_back(storage_info.Clone());
-    auto info = chromeos::cros_healthd::mojom::TelemetryInfo::New();
-    info->block_device_result = chromeos::cros_healthd::mojom::
+    auto info = ash::cros_healthd::mojom::TelemetryInfo::New();
+    info->block_device_result = ash::cros_healthd::mojom::
         NonRemovableBlockDeviceResult::NewBlockDeviceInfo(std::move(devs));
     ash::cros_healthd::FakeCrosHealthd::Get()
         ->SetProbeTelemetryInfoResponseForTesting(info);

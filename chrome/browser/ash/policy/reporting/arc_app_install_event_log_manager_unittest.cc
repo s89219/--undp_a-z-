@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@
 #include "chrome/browser/ash/policy/reporting/install_event_log_util.h"
 #include "chrome/browser/profiles/reporting_util.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
 #include "components/policy/core/common/cloud/realtime_reporting_job_configuration.h"
@@ -166,8 +166,7 @@ class ArcAppInstallEventLogManagerTest : public testing::Test {
         log_file_path_(profile_.GetPath().Append(kLogFileName)),
         packages_{std::begin(kPackageNames), std::end(kPackageNames)},
         scoped_fake_statistics_provider_(
-            std::make_unique<
-                chromeos::system::ScopedFakeStatisticsProvider>()) {}
+            std::make_unique<ash::system::ScopedFakeStatisticsProvider>()) {}
 
   // testing::Test:
   void SetUp() override {
@@ -307,7 +306,7 @@ class ArcAppInstallEventLogManagerTest : public testing::Test {
   const base::FilePath log_file_path_;
   const std::set<std::string> packages_;
   base::Value::Dict events_value_;
-  std::unique_ptr<chromeos::system::ScopedFakeStatisticsProvider>
+  std::unique_ptr<ash::system::ScopedFakeStatisticsProvider>
       scoped_fake_statistics_provider_;
 
   em::AppInstallReportLogEvent event_;
@@ -730,10 +729,12 @@ TEST_F(ArcAppInstallEventLogManagerTest, Clear) {
   log.Add(kPackageNames[0], event_);
   log.Store();
 
-  base::ListValue list;
+  base::Value::List list;
   list.Append("test");
-  profile_.GetPrefs()->Set(arc::prefs::kArcPushInstallAppsRequested, list);
-  profile_.GetPrefs()->Set(arc::prefs::kArcPushInstallAppsPending, list);
+  profile_.GetPrefs()->SetList(arc::prefs::kArcPushInstallAppsRequested,
+                               list.Clone());
+  profile_.GetPrefs()->SetList(arc::prefs::kArcPushInstallAppsPending,
+                               list.Clone());
 
   ArcAppInstallEventLogManager::Clear(&log_task_runner_wrapper_, &profile_);
   EXPECT_TRUE(profile_.GetPrefs()
@@ -764,10 +765,12 @@ TEST_F(ArcAppInstallEventLogManagerTest, RunClearRun) {
   FlushNonDelayedTasks();
   VerifyLogFile();
 
-  base::ListValue list;
+  base::Value::List list;
   list.Append("test");
-  profile_.GetPrefs()->Set(arc::prefs::kArcPushInstallAppsRequested, list);
-  profile_.GetPrefs()->Set(arc::prefs::kArcPushInstallAppsPending, list);
+  profile_.GetPrefs()->SetList(arc::prefs::kArcPushInstallAppsRequested,
+                               list.Clone());
+  profile_.GetPrefs()->SetList(arc::prefs::kArcPushInstallAppsPending,
+                               list.Clone());
 
   ArcAppInstallEventLogManager::Clear(&log_task_runner_wrapper_, &profile_);
   EXPECT_TRUE(profile_.GetPrefs()

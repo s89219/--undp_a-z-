@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browsing_data/chrome_browsing_data_remover_constants.h"
 #include "chrome/browser/profiles/profile_observer.h"
+#include "chrome/browser/profiles/profile_selections.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
@@ -60,7 +61,7 @@
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/common/chrome_constants.h"
-#include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #endif
 
 #if DCHECK_IS_ON()
@@ -87,6 +88,10 @@ const char kDevToolsOTRProfileIDPrefix[] = "Devtools::BrowserContext";
 const char kMediaRouterOTRProfileIDPrefix[] = "MediaRouter::Presentation";
 const char kTestOTRProfileIDPrefix[] = "Test::OTR";
 
+#if BUILDFLAG(IS_CHROMEOS)
+const char kCaptivePortalOTRProfileIDPrefix[] = "CaptivePortal::Signin";
+#endif
+
 using perfetto::protos::pbzero::ChromeTrackEvent;
 
 }  // namespace
@@ -96,14 +101,30 @@ Profile::OTRProfileID::OTRProfileID(const std::string& profile_id)
 
 bool Profile::OTRProfileID::AllowsBrowserWindows() const {
   // Non-Primary OTR profiles are not supposed to create Browser windows.
-  // DevTools::BrowserContext and MediaRouter::Presentation are an
-  // exception to this ban.
-  return *this == PrimaryID() ||
-         base::StartsWith(profile_id_, kDevToolsOTRProfileIDPrefix,
-                          base::CompareCase::SENSITIVE) ||
-         base::StartsWith(profile_id_, kMediaRouterOTRProfileIDPrefix,
+  // DevTools::BrowserContext, MediaRouter::Presentation, and
+  // CaptivePortal::Signin are exceptions to this ban.
+  if (*this == PrimaryID() ||
+      base::StartsWith(profile_id_, kDevToolsOTRProfileIDPrefix,
+                       base::CompareCase::SENSITIVE) ||
+      base::StartsWith(profile_id_, kMediaRouterOTRProfileIDPrefix,
+                       base::CompareCase::SENSITIVE)) {
+    return true;
+  }
+#if BUILDFLAG(IS_CHROMEOS)
+  if (base::StartsWith(profile_id_, kCaptivePortalOTRProfileIDPrefix,
+                       base::CompareCase::SENSITIVE)) {
+    return true;
+  }
+#endif
+  return false;
+}
+
+#if BUILDFLAG(IS_CHROMEOS)
+bool Profile::OTRProfileID::IsCaptivePortal() const {
+  return base::StartsWith(profile_id_, kCaptivePortalOTRProfileIDPrefix,
                           base::CompareCase::SENSITIVE);
 }
+#endif
 
 // static
 const Profile::OTRProfileID Profile::OTRProfileID::PrimaryID() {
@@ -129,6 +150,13 @@ Profile::OTRProfileID Profile::OTRProfileID::CreateUniqueForDevTools() {
 Profile::OTRProfileID Profile::OTRProfileID::CreateUniqueForMediaRouter() {
   return CreateUnique(kMediaRouterOTRProfileIDPrefix);
 }
+
+#if BUILDFLAG(IS_CHROMEOS)
+// static
+Profile::OTRProfileID Profile::OTRProfileID::CreateUniqueForCaptivePortal() {
+  return CreateUnique(kCaptivePortalOTRProfileIDPrefix);
+}
+#endif
 
 // static
 Profile::OTRProfileID Profile::OTRProfileID::CreateUniqueForTesting() {
@@ -244,6 +272,10 @@ Profile* Profile::FromWebUI(content::WebUI* web_ui) {
 }
 
 void Profile::AddObserver(ProfileObserver* observer) {
+  // Instrumentation for https://crbug.com/1359689.
+  CHECK(observer);
+  CHECK(!observers_.HasObserver(observer));
+
   observers_.AddObserver(observer);
 }
 
@@ -334,13 +366,7 @@ void Profile::RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry) {
                                std::string());
 #endif
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
-  // Preferences related to the avatar bubble and user manager tutorials.
-  registry->RegisterIntegerPref(prefs::kProfileAvatarTutorialShown, 0);
-#endif
-
 #if BUILDFLAG(IS_ANDROID)
-  registry->RegisterBooleanPref(prefs::kClickedUpdateMenuItem, false);
   registry->RegisterStringPref(prefs::kLatestVersionWhenClickedUpdateMenuItem,
                                std::string());
 #endif
@@ -379,8 +405,7 @@ bool Profile::IsGuestSession() const {
   return is_guest_session;
 #else
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-  DCHECK(chromeos::LacrosService::Get());
-  if (chromeos::LacrosService::Get()->init_params()->session_type ==
+  if (chromeos::BrowserParamsProxy::Get()->SessionType() ==
       crosapi::mojom::SessionType::kGuestSession) {
     return true;
   }
@@ -395,8 +420,14 @@ PrefService* Profile::GetReadOnlyOffTheRecordPrefs() {
 }
 
 bool Profile::IsSystemProfile() const {
+#if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_ANDROID)
+  DCHECK_NE(profile_metrics::GetBrowserProfileType(this),
+            profile_metrics::BrowserProfileType::kSystem);
+  return false;
+#else  // BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_ANDROID)
   return profile_metrics::GetBrowserProfileType(this) ==
          profile_metrics::BrowserProfileType::kSystem;
+#endif
 }
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -434,13 +465,19 @@ void Profile::MaybeSendDestroyedNotification() {
   TRACE_EVENT("shutdown", "Profile::MaybeSendDestroyedNotification",
                ChromeTrackEvent::kChromeBrowserContext, this);
 
-  if (!sent_destroyed_notification_) {
-    sent_destroyed_notification_ = true;
+  if (sent_destroyed_notification_)
+    return;
+  sent_destroyed_notification_ = true;
 
-    NotifyWillBeDestroyed();
+  // Instrumentation for https://crbug.com/1359689,
+  auto weak_this = GetWeakPtr();
 
-    for (auto& observer : observers_)
-      observer.OnProfileWillBeDestroyed(this);
+  NotifyWillBeDestroyed();
+  CHECK(weak_this);
+
+  for (auto& observer : observers_) {
+    observer.OnProfileWillBeDestroyed(this);
+    CHECK(weak_this);
   }
 }
 
@@ -448,12 +485,12 @@ void Profile::MaybeSendDestroyedNotification() {
 PrefStore* Profile::CreateExtensionPrefStore(Profile* profile,
                                              bool incognito_pref_store) {
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  return new ExtensionPrefStore(
-      ExtensionPrefValueMapFactory::GetForBrowserContext(profile),
-      incognito_pref_store);
-#else
-  return nullptr;
+  if (ExtensionPrefValueMap* pref_value_map =
+          ExtensionPrefValueMapFactory::GetForBrowserContext(profile)) {
+    return new ExtensionPrefStore(pref_value_map, incognito_pref_store);
+  }
 #endif
+  return nullptr;
 }
 
 bool ProfileCompare::operator()(Profile* a, Profile* b) const {
@@ -479,6 +516,13 @@ void Profile::NotifyOffTheRecordProfileCreated(Profile* off_the_record) {
   DCHECK(off_the_record->IsOffTheRecord());
   for (auto& observer : observers_)
     observer.OnOffTheRecordProfileCreated(off_the_record);
+}
+
+void Profile::NotifyProfileInitializationComplete() {
+  DCHECK(!IsOffTheRecord());
+  for (auto& observer : observers_) {
+    observer.OnProfileInitializationComplete(this);
+  }
 }
 
 Profile* Profile::GetPrimaryOTRProfile(bool create_if_needed) {
@@ -515,4 +559,8 @@ variations::VariationsClient* Profile::GetVariationsClient() {
 
 content::ResourceContext* Profile::GetResourceContext() {
   return resource_context_.get();
+}
+
+base::WeakPtr<Profile> Profile::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }

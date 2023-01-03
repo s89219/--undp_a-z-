@@ -1,9 +1,11 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 var video;
-var abort = false;
+var totalVideoSwaps = 8;
+var useTimer = 0;
+var delayMs = 1000;
 
 function logOutput(s) {
   if (window.domAutomationController)
@@ -12,10 +14,51 @@ function logOutput(s) {
     console.log(s);
 }
 
+const parsedString = (function (names) {
+  const pairs = {};
+  for (let i = 0; i < names.length; ++i) {
+    var keyValue = names[i].split('=', 2);
+    if (keyValue.length == 1)
+      pairs[keyValue[0]] = '';
+    else
+      pairs[keyValue[0]] = decodeURIComponent(keyValue[1].replace(/\+/g, ' '));
+  }
+  return pairs;
+})(window.location.search.substr(1).split('&'));
+
+function setVideoSize() {
+  let width = '240';
+  let height = '135';
+
+  let widthString = parsedString['width'];
+  let heightString = parsedString['height'];
+  if (widthString != undefined)
+    width = widthString;
+  if (heightString != undefined)
+    height = heightString;
+
+  video.width = width;
+  video.height = height;
+  logOutput(`Video size:${video.width}x${video.height}`);
+}
+
+function getParametersTesting() {
+  let swapsString = parsedString['swaps'];
+  if (swapsString != undefined)
+    totalVideoSwaps = swapsString;
+
+  let useTimerString = parsedString['use_timer'];
+  if (useTimerString != undefined)
+    useTimer = useTimerString;
+}
+
 function main() {
+  let t0Ms = performance.now();
   video = document.getElementById('video');
   video.loop = true;
   video.muted = true;  // No need to exercise audio paths.
+  setVideoSize(video);
+  getParametersTesting();
 
   video.onerror = e => {
     logOutput(`Test failed: ${e.message}`);
@@ -26,19 +69,62 @@ function main() {
   logOutput('Playback started.');
   video.play();
 
+  // Used by the swap counter, without using the timer.
+  let testCompletion = false;
+  let videoFrameReady = false;
+  let swapCount = 0;
+
   // These tests expect playback, so we intentionally don't request the frame
   // callback before starting playback. Since these videos loop there should
   // always be frames being generated.
   video.requestVideoFrameCallback((_, f) => {
-    logOutput(`First frame: ${f.width}x${f.height}, ts: ${f.mediaTime}`);
+    let timestamp = performance.now() - t0Ms;
+    logOutput(`First videoFrameCallback: TimeStamp:${timestamp}ms`);
 
-    // Trace tests on Windows need some time to collect statistics from the
-    // overlay system, so allow for a 500ms delay (~30 swaps at 60Hz).
-    setTimeout(_ => {
-      if (abort)
-        return;
-      logOutput('Test complete.');
-      domAutomationController.send('SUCCESS');
-    }, 500);
+    if (useTimer == 1) {
+      setTimeout(_ => {
+        logOutput('Test complete.');
+        domAutomationController.send('SUCCESS');
+      }, delayMs);
+    } else {
+      video.requestVideoFrameCallback(rVF_function);
+      chrome.gpuBenchmarking.addSwapCompletionEventListener(
+          waitForSwapsToComplete);
+    }
   });
+
+
+  function rVF_function() {
+    videoFrameReady = true;
+    if (!testCompletion) {
+      video.requestVideoFrameCallback(rVF_function);
+    }
+  }
+
+  // Must add "--enable-features=ReportFCPOnlyOnSuccessfulCommit" with
+  // gpu_benchmarking to ensure completion event callback in
+  // addSwapCompletionEventListener is sent only on a succdessful commit.
+  function waitForSwapsToComplete() {
+    if (videoFrameReady) {
+      if (swapCount == 0) {
+        let timestamp = performance.now() - t0Ms;
+        logOutput(`First video overlay swap: TimeStamp:${timestamp}ms`);
+      }
+
+      swapCount++;
+      videoFrameReady = false;
+    }
+
+    if (swapCount < totalVideoSwaps) {
+      chrome.gpuBenchmarking.addSwapCompletionEventListener(
+          waitForSwapsToComplete);
+    } else {
+      testCompletion = true;
+      let timestamp = performance.now() - t0Ms;
+      logOutput(`Total swaps: ~${totalVideoSwaps}. Timestamp:${timestamp}ms`);
+      logOutput('Test complete.');
+
+      domAutomationController.send('SUCCESS');
+    }
+  }
 }

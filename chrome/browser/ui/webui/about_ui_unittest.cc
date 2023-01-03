@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,13 +20,13 @@
 #include "chrome/browser/ash/login/demo_mode/demo_setup_controller.h"
 #include "chrome/browser/ash/login/ui/fake_login_display_host.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
-#include "chrome/browser/ui/webui/chromeos/login/demo_preferences_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/demo_preferences_screen_handler.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/scoped_browser_locale.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/system/fake_statistics_provider.h"
-#include "chromeos/system/statistics_provider.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -111,8 +111,7 @@ class ChromeOSTermsTest : public testing::Test {
 
   // Sets device region in VPD.
   void SetRegion(const std::string& region) {
-    statistics_provider_.SetMachineStatistic(chromeos::system::kRegionKey,
-                                             region);
+    statistics_provider_.SetMachineStatistic(ash::system::kRegionKey, region);
   }
 
   // Starts data request with the |request_url|.
@@ -138,7 +137,7 @@ class ChromeOSTermsTest : public testing::Test {
 
   content::BrowserTaskEnvironment task_environment_;
 
-  chromeos::system::ScopedFakeStatisticsProvider statistics_provider_;
+  ash::system::ScopedFakeStatisticsProvider statistics_provider_;
 
   std::unique_ptr<AboutUIHTMLSource> tested_html_source_;
 };

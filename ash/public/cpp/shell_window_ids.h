@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,16 +58,18 @@ enum ShellWindowId {
   // The wallpaper (desktop background) window.
   kShellWindowId_WallpaperContainer,
 
+  // The glanceables ("welcome back") window container.
+  kShellWindowId_GlanceablesContainer,
+
   // The containers for standard top-level windows per active desks.
   // * Notes:
   //   - There are no direct mapping between `kShellWindowId_DeskContainerA` and
   //     Desk 1, or `kShellWindowId_DeskContainerB` and Desk 2. The containers
   //     are reused as desks are created and deleted.
+  //   - Keep the desk container IDs sequential here.
   //   - **DO NOT** use these container IDs directly, instead use
   //     `desks_util::GetActiveDeskContainerId()`.
-  // TODO(afakhry): Rename this container, unexpose it, and add the rest of the
-  // containers.
-  kShellWindowId_DefaultContainerDeprecated,
+  kShellWindowId_DeskContainerA,
   kShellWindowId_DeskContainerB,
   kShellWindowId_DeskContainerC,
   kShellWindowId_DeskContainerD,
@@ -75,6 +77,14 @@ enum ShellWindowId {
   kShellWindowId_DeskContainerF,
   kShellWindowId_DeskContainerG,
   kShellWindowId_DeskContainerH,
+  kShellWindowId_DeskContainerI,
+  kShellWindowId_DeskContainerJ,
+  kShellWindowId_DeskContainerK,
+  kShellWindowId_DeskContainerL,
+  kShellWindowId_DeskContainerM,
+  kShellWindowId_DeskContainerN,
+  kShellWindowId_DeskContainerO,
+  kShellWindowId_DeskContainerP,
 
   // The container for top-level windows with the 'always-on-top' flag set.
   kShellWindowId_AlwaysOnTopContainer,
@@ -102,7 +112,7 @@ enum ShellWindowId {
   kShellWindowId_ArcVirtualKeyboardContainer,
 
   // The container for UI on the shelf (shelf, navigation, hotseat,
-  // status area).
+  // status area, notifications).
   kShellWindowId_ShelfContainer,
 
   // The container for bubbles which float over the shelf.
@@ -140,7 +150,8 @@ enum ShellWindowId {
   // The container for menus.
   kShellWindowId_MenuContainer,
 
-  // The container for drag/drop images and tooltips.
+  // The container for drag/drop images, tooltips, toasts, and widgets that are
+  // tagged with ui::ZOrderLevel::kSecuritySurface.
   kShellWindowId_DragImageAndTooltipContainer,
 
   // The container for the fullscreen power button menu.
@@ -215,8 +226,8 @@ enum NonContainerWindowId {
   // each display when overview mode is active.
   kShellWindowId_SaveDeskButtonContainer,
 
-  // The window that shows the Desks Templates grid in overview.
-  kShellWindowId_DesksTemplatesGridWindow,
+  // The window that shows the Saved Desk Library in overview.
+  kShellWindowId_SavedDeskLibraryWindow,
 
   // The window that shows the "No recent items" label in overview.
   kShellWindowId_OverviewNoWindowsLabelWindow,

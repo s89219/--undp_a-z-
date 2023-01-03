@@ -1,15 +1,12 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/crostini/crostini_upgrader.h"
 
-#include "ash/constants/ash_features.h"
-#include "base/feature_list.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/no_destructor.h"
-#include "base/system/sys_info.h"
 #include "base/task/thread_pool.h"
 #include "chrome/browser/ash/crostini/crostini_export_import.h"
 #include "chrome/browser/ash/crostini/crostini_export_import_status_tracker.h"
@@ -17,13 +14,10 @@
 #include "chrome/browser/ash/crostini/crostini_manager_factory.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "chrome/browser/ui/webui/ash/crostini_upgrader/crostini_upgrader.mojom.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_task_traits.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/network_service_instance.h"
 #include "services/network/public/cpp/network_connection_tracker.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -32,7 +26,7 @@ namespace crostini {
 
 namespace {
 
-class CrostiniUpgraderFactory : public BrowserContextKeyedServiceFactory {
+class CrostiniUpgraderFactory : public ProfileKeyedServiceFactory {
  public:
   static CrostiniUpgrader* GetForProfile(Profile* profile) {
     return static_cast<CrostiniUpgrader*>(
@@ -48,9 +42,7 @@ class CrostiniUpgraderFactory : public BrowserContextKeyedServiceFactory {
   friend class base::NoDestructor<CrostiniUpgraderFactory>;
 
   CrostiniUpgraderFactory()
-      : BrowserContextKeyedServiceFactory(
-            "CrostiniUpgraderService",
-            BrowserContextDependencyManager::GetInstance()) {
+      : ProfileKeyedServiceFactory("CrostiniUpgraderService") {
     DependsOn(CrostiniManagerFactory::GetInstance());
   }
 
@@ -72,7 +64,7 @@ CrostiniUpgrader* CrostiniUpgrader::GetForProfile(Profile* profile) {
 
 CrostiniUpgrader::CrostiniUpgrader(Profile* profile)
     : profile_(profile),
-      container_id_("", ""),
+      container_id_(kCrostiniDefaultVmType, "", ""),
       log_sequence_(
           base::ThreadPool::CreateSequencedTaskRunner({base::MayBlock()})),
       current_log_file_(absl::nullopt),
@@ -199,7 +191,7 @@ void CrostiniUpgrader::StatusTracker::SetStatusFailedWithMessageUI(
 }
 
 void CrostiniUpgrader::Backup(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     bool show_file_chooser,
     base::WeakPtr<content::WebContents> web_contents) {
   if (show_file_chooser) {
@@ -218,7 +210,7 @@ void CrostiniUpgrader::Backup(
 }
 
 void CrostiniUpgrader::OnBackupPathChecked(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     base::WeakPtr<content::WebContents> web_contents,
     base::FilePath path,
     bool path_exists) {
@@ -293,15 +285,14 @@ void CrostiniUpgrader::PowerChanged(
 }
 
 void CrostiniUpgrader::DoPrechecks() {
-  chromeos::crostini_upgrader::mojom::UpgradePrecheckStatus status;
+  ash::crostini_upgrader::mojom::UpgradePrecheckStatus status;
   if (content::GetNetworkConnectionTracker()->IsOffline()) {
-    status = chromeos::crostini_upgrader::mojom::UpgradePrecheckStatus::
-        NETWORK_FAILURE;
-  } else if (!power_status_good_) {
     status =
-        chromeos::crostini_upgrader::mojom::UpgradePrecheckStatus::LOW_POWER;
+        ash::crostini_upgrader::mojom::UpgradePrecheckStatus::NETWORK_FAILURE;
+  } else if (!power_status_good_) {
+    status = ash::crostini_upgrader::mojom::UpgradePrecheckStatus::LOW_POWER;
   } else {
-    status = chromeos::crostini_upgrader::mojom::UpgradePrecheckStatus::OK;
+    status = ash::crostini_upgrader::mojom::UpgradePrecheckStatus::OK;
   }
 
   for (auto& observer : upgrader_observers_) {
@@ -309,7 +300,7 @@ void CrostiniUpgrader::DoPrechecks() {
   }
 }
 
-void CrostiniUpgrader::Upgrade(const ContainerId& container_id) {
+void CrostiniUpgrader::Upgrade(const guest_os::GuestId& container_id) {
   container_id_ = container_id;
 
   if (!current_log_file_.has_value()) {
@@ -334,13 +325,7 @@ void CrostiniUpgrader::Upgrade(const ContainerId& container_id) {
               return;
             }
 
-            ContainerVersion target_version;
-            if (base::FeatureList::IsEnabled(
-                    chromeos::features::kCrostiniBullseyeUpgrade)) {
-              target_version = ContainerVersion::BULLSEYE;
-            } else {
-              target_version = ContainerVersion::BUSTER;
-            }
+            auto target_version = ContainerVersion::BULLSEYE;
 
             CrostiniManager::GetForProfile(weak_this->profile_)
                 ->UpgradeContainer(
@@ -361,7 +346,7 @@ void CrostiniUpgrader::OnUpgrade(CrostiniResult result) {
 }
 
 void CrostiniUpgrader::Restore(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     base::WeakPtr<content::WebContents> web_contents) {
   if (!backup_path_.has_value()) {
     CrostiniExportImport::GetForProfile(profile_)->ImportContainer(
@@ -377,7 +362,7 @@ void CrostiniUpgrader::Restore(
 }
 
 void CrostiniUpgrader::OnRestorePathChecked(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     base::WeakPtr<content::WebContents> web_contents,
     base::FilePath path,
     bool path_exists) {
@@ -432,7 +417,7 @@ void CrostiniUpgrader::CancelBeforeStart() {
 }
 
 void CrostiniUpgrader::OnUpgradeContainerProgress(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     UpgradeContainerProgressStatus status,
     const std::vector<std::string>& messages) {
   if (container_id != container_id_) {

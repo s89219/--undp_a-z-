@@ -1,31 +1,30 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {PromiseResolver} from 'chrome://resources/ash/common/promise_resolver.js';
+import {loadTimeData} from 'chrome://resources/ash/common/load_time_data.m.js';
 import {FakeShimlessRmaService} from 'chrome://shimless-rma/fake_shimless_rma_service.js';
 import {setShimlessRmaServiceForTesting} from 'chrome://shimless-rma/mojo_interface_provider.js';
 import {OnboardingUpdatePageElement} from 'chrome://shimless-rma/onboarding_update_page.js';
-import {OsUpdateOperation} from 'chrome://shimless-rma/shimless_rma_types.js';
+import {ShimlessRma} from 'chrome://shimless-rma/shimless_rma.js';
+import {OsUpdateOperation, UpdateErrorCode} from 'chrome://shimless-rma/shimless_rma_types.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
-import {flushTasks, isVisible} from '../../test_util.js';
+import {isVisible} from '../test_util.js';
 
-export function onboardingUpdatePageTest() {
+suite('onboardingUpdatePageTest', function() {
   /** @type {?OnboardingUpdatePageElement} */
   let component = null;
 
   /** @type {?FakeShimlessRmaService} */
   let service = null;
 
-  suiteSetup(() => {
-    service = new FakeShimlessRmaService();
-    setShimlessRmaServiceForTesting(service);
-  });
-
   setup(() => {
     document.body.innerHTML = '';
+    service = new FakeShimlessRmaService();
+    setShimlessRmaServiceForTesting(service);
   });
 
   teardown(() => {
@@ -121,13 +120,18 @@ export function onboardingUpdatePageTest() {
     const updateStatusDiv =
         component.shadowRoot.querySelector('#updateStatusDiv');
     assertTrue(updateStatusDiv.hidden);
+    const updateErrorDiv =
+        component.shadowRoot.querySelector('#updateErrorDiv');
+    assertTrue(updateErrorDiv.hidden);
     await clickPerformUpdateButton();
 
-    service.triggerOsUpdateObserver(OsUpdateOperation.kDownloading, 0.5, 0);
+    service.triggerOsUpdateObserver(
+        OsUpdateOperation.kDownloading, 0.5, UpdateErrorCode.kSuccess, 0);
     await flushTasks();
 
     assertTrue(updateInstructionsDiv.hidden);
     assertFalse(updateStatusDiv.hidden);
+    assertTrue(updateErrorDiv.hidden);
   });
 
   test('UpdatePageShowHideUnqualifiedComponentsLink', () => {
@@ -170,6 +174,68 @@ export function onboardingUpdatePageTest() {
         });
   });
 
+  test('UpdatePageShowsErrors', async () => {
+    const version = '90.1.2.3';
+    await initializeUpdatePage(version);
+
+    const updateInstructionsDiv =
+        component.shadowRoot.querySelector('#updateInstructionsDiv');
+    assertFalse(updateInstructionsDiv.hidden);
+    const updateStatusDiv =
+        component.shadowRoot.querySelector('#updateStatusDiv');
+    assertTrue(updateStatusDiv.hidden);
+    const updateErrorDiv =
+        component.shadowRoot.querySelector('#updateErrorDiv');
+    assertTrue(updateErrorDiv.hidden);
+    await clickPerformUpdateButton();
+
+    service.triggerOsUpdateObserver(
+        OsUpdateOperation.kReportingErrorEvent, 0.5,
+        UpdateErrorCode.kDownloadError, 0);
+    await flushTasks();
+
+    assertTrue(updateInstructionsDiv.hidden);
+    assertTrue(updateStatusDiv.hidden);
+    assertFalse(updateErrorDiv.hidden);
+  });
+
+  test('UpdatePageAllowsRetryAfterError', async () => {
+    const version = '90.1.2.3';
+    await initializeUpdatePage(version);
+
+    // First, we need to get to the error screen.
+    const updateInstructionsDiv =
+        component.shadowRoot.querySelector('#updateInstructionsDiv');
+    assertFalse(updateInstructionsDiv.hidden);
+    const updateStatusDiv =
+        component.shadowRoot.querySelector('#updateStatusDiv');
+    assertTrue(updateStatusDiv.hidden);
+    const updateErrorDiv =
+        component.shadowRoot.querySelector('#updateErrorDiv');
+    assertTrue(updateErrorDiv.hidden);
+    await clickPerformUpdateButton();
+
+    service.triggerOsUpdateObserver(
+        OsUpdateOperation.kReportingErrorEvent, 0.5,
+        UpdateErrorCode.kDownloadError, 0);
+    await flushTasks();
+
+    assertTrue(updateInstructionsDiv.hidden);
+    assertTrue(updateStatusDiv.hidden);
+    assertFalse(updateErrorDiv.hidden);
+
+    // Next, click the Retry button.
+    const retryUpdateButton =
+        component.shadowRoot.querySelector('#retryUpdateButton');
+    retryUpdateButton.click();
+    await flushTasks();
+
+    // This should send us back to the update progress screen.
+    assertTrue(updateInstructionsDiv.hidden);
+    assertFalse(updateStatusDiv.hidden);
+    assertTrue(updateErrorDiv.hidden);
+  });
+
   test('UpdatePageUpdateFailedToStartButtonsEnabled', () => {
     const version = '90.1.2.3';
 
@@ -200,4 +266,4 @@ export function onboardingUpdatePageTest() {
           });
     });
   });
-}
+});

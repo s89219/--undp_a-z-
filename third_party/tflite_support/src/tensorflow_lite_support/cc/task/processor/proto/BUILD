@@ -1,6 +1,7 @@
 load("//tensorflow_lite_support/cc/port:build_defs.bzl", "support_py_proto_library")
 
 package(
+    default_applicable_licenses = ["//tensorflow_lite_support:license"],
     default_visibility = [
         "//visibility:public",
     ],
@@ -44,6 +45,9 @@ support_py_proto_library(
     srcs = ["classifications.proto"],
     api_version = 2,
     proto_deps = [":classifications_proto"],
+    py_proto_deps = [
+        ":class_py_pb2",
+    ],
 )
 
 proto_library(
@@ -93,6 +97,14 @@ cc_proto_library(
     name = "embedding_options_cc_proto",
     deps = [
         ":embedding_options_proto",
+    ],
+)
+
+cc_library(
+    name = "embedding_options_cc_proto_inc",
+    hdrs = ["embedding_options_proto_inc.h"],
+    deps = [
+        ":embedding_options_cc_proto",
     ],
 )
 
@@ -213,6 +225,24 @@ cc_proto_library(
     ],
 )
 
+cc_library(
+    name = "search_options_cc_proto_inc",
+    hdrs = ["search_options_proto_inc.h"],
+    deps = [
+        ":search_options_cc_proto",
+    ],
+)
+
+support_py_proto_library(
+    name = "search_options_py_pb2",
+    srcs = ["search_options.proto"],
+    api_version = 2,
+    proto_deps = [":search_options_proto"],
+    py_proto_deps = [
+        "//tensorflow_lite_support/cc/task/core/proto:external_file_py_pb2",
+    ],
+)
+
 proto_library(
     name = "search_result_proto",
     srcs = ["search_result.proto"],
@@ -221,4 +251,78 @@ proto_library(
 cc_proto_library(
     name = "search_result_cc_proto",
     deps = [":search_result_proto"],
+)
+
+cc_library(
+    name = "search_result_cc_proto_inc",
+    hdrs = ["search_result_proto_inc.h"],
+    deps = [
+        ":search_result_cc_proto",
+    ],
+)
+
+support_py_proto_library(
+    name = "search_result_py_pb2",
+    srcs = ["search_result.proto"],
+    api_version = 2,
+    proto_deps = [":search_result_proto"],
+)
+
+proto_library(
+    name = "clu_annotation_options_proto",
+    srcs = ["clu_annotation_options.proto"],
+)
+
+cc_proto_library(
+    name = "clu_annotation_options_cc_proto",
+    deps = [":clu_annotation_options_proto"],
+)
+
+support_py_proto_library(
+    name = "clu_annotation_options_py_pb2",
+    srcs = ["clu_annotation_options.proto"],
+    api_version = 2,
+    proto_deps = [":clu_annotation_options_proto"],
+)
+
+proto_library(
+    name = "clu_proto",
+    srcs = ["clu.proto"],
+    deps = [
+        ":class_proto",
+    ],
+)
+
+cc_proto_library(
+    name = "clu_cc_proto",
+    deps = [":clu_proto"],
+)
+
+support_py_proto_library(
+    name = "clu_py_pb2",
+    srcs = ["clu.proto"],
+    api_version = 2,
+    proto_deps = [":clu_proto"],
+    py_proto_deps = [
+        ":class_py_pb2",
+    ],
+)
+
+proto_library(
+    name = "qa_answers_proto",
+    srcs = ["qa_answers.proto"],
+)
+
+cc_proto_library(
+    name = "qa_answers_cc_proto",
+    deps = [
+        ":qa_answers_proto",
+    ],
+)
+
+support_py_proto_library(
+    name = "qa_answers_py_pb2",
+    srcs = ["qa_answers.proto"],
+    api_version = 2,
+    proto_deps = [":qa_answers_proto"],
 )

@@ -88,15 +88,17 @@ FetchParameters CSSImageValue::PrepareFetch(
       ReferrerUtils::MojoReferrerPolicyResolveDefault(
           referrer_.referrer_policy));
   resource_request.SetReferrerString(referrer_.referrer);
-  if (is_ad_related_)
+  if (is_ad_related_) {
     resource_request.SetIsAdResource();
+  }
   ExecutionContext* execution_context = document.GetExecutionContext();
   ResourceLoaderOptions options(execution_context->GetCurrentWorld());
-  options.initiator_info.name = initiator_name_.IsEmpty()
+  options.initiator_info.name = initiator_name_.empty()
                                     ? fetch_initiator_type_names::kCSS
                                     : initiator_name_;
-  if (referrer_.referrer != Referrer::ClientReferrerString())
+  if (referrer_.referrer != Referrer::ClientReferrerString()) {
     options.initiator_info.referrer = referrer_.referrer;
+  }
   FetchParameters params(std::move(resource_request), options);
 
   if (cross_origin != kCrossOriginAttributeNotSet) {
@@ -105,14 +107,17 @@ FetchParameters CSSImageValue::PrepareFetch(
   }
 
   bool is_lazily_loaded =
-      image_request_behavior == FetchParameters::kDeferImageLoad &&
+      image_request_behavior ==
+          FetchParameters::ImageRequestBehavior::kDeferImageLoad &&
       // Only http/https images are eligible to be lazily loaded.
       params.Url().ProtocolIsInHTTPFamily();
-  if (is_lazily_loaded)
+  if (is_lazily_loaded) {
     params.SetLazyImageDeferred();
+  }
 
-  if (origin_clean_ != OriginClean::kTrue)
+  if (origin_clean_ != OriginClean::kTrue) {
     params.SetFromOriginDirtyStyleSheet(true);
+  }
 
   return params;
 }
@@ -122,8 +127,9 @@ StyleImage* CSSImageValue::CacheImage(
     FetchParameters::ImageRequestBehavior image_request_behavior,
     CrossOriginAttributeValue cross_origin) {
   if (!cached_image_) {
-    if (absolute_url_.IsEmpty())
+    if (absolute_url_.empty()) {
       ReResolveURL(document);
+    }
 
     FetchParameters params =
         PrepareFetch(document, image_request_behavior, cross_origin);
@@ -135,30 +141,35 @@ StyleImage* CSSImageValue::CacheImage(
 
 void CSSImageValue::RestoreCachedResourceIfNeeded(
     const Document& document) const {
-  if (!cached_image_ || !document.Fetcher() || absolute_url_.IsNull())
+  if (!cached_image_ || !document.Fetcher() || absolute_url_.IsNull()) {
     return;
+  }
 
   ImageResourceContent* cached_content = cached_image_->CachedImage();
-  if (!cached_content)
+  if (!cached_content) {
     return;
+  }
 
   cached_content->EmulateLoadStartedForInspector(
       document.Fetcher(), KURL(absolute_url_),
-      initiator_name_.IsEmpty() ? fetch_initiator_type_names::kCSS
-                                : initiator_name_);
+      initiator_name_.empty() ? fetch_initiator_type_names::kCSS
+                              : initiator_name_);
 }
 
 bool CSSImageValue::HasFailedOrCanceledSubresources() const {
-  if (!cached_image_)
+  if (!cached_image_) {
     return false;
-  if (ImageResourceContent* cached_content = cached_image_->CachedImage())
+  }
+  if (ImageResourceContent* cached_content = cached_image_->CachedImage()) {
     return cached_content->LoadFailedOrCanceled();
+  }
   return true;
 }
 
 bool CSSImageValue::Equals(const CSSImageValue& other) const {
-  if (absolute_url_.IsEmpty() && other.absolute_url_.IsEmpty())
+  if (absolute_url_.empty() && other.absolute_url_.empty()) {
     return relative_url_ == other.relative_url_;
+  }
   return absolute_url_ == other.absolute_url_;
 }
 
@@ -174,8 +185,9 @@ void CSSImageValue::TraceAfterDispatch(blink::Visitor* visitor) const {
 void CSSImageValue::ReResolveURL(const Document& document) const {
   KURL url = document.CompleteURL(relative_url_);
   AtomicString url_string(url.GetString());
-  if (url_string == absolute_url_)
+  if (url_string == absolute_url_) {
     return;
+  }
   absolute_url_ = url_string;
   cached_image_.Clear();
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,8 @@ APP_ENUM_TO_STRING(AppType,
                    kSystemWeb,
                    kStandaloneBrowserChromeApp,
                    kExtension,
-                   kStandaloneBrowserExtension)
+                   kStandaloneBrowserExtension,
+                   kBruschetta)
 APP_ENUM_TO_STRING(Readiness,
                    kUnknown,
                    kReady,
@@ -40,7 +41,9 @@ APP_ENUM_TO_STRING(InstallReason,
                    kDefault,
                    kSync,
                    kUser,
-                   kSubApp)
+                   kSubApp,
+                   kKiosk,
+                   kCommandLine)
 APP_ENUM_TO_STRING(InstallSource,
                    kUnknown,
                    kSystem,
@@ -76,7 +79,7 @@ AppPtr App::Clone() const {
   app->permissions = ClonePermissions(permissions);
   app->install_reason = install_reason;
   app->install_source = install_source;
-  app->policy_id = policy_id;
+  app->policy_ids = policy_ids;
   app->is_platform_app = is_platform_app;
   app->recommendable = recommendable;
   app->searchable = searchable;
@@ -103,6 +106,106 @@ AppPtr App::Clone() const {
   app->data_size_in_bytes = data_size_in_bytes;
 
   return app;
+}
+
+ApplicationType ConvertAppTypeToProtoApplicationType(AppType app_type) {
+  switch (app_type) {
+    case AppType::kUnknown:
+      return ApplicationType::APPLICATION_TYPE_UNKNOWN;
+    case AppType::kArc:
+      return ApplicationType::APPLICATION_TYPE_ARC;
+    case AppType::kBuiltIn:
+      return ApplicationType::APPLICATION_TYPE_BUILT_IN;
+    case AppType::kCrostini:
+      return ApplicationType::APPLICATION_TYPE_CROSTINI;
+    case AppType::kChromeApp:
+      return ApplicationType::APPLICATION_TYPE_CHROME_APP;
+    case AppType::kWeb:
+      return ApplicationType::APPLICATION_TYPE_WEB;
+    case AppType::kMacOs:
+      return ApplicationType::APPLICATION_TYPE_MAC_OS;
+    case AppType::kPluginVm:
+      return ApplicationType::APPLICATION_TYPE_PLUGIN_VM;
+    case AppType::kStandaloneBrowser:
+      return ApplicationType::APPLICATION_TYPE_STANDALONE_BROWSER;
+    case AppType::kRemote:
+      return ApplicationType::APPLICATION_TYPE_REMOTE;
+    case AppType::kBorealis:
+      return ApplicationType::APPLICATION_TYPE_BOREALIS;
+    case AppType::kSystemWeb:
+      return ApplicationType::APPLICATION_TYPE_SYSTEM_WEB;
+    case AppType::kStandaloneBrowserChromeApp:
+      return ApplicationType::APPLICATION_TYPE_STANDALONE_BROWSER_CHROME_APP;
+    case AppType::kExtension:
+      return ApplicationType::APPLICATION_TYPE_EXTENSION;
+    case AppType::kStandaloneBrowserExtension:
+      return ApplicationType::APPLICATION_TYPE_STANDALONE_BROWSER_EXTENSION;
+    case AppType::kBruschetta:
+      return ApplicationType::APPLICATION_TYPE_BRUSCHETTA;
+  }
+}
+
+ApplicationInstallReason ConvertInstallReasonToProtoApplicationInstallReason(
+    InstallReason install_reason) {
+  switch (install_reason) {
+    case InstallReason::kUnknown:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_UNKNOWN;
+    case InstallReason::kSystem:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_SYSTEM;
+    case InstallReason::kPolicy:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_POLICY;
+    case InstallReason::kOem:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_OEM;
+    case InstallReason::kDefault:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_DEFAULT;
+    case InstallReason::kSync:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_SYNC;
+    case InstallReason::kUser:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_USER;
+    case InstallReason::kSubApp:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_SUB_APP;
+    case InstallReason::kKiosk:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_KIOSK;
+    case InstallReason::kCommandLine:
+      return ApplicationInstallReason::APPLICATION_INSTALL_REASON_COMMAND_LINE;
+  }
+}
+
+ApplicationInstallSource ConvertInstallSourceToProtoApplicationInstallSource(
+    InstallSource install_source) {
+  switch (install_source) {
+    case InstallSource::kUnknown:
+      return ApplicationInstallSource::APPLICATION_INSTALL_SOURCE_UNKNOWN;
+    case InstallSource::kSystem:
+      return ApplicationInstallSource::APPLICATION_INSTALL_SOURCE_SYSTEM;
+    case InstallSource::kSync:
+      return ApplicationInstallSource::APPLICATION_INSTALL_SOURCE_SYNC;
+    case InstallSource::kPlayStore:
+      return ApplicationInstallSource::APPLICATION_INSTALL_SOURCE_PLAY_STORE;
+    case InstallSource::kChromeWebStore:
+      return ApplicationInstallSource::
+          APPLICATION_INSTALL_SOURCE_CHROME_WEB_STORE;
+    case InstallSource::kBrowser:
+      return ApplicationInstallSource::APPLICATION_INSTALL_SOURCE_BROWSER;
+  }
+}
+
+ApplicationUninstallSource
+ConvertUninstallSourceToProtoApplicationUninstallSource(
+    UninstallSource uninstall_source) {
+  switch (uninstall_source) {
+    case UninstallSource::kUnknown:
+      return ApplicationUninstallSource::APPLICATION_UNINSTALL_SOURCE_UNKNOWN;
+    case UninstallSource::kAppList:
+      return ApplicationUninstallSource::APPLICATION_UNINSTALL_SOURCE_APP_LIST;
+    case UninstallSource ::kAppManagement:
+      return ApplicationUninstallSource::
+          APPLICATION_UNINSTALL_SOURCE_APP_MANAGEMENT;
+    case UninstallSource ::kShelf:
+      return ApplicationUninstallSource::APPLICATION_UNINSTALL_SOURCE_SHELF;
+    case UninstallSource ::kMigration:
+      return ApplicationUninstallSource::APPLICATION_UNINSTALL_SOURCE_MIGRATION;
+  }
 }
 
 AppType ConvertMojomAppTypToAppType(apps::mojom::AppType mojom_app_type) {
@@ -137,6 +240,8 @@ AppType ConvertMojomAppTypToAppType(apps::mojom::AppType mojom_app_type) {
       return AppType::kExtension;
     case apps::mojom::AppType::kStandaloneBrowserExtension:
       return AppType::kStandaloneBrowserExtension;
+    case apps::mojom::AppType::kBruschetta:
+      return AppType::kBruschetta;
   }
 }
 
@@ -172,6 +277,8 @@ mojom::AppType ConvertAppTypeToMojomAppType(AppType app_type) {
       return apps::mojom::AppType::kExtension;
     case AppType::kStandaloneBrowserExtension:
       return apps::mojom::AppType::kStandaloneBrowserExtension;
+    case AppType::kBruschetta:
+      return apps::mojom::AppType::kBruschetta;
   }
 }
 
@@ -241,6 +348,10 @@ InstallReason ConvertMojomInstallReasonToInstallReason(
       return InstallReason::kUser;
     case apps::mojom::InstallReason::kSubApp:
       return InstallReason::kSubApp;
+    case apps::mojom::InstallReason::kKiosk:
+      return InstallReason::kKiosk;
+    case apps::mojom::InstallReason::kCommandLine:
+      return InstallReason::kCommandLine;
   }
 }
 
@@ -263,6 +374,10 @@ apps::mojom::InstallReason ConvertInstallReasonToMojomInstallReason(
       return apps::mojom::InstallReason::kUser;
     case InstallReason::kSubApp:
       return apps::mojom::InstallReason::kSubApp;
+    case InstallReason::kKiosk:
+      return apps::mojom::InstallReason::kKiosk;
+    case InstallReason::kCommandLine:
+      return apps::mojom::InstallReason::kCommandLine;
   }
 }
 
@@ -313,6 +428,18 @@ WindowMode ConvertMojomWindowModeToWindowMode(
       return WindowMode::kBrowser;
     case apps::mojom::WindowMode::kTabbedWindow:
       return WindowMode::kTabbedWindow;
+  }
+}
+
+apps::RunOnOsLoginMode ConvertMojomRunOnOsLoginModeToRunOnOsLoginMode(
+    apps::mojom::RunOnOsLoginMode run_on_os_login_mode) {
+  switch (run_on_os_login_mode) {
+    case apps::mojom::RunOnOsLoginMode::kUnknown:
+      return apps::RunOnOsLoginMode::kUnknown;
+    case apps::mojom::RunOnOsLoginMode::kWindowed:
+      return apps::RunOnOsLoginMode::kWindowed;
+    case apps::mojom::RunOnOsLoginMode::kNotRun:
+      return apps::RunOnOsLoginMode::kNotRun;
   }
 }
 
@@ -381,7 +508,7 @@ AppPtr ConvertMojomAppToApp(const apps::mojom::AppPtr& mojom_app) {
   app->install_source =
       ConvertMojomInstallSourceToInstallSource(mojom_app->install_source);
 
-  app->policy_id = mojom_app->policy_id;
+  app->policy_ids = mojom_app->policy_ids;
 
   app->is_platform_app = GetOptionalBool(mojom_app->is_platform_app);
   app->recommendable = GetOptionalBool(mojom_app->recommendable);
@@ -445,7 +572,7 @@ apps::mojom::AppPtr ConvertAppToMojomApp(const AppPtr& app) {
       ConvertInstallReasonToMojomInstallReason(app->install_reason);
   mojom_app->install_source =
       ConvertInstallSourceToMojomInstallSource(app->install_source);
-  mojom_app->policy_id = app->policy_id;
+  mojom_app->policy_ids = app->policy_ids;
   mojom_app->is_platform_app = GetMojomOptionalBool(app->is_platform_app);
   mojom_app->recommendable = GetMojomOptionalBool(app->recommendable);
   mojom_app->searchable = GetMojomOptionalBool(app->searchable);
@@ -473,6 +600,15 @@ apps::mojom::AppPtr ConvertAppToMojomApp(const AppPtr& app) {
         ConvertRunOnOsLoginToMojomRunOnOsLogin(app->run_on_os_login.value());
   }
   return mojom_app;
+}
+
+std::vector<base::FilePath> ConvertMojomFilePathsToFilePaths(
+    apps::mojom::FilePathsPtr mojom_file_paths) {
+  std::vector<base::FilePath> file_paths;
+  if (mojom_file_paths) {
+    file_paths = std::move(mojom_file_paths->file_paths);
+  }
+  return file_paths;
 }
 
 }  // namespace apps

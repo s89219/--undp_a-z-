@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@ package org.chromium.chrome.browser.omnibox.suggestions;
 import static org.chromium.base.test.util.CriteriaHelper.DEFAULT_MAX_TIME_TO_POLL;
 import static org.chromium.base.test.util.CriteriaHelper.DEFAULT_POLLING_INTERVAL;
 
+import android.app.Activity;
 import android.support.test.InstrumentationRegistry;
 import android.view.KeyEvent;
 
@@ -29,6 +30,7 @@ import org.chromium.base.test.metrics.HistogramTestRule;
 import org.chromium.base.test.params.ParameterAnnotations;
 import org.chromium.base.test.params.ParameterSet;
 import org.chromium.base.test.params.ParameterizedRunner;
+import org.chromium.base.test.util.ApplicationTestUtils;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
@@ -39,7 +41,6 @@ import org.chromium.chrome.browser.browsing_data.ClearBrowsingDataTabsFragment;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.history.HistoryActivity;
-import org.chromium.chrome.browser.history_clusters.HistoryClustersBottomSheetContent;
 import org.chromium.chrome.browser.omnibox.LocationBarLayout;
 import org.chromium.chrome.browser.omnibox.OmniboxSuggestionType;
 import org.chromium.chrome.browser.omnibox.action.OmniboxActionType;
@@ -56,8 +57,8 @@ import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ActivityTestUtils;
 import org.chromium.chrome.test.util.OmniboxTestUtils;
 import org.chromium.chrome.test.util.OmniboxTestUtils.SuggestionInfo;
+import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.components.browser_ui.accessibility.AccessibilitySettings;
-import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.site_settings.SiteSettings;
 import org.chromium.components.embedder_support.util.UrlConstants;
 import org.chromium.components.omnibox.AutocompleteMatch;
@@ -97,6 +98,7 @@ public class OmniboxPedalsTest {
     private OmniboxTestUtils mOmniboxUtils;
     private boolean mIncognito;
     private LocationBarLayout mLocationBarLayout;
+    private Activity mTargetActivity;
 
     public OmniboxPedalsTest(boolean incognito) {
         mIncognito = incognito;
@@ -126,9 +128,15 @@ public class OmniboxPedalsTest {
     }
 
     @After
-    public void tearDown() {
+    public void tearDown() throws Exception {
+        if (mOmniboxUtils.getFocus()) {
+            mOmniboxUtils.clearFocus();
+        }
         TestThreadUtils.runOnUiThreadBlocking(
                 () -> { IncognitoTabHostUtils.closeAllIncognitoTabs(); });
+        if (mTargetActivity != null) {
+            ApplicationTestUtils.finishActivity(mTargetActivity);
+        }
     }
 
     /**
@@ -139,6 +147,7 @@ public class OmniboxPedalsTest {
      */
     private void typeInOmnibox(String text) throws InterruptedException {
         mOmniboxUtils.requestFocus();
+        mOmniboxUtils.setText("");
         mOmniboxUtils.typeText(text, false);
         mOmniboxUtils.waitForAutocomplete();
         mOmniboxUtils.checkSuggestionsShown();
@@ -197,8 +206,10 @@ public class OmniboxPedalsTest {
      */
     private <T> T clickOnPedalToSettings(
             final Class<T> activityType, @OmniboxPedalType int pedalType) {
-        return ActivityTestUtils.waitForActivity(InstrumentationRegistry.getInstrumentation(),
-                activityType, () -> clickOnPedal());
+        mTargetActivity = (Activity) ActivityTestUtils.waitForActivity(
+                InstrumentationRegistry.getInstrumentation(), activityType, () -> clickOnPedal());
+
+        return (T) mTargetActivity;
     }
 
     /**
@@ -292,8 +303,6 @@ public class OmniboxPedalsTest {
                 settingsActivity, ClearBrowsingDataTabsFragment.class);
 
         verifyHistogram(OmniboxPedalType.CLEAR_BROWSING_DATA);
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -311,8 +320,6 @@ public class OmniboxPedalsTest {
         checkSettingsWasShownAndOmniboxNoFocus(settingsActivity, PasswordSettings.class);
 
         verifyHistogram(OmniboxPedalType.MANAGE_PASSWORDS);
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -331,8 +338,6 @@ public class OmniboxPedalsTest {
                 settingsActivity, AutofillPaymentMethodsFragment.class);
 
         verifyHistogram(OmniboxPedalType.UPDATE_CREDIT_CARD);
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -376,8 +381,6 @@ public class OmniboxPedalsTest {
                     mHistogramTester.getHistogramTotalCount("Settings.SafetyCheck.UpdatesResult"),
                     Matchers.is(1));
         });
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -395,8 +398,6 @@ public class OmniboxPedalsTest {
         checkSettingsWasShownAndOmniboxNoFocus(settingsActivity, SiteSettings.class);
 
         verifyHistogram(OmniboxPedalType.MANAGE_SITE_SETTINGS);
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -414,8 +415,6 @@ public class OmniboxPedalsTest {
         checkSettingsWasShownAndOmniboxNoFocus(settingsActivity, MainSettings.class);
 
         verifyHistogram(OmniboxPedalType.MANAGE_CHROME_SETTINGS);
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -449,8 +448,6 @@ public class OmniboxPedalsTest {
         Assert.assertNotNull("Could not find the history activity", historyActivity);
 
         verifyHistogram(OmniboxPedalType.VIEW_CHROME_HISTORY);
-
-        historyActivity.finish();
     }
 
     @Test
@@ -470,13 +467,11 @@ public class OmniboxPedalsTest {
         checkSettingsWasShownAndOmniboxNoFocus(settingsActivity, AccessibilitySettings.class);
 
         verifyHistogram(OmniboxPedalType.MANAGE_CHROME_ACCESSIBILITY);
-
-        settingsActivity.finish();
     }
 
     @Test
     @MediumTest
-    public void testPedalsStartedOnCtrlEnterKeyStroke() throws InterruptedException {
+    public void testPedalsStartedOnCtrlEnterKeyStroke() throws Exception {
         typeInOmnibox("Chrome accessibility");
         SuggestionInfo<PedalSuggestionView> pedal =
                 mOmniboxUtils.getSuggestionByType(OmniboxSuggestionUiType.PEDAL_SUGGESTION);
@@ -486,16 +481,15 @@ public class OmniboxPedalsTest {
         // Select Pedal with the TAB key and activate it with an ENTER key.
         mOmniboxUtils.sendKey(KeyEvent.KEYCODE_TAB);
 
-        SettingsActivity settingsActivity = ActivityTestUtils.waitForActivity(
+        mTargetActivity = ActivityTestUtils.waitForActivity(
                 InstrumentationRegistry.getInstrumentation(), SettingsActivity.class,
                 () -> mOmniboxUtils.sendKey(KeyEvent.KEYCODE_ENTER));
-        Assert.assertNotNull("Could not find the Settings activity", settingsActivity);
+        Assert.assertNotNull("Could not find the Settings activity", mTargetActivity);
 
-        checkSettingsWasShownAndOmniboxNoFocus(settingsActivity, AccessibilitySettings.class);
+        checkSettingsWasShownAndOmniboxNoFocus(
+                (SettingsActivity) mTargetActivity, AccessibilitySettings.class);
 
         verifyHistogram(OmniboxPedalType.MANAGE_CHROME_ACCESSIBILITY);
-
-        settingsActivity.finish();
     }
 
     @Test
@@ -556,7 +550,9 @@ public class OmniboxPedalsTest {
 
     @Test
     @MediumTest
-    public void testHistoryClustersAction() {
+    @EnableFeatures({ChromeFeatureList.HISTORY_JOURNEYS})
+    public void testHistoryClustersAction() throws Exception {
+        if (mIncognito) return;
         mOmniboxUtils.requestFocus();
         List<AutocompleteMatch> suggestionsList = buildDummySuggestionsList(2, "Suggestion");
         suggestionsList.add(createDummyHistoryClustersAction("query"));
@@ -571,12 +567,17 @@ public class OmniboxPedalsTest {
 
         clickOnPedal();
 
-        CriteriaHelper.pollUiThread(() -> {
-            BottomSheetController bottomSheetController = sActivityTestRule.getActivity()
-                                                                  .getRootUiCoordinatorForTesting()
-                                                                  .getBottomSheetController();
-            Criteria.checkThat(bottomSheetController.getCurrentSheetContent(),
-                    Matchers.instanceOf(HistoryClustersBottomSheetContent.class));
-        });
+        if (DeviceFormFactor.isNonMultiDisplayContextOnTablet(sActivityTestRule.getActivity())) {
+            CriteriaHelper.pollUiThread(() -> {
+                Tab tab = sActivityTestRule.getActivity().getActivityTab();
+                Criteria.checkThat(tab, Matchers.notNullValue());
+                Criteria.checkThat(
+                        tab.getUrl().getSpec(), Matchers.startsWith("chrome://history/journeys"));
+            });
+        } else {
+            mTargetActivity = ActivityTestUtils.waitForActivity(
+                    InstrumentationRegistry.getInstrumentation(), HistoryActivity.class);
+            Assert.assertNotNull("Could not find the history activity", mTargetActivity);
+        }
     }
 }

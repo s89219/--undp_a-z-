@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,20 +14,24 @@
 #include "chrome/browser/ash/borealis/borealis_features.h"
 #include "chrome/browser/ash/borealis/borealis_service.h"
 #include "chrome/browser/ash/crostini/crostini_features.h"
-#include "chrome/browser/ash/crostini/crostini_terminal.h"
 #include "chrome/browser/ash/crostini/crostini_util.h"
 #include "chrome/browser/ash/exo/chrome_data_exchange_delegate.h"
+#include "chrome/browser/ash/guest_os/guest_id.h"
 #include "chrome/browser/ash/guest_os/guest_os_mime_types_service.h"
 #include "chrome/browser/ash/guest_os/guest_os_mime_types_service_factory.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service_factory.h"
+#include "chrome/browser/ash/guest_os/guest_os_terminal.h"
 #include "chrome/browser/ash/plugin_vm/plugin_vm_features.h"
 #include "chrome/browser/ash/plugin_vm/plugin_vm_util.h"
+#include "chrome/browser/ash/policy/dlp/dlp_files_controller.h"
+#include "chrome/browser/chromeos/policy/dlp/dlp_rules_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
-#include "chromeos/dbus/cicerone/cicerone_client.h"
-#include "chromeos/dbus/cicerone/cicerone_service.pb.h"
-#include "chromeos/dbus/vm_applications/apps.pb.h"
+#include "chrome/browser/ui/views/select_file_dialog_extension.h"
+#include "chromeos/ash/components/dbus/cicerone/cicerone_client.h"
+#include "chromeos/ash/components/dbus/cicerone/cicerone_service.pb.h"
+#include "chromeos/ash/components/dbus/vm_applications/apps.pb.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -39,13 +43,13 @@ namespace ash {
 namespace {
 
 struct SelectFileData {
-  scoped_refptr<ui::SelectFileDialog> dialog;
+  scoped_refptr<SelectFileDialogExtension> dialog;
   vm_tools::cicerone::FileSelectedSignal signal;
 };
 
 }  // namespace
 
-VmApplicationsServiceProvider::VmApplicationsServiceProvider() {}
+VmApplicationsServiceProvider::VmApplicationsServiceProvider() = default;
 
 VmApplicationsServiceProvider::~VmApplicationsServiceProvider() = default;
 
@@ -135,9 +139,10 @@ void VmApplicationsServiceProvider::LaunchTerminal(
   if (crostini::CrostiniFeatures::Get()->IsEnabled(profile) &&
       request.owner_id() == crostini::CryptohomeIdForProfile(profile)) {
     // kInvalidDisplayId will launch terminal on the current active display.
-    crostini::LaunchTerminal(
+    guest_os::LaunchTerminal(
         profile, display::kInvalidDisplayId,
-        crostini::ContainerId(request.vm_name(), request.container_name()),
+        guest_os::GuestId(crostini::kCrostiniDefaultVmType, request.vm_name(),
+                          request.container_name()),
         request.cwd(),
         std::vector<std::string>(request.params().begin(),
                                  request.params().end()));
@@ -208,6 +213,7 @@ void VmApplicationsServiceProvider::SelectFile(
   }
   std::u16string title = base::UTF8ToUTF16(request.title());
   base::FilePath default_path;
+  SelectFileDialogExtension::Owner owner;
   if (!request.default_path().empty()) {
     // Parse as file: URL if possible.
     std::vector<ui::FileInfo> file_infos =
@@ -216,10 +222,12 @@ void VmApplicationsServiceProvider::SelectFile(
       file_infos.push_back(ui::FileInfo(base::FilePath(request.default_path()),
                                         base::FilePath()));
     }
-    // Translate to path in host if possible.
+    // Translate to path in host and DLP component type if possible.
     ui::EndpointType source = ui::EndpointType::kUnknownVm;
     if (request.vm_name() == crostini::kCrostiniDefaultVmName) {
       source = ui::EndpointType::kCrostini;
+      owner.dialog_caller = policy::DlpFilesController::DlpFileDestination(
+          policy::DlpRulesManager::Component::kCrostini);
     }
     std::vector<base::FilePath> paths =
         TranslateVMPathsToHost(source, file_infos);
@@ -231,14 +239,14 @@ void VmApplicationsServiceProvider::SelectFile(
   int file_type_index = 0;
   ParseSelectFileDialogFileTypes(request.allowed_extensions(), &file_types,
                                  &file_type_index);
-  base::FilePath::StringType default_extension;
-  data->dialog = ui::SelectFileDialog::Create(
+  data->dialog = SelectFileDialogExtension::Create(
       this, std::make_unique<ChromeSelectFilePolicy>(nullptr));
   // Release ownership of |data| and take back in MultiFilesSelected().
   void* params = static_cast<void*>(data.get());
-  data.release()->dialog->SelectFile(type, title, default_path, &file_types,
-                                     file_type_index, default_extension,
-                                     /*owning_window=*/nullptr, params);
+
+  data.release()->dialog->SelectFileWithFileManagerParams(
+      type, title, default_path, &file_types, file_type_index, params, owner,
+      /*search_query=*/"", /*show_android_picker_apps=*/false);
 }
 
 void VmApplicationsServiceProvider::ParseSelectFileDialogFileTypes(
@@ -308,7 +316,7 @@ void VmApplicationsServiceProvider::MultiFilesSelected(
             for (const auto& file_url : file_urls) {
               data->signal.add_files(file_url);
             }
-            chromeos::CiceroneClient::Get()->FileSelected(data->signal);
+            CiceroneClient::Get()->FileSelected(data->signal);
           },
           std::move(data)));
 }

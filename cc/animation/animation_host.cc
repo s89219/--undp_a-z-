@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
+#include "base/ranges/algorithm.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
 #include "cc/animation/animation.h"
@@ -154,6 +155,15 @@ void AnimationHost::SetHasSmilAnimation(bool has_smil_animation) {
   has_smil_animation_.Write(*this) = has_smil_animation;
 }
 
+bool AnimationHost::HasSharedElementTransition() const {
+  return has_shared_element_transition_.Read(*this);
+}
+
+void AnimationHost::SetHasSharedElementTransition(
+    bool has_shared_element_transition) {
+  has_shared_element_transition_.Write(*this) = has_shared_element_transition;
+}
+
 void AnimationHost::SetCurrentFrameHadRaf(bool current_frame_had_raf) {
   current_frame_had_raf_.Write(*this) = current_frame_had_raf;
 }
@@ -179,6 +189,7 @@ void AnimationHost::RemoveElementId(ElementId element_id) {
   scoped_refptr<ElementAnimations> element_animations =
       GetElementAnimationsForElementId(element_id);
   if (element_animations) {
+    DCHECK(!element_animations->HasTickingKeyframeEffect());
     element_animations->RemoveKeyframeEffects();
   }
 }
@@ -187,6 +198,26 @@ void AnimationHost::RegisterAnimationForElement(ElementId element_id,
                                                 Animation* animation) {
   DCHECK(element_id);
   DCHECK(animation);
+#if DCHECK_IS_ON()
+  for (const auto& keyframe_model :
+       animation->keyframe_effect()->keyframe_models()) {
+    KeyframeModel* cc_keyframe_model =
+        KeyframeModel::ToCcKeyframeModel(keyframe_model.get());
+    ElementId model_element_id = cc_keyframe_model->element_id()
+                                     ? cc_keyframe_model->element_id()
+                                     : element_id;
+    DCHECK(cc_keyframe_model->affects_active_elements() ||
+           cc_keyframe_model->affects_pending_elements());
+    DCHECK(!cc_keyframe_model->affects_active_elements() ||
+           mutator_host_client()->IsElementInPropertyTrees(
+               model_element_id, ElementListType::ACTIVE));
+    // Test thread_instance_ because LayerTreeHost has no pending tree.
+    DCHECK(thread_instance_ == ThreadInstance::MAIN ||
+           !cc_keyframe_model->affects_pending_elements() ||
+           mutator_host_client()->IsElementInPropertyTrees(
+               model_element_id, ElementListType::PENDING));
+  }
+#endif
 
   scoped_refptr<ElementAnimations> element_animations =
       GetElementAnimationsForElementId(element_id);
@@ -226,6 +257,13 @@ void AnimationHost::UnregisterAnimationForElement(ElementId element_id,
   }
 
   RemoveFromTicking(animation);
+}
+
+void AnimationHost::UpdateClientAnimationStateForElementAnimations(
+    ElementId element_id) {
+  auto* element_animations = GetElementAnimationsForElementId(element_id).get();
+  if (element_animations)
+    element_animations->UpdateClientAnimationState();
 }
 
 void AnimationHost::SetMutatorHostClient(MutatorHostClient* client) {
@@ -307,6 +345,7 @@ void AnimationHost::PushPropertiesTo(MutatorHost* mutator_host_impl,
   host_impl->SetHasCanvasInvalidation(HasCanvasInvalidation());
   host_impl->SetHasInlineStyleMutation(HasJSAnimation());
   host_impl->SetHasSmilAnimation(HasSmilAnimation());
+  host_impl->SetHasSharedElementTransition(HasSharedElementTransition());
 
   if (needs_push_properties()) {
     needs_push_properties_.Write(*this) = false;
@@ -382,13 +421,14 @@ void AnimationHost::PushPropertiesToImplThread(AnimationHost* host_impl) {
       TakePendingThroughputTrackerInfos();
 }
 
-scoped_refptr<const ElementAnimations>
-AnimationHost::GetElementAnimationsForElementId(ElementId element_id) const {
+const ElementAnimations* AnimationHost::GetElementAnimationsForElementId(
+    ElementId element_id) const {
   if (!element_id)
     return nullptr;
   auto iter = element_to_animations_map_.Read(*this).find(element_id);
-  return iter == element_to_animations_map_.Read(*this).end() ? nullptr
-                                                              : iter->second;
+  return iter == element_to_animations_map_.Read(*this).end()
+             ? nullptr
+             : iter->second.get();
 }
 
 scoped_refptr<ElementAnimations>
@@ -398,6 +438,12 @@ AnimationHost::GetElementAnimationsForElementId(ElementId element_id) {
   auto iter = element_to_animations_map_.Write(*this).find(element_id);
   return iter == element_to_animations_map_.Write(*this).end() ? nullptr
                                                                : iter->second;
+}
+
+scoped_refptr<const ElementAnimations>
+AnimationHost::GetElementAnimationsForElementIdForTesting(
+    ElementId element_id) const {
+  return GetElementAnimationsForElementId(element_id);
 }
 
 gfx::PointF AnimationHost::GetScrollOffsetForAnimation(
@@ -603,7 +649,7 @@ void AnimationHost::SetAnimationEvents(
 
 bool AnimationHost::ScrollOffsetAnimationWasInterrupted(
     ElementId element_id) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   return element_animations
              ? element_animations->ScrollOffsetAnimationWasInterrupted()
              : false;
@@ -612,7 +658,7 @@ bool AnimationHost::ScrollOffsetAnimationWasInterrupted(
 bool AnimationHost::IsAnimatingProperty(ElementId element_id,
                                         ElementListType list_type,
                                         TargetProperty::Type property) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   return element_animations ? element_animations->IsCurrentlyAnimatingProperty(
                                   property, list_type)
                             : false;
@@ -622,7 +668,7 @@ bool AnimationHost::HasPotentiallyRunningAnimationForProperty(
     ElementId element_id,
     ElementListType list_type,
     TargetProperty::Type property) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   return element_animations
              ? element_animations->IsPotentiallyAnimatingProperty(property,
                                                                   list_type)
@@ -632,16 +678,17 @@ bool AnimationHost::HasPotentiallyRunningAnimationForProperty(
 bool AnimationHost::HasAnyAnimationTargetingProperty(
     ElementId element_id,
     TargetProperty::Type property) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   if (!element_animations)
     return false;
 
-  return element_animations->HasAnyAnimationTargetingProperty(property);
+  return element_animations->HasAnyAnimationTargetingProperty(property,
+                                                              element_id);
 }
 
 bool AnimationHost::AnimationsPreserveAxisAlignment(
     ElementId element_id) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   return element_animations
              ? element_animations->AnimationsPreserveAxisAlignment()
              : true;
@@ -649,19 +696,21 @@ bool AnimationHost::AnimationsPreserveAxisAlignment(
 
 float AnimationHost::MaximumScale(ElementId element_id,
                                   ElementListType list_type) const {
-  if (auto element_animations = GetElementAnimationsForElementId(element_id))
-    return element_animations->MaximumScale(list_type);
+  if (const auto* element_animations =
+          GetElementAnimationsForElementId(element_id)) {
+    return element_animations->MaximumScale(element_id, list_type);
+  }
   return kInvalidScale;
 }
 
 bool AnimationHost::IsElementAnimating(ElementId element_id) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   return element_animations ? element_animations->HasAnyKeyframeModel() : false;
 }
 
 bool AnimationHost::HasTickingKeyframeModelForTesting(
     ElementId element_id) const {
-  auto element_animations = GetElementAnimationsForElementId(element_id);
+  const auto* element_animations = GetElementAnimationsForElementId(element_id);
   return element_animations ? element_animations->HasTickingKeyframeEffect()
                             : false;
 }
@@ -731,8 +780,8 @@ void AnimationHost::AddToTicking(scoped_refptr<Animation> animation) {
 }
 
 void AnimationHost::RemoveFromTicking(scoped_refptr<Animation> animation) {
-  auto to_erase = std::find(ticking_animations_.Write(*this).begin(),
-                            ticking_animations_.Write(*this).end(), animation);
+  auto to_erase =
+      base::ranges::find(ticking_animations_.Write(*this), animation);
   if (to_erase != ticking_animations_.Write(*this).end())
     ticking_animations_.Write(*this).erase(to_erase);
 }
@@ -755,9 +804,8 @@ void AnimationHost::SetLayerTreeMutator(
 
 WorkletAnimation* AnimationHost::FindWorkletAnimation(WorkletAnimationId id) {
   // TODO(majidvp): Use a map to make lookup O(1)
-  auto animation = std::find_if(
-      ticking_animations_.Read(*this).begin(),
-      ticking_animations_.Read(*this).end(), [id](auto& it) {
+  auto animation =
+      base::ranges::find_if(ticking_animations_.Read(*this), [id](auto& it) {
         return it->IsWorkletAnimation() &&
                ToWorkletAnimation(it.get())->worklet_animation_id() == id;
       });

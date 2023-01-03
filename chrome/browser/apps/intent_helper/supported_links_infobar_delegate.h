@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,6 +39,10 @@ class SupportedLinksInfoBarDelegate : public ConfirmInfoBarDelegate {
   // (e.g. the app does not already have the supported links setting enabled).
   static void MaybeShowSupportedLinksInfoBar(content::WebContents* web_contents,
                                              const std::string& app_id);
+
+  // Removes the supported links infobar (if there is one) from the given
+  // |web_contents|.
+  static void RemoveSupportedLinksInfoBar(content::WebContents* web_contents);
 
   // Returns true if the SetSupportedLinksPreference call is supported by App
   // Service in this browser. Visible for testing.

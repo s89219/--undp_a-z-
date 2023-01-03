@@ -1,27 +1,27 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/icons.m.js';
+import 'chrome://resources/cr_elements/icons.html.js';
 import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 import './shimless_rma_shared_css.js';
 import './base_page.js';
 import './icons.js';
 
-import {assert} from 'chrome://resources/js/assert.m.js';
-import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/ash/common/i18n_behavior.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
 import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getShimlessRmaService} from './mojo_interface_provider.js';
 import {CalibrationSetupInstruction, ShimlessRmaServiceInterface, StateResult} from './shimless_rma_types.js';
-import {enableNextButton} from './shimless_rma_util.js';
+import {enableNextButton, focusPageTitle} from './shimless_rma_util.js';
 
 /** @type {!Object<!CalibrationSetupInstruction, string>} */
 const INSRUCTION_MESSAGE_KEY_MAP = {
   [CalibrationSetupInstruction.kCalibrationInstructionPlaceBaseOnFlatSurface]:
       'calibrateBaseInstructionsText',
   [CalibrationSetupInstruction.kCalibrationInstructionPlaceLidOnFlatSurface]:
-      'calibrateLidInstructionsText'
+      'calibrateLidInstructionsText',
 };
 
 /** @type {!Object<!CalibrationSetupInstruction, string>} */
@@ -30,6 +30,14 @@ const CALIBRATION_IMG_MAP = {
       'base_on_flat_surface',
   [CalibrationSetupInstruction.kCalibrationInstructionPlaceLidOnFlatSurface]:
       'lid_on_flat_surface',
+};
+
+/** @type {!Object<!CalibrationSetupInstruction, string>} */
+const CALIBRATION_ALT_MAP = {
+  [CalibrationSetupInstruction.kCalibrationInstructionPlaceBaseOnFlatSurface]:
+      'baseOnFlatSurfaceAltText',
+  [CalibrationSetupInstruction.kCalibrationInstructionPlaceLidOnFlatSurface]:
+      'lidOnFlatSurfaceAltText',
 };
 
 /**
@@ -62,7 +70,24 @@ export class ReimagingCalibrationSetupPage extends
       /** @protected {?CalibrationSetupInstruction} */
       calibrationSetupInstruction_: {
         type: Object,
-      }
+      },
+
+      /** @protected {string} */
+      imgSrc_: {
+        type: String,
+        value: '',
+      },
+
+      /** @protected {string} */
+      imgAlt_: {
+        type: String,
+        value: '',
+      },
+
+      /** @protected {string} */
+      calibrationInstructionsText_: {
+        type: String,
+      },
     };
   }
 
@@ -70,6 +95,10 @@ export class ReimagingCalibrationSetupPage extends
     super();
     /** @private {ShimlessRmaServiceInterface} */
     this.shimlessRmaService_ = getShimlessRmaService();
+  }
+
+  static get observers() {
+    return ['onStatusChanged_(calibrationSetupInstruction_)'];
   }
 
   /** @override */
@@ -80,31 +109,43 @@ export class ReimagingCalibrationSetupPage extends
           this.calibrationSetupInstruction_ = result.instructions;
         });
     enableNextButton(this);
+
+    focusPageTitle(this);
   }
 
-  /** @return {!Promise<StateResult>} */
+  /** @return {!Promise<{stateResult: !StateResult}>} */
   onNextButtonClick() {
     return this.shimlessRmaService_.runCalibrationStep();
   }
 
   /**
-   * @return {string}
+   * Groups state changes related to the |calibrationSetupInstruction_|
+   * updating.
    * @protected
    */
-  getCalibrationInstructionsText_() {
+  onStatusChanged_() {
+    this.setCalibrationInstructionsText_();
+    this.setImgSrcAndAlt_();
+  }
+
+  /**
+   * @protected
+   */
+  setCalibrationInstructionsText_() {
     assert(this.calibrationSetupInstruction_);
-    return this.i18n(
+    this.calibrationInstructionsText_ = this.i18n(
         INSRUCTION_MESSAGE_KEY_MAP[this.calibrationSetupInstruction_]);
   }
 
   /**
-   * @return {string}
    * @protected
    */
-  getImgSrc_() {
+  setImgSrcAndAlt_() {
     assert(this.calibrationSetupInstruction_);
-    return `illustrations/${
+    this.imgSrc_ = `illustrations/${
         CALIBRATION_IMG_MAP[this.calibrationSetupInstruction_]}.svg`;
+    this.imgAlt_ =
+        this.i18n(CALIBRATION_ALT_MAP[this.calibrationSetupInstruction_]);
   }
 }
 

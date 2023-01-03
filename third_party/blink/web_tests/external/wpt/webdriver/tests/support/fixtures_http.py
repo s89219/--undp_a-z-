@@ -153,13 +153,24 @@ def create_frame(session):
 
 
 @pytest.fixture
-def current_time(current_session):
-    """Get the current time stamp in ms from the remote end.
+def stale_element(current_session, iframe, inline):
+    """Create a stale element reference
 
-    This is required especially when tests are run on different devices like
-    for Android, where it's not guaranteed that both machines are in sync.
+    The given document will be loaded in the top-level or child browsing context.
+    Before the requested element is returned it is removed from the document's DOM.
     """
-    def _timestamp():
-        return current_session.execute_script("return Date.now();")
+    def stale_element(doc, css_value, as_frame=False):
+        if as_frame:
+            current_session.url = inline(iframe(doc))
+            frame = current_session.find.css("iframe", all=False)
+            current_session.switch_frame(frame)
+        else:
+            current_session.url = inline(doc)
 
-    return _timestamp
+        element = current_session.find.css(css_value, all=False)
+
+        current_session.execute_script("arguments[0].remove();", args=[element])
+
+        return element
+
+    return stale_element

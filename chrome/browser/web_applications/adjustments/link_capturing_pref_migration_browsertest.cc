@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,7 @@ class LinkCapturingPrefMigrationBrowserTest : public InProcessBrowserTest {
   // InProcessBrowserTest:
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
-    web_app::test::WaitUntilReady(
-        web_app::WebAppProvider::GetForTest(browser()->profile()));
+    test::WaitUntilReady(WebAppProvider::GetForTest(browser()->profile()));
   }
 
  protected:
@@ -42,7 +41,6 @@ IN_PROC_BROWSER_TEST_F(LinkCapturingPrefMigrationBrowserTest,
   web_app_info->capture_links =
       blink::mojom::CaptureLinks::kExistingClientNavigate;
   AppId app_id = test::InstallWebApp(profile, std::move(web_app_info));
-  proxy->FlushMojoCallsForTesting();
 
   EXPECT_EQ(proxy->PreferredAppsList().FindPreferredAppForUrl(
                 GURL("https://example.org/some/path")),

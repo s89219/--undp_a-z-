@@ -185,11 +185,12 @@ bool DecodingImageGenerator::GetPixels(const SkImageInfo& dst_info,
 
   const bool needs_color_xform = !ApproximatelyEqualSkColorSpaces(
       decode_color_space, target_info.refColorSpace());
-  ImageDecoder::AlphaOption alpha_option = ImageDecoder::kAlphaPremultiplied;
   if (needs_color_xform && !decode_info.isOpaque()) {
-    alpha_option = ImageDecoder::kAlphaNotPremultiplied;
     decode_info = decode_info.makeAlphaType(kUnpremul_SkAlphaType);
+  } else {
+    DCHECK(decode_info.alphaType() != kUnpremul_SkAlphaType);
   }
+  SkPixmap decode_pixmap(decode_info, memory, adjusted_row_bytes);
 
   bool decoded = false;
   {
@@ -199,7 +200,7 @@ bool DecodingImageGenerator::GetPixels(const SkImageInfo& dst_info,
     ScopedSegmentReaderDataLocker lock_data(data_.get());
     decoded = frame_generator_->DecodeAndScale(
         data_.get(), all_data_received_, static_cast<wtf_size_t>(frame_index),
-        decode_info, memory, adjusted_row_bytes, alpha_option, client_id);
+        decode_pixmap, client_id);
   }
 
   if (decoded && needs_color_xform) {
@@ -251,9 +252,11 @@ bool DecodingImageGenerator::QueryYUVA(
                                        yuva_pixmap_info);
 }
 
-bool DecodingImageGenerator::GetYUVAPlanes(const SkYUVAPixmaps& pixmaps,
-                                           size_t frame_index,
-                                           uint32_t lazy_pixel_ref) {
+bool DecodingImageGenerator::GetYUVAPlanes(
+    const SkYUVAPixmaps& pixmaps,
+    size_t frame_index,
+    uint32_t lazy_pixel_ref,
+    PaintImage::GeneratorClientId client_id) {
   // TODO(crbug.com/943519): YUV decoding does not currently support incremental
   // decoding. See comment in image_frame_generator.h.
   DCHECK(can_yuv_decode_);
@@ -285,7 +288,8 @@ bool DecodingImageGenerator::GetYUVAPlanes(const SkYUVAPixmaps& pixmaps,
   ScopedSegmentReaderDataLocker lock_data(data_.get());
   return frame_generator_->DecodeToYUV(
       data_.get(), static_cast<wtf_size_t>(frame_index),
-      pixmaps.plane(0).colorType(), plane_sizes, plane_addrs, plane_row_bytes);
+      pixmaps.plane(0).colorType(), plane_sizes, plane_addrs, plane_row_bytes,
+      client_id);
 }
 
 SkISize DecodingImageGenerator::GetSupportedDecodeSize(

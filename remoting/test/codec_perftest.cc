@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,11 +17,10 @@ namespace test {
 constexpr auto kIntervalBetweenFrames = base::Seconds(1) / 30;
 
 struct CodecParams {
-  CodecParams(bool use_vp9, bool lossless, bool lossless_color)
-      : use_vp9(use_vp9), lossless(lossless), lossless_color(lossless_color) {}
+  CodecParams(bool use_vp9, bool lossless_color)
+      : use_vp9(use_vp9), lossless_color(lossless_color) {}
 
   bool use_vp9;
-  bool lossless;
   bool lossless_color;
 };
 
@@ -31,7 +30,6 @@ class CodecPerfTest : public testing::Test,
   void SetUp() override {
     if (GetParam().use_vp9) {
       encoder_ = VideoEncoderVpx::CreateForVP9();
-      encoder_->SetLosslessEncode(GetParam().lossless);
       encoder_->SetLosslessColor(GetParam().lossless_color);
     } else {
       encoder_ = VideoEncoderVpx::CreateForVP8();
@@ -50,16 +48,13 @@ class CodecPerfTest : public testing::Test,
 
 INSTANTIATE_TEST_SUITE_P(VP8,
                          CodecPerfTest,
-                         ::testing::Values(CodecParams(false, false, false)));
+                         ::testing::Values(CodecParams(false, false)));
 INSTANTIATE_TEST_SUITE_P(VP9,
                          CodecPerfTest,
-                         ::testing::Values(CodecParams(true, false, false)));
-INSTANTIATE_TEST_SUITE_P(VP9Lossless,
-                         CodecPerfTest,
-                         ::testing::Values(CodecParams(true, true, false)));
+                         ::testing::Values(CodecParams(true, false)));
 INSTANTIATE_TEST_SUITE_P(VP9LosslessColor,
                          CodecPerfTest,
-                         ::testing::Values(CodecParams(true, false, true)));
+                         ::testing::Values(CodecParams(true, true)));
 
 TEST_P(CodecPerfTest, EncodeLatency) {
   const int kTotalFrames = 300;

@@ -105,12 +105,6 @@ interface HTMLInputElement : HTMLElement
 # File System Access API not supported on Android, crbug.com/1011535
 interface DataTransferItem
     method getAsFileSystemHandle
-interface StorageManager : EventTarget
-    method getDirectory
-interface FileSystemHandle
-interface FileSystemDirectoryHandle : FileSystemHandle
-interface FileSystemFileHandle : FileSystemHandle
-interface FileSystemWritableFileStream : WritableStream
 
 interface MediaDevices : EventTarget
     # MediaDevices devicechange disabled on Android, crbug.com/671461
@@ -119,13 +113,15 @@ interface MediaDevices : EventTarget
     method getDisplayMedia
     method setCaptureHandleConfig
 
-# Because getDisplayMedia() is not supported on Android,
-# dependent features such as Capture Handle are also unsupported.
-interface CaptureHandleChangeEvent : Event
+# Because getDisplayMedia() is not supported on Android, dependent features
+# such as Capture Handle and Region Capture are also unsupported.
 interface MediaStreamTrack : EventTarget
   getter oncapturehandlechange
   setter oncapturehandlechange
   method getCaptureHandle
+interface BrowserCaptureMediaStreamTrack : MediaStreamTrack
+interface CropTarget
+interface CaptureController
 
 # WebAuthN API should not be exposed in WebView, crbug.com/828168
 interface AuthenticatorAssertionResponse : AuthenticatorResponse
@@ -135,24 +131,6 @@ interface AuthenticatorAttestationResponse : AuthenticatorResponse
 
 # WebOTP API should not be exposed in WebView, crbug.com/1224417
 interface OTPCredential : Credential
-
-# Picture-in-Picture API is disabled in Android WebView, crbug.com/852449
-interface PictureInPictureEvent : Event
-interface PictureInPictureWindow : EventTarget
-interface Document : Node
-    method exitPictureInPicture
-    getter pictureInPictureElement
-    getter pictureInPictureEnabled
-interface ShadowRoot : DocumentFragment
-    getter pictureInPictureElement
-interface HTMLVideoElement : HTMLMediaElement
-    getter disablePictureInPicture
-    setter disablePictureInPicture
-    method requestPictureInPicture
-    getter onenterpictureinpicture
-    setter onenterpictureinpicture
-    getter onleavepictureinpicture
-    setter onleavepictureinpicture
 
 # Background Fetch API is not enabled in Android webview, crbug.com/766077
 interface BackgroundFetchManager
@@ -205,11 +183,13 @@ interface XRAnchorSet
 interface XRLightEstimate
 interface XRLightProbe : EventTarget
 interface XRWebGLBinding
+    method getCameraImage
     method getDepthInformation
     method getReflectionCubeMap
 interface XRDepthInformation
 interface XRCPUDepthInformation : XRDepthInformation
 interface XRWebGLDepthInformation : XRDepthInformation
+interface XRCamera
 
 # Web Serial API is not implemented on Android. If Bluetooth Classic support
 # were added this could change. https://crbug.com/1164036
@@ -225,6 +205,8 @@ interface HID : EventTarget
 # Window Controls Overlay API is not implemented on Android.
 interface WindowControlsOverlay : EventTarget
 interface WindowControlsOverlayGeometryChangeEvent : Event
+interface Navigator
+    getter windowControlsOverlay
 
 # Web Bluetooth is not implemented on WebView. crbug.com/1100993
 interface Bluetooth : EventTarget
@@ -251,6 +233,24 @@ interface USBInterface
 interface USBAlternateInterface
 interface USBEndpoint
 
+# File Handling API is not implemented in WebView (or Android). crbug.com/829689
+interface LaunchParams
+interface LaunchQueue
+
+# Local Font Access API is not implemented in WebView (or Android).
+# crbug.com/1326898
+interface FontData
+
+# The Popover API (crbug.com/1307772) is enabled by the fieldtrial_testing_config,
+# but only for desktop and Android platforms. It is not shipped to stable yet,
+# on any platform.
+interface HTMLElement : Element
+	  method hidePopover
+	  method showPopover
+
+# FedCM API is not implemented on WebView. crbug.com/1340252
+interface IdentityCredential : Credential
+
 [GLOBAL OBJECT]
     method openDatabase
     attribute eventSender                    # test only
@@ -260,6 +260,7 @@ interface USBEndpoint
     attribute textInputController            # test only
     attribute gamepadController              # test only
     attribute GCController                   # test only
+    getter launchQueue                       # PWA File Handling API, crbug.com/829689
     getter speechSynthesis                   # Speech API, crbug.com/487255
     attribute chrome                         # crbug.com/618471
     method gc                                # test only
@@ -269,6 +270,7 @@ interface USBEndpoint
     method showOpenFilePicker                # File System Access API, crbug.com/1011535
     method showSaveFilePicker                # File System Access API, crbug.com/1011535
     method showDirectoryPicker               # File System Access API, crbug.com/1011535
+    method queryLocalFonts                   # Local Font Access API, crbug.com/1326898
 
 # TODO(timvolodine): check screen orientation lock api
 # TODO(timvolodine): check notifications in service workers

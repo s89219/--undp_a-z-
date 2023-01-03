@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -230,7 +230,7 @@ class MojoJSInterfaceBrokerBrowserTest : public InProcessBrowserTest {
                              : browser()
                                    ->tab_strip_model()
                                    ->GetActiveWebContents()
-                                   ->GetMainFrame();
+                                   ->GetPrimaryMainFrame();
     // We can't use EvalJs with a different world_id to get around CSP
     // restrictions, because Mojo is only exposed to the global world
     // (ISOLATED_WORLD_ID_GLOBAL). So we use |ExecuteScriptAndExtractString| to
@@ -254,7 +254,7 @@ class MojoJSInterfaceBrokerBrowserTest : public InProcessBrowserTest {
                              : browser()
                                    ->tab_strip_model()
                                    ->GetActiveWebContents()
-                                   ->GetMainFrame();
+                                   ->GetPrimaryMainFrame();
     // We can't use EvalJs with a different world_id to get around CSP
     // restrictions, because Mojo is only exposed to the global world
     // (ISOLATED_WORLD_ID_GLOBAL). So we use |ExecuteScriptAndExtractString| to
@@ -383,7 +383,7 @@ IN_PROC_BROWSER_TEST_F(MojoJSInterfaceBrokerBrowserTest, IframeBarWorks) {
 
   // Bar page gets Bar Mojo API.
   content::RenderFrameHost* bar_frame =
-      ChildFrameAt(web_contents->GetMainFrame(), 0);
+      ChildFrameAt(web_contents->GetPrimaryMainFrame(), 0);
   ASSERT_EQ(GURL(kBarURL), bar_frame->GetLastCommittedURL());
 
   EXPECT_EQ("bar", EvalStatement("(async () => {"

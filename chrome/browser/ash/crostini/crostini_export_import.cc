@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,16 +22,15 @@
 #include "chrome/browser/ash/guest_os/guest_os_share_path.h"
 #include "chrome/browser/ash/guest_os/guest_os_share_path_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_keyed_service_factory.h"
 #include "chrome/browser/ui/chrome_select_file_policy.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace crostini {
 
-class CrostiniExportImportFactory : public BrowserContextKeyedServiceFactory {
+class CrostiniExportImportFactory : public ProfileKeyedServiceFactory {
  public:
   static CrostiniExportImport* GetForProfile(Profile* profile) {
     return static_cast<CrostiniExportImport*>(
@@ -47,9 +46,7 @@ class CrostiniExportImportFactory : public BrowserContextKeyedServiceFactory {
   friend class base::NoDestructor<CrostiniExportImportFactory>;
 
   CrostiniExportImportFactory()
-      : BrowserContextKeyedServiceFactory(
-            "CrostiniExportImportService",
-            BrowserContextDependencyManager::GetInstance()) {
+      : ProfileKeyedServiceFactory("CrostiniExportImportService") {
     DependsOn(guest_os::GuestOsSharePathFactory::GetInstance());
     DependsOn(CrostiniManagerFactory::GetInstance());
   }
@@ -90,7 +87,7 @@ void CrostiniExportImport::Shutdown() {
 
 CrostiniExportImport::OperationData::OperationData(
     ExportImportType type,
-    ContainerId container_id,
+    guest_os::GuestId container_id,
     OnceTrackerFactory tracker_factory)
     : type(type),
       container_id(std::move(container_id)),
@@ -100,7 +97,7 @@ CrostiniExportImport::OperationData::~OperationData() = default;
 
 CrostiniExportImport::OperationData* CrostiniExportImport::NewOperationData(
     ExportImportType type,
-    ContainerId container_id,
+    guest_os::GuestId container_id,
     OnceTrackerFactory factory) {
   auto operation_data = std::make_unique<OperationData>(
       type, std::move(container_id), std::move(factory));
@@ -112,9 +109,9 @@ CrostiniExportImport::OperationData* CrostiniExportImport::NewOperationData(
 
 CrostiniExportImport::OperationData* CrostiniExportImport::NewOperationData(
     ExportImportType type,
-    ContainerId container_id) {
+    guest_os::GuestId container_id) {
   OnceTrackerFactory factory = base::BindOnce(
-      [](Profile* profile, ContainerId container_id,
+      [](Profile* profile, guest_os::GuestId container_id,
          std::string notification_id, ExportImportType type,
          base::FilePath path)
           -> std::unique_ptr<CrostiniExportImportStatusTracker> {
@@ -128,21 +125,24 @@ CrostiniExportImport::OperationData* CrostiniExportImport::NewOperationData(
 
 CrostiniExportImport::OperationData* CrostiniExportImport::NewOperationData(
     ExportImportType type) {
-  return NewOperationData(type, ContainerId::GetDefault());
+  return NewOperationData(type, DefaultContainerId());
 }
 
-void CrostiniExportImport::ExportContainer(ContainerId container_id,
+void CrostiniExportImport::ExportContainer(guest_os::GuestId container_id,
                                            content::WebContents* web_contents) {
   OpenFileDialog(
       NewOperationData(ExportImportType::EXPORT, std::move(container_id)),
       web_contents);
 }
 
-void CrostiniExportImport::ImportContainer(content::WebContents* web_contents) {
-  OpenFileDialog(NewOperationData(ExportImportType::IMPORT), web_contents);
+void CrostiniExportImport::ImportContainer(guest_os::GuestId container_id,
+                                           content::WebContents* web_contents) {
+  OpenFileDialog(
+      NewOperationData(ExportImportType::IMPORT, std::move(container_id)),
+      web_contents);
 }
 
-void CrostiniExportImport::ExportContainer(ContainerId container_id,
+void CrostiniExportImport::ExportContainer(guest_os::GuestId container_id,
                                            content::WebContents* web_contents,
                                            OnceTrackerFactory tracker_factory) {
   OpenFileDialog(
@@ -151,7 +151,7 @@ void CrostiniExportImport::ExportContainer(ContainerId container_id,
       web_contents);
 }
 
-void CrostiniExportImport::ImportContainer(ContainerId container_id,
+void CrostiniExportImport::ImportContainer(guest_os::GuestId container_id,
                                            content::WebContents* web_contents,
                                            OnceTrackerFactory tracker_factory) {
   OpenFileDialog(
@@ -227,7 +227,7 @@ void CrostiniExportImport::FileSelectionCanceled(void* params) {
 }
 
 void CrostiniExportImport::ExportContainer(
-    ContainerId container_id,
+    guest_os::GuestId container_id,
     base::FilePath path,
     CrostiniManager::CrostiniResultCallback callback) {
   Start(NewOperationData(ExportImportType::EXPORT, std::move(container_id)),
@@ -235,14 +235,14 @@ void CrostiniExportImport::ExportContainer(
 }
 
 void CrostiniExportImport::ImportContainer(
-    ContainerId container_id,
+    guest_os::GuestId container_id,
     base::FilePath path,
     CrostiniManager::CrostiniResultCallback callback) {
   Start(NewOperationData(ExportImportType::IMPORT, std::move(container_id)),
         path, std::move(callback));
 }
 
-void CrostiniExportImport::ExportContainer(ContainerId container_id,
+void CrostiniExportImport::ExportContainer(guest_os::GuestId container_id,
                                            base::FilePath path,
                                            OnceTrackerFactory tracker_factory) {
   Start(NewOperationData(ExportImportType::EXPORT, std::move(container_id),
@@ -250,7 +250,7 @@ void CrostiniExportImport::ExportContainer(ContainerId container_id,
         path, base::DoNothing());
 }
 
-void CrostiniExportImport::ImportContainer(ContainerId container_id,
+void CrostiniExportImport::ImportContainer(guest_os::GuestId container_id,
                                            base::FilePath path,
                                            OnceTrackerFactory tracker_factory) {
   Start(NewOperationData(ExportImportType::IMPORT, std::move(container_id),
@@ -323,7 +323,7 @@ void CrostiniExportImport::Start(
 }
 
 void CrostiniExportImport::EnsureLxdStartedThenSharePath(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     const base::FilePath& path,
     bool persist,
     guest_os::GuestOsSharePath::SharePathCallback callback) {
@@ -342,18 +342,21 @@ void CrostiniExportImport::SharePath(
     const base::FilePath& path,
     guest_os::GuestOsSharePath::SharePathCallback callback,
     crostini::CrostiniResult result) {
-  if (result != CrostiniResult::SUCCESS) {
+  auto vm_info =
+      crostini::CrostiniManager::GetForProfile(profile_)->GetVmInfo(vm_name);
+  if (result != CrostiniResult::SUCCESS || !vm_info.has_value()) {
     std::move(callback).Run(
         base::FilePath(), false,
         base::StringPrintf("VM could not be started: %d", result));
     return;
   }
   guest_os::GuestOsSharePath::GetForProfile(profile_)->SharePath(
-      vm_name, path, false, std::move(callback));
+      vm_name, vm_info->info.seneschal_server_handle(), path,
+      std::move(callback));
 }
 
 void CrostiniExportImport::ExportAfterSharing(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     const base::FilePath& path,
     CrostiniManager::CrostiniResultCallback callback,
     const base::FilePath& container_path,
@@ -380,7 +383,7 @@ void CrostiniExportImport::ExportAfterSharing(
 
 void CrostiniExportImport::OnExportComplete(
     const base::Time& start,
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     CrostiniManager::CrostiniResultCallback callback,
     CrostiniResult result,
     uint64_t container_size,
@@ -400,7 +403,7 @@ void CrostiniExportImport::OnExportComplete(
         // file is functionally the same as a successful cancel.
         base::ThreadPool::PostTask(
             FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-            base::BindOnce(base::GetDeleteFileCallback(), it->second->path()));
+            base::GetDeleteFileCallback(it->second->path()));
         RemoveTracker(it)->SetStatusCancelled();
         break;
       }
@@ -432,7 +435,7 @@ void CrostiniExportImport::OnExportComplete(
         // file needs to be cleaned up.
         base::ThreadPool::PostTask(
             FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-            base::BindOnce(base::GetDeleteFileCallback(), it->second->path()));
+            base::GetDeleteFileCallback(it->second->path()));
         RemoveTracker(it)->SetStatusCancelled();
         break;
       }
@@ -443,7 +446,7 @@ void CrostiniExportImport::OnExportComplete(
     LOG(ERROR) << "Error exporting " << int(result);
     base::ThreadPool::PostTask(
         FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-        base::BindOnce(base::GetDeleteFileCallback(), it->second->path()));
+        base::GetDeleteFileCallback(it->second->path()));
     switch (result) {
       case CrostiniResult::CONTAINER_EXPORT_IMPORT_FAILED_VM_STOPPED:
         enum_hist_result = ExportContainerResult::kFailedVmStopped;
@@ -468,7 +471,7 @@ void CrostiniExportImport::OnExportComplete(
 }
 
 void CrostiniExportImport::OnExportContainerProgress(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     const StreamingExportStatus& status) {
   auto it = status_trackers_.find(container_id);
   if (it == status_trackers_.end()) {
@@ -489,7 +492,7 @@ void CrostiniExportImport::OnExportContainerProgress(
 }
 
 void CrostiniExportImport::ImportAfterSharing(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     const base::FilePath& path,
     CrostiniManager::CrostiniResultCallback callback,
     const base::FilePath& container_path,
@@ -516,7 +519,7 @@ void CrostiniExportImport::ImportAfterSharing(
 
 void CrostiniExportImport::OnImportComplete(
     const base::Time& start,
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     CrostiniManager::CrostiniResultCallback callback,
     CrostiniResult result) {
   auto it = status_trackers_.find(container_id);
@@ -603,7 +606,7 @@ void CrostiniExportImport::OnImportComplete(
 }
 
 void CrostiniExportImport::OnImportContainerProgress(
-    const ContainerId& container_id,
+    const guest_os::GuestId& container_id,
     ImportContainerProgressStatus status,
     int progress_percent,
     uint64_t progress_speed,
@@ -660,7 +663,7 @@ CrostiniExportImport::RemoveTracker(TrackerMap::iterator it) {
 }
 
 void CrostiniExportImport::CancelOperation(ExportImportType type,
-                                           ContainerId container_id) {
+                                           guest_os::GuestId container_id) {
   auto it = status_trackers_.find(container_id);
   if (it == status_trackers_.end()) {
     NOTREACHED() << container_id << " has no status_tracker to cancel";
@@ -684,13 +687,12 @@ void CrostiniExportImport::CancelOperation(ExportImportType type,
 }
 
 bool CrostiniExportImport::GetExportImportOperationStatus() const {
-  ContainerId id(kCrostiniDefaultVmName, kCrostiniDefaultContainerName);
-  return status_trackers_.find(id) != status_trackers_.end();
+  return status_trackers_.size() != 0;
 }
 
 base::WeakPtr<CrostiniExportImportNotificationController>
 CrostiniExportImport::GetNotificationControllerForTesting(
-    ContainerId container_id) {
+    guest_os::GuestId container_id) {
   auto it = status_trackers_.find(container_id);
   if (it == status_trackers_.end()) {
     return nullptr;

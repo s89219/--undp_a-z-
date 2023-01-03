@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,8 +11,8 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
+#include "base/path_service.h"
 #include "base/run_loop.h"
-#include "chrome/browser/ash/login/test/fake_gaia_mixin.h"
 #include "chrome/browser/ash/login/test/js_checker.h"
 #include "chrome/browser/ash/login/test/oobe_base_test.h"
 #include "chrome/browser/ash/login/test/oobe_screen_waiter.h"
@@ -21,9 +21,11 @@
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/signin/chrome_device_id_helper.h"
-#include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/gaia_screen_handler.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/test/base/fake_gaia_mixin.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chromeos/dbus/constants/dbus_paths.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/base/signin_pref_names.h"
 #include "components/user_manager/known_user.h"
@@ -106,6 +108,10 @@ class DeviceIDTest : public OobeBaseTest,
                     const std::string& gaia_id) {
     WaitForGaiaPageLoad();
 
+    // On a real device the first user would create the install attributes file,
+    // emulate that, so the following users don't try to establish ownership.
+    EnsureInstallAttributesCreated();
+
     FakeGaia::MergeSessionParams params;
     params.email = user_id;
     params.refresh_token = refresh_token;
@@ -148,12 +154,11 @@ class DeviceIDTest : public OobeBaseTest,
     if (!base::ReadFileToString(GetRefreshTokenToDeviceIdMapFilePath(),
                                 &file_contents))
       return;
-    std::unique_ptr<base::Value> value(
-        base::JSONReader::ReadDeprecated(file_contents));
-    base::DictionaryValue* dictionary;
-    EXPECT_TRUE(value->GetAsDictionary(&dictionary));
+    absl::optional<base::Value> value = base::JSONReader::Read(file_contents);
+    EXPECT_TRUE(value->is_dict());
+    base::Value::Dict& dictionary = value->GetDict();
     FakeGaia::RefreshTokenToDeviceIdMap map;
-    for (auto item : dictionary->DictItems()) {
+    for (auto item : dictionary) {
       ASSERT_TRUE(item.second.is_string());
       map[item.first] = item.second.GetString();
     }
@@ -161,13 +166,23 @@ class DeviceIDTest : public OobeBaseTest,
   }
 
   void SaveRefreshTokenToDeviceIdMap() {
-    base::DictionaryValue dictionary;
+    base::Value::Dict dictionary;
     for (const auto& kv :
          fake_gaia_.fake_gaia()->refresh_token_to_device_id_map())
-      dictionary.SetKey(kv.first, base::Value(kv.second));
+      dictionary.Set(kv.first, kv.second);
     std::string json;
     EXPECT_TRUE(base::JSONWriter::Write(dictionary, &json));
     EXPECT_TRUE(base::WriteFile(GetRefreshTokenToDeviceIdMapFilePath(), json));
+  }
+
+  void EnsureInstallAttributesCreated() {
+    base::FilePath install_attrs_path = base::PathService::CheckedGet(
+        chromeos::dbus_paths::FILE_INSTALL_ATTRIBUTES);
+    base::ScopedAllowBlockingForTesting allow_blocking;
+    if (!base::PathExists(install_attrs_path)) {
+      EXPECT_TRUE(
+          base::WriteFile(install_attrs_path, "fake_install_attributes_data"));
+    }
   }
 
   std::unique_ptr<base::RunLoop> user_removal_loop_;

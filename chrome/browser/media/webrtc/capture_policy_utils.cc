@@ -1,10 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/media/webrtc/capture_policy_utils.h"
 
 #include "base/containers/cxx20_erase_vector.h"
+#include "base/ranges/algorithm.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -39,14 +40,11 @@ struct RestrictedCapturePolicy {
 }  // namespace
 
 bool IsOriginInList(const GURL& request_origin,
-                    const base::Value* allowed_origins) {
-  if (!allowed_origins || !allowed_origins->is_list())
-    return false;
-
+                    const base::Value::List& allowed_origins) {
   // Though we are not technically a Content Setting, ContentSettingsPattern
   // aligns better than URLMatcher with the rules from:
   // https://chromeenterprise.google/policies/url-patterns/.
-  for (const auto& value : allowed_origins->GetListDeprecated()) {
+  for (const auto& value : allowed_origins) {
     if (!value.is_string())
       continue;
     ContentSettingsPattern pattern =
@@ -107,10 +105,36 @@ AllowedScreenCaptureLevel GetAllowedCaptureLevel(const GURL& request_origin,
   return AllowedScreenCaptureLevel::kDisallowed;
 }
 
+bool IsGetDisplaymediaSetSelectAllScreensAllowedForAnySite(
+    content::BrowserContext* context) {
+#if BUILDFLAG(IS_CHROMEOS)
+  Profile* profile = Profile::FromBrowserContext(context);
+  if (!profile) {
+    return false;
+  }
+  HostContentSettingsMap* host_content_settings_map =
+      HostContentSettingsMapFactory::GetForProfile(profile);
+  if (!host_content_settings_map) {
+    return false;
+  }
+  ContentSettingsForOneType content_settings;
+  host_content_settings_map->GetSettingsForOneType(
+      ContentSettingsType::GET_DISPLAY_MEDIA_SET_SELECT_ALL_SCREENS,
+      &content_settings);
+  return base::ranges::any_of(content_settings,
+                              [](const ContentSettingPatternSource& source) {
+                                return source.GetContentSetting() ==
+                                       ContentSetting::CONTENT_SETTING_ALLOW;
+                              });
+#else
+  return false;
+#endif
+}
+
 bool IsGetDisplayMediaSetSelectAllScreensAllowed(
     content::BrowserContext* context,
     const GURL& url) {
-#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
   Profile* profile = Profile::FromBrowserContext(context);
   if (!profile)
     return false;
@@ -118,13 +142,11 @@ bool IsGetDisplayMediaSetSelectAllScreensAllowed(
       HostContentSettingsMapFactory::GetForProfile(profile);
   if (!host_content_settings_map)
     return false;
-  const base::Value auto_accept_enabled =
-      host_content_settings_map->GetWebsiteSetting(
+  ContentSetting auto_accept_enabled =
+      host_content_settings_map->GetContentSetting(
           url, url,
-          ContentSettingsType::GET_DISPLAY_MEDIA_SET_SELECT_ALL_SCREENS,
-          /*info=*/nullptr);
-  return auto_accept_enabled.is_int() &&
-         auto_accept_enabled.GetInt() == ContentSetting::CONTENT_SETTING_ALLOW;
+          ContentSettingsType::GET_DISPLAY_MEDIA_SET_SELECT_ALL_SCREENS);
+  return auto_accept_enabled == ContentSetting::CONTENT_SETTING_ALLOW;
 #else
   // This API is currently only available on ChromeOS.
   return false;

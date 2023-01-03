@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,13 @@
 #include "base/containers/flat_map.h"
 #include "base/json/json_reader.h"
 #include "base/memory/weak_ptr.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ash/arc/policy/arc_policy_bridge.h"
 #include "chrome/browser/ash/arc/policy/arc_policy_util.h"
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_service.h"
@@ -227,7 +227,7 @@ PolicyComplianceObserver::PolicyComplianceObserver(
   auto last_report = arc_policy_bridge->get_arc_policy_compliance_report();
   if (last_report.empty())
     return;
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&PolicyComplianceObserver::ProcessInitialComplianceReport,
                      weak_ptr_factory_.GetWeakPtr(), std::move(last_report)));
@@ -249,7 +249,7 @@ void PolicyComplianceObserver::OnComplianceReportReceived(
   }
 
   bool is_android_id_reset = true;
-  for (const auto& detail : details->GetListDeprecated()) {
+  for (const auto& detail : details->GetList()) {
     const base::Value* const reason =
         detail.FindKeyOfType("nonComplianceReason", base::Value::Type::INTEGER);
     const std::string* const settingName = detail.FindStringKey("settingName");

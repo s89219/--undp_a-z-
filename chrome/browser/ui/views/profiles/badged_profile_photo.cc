@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -120,7 +120,7 @@ BadgedProfilePhoto::BadgedProfilePhoto(BadgeType badge_type,
 
   // Create and add image view for profile icon.
   gfx::Image profile_photo_circular = profiles::GetSizedAvatarIcon(
-      profile_photo, true, kImageSize, kImageSize, profiles::SHAPE_CIRCLE);
+      profile_photo, kImageSize, kImageSize, profiles::SHAPE_CIRCLE);
   views::ImageView* profile_photo_view = badge_type == BADGE_TYPE_NONE
                                              ? new views::ImageView()
                                              : new CustomImageView();

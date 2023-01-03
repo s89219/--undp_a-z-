@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -97,7 +97,7 @@ public class ProfileDataCacheWithBadgeRenderTest extends BlankUiTestActivityTest
     public void testProfileDataWithSettingBadgeDynamically() throws IOException {
         setUpProfileDataCache(0);
         mRenderTestRule.render(mImageView, "profile_data_cache_without_badge");
-        setBadgeConfig(R.drawable.ic_sync_badge_error_20dp);
+        setBadgeConfig(R.drawable.ic_account_child_20dp);
         mRenderTestRule.render(mImageView, "profile_data_cache_with_child_badge");
     }
 

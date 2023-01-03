@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,6 @@ import static org.chromium.chrome.browser.keyboard_accessory.ManualFillingTestHe
 import static org.chromium.chrome.browser.keyboard_accessory.tab_layout_component.KeyboardAccessoryTabTestHelper.isKeyboardAccessoryTabLayout;
 
 import android.app.Activity;
-import android.os.Build.VERSION_CODES;
 import android.view.View;
 
 import androidx.annotation.IntDef;
@@ -38,8 +37,6 @@ import org.chromium.base.test.params.ParameterizedRunner;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.CriteriaHelper;
-import org.chromium.base.test.util.DisableIf;
-import org.chromium.base.test.util.FlakyTest;
 import org.chromium.chrome.browser.ChromeWindow;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
@@ -179,7 +176,6 @@ public class AutofillKeyboardAccessoryIntegrationTest {
      */
     @Test
     @MediumTest
-    @FlakyTest(message = "https://crbug.com/984489")
     public void testSwitchFieldsRescrollsKeyboardAccessory() throws TimeoutException {
         loadTestPage(FakeKeyboard::new);
         mHelper.clickNodeAndShowKeyboard("EMAIL_ADDRESS", 8);
@@ -206,11 +202,7 @@ public class AutofillKeyboardAccessoryIntegrationTest {
     @Test
     @MediumTest
     @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
-    @DisableIf.
-    Build(sdk_is_greater_than = VERSION_CODES.LOLLIPOP_MR1, sdk_is_less_than = VERSION_CODES.N,
-            message = "Flaky on Marshmallow https://crbug.com/1102302")
-    public void
-    testSelectSuggestionHidesKeyboardAccessory(@EnabledFeature int enabledFeature)
+    public void testSelectSuggestionHidesKeyboardAccessory(@EnabledFeature int enabledFeature)
             throws ExecutionException, TimeoutException {
         loadTestPage(FakeKeyboard::new, enabledFeature);
         mHelper.clickNodeAndShowKeyboard("NAME_FIRST", 1);
@@ -237,12 +229,8 @@ public class AutofillKeyboardAccessoryIntegrationTest {
 
     @Test
     @SmallTest
-    // clang-format off
-    @DisableIf.Build(hardware_is = "bullhead", sdk_is_greater_than = VERSION_CODES.LOLLIPOP_MR1,
-        sdk_is_less_than = VERSION_CODES.N, message = "https://crbug.com/1216008")
     public void testPressingBackButtonHidesAccessoryWithAutofillSuggestions()
             throws TimeoutException, ExecutionException {
-        // clang-format on
         loadTestPage(MultiWindowKeyboard::new);
         mHelper.clickNodeAndShowKeyboard("NAME_FIRST", 1);
         mHelper.waitForKeyboardAccessoryToBeShown(true);
@@ -254,18 +242,19 @@ public class AutofillKeyboardAccessoryIntegrationTest {
         whenDisplayed(withChild(withId(R.id.keyboard_accessory_sheet)));
 
         assertTrue(TestThreadUtils.runOnUiThreadBlocking(
-                () -> mHelper.getManualFillingCoordinator().handleBackPress()));
+                ()
+                        -> mHelper.getManualFillingCoordinator()
+                                   .getHandleBackPressChangedSupplier()
+                                   .get()));
+        assertTrue(TestThreadUtils.runOnUiThreadBlocking(
+                () -> mHelper.getManualFillingCoordinator().onBackPressed()));
 
         waitToBeHidden(withChild(withId(R.id.keyboard_accessory_sheet)));
     }
 
     @Test
     @MediumTest
-    // clang-format off
-    @DisableIf.Build(hardware_is = "bullhead", sdk_is_greater_than = VERSION_CODES.LOLLIPOP_MR1,
-        sdk_is_less_than = VERSION_CODES.N, message = "https://crbug.com/1216008")
     public void testSheetHasMinimumSizeWhenTriggeredBySuggestion() throws TimeoutException {
-        // clang-format on
         MultiWindowUtils.getInstance().setIsInMultiWindowModeForTesting(true);
         loadTestPage(MultiWindowKeyboard::new);
         mHelper.clickNode("NAME_FIRST", 1, FocusedFieldType.FILLABLE_NON_SEARCH_FIELD);

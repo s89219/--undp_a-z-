@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,13 +8,14 @@ import 'chrome://new-tab-page/lazy_load.js';
 import {VoiceSearchOverlayElement} from 'chrome://new-tab-page/lazy_load.js';
 import {$$, NewTabPageProxy, VoiceAction as Action, VoiceError as Error, WindowProxy} from 'chrome://new-tab-page/new_tab_page.js';
 import {PageCallbackRouter, PageHandlerRemote} from 'chrome://new-tab-page/new_tab_page.mojom-webui.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {flushTasks, isVisible} from 'chrome://webui-test/test_util.js';
+import {isVisible} from 'chrome://webui-test/test_util.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
-import {fakeMetricsPrivate, MetricsTracker} from './metrics_test_support.js';
+import {fakeMetricsPrivate, MetricsTracker} from './../metrics_test_support.js';
 import {assertNotStyle, assertStyle, installMock, keydown} from './test_support.js';
 
 function createResults(n: number): SpeechRecognitionEvent {
@@ -32,6 +33,7 @@ function createResults(n: number): SpeechRecognitionEvent {
   } as unknown as SpeechRecognitionEvent;
 }
 
+// eslint-disable-next-line @typescript-eslint/naming-convention
 type webkitSpeechRecognitionError = SpeechRecognitionErrorEvent;
 declare const webkitSpeechRecognitionError: typeof SpeechRecognitionErrorEvent;
 
@@ -71,11 +73,11 @@ let mockSpeechRecognition: MockSpeechRecognition;
 
 suite('NewTabPageVoiceSearchOverlayTest', () => {
   let voiceSearchOverlay: VoiceSearchOverlayElement;
-  let windowProxy: TestBrowserProxy;
+  let windowProxy: TestBrowserProxy<WindowProxy>;
   let metrics: MetricsTracker;
 
   setup(async () => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     window.webkitSpeechRecognition =
         MockSpeechRecognition as unknown as typeof SpeechRecognition;
@@ -185,24 +187,31 @@ suite('NewTabPageVoiceSearchOverlayTest', () => {
     assertStyle(voiceSearchOverlay.$.micVolume, '--mic-volume-level', '0');
     assertEquals(1, metrics.count('NewTabPage.VoiceActions'));
     assertEquals(
-        1, metrics.count('NewTabPage.VoiceActions', Action.kQuerySubmitted));
+        1, metrics.count('NewTabPage.VoiceActions', Action.QUERY_SUBMITTED));
   });
 
   ([
-    ['no-speech', 'no-speech', 'learn-more', Error.kNoSpeech],
-    ['audio-capture', 'audio-capture', 'learn-more', Error.kAudioCapture],
-    ['network', 'network', 'none', Error.kNetwork],
-    ['not-allowed', 'not-allowed', 'details', Error.kNotAllowed],
-    ['service-not-allowed', 'not-allowed', 'details', Error.kServiceNotAllowed],
+    ['no-speech', 'no-speech', 'learn-more', Error.NO_SPEECH],
+    ['audio-capture', 'audio-capture', 'learn-more', Error.AUDIO_CAPTURE],
+    ['network', 'network', 'none', Error.NETWORK],
+    ['not-allowed', 'not-allowed', 'details', Error.NOT_ALLOWED],
     [
-      'language-not-supported', 'language-not-supported', 'none',
-      Error.kLanguageNotSupported
+      'service-not-allowed',
+      'not-allowed',
+      'details',
+      Error.SERVICE_NOT_ALLOWED,
     ],
-    ['aborted', 'other', 'none', Error.kAborted],
-    ['bad-grammar', 'other', 'none', Error.kBadGrammar],
-    ['foo', 'other', 'none', Error.kOther],
-    ['no-match', 'no-match', 'try-again', Error.kNoMatch],
-  ] as [SpeechRecognitionErrorCode & 'no-match', string, string, Error][])
+    [
+      'language-not-supported',
+      'language-not-supported',
+      'none',
+      Error.LANGUAGE_NOT_SUPPORTED,
+    ],
+    ['aborted', 'other', 'none', Error.ABORTED],
+    ['bad-grammar', 'other', 'none', Error.BAD_GRAMMAR],
+    ['foo', 'other', 'none', Error.OTHER],
+    ['no-match', 'no-match', 'try-again', Error.NO_MATCH],
+  ] as Array<[SpeechRecognitionErrorCode & 'no-match', string, string, Error]>)
       .forEach(([error, text, link, logError]) => {
         test(`on '${error}' received shows error text`, async () => {
           // Act.
@@ -335,25 +344,20 @@ suite('NewTabPageVoiceSearchOverlayTest', () => {
     assertTrue(mockSpeechRecognition.abortCalled);
   });
 
-  ([
-    ['#retryLink', Action.kTryAgainLink],
-    ['#micButton', Action.kTryAgainMicButton],
-  ] as [string, Action][])
-      .forEach(([id, action]) => {
-        test(`clicking '${id}' starts voice search if in retry state`, () => {
-          // Arrange.
-          mockSpeechRecognition.onnomatch!();
-          mockSpeechRecognition.startCalled = false;
+  test(`clicking '#retryLink' starts voice search if in retry state`, () => {
+    // Arrange.
+    mockSpeechRecognition.onnomatch!();
+    mockSpeechRecognition.startCalled = false;
 
-          // Act.
-          $$<HTMLElement>(voiceSearchOverlay, id)!.click();
+    // Act.
+    $$<HTMLElement>(voiceSearchOverlay, '#retryLink')!.click();
 
-          // Assert.
-          assertTrue(mockSpeechRecognition.startCalled);
-          assertEquals(1, metrics.count('NewTabPage.VoiceActions'));
-          assertEquals(1, metrics.count('NewTabPage.VoiceActions', action));
-        });
-      });
+    // Assert.
+    assertTrue(mockSpeechRecognition.startCalled);
+    assertEquals(1, metrics.count('NewTabPage.VoiceActions'));
+    assertEquals(
+        1, metrics.count('NewTabPage.VoiceActions', Action.TRY_AGAIN_LINK));
+  });
 
   [' ', 'Enter'].forEach(key => {
     test(`'${key}' submits query if result`, () => {
@@ -408,7 +412,7 @@ suite('NewTabPageVoiceSearchOverlayTest', () => {
     assertFalse(voiceSearchOverlay.$.dialog.open);
     assertEquals(1, metrics.count('NewTabPage.VoiceActions'));
     assertEquals(
-        1, metrics.count('NewTabPage.VoiceActions', Action.kCloseOverlay));
+        1, metrics.count('NewTabPage.VoiceActions', Action.CLOSE_OVERLAY));
   });
 
   test('Click closes overlay', () => {
@@ -419,7 +423,7 @@ suite('NewTabPageVoiceSearchOverlayTest', () => {
     assertFalse(voiceSearchOverlay.$.dialog.open);
     assertEquals(1, metrics.count('NewTabPage.VoiceActions'));
     assertEquals(
-        1, metrics.count('NewTabPage.VoiceActions', Action.kCloseOverlay));
+        1, metrics.count('NewTabPage.VoiceActions', Action.CLOSE_OVERLAY));
   });
 
   test('Clicking learn more logs action', () => {
@@ -437,6 +441,6 @@ suite('NewTabPageVoiceSearchOverlayTest', () => {
     // Assert.
     assertEquals(
         1,
-        metrics.count('NewTabPage.VoiceActions', Action.kSupportLinkClicked));
+        metrics.count('NewTabPage.VoiceActions', Action.SUPPORT_LINK_CLICKED));
   });
 });

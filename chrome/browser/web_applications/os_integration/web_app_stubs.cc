@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,8 +30,10 @@ bool FileHandlingIconsSupportedByOs() {
 void RegisterFileHandlersWithOs(const AppId& app_id,
                                 const std::string& app_name,
                                 Profile* profile,
-                                const apps::FileHandlers& file_handlers) {
+                                const apps::FileHandlers& file_handlers,
+                                ResultCallback callback) {
   NOTIMPLEMENTED();
+  std::move(callback).Run(Result::kError);
 }
 
 void UnregisterFileHandlersWithOs(const AppId& app_id,
@@ -63,10 +65,11 @@ bool CreatePlatformShortcuts(const base::FilePath& web_app_path,
   return false;
 }
 
-void UpdatePlatformShortcuts(const base::FilePath& web_app_path,
-                             const std::u16string& old_app_title,
-                             const ShortcutInfo& shortcut_info) {
+Result UpdatePlatformShortcuts(const base::FilePath& web_app_path,
+                               const std::u16string& old_app_title,
+                               const ShortcutInfo& shortcut_info) {
   NOTIMPLEMENTED();
+  return Result::kOk;
 }
 
 void DeletePlatformShortcuts(const base::FilePath& web_app_path,

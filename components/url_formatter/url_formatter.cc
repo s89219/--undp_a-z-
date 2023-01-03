@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -695,7 +695,7 @@ std::u16string FormatUrlWithAdjustments(
   } else if ((format_types & kFormatUrlOmitTrailingSlashOnBareHostname) &&
              CanStripTrailingSlash(url)) {
     // Omit the path, which is a single trailing slash. There's no query or ref.
-    if (parsed.path.len > 0) {
+    if (parsed.path.is_nonempty()) {
       adjustments->push_back(base::OffsetAdjuster::Adjustment(
           parsed.path.begin, parsed.path.len, 0));
     }
@@ -838,6 +838,10 @@ TopDomainEntry LookupSkeletonInTopDomains(const std::string& skeleton,
 
 std::u16string MaybeRemoveDiacritics(const std::u16string& host) {
   return g_idn_spoof_checker.Get().MaybeRemoveDiacritics(host);
+}
+
+IDNA2008DeviationCharacter GetDeviationCharacter(base::StringPiece16 hostname) {
+  return g_idn_spoof_checker.Get().GetDeviationCharacter(hostname);
 }
 
 }  // namespace url_formatter

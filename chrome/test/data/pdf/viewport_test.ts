@@ -1,9 +1,9 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {FittingType, PAGE_SHADOW, Viewport} from 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/pdf_viewer_wrapper.js';
-import {isMac} from 'chrome://resources/js/cr.m.js';
+import {FittingType, PAGE_SHADOW, SwipeDirection, Viewport} from 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/pdf_viewer_wrapper.js';
+import {isMac} from 'chrome://resources/js/platform.js';
 
 import {createMockUnseasonedPdfPluginForTest, getZoomableViewport, MockDocumentDimensions, MockElement, MockSizer, MockUnseasonedPdfPluginElement, MockViewportChangedCallback} from './test_util.js';
 
@@ -315,6 +315,25 @@ const tests = [
     viewport.setZoom(0.25);
     mockWindow.scrollTo(0, 0);
     chrome.test.assertEq(0, viewport.getMostVisiblePage());
+    chrome.test.succeed();
+  },
+
+  function testSetFittingType() {
+    const viewport = getZoomableViewport(
+        new MockElement(400, 500, null), new MockSizer(), 0, 1);
+
+    viewport.setFittingType(FittingType.FIT_TO_PAGE);
+    chrome.test.assertEq(FittingType.FIT_TO_PAGE, viewport.fittingType);
+
+    viewport.setFittingType(FittingType.FIT_TO_WIDTH);
+    chrome.test.assertEq(FittingType.FIT_TO_WIDTH, viewport.fittingType);
+
+    viewport.setFittingType(FittingType.FIT_TO_HEIGHT);
+    chrome.test.assertEq(FittingType.FIT_TO_HEIGHT, viewport.fittingType);
+
+    viewport.setFittingType(FittingType.NONE);
+    chrome.test.assertEq(FittingType.NONE, viewport.fittingType);
+
     chrome.test.succeed();
   },
 
@@ -646,6 +665,59 @@ const tests = [
     assertRoughlyEquals(1.5, viewport.getZoom(), 0.001);
     assertRoughlyEquals(6.25, viewport.position.x, 0.001);
     assertRoughlyEquals(12.50, viewport.position.y, 0.001);
+
+    chrome.test.succeed();
+  },
+
+  async function testPageNavigationWithDispatchSwipe() {
+    const mockWindow = new MockElement(100, 100, null);
+    const viewport = getZoomableViewport(mockWindow, new MockSizer(), 0, 1);
+    const documentDimensions = new MockDocumentDimensions();
+
+    // Add 2 pages to the document.
+    documentDimensions.addPage(200, 300);
+    documentDimensions.addPage(200, 300);
+    viewport.setDocumentDimensions(documentDimensions);
+    chrome.test.assertEq(0, viewport.getMostVisiblePage());
+
+    // When fullscreen is not enabled, swiping doesn't turn the pages.
+    viewport.dispatchSwipe(SwipeDirection.RIGHT_TO_LEFT);
+    await whenRequestAnimationFrame();
+    chrome.test.assertEq(0, viewport.getMostVisiblePage());
+
+    // Turn on fullscreen (Presentation) mode.
+    viewport.enableFullscreenForTesting();
+
+    // Test swiping in RTL.
+    {
+      document.documentElement.dir = 'rtl';
+      // Swiping from left to right navigates to the next page.
+      viewport.dispatchSwipe(SwipeDirection.LEFT_TO_RIGHT);
+      await whenRequestAnimationFrame();
+      chrome.test.assertEq(1, viewport.getMostVisiblePage());
+
+      // Swiping from right to left navigates to the previous page.
+      viewport.dispatchSwipe(SwipeDirection.RIGHT_TO_LEFT);
+      await whenRequestAnimationFrame();
+      chrome.test.assertEq(0, viewport.getMostVisiblePage());
+    }
+
+    // Test swiping in LTR.
+    {
+      // Note: Make sure text direction is reset to LTR before finishing this
+      // test or it's going to affect other tests in this test suite.
+      document.documentElement.dir = 'ltr';
+
+      // Swiping from right to left navigates to the next page.
+      viewport.dispatchSwipe(SwipeDirection.RIGHT_TO_LEFT);
+      await whenRequestAnimationFrame();
+      chrome.test.assertEq(1, viewport.getMostVisiblePage());
+
+      // Swiping from left to right navigates to the previous page.
+      viewport.dispatchSwipe(SwipeDirection.LEFT_TO_RIGHT);
+      await whenRequestAnimationFrame();
+      chrome.test.assertEq(0, viewport.getMostVisiblePage());
+    }
 
     chrome.test.succeed();
   },
@@ -1019,38 +1091,38 @@ const tests = [
     viewport.setZoom(1);
 
     mockCallback.reset();
-    viewport.goToPageAndXY(0, 0, 0);
+    viewport.goToPageAndXy(0, 0, 0);
     chrome.test.assertTrue(mockCallback.wasCalled);
     chrome.test.assertEq(0, viewport.position.x);
     chrome.test.assertEq(0, viewport.position.y);
 
     mockCallback.reset();
-    viewport.goToPageAndXY(1, 0, 0);
+    viewport.goToPageAndXy(1, 0, 0);
     chrome.test.assertTrue(mockCallback.wasCalled);
     chrome.test.assertEq(0, viewport.position.x);
     chrome.test.assertEq(100, viewport.position.y);
 
     mockCallback.reset();
-    viewport.goToPageAndXY(2, 42, 46);
+    viewport.goToPageAndXy(2, 42, 46);
     chrome.test.assertTrue(mockCallback.wasCalled);
     chrome.test.assertEq(0 + 42, viewport.position.x);
     chrome.test.assertEq(300 + 46, viewport.position.y);
 
     mockCallback.reset();
-    viewport.goToPageAndXY(2, 42, 0);
+    viewport.goToPageAndXy(2, 42, 0);
     chrome.test.assertTrue(mockCallback.wasCalled);
     chrome.test.assertEq(0 + 42, viewport.position.x);
     chrome.test.assertEq(300, viewport.position.y);
 
     mockCallback.reset();
-    viewport.goToPageAndXY(2, 0, 46);
+    viewport.goToPageAndXy(2, 0, 46);
     chrome.test.assertTrue(mockCallback.wasCalled);
     chrome.test.assertEq(0, viewport.position.x);
     chrome.test.assertEq(300 + 46, viewport.position.y);
 
     viewport.setZoom(0.5);
     mockCallback.reset();
-    viewport.goToPageAndXY(2, 42, 46);
+    viewport.goToPageAndXy(2, 42, 46);
     chrome.test.assertTrue(mockCallback.wasCalled);
     chrome.test.assertEq(0 + 21, viewport.position.x);
     chrome.test.assertEq(150 + 23, viewport.position.y);

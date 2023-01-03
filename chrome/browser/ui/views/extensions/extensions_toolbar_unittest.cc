@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,18 +13,19 @@
 #include "chrome/browser/ui/toolbar/toolbar_action_view_controller.h"
 #include "components/crx_file/id_util.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/test/test_utils.h"
 #include "extensions/browser/notification_types.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/value_builder.h"
+#include "extensions/test/permissions_manager_waiter.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/views/layout/animating_layout_manager_test_util.h"
 #include "ui/views/view_utils.h"
 
 namespace {
 
-std::unique_ptr<base::ListValue> ToListValue(
-    const std::vector<std::string>& permissions) {
+base::Value::List ToListValue(const std::vector<std::string>& permissions) {
   extensions::ListBuilder builder;
   for (const std::string& permission : permissions)
     builder.Append(permission);
@@ -51,16 +52,32 @@ void ExtensionsToolbarUnitTest::SetUp() {
 
 scoped_refptr<const extensions::Extension>
 ExtensionsToolbarUnitTest::InstallExtension(const std::string& name) {
-  return InstallExtensionWithHostPermissions(name, {});
+  return InstallExtension(name, {}, {});
 }
 
 scoped_refptr<const extensions::Extension>
 ExtensionsToolbarUnitTest::InstallExtensionWithHostPermissions(
     const std::string& name,
     const std::vector<std::string>& host_permissions) {
+  return InstallExtension(name, {}, host_permissions);
+}
+
+scoped_refptr<const extensions::Extension>
+ExtensionsToolbarUnitTest::InstallExtensionWithPermissions(
+    const std::string& name,
+    const std::vector<std::string>& permissions) {
+  return InstallExtension(name, permissions, {});
+}
+
+scoped_refptr<const extensions::Extension>
+ExtensionsToolbarUnitTest::InstallExtension(
+    const std::string& name,
+    const std::vector<std::string>& permissions,
+    const std::vector<std::string>& host_permissions) {
   scoped_refptr<const extensions::Extension> extension =
       extensions::ExtensionBuilder(name)
           .SetManifestVersion(3)
+          .AddPermissions(permissions)
           .SetManifestKey("host_permissions", ToListValue(host_permissions))
           .SetID(crx_file::id_util::GenerateId(name))
           .Build();
@@ -106,12 +123,11 @@ void ExtensionsToolbarUnitTest::DisableExtension(
 
 void ExtensionsToolbarUnitTest::WithholdHostPermissions(
     const extensions::Extension* extension) {
-  content::WindowedNotificationObserver permissions_observer(
-      extensions::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
-      content::NotificationService::AllSources());
+  extensions::PermissionsManagerWaiter waiter(
+      extensions::PermissionsManager::Get(profile()));
   extensions::ScriptingPermissionsModifier(profile(), extension)
       .RemoveAllGrantedHostPermissions();
-  permissions_observer.Wait();
+  waiter.WaitForExtensionPermissionsUpdate();
 }
 
 void ExtensionsToolbarUnitTest::ClickButton(views::Button* button) const {

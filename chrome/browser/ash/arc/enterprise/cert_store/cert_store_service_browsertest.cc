@@ -1,10 +1,12 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
+#include <stdint.h>
+
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "ash/components/arc/arc_prefs.h"
@@ -16,6 +18,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "chrome/browser/ash/arc/enterprise/cert_store/cert_store_service.h"
 #include "chrome/browser/ash/arc/keymaster/arc_keymaster_bridge.h"
@@ -38,7 +41,7 @@
 #include "chrome/services/keymaster/public/mojom/cert_store.mojom.h"
 #include "chrome/test/base/mixin_based_in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/network/network_cert_loader.h"
+#include "chromeos/ash/components/network/network_cert_loader.h"
 #include "components/policy/policy_constants.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -258,10 +261,7 @@ bool IsSystemSlotAvailable(Profile* profile) {
 
 // Returns the number of corporate usage certs in |test_certs|.
 size_t CountCorporateUsage(const std::vector<TestCertData>& test_certs) {
-  return std::count_if(test_certs.begin(), test_certs.end(),
-                       [](const TestCertData& test_data) {
-                         return test_data.is_corporate_usage;
-                       });
+  return base::ranges::count_if(test_certs, &TestCertData::is_corporate_usage);
 }
 
 // Deletes the given |cert| from |cert_db|.
@@ -287,12 +287,13 @@ void RegisterCorporateKeyWithService(
     base::OnceClosure done_callback,
     std::unique_ptr<chromeos::platform_keys::ExtensionKeyPermissionsService>
         service) {
-  std::string client_cert_spki(
+  std::vector<uint8_t> client_cert_spki(
       cert->derPublicKey.data,
       cert->derPublicKey.data + cert->derPublicKey.len);
   service->RegisterKeyForCorporateUsage(
-      client_cert_spki, base::BindOnce(&OnKeyRegisteredForCorporateUsage,
-                                       std::move(done_callback)));
+      std::move(client_cert_spki),
+      base::BindOnce(&OnKeyRegisteredForCorporateUsage,
+                     std::move(done_callback)));
 }
 
 }  // namespace
@@ -386,16 +387,14 @@ CertStoreServiceTest::CertStoreServiceTest()
     : test_cert_data_vector_(std::get<0>(GetParam())) {
   cryptohome_mixin_.MarkUserAsExisting(affiliation_mixin_.account_id());
 
-  // TODO(crbug.com/1311355): This test is run with the feature
-  // kUseAuthsessionAuthentication enabled and disabled because of a
+  // TODO(b/260718534): This test is run with the feature
+  // kUseAuthFactors enabled and disabled because of a
   // transitive dependency of AffiliationTestHelper on that feature. Remove
-  // the parameter when kUseAuthsessionAuthentication is removed.
+  // the parameter when kUseAuthFactors is removed.
   if (std::get<1>(GetParam())) {
-    feature_list_.InitAndEnableFeature(
-        ash::features::kUseAuthsessionAuthentication);
+    feature_list_.InitAndEnableFeature(ash::features::kUseAuthFactors);
   } else {
-    feature_list_.InitAndDisableFeature(
-        ash::features::kUseAuthsessionAuthentication);
+    feature_list_.InitAndDisableFeature(ash::features::kUseAuthFactors);
   }
 }
 
@@ -457,13 +456,15 @@ void CertStoreServiceTest::SetUpCerts(
   // Remember current size of |installed_certs_| before new certs.
   size_t initial_size = installed_certs_.size();
 
-  // Read certs from files.
-  base::RunLoop loop;
-  NssServiceFactory::GetForContext(profile())
-      ->UnsafelyGetNSSCertDatabaseForTesting(base::BindOnce(
-          &CertStoreServiceTest::SetUpTestClientCerts, base::Unretained(this),
-          certs_to_setup, loop.QuitClosure()));
-  loop.Run();
+  {
+    // Read certs from files.
+    base::RunLoop loop;
+    NssServiceFactory::GetForContext(profile())
+        ->UnsafelyGetNSSCertDatabaseForTesting(base::BindOnce(
+            &CertStoreServiceTest::SetUpTestClientCerts, base::Unretained(this),
+            certs_to_setup, loop.QuitClosure()));
+    loop.Run();
+  }
 
   // Verify |certs_to_setup.size()| new certs have been installed.
   ASSERT_EQ(installed_certs_.size(), certs_to_setup.size() + initial_size);
@@ -546,7 +547,7 @@ void CertStoreServiceTest::CheckInstalledCerts(
       std::string hex_encoded_id =
           base::HexEncode(cert_id.data(), cert_id.size());
       EXPECT_EQ(hex_encoded_id,
-                chromeos::NetworkCertLoader::GetPkcs11IdAndSlotForCert(
+                ash::NetworkCertLoader::GetPkcs11IdAndSlotForCert(
                     nss_cert.get(), &slot_id));
       EXPECT_TRUE(PlaceholdersContainIdAndSlot(cert_id, cert.test_data.slot));
       break;

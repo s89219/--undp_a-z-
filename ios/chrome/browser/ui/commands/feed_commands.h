@@ -1,17 +1,17 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef IOS_CHROME_BROWSER_UI_COMMANDS_FEED_COMMANDS_H_
 #define IOS_CHROME_BROWSER_UI_COMMANDS_FEED_COMMANDS_H_
 
-@class FollowedWebChannel;
+@class FollowedWebSite;
 
 // Commands related to feed.
 @protocol FeedCommands
 
-// Displays the First Follow UI with |followedWebChannel|.
-- (void)showFirstFollowUIForWebChannel:(FollowedWebChannel*)followedWebChannel;
+// Displays the First Follow UI with `followedWebSite`.
+- (void)showFirstFollowUIForWebSite:(FollowedWebSite*)followedWebSite;
 
 @end
 

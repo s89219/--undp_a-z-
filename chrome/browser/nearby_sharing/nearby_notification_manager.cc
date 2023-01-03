@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 
 #include <string>
 
+#include "ash/constants/notifier_catalogs.h"
+#include "ash/public/cpp/notification_utils.h"
 #include "base/callback_helpers.h"
 #include "base/files/file_util.h"
 #include "base/notreached.h"
@@ -77,9 +79,12 @@ message_center::Notification CreateNearbyNotification(const std::string& id) {
       l10n_util::GetStringUTF16(IDS_NEARBY_NOTIFICATION_SOURCE),
       /*origin_url=*/GURL(),
       message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
-                                 kNearbyNotifier),
+                                 kNearbyNotifier,
+                                 ash::NotificationCatalogName::kNearbyShare),
       /*optional_fields=*/{},
       /*delegate=*/nullptr);
+
+  notification.set_accent_color(ash::kSystemNotificationColorNormal);
   notification.set_vector_small_image(kNearbyShareIcon);
   notification.set_settings_button_handler(
       message_center::SettingsButtonHandler::DELEGATE);
@@ -217,9 +222,7 @@ std::u16string FormatNotificationTitle(const ShareTarget& share_target,
   size_t attachment_count = share_target.file_attachments.size() +
                             share_target.text_attachments.size();
 
-  if (!share_target.wifi_credentials_attachments.empty() &&
-      base::FeatureList::IsEnabled(
-          features::kNearbySharingReceiveWifiCredentials)) {
+  if (!share_target.wifi_credentials_attachments.empty()) {
     std::u16string network_name =
         base::UTF8ToUTF16(share_target.wifi_credentials_attachments[0].ssid());
     return base::ReplaceStringPlaceholders(
@@ -233,9 +236,7 @@ std::u16string FormatNotificationTitle(const ShareTarget& share_target,
 }
 
 std::u16string GetProgressNotificationTitle(const ShareTarget& share_target) {
-  if (!share_target.wifi_credentials_attachments.empty() &&
-      base::FeatureList::IsEnabled(
-          features::kNearbySharingReceiveWifiCredentials)) {
+  if (!share_target.wifi_credentials_attachments.empty()) {
     return FormatNotificationTitle(
         share_target,
         IDS_NEARBY_NOTIFICATION_RECEIVE_PROGRESS_TITLE_WIFI_CREDENTIALS,
@@ -251,9 +252,7 @@ std::u16string GetProgressNotificationTitle(const ShareTarget& share_target) {
 }
 
 std::u16string GetSuccessNotificationTitle(const ShareTarget& share_target) {
-  if (!share_target.wifi_credentials_attachments.empty() &&
-      base::FeatureList::IsEnabled(
-          features::kNearbySharingReceiveWifiCredentials)) {
+  if (!share_target.wifi_credentials_attachments.empty()) {
     return FormatNotificationTitle(
         share_target,
         IDS_NEARBY_NOTIFICATION_RECEIVE_SUCCESS_TITLE_WIFI_CREDENTIALS,
@@ -268,9 +267,7 @@ std::u16string GetSuccessNotificationTitle(const ShareTarget& share_target) {
 }
 
 std::u16string GetFailureNotificationTitle(const ShareTarget& share_target) {
-  if (!share_target.wifi_credentials_attachments.empty() &&
-      base::FeatureList::IsEnabled(
-          features::kNearbySharingReceiveWifiCredentials)) {
+  if (!share_target.wifi_credentials_attachments.empty()) {
     return FormatNotificationTitle(
         share_target,
         IDS_NEARBY_NOTIFICATION_RECEIVE_FAILURE_TITLE_WIFI_CREDENTIALS,
@@ -308,9 +305,7 @@ std::u16string GetConnectionRequestNotificationMessage(
   size_t attachment_count = share_target.file_attachments.size() +
                             share_target.text_attachments.size();
   std::u16string message;
-  if (!share_target.wifi_credentials_attachments.empty() &&
-      base::FeatureList::IsEnabled(
-          features::kNearbySharingReceiveWifiCredentials)) {
+  if (!share_target.wifi_credentials_attachments.empty()) {
     message = base::ReplaceStringPlaceholders(
         l10n_util::GetStringUTF16(
             IDS_NEARBY_NOTIFICATION_CONNECTION_REQUEST_MESSAGE_WIFI_CREDENTIALS),
@@ -660,20 +655,12 @@ class NearbyDeviceTryingToShareNotificationDelegate
   NearbyNotificationManager* manager_;
 };
 
-bool IsVisibilityReminderEnabled() {
-  return base::FeatureList::IsEnabled(
-      features::kNearbySharingVisibilityReminder);
-}
-
 class NearbyVisibilityReminderNotificationDelegate
     : public NearbyNotificationDelegate {
  public:
   explicit NearbyVisibilityReminderNotificationDelegate(
       NearbyNotificationManager* manager)
-      : manager_(manager) {
-    // Make sure the delegate is only created when the feature flag is enabled.
-    DCHECK(IsVisibilityReminderEnabled());
-  }
+      : manager_(manager) {}
 
   ~NearbyVisibilityReminderNotificationDelegate() override = default;
 
@@ -1168,8 +1155,9 @@ void NearbyNotificationManager::ShowCancelled(const ShareTarget& share_target) {
 void NearbyNotificationManager::ShowVisibilityReminder() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  DCHECK(IsVisibilityReminderEnabled());
-  DCHECK(ShouldShowNearbyVisibilityReminderNotification(pref_service_));
+  if (!ShouldShowNearbyVisibilityReminderNotification(pref_service_)) {
+    return;
+  }
 
   message_center::Notification notification =
       CreateNearbyNotification(kNearbyVisibilityReminderNotificationId);

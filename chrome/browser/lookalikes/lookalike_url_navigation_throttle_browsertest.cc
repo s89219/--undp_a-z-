@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_test_utils.h"
-#include "chrome/browser/lookalikes/digital_asset_links_cross_validator.h"
+#include "chrome/browser/lookalikes/lookalike_test_helper.h"
 #include "chrome/browser/lookalikes/lookalike_url_blocking_page.h"
 #include "chrome/browser/lookalikes/lookalike_url_navigation_throttle.h"
 #include "chrome/browser/lookalikes/lookalike_url_service.h"
@@ -45,10 +45,12 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/content_mock_cert_verifier.h"
+#include "content/public/test/prerender_test_util.h"
 #include "content/public/test/signed_exchange_browser_test_helper.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/url_loader_interceptor.h"
 #include "net/cert/mock_cert_verifier.h"
+#include "net/cert/test_root_certs.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/cert_test_util.h"
 #include "net/test/embedded_test_server/http_request.h"
@@ -78,6 +80,8 @@ const char kInterstitialInteractionMetric[] =
 
 const char kConsoleMessage[] =
     "Chrome has determined that * could be fake or fraudulent*";
+
+enum class PrewarmLookalike { kPrewarm, kNoPrewarm };
 
 static std::unique_ptr<net::test_server::HttpResponse>
 NetworkErrorResponseHandler(const net::test_server::HttpRequest& request) {
@@ -148,7 +152,7 @@ void LoadAndCheckInterstitialAt(Browser* browser, const GURL& url) {
             GetInterstitialType(web_contents));
   EXPECT_FALSE(IsUrlShowing(browser));
 
-  console_observer.Wait();
+  ASSERT_TRUE(console_observer.Wait());
   EXPECT_TRUE(
       base::MatchPattern(console_observer.GetMessageAt(0u), kConsoleMessage));
 }
@@ -197,39 +201,51 @@ void TestInterstitialNotShown(Browser* browser, const GURL& navigated_url) {
   EXPECT_EQ(nullptr, GetCurrentInterstitial(web_contents));
 }
 
-namespace test {
-#include "components/url_formatter/spoof_checks/top_domains/browsertest_domains-trie-inc.cc"
+// Add an allowlist with entries that aren't allowlisted for all domains.
+void ConfigureAllowlistWithScopes() {
+  auto config_proto = reputation::GetOrCreateSafetyTipsConfig();
+  config_proto->clear_allowed_pattern();
+  config_proto->clear_canonical_pattern();
+  config_proto->clear_cohort();
+
+  // Note: allowed_pattern must be sorted, so "Allowed*" comes before "May*".
+
+  // may-spoof-anyone.com has no cohort.
+  auto* patternWildcard = config_proto->add_allowed_pattern();
+  patternWildcard->set_pattern("may-spoof-anyone.com/");
+
+  // may-spoof-google.com is only allowed to spoof google.com.
+  config_proto->add_canonical_pattern()->set_pattern("google.com/");
+  auto* pattern = config_proto->add_allowed_pattern();
+  pattern->set_pattern("may-spoof-google.com/");
+  auto* cohort = config_proto->add_cohort();
+  cohort->add_canonical_index(0);  // google.com
+  pattern->add_cohort_index(0);
+
+  reputation::SetSafetyTipsRemoteConfigProto(std::move(config_proto));
 }
 
 }  // namespace
 
 class LookalikeUrlNavigationThrottleBrowserTest
     : public InProcessBrowserTest,
-      public testing::WithParamInterface<bool> {
+      public testing::WithParamInterface<PrewarmLookalike> {
  protected:
   void SetUp() override {
-    std::vector<base::test::ScopedFeatureList::FeatureAndParams>
-        enabled_features;
-    std::vector<base::Feature> disabled_features;
+    std::vector<base::test::FeatureRef> enabled_features;
+    std::vector<base::test::FeatureRef> disabled_features;
 
-    enabled_features.emplace_back(features::kSignedHTTPExchange,
-                                  base::FieldTrialParams());
+    enabled_features.emplace_back(features::kSignedHTTPExchange);
 
-    if (digital_asset_links_enabled()) {
-      enabled_features.emplace_back(
-          lookalikes::features::kLookalikeDigitalAssetLinks,
-          base::FieldTrialParams());
+    if (GetParam() == PrewarmLookalike::kPrewarm) {
+      enabled_features.emplace_back(kPrewarmLookalikeCheck);
     } else {
-      disabled_features.push_back(
-          lookalikes::features::kLookalikeDigitalAssetLinks);
+      disabled_features.emplace_back(kPrewarmLookalikeCheck);
     }
-    feature_list_.InitWithFeaturesAndParameters(enabled_features,
-                                                disabled_features);
-    reputation::InitializeSafetyTipConfig();
+
+    feature_list_.InitWithFeatures(enabled_features, disabled_features);
     InProcessBrowserTest::SetUp();
   }
-
-  bool digital_asset_links_enabled() const { return GetParam(); }
 
   void SetUpOnMainThread() override {
     host_resolver()->AddRule("*", "127.0.0.1");
@@ -243,36 +259,13 @@ class LookalikeUrlNavigationThrottleBrowserTest
         LookalikeUrlService::Get(browser()->profile());
     lookalike_service->SetClockForTesting(&test_clock_);
 
-    // Use test top domain lists instead of the actual list.
-    url_formatter::IDNSpoofChecker::HuffmanTrieParams trie_params{
-        test::kTopDomainsHuffmanTree, sizeof(test::kTopDomainsHuffmanTree),
-        test::kTopDomainsTrie, test::kTopDomainsTrieBits,
-        test::kTopDomainsRootPosition};
-    url_formatter::IDNSpoofChecker::SetTrieParamsForTesting(trie_params);
-
-    // Use test top 500 domain skeletons instead of the actual list.
-    Top500DomainsParams top500_params{
-        test_top500_domains::kTop500EditDistanceSkeletons,
-        test_top500_domains::kNumTop500EditDistanceSkeletons};
-    SetTop500DomainsParamsForTesting(top500_params);
-
-    // Use test keywords instead of the actual list. This isn't strictly
-    // necessary as this test doesn't use reputation service, but it's good
-    // practice.
-    ReputationService* rep_service =
-        ReputationService::Get(browser()->profile());
-    rep_service->SetSensitiveKeywordsForTesting(
-        test_top500_domains::kTopKeywords,
-        test_top500_domains::kNumTopKeywords);
+    SetUpLookalikeTestParams();
+    InProcessBrowserTest::SetUpOnMainThread();
   }
 
   void TearDownOnMainThread() override {
-    url_formatter::IDNSpoofChecker::RestoreTrieParamsForTesting();
-    ResetTop500DomainsParamsForTesting();
-
-    ReputationService* rep_service =
-        ReputationService::Get(browser()->profile());
-    rep_service->ResetSensitiveKeywordsForTesting();
+    InProcessBrowserTest::TearDownOnMainThread();
+    TearDownLookalikeTestParams();
   }
 
   GURL GetURL(const char* hostname) const {
@@ -458,7 +451,8 @@ class LookalikeUrlNavigationThrottleBrowserTest
 
 INSTANTIATE_TEST_SUITE_P(All,
                          LookalikeUrlNavigationThrottleBrowserTest,
-                         testing::Bool() /* digital_asset_links_enabled */);
+                         ::testing::Values(PrewarmLookalike::kNoPrewarm,
+                                           PrewarmLookalike::kPrewarm));
 
 // Navigating to a non-IDN shouldn't show an interstitial or record metrics.
 // TODO(https://crbug.com1207573): re-enable when flakiness is fixed.
@@ -537,6 +531,36 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
   SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
   base::HistogramTester histograms;
 
+  TestMetricsRecordedAndInterstitialShown(
+      browser(), histograms, kNavigatedUrl, kExpectedSuggestedUrl,
+      NavigationSuggestionEvent::kMatchTargetEmbedding);
+  CheckUkm({kNavigatedUrl}, "MatchType",
+           LookalikeUrlMatchType::kTargetEmbedding);
+  CheckUkm({kNavigatedUrl}, "TriggeredByInitialUrl", false);
+}
+
+// Embedding a top domain would normally show an interstitial, but shouldn't
+// here because it's narrowly allowlisted.
+IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
+                       TargetEmbedding_ScopedAllowlistMatch) {
+  ConfigureAllowlistWithScopes();
+  const GURL kNavigatedUrl = GetURL("google.com.may-spoof-google.com");
+  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
+
+  TestInterstitialNotShown(browser(), kNavigatedUrl);
+  CheckNoUkm();
+}
+
+// Same as TargetEmbedding_ScopedAllowlistMatch, but the attacker-controlled
+// domain is spoofing an unauthorized victim. This should show a warning.
+IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
+                       TargetEmbedding_ScopedAllowlistMatchWrongDomain) {
+  ConfigureAllowlistWithScopes();
+  const GURL kNavigatedUrl = GetURL("blogspot.com.may-spoof-google.com");
+  const GURL kExpectedSuggestedUrl = GetURLWithoutPath("blogspot.com");
+  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
+
+  base::HistogramTester histograms;
   TestMetricsRecordedAndInterstitialShown(
       browser(), histograms, kNavigatedUrl, kExpectedSuggestedUrl,
       NavigationSuggestionEvent::kMatchTargetEmbedding);
@@ -770,50 +794,28 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
            LookalikeUrlMatchType::kEditDistanceSiteEngagement);
 }
 
-// Navigate to a domain with a character swap of 1 to an engaged domain.
-// This should record metrics, but should not show a lookalike warning
-// interstitial yet.
+// Navigate to a domain within a character swap of 1 to a top domain.
+// This should not record interstitial metrics as it'll display a safety tip.
 IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
-                       CharacterSwap_EngagedDomain_SkeletonMatch) {
+                       CharacterSwap_TopDomain_Match_ShouldNotRecordMetrics) {
   base::HistogramTester histograms;
-  SetEngagementScore(browser(), GURL("https://character-swap.com"),
-                     kHighEngagement);
-
-  // The skeleton of this domain is one character swap from the skeleton of
-  // character-swap.com.
-  const GURL kNavigatedUrl = GetURL("character-wsap.com");
+  const GURL kNavigatedUrl = GetURL("goolge.com");
   // Even if the navigated site has a low engagement score, it should be
   // considered for lookalike suggestions.
   SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
-  // Advance clock to force a fetch of new engaged sites list.
-  test_clock()->Advance(base::Hours(1));
-
-  content::WebContents* tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  content::WebContentsConsoleObserver console_observer(tab);
-  console_observer.SetPattern("Chrome has determined that*character-wsap.com*");
 
   TestInterstitialNotShown(browser(), kNavigatedUrl);
-  console_observer.Wait();
-
-  histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
-  histograms.ExpectBucketCount(
-      lookalikes::kHistogramName,
-      NavigationSuggestionEvent::kMatchCharacterSwapSiteEngagement, 1);
-
-  CheckUkm({kNavigatedUrl}, "MatchType",
-           LookalikeUrlMatchType::kCharacterSwapSiteEngagement);
+  histograms.ExpectTotalCount(lookalikes::kHistogramName, 0);
+  CheckNoUkm();
 }
 
-// Same as CharacterSwap_EngagedDomain_SkeletonMatch, but this time
-// the match is on the actual hostnames and not skeletons. Note that
-// the skeletons of example.com and éxaplme.com don't have exactly
-// one character swap (exarnple.com and exaprnle.com)
+// Tests that a hostname on a safe TLD can spoof another hostname without a
+// lookalike warning.
 IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
-                       CharacterSwap_EngagedDomain_HostnameMatch) {
+                       Idn_SafeTLD_CanSpoof) {
   base::HistogramTester histograms;
-  SetEngagementScore(browser(), GURL("https://example.com"), kHighEngagement);
-  const GURL kNavigatedUrl = GetURL("éxapmle.com");
+  SetEngagementScore(browser(), GURL("https://digital.gov"), kHighEngagement);
+  const GURL kNavigatedUrl = GetURL("digitál.gov");
   // Even if the navigated site has a low engagement score, it should be
   // considered for lookalike suggestions.
   SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
@@ -821,13 +823,8 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
   test_clock()->Advance(base::Hours(1));
 
   TestInterstitialNotShown(browser(), kNavigatedUrl);
-  histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
-  histograms.ExpectBucketCount(
-      lookalikes::kHistogramName,
-      NavigationSuggestionEvent::kMatchCharacterSwapSiteEngagement, 1);
-
-  CheckUkm({kNavigatedUrl}, "MatchType",
-           LookalikeUrlMatchType::kCharacterSwapSiteEngagement);
+  histograms.ExpectTotalCount(lookalikes::kHistogramName, 0);
+  CheckNoUkm();
 }
 
 // Navigate to a domain within an edit distance of 1 to a top domain.
@@ -851,44 +848,6 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
                                1);
 
   CheckUkm({kNavigatedUrl}, "MatchType", LookalikeUrlMatchType::kEditDistance);
-}
-
-// Navigate to a domain within a character swap of 1 to a top domain.
-// This should record metrics, but should not show a lookalike warning
-// interstitial yet.
-IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
-                       CharacterSwap_TopDomain_Match) {
-  base::HistogramTester histograms;
-  const GURL kNavigatedUrl = GetURL("goolge.com");
-  // Even if the navigated site has a low engagement score, it should be
-  // considered for lookalike suggestions.
-  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
-
-  TestInterstitialNotShown(browser(), kNavigatedUrl);
-  histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
-  histograms.ExpectBucketCount(
-      lookalikes::kHistogramName,
-      NavigationSuggestionEvent::kMatchCharacterSwapTop500, 1);
-
-  CheckUkm({kNavigatedUrl}, "MatchType",
-           LookalikeUrlMatchType::kCharacterSwapTop500);
-}
-
-// Navigate to a domain within a character swap of 1 to a top domain,
-// but the character swap is at the registry. This should not be flagged
-// as a character swap match.
-IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
-                       CharacterSwap_TopDomainWithDifferentRegistry_NoMatch) {
-  base::HistogramTester histograms;
-  // google.sr is within one character swap of google.rs which is a top domain.
-  const GURL kNavigatedUrl = GetURL("google.sr");
-  // Even if the navigated site has a low engagement score, it should be
-  // considered for lookalike suggestions.
-  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
-
-  TestInterstitialNotShown(browser(), kNavigatedUrl);
-  histograms.ExpectTotalCount(lookalikes::kHistogramName, 0);
-  CheckNoUkm();
 }
 
 // Navigate to a domain within an edit distance of 1 to a top domain, but that
@@ -1066,7 +1025,8 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
         NavigationSuggestionEvent::kMatchSiteEngagement);
 
     ukm_urls.push_back(kNavigatedUrl);
-    CheckUkm(ukm_urls, "MatchType", LookalikeUrlMatchType::kSiteEngagement);
+    CheckUkm(ukm_urls, "MatchType",
+             LookalikeUrlMatchType::kSkeletonMatchSiteEngagement);
   }
 }
 
@@ -1169,7 +1129,7 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
       NavigationSuggestionEvent::kMatchSiteEngagement);
 
   CheckUkm({kNavigatedUrl}, "MatchType",
-           LookalikeUrlMatchType::kSiteEngagement);
+           LookalikeUrlMatchType::kSkeletonMatchSiteEngagement);
 }
 
 // Similar to Idn_SiteEngagement_Match, but tests a single domain. Also checks
@@ -1200,7 +1160,8 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
         NavigationSuggestionEvent::kMatchSiteEngagement);
 
     ukm_urls.push_back(kNavigatedUrl);
-    CheckUkm(ukm_urls, "MatchType", LookalikeUrlMatchType::kSiteEngagement);
+    CheckUkm(ukm_urls, "MatchType",
+             LookalikeUrlMatchType::kSkeletonMatchSiteEngagement);
   }
 
   // Incognito shouldn't record metrics because there are no engaged sites.
@@ -1225,7 +1186,8 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
         incognito, histograms, kNavigatedUrl, kEngagedUrl,
         NavigationSuggestionEvent::kMatchSiteEngagement);
     ukm_urls.push_back(kNavigatedUrl);
-    CheckUkm(ukm_urls, "MatchType", LookalikeUrlMatchType::kSiteEngagement);
+    CheckUkm(ukm_urls, "MatchType",
+             LookalikeUrlMatchType::kSkeletonMatchSiteEngagement);
   }
 
   // Main profile shouldn't record metrics because there are no engaged sites.
@@ -1302,7 +1264,7 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
       NavigationSuggestionEvent::kMatchSiteEngagement);
 
   CheckUkm({kNavigatedUrl}, "MatchType",
-           LookalikeUrlMatchType::kSiteEngagement);
+           LookalikeUrlMatchType::kSkeletonMatchSiteEngagement);
 }
 
 // Navigate to lookalike domains that redirect to benign domains and ensure that
@@ -1501,6 +1463,60 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
                            embedded_test_server()->GetURL("example.net", "/"));
 }
 
+// Navigate to a URL that triggers combo squatting heuristic via the
+// hard coded brand name list. This should record metrics but shouldn't show
+// an interstitial.
+IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
+                       ComboSquatting_ShouldRecordMetricsWithoutUI) {
+  base::HistogramTester histograms;
+  const GURL kNavigatedUrl = GetURL("google-login.com");
+  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
+
+  TestInterstitialNotShown(browser(), kNavigatedUrl);
+
+  histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
+  histograms.ExpectBucketCount(lookalikes::kHistogramName,
+                               NavigationSuggestionEvent::kComboSquatting, 1);
+
+  CheckUkm({kNavigatedUrl}, "MatchType",
+           LookalikeUrlMatchType::kComboSquatting);
+  CheckUkm({kNavigatedUrl}, "TriggeredByInitialUrl", false);
+}
+
+// Navigate to a URL that triggers combo squatting heuristic via a
+// brand name from engaged sites. This should record metrics but shouldn't show
+// an interstitial.
+IN_PROC_BROWSER_TEST_P(
+    LookalikeUrlNavigationThrottleBrowserTest,
+    ComboSquatting_EngagedSites_ShouldRecordMetricsWithoutUI) {
+  base::HistogramTester histograms;
+  SetEngagementScore(browser(), GURL("https://example.com"), kHighEngagement);
+  const GURL kNavigatedUrl = GetURL("example-login.com");
+  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
+
+  TestInterstitialNotShown(browser(), kNavigatedUrl);
+
+  histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
+  histograms.ExpectBucketCount(
+      lookalikes::kHistogramName,
+      NavigationSuggestionEvent::kComboSquattingSiteEngagement, 1);
+
+  CheckUkm({kNavigatedUrl}, "MatchType",
+           LookalikeUrlMatchType::kComboSquattingSiteEngagement);
+  CheckUkm({kNavigatedUrl}, "TriggeredByInitialUrl", false);
+}
+
+// Combo Squatting shouldn't trigger on allowlisted sites and no
+// UKM should be recorded.
+IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleBrowserTest,
+                       ComboSquatting_ShouldNotTriggeredForAllowlist) {
+  const GURL kNavigatedUrl = GetURL("google-login.com");
+  SetEngagementScore(browser(), kNavigatedUrl, kLowEngagement);
+  reputation::SetSafetyTipAllowlistPatterns({"google-login.com/"}, {}, {});
+  TestInterstitialNotShown(browser(), kNavigatedUrl);
+  CheckNoUkm();
+}
+
 scoped_refptr<net::X509Certificate> LoadCertificate() {
   constexpr char kCertFileName[] = "prime256v1-sha256-google-com.public.pem";
 
@@ -1518,7 +1534,7 @@ class LookalikeUrlNavigationThrottleSignedExchangeBrowserTest
     : public LookalikeUrlNavigationThrottleBrowserTest {
  public:
   LookalikeUrlNavigationThrottleSignedExchangeBrowserTest() {
-    net::EmbeddedTestServer::RegisterTestCerts();
+    scoped_test_root_ = net::EmbeddedTestServer::RegisterTestCerts();
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
@@ -1603,13 +1619,15 @@ class LookalikeUrlNavigationThrottleSignedExchangeBrowserTest
         it->second;
   }
 
+  net::ScopedTestRoot scoped_test_root_;
   std::map<GURL, std::string> url_accept_header_map_;
 };
 
 INSTANTIATE_TEST_SUITE_P(
     All,
     LookalikeUrlNavigationThrottleSignedExchangeBrowserTest,
-    testing::Bool() /* digital_asset_links_enabled */);
+    ::testing::Values(PrewarmLookalike::kNoPrewarm,
+                      PrewarmLookalike::kPrewarm));
 
 // Navigates to a 127.0.0.1 URL that serves a signed exchange for
 // google-com.example.org. This navigation should be blocked by the target
@@ -1721,404 +1739,69 @@ IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottleSignedExchangeBrowserTest,
 // as a normal redirect. In fact, InnerAndOuterUrlsLookalikes_ShouldBlock
 // is actually testing this right now, fix it.
 
-// Tests for Digital Asset Links.
-class LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest
+class LookalikeUrlNavigationThrottlePrerenderBrowserTest
     : public LookalikeUrlNavigationThrottleBrowserTest {
  public:
-  struct TestSite {
-    std::string hostname;
-    std::string manifest;
-    bool slow_load = false;
-  };
+  LookalikeUrlNavigationThrottlePrerenderBrowserTest() = default;
+  ~LookalikeUrlNavigationThrottlePrerenderBrowserTest() override = default;
 
-  enum SlowLoad { kNone, kLookalike, kTarget };
-  // Sets up the site |lookalike_hostname| to serve a manifest with contents
-  // |lookalike_manifest|, and the site |target_hostname| to serve a manifest
-  // with contents |target_manifest| and navigates to |lookalike_hostname|.
-  // Expects an interstitial with the suggested hostname
-  // |expected_suggested_hostname|.
-  void TestExpectInterstitial(const base::HistogramTester& histograms,
-                              const char* lookalike_hostname,
-                              const std::string& lookalike_manifest,
-                              const char* target_hostname,
-                              const std::string& target_manifest,
-                              const char* expected_suggested_hostname,
-                              bool is_target_embedding,
-                              SlowLoad slow_load = SlowLoad::kNone) {
-    const GURL kNavigatedUrl = MakeURL(lookalike_hostname);
-    const std::vector<TestSite> sites{
-        {lookalike_hostname, lookalike_manifest,
-         slow_load == SlowLoad::kLookalike},
-        {target_hostname, target_manifest, slow_load == SlowLoad::kTarget},
-    };
-    NavigationSuggestionEvent expected_event =
-        is_target_embedding ? NavigationSuggestionEvent::kMatchTargetEmbedding
-                            : NavigationSuggestionEvent::kMatchSkeletonTop500;
-    SetUpManifests(sites);
-    TestMetricsRecordedAndInterstitialShown(
-        browser(), histograms, kNavigatedUrl,
-        MakeURL(expected_suggested_hostname), expected_event);
-    CheckUkm({kNavigatedUrl}, "MatchType",
-             is_target_embedding ? LookalikeUrlMatchType::kTargetEmbedding
-                                 : LookalikeUrlMatchType::kSkeletonMatchTop500);
-    // Ensure that there was indeed a lookalike match.
-    histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
-    histograms.ExpectBucketCount(lookalikes::kHistogramName, expected_event, 1);
+  // |prerender_helper_| has a ScopedFeatureList so we needed to delay its
+  // creation until now because the base class also uses ScopedFeatureList and
+  // initialization order matters.
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    LookalikeUrlNavigationThrottleBrowserTest::SetUpCommandLine(command_line);
+    prerender_helper_ = std::make_unique<content::test::PrerenderTestHelper>(
+        base::BindRepeating(
+            &LookalikeUrlNavigationThrottlePrerenderBrowserTest::web_contents,
+            base::Unretained(this)));
   }
 
-  // Sets up the site |lookalike_hostname| to serve a manifest with contents
-  // |lookalike_manifest|, and the site |target_hostname| to serve a manifest
-  // with contents |target_manifest| and navigates to |lookalike_hostname|.
-  // Expects no interstitial.
-  void TestNoInterstitial(const base::HistogramTester& histograms,
-                          const char* lookalike_hostname,
-                          const std::string& lookalike_manifest,
-                          const char* target_hostname,
-                          const std::string& target_manifest) {
-    const std::vector<TestSite> sites{
-        {lookalike_hostname, lookalike_manifest},
-        {target_hostname, target_manifest},
-    };
-    SetUpManifests(sites);
-
-    TestInterstitialNotShown(browser(),  // histograms,
-                             MakeURL(lookalike_hostname));
-    CheckNoUkm();
-    // Ensure that there was indeed a lookalike match.
-    histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
-    histograms.ExpectBucketCount(
-        lookalikes::kHistogramName,
-        NavigationSuggestionEvent::kMatchSkeletonTop500, 1);
+  void SetUpOnMainThread() override {
+    prerender_helper_->SetUp(embedded_test_server());
+    LookalikeUrlNavigationThrottleBrowserTest::SetUpOnMainThread();
   }
 
-  void SetUpManifests(const std::vector<TestSite>& sites) {
-    url_loader_interceptor_ =
-        std::make_unique<content::URLLoaderInterceptor>(base::BindRepeating(
-            &LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest::
-                OnIntercept,
-            base::Unretained(this), sites));
+  content::WebContents* web_contents() {
+    return browser()->tab_strip_model()->GetActiveWebContents();
   }
 
-  void TearDownOnMainThread() override { url_loader_interceptor_.reset(); }
-
-  bool OnIntercept(const std::vector<TestSite>& sites,
-                   content::URLLoaderInterceptor::RequestParams* params) {
-    for (const TestSite& site : sites) {
-      if (params->url_request.url == MakeManifestURL(site.hostname)) {
-        if (site.slow_load) {
-          test_clock()->Advance(base::Minutes(15));
-        }
-        if (!site.manifest.empty()) {
-          // Serve manifest contents:
-          std::string headers =
-              "HTTP/1.1 200 OK\nContent-Type: application/json; "
-              "charset=utf-8\n";
-          content::URLLoaderInterceptor::WriteResponse(headers, site.manifest,
-                                                       params->client.get());
-        } else {
-          // Serve error:
-          params->client->OnComplete(
-              network::URLLoaderCompletionStatus(net::ERR_CONNECTION_RESET));
-        }
-        return true;
-      }
-      if (params->url_request.url == MakeURL(site.hostname)) {
-        content::URLLoaderInterceptor::WriteResponse(
-            "HTTP/1.1 200 OK\nContent-Type: text/html; charset=utf-8\n",
-            "<html>Test page</html>", params->client.get());
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static GURL MakeManifestURL(const std::string& hostname) {
-    return GURL("https://" + hostname + "/.well-known/assetlinks.json");
-  }
-
-  static GURL MakeURL(const std::string& hostname) {
-    return GURL("https://" + hostname);
-  }
-
-  static std::string MakeManifestWithTarget(const char* target_domain,
-                                            bool invalid = false) {
-    const char* const format = R"([{
-        "relation": ["%s"],
-        "target": {
-          "namespace": "web",
-          "site": "https://%s"
-        }
-      }]
-      )";
-    // Go through MakeURL to convert target_domain to punycode.
-    return base::StringPrintf(format,
-                              (invalid ? "junkvalue" : "lookalikes/allowlist"),
-                              MakeURL(target_domain).host().c_str());
-  }
-
- private:
-  std::unique_ptr<content::URLLoaderInterceptor> url_loader_interceptor_;
+ protected:
+  std::unique_ptr<content::test::PrerenderTestHelper> prerender_helper_;
 };
 
-INSTANTIATE_TEST_SUITE_P(
-    All,
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    testing::Values(true) /* digital_asset_links_enabled */);
+INSTANTIATE_TEST_SUITE_P(All,
+                         LookalikeUrlNavigationThrottlePrerenderBrowserTest,
+                         ::testing::Values(PrewarmLookalike::kNoPrewarm,
+                                           PrewarmLookalike::kPrewarm));
 
-// Neither site serves a manifest.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    NoAssetLinks_ShowInterstitial) {
-  base::HistogramTester histograms;
-  TestExpectInterstitial(histograms, "googlé.com", std::string(), "google.com",
-                         std::string(),
-                         /*expected_suggested_hostname=*/"google.com",
-                         /*is_target_embedding=*/false);
+IN_PROC_BROWSER_TEST_P(LookalikeUrlNavigationThrottlePrerenderBrowserTest,
+                       ShowInterstitialAfterActivation) {
+  // TODO(crbug.com/1176054): Cross-origin prerender isn't yet supported, so we
+  // trigger prerendering a page that needs to show an interstitial like this.
+  // Once cross-origin prerender is supported, this should be updated to more
+  // realistic use-case. i.e. navigate to an primary page with a normal URL and
+  // prerender/activate with a lookalike URL.
+  const GURL kNavigateUrl = GetURL("googlé.com");
+  LoadAndCheckInterstitialAt(browser(), kNavigateUrl);
+  SendInterstitialCommandSync(browser(),
+                              SecurityInterstitialCommand::CMD_PROCEED);
+  ReputationService::Get(browser()->profile())
+      ->ResetWarningDismissedETLDPlusOnesForTesting();
 
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kLookalikeManifestFailed, 1);
-}
+  // Start a prerender.
+  const GURL kPrerenderUrl =
+      embedded_test_server()->GetURL("googlé.com", "/title1.html?prerender");
+  content::test::PrerenderHostObserver host_observer(*web_contents(),
+                                                     kPrerenderUrl);
+  prerender_helper_->AddPrerenderAsync(kPrerenderUrl);
 
-// Both lookalike and target sites serve valid asset link manifests pointing to
-// each other.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidAssetLinks_IgnoreInterstitial) {
-  base::HistogramTester histograms;
+  // Wait until the prerender destroyed.
+  host_observer.WaitForDestroyed();
+  EXPECT_EQ(nullptr, GetCurrentInterstitial(web_contents()));
 
-  TestNoInterstitial(histograms, "googlé.com",
-                     MakeManifestWithTarget("google.com"), "google.com",
-                     MakeManifestWithTarget("googlé.com"));
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kValidationSucceeded, 1);
-
-  // Try again. The first try should have added the lookalike site to the
-  // allowlist so we shouldn't fetch the manifests again.
-  TestInterstitialNotShown(browser(), MakeURL("googlé.com"));
-  CheckNoUkm();
-  // Ensure that there was indeed a lookalike match.
-  histograms.ExpectTotalCount(lookalikes::kHistogramName, 1);
-  histograms.ExpectBucketCount(lookalikes::kHistogramName,
-                               NavigationSuggestionEvent::kMatchSkeletonTop500,
-                               1);
-  // Validator histogram should remain unchanged.
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kValidationSucceeded, 1);
-}
-
-// Similar to ValidAssetLinks_IgnoreInterstitial, but the lookalike manifest
-// fetch times out.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidAssetLinks_LookalikeTimeout_ShowInterstitial) {
-  base::HistogramTester histograms;
-
-  TestExpectInterstitial(histograms, "googlé.com",
-                         MakeManifestWithTarget("google.com"), "google.com",
-                         MakeManifestWithTarget("googlé.com"),
-                         /*expected_suggested_hostname=*/"google.com",
-                         /*is_target_embedding=*/false, SlowLoad::kLookalike);
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kLookalikeManifestTimedOut, 1);
-}
-
-// Similar to ValidAssetLinks_IgnoreInterstitial, but the target manifest fetch
-// times out.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidAssetLinks_TargetTimeout_ShowInterstitial) {
-  base::HistogramTester histograms;
-
-  TestExpectInterstitial(histograms, "googlé.com",
-                         MakeManifestWithTarget("google.com"), "google.com",
-                         MakeManifestWithTarget("googlé.com"),
-                         /*expected_suggested_hostname=*/"google.com",
-                         /*is_target_embedding=*/false, SlowLoad::kTarget);
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kTargetManifestTimedOut, 1);
-}
-
-// Both lookalike and target sites serve asset links. Lookalike site's manifest
-// has an entry for the target, but the target site's manifest doesn't have one
-// for the lookalike.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidAssetLinks_TargetManifestNotMatching_ShowInterstitial) {
-  base::HistogramTester histograms;
-  TestExpectInterstitial(histograms, "góógle.com",
-                         MakeManifestWithTarget("google.com"), "google.com",
-                         MakeManifestWithTarget("site.test"),
-                         /*expected_suggested_hostname=*/"google.com",
-                         /*is_target_embedding=*/false);
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kTargetManifestFailed, 1);
-}
-
-// Both lookalike and target sites serve asset links. Lookalike site's manifest
-// has an entry for the target, but the target site's manifest doesn't have
-// valid content.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidAssetLinks_TargetManifestInvalid_ShowInterstitial) {
-  base::HistogramTester histograms;
-  TestExpectInterstitial(histograms, "góógle.com",
-                         MakeManifestWithTarget("google.com"), "google.com",
-                         MakeManifestWithTarget("góógle.com", /*invalid=*/true),
-                         /*expected_suggested_hostname=*/"google.com",
-                         /*is_target_embedding=*/false);
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kTargetManifestFailed, 1);
-}
-
-// Both lookalike and target sites are subdomains and serve valid asset links.
-// However, lookalike heuristics match to eTLD+1s, so the lookalike's manifest
-// will fail to validate because it points to the full URL instead.
-// TODO(meacer): Support this use case.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidSubdomainAssetLinks_NoMatch_ShowInterstitial) {
-  base::HistogramTester histograms;
-  TestExpectInterstitial(
-      histograms, "docs.góógle.com", MakeManifestWithTarget("docs.google.com"),
-      "docs.google.com", MakeManifestWithTarget("docs.góógle.com"),
-      /*expected_suggested_hostname=*/"google.com",
-      /*is_target_embedding=*/false);
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kLookalikeManifestFailed, 1);
-}
-
-// Both lookalike and target sites are subdomains and serve valid asset links.
-// This time, the lookalike's manifest points to the eTLD+1 of the matching
-// domain so the validation is successful.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidSubdomainAssetLinks_IgnoreInterstitial) {
-  base::HistogramTester histograms;
-  TestNoInterstitial(histograms, "docs.góógle.com",
-                     MakeManifestWithTarget("google.com"), "google.com",
-                     MakeManifestWithTarget("docs.góógle.com"));
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kValidationSucceeded, 1);
-}
-
-// Similar to ValidSubdomainAssetLinks_IgnoreInterstitial with a few
-// differences:
-// - Lookalike is a subdomain but target is an eTLD+1 and lookalike's manifest
-//   points to this eTLD+1.
-// - This time, the target's manifest points to the eTLD+1 of the lookalike
-//   instead of its fully qualified domain name.
-// Validation is still successful despite the fact that the target manifest
-// doesn't list the FQDN of the lookalike.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidSubdomainAssetLinks_TargetDoesntListLookalikeFQDN_IgnoreInterstitial) {
-  base::HistogramTester histograms;
-  TestNoInterstitial(
-      histograms,
-      /*lookalike_hostname=*/"docs.góógle.com",
-      /*lookalike_manifest=*/MakeManifestWithTarget("google.com"),
-      /*target_hostname=*/"google.com",
-      /*target_manifest=*/MakeManifestWithTarget("góógle.com"));
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kValidationSucceeded, 1);
-}
-
-// Similar to ValidSubdomainAssetLinks_NoMatch_ShowInterstitial but the target
-// is a subdomain. In some cases the target embedding heuristic can suggest
-// subdomains instead of eTLD+1s. This doesn't show an interstitial.
-// TODO(crbug.com/1174862): This currently isn't testing the right thing because
-// Chrome suggests targetembedding.com instead of test.targetembedding.com.
-IN_PROC_BROWSER_TEST_P(
-    LookalikeUrlNavigationThrottleDigitalAssetLinksBrowserTest,
-    ValidSubdomainAssetLinks_TargetIsSubdomain_ShowInterstitial) {
-  const char* kSuggestedSite = "targetembedding.com";
-  SetEngagementScore(browser(), GetURLWithoutPath(kSuggestedSite),
-                     kHighEngagement);
-
-  base::HistogramTester histograms;
-  TestExpectInterstitial(
-      histograms,
-      /*lookalike_hostname=*/"test-targetembedding-com.com",
-      /*lookalike_manifest=*/MakeManifestWithTarget("test.targetembedding.com"),
-      /*target_hostname=*/"test.targetembedding.com",
-      /*target_manifest=*/
-      MakeManifestWithTarget("test-targetembedding-com.com"),
-      /*expected_suggested_hostname=*/kSuggestedSite,
-      /*is_target_embedding=*/true);
-
-  histograms.ExpectTotalCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName, 2);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kStarted, 1);
-  histograms.ExpectBucketCount(
-      DigitalAssetLinkCrossValidator::kEventHistogramName,
-      DigitalAssetLinkCrossValidator::Event::kLookalikeManifestFailed, 1);
+  // Activate the prerendered page.
+  prerender_helper_->NavigatePrimaryPage(kPrerenderUrl);
+  EXPECT_EQ(LookalikeUrlBlockingPage::kTypeForTesting,
+            GetInterstitialType(web_contents()));
+  EXPECT_FALSE(IsUrlShowing(browser()));
 }

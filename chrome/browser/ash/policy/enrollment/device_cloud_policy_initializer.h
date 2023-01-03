@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,23 +13,20 @@
 #include "base/scoped_observation.h"
 #include "chrome/browser/ash/policy/core/device_cloud_policy_manager_ash.h"
 #include "chrome/browser/ash/policy/server_backed_state/server_backed_state_keys_broker.h"
-#include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_store.h"
 #include "components/policy/core/common/cloud/dm_auth.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace ash {
-class InstallAttributes;
-}
-
-namespace chromeos {
 namespace system {
 class StatisticsProvider;
 }
-}  // namespace chromeos
+class InstallAttributes;
+}  // namespace ash
 
 namespace policy {
+class CloudPolicyClient;
 class DeviceCloudPolicyStoreAsh;
 class DeviceManagementService;
 
@@ -53,7 +50,7 @@ class DeviceCloudPolicyInitializer
       ServerBackedStateKeysBroker* state_keys_broker,
       DeviceCloudPolicyStoreAsh* policy_store,
       DeviceCloudPolicyManagerAsh* policy_manager,
-      chromeos::system::StatisticsProvider* statistics_provider);
+      ash::system::StatisticsProvider* statistics_provider);
 
   DeviceCloudPolicyInitializer(const DeviceCloudPolicyInitializer&) = delete;
   DeviceCloudPolicyInitializer& operator=(const DeviceCloudPolicyInitializer&) =
@@ -70,7 +67,6 @@ class DeviceCloudPolicyInitializer
 
   // DeviceCloudPolicyManagerAsh::Observer
   void OnDeviceCloudPolicyManagerConnected() override;
-  void OnDeviceCloudPolicyManagerDisconnected() override;
   void OnDeviceCloudPolicyManagerGotRegistry() override;
 
   void SetSystemURLLoaderFactoryForTesting(
@@ -84,23 +80,18 @@ class DeviceCloudPolicyInitializer
   void TryToStartConnection();
   void StartConnection(std::unique_ptr<CloudPolicyClient> client);
 
-  bool GetMachineFlag(const std::string& key, bool default_value) const;
-
   DeviceManagementService* enterprise_service_;
   ash::InstallAttributes* install_attributes_;
   ServerBackedStateKeysBroker* state_keys_broker_;
   DeviceCloudPolicyStoreAsh* policy_store_;
   DeviceCloudPolicyManagerAsh* policy_manager_;
-  chromeos::system::StatisticsProvider* statistics_provider_;
+  ash::system::StatisticsProvider* statistics_provider_;
   bool is_initialized_ = false;
   bool policy_manager_store_ready_notified_ = false;
 
   base::CallbackListSubscription state_keys_update_subscription_;
-  base::ScopedObservation<
-      DeviceCloudPolicyManagerAsh,
-      DeviceCloudPolicyManagerAsh::Observer,
-      &DeviceCloudPolicyManagerAsh::AddDeviceCloudPolicyManagerObserver,
-      &DeviceCloudPolicyManagerAsh::RemoveDeviceCloudPolicyManagerObserver>
+  base::ScopedObservation<DeviceCloudPolicyManagerAsh,
+                          DeviceCloudPolicyManagerAsh::Observer>
       policy_manager_observer_{this};
 
   // The URLLoaderFactory set in tests.

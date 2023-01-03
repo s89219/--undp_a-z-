@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "ash/wm/desks/desks_histogram_enums.h"
 #include "ash/wm/desks/root_window_desk_switch_animator_test_api.h"
 #include "base/run_loop.h"
-#include "components/viz/common/features.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 
@@ -54,9 +53,7 @@ gfx::Rect GetVisibleBounds(ui::Layer* child_layer,
       use_target_transform ? animating_layer->GetTargetTransform()
                            : animating_layer->transform();
   DCHECK(animating_layer_transform.IsIdentityOr2DTranslation());
-  gfx::RectF bounds(child_layer->bounds());
-  animating_layer_transform.TransformRect(&bounds);
-  return gfx::ToRoundedRect(bounds);
+  return animating_layer_transform.MapRect(child_layer->bounds());
 }
 
 gfx::Rect GetTargetVisibleBounds(ui::Layer* child_layer,
@@ -181,9 +178,8 @@ TEST_F(RootWindowDeskSwitchAnimatorTest, SimpleAnimation) {
 // TODO(b/219068687): Re-enable chained desk animation tests.
 // Tests a chained animation where the replaced animation already has a
 // screenshot layer stored.
-TEST_F(RootWindowDeskSwitchAnimatorTest, ChainedAnimationNoNewScreenshot) {
-  if (::features::IsUsingSkiaRenderer())
-    GTEST_SKIP() << "Chained desk animations are flaky on SkiaRenderer.";
+TEST_F(RootWindowDeskSwitchAnimatorTest,
+       DISABLED_ChainedAnimationNoNewScreenshot) {
   InitAnimator(1, 2);
   TakeStartingDeskScreenshotAndWait();
   TakeEndingDeskScreenshotAndWait();
@@ -214,11 +210,10 @@ TEST_F(RootWindowDeskSwitchAnimatorTest, ChainedAnimationNoNewScreenshot) {
                              animation_layer));
 }
 
+// TODO(b/219068687): Re-enable chained desk animation tests.
 // Tests a chained animation where we are adding an animation to the right of
 // the current animating desks, causing the animation layer to shift left.
-TEST_F(RootWindowDeskSwitchAnimatorTest, ChainedAnimationMovingLeft) {
-  if (::features::IsUsingSkiaRenderer())
-    GTEST_SKIP() << "Chained desk animations are flaky on SkiaRenderer.";
+TEST_F(RootWindowDeskSwitchAnimatorTest, DISABLED_ChainedAnimationMovingLeft) {
   InitAnimator(1, 2);
   TakeStartingDeskScreenshotAndWait();
   TakeEndingDeskScreenshotAndWait();
@@ -258,11 +253,10 @@ TEST_F(RootWindowDeskSwitchAnimatorTest, ChainedAnimationMovingLeft) {
                              animation_layer));
 }
 
+// TODO(b/219068687): Re-enable chained desk animation tests.
 // Tests a chained animation where we are adding an animation to the left of
 // the current animating desks, causing the animation layer to shift right.
-TEST_F(RootWindowDeskSwitchAnimatorTest, ChainedAnimationMovingRight) {
-  if (::features::IsUsingSkiaRenderer())
-    GTEST_SKIP() << "Chained desk animations are flaky on SkiaRenderer.";
+TEST_F(RootWindowDeskSwitchAnimatorTest, DISABLED_ChainedAnimationMovingRight) {
   InitAnimator(3, 2);
   TakeStartingDeskScreenshotAndWait();
   TakeEndingDeskScreenshotAndWait();
@@ -299,10 +293,9 @@ TEST_F(RootWindowDeskSwitchAnimatorTest, ChainedAnimationMovingRight) {
                              animation_layer));
 }
 
+// TODO(b/219068687): Re-enable chained desk animation tests.
 // Tests a complex animation which multiple animations are started and replaced.
-TEST_F(RootWindowDeskSwitchAnimatorTest, MultipleReplacements) {
-  if (::features::IsUsingSkiaRenderer())
-    GTEST_SKIP() << "Chained desk animations are flaky on SkiaRenderer.";
+TEST_F(RootWindowDeskSwitchAnimatorTest, DISABLED_MultipleReplacements) {
   InitAnimator(1, 2);
   TakeStartingDeskScreenshotAndWait();
   TakeEndingDeskScreenshotAndWait();

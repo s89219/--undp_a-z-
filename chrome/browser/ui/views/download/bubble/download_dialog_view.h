@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,9 +26,11 @@ class DownloadDialogView : public views::View {
 
  private:
   void CloseBubble();
+  void ShowAllDownloads();
   void AddHeader();
   void AddFooter();
-  void ShowAllDownloads();
+
+  // views::View.
   void OnThemeChanged() override;
 
   raw_ptr<DownloadBubbleNavigationHandler> navigation_handler_ = nullptr;

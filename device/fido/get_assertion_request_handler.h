@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,6 +73,12 @@ class COMPONENT_EXPORT(DEVICE_FIDO) GetAssertionRequestHandler
       delete;
 
   ~GetAssertionRequestHandler() override;
+
+  // Filters the allow list of the get assertion request to the given
+  // |credential_id|. This is only valid to call for empty allow list requests.
+  void PreselectAccount(std::vector<uint8_t> credential_id);
+
+  base::WeakPtr<GetAssertionRequestHandler> GetWeakPtr();
 
  private:
   enum class State {
@@ -165,6 +171,12 @@ class COMPONENT_EXPORT(DEVICE_FIDO) GetAssertionRequestHandler
   // authenticators that need a pinUvAuthToken to service the request.
   std::map<FidoAuthenticator*, std::unique_ptr<AuthTokenRequester>>
       auth_token_requester_map_;
+
+  // preselected_credential_ is set when the UI invokes `PreselectAccount()`. It
+  // contains the ID of a platform authenticator credential chosen by the user
+  // during a resident key request prior to dispatching to that platform
+  // authenticator.
+  absl::optional<std::vector<uint8_t>> preselected_credential_;
 
   SEQUENCE_CHECKER(my_sequence_checker_);
   base::WeakPtrFactory<GetAssertionRequestHandler> weak_factory_{this};

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,10 @@
 #include "base/bind.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "chromeos/ash/components/dbus/upstart/upstart_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/api/media_perception_private/conversion_utils.h"
 #include "extensions/browser/api/media_perception_private/media_perception_api_delegate.h"
@@ -73,10 +73,8 @@ GetFailedToInstallComponentState() {
 // Pulls out the version number from a mount_point location for the media
 // perception component. Mount points look like
 // /run/imageloader/rtanalytics-light/1.0, where 1.0 is the version string.
-std::unique_ptr<std::string> ExtractVersionFromMountPoint(
-    const std::string& mount_point) {
-  return std::make_unique<std::string>(
-      base::FilePath(mount_point).BaseName().value());
+std::string ExtractVersionFromMountPoint(const std::string& mount_point) {
+  return base::FilePath(mount_point).BaseName().value();
 }
 
 }  // namespace
@@ -388,7 +386,7 @@ void MediaPerceptionAPIManager::UpstartStartProcessCallback(
   // TODO(crbug.com/1003968): Look into using
   // ObjectProxy::WaitForServiceToBeAvailable instead, since a timeout is
   // inherently not deterministic, even if it works in practice.
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&MediaPerceptionAPIManager::SendMojoInvitation,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback)),

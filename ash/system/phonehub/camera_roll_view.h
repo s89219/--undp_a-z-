@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,8 @@
 #define ASH_SYSTEM_PHONEHUB_CAMERA_ROLL_VIEW_H_
 
 #include "ash/ash_export.h"
-#include "ash/components/phonehub/camera_roll_manager.h"
 #include "base/gtest_prod_util.h"
+#include "chromeos/ash/components/phonehub/camera_roll_manager.h"
 #include "ui/views/view.h"
 #include "ui/views/view_model.h"
 

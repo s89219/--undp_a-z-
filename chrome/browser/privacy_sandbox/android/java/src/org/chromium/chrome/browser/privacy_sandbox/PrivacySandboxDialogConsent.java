@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,7 +60,7 @@ public class PrivacySandboxDialogConsent extends Dialog implements View.OnClickL
 
     @Override
     public void show() {
-        PrivacySandboxBridge.dialogActionOccurred(DialogAction.CONSENT_SHOWN);
+        PrivacySandboxBridge.promptActionOccurred(PromptAction.CONSENT_SHOWN);
         super.show();
     }
 
@@ -70,29 +70,41 @@ public class PrivacySandboxDialogConsent extends Dialog implements View.OnClickL
     public void onClick(View view) {
         int id = view.getId();
         if (id == R.id.yes_button) {
-            PrivacySandboxBridge.dialogActionOccurred(DialogAction.CONSENT_ACCEPTED);
+            PrivacySandboxBridge.promptActionOccurred(PromptAction.CONSENT_ACCEPTED);
             dismiss();
         } else if (id == R.id.no_button) {
-            PrivacySandboxBridge.dialogActionOccurred(DialogAction.CONSENT_DECLINED);
+            PrivacySandboxBridge.promptActionOccurred(PromptAction.CONSENT_DECLINED);
             dismiss();
         } else if (id == R.id.dropdown_element) {
             LinearLayout dropdownContainer = mContentView.findViewById(R.id.dropdown_container);
             if (mDropdownExpanded) {
-                PrivacySandboxBridge.dialogActionOccurred(DialogAction.CONSENT_MORE_INFO_CLOSED);
+                PrivacySandboxBridge.promptActionOccurred(PromptAction.CONSENT_MORE_INFO_CLOSED);
                 dropdownContainer.removeAllViews();
                 dropdownContainer.setVisibility(View.GONE);
             } else {
-                PrivacySandboxBridge.dialogActionOccurred(DialogAction.CONSENT_MORE_INFO_OPENED);
+                PrivacySandboxBridge.promptActionOccurred(PromptAction.CONSENT_MORE_INFO_OPENED);
                 dropdownContainer.setVisibility(View.VISIBLE);
                 mLayoutInflater.inflate(
                         R.layout.privacy_sandbox_consent_dropdown, dropdownContainer);
-                setDropdownDescription(dropdownContainer, R.id.privacy_sandbox_consent_dropdown_one,
-                        R.string.privacy_sandbox_learn_more_description_1);
-                setDropdownDescription(dropdownContainer, R.id.privacy_sandbox_consent_dropdown_two,
-                        R.string.privacy_sandbox_learn_more_description_2);
                 setDropdownDescription(dropdownContainer,
-                        R.id.privacy_sandbox_consent_dropdown_three,
-                        R.string.privacy_sandbox_learn_more_description_3);
+                        R.id.privacy_sandbox_consent_dropdown_topics_one,
+                        R.string.privacy_sandbox_learn_more_description_topics_1);
+                setDropdownDescription(dropdownContainer,
+                        R.id.privacy_sandbox_consent_dropdown_topics_two,
+                        R.string.privacy_sandbox_learn_more_description_topics_2);
+                setDropdownDescription(dropdownContainer,
+                        R.id.privacy_sandbox_consent_dropdown_topics_three,
+                        R.string.privacy_sandbox_learn_more_description_topics_3);
+
+                setDropdownDescription(dropdownContainer,
+                        R.id.privacy_sandbox_consent_dropdown_fledge_one,
+                        R.string.privacy_sandbox_learn_more_description_fledge_1);
+                setDropdownDescription(dropdownContainer,
+                        R.id.privacy_sandbox_consent_dropdown_fledge_two,
+                        R.string.privacy_sandbox_learn_more_description_fledge_2);
+                setDropdownDescription(dropdownContainer,
+                        R.id.privacy_sandbox_consent_dropdown_fledge_three,
+                        R.string.privacy_sandbox_learn_more_description_fledge_3);
             }
             mDropdownExpanded = !mDropdownExpanded;
             mExpandArrowView.setChecked(mDropdownExpanded);
@@ -115,14 +127,16 @@ public class PrivacySandboxDialogConsent extends Dialog implements View.OnClickL
     }
 
     private void updateDropdownControlContentDescription(View dropdownElement) {
-        // TODO(crbug.com/1286276): add CONCAT_TWO_STRINGS_WITH_PERIODS to Android strings and use
-        // that instead to avoid l10n issues.
-        String description = getContext().getResources().getString(
-                                     R.string.privacy_sandbox_consent_dropdown_button)
-                + ". "
-                + getContext().getResources().getString(mDropdownExpanded
-                                ? R.string.accessibility_expanded_group
-                                : R.string.accessibility_collapsed_group);
+        String dropdownButtonText = getContext().getResources().getString(
+                R.string.privacy_sandbox_consent_dropdown_button);
+
+        String collapseOrExpandedText = getContext().getResources().getString(mDropdownExpanded
+                        ? R.string.accessibility_expanded_group
+                        : R.string.accessibility_collapsed_group);
+
+        String description =
+                getContext().getResources().getString(R.string.concat_two_strings_with_periods,
+                        dropdownButtonText, collapseOrExpandedText);
         dropdownElement.setContentDescription(description);
     }
 

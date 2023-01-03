@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,8 @@ package org.chromium.content_public.browser;
 
 import android.os.Handler;
 
-import org.chromium.base.annotations.UsedByReflection;
+import org.chromium.build.annotations.UsedByReflection;
 import org.chromium.content.browser.AppWebMessagePort;
-import org.chromium.content.browser.AppWebMessagePortDescriptor;
 
 /**
  * Interface for message ports that handle postMessage requests.
@@ -33,14 +32,6 @@ public interface MessagePort {
      */
     public static MessagePort[] createPair() {
         return AppWebMessagePort.createPair();
-    }
-
-    /**
-     * Called to create a port from {@link AppWebMessagePortDescriptor}.
-     * @return A {@link MessagePort} instance.
-     */
-    public static MessagePort create(AppWebMessagePortDescriptor descriptor) {
-        return AppWebMessagePort.create(descriptor);
     }
 
     /**

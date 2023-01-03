@@ -1,11 +1,9 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef COMPONENTS_POLICY_CORE_COMMON_ASYNC_POLICY_LOADER_H_
 #define COMPONENTS_POLICY_CORE_COMMON_ASYNC_POLICY_LOADER_H_
-
-#include <memory>
 
 #include "base/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -58,7 +56,7 @@ class POLICY_EXPORT AsyncPolicyLoader {
   // Returns the currently configured policies. Load() is always invoked on
   // the background thread, except for the initial Load() at startup which is
   // invoked from the thread that owns the provider.
-  virtual std::unique_ptr<PolicyBundle> Load() = 0;
+  virtual PolicyBundle Load() = 0;
 
   // Allows implementations to finalize their initialization on the background
   // thread (e.g. setup file watchers).
@@ -71,8 +69,7 @@ class POLICY_EXPORT AsyncPolicyLoader {
   // Used by the AsyncPolicyProvider to do the initial Load(). The first load
   // is also used to initialize |last_modification_time_| and
   // |schema_map_|.
-  std::unique_ptr<PolicyBundle> InitialLoad(
-      const scoped_refptr<SchemaMap>& schemas);
+  PolicyBundle InitialLoad(const scoped_refptr<SchemaMap>& schemas);
 
   // Implementations should invoke Reload() when a change is detected. This
   // must be invoked from the background thread and will trigger a Load(),
@@ -98,10 +95,7 @@ class POLICY_EXPORT AsyncPolicyLoader {
   // Allow AsyncPolicyProvider to call Init().
   friend class AsyncPolicyProvider;
 
-  typedef base::RepeatingCallback<void(std::unique_ptr<PolicyBundle>)>
-      UpdateCallback;
-
-  void ReloadInternal(bool force);
+  using UpdateCallback = base::RepeatingCallback<void(PolicyBundle)>;
 
   // Used by the AsyncPolicyProvider to install the |update_callback_|.
   // Invoked on the background thread.
@@ -126,7 +120,6 @@ class POLICY_EXPORT AsyncPolicyLoader {
   // Task runner for running foregroud jobs.
   scoped_refptr<base::SequencedTaskRunner> ui_thread_task_runner_;
 
-  bool loading_management_trustworhiness_ = false;
   absl::optional<ManagementAuthorityTrustworthiness>
       platform_management_trustworthiness_;
 

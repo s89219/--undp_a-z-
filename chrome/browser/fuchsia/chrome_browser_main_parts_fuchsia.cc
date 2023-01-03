@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,18 +29,49 @@
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "base/numerics/clamped_math.h"
+#include "build/branding_buildflags.h"
 #include "chrome/browser/fuchsia/element_manager_impl.h"
 #include "chrome/browser/fuchsia/switches.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/fuchsia_component_support/feedback_registration.h"
 #include "components/keep_alive_registry/keep_alive_types.h"
 #include "components/keep_alive_registry/scoped_keep_alive.h"
+#include "content/public/common/content_switches.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/switches.h"
 #include "ui/ozone/public/ozone_switches.h"
 #include "ui/platform_window/fuchsia/initialize_presenter_api_view.h"
 
 namespace {
+
+// Registers product data for the Chrome browser Component. This should only
+// be called once per browser instance, and the calling thread must have an
+// async_dispatcher.
+void RegisterChromeProductData() {
+  // The URL cannot be obtained programmatically - see fxbug.dev/51490.
+  constexpr char kComponentUrl[] =
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+      "fuchsia-pkg://chrome.com/chrome#meta/chrome.cm";
+#else
+      "fuchsia-pkg://chromium.org/chrome#meta/chrome.cm";
+#endif
+
+  constexpr char kCrashProductName[] = "Chrome_Fuchsia";
+
+  constexpr char kFeedbackAnnotationsNamespace[] =
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
+      "google-chrome";
+#else
+      "chromium";
+#endif
+
+  fuchsia_component_support::RegisterProductDataForCrashReporting(
+      kComponentUrl, kCrashProductName);
+
+  fuchsia_component_support::RegisterProductDataForFeedback(
+      kFeedbackAnnotationsNamespace);
+}
 
 // Checks the supported ozone platform with Scenic if no arg is specified.
 // TODO(fxbug.dev/94001): Delete this after Flatland migration is completed.
@@ -539,7 +570,8 @@ class ChromeBrowserMainPartsFuchsia::UseGraphicalPresenter final {
     fuchsia::element::ViewSpec view_spec;
     view_spec.set_view_holder_token(std::move(view_holder_token));
     view_spec.set_view_ref(std::move(view_ref));
-    view_spec.set_annotations(fidl::Clone(element_manager_->GetAnnotations()));
+    view_spec.set_annotations(
+        element_manager_->annotations_manager().GetAnnotations());
     graphical_presenter_->PresentView(std::move(view_spec), nullptr,
                                       view_controller.NewRequest(),
                                       [](auto result) {});
@@ -553,7 +585,8 @@ class ChromeBrowserMainPartsFuchsia::UseGraphicalPresenter final {
     fuchsia::element::ViewSpec view_spec;
     view_spec.set_viewport_creation_token(std::move(viewport_creation_token));
     view_spec.set_view_ref(std::move(view_ref_pair.view_ref));
-    view_spec.set_annotations(fidl::Clone(element_manager_->GetAnnotations()));
+    view_spec.set_annotations(
+        element_manager_->annotations_manager().GetAnnotations());
     graphical_presenter_->PresentView(std::move(view_spec), nullptr,
                                       view_controller.NewRequest(),
                                       [](auto result) {});
@@ -627,9 +660,9 @@ class ChromeBrowserMainPartsFuchsia::ViewProviderRouter
 // ChromeBrowserMainPartsFuchsia -----------------------------------------------
 
 ChromeBrowserMainPartsFuchsia::ChromeBrowserMainPartsFuchsia(
-    content::MainFunctionParams parameters,
+    bool is_integration_test,
     StartupData* startup_data)
-    : ChromeBrowserMainParts(std::move(parameters), startup_data) {}
+    : ChromeBrowserMainParts(is_integration_test, startup_data) {}
 
 ChromeBrowserMainPartsFuchsia::~ChromeBrowserMainPartsFuchsia() = default;
 
@@ -645,37 +678,45 @@ int ChromeBrowserMainPartsFuchsia::PreEarlyInitialization() {
   return ChromeBrowserMainParts::PreEarlyInitialization();
 }
 
+void ChromeBrowserMainPartsFuchsia::PostCreateMainMessageLoop() {
+  RegisterChromeProductData();
+
+  ChromeBrowserMainParts::PostCreateMainMessageLoop();
+}
+
 int ChromeBrowserMainPartsFuchsia::PreMainMessageLoopRun() {
   const bool enable_cfv2 =
       base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableCFv2);
 
-  if (!base::CommandLine::ForCurrentProcess()->HasSwitch(switches::kHeadless)) {
-    if (enable_cfv2) {
-      // Configure Ozone to create top-level Views via GraphicalPresenter.
-      element_manager_ = std::make_unique<ElementManagerImpl>(
-          base::ComponentContextForProcess()->outgoing().get(),
-          base::BindRepeating(&NotifyNewBrowserWindow));
-      keep_alive_ = std::make_unique<ScopedKeepAlive>(
-          KeepAliveOrigin::BROWSER_PROCESS_FUCHSIA,
-          KeepAliveRestartOption::ENABLED);
-      use_graphical_presenter_ =
-          std::make_unique<UseGraphicalPresenter>(element_manager_.get());
-    } else {
-      // Register the ViewProvider API.
-      view_provider_ = std::make_unique<ViewProviderRouter>(
-          std::make_unique<ViewProviderScenic>(),
-          std::make_unique<ViewProviderFlatland>());
-    }
+  if (enable_cfv2) {
+    // Configure Ozone to create top-level Views via GraphicalPresenter.
+    element_manager_ = std::make_unique<ElementManagerImpl>(
+        base::ComponentContextForProcess()->outgoing().get(),
+        base::BindRepeating(&NotifyNewBrowserWindow));
+    use_graphical_presenter_ =
+        std::make_unique<UseGraphicalPresenter>(element_manager_.get());
+
+    // Ensure that the browser process remains live until the first browser
+    // window is opened by an ElementManager request. The browser will then
+    // terminate itself as soon as the last browser window is closed, or it
+    // is explicitly terminated by the Component Framework (see below).
+    // TODO(crbug.com/1314718): Integrate with the Framework to coordinate
+    // teardown, to avoid risk of in-flight requests being dropped.
+    keep_alive_ = std::make_unique<ScopedKeepAlive>(
+        KeepAliveOrigin::BROWSER_PROCESS_FUCHSIA,
+        KeepAliveRestartOption::ENABLED);
+    BrowserList::AddObserver(this);
+  } else {
+    // Register the ViewProvider API.
+    view_provider_ = std::make_unique<ViewProviderRouter>(
+        std::make_unique<ViewProviderScenic>(),
+        std::make_unique<ViewProviderFlatland>());
   }
 
-  zx_status_t status =
-      base::ComponentContextForProcess()->outgoing()->ServeFromStartupInfo();
-  ZX_CHECK(status == ZX_OK, status);
-
-  // Publish the fuchsia.process.lifecycle.Lifecycle service to allow graceful
-  // teardown. If there is a |ui_task| then this is a browser-test and graceful
-  // shutdown is not required.
-  if (!parameters().ui_task) {
+  // Browser tests run in TestLauncher sub-processes, which do not have
+  // some of the startup handles provided by the ELF runner when running as
+  // a component in production, so disable features that require them.
+  if (!is_integration_test()) {
     if (enable_cfv2) {
       // chrome::ExitIgnoreUnloadHandlers() will perform a graceful shutdown,
       // flushing any pending data.  All Browser windows will then be closed,
@@ -690,6 +731,15 @@ int ChromeBrowserMainPartsFuchsia::PreMainMessageLoopRun() {
       lifecycle_ =
           std::make_unique<base::ProcessLifecycle>(std::move(quit_closure));
     }
+
+    // Take the outgoing-directory channel request from the startup handles,
+    // and start serving requests over it (e.g. for outgoing services, Inspect
+    // data, etc). This is not possible (see above), in browser tests,
+    // where TestComponentContextForProcess() should be used to reach the
+    // outgoing directory if necessary.
+    zx_status_t status =
+        base::ComponentContextForProcess()->outgoing()->ServeFromStartupInfo();
+    ZX_CHECK(status == ZX_OK, status);
   }
 
   return ChromeBrowserMainParts::PreMainMessageLoopRun();
@@ -701,4 +751,11 @@ void ChromeBrowserMainPartsFuchsia::PostMainMessageLoopRun() {
   view_provider_.reset();
 
   ChromeBrowserMainParts::PostMainMessageLoopRun();
+}
+
+void ChromeBrowserMainPartsFuchsia::OnBrowserAdded(Browser* browser) {
+  BrowserList::RemoveObserver(this);
+  // TODO(crbug.com/1314718): Integrate with the Component Framework to tear
+  // this down only when safe to terminate.
+  keep_alive_ = nullptr;
 }

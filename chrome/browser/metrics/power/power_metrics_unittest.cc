@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -62,11 +63,8 @@ TEST(PowerMetricsTest, ReportAggregatedProcessMetricsHistograms) {
   base::HistogramTester histogram_tester;
   const std::vector<const char*> suffixes = {"", ".Foo", ".Bar"};
 
-  performance_monitor::ProcessMonitor::Metrics process_metrics;
+  ProcessMonitor::Metrics process_metrics;
   process_metrics.cpu_usage = 0.20;
-#if BUILDFLAG(IS_WIN)
-  process_metrics.precise_cpu_usage = 0.30;
-#endif
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_AIX)
   // Returns the number of average idle cpu wakeups per second since the last
@@ -87,19 +85,20 @@ TEST(PowerMetricsTest, ReportAggregatedProcessMetricsHistograms) {
   ReportAggregatedProcessMetricsHistograms(process_metrics, suffixes);
 
   ExpectHistogramSamples(&histogram_tester, suffixes, {
-    {"PerformanceMonitor.AverageCPU2.Total", 20},
-#if BUILDFLAG(IS_WIN)
-        {"PerformanceMonitor.AverageCPU3.Total", 30},
+// Windows ARM64 does not support Constant Rate TSC so
+// PerformanceMonitor.AverageCPU8.Total is not recorded there.
+#if !BUILDFLAG(IS_WIN) || !defined(ARCH_CPU_ARM64)
+    {"PerformanceMonitor.AverageCPU8.Total", 20},
 #endif
 
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
     BUILDFLAG(IS_AIX)
-        {"PerformanceMonitor.IdleWakeups.Total", 51},
+        {"PerformanceMonitor.IdleWakeups2.Total", 51},
 #endif
 
 #if BUILDFLAG(IS_MAC)
-        {"PerformanceMonitor.PackageExitIdleWakeups.Total", 52},
-        {"PerformanceMonitor.EnergyImpact.Total", 10},
+        {"PerformanceMonitor.PackageExitIdleWakeups2.Total", 52},
+        {"PerformanceMonitor.EnergyImpact2.Total", 10},
 #endif
   });
 }
@@ -181,3 +180,98 @@ TEST(PowerMetricsTest, ReportResourceCoalitionHistograms_NoEnergyImpact) {
       "PerformanceMonitor.ResourceCoalition.EnergyImpact.Foo", 0);
 }
 #endif  // BUILDFLAG(IS_MAC)
+
+TEST(PowerMetricsTest, CalculateDischargeRateMilliwatts_mWh) {
+  int64_t discharge_rate = CalculateDischargeRateMilliwatts(
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 100,
+          .full_charged_capacity = 10000,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMWh,
+      },
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 90,
+          .full_charged_capacity = 10000,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMWh,
+      },
+      base::Minutes(1));
+
+  // 10 mWh discharge in 1 minute translates to 600 mWh in 1 hour.
+  EXPECT_EQ(discharge_rate, 600);
+}
+
+TEST(PowerMetricsTest, CalculateDischargeRateMilliwatts_mAh) {
+  int64_t discharge_rate = CalculateDischargeRateMilliwatts(
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 100,
+          .full_charged_capacity = 10000,
+          .voltage_mv = 12000,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMAh,
+      },
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 90,
+          .full_charged_capacity = 10000,
+          .voltage_mv = 12000,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMAh,
+      },
+      base::Minutes(1));
+
+  // 10 mAh discharge in 1 minute translates to 600 mWh in 1 hour. That value is
+  // then multiplied by the voltage (12v) to get 7200 milliwatts.
+  EXPECT_EQ(discharge_rate, 7200);
+}
+
+TEST(PowerMetricsTest, CalculateAltDischargeRateMilliwatts_mWh) {
+  int64_t discharge_rate = CalculateAltDischargeRateMilliwatts(
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 100,
+          .full_charged_capacity = 10000,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMWh,
+      },
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 90,
+          .full_charged_capacity = 10000,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMWh,
+      },
+      base::Minutes(1));
+
+  // 10 mWh discharge in 1 minute translates to 600 mWh in 1 hour.
+  EXPECT_EQ(discharge_rate, 600);
+}
+
+
+TEST(PowerMetricsTest, CalculateAltDischargeRateMilliwatts_mAh) {
+  int64_t discharge_rate = CalculateAltDischargeRateMilliwatts(
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 100,
+          .full_charged_capacity = 10000,
+          .voltage_mv = 12100,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMAh,
+      },
+      base::BatteryLevelProvider::BatteryState{
+          .battery_count = 1,
+          .is_external_power_connected = false,
+          .current_capacity = 90,
+          .full_charged_capacity = 10000,
+          .voltage_mv = 11900,
+          .charge_unit = base::BatteryLevelProvider::BatteryLevelUnit::kMAh,
+      },
+      base::Minutes(1));
+
+  // 10 mAh discharge in 1 minute translates to 600 mWh in 1 hour. That value is
+  // then multiplied by the average voltage (12v) to get 7200 milliwatts.
+  EXPECT_EQ(discharge_rate, 7200);
+}

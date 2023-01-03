@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,8 +30,6 @@ class WebAppTranslationManagerTest : public WebAppTest {
   void SetUp() override {
     WebAppTest::SetUp();
 
-    FakeWebAppProvider* provider = FakeWebAppProvider::Get(profile());
-    provider->SetDefaultFakeSubsystems();
     test::AwaitStartWebAppProviderAndSubsystems(profile());
   }
 
@@ -72,7 +70,7 @@ class WebAppTranslationManagerTest : public WebAppTest {
   }
 
   WebAppProvider& provider() { return *WebAppProvider::GetForTest(profile()); }
-  WebAppRegistrar& registrar() { return provider().registrar(); }
+  WebAppRegistrar& registrar() { return provider().registrar_unsafe(); }
   WebAppTranslationManager& translation_manager() {
     return provider().translation_manager();
   }
@@ -231,14 +229,14 @@ TEST_F(WebAppTranslationManagerTest, InstallAndUninstall) {
   app_info->translations = translations;
 
   // Install app
-  AppId app_id = web_app::test::InstallWebApp(profile(), std::move(app_info));
+  AppId app_id = test::InstallWebApp(profile(), std::move(app_info));
 
   // Check translations are stored
   EXPECT_EQ(provider().translation_manager().GetTranslatedName(app_id),
             item1.name);
 
   // Uninstall app
-  web_app::test::UninstallWebApp(profile(), app_id);
+  test::UninstallWebApp(profile(), app_id);
 
   // Check translations were deleted
   EXPECT_EQ(provider().translation_manager().GetTranslatedName(app_id),

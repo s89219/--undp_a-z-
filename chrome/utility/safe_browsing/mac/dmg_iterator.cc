@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,9 +32,10 @@ bool DMGIterator::Open() {
   // this is relatively inexpensive.
   bool has_apfs = false;
   for (size_t i = 0; i < udif_.GetNumberOfPartitions(); ++i) {
-    if (udif_.GetPartitionType(i) == "Apple_HFS" ||
-        udif_.GetPartitionType(i) == "Apple_HFSX") {
-      partitions_.push_back(udif_.GetPartitionReadStream(i));
+    std::unique_ptr<ReadStream> partition = udif_.GetPartitionReadStream(i);
+    HFSIterator hfs(partition.get());
+    if (hfs.Open()) {
+      partitions_.push_back(std::move(partition));
     }
 
     if (udif_.GetPartitionType(i) == "Apple_APFS") {
@@ -43,7 +44,7 @@ bool DMGIterator::Open() {
   }
   base::UmaHistogramBoolean("SBClientDownload.DmgHasAPFS", has_apfs);
 
-  return partitions_.size() > 0;
+  return true;
 }
 
 const std::vector<uint8_t>& DMGIterator::GetCodeSignature() {
@@ -93,6 +94,10 @@ std::u16string DMGIterator::GetPath() {
 
 std::unique_ptr<ReadStream> DMGIterator::GetReadStream() {
   return hfs_->GetReadStream();
+}
+
+bool DMGIterator::IsEmpty() {
+  return partitions_.empty();
 }
 
 }  // namespace dmg

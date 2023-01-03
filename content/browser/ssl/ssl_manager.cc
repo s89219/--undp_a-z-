@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/trace_event/optional_trace_event.h"
 #include "content/browser/devtools/devtools_instrumentation.h"
 #include "content/browser/navigation_or_document_handle.h"
+#include "content/browser/navigation_subresource_loader_params.h"
 #include "content/browser/renderer_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/ssl/ssl_error_handler.h"
@@ -54,6 +55,7 @@ enum class MixedContentType {
 };
 
 void OnAllowCertificate(SSLErrorHandler* handler,
+                        StoragePartition* storage_partition,
                         SSLHostStateDelegate* state_delegate,
                         bool record_decision,
                         CertificateRequestResultType decision) {
@@ -71,9 +73,9 @@ void OnAllowCertificate(SSLErrorHandler* handler,
       // ContinueRequest() gets posted to a different thread. Calling
       // AllowCert() first ensures deterministic ordering.
       if (record_decision && state_delegate) {
-        state_delegate->AllowCert(
-            handler->request_url().host(), *handler->ssl_info().cert.get(),
-            handler->cert_error(), handler->web_contents());
+        state_delegate->AllowCert(handler->request_url().host(),
+                                  *handler->ssl_info().cert.get(),
+                                  handler->cert_error(), storage_partition);
       }
       handler->ContinueRequest();
       return;
@@ -234,6 +236,10 @@ void SSLManager::DidDisplayMixedContent() {
     ukm::SourceId source_id = main_frame->GetPageUkmSourceId();
     LogMixedContentMetrics(MixedContentType::kOptionallyBlockableMixedContent,
                            source_id, ukm::UkmRecorder::Get());
+    WebContents* contents = WebContents::FromRenderFrameHost(main_frame);
+    if (contents) {
+      GetContentClient()->browser()->OnDisplayInsecureContent(contents);
+    }
   }
   UpdateLastCommittedEntry(SSLStatus::DISPLAYED_INSECURE_CONTENT, 0);
 }
@@ -343,7 +349,8 @@ void SSLManager::OnCertError(std::unique_ptr<SSLErrorHandler> handler) {
   } else if (ssl_host_state_delegate_) {
     judgment = ssl_host_state_delegate_->QueryPolicy(
         handler->request_url().host(), *handler->ssl_info().cert.get(),
-        handler->cert_error(), handler->web_contents());
+        handler->cert_error(),
+        controller_->frame_tree().GetMainFrame()->GetStoragePartition());
   } else {
     judgment = SSLHostStateDelegate::DENIED;
   }
@@ -357,24 +364,30 @@ void SSLManager::OnCertError(std::unique_ptr<SSLErrorHandler> handler) {
   OnCertErrorInternal(std::move(handler));
 }
 
-void SSLManager::DidStartResourceResponse(const GURL& url,
-                                          bool has_certificate_errors) {
-  if (!url.SchemeIsCryptographic() || has_certificate_errors)
-    return;
+bool SSLManager::DidStartResourceResponse(
+    const url::SchemeHostPort& final_response_url,
+    bool has_certificate_errors) {
+  const std::string& scheme = final_response_url.scheme();
+  const std::string& host = final_response_url.host();
 
+  if (!GURL::SchemeIsCryptographic(scheme) || has_certificate_errors) {
+    return false;
+  }
   // If the scheme is https: or wss and the cert did not have any errors, revoke
   // any previous decisions that have occurred.
   if (!ssl_host_state_delegate_ ||
       !ssl_host_state_delegate_->HasAllowException(
-          url.host(), controller_->DeprecatedGetWebContents())) {
-    return;
+          host,
+          controller_->frame_tree().GetMainFrame()->GetStoragePartition())) {
+    return false;
   }
 
   // If there's no certificate error, a good certificate has been seen, so
   // clear out any exceptions that were made by the user for bad
   // certificates. This intentionally does not apply to cached resources
   // (see https://crbug.com/634553 for an explanation).
-  ssl_host_state_delegate_->RevokeUserAllowExceptions(url.host());
+  ssl_host_state_delegate_->RevokeUserAllowExceptions(host);
+  return true;
 }
 
 void SSLManager::OnCertErrorInternal(std::unique_ptr<SSLErrorHandler> handler) {
@@ -386,9 +399,10 @@ void SSLManager::OnCertErrorInternal(std::unique_ptr<SSLErrorHandler> handler) {
   bool fatal = handler->fatal();
 
   base::RepeatingCallback<void(bool, content::CertificateRequestResultType)>
-      callback = base::BindRepeating(&OnAllowCertificate,
-                                     base::Owned(handler.release()),
-                                     ssl_host_state_delegate_);
+      callback = base::BindRepeating(
+          &OnAllowCertificate, base::Owned(handler.release()),
+          controller_->frame_tree().GetMainFrame()->GetStoragePartition(),
+          ssl_host_state_delegate_);
 
   if (devtools_instrumentation::HandleCertificateError(
           web_contents, cert_error, request_url,

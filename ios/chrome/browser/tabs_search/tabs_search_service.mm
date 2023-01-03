@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,28 +6,19 @@
 
 #import <Foundation/Foundation.h>
 
-#include "base/i18n/break_iterator.h"
-#include "base/i18n/string_search.h"
+#import "base/i18n/break_iterator.h"
+#import "base/i18n/string_search.h"
 #import "base/strings/sys_string_conversions.h"
 #import "base/strings/utf_string_conversions.h"
-#include "components/keyed_service/core/service_access_type.h"
-#include "components/sessions/core/tab_restore_service.h"
-#include "components/signin/public/base/consent_level.h"
-#include "components/signin/public/identity_manager/identity_manager.h"
-#include "components/sync_sessions/session_sync_service.h"
-#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/history/history_service_factory.h"
-#include "ios/chrome/browser/history/history_utils.h"
-#include "ios/chrome/browser/history/web_history_service_factory.h"
+#import "components/sessions/core/tab_restore_service.h"
+#import "components/signin/public/base/consent_level.h"
+#import "components/signin/public/identity_manager/identity_manager.h"
+#import "components/sync_sessions/session_sync_service.h"
+#import "ios/chrome/browser/history/history_utils.h"
 #import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/main/browser_list.h"
-#import "ios/chrome/browser/main/browser_list_factory.h"
-#include "ios/chrome/browser/sessions/ios_chrome_tab_restore_service_factory.h"
-#include "ios/chrome/browser/signin/identity_manager_factory.h"
-#include "ios/chrome/browser/sync/session_sync_service_factory.h"
-#include "ios/chrome/browser/sync/sync_service_factory.h"
 #import "ios/chrome/browser/tabs/tab_title_util.h"
-#include "ios/chrome/browser/ui/recent_tabs/synced_sessions.h"
+#import "ios/chrome/browser/ui/recent_tabs/synced_sessions.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/web/public/web_state.h"
 
@@ -37,9 +28,35 @@
 
 using base::i18n::FixedPatternStringSearchIgnoringCaseAndAccents;
 
-TabsSearchService::TabsSearchService(ChromeBrowserState* browser_state)
-    : browser_state_(browser_state) {
-  DCHECK(browser_state_);
+TabsSearchService::TabsSearchService(
+    bool is_off_the_record,
+    BrowserList* browser_list,
+    signin::IdentityManager* identity_manager,
+    syncer::SyncService* sync_service,
+    sessions::TabRestoreService* restore_service,
+    sync_sessions::SessionSyncService* session_sync_service,
+    history::HistoryService* history_service,
+    WebHistoryServiceGetter web_history_service_getter)
+    : is_off_the_record_(is_off_the_record),
+      browser_list_(browser_list),
+      identity_manager_(identity_manager),
+      sync_service_(sync_service),
+      restore_service_(restore_service),
+      session_sync_service_(session_sync_service),
+      history_service_(history_service),
+      web_history_service_getter_(web_history_service_getter) {
+  DCHECK(browser_list_);
+
+  // Those services are only used if not off-the-record, so allow them to
+  // be null when off-the-record.
+  if (!is_off_the_record_) {
+    DCHECK(identity_manager_);
+    DCHECK(sync_service_);
+    DCHECK(session_sync_service_);
+    DCHECK(restore_service_);
+    DCHECK(history_service_);
+    DCHECK(!web_history_service_getter_.is_null());
+  }
 }
 
 TabsSearchService::TabsSearchBrowserResults::TabsSearchBrowserResults(
@@ -59,32 +76,27 @@ void TabsSearchService::Search(
     const std::u16string& term,
     base::OnceCallback<void(std::vector<TabsSearchBrowserResults>)>
         completion) {
-  BrowserList* browser_list =
-      BrowserListFactory::GetForBrowserState(browser_state_);
-  std::set<Browser*> browsers = browser_state_->IsOffTheRecord()
-                                    ? browser_list->AllIncognitoBrowsers()
-                                    : browser_list->AllRegularBrowsers();
+  std::set<Browser*> browsers = is_off_the_record_
+                                    ? browser_list_->AllIncognitoBrowsers()
+                                    : browser_list_->AllRegularBrowsers();
   SearchWithinBrowsers(browsers, term, std::move(completion));
 }
 
 void TabsSearchService::SearchRecentlyClosed(
     const std::u16string& term,
     base::OnceCallback<void(std::vector<RecentlyClosedItemPair>)> completion) {
-  DCHECK(!browser_state_->IsOffTheRecord());
+  DCHECK(!is_off_the_record_);
   FixedPatternStringSearchIgnoringCaseAndAccents query_search(term);
 
   std::vector<RecentlyClosedItemPair> results;
-  sessions::TabRestoreService* restore_service =
-      IOSChromeTabRestoreServiceFactory::GetForBrowserState(browser_state_);
-  for (auto iter = restore_service->entries().begin();
-       iter != restore_service->entries().end(); ++iter) {
-    const sessions::TabRestoreService::Entry* entry = iter->get();
+  for (const auto& entry : restore_service_->entries()) {
     DCHECK(entry);
+
     // Only TAB type is handled.
     // TODO(crbug.com/1056596) : Support WINDOW restoration under multi-window.
     DCHECK_EQ(sessions::TabRestoreService::TAB, entry->type);
     const sessions::TabRestoreService::Tab* tab =
-        static_cast<const sessions::TabRestoreService::Tab*>(entry);
+        static_cast<const sessions::TabRestoreService::Tab*>(entry.get());
     const sessions::SerializedNavigationEntry& navigationEntry =
         tab->navigations[tab->current_navigation_index];
 
@@ -106,23 +118,18 @@ void TabsSearchService::SearchRemoteTabs(
     base::OnceCallback<void(std::unique_ptr<synced_sessions::SyncedSessions>,
                             std::vector<synced_sessions::DistantTabsSet>)>
         completion) {
-  DCHECK(!browser_state_->IsOffTheRecord());
+  DCHECK(!is_off_the_record_);
   std::vector<synced_sessions::DistantTabsSet> results;
 
-  signin::IdentityManager* identity_manager =
-      IdentityManagerFactory::GetForBrowserState(browser_state_);
-  if (!identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
+  if (!identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
     // There must be a primary account for synced sessions to be available.
     std::move(completion).Run(nullptr, results);
     return;
   }
 
   FixedPatternStringSearchIgnoringCaseAndAccents query_search(term);
-  sync_sessions::SessionSyncService* sync_service =
-      SessionSyncServiceFactory::GetForBrowserState(browser_state_);
-
   auto synced_sessions =
-      std::make_unique<synced_sessions::SyncedSessions>(sync_service);
+      std::make_unique<synced_sessions::SyncedSessions>(session_sync_service_);
 
   for (size_t s = 0; s < synced_sessions->GetSessionCount(); s++) {
     const synced_sessions::DistantSession* session =
@@ -154,26 +161,37 @@ void TabsSearchService::SearchRemoteTabs(
 void TabsSearchService::SearchHistory(
     const std::u16string& term,
     base::OnceCallback<void(size_t result_count)> completion) {
-  DCHECK(!browser_state_->IsOffTheRecord());
+  DCHECK(!is_off_the_record_);
   DCHECK(completion);
+
+  if (!browsing_history_service_) {
+    history_driver_ = std::make_unique<IOSBrowsingHistoryDriver>(
+        web_history_service_getter_, this);
+
+    browsing_history_service_ =
+        std::make_unique<history::BrowsingHistoryService>(
+            history_driver_.get(), history_service_.get(), sync_service_.get());
+  }
 
   ongoing_history_search_term_ = term;
   history_search_callback_ = std::move(completion);
-
-  history_driver_ =
-      std::make_unique<IOSBrowsingHistoryDriver>(browser_state_, this);
-
-  history_service_ = std::make_unique<history::BrowsingHistoryService>(
-      history_driver_.get(),
-      ios::HistoryServiceFactory::GetForBrowserState(
-          browser_state_, ServiceAccessType::EXPLICIT_ACCESS),
-      SyncServiceFactory::GetForBrowserState(browser_state_));
 
   history::QueryOptions options;
   options.duplicate_policy = history::QueryOptions::REMOVE_ALL_DUPLICATES;
   options.matching_algorithm =
       query_parser::MatchingAlgorithm::ALWAYS_PREFIX_SEARCH;
-  history_service_->QueryHistory(term, options);
+  browsing_history_service_->QueryHistory(term, options);
+}
+
+void TabsSearchService::Shutdown() {
+  // BrowsingHistoryService registers a SyncServiceObserver with the
+  // SyncService. Destroy it during shutdown to ensure it is removed
+  // before the SyncService destruction.
+  browsing_history_service_.reset();
+
+  // The driver has reference to WebHistoryServiceFactory and thus
+  // needs to be destroyed during the shutdown too.
+  history_driver_.reset();
 }
 
 #pragma mark - Private
@@ -229,5 +247,4 @@ void TabsSearchService::HistoryQueryCompleted(
   std::move(history_search_callback_).Run(results.size());
 
   ongoing_history_search_term_ = std::u16string();
-  history_service_.reset();
 }

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/task/task_runner_util.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "net/base/url_util.h"
 #include "url/url_util.h"
 
@@ -66,10 +65,9 @@ void InsertRuleToTrie(const std::vector<base::StringPiece>& components,
                       TrieNode* root,
                       bool match_prefix) {
   TrieNode* node = root;
-  for (auto hostcomp = components.rbegin(); hostcomp != components.rend();
-       ++hostcomp) {
+  for (const auto& hostcomp : base::Reversed(components)) {
     DCHECK(!node->match_prefix);
-    std::string component(*hostcomp);
+    std::string component(hostcomp);
     auto child_node = node->children.find(component);
     if (child_node == node->children.end()) {
       std::unique_ptr<TrieNode> temp = std::make_unique<TrieNode>();
@@ -185,7 +183,7 @@ AwSafeBrowsingAllowlistManager::AwSafeBrowsingAllowlistManager(
     const scoped_refptr<base::SequencedTaskRunner>& io_task_runner)
     : background_task_runner_(background_task_runner),
       io_task_runner_(io_task_runner),
-      ui_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      ui_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       allowlist_(std::make_unique<TrieNode>()) {}
 
 AwSafeBrowsingAllowlistManager::~AwSafeBrowsingAllowlistManager() {}

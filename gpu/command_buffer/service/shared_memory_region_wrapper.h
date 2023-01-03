@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,8 @@
 
 #include "base/containers/span.h"
 #include "base/memory/shared_memory_mapping.h"
-#include "components/viz/common/resources/resource_format.h"
+#include "base/unguessable_token.h"
+#include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace gfx {
@@ -30,12 +31,14 @@ class SharedMemoryRegionWrapper {
   // until destruction.
   bool Initialize(const gfx::GpuMemoryBufferHandle& handle,
                   const gfx::Size& size,
-                  viz::ResourceFormat format);
+                  gfx::BufferFormat format,
+                  gfx::BufferPlane plane);
 
   bool IsValid() const;
   uint8_t* GetMemory() const;
   base::span<const uint8_t> GetMemoryAsSpan() const;
   size_t GetStride() const;
+  const base::UnguessableToken& GetMappingGuid();
 
  private:
   base::WritableSharedMemoryMapping mapping_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,7 +35,7 @@ using ExperimentalAppWindowApiTest = ExperimentalPlatformAppBrowserTest;
 
 // Tests chrome.app.window.setIcon.
 IN_PROC_BROWSER_TEST_F(ExperimentalAppWindowApiTest, SetIcon) {
-  ExtensionTestMessageListener listener("ready", true);
+  ExtensionTestMessageListener listener("ready", ReplyBehavior::kWillReply);
 
   // Launch the app and wait for it to be ready.
   LoadAndLaunchPlatformApp("windows_api_set_icon", &listener);
@@ -131,7 +131,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowApiTest, SetShapeNoPerm) {
 }
 
 // Fails on Ozone/X11.  https://crbug.com/1109112
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 #define MAYBE_AlphaEnabledHasPermissions DISABLED_AlphaEnabledHasPermissions
 #else
 #define MAYBE_AlphaEnabledHasPermissions AlphaEnabledHasPermissions
@@ -211,7 +211,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowApiTest, OpeningAbsoluteURLs) {
       (*app_windows.begin())->web_contents();
   EXPECT_EQ(GURL("chrome://version"),
             app_window_contents->GetLastCommittedURL());
-  EXPECT_FALSE(app_window_contents->GetMainFrame()->IsErrorDocument());
+  EXPECT_FALSE(app_window_contents->GetPrimaryMainFrame()->IsErrorDocument());
 }
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)

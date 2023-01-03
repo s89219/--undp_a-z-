@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "ash/constants/ash_features.h"
 #include "ash/public/cpp/holding_space/holding_space_constants.h"
 #include "ash/public/cpp/holding_space/holding_space_image.h"
 #include "ash/public/cpp/holding_space/holding_space_item.h"
@@ -14,7 +13,8 @@
 #include "ash/public/cpp/holding_space/holding_space_model_observer.h"
 #include "ash/public/cpp/shelf_config.h"
 #include "ash/shelf/shelf.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/ash_color_id.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "ash/system/holding_space/holding_space_animation_registry.h"
 #include "ash/system/holding_space/holding_space_progress_indicator_util.h"
 #include "ash/system/holding_space/holding_space_tray_icon.h"
@@ -22,6 +22,7 @@
 #include "ash/system/tray/tray_constants.h"
 #include "base/bind.h"
 #include "base/i18n/rtl.h"
+#include "ui/color/color_provider.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/paint_recorder.h"
@@ -58,13 +59,6 @@ constexpr base::TimeDelta kBounceAnimationBaseDelay = base::Milliseconds(150);
 constexpr base::TimeDelta kShiftAnimationDuration = base::Milliseconds(250);
 
 // Helpers ---------------------------------------------------------------------
-
-// Convenience helper to allow a `closure` to be used in a context which is
-// expecting a callback with arguments.
-template <typename... T>
-base::RepeatingCallback<void(T...)> IgnoreArgs(base::RepeatingClosure closure) {
-  return base::BindRepeating([](T...) {}).Then(std::move(closure));
-}
 
 // Returns true if small previews should be used given the current shelf
 // configuration, false otherwise.
@@ -206,7 +200,7 @@ class HoldingSpaceTrayIconPreview::ImageLayerOwner
         HoldingSpaceAnimationRegistry::GetInstance()
             ->AddProgressRingAnimationChangedCallbackForKey(
                 /*animation_key=*/item_,
-                IgnoreArgs<ProgressRingAnimation*>(
+                base::IgnoreArgs<ProgressRingAnimation*>(
                     base::BindRepeating(&ImageLayerOwner::UpdateTransform,
                                         base::Unretained(this))));
 
@@ -291,7 +285,8 @@ class HoldingSpaceTrayIconPreview::ImageLayerOwner
   void UpdateVisualState() override {
     if (item_ && image_skia_.isNull()) {
       image_skia_ = item_->image().GetImageSkia(
-          layer()->size(), AshColorProvider::Get()->IsDarkModeEnabled());
+          layer()->size(),
+          DarkLightModeControllerImpl::Get()->IsDarkModeEnabled());
     }
   }
 
@@ -314,13 +309,9 @@ class HoldingSpaceTrayIconPreview::ImageLayerOwner
   void UpdateOpacity() {
     // Opacity need not be updated if:
     // * `item_` is destroyed and is being animated out,
-    // * `layer()` does not exist, or
-    // * in-progress animations v2 is disabled since in that case there is no
-    //   progress indicator inner icon which would otherwise result in overlap.
-    if (!item_ || !layer() ||
-        !features::IsHoldingSpaceInProgressAnimationV2Enabled()) {
+    // * `layer()` does not exist.
+    if (!item_ || !layer())
       return;
-    }
 
     const bool is_item_visibly_in_progress =
         !item_->progress().IsHidden() && !item_->progress().IsComplete();
@@ -346,13 +337,9 @@ class HoldingSpaceTrayIconPreview::ImageLayerOwner
   void UpdateTransform() {
     // Transform need not be updated if:
     // * `item_` is destroyed and is being animated out,
-    // * `layer()` does not exist, or
-    // * in-progress animations v2 is disabled since in that case there is no
-    //   progress indicator inner icon which would otherwise result in overlap.
-    if (!item_ || !layer() ||
-        !features::IsHoldingSpaceInProgressAnimationV2Enabled()) {
+    // * `layer()` does not exist.
+    if (!item_ || !layer())
       return;
-    }
 
     const bool is_item_visibly_in_progress =
         !item_->progress().IsHidden() && !item_->progress().IsComplete();
@@ -434,13 +421,11 @@ void HoldingSpaceTrayIconPreview::AnimateIn(base::TimeDelta additional_delay) {
   if (!NeedsLayer()) {
     // Since the holding space tray icon preview will not be animated, any
     // associated progress icon animation can `Start()` immediately.
-    if (features::IsHoldingSpaceInProgressAnimationV2DelayEnabled()) {
-      auto* key = progress_indicator_->animation_key();
-      auto* registry = HoldingSpaceAnimationRegistry::GetInstance();
-      auto* animation = registry->GetProgressIconAnimationForKey(key);
-      if (animation && !animation->HasAnimated())
-        animation->Start();
-    }
+    auto* key = progress_indicator_->animation_key();
+    auto* registry = HoldingSpaceAnimationRegistry::GetInstance();
+    auto* animation = registry->GetProgressIconAnimationForKey(key);
+    if (animation && !animation->HasAnimated())
+      animation->Start();
     return;
   }
 
@@ -483,19 +468,16 @@ void HoldingSpaceTrayIconPreview::AnimateIn(base::TimeDelta additional_delay) {
 
   // Any associated progress icon animation should `Start()` only after
   // completion of the holding space tray icon preview animation.
-  if (features::IsHoldingSpaceInProgressAnimationV2DelayEnabled()) {
-    auto observer = std::make_unique<CallbackLayerAnimationObserver>();
-    sequence->AddObserver(observer.get());
-    observer->SetAnimationCompletedCallback(base::BindOnce(
-        [](CallbackLayerAnimationObserver* observer, const void* key) {
-          auto* registry = HoldingSpaceAnimationRegistry::GetInstance();
-          auto* animation = registry->GetProgressIconAnimationForKey(key);
-          if (animation && !animation->HasAnimated())
-            animation->Start();
-        },
-        base::Owned(std::move(observer)),
-        progress_indicator_->animation_key()));
-  }
+  auto observer = std::make_unique<CallbackLayerAnimationObserver>();
+  sequence->AddObserver(observer.get());
+  observer->SetAnimationCompletedCallback(base::BindOnce(
+      [](CallbackLayerAnimationObserver* observer, const void* key) {
+        auto* registry = HoldingSpaceAnimationRegistry::GetInstance();
+        auto* animation = registry->GetProgressIconAnimationForKey(key);
+        if (animation && !animation->HasAnimated())
+          animation->Start();
+      },
+      base::Owned(std::move(observer)), progress_indicator_->animation_key()));
 
   layer()->GetAnimator()->StartAnimation(sequence.release());
 }
@@ -692,8 +674,8 @@ void HoldingSpaceTrayIconPreview::OnPaintLayer(
   // due to pixel rounding. Failure to do so could result in paint artifacts.
   cc::PaintFlags flags;
   flags.setAntiAlias(true);
-  flags.setColor(AshColorProvider::Get()->GetBaseLayerColor(
-      AshColorProvider::BaseLayerType::kOpaque));
+  flags.setColor(
+      container_->GetColorProvider()->GetColor(kColorAshShieldAndBaseOpaque));
   flags.setLooper(gfx::CreateShadowDrawLooper(GetShadowDetails().values));
   canvas->DrawCircle(
       gfx::PointF(contents_bounds.CenterPoint()),

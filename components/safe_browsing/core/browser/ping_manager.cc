@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "components/safe_browsing/core/browser/db/v4_protocol_manager_util.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
 #include "components/safe_browsing/core/common/utils.h"
 #include "google_apis/google_api_keys.h"
 #include "net/base/load_flags.h"
@@ -74,20 +75,32 @@ PingManager* PingManager::Create(
     const V4ProtocolConfig& config,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     std::unique_ptr<SafeBrowsingTokenFetcher> token_fetcher,
-    base::RepeatingCallback<bool()> get_should_fetch_access_token) {
+    base::RepeatingCallback<bool()> get_should_fetch_access_token,
+    WebUIDelegate* webui_delegate,
+    scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+    base::RepeatingCallback<ChromeUserPopulation()>
+        get_user_population_callback) {
   return new PingManager(config, url_loader_factory, std::move(token_fetcher),
-                         get_should_fetch_access_token);
+                         get_should_fetch_access_token, webui_delegate,
+                         ui_task_runner, get_user_population_callback);
 }
 
 PingManager::PingManager(
     const V4ProtocolConfig& config,
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     std::unique_ptr<SafeBrowsingTokenFetcher> token_fetcher,
-    base::RepeatingCallback<bool()> get_should_fetch_access_token)
+    base::RepeatingCallback<bool()> get_should_fetch_access_token,
+    WebUIDelegate* webui_delegate,
+    scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+    base::RepeatingCallback<ChromeUserPopulation()>
+        get_user_population_callback)
     : config_(config),
       url_loader_factory_(url_loader_factory),
       token_fetcher_(std::move(token_fetcher)),
-      get_should_fetch_access_token_(get_should_fetch_access_token) {}
+      get_should_fetch_access_token_(get_should_fetch_access_token),
+      webui_delegate_(webui_delegate),
+      ui_task_runner_(ui_task_runner),
+      get_user_population_callback_(get_user_population_callback) {}
 
 PingManager::~PingManager() {}
 
@@ -139,19 +152,48 @@ void PingManager::ReportSafeBrowsingHit(
 }
 
 // Sends threat details for users who opt-in.
-void PingManager::ReportThreatDetails(const std::string& report) {
+PingManager::ReportThreatDetailsResult PingManager::ReportThreatDetails(
+    std::unique_ptr<ClientSafeBrowsingReportRequest> report) {
+  if (!get_user_population_callback_.is_null()) {
+    *report->mutable_population() = get_user_population_callback_.Run();
+  }
+
+  std::string serialized_report;
+  if (!report->SerializeToString(&serialized_report)) {
+    DLOG(ERROR) << "Unable to serialize the threat report.";
+    return ReportThreatDetailsResult::SERIALIZATION_ERROR;
+  }
+  if (serialized_report.empty()) {
+    DLOG(ERROR) << "The threat report is empty.";
+    return ReportThreatDetailsResult::EMPTY_REPORT;
+  }
+
   if (get_should_fetch_access_token_.Run()) {
     token_fetcher_->Start(
         base::BindOnce(&PingManager::ReportThreatDetailsOnGotAccessToken,
-                       weak_factory_.GetWeakPtr(), report));
+                       weak_factory_.GetWeakPtr(), serialized_report));
   } else {
     std::string empty_access_token;
-    ReportThreatDetailsOnGotAccessToken(report, empty_access_token);
+    ReportThreatDetailsOnGotAccessToken(serialized_report, empty_access_token);
   }
+
+  base::UmaHistogramExactLinear(
+      "SafeBrowsing.ClientSafeBrowsingReport.ReportType", report->type(),
+      ClientSafeBrowsingReportRequest::ReportType_MAX + 1);
+  // The following is to log this ClientSafeBrowsingReportRequest on any open
+  // chrome://safe-browsing pages.
+  ui_task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&WebUIDelegate::AddToCSBRRsSent,
+                     // Unretained is okay because in practice, webui_delegate_
+                     // is a singleton
+                     base::Unretained(webui_delegate_), std::move(report)));
+
+  return ReportThreatDetailsResult::SUCCESS;
 }
 
 void PingManager::ReportThreatDetailsOnGotAccessToken(
-    const std::string& report,
+    const std::string& serialized_report,
     const std::string& access_token) {
   GURL report_url = ThreatDetailsUrl();
 
@@ -171,7 +213,7 @@ void PingManager::ReportThreatDetailsOnGotAccessToken(
   auto loader = network::SimpleURLLoader::Create(std::move(resource_request),
                                                  kTrafficAnnotation);
 
-  loader->AttachStringForUpload(report, "application/octet-stream");
+  loader->AttachStringForUpload(serialized_report, "application/octet-stream");
 
   loader->DownloadToStringOfUnboundedSizeUntilCrashAndDie(
       url_loader_factory_.get(),

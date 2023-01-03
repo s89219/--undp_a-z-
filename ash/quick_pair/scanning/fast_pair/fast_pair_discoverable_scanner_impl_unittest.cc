@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,9 @@
 #include "ash/quick_pair/common/constants.h"
 #include "ash/quick_pair/common/device.h"
 #include "ash/quick_pair/common/pair_failure.h"
-#include "ash/quick_pair/fast_pair_handshake/fake_fast_pair_handshake.h"
-#include "ash/quick_pair/fast_pair_handshake/fast_pair_data_encryptor.h"
-#include "ash/quick_pair/fast_pair_handshake/fast_pair_gatt_service_client.h"
-#include "ash/quick_pair/fast_pair_handshake/fast_pair_handshake_lookup.h"
 #include "ash/quick_pair/repository/fake_fast_pair_repository.h"
 #include "ash/quick_pair/scanning/fast_pair/fake_fast_pair_scanner.h"
 #include "ash/quick_pair/scanning/fast_pair/fast_pair_discoverable_scanner.h"
-#include "ash/services/quick_pair/fast_pair_data_parser.h"
-#include "ash/services/quick_pair/mock_quick_pair_process_manager.h"
-#include "ash/services/quick_pair/quick_pair_process.h"
-#include "ash/services/quick_pair/quick_pair_process_manager.h"
-#include "ash/services/quick_pair/quick_pair_process_manager_impl.h"
 #include "base/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
@@ -30,9 +21,14 @@
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
 #include "base/test/task_environment.h"
-#include "chromeos/network/network_handler.h"
-#include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/network_state_test_helper.h"
+#include "chromeos/ash/components/network/network_handler.h"
+#include "chromeos/ash/components/network/network_state_handler.h"
+#include "chromeos/ash/components/network/network_state_test_helper.h"
+#include "chromeos/ash/services/quick_pair/fast_pair_data_parser.h"
+#include "chromeos/ash/services/quick_pair/mock_quick_pair_process_manager.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process_manager.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process_manager_impl.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/test/mock_bluetooth_adapter.h"
@@ -98,11 +94,13 @@ namespace quick_pair {
 class FastPairDiscoverableScannerImplTest : public testing::Test {
  public:
   void SetUp() override {
-    chromeos::NetworkHandler::Initialize();
+    NetworkHandler::Initialize();
     repository_ = std::make_unique<FakeFastPairRepository>();
 
     nearby::fastpair::Device metadata;
     metadata.set_trigger_distance(2);
+    metadata.set_device_type(
+        nearby::fastpair::DeviceType::TRUE_WIRELESS_HEADPHONES);
     repository_->SetFakeMetadata(kValidModelId, metadata);
 
     scanner_ = base::MakeRefCounted<FakeFastPairScanner>();
@@ -116,10 +114,6 @@ class FastPairDiscoverableScannerImplTest : public testing::Test {
     fake_process_manager_ =
         static_cast<FakeQuickPairProcessManager*>(process_manager_.get());
 
-    FastPairHandshakeLookup::SetCreateFunctionForTesting(base::BindRepeating(
-        &FastPairDiscoverableScannerImplTest::CreateHandshake,
-        base::Unretained(this)));
-
     discoverable_scanner_ = std::make_unique<FastPairDiscoverableScannerImpl>(
         scanner_, adapter_, found_device_callback_.Get(),
         lost_device_callback_.Get());
@@ -129,7 +123,7 @@ class FastPairDiscoverableScannerImplTest : public testing::Test {
     process_manager_.reset();
     testing::Test::TearDown();
     discoverable_scanner_.reset();
-    chromeos::NetworkHandler::Shutdown();
+    NetworkHandler::Shutdown();
   }
 
   MockQuickPairProcessManager* mock_process_manager() {
@@ -158,20 +152,9 @@ class FastPairDiscoverableScannerImplTest : public testing::Test {
     return device_ptr;
   }
 
-  std::unique_ptr<FastPairHandshake> CreateHandshake(
-      scoped_refptr<Device> device,
-      FastPairHandshake::OnCompleteCallback callback) {
-    auto fake = std::make_unique<FakeFastPairHandshake>(
-        adapter_, std::move(device), std::move(callback));
-
-    fake_fast_pair_handshake_ = fake.get();
-
-    return fake;
-  }
-
   FakeQuickPairProcessManager* fake_process_manager_;
   base::test::SingleThreadTaskEnvironment task_enviornment_;
-  chromeos::NetworkStateTestHelper helper_{/*use_defaults=*/true};
+  NetworkStateTestHelper helper_{/*use_default_devices_and_services=*/true};
   scoped_refptr<FakeFastPairScanner> scanner_;
   std::unique_ptr<FakeFastPairRepository> repository_;
   std::unique_ptr<FastPairDiscoverableScannerImpl> discoverable_scanner_;
@@ -180,7 +163,6 @@ class FastPairDiscoverableScannerImplTest : public testing::Test {
   std::unique_ptr<QuickPairProcessManager> process_manager_;
   base::MockCallback<DeviceCallback> found_device_callback_;
   base::MockCallback<DeviceCallback> lost_device_callback_;
-  FakeFastPairHandshake* fake_fast_pair_handshake_ = nullptr;
 };
 
 TEST_F(FastPairDiscoverableScannerImplTest,
@@ -265,6 +247,86 @@ TEST_F(FastPairDiscoverableScannerImplTest, ValidModelId) {
   base::RunLoop().RunUntilIdle();
 }
 
+TEST_F(FastPairDiscoverableScannerImplTest, WrongDeviceType) {
+  nearby::fastpair::Device metadata;
+  metadata.set_trigger_distance(2);
+  metadata.set_device_type(nearby::fastpair::DeviceType::AUTOMOTIVE);
+  repository_->SetFakeMetadata(kValidModelId, metadata);
+
+  EXPECT_CALL(found_device_callback_, Run).Times(0);
+  device::BluetoothDevice* device = GetDevice(kValidModelId);
+  scanner_->NotifyDeviceFound(device);
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(FastPairDiscoverableScannerImplTest, UnspecifiedNotificationType) {
+  // Set metadata to mimic a device that doesn't specify the notification
+  // or device type. Since we aren't sure what this device is, we'll show
+  // the notification to be safe.
+  nearby::fastpair::Device metadata;
+  metadata.set_trigger_distance(2);
+  metadata.set_device_type(
+      nearby::fastpair::DeviceType::DEVICE_TYPE_UNSPECIFIED);
+  metadata.set_notification_type(
+      nearby::fastpair::NotificationType::NOTIFICATION_TYPE_UNSPECIFIED);
+  repository_->SetFakeMetadata(kValidModelId, metadata);
+
+  EXPECT_CALL(found_device_callback_, Run).Times(1);
+  device::BluetoothDevice* device = GetDevice(kValidModelId);
+  scanner_->NotifyDeviceFound(device);
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(FastPairDiscoverableScannerImplTest, V1NotificationType) {
+  // Set metadata to mimic a V1 device which advertises with no device
+  // type and a notification type of FAST_PAIR_ONE.
+  nearby::fastpair::Device metadata;
+  metadata.set_trigger_distance(2);
+  metadata.set_device_type(
+      nearby::fastpair::DeviceType::DEVICE_TYPE_UNSPECIFIED);
+  metadata.set_notification_type(
+      nearby::fastpair::NotificationType::FAST_PAIR_ONE);
+  repository_->SetFakeMetadata(kValidModelId, metadata);
+
+  EXPECT_CALL(found_device_callback_, Run).Times(1);
+  device::BluetoothDevice* device = GetDevice(kValidModelId);
+  scanner_->NotifyDeviceFound(device);
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(FastPairDiscoverableScannerImplTest, V2NotificationType) {
+  // Set metadata to mimic a V2 device which advertises with a device
+  // type of TRUE_WIRELESS_HEADPHONES and a notification type of FAST_PAIR.
+  nearby::fastpair::Device metadata;
+  metadata.set_trigger_distance(2);
+  metadata.set_device_type(
+      nearby::fastpair::DeviceType::TRUE_WIRELESS_HEADPHONES);
+  metadata.set_notification_type(nearby::fastpair::NotificationType::FAST_PAIR);
+  repository_->SetFakeMetadata(kValidModelId, metadata);
+
+  EXPECT_CALL(found_device_callback_, Run).Times(1);
+  device::BluetoothDevice* device = GetDevice(kValidModelId);
+  scanner_->NotifyDeviceFound(device);
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(FastPairDiscoverableScannerImplTest, WrongNotificationType) {
+  // Set metadata to mimic a Fitbit wearable which advertises with no
+  // device type and a notification type of APP_LAUNCH.
+  nearby::fastpair::Device metadata;
+  metadata.set_trigger_distance(2);
+  metadata.set_device_type(
+      nearby::fastpair::DeviceType::DEVICE_TYPE_UNSPECIFIED);
+  metadata.set_notification_type(
+      nearby::fastpair::NotificationType::APP_LAUNCH);
+  repository_->SetFakeMetadata(kValidModelId, metadata);
+
+  EXPECT_CALL(found_device_callback_, Run).Times(0);
+  device::BluetoothDevice* device = GetDevice(kValidModelId);
+  scanner_->NotifyDeviceFound(device);
+  base::RunLoop().RunUntilIdle();
+}
+
 TEST_F(FastPairDiscoverableScannerImplTest, DeviceLost) {
   EXPECT_CALL(found_device_callback_, Run).Times(0);
   device::BluetoothDevice* device = GetDevice(kValidModelId);
@@ -344,6 +406,8 @@ TEST_F(FastPairDiscoverableScannerImplTest,
 TEST_F(FastPairDiscoverableScannerImplTest, InvokesLostCallbackAfterFound_v2) {
   nearby::fastpair::Device metadata;
   metadata.set_trigger_distance(2);
+  metadata.set_device_type(
+      nearby::fastpair::DeviceType::TRUE_WIRELESS_HEADPHONES);
   auto* key_pair = new ::nearby::fastpair::AntiSpoofingKeyPair();
   key_pair->set_public_key("test_public_key");
   metadata.set_allocated_anti_spoofing_key_pair(key_pair);
@@ -356,70 +420,21 @@ TEST_F(FastPairDiscoverableScannerImplTest, InvokesLostCallbackAfterFound_v2) {
 
   base::RunLoop().RunUntilIdle();
 
-  fake_fast_pair_handshake_->InvokeCallback();
-  base::RunLoop().RunUntilIdle();
-
   EXPECT_CALL(lost_device_callback_, Run).Times(1);
   scanner_->NotifyDeviceLost(device);
 
   base::RunLoop().RunUntilIdle();
 }
 
-TEST_F(FastPairDiscoverableScannerImplTest, AlreadyPaired_v1) {
+// TODO(b/242100708): This test is misleading since we don't actually
+// catch the cases where a paired device is discovered by this scanner.
+// Update/remove this test once this bug is fixed.
+TEST_F(FastPairDiscoverableScannerImplTest, AlreadyPaired) {
   device::BluetoothDevice* device =
       GetDevice(kValidModelId, /*is_paired=*/true);
 
   EXPECT_CALL(found_device_callback_, Run).Times(0);
   scanner_->NotifyDeviceFound(device);
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_CALL(lost_device_callback_, Run).Times(0);
-  scanner_->NotifyDeviceLost(device);
-
-  base::RunLoop().RunUntilIdle();
-}
-
-TEST_F(FastPairDiscoverableScannerImplTest, AlreadyPaired_v2) {
-  nearby::fastpair::Device metadata;
-  metadata.set_trigger_distance(2);
-  auto* key_pair = new ::nearby::fastpair::AntiSpoofingKeyPair();
-  key_pair->set_public_key("test_public_key");
-  metadata.set_allocated_anti_spoofing_key_pair(key_pair);
-  repository_->SetFakeMetadata(kValidModelId, metadata);
-
-  device::BluetoothDevice* device =
-      GetDevice(kValidModelId, /*is_paired=*/true);
-
-  EXPECT_CALL(found_device_callback_, Run).Times(0);
-  scanner_->NotifyDeviceFound(device);
-
-  base::RunLoop().RunUntilIdle();
-
-  fake_fast_pair_handshake_->InvokeCallback();
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_CALL(lost_device_callback_, Run).Times(0);
-  scanner_->NotifyDeviceLost(device);
-
-  base::RunLoop().RunUntilIdle();
-}
-
-TEST_F(FastPairDiscoverableScannerImplTest, HandshakeFailed) {
-  nearby::fastpair::Device metadata;
-  metadata.set_trigger_distance(2);
-  auto* key_pair = new ::nearby::fastpair::AntiSpoofingKeyPair();
-  key_pair->set_public_key("test_public_key");
-  metadata.set_allocated_anti_spoofing_key_pair(key_pair);
-  repository_->SetFakeMetadata(kValidModelId, metadata);
-
-  device::BluetoothDevice* device = GetDevice(kValidModelId);
-
-  EXPECT_CALL(found_device_callback_, Run).Times(0);
-  scanner_->NotifyDeviceFound(device);
-
-  base::RunLoop().RunUntilIdle();
-
-  fake_fast_pair_handshake_->InvokeCallback(PairFailure::kCreateGattConnection);
   base::RunLoop().RunUntilIdle();
 
   EXPECT_CALL(lost_device_callback_, Run).Times(0);

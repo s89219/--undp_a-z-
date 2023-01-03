@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -150,7 +150,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) RecursiveOperationDelegate
   // Called when all recursive operation is done (or an error occurs).
   void Done(base::File::Error error);
 
-  raw_ptr<FileSystemContext> file_system_context_;
+  raw_ptr<FileSystemContext, DanglingUntriaged> file_system_context_;
   StatusCallback callback_;
   base::stack<FileSystemURL> pending_directories_;
   base::stack<base::queue<FileSystemURL>> pending_directory_stack_;

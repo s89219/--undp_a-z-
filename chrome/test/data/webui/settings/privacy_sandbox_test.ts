@@ -1,273 +1,46 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://settings/privacy_sandbox/app.js';
 
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
 import {DomIf} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {CrDialogElement} from 'chrome://settings/lazy_load.js';
 import {PrivacySandboxAppElement, PrivacySandboxSettingsView} from 'chrome://settings/privacy_sandbox/app.js';
-import {CanonicalTopic, PrivacySandboxBrowserProxy, PrivacySandboxBrowserProxyImpl} from 'chrome://settings/privacy_sandbox/privacy_sandbox_browser_proxy.js';
-import {CrButtonElement, CrSettingsPrefs, HatsBrowserProxyImpl, loadTimeData, MetricsBrowserProxyImpl, TrustSafetyInteraction} from 'chrome://settings/settings.js';
-
+import {CrSettingsPrefs, HatsBrowserProxyImpl, MetricsBrowserProxyImpl, PrivacySandboxBrowserProxyImpl, TrustSafetyInteraction} from 'chrome://settings/settings.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {flushTasks, isChildVisible, isVisible} from 'chrome://webui-test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 
 import {TestHatsBrowserProxy} from './test_hats_browser_proxy.js';
 import {TestMetricsBrowserProxy} from './test_metrics_browser_proxy.js';
+import {TestPrivacySandboxBrowserProxy} from './test_privacy_sandbox_browser_proxy.js';
 
-class TestPrivacySandboxBrowserProxy extends TestBrowserProxy implements
-    PrivacySandboxBrowserProxy {
-  constructor() {
-    super([
-      'getFlocId',
-      'resetFlocId',
-      'getFledgeState',
-      'setFledgeJoiningAllowed',
-      'getTopicsState',
-      'setTopicAllowed',
-    ]);
-  }
-
-  getFlocId() {
-    this.methodCalled('getFlocId');
-    return Promise.resolve({
-      trialStatus: 'test-trial-status',
-      cohort: 'test-id',
-      nextUpdate: 'test-time',
-      canReset: true,
-    });
-  }
-
-  resetFlocId() {
-    this.methodCalled('resetFlocId');
-  }
-
-  getFledgeState() {
-    this.methodCalled('getFledgeState');
-    return Promise.resolve({
-      joiningSites: ['test-site-one.com'],
-      blockedSites: ['test-site-two.com'],
-    });
-  }
-
-  setFledgeJoiningAllowed(site: string, allowed: boolean) {
-    this.methodCalled('setFledgeJoiningAllowed', [site, allowed]);
-  }
-
-  getTopicsState() {
-    this.methodCalled('getTopicsState');
-    return Promise.resolve({
-      topTopics:
-          [{topicId: 1, taxonomyVersion: 1, displayString: 'test-topic-1'}],
-      blockedTopics:
-          [{topicId: 2, taxonomyVersion: 1, displayString: 'test-topic-2'}],
-    });
-  }
-
-  setTopicAllowed(topic: CanonicalTopic, allowed: boolean) {
-    this.methodCalled('setTopicAllowed', [topic, allowed]);
-  }
-}
-
-suite('PrivacySandbox', function() {
+suite('PrivacySandboxSettings', function() {
   let page: PrivacySandboxAppElement;
   let metricsBrowserProxy: TestMetricsBrowserProxy;
   let testHatsBrowserProxy: TestHatsBrowserProxy;
   let testPrivacySandboxBrowserProxy: TestPrivacySandboxBrowserProxy;
 
-  suiteSetup(function() {
-    loadTimeData.overrideValues({
-      privacySandboxSettings3Enabled: false,
-    });
-  });
-
   setup(function() {
     testHatsBrowserProxy = new TestHatsBrowserProxy();
     HatsBrowserProxyImpl.setInstance(testHatsBrowserProxy);
-
-    metricsBrowserProxy = new TestMetricsBrowserProxy();
-    MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
-
-    testPrivacySandboxBrowserProxy = new TestPrivacySandboxBrowserProxy();
-    PrivacySandboxBrowserProxyImpl.setInstance(testPrivacySandboxBrowserProxy);
-
-    CrSettingsPrefs.deferInitialization = true;
-
-    document.body.innerHTML = '';
-    page = /** @type {!PrivacySandboxAppElement} */
-        (document.createElement('privacy-sandbox-app'));
-    document.body.appendChild(page);
-
-    page.prefs = {generated: {floc_enabled: {value: true}}};
-
-    return flushTasks();
-  });
-
-  teardown(function() {
-    CrSettingsPrefs.resetForTesting();
-  });
-
-  test('testSandboxSettings3Visibility', function() {
-    assertTrue(isChildVisible(page, '#trialsCard'));
-    assertTrue(isChildVisible(page, '#flocCard'));
-    assertFalse(isChildVisible(page, '#trialsCardSettings3'));
-  });
-
-  test('clickApiToggleTest', async function() {
-    const toggleButton =
-        page.shadowRoot!.querySelector<HTMLElement>('#apiToggleButton')!;
-    for (const apisEnabledPrior of [true, false]) {
-      page.prefs = {
-        privacy_sandbox: {
-          apis_enabled: {value: apisEnabledPrior},
-          manually_controlled: {value: false},
-          manually_controlled_v2: {value: false},
-        },
-        generated: {floc_enabled: {value: true}}
-      };
-      await flushTasks();
-      metricsBrowserProxy.resetResolver('recordAction');
-      // User clicks the API toggle.
-      toggleButton.click();
-      assertTrue(page.prefs.privacy_sandbox.manually_controlled.value);
-      assertFalse(page.prefs.privacy_sandbox.manually_controlled_v2.value);
-      // Ensure UMA is logged.
-      assertEquals(
-          apisEnabledPrior ? 'Settings.PrivacySandbox.ApisDisabled' :
-                             'Settings.PrivacySandbox.ApisEnabled',
-          await metricsBrowserProxy.whenCalled('recordAction'));
-    }
-  });
-
-  test('viewedPref', async function() {
-    page.shadowRoot!.querySelector('settings-prefs')!.initialize();
-    await CrSettingsPrefs.initialized;
-    assertTrue(!!page.getPref('privacy_sandbox.page_viewed').value);
-  });
-
-  test('hatsSurvey', async function() {
-    // Confirm that the page called out to the HaTS proxy.
-    const interaction =
-        await testHatsBrowserProxy.whenCalled('trustSafetyInteractionOccurred');
-    assertEquals(TrustSafetyInteraction.OPENED_PRIVACY_SANDBOX, interaction);
-  });
-
-  test('flocId', async function() {
-    // The page should automatically retrieve the FLoC state when it is attached
-    // to the document.
-    await testPrivacySandboxBrowserProxy.whenCalled('getFlocId');
-    assertEquals(
-        'test-trial-status',
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#flocStatus')!.textContent!.trim());
-    assertEquals(
-        'test-id',
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#flocId')!.textContent!.trim());
-    assertEquals(
-        'test-time',
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#flocUpdatedOn')!.textContent!.trim());
-    assertFalse(
-        page.shadowRoot!.querySelector<CrButtonElement>(
-                            '#resetFlocIdButton')!.disabled);
-
-    // The page should listen for changes via a WebUI listener.
-    webUIListenerCallback('floc-id-changed', {
-      trialStatus: 'new-test-trial-status',
-      cohort: 'new-test-id',
-      nextUpdate: 'new-test-time',
-      canReset: false,
-    });
-
-    await flushTasks();
-    assertEquals(
-        'new-test-trial-status',
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#flocStatus')!.textContent!.trim());
-    assertEquals(
-        'new-test-id',
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#flocId')!.textContent!.trim());
-    assertEquals(
-        'new-test-time',
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#flocUpdatedOn')!.textContent!.trim());
-    assertTrue(
-        page.shadowRoot!.querySelector<CrButtonElement>(
-                            '#resetFlocIdButton')!.disabled);
-  });
-
-  test('resetFlocId', function() {
-    page.shadowRoot!.querySelector<HTMLElement>('#resetFlocIdButton')!.click();
-    return testPrivacySandboxBrowserProxy.whenCalled('resetFlocId');
-  });
-
-  test('prefObserver', async function() {
-    await testPrivacySandboxBrowserProxy.whenCalled('getFlocId');
-    testPrivacySandboxBrowserProxy.resetResolver('getFlocId');
-
-    // When the FLoC generated preference is changed, the page should re-query
-    // for the FLoC id.
-    testPrivacySandboxBrowserProxy.resetResolver('getFlocId');
-    page.set('prefs.generated.floc_enabled.value', false);
-    await testPrivacySandboxBrowserProxy.whenCalled('getFlocId');
-  });
-
-  test('userActions', async function() {
-    page.shadowRoot!.querySelector<HTMLElement>('#flocToggleButton')!.click();
-    assertEquals(
-        'Settings.PrivacySandbox.FlocDisabled',
-        await metricsBrowserProxy.whenCalled('recordAction'));
-    metricsBrowserProxy.resetResolver('recordAction');
-
-    page.shadowRoot!.querySelector<HTMLElement>('#flocToggleButton')!.click();
-    assertEquals(
-        'Settings.PrivacySandbox.FlocEnabled',
-        await metricsBrowserProxy.whenCalled('recordAction'));
-    metricsBrowserProxy.resetResolver('recordAction');
-
-    // Ensure that an action is only recorded in response to interaction with
-    // the toggle, and not for the generated preference changing.
-    page.set('prefs.generated.floc_enabled.value', false);
-    await flushTasks();
-    assertEquals(0, metricsBrowserProxy.getCallCount('recordAction'));
-  });
-});
-
-suite('PrivacySandboxSettings3', function() {
-  let page: PrivacySandboxAppElement;
-  let metricsBrowserProxy: TestMetricsBrowserProxy;
-  let testPrivacySandboxBrowserProxy: TestPrivacySandboxBrowserProxy;
-
-  suiteSetup(function() {
-    loadTimeData.overrideValues({
-      privacySandboxSettings3Enabled: true,
-    });
-  });
-
-  setup(function() {
-    assertTrue(loadTimeData.getBoolean('privacySandboxSettings3Enabled'));
     metricsBrowserProxy = new TestMetricsBrowserProxy();
     MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
     testPrivacySandboxBrowserProxy = new TestPrivacySandboxBrowserProxy();
     PrivacySandboxBrowserProxyImpl.setInstance(testPrivacySandboxBrowserProxy);
 
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = /** @type {!PrivacySandboxAppElement} */
         (document.createElement('privacy-sandbox-app'));
     document.body.appendChild(page);
     page.prefs = {privacy_sandbox: {apis_enabled_v2: {value: true}}};
-
     return flushTasks();
   });
 
   function assertMainViewVisible() {
     assertEquals(
-        page.privacySandboxSettingsView_, PrivacySandboxSettingsView.MAIN);
+        page.privacySandboxSettingsView, PrivacySandboxSettingsView.MAIN);
     const dialogWrapper =
         page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
     assertFalse(!!dialogWrapper);
@@ -275,7 +48,7 @@ suite('PrivacySandboxSettings3', function() {
 
   function assertLearnMoreDialogVisible() {
     assertEquals(
-        page.privacySandboxSettingsView_,
+        page.privacySandboxSettingsView,
         PrivacySandboxSettingsView.LEARN_MORE_DIALOG);
     const dialogWrapper =
         page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
@@ -289,7 +62,7 @@ suite('PrivacySandboxSettings3', function() {
 
   function assertAdPersonalizationDialogVisible() {
     assertEquals(
-        page.privacySandboxSettingsView_,
+        page.privacySandboxSettingsView,
         PrivacySandboxSettingsView.AD_PERSONALIZATION_DIALOG);
     const dialogWrapper =
         page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
@@ -310,7 +83,7 @@ suite('PrivacySandboxSettings3', function() {
 
   function assertAdPersonalizationRemovedDialogVisible() {
     assertEquals(
-        page.privacySandboxSettingsView_,
+        page.privacySandboxSettingsView,
         PrivacySandboxSettingsView.AD_PERSONALIZATION_REMOVED_DIALOG);
     const dialogWrapper =
         page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
@@ -331,7 +104,7 @@ suite('PrivacySandboxSettings3', function() {
 
   function assertAdMeasurementDialogVisible() {
     assertEquals(
-        page.privacySandboxSettingsView_,
+        page.privacySandboxSettingsView,
         PrivacySandboxSettingsView.AD_MEASUREMENT_DIALOG);
     const dialogWrapper =
         page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
@@ -345,7 +118,7 @@ suite('PrivacySandboxSettings3', function() {
 
   function assertSpamAndFraudDialogVisible() {
     assertEquals(
-        page.privacySandboxSettingsView_,
+        page.privacySandboxSettingsView,
         PrivacySandboxSettingsView.SPAM_AND_FRAUD_DIALOG);
     const dialogWrapper =
         page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
@@ -357,10 +130,18 @@ suite('PrivacySandboxSettings3', function() {
                 '#' + PrivacySandboxSettingsView.SPAM_AND_FRAUD_DIALOG)!.if !);
   }
 
-  test('testSandboxSettings3Visibility', function() {
-    assertFalse(isChildVisible(page, '#trialsCard'));
-    assertFalse(isChildVisible(page, '#flocCard'));
-    assertTrue(isChildVisible(page, '#trialsCardSettings3'));
+
+  test('viewedPref', async function() {
+    page.shadowRoot!.querySelector('settings-prefs')!.initialize();
+    await CrSettingsPrefs.initialized;
+    assertTrue(!!page.getPref('privacy_sandbox.page_viewed').value);
+  });
+
+  test('hatsSurvey', async function() {
+    // Confirm that the page called out to the HaTS proxy.
+    const interaction =
+        await testHatsBrowserProxy.whenCalled('trustSafetyInteractionOccurred');
+    assertEquals(TrustSafetyInteraction.OPENED_PRIVACY_SANDBOX, interaction);
   });
 
   [true, false].forEach(apisEnabledPrior => {
@@ -370,7 +151,6 @@ suite('PrivacySandboxSettings3', function() {
       page.prefs = {
         privacy_sandbox: {
           apis_enabled_v2: {value: apisEnabledPrior},
-          manually_controlled: {value: false},
           manually_controlled_v2: {value: false},
         },
       };
@@ -381,7 +161,6 @@ suite('PrivacySandboxSettings3', function() {
       assertEquals(
           !apisEnabledPrior,
           page.getPref('privacy_sandbox.apis_enabled_v2').value);
-      assertFalse(page.prefs.privacy_sandbox.manually_controlled.value);
       assertTrue(page.prefs.privacy_sandbox.manually_controlled_v2.value);
       // Ensure UMA is logged.
       assertEquals(
@@ -392,8 +171,7 @@ suite('PrivacySandboxSettings3', function() {
       if (apisEnabledPrior) {
         // Check that top topics & joining sites have been cleared.
         assertMainViewVisible();
-        page.shadowRoot!.querySelector<HTMLElement>(
-                            '#adPersonalizationRow')!.click();
+        page.$.adPersonalizationRow.click();
         await flushTasks();
         assertAdPersonalizationDialogVisible();
 
@@ -419,10 +197,10 @@ suite('PrivacySandboxSettings3', function() {
   test('testLearnMoreDialog', async function() {
     // The learn more link should be visible but the dialog itself not.
     assertMainViewVisible();
-    assertTrue(isChildVisible(page, '#learnMoreLink'));
+    assertTrue(isVisible(page.$.learnMoreLink));
 
     // Clicking on the learn more link should open the dialog.
-    page.shadowRoot!.querySelector<HTMLElement>('#learnMoreLink')!.click();
+    page.$.learnMoreLink.click();
     assertEquals(
         'Settings.PrivacySandbox.AdPersonalization.LearnMoreClicked',
         await metricsBrowserProxy.whenCalled('recordAction'));
@@ -439,8 +217,7 @@ suite('PrivacySandboxSettings3', function() {
     assertMainViewVisible();
 
     // Clicking on the ad personalization row should open the dialog.
-    page.shadowRoot!.querySelector<HTMLElement>(
-                        '#adPersonalizationRow')!.click();
+    page.$.adPersonalizationRow.click();
     assertEquals(
         'Settings.PrivacySandbox.AdPersonalization.Opened',
         await metricsBrowserProxy.whenCalled('recordAction'));
@@ -457,8 +234,7 @@ suite('PrivacySandboxSettings3', function() {
     assertMainViewVisible();
 
     // Clicking on the ad personalization row should open the dialog.
-    page.shadowRoot!.querySelector<HTMLElement>(
-                        '#adPersonalizationRow')!.click();
+    page.$.adPersonalizationRow.click();
     await flushTasks();
     assertAdPersonalizationDialogVisible();
     metricsBrowserProxy.resetResolver('recordAction');
@@ -490,7 +266,7 @@ suite('PrivacySandboxSettings3', function() {
     assertMainViewVisible();
 
     // Clicking on the ad measurement row should open the dialog.
-    page.shadowRoot!.querySelector<HTMLElement>('#adMeasurementRow')!.click();
+    page.$.adMeasurementRow.click();
     assertEquals(
         'Settings.PrivacySandbox.AdMeasurement.Opened',
         await metricsBrowserProxy.whenCalled('recordAction'));
@@ -505,7 +281,7 @@ suite('PrivacySandboxSettings3', function() {
 
   test('testAdMeasurementDialogBrowsingHistoryLink', async function() {
     assertMainViewVisible();
-    page.shadowRoot!.querySelector<HTMLElement>('#adMeasurementRow')!.click();
+    page.$.adMeasurementRow.click();
     await flushTasks();
     assertAdMeasurementDialogVisible();
 
@@ -524,7 +300,7 @@ suite('PrivacySandboxSettings3', function() {
     assertMainViewVisible();
 
     // Clicking on the spam & fraud row should open the dialog.
-    page.shadowRoot!.querySelector<HTMLElement>('#spamAndFraudRow')!.click();
+    page.$.spamAndFraudRow.click();
     assertEquals(
         'Settings.PrivacySandbox.SpamFraud.Opened',
         await metricsBrowserProxy.whenCalled('recordAction'));
@@ -539,8 +315,7 @@ suite('PrivacySandboxSettings3', function() {
 
   test('testTopicsList', async function() {
     assertMainViewVisible();
-    page.shadowRoot!.querySelector<HTMLElement>(
-                        '#adPersonalizationRow')!.click();
+    page.$.adPersonalizationRow.click();
     await flushTasks();
     assertAdPersonalizationDialogVisible();
 
@@ -627,8 +402,7 @@ suite('PrivacySandboxSettings3', function() {
 
   test('testFledgeList', async function() {
     assertMainViewVisible();
-    page.shadowRoot!.querySelector<HTMLElement>(
-                        '#adPersonalizationRow')!.click();
+    page.$.adPersonalizationRow.click();
     await flushTasks();
     assertAdPersonalizationDialogVisible();
 
@@ -713,5 +487,37 @@ suite('PrivacySandboxSettings3', function() {
     page.shadowRoot!.querySelector<HTMLElement>('#dialogCloseButton')!.click();
     await flushTasks();
     assertMainViewVisible();
+  });
+
+  test('directDialogClose', async function() {
+    // Confirm that closing the dialog directly (as done through the escape key)
+    // correctly navigates back.
+    assertMainViewVisible();
+
+    // Open a sub page.
+    page.$.adPersonalizationRow.click();
+    await flushTasks();
+    assertAdPersonalizationDialogVisible();
+
+    // Close the subpage by closing the modal dialog directly.
+    const dialogWrapper =
+        page.shadowRoot!.querySelector<CrDialogElement>('#dialogWrapper');
+    assertTrue(!!dialogWrapper);
+    dialogWrapper.close();
+    // The close() call on the the <cr-dialog> is routed to its internal
+    // <dialog> element, which then fires close, which the <cr-dialog> then
+    // fires it's own close event from. Not all of these tasks are necessarily
+    // queued synchronously. Waiting until the <cr-dialog> fires close, and
+    // then an additional flushTasks() so the page can react, is required.
+    await eventToPromise('close', dialogWrapper);
+    await flushTasks();
+
+    assertMainViewVisible();
+
+    // Closing the dialog should have reset the view state, such that another
+    // dialog can be opened.
+    page.$.adMeasurementRow.click();
+    await flushTasks();
+    assertAdMeasurementDialogVisible();
   });
 });

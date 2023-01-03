@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,6 @@ import androidx.annotation.ColorInt;
 import androidx.annotation.ColorRes;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.drawable.DrawableCompat;
-import androidx.core.widget.TextViewCompat;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.chrome.tab_ui.R;
@@ -195,16 +194,22 @@ public class TabGroupUiToolbarView extends FrameLayout {
         MarginLayoutParams params = (MarginLayoutParams) mTitleTextView.getLayoutParams();
         params.setMarginStart(topicMargin);
         mTitleTextView.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-        TextViewCompat.setTextAppearance(
-                mTitleTextView, org.chromium.chrome.R.style.TextAppearance_Headline_Primary);
+        mTitleTextView.setTextAppearance(
+                org.chromium.chrome.R.style.TextAppearance_Headline_Primary);
     }
 
     /**
-     * Hide the UI widgets related to tab group continuation features.
+     * Hide the title widgets related to tab group continuation features.
      */
-    void hideTabGroupsContinuationWidgets() {
+    void hideTitleWidget() {
         mTitleTextView.setFocusable(false);
         mTitleTextView.setBackgroundColor(Color.TRANSPARENT);
+    }
+
+    /**
+     * Hide the menu button related to tab group continuation and selection editor features.
+     */
+    void hideMenuButton() {
         mMainContent.removeView(mMenuButton);
     }
 

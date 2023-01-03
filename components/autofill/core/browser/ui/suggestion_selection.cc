@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include "components/autofill/core/browser/ui/suggestion_selection.h"
@@ -21,8 +21,10 @@
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_util.h"
+#include "components/strings/grit/components_strings.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_data.h"
 #include "third_party/libaddressinput/src/cpp/include/libaddressinput/address_formatter.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace autofill {
 namespace suggestion_selection {
@@ -87,7 +89,7 @@ std::vector<Suggestion> GetPrefixMatchedSuggestions(
         profile->GetRawInfo(type.GetStorableType()) == raw_field_contents) {
       continue;
     }
-#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
+#endif  // BUILDFLAG(IS_ANDROID)
 
     std::u16string value =
         GetInfoInOneLine(profile, type, comparator.app_locale());
@@ -107,10 +109,10 @@ std::vector<Suggestion> GetPrefixMatchedSuggestions(
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
         format_phone = base::FeatureList::IsEnabled(
-            autofill::features::kAutofillUseMobileLabelDisambiguation);
+            features::kAutofillUseMobileLabelDisambiguation);
 #else
         format_phone = base::FeatureList::IsEnabled(
-            autofill::features::kAutofillUseImprovedLabelDisambiguation);
+            features::kAutofillUseImprovedLabelDisambiguation);
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 
         if (format_phone) {
@@ -126,10 +128,12 @@ std::vector<Suggestion> GetPrefixMatchedSuggestions(
       }
 
       suggestions.emplace_back(value);
-      suggestions.back().backend_id = profile->guid();
+      suggestions.back().payload = Suggestion::BackendId(profile->guid());
       suggestions.back().match = prefix_matched_suggestion
                                      ? Suggestion::PREFIX_MATCH
                                      : Suggestion::SUBSTRING_MATCH;
+      suggestions.back().acceptance_a11y_announcement =
+          l10n_util::GetStringUTF16(IDS_AUTOFILL_A11Y_ANNOUNCE_FILLED_FORM);
     }
   }
 
@@ -166,16 +170,24 @@ std::vector<Suggestion> GetUniqueSuggestions(
       AutofillProfile* profile_b = matched_profiles[j];
       // Check if profile A is a subset of profile B. If not, continue.
       if (i == j ||
-          !comparator.Compare(suggestions[i].value, suggestions[j].value) ||
+          !comparator.Compare(suggestions[i].main_text.value,
+                              suggestions[j].main_text.value) ||
           !profile_a->IsSubsetOfForFieldSet(comparator, *profile_b, app_locale,
                                             types)) {
         continue;
       }
 
       // Check if profile B is also a subset of profile A. If so, the
-      // profiles are identical. Include the first one but not the second.
-      if (i < j && profile_b->IsSubsetOfForFieldSet(comparator, *profile_a,
-                                                    app_locale, types)) {
+      // profiles are identical and only one should be included.
+      // Prefer `kAccount` profiles over `kLocalOrSyncable` ones. In case the
+      // profiles have the same source, prefer the earlier one (since the
+      // profiles are pre-sorted by their relevants).
+      const bool prefer_a_over_b =
+          profile_a->source() == profile_b->source()
+              ? i < j
+              : profile_a->source() == AutofillProfile::Source::kAccount;
+      if (prefer_a_over_b && profile_b->IsSubsetOfForFieldSet(
+                                 comparator, *profile_a, app_locale, types)) {
         continue;
       }
 
@@ -184,7 +196,7 @@ std::vector<Suggestion> GetUniqueSuggestions(
       break;
     }
     if (include) {
-      unique_matched_profiles->push_back(matched_profiles[i]);
+      unique_matched_profiles->push_back(profile_a);
       unique_suggestions.push_back(suggestions[i]);
     }
   }
@@ -290,12 +302,11 @@ void PrepareSuggestions(const std::vector<std::u16string>& labels,
   for (size_t i = 0; i < labels.size(); ++i) {
     std::u16string label = labels[i];
 
-    bool text_inserted =
-        suggestion_text
-            .insert(comparator.NormalizeForComparison(
-                (*suggestions)[i].value + label,
-                autofill::AutofillProfileComparator::DISCARD_WHITESPACE))
-            .second;
+    bool text_inserted = suggestion_text
+                             .insert(comparator.NormalizeForComparison(
+                                 (*suggestions)[i].main_text.value + label,
+                                 AutofillProfileComparator::DISCARD_WHITESPACE))
+                             .second;
 
     if (text_inserted) {
       if (index_to_add_suggestion != i) {
@@ -309,9 +320,12 @@ void PrepareSuggestions(const std::vector<std::u16string>& labels,
       // cases, e.g. when a credit card form contains a zip code field and the
       // user clicks on the zip code, a suggestion's value and the label
       // produced for it may both be a zip code.
-      if (!comparator.Compare((*suggestions)[index_to_add_suggestion].value,
-                              labels[i])) {
-        (*suggestions)[index_to_add_suggestion].label = labels[i];
+      if (!comparator.Compare(
+              (*suggestions)[index_to_add_suggestion].main_text.value,
+              labels[i]) &&
+          !labels[i].empty()) {
+        (*suggestions)[index_to_add_suggestion].labels = {
+            {Suggestion::Text(labels[i])}};
       }
       ++index_to_add_suggestion;
     }

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,9 @@ class LogRouter;
 
 namespace content {
 class BrowserContext;
-class WebUIDataSource;
 }  // namespace content
+
+class Profile;
 
 namespace autofill {
 
@@ -29,8 +30,8 @@ constexpr char kCacheResetDone[] =
     "cache reset.";
 constexpr char kCacheResetAlreadyInProgress[] = "Reset already in progress";
 
-content::WebUIDataSource* CreateInternalsHTMLSource(
-    const std::string& source_name);
+void CreateAndAddInternalsHTMLSource(Profile* profile,
+                                     const std::string& source_name);
 
 // Class that wipes responses from the Autofill server from the HTTP cache.
 class AutofillCacheResetter : public content::BrowsingDataRemover::Observer {
@@ -78,14 +79,15 @@ class InternalsUIHandler : public content::WebUIMessageHandler,
   void OnJavascriptDisallowed() override;
 
   // LogReceiver implementation.
-  void LogEntry(const base::Value& entry) override;
+  void LogEntry(const base::Value::Dict& entry) override;
 
   void StartSubscription();
   void EndSubscription();
 
   // JavaScript call handler.
-  void OnLoaded(const base::ListValue* args);
-  void OnResetCache(const base::ListValue* args);
+  void OnLoaded(const base::Value::List& args);
+  void OnResetCache(const base::Value::List& args);
+  void OnResetUpmEviction(const base::Value::List& args);
 
   void OnResetCacheDone(const std::string& message);
 

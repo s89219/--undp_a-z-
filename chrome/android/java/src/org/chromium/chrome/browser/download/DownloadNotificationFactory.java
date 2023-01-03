@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,6 @@ import org.chromium.components.offline_items_collection.ContentId;
 import org.chromium.components.offline_items_collection.LegacyHelpers;
 import org.chromium.components.offline_items_collection.OfflineItem;
 import org.chromium.components.offline_items_collection.PendingState;
-import org.chromium.url.GURL;
 
 /**
  * Creates and updates notifications related to downloads.
@@ -92,8 +91,7 @@ public final class DownloadNotificationFactory {
         // TODO(xingliu): Write a unit test for this class.
         String channelId = ChromeChannelDefinitions.ChannelId.DOWNLOADS;
         if (LegacyHelpers.isLegacyDownload(downloadUpdate.getContentId())
-                && downloadStatus == DownloadNotificationService.DownloadStatus.COMPLETED
-                && ChromeFeatureList.isEnabled(ChromeFeatureList.DOWNLOAD_NOTIFICATION_BADGE)) {
+                && downloadStatus == DownloadNotificationService.DownloadStatus.COMPLETED) {
             channelId = ChromeChannelDefinitions.ChannelId.COMPLETED_DOWNLOADS;
         }
         NotificationWrapperBuilder builder =
@@ -299,7 +297,8 @@ public final class DownloadNotificationFactory {
                         intent.putExtra(NotificationConstants.EXTRA_NOTIFICATION_ID,
                                 downloadUpdate.getNotificationId());
                         MediaViewerUtils.setOriginalUrlAndReferralExtraToIntent(intent,
-                                downloadUpdate.getOriginalUrl(), downloadUpdate.getReferrer());
+                                downloadUpdate.getOriginalUrl().getSpec(),
+                                downloadUpdate.getReferrer().getSpec());
                     } else {
                         intent = buildActionIntent(
                                 context, ACTION_DOWNLOAD_OPEN, downloadUpdate.getContentId(), null);
@@ -365,7 +364,7 @@ public final class DownloadNotificationFactory {
         } else if (downloadUpdate.getShouldPromoteOrigin()) {
             // Always show the origin URL if available (for normal profiles).
             String formattedUrl = DownloadUtils.formatUrlForDisplayInNotification(
-                    new GURL(downloadUpdate.getOriginalUrl()));
+                    downloadUpdate.getOriginalUrl());
             if (formattedUrl != null) setSubText(builder, formattedUrl);
         }
 

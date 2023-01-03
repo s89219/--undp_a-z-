@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "chrome/browser/ui/signin_modal_dialog.h"
 #include "chrome/browser/ui/signin_modal_dialog_impl.h"
 #include "chrome/browser/ui/signin_view_controller_delegate.h"
+#include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
 #include "chrome/browser/ui/webui/signin/signin_utils.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_buildflags.h"
@@ -55,7 +56,6 @@ namespace {
 
 // Returns the sign-in reason for |mode|.
 signin_metrics::Reason GetSigninReasonFromMode(profiles::BubbleViewMode mode) {
-  DCHECK(SigninViewController::ShouldShowSigninForMode(mode));
   switch (mode) {
     case profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN:
       return signin_metrics::Reason::kSigninPrimaryAccount;
@@ -75,7 +75,7 @@ void ShowTabOverwritingNTP(Browser* browser, const GURL& url) {
   params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
   params.window_action = NavigateParams::SHOW_WINDOW;
   params.user_gesture = false;
-  params.tabstrip_add_types |= TabStripModel::ADD_INHERIT_OPENER;
+  params.tabstrip_add_types |= AddTabTypes::ADD_INHERIT_OPENER;
 
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
@@ -156,20 +156,10 @@ SigninViewController::~SigninViewController() {
   CloseModalSignin();
 }
 
-// static
-bool SigninViewController::ShouldShowSigninForMode(
-    profiles::BubbleViewMode mode) {
-  return mode == profiles::BUBBLE_VIEW_MODE_GAIA_SIGNIN ||
-         mode == profiles::BUBBLE_VIEW_MODE_GAIA_ADD_ACCOUNT ||
-         mode == profiles::BUBBLE_VIEW_MODE_GAIA_REAUTH;
-}
-
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 void SigninViewController::ShowSignin(profiles::BubbleViewMode mode,
                                       signin_metrics::AccessPoint access_point,
                                       const GURL& redirect_url) {
-  DCHECK(ShouldShowSigninForMode(mode));
-
   Profile* profile = browser_->profile();
   std::string email;
   signin_metrics::Reason signin_reason = GetSigninReasonFromMode(mode);
@@ -244,6 +234,16 @@ void SigninViewController::ShowModalInterceptFirstRunExperienceDialog(
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+void SigninViewController::ShowModalProfileCustomizationDialog(
+    bool is_local_profile_creation) {
+  CloseModalSignin();
+  dialog_ = std::make_unique<SigninModalDialogImpl>(
+      SigninViewControllerDelegate::CreateProfileCustomizationDelegate(
+          browser_, is_local_profile_creation,
+          /*show_profile_switch_iph=*/true),
+      GetOnModalDialogClosedCallback());
+}
+
 void SigninViewController::ShowModalSigninEmailConfirmationDialog(
     const std::string& last_email,
     const std::string& email,
@@ -259,10 +259,12 @@ void SigninViewController::ShowModalSigninEmailConfirmationDialog(
 }
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 
-void SigninViewController::ShowModalSyncConfirmationDialog() {
+void SigninViewController::ShowModalSyncConfirmationDialog(
+    bool is_signin_intercept) {
   CloseModalSignin();
   dialog_ = std::make_unique<SigninModalDialogImpl>(
-      SigninViewControllerDelegate::CreateSyncConfirmationDelegate(browser_),
+      SigninViewControllerDelegate::CreateSyncConfirmationDelegate(
+          browser_, is_signin_intercept),
       GetOnModalDialogClosedCallback());
 }
 
@@ -375,8 +377,10 @@ void SigninViewController::ShowDiceSigninTab(
           signin_metrics::AccessPoint::ACCESS_POINT_EXTENSIONS) {
         // Extensions do not activate the tab to prevent misbehaving
         // extensions to keep focusing the signin tab.
-        tab_strip->ActivateTabAt(dice_tab_index,
-                                 {TabStripModel::GestureType::kOther});
+        tab_strip->ActivateTabAt(
+            dice_tab_index,
+            TabStripUserGestureDetails(
+                TabStripUserGestureDetails::GestureType::kOther));
       }
       // Do not create a new signin tab, because there is already one.
       return;

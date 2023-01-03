@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,8 @@
 
 namespace media {
 
+struct AudioGlitchInfo;
+
 // AudioRendererSink is an interface representing the end-point for
 // rendered audio.  An implementation is expected to
 // periodically call Render() on a callback object.
@@ -27,14 +29,13 @@ class AudioRendererSink
   class RenderCallback {
    public:
     // Attempts to completely fill all channels of |dest|, returns actual
-    // number of frames filled. |prior_frames_skipped| contains the number of
-    // frames
-    // the consumer has skipped, if any.
-    // The |delay| argument represents audio device output latency,
-    // |delay_timestamp| represents the time when |delay| was obtained.
+    // number of frames filled. The |delay| argument represents audio device
+    // output latency, |delay_timestamp| represents the time when |delay| was
+    // obtained. |glitch_info| contains information about all glitches that
+    // have occurred since the last call to Render().
     virtual int Render(base::TimeDelta delay,
                        base::TimeTicks delay_timestamp,
-                       int prior_frames_skipped,
+                       const AudioGlitchInfo& glitch_info,
                        AudioBus* dest) = 0;
     // Signals an error has occurred.
     virtual void OnRenderError() = 0;

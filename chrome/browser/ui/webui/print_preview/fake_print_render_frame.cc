@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,8 @@ FakePrintRenderFrame::~FakePrintRenderFrame() = default;
 
 void FakePrintRenderFrame::PrintRequestedPages() {}
 
-void FakePrintRenderFrame::PrintWithParams(mojom::PrintPagesParamsPtr params) {
+void FakePrintRenderFrame::PrintWithParams(mojom::PrintPagesParamsPtr params,
+                                           PrintWithParamsCallback callback) {
   NOTREACHED();
 }
 
@@ -36,7 +37,7 @@ void FakePrintRenderFrame::InitiatePrintPreview(
     mojo::PendingAssociatedRemote<mojom::PrintRenderer> print_renderer,
     bool has_selection) {}
 
-void FakePrintRenderFrame::PrintPreview(base::Value settings) {}
+void FakePrintRenderFrame::PrintPreview(base::Value::Dict settings) {}
 
 void FakePrintRenderFrame::OnPrintPreviewDialogClosed() {}
 
@@ -46,7 +47,7 @@ void FakePrintRenderFrame::PrintFrameContent(
 
 void FakePrintRenderFrame::PrintingDone(bool success) {}
 
-void FakePrintRenderFrame::SetPrintingEnabled(bool enabled) {}
+void FakePrintRenderFrame::ConnectToPdfRenderer() {}
 
 void FakePrintRenderFrame::PrintNodeUnderContextMenu() {}
 

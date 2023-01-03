@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,7 @@
 #include "net/der/parse_values.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace net {
-namespace der {
-namespace test {
+namespace net::der::test {
 
 namespace {
 
@@ -273,8 +271,4 @@ TEST(EncodeValuesTest, EncodeUTCTime) {
   EXPECT_FALSE(EncodeUTCTime(time, out));
 }
 
-}  // namespace test
-
-}  // namespace der
-
-}  // namespace net
+}  // namespace net::der::test

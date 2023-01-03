@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include "base/callback.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/task/task_runner_util.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
@@ -114,7 +113,17 @@ void ChangeMetricsReportingStateWithReply(
     OnMetricsReportingCallbackType callback_fn,
     ChangeMetricsReportingStateCalledFrom called_from) {
 #if !BUILDFLAG(IS_ANDROID)
-  if (IsMetricsReportingPolicyManaged()) {
+  // Chrome OS manages metrics settings externally and changes to reporting
+  // should be propagated to metrics service regardless if the policy is managed
+  // or not.
+  // TODO(crbug/1346321): Possibly change |is_chrome_os| to use
+  // BUILDFLAG(IS_CHROMEOS_ASH).
+  bool is_chrome_os =
+      (called_from ==
+       ChangeMetricsReportingStateCalledFrom::kCrosMetricsSettingsChange) ||
+      (called_from ==
+       ChangeMetricsReportingStateCalledFrom::kCrosMetricsSettingsCreated);
+  if (IsMetricsReportingPolicyManaged() && !is_chrome_os) {
     if (!callback_fn.is_null()) {
       const bool metrics_enabled =
           ChromeMetricsServiceAccessor::IsMetricsAndCrashReportingEnabled();
@@ -130,16 +139,25 @@ void ChangeMetricsReportingStateWithReply(
       metrics::structured::NeutrinoDevicesLocation::
           kChangeMetricsReportingStateWithReply);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-  base::PostTaskAndReplyWithResult(
-      GoogleUpdateSettings::CollectStatsConsentTaskRunner(), FROM_HERE,
-      base::BindOnce(&SetGoogleUpdateSettings, enabled),
-      base::BindOnce(&SetMetricsReporting, enabled, std::move(callback_fn),
-                     called_from));
+  GoogleUpdateSettings::CollectStatsConsentTaskRunner()
+      ->PostTaskAndReplyWithResult(
+          FROM_HERE, base::BindOnce(&SetGoogleUpdateSettings, enabled),
+          base::BindOnce(&SetMetricsReporting, enabled, std::move(callback_fn),
+                         called_from));
 }
 
 void UpdateMetricsPrefsOnPermissionChange(
     bool metrics_enabled,
     ChangeMetricsReportingStateCalledFrom called_from) {
+  // On Chrome OS settings creation, nothing should be performed (the metrics
+  // service is simply being initialized). Otherwise, for users who have
+  // metrics reporting disabled, their client ID and low entropy sources would
+  // be cleared on each log in. For users who have metrics reporting enabled,
+  // their stability metrics and histogram data would be cleared.
+  if (called_from ==
+      ChangeMetricsReportingStateCalledFrom::kCrosMetricsSettingsCreated) {
+    return;
+  }
   if (metrics_enabled) {
     // When a user opts in to the metrics reporting service, the previously
     // collected data should be cleared to ensure that nothing is reported
@@ -150,9 +168,26 @@ void UpdateMetricsPrefsOnPermissionChange(
     }
     return;
   }
+#if BUILDFLAG(IS_ANDROID)
+  // When a user disables metrics reporting on Android Chrome, the new
+  // sampling trial should be used to determine whether the client is sampled
+  // in or out (if the user ever re-enables metrics reporting).
+  //
+  // Existing metrics-reporting-enabled clients (i.e. the users without this
+  // pref set) do not use the new sampling trial; they continue to use
+  // MetricsAndCrashSampling. However, if such a user disables metrics
+  // reporting and later re-enables it, they will start using the new trial.
+  //
+  // See crbug/1306481 and the comment above |kUsePostFREFixSamplingTrial| in
+  // components/metrics/metrics_pref_names.cc for more details.
+  g_browser_process->local_state()->SetBoolean(
+      metrics::prefs::kUsePostFREFixSamplingTrial, true);
+#endif  // BUILDFLAG(IS_ANDROID)
+
   // Clear the client id and low entropy sources pref when opting out.
   // Note: This will not affect the running state (e.g. field trial
   // randomization), as the pref is only read on startup.
+
   UMA_HISTOGRAM_BOOLEAN("UMA.ClientIdCleared", true);
 
   PrefService* local_state = g_browser_process->local_state();
@@ -164,6 +199,7 @@ void UpdateMetricsPrefsOnPermissionChange(
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
   local_state->ClearPref(metrics::prefs::kMetricsClientID);
+  local_state->ClearPref(metrics::prefs::kMetricsProvisionalClientID);
   metrics::EntropyState::ClearPrefs(local_state);
   metrics::ClonedInstallDetector::ClearClonedInstallInfo(local_state);
   local_state->ClearPref(metrics::prefs::kMetricsReportingEnabledTimestamp);

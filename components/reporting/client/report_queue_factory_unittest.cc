@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,8 +38,8 @@ class MockReportQueueConsumer {
       waiter->Signal();
     }
   }
-  base::OnceCallback<void(std::unique_ptr<reporting::ReportQueue>)>
-  GetReportQueueSetter(test::TestCallbackWaiter* waiter) {
+  base::OnceCallback<void(std::unique_ptr<ReportQueue>)> GetReportQueueSetter(
+      test::TestCallbackWaiter* waiter) {
     return base::BindOnce(&MockReportQueueConsumer::SetReportQueue,
                           weak_factory_.GetWeakPtr(), base::Unretained(waiter));
   }
@@ -61,8 +61,8 @@ class ReportQueueFactoryTest : public ::testing::Test {
   }
 
   void TearDown() override {
-    task_environment_.RunUntilIdle();  // Drain remaining scheduled tasks.
     report_queue_provider_test_helper::SetForTesting(nullptr);
+    task_environment_.RunUntilIdle();  // Drain remaining scheduled tasks.
   }
 
   const Destination destination_ = Destination::UPLOAD_EVENTS;
@@ -77,9 +77,8 @@ TEST_F(ReportQueueFactoryTest, CreateAndGetQueue) {
   EXPECT_FALSE(consumer_->GetReportQueue());
   {
     test::TestCallbackAutoWaiter set_waiter;
-    reporting::ReportQueueFactory::Create(
-        EventType::kDevice, destination_,
-        consumer_->GetReportQueueSetter(&set_waiter));
+    ReportQueueFactory::Create(EventType::kDevice, destination_,
+                               consumer_->GetReportQueueSetter(&set_waiter));
     EXPECT_CALL(*provider_.get(), OnInitCompletedMock()).Times(1);
     provider_->ExpectCreateNewQueueAndReturnNewMockQueue(1);
   }
@@ -90,9 +89,35 @@ TEST_F(ReportQueueFactoryTest, CreateAndGetQueue) {
 TEST_F(ReportQueueFactoryTest, CreateQueueWithInvalidConfig) {
   // Initially the queue must be an uninitialized unique_ptr
   EXPECT_FALSE(consumer_->GetReportQueue());
-  reporting::ReportQueueFactory::Create(
-      EventType::kDevice, Destination::UNDEFINED_DESTINATION,
-      consumer_->GetReportQueueSetter(nullptr));
+  ReportQueueFactory::Create(EventType::kDevice,
+                             Destination::UNDEFINED_DESTINATION,
+                             consumer_->GetReportQueueSetter(nullptr));
+  // Expect failure before it gets to the report queue provider
+  EXPECT_CALL(*provider_.get(), OnInitCompletedMock()).Times(0);
+  // We do not expect the report queue to be existing in the consumer.
+  EXPECT_FALSE(consumer_->GetReportQueue());
+}
+
+TEST_F(ReportQueueFactoryTest, CreateAndGetQueueWithValidReservedSpace) {
+  EXPECT_FALSE(consumer_->GetReportQueue());
+  {
+    test::TestCallbackAutoWaiter set_waiter;
+    ReportQueueFactory::Create(EventType::kDevice, destination_,
+                               consumer_->GetReportQueueSetter(&set_waiter),
+                               /*reserved_space=*/12345L);
+    EXPECT_CALL(*provider_.get(), OnInitCompletedMock()).Times(1);
+    provider_->ExpectCreateNewQueueAndReturnNewMockQueue(1);
+  }
+  // We expect the report queue to be existing in the consumer.
+  EXPECT_TRUE(consumer_->GetReportQueue());
+}
+
+TEST_F(ReportQueueFactoryTest, CreateQueueWithInvalidReservedSpace) {
+  // Initially the queue must be an uninitialized unique_ptr
+  EXPECT_FALSE(consumer_->GetReportQueue());
+  ReportQueueFactory::Create(EventType::kDevice, destination_,
+                             consumer_->GetReportQueueSetter(nullptr),
+                             /*reserved_space=*/-1L);
   // Expect failure before it gets to the report queue provider
   EXPECT_CALL(*provider_.get(), OnInitCompletedMock()).Times(0);
   // We do not expect the report queue to be existing in the consumer.
@@ -102,16 +127,30 @@ TEST_F(ReportQueueFactoryTest, CreateQueueWithInvalidConfig) {
 TEST_F(ReportQueueFactoryTest, CreateSpeculativeQueue) {
   // Mock internal implementation to use a MockReportQueue
   provider_->ExpectCreateNewSpeculativeQueueAndReturnNewMockQueue(1);
-  const auto report_queue =
-      reporting::ReportQueueFactory::CreateSpeculativeReportQueue(
-          EventType::kDevice, destination_);
+  const auto report_queue = ReportQueueFactory::CreateSpeculativeReportQueue(
+      EventType::kDevice, destination_);
   EXPECT_THAT(report_queue, NotNull());
 }
 
+TEST_F(ReportQueueFactoryTest, CreateSpeculativeQueueWithValidReservedSpace) {
+  // Mock internal implementation to use a MockReportQueue
+  provider_->ExpectCreateNewSpeculativeQueueAndReturnNewMockQueue(1);
+  const auto report_queue = ReportQueueFactory::CreateSpeculativeReportQueue(
+      EventType::kDevice, destination_,
+      /*reserved_space=*/12345L);
+  EXPECT_THAT(report_queue, NotNull());
+}
+
+TEST_F(ReportQueueFactoryTest, CreateSpeculativeQueueWithInvalidReservedSpace) {
+  const auto report_queue = ReportQueueFactory::CreateSpeculativeReportQueue(
+      EventType::kDevice, destination_,
+      /*reserved_space=*/-1L);
+  EXPECT_THAT(report_queue, IsNull());
+}
+
 TEST_F(ReportQueueFactoryTest, CreateSpeculativeQueueWithInvalidConfig) {
-  const auto report_queue =
-      reporting::ReportQueueFactory::CreateSpeculativeReportQueue(
-          EventType::kDevice, Destination::UNDEFINED_DESTINATION);
+  const auto report_queue = ReportQueueFactory::CreateSpeculativeReportQueue(
+      EventType::kDevice, Destination::UNDEFINED_DESTINATION);
   EXPECT_THAT(report_queue, IsNull());
 }
 
@@ -123,12 +162,10 @@ TEST_F(ReportQueueFactoryTest, SameProviderForMultipleThreads) {
   {
     test::TestCallbackAutoWaiter set_waiter;
     set_waiter.Attach();
-    reporting::ReportQueueFactory::Create(
-        EventType::kDevice, destination_,
-        consumer_->GetReportQueueSetter(&set_waiter));
-    reporting::ReportQueueFactory::Create(
-        EventType::kUser, destination_,
-        consumer2->GetReportQueueSetter(&set_waiter));
+    ReportQueueFactory::Create(EventType::kDevice, destination_,
+                               consumer_->GetReportQueueSetter(&set_waiter));
+    ReportQueueFactory::Create(EventType::kUser, destination_,
+                               consumer2->GetReportQueueSetter(&set_waiter));
     EXPECT_CALL(*provider_.get(), OnInitCompletedMock()).Times(1);
     provider_->ExpectCreateNewQueueAndReturnNewMockQueue(2);
   }

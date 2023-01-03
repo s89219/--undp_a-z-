@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,8 @@
 #include "chrome/browser/ui/extensions/extension_action_view_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
+#include "chrome/browser/ui/views/controls/hover_button.h"
 #include "chrome/browser/ui/views/extensions/extensions_toolbar_button.h"
-#include "chrome/browser/ui/views/hover_button.h"
 #include "extensions/browser/permissions_manager.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
@@ -39,32 +39,11 @@ class ExtensionsTabbedMenuView
   ExtensionsTabbedMenuView(views::View* anchor_view,
                            Browser* browser,
                            ExtensionsContainer* extensions_container,
-                           ExtensionsToolbarButton::ButtonType button_type,
                            bool allow_pinning);
   ~ExtensionsTabbedMenuView() override;
   ExtensionsTabbedMenuView(const ExtensionsTabbedMenuView&) = delete;
   const ExtensionsTabbedMenuView& operator=(const ExtensionsTabbedMenuView&) =
       delete;
-
-  // Displays the ExtensionsTabbedMenu under `anchor_view` with the selected tab
-  // open by the `selected_tab_index` given. Only one menu is allowed to be
-  // shown at a time (outside of tests).
-  static views::Widget* ShowBubble(
-      views::View* anchor_view,
-      Browser* browser,
-      ExtensionsContainer* extensions_container_,
-      ExtensionsToolbarButton::ButtonType button_type,
-      bool allow_pinning);
-
-  // Returns true if there is currently an ExtensionsTabbedMenuView showing
-  // (across all browsers and profiles).
-  static bool IsShowing();
-
-  // Hides the currently-showing ExtensionsTabbedMenuView, if any exists.
-  static void Hide();
-
-  // Returns the currently-showing ExtensionsTabbedMenuView, if any exists.
-  static ExtensionsTabbedMenuView* GetExtensionsTabbedMenuViewForTesting();
 
   // Returns the currently-showing extension items in the extensions tab, if any
   // exists.
@@ -119,7 +98,7 @@ class ExtensionsTabbedMenuView
   void OnToolbarPinnedActionsChanged() override;
 
   // PermissionsManager::Observer:
-  void UserPermissionsSettingsChanged(
+  void OnUserPermissionsSettingsChanged(
       const extensions::PermissionsManager::UserPermissionsSettings& settings)
       override;
 
@@ -139,9 +118,6 @@ class ExtensionsTabbedMenuView
     // The id of the string to use for the section heading. Does not include the
     // current site string.
     const int header_string_id;
-
-    // The site interaction that this section is handling.
-    const extensions::SitePermissionsHelper::SiteInteraction site_interaction;
   };
 
   // Initially creates the tabs.
@@ -157,7 +133,7 @@ class ExtensionsTabbedMenuView
   // newly-added extension.
   void CreateAndInsertInstalledExtension(
       const ToolbarActionsModel::ActionId& id,
-      int index);
+      size_t index);
 
   // Creates and adds a menu item for `id` in its corresponding site access
   // section if the associated extension has or requests access to the current
@@ -192,13 +168,15 @@ class ExtensionsTabbedMenuView
   void UpdateSiteAccessSectionsVisibility(bool show_combobox);
 
   // Returns the section corresponding to `site_interaction`, or nullptr.
-  SiteAccessSection* GetSectionForSiteInteraction(
-      extensions::SitePermissionsHelper::SiteInteraction site_interaction);
+  SiteAccessSection* GetSectionForAction(ToolbarActionViewController* action);
 
   // Returns the currently-showing menu items for `section` in the
   // site access tab, if any exists.
   std::vector<SiteAccessMenuItemView*> GetVisibleMenuItemsOf(
       SiteAccessSection section) const;
+
+  // Returns the current web contents in `browser_`.
+  content::WebContents* GetActiveWebContents();
 
   // Handles the selection of a site setting radio button.
   void OnSiteSettingSelected(

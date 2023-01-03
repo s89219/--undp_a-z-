@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{Prije 1 dan}one{Prije # dan}few{Prije # dana}other{Prije # dana}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{Prije 1 minutu}one{Prije # minutu}few{Prije # minute}other{Prije # minuta}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 m}one{# m}few{# m}other{# m}}</translation>
+<translation id="1181037720776840403">Ukloni</translation>
 <translation id="1243314992276662751">Otpremi</translation>
 <translation id="1266864766717917324">Nije moguće podijeliti <ph name="CONTENT_TYPE" /></translation>
 <translation id="1269641567813814718">Win</translation>
@@ -37,7 +38,7 @@
 <translation id="2141853158323869627">{DAYS,plural, =1{1 d}one{# d}few{# d}other{# d}}</translation>
 <translation id="2148716181193084225">Danas</translation>
 <translation id="2161656808144014275">Tekst</translation>
-<translation id="2168039046890040389">Stranica prema gore</translation>
+<translation id="2168039046890040389">Tipka Page Up</translation>
 <translation id="2190355936436201913">(prazno)</translation>
 <translation id="2192232475740621500">Koristi nisku gustoću</translation>
 <translation id="2267918077332197517">Blokiraj sva obavještenja s ove web lokacije</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Koristi veću gustoću</translation>
 <translation id="2482878487686419369">Obavještenja</translation>
 <translation id="2497284189126895209">Svi fajlovi</translation>
-<translation id="2498950423397131220">Plutajući</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Kalibracija je završena</translation>
 <translation id="252373100621549798">Nepoznati zaslon</translation>
@@ -136,7 +136,7 @@
 <translation id="6007284015834422026">Ekstenzija je zakačena</translation>
 <translation id="6040143037577758943">Zatvori</translation>
 <translation id="6117103120090651229">Dugme Centriraj</translation>
-<translation id="6129953537138746214">Razmaknica</translation>
+<translation id="6129953537138746214">Tipka za razmak</translation>
 <translation id="6135826906199951471">Izbr</translation>
 <translation id="6142413573757616983"><ph name="QUANTITY" /> B/s</translation>
 <translation id="6237461503717005873">Izabran je red <ph name="ROW_NAME" />.</translation>
@@ -189,7 +189,7 @@
 <translation id="8134065097954893699">Ponovno učitavanje stranice</translation>
 <translation id="815598010540052116">Klizni prema dolje</translation>
 <translation id="8179976553408161302">Enter</translation>
-<translation id="8210608804940886430">Stranica prema dolje</translation>
+<translation id="8210608804940886430">Tipka Page Down</translation>
 <translation id="822964464349305906"><ph name="TYPE_1" />, <ph name="TYPE_2" /></translation>
 <translation id="8245914219290430011">Tab</translation>
 <translation id="8259556432390118667">Hex vrijednost boje</translation>

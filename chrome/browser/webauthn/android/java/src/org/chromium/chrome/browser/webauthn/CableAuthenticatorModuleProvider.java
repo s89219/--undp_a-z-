@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -89,17 +88,6 @@ public class CableAuthenticatorModuleProvider extends Fragment implements OnClic
         ((TextView) mErrorView.findViewById(R.id.error_code))
                 .setText(getResources().getString(
                         R.string.cablev2_error_code, INSTALL_FAILURE_ERROR_CODE));
-
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
-            // While the device will not be advertised in Sync if the Android
-            // version is too old, this case can occur in the QR flow because
-            // there's no version restriction on Play Services forwarding the
-            // `Intent`.
-            ((TextView) mErrorView.findViewById(R.id.error_description))
-                    .setText(getResources().getString(
-                            R.string.menu_update_unsupported_summary_default));
-            return mErrorView;
-        }
 
         ((TextView) mErrorView.findViewById(R.id.error_description))
                 .setText(getResources().getString(R.string.cablev2_error_generic));
@@ -240,8 +228,9 @@ public class CableAuthenticatorModuleProvider extends Fragment implements OnClic
 
     @CalledByNative
     public static boolean canDeviceSupportCable() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N
-                || BluetoothAdapter.getDefaultAdapter() == null) {
+        // This function will be run on a background thread.
+
+        if (BluetoothAdapter.getDefaultAdapter() == null) {
             return false;
         }
 

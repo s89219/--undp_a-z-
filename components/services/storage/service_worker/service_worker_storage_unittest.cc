@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,9 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/net_errors.h"
@@ -85,7 +85,8 @@ class ServiceWorkerStorageTest : public testing::Test {
   void SetUp() override {
     storage_ = ServiceWorkerStorage::Create(
         user_data_directory_path_,
-        /*database_task_runner=*/base::ThreadTaskRunnerHandle::Get());
+        /*database_task_runner=*/base::SingleThreadTaskRunner::
+            GetCurrentDefault());
   }
 
   void TearDown() override {
@@ -302,6 +303,22 @@ class ServiceWorkerStorageTest : public testing::Test {
     base::RunLoop loop;
     storage()->UpdateToActiveState(
         registration_id, key,
+        base::BindLambdaForTesting([&](ServiceWorkerDatabase::Status status) {
+          result = status;
+          loop.Quit();
+        }));
+    loop.Run();
+    return result;
+  }
+
+  ServiceWorkerDatabase::Status UpdateFetchHandlerType(
+      int64_t registration_id,
+      const blink::StorageKey& key,
+      blink::mojom::ServiceWorkerFetchHandlerType fetch_handler_type) {
+    ServiceWorkerDatabase::Status result;
+    base::RunLoop loop;
+    storage()->UpdateFetchHandlerType(
+        registration_id, key, fetch_handler_type,
         base::BindLambdaForTesting([&](ServiceWorkerDatabase::Status status) {
           result = status;
           loop.Quit();
@@ -568,6 +585,11 @@ TEST_F(ServiceWorkerStorageTest, DisabledStorage) {
       ServiceWorkerDatabase::Status::kErrorDisabled);
 
   EXPECT_EQ(UpdateToActiveState(kRegistrationId, kKey),
+            ServiceWorkerDatabase::Status::kErrorDisabled);
+
+  EXPECT_EQ(UpdateFetchHandlerType(
+                kRegistrationId, kKey,
+                blink::mojom::ServiceWorkerFetchHandlerType::kNotSkippable),
             ServiceWorkerDatabase::Status::kErrorDisabled);
 
   EXPECT_EQ(DeleteRegistration(kRegistrationId, kKey),

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
+#include "base/values.h"
 #include "components/component_updater/component_installer.h"
+#include "net/net_buildflags.h"
 #include "third_party/protobuf/src/google/protobuf/repeated_field.h"
 
 namespace component_updater {
@@ -24,7 +26,12 @@ class PKIMetadataComponentInstallerService final {
   class Observer : public base::CheckedObserver {
    public:
     // Called after the CT Log list data is configured.
-    virtual void OnCTLogListConfigured() = 0;
+    virtual void OnCTLogListConfigured() {}
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+    // Called after the Chrome Root Store data was configured.
+    virtual void OnChromeRootStoreConfigured() {}
+#endif
   };
 
   // Returns the live server instance, creating it if it does not exist.
@@ -47,8 +54,13 @@ class PKIMetadataComponentInstallerService final {
   void OnComponentReady(base::FilePath install_dir);
 
   // Writes arbitrary data to the CT config component.
-  void WriteComponentForTesting(const base::FilePath& path,
-                                std::string contents);
+  [[nodiscard]] bool WriteCTDataForTesting(const base::FilePath& path,
+                                           const std::string& contents);
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+  [[nodiscard]] bool WriteCRSDataForTesting(const base::FilePath& path,
+                                            const std::string& contents);
+#endif
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
@@ -61,6 +73,17 @@ class PKIMetadataComponentInstallerService final {
   // Updates the network service pins list with the component delivered data.
   // |kp_config_bytes| should be a serialized KPConfig proto message.
   void UpdateNetworkServiceKPListOnUI(const std::string& kp_config_bytes);
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+  // Updates cert verifiers with the component delivered Chrome Root Store
+  // data. |chrome_root_store_bytes| should be a serialized
+  // chrome_root_store.RootStore proto message.
+  void UpdateChromeRootStoreOnUI(const std::string& chrome_root_store_bytes);
+
+  // Notifies all observers that the Chrome Root Store data has been
+  // configured.
+  void NotifyChromeRootStoreConfigured();
+#endif
 
   // Notifies all observers that the CT Log list data has been configured.
   void NotifyCTLogListConfigured();
@@ -96,14 +119,14 @@ class PKIMetadataComponentInstallerPolicy : public ComponentInstallerPolicy {
   bool SupportsGroupPolicyEnabledComponentUpdates() const override;
   bool RequiresNetworkEncryption() const override;
   update_client::CrxInstaller::Result OnCustomInstall(
-      const base::Value& manifest,
+      const base::Value::Dict& manifest,
       const base::FilePath& install_dir) override;
   void OnCustomUninstall() override;
-  bool VerifyInstallation(const base::Value& manifest,
+  bool VerifyInstallation(const base::Value::Dict& manifest,
                           const base::FilePath& install_dir) const override;
   void ComponentReady(const base::Version& version,
                       const base::FilePath& install_dir,
-                      base::Value manifest) override;
+                      base::Value::Dict manifest) override;
   base::FilePath GetRelativeInstallDir() const override;
   void GetHash(std::vector<uint8_t>* hash) const override;
   std::string GetName() const override;

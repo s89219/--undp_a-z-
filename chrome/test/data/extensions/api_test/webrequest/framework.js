@@ -1,6 +1,13 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+if ('ServiceWorkerGlobalScope' in self) {
+  self.selfFrameId = -1;
+} else {
+  self.selfDocumentId = 1;
+  self.selfFrameId = 0;
+}
 
 var getURL = chrome.extension.getURL;
 var deepEq = chrome.test.checkDeepEq;
@@ -68,6 +75,10 @@ function runTests(tests) {
       let args = JSON.parse(config.customArg);
       debug = args.debug;
       mparchEnabled = args.mparch;
+      // Because the extension runs in split mode, only the incognito context
+      // should run the tests.
+      if (args.runInIncognito && !chrome.extension.inIncognitoContext)
+        return;
     }
 
     var waitForAboutBlank = function(_, info, tab) {
@@ -458,7 +469,7 @@ function captureEvent(name, details, callback) {
   }
 
   if (callback) {
-    window.setTimeout(callback, 0, retval);
+    setTimeout(callback, 0, retval);
   } else {
     return retval;
   }

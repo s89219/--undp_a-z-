@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "base/command_line.h"
 #include "base/no_destructor.h"
 #include "base/trace_event/trace_event.h"
+#include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -54,11 +55,12 @@ constexpr net::NetworkTrafficAnnotationTag kProxyConfigTrafficAnnotation =
 }  // namespace
 
 AwProxyConfigMonitor::AwProxyConfigMonitor() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   TRACE_EVENT0("startup", "AwProxyConfigMonitor");
   proxy_config_service_android_ =
       std::make_unique<net::ProxyConfigServiceAndroid>(
-          base::ThreadTaskRunnerHandle::Get(),
-          base::ThreadTaskRunnerHandle::Get());
+          base::SingleThreadTaskRunner::GetCurrentDefault(),
+          base::SingleThreadTaskRunner::GetCurrentDefault());
   proxy_config_service_android_->set_exclude_pac_url(true);
   proxy_config_service_android_->AddObserver(this);
 }

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/browser/bad_message.h"
-#include "extensions/browser/blob_holder.h"
 #include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_registry.h"
@@ -62,7 +61,8 @@ class ExtensionFunctionMemoryDumpProvider
  public:
   ExtensionFunctionMemoryDumpProvider() {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, "ExtensionFunctions", base::ThreadTaskRunnerHandle::Get());
+        this, "ExtensionFunctions",
+        base::SingleThreadTaskRunner::GetCurrentDefault());
   }
 
   ExtensionFunctionMemoryDumpProvider(
@@ -143,13 +143,6 @@ void EnsureMemoryDumpProviderExists() {
   std::ignore = ExtensionFunctionMemoryDumpProvider::GetInstance();
 }
 
-// Adds Kiosk. prefix to uma histograms if running in a kiosk extension.
-std::string WrapUma(const std::string& uma, bool is_kiosk_enabled) {
-  if (is_kiosk_enabled)
-    return uma + ".Kiosk";
-  return uma;
-}
-
 // Logs UMA about the performance for a given extension function run.
 void LogUma(bool success,
             base::TimeDelta elapsed_time,
@@ -171,6 +164,10 @@ void LogUma(bool success,
     } else {
       base::UmaHistogramSparse("Extensions.Functions.SucceededTime.Over10ms",
                                histogram_value);
+      if (elapsed_time >= base::Seconds(270)) {
+        base::UmaHistogramSparse("Extensions.Functions.SucceededTime.Over270s",
+                                 histogram_value);
+      }
     }
     UMA_HISTOGRAM_TIMES("Extensions.Functions.SucceededTotalExecutionTime",
                         elapsed_time);
@@ -187,11 +184,11 @@ void LogUma(bool success,
     } else {
       base::UmaHistogramSparse("Extensions.Functions.FailedTime.Over10ms",
                                histogram_value);
+      if (elapsed_time >= base::Seconds(270)) {
+        base::UmaHistogramSparse("Extensions.Functions.FailedTime.Over270s",
+                                 histogram_value);
+      }
     }
-    base::UmaHistogramTimes(
-        WrapUma("Extensions.Functions.FailedTotalExecutionTime",
-                is_kiosk_enabled),
-        elapsed_time);
   }
 }
 
@@ -200,9 +197,10 @@ void LogBadMessage(bool is_kiosk_enabled,
   base::RecordAction(base::UserMetricsAction("BadMessageTerminate_EFD"));
   // Track the specific function's |histogram_value|, as this may indicate a
   // bug in that API's implementation.
-  base::UmaHistogramSparse(
-      WrapUma("Extensions.BadMessageFunctionName", is_kiosk_enabled),
-      histogram_value);
+  const char* histogram_name = is_kiosk_enabled
+                                   ? "Extensions.BadMessageFunctionName.Kiosk"
+                                   : "Extensions.BadMessageFunctionName";
+  base::UmaHistogramSparse(histogram_name, histogram_value);
 }
 
 bool IsKiosk(const extensions::Extension* extension) {
@@ -485,8 +483,8 @@ ExtensionFunction::~ExtensionFunction() {
   if (!response_callback_.is_null()) {
     constexpr char kShouldCallMojoCallback[] = "Ignored did_respond()";
     std::move(response_callback_)
-        .Run(ResponseType::FAILED, base::Value::List(),
-             kShouldCallMojoCallback);
+        .Run(ResponseType::FAILED, base::Value::List(), kShouldCallMojoCallback,
+             nullptr);
   }
 #endif  // DCHECK_IS_ON()
 }
@@ -552,10 +550,10 @@ void ExtensionFunction::OnQuotaExceeded(std::string violation_error) {
 void ExtensionFunction::SetArgs(base::Value args) {
   DCHECK(args.is_list());
   DCHECK(!args_.has_value());
-  args_ = std::move(args).TakeListDeprecated();
+  args_ = std::move(args).TakeList();
 }
 
-const base::Value::List* ExtensionFunction::GetResultList() const {
+const base::Value::List* ExtensionFunction::GetResultListForTest() const {
   return results_ ? &(*results_) : nullptr;
 }
 
@@ -680,21 +678,8 @@ ExtensionFunction::ResponseValue ExtensionFunction::TwoArguments(
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::ArgumentList(
-    std::vector<base::Value> results) {
-  base::Value::List list;
-  for (auto&& value : results) {
-    list.Append(std::move(value));
-  }
-  return ResponseValue(new ArgumentListResponseValue(this, std::move(list)));
-}
-
-ExtensionFunction::ResponseValue ExtensionFunction::ArgumentList(
-    std::unique_ptr<base::ListValue> args) {
-  base::Value::List new_args;
-  if (args)
-    new_args = std::move(args->GetList());
-  return ResponseValue(
-      new ArgumentListResponseValue(this, std::move(new_args)));
+    base::Value::List results) {
+  return ResponseValue(new ArgumentListResponseValue(this, std::move(results)));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::Error(std::string error) {
@@ -726,24 +711,10 @@ ExtensionFunction::ResponseValue ExtensionFunction::Error(
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::ErrorWithArguments(
-    std::vector<base::Value> args,
+    base::Value::List args,
     const std::string& error) {
-  base::Value::List list;
-  for (auto&& value : args) {
-    list.Append(std::move(value));
-  }
   return ResponseValue(
-      new ErrorWithArgumentsResponseValue(this, std::move(list), error));
-}
-
-ExtensionFunction::ResponseValue ExtensionFunction::ErrorWithArguments(
-    std::unique_ptr<base::ListValue> args,
-    const std::string& error) {
-  base::Value::List new_args;
-  if (args)
-    new_args = std::move(args->GetList());
-  return ResponseValue(
-      new ErrorWithArgumentsResponseValue(this, std::move(new_args), error));
+      new ErrorWithArgumentsResponseValue(this, std::move(args), error));
 }
 
 ExtensionFunction::ResponseValue ExtensionFunction::BadMessage() {
@@ -777,20 +748,7 @@ void ExtensionFunction::Respond(ResponseValue result) {
   SendResponseImpl(result->Apply());
 }
 
-void ExtensionFunction::OnResponded() {
-  if (!transferred_blob_uuids_.empty()) {
-    extensions::mojom::Renderer* renderer =
-        extensions::RendererStartupHelperFactory::GetForBrowserContext(
-            browser_context())
-            ->GetRenderer(
-                content::RenderProcessHost::FromID(source_process_id()));
-    if (renderer) {
-      renderer->TransferBlobs(
-          base::BindOnce(&ExtensionFunction::OnTransferBlobsAck, this,
-                         source_process_id(), transferred_blob_uuids_));
-    }
-  }
-}
+void ExtensionFunction::OnResponded() {}
 
 bool ExtensionFunction::HasOptionalArgument(size_t index) {
   DCHECK(args_);
@@ -806,10 +764,10 @@ void ExtensionFunction::WriteToConsole(blink::mojom::ConsoleMessageLevel level,
   render_frame_host_->AddMessageToConsole(level, message);
 }
 
-void ExtensionFunction::SetTransferredBlobUUIDs(
-    const std::vector<std::string>& blob_uuids) {
-  DCHECK(transferred_blob_uuids_.empty());  // Should only be called once.
-  transferred_blob_uuids_ = blob_uuids;
+void ExtensionFunction::SetTransferredBlobs(
+    std::vector<blink::mojom::SerializedBlobPtr> blobs) {
+  DCHECK(transferred_blobs_.empty());  // Should only be called once.
+  transferred_blobs_ = std::move(blobs);
 }
 
 void ExtensionFunction::SendResponseImpl(bool success) {
@@ -836,22 +794,17 @@ void ExtensionFunction::SendResponseImpl(bool success) {
     results = std::move(*results_);
   }
 
-  std::move(response_callback_).Run(response, std::move(results), GetError());
+  extensions::mojom::ExtraResponseDataPtr extra_data;
+  if (!transferred_blobs_.empty()) {
+    extra_data = extensions::mojom::ExtraResponseData::New(
+        std::move(transferred_blobs_));
+  }
+  std::move(response_callback_)
+      .Run(response, std::move(results), GetError(), std::move(extra_data));
   LogUma(success, timer_.Elapsed(), IsKiosk(extension_.get()),
          histogram_value_);
 
   OnResponded();
-}
-
-void ExtensionFunction::OnTransferBlobsAck(
-    int process_id,
-    const std::vector<std::string>& blob_uuids) {
-  content::RenderProcessHost* process =
-      content::RenderProcessHost::FromID(process_id);
-  if (!process)
-    return;
-
-  extensions::BlobHolder::FromRenderProcessHost(process)->DropBlobs(blob_uuids);
 }
 
 ExtensionFunction::ScopedUserGestureForTests::ScopedUserGestureForTests() {

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -117,10 +117,6 @@ class MediaItemUIDeviceSelectorView
   void RemoveDevicesOfType(DeviceEntryUIType type);
   void StartCastSession(CastDeviceEntryView* entry);
   void DoStartCastSession(media_router::UIMediaSink sink);
-  void RecordStartCastingMetrics(media_router::SinkIconType sink_icon_type);
-  void RecordStartCastingWithCastAndDialPresent(
-      media_router::SinkIconType sink_icon_type);
-  void RecordStopCastingMetrics();
   void RecordCastDeviceCountAfterDelay();
   void RecordCastDeviceCount();
   DeviceEntryUI* GetDeviceEntryUI(views::View* view) const;

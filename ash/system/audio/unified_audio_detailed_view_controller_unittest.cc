@@ -1,12 +1,10 @@
-// Copyright (c) 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/audio/unified_audio_detailed_view_controller.h"
 
 #include "ash/accessibility/accessibility_controller_impl.h"
-#include "ash/components/audio/audio_devices_pref_handler.h"
-#include "ash/components/audio/audio_devices_pref_handler_stub.h"
 #include "ash/constants/ash_features.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
@@ -19,8 +17,10 @@
 #include "base/bind.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/test/scoped_feature_list.h"
-#include "chromeos/dbus/audio/cras_audio_client.h"
-#include "chromeos/dbus/audio/fake_cras_audio_client.h"
+#include "chromeos/ash/components/audio/audio_devices_pref_handler.h"
+#include "chromeos/ash/components/audio/audio_devices_pref_handler_stub.h"
+#include "chromeos/ash/components/dbus/audio/cras_audio_client.h"
+#include "chromeos/ash/components/dbus/audio/fake_cras_audio_client.h"
 #include "components/live_caption/pref_names.h"
 #include "components/soda/soda_installer_impl_chromeos.h"
 #include "media/base/media_switches.h"
@@ -31,9 +31,6 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/test/button_test_api.h"
 #include "ui/views/widget/widget.h"
-
-using chromeos::AudioNode;
-using chromeos::AudioNodeList;
 
 namespace ash {
 namespace {
@@ -72,6 +69,9 @@ struct AudioNodeInfo {
 const uint32_t kInputMaxSupportedChannels = 1;
 const uint32_t kOutputMaxSupportedChannels = 2;
 
+const int32_t kInputNumberOfVolumeSteps = 0;
+const int32_t kOutputNumberOfVolumeSteps = 25;
+
 const AudioNodeInfo kMicJack[] = {
     {true, kMicJackId, "Fake Mic Jack", "MIC", "Mic Jack", 0}};
 
@@ -94,7 +94,9 @@ AudioNode GenerateAudioNode(const AudioNodeInfo* node_info) {
                    false /* is_active*/, 0 /* pluged_time */,
                    node_info->is_input ? kInputMaxSupportedChannels
                                        : kOutputMaxSupportedChannels,
-                   node_info->audio_effect);
+                   node_info->audio_effect,
+                   node_info->is_input ? kInputNumberOfVolumeSteps
+                                       : kOutputNumberOfVolumeSteps);
 }
 
 AudioNodeList GenerateAudioNodeList(
@@ -169,14 +171,14 @@ class UnifiedAudioDetailedViewControllerTest : public AshTestBase {
   }
 
  protected:
-  chromeos::FakeCrasAudioClient* fake_cras_audio_client() {
-    return chromeos::FakeCrasAudioClient::Get();
+  FakeCrasAudioClient* fake_cras_audio_client() {
+    return FakeCrasAudioClient::Get();
   }
 
   AudioDetailedView* audio_detailed_view() {
     if (!audio_detailed_view_) {
       audio_detailed_view_ = base::WrapUnique(static_cast<AudioDetailedView*>(
-          audio_detailed_view_controller_->CreateView()));
+          audio_detailed_view_controller_->CreateView().release()));
     }
     return audio_detailed_view_.get();
   }
@@ -206,7 +208,7 @@ class UnifiedAudioDetailedViewControllerTest : public AshTestBase {
 
 TEST_F(UnifiedAudioDetailedViewControllerTest, OnlyOneVisibleSlider) {
   std::unique_ptr<views::View> view =
-      base::WrapUnique(audio_detailed_view_controller_->CreateView());
+      audio_detailed_view_controller_->CreateView();
   fake_cras_audio_client()->SetAudioNodesAndNotifyObserversForTesting(
       GenerateAudioNodeList({kInternalMic, kMicJack}));
 
@@ -237,7 +239,7 @@ TEST_F(UnifiedAudioDetailedViewControllerTest,
   EXPECT_TRUE(cras_audio_handler_->HasDualInternalMic());
 
   std::unique_ptr<views::View> view =
-      base::WrapUnique(audio_detailed_view_controller_->CreateView());
+      audio_detailed_view_controller_->CreateView();
 
   // Verify there is only 1 slider in the view.
   EXPECT_EQ(sliders_map_.size(), 1u);
@@ -257,7 +259,7 @@ TEST_F(UnifiedAudioDetailedViewControllerTest,
       CrasAudioHandler::ACTIVATE_BY_USER);
 
   std::unique_ptr<views::View> view =
-      base::WrapUnique(audio_detailed_view_controller_->CreateView());
+      audio_detailed_view_controller_->CreateView();
   EXPECT_EQ(0u, toggles_map_.size());
 }
 
@@ -273,7 +275,7 @@ TEST_F(UnifiedAudioDetailedViewControllerTest,
                                       CrasAudioHandler::ACTIVATE_BY_USER);
 
   std::unique_ptr<views::View> view =
-      base::WrapUnique(audio_detailed_view_controller_->CreateView());
+      audio_detailed_view_controller_->CreateView();
   EXPECT_EQ(1u, toggles_map_.size());
 
   views::ToggleButton* toggle =
@@ -295,7 +297,7 @@ TEST_F(UnifiedAudioDetailedViewControllerTest,
                                       CrasAudioHandler::ACTIVATE_BY_USER);
 
   std::unique_ptr<views::View> view =
-      base::WrapUnique(audio_detailed_view_controller_->CreateView());
+      audio_detailed_view_controller_->CreateView();
   EXPECT_EQ(1u, toggles_map_.size());
 
   views::ToggleButton* toggle =
@@ -332,7 +334,7 @@ TEST_F(UnifiedAudioDetailedViewControllerTest,
                                       true, CrasAudioHandler::ACTIVATE_BY_USER);
 
   std::unique_ptr<views::View> view =
-      base::WrapUnique(audio_detailed_view_controller_->CreateView());
+      audio_detailed_view_controller_->CreateView();
 
   EXPECT_EQ(0u, toggles_map_.size());
 

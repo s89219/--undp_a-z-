@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/android/webapk/webapk_install_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
@@ -90,7 +89,7 @@ class TestWebApkInstaller : public WebApkInstaller {
   }
 
   void PostTaskToRunSuccessCallback() {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&TestWebApkInstaller::OnResult, base::Unretained(this),
                        webapps::WebApkInstallResult::SUCCESS));
@@ -194,9 +193,9 @@ class UpdateRequestStorer {
     base::RunLoop run_loop;
     quit_closure_ = run_loop.QuitClosure();
     WebApkInstaller::StoreUpdateRequestToFile(
-        update_request_path, webapps::ShortcutInfo((GURL())), "", false, "", "",
-        "", std::map<std::string, webapps::WebApkIconHasher::Icon>(), false,
-        false, {webapps::WebApkUpdateReason::PRIMARY_ICON_HASH_DIFFERS},
+        update_request_path, webapps::ShortcutInfo((GURL())), GURL(), "", false,
+        "", "", "", std::map<std::string, webapps::WebApkIconHasher::Icon>(),
+        false, false, {webapps::WebApkUpdateReason::PRIMARY_ICON_HASH_DIFFERS},
         base::BindOnce(&UpdateRequestStorer::OnComplete,
                        base::Unretained(this)));
     run_loop.Run();
@@ -300,7 +299,7 @@ class WebApkInstallerTest : public ::testing::Test {
     webapps::ShortcutInfo info(GURL::EmptyGURL());
 
     return webapps::BuildProtoInBackground(
-        info, primary_icon_data, false, splash_icon_data,
+        info, info.manifest_id, primary_icon_data, false, splash_icon_data,
         /*package_name*/ "", /*version*/ "",
         std::move(icon_url_to_murmur2_hash), true /* is_manifest_stale */,
         true /* is_app_identity_update_supported */,

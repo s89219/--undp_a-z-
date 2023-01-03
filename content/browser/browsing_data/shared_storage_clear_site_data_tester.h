@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/storage_partition.h"
 #include "url/origin.h"
@@ -37,7 +38,7 @@ class SharedStorageClearSiteDataTester {
   int GetSharedStorageTotalEntries();
 
  private:
-  StoragePartitionImpl* storage_partition_impl_;
+  raw_ptr<StoragePartitionImpl> storage_partition_impl_;
 };
 
 }  // namespace content

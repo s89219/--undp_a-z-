@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -99,16 +99,16 @@ MessageCenterController::MessageCenterController() {
         std::make_unique<PopupNotificationBlocker>(MessageCenter::Get());
   }
 
-  if (chromeos::features::IsPhoneHubEnabled()) {
+  if (features::IsPhoneHubEnabled()) {
     phone_hub_notification_controller_ =
         std::make_unique<PhoneHubNotificationController>();
   }
 
   // When adding other notification blockers, ensure that they are initialized
-  // before the shell's `HpsNotifyController`. The notification blocker that it
-  // adds during its construction must be the last blocker, since it observes
-  // the states of all the others.
-  DCHECK(!Shell::Get()->hps_notify_controller());
+  // before the shell's `SnoopingProtectionController`. The notification blocker
+  // that it adds during its construction must be the last blocker, since it
+  // observes the states of all the others.
+  DCHECK(!Shell::Get()->snooping_protection_controller());
 
   // Set the system notification source display name ("ChromeOS" or
   // "ChromiumOS").

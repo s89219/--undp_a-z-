@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,8 @@
 
 #include "base/values.h"
 #include "ui/base/template_expressions.h"
+
+class GURL;
 
 namespace content {
 
@@ -26,7 +28,7 @@ class TestWebUIDataSource {
 
   virtual const ui::TemplateReplacements* GetReplacements() = 0;
 
-  virtual int PathToIdrOrDefault(const std::string& path) = 0;
+  virtual int URLToIdrOrDefault(const GURL& url) = 0;
 
   virtual WebUIDataSource* GetWebUIDataSource() = 0;
 };

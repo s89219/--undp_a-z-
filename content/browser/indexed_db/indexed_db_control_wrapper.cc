@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,6 +44,8 @@ IndexedDBControlWrapper::~IndexedDBControlWrapper() {
 
 void IndexedDBControlWrapper::BindIndexedDB(
     const blink::StorageKey& storage_key,
+    mojo::PendingAssociatedRemote<storage::mojom::IndexedDBClientStateChecker>
+        client_state_checker_remote,
     mojo::PendingReceiver<blink::mojom::IDBFactory> receiver) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   BindRemoteIfNeeded();
@@ -52,7 +54,26 @@ void IndexedDBControlWrapper::BindIndexedDB(
     // StoragePolicyObserver is migrated.
     storage_policy_observer_->StartTrackingOrigin(storage_key.origin());
   }
-  indexed_db_control_->BindIndexedDB(storage_key, std::move(receiver));
+  indexed_db_control_->BindIndexedDB(
+      storage_key, std::move(client_state_checker_remote), std::move(receiver));
+}
+
+void IndexedDBControlWrapper::BindIndexedDBForBucket(
+    const storage::BucketLocator& bucket_locator,
+    mojo::PendingAssociatedRemote<storage::mojom::IndexedDBClientStateChecker>
+        client_state_checker_remote,
+    mojo::PendingReceiver<blink::mojom::IDBFactory> receiver) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  BindRemoteIfNeeded();
+  if (storage_policy_observer_) {
+    // TODO(https://crbug.com/1199077): Pass the real StorageKey once
+    // StoragePolicyObserver is migrated.
+    storage_policy_observer_->StartTrackingOrigin(
+        bucket_locator.storage_key.origin());
+  }
+  indexed_db_control_->BindIndexedDBForBucket(
+      bucket_locator, std::move(client_state_checker_remote),
+      std::move(receiver));
 }
 
 void IndexedDBControlWrapper::GetUsage(GetUsageCallback usage_callback) {
@@ -61,37 +82,37 @@ void IndexedDBControlWrapper::GetUsage(GetUsageCallback usage_callback) {
   indexed_db_control_->GetUsage(std::move(usage_callback));
 }
 
-void IndexedDBControlWrapper::DeleteForBucket(
+void IndexedDBControlWrapper::DeleteForStorageKey(
     const blink::StorageKey& storage_key,
-    DeleteForBucketCallback callback) {
+    DeleteForStorageKeyCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   BindRemoteIfNeeded();
-  indexed_db_control_->DeleteForBucket(storage_key, std::move(callback));
+  indexed_db_control_->DeleteForStorageKey(storage_key, std::move(callback));
 }
 
 void IndexedDBControlWrapper::ForceClose(
-    const blink::StorageKey& storage_key,
+    storage::BucketId bucket_id,
     storage::mojom::ForceCloseReason reason,
     base::OnceClosure callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   BindRemoteIfNeeded();
-  indexed_db_control_->ForceClose(storage_key, reason, std::move(callback));
+  indexed_db_control_->ForceClose(bucket_id, reason, std::move(callback));
 }
 
 void IndexedDBControlWrapper::GetConnectionCount(
-    const blink::StorageKey& storage_key,
+    storage::BucketId bucket_id,
     GetConnectionCountCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   BindRemoteIfNeeded();
-  indexed_db_control_->GetConnectionCount(storage_key, std::move(callback));
+  indexed_db_control_->GetConnectionCount(bucket_id, std::move(callback));
 }
 
 void IndexedDBControlWrapper::DownloadBucketData(
-    const blink::StorageKey& storage_key,
+    storage::BucketId bucket_id,
     DownloadBucketDataCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   BindRemoteIfNeeded();
-  indexed_db_control_->DownloadBucketData(storage_key, std::move(callback));
+  indexed_db_control_->DownloadBucketData(bucket_id, std::move(callback));
 }
 
 void IndexedDBControlWrapper::GetAllBucketsDetails(

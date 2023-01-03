@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -701,8 +701,8 @@ leveldb::Status IndexedDBBackingStore::Initialize(bool clean_active_journal) {
 
   std::unique_ptr<LevelDBWriteBatch> write_batch = LevelDBWriteBatch::Create();
 
-  // This must have a default value to handle this case where
-  // ReportSchemaVersion reports a not-found entry.
+  // This must have a default value to handle the case where
+  // a not-found entry is reported.
   int64_t db_schema_version = 0;
   IndexedDBDataFormatVersion db_data_version;
   bool found = false;
@@ -711,9 +711,6 @@ leveldb::Status IndexedDBBackingStore::Initialize(bool clean_active_journal) {
     INTERNAL_READ_ERROR(SET_UP_METADATA);
     return s;
   }
-  // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
-  indexed_db::ReportSchemaVersion(db_schema_version,
-                                  bucket_locator_.storage_key);
   if (!found) {
     // Initialize new backing store.
     db_schema_version = indexed_db::kLatestKnownSchemaVersion;
@@ -793,10 +790,9 @@ leveldb::Status IndexedDBBackingStore::Initialize(bool clean_active_journal) {
   s = db_->Write(write_batch.get());
   write_batch.reset();
   if (!s.ok()) {
-    // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
     indexed_db::ReportOpenStatus(
         indexed_db::INDEXED_DB_BACKING_STORE_OPEN_FAILED_METADATA_SETUP,
-        bucket_locator_.storage_key);
+        bucket_locator_);
     INTERNAL_WRITE_ERROR(SET_UP_METADATA);
     return s;
   }
@@ -804,11 +800,10 @@ leveldb::Status IndexedDBBackingStore::Initialize(bool clean_active_journal) {
   if (clean_active_journal) {
     s = CleanUpBlobJournal(ActiveBlobJournalKey::Encode());
     if (!s.ok()) {
-      // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
       indexed_db::ReportOpenStatus(
           indexed_db::
               INDEXED_DB_BACKING_STORE_OPEN_FAILED_CLEANUP_JOURNAL_ERROR,
-          bucket_locator_.storage_key);
+          bucket_locator_);
     }
   }
 #if DCHECK_IS_ON()
@@ -1132,16 +1127,16 @@ leveldb::Status IndexedDBBackingStore::GetCompleteMetadata(
 // static
 bool IndexedDBBackingStore::RecordCorruptionInfo(
     const base::FilePath& path_base,
-    const blink::StorageKey& storage_key,
+    const storage::BucketLocator& bucket_locator,
     const std::string& message) {
   auto filesystem = storage::CreateFilesystemProxy();
   const base::FilePath info_path =
-      path_base.Append(indexed_db::ComputeCorruptionFileName(storage_key));
+      path_base.Append(indexed_db::ComputeCorruptionFileName(bucket_locator));
   if (IsPathTooLong(filesystem.get(), info_path))
     return false;
 
-  base::Value root_dict(base::Value::Type::DICTIONARY);
-  root_dict.SetStringKey("message", message);
+  base::Value::Dict root_dict;
+  root_dict.Set("message", message);
   std::string output_js;
 
   base::JSONWriter::Write(root_dict, &output_js);
@@ -3052,7 +3047,8 @@ IndexedDBBackingStore::Transaction::~Transaction() {
   DCHECK(!committing_);
 }
 
-void IndexedDBBackingStore::Transaction::Begin(std::vector<LeveledLock> locks) {
+void IndexedDBBackingStore::Transaction::Begin(
+    std::vector<PartitionedLock> locks) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK_CALLED_ON_VALID_SEQUENCE(backing_store_->sequence_checker_);
   DCHECK(backing_store_);

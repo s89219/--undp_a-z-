@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,9 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_types.h"
+#include "chrome/browser/ash/system_web_apps/types/system_web_app_type.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_id.h"
-#include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "components/webapps/browser/install_result_code.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
@@ -45,19 +45,6 @@ using WebAppInstallDialogCallback = base::OnceCallback<void(
     std::unique_ptr<WebAppInstallInfo> web_app_info,
     WebAppInstallationAcceptanceCallback acceptance_callback)>;
 
-enum class InstallableCheckResult {
-  kNotInstallable,
-  kInstallable,
-  kAlreadyInstalled,
-};
-// Callback with the result of manifest check.
-// |web_contents| owns the WebContents that was used to check for a manifest.
-// |app_id| will be present iff already installed.
-using WebAppManifestCheckCallback =
-    base::OnceCallback<void(std::unique_ptr<content::WebContents> web_contents,
-                            InstallableCheckResult result,
-                            absl::optional<AppId> app_id)>;
-
 // See related ExternalInstallOptions struct and
 // ConvertExternalInstallOptionsToParams function.
 struct WebAppInstallParams {
@@ -69,7 +56,7 @@ struct WebAppInstallParams {
   bool force_reinstall = false;
 
   // See `WebAppInstallTask::ApplyParamsToWebAppInstallInfo`
-  absl::optional<UserDisplayMode> user_display_mode = absl::nullopt;
+  absl::optional<mojom::UserDisplayMode> user_display_mode = absl::nullopt;
 
   // URL to be used as start_url if manifest is unavailable.
   GURL fallback_start_url;
@@ -103,10 +90,14 @@ struct WebAppInstallParams {
   bool bypass_service_worker_check = false;
   bool require_manifest = false;
 
+  // Used only by ExternallyManagedInstallCommand.
+  // Has the same meaning as WebAppInstallFlow::kCreateShortcut
+  bool install_as_shortcut = false;
+
   std::vector<std::string> additional_search_terms;
 
   absl::optional<std::string> launch_query_params;
-  absl::optional<SystemAppType> system_app_type;
+  absl::optional<ash::SystemWebAppType> system_app_type;
 
   bool oem_installed = false;
 
@@ -117,6 +108,18 @@ struct WebAppInstallParams {
   // populated (especially for user installed or sync installed apps)
   // in which case the URL will not be written to the web_app DB.
   GURL install_url;
+};
+
+// The different UI flows that exist for creating a web app.
+enum class WebAppInstallFlow {
+  // TODO(crbug.com/1216457): This should be removed by adding all known flows
+  // to this enum.
+  kUnknown,
+  // The 'Create Shortcut' flow for adding the current page as a shortcut app.
+  kCreateShortcut,
+  // The 'Install Site' flow for installing the current site with an app
+  // experience determined by the site.
+  kInstallSite,
 };
 
 }  // namespace web_app

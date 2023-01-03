@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,14 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/views/profiles/profile_management_utils.h"
 #include "chrome/browser/ui/views/profiles/profile_picker_turn_sync_on_delegate.h"
 #include "chrome/browser/ui/webui/signin/signin_url_utils.h"
 #include "chrome/browser/ui/webui/signin/sync_confirmation_ui.h"
 #include "chrome/browser/ui/webui/signin/turn_sync_on_helper.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/signin/public/identity_manager/account_info.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
 #include "content/public/browser/context_menu_params.h"
 #include "content/public/browser/render_frame_host.h"
 
@@ -36,11 +38,16 @@ ProfilePickerSignedInFlowController::ProfilePickerSignedInFlowController(
 }
 
 ProfilePickerSignedInFlowController::~ProfilePickerSignedInFlowController() {
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  LOG(WARNING) << "crbug.com/1340791 | Flow controller destruction.";
+#endif
   if (contents())
     contents()->SetDelegate(nullptr);
 }
 
 void ProfilePickerSignedInFlowController::Init() {
+  DCHECK(!IsInitialized());
+
   contents()->SetDelegate(this);
 
   const CoreAccountInfo& account_info =
@@ -50,9 +57,9 @@ void ProfilePickerSignedInFlowController::Init() {
                                      "primary account must be passed in.";
   email_ = account_info.email;
 
-  base::OnceClosure sync_consent_completed_closure = base::BindOnce(
-      &ProfilePickerSignedInFlowController::FinishAndOpenBrowser,
-      weak_ptr_factory_.GetWeakPtr(), ProfilePicker::BrowserOpenedCallback());
+  base::OnceClosure sync_consent_completed_closure =
+      base::BindOnce(&ProfilePickerSignedInFlowController::FinishAndOpenBrowser,
+                     weak_ptr_factory_.GetWeakPtr(), PostHostClearedCallback());
 
   // TurnSyncOnHelper deletes itself once done.
   new TurnSyncOnHelper(
@@ -69,6 +76,9 @@ void ProfilePickerSignedInFlowController::Cancel() {}
 
 void ProfilePickerSignedInFlowController::SwitchToSyncConfirmation() {
   DCHECK(IsInitialized());
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  PreShowScreenForDebug();
+#endif
   host_->ShowScreen(contents(), GetSyncConfirmationURL(/*loading=*/false),
                     /*navigation_finished_closure=*/
                     base::BindOnce(&ProfilePickerSignedInFlowController::
@@ -82,6 +92,9 @@ void ProfilePickerSignedInFlowController::SwitchToEnterpriseProfileWelcome(
     EnterpriseProfileWelcomeUI::ScreenType type,
     signin::SigninChoiceCallback proceed_callback) {
   DCHECK(IsInitialized());
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  PreShowScreenForDebug();
+#endif
   host_->ShowScreen(contents(),
                     GURL(chrome::kChromeUIEnterpriseProfileWelcomeURL),
                     /*navigation_finished_closure=*/
@@ -99,6 +112,9 @@ void ProfilePickerSignedInFlowController::SwitchToProfileSwitch(
   // The sign-in flow is finished, no profile window should be shown in the end.
   Cancel();
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  PreShowScreenForDebug();
+#endif
   switch_profile_path_ = profile_path;
   host_->ShowScreenInPickerContents(
       GURL(chrome::kChromeUIProfilePickerUrl).Resolve("profile-switch"));
@@ -115,17 +131,10 @@ absl::optional<SkColor> ProfilePickerSignedInFlowController::GetProfileColor()
 }
 
 GURL ProfilePickerSignedInFlowController::GetSyncConfirmationURL(bool loading) {
-  // The color should be set also for the loading case. Namely, the sync
-  // confirmation webUI is not re-initialized when loading a URL for the same
-  // host but with another path. If a policy later changes the value of
-  // `GetProfileColor()`, it's fine. In this case, Chrome shows the enterprise
-  // welcome screen in between the loading URL and the sync confirmation URL and
-  // thus the sync confirmation webUI will get recreated with the right color.
   GURL url = GURL(chrome::kChromeUISyncConfirmationURL);
   return AppendSyncConfirmationQueryParams(
       loading ? url.Resolve(chrome::kChromeUISyncConfirmationLoadingPath) : url,
-      {/*is_modal=*/false, SyncConfirmationUI::DesignVersion::kColored,
-       GetProfileColor()});
+      SyncConfirmationStyle::kWindow);
 }
 
 std::unique_ptr<content::WebContents>
@@ -165,8 +174,9 @@ void ProfilePickerSignedInFlowController::
       /*browser=*/nullptr, type,
       IdentityManagerFactory::GetForProfile(profile_)
           ->FindExtendedAccountInfoByEmailAddress(email_),
-      /*force_new_profile_=*/false, /*show_link_data_option=*/false,
-      GetProfileColor(), std::move(proceed_callback));
+      /*profile_creation_required_by_policy=*/false,
+      /*show_link_data_option=*/false, GetProfileColor(),
+      std::move(proceed_callback));
 }
 
 bool ProfilePickerSignedInFlowController::IsInitialized() const {

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,49 +8,56 @@
  * when using Nearby Share.
  */
 
-import '//resources/cr_elements/cr_button/cr_button.m.js';
-import '//resources/cr_elements/cr_dialog/cr_dialog.m.js';
-import '//resources/cr_elements/cr_radio_button/cr_radio_button.m.js';
-import '//resources/cr_elements/cr_radio_group/cr_radio_group.m.js';
-import '../../prefs/prefs.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
+import 'chrome://resources/cr_elements/cr_radio_button/cr_radio_button.js';
+import 'chrome://resources/cr_elements/cr_radio_group/cr_radio_group.js';
 
-import {I18nBehavior} from '//resources/js/i18n_behavior.m.js';
-import {html, Polymer} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/ash/common/i18n_behavior.js';
+import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {PrefsBehavior} from '../prefs_behavior.js';
+import {getNearbyShareSettings} from '../../shared/nearby_share_settings.js';
 
 import {dataUsageStringToEnum, NearbyShareDataUsage} from './types.js';
 
-Polymer({
-  _template: html`{__html_template__}`,
-  is: 'nearby-share-data-usage-dialog',
+/**
+ * @constructor
+ * @extends {PolymerElement}
+ * @implements {I18nBehaviorInterface}
+ */
+const NearbyShareDataUsageDialogElementBase =
+    mixinBehaviors([I18nBehavior], PolymerElement);
 
-  behaviors: [
-    I18nBehavior,
-    PrefsBehavior,
-  ],
+/** @polymer */
+class NearbyShareDataUsageDialogElement extends
+    NearbyShareDataUsageDialogElementBase {
+  static get is() {
+    return 'nearby-share-data-usage-dialog';
+  }
 
-  properties: {
-    /** Preferences state. */
-    prefs: {
-      type: Object,
-      notify: true,
-    },
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
-    /** @type {!Object<string, number>} */
-    NearbyShareDataUsage: {
-      type: Object,
-      value: NearbyShareDataUsage,
-    },
-  },
+  static get properties() {
+    return {
+      /** @type {!Object<string, number>} */
+      NearbyShareDataUsage: {
+        type: Object,
+        value: NearbyShareDataUsage,
+      },
+    };
+  }
 
   /** @override */
-  attached() {
+  connectedCallback() {
+    super.connectedCallback();
+
     const dialog = /** @type {!CrDialogElement} */ (this.$.dialog);
     if (!dialog.open) {
       dialog.showModal();
     }
-  },
+  }
 
   /** @private */
   close() {
@@ -58,20 +65,19 @@ Polymer({
     if (dialog.open) {
       dialog.close();
     }
-  },
+  }
 
   /** @private */
   onCancelClick_() {
     this.close();
-  },
+  }
 
   /** @private */
   onSaveClick_() {
-    this.setPrefValue(
-        'nearby_sharing.data_usage',
-        dataUsageStringToEnum(this.$$('cr-radio-group').selected));
+    getNearbyShareSettings().setDataUsage((dataUsageStringToEnum(
+        this.shadowRoot.querySelector('cr-radio-group').selected)));
     this.close();
-  },
+  }
 
   /** @private */
   selectedDataUsage_(dataUsageValue) {
@@ -80,5 +86,8 @@ Polymer({
     }
 
     return dataUsageValue;
-  },
-});
+  }
+}
+
+customElements.define(
+    NearbyShareDataUsageDialogElement.is, NearbyShareDataUsageDialogElement);

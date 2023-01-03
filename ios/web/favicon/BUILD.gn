@@ -1,8 +1,9 @@
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import("//ios/build/config.gni")
+import("//ios/web/public/js_messaging/compile_ts.gni")
 import("//ios/web/public/js_messaging/optimize_js.gni")
 
 source_set("favicon") {
@@ -17,25 +18,41 @@ source_set("favicon") {
   sources = [
     "favicon_java_script_feature.h",
     "favicon_java_script_feature.mm",
-    "favicon_status.cc",
     "favicon_url.cc",
     "favicon_util.h",
     "favicon_util.mm",
   ]
 }
 
+compile_ts("compile_typescript") {
+  sources = [
+    "//ios/web/public/js_messaging/resources/utils.ts",
+    "resources/favicon.ts",
+    "resources/favicon_event_listeners.ts",
+    "resources/favicon_utils.ts",
+  ]
+}
+
 optimize_js("favicon_js") {
   visibility = [ ":favicon" ]
 
-  primary_script = "resources/favicon.js"
-  sources = [ "resources/favicon.js" ]
+  _script = filter_include(get_target_outputs(":compile_typescript"),
+                           [ "*favicon.js" ])
+  primary_script = _script[0]
+  sources = _script
+
+  deps = [ ":compile_typescript" ]
 }
 
 optimize_js("favicon_event_listeners_js") {
   visibility = [ ":favicon" ]
 
-  primary_script = "resources/favicon_event_listeners.js"
-  sources = [ "resources/favicon_event_listeners.js" ]
+  _script = filter_include(get_target_outputs(":compile_typescript"),
+                           [ "*favicon_event_listeners.js" ])
+  primary_script = _script[0]
+  sources = _script
+
+  deps = [ ":compile_typescript" ]
 }
 
 source_set("unittests") {

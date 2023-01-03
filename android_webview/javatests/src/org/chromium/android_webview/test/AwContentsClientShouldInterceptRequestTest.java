@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -141,10 +141,11 @@ public class AwContentsClientShouldInterceptRequestTest {
         mActivityTestRule.loadUrlAsync(mAwContents, pageWithIframeUrl);
         mShouldInterceptRequestHelper.waitForCallback(callCount, 2);
         Assert.assertEquals(2, mShouldInterceptRequestHelper.getUrls().size());
-        Assert.assertEquals(
-                false, mShouldInterceptRequestHelper.getRequestsForUrl(subframeUrl).isMainFrame);
+        Assert.assertEquals(false,
+                mShouldInterceptRequestHelper.getRequestsForUrl(subframeUrl).isOutermostMainFrame);
         Assert.assertEquals(true,
-                mShouldInterceptRequestHelper.getRequestsForUrl(pageWithIframeUrl).isMainFrame);
+                mShouldInterceptRequestHelper.getRequestsForUrl(pageWithIframeUrl)
+                        .isOutermostMainFrame);
     }
 
     @Test

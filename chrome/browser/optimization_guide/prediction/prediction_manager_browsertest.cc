@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
-#include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/scoped_run_loop_timeout.h"
@@ -24,6 +23,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_key.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -58,28 +58,9 @@ namespace {
 
 constexpr int kSuccessfulModelVersion = 123;
 
-std::unique_ptr<optimization_guide::proto::GetModelsResponse>
-BuildGetModelsResponse() {
-  std::unique_ptr<optimization_guide::proto::GetModelsResponse>
-      get_models_response =
-          std::make_unique<optimization_guide::proto::GetModelsResponse>();
-
-  std::unique_ptr<optimization_guide::proto::PredictionModel> prediction_model =
-      std::make_unique<optimization_guide::proto::PredictionModel>();
-  optimization_guide::proto::ModelInfo* model_info =
-      prediction_model->mutable_model_info();
-  model_info->set_version(2);
-  model_info->set_optimization_target(
-      optimization_guide::proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
-  model_info->add_supported_model_engine_versions(
-      optimization_guide::proto::ModelEngineVersion::
-          MODEL_ENGINE_VERSION_TFLITE_2_8);
-  prediction_model->mutable_model()->set_download_url(
-      "https://example.com/model");
-  *get_models_response->add_models() = *prediction_model.get();
-
-  return get_models_response;
-}
+// Timeout to allow the model file to be downloaded, unzipped and sent to the
+// model file observers.
+constexpr base::TimeDelta kModelFileDownloadTimeout = base::Seconds(60);
 
 enum class PredictionModelsFetcherRemoteResponseType {
   kSuccessfulWithValidModelFile = 0,
@@ -92,28 +73,6 @@ enum class PredictionModelsFetcherRemoteResponseType {
 }  // namespace
 
 namespace optimization_guide {
-
-class ModelFileObserver : public OptimizationTargetModelObserver {
- public:
-  using ModelFileReceivedCallback =
-      base::OnceCallback<void(proto::OptimizationTarget, const ModelInfo&)>;
-
-  ModelFileObserver() = default;
-  ~ModelFileObserver() override = default;
-
-  void set_model_file_received_callback(ModelFileReceivedCallback callback) {
-    file_received_callback_ = std::move(callback);
-  }
-
-  void OnModelUpdated(proto::OptimizationTarget optimization_target,
-                      const ModelInfo& model_info) override {
-    if (file_received_callback_)
-      std::move(file_received_callback_).Run(optimization_target, model_info);
-  }
-
- private:
-  ModelFileReceivedCallback file_received_callback_;
-};
 
 // Abstract base class for browser testing Prediction Manager.
 // Actual class fixtures should implement InitializeFeatureList to set up
@@ -144,8 +103,6 @@ class PredictionManagerBrowserTestBase : public InProcessBrowserTest {
   }
 
   void SetUpOnMainThread() override {
-    content::NetworkConnectionChangeSimulator().SetConnectionType(
-        network::mojom::ConnectionType::CONNECTION_2G);
     https_server_ = std::make_unique<net::EmbeddedTestServer>(
         net::EmbeddedTestServer::TYPE_HTTPS);
     https_server_->ServeFilesFromSourceDirectory(GetChromeTestDataDir());
@@ -168,8 +125,6 @@ class PredictionManagerBrowserTestBase : public InProcessBrowserTest {
   }
 
   void SetUpCommandLine(base::CommandLine* cmd) override {
-    cmd->AppendSwitch("enable-spdy-proxy-auth");
-
     cmd->AppendSwitch(optimization_guide::switches::
                           kDisableCheckingUserPermissionsForTesting);
     cmd->AppendSwitchASCII(optimization_guide::switches::kFetchHintsOverride,
@@ -205,14 +160,6 @@ class PredictionManagerBrowserTestBase : public InProcessBrowserTest {
     return optimization_guide_keyed_service->GetPredictionManager();
   }
 
-  void SetExpectedFieldTrialNames(
-      const base::flat_set<uint32_t>& expected_field_trial_name_hashes) {
-    expected_field_trial_name_hashes_ = expected_field_trial_name_hashes;
-  }
-
-  GURL https_url_with_content() { return https_url_with_content_; }
-  GURL https_url_without_content() { return https_url_without_content_; }
-
  protected:
   // Virtualize for testing different feature configurations.
   virtual void InitializeFeatureList() = 0;
@@ -240,18 +187,6 @@ class PredictionManagerBrowserTestBase : public InProcessBrowserTest {
     EXPECT_NE(request.headers.end(), request.headers.find("X-Client-Data"));
     optimization_guide::proto::GetModelsRequest models_request;
     EXPECT_TRUE(models_request.ParseFromString(request.content));
-    // Make sure we actually filter field trials appropriately.
-    EXPECT_EQ(expected_field_trial_name_hashes_.size(),
-              static_cast<size_t>(models_request.active_field_trials_size()));
-    base::flat_set<uint32_t> seen_field_trial_name_hashes;
-    for (const auto& field_trial : models_request.active_field_trials()) {
-      EXPECT_TRUE(
-          expected_field_trial_name_hashes_.find(field_trial.name_hash()) !=
-          expected_field_trial_name_hashes_.end());
-      seen_field_trial_name_hashes.insert(field_trial.name_hash());
-    }
-    EXPECT_EQ(seen_field_trial_name_hashes.size(),
-              expected_field_trial_name_hashes_.size());
 
     response->set_code(net::HTTP_OK);
     std::unique_ptr<optimization_guide::proto::GetModelsResponse>
@@ -293,10 +228,10 @@ class PredictionManagerBrowserTestBase : public InProcessBrowserTest {
   std::unique_ptr<net::EmbeddedTestServer> models_server_;
   PredictionModelsFetcherRemoteResponseType response_type_ =
       PredictionModelsFetcherRemoteResponseType::kSuccessfulWithValidModelFile;
-  base::flat_set<uint32_t> expected_field_trial_name_hashes_;
 };
 
-class PredictionManagerBrowserTest : public PredictionManagerBrowserTestBase {
+class PredictionManagerBrowserTest : public testing::WithParamInterface<bool>,
+                                     public PredictionManagerBrowserTestBase {
  public:
   PredictionManagerBrowserTest() = default;
   ~PredictionManagerBrowserTest() override = default;
@@ -305,17 +240,30 @@ class PredictionManagerBrowserTest : public PredictionManagerBrowserTestBase {
   PredictionManagerBrowserTest& operator=(const PredictionManagerBrowserTest&) =
       delete;
 
+  bool ShouldEnableInstallWideModelStore() const { return GetParam(); }
+
  private:
   void InitializeFeatureList() override {
-    scoped_feature_list_.InitWithFeatures(
-        {optimization_guide::features::kOptimizationHints,
-         optimization_guide::features::kRemoteOptimizationGuideFetching,
-         optimization_guide::features::kOptimizationTargetPrediction},
-        {});
+    std::vector<base::test::FeatureRefAndParams> enabled_features = {
+        {optimization_guide::features::kOptimizationHints, {}},
+        {optimization_guide::features::kRemoteOptimizationGuideFetching, {}},
+        {optimization_guide::features::kOptimizationTargetPrediction,
+         {{"fetch_startup_delay_ms", "2000"}}},
+    };
+    if (ShouldEnableInstallWideModelStore()) {
+      enabled_features.emplace_back(
+          features::kOptimizationGuideInstallWideModelStore,
+          base::FieldTrialParams());
+    }
+    scoped_feature_list_.InitWithFeaturesAndParameters(enabled_features, {});
   }
 };
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerBrowserTest,
+INSTANTIATE_TEST_SUITE_P(All,
+                         PredictionManagerBrowserTest,
+                         /*use_install_wide_model_store=*/testing::Bool());
+
+IN_PROC_BROWSER_TEST_P(PredictionManagerBrowserTest,
                        ComponentUpdatesPrefDisabled) {
   ModelFileObserver model_file_observer;
   SetResponseType(PredictionModelsFetcherRemoteResponseType::kUnsuccessful);
@@ -336,8 +284,17 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerBrowserTest,
       0);
 }
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerBrowserTest,
-                       ModelsAndFeaturesStoreInitialized) {
+// Flaky on linux-chromeos-dbg bot. http://crbug.com/1402697
+#if BUILDFLAG(IS_CHROMEOS) && !defined(NDEBUG)
+#define MAYBE_ModelsAndFeaturesStoreInitialized \
+  DISABLED_ModelsAndFeaturesStoreInitialized
+#else
+#define MAYBE_ModelsAndFeaturesStoreInitialized \
+  ModelsAndFeaturesStoreInitialized
+#endif
+
+IN_PROC_BROWSER_TEST_P(PredictionManagerBrowserTest,
+                       MAYBE_ModelsAndFeaturesStoreInitialized) {
   ModelFileObserver model_file_observer;
   SetResponseType(
       PredictionModelsFetcherRemoteResponseType::kSuccessfulWithValidModelFile);
@@ -362,8 +319,15 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerBrowserTest,
       kSuccessfulModelVersion, 1);
 }
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerBrowserTest,
-                       PredictionModelFetchFailed) {
+// TODO(crbug.com/1402697): Flaky on linux-chromeos-chrome bot.
+// TODO(crbug.com/1402228): Also flaky on Win-ASAN bot.
+#if (BUILDFLAG(IS_CHROMEOS) && !defined(NDEBUG)) || (BUILDFLAG(IS_WIN) && defined(ADDRESS_SANITIZER))
+#define MAYBE_PredictionModelFetchFailed DISABLED_PredictionModelFetchFailed
+#else
+#define MAYBE_PredictionModelFetchFailed PredictionModelFetchFailed
+#endif
+IN_PROC_BROWSER_TEST_P(PredictionManagerBrowserTest,
+                       MAYBE_PredictionModelFetchFailed) {
   ModelFileObserver model_file_observer;
   SetResponseType(PredictionModelsFetcherRemoteResponseType::kUnsuccessful);
   base::HistogramTester histogram_tester;
@@ -390,57 +354,6 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerBrowserTest,
       "OptimizationGuide.PredictionModelUpdateVersion.PainfulPageLoad", 0);
   histogram_tester.ExpectTotalCount(
       "OptimizationGuide.PredictionModelLoadedVersion.PainfulPageLoad", 0);
-}
-
-class PredictionManagerNoUserPermissionsTest
-    : public PredictionManagerBrowserTest {
- public:
-  PredictionManagerNoUserPermissionsTest() {
-    // Field trials should not be sent.
-    SetExpectedFieldTrialNames({});
-  }
-
-  ~PredictionManagerNoUserPermissionsTest() override = default;
-
-  void SetUpCommandLine(base::CommandLine* cmd) override {
-    PredictionManagerBrowserTest::SetUpCommandLine(cmd);
-
-    // Remove switches that enable user permissions.
-    cmd->RemoveSwitch(switches::kDisableCheckingUserPermissionsForTesting);
-  }
-
- private:
-  void InitializeFeatureList() override {
-    scoped_feature_list_.InitWithFeaturesAndParameters(
-        {
-            {features::kOptimizationHints, {}},
-            {features::kRemoteOptimizationGuideFetching, {}},
-            {features::kOptimizationTargetPrediction, {}},
-            {features::kOptimizationHintsFieldTrials,
-             {{"allowed_field_trial_names",
-               "scoped_feature_list_trial_for_OptimizationHints,scoped_feature_"
-               "list_trial_for_OptimizationHintsFetching"}}},
-        },
-        {});
-  }
-};
-
-IN_PROC_BROWSER_TEST_F(PredictionManagerNoUserPermissionsTest,
-                       FieldTrialsNotPassedWhenNoUserPermissions) {
-  ModelFileObserver model_file_observer;
-  base::HistogramTester histogram_tester;
-
-  SetResponseType(
-      PredictionModelsFetcherRemoteResponseType::kSuccessfulWithValidModelFile);
-  RegisterWithKeyedService(&model_file_observer);
-
-  RetryForHistogramUntilCountReached(
-      &histogram_tester,
-      "OptimizationGuide.PredictionManager.PredictionModelsStored", 1);
-
-  RetryForHistogramUntilCountReached(
-      &histogram_tester,
-      "OptimizationGuide.PredictionModelLoadedVersion.PainfulPageLoad", 1);
 }
 
 class PredictionManagerModelDownloadingBrowserTest
@@ -481,31 +394,30 @@ class PredictionManagerModelDownloadingBrowserTest
 
  private:
   void InitializeFeatureList() override {
-    scoped_feature_list_.InitWithFeaturesAndParameters(
-        {
-            {features::kOptimizationHints, {}},
-            {features::kRemoteOptimizationGuideFetching, {}},
-            {features::kOptimizationTargetPrediction, {}},
-            {features::kOptimizationGuideModelDownloading,
-             {{"unrestricted_model_downloading", "true"}}},
-            {features::kOptimizationHintsFieldTrials,
-             {{"allowed_field_trial_names",
-               "scoped_feature_list_trial_for_OptimizationHints,scoped_feature_"
-               "list_trial_for_OptimizationHintsFetching"}}},
-        },
-        {});
-    SetExpectedFieldTrialNames(base::flat_set<uint32_t>(
-        {variations::HashName(
-             "scoped_feature_list_trial_for_OptimizationHints"),
-         variations::HashName(
-             "scoped_feature_list_trial_for_OptimizationHintsFetching")}));
+    std::vector<base::test::FeatureRefAndParams> enabled_features = {
+        {features::kOptimizationHints, {}},
+        {features::kRemoteOptimizationGuideFetching, {}},
+        {features::kOptimizationTargetPrediction, {}},
+        {features::kOptimizationGuideModelDownloading,
+         {{"unrestricted_model_downloading", "true"}}},
+    };
+    if (ShouldEnableInstallWideModelStore()) {
+      enabled_features.emplace_back(
+          features::kOptimizationGuideInstallWideModelStore,
+          base::FieldTrialParams());
+    }
+    scoped_feature_list_.InitWithFeaturesAndParameters(enabled_features, {});
   }
 
   std::unique_ptr<ModelFileObserver> model_file_observer_;
 };
 
+INSTANTIATE_TEST_SUITE_P(All,
+                         PredictionManagerModelDownloadingBrowserTest,
+                         /*ShouldEnableInstallWideModelStore=*/testing::Bool());
+
 // Flaky on various bots. See https://crbug.com/1266318
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        DISABLED_TestIncognitoUsesModelFromRegularProfile) {
   SetResponseType(
       PredictionModelsFetcherRemoteResponseType::kSuccessfulWithValidModelFile);
@@ -529,8 +441,8 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
     // Wait until the observer receives the file. We increase the timeout to 60
     // seconds here since the file is on the larger side.
     {
-      base::test::ScopedRunLoopTimeout file_download_timeout(FROM_HERE,
-                                                             base::Seconds(60));
+      base::test::ScopedRunLoopTimeout file_download_timeout(
+          FROM_HERE, kModelFileDownloadTimeout);
       run_loop->Run();
     }
 
@@ -578,7 +490,7 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
 #else
 #define MAYBE_TestIncognitoDoesntFetchModels TestIncognitoDoesntFetchModels
 #endif
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        MAYBE_TestIncognitoDoesntFetchModels) {
   base::HistogramTester histogram_tester;
 
@@ -605,7 +517,7 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
       "OptimizationGuide.PredictionModelUpdateVersion.PainfulPageLoad", 0);
 }
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        TestDownloadUrlAcceptedByDownloadServiceButInvalid) {
   base::HistogramTester histogram_tester;
 
@@ -644,7 +556,7 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
       "OptimizationGuide.PredictionModelUpdateVersion.PainfulPageLoad", 0);
 }
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        TestSuccessfulModelFileFlow) {
   base::HistogramTester histogram_tester;
 
@@ -657,6 +569,14 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
          const ModelInfo& model_info) {
         EXPECT_EQ(optimization_target,
                   proto::OPTIMIZATION_TARGET_PAINFUL_PAGE_LOAD);
+
+        if (!GetParam()) {
+          // Regression test for crbug/1327975.
+          // Make sure model file path downloaded into profile dir.
+          base::FilePath profile_dir =
+              g_browser_process->profile_manager()->GetLastUsedProfileDir();
+          EXPECT_TRUE(profile_dir.IsParent(model_info.GetModelFilePath()));
+        }
         run_loop->Quit();
       },
       run_loop.get()));
@@ -668,8 +588,8 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
   // Wait until the observer receives the file. We increase the timeout to 60
   // seconds here since the file is on the larger side.
   {
-    base::test::ScopedRunLoopTimeout file_download_timeout(FROM_HERE,
-                                                           base::Seconds(60));
+    base::test::ScopedRunLoopTimeout file_download_timeout(
+        FROM_HERE, kModelFileDownloadTimeout);
     run_loop->Run();
   }
 
@@ -707,7 +627,7 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
                        1)));
 }
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        TestSuccessfulModelFileFlowWithAdditionalFile) {
   base::HistogramTester histogram_tester;
 
@@ -735,8 +655,8 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
   // Wait until the observer receives the file. We increase the timeout to 60
   // seconds here since the file is on the larger side.
   {
-    base::test::ScopedRunLoopTimeout file_download_timeout(FROM_HERE,
-                                                           base::Seconds(60));
+    base::test::ScopedRunLoopTimeout file_download_timeout(
+        FROM_HERE, kModelFileDownloadTimeout);
     run_loop->Run();
   }
 
@@ -774,7 +694,7 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
                        1)));
 }
 
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        TestSuccessfulModelFileFlowWithInvalidAdditionalFile) {
   base::HistogramTester histogram_tester;
 
@@ -821,33 +741,21 @@ IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
 #else
 #define MAYBE_TestSwitchProfileDoesntCrash TestSwitchProfileDoesntCrash
 #endif
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        MAYBE_TestSwitchProfileDoesntCrash) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   base::FilePath other_path =
       profile_manager->GenerateNextProfileDirectoryPath();
-
-  base::RunLoop run_loop;
-
   // Create an additional profile.
-  profile_manager->CreateProfileAsync(
-      other_path,
-      base::BindLambdaForTesting(
-          [&run_loop](Profile* profile, Profile::CreateStatus status) {
-            if (status == Profile::CREATE_STATUS_INITIALIZED)
-              run_loop.Quit();
-          }));
-
-  run_loop.Run();
-
-  Profile* profile = profile_manager->GetProfileByPath(other_path);
+  Profile* profile =
+      profiles::testing::CreateProfileSync(profile_manager, other_path);
   ASSERT_TRUE(profile);
   CreateBrowser(profile);
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
 // CreateGuestBrowser() is not supported for Android or ChromeOS out of the box.
-IN_PROC_BROWSER_TEST_F(PredictionManagerModelDownloadingBrowserTest,
+IN_PROC_BROWSER_TEST_P(PredictionManagerModelDownloadingBrowserTest,
                        GuestProfileReceivesModel) {
   SetResponseType(
       PredictionModelsFetcherRemoteResponseType::kSuccessfulWithValidModelFile);

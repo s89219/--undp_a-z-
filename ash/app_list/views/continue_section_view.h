@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,6 @@
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/view.h"
 
-namespace views {
-class Label;
-}  // namespace views
-
 namespace ash {
 
 class AppListNudgeController;
@@ -24,7 +20,6 @@ class AppListViewDelegate;
 class AppListToastView;
 class ContinueTaskContainerView;
 class ContinueTaskView;
-class SearchResultPageDialogController;
 
 // The "Continue" section of the bubble launcher. This view wraps around
 // suggestions with tasks to continue.
@@ -36,7 +31,6 @@ class ASH_EXPORT ContinueSectionView : public views::View,
   METADATA_HEADER(ContinueSectionView);
 
   ContinueSectionView(AppListViewDelegate* view_delegate,
-                      SearchResultPageDialogController* dialog_controller,
                       int columns,
                       bool tablet_mode);
   ContinueSectionView(const ContinueSectionView&) = delete;
@@ -142,9 +136,6 @@ class ASH_EXPORT ContinueSectionView : public views::View,
 
   AppListViewDelegate* const view_delegate_;
 
-  // Controller for showing a modal dialog in the continue section.
-  SearchResultPageDialogController* const dialog_controller_;
-
   bool tablet_mode_ = false;
 
   // Timer for marking the privacy notice as shown.
@@ -153,7 +144,6 @@ class ASH_EXPORT ContinueSectionView : public views::View,
   // Not owned.
   AppListNudgeController* nudge_controller_ = nullptr;
 
-  views::Label* continue_label_ = nullptr;
   AppListToastView* privacy_toast_ = nullptr;
   ContinueTaskContainerView* suggestions_container_ = nullptr;
 

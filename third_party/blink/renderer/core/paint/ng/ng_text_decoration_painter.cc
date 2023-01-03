@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,10 +38,12 @@ NGTextDecorationPainter::~NGTextDecorationPainter() {
 void NGTextDecorationPainter::UpdateDecorationInfo(
     absl::optional<TextDecorationInfo>& result,
     const ComputedStyle& style,
-    const TextPaintStyle& text_style) {
+    const TextPaintStyle& text_style,
+    const AppliedTextDecoration* decoration_override) {
   result.reset();
 
-  if (style.TextDecorationsInEffect() == TextDecorationLine::kNone ||
+  if ((style.TextDecorationsInEffect() == TextDecorationLine::kNone &&
+       !decoration_override) ||
       // Ellipsis should not have text decorations. This is not defined, but
       // 4 impls do this: <https://github.com/w3c/csswg-drafts/issues/6531>
       text_item_.IsEllipsis())
@@ -73,14 +75,15 @@ void NGTextDecorationPainter::UpdateDecorationInfo(
     top *= scaling_factor / text_item_.SvgScalingFactor();
     top -= scaled_font.PrimaryFont()->GetFontMetrics().FixedAscent();
     result.emplace(PhysicalOffset(decoration_rect_.offset.left, top),
-                   decoration_rect_.Width(), style.GetFontBaseline(), style,
-                   scaled_font, effective_selection_decoration, nullptr,
-                   MinimumThickness1(false), scaling_factor);
+                   decoration_rect_.Width(), style,
+                   text_painter_.InlineContext(),
+                   effective_selection_decoration, decoration_override,
+                   &scaled_font, MinimumThickness1(false), scaling_factor);
   } else {
     result.emplace(
-        decoration_rect_.offset, decoration_rect_.Width(),
-        style.GetFontBaseline(), style, text_item_.ScaledFont(),
-        effective_selection_decoration, nullptr,
+        decoration_rect_.offset, decoration_rect_.Width(), style,
+        text_painter_.InlineContext(), effective_selection_decoration,
+        decoration_override, &text_item_.ScaledFont(),
         MinimumThickness1(text_item_.Type() != NGFragmentItem::kSvgText));
   }
 }
@@ -89,7 +92,6 @@ void NGTextDecorationPainter::Begin(Phase phase) {
   DCHECK(step_ == kBegin);
 
   phase_ = phase;
-  has_line_through_decoration_ = false;
   UpdateDecorationInfo(decoration_info_, style_, text_style_);
   clip_rect_.reset();
 
@@ -114,16 +116,20 @@ void NGTextDecorationPainter::Begin(Phase phase) {
   step_ = kExcept;
 }
 
-void NGTextDecorationPainter::PaintExceptLineThrough() {
+void NGTextDecorationPainter::PaintExceptLineThrough(
+    const NGTextFragmentPaintInfo& fragment_paint_info) {
   DCHECK(step_ == kExcept);
 
-  if (decoration_info_) {
+  // Clipping the canvas unnecessarily is expensive, so avoid doing it if the
+  // only decoration was a ‘line-through’.
+  if (decoration_info_ &&
+      decoration_info_->HasAnyLine(~TextDecorationLine::kLineThrough)) {
     GraphicsContextStateSaver state_saver(paint_info_.context, false);
     ClipIfNeeded(state_saver);
 
     text_painter_.PaintDecorationsExceptLineThrough(
-        text_item_, paint_info_, style_, text_style_, *decoration_info_,
-        decoration_rect_, &has_line_through_decoration_);
+        fragment_paint_info, text_item_, paint_info_, style_, text_style_,
+        *decoration_info_, ~TextDecorationLine::kNone, decoration_rect_);
   }
 
   step_ = kOnly;
@@ -132,9 +138,10 @@ void NGTextDecorationPainter::PaintExceptLineThrough() {
 void NGTextDecorationPainter::PaintOnlyLineThrough() {
   DCHECK(step_ == kOnly);
 
-  if (has_line_through_decoration_) {
-    DCHECK(decoration_info_);
-
+  // Clipping the canvas unnecessarily is expensive, so avoid doing it if there
+  // are no ‘line-through’ decorations.
+  if (decoration_info_ &&
+      decoration_info_->HasAnyLine(TextDecorationLine::kLineThrough)) {
     GraphicsContextStateSaver state_saver(paint_info_.context, false);
     ClipIfNeeded(state_saver);
 

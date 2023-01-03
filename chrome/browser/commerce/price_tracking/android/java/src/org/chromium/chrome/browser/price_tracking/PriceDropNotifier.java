@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -114,7 +114,7 @@ public class PriceDropNotifier {
         mContext = context;
         mNotificationManagerProxy = notificationManager;
         mPriceDropNotificationManager =
-                new PriceDropNotificationManager(mContext, mNotificationManagerProxy);
+                PriceDropNotificationManagerFactory.create(mContext, mNotificationManagerProxy);
     }
 
     /**
@@ -138,7 +138,7 @@ public class PriceDropNotifier {
     protected NotificationWrapperBuilder getNotificationBuilder(
             @SystemNotificationType int notificationType, int notificationId) {
         return NotificationWrapperBuilderFactory.createNotificationWrapperBuilder(
-                ChannelId.PRICE_DROP,
+                ChannelId.PRICE_DROP_DEFAULT,
                 new NotificationMetadata(notificationType, NOTIFICATION_TAG, notificationId));
     }
 
@@ -197,10 +197,10 @@ public class PriceDropNotifier {
     }
 
     private static @NotificationUmaTracker.ActionType int actionIdToUmaActionType(String actionId) {
-        if (PriceDropNotificationManager.ACTION_ID_VISIT_SITE.equals(actionId)) {
+        if (PriceDropNotificationManagerImpl.ACTION_ID_VISIT_SITE.equals(actionId)) {
             return ActionType.PRICE_DROP_VISIT_SITE;
         }
-        if (PriceDropNotificationManager.ACTION_ID_TURN_OFF_ALERT.equals(actionId)) {
+        if (PriceDropNotificationManagerImpl.ACTION_ID_TURN_OFF_ALERT.equals(actionId)) {
             return ActionType.PRICE_DROP_TURN_OFF_ALERT;
         }
         return ActionType.UNKNOWN;

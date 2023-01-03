@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <map>
 #include <string>
+#include <utility>
 
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -242,10 +243,7 @@ TEST_P(DataPackWithResourceSharingTest, OnFailedToGenerateFile) {
   ASSERT_FALSE(
       pack.LoadFromPathWithAshResource(shared_resource_file, empty_ash_file));
 
-  int64_t shared_resource_file_size;
-  ASSERT_TRUE(
-      base::GetFileSize(shared_resource_file, &shared_resource_file_size));
-  EXPECT_EQ(shared_resource_file_size, 0);
+  EXPECT_FALSE(base::PathExists(shared_resource_file));
 }
 
 }  // namespace ui

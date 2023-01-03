@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,13 +34,11 @@ namespace content {
 class WebUI;
 }  // namespace content
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 class PersonalizationAppUserProviderImpl
     : public PersonalizationAppUserProvider,
-      public user_manager::UserManager::Observer,
-      public ash::CameraPresenceNotifier::Observer {
+      public user_manager::UserManager::Observer {
  public:
   explicit PersonalizationAppUserProviderImpl(content::WebUI* web_ui);
 
@@ -83,11 +81,14 @@ class PersonalizationAppUserProviderImpl
   // user_manager::UserManager::Observer:
   void OnUserImageChanged(const user_manager::User& user) override;
 
+  void OnUserImageIsEnterpriseManagedChanged(
+      const user_manager::User& user,
+      bool is_enterprise_managed) override;
+
   void OnUserProfileImageUpdated(const user_manager::User& user,
                                  const gfx::ImageSkia& profile_image) override;
 
-  // ash::CameraPresenceNotifier::Observer:
-  void OnCameraPresenceCheckDone(bool is_camera_present) override;
+  void OnCameraPresenceCheckDone(bool is_camera_present);
 
   void SetUserImageFileSelectorForTesting(
       std::unique_ptr<ash::UserImageFileSelector> file_selector);
@@ -131,9 +132,7 @@ class PersonalizationAppUserProviderImpl
                           user_manager::UserManager::Observer>
       user_manager_observer_{this};
 
-  base::ScopedObservation<ash::CameraPresenceNotifier,
-                          ash::CameraPresenceNotifier::Observer>
-      camera_observer_{this};
+  std::unique_ptr<ash::CameraPresenceNotifier> camera_presence_notifier_;
 
   mojo::Remote<ash::personalization_app::mojom::UserImageObserver>
       user_image_observer_remote_;
@@ -155,7 +154,6 @@ class PersonalizationAppUserProviderImpl
       image_decode_weak_ptr_factory_{this};
 };
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app
 
 #endif  // CHROME_BROWSER_ASH_WEB_APPLICATIONS_PERSONALIZATION_APP_PERSONALIZATION_APP_USER_PROVIDER_IMPL_H_

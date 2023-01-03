@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -206,6 +206,13 @@ TEST_F(RemotingMessageFactoriesTest, CreateMessageForDemuxerStreamReadUntil) {
   auto& message = rpc->demuxerstream_readuntil_rpc();
   EXPECT_EQ(message.count(), kTotalCount);
   EXPECT_EQ(message.callback_handle(), kTestHandle);
+}
+
+TEST_F(RemotingMessageFactoriesTest,
+       CreateMessageForDemuxerStreamEnableBitstreamConverter) {
+  const auto rpc = CreateMessageForDemuxerStreamEnableBitstreamConverter();
+  EXPECT_EQ(rpc->proc(),
+            openscreen::cast::RpcMessage::RPC_DS_ENABLEBITSTREAMCONVERTER);
 }
 
 TEST_F(RemotingMessageFactoriesTest, CreateMessageForDemuxerStreamError) {

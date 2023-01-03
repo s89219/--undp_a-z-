@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,12 @@ class DisplaySnapshot;
 class NativeDisplayObserver;
 
 namespace test {
+
+constexpr char kTestModesetStr[] = "test-modeset";
+constexpr char kCommitModesetStr[] = "commit-modeset";
+constexpr char kSeamlessModesetStr[] = "seamless-modeset";
+constexpr char kModesetOutcomeFailure[] = "outcome: failure";
+constexpr char kModesetOutcomeSuccess[] = "outcome: success";
 
 class TestNativeDisplayDelegate : public NativeDisplayDelegate {
  public:
@@ -76,7 +82,8 @@ class TestNativeDisplayDelegate : public NativeDisplayDelegate {
   void GetDisplays(GetDisplaysCallback callback) override;
   void Configure(
       const std::vector<display::DisplayConfigurationParams>& config_requests,
-      ConfigureCallback callback) override;
+      ConfigureCallback callback,
+      uint32_t modeset_flag) override;
   void GetHDCPState(const DisplaySnapshot& output,
                     GetHDCPStateCallback callback) override;
   void SetHDCPState(const DisplaySnapshot& output,

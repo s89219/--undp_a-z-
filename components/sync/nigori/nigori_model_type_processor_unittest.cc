@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -156,6 +156,15 @@ class NigoriModelTypeProcessorTest : public testing::Test {
     EXPECT_CALL(capture_callback, Run).WillOnce(testing::SaveArg<0>(&count));
     processor()->GetTypeEntitiesCountForDebugging(capture_callback.Get());
     return count.non_tombstone_entities > 0;
+  }
+
+  sync_pb::ModelTypeState::Invalidation BuildInvalidation(
+      int64_t version,
+      const std::string& payload) {
+    sync_pb::ModelTypeState::Invalidation inv;
+    inv.set_version(version);
+    inv.set_hint(payload);
+    return inv;
   }
 
  private:
@@ -426,8 +435,8 @@ TEST_F(NigoriModelTypeProcessorTest, ShouldMergeSyncData) {
               MergeSyncData(OptionalEntityDataHasDecryptorTokenKeyName(
                   kDecryptorTokenKeyName)));
 
-  processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                std::move(updates));
+  processor()->OnUpdateReceived(CreateDummyModelTypeState(), std::move(updates),
+                                /*gc_directive=*/absl::nullopt);
 }
 
 TEST_F(NigoriModelTypeProcessorTest, ShouldApplySyncChanges) {
@@ -442,8 +451,8 @@ TEST_F(NigoriModelTypeProcessorTest, ShouldApplySyncChanges) {
               ApplySyncChanges(OptionalEntityDataHasDecryptorTokenKeyName(
                   kDecryptorTokenKeyName)));
 
-  processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                std::move(updates));
+  processor()->OnUpdateReceived(CreateDummyModelTypeState(), std::move(updates),
+                                /*gc_directive=*/absl::nullopt);
 }
 
 TEST_F(NigoriModelTypeProcessorTest, ShouldApplySyncChangesWhenEmptyUpdates) {
@@ -455,7 +464,8 @@ TEST_F(NigoriModelTypeProcessorTest, ShouldApplySyncChangesWhenEmptyUpdates) {
   EXPECT_CALL(*mock_nigori_sync_bridge(), ApplySyncChanges(Eq(absl::nullopt)));
 
   processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                UpdateResponseDataList());
+                                UpdateResponseDataList(),
+                                /*gc_directive=*/absl::nullopt);
 }
 
 TEST_F(NigoriModelTypeProcessorTest, ShouldApplySyncChangesWhenReflection) {
@@ -470,8 +480,8 @@ TEST_F(NigoriModelTypeProcessorTest, ShouldApplySyncChangesWhenReflection) {
   // metadata.
   EXPECT_CALL(*mock_nigori_sync_bridge(), ApplySyncChanges(Eq(absl::nullopt)));
 
-  processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                std::move(updates));
+  processor()->OnUpdateReceived(CreateDummyModelTypeState(), std::move(updates),
+                                /*gc_directive=*/absl::nullopt);
 }
 
 TEST_F(NigoriModelTypeProcessorTest, ShouldStopSyncingAndKeepMetadata) {
@@ -533,8 +543,8 @@ TEST_F(NigoriModelTypeProcessorTest, ShouldResetDataOnCacheGuidMismatch) {
               MergeSyncData(OptionalEntityDataHasDecryptorTokenKeyName(
                   kDecryptorTokenKeyName)));
 
-  processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                std::move(updates));
+  processor()->OnUpdateReceived(CreateDummyModelTypeState(), std::move(updates),
+                                /*gc_directive=*/absl::nullopt);
 }
 
 TEST_F(NigoriModelTypeProcessorTest, ShouldDisconnectWhenMergeSyncDataFails) {
@@ -560,8 +570,8 @@ TEST_F(NigoriModelTypeProcessorTest, ShouldDisconnectWhenMergeSyncDataFails) {
 
   ASSERT_TRUE(processor()->IsConnectedForTest());
   EXPECT_CALL(error_handler_callback, Run);
-  processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                std::move(updates));
+  processor()->OnUpdateReceived(CreateDummyModelTypeState(), std::move(updates),
+                                /*gc_directive=*/absl::nullopt);
   EXPECT_FALSE(processor()->IsConnectedForTest());
 }
 
@@ -589,8 +599,8 @@ TEST_F(NigoriModelTypeProcessorTest,
 
   ASSERT_TRUE(processor()->IsConnectedForTest());
   EXPECT_CALL(error_handler_callback, Run);
-  processor()->OnUpdateReceived(CreateDummyModelTypeState(),
-                                std::move(updates));
+  processor()->OnUpdateReceived(CreateDummyModelTypeState(), std::move(updates),
+                                /*gc_directive=*/absl::nullopt);
   EXPECT_FALSE(processor()->IsConnectedForTest());
 }
 
@@ -605,6 +615,29 @@ TEST_F(NigoriModelTypeProcessorTest,
 
   EXPECT_CALL(error_handler_callback, Run);
   processor()->OnSyncStarting(request, base::DoNothing());
+}
+
+TEST_F(NigoriModelTypeProcessorTest,
+       ShouldUpdateModelTypeStateUponHandlingInvalidations) {
+  SimulateModelReadyToSync(/*initial_sync_done=*/true);
+  // Build invalidations.
+  sync_pb::ModelTypeState::Invalidation inv_1 = BuildInvalidation(1, "hint_1");
+  sync_pb::ModelTypeState::Invalidation inv_2 = BuildInvalidation(2, "hint_2");
+
+  processor()->StorePendingInvalidations({inv_1, inv_2});
+
+  // The model type state and the metadata should have been stored in the
+  // processor.
+  NigoriMetadataBatch processor_metadata_batch = processor()->GetMetadata();
+  sync_pb::ModelTypeState model_type_state =
+      processor_metadata_batch.model_type_state;
+  EXPECT_EQ(2, model_type_state.invalidations_size());
+
+  EXPECT_EQ(inv_1.hint(), model_type_state.invalidations(0).hint());
+  EXPECT_EQ(inv_1.version(), model_type_state.invalidations(0).version());
+
+  EXPECT_EQ(inv_2.hint(), model_type_state.invalidations(1).hint());
+  EXPECT_EQ(inv_2.version(), model_type_state.invalidations(1).version());
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,8 @@
 #include "base/rand_util.h"
 #include "base/test/test_suite.h"
 #include "build/build_config.h"
+#include "components/breadcrumbs/core/breadcrumb_manager.h"
+#include "components/breadcrumbs/core/crash_reporter_breadcrumb_observer.h"
 #include "content/app/mojo/mojo_init.h"
 #include "content/browser/network_service_instance_impl.h"
 #include "content/browser/notification_service_impl.h"
@@ -26,6 +28,7 @@
 #include "content/test/test_blink_web_unit_test_support.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
+#include "mojo/core/embedder/embedder.h"
 #include "services/network/test/test_network_connection_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/web/blink.h"
@@ -93,6 +96,8 @@ class UnitTestTestSuite::UnitTestEventListener
     // InterfacePtr pointing to it to avoid it getting the connection error
     // later and have other tests use the InterfacePtr that is invalid.
     ResetNetworkServiceForTesting();
+
+    breadcrumbs::BreadcrumbManager::GetInstance().ResetForTesting();
   }
 
  private:
@@ -135,17 +140,12 @@ UnitTestTestSuite::UnitTestTestSuite(
   listeners.Append(CreateTestEventListener());
   listeners.Append(new CheckForLeakedWebUIRegistrations);
 
-  // The ThreadPool created by the test launcher is never destroyed.
-  // Similarly, the FeatureList created here is never destroyed so it
-  // can safely be accessed by the ThreadPool.
-  std::unique_ptr<base::FeatureList> feature_list =
-      std::make_unique<base::FeatureList>();
-  feature_list->InitializeFromCommandLine(enabled, disabled);
-  base::FeatureList::SetInstance(std::move(feature_list));
+  scoped_feature_list_.InitFromCommandLine(enabled, disabled);
 
   // Do this here even though TestBlinkWebUnitTestSupport calls it since a
   // multi process unit test won't get to create TestBlinkWebUnitTestSupport.
   // This is safe to call multiple times.
+  mojo::core::InitFeatures();
   InitializeMojo();
 
 #if BUILDFLAG(IS_FUCHSIA)
@@ -165,6 +165,7 @@ int UnitTestTestSuite::Run() {
 #if defined(USE_AURA)
   std::unique_ptr<aura::Env> aura_env = aura::Env::CreateInstance();
 #endif
+  std::unique_ptr<url::ScopedSchemeRegistryForTests> scheme_registry;
 
   // TestEventListeners repeater event propagation is disabled in death test
   // child process so create and set the clients here for it.
@@ -179,7 +180,7 @@ int UnitTestTestSuite::Run() {
 
     // Since Blink initialization ended up using the SchemeRegistry, reset
     // that it was accessed before testSuite::Initialize registers its schemes.
-    new url::ScopedSchemeRegistryForTests();
+    scheme_registry = std::make_unique<url::ScopedSchemeRegistryForTests>();
 
     ui::ResourceBundle::CleanupSharedInstance();
   }

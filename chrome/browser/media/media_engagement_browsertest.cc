@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/gmock_callback_support.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_clock.h"
 #include "base/test/test_mock_time_task_runner.h"
@@ -19,9 +20,9 @@
 #include "chrome/browser/media/media_engagement_contents_observer.h"
 #include "chrome/browser/media/media_engagement_preloaded_list.h"
 #include "chrome/browser/media/media_engagement_service.h"
-#include "chrome/browser/prefetch/no_state_prefetch/no_state_prefetch_manager_factory.h"
-#include "chrome/browser/prefetch/no_state_prefetch/prerender_test_utils.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/preloading/prefetch/no_state_prefetch/no_state_prefetch_manager_factory.h"
+#include "chrome/browser/preloading/prefetch/no_state_prefetch/no_state_prefetch_test_utils.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "chrome/browser/profiles/profile.h"
@@ -104,7 +105,7 @@ class WasRecentlyAudibleWatcher {
     }
   }
 
-  const raw_ptr<RecentlyAudibleHelper> audible_helper_;
+  const raw_ptr<RecentlyAudibleHelper, DanglingUntriaged> audible_helper_;
 
   base::RepeatingTimer timer_;
   std::unique_ptr<base::RunLoop> run_loop_;
@@ -796,7 +797,7 @@ IN_PROC_BROWSER_TEST_F(MediaEngagementBrowserTest, MAYBE_Ignored) {
 
   std::unique_ptr<prerender::NoStatePrefetchHandle> no_state_prefetch_handle =
       no_state_prefetch_manager->StartPrefetchingFromOmnibox(
-          url, storage_namespace, gfx::Size(640, 480));
+          url, storage_namespace, gfx::Size(640, 480), nullptr);
 
   ASSERT_EQ(no_state_prefetch_handle->contents(), test_prerender->contents());
 
@@ -977,7 +978,7 @@ IN_PROC_BROWSER_TEST_F(MediaEngagementContentsObserverPrerenderBrowserTest,
   ASSERT_TRUE(embedded_test_server()->Start());
 
   MockAutoplayConfigurationClient client;
-  OverrideInterface(GetWebContents()->GetMainFrame(), &client);
+  OverrideInterface(GetWebContents()->GetPrimaryMainFrame(), &client);
 
   const GURL& initial_url = embedded_test_server()->GetURL("/empty.html");
   SetScores(url::Origin::Create(initial_url), 24, 20);
@@ -1040,13 +1041,12 @@ class MediaEngagementContentsObserverFencedFrameBrowserTest
   std::unique_ptr<content::test::FencedFrameTestHelper> fenced_frame_helper_;
 };
 
-// TODO(crbug.com/1320380): Re-enable this test
 IN_PROC_BROWSER_TEST_F(MediaEngagementContentsObserverFencedFrameBrowserTest,
-                       DISABLED_SendEngagementLevelToRenderFrameOnFencedFrame) {
+                       SendEngagementLevelToRenderFrameOnFencedFrame) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   MockAutoplayConfigurationClient client;
-  OverrideInterface(GetWebContents()->GetMainFrame(), &client);
+  OverrideInterface(GetWebContents()->GetPrimaryMainFrame(), &client);
 
   const GURL& initial_url =
       embedded_test_server()->GetURL("a.com", "/empty.html");
@@ -1063,7 +1063,7 @@ IN_PROC_BROWSER_TEST_F(MediaEngagementContentsObserverFencedFrameBrowserTest,
       embedded_test_server()->GetURL("b.com", "/fenced_frames/title1.html");
   content::RenderFrameHost* fenced_frame_host =
       fenced_frame_test_helper().CreateFencedFrame(
-          GetWebContents()->GetMainFrame(), fenced_frame_url);
+          GetWebContents()->GetPrimaryMainFrame(), fenced_frame_url);
   EXPECT_NE(nullptr, fenced_frame_host);
 
   // AddAutoplayFlags should be called on the fenced frame.
@@ -1071,10 +1071,13 @@ IN_PROC_BROWSER_TEST_F(MediaEngagementContentsObserverFencedFrameBrowserTest,
   OverrideInterface(fenced_frame_host, &fenced_frame_client);
   GURL fenced_frame_navigate_url =
       embedded_test_server()->GetURL("b.com", "/fenced_frames/title2.html");
+  base::RunLoop run_loop;
   EXPECT_CALL(fenced_frame_client,
               AddAutoplayFlags(url::Origin::Create(fenced_frame_navigate_url),
                                testing::_))
-      .Times(1);
+      .Times(1)
+      .WillOnce(base::test::RunClosure(run_loop.QuitClosure()));
   fenced_frame_test_helper().NavigateFrameInFencedFrameTree(
       fenced_frame_host, fenced_frame_navigate_url);
+  run_loop.Run();
 }

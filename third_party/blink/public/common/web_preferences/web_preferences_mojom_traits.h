@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -129,10 +129,6 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.javascript_can_access_clipboard;
   }
 
-  static bool xslt_enabled(const blink::web_pref::WebPreferences& r) {
-    return r.xslt_enabled;
-  }
-
   static bool dns_prefetching_enabled(
       const blink::web_pref::WebPreferences& r) {
     return r.dns_prefetching_enabled;
@@ -198,6 +194,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
 
   static bool hide_scrollbars(const blink::web_pref::WebPreferences& r) {
     return r.hide_scrollbars;
+  }
+
+  static bool enable_webkit_scrollbar_styling(
+      const blink::web_pref::WebPreferences& r) {
+    return r.enable_webkit_scrollbar_styling;
   }
 
   static bool accelerated_2d_canvas_enabled(
@@ -428,6 +429,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.record_whole_document;
   }
 
+  static bool stylus_handwriting_enabled(
+      const blink::web_pref::WebPreferences& r) {
+    return r.stylus_handwriting_enabled;
+  }
+
   static bool cookie_enabled(const blink::web_pref::WebPreferences& r) {
     return r.cookie_enabled;
   }
@@ -489,11 +495,6 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
   static const std::string& text_track_window_color(
       const blink::web_pref::WebPreferences& r) {
     return r.text_track_window_color;
-  }
-
-  static const std::string& text_track_window_padding(
-      const blink::web_pref::WebPreferences& r) {
-    return r.text_track_window_padding;
   }
 
   static const std::string& text_track_window_radius(
@@ -639,11 +640,13 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
       const blink::web_pref::WebPreferences& r) {
     return r.disable_accelerated_small_canvases;
   }
+#endif  // BUILDFLAG(IS_ANDROID)
 
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
   static bool disable_webauthn(const blink::web_pref::WebPreferences& r) {
     return r.disable_webauthn;
   }
-#endif
+#endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
 
   static bool force_dark_mode_enabled(
       const blink::web_pref::WebPreferences& r) {
@@ -751,6 +754,20 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
   static bool webxr_immersive_ar_allowed(
       const blink::web_pref::WebPreferences& r) {
     return r.webxr_immersive_ar_allowed;
+  }
+
+  static bool renderer_wide_named_frame_lookup(
+      const blink::web_pref::WebPreferences& r) {
+    return r.renderer_wide_named_frame_lookup;
+  }
+
+  static bool strict_mime_type_check_for_worker_scripts_enabled(
+      const blink::web_pref::WebPreferences& r) {
+    return r.strict_mime_type_check_for_worker_scripts_enabled;
+  }
+
+  static bool modal_context_menu(const blink::web_pref::WebPreferences& r) {
+    return r.modal_context_menu;
   }
 
   static bool Read(blink::mojom::WebPreferencesDataView r,

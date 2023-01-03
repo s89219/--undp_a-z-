@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,6 @@
 
 #include "ash/components/arc/enterprise/arc_data_snapshotd_manager.h"
 #include "ash/components/arc/test/arc_util_test_support.h"
-#include "ash/components/cryptohome/cryptohome_parameters.h"
-#include "ash/components/login/auth/key.h"
-#include "ash/components/login/auth/stub_authenticator_builder.h"
-#include "ash/components/login/auth/user_context.h"
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/settings/cros_settings_provider.h"
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
 #include "ash/public/cpp/login_screen_test_api.h"
@@ -31,6 +25,7 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_list_prefs_factory.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/ash/authpolicy/authpolicy_credentials_manager.h"
@@ -43,11 +38,11 @@
 #include "chrome/browser/ash/login/session/user_session_manager.h"
 #include "chrome/browser/ash/login/session/user_session_manager_test_api.h"
 #include "chrome/browser/ash/login/test/cryptohome_mixin.h"
-#include "chrome/browser/ash/login/test/fake_gaia_mixin.h"
 #include "chrome/browser/ash/login/test/js_checker.h"
 #include "chrome/browser/ash/login/test/login_manager_mixin.h"
 #include "chrome/browser/ash/login/test/oobe_base_test.h"
 #include "chrome/browser/ash/login/test/oobe_screen_waiter.h"
+#include "chrome/browser/ash/login/test/oobe_screens_utils.h"
 #include "chrome/browser/ash/login/test/user_policy_mixin.h"
 #include "chrome/browser/ash/login/ui/mock_login_display.h"
 #include "chrome/browser/ash/login/ui/mock_login_display_host.h"
@@ -64,18 +59,25 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_list_prefs_factory.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/terms_of_service_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/tpm_error_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/gaia_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/locale_switch_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/terms_of_service_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/tpm_error_screen_handler.h"
 #include "chrome/grit/generated_resources.h"
+#include "chrome/test/base/fake_gaia_mixin.h"
 #include "chrome/test/base/testing_browser_process.h"
+#include "chromeos/ash/components/cryptohome/cryptohome_parameters.h"
 #include "chromeos/ash/components/dbus/authpolicy/fake_authpolicy_client.h"
+#include "chromeos/ash/components/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/ash/components/dbus/userdataauth/fake_userdataauth_client.h"
+#include "chromeos/ash/components/login/auth/public/key.h"
+#include "chromeos/ash/components/login/auth/public/user_context.h"
+#include "chromeos/ash/components/login/auth/stub_authenticator_builder.h"
+#include "chromeos/ash/components/network/network_state_test_helper.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/settings/cros_settings_provider.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
-#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
-#include "chromeos/dbus/userdataauth/fake_userdataauth_client.h"
-#include "chromeos/network/network_state_test_helper.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "components/account_id/account_id.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
@@ -104,6 +106,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace ash {
+
 namespace {
 
 namespace em = ::enterprise_management;
@@ -260,7 +263,7 @@ class ExistingUserControllerTest : public policy::DevicePolicyCrosBrowserTest {
 
     // Prevent browser start in user session so that we do not need to wait
     // for its initialization.
-    ash::test::UserSessionManagerTestApi(ash::UserSessionManager::GetInstance())
+    test::UserSessionManagerTestApi(UserSessionManager::GetInstance())
         .SetShouldLaunchBrowserInTests(false);
   }
 
@@ -875,7 +878,13 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerSecondPublicSessionTest,
 class ExistingUserControllerActiveDirectoryTest
     : public ExistingUserControllerTest {
  public:
-  ExistingUserControllerActiveDirectoryTest() = default;
+  ExistingUserControllerActiveDirectoryTest() {
+    // All tests related to Active Directory login don't make sense when the
+    // kChromadAvailable feature is disabled. We also don't need to verify that
+    // the device is disabled in that case, because the Chromad disabling
+    // feature is already tested in `device_disabling_manager_unittest.cc`.
+    scoped_feature_list_.InitAndEnableFeature(features::kChromadAvailable);
+  }
 
   // Overriden from ExistingUserControllerTest:
   void SetUp() override {
@@ -893,7 +902,7 @@ class ExistingUserControllerActiveDirectoryTest
     AuthPolicyClient::InitializeFake();
     FakeAuthPolicyClient::Get()->DisableOperationDelayForTesting();
     // Required for tpm_util. Will be destroyed in browser shutdown.
-    chromeos::UserDataAuthClient::InitializeFake();
+    UserDataAuthClient::InitializeFake();
 
     RefreshDevicePolicy();
     policy_provider_.SetDefaultReturns(
@@ -1009,6 +1018,7 @@ class ExistingUserControllerActiveDirectoryTest
 
  private:
   testing::NiceMock<policy::MockConfigurationPolicyProvider> policy_provider_;
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 class ExistingUserControllerActiveDirectoryTestCreateProfileDir
@@ -1018,16 +1028,14 @@ class ExistingUserControllerActiveDirectoryTestCreateProfileDir
   ExistingUserControllerActiveDirectoryTestCreateProfileDir() {
     cryptohome_mixin_.MarkUserAsExisting(ad_account_id_);
 
-    // TODO(crbug.com/1311355): This test is run with the feature
-    // kUseAuthsessionAuthentication enabled and disabled because of a
+    // TODO(b/239422391): This test is run with the feature
+    // kUseAuthFactors enabled and disabled because of a
     // transitive dependency of AffiliationTestHelper on that feature. Remove
-    // the parameter when kUseAuthsessionAuthentication is removed.
+    // the parameter when kUseAuthFactors is removed.
     if (GetParam()) {
-      scoped_feature_list_.InitAndEnableFeature(
-          features::kUseAuthsessionAuthentication);
+      scoped_feature_list_.InitAndEnableFeature(features::kUseAuthFactors);
     } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          features::kUseAuthsessionAuthentication);
+      scoped_feature_list_.InitAndDisableFeature(features::kUseAuthFactors);
     }
   }
 
@@ -1175,11 +1183,9 @@ class ExistingUserControllerSavePasswordHashTest
  public:
   ExistingUserControllerSavePasswordHashTest() {
     if (GetParam()) {
-      scoped_feature_list_.InitAndEnableFeature(
-          features::kUseAuthsessionAuthentication);
+      scoped_feature_list_.InitAndEnableFeature(features::kUseAuthFactors);
     } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          features::kUseAuthsessionAuthentication);
+      scoped_feature_list_.InitAndDisableFeature(features::kUseAuthFactors);
     }
   }
   ~ExistingUserControllerSavePasswordHashTest() override = default;
@@ -1316,11 +1322,14 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerAuthFailureTest, TpmError) {
   OobeScreenWaiter(TpmErrorView::kScreenId).Wait();
   EXPECT_TRUE(LoginScreenTestApi::IsOobeDialogVisible());
 
-  EXPECT_EQ(0, FakePowerManagerClient::Get()->num_request_restart_calls());
+  EXPECT_EQ(
+      0, chromeos::FakePowerManagerClient::Get()->num_request_restart_calls());
 
-  test::OobeJS().ClickOnPath({"tpm-error-message", "restartButton"});
+  test::TapOnPathAndWaitForOobeToBeDestroyed(
+      {"tpm-error-message", "restartButton"});
 
-  EXPECT_EQ(1, FakePowerManagerClient::Get()->num_request_restart_calls());
+  EXPECT_EQ(
+      1, chromeos::FakePowerManagerClient::Get()->num_request_restart_calls());
 }
 
 IN_PROC_BROWSER_TEST_F(ExistingUserControllerAuthFailureTest, OwnerRequired) {
@@ -1383,7 +1392,7 @@ class ExistingUserControllerProfileTest : public LoginManagerTest {
   }
 
   void Login(const LoginManagerMixin::TestUserInfo& test_user) {
-    WizardController::SkipPostLoginScreensForTesting();
+    login_manager_mixin_.SkipPostLoginScreens();
 
     auto context = LoginManagerMixin::CreateDefaultUserContext(test_user);
     login_manager_mixin_.LoginAndWaitForActiveSession(context);
@@ -1466,6 +1475,12 @@ IN_PROC_BROWSER_TEST_F(ExistingUserControllerProfileTest, NotManagedUserLogin) {
   // Verify that no managed warning is shown for an unmanaged user.
   EXPECT_FALSE(LoginScreenTestApi::IsManagedMessageInDialogShown(
       not_managed_user_.account_id));
+
+  // Verify that the owner user gets saved into local state.
+  absl::optional<std::string> owner =
+      user_manager::UserManager::Get()->GetOwnerEmail();
+  ASSERT_TRUE(owner.has_value());
+  EXPECT_EQ(owner.value(), not_managed_user_.account_id.GetUserEmail());
 }
 
 INSTANTIATE_TEST_SUITE_P(All,

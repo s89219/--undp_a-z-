@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -94,6 +94,7 @@ export class SettingsIdleLoadElement extends PolymerElement {
     return this.loading_;
   }
 
+  /* eslint-disable-next-line @typescript-eslint/naming-convention */
   private _forwardHostPropV2(prop: string, value: any) {
     if (this.instance_) {
       this.instance_.forwardHostProp(prop, value);

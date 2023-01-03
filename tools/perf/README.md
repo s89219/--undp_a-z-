@@ -1,4 +1,4 @@
-<!-- Copyright 2020 The Chromium Authors. All rights reserved.
+<!-- Copyright 2020 The Chromium Authors
      Use of this source code is governed by a BSD-style license that can be
      found in the LICENSE file.
 -->
@@ -47,7 +47,7 @@ the easiest way is to set up the debugger in VSCode (guide
 ## Creating New Tests (stories)
 
 [This document](https://chromium.googlesource.com/catapult.git/+/HEAD/telemetry)
-provides an oveview of how tests are structured and some of the underlying
+provides an overview of how tests are structured and some of the underlying
 technologies. After reading that doc, figure out if your story fits into an
 existing benchmark by checking
 [here](https://goto.google.com/chrome-benchmarking-sheet) (or
@@ -105,12 +105,6 @@ to cloud storage, and finally send a CL to review with the new recordings.
 
 [wpr]: https://github.com/catapult-project/catapult/tree/master/web_page_replay_go
 
-## flakiness_cli
-
-A command line interface to the [flakiness dashboard][].
-
-[flakiness dashboard]: https://test-results.appspot.com/dashboards/flakiness_dashboard.html
-
 ## soundwave
 
 Allows to fetch data from the [Chrome Performance Dashboard][chromeperf] and
@@ -125,12 +119,3 @@ in tracking, and uploads them to cloud storage to visualize with the help of
 [Data Studio]: https://datastudio.google.com/
 [v8_dashboard]: https://datastudio.google.com/s/iNcXppkP3DI
 [health_dashboard]: https://datastudio.google.com/s/jUXfKZXXfT8
-
-## pinboard
-
-Allows scheduling daily [pinpoint][] jobs to compare measurements with/without a
-patch being applied. This is useful for teams developing a new feature behind a
-flag, who wants to track the effects on performance as the development of their
-feature progresses. Processed data for relevant measurements is uploaded to
-cloud storage, where it can be read by [Data Studio][]. This also backs data
-displayed on the [v8][v8_dashboard] dashboard.

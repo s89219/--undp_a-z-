@@ -1,35 +1,35 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_command_line.h"
+#import "base/test/scoped_command_line.h"
 #import "base/test/scoped_feature_list.h"
-#include "components/component_updater/pref_names.h"
-#include "components/download/internal/background_service/ios/background_download_task_helper.h"
-#include "components/optimization_guide/core/optimization_guide_constants.h"
-#include "components/optimization_guide/core/optimization_guide_enums.h"
-#include "components/optimization_guide/core/optimization_guide_features.h"
-#include "components/optimization_guide/core/optimization_guide_prefs.h"
-#include "components/optimization_guide/core/optimization_guide_switches.h"
-#include "components/optimization_guide/core/optimization_target_model_observer.h"
+#import "components/component_updater/pref_names.h"
+#import "components/download/internal/background_service/ios/background_download_task_helper.h"
+#import "components/optimization_guide/core/optimization_guide_constants.h"
+#import "components/optimization_guide/core/optimization_guide_enums.h"
+#import "components/optimization_guide/core/optimization_guide_features.h"
+#import "components/optimization_guide/core/optimization_guide_prefs.h"
+#import "components/optimization_guide/core/optimization_guide_switches.h"
+#import "components/optimization_guide/core/optimization_target_model_observer.h"
 #import "components/sync_preferences/pref_service_syncable.h"
 #import "components/sync_preferences/testing_pref_service_syncable.h"
-#include "components/variations/hashing.h"
-#include "components/variations/scoped_variations_ids_provider.h"
-#include "ios/chrome/browser/application_context.h"
+#import "components/variations/hashing.h"
+#import "components/variations/scoped_variations_ids_provider.h"
+#import "ios/chrome/browser/application_context/application_context.h"
 #import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#include "ios/chrome/browser/optimization_guide/optimization_guide_service.h"
-#include "ios/chrome/browser/optimization_guide/optimization_guide_service_factory.h"
-#include "ios/chrome/browser/optimization_guide/optimization_guide_test_utils.h"
+#import "ios/chrome/browser/optimization_guide/optimization_guide_service.h"
+#import "ios/chrome/browser/optimization_guide/optimization_guide_service_factory.h"
+#import "ios/chrome/browser/optimization_guide/optimization_guide_test_utils.h"
 #import "ios/chrome/browser/prefs/browser_prefs.h"
 #import "ios/chrome/test/ios_chrome_scoped_testing_local_state.h"
-#include "ios/web/public/test/web_task_environment.h"
-#include "net/base/mock_network_change_notifier.h"
-#include "net/test/embedded_test_server/default_handlers.h"
-#include "net/test/embedded_test_server/embedded_test_server.h"
-#include "net/test/embedded_test_server/http_request.h"
-#include "net/test/embedded_test_server/http_response.h"
+#import "ios/web/public/test/web_task_environment.h"
+#import "net/base/mock_network_change_notifier.h"
+#import "net/test/embedded_test_server/default_handlers.h"
+#import "net/test/embedded_test_server/embedded_test_server.h"
+#import "net/test/embedded_test_server/http_request.h"
+#import "net/test/embedded_test_server/http_response.h"
 #import "testing/gtest/include/gtest/gtest.h"
 #import "testing/platform_test.h"
 
@@ -172,11 +172,6 @@ class PredictionManagerTestBase : public PlatformTest {
             absl::nullopt, model_file_observer);
   }
 
-  void SetExpectedFieldTrialNames(
-      const base::flat_set<uint32_t>& expected_field_trial_name_hashes) {
-    expected_field_trial_name_hashes_ = expected_field_trial_name_hashes;
-  }
-
   void SetComponentUpdatesEnabled(bool enabled) {
     GetApplicationContext()->GetLocalState()->SetBoolean(
         ::prefs::kComponentUpdatesEnabled, enabled);
@@ -225,18 +220,6 @@ class PredictionManagerTestBase : public PlatformTest {
 
     optimization_guide::proto::GetModelsRequest models_request;
     EXPECT_TRUE(models_request.ParseFromString(request.content));
-    // Make sure we actually filter field trials appropriately.
-    EXPECT_EQ(expected_field_trial_name_hashes_.size(),
-              static_cast<size_t>(models_request.active_field_trials_size()));
-    base::flat_set<uint32_t> seen_field_trial_name_hashes;
-    for (const auto& field_trial : models_request.active_field_trials()) {
-      EXPECT_TRUE(
-          expected_field_trial_name_hashes_.find(field_trial.name_hash()) !=
-          expected_field_trial_name_hashes_.end());
-      seen_field_trial_name_hashes.insert(field_trial.name_hash());
-    }
-    EXPECT_EQ(seen_field_trial_name_hashes.size(),
-              expected_field_trial_name_hashes_.size());
 
     response->set_code(net::HTTP_OK);
     std::unique_ptr<optimization_guide::proto::GetModelsResponse>
@@ -286,7 +269,6 @@ class PredictionManagerTestBase : public PlatformTest {
   variations::ScopedVariationsIdsProvider scoped_variations_ids_provider_{
       variations::VariationsIdsProvider::Mode::kUseSignedInState};
   base::test::ScopedCommandLine scoped_command_line_;
-  base::flat_set<uint32_t> expected_field_trial_name_hashes_;
   std::unique_ptr<net::EmbeddedTestServer> https_server_;
   std::unique_ptr<net::EmbeddedTestServer> models_server_;
   PredictionModelsFetcherRemoteResponseType response_type_ =
@@ -295,12 +277,15 @@ class PredictionManagerTestBase : public PlatformTest {
 
 class PredictionManagerTest : public PredictionManagerTestBase {
   void InitializeFeatureList() override {
-    scoped_feature_list_.InitWithFeatures(
+    scoped_feature_list_.InitWithFeaturesAndParameters(
         {
-            optimization_guide::features::kOptimizationHints,
-            optimization_guide::features::kRemoteOptimizationGuideFetching,
-            optimization_guide::features::kOptimizationTargetPrediction,
-            optimization_guide::features::kOptimizationGuideModelDownloading,
+            {optimization_guide::features::kOptimizationHints, {}},
+            {optimization_guide::features::kRemoteOptimizationGuideFetching,
+             {}},
+            {optimization_guide::features::kOptimizationTargetPrediction,
+             {{"fetch_startup_delay_ms", "2000"}}},
+            {optimization_guide::features::kOptimizationGuideModelDownloading,
+             {}},
         },
         {});
   }
@@ -369,60 +354,6 @@ TEST_F(PredictionManagerTest, PredictionModelFetchFailed) {
       "OptimizationGuide.PredictionModelLoadedVersion.PainfulPageLoad", 0);
 }
 
-class PredictionManagerNoUserPermissionsTest : public PredictionManagerTest {
- public:
-  PredictionManagerNoUserPermissionsTest() {
-    // Field trials should not be sent.
-    SetExpectedFieldTrialNames({});
-  }
-
-  ~PredictionManagerNoUserPermissionsTest() override = default;
-
-  void SetUpCommandLine(base::CommandLine* cmd) override {
-    PredictionManagerTest::SetUpCommandLine(cmd);
-
-    // Remove switches that enable user permissions.
-    cmd->RemoveSwitch(optimization_guide::switches::
-                          kDisableCheckingUserPermissionsForTesting);
-  }
-
- private:
-  void InitializeFeatureList() override {
-    scoped_feature_list_.InitWithFeaturesAndParameters(
-        {
-            {optimization_guide::features::kOptimizationHints, {}},
-            {optimization_guide::features::kRemoteOptimizationGuideFetching,
-             {}},
-            {optimization_guide::features::kOptimizationTargetPrediction, {}},
-            {optimization_guide::features::kOptimizationGuideModelDownloading,
-             {}},
-            {optimization_guide::features::kOptimizationHintsFieldTrials,
-             {{"allowed_field_trial_names",
-               "scoped_feature_list_trial_for_OptimizationHints,scoped_feature_"
-               "list_trial_for_OptimizationHintsFetching"}}},
-        },
-        {});
-  }
-};
-
-TEST_F(PredictionManagerNoUserPermissionsTest,
-       FieldTrialsNotPassedWhenNoUserPermissions) {
-  ModelFileObserver model_file_observer;
-  base::HistogramTester histogram_tester;
-
-  SetResponseType(
-      PredictionModelsFetcherRemoteResponseType::kSuccessfulWithValidModelFile);
-  RegisterWithKeyedService(&model_file_observer);
-
-  RetryForHistogramUntilCountReached(
-      &histogram_tester,
-      "OptimizationGuide.PredictionManager.PredictionModelsStored", 1);
-
-  RetryForHistogramUntilCountReached(
-      &histogram_tester,
-      "OptimizationGuide.PredictionModelLoadedVersion.PainfulPageLoad", 1);
-}
-
 class PredictionManagerModelDownloadingBrowserTest
     : public PredictionManagerTest {
  public:
@@ -454,20 +385,12 @@ class PredictionManagerModelDownloadingBrowserTest
             {optimization_guide::features::kOptimizationHints, {}},
             {optimization_guide::features::kRemoteOptimizationGuideFetching,
              {}},
-            {optimization_guide::features::kOptimizationTargetPrediction, {}},
+            {optimization_guide::features::kOptimizationTargetPrediction,
+             {{"fetch_startup_delay_ms", "2000"}}},
             {optimization_guide::features::kOptimizationGuideModelDownloading,
              {{"unrestricted_model_downloading", "true"}}},
-            {optimization_guide::features::kOptimizationHintsFieldTrials,
-             {{"allowed_field_trial_names",
-               "scoped_feature_list_trial_for_OptimizationHints,scoped_feature_"
-               "list_trial_for_OptimizationHintsFetching"}}},
         },
         {});
-    SetExpectedFieldTrialNames(base::flat_set<uint32_t>(
-        {variations::HashName(
-             "scoped_feature_list_trial_for_OptimizationHints"),
-         variations::HashName(
-             "scoped_feature_list_trial_for_OptimizationHintsFetching")}));
   }
 
  protected:

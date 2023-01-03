@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,6 +33,7 @@ import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.net.CronetTestRule.CronetTestFramework;
 import org.chromium.net.CronetTestRule.OnlyRunNativeCronet;
+import org.chromium.net.CronetTestRule.RequiresMinAndroidApi;
 import org.chromium.net.CronetTestRule.RequiresMinApi;
 import org.chromium.net.TestUrlRequestCallback.FailureType;
 import org.chromium.net.TestUrlRequestCallback.ResponseStep;
@@ -2332,24 +2333,22 @@ public class CronetUrlRequestTest {
     @SmallTest
     @Feature({"Cronet"})
     @OnlyRunNativeCronet
+    @RequiresMinAndroidApi(Build.VERSION_CODES.N)
+    // Used for Android's NetworkSecurityPolicy added in Nougat
     public void testCleartextTrafficBlocked() throws Exception {
-        // This feature only works starting from N.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            final int cleartextNotPermitted = -29;
-            // This hostname needs to match the one in network_security_config.xml and the one used
-            // by QuicTestServer.
-            // https requests to it are tested in QuicTest, so this checks that we're only blocking
-            // cleartext.
-            final String url = "http://example.com/simple.txt";
-            TestUrlRequestCallback callback = startAndWaitForComplete(url);
-            assertNull(callback.mResponseInfo);
-            assertNotNull(callback.mError);
-            assertEquals(cleartextNotPermitted,
-                    ((NetworkException) callback.mError).getCronetInternalErrorCode());
-        }
+        final int cleartextNotPermitted = -29;
+        // This hostname needs to match the one in network_security_config.xml and the one used
+        // by QuicTestServer.
+        // https requests to it are tested in QuicTest, so this checks that we're only blocking
+        // cleartext.
+        final String url = "http://example.com/simple.txt";
+        TestUrlRequestCallback callback = startAndWaitForComplete(url);
+        assertNull(callback.mResponseInfo);
+        assertNotNull(callback.mError);
+        assertEquals(cleartextNotPermitted,
+                ((NetworkException) callback.mError).getCronetInternalErrorCode());
     }
 
-    @DisabledTest(message = "crbug.com/1319387")
     @Test
     @SmallTest
     @Feature({"Cronet"})
@@ -2403,6 +2402,7 @@ public class CronetUrlRequestTest {
     @SmallTest
     @Feature({"Cronet"})
     @RequiresMinApi(9) // Tagging support added in API level 9: crrev.com/c/chromium/src/+/930086
+    @RequiresMinAndroidApi(Build.VERSION_CODES.M) // crbug/1301957
     public void testTagging() throws Exception {
         if (!CronetTestUtil.nativeCanGetTaggedBytes()) {
             Log.i(TAG, "Skipping test - GetTaggedBytes unsupported.");

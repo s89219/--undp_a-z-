@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -92,9 +92,6 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::
                        kCSSSelectorInternalMediaControlsOverlayCastButton);
-    case WebFeature::kCustomCursorIntersectsViewport:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kCustomCursorIntersectsViewport);
     case WebFeature::kDeprecationExample:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kDeprecationExample);
@@ -105,6 +102,9 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
     case WebFeature::kEventPath:
       return DeprecationInfo::WithTranslation(feature,
                                               DeprecationIssueType::kEventPath);
+    case WebFeature::kExpectCTHeader:
+      return DeprecationInfo::WithTranslation(
+          feature, DeprecationIssueType::kExpectCTHeader);
     // Powerful features on insecure origins (https://goo.gl/rStTGz)
     case WebFeature::kGeolocationInsecureOrigin:
     case WebFeature::kGeolocationInsecureOriginIframe:
@@ -128,27 +128,9 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
       return DeprecationInfo::WithTranslation(
           feature,
           DeprecationIssueType::kInsecurePrivateNetworkSubresourceRequest);
-    case WebFeature::kLegacyConstraintGoogCpuOveruseDetection:
-      return DeprecationInfo::WithTranslation(
-          feature,
-          DeprecationIssueType::kLegacyConstraintGoogCpuOveruseDetection);
-    case WebFeature::kLegacyConstraintGoogIPv6:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kLegacyConstraintGoogIPv6);
-    case WebFeature::kLegacyConstraintGoogScreencastMinBitrate:
-      return DeprecationInfo::WithTranslation(
-          feature,
-          DeprecationIssueType::kLegacyConstraintGoogScreencastMinBitrate);
-    case WebFeature::kLegacyConstraintGoogSuspendBelowMinBitrate:
-      return DeprecationInfo::WithTranslation(
-          feature,
-          DeprecationIssueType::kLegacyConstraintGoogSuspendBelowMinBitrate);
     case WebFeature::kLocalCSSFileExtensionRejected:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kLocalCSSFileExtensionRejected);
-    case WebFeature::kMediaElementSourceOnOfflineContext:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kMediaElementAudioSourceNode);
     case WebFeature::kMediaSourceAbortRemove:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kMediaSourceAbortRemove);
@@ -171,12 +153,18 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
     case WebFeature::kObsoleteWebrtcTlsVersion:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kObsoleteWebRtcCipherSuite);
-    case WebFeature::kPaymentRequestBasicCard:
+    case WebFeature::kOpenWebDatabaseInsecureContext:
       return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kPaymentRequestBasicCard);
-    case WebFeature::kPaymentRequestShowWithoutGesture:
+          feature, DeprecationIssueType::kOpenWebDatabaseInsecureContext);
+    case WebFeature::kPaymentInstruments:
       return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kPaymentRequestShowWithoutGesture);
+          feature, DeprecationIssueType::kPaymentInstruments);
+    case WebFeature::kPaymentRequestCSPViolation:
+      return DeprecationInfo::WithTranslation(
+          feature, DeprecationIssueType::kPaymentRequestCSPViolation);
+    case WebFeature::kPersistentQuotaType:
+      return DeprecationInfo::WithTranslation(
+          feature, DeprecationIssueType::kPersistentQuotaType);
     case WebFeature::kPictureSourceSrc:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kPictureSourceSrc);
@@ -222,28 +210,9 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
     case WebFeature::kRTCConstraintEnableDtlsSrtpTrue:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kRTCConstraintEnableDtlsSrtpTrue);
-    case WebFeature::kRTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics:
-      return DeprecationInfo::WithTranslation(
-          feature,
-          DeprecationIssueType::
-              kRTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics);
-    case WebFeature::kRTCPeerConnectionLegacyCreateWithMediaConstraints:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::
-                       kRTCPeerConnectionLegacyCreateWithMediaConstraints);
-    case WebFeature::kRTCPeerConnectionSdpSemanticsPlanB:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kRTCPeerConnectionSdpSemanticsPlanB);
     case WebFeature::kRtcpMuxPolicyNegotiate:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kRtcpMuxPolicyNegotiate);
-    case WebFeature::kRTCConstraintEnableRtpDataChannelsFalse:
-    case WebFeature::kRTCConstraintEnableRtpDataChannelsTrue:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kRTPDataChannel);
-    case WebFeature::kSelectionAddRangeIntersect:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kSelectionAddRangeIntersect);
     case WebFeature::kV8SharedArrayBufferConstructedWithoutIsolation:
       return DeprecationInfo::WithTranslation(
           feature,
@@ -256,9 +225,6 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
           feature,
           DeprecationIssueType::
               kV8SharedArrayBufferConstructedInExtensionWithoutIsolation);
-    case WebFeature::kWebCodecsVideoFrameDefaultTimestamp:
-      return DeprecationInfo::WithTranslation(
-          feature, DeprecationIssueType::kWebCodecsVideoFrameDefaultTimestamp);
     case WebFeature::kXHRJSONEncodingDetection:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kXHRJSONEncodingDetection);
@@ -270,6 +236,12 @@ const DeprecationInfo GetDeprecationInfo(WebFeature feature) {
     case WebFeature::kXRSupportsSession:
       return DeprecationInfo::WithTranslation(
           feature, DeprecationIssueType::kXRSupportsSession);
+    case WebFeature::kIdentityInCanMakePaymentEvent:
+      return DeprecationInfo::WithTranslation(
+          feature, DeprecationIssueType::kIdentityInCanMakePaymentEvent);
+    case WebFeature::kExplicitOverflowVisibleOnReplacedElement:
+      return DeprecationInfo::WithTranslation(
+          feature, DeprecationIssueType::kOverflowVisibleOnReplacedElement);
     default:
       return DeprecationInfo::NotDeprecated(feature);
   }

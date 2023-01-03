@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -241,25 +241,6 @@ class GooglePhotosAlbumsFetcher
       const GooglePhotosAlbumsCbkArgs& result) override;
 };
 
-// Downloads the number of photos in a user's Google Photos library.
-class GooglePhotosCountFetcher : public GooglePhotosFetcher<int> {
- public:
-  explicit GooglePhotosCountFetcher(Profile* profile);
-
-  GooglePhotosCountFetcher(const GooglePhotosCountFetcher&) = delete;
-  GooglePhotosCountFetcher& operator=(const GooglePhotosCountFetcher&) = delete;
-
-  ~GooglePhotosCountFetcher() override;
-
-  virtual void AddRequestAndStartIfNecessary(
-      base::OnceCallback<void(int)> callback);
-
- protected:
-  // GooglePhotosFetcher:
-  int ParseResponse(const base::Value::Dict* response) override;
-  absl::optional<size_t> GetResultCount(const int& result) override;
-};
-
 using ash::personalization_app::mojom::GooglePhotosEnablementState;
 // Downloads whether the user is allowed to access Google Photos data.
 class GooglePhotosEnabledFetcher
@@ -302,6 +283,7 @@ class GooglePhotosPhotosFetcher
       const absl::optional<std::string>& item_id,
       const absl::optional<std::string>& album_id,
       const absl::optional<std::string>& resume_token,
+      bool shuffle,
       base::OnceCallback<void(GooglePhotosPhotosCbkArgs)> callback);
 
  protected:

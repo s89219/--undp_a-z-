@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,6 @@
 #include <memory>
 #include <utility>
 
-#include "ash/components/login/auth/user_context.h"
-#include "ash/components/multidevice/logging/logging.h"
-#include "ash/components/proximity_auth/proximity_auth_local_state_pref_manager.h"
-#include "ash/components/proximity_auth/proximity_auth_profile_pref_manager.h"
-#include "ash/components/proximity_auth/proximity_auth_system.h"
-#include "ash/components/proximity_auth/screenlock_bridge.h"
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/smartlock_state.h"
 #include "base/bind.h"
@@ -22,7 +16,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/system/sys_info.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "base/version.h"
@@ -40,7 +34,14 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/login/auth/public/user_context.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
+#include "chromeos/ash/components/proximity_auth/proximity_auth_local_state_pref_manager.h"
+#include "chromeos/ash/components/proximity_auth/proximity_auth_profile_pref_manager.h"
+#include "chromeos/ash/components/proximity_auth/proximity_auth_system.h"
+#include "chromeos/ash/components/proximity_auth/screenlock_bridge.h"
+#include "chromeos/ash/services/secure_channel/public/cpp/client/secure_channel_client.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "components/account_id/account_id.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -54,10 +55,11 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace ash {
+
 namespace {
 
 PrefService* GetLocalState() {
-  return g_browser_process ? g_browser_process->local_state() : NULL;
+  return g_browser_process ? g_browser_process->local_state() : nullptr;
 }
 
 void RecordAuthResultFailure(
@@ -99,16 +101,19 @@ EasyUnlockService* EasyUnlockService::GetForUser(
   return EasyUnlockService::Get(profile);
 }
 
-class EasyUnlockService::PowerMonitor : public PowerManagerClient::Observer {
+class EasyUnlockService::PowerMonitor
+    : public chromeos::PowerManagerClient::Observer {
  public:
   explicit PowerMonitor(EasyUnlockService* service) : service_(service) {
-    PowerManagerClient::Get()->AddObserver(this);
+    chromeos::PowerManagerClient::Get()->AddObserver(this);
   }
 
   PowerMonitor(const PowerMonitor&) = delete;
   PowerMonitor& operator=(const PowerMonitor&) = delete;
 
-  ~PowerMonitor() override { PowerManagerClient::Get()->RemoveObserver(this); }
+  ~PowerMonitor() override {
+    chromeos::PowerManagerClient::Get()->RemoveObserver(this);
+  }
 
  private:
   // PowerManagerClient::Observer:
@@ -117,7 +122,7 @@ class EasyUnlockService::PowerMonitor : public PowerManagerClient::Observer {
   }
 
   void SuspendDone(base::TimeDelta sleep_duration) override {
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&PowerMonitor::ResetWakingUp,
                        weak_ptr_factory_.GetWeakPtr()),
@@ -166,8 +171,8 @@ void EasyUnlockService::ResetLocalStateForUser(const AccountId& account_id) {
   if (!local_state)
     return;
 
-  DictionaryPrefUpdate update(local_state, prefs::kEasyUnlockHardlockState);
-  update->RemoveKey(account_id.GetUserEmail());
+  ScopedDictPrefUpdate update(local_state, prefs::kEasyUnlockHardlockState);
+  update->Remove(account_id.GetUserEmail());
 
   EasyUnlockTpmKeyManager::ResetLocalStateForUser(account_id);
 }
@@ -211,7 +216,7 @@ SmartLockState EasyUnlockService::GetInitialSmartLockState() const {
 
 void EasyUnlockService::SetHardlockState(
     SmartLockStateHandler::HardlockState state) {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
     return;
 
   const AccountId& account_id = GetAccountId();
@@ -226,7 +231,7 @@ void EasyUnlockService::SetHardlockState(
 
 SmartLockStateHandler::HardlockState EasyUnlockService::GetHardlockState()
     const {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
     return SmartLockStateHandler::NO_HARDLOCK;
 
   SmartLockStateHandler::HardlockState state;
@@ -238,7 +243,7 @@ SmartLockStateHandler::HardlockState EasyUnlockService::GetHardlockState()
 
 bool EasyUnlockService::GetPersistedHardlockState(
     SmartLockStateHandler::HardlockState* state) const {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
     return false;
 
   const AccountId& account_id = GetAccountId();
@@ -249,12 +254,10 @@ bool EasyUnlockService::GetPersistedHardlockState(
   if (!local_state)
     return false;
 
-  const base::Value* dict =
-      local_state->GetDictionary(prefs::kEasyUnlockHardlockState);
-  if (!dict)
-    return false;
+  const base::Value::Dict& dict =
+      local_state->GetDict(prefs::kEasyUnlockHardlockState);
 
-  absl::optional<int> state_int = dict->FindIntKey(account_id.GetUserEmail());
+  absl::optional<int> state_int = dict.FindInt(account_id.GetUserEmail());
   if (!state_int.has_value())
     return false;
 
@@ -263,7 +266,7 @@ bool EasyUnlockService::GetPersistedHardlockState(
 }
 
 SmartLockStateHandler* EasyUnlockService::GetSmartLockStateHandler() {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
     return nullptr;
 
   if (!IsAllowed())
@@ -277,7 +280,7 @@ SmartLockStateHandler* EasyUnlockService::GetSmartLockStateHandler() {
 }
 
 void EasyUnlockService::UpdateSmartLockState(SmartLockState state) {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     if (smart_lock_state_ && state == smart_lock_state_.value())
       return;
 
@@ -411,12 +414,12 @@ void EasyUnlockService::FinalizeUnlock(bool success) {
   if (!success) {
     auth_attempt_.reset();
     RecordEasyUnlockScreenUnlockEvent(EASY_UNLOCK_FAILURE);
-    if (!base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+    if (!base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
       HandleAuthFailure(GetAccountId());
     }
   }
 
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     NotifySmartLockAuthResult(success);
   }
 }
@@ -441,18 +444,18 @@ void EasyUnlockService::FinalizeSignin(const std::string& key) {
     set_will_authenticate_using_easy_unlock(true);
   } else {
     auth_attempt_.reset();
-    if (!base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+    if (!base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
       HandleAuthFailure(GetAccountId());
     }
   }
 
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     NotifySmartLockAuthResult(success);
   }
 }
 
 void EasyUnlockService::HandleAuthFailure(const AccountId& account_id) {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     NotifySmartLockAuthResult(/*success=*/false);
     return;
   }
@@ -472,7 +475,7 @@ void EasyUnlockService::CheckCryptohomeKeysAndMaybeHardlock() {
   if (!account_id.is_valid() || !IsChromeOSLoginEnabled())
     return;
 
-  const base::ListValue* device_list = GetRemoteDevices();
+  const base::Value::List* device_list = GetRemoteDevices();
   std::set<std::string> paired_devices;
   if (device_list) {
     EasyUnlockDeviceKeyDataList parsed_paired;
@@ -524,7 +527,7 @@ void EasyUnlockService::Shutdown() {
 
 void EasyUnlockService::OnScreenDidLock(
     proximity_auth::ScreenlockBridge::LockHandler::ScreenType screen_type) {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     ShowInitialSmartLockState();
   }
 }
@@ -559,7 +562,7 @@ void EasyUnlockService::ShowInitialSmartLockState() {
 }
 
 void EasyUnlockService::ResetSmartLockState() {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     smart_lock_state_.reset();
   } else {
     smartlock_state_handler_.reset();
@@ -570,7 +573,7 @@ void EasyUnlockService::ResetSmartLockState() {
 
 void EasyUnlockService::SetSmartLockHardlockedState(
     SmartLockStateHandler::HardlockState state) {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
     return;
 
   if (GetSmartLockStateHandler()) {
@@ -584,7 +587,7 @@ void EasyUnlockService::SetSmartLockHardlockedState(
 void EasyUnlockService::SetHardlockStateForUser(
     const AccountId& account_id,
     SmartLockStateHandler::HardlockState state) {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
     return;
 
   DCHECK(account_id.is_valid());
@@ -601,8 +604,8 @@ void EasyUnlockService::SetHardlockStateForUser(
     return;
   }
 
-  DictionaryPrefUpdate update(local_state, prefs::kEasyUnlockHardlockState);
-  update->SetIntKey(account_id.GetUserEmail(), static_cast<int>(state));
+  ScopedDictPrefUpdate update(local_state, prefs::kEasyUnlockHardlockState);
+  update->Set(account_id.GetUserEmail(), static_cast<int>(state));
 
   if (GetAccountId() == account_id)
     SetSmartLockHardlockedState(state);
@@ -637,17 +640,17 @@ EasyUnlockService::GetSmartUnlockPasswordAuthEvent() const {
         return SmartLockMetricsRecorder::SmartLockAuthEventPasswordState::
             kUnknownState;
     }
-  } else if (!base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp) &&
+  } else if (!base::FeatureList::IsEnabled(features::kSmartLockUIRevamp) &&
              !smartlock_state_handler()) {
     return SmartLockMetricsRecorder::SmartLockAuthEventPasswordState::
         kUnknownState;
-  } else if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp) &&
+  } else if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp) &&
              !smart_lock_state_) {
     return SmartLockMetricsRecorder::SmartLockAuthEventPasswordState::
         kUnknownState;
   } else {
     SmartLockState state =
-        (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+        (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
             ? smart_lock_state_.value()
             : smartlock_state_handler()->state();
     switch (state) {
@@ -721,15 +724,15 @@ EasyUnlockAuthEvent EasyUnlockService::GetPasswordAuthEvent() const {
       case SmartLockStateHandler::LOGIN_DISABLED:
         return PASSWORD_ENTRY_LOGIN_DISABLED;
     }
-  } else if (!base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp) &&
+  } else if (!base::FeatureList::IsEnabled(features::kSmartLockUIRevamp) &&
              !smartlock_state_handler()) {
     return PASSWORD_ENTRY_NO_SMARTLOCK_STATE_HANDLER;
-  } else if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp) &&
+  } else if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp) &&
              !smart_lock_state_) {
     return PASSWORD_ENTRY_NO_SMARTLOCK_STATE_HANDLER;
   } else {
     SmartLockState state =
-        (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp))
+        (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp))
             ? smart_lock_state_.value()
             : smartlock_state_handler()->state();
 
@@ -819,7 +822,7 @@ void EasyUnlockService::OnCryptohomeKeysFetchedForChecking(
 }
 
 void EasyUnlockService::PrepareForSuspend() {
-  if (base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp)) {
+  if (base::FeatureList::IsEnabled(features::kSmartLockUIRevamp)) {
     if (smart_lock_state_ && *smart_lock_state_ != SmartLockState::kInactive) {
       ShowInitialSmartLockState();
     }

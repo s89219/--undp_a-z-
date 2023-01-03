@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -196,7 +196,7 @@ void TabDesktopMediaList::Refresh(bool update_thumnails) {
   for (auto* contents : contents_list) {
     if (!includable_web_contents_filter_.Run(contents))
       continue;
-    content::RenderFrameHost* main_frame = contents->GetMainFrame();
+    content::RenderFrameHost* main_frame = contents->GetPrimaryMainFrame();
     DCHECK(main_frame);
     DesktopMediaID media_id(
         DesktopMediaID::TYPE_WEB_CONTENTS, DesktopMediaID::kNullId,
@@ -238,8 +238,8 @@ void TabDesktopMediaList::Refresh(bool update_thumnails) {
   for (const auto& it : favicon_pairs) {
     // Create a thumbail in a different thread and update the thumbnail in
     // current thread.
-    base::PostTaskAndReplyWithResult(
-        image_resize_task_runner_.get(), FROM_HERE,
+    image_resize_task_runner_->PostTaskAndReplyWithResult(
+        FROM_HERE,
         base::BindOnce(&CreateEnclosedFaviconImage, thumbnail_size_, it.second),
         base::BindOnce(&TabDesktopMediaList::UpdateSourceThumbnail,
                        weak_factory_.GetWeakPtr(), it.first));

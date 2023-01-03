@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 
 #include "ash/app_list/views/app_list_drag_and_drop_host.h"
 #include "ash/ash_export.h"
-#include "ash/controls/gradient_layer_delegate.h"
 #include "ash/drag_drop/drag_image_view.h"
 #include "ash/public/cpp/shelf_config.h"
 #include "ash/public/cpp/shelf_model.h"
@@ -22,7 +21,10 @@
 #include "base/callback_helpers.h"
 #include "base/cancelable_callback.h"
 #include "base/time/time.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
+#include "ui/gfx/geometry/linear_gradient.h"
 #include "ui/views/animation/ink_drop_host_view.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
@@ -149,8 +151,12 @@ class ASH_EXPORT ScrollableShelfView : public views::AccessiblePaneView,
   LayoutStrategy layout_strategy_for_test() const { return layout_strategy_; }
   gfx::Vector2dF scroll_offset_for_test() const { return scroll_offset_; }
 
-  int first_tappable_app_index() const { return first_tappable_app_index_; }
-  int last_tappable_app_index() const { return last_tappable_app_index_; }
+  absl::optional<size_t> first_tappable_app_index() const {
+    return first_tappable_app_index_;
+  }
+  absl::optional<size_t> last_tappable_app_index() const {
+    return last_tappable_app_index_;
+  }
 
   void set_default_last_focusable_child(bool default_last_focusable_child) {
     default_last_focusable_child_ = default_last_focusable_child;
@@ -250,6 +256,7 @@ class ASH_EXPORT ScrollableShelfView : public views::AccessiblePaneView,
   std::unique_ptr<ScopedActiveInkDropCount> CreateScopedActiveInkDropCount(
       const ShelfButton* sender) override;
   void OnButtonWillBeRemoved() override;
+  void OnAppButtonActivated(const ShelfButton* button) override;
 
   // ContextMenuController:
   void ShowContextMenuForViewImpl(views::View* source,
@@ -328,10 +335,11 @@ class ASH_EXPORT ScrollableShelfView : public views::AccessiblePaneView,
   float CalculateTargetOffsetAfterScroll(float start_offset,
                                          float scroll_distance) const;
 
-  // Calculates the bounds of the gradient zone before/after the shelf
+  // Updates the bounds of the gradient zone before/after the shelf
   // container.
-  GradientLayerDelegate::FadeZone CalculateStartGradientZone() const;
-  GradientLayerDelegate::FadeZone CalculateEndGradientZone() const;
+  void UpdateGradientMask();
+  void CalculateHorizontalGradient(gfx::LinearGradient* gradient_mask);
+  void CalculateVerticalGradient(gfx::LinearGradient* gradient_mask);
 
   // Updates the visibility of gradient zones.
   void UpdateGradientZoneState();
@@ -339,10 +347,6 @@ class ASH_EXPORT ScrollableShelfView : public views::AccessiblePaneView,
   // Updates the gradient zone if the gradient zone's target bounds are
   // different from the actual values.
   void MaybeUpdateGradientZone();
-
-  void PaintGradientZone(
-      const GradientLayerDelegate::FadeZone& start_gradient_zone,
-      const GradientLayerDelegate::FadeZone& end_gradient_zone);
 
   bool ShouldApplyMaskLayerGradientZone() const;
 
@@ -361,9 +365,9 @@ class ASH_EXPORT ScrollableShelfView : public views::AccessiblePaneView,
   // layout strategy and offset along the main axis (that is the x-axis when
   // shelf is horizontally aligned or the y-axis if the shelf is vertically
   // aligned).
-  std::pair<int, int> CalculateTappableIconIndices(
-      LayoutStrategy layout_strategy,
-      int scroll_distance_on_main_axis) const;
+  std::pair<absl::optional<size_t>, absl::optional<size_t>>
+  CalculateTappableIconIndices(LayoutStrategy layout_strategy,
+                               int scroll_distance_on_main_axis) const;
 
   views::View* FindFirstFocusableChild();
   views::View* FindLastFocusableChild();
@@ -505,13 +509,11 @@ class ASH_EXPORT ScrollableShelfView : public views::AccessiblePaneView,
   LayoutStrategy layout_strategy_before_main_axis_scrolling_ =
       kNotShowArrowButtons;
 
-  std::unique_ptr<GradientLayerDelegate> gradient_layer_delegate_;
-
   std::unique_ptr<views::FocusSearch> focus_search_;
 
   // The index of the first/last tappable app index.
-  int first_tappable_app_index_ = -1;
-  int last_tappable_app_index_ = -1;
+  absl::optional<size_t> first_tappable_app_index_ = absl::nullopt;
+  absl::optional<size_t> last_tappable_app_index_ = absl::nullopt;
 
   // The number of corner buttons whose ink drop is activated.
   int activated_corner_buttons_ = 0;

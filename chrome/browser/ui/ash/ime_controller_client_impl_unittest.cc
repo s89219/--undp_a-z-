@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,10 +67,9 @@ class TestInputMethodManager : public MockInputMethodManager {
       current_ime_id_ = input_method_id;
       last_show_message_ = show_message;
     }
-    std::unique_ptr<std::vector<InputMethodDescriptor>>
+    std::vector<InputMethodDescriptor>
     GetEnabledInputMethodsSortedByLocalizedDisplayNames() const override {
-      return std::make_unique<std::vector<InputMethodDescriptor>>(
-          input_methods_);
+      return input_methods_;
     }
     const InputMethodDescriptor* GetInputMethodFromId(
         const std::string& input_method_id) const override {
@@ -246,7 +245,7 @@ TEST_F(ImeControllerClientImplTest, ShowImeMenuOnShelf) {
 TEST_F(ImeControllerClientImplTest, InputMethodChanged) {
   auto mock_candidate_window =
       std::make_unique<ash::MockIMECandidateWindowHandler>();
-  ui::IMEBridge::Get()->SetCandidateWindowHandler(mock_candidate_window.get());
+  ash::IMEBridge::Get()->SetCandidateWindowHandler(mock_candidate_window.get());
 
   ImeControllerClientImpl client(&input_method_manager_);
   client.Init();

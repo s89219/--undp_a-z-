@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,7 @@ namespace policy {
 class UserCloudPolicyManagerTest
     : public MixinBasedInProcessBrowserTest,
       public testing::WithParamInterface<
-          std::tuple<std::vector<base::Feature>,
+          std::tuple<std::vector<base::test::FeatureRef>,
                      ash::LoggedInUserMixin::LogInType>> {
  public:
   UserCloudPolicyManagerTest(const UserCloudPolicyManagerTest&) = delete;
@@ -53,7 +53,7 @@ class UserCloudPolicyManagerTest
 
     scoped_feature_list_.InitWithFeatures(
         std::get<0>(GetParam()) /* enabled_features */,
-        std::vector<base::Feature>() /* disabled_features */);
+        std::vector<base::test::FeatureRef>() /* disabled_features */);
   }
 
   ~UserCloudPolicyManagerTest() override = default;
@@ -75,9 +75,8 @@ class UserCloudPolicyManagerTest
   ash::LoggedInUserMixin logged_in_user_mixin_{
       &mixin_host_, std::get<1>(GetParam()) /*type*/, embedded_test_server(),
       this, true /*should_launch_browser*/,
-      AccountId::FromUserEmailGaiaId(
-          ash::FakeGaiaMixin::kEnterpriseUser1,
-          ash::FakeGaiaMixin::kEnterpriseUser1GaiaId),
+      AccountId::FromUserEmailGaiaId(FakeGaiaMixin::kEnterpriseUser1,
+                                     FakeGaiaMixin::kEnterpriseUser1GaiaId),
       // Initializing the login manager with no user will cause GAIA screen to
       // be shown on start-up.
       false /*include_initial_user*/};
@@ -250,7 +249,7 @@ IN_PROC_BROWSER_TEST_P(UserCloudPolicyManagerChildTest,
                 logged_in_user_mixin_.GetAccountId()));
 }
 
-const std::vector<base::Feature> feature_lists[] = {
+const std::vector<base::test::FeatureRef> feature_lists[] = {
     {},
     {features::kDMServerOAuthForChildUser}};
 

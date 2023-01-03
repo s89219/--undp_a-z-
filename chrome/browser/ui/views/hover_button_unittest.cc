@@ -1,8 +1,8 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/ui/views/hover_button.h"
+#include "chrome/browser/ui/views/controls/hover_button.h"
 
 #include <memory>
 
@@ -16,6 +16,7 @@
 #include "ui/gfx/text_utils.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/style/typography.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget_utils.h"
@@ -158,6 +159,20 @@ TEST_F(HoverButtonTest, ActivatesOnMouseReleased) {
   EXPECT_TRUE(clicked);
 
   widget()->Close();
+}
+
+// Test that changing the text style updates the return value of
+// views::View::GetHeightForWidth().
+TEST_F(HoverButtonTest, ChangingTextStyleResizesButton) {
+  auto button = std::make_unique<HoverButton>(
+      views::Button::PressedCallback(), CreateIcon(), u"Title", u"Subtitle");
+  button->SetSubtitleTextStyle(views::style::CONTEXT_LABEL,
+                               views::style::STYLE_SECONDARY);
+  int height1 = button->GetHeightForWidth(100);
+  button->SetSubtitleTextStyle(views::style::CONTEXT_DIALOG_TITLE,
+                               views::style::STYLE_SECONDARY);
+  int height2 = button->GetHeightForWidth(100);
+  EXPECT_NE(height1, height2);
 }
 
 // No touch on desktop Mac.

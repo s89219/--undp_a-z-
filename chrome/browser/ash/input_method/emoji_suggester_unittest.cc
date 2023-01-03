@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,9 +18,9 @@ namespace ash {
 namespace input_method {
 namespace {
 
-using TextSuggestion = ime::TextSuggestion;
-using TextSuggestionMode = ime::TextSuggestionMode;
-using TextSuggestionType = ime::TextSuggestionType;
+using AssistiveSuggestion = ime::AssistiveSuggestion;
+using AssistiveSuggestionMode = ime::AssistiveSuggestionMode;
+using AssistiveSuggestionType = ime::AssistiveSuggestionType;
 
 }  // namespace
 
@@ -30,6 +30,7 @@ ui::KeyEvent CreateKeyEventFromCode(const ui::DomCode& code) {
 }
 
 const char kEmojiData[] = "happy,😀;😃;😄";
+const int kContextId = 24601;
 
 class TestSuggestionHandler : public SuggestionHandlerInterface {
  public:
@@ -58,6 +59,7 @@ class TestSuggestionHandler : public SuggestionHandlerInterface {
       int context_id,
       const AssistiveWindowProperties& assistive_window,
       std::string* error) override {
+    context_id_ = context_id;
     candidate_highlighted_.clear();
     for (size_t i = 0; i < assistive_window.candidates.size(); i++) {
       candidate_highlighted_.push_back(0);
@@ -84,6 +86,10 @@ class TestSuggestionHandler : public SuggestionHandlerInterface {
     EXPECT_EQ(show_setting_link_, show_setting_link);
   }
 
+  void VerifyContextId(const int context_id) {
+    EXPECT_EQ(context_id_, context_id);
+  }
+
   bool DismissSuggestion(int context_id, std::string* error) override {
     return false;
   }
@@ -99,6 +105,7 @@ class TestSuggestionHandler : public SuggestionHandlerInterface {
 
   bool AcceptSuggestionCandidate(int context_id,
                                  const std::u16string& candidate,
+                                 size_t delete_previous_utf16_len,
                                  std::string* error) override {
     return false;
   }
@@ -117,6 +124,7 @@ class TestSuggestionHandler : public SuggestionHandlerInterface {
   bool learn_more_button_highlighted_ = false;
   std::vector<int> candidate_highlighted_;
   size_t currently_highlighted_index_ = INT_MAX;
+  int context_id_ = -1;
 };
 
 class EmojiSuggesterTest : public testing::Test {
@@ -130,6 +138,7 @@ class EmojiSuggesterTest : public testing::Test {
     chrome_keyboard_controller_client_ =
         ChromeKeyboardControllerClient::CreateForTest();
     chrome_keyboard_controller_client_->set_keyboard_visible_for_test(false);
+    emoji_suggester_->OnFocus(kContextId);
   }
 
   SuggestionStatus Press(ui::DomCode code) {
@@ -146,6 +155,16 @@ class EmojiSuggesterTest : public testing::Test {
 
 TEST_F(EmojiSuggesterTest, SuggestWhenStringEndsWithSpace) {
   EXPECT_TRUE(emoji_suggester_->TrySuggestWithSurroundingText(u"happy ", 6, 6));
+}
+
+TEST_F(EmojiSuggesterTest, SuggestWhenStringEndsWithSpaceInNewLine) {
+  EXPECT_TRUE(emoji_suggester_->TrySuggestWithSurroundingText(
+      u"oldline\nhappy ", 14, 14));
+}
+
+TEST_F(EmojiSuggesterTest, PassesContextIdToHandlerOnSuggestion) {
+  emoji_suggester_->TrySuggestWithSurroundingText(u"happy ", 6, 6);
+  engine_->VerifyContextId(kContextId);
 }
 
 TEST_F(EmojiSuggesterTest, SuggestWhenStringStartsWithOpenBracket) {
@@ -178,6 +197,12 @@ TEST_F(EmojiSuggesterTest, DoNotSuggestOnWhenNotAtEndOfText) {
 
 TEST_F(EmojiSuggesterTest, DoNotSuggestWhenWordNotInMap) {
   EXPECT_FALSE(emoji_suggester_->TrySuggestWithSurroundingText(u"hapy ", 5, 5));
+}
+
+TEST_F(EmojiSuggesterTest, DoNotSuggestAfterBlur) {
+  emoji_suggester_->OnBlur();
+  EXPECT_FALSE(
+      emoji_suggester_->TrySuggestWithSurroundingText(u"happy ", 6, 6));
 }
 
 TEST_F(EmojiSuggesterTest, DoNotShowSuggestionWhenVirtualKeyboardEnabled) {
@@ -366,18 +391,19 @@ TEST_F(EmojiSuggesterTest, IsShowingSuggestionFalseWhenCandidatesUnavailable) {
 
 TEST_F(EmojiSuggesterTest, GetSuggestionReturnsCandidatesWhenAvailable) {
   EXPECT_TRUE(emoji_suggester_->TrySuggestWithSurroundingText(u"happy ", 6, 6));
-  EXPECT_EQ(emoji_suggester_->GetSuggestions(),
-            (std::vector<TextSuggestion>{
-                TextSuggestion{.mode = TextSuggestionMode::kPrediction,
-                               .type = TextSuggestionType::kAssistiveEmoji,
-                               .text = "😀"},
-                TextSuggestion{.mode = TextSuggestionMode::kPrediction,
-                               .type = TextSuggestionType::kAssistiveEmoji,
-                               .text = "😃"},
-                TextSuggestion{.mode = TextSuggestionMode::kPrediction,
-                               .type = TextSuggestionType::kAssistiveEmoji,
-                               .text = "😄"},
-            }));
+  EXPECT_EQ(
+      emoji_suggester_->GetSuggestions(),
+      (std::vector<AssistiveSuggestion>{
+          AssistiveSuggestion{.mode = AssistiveSuggestionMode::kPrediction,
+                              .type = AssistiveSuggestionType::kAssistiveEmoji,
+                              .text = "😀"},
+          AssistiveSuggestion{.mode = AssistiveSuggestionMode::kPrediction,
+                              .type = AssistiveSuggestionType::kAssistiveEmoji,
+                              .text = "😃"},
+          AssistiveSuggestion{.mode = AssistiveSuggestionMode::kPrediction,
+                              .type = AssistiveSuggestionType::kAssistiveEmoji,
+                              .text = "😄"},
+      }));
 }
 
 TEST_F(EmojiSuggesterTest,

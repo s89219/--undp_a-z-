@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@ class IndexedDBBucketState;
 // using the bucket, and the IndexedDBBucketState won't close until all
 // handles are destroyed. Destroying this handle can cause the bucket state
 // to synchronously destruct, which modifies the `factories_per_bucket_`
-// map in IndexedDBFactoryImpl.
+// map in IndexedDBFactory.
 class CONTENT_EXPORT IndexedDBBucketStateHandle {
  public:
   IndexedDBBucketStateHandle();

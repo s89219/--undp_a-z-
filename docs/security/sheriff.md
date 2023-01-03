@@ -74,7 +74,8 @@ various important responsibilities:
 ### Marshal
 
 * Ensure that all incoming queries to the
-  [security@chromium.org](https://groups.google.com/a/chromium.org/forum/#!forum/security)
+  [security@chromium.org](https://groups.google.com/a/chromium.org/forum/#!forum/security),
+  [security-dev@chromium.org](https://groups.google.com/a/chromium.org/forum/#!forum/security-dev),
   and
   [chrome-security@google.com](https://groups.google.com/a/google.com/forum/#!forum/chrome-security)
   lists get a reply (by someone; not necessarily the marshal themselves). See
@@ -136,7 +137,7 @@ i like that.")
 
 ### Diagnose The Issue
 
-![alt text](life-of-a-security-issue.png "Life of a security issue.")
+![alt text](sheriff-life-of-an-issue.png "Life of a security issue.")
 
 * **If the report is invalid**, remove the **Restrict-View-SecurityTeam** label
   and mark it **WontFix**.
@@ -144,6 +145,7 @@ i like that.")
   a duplicate of is public, remove the **Restrict-View-SecurityTeam** label.
 * **If the report is primarily a privacy issue**, send it to the privacy team:
   * Add the **Privacy** component so that it enters their triage queue.
+  * Change **Type-Bug-Security** to **Type-Bug**.
   * CC any security team members, including yourself, who may be interested in
     the privacy issue.
 	* Change the **Restrict-View-SecurityTeam** label to
@@ -152,11 +154,7 @@ i like that.")
       access, so this will probably make the issue inaccessible to you.
 * **If the report is asking about why something is or is not on the Safe
   Browsing list:**
-  * Assign it to zbutler@, who will triage it for the Safe Browsing team.
-	* Remove the **Restrict-View-SecurityTeam** label and add the
-  **Restrict-View-Google** label.
-  * Change **Type-Bug-Security** label to **Type-Bug**.
-  * Add the **Security** component.
+  * Close the bug and request the reporter submit the URL to SafeBrowsing.
   * See below for reporting URLs to SafeBrowsing.
 * **If the report is a potentially valid bug but is not a security
   vulnerability:**
@@ -252,6 +250,10 @@ Tips for reproducing bugs:
   [ThreadSanitizer](https://www.chromium.org/developers/testing/threadsanitizer-tsan-v2),
   and
   [UndefinedBehaviorSanitizer](https://www.chromium.org/developers/testing/undefinedbehaviorsanitizer).
+* The [get_asan_chrome](https://source.chromium.org/chromium/chromium/src/+/main:tools/get_asan_chrome/get_asan_chrome.py)
+  helper script is a handy way to download ASAN Chrome. The --help flag
+  provides usage instructions, e.g. to fetch builds for various versions and
+  platforms.
 * If you run into issues with a reproducible ClusterFuzz test case (like
   missing symbols, or if anything else seems off), try uploading the test case
   again using a different job type with a more mature tool (e.g. ASan on Linux).
@@ -343,8 +345,10 @@ changes.** Severity, milestone, and priority assignment generally require
 explanatory text.
 
 * Report suspected malicious URLs to SafeBrowsing:
-  * Public URL:
-  [https://support.google.com/websearch/contact/safe_browsing](https://support.google.com/websearch/contact/safe_browsing).
+  * Public URLs:
+    * [Report malware](https://safebrowsing.google.com/safebrowsing/report_badware/?hl=en)
+    * [Report phishing](https://safebrowsing.google.com/safebrowsing/report_phish/?hl=en)
+    * [Report incorrect phishing warning](https://safebrowsing.google.com/safebrowsing/report_error/?hl=en)
   * Googlers: see instructions at [go/safebrowsing-escalation](https://goto.google.com/safebrowsing-escalation)
   * Report suspected malicious file attachments to SafeBrowsing and VirusTotal.
 * Make sure the report is properly forwarded when the vulnerability is in an

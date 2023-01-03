@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/system/network/network_list_network_header_view.h"
+#include "ui/base/metadata/metadata_impl_macros.h"
 
 namespace ash {
 
@@ -15,6 +16,8 @@ namespace ash {
 class ASH_EXPORT NetworkListWifiHeaderView
     : public NetworkListNetworkHeaderView {
  public:
+  METADATA_HEADER(NetworkListWifiHeaderView);
+
   explicit NetworkListWifiHeaderView(
       NetworkListNetworkHeaderView::Delegate* delegate);
   NetworkListWifiHeaderView(const NetworkListWifiHeaderView&) = delete;

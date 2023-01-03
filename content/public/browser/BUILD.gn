@@ -1,5 +1,5 @@
-# Copyright 2014 The Chromium Authors. All rights reserved.
-# Use of this source code is governed by a BSD-style license that can be
+# Copyright 2014 The Chromium Authors
+# Use of this source code is governed by a BSD - style license that can be
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
@@ -26,12 +26,19 @@ source_set("browser_sources") {
   # External code should depend on via ":browser" above.
   visibility = [ "//content/*" ]
   sources = [
+    "active_url_message_filter.cc",
+    "active_url_message_filter.h",
     "allow_service_worker_result.cc",
     "allow_service_worker_result.h",
+    "anchor_element_preconnect_delegate.h",
+    "attribution_config.h",
     "attribution_reporting.h",
     "audio_service.h",
     "audio_service_info.cc",
     "audio_service_info.h",
+    "audio_stream_broker.cc",
+    "audio_stream_broker.h",
+    "authenticator_common.h",
     "authenticator_environment.h",
     "authenticator_request_client_delegate.cc",
     "authenticator_request_client_delegate.h",
@@ -140,8 +147,6 @@ source_set("browser_sources") {
     "devtools_manager_delegate.cc",
     "devtools_manager_delegate.h",
     "devtools_network_transaction_factory.h",
-    "devtools_permission_overrides.cc",
-    "devtools_permission_overrides.h",
     "devtools_socket_factory.h",
     "disallow_activation_reason.h",
     "document_picture_in_picture_window_controller.h",
@@ -165,9 +170,9 @@ source_set("browser_sources") {
     "favicon_status.cc",
     "favicon_status.h",
     "feature_observer_client.h",
-    "federated_identity_active_session_permission_context_delegate.h",
+    "federated_identity_api_permission_context_delegate.cc",
     "federated_identity_api_permission_context_delegate.h",
-    "federated_identity_sharing_permission_context_delegate.h",
+    "federated_identity_permission_context_delegate.h",
     "file_select_listener.h",
     "file_system_access_entry_factory.h",
     "file_system_access_permission_context.h",
@@ -181,6 +186,8 @@ source_set("browser_sources") {
     "font_list_async.h",
     "frame_accept_header.cc",
     "frame_accept_header.h",
+    "frame_rate_throttling.h",
+    "frame_type.cc",
     "frame_type.h",
     "generated_code_cache_settings.h",
     "global_request_id.cc",
@@ -195,14 +202,14 @@ source_set("browser_sources") {
     "gpu_service_registry.h",
     "gpu_utils.cc",
     "gpu_utils.h",
-    "guest_host.h",
     "hid_chooser.h",
     "hid_delegate.h",
     "histogram_fetcher.h",
     "host_zoom_map.h",
+    "identity_request_account.cc",
+    "identity_request_account.h",
     "identity_request_dialog_controller.cc",
     "identity_request_dialog_controller.h",
-    "idle_time_provider.h",
     "installability_error.cc",
     "installability_error.h",
     "installed_payment_apps_finder.h",
@@ -211,6 +218,7 @@ source_set("browser_sources") {
     "jank_monitor.h",
     "javascript_dialog_manager.cc",
     "javascript_dialog_manager.h",
+    "k_anonymity_service_delegate.h",
     "keyboard_event_processing_result.h",
     "load_notification_details.h",
     "login_delegate.h",
@@ -251,7 +259,6 @@ source_set("browser_sources") {
     "navigation_handle_user_data.h",
     "navigation_throttle.cc",
     "navigation_throttle.h",
-    "navigation_type.h",
     "navigation_ui_data.h",
     "network_context_client_base.h",
     "network_quality_observer_factory.h",
@@ -267,7 +274,7 @@ source_set("browser_sources") {
     "notification_service.h",
     "notification_source.h",
     "notification_types.h",
-    "origin_policy_commands.h",
+    "origin_trials_controller_delegate.h",
     "overlay_window.h",
     "overscroll_configuration.h",
     "page.h",
@@ -283,11 +290,21 @@ source_set("browser_sources") {
     "permission_controller.h",
     "permission_controller_delegate.cc",
     "permission_controller_delegate.h",
+    "permission_overrides.cc",
+    "permission_overrides.h",
+    "permission_result.cc",
+    "permission_result.h",
     "picture_in_picture_window_controller.h",
     "platform_notification_context.h",
     "platform_notification_service.h",
+    "prefetch_metrics.h",
+    "prefetch_service_delegate.cc",
+    "prefetch_service_delegate.h",
+    "preloading.h",
+    "preloading_data.h",
     "prerender_handle.h",
     "prerender_trigger_type.h",
+    "presentation_observer.h",
     "presentation_receiver_flags.h",
     "presentation_request.cc",
     "presentation_request.h",
@@ -299,9 +316,11 @@ source_set("browser_sources") {
     "provision_fetcher_impl.h",
     "push_messaging_service.cc",
     "push_messaging_service.h",
-    "quota_permission_context.h",
+    "reduce_accept_language_controller_delegate.h",
     "reload_type.h",
     "render_frame_host.h",
+    "render_frame_host_observer.cc",
+    "render_frame_host_observer.h",
     "render_frame_host_receiver_set.h",
     "render_frame_metadata_provider.h",
     "render_process_host.h",
@@ -309,6 +328,7 @@ source_set("browser_sources") {
     "render_process_host_factory.h",
     "render_process_host_observer.cc",
     "render_process_host_observer.h",
+    "render_process_host_priority_client.h",
     "render_view_host.h",
     "render_widget_host.h",
     "render_widget_host_iterator.h",
@@ -341,6 +361,7 @@ source_set("browser_sources") {
     "service_worker_external_request_timeout_type.h",
     "service_worker_running_info.cc",
     "service_worker_running_info.h",
+    "service_worker_version_base_info.cc",
     "service_worker_version_base_info.h",
     "session_storage_namespace.cc",
     "session_storage_namespace.h",
@@ -390,6 +411,9 @@ source_set("browser_sources") {
     "url_data_source.h",
     "url_loader_request_interceptor.h",
     "url_loader_throttles.h",
+    "usb_chooser.cc",
+    "usb_chooser.h",
+    "usb_delegate.h",
     "video_capture_device_launcher.cc",
     "video_capture_device_launcher.h",
     "video_capture_service.h",
@@ -415,6 +439,8 @@ source_set("browser_sources") {
     "web_ui_controller.cc",
     "web_ui_controller.h",
     "web_ui_controller_factory.h",
+    "web_ui_controller_interface_binder.cc",
+    "web_ui_controller_interface_binder.h",
     "web_ui_data_source.h",
     "web_ui_message_handler.h",
     "web_ui_url_loader_factory.h",
@@ -450,6 +476,8 @@ source_set("browser_sources") {
     "//build:chromecast_buildflags",
     "//components/browsing_topics/common:common",
     "//components/download/public/common:public",
+    "//components/file_access",
+    "//components/services/storage/privileged/mojom",
     "//components/services/storage/public/mojom",
     "//content/public/common:common_sources",
     "//device/vr/buildflags",
@@ -508,18 +536,22 @@ source_set("browser_sources") {
   ]
 
   allow_circular_includes_from = [
-    # This target is a pair with content/browser. They always go together and
+    # This target is a pair with content / browser.They always go together and
     # include headers from each other.
     "//content/browser",
   ]
 
   if (enable_plugins) {
     sources += [
-      "browser_ppapi_host.h",
-      "pepper_vpn_provider_resource_host_proxy.h",
-      "plugin_data_remover.h",
       "plugin_service.h",
       "plugin_service_filter.h",
+    ]
+  }
+
+  if (enable_ppapi) {
+    sources += [
+      "browser_ppapi_host.h",
+      "pepper_vpn_provider_resource_host_proxy.h",
     ]
     deps += [ "//ppapi/c" ]
   }
@@ -532,7 +564,6 @@ source_set("browser_sources") {
     deps += [ "//ui/android" ]
     sources += [
       "android/android_overlay_provider.h",
-      "android/app_web_message_port.h",
       "android/browser_context_handle.h",
       "android/child_process_importance.h",
       "android/compositor.h",
@@ -542,12 +573,14 @@ source_set("browser_sources") {
       "android/java_interfaces.h",
       "android/media_url_interceptor_register.cc",
       "android/media_url_interceptor_register.h",
+      "android/message_payload.h",
+      "android/message_payload_type.h",
+      "android/message_port_helper.h",
       "android/motion_event_action.h",
       "android/synchronous_compositor.cc",
       "android/synchronous_compositor.h",
       "android/synchronous_compositor_client.h",
       "ax_inspect_factory_android.cc",
-      "conditional_ui_delegate_android.h",
       "tts_environment_android.h",
     ]
   }
@@ -568,6 +601,7 @@ source_set("browser_sources") {
 
   if (is_fuchsia) {
     sources += [ "ax_inspect_factory_fuchsia.cc" ]
+    deps += [ "//media/fuchsia/mojom:fuchsia_media" ]
   }
 
   if (is_win) {
@@ -588,16 +622,28 @@ source_set("browser_sources") {
   }
 
   if (is_chromeos) {
-    sources += [ "lock_screen_storage.h" ]
-    deps += [ "//ui/ozone:ozone_switches" ]
+    sources += [
+      "chromeos/multi_capture_service.cc",
+      "chromeos/multi_capture_service.h",
+      "firewall_hole_proxy.h",
+      "lock_screen_storage.h",
+    ]
   }
 
   if (!is_android) {
     sources += [
+      "direct_sockets_delegate.h",
+
       # Some Web Authentication related targets only apply to desktop because
       # Android provides its own native implementation of that API.
       "web_authentication_request_proxy.h",
     ]
+    if (!is_fuchsia) {
+      sources += [
+        "smart_card_delegate.cc",
+        "smart_card_delegate.h",
+      ]
+    }
   }
 
   if (is_chromeos_ash) {
@@ -625,6 +671,10 @@ source_set("browser_sources") {
 
   if (use_clang_profiling_inside_sandbox) {
     sources += [ "profiling_utils.h" ]
+  }
+
+  if (is_chromeos_lacros) {
+    deps += [ "//chromeos/startup" ]
   }
 }
 

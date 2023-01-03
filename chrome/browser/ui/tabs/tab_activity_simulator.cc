@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -66,8 +66,9 @@ void TabActivitySimulator::SwitchToTabAt(TabStripModel* tab_strip_model,
   // which is what actually triggers TabActivityWatcher to log the change. For
   // a TestWebContents, we must manually call WasHidden(), and do the reverse
   // for the newly activated tab.
-  tab_strip_model->ActivateTabAt(new_index,
-                                 {TabStripModel::GestureType::kOther});
+  tab_strip_model->ActivateTabAt(
+      new_index, TabStripUserGestureDetails(
+                     TabStripUserGestureDetails::GestureType::kOther));
   active_contents->WasHidden();
   new_contents->WasShown();
 }

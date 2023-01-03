@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,10 @@
 #include "base/component_export.h"
 #include "ui/events/devices/input_device.h"
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ui/events/ozone/evdev/fake_keyboard_heuristic_metrics.h"
+#endif
 
 namespace ui {
 class COMPONENT_EXPORT(EVDEV) KeyboardImposterCheckerEvdev {
@@ -33,6 +37,10 @@ class COMPONENT_EXPORT(EVDEV) KeyboardImposterCheckerEvdev {
 
   // Number of devices per phys path.
   std::multimap<std::string, int> devices_on_phys_path_;
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  FakeKeyboardHeuristicMetrics fake_keyboard_heuristic_metrics_;
+#endif
 };
 }  // namespace ui
 

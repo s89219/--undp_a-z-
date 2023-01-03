@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,5 +25,6 @@ TEST_F(ChromeWebContentsViewDelegateViewsTest,
       CreateWebContentsViewDelegate(web_contents());
   EXPECT_FALSE(web_contents()->GetFocusedFrame());
   const content::ContextMenuParams params;
-  delegate_view->ShowContextMenu(*web_contents()->GetMainFrame(), params);
+  delegate_view->ShowContextMenu(*web_contents()->GetPrimaryMainFrame(),
+                                 params);
 }

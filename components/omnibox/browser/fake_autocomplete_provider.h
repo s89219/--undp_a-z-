@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,9 @@ class FakeAutocompleteProvider : public AutocompleteProvider {
   // Used by some tests that create providers ahead of time and later set the
   // specific type needed.
   void SetType(Type type) { type_ = type; }
+
+  using AutocompleteProvider::done_;
+  using AutocompleteProvider::matches_;
 
  private:
   ~FakeAutocompleteProvider() override = default;

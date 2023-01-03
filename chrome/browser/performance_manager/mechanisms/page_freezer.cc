@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,8 @@ void MaybeFreezePageOnUIThread(const WebContentsProxy& contents_proxy) {
   // it's in background. This information isn't available in the PM graph, this
   // has to be checked on the UI thread.
   if (permission_controller->GetPermissionStatusForCurrentDocument(
-          blink::PermissionType::NOTIFICATIONS, contents->GetMainFrame()) ==
+          blink::PermissionType::NOTIFICATIONS,
+          contents->GetPrimaryMainFrame()) ==
       blink::mojom::PermissionStatus::GRANTED) {
     return;
   }

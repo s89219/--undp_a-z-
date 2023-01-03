@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@ import org.chromium.components.signin.metrics.SigninAccessPoint;
 import org.chromium.components.signin.metrics.SignoutReason;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -48,7 +49,6 @@ public final class SigninTestUtil {
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             SigninManager signinManager = IdentityServicesProvider.get().getSigninManager(
                     Profile.getLastUsedRegularProfile());
-            signinManager.onFirstRunCheckDone(); // Allow sign-in
             signinManager.signin(AccountUtils.createAccountFromName(coreAccountInfo.getEmail()),
                     new SigninManager.SignInCallback() {
                         @Override
@@ -87,7 +87,6 @@ public final class SigninTestUtil {
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             SigninManager signinManager = IdentityServicesProvider.get().getSigninManager(
                     Profile.getLastUsedRegularProfile());
-            signinManager.onFirstRunCheckDone(); // Allow sign-in
             signinManager.signinAndEnableSync(SigninAccessPoint.UNKNOWN,
                     AccountUtils.createAccountFromName(coreAccountInfo.getEmail()),
                     new SigninManager.SignInCallback() {
@@ -131,7 +130,8 @@ public final class SigninTestUtil {
                     .seedAccountsIfNeeded(ch::notifyCalled);
         });
         try {
-            ch.waitForFirst("Timed out while waiting for system accounts to seed.");
+            ch.waitForFirst(
+                    "Timed out while waiting for system accounts to seed.", 20, TimeUnit.SECONDS);
         } catch (TimeoutException ex) {
             throw new RuntimeException("Timed out while waiting for system accounts to seed.");
         }
@@ -149,9 +149,12 @@ public final class SigninTestUtil {
         ThreadUtils.assertOnBackgroundThread();
         CallbackHelper callbackHelper = new CallbackHelper();
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            IdentityServicesProvider.get()
-                    .getSigninManager(Profile.getLastUsedRegularProfile())
-                    .signOut(signoutReason, callbackHelper::notifyCalled, false);
+            final SigninManager signinManager = IdentityServicesProvider.get().getSigninManager(
+                    Profile.getLastUsedRegularProfile());
+            signinManager.runAfterOperationInProgress(
+                    ()
+                            -> signinManager.signOut(
+                                    signoutReason, callbackHelper::notifyCalled, false));
         });
         try {
             callbackHelper.waitForFirst();

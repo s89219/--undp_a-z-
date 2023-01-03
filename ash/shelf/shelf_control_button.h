@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@ class ASH_EXPORT ShelfControlButton : public ShelfButton {
 
   // Get the center point of the button used to draw its background and ink
   // drops.
-  gfx::Point GetCenterPoint() const;
+  gfx::PointF GetCenterPoint() const;
 
   const gfx::Rect& ideal_bounds() const { return ideal_bounds_; }
 
@@ -35,7 +35,6 @@ class ASH_EXPORT ShelfControlButton : public ShelfButton {
   const char* GetClassName() const override;
   gfx::Size CalculatePreferredSize() const override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
-  void OnThemeChanged() override;
 
  protected:
   void PaintBackground(gfx::Canvas* canvas, const gfx::Rect& bounds);

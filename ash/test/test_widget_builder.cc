@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,13 +17,12 @@ namespace {
 
 // WidgetDelegate that is resizable and creates ash's NonClientFrameView
 // implementation.
-class TestWidgetDelegate : public views::WidgetDelegate {
+class TestWidgetDelegate : public views::WidgetDelegateView {
  public:
   TestWidgetDelegate() {
     SetCanMaximize(true);
     SetCanMinimize(true);
     SetCanResize(true);
-    SetOwnedByWidget(true);
   }
   TestWidgetDelegate(const TestWidgetDelegate& other) = delete;
   TestWidgetDelegate& operator=(const TestWidgetDelegate& other) = delete;

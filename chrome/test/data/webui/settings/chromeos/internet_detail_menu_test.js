@@ -1,23 +1,25 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {setESimManagerRemoteForTesting} from 'chrome://resources/cr_components/chromeos/cellular_setup/mojo_interface_provider.m.js';
-import {MojoInterfaceProviderImpl} from 'chrome://resources/cr_components/chromeos/network/mojo_interface_provider.m.js';
-import {OncMojo} from 'chrome://resources/cr_components/chromeos/network/onc_mojo.m.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {setESimManagerRemoteForTesting} from 'chrome://resources/ash/common/cellular_setup/mojo_interface_provider.js';
+import {MojoInterfaceProviderImpl} from 'chrome://resources/ash/common/network/mojo_interface_provider.js';
+import {OncMojo} from 'chrome://resources/ash/common/network/onc_mojo.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
+import {InhibitReason} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/cros_network_config.mojom-webui.js';
+import {DeviceStateType, NetworkType, OncSource} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/network_types.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {FakeNetworkConfig} from 'chrome://test/chromeos/fake_network_config_mojom.js';
-import {FakeESimManagerRemote} from 'chrome://test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.m.js';
-import {eventToPromise, flushTasks, waitAfterNextRender} from 'chrome://test/test_util.js';
+import {FakeNetworkConfig} from 'chrome://webui-test/chromeos/fake_network_config_mojom.js';
+import {FakeESimManagerRemote} from 'chrome://webui-test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-import {assertEquals, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('InternetDetailMenu', function() {
   let internetDetailMenu;
   let mojoApi_;
-  let mojom;
   let eSimManagerRemote;
 
   setup(function() {
@@ -28,8 +30,7 @@ suite('InternetDetailMenu', function() {
     eSimManagerRemote = new FakeESimManagerRemote();
     setESimManagerRemoteForTesting(eSimManagerRemote);
 
-    mojom = chromeos.networkConfig.mojom;
-    mojoApi_.setNetworkTypeEnabledState(mojom.NetworkType.kCellular, true);
+    mojoApi_.setNetworkTypeEnabledState(NetworkType.kCellular, true);
   });
 
   teardown(function() {
@@ -46,7 +47,7 @@ suite('InternetDetailMenu', function() {
   /** @param {boolean=} opt_isGuest */
   async function init(opt_isGuest) {
     const isGuest = !!opt_isGuest;
-    loadTimeData.overrideValues({esimPolicyEnabled: true, isGuest: isGuest});
+    loadTimeData.overrideValues({isGuest: isGuest});
 
     const params = new URLSearchParams();
     params.append('guid', 'cellular_guid');
@@ -61,12 +62,11 @@ suite('InternetDetailMenu', function() {
   }
 
   async function addEsimCellularNetwork(iccid, eid, is_managed) {
-    const cellular =
-        getManagedProperties(mojom.NetworkType.kCellular, 'cellular');
+    const cellular = getManagedProperties(NetworkType.kCellular, 'cellular');
     cellular.typeProperties.cellular.iccid = iccid;
     cellular.typeProperties.cellular.eid = eid;
     if (is_managed) {
-      cellular.source = mojom.OncSource.kDevicePolicy;
+      cellular.source = OncSource.kDevicePolicy;
     }
     mojoApi_.setManagedPropertiesForTest(cellular);
     await flushAsync();
@@ -118,7 +118,8 @@ suite('InternetDetailMenu', function() {
     addEsimCellularNetwork(null, '11111111111111111111111111111111');
     await init();
 
-    let tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    let tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertFalse(!!tripleDot);
 
     addEsimCellularNetwork('100000', '11111111111111111111111111111111');
@@ -128,7 +129,8 @@ suite('InternetDetailMenu', function() {
     Router.getInstance().navigateTo(routes.NETWORK_DETAIL, params);
 
     await flushAsync();
-    tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertTrue(!!tripleDot);
   });
 
@@ -136,7 +138,8 @@ suite('InternetDetailMenu', function() {
     addEsimCellularNetwork('100000', null);
     await init();
 
-    let tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    let tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertFalse(!!tripleDot);
 
     addEsimCellularNetwork('100000', '11111111111111111111111111111111');
@@ -146,7 +149,8 @@ suite('InternetDetailMenu', function() {
     Router.getInstance().navigateTo(routes.NETWORK_DETAIL, params);
 
     await flushAsync();
-    tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertTrue(!!tripleDot);
   });
 
@@ -160,7 +164,8 @@ suite('InternetDetailMenu', function() {
     await flushAsync();
 
     // Has ICCID and EID, but not shown since the user is in guest mode.
-    assertFalse(!!internetDetailMenu.$$('#moreNetworkDetail'));
+    assertFalse(
+        !!internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail'));
   });
 
   test('Rename menu click', async function() {
@@ -172,7 +177,8 @@ suite('InternetDetailMenu', function() {
     Router.getInstance().navigateTo(routes.NETWORK_DETAIL, params);
 
     await flushAsync();
-    const tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    const tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertTrue(!!tripleDot);
 
     tripleDot.click();
@@ -203,7 +209,8 @@ suite('InternetDetailMenu', function() {
     Router.getInstance().navigateTo(routes.NETWORK_DETAIL, params);
 
     await flushAsync();
-    const tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    const tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertTrue(!!tripleDot);
 
     tripleDot.click();
@@ -234,21 +241,22 @@ suite('InternetDetailMenu', function() {
     Router.getInstance().navigateTo(routes.NETWORK_DETAIL, params);
 
     await flushAsync();
-    const tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    const tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertTrue(!!tripleDot);
     assertFalse(tripleDot.disabled);
 
     internetDetailMenu.deviceState = {
-      type: mojom.NetworkType.kCellular,
-      deviceState: chromeos.networkConfig.mojom.DeviceStateType.kEnabled,
-      inhibitReason: mojom.InhibitReason.kConnectingToProfile,
+      type: NetworkType.kCellular,
+      deviceState: DeviceStateType.kEnabled,
+      inhibitReason: InhibitReason.kConnectingToProfile,
     };
     assertTrue(tripleDot.disabled);
 
     internetDetailMenu.deviceState = {
-      type: mojom.NetworkType.kCellular,
-      deviceState: chromeos.networkConfig.mojom.DeviceStateType.kEnabled,
-      inhibitReason: mojom.InhibitReason.kNotInhibited,
+      type: NetworkType.kCellular,
+      deviceState: DeviceStateType.kEnabled,
+      inhibitReason: InhibitReason.kNotInhibited,
     };
     assertFalse(tripleDot.disabled);
   });
@@ -263,7 +271,8 @@ suite('InternetDetailMenu', function() {
     Router.getInstance().navigateTo(routes.NETWORK_DETAIL, params);
 
     await flushAsync();
-    const tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+    const tripleDot =
+        internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     assertTrue(!!tripleDot);
     assertTrue(tripleDot.disabled);
   });
@@ -278,13 +287,14 @@ suite('InternetDetailMenu', function() {
         addEsimCellularNetwork(iccid, eid);
         init();
         await flushAsync();
-        const tripleDot = internetDetailMenu.$$('#moreNetworkDetail');
+        const tripleDot =
+            internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
         assertTrue(!!tripleDot);
         assertFalse(tripleDot.disabled);
 
         // Change esim profile name.
         const cellular =
-            getManagedProperties(mojom.NetworkType.kCellular, 'cellular');
+            getManagedProperties(NetworkType.kCellular, 'cellular');
         cellular.typeProperties.cellular.iccid = iccid;
         cellular.typeProperties.cellular.eid = eid;
         cellular.name.activeValue = profileName;
@@ -315,7 +325,7 @@ suite('InternetDetailMenu', function() {
 
   test('Network state is null if no profile is found', async function() {
     const getTrippleDot = () => {
-      return internetDetailMenu.$$('#moreNetworkDetail');
+      return internetDetailMenu.shadowRoot.querySelector('#moreNetworkDetail');
     };
     addEsimCellularNetwork('1', '1');
     await init();

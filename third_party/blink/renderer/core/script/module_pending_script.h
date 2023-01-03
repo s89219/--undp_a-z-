@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,7 +63,7 @@ class CORE_EXPORT ModulePendingScript : public PendingScript {
   mojom::blink::ScriptType GetScriptType() const override {
     return mojom::blink::ScriptType::kModule;
   }
-  Script* GetSource(const KURL& document_url) const override;
+  Script* GetSource() const override;
   bool IsReady() const override { return ready_; }
   bool IsExternal() const override { return is_external_; }
   bool WasCanceled() const override { return false; }

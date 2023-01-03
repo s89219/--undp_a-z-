@@ -1,8 +1,10 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/sync/nigori/nigori_model_type_processor.h"
+
+#include <vector>
 
 #include "base/logging.h"
 #include "base/threading/sequenced_task_runner_handle.h"
@@ -13,6 +15,7 @@
 #include "components/sync/engine/data_type_activation_response.h"
 #include "components/sync/engine/forwarding_model_type_processor.h"
 #include "components/sync/engine/model_type_processor_metrics.h"
+#include "components/sync/engine/model_type_worker.h"
 #include "components/sync/model/processor_entity.h"
 #include "components/sync/model/type_entities_count.h"
 #include "components/sync/nigori/nigori_sync_bridge.h"
@@ -117,7 +120,8 @@ void NigoriModelTypeProcessor::OnCommitCompleted(
 
 void NigoriModelTypeProcessor::OnUpdateReceived(
     const sync_pb::ModelTypeState& type_state,
-    UpdateResponseDataList updates) {
+    UpdateResponseDataList updates,
+    absl::optional<sync_pb::GarbageCollectionDirective> gc_directive) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(model_ready_to_sync_);
   // If there is a model error, it must have been reported already but hasn't
@@ -127,6 +131,8 @@ void NigoriModelTypeProcessor::OnUpdateReceived(
     return;
   }
 
+  // TODO(crbug.com/1356900): validate incoming updates, e.g. |gc_directive|
+  // must be empty for Nigori.
   absl::optional<ModelError> error;
 
   const bool is_initial_sync = !model_type_state_.initial_sync_done();
@@ -163,7 +169,7 @@ void NigoriModelTypeProcessor::OnUpdateReceived(
   // are adding the following DCHECK to simplify the code.
   DCHECK(!updates[0].entity.is_deleted());
 
-  if (entity_->UpdateIsReflection(updates[0].response_version)) {
+  if (entity_->IsVersionAlreadyKnown(updates[0].response_version)) {
     // Seen this update before; just ignore it.
     bridge_->ApplySyncChanges(/*data=*/absl::nullopt);
     return;
@@ -187,6 +193,15 @@ void NigoriModelTypeProcessor::OnUpdateReceived(
 
   // There may be new reasons to commit by the time this function is done.
   NudgeForCommitIfNeeded();
+}
+
+void NigoriModelTypeProcessor::StorePendingInvalidations(
+    std::vector<sync_pb::ModelTypeState::Invalidation> invalidations_to_store) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  model_type_state_.mutable_invalidations()->Assign(
+      invalidations_to_store.begin(), invalidations_to_store.end());
+  // ApplySyncChanges does actually query and persist the |model_type_state_|.
+  bridge_->ApplySyncChanges(/*data=*/absl::nullopt);
 }
 
 void NigoriModelTypeProcessor::OnSyncStarting(
@@ -238,8 +253,7 @@ void NigoriModelTypeProcessor::GetAllNodesForDebugging(
 
   std::unique_ptr<EntityData> entity_data = bridge_->GetData();
   if (!entity_data) {
-    std::move(callback).Run(syncer::NIGORI,
-                            std::make_unique<base::ListValue>());
+    std::move(callback).Run(syncer::NIGORI, base::Value::List());
     return;
   }
 
@@ -251,24 +265,21 @@ void NigoriModelTypeProcessor::GetAllNodesForDebugging(
     entity_data->modification_time =
         ProtoTimeToTime(metadata.modification_time());
   }
-  std::unique_ptr<base::DictionaryValue> root_node;
-  root_node = entity_data->ToDictionaryValue();
+  base::Value::Dict root_node = entity_data->ToDictionaryValue();
   if (entity_) {
-    root_node->SetKey("metadata",
-                      base::Value::FromUniquePtrValue(
-                          EntityMetadataToValue(entity_->metadata())));
+    root_node.Set("metadata", EntityMetadataToValue(entity_->metadata()));
   }
 
   // Function isTypeRootNode in sync_node_browser.js use PARENT_ID and
   // UNIQUE_SERVER_TAG to check if the node is root node. isChildOf in
   // sync_node_browser.js uses modelType to check if root node is parent of real
   // data node.
-  root_node->SetStringKey("PARENT_ID", "r");
-  root_node->SetStringKey("UNIQUE_SERVER_TAG", "Nigori");
-  root_node->SetStringKey("modelType", ModelTypeToDebugString(NIGORI));
+  root_node.Set("PARENT_ID", "r");
+  root_node.Set("UNIQUE_SERVER_TAG", "Nigori");
+  root_node.Set("modelType", ModelTypeToDebugString(NIGORI));
 
-  auto all_nodes = std::make_unique<base::ListValue>();
-  all_nodes->Append(std::move(root_node));
+  base::Value::List all_nodes;
+  all_nodes.Append(std::move(root_node));
   std::move(callback).Run(syncer::NIGORI, std::move(all_nodes));
 }
 

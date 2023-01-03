@@ -1,4 +1,4 @@
-# Copyright 2014 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -59,7 +59,7 @@ android_aidl("embedded_test_server_aidl") {
 
 android_library("embedded_test_server_aidl_java") {
   testonly = true
-  deps = [ "//third_party/androidx:androidx_annotation_annotation_java" ]
+  deps = []
   srcjar_deps = [ ":embedded_test_server_aidl" ]
 }
 
@@ -78,7 +78,7 @@ android_library("net_java_test_support") {
     ":embedded_test_server_aidl_java",
     ":net_java",
     "//base:base_java",
-    "//base:base_java_test_support",
+    "//base:base_java_url_utils_for_test",
     "//base:jni_java",
     "//third_party/android_support_test_runner:rules_java",
     "//third_party/android_support_test_runner:runner_java",
@@ -103,9 +103,8 @@ android_library("net_java_test_support_provider") {
     ":embedded_test_server_aidl_java",
     ":net_java",
     "//base:base_java",
-    "//base:base_java_test_support",
+    "//base:base_java_url_utils_for_test",
     "//base:jni_java",
-    "//build/android:build_java",
   ]
 
   data_deps = [ "//net:test_support" ]
@@ -152,8 +151,6 @@ android_apk("net_test_support_apk") {
   deps = [
     ":net_java_test_support",
     ":net_java_test_support_provider",
-    "//base:base_java",
-    "//build/android:build_java",
   ]
   android_manifest = "../test/android/javatests/AndroidManifest.xml"
   apk_name = "ChromiumNetTestSupport"
@@ -194,7 +191,6 @@ android_library("net_javatests") {
     "//base:base_java",
     "//base:base_java_test_support",
     "//base:jni_java",
-    "//build/android:build_java",
     "//third_party/android_sdk:android_test_mock_java",
     "//third_party/android_support_test_runner:rules_java",
     "//third_party/android_support_test_runner:runner_java",
@@ -227,7 +223,7 @@ java_cpp_enum("net_android_java_enums_srcjar") {
   ]
 }
 
-junit_binary("net_junit_tests") {
+robolectric_binary("net_junit_tests") {
   sources = [
     "junit/src/org/chromium/net/HttpNegotiateAuthenticatorTest.java",
     "junit/src/org/chromium/net/NetworkTrafficAnnotationTagTest.java",
@@ -237,7 +233,6 @@ junit_binary("net_junit_tests") {
     "//base:base_java",
     "//base:base_java_test_support",
     "//base:base_junit_test_support",
-    "//build/android:build_java",
     "//third_party/hamcrest:hamcrest_java",
   ]
 }

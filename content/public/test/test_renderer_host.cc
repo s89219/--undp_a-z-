@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,8 @@
 
 #include "base/run_loop.h"
 #include "base/task/current_thread.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/browser/compositor/test/test_image_transport_factory.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -30,6 +30,7 @@
 #include "content/public/test/test_browser_context.h"
 #include "content/test/content_browser_consistency_checker.h"
 #include "content/test/test_navigation_url_loader_factory.h"
+#include "content/test/test_page_factory.h"
 #include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_frame_host_factory.h"
 #include "content/test/test_render_view_host.h"
@@ -40,9 +41,12 @@
 #include "third_party/blink/public/common/input/synthetic_web_input_event_builders.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_ANDROID)
+#include "ui/display/screen.h"
+#endif
+
 #if BUILDFLAG(IS_ANDROID)
 #include "ui/android/dummy_screen_android.h"
-#include "ui/display/screen.h"
 #endif
 
 #if BUILDFLAG(IS_WIN)
@@ -117,6 +121,7 @@ RenderViewHostTestEnabler::RenderViewHostTestEnabler(
     NavigationURLLoaderFactoryType url_loader_factory_type)
     : rph_factory_(new MockRenderProcessHostFactory()),
       asgh_factory_(new MockAgentSchedulingGroupHostFactory()),
+      page_factory_(new TestPageFactory()),
       rvh_factory_(new TestRenderViewHostFactory(rph_factory_.get(),
                                                  asgh_factory_.get())),
       rfh_factory_(new TestRenderFrameHostFactory()),
@@ -142,8 +147,9 @@ RenderViewHostTestEnabler::RenderViewHostTestEnabler(
   display::Screen::SetScreenInstance(screen_.get());
 #endif
 #if BUILDFLAG(IS_MAC)
-  if (base::ThreadTaskRunnerHandle::IsSet())
-    ui::WindowResizeHelperMac::Get()->Init(base::ThreadTaskRunnerHandle::Get());
+  if (base::SingleThreadTaskRunner::HasCurrentDefault())
+    ui::WindowResizeHelperMac::Get()->Init(
+        base::SingleThreadTaskRunner::GetCurrentDefault());
 #endif  // BUILDFLAG(IS_MAC)
 }
 
@@ -176,11 +182,11 @@ WebContents* RenderViewHostTestHarness::web_contents() {
 }
 
 RenderViewHost* RenderViewHostTestHarness::rvh() {
-  return web_contents()->GetMainFrame()->GetRenderViewHost();
+  return web_contents()->GetPrimaryMainFrame()->GetRenderViewHost();
 }
 
 RenderFrameHost* RenderViewHostTestHarness::main_rfh() {
-  return web_contents()->GetMainFrame();
+  return web_contents()->GetPrimaryMainFrame();
 }
 
 BrowserContext* RenderViewHostTestHarness::browser_context() {
@@ -189,7 +195,7 @@ BrowserContext* RenderViewHostTestHarness::browser_context() {
 
 MockRenderProcessHost* RenderViewHostTestHarness::process() {
   auto* contents = static_cast<TestWebContents*>(web_contents());
-  return contents->GetMainFrame()->GetProcess();
+  return contents->GetPrimaryMainFrame()->GetProcess();
 }
 
 void RenderViewHostTestHarness::DeleteContents() {
@@ -239,6 +245,10 @@ void RenderViewHostTestHarness::SetUp() {
 #if BUILDFLAG(IS_WIN)
   ole_initializer_ = std::make_unique<ui::ScopedOleInitializer>();
 #endif
+#if BUILDFLAG(IS_MAC)
+  screen_ = std::make_unique<display::ScopedNativeScreen>();
+#endif
+
 #if defined(USE_AURA)
   aura_test_helper_ = std::make_unique<aura::test::AuraTestHelper>(
       ImageTransportFactory::GetInstance()->GetContextFactory());

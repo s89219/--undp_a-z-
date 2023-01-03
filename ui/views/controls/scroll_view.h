@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -137,6 +137,9 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
 
   // Returns the visible region of the content View.
   gfx::Rect GetVisibleRect() const;
+
+  // Scrolls the `contents_` by an offset.
+  void ScrollByOffset(const gfx::PointF& offset);
 
   bool GetUseColorId() const { return !!background_color_id_; }
 
@@ -328,10 +331,10 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   raw_ptr<Viewport> header_viewport_ = nullptr;
 
   // Horizontal scrollbar.
-  raw_ptr<ScrollBar> horiz_sb_;
+  raw_ptr<ScrollBar, DanglingUntriaged> horiz_sb_;
 
   // Vertical scrollbar.
-  raw_ptr<ScrollBar> vert_sb_;
+  raw_ptr<ScrollBar, DanglingUntriaged> vert_sb_;
 
   // Corner view.
   std::unique_ptr<View> corner_view_;

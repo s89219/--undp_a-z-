@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,9 +29,9 @@ class RenderFrameHostDelegate;
 // be created, used and destroyed on the IO thread.
 class CONTENT_EXPORT MediaStreamUIProxy {
  public:
-  using ResponseCallback =
-      base::OnceCallback<void(const blink::MediaStreamDevices& devices,
-                              blink::mojom::MediaStreamRequestResult result)>;
+  using ResponseCallback = base::OnceCallback<void(
+      const blink::mojom::StreamDevicesSet& stream_devices_set,
+      blink::mojom::MediaStreamRequestResult result)>;
 
   using WindowIdCallback =
       base::OnceCallback<void(gfx::NativeViewId window_id)>;
@@ -117,7 +117,7 @@ class CONTENT_EXPORT MediaStreamUIProxy {
   friend class FakeMediaStreamUIProxy;
 
   void ProcessAccessRequestResponse(
-      const blink::MediaStreamDevices& devices,
+      blink::mojom::StreamDevicesSetPtr stream_devices_set,
       blink::mojom::MediaStreamRequestResult result);
   void ProcessStopRequestFromUI();
   void ProcessChangeSourceRequestFromUI(const DesktopMediaID& media_id);
@@ -150,6 +150,7 @@ class CONTENT_EXPORT FakeMediaStreamUIProxy : public MediaStreamUIProxy {
   void SetAvailableDevices(const blink::MediaStreamDevices& devices);
   void SetMicAccess(bool access);
   void SetCameraAccess(bool access);
+  void SetAudioShare(bool audio_share);
 
   // MediaStreamUIProxy overrides.
   void RequestAccess(std::unique_ptr<MediaStreamRequest> request,
@@ -170,11 +171,14 @@ class CONTENT_EXPORT FakeMediaStreamUIProxy : public MediaStreamUIProxy {
 
  private:
   // This is used for RequestAccess().
+  // TODO(crbug.com/1313021): Use blink::mojom::StreamDevices instead of
+  // blink::MediaStreamDevices.
   blink::MediaStreamDevices devices_;
 
   // These are used for CheckAccess().
-  bool mic_access_;
-  bool camera_access_;
+  bool mic_access_ = true;
+  bool camera_access_ = true;
+  bool audio_share_ = true;
 };
 
 }  // namespace content

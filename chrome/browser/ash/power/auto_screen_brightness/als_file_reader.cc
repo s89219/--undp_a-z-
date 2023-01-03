@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -124,17 +124,16 @@ void AlsFileReader::OnAlsPathReadAttempted(const std::string& path) {
 
 void AlsFileReader::RetryAlsPath() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(), FROM_HERE, base::BindOnce(&GetAlsPath),
+  blocking_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&GetAlsPath),
       base::BindOnce(&AlsFileReader::OnAlsPathReadAttempted,
                      weak_ptr_factory_.GetWeakPtr()));
 }
 
 void AlsFileReader::ReadAlsPeriodically() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&ReadAlsFromFile, ambient_light_path_),
+  blocking_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&ReadAlsFromFile, ambient_light_path_),
       base::BindOnce(&AlsFileReader::OnAlsRead,
                      weak_ptr_factory_.GetWeakPtr()));
 }

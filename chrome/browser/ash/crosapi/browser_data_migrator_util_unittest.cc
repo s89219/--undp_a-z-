@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 
 #include <map>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
@@ -19,6 +20,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/ash/crosapi/fake_migration_progress_tracker.h"
 #include "components/sync/base/model_type.h"
+#include "components/sync/base/storage_type.h"
 #include "components/sync/model/blocking_model_type_store_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/env_chromium.h"
@@ -29,7 +31,7 @@ namespace ash::browser_data_migrator_util {
 namespace {
 
 constexpr char kDownloadsPath[] = "Downloads";
-constexpr char kPolicyDataPath[] = "Policy";
+constexpr char kSharedProtoDBPath[] = "shared_proto_db";
 constexpr char kBookmarksPath[] = "Bookmarks";
 constexpr char kCookiesPath[] = "Cookies";
 constexpr char kCachePath[] = "Cache";
@@ -38,7 +40,12 @@ constexpr char kCodeCacheUMAName[] = "CodeCache";
 constexpr char kTextFileContent[] = "Hello, World!";
 constexpr int kTextFileSize = sizeof(kTextFileContent);
 constexpr char kMoveExtensionId[] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-constexpr syncer::ModelType kAshSyncDataType = syncer::ModelType::UNSPECIFIED;
+
+constexpr syncer::ModelType kAshSyncDataType =
+    browser_data_migrator_util::kAshOnlySyncDataTypes[0];
+constexpr syncer::ModelType kLacrosSyncDataType = syncer::ModelType::WEB_APPS;
+static_assert(!base::Contains(browser_data_migrator_util::kAshOnlySyncDataTypes,
+                              kLacrosSyncDataType));
 
 struct TargetItemComparator {
   bool operator()(const TargetItem& t1, const TargetItem& t2) const {
@@ -142,22 +149,29 @@ void SetUpSyncData(const base::FilePath& path,
   ASSERT_TRUE(status.ok());
 
   leveldb::WriteBatch batch;
-  const syncer::ModelType lacros_dt =
-      browser_data_migrator_util::kLacrosSyncDataTypes[0];
-
-  batch.Put(syncer::FormatDataPrefix(lacros_dt) + kMoveExtensionId,
-            "lacros_data");
-  batch.Put(syncer::FormatMetaPrefix(lacros_dt) + kMoveExtensionId,
-            "lacros_metadata");
-  batch.Put(syncer::FormatGlobalMetadataKey(lacros_dt),
-            "lacros_globalmetadata");
-
-  batch.Put(syncer::FormatDataPrefix(kAshSyncDataType) + kMoveExtensionId,
+  batch.Put(syncer::FormatDataPrefix(kAshSyncDataType,
+                                     syncer::StorageType::kUnspecified) +
+                kMoveExtensionId,
             "ash_data");
-  batch.Put(syncer::FormatMetaPrefix(kAshSyncDataType) + kMoveExtensionId,
+  batch.Put(syncer::FormatMetaPrefix(kAshSyncDataType,
+                                     syncer::StorageType::kUnspecified) +
+                kMoveExtensionId,
             "ash_metadata");
-  batch.Put(syncer::FormatGlobalMetadataKey(kAshSyncDataType),
+  batch.Put(syncer::FormatGlobalMetadataKey(kAshSyncDataType,
+                                            syncer::StorageType::kUnspecified),
             "ash_globalmetadata");
+
+  batch.Put(syncer::FormatDataPrefix(kLacrosSyncDataType,
+                                     syncer::StorageType::kUnspecified) +
+                kMoveExtensionId,
+            "lacros_data");
+  batch.Put(syncer::FormatMetaPrefix(kLacrosSyncDataType,
+                                     syncer::StorageType::kUnspecified) +
+                kMoveExtensionId,
+            "lacros_metadata");
+  batch.Put(syncer::FormatGlobalMetadataKey(kLacrosSyncDataType,
+                                            syncer::StorageType::kUnspecified),
+            "lacros_globalmetadata");
 
   leveldb::WriteOptions write_options;
   write_options.sync = true;
@@ -418,7 +432,7 @@ TEST(BrowserDataMigratorUtilTest, MigrateLevelDB) {
   EXPECT_EQ(expected_keys, keys);
 }
 
-TEST(BrowserDataMigratorUtilTest, MigrateSyncData) {
+TEST(BrowserDataMigratorUtilTest, MigrateSyncDataLevelDB) {
   base::ScopedTempDir scoped_temp_dir;
   ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
 
@@ -432,28 +446,39 @@ TEST(BrowserDataMigratorUtilTest, MigrateSyncData) {
   // Migrate Sync Data.
   const base::FilePath ash_db_path = db_path.AddExtension(".ash");
   const base::FilePath lacros_db_path = db_path.AddExtension(".lacros");
-  EXPECT_TRUE(MigrateSyncData(db_path, ash_db_path, lacros_db_path));
+  EXPECT_TRUE(MigrateSyncDataLevelDB(db_path, ash_db_path, lacros_db_path));
 
   // Check resulting Ash database.
   auto ash_db_map = ReadLevelDB(ash_db_path);
   std::map<std::string, std::string> expected_ash_db_map = {
-      {syncer::FormatDataPrefix(kAshSyncDataType) + kMoveExtensionId,
+      {syncer::FormatDataPrefix(kAshSyncDataType,
+                                syncer::StorageType::kUnspecified) +
+           kMoveExtensionId,
        "ash_data"},
-      {syncer::FormatMetaPrefix(kAshSyncDataType) + kMoveExtensionId,
+      {syncer::FormatMetaPrefix(kAshSyncDataType,
+                                syncer::StorageType::kUnspecified) +
+           kMoveExtensionId,
        "ash_metadata"},
-      {syncer::FormatGlobalMetadataKey(kAshSyncDataType), "ash_globalmetadata"},
+      {syncer::FormatGlobalMetadataKey(kAshSyncDataType,
+                                       syncer::StorageType::kUnspecified),
+       "ash_globalmetadata"},
   };
   EXPECT_EQ(expected_ash_db_map, ash_db_map);
 
   // Check resulting Lacros database.
   auto lacros_db_map = ReadLevelDB(lacros_db_path);
-  const syncer::ModelType lacros_dt =
-      browser_data_migrator_util::kLacrosSyncDataTypes[0];
   std::map<std::string, std::string> expected_lacros_db_map = {
-      {syncer::FormatDataPrefix(lacros_dt) + kMoveExtensionId, "lacros_data"},
-      {syncer::FormatMetaPrefix(lacros_dt) + kMoveExtensionId,
+      {syncer::FormatDataPrefix(kLacrosSyncDataType,
+                                syncer::StorageType::kUnspecified) +
+           kMoveExtensionId,
+       "lacros_data"},
+      {syncer::FormatMetaPrefix(kLacrosSyncDataType,
+                                syncer::StorageType::kUnspecified) +
+           kMoveExtensionId,
        "lacros_metadata"},
-      {syncer::FormatGlobalMetadataKey(lacros_dt), "lacros_globalmetadata"},
+      {syncer::FormatGlobalMetadataKey(kLacrosSyncDataType,
+                                       syncer::StorageType::kUnspecified),
+       "lacros_globalmetadata"},
   };
   EXPECT_EQ(expected_lacros_db_map, lacros_db_map);
 }
@@ -615,6 +640,47 @@ TEST(BrowserDataMigratorUtilTest, HasEnoughDiskSpace) {
   EXPECT_TRUE(HasEnoughDiskSpace(0, temp_dir.GetPath()));
 }
 
+TEST(BrowserDataMigratorUtilTest, IsAshOnlySyncDataType) {
+  // The types that should be recognized as Ash-only are stored in
+  // `browser_data_migrator_util::kAshOnlySyncDataTypes`.
+  // Then any of the following can be suffixed to the type name:
+  // - `kDataPrefix` = "-dt-"
+  // - `kMetadataPrefix` = "-md-"
+  // - `kGlobalMetadataKey` = "-GlobalMetadata"
+  // `kDataPrefix` and `kMetadataPrefix` are then followed by an id, while
+  // `kGlobalMetadataKey` is not.
+
+  const constexpr char* const kTypes[] = {
+      "app_list",
+      "arc_package",
+      "os_preferences",
+      "os_priority_preferences",
+      "printers",
+      "printers_authorization_servers",
+      "wifi_configurations",
+      "workspace_desk",
+  };
+
+  const constexpr char* const kSuffixes[] = {
+      "-dt-",
+      "-md-",
+  };
+
+  for (const char* const type : kTypes) {
+    for (const char* const suffix : kSuffixes) {
+      auto key = std::string(type) + std::string(suffix) + "random_id";
+      EXPECT_TRUE(IsAshOnlySyncDataType(key));
+    }
+    auto global_metadata_key = std::string(type) + "-GlobalMetadata";
+    EXPECT_TRUE(IsAshOnlySyncDataType(global_metadata_key));
+    auto global_metadata_key_with_id =
+        std::string(type) + "-GlobalMetadata" + "random_id";
+    EXPECT_FALSE(IsAshOnlySyncDataType(global_metadata_key_with_id));
+  }
+
+  EXPECT_FALSE(IsAshOnlySyncDataType("random_key"));
+}
+
 class BrowserDataMigratorUtilWithTargetsTest : public ::testing::Test {
  public:
   void SetUp() override {
@@ -632,7 +698,7 @@ class BrowserDataMigratorUtilWithTargetsTest : public ::testing::Test {
     // |- Downloads/     /* remain in ash */
     //     |- file
     //     |- file 2
-    // |- Policy         /* need to copy */
+    // |- shared_proto_db  /* need to copy */
     // |- Cache          /* deletable */
     // |- Code Cache/    /* deletable */
     //     |- file
@@ -655,7 +721,7 @@ class BrowserDataMigratorUtilWithTargetsTest : public ::testing::Test {
                                 kTextFileContent, kTextFileSize));
 
     // Need to copy items.
-    ASSERT_TRUE(base::WriteFile(profile_data_dir_.Append(kPolicyDataPath),
+    ASSERT_TRUE(base::WriteFile(profile_data_dir_.Append(kSharedProtoDBPath),
                                 kTextFileContent, kTextFileSize));
 
     // Deletable items.
@@ -705,7 +771,7 @@ TEST_F(BrowserDataMigratorUtilWithTargetsTest, GetTargetItems) {
 
   // Check for items that need copies in lacros.
   std::vector<TargetItem> expected_need_copy_items = {
-      {profile_data_dir_.Append(kPolicyDataPath), kTextFileSize,
+      {profile_data_dir_.Append(kSharedProtoDBPath), kTextFileSize,
        TargetItem::ItemType::kFile}};
   TargetItems need_copy_items =
       GetTargetItems(profile_data_dir_, ItemType::kNeedCopyForMove);
@@ -745,9 +811,9 @@ TEST_F(BrowserDataMigratorUtilWithTargetsTest, DryRunToCollectUMA) {
   const std::string uma_name_downloads =
       std::string(browser_data_migrator_util::kUserDataStatsRecorderDataSize) +
       "Downloads";
-  const std::string uma_name_policy =
+  const std::string uma_name_shared_proto_db =
       std::string(browser_data_migrator_util::kUserDataStatsRecorderDataSize) +
-      "Policy";
+      "SharedProtoDb";
   const std::string uma_name_cache =
       std::string(browser_data_migrator_util::kUserDataStatsRecorderDataSize) +
       "Cache";
@@ -761,7 +827,7 @@ TEST_F(BrowserDataMigratorUtilWithTargetsTest, DryRunToCollectUMA) {
                                      kTextFileSize / 1024 / 1024, 1);
   histogram_tester.ExpectBucketCount(uma_name_downloads,
                                      kTextFileSize * 2 / 1024 / 1024, 1);
-  histogram_tester.ExpectBucketCount(uma_name_policy,
+  histogram_tester.ExpectBucketCount(uma_name_shared_proto_db,
                                      kTextFileSize / 1024 / 1024, 1);
   histogram_tester.ExpectBucketCount(uma_name_cache,
                                      kTextFileSize / 1024 / 1024, 1);
@@ -838,7 +904,7 @@ TEST(BrowserDataMigratorUtilTest, UpdatePreferencesKeyByType) {
   // If a type other than string is found in a list, it will be left unchanged.
   base::Value::List* l = ash_dict.FindListByDottedPath(wrong_type_key);
   EXPECT_NE(nullptr, l);
-  EXPECT_EQ(3, l->size());
+  EXPECT_EQ(3u, l->size());
 
   // Test Lacros against expected results.
   d = lacros_dict.FindDictByDottedPath("extensions.settings");
@@ -846,7 +912,7 @@ TEST(BrowserDataMigratorUtilTest, UpdatePreferencesKeyByType) {
   EXPECT_EQ(expected_keys, CollectDictKeys(d));
   l = lacros_dict.FindListByDottedPath(wrong_type_key);
   EXPECT_NE(nullptr, l);
-  EXPECT_EQ(3, l->size());
+  EXPECT_EQ(3u, l->size());
 }
 
 TEST(BrowserDataMigratorUtilTest, MigratePreferencesContents) {
@@ -892,7 +958,7 @@ TEST(BrowserDataMigratorUtilTest, MigratePreferencesContents) {
   base::Value::List* ash_extension_list =
       ash_root_dict->FindListByDottedPath(extension_list_key);
   EXPECT_NE(nullptr, ash_extension_list);
-  EXPECT_EQ(2, ash_extension_list->size());
+  EXPECT_EQ(2u, ash_extension_list->size());
   EXPECT_EQ(kExtensionsAshOnly[0], (*ash_extension_list)[0].GetString());
   EXPECT_EQ(kExtensionsBothChromes[0], (*ash_extension_list)[1].GetString());
 
@@ -914,7 +980,7 @@ TEST(BrowserDataMigratorUtilTest, MigratePreferencesContents) {
   base::Value::List* lacros_extension_list =
       lacros_root_dict->FindListByDottedPath(extension_list_key);
   EXPECT_NE(nullptr, lacros_extension_list);
-  EXPECT_EQ(2, lacros_extension_list->size());
+  EXPECT_EQ(2u, lacros_extension_list->size());
   EXPECT_EQ(kExtensionsBothChromes[0], (*lacros_extension_list)[0].GetString());
   EXPECT_EQ(kMoveExtensionId, (*lacros_extension_list)[1].GetString());
 }

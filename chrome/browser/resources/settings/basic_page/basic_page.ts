@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,9 @@
  * @fileoverview
  * 'settings-basic-page' is the settings page containing the actual settings.
  */
-import 'chrome://resources/cr_elements/hidden_style_css.m.js';
-import 'chrome://resources/cr_elements/shared_style_css.m.js';
-import 'chrome://resources/cr_elements/shared_vars_css.m.js';
+import 'chrome://resources/cr_elements/cr_hidden_style.css.js';
+import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+import 'chrome://resources/cr_elements/cr_shared_vars.css.js';
 import 'chrome://resources/polymer/v3_0/iron-flex-layout/iron-flex-layout-classes.js';
 import '../appearance_page/appearance_page.js';
 import '../privacy_page/privacy_guide_promo.js';
@@ -18,65 +18,43 @@ import '../autofill_page/autofill_page.js';
 import '../controls/settings_idle_load.js';
 import '../on_startup_page/on_startup_page.js';
 import '../people_page/people_page.js';
+import '../performance_page/battery_page.js';
+import '../performance_page/performance_page.js';
 import '../reset_page/reset_profile_banner.js';
 import '../search_page/search_page.js';
 import '../settings_page/settings_section.js';
-import '../settings_page_css.js';
-// <if expr="chromeos_ash or chromeos_lacros">
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
-// </if>
-
-// <if expr="not chromeos_ash and not chromeos_lacros">
+import '../settings_page_styles.css.js';
+// <if expr="not is_chromeos">
 import '../default_browser_page/default_browser_page.js';
+// </if>
+// <if expr="not chromeos_ash">
+import '../languages_page/languages.js';
 
 // </if>
 
+import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {WebUIListenerMixin, WebUIListenerMixinInterface} from 'chrome://resources/js/web_ui_listener_mixin.js';
 import {beforeNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsIdleLoadElement} from '../controls/settings_idle_load.js';
 import {loadTimeData} from '../i18n_setup.js';
+// <if expr="not chromeos_ash">
+import {LanguageHelper, LanguagesModel} from '../languages_page/languages_types.js';
+// </if>
 import {PageVisibility} from '../page_visibility.js';
 import {SyncStatus} from '../people_page/sync_browser_proxy.js';
-import {PrefsMixin, PrefsMixinInterface} from '../prefs/prefs_mixin.js';
+import {PerformanceBrowserProxy, PerformanceBrowserProxyImpl} from '../performance_page/performance_browser_proxy.js';
+import {PrefsMixin} from '../prefs/prefs_mixin.js';
 import {MAX_PRIVACY_GUIDE_PROMO_IMPRESSION, PrivacyGuideBrowserProxy, PrivacyGuideBrowserProxyImpl} from '../privacy_page/privacy_guide/privacy_guide_browser_proxy.js';
 import {routes} from '../route.js';
-import {Route, RouteObserverMixin, RouteObserverMixinInterface, Router} from '../router.js';
+import {Route, RouteObserverMixin, Router} from '../router.js';
 import {getSearchManager, SearchResult} from '../search_settings.js';
-import {MainPageMixin, MainPageMixinInterface} from '../settings_page/main_page_mixin.js';
+import {MainPageMixin} from '../settings_page/main_page_mixin.js';
 
 import {getTemplate} from './basic_page.html.js';
 
-// <if expr="chromeos_ash or chromeos_lacros">
-const OS_BANNER_INTERACTION_METRIC_NAME =
-    'ChromeOS.Settings.OsBannerInteraction';
-
-/**
- * These values are persisted to logs and should not be renumbered or re-used.
- * See tools/metrics/histograms/enums.xml.
- * @enum {number}
- */
-const CrosSettingsOsBannerInteraction = {
-  NotShown: 0,
-  Shown: 1,
-  Clicked: 2,
-  Closed: 3,
-};
-// </if>
-
-// TODO(crbug.com/1234307): Remove when RouteObserverMixin is converted to
-// TypeScript.
-type Constructor<T> = new (...args: any[]) => T;
-
-const SettingsBasicPageElementBase =
-    PrefsMixin(MainPageMixin(
-        RouteObserverMixin(WebUIListenerMixin(PolymerElement)) as unknown as
-        Constructor<PolymerElement>)) as unknown as {
-      new (): PolymerElement & WebUIListenerMixinInterface &
-          PrefsMixinInterface & RouteObserverMixinInterface &
-          MainPageMixinInterface,
-    };
+const SettingsBasicPageElementBase = PrefsMixin(
+    MainPageMixin(RouteObserverMixin(WebUiListenerMixin(PolymerElement))));
 
 export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
   static get is() {
@@ -94,6 +72,19 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
         type: Object,
         notify: true,
       },
+
+      // <if expr="not chromeos_ash">
+      /**
+       * Read-only reference to the languages model provided by the
+       * 'settings-languages' instance.
+       */
+      languages: {
+        type: Object,
+        notify: true,
+      },
+
+      languageHelper: Object,
+      // </if>
 
       /**
        * Dictionary defining page visibility.
@@ -142,6 +133,16 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
         },
       },
 
+      // <if expr="not chromeos_ash">
+      enableDesktopDetailedLanguageSettings_: {
+        type: Boolean,
+        value() {
+          return loadTimeData.getBoolean(
+              'enableDesktopDetailedLanguageSettings');
+        },
+      },
+      // </if>
+
       /**
        * True if the basic page should currently display the privacy guide
        * promo.
@@ -161,14 +162,6 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
         value: false,
       },
 
-      // <if expr="chromeos_ash or chromeos_lacros">
-      showOSSettingsBanner_: {
-        type: Boolean,
-        computed: 'computeShowOSSettingsBanner_(' +
-            'prefs.settings.cros.show_os_banner.value, currentRoute_)',
-      },
-      // </if>
-
       currentRoute_: Object,
 
       /**
@@ -179,6 +172,14 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
         value: false,
         reflectToAttribute: true,
       },
+
+      /**
+       * Used to hide battery settings section if the device has no battery
+       */
+      showBatterySettings_: {
+        type: Boolean,
+        value: false,
+      },
     };
   }
 
@@ -188,19 +189,20 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
     ];
   }
 
+  // <if expr="not chromeos_ash">
+  languages?: LanguagesModel;
+  languageHelper: LanguageHelper;
+  private enableDesktopDetailedLanguageSettings_: boolean;
+  // </if>
   pageVisibility: PageVisibility;
   inSearchMode: boolean;
   advancedToggleExpanded: boolean;
   private hasExpandedSection_: boolean;
   private showResetProfileBanner_: boolean;
 
-  // <if expr="chromeos_ash or chromeos_lacros">
-  private showOSSettingsBanner_: boolean;
-  private osBannerShowMetricRecorded_: boolean = false;
-  // </if>
-
   private currentRoute_: Route;
   private advancedTogglingInProgress_: boolean;
+  private showBatterySettings_: boolean;
 
   private showPrivacyGuidePromo_: boolean;
   private privacyGuidePromoWasShown_: boolean;
@@ -208,6 +210,8 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
   private isChildUser_: boolean;
   private privacyGuideBrowserProxy_: PrivacyGuideBrowserProxy =
       PrivacyGuideBrowserProxyImpl.getInstance();
+  private performanceBrowserProxy_: PerformanceBrowserProxy =
+      PerformanceBrowserProxyImpl.getInstance();
 
   override ready() {
     super.ready();
@@ -219,10 +223,18 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
 
   override connectedCallback() {
     super.connectedCallback();
-    this.addWebUIListener(
+    this.addWebUiListener(
         'is-managed-changed', this.onIsManagedChanged_.bind(this));
-    this.addWebUIListener(
+    this.addWebUiListener(
         'sync-status-changed', this.onSyncStatusChanged_.bind(this));
+
+    if (loadTimeData.getBoolean('batterySaverModeAvailable')) {
+      this.addWebUiListener(
+          'device-has-battery-changed',
+          this.onDeviceHasBatteryChanged_.bind(this));
+      this.performanceBrowserProxy_.getDeviceHasBattery().then(
+          this.onDeviceHasBatteryChanged_.bind(this));
+    }
 
     this.currentRoute_ = Router.getInstance().getCurrentRoute();
   }
@@ -267,8 +279,8 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
   }
 
   private updatePrivacyGuidePromoVisibility_() {
-    if (this.pageVisibility.privacy === false ||
-        !loadTimeData.getBoolean('privacyGuideEnabled') || this.isManaged_ ||
+    if (!loadTimeData.getBoolean('showPrivacyGuide') ||
+        this.pageVisibility.privacy === false || this.isManaged_ ||
         this.isChildUser_ || this.prefs === undefined ||
         this.getPref('privacy_guide.viewed').value ||
         this.privacyGuideBrowserProxy_.getPromoImpressionCount() >=
@@ -300,6 +312,10 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
     // state as true, because the Settings route for privacy guide would still
     // be unavailable until the page is reloaded.
     this.isChildUser_ = this.isChildUser_ || !!syncStatus.childUser;
+  }
+
+  private onDeviceHasBatteryChanged_(deviceHasBattery: boolean) {
+    this.showBatterySettings_ = deviceHasBattery;
   }
 
   /**
@@ -336,50 +352,8 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
     });
   }
 
-  // <if expr="chromeos_ash or chromeos_lacros">
-  private computeShowOSSettingsBanner_(): boolean|undefined {
-    // this.prefs is implicitly used by this.getPref() below.
-    if (!this.prefs || !this.currentRoute_) {
-      return;
-    }
-    const showPref = this.getPref('settings.cros.show_os_banner').value;
-
-    // Banner only shows on the main page because direct navigations to a
-    // sub-page are unlikely to be due to a user looking for an OS setting.
-    const show = showPref && !this.currentRoute_.isSubpage();
-
-    // Record the show metric once. We can't record the metric in attached()
-    // because prefs might not be ready yet.
-    if (!this.osBannerShowMetricRecorded_) {
-      chrome.metricsPrivate.recordEnumerationValue(
-          OS_BANNER_INTERACTION_METRIC_NAME,
-          show ? CrosSettingsOsBannerInteraction.Shown :
-                 CrosSettingsOsBannerInteraction.NotShown,
-          Object.keys(CrosSettingsOsBannerInteraction).length);
-      this.osBannerShowMetricRecorded_ = true;
-    }
-    return show;
-  }
-
-  private onOSSettingsBannerClick_() {
-    // The label has a link that opens the page, so just record the metric.
-    chrome.metricsPrivate.recordEnumerationValue(
-        OS_BANNER_INTERACTION_METRIC_NAME,
-        CrosSettingsOsBannerInteraction.Clicked,
-        Object.keys(CrosSettingsOsBannerInteraction).length);
-  }
-
-  private onOSSettingsBannerClosed_() {
-    this.setPrefValue('settings.cros.show_os_banner', false);
-    chrome.metricsPrivate.recordEnumerationValue(
-        OS_BANNER_INTERACTION_METRIC_NAME,
-        CrosSettingsOsBannerInteraction.Closed,
-        Object.keys(CrosSettingsOsBannerInteraction).length);
-  }
-  // </if>
-
   // <if expr="chromeos_ash">
-  private onOpenChromeOSLanguagesSettingsClick_() {
+  private onOpenChromeOsLanguagesSettingsClick_() {
     const chromeOSLanguagesSettingsPath =
         loadTimeData.getString('chromeOSLanguagesSettingsPath');
     window.location.href =
@@ -442,6 +416,16 @@ export class SettingsBasicPageElement extends SettingsBasicPageElementBase {
 
   private showAdvancedSettings_(visibility?: boolean): boolean {
     return visibility !== false;
+  }
+
+  private showPerformancePage_(visibility?: boolean): boolean {
+    return visibility !== false &&
+        loadTimeData.getBoolean('highEfficiencyModeAvailable');
+  }
+
+  private showBatteryPage_(visibility?: boolean): boolean {
+    return visibility !== false &&
+        loadTimeData.getBoolean('batterySaverModeAvailable');
   }
 }
 

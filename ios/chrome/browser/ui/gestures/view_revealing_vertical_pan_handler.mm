@@ -1,18 +1,17 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/gestures/view_revealing_vertical_pan_handler.h"
 
 #import "base/check_op.h"
-#include "base/cxx17_backports.h"
-#include "base/ios/block_types.h"
-#include "base/logging.h"
-#include "base/mac/foundation_util.h"
+#import "base/cxx17_backports.h"
+#import "base/ios/block_types.h"
+#import "base/logging.h"
+#import "base/mac/foundation_util.h"
 #import "base/notreached.h"
 #import "ios/chrome/browser/ui/gestures/layout_switcher.h"
 #import "ios/chrome/browser/ui/gestures/pan_handler_scroll_view.h"
-#include "ios/chrome/browser/ui/util/ui_util.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -76,7 +75,7 @@ enum class ScrollViewTracking {
 
 @interface ViewRevealingVerticalPanHandler ()
 
-// Privately redeclare |currentState| as readwrite.
+// Privately redeclare `currentState` as readwrite.
 @property(nonatomic, readwrite, assign) ViewRevealState currentState;
 
 // The latest trigger that brought the view to the currentState (or nextState if
@@ -94,11 +93,11 @@ enum class ScrollViewTracking {
 // Set of UI elements which are animated during view reveal transitions.
 @property(nonatomic, strong) NSHashTable<id<ViewRevealingAnimatee>>* animatees;
 // The current state tracking whether the revealed view is undergoing a
-// transition of layout. This is |::Inactive| initially. It is set to |::Active|
-// when the transition layout is created.  It is set to |::Finishing| when the
+// transition of layout. This is `::Inactive` initially. It is set to `::Active`
+// when the transition layout is created.  It is set to `::Finishing` when the
 // layout transition should start to finish. (This takes time because of
 // finishing animations/UIKit restrictions). Finally, in the transition's
-// completion block, this is set back to |::Inactive|.
+// completion block, this is set back to `::Inactive`.
 @property(nonatomic, assign) LayoutTransitionState layoutTransitionState;
 // Whether new pan gestures should be handled. Set to NO when a pan gesture ends
 // and set to YES when a pan gesture starts while layoutInTransition is NO.
@@ -306,6 +305,10 @@ enum class ScrollViewTracking {
     if (!weakSelf.animator.reversed) {
       weakSelf.currentState = weakSelf.nextState;
     }
+    // Animator crashes if stopAnimation is called during this completer. It can
+    // happened if a listener to `didAnimateViewRevealFromState:toState`
+    // triggers a new state change. Make it nil to avoid calling that.
+    weakSelf.animator = nil;
     [weakSelf didAnimateViewRevealFromState:startState
                                     toState:weakSelf.currentState];
   }];
@@ -377,7 +380,7 @@ enum class ScrollViewTracking {
 // Notifies the layout switcher that a layout transition should happen.
 - (void)willTransitionToLayout:(LayoutSwitcherState)nextState {
   // Don't do anything if there isn't a layout switcher available. Especially
-  // don't change the |layoutTransitionState|.
+  // don't change the `layoutTransitionState`.
   if (!self.layoutSwitcherProvider.layoutSwitcher) {
     return;
   }
@@ -413,10 +416,10 @@ enum class ScrollViewTracking {
 }
 
 // Notifies the layout switcher that a layout transition finished with
-// |success|.
+// `success`.
 - (void)didTransitionToLayoutSuccessfully:(BOOL)success {
   // Don't do anything if there isn't a layout switcher available. Especially
-  // don't change the |layoutTransitionState|.
+  // don't change the `layoutTransitionState`.
   if (!self.layoutSwitcherProvider.layoutSwitcher) {
     return;
   }
@@ -775,7 +778,7 @@ enum class ScrollViewTracking {
 #pragma mark - Private
 
 // If self.deferredScrollEnabled is YES, returns YES if the pan gesture should
-// be active for the given |scrollView| due to a top overscroll and sets up the
+// be active for the given `scrollView` due to a top overscroll and sets up the
 // initial pan state.
 - (BOOL)checkDeferredDraggingForPanHandlerScrollView:
     (PanHandlerScrollView*)scrollView {

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -140,13 +140,6 @@ class NavigationSimulator {
   // to drive the navigation to completion.
   static std::unique_ptr<NavigationSimulator> CreateFromPending(
       NavigationController& controller);
-
-  // Creates a NavigationSimulator that will be used to simulate a
-  // renderer-initiated navigation of a fenced frame root (|render_frame_host|)
-  // to |original_url|.
-  static std::unique_ptr<NavigationSimulator> CreateForFencedFrame(
-      const GURL& original_url,
-      RenderFrameHost* fenced_frame_root);
 
   virtual ~NavigationSimulator() = default;
 

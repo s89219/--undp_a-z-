@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{۱ روز قبل}one{# روز قبل}other{# روز قبل}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{۱ دقیقه قبل}one{# دقیقه قبل}other{# دقیقه قبل}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{۱ دقیقه}one{# دقیقه}other{# دقیقه}}</translation>
+<translation id="1181037720776840403">حذف</translation>
 <translation id="1243314992276662751">بارگذاری</translation>
 <translation id="1266864766717917324"><ph name="CONTENT_TYPE" /> هم‌رسانی نشد</translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">استفاده از تراکم بالا</translation>
 <translation id="2482878487686419369">اعلان‌ها</translation>
 <translation id="2497284189126895209">همه فایل‌ها</translation>
-<translation id="2498950423397131220">شناور</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">کالیبراسیون تمام شد</translation>
 <translation id="252373100621549798">نمایش ناشناس</translation>
@@ -73,7 +73,7 @@
 <translation id="3126026824346185272">Ctrl</translation>
 <translation id="3157931365184549694">بازیابی</translation>
 <translation id="3183922693828471536">پیمایش به اینجا</translation>
-<translation id="3234408098842461169">پیکان پایین</translation>
+<translation id="3234408098842461169">کلید پایین‌بر</translation>
 <translation id="3291688615589870984">{DAYS,plural, =1{۱ روز}one{# روز}other{# روز}}</translation>
 <translation id="3295886253693811851">برقراری تماس از</translation>
 <translation id="3306688585798492231">نمایشگر داخلی</translation>
@@ -186,7 +186,7 @@
 <translation id="8090736967111090568">شماره از <ph name="ORIGIN" /></translation>
 <translation id="8106081041558092062">{HOURS,plural, =1{۱ ساعت قبل}one{# ساعت قبل}other{# ساعت قبل}}</translation>
 <translation id="8131263257437993507">{SECONDS,plural, =1{۱ ثانیه باقی مانده است}one{# ثانیه باقی مانده است}other{# ثانیه باقی مانده است}}</translation>
-<translation id="8134065097954893699">درحال تازه‌سازی این صفحه</translation>
+<translation id="8134065097954893699">درحال بار کردن مجدد این صفحه</translation>
 <translation id="815598010540052116">پیمایش به پایین</translation>
 <translation id="8179976553408161302">ورود</translation>
 <translation id="8210608804940886430">صفحه پایین</translation>

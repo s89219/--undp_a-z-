@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
  * This file contains typedefs for chromeOS OOBE properties.
  */
 
-/* #export */ var OobeTypes = {};
+export const OobeTypes = {};
 
 /**
  * ChromeOS OOBE language descriptor.
@@ -123,6 +123,25 @@ OobeTypes.SecurityTokenPinDialogParameters;
  *   package_name: string,
  * }}
  */
+OobeTypes.RecommendedAppsOldExpectedAppData;
+
+/**
+ * Data type that is expected for each app that is shown on the RecommendApps
+ * screen.
+ * @typedef {{
+ *   title: string,
+ *   icon_url: string,
+ *   category: string,
+ *   description: string,
+ *   content_rating: number,
+ *   content_rating_icon: string,
+ *   in_app_purchases: boolean,
+ *   was_installed: boolean,
+ *   contains_ads: boolean,
+ *   package_name: string,
+ *   optimized_for_chrome: boolean,
+ * }}
+ */
 OobeTypes.RecommendedAppsExpectedAppData;
 
 /**
@@ -152,6 +171,7 @@ OobeTypes.FatalErrorCode = {
  * @enum {string}
  */
 OobeTypes.EnrollmentStep = {
+  LOADING: 'loading',
   SIGNIN: 'signin',
   AD_JOIN: 'ad-join',
   WORKING: 'working',
@@ -187,7 +207,7 @@ OobeTypes.GaiaDialogButtonsType = {
 OobeTypes.LicenseType = {
   /* NONE: 0, not used in js */
   ENTERPRISE: 1,
-  /* EDUCATION: 2, not used in js */
+  EDUCATION: 2,
   KIOSK: 3,
 };
 

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,13 @@
 #include "extensions/browser/extension_api_frame_id_map.h"
 #include "extensions/browser/extension_error.h"
 #include "extensions/browser/updater/scoped_extension_updater_keep_alive.h"
+#include "extensions/common/permissions/permission_set.h"
 
 namespace extensions {
 
 namespace {
 
-ExtensionsBrowserClient* g_extension_browser_client = NULL;
+ExtensionsBrowserClient* g_extension_browser_client = nullptr;
 
 }  // namespace
 
@@ -141,11 +142,6 @@ bool ExtensionsBrowserClient::IsExtensionTelemetryServiceEnabled(
   return false;
 }
 
-bool ExtensionsBrowserClient::
-    IsExtensionTelemetryRemoteHostContactedSignalEnabled() const {
-  return false;
-}
-
 void ExtensionsBrowserClient::NotifyExtensionRemoteHostContacted(
     content::BrowserContext* context,
     const ExtensionId& extension_id,
@@ -166,5 +162,16 @@ void ExtensionsBrowserClient::GetFavicon(
     base::CancelableTaskTracker* tracker,
     base::OnceCallback<void(scoped_refptr<base::RefCountedMemory> bitmap_data)>
         callback) const {}
+
+std::vector<content::BrowserContext*>
+ExtensionsBrowserClient::GetRelatedContextsForExtension(
+    content::BrowserContext* browser_context,
+    const Extension& extension) const {
+  return {browser_context};
+}
+
+void ExtensionsBrowserClient::AddAdditionalAllowedHosts(
+    const PermissionSet& desired_permissions,
+    PermissionSet* granted_permissions) const {}
 
 }  // namespace extensions

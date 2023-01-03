@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,9 @@
 
 #include "base/callback.h"
 #include "base/time/time.h"
+#include "components/feed/core/v2/test/proto_printer.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 // Some functionality shared among feed tests.
 namespace feed {
@@ -33,6 +36,13 @@ const base::TimeDelta kEpsilon = base::Milliseconds(5);
                                << want___ << "\nBut got:\n" \
                                << got___;                   \
   }
+
+MATCHER_P(EqualsProto, message, ToTextProto(message)) {
+  std::string expected_serialized, actual_serialized;
+  message.SerializeToString(&expected_serialized);
+  arg.SerializeToString(&actual_serialized);
+  return expected_serialized == actual_serialized;
+}
 
 // Execute a runloop until `criteria` is true. If the criteria are not true
 // after 1000 iterations, ASSERT with the content of

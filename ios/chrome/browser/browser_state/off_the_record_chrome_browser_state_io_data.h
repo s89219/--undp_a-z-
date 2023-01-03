@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,7 +59,7 @@ class OffTheRecordChromeBrowserStateIOData : public ChromeBrowserStateIOData {
     void LazyInitialize() const;
 
     // Collect references to context getters in reverse order, i.e. last item
-    // will be main request getter. This list is passed to |io_data_|
+    // will be main request getter. This list is passed to `io_data_`
     // for invalidation on IO thread.
     std::unique_ptr<IOSChromeURLRequestContextGetterVector>
     GetAllContextGetters();

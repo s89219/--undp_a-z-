@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,10 @@
 #include <utility>
 #include <vector>
 
-#include "ash/services/nearby/public/mojom/nearby_connections.mojom.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/nearby_sharing/nearby_connections_manager.h"
+#include "chrome/browser/nearby_sharing/public/cpp/nearby_connections_manager.h"
+#include "chromeos/ash/services/nearby/public/mojom/nearby_connections.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 class NearbyConnection;
@@ -60,6 +60,7 @@ class FakeNearbyConnectionsManager
   absl::optional<std::vector<uint8_t>> GetRawAuthenticationToken(
       const std::string& endpoint_id) override;
   void UpgradeBandwidth(const std::string& endpoint_id) override;
+  base::WeakPtr<NearbyConnectionsManager> GetWeakPtr() override;
 
   void SetRawAuthenticationToken(const std::string& endpoint_id,
                                  std::vector<uint8_t> token);
@@ -146,6 +147,8 @@ class FakeNearbyConnectionsManager
       payload_status_listeners_;
   std::map<int64_t, PayloadPtr> incoming_payloads_;
   std::map<int64_t, base::FilePath> registered_payload_paths_;
+
+  base::WeakPtrFactory<FakeNearbyConnectionsManager> weak_ptr_factory_{this};
 };
 
 #endif  // CHROME_BROWSER_NEARBY_SHARING_FAKE_NEARBY_CONNECTIONS_MANAGER_H_

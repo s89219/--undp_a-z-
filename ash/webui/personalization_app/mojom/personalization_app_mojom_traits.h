@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,12 @@
 #include <vector>
 
 #include "ash/constants/ambient_animation_theme.h"
+#include "ash/public/cpp/ambient/ambient_ui_model.h"
 #include "ash/public/cpp/ambient/common/ambient_settings.h"
 #include "ash/public/cpp/default_user_image.h"
 #include "ash/public/cpp/personalization_app/user_display_info.h"
 #include "ash/public/cpp/wallpaper/wallpaper_types.h"
+#include "ash/style/color_palette_controller.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom-forward.h"
 #include "ash/webui/personalization_app/proto/backdrop_wallpaper.pb.h"
 #include "base/unguessable_token.h"
@@ -91,6 +93,21 @@ struct StructTraits<ash::personalization_app::mojom::UserInfoDataView,
 };
 
 template <>
+struct StructTraits<
+    ash::personalization_app::mojom::DeprecatedSourceInfoDataView,
+    ash::default_user_image::DeprecatedSourceInfo> {
+  static const std::u16string& author(
+      const ash::default_user_image::DeprecatedSourceInfo&
+          deprecated_source_info);
+  static const GURL& website(
+      const ash::default_user_image::DeprecatedSourceInfo&
+          deprecated_source_info);
+  static bool Read(
+      ash::personalization_app::mojom::DeprecatedSourceInfoDataView data,
+      ash::default_user_image::DeprecatedSourceInfo* out);
+};
+
+template <>
 struct StructTraits<ash::personalization_app::mojom::DefaultUserImageDataView,
                     ash::default_user_image::DefaultUserImage> {
   static int index(
@@ -98,6 +115,9 @@ struct StructTraits<ash::personalization_app::mojom::DefaultUserImageDataView,
   static const std::u16string& title(
       const ash::default_user_image::DefaultUserImage& default_user_image);
   static const GURL& url(
+      const ash::default_user_image::DefaultUserImage& default_user_image);
+  static const absl::optional<ash::default_user_image::DeprecatedSourceInfo>&
+  source_info(
       const ash::default_user_image::DefaultUserImage& default_user_image);
   static bool Read(
       ash::personalization_app::mojom::DefaultUserImageDataView data,
@@ -130,6 +150,24 @@ struct EnumTraits<ash::personalization_app::mojom::TemperatureUnit,
   static MojomTemperatureUnit ToMojom(ash::AmbientModeTemperatureUnit input);
   static bool FromMojom(MojomTemperatureUnit input,
                         ash::AmbientModeTemperatureUnit* output);
+};
+
+template <>
+struct EnumTraits<ash::personalization_app::mojom::AmbientUiVisibility,
+                  ash::AmbientUiVisibility> {
+  using MojomAmbientUiVisibility =
+      ::ash::personalization_app::mojom::AmbientUiVisibility;
+  static MojomAmbientUiVisibility ToMojom(ash::AmbientUiVisibility input);
+  static bool FromMojom(MojomAmbientUiVisibility input,
+                        ash::AmbientUiVisibility* output);
+};
+
+template <>
+struct EnumTraits<ash::personalization_app::mojom::ColorScheme,
+                  ash::ColorScheme> {
+  using MojomColorScheme = ::ash::personalization_app::mojom::ColorScheme;
+  static MojomColorScheme ToMojom(ash::ColorScheme input);
+  static bool FromMojom(MojomColorScheme input, ash::ColorScheme* output);
 };
 
 }  // namespace mojo

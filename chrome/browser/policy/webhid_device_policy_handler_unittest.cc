@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -197,57 +197,59 @@ TEST_F(WebHidDevicePolicyHandlerTest, ApplyPolicySettingsWithDevicePolicy) {
   ASSERT_TRUE(pref_value->is_list());
 
   // Ensure that the kManagedWebHidAllowDevicesForUrls pref is set correctly.
-  const auto& list = pref_value->GetListDeprecated();
+  const auto& list = pref_value->GetList();
   ASSERT_EQ(2ul, list.size());
 
   // Check the first item's devices list.
-  const base::Value* devices = list[0].FindKey(kDevicesKey);
-  ASSERT_TRUE(devices);
+  const base::Value::List* first_devices_list =
+      list[0].GetDict().FindList(kDevicesKey);
+  ASSERT_TRUE(first_devices_list);
 
-  const auto& first_devices_list = devices->GetListDeprecated();
-  ASSERT_EQ(2ul, first_devices_list.size());
+  ASSERT_EQ(2ul, first_devices_list->size());
 
-  const base::Value* vendor_id = first_devices_list[0].FindKey(kVendorIdKey);
+  const base::Value* vendor_id =
+      (*first_devices_list)[0].GetDict().Find(kVendorIdKey);
   ASSERT_TRUE(vendor_id);
   EXPECT_EQ(base::Value(kTestVendorId1), *vendor_id);
 
-  const base::Value* product_id = first_devices_list[0].FindKey(kProductIdKey);
+  const base::Value* product_id =
+      (*first_devices_list)[0].GetDict().Find(kProductIdKey);
   ASSERT_TRUE(product_id);
   EXPECT_EQ(base::Value(kTestProductId), *product_id);
 
-  vendor_id = first_devices_list[1].FindKey(kVendorIdKey);
+  vendor_id = (*first_devices_list)[1].GetDict().Find(kVendorIdKey);
   ASSERT_TRUE(vendor_id);
   EXPECT_EQ(base::Value(kTestVendorId2), *vendor_id);
 
-  product_id = first_devices_list[1].FindKey(kProductIdKey);
+  product_id = (*first_devices_list)[1].GetDict().Find(kProductIdKey);
   EXPECT_FALSE(product_id);
 
   // Check the first item's urls list.
-  const base::Value* urls = list[0].FindKey(kUrlsKey);
+  const base::Value::List* urls = list[0].GetDict().FindList(kUrlsKey);
   ASSERT_TRUE(urls);
-  ASSERT_EQ(2ul, urls->GetListDeprecated().size());
-  EXPECT_EQ(base::Value("https://origin1"), urls->GetListDeprecated()[0]);
-  EXPECT_EQ(base::Value("https://origin2"), urls->GetListDeprecated()[1]);
+  ASSERT_EQ(2ul, urls->size());
+  EXPECT_EQ(base::Value("https://origin1"), (*urls)[0]);
+  EXPECT_EQ(base::Value("https://origin2"), (*urls)[1]);
 
   // Check the second item's devices list.
-  devices = list[1].FindKey(kDevicesKey);
-  ASSERT_TRUE(devices);
+  const base::Value::List* second_devices_list =
+      list[1].GetDict().FindList(kDevicesKey);
+  ASSERT_TRUE(second_devices_list);
 
-  const auto& second_devices_list = devices->GetListDeprecated();
-  ASSERT_EQ(1ul, second_devices_list.size());
+  ASSERT_EQ(1ul, second_devices_list->size());
 
-  vendor_id = second_devices_list[0].FindKey(kVendorIdKey);
+  vendor_id = (*second_devices_list)[0].GetDict().Find(kVendorIdKey);
   ASSERT_TRUE(vendor_id);
   EXPECT_EQ(base::Value(kTestVendorId3), *vendor_id);
 
-  product_id = second_devices_list[0].FindKey(kProductIdKey);
+  product_id = (*second_devices_list)[0].GetDict().Find(kProductIdKey);
   EXPECT_FALSE(product_id);
 
   // Check the second item's urls list.
-  urls = list[1].FindKey(kUrlsKey);
+  urls = list[1].GetDict().FindList(kUrlsKey);
   ASSERT_TRUE(urls);
-  ASSERT_EQ(1ul, urls->GetListDeprecated().size());
-  EXPECT_EQ(base::Value("https://origin3"), urls->GetListDeprecated()[0]);
+  ASSERT_EQ(1ul, urls->size());
+  EXPECT_EQ(base::Value("https://origin3"), (*urls)[0]);
 }
 
 TEST_F(WebHidDevicePolicyHandlerTest, ApplyPolicySettingsWithUsagePolicy) {
@@ -272,57 +274,58 @@ TEST_F(WebHidDevicePolicyHandlerTest, ApplyPolicySettingsWithUsagePolicy) {
 
   // Ensure that the kManagedWebHidAllowDevicesWithHidUsagesForUrls pref is set
   // correctly.
-  const auto& list = pref_value->GetListDeprecated();
+  const auto& list = pref_value->GetList();
   ASSERT_EQ(2ul, list.size());
 
   // Check the first item's usages list.
-  const base::Value* usages = list[0].FindKey(kUsagesKey);
-  ASSERT_TRUE(usages);
+  const base::Value::List* first_usages_list =
+      list[0].GetDict().FindList(kUsagesKey);
+  ASSERT_TRUE(first_usages_list);
 
-  const auto& first_usages_list = usages->GetListDeprecated();
-  ASSERT_EQ(2ul, first_usages_list.size());
+  ASSERT_EQ(2ul, first_usages_list->size());
 
-  const base::Value* usage_page = first_usages_list[0].FindKey(kUsagePageKey);
+  const base::Value* usage_page =
+      (*first_usages_list)[0].GetDict().Find(kUsagePageKey);
   ASSERT_TRUE(usage_page);
   EXPECT_EQ(base::Value(kTestUsagePage1), *usage_page);
 
-  const base::Value* usage = first_usages_list[0].FindKey(kUsageKey);
+  const base::Value* usage = (*first_usages_list)[0].GetDict().Find(kUsageKey);
   ASSERT_TRUE(usage);
   EXPECT_EQ(base::Value(kTestUsage), *usage);
 
-  usage_page = first_usages_list[1].FindKey(kUsagePageKey);
+  usage_page = (*first_usages_list)[1].GetDict().Find(kUsagePageKey);
   ASSERT_TRUE(usage_page);
   EXPECT_EQ(base::Value(kTestUsagePage2), *usage_page);
 
-  usage = first_usages_list[1].FindKey(kUsageKey);
+  usage = (*first_usages_list)[1].GetDict().Find(kUsageKey);
   EXPECT_FALSE(usage);
 
   // Check the first item's urls list.
-  const base::Value* urls = list[0].FindKey(kUrlsKey);
+  const base::Value::List* urls = list[0].GetDict().FindList(kUrlsKey);
   ASSERT_TRUE(urls);
-  ASSERT_EQ(2ul, urls->GetListDeprecated().size());
-  EXPECT_EQ(base::Value("https://origin1"), urls->GetListDeprecated()[0]);
-  EXPECT_EQ(base::Value("https://origin2"), urls->GetListDeprecated()[1]);
+  ASSERT_EQ(2ul, urls->size());
+  EXPECT_EQ(base::Value("https://origin1"), (*urls)[0]);
+  EXPECT_EQ(base::Value("https://origin2"), (*urls)[1]);
 
   // Check the second item's usages list.
-  usages = list[1].FindKey(kUsagesKey);
-  ASSERT_TRUE(usages);
+  const base::Value::List* second_usages_list =
+      list[1].GetDict().FindList(kUsagesKey);
+  ASSERT_TRUE(second_usages_list);
 
-  const auto& second_usages_list = usages->GetListDeprecated();
-  ASSERT_EQ(1ul, second_usages_list.size());
+  ASSERT_EQ(1ul, second_usages_list->size());
 
-  usage_page = second_usages_list[0].FindKey(kUsagePageKey);
+  usage_page = (*second_usages_list)[0].GetDict().Find(kUsagePageKey);
   ASSERT_TRUE(usage_page);
   EXPECT_EQ(base::Value(kTestUsagePage3), *usage_page);
 
-  usage = second_usages_list[0].FindKey(kUsageKey);
+  usage = (*second_usages_list)[0].GetDict().Find(kUsageKey);
   EXPECT_FALSE(usage);
 
   // Check the second item's urls list.
-  urls = list[1].FindKey(kUrlsKey);
+  urls = list[1].GetDict().FindList(kUrlsKey);
   ASSERT_TRUE(urls);
-  ASSERT_EQ(1ul, urls->GetListDeprecated().size());
-  EXPECT_EQ(base::Value("https://origin3"), urls->GetListDeprecated()[0]);
+  ASSERT_EQ(1ul, urls->size());
+  EXPECT_EQ(base::Value("https://origin3"), (*urls)[0]);
 }
 
 struct WebHidInvalidPolicyTestData {
@@ -352,7 +355,8 @@ TEST_P(WebHidInvalidPolicyTest, CheckPolicySettingsWithInvalidPolicy) {
   PolicyErrorMap errors;
   bool success = handler->CheckPolicySettings(policy, &errors);
   EXPECT_EQ(success, test_data.expected_pref != nullptr);
-  EXPECT_EQ(test_data.expected_errors, errors.GetErrors(test_data.policy_name));
+  EXPECT_EQ(test_data.expected_errors,
+            errors.GetErrorMessages(test_data.policy_name));
 
   EXPECT_FALSE(store_->GetValue(test_data.pref_name, /*result=*/nullptr));
 
@@ -382,8 +386,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0]\": Missing or invalid required "
-        u"property: devices",
+        u"Error at WebHidAllowDevicesForUrls[0]: Schema validation error: "
+        u"Missing or invalid required property: devices",
         "[]",
     },
     {
@@ -399,8 +403,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0]\": Missing or invalid required "
-        u"property: urls",
+        u"Error at WebHidAllowDevicesForUrls[0]: Schema validation error: "
+        u"Missing or invalid required property: urls",
         "[]",
     },
     {
@@ -420,8 +424,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].devices.items[0]\": Unknown "
-        u"property: serial_number",
+        u"Error at WebHidAllowDevicesForUrls[0].devices[0]: Schema validation "
+        u"error: Unknown property: serial_number",
         R"(
         [
           {
@@ -452,8 +456,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].devices.items[0].vendor_id\": "
-        u"Invalid value for integer",
+        u"Error at WebHidAllowDevicesForUrls[0].devices[0].vendor_id: Schema "
+        u"validation error: Invalid value for integer",
         R"(
         [
           {
@@ -481,8 +485,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].devices.items[0].product_id\": "
-        u"Invalid value for integer",
+        u"Error at WebHidAllowDevicesForUrls[0].devices[0].product_id: Schema "
+        u"validation error: Invalid value for integer",
         R"(
         [
           {
@@ -509,8 +513,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].devices.items[0]\": Missing or "
-        u"invalid required property: vendor_id",
+        u"Error at WebHidAllowDevicesForUrls[0].devices[0]: Schema validation "
+        u"error: Missing or invalid required property: vendor_id",
         R"(
         [
           {
@@ -537,8 +541,7 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].urls.items[0]\": Invalid URL: "
-        u"not-a-valid-url",
+        u"Error at WebHidAllowDevicesForUrls[0].urls[0]: Invalid URL.",
         R"(
         [
           {
@@ -569,7 +572,7 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].urls.items[0]\": Invalid URL: ",
+        u"Error at WebHidAllowDevicesForUrls[0].urls[0]: Invalid URL.",
         R"(
         [
           {
@@ -601,9 +604,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].urls.items[0]\": Invalid URL: "
-        u"invalid-url-1\nSchema validation error at "
-        u"\"items[0].urls.items[1]\": Invalid URL: invalid-url-2",
+        u"Error at WebHidAllowDevicesForUrls[0].urls[0]: Invalid URL.\n"
+        u"Error at WebHidAllowDevicesForUrls[0].urls[1]: Invalid URL.",
         R"(
         [
           {
@@ -620,6 +622,51 @@ WebHidInvalidPolicyTestData kTestData[]{
         ])",
     },
     {
+        key::kWebHidAllowDevicesForUrls,
+        prefs::kManagedWebHidAllowDevicesForUrls,
+        R"(
+        [
+          {
+            "devices": [
+              {
+                "vendor_id": 1234
+              }
+            ],
+            "urls": [
+              123
+            ]
+          }
+        ])",
+        u"Error at WebHidAllowDevicesForUrls[0].urls[0]: Schema validation "
+        u"error: Policy type mismatch: expected: \"string\", actual: "
+        u"\"integer\".\nError at WebHidAllowDevicesForUrls[0].urls[0]: Invalid "
+        u"URL.",
+        R"(
+        [
+          {
+            "devices": [
+              {
+                "vendor_id": 1234
+              }
+            ],
+            "urls": [
+            ]
+          }
+        ])",
+    },
+    {
+        key::kWebHidAllowDevicesForUrls,
+        prefs::kManagedWebHidAllowDevicesForUrls,
+        R"(
+        [123]
+        )",
+        u"Error at WebHidAllowDevicesForUrls[0]: Schema validation error: "
+        u"Policy type mismatch: expected: \"dictionary\", actual: \"integer\".",
+        R"(
+        []
+        )",
+    },
+    {
         key::kWebHidAllowDevicesWithHidUsagesForUrls,
         prefs::kManagedWebHidAllowDevicesWithHidUsagesForUrls,
         R"(
@@ -630,8 +677,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0]\": Missing or invalid required "
-        u"property: usages",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0]: Schema "
+        u"validation error: Missing or invalid required property: usages",
         "[]",
     },
     {
@@ -647,8 +694,9 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0]\": Missing or invalid required "
-        u"property: urls",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0]: Schema "
+        u"validation "
+        u"error: Missing or invalid required property: urls",
         "[]",
     },
     {
@@ -668,8 +716,9 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].usages.items[0]\": Unknown "
-        u"property: serial_number",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].usages[0]: "
+        u"Schema "
+        u"validation error: Unknown property: serial_number",
         R"(
         [
           {
@@ -700,8 +749,9 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].usages.items[0].usage_page\": "
-        u"Invalid value for integer",
+        u"Error at "
+        u"WebHidAllowDevicesWithHidUsagesForUrls[0].usages[0].usage_page: "
+        u"Schema validation error: Invalid value for integer",
         R"(
         [
           {
@@ -729,8 +779,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].usages.items[0].usage\": "
-        u"Invalid value for integer",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].usages[0].usage: "
+        u"Schema validation error: Invalid value for integer",
         R"(
         [
           {
@@ -757,8 +807,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].usages.items[0]\": Missing or "
-        u"invalid required property: usage_page",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].usages[0]: Schema "
+        u"validation error: Missing or invalid required property: usage_page",
         R"(
         [
           {
@@ -785,8 +835,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].urls.items[0]\": Invalid URL: "
-        u"not-a-valid-url",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].urls[0]: Invalid "
+        u"URL.",
         R"(
         [
           {
@@ -817,7 +867,8 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].urls.items[0]\": Invalid URL: ",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].urls[0]: Invalid "
+        u"URL.",
         R"(
         [
           {
@@ -849,9 +900,10 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
-        u"Schema validation error at \"items[0].urls.items[0]\": Invalid URL: "
-        u"invalid-url-1\nSchema validation error at "
-        u"\"items[0].urls.items[1]\": Invalid URL: invalid-url-2",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].urls[0]: Invalid "
+        u"URL.\n"
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].urls[1]: Invalid "
+        u"URL.",
         R"(
         [
           {
@@ -866,6 +918,52 @@ WebHidInvalidPolicyTestData kTestData[]{
             ]
           }
         ])",
+    },
+    {
+        key::kWebHidAllowDevicesWithHidUsagesForUrls,
+        prefs::kManagedWebHidAllowDevicesWithHidUsagesForUrls,
+        R"(
+        [
+          {
+            "usages": [
+              {
+                "usage_page": 1234
+              }
+            ],
+            "urls": [
+              123
+            ]
+          }
+        ])",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0].urls[0]: Schema "
+        u"validation error: Policy type mismatch: expected: \"string\", "
+        u"actual: \"integer\".\nError at "
+        u"WebHidAllowDevicesWithHidUsagesForUrls[0].urls[0]: Invalid URL.",
+        R"(
+        [
+          {
+            "usages": [
+              {
+                "usage_page": 1234
+              }
+            ],
+            "urls": [
+            ]
+          }
+        ])",
+    },
+    {
+        key::kWebHidAllowDevicesWithHidUsagesForUrls,
+        prefs::kManagedWebHidAllowDevicesWithHidUsagesForUrls,
+        R"(
+        [123]
+        )",
+        u"Error at WebHidAllowDevicesWithHidUsagesForUrls[0]: Schema "
+        u"validation error: Policy type mismatch: expected: \"dictionary\", "
+        u"actual: \"integer\".",
+        R"(
+        []
+        )",
     },
 };
 

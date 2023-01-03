@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,9 +52,13 @@ class DownloadToolbarButtonView : public ToolbarButton,
   void Disable() override;
   void UpdateDownloadIcon() override;
   void ShowDetails() override;
+  void HideDetails() override;
+  bool IsShowingDetails() override;
+  bool IsFullscreenWithParentViewHidden() override;
 
   // ToolbarButton:
   void UpdateIcon() override;
+  void OnThemeChanged() override;
 
   // DownloadBubbleNavigationHandler:
   void OpenPrimaryDialog() override;
@@ -65,6 +69,11 @@ class DownloadToolbarButtonView : public ToolbarButton,
   DownloadBubbleUIController* bubble_controller() {
     return bubble_controller_.get();
   }
+
+  DownloadDisplayController* display_controller() { return controller_.get(); }
+
+  SkColor GetIconColor() const;
+  void SetIconColor(SkColor color);
 
  private:
   // views::Button overrides:
@@ -89,6 +98,10 @@ class DownloadToolbarButtonView : public ToolbarButton,
   raw_ptr<views::BubbleDialogDelegate> bubble_delegate_ = nullptr;
   raw_ptr<View> primary_view_ = nullptr;
   raw_ptr<DownloadBubbleSecurityView> security_view_ = nullptr;
+
+  // Override for the icon color. Used for PWAs, which don't have full
+  // ThemeProvider color support.
+  absl::optional<SkColor> icon_color_;
 
   gfx::SlideAnimation scanning_animation_{this};
 

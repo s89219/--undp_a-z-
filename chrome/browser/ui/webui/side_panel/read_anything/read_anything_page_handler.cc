@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,52 +10,86 @@
 
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/views/side_panel/read_anything/read_anything_coordinator.h"
+#include "chrome/browser/ui/views/side_panel/read_anything/read_anything_controller.h"
+#include "content/public/browser/web_ui.h"
+#include "ui/accessibility/ax_tree_update.h"
+
+using read_anything::mojom::Page;
+using read_anything::mojom::PageHandler;
+using read_anything::mojom::ReadAnythingTheme;
 
 ReadAnythingPageHandler::ReadAnythingPageHandler(
     mojo::PendingRemote<Page> page,
-    mojo::PendingReceiver<PageHandler> receiver)
-    : receiver_(this, std::move(receiver)), page_(std::move(page)) {
+    mojo::PendingReceiver<PageHandler> receiver,
+    content::WebUI* web_ui)
+    : browser_(chrome::FindLastActive()),
+      receiver_(this, std::move(receiver)),
+      page_(std::move(page)),
+      web_ui_(web_ui) {
   // Register |this| as a |ReadAnythingModel::Observer| with the coordinator
   // for the component. This will allow the IPC to update the front-end web ui.
 
-  browser_ = chrome::FindLastActive();
   if (!browser_)
     return;
-  ReadAnythingCoordinator::FromBrowser(browser_)->AddModelObserver(this);
-  delegate_ =
-      ReadAnythingCoordinator::FromBrowser(browser_)->GetPageHandlerDelegate();
+
+  coordinator_ = ReadAnythingCoordinator::FromBrowser(browser_);
+  if (coordinator_) {
+    coordinator_->AddObserver(this);
+    coordinator_->AddModelObserver(this);
+  }
+
+  delegate_ = static_cast<ReadAnythingPageHandler::Delegate*>(
+      coordinator_->GetController());
+  if (delegate_)
+    delegate_->OnUIReady();
 }
 
 ReadAnythingPageHandler::~ReadAnythingPageHandler() {
-  // Remove |this| from the observer list of |ReadAnythingModel|.
-  if (browser_) {
-    ReadAnythingCoordinator* coordinator =
-        ReadAnythingCoordinator::FromBrowser(browser_);
+  if (!coordinator_)
+    return;
 
-    // `Browser` is guaranteed to live as long as the ReadAnythingCoordinator
-    // since it is BrowserUserData (due to how UserData works - Browser owns
-    // this UserData).
-    DCHECK(coordinator);
-    coordinator->RemoveModelObserver(this);
-  }
+  // If |this| is destroyed before the |ReadAnythingCoordinator|, then remove
+  // |this| from the observer lists. In the cases where the coordinator is
+  // destroyed first, these will have been destroyed before this call.
+  coordinator_->RemoveObserver(this);
+  coordinator_->RemoveModelObserver(this);
+
+  delegate_ = static_cast<ReadAnythingPageHandler::Delegate*>(
+      coordinator_->GetController());
+  if (delegate_)
+    delegate_->OnUIDestroyed();
 }
 
-void ReadAnythingPageHandler::ShowUI() {
-  delegate_->OnUIShown();
+void ReadAnythingPageHandler::OnCoordinatorDestroyed() {
+  coordinator_ = nullptr;
+  delegate_ = nullptr;
 }
 
-void ReadAnythingPageHandler::OnContentUpdated(
-    const std::vector<ContentNodePtr>& content_nodes) {
-  // Make a copy of |content_nodes|, which is stored in the model, before moving
-  // across IPC to the WebUI.
-  std::vector<ContentNodePtr> content_nodes_copy;
-  for (auto it = content_nodes.begin(); it != content_nodes.end(); ++it)
-    content_nodes_copy.push_back(it->Clone());
-  page_->ShowContent(std::move(content_nodes_copy));
+void ReadAnythingPageHandler::OnAXTreeSnapshotted(
+    const ui::AXTreeUpdate& snapshot) {
+  page_->OnAXTreeSnapshotted(snapshot);
 }
 
-void ReadAnythingPageHandler::OnFontNameUpdated(
-    const std::string& new_font_name) {
-  page_->OnFontNameChange(new_font_name);
+void ReadAnythingPageHandler::OnReadAnythingThemeChanged(
+    const std::string& font_name,
+    double font_scale,
+    ui::ColorId foreground_color_id,
+    ui::ColorId background_color_id,
+    read_anything::mojom::Spacing line_spacing,
+    read_anything::mojom::Spacing letter_spacing) {
+  content::WebContents* web_contents = web_ui_->GetWebContents();
+  SkColor foreground_skcolor =
+      web_contents->GetColorProvider().GetColor(foreground_color_id);
+  SkColor background_skcolor =
+      web_contents->GetColorProvider().GetColor(background_color_id);
+
+  page_->OnThemeChanged(
+      ReadAnythingTheme::New(font_name, font_scale, foreground_skcolor,
+                             background_skcolor, line_spacing, letter_spacing));
+}
+
+void ReadAnythingPageHandler::OnLinkClicked(const GURL& url,
+                                            bool open_in_new_tab) {
+  if (delegate_)
+    delegate_->OnLinkClicked(url, open_in_new_tab);
 }

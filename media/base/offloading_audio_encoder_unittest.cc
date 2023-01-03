@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,7 +35,8 @@ class OffloadingAudioEncoderTest : public testing::Test {
     auto mock_audio_encoder = std::make_unique<MockAudioEncoder>();
     mock_audio_encoder_ = mock_audio_encoder.get();
     work_runner_ = base::ThreadPool::CreateSequencedTaskRunner({});
-    callback_runner_ = base::SequencedTaskRunnerHandle::Get();
+    callback_runner_ = base::SequencedTaskRunner::GetCurrentDefault();
+    EXPECT_CALL(*mock_audio_encoder_, DisablePostedCallbacks());
     offloading_encoder_ = std::make_unique<OffloadingAudioEncoder>(
         std::move(mock_audio_encoder), work_runner_, callback_runner_);
     EXPECT_CALL(*mock_audio_encoder_, OnDestruct()).WillOnce(Invoke([this]() {

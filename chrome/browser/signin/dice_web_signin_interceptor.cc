@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,17 @@
 #include <string>
 
 #include "base/check.h"
+#include "base/feature_list.h"
 #include "base/hash/hash.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/enterprise/browser_management/management_service_factory.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/new_tab_page/chrome_colors/generated_colors_info.h"
@@ -33,6 +35,7 @@
 #include "chrome/browser/signin/dice_signed_in_profile_creator.h"
 #include "chrome/browser/signin/dice_web_signin_interceptor_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
+#include "chrome/browser/signin/signin_features.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -120,13 +123,15 @@ DiceWebSigninInterceptor::Delegate::BubbleParameters::BubbleParameters(
     AccountInfo primary_account,
     SkColor profile_highlight_color,
     bool show_guest_option,
-    bool show_link_data_option)
+    bool show_link_data_option,
+    bool show_managed_disclaimer)
     : interception_type(interception_type),
       intercepted_account(intercepted_account),
       primary_account(primary_account),
       profile_highlight_color(profile_highlight_color),
       show_guest_option(show_guest_option),
-      show_link_data_option(show_link_data_option) {}
+      show_link_data_option(show_link_data_option),
+      show_managed_disclaimer(show_managed_disclaimer) {}
 
 DiceWebSigninInterceptor::Delegate::BubbleParameters::BubbleParameters(
     const BubbleParameters& copy) = default;
@@ -317,7 +322,7 @@ void DiceWebSigninInterceptor::MaybeInterceptWebSignin(
     on_account_info_update_timeout_.Reset(base::BindOnce(
         &DiceWebSigninInterceptor::OnExtendedAccountInfoFetchTimeout,
         base::Unretained(this)));
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE, on_account_info_update_timeout_.callback(),
         base::Seconds(5));
     account_info_update_observation_.Observe(identity_manager_.get());
@@ -415,6 +420,12 @@ bool DiceWebSigninInterceptor::ShouldEnforceEnterpriseProfileSeparation(
 bool DiceWebSigninInterceptor::ShouldShowEnterpriseDialog(
     const AccountInfo& intercepted_account_info) const {
   DCHECK(intercepted_account_info.IsValid());
+
+  if (!base::FeatureList::IsEnabled(
+          kShowEnterpriseDialogForAllManagedAccountsSignin)) {
+    return false;
+  }
+
   // Check if the intercepted account is managed.
   if (!intercepted_account_info.IsManaged())
     return false;
@@ -532,15 +543,21 @@ void DiceWebSigninInterceptor::OnInterceptionReadyToBeProcessed(
       return;
     } else {
       interception_type = SigninInterceptionType::kEnterpriseForced;
-      show_link_data_option = signin_util::
-          ProfileSeparationAllowsKeepingUnmanagedBrowsingDataInManagedProfile(
-              profile_,
-              intercepted_account_level_policy_value_.value_or(std::string()));
+      auto primary_account_id =
+          identity_manager_->GetPrimaryAccountId(signin::ConsentLevel::kSignin);
+      show_link_data_option =
+          (primary_account_id.empty() ||
+           primary_account_id == info.account_id) &&
+          signin_util::
+              ProfileSeparationAllowsKeepingUnmanagedBrowsingDataInManagedProfile(
+                  profile_, intercepted_account_level_policy_value_.value_or(
+                                std::string()));
       RecordSigninInterceptionHeuristicOutcome(
           SigninInterceptionHeuristicOutcome::kInterceptEnterpriseForced);
     }
   } else if (ShouldShowEnterpriseDialog(info)) {
     interception_type = SigninInterceptionType::kEnterpriseAcceptManagement;
+    show_link_data_option = true;
     RecordSigninInterceptionHeuristicOutcome(
         SigninInterceptionHeuristicOutcome::kInterceptEnterprise);
   } else if (!profile_->GetPrefs()->GetBoolean(
@@ -574,10 +591,17 @@ void DiceWebSigninInterceptor::OnInterceptionReadyToBeProcessed(
     return;
   }
 
+  bool show_managed_disclaimer =
+      *interception_type != SigninInterceptionType::kProfileSwitch &&
+      base::FeatureList::IsEnabled(kSigninInterceptBubbleV2) &&
+      (info.IsManaged() ||
+       policy::ManagementServiceFactory::GetForPlatform()->IsManaged());
+
   Delegate::BubbleParameters bubble_parameters(
       *interception_type, info, GetPrimaryAccountInfo(identity_manager_),
       GetAutogeneratedThemeColors(profile_color).frame_color,
-      /*show_guest_option=*/false, show_link_data_option);
+      /*show_guest_option=*/false, show_link_data_option,
+      show_managed_disclaimer);
 
   base::OnceCallback<void(SigninInterceptionResult)> callback;
   switch (*interception_type) {
@@ -808,19 +832,19 @@ std::string DiceWebSigninInterceptor::GetPersistentEmailHash(
 
 void DiceWebSigninInterceptor::RecordProfileCreationDeclined(
     const std::string& email) {
-  DictionaryPrefUpdate update(profile_->GetPrefs(),
+  ScopedDictPrefUpdate update(profile_->GetPrefs(),
                               kProfileCreationInterceptionDeclinedPref);
   std::string key = GetPersistentEmailHash(email);
-  absl::optional<int> declined_count = update->FindIntKey(key);
-  update->SetIntKey(key, declined_count.value_or(0) + 1);
+  absl::optional<int> declined_count = update->FindInt(key);
+  update->Set(key, declined_count.value_or(0) + 1);
 }
 
 bool DiceWebSigninInterceptor::HasUserDeclinedProfileCreation(
     const std::string& email) const {
-  const base::Value* pref_data = profile_->GetPrefs()->GetDictionary(
-      kProfileCreationInterceptionDeclinedPref);
+  const base::Value::Dict& pref_data =
+      profile_->GetPrefs()->GetDict(kProfileCreationInterceptionDeclinedPref);
   absl::optional<int> declined_count =
-      pref_data->FindIntKey(GetPersistentEmailHash(email));
+      pref_data.FindInt(GetPersistentEmailHash(email));
   // Check if the user declined 2 times.
   constexpr int kMaxProfileCreationDeclinedCount = 2;
   return declined_count &&
@@ -852,7 +876,7 @@ void DiceWebSigninInterceptor::
       &DiceWebSigninInterceptor::
           OnAccountLevelManagedAccountsSigninRestrictionReceived,
       base::Unretained(this), /*timed_out=*/true, account_info, std::string()));
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, on_intercepted_account_level_policy_value_timeout_.callback(),
       base::Seconds(5));
 }

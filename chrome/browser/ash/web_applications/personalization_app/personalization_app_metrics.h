@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 #define CHROME_BROWSER_ASH_WEB_APPLICATIONS_PERSONALIZATION_APP_PERSONALIZATION_APP_METRICS_H_
 
 #include "ash/constants/ambient_animation_theme.h"
+#include "ash/constants/personalization_entry_point.h"
+#include "ash/webui/personalization_app/mojom/personalization_app.mojom-shared.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 // This enum is used to define the buckets for an enumerated UMA histogram.
 // Hence,
@@ -28,6 +29,8 @@ constexpr char kAmbientModeAnimationThemeHistogramName[] =
     "Ash.Personalization.AmbientMode.AnimationTheme";
 constexpr char kPersonalizationThemeColorModeHistogramName[] =
     "Ash.Personalization.Theme.ColorMode";
+constexpr char kPersonalizationKeyboardBacklightColorHistogramName[] =
+    "Ash.Personalization.KeyboardBacklight.Color";
 
 // -----------------------------------------------------------------------------
 // Histograms
@@ -37,7 +40,10 @@ void LogPersonalizationTheme(ColorMode color_mode);
 
 void LogAmbientModeAnimationTheme(ash::AmbientAnimationTheme animation_theme);
 
-}  // namespace personalization_app
-}  // namespace ash
+void LogPersonalizationEntryPoint(ash::PersonalizationEntryPoint entry_point);
+
+void LogKeyboardBacklightColor(mojom::BacklightColor backlight_color);
+
+}  // namespace ash::personalization_app
 
 #endif  // CHROME_BROWSER_ASH_WEB_APPLICATIONS_PERSONALIZATION_APP_PERSONALIZATION_APP_METRICS_H_

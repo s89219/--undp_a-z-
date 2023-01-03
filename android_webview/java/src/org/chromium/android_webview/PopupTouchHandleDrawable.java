@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,6 +28,7 @@ import org.chromium.base.annotations.NativeMethods;
 import org.chromium.content_public.browser.GestureListenerManager;
 import org.chromium.content_public.browser.GestureStateListenerWithScroll;
 import org.chromium.content_public.browser.WebContents;
+import org.chromium.ui.base.ViewUtils;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.display.DisplayAndroid.DisplayAndroidObserver;
 import org.chromium.ui.resources.HandleViewResources;
@@ -144,7 +145,8 @@ public class PopupTouchHandleDrawable extends View implements DisplayAndroidObse
         mParentPositionListener = (x, y) -> updateParentPosition(x, y);
         mGestureStateListener = new GestureStateListenerWithScroll() {
             @Override
-            public void onScrollStarted(int scrollOffsetX, int scrollOffsetY) {
+            public void onScrollStarted(
+                    int scrollOffsetX, int scrollOffsetY, boolean isDirectionUp) {
                 setIsScrolling(true);
             }
             @Override
@@ -152,7 +154,8 @@ public class PopupTouchHandleDrawable extends View implements DisplayAndroidObse
                 setIsScrolling(false);
             }
             @Override
-            public void onFlingStartGesture(int scrollOffsetY, int scrollExtentY) {
+            public void onFlingStartGesture(
+                    int scrollOffsetY, int scrollExtentY, boolean isDirectionUp) {
                 // Fling accounting is unreliable in WebView, as the embedder
                 // can override onScroll() and suppress fling ticking. At best
                 // we have to rely on the scroll offset changing to temporarily
@@ -262,7 +265,6 @@ public class PopupTouchHandleDrawable extends View implements DisplayAndroidObse
         if (orientationChanged || mirroringChanged) scheduleInvalidate();
     }
 
-    @SuppressLint("NewApi")
     private void updateDrawableAndRequestLayout() {
         mNeedsUpdateDrawable = false;
 
@@ -272,7 +274,10 @@ public class PopupTouchHandleDrawable extends View implements DisplayAndroidObse
 
         if (mDrawable != null) mDrawable.setAlpha((int) (255 * mAlpha));
 
-        if (!isInLayout()) requestLayout();
+        if (!isInLayout()) {
+            ViewUtils.requestLayout(
+                    this, "PopupTouchHandleDrawable.updateDrawableAndRequestLayout");
+        }
     }
 
     private void updateParentPosition(int parentPositionX, int parentPositionY) {

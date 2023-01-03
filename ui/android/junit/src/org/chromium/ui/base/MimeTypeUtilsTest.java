@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,7 @@ import org.chromium.url.GURL;
  * Tests for {@link MimeTypeUtils}, verifying behavior across OS versions.
  */
 @RunWith(BaseRobolectricTestRunner.class)
+@SuppressWarnings("DoNotMock") // Mocking GURL
 public class MimeTypeUtilsTest {
     @Mock
     private GURL mMockedUrl;

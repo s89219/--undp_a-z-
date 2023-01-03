@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,8 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/location.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_request.h"
@@ -109,7 +109,7 @@ class OpenURLObserver : public WebContentsObserver {
     DCHECK(callback_);
 
     scoped_refptr<base::SequencedTaskRunner> task_runner =
-        base::SequencedTaskRunnerHandle::Get();
+        base::SequencedTaskRunner::GetCurrentDefault();
     // TODO(falken): Does this need to be asynchronous?
     task_runner->PostTask(FROM_HERE,
                           base::BindOnce(std::move(callback_), rfh_id));
@@ -169,7 +169,7 @@ void DidOpenURL(OpenURLCallback callback, WebContents* web_contents) {
   static_cast<WebContentsImpl*>(web_contents)->Activate();
 
   RenderFrameHostImpl* rfhi =
-      static_cast<RenderFrameHostImpl*>(web_contents->GetMainFrame());
+      static_cast<RenderFrameHostImpl*>(web_contents->GetPrimaryMainFrame());
   new OpenURLObserver(web_contents,
                       rfhi->frame_tree_node()->frame_tree_node_id(),
                       std::move(callback));
@@ -413,7 +413,7 @@ void FocusWindowClient(ServiceWorkerContainerHost* container_host,
   FrameTreeNode* frame_tree_node = render_frame_host->frame_tree_node();
 
   // Focus the frame in the frame tree node, in case it has changed.
-  frame_tree_node->frame_tree()->SetFocusedFrame(
+  frame_tree_node->frame_tree().SetFocusedFrame(
       frame_tree_node, render_frame_host->GetSiteInstance()->group());
 
   // Focus the frame's view to make sure the frame is now considered as focused.
@@ -457,7 +457,7 @@ void OpenWindow(const GURL& url,
   }
 
   // The following code is a rough copy of Navigator::RequestOpenURL. That
-  // function can't be used directly since there is no render frame host yet
+  // function can't be used directly since there is no RenderFrameHost yet
   // that the navigation will occur in.
 
   OpenURLParams params(
@@ -503,7 +503,8 @@ void NavigateClient(const GURL& url,
   // navigation. We can't proceed with the navigation and rely on the usual
   // mechanism to disallow (PrerenderNavigationThrottle), because
   // RequestOpenURL() crashes if called by a prerendering main frame.
-  if (rfhi->is_main_frame() && rfhi->frame_tree()->is_prerendering()) {
+  if (rfhi->frame_tree_node()->GetFrameType() ==
+      FrameType::kPrerenderMainFrame) {
     DidNavigate(context, script_url.DeprecatedGetOriginAsURL(), key,
                 std::move(callback), GlobalRenderFrameHostId());
     return;
@@ -523,16 +524,17 @@ void NavigateClient(const GURL& url,
 
   int frame_tree_node_id = rfhi->frame_tree_node()->frame_tree_node_id();
   Navigator& navigator = rfhi->frame_tree_node()->navigator();
+  // Service workers don't have documents, so it's ok to use nullopt for
+  // `initiator_base_url` in the following call.
   navigator.RequestOpenURL(
       rfhi, url, nullptr /* initiator_frame_token */,
       ChildProcessHost::kInvalidUniqueID /* initiator_process_id */,
-      url::Origin::Create(script_url), nullptr /* post_body */,
-      std::string() /* extra_headers */,
+      url::Origin::Create(script_url), /* initiator_base_url= */ absl::nullopt,
+      nullptr /* post_body */, std::string() /* extra_headers */,
       Referrer::SanitizeForRequest(
           url, Referrer(script_url, network::mojom::ReferrerPolicy::kDefault)),
       WindowOpenDisposition::CURRENT_TAB,
       false /* should_replace_current_entry */, false /* user_gesture */,
-      false /* is_unfenced_top_navigation */,
       blink::mojom::TriggeringEventInfo::kUnknown,
       std::string() /* href_translate */, nullptr /* blob_url_loader_factory */,
       absl::nullopt);
@@ -553,7 +555,7 @@ void GetClient(ServiceWorkerContainerHost* container_host,
     blink::mojom::ServiceWorkerClientInfoPtr info = GetWindowClientInfo(
         container_host->GetRenderFrameHostId(), container_host->create_time(),
         container_host->client_uuid());
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), std::move(info)));
     return;
   }
@@ -567,7 +569,7 @@ void GetClient(ServiceWorkerContainerHost* container_host,
       /*is_focused=*/false,
       blink::mojom::ServiceWorkerClientLifecycleState::kActive,
       base::TimeTicks(), container_host->create_time());
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(client_info)));
 }
 

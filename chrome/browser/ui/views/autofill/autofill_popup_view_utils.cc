@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,12 @@
 #include <algorithm>
 
 #include "base/cxx17_backports.h"
+#include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/permission_bubble/permission_prompt_bubble_view.h"
+#include "chrome/browser/ui/views/permissions/permission_prompt_bubble_view.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/constants.h"
@@ -308,6 +309,13 @@ bool BoundsOverlapWithOpenPermissionsPrompt(
   return permission_bubble_view->GetWidget()
       ->GetWindowBoundsInScreen()
       .Intersects(screen_bounds);
+}
+
+bool BoundsOverlapWithPictureInPictureWindow(const gfx::Rect& screen_bounds) {
+  absl::optional<gfx::Rect> pip_window_bounds =
+      PictureInPictureWindowManager::GetInstance()
+          ->GetPictureInPictureWindowBounds();
+  return pip_window_bounds && pip_window_bounds->Intersects(screen_bounds);
 }
 
 bool PopupMayExceedContentAreaBounds(content::WebContents* web_contents) {

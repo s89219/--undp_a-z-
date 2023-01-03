@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include <memory>
 #include <string>
 
-#include "chrome/browser/ui/quick_answers/quick_answers_access_token_fetcher.h"
 #include "chromeos/components/quick_answers/public/cpp/controller/quick_answers_controller.h"
 #include "chromeos/components/quick_answers/quick_answers_client.h"
 #include "chromeos/components/quick_answers/quick_answers_model.h"
@@ -22,9 +21,6 @@ class QuickAnswersUiController;
 class QuickAnswersControllerImpl : public QuickAnswersController,
                                    public quick_answers::QuickAnswersDelegate {
  public:
-  using AccessTokenCallback =
-      base::OnceCallback<void(const std::string& access_token)>;
-
   QuickAnswersControllerImpl();
   QuickAnswersControllerImpl(const QuickAnswersControllerImpl&) = delete;
   QuickAnswersControllerImpl& operator=(const QuickAnswersControllerImpl&) =
@@ -59,7 +55,6 @@ class QuickAnswersControllerImpl : public QuickAnswersController,
   void OnNetworkError() override;
   void OnRequestPreprocessFinished(
       const quick_answers::QuickAnswersRequest& processed_request) override;
-  void RequestAccessToken(AccessTokenCallback callback) override;
 
   // Retry sending quick answers request to backend.
   void OnRetryQuickAnswersRequest();
@@ -104,9 +99,6 @@ class QuickAnswersControllerImpl : public QuickAnswersController,
   std::unique_ptr<QuickAnswersState> quick_answers_state_;
 
   std::unique_ptr<QuickAnswersUiController> quick_answers_ui_controller_;
-
-  std::unique_ptr<QuickAnswersAccessTokenFetcher>
-      quick_answers_access_token_fetcher_;
 
   // The last received QuickAnswer from client.
   std::unique_ptr<quick_answers::QuickAnswer> quick_answer_;

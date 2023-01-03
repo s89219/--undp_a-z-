@@ -1,9 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/permissions/notification_blocked_message_delegate_android.h"
 
+#include "base/android/jni_android.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "components/messages/android/mock_message_dispatcher_bridge.h"
 #include "components/permissions/permission_prompt.h"
@@ -98,7 +100,7 @@ class NotificationBlockedMessageDelegateAndroidTest
   std::unique_ptr<NotificationBlockedMessageDelegate> controller_;
   messages::MockMessageDispatcherBridge message_dispatcher_bridge_;
   std::unique_ptr<MockDelegate> delegate_;
-  permissions::PermissionRequestManager* manager_ = nullptr;
+  raw_ptr<permissions::PermissionRequestManager> manager_ = nullptr;
 };
 
 void NotificationBlockedMessageDelegateAndroidTest::SetUp() {

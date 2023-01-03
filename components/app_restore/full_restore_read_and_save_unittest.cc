@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,9 @@
 #include "components/app_restore/restore_data.h"
 #include "components/app_restore/window_info.h"
 #include "components/app_restore/window_properties.h"
-#include "components/services/app_service/public/mojom/types.mojom.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
+#include "components/services/app_service/public/cpp/intent.h"
+#include "components/services/app_service/public/cpp/intent_util.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
@@ -316,7 +318,7 @@ class FullRestoreReadAndSaveTest : public testing::Test {
     window->SetProperty(aura::client::kAppType,
                         static_cast<int>(ash::AppType::LACROS));
     window->SetProperty(app_restore::kLacrosWindowId,
-                        std::string(kLacrosWindowId));
+                        std::string(lacros_window_id));
     window->SetProperty(app_restore::kWindowIdKey, restore_session_id);
     window->SetProperty(app_restore::kRestoreWindowIdKey, restore_window_id);
     return window;
@@ -812,6 +814,11 @@ TEST_F(FullRestoreReadAndSaveTest, ArcWindowRestore) {
   ASSERT_TRUE(restore_data);
 
   FullRestoreReadHandler* read_handler = FullRestoreReadHandler::GetInstance();
+  // The following is necessary for making `ShouldUseFullRestoreArcData()` and
+  // `read_handler->IsFullRestoreRunning()` return true;
+  read_handler->SetActiveProfilePath(GetPath());
+  read_handler->SetStartTimeForProfile(GetPath());
+
   FullRestoreReadHandlerTestApi read_test_api(read_handler);
   ASSERT_TRUE(read_test_api.GetArcReadHander());
   EXPECT_EQ(1u, read_test_api.GetArcWindowIdMap().size());
@@ -1052,7 +1059,7 @@ TEST_F(FullRestoreReadAndSaveTest,
   // Add a Chrome app launch info.
   SaveAppLaunchInfo(
       GetPath(), std::make_unique<app_restore::AppLaunchInfo>(
-                     kAppId, apps::mojom::LaunchContainer::kLaunchContainerNone,
+                     kAppId, apps::LaunchContainer::kLaunchContainerNone,
                      WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
                      std::vector<base::FilePath>{}, nullptr));
   const LacrosSaveHandler* lacros_save_handler = test_api.GetLacrosSaveHander();
@@ -1109,12 +1116,12 @@ TEST_F(FullRestoreReadAndSaveTest,
   base::OneShotTimer* timer = save_handler->GetTimerForTesting();
 
   // Add a Chrome app launch info.
-  auto intent = apps::mojom::Intent::New();
+  auto intent = std::make_unique<apps::Intent>(apps_util::kIntentActionSend);
   intent->activity_name = "activity_name";
   SaveAppLaunchInfo(
       GetPath(),
       std::make_unique<app_restore::AppLaunchInfo>(
-          kAppId, apps::mojom::LaunchContainer::kLaunchContainerNone,
+          kAppId, apps::LaunchContainer::kLaunchContainerNone,
           WindowOpenDisposition::CURRENT_TAB, display::kInvalidDisplayId,
           std::vector<base::FilePath>{base::FilePath(kFilePath1),
                                       base::FilePath(kFilePath2)},

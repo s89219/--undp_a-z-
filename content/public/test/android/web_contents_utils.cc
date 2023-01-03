@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/result_codes.h"
 #include "content/public/test/android/content_test_jni/WebContentsUtils_jni.h"
 
 using base::android::ConvertJavaStringToUTF16;
@@ -73,8 +74,9 @@ void JNI_WebContentsUtils_EvaluateJavaScriptWithUserGesture(
 
   if (!callback) {
     // No callback requested.
-    web_contents->GetMainFrame()->ExecuteJavaScriptWithUserGestureForTests(
-        ConvertJavaStringToUTF16(env, script), base::NullCallback());
+    web_contents->GetPrimaryMainFrame()
+        ->ExecuteJavaScriptWithUserGestureForTests(
+            ConvertJavaStringToUTF16(env, script), base::NullCallback());
     return;
   }
 
@@ -83,7 +85,7 @@ void JNI_WebContentsUtils_EvaluateJavaScriptWithUserGesture(
   ScopedJavaGlobalRef<jobject> j_callback;
   j_callback.Reset(env, callback);
 
-  web_contents->GetMainFrame()->ExecuteJavaScriptWithUserGestureForTests(
+  web_contents->GetPrimaryMainFrame()->ExecuteJavaScriptWithUserGestureForTests(
       ConvertJavaStringToUTF16(env, script),
       base::BindOnce(&JavaScriptResultCallback, std::move(j_callback)));
 }
@@ -92,7 +94,8 @@ void JNI_WebContentsUtils_CrashTab(JNIEnv* env,
                                    const JavaParamRef<jobject>& jweb_contents) {
   WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
       WebContents::FromJavaWebContents(jweb_contents));
-  web_contents->GetMainFrame()->GetProcess()->Shutdown(RESULT_CODE_KILLED);
+  web_contents->GetPrimaryMainFrame()->GetProcess()->Shutdown(
+      RESULT_CODE_KILLED);
 }
 
 }  // namespace content

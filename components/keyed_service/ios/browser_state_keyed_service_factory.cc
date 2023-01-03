@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,20 +22,6 @@ void BrowserStateKeyedServiceFactory::SetTestingFactory(
         std::move(testing_factory));
   }
   KeyedServiceFactory::SetTestingFactory(context, std::move(wrapped_factory));
-}
-
-KeyedService* BrowserStateKeyedServiceFactory::SetTestingFactoryAndUse(
-    web::BrowserState* context,
-    TestingFactory testing_factory) {
-  DCHECK(testing_factory);
-  return KeyedServiceFactory::SetTestingFactoryAndUse(
-      context,
-      base::BindRepeating(
-          [](const TestingFactory& testing_factory, void* context) {
-            return testing_factory.Run(
-                static_cast<web::BrowserState*>(context));
-          },
-          std::move(testing_factory)));
 }
 
 BrowserStateKeyedServiceFactory::BrowserStateKeyedServiceFactory(

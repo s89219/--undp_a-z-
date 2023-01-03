@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,27 +6,23 @@
  * @fileoverview Display manager for WebUI OOBE and login.
  */
 
-// #import {assert} from 'chrome://resources/js/assert.m.js';
-// #import {$, ensureTransitionEndEvent} from 'chrome://resources/js/util.m.js';
-// #import {loadTimeData} from './i18n_setup.js';
-// #import {OobeTypes} from './components/oobe_types.m.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
+import {$, ensureTransitionEndEvent} from 'chrome://resources/ash/common/util.js';
+import {loadTimeData} from './i18n_setup.js';
+import {OobeTypes} from './components/oobe_types.js';
 
+import {DISPLAY_TYPE, SCREEN_DEVICE_DISABLED, OOBE_UI_STATE, SCREEN_WELCOME } from './components/display_manager_types.js';
+import {MultiTapDetector} from './multi_tap_detector.js';
+import {globalOobeKeyboard} from './components/keyboard_utils_oobe.js';
 
-// #import {RESET_AVAILABLE_SCREEN_GROUP, SCREEN_APP_LAUNCH_SPLASH, SCREEN_GAIA_SIGNIN, DISPLAY_TYPE, ACCELERATOR_CANCEL, ACCELERATOR_VERSION, ACCELERATOR_RESET, ACCELERATOR_APP_LAUNCH_BAILOUT, SCREEN_OOBE_RESET, SCREEN_DEVICE_DISABLED, USER_ACTION_ROLLBACK_TOGGLED, ACCELERATOR_APP_LAUNCH_NETWORK_CONFIG, OOBE_UI_STATE, SCREEN_WELCOME } from './components/display_manager_types.m.js';
-// #import {MultiTapDetector} from './multi_tap_detector.m.js';
-// #import {keyboard} from './keyboard_utils.m.js'
-// #import {DisplayManagerScreenAttributes} from './components/display_manager_types.m.js'
-
-cr.define('cr.ui.login', function() {
   /**
    * Maximum time in milliseconds to wait for step transition to finish.
    * The value is used as the duration for ensureTransitionEndEvent below.
    * It needs to be inline with the step screen transition duration time
    * defined in css file. The current value in css is 200ms. To avoid emulated
    * transitionend fired before real one, 250ms is used.
-   * @const
    */
-  var MAX_SCREEN_TRANSITION_DURATION = 250;
+  const MAX_SCREEN_TRANSITION_DURATION = 250;
 
   /**
    * As Polymer behaviors do not provide true inheritance, when two behaviors
@@ -43,7 +39,7 @@ cr.define('cr.ui.login', function() {
    * element.behaviors
    * TODO(crbug.com/1229130) - Remove this suppression.
    */
-  /* #export */ function invokePolymerMethod(element, name, ...args) {
+  export function invokePolymerMethod(element, name, ...args) {
     const method = element[name];
     if (!method || typeof method !== 'function') {
       return;
@@ -55,7 +51,7 @@ cr.define('cr.ui.login', function() {
 
     // If element has behaviors call functions on them in reverse order,
     // ignoring case when method on element was derived from behavior.
-    for (var i = element.behaviors.length - 1; i >= 0; i--) {
+    for (let i = element.behaviors.length - 1; i >= 0; i--) {
       const behavior = element.behaviors[i];
       const behaviorMethod = behavior[name];
       if (!behaviorMethod || typeof behaviorMethod !== 'function') {
@@ -72,7 +68,7 @@ cr.define('cr.ui.login', function() {
    * A display manager that manages initialization of screens,
    * transitions, error messages display.
    */
-  /* #export */ class DisplayManager {
+  export class DisplayManager {
     constructor() {
       /**
        * Registered screens.
@@ -80,22 +76,10 @@ cr.define('cr.ui.login', function() {
       this.screens_ = [];
 
       /**
-       * Attributes of the registered screens.
-       * @type {Array<DisplayManagerScreenAttributes>}
-       */
-      this.screensAttributes_ = [];
-
-      /**
        * Current OOBE step, index in the screens array.
        * @type {number}
        */
       this.currentStep_ = 0;
-
-      /**
-       * Whether version label can be toggled by ACCELERATOR_VERSION.
-       * @type {boolean}
-       */
-      this.allowToggleVersion_ = false;
 
       /**
        * Whether keyboard navigation flow is enforced.
@@ -114,15 +98,6 @@ cr.define('cr.ui.login', function() {
        * @type {string}
        */
       this.displayType_ = DISPLAY_TYPE.UNKNOWN;
-
-      /**
-       * Number of users in the login screen UI. This is used by the views login
-       * screen, and is always 0 for WebUI login screen.
-       * TODO(crbug.com/808271): WebUI and views implementation should return
-       * the same user list.
-       * @type {number}
-       */
-      this.userCount_ = 0;
 
       /**
        * Stored OOBE configuration for newly registered screens.
@@ -165,22 +140,6 @@ cr.define('cr.ui.login', function() {
     }
 
     /**
-     * Returns true if we are showing views based login screen.
-     * @return {boolean}
-     */
-    get showingViewsLogin() {
-      return this.displayType_ == DISPLAY_TYPE.GAIA_SIGNIN;
-    }
-
-    /**
-     * Returns true if the login screen has user pods.
-     * @return {boolean}
-     */
-    get hasUserPods() {
-      return this.showingViewsLogin && this.userCount_ > 0;
-    }
-
-    /**
      * Sets the current height of the shelf area.
      * @param {number} height current shelf height
      */
@@ -211,7 +170,7 @@ cr.define('cr.ui.login', function() {
     set forceKeyboardFlow(value) {
       this.forceKeyboardFlow_ = value;
       if (value) {
-        keyboard.initializeKeyboardFlow(false);
+        globalOobeKeyboard.initializeKeyboardFlow();
       }
     }
 
@@ -232,61 +191,19 @@ cr.define('cr.ui.login', function() {
     }
 
     /**
-     * Shows/hides version labels.
-     * @param {boolean} show Whether labels should be visible by default. If
-     *     false, visibility can be toggled by ACCELERATOR_VERSION.
+     * Toggles system info visibility.
      */
-    showVersion(show) {
-      $('version-labels').hidden = !show;
-      this.allowToggleVersion_ = !show;
+    toggleSystemInfo() {
+      $('version-labels').hidden = !$('version-labels').hidden;
     }
 
     /**
-     * Sets the number of users on the views login screen.
-     * @param {number} userCount The number of users.
+     * Handle the cancel accelerator.
      */
-    setLoginUserCount(userCount) {
-      this.userCount_ = userCount;
-    }
-
-    /**
-     * Handle accelerators.
-     * @param {string} name Accelerator name.
-     *
-     * @suppress {missingProperties}
-     * $('reset').userActed(...)
-     * TODO(crbug.com/1229130) - Remove this suppression.
-     */
-    handleAccelerator(name) {
-      if (this.currentScreen && this.currentScreen.ignoreAccelerators) {
-        return;
-      }
+    handleCancel() {
       const currentStepId = this.screens_[this.currentStep_];
-      const attributes = this.screensAttributes_[this.currentStep_] || {};
-      if (name == ACCELERATOR_CANCEL) {
-        if (this.currentScreen && this.currentScreen.cancel) {
-          this.currentScreen.cancel();
-        }
-      } else if (name == ACCELERATOR_VERSION) {
-        if (this.allowToggleVersion_) {
-          $('version-labels').hidden = !$('version-labels').hidden;
-        }
-      } else if (name == ACCELERATOR_RESET) {
-        if (currentStepId == SCREEN_OOBE_RESET) {
-          $('reset').userActed(USER_ACTION_ROLLBACK_TOGGLED);
-        } else if (
-            attributes.resetAllowed ||
-            RESET_AVAILABLE_SCREEN_GROUP.indexOf(currentStepId) != -1) {
-          chrome.send('toggleResetScreen');
-        }
-      } else if (name == ACCELERATOR_APP_LAUNCH_BAILOUT) {
-        if (currentStepId == SCREEN_APP_LAUNCH_SPLASH) {
-          chrome.send('cancelAppLaunch');
-        }
-      } else if (name == ACCELERATOR_APP_LAUNCH_NETWORK_CONFIG) {
-        if (currentStepId == SCREEN_APP_LAUNCH_SPLASH) {
-          chrome.send('networkConfigRequest');
-        }
+      if (this.currentScreen && this.currentScreen.cancel) {
+        this.currentScreen.cancel();
       }
     }
 
@@ -323,15 +240,6 @@ cr.define('cr.ui.login', function() {
       }
 
       invokePolymerMethod(newStep, 'onBeforeShow', screenData);
-
-      // We still have several screens that are not implemented as a single
-      // Polymer-element, so we need to explicitly inform all oobe-dialogs.
-      //
-      // TODO(alemate): make every screen a single Polymer element, so that
-      // we could simply use OobeDialogHostBehavior in stead of this.
-      for (const dialog of newStep.getElementsByTagName('oobe-dialog')) {
-        invokePolymerMethod(dialog, 'onBeforeShow', screenData);
-      }
 
       if (newStep.defaultControl) {
         invokePolymerMethod(newStep.defaultControl, 'onBeforeShow', screenData);
@@ -395,18 +303,6 @@ cr.define('cr.ui.login', function() {
         return;
       }
 
-      // Prevent initial GAIA signin load from interrupting the kiosk splash
-      // screen.
-      // TODO: remove this special case when a better fix is found for the race
-      // condition. This if statement was introduced to fix http://b/113786350.
-      if (this.currentScreen.id == SCREEN_APP_LAUNCH_SPLASH &&
-          screen.id == SCREEN_GAIA_SIGNIN) {
-        console.info(
-            this.currentScreen.id +
-            ' screen showing. Ignoring switch to Gaia screen.');
-        return;
-      }
-
       const screenId = screen.id;
 
       const data = screen.data;
@@ -433,9 +329,8 @@ cr.define('cr.ui.login', function() {
     /**
      * Register an oobe screen.
      * @param {Element} el Decorated screen element.
-     * @param {DisplayManagerScreenAttributes} attributes
      */
-    registerScreen(el, attributes) {
+    registerScreen(el) {
       const screenId = el.id;
       assert(screenId);
       assert(!this.screens_.includes(screenId), 'Duplicate screen ID.');
@@ -444,7 +339,6 @@ cr.define('cr.ui.login', function() {
           'Can not register Device disabled screen as the first');
 
       this.screens_.push(screenId);
-      this.screensAttributes_.push(attributes);
 
       if (el.updateOobeConfiguration && this.oobe_configuration_) {
         el.updateOobeConfiguration(this.oobe_configuration_);
@@ -520,15 +414,6 @@ cr.define('cr.ui.login', function() {
     }
 
     /**
-     * Prepares screens to use in login display.
-     */
-    prepareForLoginDisplay_() {
-      if (this.showingViewsLogin) {
-        $('top-header-bar').hidden = true;
-      }
-    }
-
-    /**
      * Returns true if Oobe UI is shown.
      * @return {boolean}
      */
@@ -591,10 +476,3 @@ cr.define('cr.ui.login', function() {
       $('bluetooth-name').textContent = bluetoothName;
     }
   }
-  // #cr_define_end
-  // Export
-  return {
-    DisplayManager: DisplayManager,
-    invokePolymerMethod: invokePolymerMethod,
-  };
-});

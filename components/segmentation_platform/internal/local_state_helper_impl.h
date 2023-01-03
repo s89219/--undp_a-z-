@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,20 +17,20 @@ namespace segmentation_platform {
 // Implementation of the LocalStateHelper class.
 class LocalStateHelperImpl : public LocalStateHelper {
  public:
-  LocalStateHelperImpl(LocalStateHelperImpl&) = delete;
-  LocalStateHelperImpl& operator=(LocalStateHelperImpl&) = delete;
+  LocalStateHelperImpl(const LocalStateHelperImpl&) = delete;
+  LocalStateHelperImpl& operator=(const LocalStateHelperImpl&) = delete;
 
   // LocalStateHelper implementation.
   void Initialize(PrefService* local_state) override;
-  void SetUkmMostRecentAllowedTime(base::Time time) override;
-  base::Time GetUkmMostRecentAllowedTime() const override;
+  void SetPrefTime(const char* pref_name, base::Time time) override;
+  base::Time GetPrefTime(const char* pref_name) const override;
 
  private:
   friend base::NoDestructor<LocalStateHelperImpl>;
   LocalStateHelperImpl();
   ~LocalStateHelperImpl() override;
 
-  raw_ptr<PrefService> local_state_ = nullptr;
+  raw_ptr<PrefService, DanglingUntriaged> local_state_ = nullptr;
 };
 
 }  // namespace segmentation_platform

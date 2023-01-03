@@ -1,15 +1,15 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/webui/projector_app/trusted_projector_annotator_ui.h"
 
 #include "ash/public/cpp/projector/projector_annotator_controller.h"
-#include "ash/public/cpp/projector/projector_client.h"
-#include "ash/webui/grit/ash_projector_app_trusted_resources.h"
-#include "ash/webui/grit/ash_projector_app_trusted_resources_map.h"
+#include "ash/webui/grit/ash_projector_annotator_trusted_resources.h"
+#include "ash/webui/grit/ash_projector_annotator_trusted_resources_map.h"
+#include "ash/webui/grit/ash_projector_common_resources.h"
+#include "ash/webui/grit/ash_projector_common_resources_map.h"
 #include "ash/webui/projector_app/annotator_message_handler.h"
-#include "ash/webui/projector_app/projector_message_handler.h"
 #include "ash/webui/projector_app/public/cpp/projector_app_constants.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/web_contents.h"
@@ -29,11 +29,13 @@ content::WebUIDataSource* CreateProjectorAnnotatorHTMLSource() {
 
   // TODO(b/216523790): Split trusted annotator resources into a separate
   // bundle.
-  source->AddResourcePaths(base::make_span(
-      kAshProjectorAppTrustedResources, kAshProjectorAppTrustedResourcesSize));
-
+  source->AddResourcePaths(
+      base::make_span(kAshProjectorAnnotatorTrustedResources,
+                      kAshProjectorAnnotatorTrustedResourcesSize));
+  source->AddResourcePaths(base::make_span(kAshProjectorCommonResources,
+                                           kAshProjectorCommonResourcesSize));
   source->AddResourcePath(
-      "", IDR_ASH_PROJECTOR_APP_TRUSTED_ANNOTATOR_ANNOTATOR_EMBEDDER_HTML);
+      "", IDR_ASH_PROJECTOR_ANNOTATOR_TRUSTED_ANNOTATOR_EMBEDDER_HTML);
 
   std::string csp =
       std::string("frame-src ") + kChromeUIUntrustedAnnotatorUrl + ";";
@@ -43,6 +45,11 @@ content::WebUIDataSource* CreateProjectorAnnotatorHTMLSource() {
 
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::FrameSrc, csp);
+
+  source->OverrideContentSecurityPolicy(
+      network::mojom::CSPDirectiveName::TrustedTypes,
+      "trusted-types polymer-html-literal "
+      "polymer-template-event-attribute-policy;");
 
   return source;
 }
@@ -59,7 +66,6 @@ TrustedProjectorAnnotatorUI::TrustedProjectorAnnotatorUI(
   // needs to be created each time and attached to the new WebUI. The new
   // handler is then referenced in ProjectorClientImpl.
   auto handler = std::make_unique<ash::AnnotatorMessageHandler>();
-  ProjectorClient::Get()->SetAnnotatorMessageHandler(handler.get());
   web_ui->AddMessageHandler(std::move(handler));
 
   auto* browser_context = web_ui->GetWebContents()->GetBrowserContext();

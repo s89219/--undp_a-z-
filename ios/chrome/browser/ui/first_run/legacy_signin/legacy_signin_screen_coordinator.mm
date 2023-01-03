@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,16 +7,16 @@
 #import "base/metrics/histogram_functions.h"
 #import "ios/chrome/app/application_delegate/app_state.h"
 #import "ios/chrome/app/application_delegate/app_state_observer.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/first_run/first_run_metrics.h"
-#include "ios/chrome/browser/main/browser.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/first_run/first_run_metrics.h"
+#import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/policy/policy_watcher_browser_agent.h"
 #import "ios/chrome/browser/policy/policy_watcher_browser_agent_observer_bridge.h"
 #import "ios/chrome/browser/signin/authentication_service.h"
 #import "ios/chrome/browser/signin/authentication_service_factory.h"
 #import "ios/chrome/browser/signin/chrome_account_manager_service.h"
 #import "ios/chrome/browser/signin/chrome_account_manager_service_factory.h"
-#include "ios/chrome/browser/signin/identity_manager_factory.h"
+#import "ios/chrome/browser/signin/identity_manager_factory.h"
 #import "ios/chrome/browser/sync/sync_service_factory.h"
 #import "ios/chrome/browser/ui/authentication/authentication_flow.h"
 #import "ios/chrome/browser/ui/authentication/enterprise/enterprise_prompt/enterprise_prompt_coordinator.h"
@@ -104,22 +104,32 @@
 }
 
 - (void)start {
-  if (!signin::IsSigninAllowedByPolicy()) {
-    self.attemptStatus = first_run::SignInAttemptStatus::SKIPPED_BY_POLICY;
-    [self finishPresentingAndSkipRemainingScreens:NO];
-    return;
-  }
-
   ChromeBrowserState* browserState = self.browser->GetBrowserState();
   AuthenticationService* authenticationService =
       AuthenticationServiceFactory::GetForBrowserState(browserState);
+  switch (authenticationService->GetServiceStatus()) {
+    case AuthenticationService::ServiceStatus::SigninDisabledByUser:
+      // This case should not happen, unless testers trigger the FRE while
+      // sign-in is disabled by user.
+    case AuthenticationService::ServiceStatus::SigninDisabledByInternal:
+      self.attemptStatus = first_run::SignInAttemptStatus::NOT_SUPPORTED;
+      [self finishPresentingAndSkipRemainingScreens:NO];
+      return;
+    case AuthenticationService::ServiceStatus::SigninDisabledByPolicy:
+      self.attemptStatus = first_run::SignInAttemptStatus::SKIPPED_BY_POLICY;
+      [self finishPresentingAndSkipRemainingScreens:NO];
+      return;
+    case AuthenticationService::ServiceStatus::SigninAllowed:
+    case AuthenticationService::ServiceStatus::SigninForcedByPolicy:
+      break;
+  }
 
   if (authenticationService->GetPrimaryIdentity(
           signin::ConsentLevel::kSignin)) {
     // Don't show sign in screen if there is already an account signed in (for
     // example going through the FRE then killing the app and restarting the
     // FRE). Don't record any metric as the user didn't take any action.
-    [self.delegate willFinishPresenting];
+    [self.delegate screenWillFinishPresenting];
     return;
   }
 
@@ -195,6 +205,24 @@
       self.mediator.selectedIdentity;
 }
 
+- (void)logScrollButtonVisible:(BOOL)scrollButtonVisible
+            withIdentityPicker:(BOOL)identityPickerVisible
+                     andFooter:(BOOL)footerVisible {
+  first_run::FirstRunScreenType screenType;
+  if (identityPickerVisible && footerVisible) {
+    screenType =
+        first_run::FirstRunScreenType::kSignInScreenWithFooterAndIdentityPicker;
+  } else if (identityPickerVisible) {
+    screenType = first_run::FirstRunScreenType::kSignInScreenWithIdentityPicker;
+  } else if (footerVisible) {
+    screenType = first_run::FirstRunScreenType::kSignInScreenWithFooter;
+  } else {
+    screenType = first_run::FirstRunScreenType::
+        kSignInScreenWithoutFooterOrIdentityPicker;
+  }
+  RecordFirstRunScrollButtonVisibilityMetrics(screenType, scrollButtonVisible);
+}
+
 - (void)didTapPrimaryActionButton {
   if (self.mediator.selectedIdentity) {
     [self startSignIn];
@@ -229,7 +257,7 @@
 }
 
 - (void)identityChooserCoordinator:(IdentityChooserCoordinator*)coordinator
-                 didSelectIdentity:(ChromeIdentity*)identity {
+                 didSelectIdentity:(id<SystemIdentity>)identity {
   CHECK_EQ(self.identityChooserCoordinator, coordinator);
   self.mediator.selectedIdentity = identity;
 }
@@ -258,7 +286,7 @@
 
 #pragma mark - Private
 
-// Dismisses the Signed Out modal if it is still present and |skipScreens|.
+// Dismisses the Signed Out modal if it is still present and `skipScreens`.
 - (void)dismissSignedOutModalAndSkipScreens:(BOOL)skipScreens {
   [self.enterprisePromptCoordinator stop];
   self.enterprisePromptCoordinator = nil;
@@ -277,7 +305,7 @@
 }
 
 // Completes the presentation of the screen, recording the metrics and notifying
-// the delegate to skip the rest of the FRE if |skipRemainingScreens| is YES, or
+// the delegate to skip the rest of the FRE if `skipRemainingScreens` is YES, or
 // to continue the FRE.
 - (void)finishPresentingAndSkipRemainingScreens:(BOOL)skipRemainingScreens {
   if (self.firstRun) {
@@ -288,9 +316,9 @@
                                 self.hadIdentitiesAtStartup);
   }
   if (skipRemainingScreens) {
-    [self.delegate skipAll];
+    [self.delegate skipAllScreens];
   } else {
-    [self.delegate willFinishPresenting];
+    [self.delegate screenWillFinishPresenting];
   }
 }
 
@@ -333,8 +361,6 @@
   DCHECK(self.mediator.selectedIdentity);
 
   self.attemptStatus = first_run::SignInAttemptStatus::ATTEMPTED;
-
-  DCHECK(self.mediator.selectedIdentity);
   AuthenticationFlow* authenticationFlow =
       [[AuthenticationFlow alloc] initWithBrowser:self.browser
                                          identity:self.mediator.selectedIdentity

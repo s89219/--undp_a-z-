@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,7 +72,7 @@ void NotificationExample::OnViewAddedToWidget(View* observed_view) {
   message_center::RichNotificationData data;
   data.settings_button_handler = message_center::SettingsButtonHandler::INLINE;
   message_center::Notification notification(
-      message_center::NOTIFICATION_TYPE_BASE_FORMAT, "id", u"Title", u"Message",
+      message_center::NOTIFICATION_TYPE_SIMPLE, "id", u"Title", u"Message",
       ui::ImageModel::FromImage(CreateTestImage(gfx::Size(80, 80), cp)),
       std::u16string(), GURL(),
       message_center::NotifierId(

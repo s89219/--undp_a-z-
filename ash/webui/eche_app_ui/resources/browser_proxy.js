@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,14 +89,9 @@ displayStreamHandler.setStreamActionObserver(
  guestMessagePipe.registerHandler(Message.CLOSE_WINDOW, async () => {
    const info = /** @type {!SystemInfo} */ (await systemInfo.getSystemInfo());
    const systemInfoJson = JSON.parse(JSON.stringify(info));
-   const debugMode = JSON.parse(systemInfoJson.systemInfo)['debug_mode'];
-   if (debugMode) {
-     console.log('echeapi debug on, browser_proxy.js window.close block');
-   } else {
-     console.log('echeapi browser_proxy.js window.close');
-     displayStreamHandler.onStreamStatusChanged(
-         ash.echeApp.mojom.StreamStatus.kStreamStatusStopped);
-   }
+   console.log('echeapi browser_proxy.js window.close');
+   displayStreamHandler.onStreamStatusChanged(
+       ash.echeApp.mojom.StreamStatus.kStreamStatusStopped);
  });
 
  // Register GET_SYSTEM_INFO pipes for wrapping getSystemInfo async api call.
@@ -126,6 +121,17 @@ displayStreamHandler.setStreamActionObserver(
            Message.TABLET_MODE, {/** @type {boolean} */ isTabletMode});
      });
 
+ // Add Android network info listener and send result via pipes.
+ systemInfoObserverRouter.onAndroidDeviceNetworkInfoChanged.addListener(
+     (isDifferentNetwork, androidDeviceOnCellular) => {
+       console.log(
+           'echeapi browser_proxy.js onAndroidDeviceNetworkInfoChanged');
+       guestMessagePipe.sendMessage(Message.TABLET_MODE, {
+         /** @type {boolean} */ isDifferentNetwork,
+         /** @type {boolean} */ androidDeviceOnCellular,
+       });
+     });
+
  // Add stream action listener and send result via pipes.
  streamActionObserverRouter.onStreamAction.addListener((action) => {
    console.log(`echeapi browser_proxy.js OnStreamAction ${action}`);
@@ -139,15 +145,24 @@ displayStreamHandler.setStreamActionObserver(
        // strings support either 8 or 16 bit characters, and must be converted
        // to an array of 16 bit character codes that match std::u16string.
        const titleArray = {
-         data: Array.from(message.title, c => c.charCodeAt())
+         data: Array.from(message.title, c => c.charCodeAt()),
        };
        const messageArray = {
-         data: Array.from(message.message, c => c.charCodeAt())
+         data: Array.from(message.message, c => c.charCodeAt()),
        };
        console.log('echeapi browser_proxy.js showNotification');
        notificationGenerator.showNotification(
            titleArray, messageArray, message.notificationType);
      });
+
+ guestMessagePipe.registerHandler(Message.SHOW_TOAST, async (message) => {
+   // The C++ layer uses std::u16string, which use 16 bit characters. JS
+   // strings support either 8 or 16 bit characters, and must be converted
+   // to an array of 16 bit character codes that match std::u16string.
+   const textArray = {data: Array.from(message.text, c => c.charCodeAt())};
+   console.log('echeapi browser_proxy.js showToast');
+   notificationGenerator.showToast(textArray);
+ });
 
  guestMessagePipe.registerHandler(
      Message.TIME_HISTOGRAM_MESSAGE, async (message) => {
@@ -190,3 +205,17 @@ displayStreamHandler.setStreamActionObserver(
  }
 
 window.onhashchange = locationHashChanged;
+
+if ('virtualKeyboard' in navigator) {
+  navigator['virtualKeyboard'].overlaysContent = true;
+  navigator['virtualKeyboard'].addEventListener('geometrychange', (event) => {
+    const {x, y, width, height} = event.target['boundingRect'];
+    console.log('Virtual keyboard geometry:', x, y, width, height);
+    const isVirtualKeyboardEnabled = width > 0 && height > 0;
+    guestMessagePipe.sendMessage(
+        Message.IS_VIRTUAL_KEYBOARD_ENABLED,
+        {/** @type {boolean} */ isVirtualKeyboardEnabled});
+  });
+} else {
+  console.log('virtual keyboard is not supported!');
+}

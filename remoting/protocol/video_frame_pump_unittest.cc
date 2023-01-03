@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "remoting/codec/video_encoder_verbatim.h"
 #include "remoting/proto/control.pb.h"
 #include "remoting/proto/video.pb.h"
+#include "remoting/protocol/desktop_capturer.h"
 #include "remoting/protocol/fake_desktop_capturer.h"
 #include "remoting/protocol/protocol_mock_objects.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -32,8 +33,7 @@ using ::testing::Expectation;
 using ::testing::InvokeWithoutArgs;
 using ::testing::Return;
 
-namespace remoting {
-namespace protocol {
+namespace remoting::protocol {
 
 namespace {
 
@@ -58,8 +58,6 @@ class MockVideoEncoder : public VideoEncoder {
   MockVideoEncoder() = default;
   ~MockVideoEncoder() override = default;
 
-  MOCK_METHOD1(SetLosslessEncode, void(bool));
-  MOCK_METHOD1(SetLosslessColor, void(bool));
   MOCK_METHOD1(EncodePtr, VideoPacket*(const webrtc::DesktopFrame&));
 
   std::unique_ptr<VideoPacket> Encode(
@@ -96,7 +94,7 @@ class ThreadCheckVideoEncoder : public VideoEncoderVerbatim {
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 };
 
-class ThreadCheckDesktopCapturer : public webrtc::DesktopCapturer {
+class ThreadCheckDesktopCapturer : public DesktopCapturer {
  public:
   ThreadCheckDesktopCapturer(
       scoped_refptr<base::SingleThreadTaskRunner> task_runner)
@@ -261,5 +259,4 @@ TEST_F(VideoFramePumpTest, UnchangedFrame) {
   run_loop.Run();
 }
 
-}  // namespace protocol
-}  // namespace remoting
+}  // namespace remoting::protocol

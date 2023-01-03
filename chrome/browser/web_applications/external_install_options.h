@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/values.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_types.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/ash/system_web_apps/types/system_web_app_type.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
@@ -26,9 +26,10 @@ using WebAppInstallInfoFactory =
 enum class ExternalInstallSource;
 
 struct ExternalInstallOptions {
-  ExternalInstallOptions(const GURL& install_url,
-                         absl::optional<UserDisplayMode> user_display_mode,
-                         ExternalInstallSource install_source);
+  ExternalInstallOptions(
+      const GURL& install_url,
+      absl::optional<mojom::UserDisplayMode> user_display_mode,
+      ExternalInstallSource install_source);
 
   ~ExternalInstallOptions();
   ExternalInstallOptions(const ExternalInstallOptions& other);
@@ -41,7 +42,7 @@ struct ExternalInstallOptions {
 
   GURL install_url;
 
-  absl::optional<UserDisplayMode> user_display_mode;
+  absl::optional<mojom::UserDisplayMode> user_display_mode;
 
   ExternalInstallSource install_source;
 
@@ -87,7 +88,8 @@ struct ExternalInstallOptions {
   bool is_disabled = false;
 
   // Whether the app should be reinstalled even if the user has previously
-  // uninstalled it.
+  // uninstalled it. Only applies to preinstalled apps and/or apps that can be
+  // uninstalled by the user.
   bool override_previous_user_uninstall = false;
 
   // Whether the app should only be installed if the user is using Chrome for
@@ -132,6 +134,13 @@ struct ExternalInstallOptions {
   // that passes basic validity checks. This is ignored when |app_info_factory|
   // is used.
   bool require_manifest = false;
+
+  // The web app should be installed as a shortcut, where only limited
+  // values from the manifest are used (like theme color) and all extra
+  // capabilities are not used (like file handlers).
+  // Note: This is different behavior than using the "Create Shortcut..."
+  // option in the GUI.
+  bool install_as_shortcut = false;
 
   // Whether the app should be reinstalled even if it is already installed.
   bool force_reinstall = false;
@@ -189,7 +198,7 @@ struct ExternalInstallOptions {
   WebAppInstallInfoFactory app_info_factory;
 
   // The type of SystemWebApp, if this app is a System Web App.
-  absl::optional<SystemAppType> system_app_type = absl::nullopt;
+  absl::optional<ash::SystemWebAppType> system_app_type = absl::nullopt;
 
   // Whether the app was installed by an OEM and should be placed in a special
   // OEM folder in the app launcher. Only used on Chrome OS.

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,20 +18,24 @@
 #include "ash/root_window_controller.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/ash_color_id.h"
+#include "ash/system/privacy/privacy_indicators_controller.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/check.h"
 #include "base/notreached.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/models/image_model.h"
 #include "ui/chromeos/events/keyboard_layout_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/transform_util.h"
-#include "ui/gfx/paint_vector_icon.h"
-#include "ui/message_center/views/notification_background_painter.h"
+#include "ui/views/animation/animation_builder.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 
 namespace ash::capture_mode_util {
 
@@ -39,6 +43,13 @@ namespace {
 
 constexpr int kBannerViewTopRadius = 0;
 constexpr int kBannerViewBottomRadius = 8;
+constexpr float kScaleUpFactor = 0.8f;
+
+// The app IDs used for the capture mode camera and microphone recording privacy
+// indicators.
+constexpr char kCameraPrivacyIndicatorId[] = "system-capture-mode-camera";
+constexpr char kMicrophonePrivacyIndicatorId[] =
+    "system-capture-mode-microphone";
 
 // Returns the target visibility of the camera preview, given the
 // `confine_bounds_short_side_length`. The out parameter
@@ -67,9 +78,72 @@ bool CalculateCameraPreviewTargetVisibility(
              ->CalculateCameraPreviewTargetVisibility();
 }
 
-// Returns the local center point of the given `layer`.
-gfx::Point GetLocalCenterPoint(ui::Layer* layer) {
-  return gfx::Rect(layer->GetTargetBounds().size()).CenterPoint();
+void FadeInWidget(views::Widget* widget,
+                  const AnimationParams& animation_params) {
+  DCHECK(widget);
+  auto* layer = widget->GetLayer();
+  DCHECK(!widget->GetNativeWindow()->TargetVisibility() ||
+         layer->GetTargetOpacity() < 1.f);
+
+  // Please notice the order matters here. When the opacity is set to 0.f, if
+  // there's any on-going fade out animation, the `OnEnded` in `FadeOutWidget`
+  // will be triggered, which will hide the widget and set its opacity to 1.f.
+  // So `Show` should be triggered after setting the opacity to 0 to undo the
+  // work done by the FadeOutWidget's OnEnded .
+  if (layer->opacity() == 1.f)
+    layer->SetOpacity(0.f);
+  if (!widget->GetNativeWindow()->TargetVisibility())
+    widget->Show();
+
+  if (animation_params.apply_scale_up_animation) {
+    layer->SetTransform(
+        capture_mode_util::GetScaleTransformAboutCenter(layer, kScaleUpFactor));
+  }
+
+  views::AnimationBuilder builder;
+  auto& animation_sequence_block =
+      builder
+          .SetPreemptionStrategy(
+              ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET)
+          .Once()
+          .SetDuration(animation_params.animation_duration)
+          .SetOpacity(layer, 1.f, animation_params.tween_type);
+
+  // We should only set transform here if `apply_scale_up_animation` is true,
+  // otherwise, it may mess up with the snap animation in
+  // `SetCameraPreviewBounds`.
+  if (animation_params.apply_scale_up_animation) {
+    animation_sequence_block.SetTransform(layer, gfx::Transform(),
+                                          gfx::Tween::ACCEL_20_DECEL_100);
+  }
+}
+
+void FadeOutWidget(views::Widget* widget,
+                   const AnimationParams& animation_params) {
+  DCHECK(widget);
+  DCHECK(widget->GetNativeWindow()->TargetVisibility());
+
+  auto* layer = widget->GetLayer();
+  DCHECK_EQ(layer->GetTargetOpacity(), 1.f);
+
+  views::AnimationBuilder()
+      .OnEnded(base::BindOnce(
+          [](base::WeakPtr<views::Widget> the_widget) {
+            if (!the_widget)
+              return;
+
+            // Please notice, the order matters here. If we set the layer's
+            // opacity back to 1.f before calling `Hide`, flickering can be
+            // seen.
+            the_widget->Hide();
+            the_widget->GetLayer()->SetOpacity(1.f);
+          },
+          widget->GetWeakPtr()))
+      .SetPreemptionStrategy(
+          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET)
+      .Once()
+      .SetDuration(animation_params.animation_duration)
+      .SetOpacity(layer, 0.f, animation_params.tween_type);
 }
 
 }  // namespace
@@ -153,13 +227,16 @@ void TriggerAccessibilityAlert(int message_id) {
   TriggerAccessibilityAlert(l10n_util::GetStringUTF8(message_id));
 }
 
-void TriggerAccessibilityAlertSoon(int message_id) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+void TriggerAccessibilityAlertSoon(const std::string& message) {
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
           &AccessibilityControllerImpl::TriggerAccessibilityAlertWithMessage,
-          Shell::Get()->accessibility_controller()->GetWeakPtr(),
-          l10n_util::GetStringUTF8(message_id)));
+          Shell::Get()->accessibility_controller()->GetWeakPtr(), message));
+}
+
+void TriggerAccessibilityAlertSoon(int message_id) {
+  TriggerAccessibilityAlertSoon(l10n_util::GetStringUTF8(message_id));
 }
 
 CameraPreviewSnapPosition GetCameraNextHorizontalSnapPosition(
@@ -196,14 +273,6 @@ std::unique_ptr<views::View> CreateClipboardShortcutView() {
   std::unique_ptr<views::View> clipboard_shortcut_view =
       std::make_unique<views::View>();
 
-  auto* color_provider = AshColorProvider::Get();
-  const SkColor background_color = color_provider->GetControlsLayerColor(
-      AshColorProvider::ControlsLayerType::kControlBackgroundColorActive);
-  // The text and icon are showing on the background with |background_color|
-  // so its color is same with kButtonLabelColorPrimary although they're
-  // not theoretically showing on a button.
-  const SkColor text_icon_color = color_provider->GetContentLayerColor(
-      AshColorProvider::ContentLayerType::kButtonLabelColorPrimary);
   clipboard_shortcut_view->SetLayoutManager(std::make_unique<views::BoxLayout>(
       views::BoxLayout::Orientation::kHorizontal));
 
@@ -217,8 +286,8 @@ std::unique_ptr<views::View> CreateClipboardShortcutView() {
   views::Label* shortcut_label =
       clipboard_shortcut_view->AddChildView(std::make_unique<views::Label>());
   shortcut_label->SetText(label_text);
-  shortcut_label->SetBackgroundColor(background_color);
-  shortcut_label->SetEnabledColor(text_icon_color);
+  shortcut_label->SetBackgroundColorId(kColorAshControlBackgroundColorActive);
+  shortcut_label->SetEnabledColorId(kColorAshTextOnBackgroundColor);
 
   return clipboard_shortcut_view;
 }
@@ -226,19 +295,10 @@ std::unique_ptr<views::View> CreateClipboardShortcutView() {
 // Creates the banner view that will show on top of the notification image.
 std::unique_ptr<views::View> CreateBannerView() {
   std::unique_ptr<views::View> banner_view = std::make_unique<views::View>();
-
   // Use the light mode as default as notification is still using light
   // theme as the default theme.
   ScopedLightModeAsDefault scoped_light_mode_as_default;
 
-  auto* color_provider = AshColorProvider::Get();
-  const SkColor background_color = color_provider->GetControlsLayerColor(
-      AshColorProvider::ControlsLayerType::kControlBackgroundColorActive);
-  // The text and icon are showing on the background with |background_color|
-  // so its color is same with kButtonLabelColorPrimary although they're
-  // not theoretically showing on a button.
-  const SkColor text_icon_color = color_provider->GetContentLayerColor(
-      AshColorProvider::ContentLayerType::kButtonLabelColorPrimary);
   auto* layout =
       banner_view->SetLayoutManager(std::make_unique<views::BoxLayout>(
           views::BoxLayout::Orientation::kHorizontal,
@@ -246,24 +306,26 @@ std::unique_ptr<views::View> CreateBannerView() {
           kBannerIconTextSpacingDip));
 
   if (features::IsNotificationsRefreshEnabled()) {
-    banner_view->SetBackground(views::CreateBackgroundFromPainter(
-        std::make_unique<message_center::NotificationBackgroundPainter>(
-            kBannerViewTopRadius, kBannerViewBottomRadius, background_color)));
+    banner_view->SetBackground(views::CreateThemedRoundedRectBackground(
+        kColorAshControlBackgroundColorActive, kBannerViewTopRadius,
+        kBannerViewBottomRadius, /*for_border_thickness=*/0));
   } else {
-    banner_view->SetBackground(views::CreateSolidBackground(background_color));
+    banner_view->SetBackground(views::CreateThemedSolidBackground(
+        kColorAshControlBackgroundColorActive));
   }
 
   views::ImageView* icon =
       banner_view->AddChildView(std::make_unique<views::ImageView>());
-  icon->SetImage(gfx::CreateVectorIcon(kCaptureModeCopiedToClipboardIcon,
-                                       kBannerIconSizeDip, text_icon_color));
+  icon->SetImage(ui::ImageModel::FromVectorIcon(
+      kCaptureModeCopiedToClipboardIcon, kColorAshIconOnBackgroundColor,
+      kBannerIconSizeDip));
 
   views::Label* label = banner_view->AddChildView(
       std::make_unique<views::Label>(l10n_util::GetStringUTF16(
           IDS_ASH_SCREEN_CAPTURE_SCREENSHOT_COPIED_TO_CLIPBOARD)));
-  label->SetBackgroundColor(background_color);
+  label->SetBackgroundColorId(kColorAshControlBackgroundColorActive);
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  label->SetEnabledColor(text_icon_color);
+  label->SetEnabledColorId(kColorAshTextOnBackgroundColor);
 
   if (!Shell::Get()->tablet_mode_controller()->InTabletMode()) {
     banner_view->AddChildView(CreateClipboardShortcutView());
@@ -279,18 +341,17 @@ std::unique_ptr<views::View> CreateBannerView() {
 // notification.
 std::unique_ptr<views::View> CreatePlayIconView() {
   auto play_view = std::make_unique<views::ImageView>();
-  auto* color_provider = AshColorProvider::Get();
-  const SkColor icon_color = color_provider->GetContentLayerColor(
-      AshColorProvider::ContentLayerType::kIconColorPrimary);
-  play_view->SetImage(gfx::CreateVectorIcon(kCaptureModePlayIcon,
-                                            kPlayIconSizeDip, icon_color));
+  play_view->SetImage(ui::ImageModel::FromVectorIcon(
+      kCaptureModePlayIcon, kColorAshIconColorPrimary, kPlayIconSizeDip));
   play_view->SetHorizontalAlignment(views::ImageView::Alignment::kCenter);
   play_view->SetVerticalAlignment(views::ImageView::Alignment::kCenter);
-  const SkColor background_color = color_provider->GetBaseLayerColor(
-      AshColorProvider::BaseLayerType::kTransparent80);
-  play_view->SetBackground(views::CreateRoundedRectBackground(
-      background_color, kPlayIconBackgroundCornerRadiusDip));
+  play_view->SetBackground(views::CreateThemedRoundedRectBackground(
+      kColorAshShieldAndBase80, kPlayIconBackgroundCornerRadiusDip));
   return play_view;
+}
+
+gfx::Point GetLocalCenterPoint(ui::Layer* layer) {
+  return gfx::Rect(layer->GetTargetBounds().size()).CenterPoint();
 }
 
 gfx::Transform GetScaleTransformAboutCenter(ui::Layer* layer, float scale) {
@@ -340,19 +401,134 @@ aura::Window* GetTopMostCapturableWindowAtPoint(
   auto* controller = CaptureModeController::Get();
   std::set<aura::Window*> ignore_windows;
   auto* camera_controller = controller->camera_controller();
-  if (camera_controller && camera_controller->camera_preview_widget()) {
-    ignore_windows.insert(
-        camera_controller->camera_preview_widget()->GetNativeWindow());
-  }
+  if (auto* camera_preview_widget = camera_controller->camera_preview_widget())
+    ignore_windows.insert(camera_preview_widget->GetNativeWindow());
 
   if (controller->IsActive()) {
-    if (auto* capture_label_widget =
-            controller->capture_mode_session()->capture_label_widget()) {
+    auto* capture_session = controller->capture_mode_session();
+    DCHECK(capture_session->capture_mode_bar_widget());
+    ignore_windows.insert(
+        capture_session->capture_mode_bar_widget()->GetNativeWindow());
+
+    if (auto* capture_settings_widget =
+            capture_session->capture_mode_settings_widget()) {
+      ignore_windows.insert(capture_settings_widget->GetNativeWindow());
+    }
+
+    if (auto* capture_label_widget = capture_session->capture_label_widget())
       ignore_windows.insert(capture_label_widget->GetNativeWindow());
+
+    if (auto* capture_toast_widget = capture_session->capture_toast_controller()
+                                         ->capture_toast_widget()) {
+      ignore_windows.insert(capture_toast_widget->GetNativeWindow());
     }
   }
 
   return GetTopmostWindowAtPoint(screen_point, ignore_windows);
+}
+
+bool GetWidgetCurrentVisibility(views::Widget* widget) {
+  // Note that we use `aura::Window::TargetVisibility()` rather than
+  // `views::Widget::IsVisible()` (which in turn uses
+  // `aura::Window::IsVisible()`). The reason is because the latter takes into
+  // account whether window's layer is drawn or not. We want to calculate the
+  // current visibility only based on the actual visibility of the window
+  // itself, so that we can correctly compare it against `target_visibility`.
+  // Note that the widget may be a child of the unparented container (which is
+  // always hidden), yet the native window is shown.
+  return widget->GetNativeWindow()->TargetVisibility() &&
+         widget->GetLayer()->GetTargetOpacity() > 0.f;
+}
+
+bool SetWidgetVisibility(views::Widget* widget,
+                         bool target_visibility,
+                         absl::optional<AnimationParams> animation_params) {
+  DCHECK(widget);
+  if (target_visibility == GetWidgetCurrentVisibility(widget))
+    return false;
+
+  if (animation_params) {
+    if (target_visibility)
+      FadeInWidget(widget, *animation_params);
+    else
+      FadeOutWidget(widget, *animation_params);
+  } else {
+    if (target_visibility)
+      widget->Show();
+    else
+      widget->Hide();
+  }
+  return true;
+}
+
+aura::Window* GetPreferredRootWindow(
+    absl::optional<gfx::Point> location_in_screen) {
+  int64_t display_id =
+      (location_in_screen
+           ? display::Screen::GetScreen()->GetDisplayNearestPoint(
+                 *location_in_screen)
+           : Shell::Get()->cursor_manager()->GetDisplay())
+          .id();
+
+  // The Display object returned by `CursorManager::GetDisplay()` may be stale,
+  // but will have the correct id.
+  DCHECK_NE(display::kInvalidDisplayId, display_id);
+  return Shell::GetRootWindowForDisplayId(display_id);
+}
+
+void ConfigLabelView(views::Label* label_view) {
+  label_view->SetEnabledColorId(kColorAshTextColorPrimary);
+  label_view->SetBackgroundColor(SK_ColorTRANSPARENT);
+  label_view->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  label_view->SetVerticalAlignment(gfx::VerticalAlignment::ALIGN_MIDDLE);
+}
+
+views::BoxLayout* CreateAndInitBoxLayoutForView(views::View* view) {
+  auto* box_layout = view->SetLayoutManager(std::make_unique<views::BoxLayout>(
+      views::BoxLayout::Orientation::kHorizontal, gfx::Insets(),
+      capture_mode::kBetweenChildSpacing));
+  box_layout->set_cross_axis_alignment(
+      views::BoxLayout::CrossAxisAlignment::kCenter);
+  return box_layout;
+}
+
+std::string GetScreenCaptureNotificationIdForPath(const base::FilePath& path) {
+  DCHECK(!path.empty());
+  return base::StringPrintf("%s-%s", kScreenCaptureNotificationId,
+                            path.BaseName().value().c_str());
+}
+
+void MaybeUpdateCameraPrivacyIndicator(bool camera_on) {
+  if (features::IsPrivacyIndicatorsEnabled()) {
+    UpdatePrivacyIndicatorsView(kCameraPrivacyIndicatorId, camera_on,
+                                /*is_microphone_used=*/false);
+  }
+}
+
+void MaybeUpdateMicrophonePrivacyIndicator(bool mic_on) {
+  if (features::IsPrivacyIndicatorsEnabled()) {
+    UpdatePrivacyIndicatorsView(kMicrophonePrivacyIndicatorId,
+                                /*is_camera_used=*/false, mic_on);
+  }
+}
+
+ui::ColorProvider* GetColorProviderForNativeTheme() {
+  auto* native_theme = ui::NativeTheme::GetInstanceForNativeUi();
+  return ui::ColorProviderManager::Get().GetColorProviderFor(
+      native_theme->GetColorProviderKey(nullptr));
+}
+
+bool IsEventTargetedOnWidget(const ui::LocatedEvent& event,
+                             views::Widget* widget) {
+  auto* target = static_cast<aura::Window*>(event.target());
+  return widget && widget->GetNativeWindow()->Contains(target);
+}
+
+gfx::Rect CalculateHighlightLayerBounds(const gfx::PointF& center_point,
+                                        int highlight_layer_radius) {
+  return gfx::Rect(center_point.x() - highlight_layer_radius,
+                   center_point.y() - highlight_layer_radius,
+                   highlight_layer_radius * 2, highlight_layer_radius * 2);
 }
 
 }  // namespace ash::capture_mode_util

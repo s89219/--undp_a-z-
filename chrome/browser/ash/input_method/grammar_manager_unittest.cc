@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,6 +95,7 @@ class MockSuggestionHandler : public SuggestionHandlerInterface {
               AcceptSuggestionCandidate,
               (int context_id,
                const std::u16string& candidate,
+               size_t delete_previous_utf16_len,
                std::string* error),
               (override));
   MOCK_METHOD(bool,
@@ -110,8 +111,7 @@ class GrammarManagerTest : public testing::Test {
  protected:
   void SetUp() override {
     profile_ = std::make_unique<TestingProfile>();
-    ui::IMEBridge::Get()->SetInputContextHandler(
-        &mock_ime_input_context_handler_);
+    IMEBridge::Get()->SetInputContextHandler(&mock_ime_input_context_handler_);
     chromeos::machine_learning::ServiceConnection::
         UseFakeServiceConnectionForTesting(&fake_service_connection_);
     chromeos::machine_learning::ServiceConnection::GetInstance()->Initialize();
@@ -123,7 +123,7 @@ class GrammarManagerTest : public testing::Test {
   std::unique_ptr<TestingProfile> profile_;
   chromeos::machine_learning::FakeServiceConnectionImpl
       fake_service_connection_;
-  ui::MockIMEInputContextHandler mock_ime_input_context_handler_;
+  MockIMEInputContextHandler mock_ime_input_context_handler_;
 };
 
 TEST_F(GrammarManagerTest, HandlesSingleGrammarCheckResult) {
@@ -133,7 +133,7 @@ TEST_F(GrammarManagerTest, HandlesSingleGrammarCheckResult) {
                          &mock_suggestion_handler);
   base::HistogramTester histogram_tester;
 
-  manager.OnFocus(1, /*text_input_flags=*/0);
+  manager.OnFocus(1, SpellcheckMode::kUnspecified);
   manager.OnSurroundingTextChanged(u"", 0, 0);
   manager.OnSurroundingTextChanged(u"There is error.", 0, 0);
   task_environment_.FastForwardBy(base::Milliseconds(2500));
@@ -154,7 +154,7 @@ TEST_F(GrammarManagerTest, RecordsUnderlinesMetricsWithoutDups) {
                          &mock_suggestion_handler);
   base::HistogramTester histogram_tester;
 
-  manager.OnFocus(1, /*text_input_flags=*/0);
+  manager.OnFocus(1, SpellcheckMode::kUnspecified);
   manager.OnSurroundingTextChanged(u"", 0, 0);
   manager.OnSurroundingTextChanged(u"There is error error", 0, 0);
   task_environment_.FastForwardBy(base::Milliseconds(2500));
@@ -174,7 +174,7 @@ TEST_F(GrammarManagerTest, DoesNotRunGrammarCheckOnTextFieldWithSpellcheckOff) {
                          &mock_suggestion_handler);
   base::HistogramTester histogram_tester;
 
-  manager.OnFocus(1, ui::TEXT_INPUT_FLAG_SPELLCHECK_OFF);
+  manager.OnFocus(1, SpellcheckMode::kDisabled);
   manager.OnSurroundingTextChanged(u"", 0, 0);
   manager.OnSurroundingTextChanged(u"There is error.", 0, 0);
   task_environment_.FastForwardBy(base::Milliseconds(2500));
@@ -286,7 +286,7 @@ TEST_F(GrammarManagerTest, ShowsAndDismissesGrammarSuggestion) {
   task_environment_.FastForwardBy(base::Milliseconds(2500));
 
   AssistiveWindowProperties expected_properties;
-  expected_properties.type = ui::ime::AssistiveWindowType::kGrammarSuggestion;
+  expected_properties.type = ash::ime::AssistiveWindowType::kGrammarSuggestion;
   expected_properties.candidates = {u"correct"};
   expected_properties.visible = true;
   expected_properties.announce_string = kShowGrammarSuggestionMessage;
@@ -294,6 +294,7 @@ TEST_F(GrammarManagerTest, ShowsAndDismissesGrammarSuggestion) {
   EXPECT_CALL(mock_suggestion_handler,
               SetAssistiveWindowProperties(1, expected_properties, _));
 
+  mock_ime_input_context_handler_.set_cursor_range(gfx::Range(10, 10));
   manager.OnSurroundingTextChanged(u"There is error.", 10, 10);
   histogram_tester.ExpectBucketCount("InputMethod.Assistive.Grammar.Actions",
                                      1 /*GrammarAction::kWindowShown*/, 1);
@@ -315,7 +316,8 @@ TEST_F(GrammarManagerTest, DoesntShowGrammarSuggestionWhenUndoWindowIsShown) {
   manager.OnFocus(1);
   manager.OnSurroundingTextChanged(u"", 0, 0);
   manager.OnSurroundingTextChanged(u"There is error.", 0, 0);
-  mock_ime_input_context_handler_.SetAutocorrectRange(gfx::Range(9, 14));
+  mock_ime_input_context_handler_.SetAutocorrectRange(gfx::Range(9, 14),
+                                                      base::DoNothing());
   task_environment_.FastForwardBy(base::Milliseconds(2500));
 
   auto grammar_fragments =
@@ -344,7 +346,7 @@ TEST_F(GrammarManagerTest, DismissesSuggestionWhenSelectingARange) {
   task_environment_.FastForwardBy(base::Milliseconds(2500));
 
   AssistiveWindowProperties expected_properties;
-  expected_properties.type = ui::ime::AssistiveWindowType::kGrammarSuggestion;
+  expected_properties.type = ash::ime::AssistiveWindowType::kGrammarSuggestion;
   expected_properties.candidates = {u"correct"};
   expected_properties.visible = true;
   expected_properties.announce_string = kShowGrammarSuggestionMessage;
@@ -352,10 +354,12 @@ TEST_F(GrammarManagerTest, DismissesSuggestionWhenSelectingARange) {
   EXPECT_CALL(mock_suggestion_handler,
               SetAssistiveWindowProperties(1, expected_properties, _));
 
+  mock_ime_input_context_handler_.set_cursor_range(gfx::Range(10, 10));
   manager.OnSurroundingTextChanged(u"There is error.", 10, 10);
 
   EXPECT_CALL(mock_suggestion_handler, DismissSuggestion(1, _));
 
+  mock_ime_input_context_handler_.set_cursor_range(gfx::Range(9, 10));
   manager.OnSurroundingTextChanged(u"There is error.", 9, 10);
 }
 
@@ -374,11 +378,12 @@ TEST_F(GrammarManagerTest, HighlightsAndCommitsGrammarSuggestionWithTab) {
   task_environment_.FastForwardBy(base::Milliseconds(2500));
 
   EXPECT_CALL(mock_suggestion_handler, SetAssistiveWindowProperties(1, _, _));
+  mock_ime_input_context_handler_.set_cursor_range(gfx::Range(10, 10));
   manager.OnSurroundingTextChanged(u"There is error.", 10, 10);
 
   ui::ime::AssistiveWindowButton suggestion_button{
       .id = ui::ime::ButtonId::kSuggestion,
-      .window_type = ui::ime::AssistiveWindowType::kGrammarSuggestion,
+      .window_type = ash::ime::AssistiveWindowType::kGrammarSuggestion,
       .announce_string = kSuggestionButtonMessage,
   };
   EXPECT_CALL(mock_suggestion_handler,
@@ -394,8 +399,8 @@ TEST_F(GrammarManagerTest, HighlightsAndCommitsGrammarSuggestionWithTab) {
       mock_ime_input_context_handler_.delete_surrounding_text_call_count(), 1);
   auto deleteSurroundingTextArg =
       mock_ime_input_context_handler_.last_delete_surrounding_text_arg();
-  EXPECT_EQ(deleteSurroundingTextArg.offset, 9);
-  EXPECT_EQ(deleteSurroundingTextArg.length, 5u);
+  EXPECT_EQ(deleteSurroundingTextArg.num_char16s_before_cursor, 1u);
+  EXPECT_EQ(deleteSurroundingTextArg.num_char16s_after_cursor, 4u);
 
   EXPECT_EQ(mock_ime_input_context_handler_.commit_text_call_count(), 1);
   EXPECT_EQ(mock_ime_input_context_handler_.last_commit_text(), u"correct");
@@ -418,11 +423,12 @@ TEST_F(GrammarManagerTest, HighlightsAndCommitsGrammarSuggestionWithUpArrow) {
   task_environment_.FastForwardBy(base::Milliseconds(2500));
 
   EXPECT_CALL(mock_suggestion_handler, SetAssistiveWindowProperties(1, _, _));
+  mock_ime_input_context_handler_.set_cursor_range(gfx::Range(10, 10));
   manager.OnSurroundingTextChanged(u"There is error.", 10, 10);
 
   ui::ime::AssistiveWindowButton suggestion_button{
       .id = ui::ime::ButtonId::kSuggestion,
-      .window_type = ui::ime::AssistiveWindowType::kGrammarSuggestion,
+      .window_type = ash::ime::AssistiveWindowType::kGrammarSuggestion,
       .announce_string = kSuggestionButtonMessage,
   };
   EXPECT_CALL(mock_suggestion_handler,
@@ -438,8 +444,8 @@ TEST_F(GrammarManagerTest, HighlightsAndCommitsGrammarSuggestionWithUpArrow) {
       mock_ime_input_context_handler_.delete_surrounding_text_call_count(), 1);
   auto deleteSurroundingTextArg =
       mock_ime_input_context_handler_.last_delete_surrounding_text_arg();
-  EXPECT_EQ(deleteSurroundingTextArg.offset, 9);
-  EXPECT_EQ(deleteSurroundingTextArg.length, 5u);
+  EXPECT_EQ(deleteSurroundingTextArg.num_char16s_before_cursor, 1u);
+  EXPECT_EQ(deleteSurroundingTextArg.num_char16s_after_cursor, 4u);
 
   EXPECT_EQ(mock_ime_input_context_handler_.commit_text_call_count(), 1);
   EXPECT_EQ(mock_ime_input_context_handler_.last_commit_text(), u"correct");
@@ -463,16 +469,17 @@ TEST_F(GrammarManagerTest, IgnoresGrammarSuggestion) {
 
   EXPECT_EQ(mock_ime_input_context_handler_.get_grammar_fragments().size(), 1u);
   EXPECT_CALL(mock_suggestion_handler, SetAssistiveWindowProperties(1, _, _));
+  mock_ime_input_context_handler_.set_cursor_range(gfx::Range(10, 10));
   manager.OnSurroundingTextChanged(u"There is error.", 10, 10);
 
   ui::ime::AssistiveWindowButton suggestion_button{
       .id = ui::ime::ButtonId::kSuggestion,
-      .window_type = ui::ime::AssistiveWindowType::kGrammarSuggestion,
+      .window_type = ash::ime::AssistiveWindowType::kGrammarSuggestion,
       .announce_string = kSuggestionButtonMessage,
   };
   ui::ime::AssistiveWindowButton ignore_button{
       .id = ui::ime::ButtonId::kIgnoreSuggestion,
-      .window_type = ui::ime::AssistiveWindowType::kGrammarSuggestion,
+      .window_type = ash::ime::AssistiveWindowType::kGrammarSuggestion,
       .announce_string = kIgnoreButtonMessage,
   };
 

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -119,9 +119,8 @@ class FolderImageTest : public testing::Test,
 INSTANTIATE_TEST_SUITE_P(
     All,
     FolderImageTest,
-    ::testing::Combine(::testing::Values(AppListConfigType::kLarge,
-                                         AppListConfigType::kMedium,
-                                         AppListConfigType::kSmall),
+    ::testing::Combine(::testing::Values(AppListConfigType::kRegular,
+                                         AppListConfigType::kDense),
                        ::testing::Bool()));
 
 TEST_P(FolderImageTest, UpdateListTest) {

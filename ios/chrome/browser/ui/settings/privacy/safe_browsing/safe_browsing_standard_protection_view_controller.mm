@@ -1,10 +1,12 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/settings/privacy/safe_browsing/safe_browsing_standard_protection_view_controller.h"
 
-#include "base/mac/foundation_util.h"
+#import "base/mac/foundation_util.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
 #import "ios/chrome/browser/net/crurl.h"
 #import "ios/chrome/browser/ui/settings/cells/safe_browsing_header_item.h"
 #import "ios/chrome/browser/ui/settings/elements/enterprise_info_popover_view_controller.h"
@@ -14,8 +16,8 @@
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_cell.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util_mac.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -55,6 +57,22 @@ const CGFloat kSafeBrowsingStandardProtectionContentInset = 16;
 
 @implementation SafeBrowsingStandardProtectionViewController
 
+- (instancetype)initWithStyle:(UITableViewStyle)style {
+  if (self = [super initWithStyle:style]) {
+    // Wraps view controller to properly show navigation bar, otherwise "Done"
+    // button won't show.
+    self.navigationController =
+        [[UINavigationController alloc] initWithRootViewController:self];
+    UIBarButtonItem* doneButton = [[UIBarButtonItem alloc]
+        initWithBarButtonSystemItem:UIBarButtonSystemItemDone
+                             target:self
+                             action:@selector(dismiss)];
+    self.modalPresentationStyle = UIModalPresentationFormSheet;
+    self.navigationItem.rightBarButtonItem = doneButton;
+  }
+  return self;
+}
+
 - (void)viewDidLoad {
   [super viewDidLoad];
   self.tableView.accessibilityIdentifier =
@@ -69,6 +87,12 @@ const CGFloat kSafeBrowsingStandardProtectionContentInset = 16;
                           0)];
 }
 
+- (void)viewDidDisappear:(BOOL)animated {
+  [self.presentationDelegate
+      safeBrowsingStandardProtectionViewControllerDidRemove:self];
+  [super viewDidDisappear:animated];
+}
+
 #pragma mark - Private
 
 // Called when switch is toggled.
@@ -78,6 +102,11 @@ const CGFloat kSafeBrowsingStandardProtectionContentInset = 16;
   DCHECK(indexPath);
   TableViewItem* item = [self.tableViewModel itemAtIndexPath:indexPath];
   [self.modelDelegate toggleSwitchItem:item withValue:sender.isOn];
+}
+
+// Removes the view as a result of pressing "Done" button.
+- (void)dismiss {
+  [self dismissViewControllerAnimated:YES completion:nil];
 }
 
 #pragma mark - UITableViewDataSource
@@ -108,11 +137,13 @@ const CGFloat kSafeBrowsingStandardProtectionContentInset = 16;
 #pragma mark - SettingsControllerProtocol
 
 - (void)reportDismissalUserAction {
-  // TODO(crbug.com/1307428): Add UMA recording.
+  base::RecordAction(base::UserMetricsAction(
+      "MobileSafeBrowsingStandardProtectionSettingsClose"));
 }
 
 - (void)reportBackUserAction {
-  // TODO(crbug.com/1307428): Add UMA recording.
+  base::RecordAction(base::UserMetricsAction(
+      "MobileSafeBrowsingStandardProtectionSettingsBack"));
 }
 
 #pragma mark - Actions
@@ -147,6 +178,15 @@ const CGFloat kSafeBrowsingStandardProtectionContentInset = 16;
 }
 
 #pragma mark - SafeBrowsingStandardProtectionConsumer
+
+- (void)reloadCellsForItems {
+  if (!self.tableViewModel) {
+    // No need to reconfigure since the model has not been loaded yet.
+    return;
+  }
+  [self reloadCellsForItems:self.safeBrowsingStandardProtectionItems
+           withRowAnimation:UITableViewRowAnimationAutomatic];
+}
 
 - (void)setSafeBrowsingStandardProtectionItems:
     (ItemArray)safeBrowsingStandardProtectionItems {
@@ -187,7 +227,8 @@ const CGFloat kSafeBrowsingStandardProtectionContentInset = 16;
 
 - (void)presentationControllerDidDismiss:
     (UIPresentationController*)presentationController {
-  // TODO(crbug.com/1307428): Add UMA recording.
+  base::RecordAction(base::UserMetricsAction(
+      "IOSSafeBrowsingStandardProtectionSettingsCloseWithSwipe"));
 }
 
 #pragma mark - PopoverLabelViewControllerDelegate

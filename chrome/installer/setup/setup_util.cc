@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -41,13 +41,14 @@
 #include "base/win/windows_version.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
-#include "chrome/browser/enterprise/connectors/device_trust/key_management/installer/key_rotation_manager.h"
+#include "chrome/browser/chrome_for_testing/buildflags.h"
 #include "chrome/install_static/install_details.h"
 #include "chrome/install_static/install_modes.h"
 #include "chrome/install_static/install_util.h"
 #include "chrome/installer/setup/installer_state.h"
 #include "chrome/installer/setup/setup_constants.h"
 #include "chrome/installer/setup/user_hive_visitor.h"
+#include "chrome/installer/util/app_command.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/initial_preferences.h"
@@ -96,6 +97,7 @@ void RemoveLegacyIExecuteCommandKey(const InstallerState& installer_state) {
 // for this mode of install was dropped from ToT in December 2016. Remove any
 // stray bits in the registry leftover from such installs.
 void RemoveBinariesVersionKey(const InstallerState& installer_state) {
+#if !BUILDFLAG(GOOGLE_CHROME_FOR_TESTING_BRANDING)
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   std::wstring path(install_static::GetClientsKeyPath(
       L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}"));
@@ -105,6 +107,7 @@ void RemoveBinariesVersionKey(const InstallerState& installer_state) {
 #endif
   installer::DeleteRegistryKey(installer_state.root_key(), path,
                                KEY_WOW64_32KEY);
+#endif  // !BUILDFLAG(GOOGLE_CHROME_FOR_TESTING_BRANDING)
 }
 
 void RemoveAppLauncherVersionKey(const InstallerState& installer_state) {
@@ -122,9 +125,10 @@ void RemoveAppLauncherVersionKey(const InstallerState& installer_state) {
 void RemoveLegacyChromeAppCommands(const InstallerState& installer_state) {
 // These app commands were only registered for Google Chrome.
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  installer::DeleteRegistryKey(installer_state.root_key(),
-                               GetCommandKey(L"install-extension"),
-                               KEY_WOW64_32KEY);
+  std::unique_ptr<WorkItemList> list(WorkItem::CreateWorkItemList());
+  AppCommand(L"install-extension", {})
+      .AddDeleteAppCommandWorkItems(installer_state.root_key(), list.get());
+  list->Do();
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 }
 
@@ -374,15 +378,6 @@ bool IsProcessorSupported() {
 #else
 #error Port
 #endif
-}
-
-std::wstring GetCommandKey(const wchar_t* name) {
-  std::wstring cmd_key = install_static::GetClientsKeyPath();
-  cmd_key.append(1, base::FilePath::kSeparators[0])
-      .append(google_update::kRegCommandsKey)
-      .append(1, base::FilePath::kSeparators[0])
-      .append(name);
-  return cmd_key;
 }
 
 void DeleteRegistryKeyPartial(
@@ -748,28 +743,66 @@ bool StoreDMToken(const std::string& token) {
   return true;
 }
 
-bool RotateDeviceTrustKey(
-    std::unique_ptr<enterprise_connectors::KeyRotationManager>
-        key_rotation_manager,
-    const GURL& dm_server_url,
-    const std::string& dm_token,
-    const std::string& nonce) {
+bool DeleteDMToken() {
   DCHECK(install_static::IsSystemInstall());
-  DCHECK(key_rotation_manager);
 
-  if (dm_token.size() > kMaxDMTokenLength) {
-    LOG(ERROR) << "DMToken length out of bounds";
-    return false;
+  // Delete the token from both the app-neutral and browser-specific locations.
+  // Only the former is mandatory -- the latter is best-effort.
+  for (const auto& is_browser_location : {InstallUtil::BrowserLocation(false),
+                                          InstallUtil::BrowserLocation(true)}) {
+    auto [key_path, value_name] =
+        InstallUtil::GetCloudManagementDmTokenPath(is_browser_location);
+    REGSAM wow_access = is_browser_location ? KEY_WOW64_64KEY : KEY_WOW64_32KEY;
+
+    base::win::RegKey key;
+    auto result = key.Open(HKEY_LOCAL_MACHINE, key_path.c_str(),
+                           KEY_SET_VALUE | wow_access);
+    if (result == ERROR_FILE_NOT_FOUND) {
+      // The registry key which stores the DMToken value was not found, so
+      // deletion is not necessary.
+      continue;
+    }
+    if (result != ERROR_SUCCESS) {
+      ::SetLastError(result);
+      PLOG(ERROR) << "Failed to open registry key HKLM\\" << key_path
+                  << " for deletion";
+      // If the key couldn't be opened for the mandatory location, return
+      // failure immediately. Otherwise, continue iterating.
+      if (!is_browser_location)
+        return false;
+      continue;
+    }
+
+    if (!DeleteRegistryValue(key.Handle(), std::wstring(), wow_access,
+                             value_name)) {
+      if (!is_browser_location)
+        return false;  // Logging already performed in `DeleteRegistryValue()`.
+      continue;
+    }  // Else ignore the failure to write to the best-effort location.
+
+    // Delete the key if no other values are present.
+    base::win::RegKey(HKEY_LOCAL_MACHINE, L"", KEY_QUERY_VALUE | wow_access)
+        .DeleteEmptyKey(key_path.c_str());
   }
 
-  return key_rotation_manager->RotateWithAdminRights(dm_server_url, dm_token,
-                                                     nonce);
+  VLOG(1) << "Successfully deleted DMToken from the registry.";
+  return true;
 }
 
 base::FilePath GetNotificationHelperPath(const base::FilePath& target_path,
                                          const base::Version& version) {
   return target_path.AppendASCII(version.GetString())
       .Append(kNotificationHelperExe);
+}
+
+base::FilePath GetWerHelperPath(const base::FilePath& target_path,
+                                const base::Version& version) {
+  return target_path.AppendASCII(version.GetString()).Append(kWerDll);
+}
+
+std::wstring GetWerHelperRegistryPath() {
+  return L"Software\\Microsoft\\Windows\\Windows Error Reporting"
+         L"\\RuntimeExceptionHelperModules";
 }
 
 base::FilePath GetElevationServicePath(const base::FilePath& target_path,

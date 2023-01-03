@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/views/frame/top_container_view.h"
 #include "chrome/browser/ui/views/global_media_controls/media_dialog_view.h"
 #include "chrome/browser/ui/views/global_media_controls/media_toolbar_button_view.h"
+#include "chrome/browser/ui/views/media_router/cast_dialog_coordinator.h"
 #include "chrome/browser/ui/views/media_router/cast_dialog_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "components/media_router/browser/presentation/start_presentation_context.h"
@@ -55,7 +56,7 @@ bool MediaRouterDialogControllerViews::ShowMediaRouterDialogForPresentation(
 }
 
 void MediaRouterDialogControllerViews::CreateMediaRouterDialog(
-    MediaRouterDialogOpenOrigin activation_location) {
+    MediaRouterDialogActivationLocation activation_location) {
   base::Time dialog_creation_time = base::Time::Now();
   if (GetActionController())
     GetActionController()->OnDialogShown();
@@ -70,10 +71,10 @@ void MediaRouterDialogControllerViews::CreateMediaRouterDialog(
   if (browser_view) {
     // Show the Cast dialog anchored to the Cast toolbar button.
     if (browser_view->toolbar()->cast_button()) {
-      CastDialogView::ShowDialogWithToolbarAction(
+      cast_dialog_coordinator_.ShowDialogWithToolbarAction(
           ui_.get(), browser, dialog_creation_time, activation_location);
     } else {
-      CastDialogView::ShowDialogCenteredForBrowserWindow(
+      cast_dialog_coordinator_.ShowDialogCenteredForBrowserWindow(
           ui_.get(), browser, dialog_creation_time, activation_location);
     }
   } else {
@@ -82,36 +83,41 @@ void MediaRouterDialogControllerViews::CreateMediaRouterDialog(
     // Set the height to 0 so that the dialog gets anchored to the top of the
     // window.
     anchor_bounds.set_height(0);
-    CastDialogView::ShowDialogCentered(anchor_bounds, ui_.get(), profile,
-                                       dialog_creation_time,
-                                       activation_location);
+    cast_dialog_coordinator_.ShowDialogCentered(anchor_bounds, ui_.get(),
+                                                profile, dialog_creation_time,
+                                                activation_location);
   }
   scoped_widget_observations_.AddObservation(
-      CastDialogView::GetCurrentDialogWidget());
+      cast_dialog_coordinator_.GetCastDialogWidget());
 
   if (dialog_creation_callback_)
     dialog_creation_callback_.Run();
+
+  MediaRouterMetrics::RecordMediaRouterDialogActivationLocation(
+      activation_location);
 }
 
 void MediaRouterDialogControllerViews::CloseMediaRouterDialog() {
-  CastDialogView::HideDialog();
+  if (IsShowingMediaRouterDialog())
+    cast_dialog_coordinator_.Hide();
 }
 
 bool MediaRouterDialogControllerViews::IsShowingMediaRouterDialog() const {
-  return CastDialogView::IsShowing();
+  return cast_dialog_coordinator_.IsShowing();
 }
 
 void MediaRouterDialogControllerViews::Reset() {
   // If |ui_| is null, Reset() has already been called.
   if (ui_) {
-    if (IsShowingMediaRouterDialog() && GetActionController())
+    if (GetActionController())
       GetActionController()->OnDialogHidden();
     ui_.reset();
     MediaRouterDialogController::Reset();
   }
 }
 
-void MediaRouterDialogControllerViews::OnWidgetClosing(views::Widget* widget) {
+void MediaRouterDialogControllerViews::OnWidgetDestroying(
+    views::Widget* widget) {
   DCHECK(scoped_widget_observations_.IsObservingSource(widget));
   if (ui_)
     ui_->LogMediaSinkStatus();

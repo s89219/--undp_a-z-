@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,8 +30,8 @@ class UkmDataManager {
   UkmDataManager() = default;
   virtual ~UkmDataManager() = default;
 
-  UkmDataManager(UkmDataManager&) = delete;
-  UkmDataManager& operator=(UkmDataManager&) = delete;
+  UkmDataManager(const UkmDataManager&) = delete;
+  UkmDataManager& operator=(const UkmDataManager&) = delete;
 
   // Initializes UKM database and the observer of all UKM events.
   virtual void Initialize(const base::FilePath& database_path,

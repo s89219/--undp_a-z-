@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
 #include "base/no_destructor.h"
 #include "base/sequence_checker.h"
 #include "base/system/sys_info.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/resource_coordinator/tab_manager_features.h"
@@ -68,11 +68,8 @@ class SysInfoDelegate : public SessionRestorePolicy::Delegate {
   }
 
   size_t GetFreeMemoryMiB() const override {
-    constexpr int64_t kMibibytesInBytes = 1 << 20;
-    int64_t free_mem =
-        base::SysInfo::AmountOfAvailablePhysicalMemory() / kMibibytesInBytes;
-    DCHECK(free_mem >= 0);
-    return free_mem;
+    constexpr uint64_t kMibibytesInBytes = 1 << 20;
+    return base::SysInfo::AmountOfAvailablePhysicalMemory() / kMibibytesInBytes;
   }
 
   base::TimeTicks NowTicks() const override { return base::TimeTicks::Now(); }
@@ -185,7 +182,7 @@ void TabDataAccess::SetUsedInBgFromSiteDataDB(
       performance_manager::PerformanceManager::GetPrimaryPageNodeForWebContents(
           contents),
       tab_data->used_in_bg_setter_cancel_callback.callback(),
-      base::SequencedTaskRunnerHandle::Get());
+      base::SequencedTaskRunner::GetCurrentDefault());
 
   performance_manager::PerformanceManager::CallOnGraph(
       FROM_HERE, std::move(call_on_graph_cb));
@@ -209,7 +206,8 @@ void TabDataAccess::SetUsedInBgFromSiteData(
       contents->GetBrowserContext()->GetPermissionController();
 
   if (permission_controller->GetPermissionStatusForCurrentDocument(
-          blink::PermissionType::NOTIFICATIONS, contents->GetMainFrame()) ==
+          blink::PermissionType::NOTIFICATIONS,
+          contents->GetPrimaryMainFrame()) ==
       blink::mojom::PermissionStatus::GRANTED) {
     used_in_bg = true;
   }
@@ -447,7 +445,7 @@ void SessionRestorePolicy::DispatchNotifyAllTabsScoredIfNeeded() {
 
   // This is done asynchronously so that this notification doesn't arrive before
   // a tab score is delivered.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&SessionRestorePolicy::NotifyAllTabsScored,
                                 weak_factory_.GetWeakPtr()));
   notification_state_ = NotificationState::kEnRoute;

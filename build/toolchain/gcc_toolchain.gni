@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -164,6 +164,11 @@ template("gcc_toolchain") {
     } else {
       toolchain_uses_remoteexec = use_remoteexec
     }
+    if (defined(toolchain_args.use_remoteexec_links)) {
+      toolchain_uses_remoteexec_links = toolchain_args.use_remoteexec_links
+    } else {
+      toolchain_uses_remoteexec_links = use_remoteexec_links
+    }
     if (defined(toolchain_args.use_goma)) {
       toolchain_uses_goma = toolchain_args.use_goma
     } else {
@@ -219,14 +224,22 @@ template("gcc_toolchain") {
       compiler_prefix = "${toolchain_cc_wrapper} "
     }
 
-    if (use_goma_thin_lto && toolchain_uses_goma && use_thin_lto) {
-      # goma_ld.py uses autoninja in an attempt to set a reasonable
+    if (toolchain_uses_remoteexec_links) {
+      if (defined(toolchain_args.rbe_link_cfg_file)) {
+        toolchain_rbe_link_cfg_file = toolchain_args.rbe_link_cfg_file
+      } else {
+        toolchain_rbe_link_cfg_file = rbe_link_cfg_file
+      }
+      link_prefix = "${rbe_bin_dir}/rewrapper -cfg=${toolchain_rbe_link_cfg_file} -exec_root=${rbe_exec_root} "
+      not_needed([ "goma_path" ])
+    } else if (use_goma_thin_lto && toolchain_uses_goma && use_thin_lto) {
+      # remote_ld.py uses autoninja in an attempt to set a reasonable
       # number of jobs, but this results in too low a value on
       # Chrome OS builders. So we pass in an explicit value.
       link_prefix =
           "$python_path " +
-          rebase_path("//tools/clang/scripts/goma_ld.py", root_build_dir) +
-          " --gomacc ${goma_path} --jobs 200 -- "
+          rebase_path("//tools/clang/scripts/remote_ld.py", root_build_dir) +
+          " --wrapper ${goma_path} --jobs 200 -- "
     } else {
       link_prefix = ""
       not_needed([ "goma_path" ])
@@ -448,7 +461,7 @@ template("gcc_toolchain") {
         # -soname flag is not available on aix ld
         soname_flag = "-Wl,-soname=\"$soname\""
       }
-      link_command = "$ld -shared $soname_flag {{ldflags}}${extra_ldflags} -o \"$unstripped_sofile\" @\"$rspfile\""
+      link_command = "$ld -shared $soname_flag {{ldflags}}${extra_ldflags} -o \"$unstripped_sofile\" @\"$rspfile\" {{rlibs}}"
 
       # Generate a map file to be used for binary size analysis.
       # Map file adds ~10% to the link time on a z620.
@@ -481,13 +494,13 @@ template("gcc_toolchain") {
       command = "$python_path \"$solink_wrapper\" --readelf=\"$readelf\" --nm=\"$nm\" $strip_switch$dwp_switch --sofile=\"$unstripped_sofile\" --tocfile=\"$tocfile\"$map_switch --output=\"$sofile\" -- $link_command $solink_extra_flags"
 
       if (target_cpu == "mipsel" && is_component_build && is_android) {
-        rspfile_content = "-Wl,--start-group -Wl,--whole-archive {{inputs}} {{solibs}} -Wl,--no-whole-archive {{libs}} -Wl,--end-group -Wl,--whole-archive {{rlibs}} -Wl,--no-whole-archive"
+        rspfile_content = "-Wl,--start-group -Wl,--whole-archive {{inputs}} {{solibs}} -Wl,--no-whole-archive {{libs}} -Wl,--end-group"
       } else if (current_os == "aix") {
         # --whole-archive, --no-whole-archive flags are not available on the aix
         # ld.
-        rspfile_content = "{{inputs}} {{solibs}} {{libs}} {{rlibs}}"
+        rspfile_content = "{{inputs}} {{solibs}} {{libs}}"
       } else {
-        rspfile_content = "-Wl,--whole-archive {{inputs}} {{solibs}} -Wl,--no-whole-archive {{libs}} -Wl,--whole-archive {{rlibs}} -Wl,--no-whole-archive"
+        rspfile_content = "-Wl,--whole-archive {{inputs}} {{solibs}} -Wl,--no-whole-archive {{libs}}"
       }
 
       description = "SOLINK $sofile"
@@ -554,7 +567,8 @@ template("gcc_toolchain") {
       whole_archive_flag = ""
       no_whole_archive_flag = ""
       if (current_os != "aix") {
-        # -soname, --whole-archive, --no-whole-archive flags are not available on aix ld
+        # -soname, --whole-archive, --no-whole-archive flags are not available
+        # on aix ld
         soname_flag = "-Wl,-soname=\"$soname\""
         whole_archive_flag = "-Wl,--whole-archive"
         no_whole_archive_flag = "-Wl,--no-whole-archive"
@@ -565,7 +579,7 @@ template("gcc_toolchain") {
         strip_command = "${invoker.strip} -o \"$sofile\" \"$unstripped_sofile\""
         command += " && " + strip_command
       }
-      rspfile_content = "$whole_archive_flag {{inputs}} {{solibs}} $no_whole_archive_flag {{libs}} $whole_archive_flag {{rlibs}} $no_whole_archive_flag"
+      rspfile_content = "$whole_archive_flag {{inputs}} {{solibs}} $no_whole_archive_flag {{libs}} {{rlibs}}"
 
       description = "SOLINK_MODULE $sofile"
 
@@ -614,11 +628,12 @@ template("gcc_toolchain") {
       start_group_flag = ""
       end_group_flag = ""
       if (current_os != "aix") {
-        # the "--start-group .. --end-group" feature isn't available on the aix ld.
+        # the "--start-group .. --end-group" feature isn't available on the aix
+        # ld.
         start_group_flag = "-Wl,--start-group"
         end_group_flag = "-Wl,--end-group "
       }
-      link_command = "$ld {{ldflags}}${extra_ldflags} -o \"$unstripped_outfile\" $start_group_flag @\"$rspfile\" {{solibs}} $end_group_flag {{libs}}"
+      link_command = "$ld {{ldflags}}${extra_ldflags} -o \"$unstripped_outfile\" $start_group_flag @\"$rspfile\" {{solibs}} $end_group_flag {{libs}} {{rlibs}}"
 
       # Generate a map file to be used for binary size analysis.
       # Map file adds ~10% to the link time on a z620.
@@ -640,26 +655,7 @@ template("gcc_toolchain") {
 
       description = "LINK $outfile"
 
-      whole_archive_flag = ""
-      no_whole_archive_flag = ""
-      if (current_os != "aix") {
-        # --whole-archive, --no-whole-archive flags are not available on aix ld
-        whole_archive_flag = "-Wl,--whole-archive"
-        no_whole_archive_flag = "-Wl,--no-whole-archive"
-      }
-
-      # TODO(crbug.com/1296284): The {{rlibs}} contains the object files from
-      # the build target's source files. They should be treated as peers of the
-      # C++ object files in {{inputs}}, however an rlib is linked like a static
-      # library, which means object files can be dropped if the linker see them
-      # as being unused. This then drops test files, for example.
-      #
-      # However the rust stdlib is also present in the {{rlibs}} and should not
-      # be equally treated as the target's .o files. The linked bug should
-      # address this by moving the std library to be linked as a library and not
-      # as a set of rlibs.
-      rspfile_content =
-          "{{inputs}} $whole_archive_flag {{rlibs}} $no_whole_archive_flag "
+      rspfile_content = "{{inputs}}"
       outputs = [ outfile ]
       if (outfile != unstripped_outfile) {
         outputs += [ unstripped_outfile ]
@@ -773,7 +769,11 @@ template("gcc_toolchain") {
       }
     }
 
-    forward_variables_from(invoker, [ "deps" ])
+    forward_variables_from(invoker,
+                           [
+                             "deps",
+                             "propagates_configs",
+                           ])
   }
 }
 
@@ -786,7 +786,16 @@ template("gcc_toolchain") {
 # use_gold too.
 template("clang_toolchain") {
   gcc_toolchain(target_name) {
-    prefix = rebase_path("$clang_base_path/bin", root_build_dir)
+    _path = "$clang_base_path/bin"
+    _is_path_absolute = get_path_info(_path, "abspath") == _path
+
+    # Preserve absolute paths for tools like distcc.
+    if (_is_path_absolute && filter_include([ _path ], [ "//*" ]) == []) {
+      prefix = _path
+    } else {
+      prefix = rebase_path(_path, root_build_dir)
+    }
+
     cc = "${prefix}/clang"
     cxx = "${prefix}/clang++"
     ld = cxx
@@ -801,6 +810,7 @@ template("clang_toolchain") {
                              "dwp",
                              "enable_linker_map",
                              "loadable_module_extension",
+                             "propagates_configs",
                              "use_unstripped_as_runtime_outputs",
                            ])
 

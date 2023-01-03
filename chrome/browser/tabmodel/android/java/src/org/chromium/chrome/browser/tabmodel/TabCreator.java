@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,6 +39,18 @@ public abstract class TabCreator {
     @Nullable
     public abstract Tab createNewTab(
             LoadUrlParams loadUrlParams, @TabLaunchType int type, Tab parent);
+
+    /**
+     * Creates a new tab and posts to UI.
+     * @param loadUrlParams parameters of the url load.
+     * @param type Information about how the tab was launched.
+     * @param parent the parent tab, if present.
+     * @param position the requested position (index in the tab model)
+     * @return The new tab or null if no tab was created.
+     */
+    @Nullable
+    public abstract Tab createNewTab(
+            LoadUrlParams loadUrlParams, @TabLaunchType int type, Tab parent, int position);
 
     /**
      * On restore, allows us to create a frozen version of a tab using saved tab state we read

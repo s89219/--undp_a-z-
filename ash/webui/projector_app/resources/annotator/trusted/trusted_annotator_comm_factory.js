@@ -1,11 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {PostMessageAPIClient} from 'chrome://resources/js/post_message_api_client.m.js';
-import {RequestHandler} from 'chrome://resources/js/post_message_api_request_handler.m.js';
+import {PostMessageAPIClient} from 'chrome://resources/ash/common/post_message_api/post_message_api_client.js';
+import {RequestHandler} from 'chrome://resources/ash/common/post_message_api/post_message_api_request_handler.js';
 
-import {ProjectorBrowserProxy, ProjectorBrowserProxyImpl} from '../../communication/projector_browser_proxy.js';
+import {AnnotatorBrowserProxy, AnnotatorBrowserProxyImpl} from './annotator_browser_proxy.js';
 
 const TARGET_URL = 'chrome-untrusted://projector-annotator/';
 
@@ -60,7 +60,7 @@ class TrustedAnnotatorRequestHandler extends RequestHandler {
   /*
    * @param {!Element} iframeElement The <iframe> element to listen to as a
    *     client.
-   * @param {ProjectorBrowserProxy} browserProxy The browser proxy that will
+   * @param {AnnotatorBrowserProxy} browserProxy The browser proxy that will
    *     be used to handle the messages.
    */
   constructor(iframeElement, browserProxy) {
@@ -107,7 +107,7 @@ export class AnnotatorTrustedCommFactory {
 
     AnnotatorTrustedCommFactory.requestHandler_ =
         new TrustedAnnotatorRequestHandler(
-            iframeElement, ProjectorBrowserProxyImpl.getInstance());
+            iframeElement, AnnotatorBrowserProxyImpl.getInstance());
   }
 
   /**

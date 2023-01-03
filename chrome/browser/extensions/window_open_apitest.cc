@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -238,7 +238,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenExtension) {
                      url::kStandardSchemeSeparator +
                      last_loaded_extension_id() + "/test.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), start_url));
-  WebContents* newtab = NULL;
+  WebContents* newtab = nullptr;
   ASSERT_NO_FATAL_FAILURE(
       OpenWindow(browser()->tab_strip_model()->GetActiveWebContents(),
                  start_url.Resolve("newtab.html"), true, true, &newtab));
@@ -268,7 +268,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenInvalidExtension) {
       broken_extension_url, new_page_in_same_process, expect_success, &newtab));
 
   EXPECT_EQ(broken_extension_url,
-            newtab->GetMainFrame()->GetLastCommittedURL());
+            newtab->GetPrimaryMainFrame()->GetLastCommittedURL());
   EXPECT_EQ(content::PAGE_TYPE_ERROR,
             newtab->GetController().GetLastCommittedEntry()->GetPageType());
 }
@@ -282,7 +282,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenNoPrivileges) {
       test_data_dir_.AppendASCII("uitest").AppendASCII("window_open")));
 
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), GURL("about:blank")));
-  WebContents* newtab = NULL;
+  WebContents* newtab = nullptr;
   ASSERT_NO_FATAL_FAILURE(
       OpenWindow(browser()->tab_strip_model()->GetActiveWebContents(),
                  GURL(std::string(extensions::kExtensionScheme) +
@@ -319,9 +319,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest,
 
   EXPECT_EQ(content::PAGE_TYPE_ERROR,
             newtab->GetController().GetLastCommittedEntry()->GetPageType());
-  EXPECT_EQ(extension_url, newtab->GetMainFrame()->GetLastCommittedURL());
-  EXPECT_FALSE(newtab->GetMainFrame()->GetSiteInstance()->GetSiteURL().SchemeIs(
-      extensions::kExtensionScheme));
+  EXPECT_EQ(extension_url,
+            newtab->GetPrimaryMainFrame()->GetLastCommittedURL());
+  EXPECT_FALSE(
+      newtab->GetPrimaryMainFrame()->GetSiteInstance()->GetSiteURL().SchemeIs(
+          extensions::kExtensionScheme));
 }
 
 // Test that navigating to an extension URL is allowed on chrome://.
@@ -342,13 +344,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest,
   GURL history_url(chrome::kChromeUIHistoryURL);
   ASSERT_TRUE(history_url.SchemeIs(content::kChromeUIScheme));
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), history_url));
-  EXPECT_EQ(history_url, tab->GetMainFrame()->GetLastCommittedURL());
+  EXPECT_EQ(history_url, tab->GetPrimaryMainFrame()->GetLastCommittedURL());
 
   content::TestNavigationObserver observer(tab);
   ASSERT_TRUE(content::ExecuteScript(
       tab, "location.href = '" + extension_url.spec() + "';"));
   observer.Wait();
-  EXPECT_EQ(extension_url, tab->GetMainFrame()->GetLastCommittedURL());
+  EXPECT_EQ(extension_url, tab->GetPrimaryMainFrame()->GetLastCommittedURL());
   std::string result;
   ASSERT_TRUE(content::ExecuteScriptAndExtractString(
       tab, "domAutomationController.send(document.body.innerText)", &result));

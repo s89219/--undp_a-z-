@@ -1,13 +1,12 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // clang-format off
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import {createEmptySearchBubble, findAndRemoveHighlights, highlight, removeHighlights, stripDiacritics} from 'chrome://resources/js/search_highlight_utils.js';
-import {findAncestor} from 'chrome://resources/js/util.m.js';
 import {DomIf, microTask} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsSectionElement} from './settings_page/settings_section.js';
@@ -26,11 +25,11 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
    * A data structure used by callers to combine the results of multiple search
    * requests.
    */
-  export type SearchResult = {
-    canceled: boolean,
-    didFindMatches: boolean,
-    wasClearSearch: boolean,
-  };
+  export interface SearchResult {
+    canceled: boolean;
+    didFindMatches: boolean;
+    wasClearSearch: boolean;
+  }
 
   /**
    * A CSS attribute indicating that a node should be ignored during searching.
@@ -68,9 +67,21 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
    * @param root The root of the sub-tree to be searched
    * @return Whether or not matches were found.
    */
-  function findAndHighlightMatches_(request: SearchRequest, root: Node): boolean {
+  function findAndHighlightMatches(
+      request: SearchRequest, root: Node): boolean {
     let foundMatches = false;
-    const highlights: Array<HTMLElement> = [];
+    const highlights: HTMLElement[] = [];
+
+    // Returns true if the node or any of its ancestors are a settings-subpage.
+    function isInSubpage(node: (Node|null)): boolean {
+      while (node !== null) {
+        if (node.nodeName === 'SETTINGS-SUBPAGE') {
+          return true;
+        }
+        node = node instanceof ShadowRoot ? node.host : node.parentNode;
+      }
+      return false;
+    }
 
     function doSearch(node: Node) {
       // NOTE: For subpage wrappers <template route-path="..."> when |no-search|
@@ -116,7 +127,7 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
 
         if (ranges.length > 0) {
           foundMatches = true;
-          revealParentSection_(
+          revealParentSection(
               node, /*numResults=*/ ranges.length, request.bubbles);
 
           if (node.parentNode!.nodeName === 'OPTION') {
@@ -127,12 +138,11 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
             // Currently, they're incorrectly positioned and there's no great
             // signal at which to know when to reposition them (because every
             // page asynchronously loads/renders things differently).
-            const isSubpage = (n: Node) => n.nodeName === 'SETTINGS-SUBPAGE';
-            if (findAncestor(select, isSubpage, true)) {
+            if (isInSubpage(select)) {
               return;
             }
 
-            showBubble_(
+            showBubble(
                 select, /*numResults=*/ ranges.length, request.bubbles,
                 /*horizontallyCenter=*/ true);
           } else {
@@ -169,7 +179,7 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
    * Finds and makes visible the <settings-section> parent of |node|.
    * @param bubbles A map of bubbles created so far.
    */
-  function revealParentSection_(
+  function revealParentSection(
       node: Node, numResults: number, bubbles: Map<Node, number>) {
     let associatedControl: HTMLElement|null = null;
 
@@ -197,13 +207,13 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
     // Need to add the search bubble after the parent SETTINGS-SECTION has
     // become visible, otherwise |offsetWidth| returns zero.
     if (associatedControl) {
-      showBubble_(
+      showBubble(
           associatedControl, numResults, bubbles,
           /* horizontallyCenter= */ false);
     }
   }
 
-  function showBubble_(
+  function showBubble(
       control: Node, numResults: number, bubbles: Map<Node, number>,
       horizontallyCenter: boolean) {
     const bubble = createEmptySearchBubble(control, horizontallyCenter);
@@ -263,7 +273,7 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
 
   class SearchAndHighlightTask extends Task {
     exec() {
-      const foundMatches = findAndHighlightMatches_(this.request, this.node);
+      const foundMatches = findAndHighlightMatches(this.request, this.node);
       this.request.updateMatches(foundMatches);
       return Promise.resolve();
     }
@@ -276,7 +286,7 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
       const shouldSearch = this.request.regExp !== null;
       this.setSectionsVisibility_(!shouldSearch);
       if (shouldSearch) {
-        const foundMatches = findAndHighlightMatches_(this.request, this.node);
+        const foundMatches = findAndHighlightMatches(this.request, this.node);
         this.request.updateMatches(foundMatches);
       }
 
@@ -292,11 +302,11 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
     }
   }
 
-  type Queues = {
-    high: Array<Task>,
-    middle: Array<Task>,
-    low: Array<Task>,
-  };
+  interface Queues {
+    high: Task[];
+    middle: Task[];
+    low: Task[];
+  }
 
   class TaskQueue {
     private request_: SearchRequest;
@@ -384,7 +394,7 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
     resolver: PromiseResolver<SearchRequest>;
     queue: TaskQueue;
     private textObservers_: Set<MutationObserver>;
-    private highlights_: Array<HTMLElement>;
+    private highlights_: HTMLElement[];
     bubbles: Map<HTMLElement, number>;
 
     constructor(rawQuery: string, root: Element) {
@@ -411,7 +421,7 @@ import {SettingsSubpageElement} from './settings_page/settings_subpage.js';
     }
 
     /** @param highlights The highlight wrappers to add */
-    addHighlights(highlights: Array<HTMLElement>) {
+    addHighlights(highlights: HTMLElement[]) {
       this.highlights_.push(...highlights);
     }
 

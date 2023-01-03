@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,10 @@ SelectToSpeakKeystrokeSelectionTest = class extends SelectToSpeakE2ETest {
     await importModule(
         'SelectToSpeakConstants',
         '/select_to_speak/select_to_speak_constants.js');
-    selectToSpeak.prefsManager_.enhancedVoicesDialogShown_ = true;
+    await importModule('PrefsManager', '/select_to_speak/prefs_manager.js');
+    chrome.settingsPrivate.setPref(
+        PrefsManager.ENHANCED_VOICES_DIALOG_SHOWN_KEY, true,
+        '' /* unused, see crbug.com/866161 */, () => {});
   }
 
   /**
@@ -50,7 +53,7 @@ SelectToSpeakKeystrokeSelectionTest = class extends SelectToSpeakE2ETest {
         anchorObject: textNode,
         anchorOffset,
         focusObject: textNode,
-        focusOffset
+        focusOffset,
       });
     }, expected);
   }
@@ -97,35 +100,55 @@ SelectToSpeakKeystrokeSelectionTest = class extends SelectToSpeakE2ETest {
         '</script>' +
         '<body onload="doSelection()">' + bodyHtml + '</body>';
   }
+
+  /**
+   * Function to set the value property and the text selection properties of
+   * the given node using a text value, a start index, and an end index. It
+   * keeps trying to set and wait for textSelStart and textSelEnd until these
+   * text selection properties are set with the given indices, respectively.
+   * @param {AutomationNode} node The automation node to be set.
+   * @param {string} text The text to be set to the node's value property.
+   * @param {number} startIndex The index in the text field where focus starts.
+   * @param {number} endIndex The index in the text field where focus ends.
+   */
+  async setValueAndTextSelection(node, value, startIndex, endIndex) {
+    node.setValue(value);
+    await this.waitForEvent(node, 'valueChanged');
+
+    while (node.textSelStart !== startIndex || node.textSelEnd !== endIndex) {
+      node.setSelection(startIndex, endIndex);
+      await this.waitForEvent(node, 'textSelectionChanged');
+    }
+  }
 };
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'SpeaksTextAtKeystrokeFullText',
     async function() {
       await this.testSimpleTextAtKeystroke(
           'This is some text', 0, 17, 'This is some text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'SpeaksTextAtKeystrokePartialText',
     async function() {
       await this.testSimpleTextAtKeystroke(
           'This is some text', 0, 12, 'This is some');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'SpeaksTextAtKeystrokeSingleWord',
     async function() {
       await this.testSimpleTextAtKeystroke('This is some text', 8, 12, 'some');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'SpeaksTextAtKeystrokePartialWord',
     async function() {
       await this.testSimpleTextAtKeystroke('This is some text', 8, 10, 'so');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'SpeaksAcrossNodesAtKeystroke',
     async function() {
       await this.testReadTextAtKeystroke(
@@ -137,13 +160,13 @@ TEST_F(
               anchorObject: firstNode,
               anchorOffset: 0,
               focusObject: lastNode,
-              focusOffset: 5
+              focusOffset: 5,
             });
           },
           'This is some bold text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'SpeaksAcrossNodesSelectedBackwardsAtKeystroke', async function() {
       await this.testReadTextAtKeystroke(
@@ -156,13 +179,13 @@ TEST_F(
               anchorObject: firstNode,
               anchorOffset: 5,
               focusObject: lastNode,
-              focusOffset: 0
+              focusOffset: 0,
             });
           },
           'This is some bold text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'SpeakTextSurroundedByBrs',
     async function() {
       // If you load this html and double-click on "Selected text", this is the
@@ -175,7 +198,7 @@ TEST_F(
           anchorObject: firstNode,
           anchorOffset: 0,
           focusObject: lastNode,
-          focusOffset: 1
+          focusOffset: 1,
         });
       };
       setFocusCallback = this.newCallback(setFocusCallback);
@@ -200,7 +223,7 @@ TEST_F(
       setFocusCallback(root);
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'StartsReadingAtFirstNodeWithText',
     async function() {
       await this.testReadTextAtKeystroke(
@@ -213,13 +236,13 @@ TEST_F(
               anchorObject: firstNode,
               anchorOffset: 0,
               focusObject: lastNode,
-              focusOffset: 5
+              focusOffset: 5,
             });
           },
           'This is some bold text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'IgnoresTextMarkedNotUserSelectable',
     async function() {
       await this.testReadTextAtKeystroke(
@@ -232,13 +255,13 @@ TEST_F(
               anchorObject: firstNode,
               anchorOffset: 0,
               focusObject: lastNode,
-              focusOffset: 5
+              focusOffset: 5,
             });
           },
           'This is some text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'HandlesSingleImageCorrectlyWithAutomation', async function() {
       await this.testReadTextAtKeystroke(
@@ -248,12 +271,12 @@ TEST_F(
               anchorObject: container,
               anchorOffset: 0,
               focusObject: container,
-              focusOffset: 1
+              focusOffset: 1,
             });
           }, 'one');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'HandlesMultipleImagesCorrectlyWithAutomation', async function() {
       await this.testReadTextAtKeystroke(
@@ -265,13 +288,13 @@ TEST_F(
               anchorObject: container,
               anchorOffset: 1,
               focusObject: container,
-              focusOffset: 2
+              focusOffset: 2,
             });
           },
           'two');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'HandlesMultipleImagesCorrectlyWithJS1', async function() {
       // Using JS to do the selection instead of Automation, so that we can
@@ -292,7 +315,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'two');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'HandlesMultipleImagesCorrectlyWithJS2', async function() {
       const selectionCode =
@@ -311,7 +334,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'two three');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'TextFieldFullySelected',
     async function() {
       const selectionCode = 'let p = document.getElementsByTagName("p")[0];' +
@@ -334,7 +357,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'text field');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'TwoTextFieldsFullySelected',
     async function() {
       const selectionCode =
@@ -357,7 +380,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'two three');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'TextInputPartiallySelected',
     async function() {
       const html = '<script type="text/javascript">' +
@@ -378,7 +401,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'field');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'TextAreaPartiallySelected',
     async function() {
       const html = '<script type="text/javascript">' +
@@ -399,7 +422,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'line second');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'HandlesTextWithBr',
     async function() {
       const selectionCode =
@@ -415,7 +438,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'Test');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'HandlesTextWithBrComplex',
     async function() {
       const selectionCode = 'let p = document.getElementsByTagName("p")[0];' +
@@ -431,7 +454,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'Some text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'HandlesTextWithBrAfterText1',
     async function() {
       // A bug was that if the selection was on the rootWebArea, paragraphs were
@@ -450,7 +473,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'Some text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'HandlesTextWithBrAfterText2',
     async function() {
       // A bug was that if the selection was on the rootWebArea, paragraphs were
@@ -475,7 +498,7 @@ TEST_F(
       }
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'HandlesTextAreaAndBrs',
     async function() {
       const selectionCode =
@@ -492,7 +515,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'Some text');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'textFieldWithComboBoxSimple',
     async function() {
       const selectionCode =
@@ -512,7 +535,7 @@ TEST_F(
 // TODO(katie): It doesn't seem possible to programatically specify a range that
 // selects only part of the text in a combo box.
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'contentEditableInternallySelected',
     async function() {
       const html = '<script type="text/javascript">' +
@@ -545,7 +568,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'd e');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'contentEditableExternallySelected',
     async function() {
       const selectionCode =
@@ -566,7 +589,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'd e f');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'ReordersSvgSingleLine',
     async function() {
       const selectionCode =
@@ -587,7 +610,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'My cat is Grumpy!');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest', 'ReordersSvgWithGroups',
     async function() {
       const selectionCode =
@@ -623,7 +646,8 @@ TEST_F(
       this.assertEqualsCollapseWhitespace(
           this.mockTts.pendingUtterances()[0], 'Column 2, Text 2');
     });
-TEST_F(
+
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'NonReorderedSvgPreservesSelectionStartEnd', async function() {
       const selectionCode = 'const t1 = document.getElementById("t1");' +
@@ -642,7 +666,7 @@ TEST_F(
           this.mockTts.pendingUtterances()[0], 'cat is');
     });
 
-TEST_F(
+AX_TEST_F(
     'SelectToSpeakKeystrokeSelectionTest',
     'ReorderedSvgIgnoresSelectionStartEnd', async function() {
       const selectionCode = 'const t1 = document.getElementById("t1");' +
@@ -659,4 +683,103 @@ TEST_F(
       assertTrue(this.mockTts.currentlySpeaking());
       this.assertEqualsCollapseWhitespace(
           this.mockTts.pendingUtterances()[0], 'My cat is Grumpy!');
+    });
+
+AX_TEST_F(
+    'SelectToSpeakKeystrokeSelectionTest', 'OmniboxFullySelected',
+    async function() {
+      let omnibox;
+      await this.runWithLoadedDesktop(desktop => {
+        omnibox = desktop.find({attributes: {className: 'OmniboxViewViews'}});
+      });
+
+      await this.setValueAndTextSelection(
+          omnibox, 'Hello, Chromium a11y', 0, 20);
+      assertEquals('Hello, Chromium a11y', omnibox.value);
+      assertEquals(0, omnibox.textSelStart);
+      assertEquals(20, omnibox.textSelEnd);
+
+      this.triggerReadSelectedText();
+      assertTrue(this.mockTts.currentlySpeaking());
+      this.assertEqualsCollapseWhitespace(
+          this.mockTts.pendingUtterances()[0], 'Hello, Chromium a11y');
+    });
+
+AX_TEST_F(
+    'SelectToSpeakKeystrokeSelectionTest', 'OmniboxPartiallySelectedFromStart',
+    async function() {
+      let omnibox;
+      await this.runWithLoadedDesktop(desktop => {
+        omnibox = desktop.find({attributes: {className: 'OmniboxViewViews'}});
+      });
+
+      await this.setValueAndTextSelection(
+          omnibox, 'Hello, Chromium a11y', 0, 5);
+      assertEquals('Hello, Chromium a11y', omnibox.value);
+      assertEquals(0, omnibox.textSelStart);
+      assertEquals(5, omnibox.textSelEnd);
+
+      this.triggerReadSelectedText();
+      assertTrue(this.mockTts.currentlySpeaking());
+      this.assertEqualsCollapseWhitespace(
+          this.mockTts.pendingUtterances()[0], 'Hello');
+    });
+
+
+AX_TEST_F(
+    'SelectToSpeakKeystrokeSelectionTest', 'OmniboxPartiallySelectedToEnd',
+    async function() {
+      let omnibox;
+      await this.runWithLoadedDesktop(desktop => {
+        omnibox = desktop.find({attributes: {className: 'OmniboxViewViews'}});
+      });
+
+      await this.setValueAndTextSelection(
+          omnibox, 'Hello, Chromium a11y', 7, 20);
+      assertEquals('Hello, Chromium a11y', omnibox.value);
+      assertEquals(7, omnibox.textSelStart);
+      assertEquals(20, omnibox.textSelEnd);
+
+      this.triggerReadSelectedText();
+      assertTrue(this.mockTts.currentlySpeaking());
+      this.assertEqualsCollapseWhitespace(
+          this.mockTts.pendingUtterances()[0], 'Chromium a11y');
+    });
+
+AX_TEST_F(
+    'SelectToSpeakKeystrokeSelectionTest', 'OmniboxPartiallySelectedInMid',
+    async function() {
+      let omnibox;
+      await this.runWithLoadedDesktop(desktop => {
+        omnibox = desktop.find({attributes: {className: 'OmniboxViewViews'}});
+      });
+
+      await this.setValueAndTextSelection(
+          omnibox, 'Hello, Chromium a11y', 7, 15);
+      assertEquals('Hello, Chromium a11y', omnibox.value);
+      assertEquals(7, omnibox.textSelStart);
+      assertEquals(15, omnibox.textSelEnd);
+
+      this.triggerReadSelectedText();
+      assertTrue(this.mockTts.currentlySpeaking());
+      this.assertEqualsCollapseWhitespace(
+          this.mockTts.pendingUtterances()[0], 'Chromium');
+    });
+
+AX_TEST_F(
+    'SelectToSpeakKeystrokeSelectionTest', 'OmniboxNoneSelected',
+    async function() {
+      let omnibox;
+      await this.runWithLoadedDesktop(desktop => {
+        omnibox = desktop.find({attributes: {className: 'OmniboxViewViews'}});
+      });
+
+      await this.setValueAndTextSelection(
+          omnibox, 'Hello, Chromium a11y', 0, 0);
+      assertEquals('Hello, Chromium a11y', omnibox.value);
+      assertEquals(0, omnibox.textSelStart);
+      assertEquals(0, omnibox.textSelEnd);
+
+      this.triggerReadSelectedText();
+      assertEquals(false, this.mockTts.currentlySpeaking());
     });

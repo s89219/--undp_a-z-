@@ -1,20 +1,25 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {Route} from '../router.js';
+import {Route} from './router.js';
 
 /**
  * Specifies all possible os routes in settings.
  *
  * @typedef {{
+ *   A11Y_AUDIO_AND_CAPTIONS: !Route,
+ *   A11Y_CURSOR_AND_TOUCHPAD: !Route,
+ *   A11Y_DISPLAY_AND_MAGNIFICATION: !Route,
+ *   A11Y_KEYBOARD_AND_TEXT_INPUT: !Route,
+ *   A11Y_TEXT_TO_SPEECH: !Route,
+ *   A11Y_SELECT_TO_SPEAK: !Route,
  *   ABOUT: !Route,
  *   ABOUT_ABOUT: !Route,
  *   ACCOUNTS: !Route,
  *   ACCOUNT_MANAGER: !Route,
  *   ADVANCED: !Route,
- *   AMBIENT_MODE: !Route,
- *   AMBIENT_MODE_PHOTOS: !Route,
+ *   APN: !Route,
  *   APP_NOTIFICATIONS: !Route,
  *   APP_MANAGEMENT: !Route,
  *   APP_MANAGEMENT_DETAIL: !Route,
@@ -23,6 +28,7 @@ import {Route} from '../router.js';
  *   APPS: !Route,
  *   ANDROID_APPS_DETAILS: !Route,
  *   ANDROID_APPS_DETAILS_ARC_VM_SHARED_USB_DEVICES: !Route,
+ *   AUDIO: !Route,
  *   CROSTINI: !Route,
  *   CROSTINI_ANDROID_ADB: !Route,
  *   CROSTINI_DETAILS: !Route,
@@ -36,6 +42,10 @@ import {Route} from '../router.js';
  *   BLUETOOTH: !Route,
  *   BLUETOOTH_DEVICES: !Route,
  *   BLUETOOTH_DEVICE_DETAIL: !Route,
+ *   BLUETOOTH_SAVED_DEVICES: !Route,
+ *   BRUSCHETTA_DETAILS: !Route,
+ *   BRUSCHETTA_SHARED_USB_DEVICES: !Route,
+ *   BRUSCHETTA_SHARED_PATHS: !Route,
  *   CHANGE_PICTURE: !Route,
  *   CUPS_PRINTERS: !Route,
  *   DARK_MODE: !Route,
@@ -48,6 +58,7 @@ import {Route} from '../router.js';
  *   FINGERPRINT: !Route,
  *   FILES: !Route,
  *   GOOGLE_ASSISTANT: !Route,
+ *   HOTSPOT_DETAIL: !Route,
  *   INTERNET: !Route,
  *   INTERNET_NETWORKS: !Route,
  *   KERBEROS: !Route,
@@ -56,7 +67,6 @@ import {Route} from '../router.js';
  *   KNOWN_NETWORKS: !Route,
  *   LOCK_SCREEN: !Route,
  *   MANAGE_ACCESSIBILITY: !Route,
- *   MANAGE_CAPTION_SETTINGS: !Route,
  *   MANAGE_SWITCH_ACCESS_SETTINGS: !Route,
  *   MANAGE_TTS_SETTINGS: !Route,
  *   MULTIDEVICE: !Route,
@@ -67,6 +77,7 @@ import {Route} from '../router.js';
  *   OS_ACCESSIBILITY: !Route,
  *   OS_LANGUAGES: !Route,
  *   OS_LANGUAGES_EDIT_DICTIONARY: !Route,
+ *   OS_LANGUAGES_JAPANESE_MANAGE_USER_DICTIONARY: !Route,
  *   OS_LANGUAGES_INPUT: !Route,
  *   OS_LANGUAGES_INPUT_METHOD_OPTIONS: !Route,
  *   OS_LANGUAGES_LANGUAGES: !Route,
@@ -78,13 +89,17 @@ import {Route} from '../router.js';
  *   OS_SIGN_OUT: !Route,
  *   OS_SYNC: !Route,
  *   OS_PEOPLE: !Route,
+ *   PER_DEVICE_KEYBOARD: !Route,
+ *   PER_DEVICE_MOUSE: !Route,
+ *   PER_DEVICE_POINTING_STICK: !Route,
+ *   PER_DEVICE_TOUCHPAD: !Route,
  *   PERSONALIZATION: !Route,
  *   POINTERS: !Route,
  *   POWER: !Route,
  *   PRIVACY: !Route,
+ *   PRIVACY_HUB: !Route,
  *   SEARCH: !Route,
  *   SEARCH_SUBPAGE: !Route,
- *   SMART_LOCK: !Route,
  *   SMART_PRIVACY: !Route,
  *   SMB_SHARES: !Route,
  *   STORAGE: !Route,

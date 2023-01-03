@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -88,7 +88,7 @@ public class SplitPreloader {
         }
 
         private Context createSplitContext() {
-            if (BundleUtils.isIsolatedSplitInstalled(mContext, mName)) {
+            if (BundleUtils.isIsolatedSplitInstalled(mName)) {
                 Context context = BundleUtils.createIsolatedSplitContext(mContext, mName);
                 if (GlobalAppLocaleController.getInstance().isOverridden()) {
                     Configuration config =
@@ -107,7 +107,7 @@ public class SplitPreloader {
 
     /** Starts preloading a split context on a background thread. */
     public void preload(String name, OnComplete onComplete) {
-        if (!BundleUtils.isIsolatedSplitInstalled(mContext, name) && onComplete == null) {
+        if (!BundleUtils.isIsolatedSplitInstalled(name) && onComplete == null) {
             return;
         }
 

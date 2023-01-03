@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,11 +23,8 @@ class PrefService;
 @property(nonatomic, weak) id<PrivacySafeBrowsingNavigationCommands> handler;
 
 // Designated initializer. All the parameters should not be null.
-// |userPrefService|: preference service from the browser state.
-// |localPrefService|: preference service from the application context.
-// |mode|: mode to display the Google services settings.
+// `userPrefService`: preference service from the browser state.
 - (instancetype)initWithUserPrefService:(PrefService*)userPrefService
-                       localPrefService:(PrefService*)localPrefService
     NS_DESIGNATED_INITIALIZER;
 
 - (instancetype)init NS_UNAVAILABLE;

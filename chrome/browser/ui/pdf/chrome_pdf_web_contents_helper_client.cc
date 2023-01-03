@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,14 @@
 namespace {
 
 content::WebContents* GetWebContentsToUse(
-    content::WebContents* web_contents) {
+    content::RenderFrameHost* render_frame_host) {
   // If we're viewing the PDF in a MimeHandlerViewGuest, use its embedder
   // WebContents.
   auto* guest_view =
-      extensions::MimeHandlerViewGuest::FromWebContents(web_contents);
-  return guest_view ? guest_view->embedder_web_contents() : web_contents;
+      extensions::MimeHandlerViewGuest::FromRenderFrameHost(render_frame_host);
+  return guest_view
+             ? guest_view->embedder_web_contents()
+             : content::WebContents::FromRenderFrameHost(render_frame_host);
 }
 
 }  // namespace
@@ -29,18 +31,19 @@ ChromePDFWebContentsHelperClient::~ChromePDFWebContentsHelperClient() = default;
 
 content::RenderFrameHost* ChromePDFWebContentsHelperClient::FindPdfFrame(
     content::WebContents* contents) {
-  content::RenderFrameHost* main_frame = contents->GetMainFrame();
+  content::RenderFrameHost* main_frame = contents->GetPrimaryMainFrame();
   content::RenderFrameHost* pdf_frame =
       pdf_frame_util::FindPdfChildFrame(main_frame);
   return pdf_frame ? pdf_frame : main_frame;
 }
 
 void ChromePDFWebContentsHelperClient::UpdateContentRestrictions(
-    content::WebContents* contents,
+    content::RenderFrameHost* render_frame_host,
     int content_restrictions) {
   // Speculative short-term-fix while we get at the root of
   // https://crbug.com/752822 .
-  content::WebContents* web_contents_to_use = GetWebContentsToUse(contents);
+  content::WebContents* web_contents_to_use =
+      GetWebContentsToUse(render_frame_host);
   if (!web_contents_to_use)
     return;
 
@@ -63,10 +66,10 @@ void ChromePDFWebContentsHelperClient::OnSaveURL(
 }
 
 void ChromePDFWebContentsHelperClient::SetPluginCanSave(
-    content::WebContents* contents,
+    content::RenderFrameHost* render_frame_host,
     bool can_save) {
   auto* guest_view =
-      extensions::MimeHandlerViewGuest::FromWebContents(contents);
+      extensions::MimeHandlerViewGuest::FromRenderFrameHost(render_frame_host);
   if (guest_view)
     guest_view->SetPluginCanSave(can_save);
 }

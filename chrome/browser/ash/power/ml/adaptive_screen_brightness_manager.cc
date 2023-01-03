@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,8 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "chromeos/constants/devicetype.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/power_manager/backlight.pb.h"
 #include "components/prefs/pref_service.h"
 #include "components/viz/host/host_frame_sink_manager.h"
@@ -87,7 +87,7 @@ const std::pair<ukm::SourceId, bool> GetActiveTabData() {
     DCHECK(tab_strip_model);
     content::WebContents* contents = tab_strip_model->GetActiveWebContents();
     if (contents) {
-      tab_id = contents->GetMainFrame()->GetPageUkmSourceId();
+      tab_id = contents->GetPrimaryMainFrame()->GetPageUkmSourceId();
       has_form_entry = FormInteractionTabHelper::FromWebContents(contents)
                            ->had_form_interaction();
     }

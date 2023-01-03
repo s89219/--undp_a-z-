@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,9 +72,6 @@ class SigninViewController {
 
   virtual ~SigninViewController();
 
-  // Returns true if the signin flow should be shown for |mode|.
-  static bool ShouldShowSigninForMode(profiles::BubbleViewMode mode);
-
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   // Shows the signin attached to |browser_|'s active web contents.
   // |access_point| indicates the access point used to open the Gaia sign in
@@ -129,6 +126,11 @@ class SigninViewController {
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+  // Shows the modal profile customization dialog as a browser-modal dialog on
+  // top of the |browser_|'s window.
+  void ShowModalProfileCustomizationDialog(
+      bool is_local_profile_creation = false);
+
   // Shows the modal sign-in email confirmation dialog as a tab-modal dialog on
   // top of the currently displayed WebContents in |browser_|.
   void ShowModalSigninEmailConfirmationDialog(
@@ -139,15 +141,20 @@ class SigninViewController {
 
   // Shows the modal sync confirmation dialog as a browser-modal dialog on top
   // of the |browser_|'s window.
-  void ShowModalSyncConfirmationDialog();
+  void ShowModalSyncConfirmationDialog(bool is_signin_intercept = false);
 
   // Shows the modal enterprise confirmation dialog as a browser-modal dialog on
   // top of the `browser_`'s window. `domain_name` is the domain of the
   // enterprise account being shown. `callback` is called with the user's action
   // on the dialog.
+  // If `profile_creation_required_by_policy` is true, the wording of the dialog
+  // will tell the user that an admin requires a new profile for the account,
+  // otherwise the default wording will be used.
+  // When `show_link_data_option` is false, the callback is called with either
+  // SIGNIN_CHOICE_CANCEL or SIGNIN_CHOICE_NEW_PROFILE.
   void ShowModalEnterpriseConfirmationDialog(
       const AccountInfo& account_info,
-      bool force_new_profile,
+      bool profile_creation_required_by_policy,
       bool show_link_data_option,
       SkColor profile_color,
       signin::SigninChoiceCallback callback);
@@ -176,9 +183,14 @@ class SigninViewController {
                            EnterpriseConfirmationDefaultFocus);
   FRIEND_TEST_ALL_PREFIXES(SigninViewControllerDelegateViewsBrowserTest,
                            CloseImmediately);
+  FRIEND_TEST_ALL_PREFIXES(ProfilePickerLocalProfileCreationDialogBrowserTest,
+                           CreateLocalProfile);
+  FRIEND_TEST_ALL_PREFIXES(ProfilePickerLocalProfileCreationDialogBrowserTest,
+                           CancelLocalProfileCreation);
   friend class login_ui_test_utils::SigninViewControllerTestUtil;
   friend class SigninReauthViewControllerBrowserTest;
   friend class SigninInterceptFirstRunExperienceDialogBrowserTest;
+  friend class SyncConfirmationUIDialogPixelTest;
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
   // Shows the DICE-specific sign-in flow: opens a Gaia sign-in webpage in a new

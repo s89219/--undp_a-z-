@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -385,7 +385,7 @@ void CloseFileDescriptor(const int file_descriptor) {
 void DeleteTemporaryFile(const base::FilePath& file_path) {
   base::ThreadPool::PostTask(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      base::BindOnce(base::GetDeleteFileCallback(), file_path));
+      base::GetDeleteFileCallback(file_path));
 }
 
 // A fake callback to be passed as CopyFileProgressCallback.

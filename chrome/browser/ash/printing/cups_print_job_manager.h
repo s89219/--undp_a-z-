@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,10 @@
 #include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
+
+namespace crosapi {
+class TestControllerAsh;
+}  // namespace crosapi
 
 namespace ash {
 
@@ -93,6 +97,7 @@ class CupsPrintJobManager : public KeyedService {
   Profile* profile_;
 
  private:
+  friend class crosapi::TestControllerAsh;
   void RecordJobDuration(base::WeakPtr<CupsPrintJob> job);
 
   std::unique_ptr<CupsPrintJobNotificationManager> notification_manager_;

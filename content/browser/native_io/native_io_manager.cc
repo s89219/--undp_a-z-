@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/sequence_checker.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/thread_checker.h"
@@ -161,9 +162,9 @@ void NativeIOManager::BindReceiver(
 
   // Ensure that the default bucket for the storage key exists on access and
   // bind receiver on retrieval.
-  quota_manager_proxy_->GetOrCreateBucket(
-      storage_key, storage::kDefaultBucketName,
-      base::SequencedTaskRunnerHandle::Get(),
+  quota_manager_proxy_->UpdateOrCreateBucket(
+      storage::BucketInitParams::ForDefaultBucket(storage_key),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindOnce(&NativeIOManager::BindReceiverWithBucketInfo,
                      weak_factory_.GetWeakPtr(), storage_key,
                      std::move(receiver)));

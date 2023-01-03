@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include <memory>
 #include <vector>
 
+#include "base/android/scoped_java_ref.h"
 #include "base/files/scoped_file.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
@@ -58,6 +59,9 @@ class GFX_EXPORT SurfaceControl {
   // Returns true if tagging a transaction with vsync id is supported.
   static GFX_EXPORT bool SupportsSetFrameTimeline();
 
+  // Returns true if APIs to convert Java SurfaceControl to ASurfaceControl.
+  static GFX_EXPORT bool SupportsSurfacelessControl();
+
   // Applies transaction. Used to emulate webview functor interface, where we
   // pass raw ASurfaceTransaction object. For use inside Chromium use
   // Transaction class below instead.
@@ -74,6 +78,8 @@ class GFX_EXPORT SurfaceControl {
     Surface();
     Surface(const Surface& parent, const char* name);
     Surface(ANativeWindow* parent, const char* name);
+    Surface(JNIEnv* env,
+            const base::android::JavaRef<jobject>& j_surface_control);
 
     Surface(const Surface&) = delete;
     Surface& operator=(const Surface&) = delete;
@@ -169,15 +175,19 @@ class GFX_EXPORT SurfaceControl {
                        scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
     void Apply();
+    // Caller(e.g.,WebView) must call ASurfaceTransaction_apply(), otherwise
+    // SurfaceControl leaks.
     ASurfaceTransaction* GetTransaction();
 
    private:
     void PrepareCallbacks();
+    void DestroyIfNeeded();
 
     int id_;
     ASurfaceTransaction* transaction_;
     OnCommitCb on_commit_cb_;
     OnCompleteCb on_complete_cb_;
+    bool need_to_apply_ = false;
   };
 };
 }  // namespace gfx

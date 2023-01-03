@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,7 @@ import org.chromium.ui.permissions.PermissionCallback;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Methods to handle requesting native permissions from Android when the user grants a website a
@@ -185,12 +186,15 @@ public class AndroidPermissionRequester {
                                     + deniedContentSettings;
 
                     String appName = BuildInfo.getInstance().hostPackageLabel;
-                    showMissingPermissionDialog(windowAndroid,
-                            context.getString(deniedStringId, appName),
-                            ()
-                                    -> requestAndroidPermissions(
-                                            windowAndroid, contentSettingsTypes, delegate),
-                            delegate::onAndroidPermissionCanceled);
+                    showMissingPermissionDialog(
+                            windowAndroid, context.getString(deniedStringId, appName), (model) -> {
+                                final ModalDialogManager modalDialogManager =
+                                        windowAndroid.getModalDialogManager();
+                                modalDialogManager.dismissDialog(
+                                        model, DialogDismissalCause.POSITIVE_BUTTON_CLICKED);
+                                requestAndroidPermissions(
+                                        windowAndroid, contentSettingsTypes, delegate);
+                            }, delegate::onAndroidPermissionCanceled);
                 } else if (deniedContentSettings.isEmpty()) {
                     delegate.onAndroidPermissionAccepted();
                 } else {
@@ -206,14 +210,17 @@ public class AndroidPermissionRequester {
     }
 
     /**
-     * Shows a dialog that informs the user about a missing Android permission.
+     * Shows a dialog that informs the user about a missing Android permission. Note that
+     * the dialog is not dismissed when the positive button is clicked, rather it will be
+     * dismissed after the Android permissions dialog is dismissed.
      * @param windowAndroid Current WindowAndroid.
      * @param messageId The message that is shown on the dialog.
-     * @param onPositiveButtonClicked Runnable that is executed on positive button click.
+     * @param onPositiveButtonClicked Consumer that is executed on positive button click.
+     *         It takes a PropertyModel.
      * @param onCancelled Runnable that is executed on cancellation.
      */
     public static void showMissingPermissionDialog(WindowAndroid windowAndroid, String message,
-            Runnable onPositiveButtonClicked, Runnable onCancelled) {
+            Consumer<PropertyModel> onPositiveButtonClicked, Runnable onCancelled) {
         final ModalDialogManager modalDialogManager = windowAndroid.getModalDialogManager();
         assert modalDialogManager != null : "ModalDialogManager is null";
 
@@ -221,9 +228,7 @@ public class AndroidPermissionRequester {
             @Override
             public void onClick(PropertyModel model, int buttonType) {
                 if (buttonType == ModalDialogProperties.ButtonType.POSITIVE) {
-                    onPositiveButtonClicked.run();
-                    modalDialogManager.dismissDialog(
-                            model, DialogDismissalCause.POSITIVE_BUTTON_CLICKED);
+                    onPositiveButtonClicked.accept(model);
                 }
             }
 

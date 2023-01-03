@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -66,11 +66,6 @@ int g_dismissal_embargo_days = kDefaultEmbargoDays;
 // The number of days that an origin will stay under embargo for a requested
 // permission due to repeated ignores.
 int g_ignore_embargo_days = kDefaultEmbargoDays;
-
-bool IsAutoBlockerEnabledForContentType(ContentSettingsType content_type) {
-  return PermissionUtil::IsPermission(content_type) ||
-         content_type == ContentSettingsType::FEDERATED_IDENTITY_API;
-}
 
 std::string GetStringForContentType(ContentSettingsType content_type) {
   if (content_type == ContentSettingsType::FEDERATED_IDENTITY_API)
@@ -226,13 +221,21 @@ const char PermissionDecisionAutoBlocker::kPermissionIgnoreEmbargoKey[] =
     "ignore_embargo_days";
 
 // static
-PermissionResult PermissionDecisionAutoBlocker::GetEmbargoResult(
+bool PermissionDecisionAutoBlocker::IsEnabledForContentSetting(
+    ContentSettingsType content_setting) {
+  return PermissionUtil::IsPermission(content_setting) ||
+         content_setting == ContentSettingsType::FEDERATED_IDENTITY_API;
+}
+
+// static
+absl::optional<PermissionResult>
+PermissionDecisionAutoBlocker::GetEmbargoResult(
     HostContentSettingsMap* settings_map,
     const GURL& request_origin,
     ContentSettingsType permission,
     base::Time current_time) {
   DCHECK(settings_map);
-  DCHECK(IsAutoBlockerEnabledForContentType(permission));
+  DCHECK(IsEnabledForContentSetting(permission));
 
   std::unique_ptr<base::Value> dict =
       GetOriginAutoBlockerData(settings_map, request_origin);
@@ -256,8 +259,7 @@ PermissionResult PermissionDecisionAutoBlocker::GetEmbargoResult(
                             PermissionStatusSource::MULTIPLE_IGNORES);
   }
 
-  return PermissionResult(CONTENT_SETTING_ASK,
-                          PermissionStatusSource::UNSPECIFIED);
+  return absl::nullopt;
 }
 
 // static
@@ -302,7 +304,14 @@ void PermissionDecisionAutoBlocker::UpdateFromVariations() {
                            kDefaultEmbargoDays);
 }
 
-PermissionResult PermissionDecisionAutoBlocker::GetEmbargoResult(
+bool PermissionDecisionAutoBlocker::IsEmbargoed(
+    const GURL& request_origin,
+    ContentSettingsType permission) {
+  return GetEmbargoResult(request_origin, permission).has_value();
+}
+
+absl::optional<PermissionResult>
+PermissionDecisionAutoBlocker::GetEmbargoResult(
     const GURL& request_origin,
     ContentSettingsType permission) {
   return GetEmbargoResult(settings_map_, request_origin, permission,
@@ -340,19 +349,23 @@ std::set<GURL> PermissionDecisionAutoBlocker::GetEmbargoedOrigins(
 std::set<GURL> PermissionDecisionAutoBlocker::GetEmbargoedOrigins(
     std::vector<ContentSettingsType> content_types) {
   DCHECK(settings_map_);
+
+  std::vector<ContentSettingsType> filtered_content_types;
+  for (ContentSettingsType content_type : content_types) {
+    if (IsEnabledForContentSetting(content_type))
+      filtered_content_types.emplace_back(content_type);
+  }
+  if (filtered_content_types.empty())
+    return std::set<GURL>();
+
   ContentSettingsForOneType embargo_settings;
   settings_map_->GetSettingsForOneType(
       ContentSettingsType::PERMISSION_AUTOBLOCKER_DATA, &embargo_settings);
   std::set<GURL> origins;
   for (const auto& e : embargo_settings) {
-    for (auto content_type : content_types) {
-      if (!IsAutoBlockerEnabledForContentType(content_type))
-        continue;
+    for (auto content_type : filtered_content_types) {
       const GURL url(e.primary_pattern.ToString());
-      PermissionResult result =
-          GetEmbargoResult(settings_map_, url, content_type, clock_->Now());
-      if (result.source == PermissionStatusSource::MULTIPLE_DISMISSALS ||
-          result.source == PermissionStatusSource::MULTIPLE_IGNORES) {
+      if (IsEmbargoed(url, content_type)) {
         origins.insert(url);
         break;
       }
@@ -447,7 +460,7 @@ bool PermissionDecisionAutoBlocker::RecordIgnoreAndEmbargo(
 void PermissionDecisionAutoBlocker::RemoveEmbargoAndResetCounts(
     const GURL& url,
     ContentSettingsType permission) {
-  if (!IsAutoBlockerEnabledForContentType(permission))
+  if (!IsEnabledForContentSetting(permission))
     return;
 
   std::unique_ptr<base::Value> dict =
@@ -478,6 +491,14 @@ void PermissionDecisionAutoBlocker::RemoveEmbargoAndResetCounts(
   }
 }
 
+void PermissionDecisionAutoBlocker::AddObserver(Observer* obs) {
+  observers_.AddObserver(obs);
+}
+
+void PermissionDecisionAutoBlocker::RemoveObserver(Observer* obs) {
+  observers_.RemoveObserver(obs);
+}
+
 // static
 const char*
 PermissionDecisionAutoBlocker::GetPromptDismissCountKeyForTesting() {
@@ -503,6 +524,14 @@ void PermissionDecisionAutoBlocker::PlaceUnderEmbargo(
   settings_map_->SetWebsiteSettingDefaultScope(
       request_origin, GURL(), ContentSettingsType::PERMISSION_AUTOBLOCKER_DATA,
       base::Value::FromUniquePtrValue(std::move(dict)));
+  NotifyEmbargoStarted(request_origin, permission);
+}
+
+void PermissionDecisionAutoBlocker::NotifyEmbargoStarted(
+    const GURL& origin,
+    ContentSettingsType content_setting) {
+  for (Observer& obs : observers_)
+    obs.OnEmbargoStarted(origin, content_setting);
 }
 
 void PermissionDecisionAutoBlocker::SetClockForTesting(base::Clock* clock) {

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ class NET_EXPORT StreamSocket : public Socket {
  public:
   using BeforeConnectCallback = base::RepeatingCallback<int()>;
 
-  ~StreamSocket() override {}
+  ~StreamSocket() override = default;
 
   // Sets a callback to be invoked before establishing a connection. This allows
   // setting options, like receive and send buffer size, when they will take

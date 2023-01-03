@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
+#include "ash/style/ash_color_id.h"
 #include "ash/style/ash_color_provider.h"
 #include "ash/wallpaper/wallpaper_controller_impl.h"
 #include "base/bind.h"
@@ -19,8 +20,6 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/color_analysis.h"
-#include "ui/gfx/color_utils.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/label_button.h"
@@ -93,19 +92,13 @@ class PinRequestView::FocusableLabelButton : public views::LabelButton {
   FocusableLabelButton(PressedCallback callback, const std::u16string& text)
       : views::LabelButton(std::move(callback), text) {
     SetInstallFocusRingOnFocus(true);
+    views::FocusRing::Get(this)->SetColorId(ui::kColorAshFocusRing);
     SetFocusBehavior(FocusBehavior::ALWAYS);
   }
 
   FocusableLabelButton(const FocusableLabelButton&) = delete;
   FocusableLabelButton& operator=(const FocusableLabelButton&) = delete;
   ~FocusableLabelButton() override = default;
-
-  void OnThemeChanged() override {
-    views::LabelButton::OnThemeChanged();
-    views::FocusRing::Get(this)->SetColor(
-        AshColorProvider::Get()->GetControlsLayerColor(
-            AshColorProvider::ControlsLayerType::kFocusRingColor));
-  }
 };
 
 PinRequestView::TestApi::TestApi(PinRequestView* view) : view_(view) {
@@ -307,8 +300,6 @@ PinRequestView::PinRequestView(PinRequest request, Delegate* delegate)
 
   add_spacer(kDescriptionToAccessCodeDistanceDp);
 
-  LoginPalette palette = CreateDefaultLoginPalette();
-
   // Access code input view.
   if (request.pin_length.has_value()) {
     CHECK_GT(request.pin_length.value(), 0);
@@ -319,7 +310,7 @@ PinRequestView::PinRequestView(PinRequest request, Delegate* delegate)
         base::BindRepeating(&PinRequestView::SubmitCode,
                             base::Unretained(this)),
         base::BindRepeating(&PinRequestView::OnBack, base::Unretained(this)),
-        request.obscure_pin, palette.pin_input_text_color));
+        request.obscure_pin));
     access_code_view_->SetFocusBehavior(FocusBehavior::ALWAYS);
   } else {
     auto flex_code_input = std::make_unique<FlexCodeInput>(
@@ -328,7 +319,7 @@ PinRequestView::PinRequestView(PinRequest request, Delegate* delegate)
         base::BindRepeating(&PinRequestView::SubmitCode,
                             base::Unretained(this)),
         base::BindRepeating(&PinRequestView::OnBack, base::Unretained(this)),
-        request.obscure_pin, palette.pin_input_text_color);
+        request.obscure_pin);
     flex_code_input->SetAccessibleName(default_accessible_title_);
     access_code_view_ = AddChildView(std::move(flex_code_input));
   }
@@ -337,13 +328,13 @@ PinRequestView::PinRequestView(PinRequest request, Delegate* delegate)
 
   // Pin keyboard. Note that the keyboard's own submit button is disabled via
   // passing a null |on_submit| callback.
-  pin_keyboard_view_ = new LoginPinView(
-      LoginPinView::Style::kAlphanumeric, CreateDefaultLoginPalette(),
-      base::BindRepeating(&AccessCodeInput::InsertDigit,
-                          base::Unretained(access_code_view_)),
-      base::BindRepeating(&AccessCodeInput::Backspace,
-                          base::Unretained(access_code_view_)),
-      /*on_submit=*/LoginPinView::OnPinSubmit());
+  pin_keyboard_view_ =
+      new LoginPinView(LoginPinView::Style::kAlphanumeric,
+                       base::BindRepeating(&AccessCodeInput::InsertDigit,
+                                           base::Unretained(access_code_view_)),
+                       base::BindRepeating(&AccessCodeInput::Backspace,
+                                           base::Unretained(access_code_view_)),
+                       /*on_submit=*/LoginPinView::OnPinSubmit());
   // Backspace key is always enabled and |access_code_| field handles it.
   pin_keyboard_view_->OnPasswordTextChanged(false);
   AddChildView(pin_keyboard_view_);
@@ -514,8 +505,9 @@ void PinRequestView::SetInputEnabled(bool input_enabled) {
 
 void PinRequestView::UpdatePreferredSize() {
   SetPreferredSize(CalculatePreferredSize());
-  if (GetWidget())
+  if (GetWidget()) {
     GetWidget()->CenterWindow(GetPreferredSize());
+  }
 }
 
 void PinRequestView::FocusSubmitButton() {
@@ -539,7 +531,7 @@ void PinRequestView::OnInputChange(bool last_field_active, bool complete) {
 
     // Moving focus is delayed by using PostTask to allow for proper
     // a11y announcements.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&PinRequestView::FocusSubmitButton,
                                   weak_ptr_factory_.GetWeakPtr()));
   }
@@ -566,8 +558,9 @@ gfx::Size PinRequestView::GetPinRequestViewSize() const {
       std::min(static_cast<int>(description_label_->GetRequiredLines()),
                kDescriptionMaxLines) *
           kDescriptionTextLineHeightDp;
-  if (PinKeyboardVisible())
+  if (PinKeyboardVisible()) {
     height += kPinKeyboardHeightDp;
+  }
   return gfx::Size(kPinRequestViewWidthDp, height);
 }
 

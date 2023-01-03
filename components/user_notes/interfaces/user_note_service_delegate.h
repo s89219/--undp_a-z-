@@ -1,5 +1,4 @@
-
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,6 +32,10 @@ class UserNoteServiceDelegate {
   // example to bring a note into focus or start the note creation flow.
   virtual UserNotesUI* GetUICoordinatorForFrame(
       const content::RenderFrameHost* rfh) = 0;
+
+  // Called by the `UserNoteService` to determine whether the given frame is
+  // part of the active tab of its owning browser window.
+  virtual bool IsFrameInActiveTab(const content::RenderFrameHost* rfh) = 0;
 };
 
 }  // namespace user_notes

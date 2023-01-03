@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,6 @@
 
 #include <memory>
 
-#include "ash/public/cpp/style/color_mode_observer.h"
-#include "ash/style/ash_color_provider.h"
 #include "base/scoped_observation.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -25,18 +23,13 @@ class Label;
 
 namespace ash {
 
-namespace {
-class FadeoutLayerDelegate;
-}
-
 // Container for displaying ongoing media information, including the name of the
 // media and the artist, formatted with a proceding music note symbol and a
 // middle dot separator.
 class MediaStringView : public views::View,
                         public views::ViewObserver,
                         public media_session::mojom::MediaControllerObserver,
-                        public ui::ImplicitAnimationObserver,
-                        public ColorModeObserver {
+                        public ui::ImplicitAnimationObserver {
  public:
   struct Settings {
     SkColor icon_light_mode_color;
@@ -75,9 +68,6 @@ class MediaStringView : public views::View,
   // ui::ImplicitAnimationObserver:
   void OnImplicitAnimationsCompleted() override;
 
-  // ColorModeObserver:
-  void OnColorModeChanged(bool dark_mode_enabled) override;
-
  private:
   friend class AmbientAshTestBase;
 
@@ -111,8 +101,6 @@ class MediaStringView : public views::View,
   // With an extra copy of media info text for scrolling animation.
   views::Label* media_text_ = nullptr;
 
-  std::unique_ptr<FadeoutLayerDelegate> fadeout_layer_delegate_;
-
   // Used to receive updates to the active media controller.
   mojo::Remote<media_session::mojom::MediaController> media_controller_remote_;
   mojo::Receiver<media_session::mojom::MediaControllerObserver>
@@ -120,9 +108,6 @@ class MediaStringView : public views::View,
 
   base::ScopedObservation<views::View, views::ViewObserver> observed_view_{
       this};
-
-  base::ScopedObservation<AshColorProvider, ColorModeObserver>
-      color_provider_observer_{this};
 
   base::WeakPtrFactory<MediaStringView> weak_factory_{this};
 };

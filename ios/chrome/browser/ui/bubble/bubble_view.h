@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,8 @@
 extern NSString* const kBubbleViewCloseButtonIdentifier;
 // Accessibility identifier for the title label.
 extern NSString* const kBubbleViewTitleLabelIdentifier;
+// Accessibility identifier for the label.
+extern NSString* const kBubbleViewLabelIdentifier;
 // Accessibility identifier for the image view.
 extern NSString* const kBubbleViewImageViewIdentifier;
 // Accessibility identifier for the snooze button.
@@ -93,8 +95,8 @@ typedef NS_ENUM(NSInteger, BubbleViewType) {
 
 // Distance between the arrow's centerX and the (leading or trailing) edge of
 // the bubble, depending on the BubbleAlignment. If BubbleAlignment is center,
-// then |alignmentOffset| is ignored. |alignmentOffset| changes the minimum size
-// of the bubble, thus might change the value of |sizeThatFits|.
+// then `alignmentOffset` is ignored. `alignmentOffset` changes the minimum size
+// of the bubble, thus might change the value of `sizeThatFits`.
 @property(nonatomic) CGFloat alignmentOffset;
 
 @end

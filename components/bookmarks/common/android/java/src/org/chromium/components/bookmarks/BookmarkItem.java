@@ -1,8 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.components.bookmarks;
+
+import androidx.annotation.VisibleForTesting;
 
 import org.chromium.components.url_formatter.SchemeDisplay;
 import org.chromium.components.url_formatter.UrlFormatter;
@@ -15,32 +17,17 @@ public class BookmarkItem {
     private final String mTitle;
     private final GURL mUrl;
     private final BookmarkId mId;
-    private final BookmarkId mParentId;
-    private final long mDateAdded;
     private final boolean mIsFolder;
+    private final BookmarkId mParentId;
     private final boolean mIsEditable;
     private final boolean mIsManaged;
+    private final long mDateAdded;
     private final boolean mRead;
-    private final boolean mReadingListSwappable;
-
     private boolean mForceEditableForTesting;
 
-    /**
-     * Constructs a bookmark item.
-     * @param id The id.
-     * @param title The title of the bookmark/folder.
-     * @param url The url of the bookmark.
-     * @param isFolder Whether this item is a folder.
-     * @param parentId The id of the parent.
-     * @param isEditable Whether this item is editable.
-     * @param isManaged Whether this item is managed.
-     * @param dateAdded The date this item was added.
-     * @param read Whether this item has been read (reading list only).
-     * @param readingListSwappable Whether this item is swappable to/from reading list.
-     */
     public BookmarkItem(BookmarkId id, String title, GURL url, boolean isFolder,
             BookmarkId parentId, boolean isEditable, boolean isManaged, long dateAdded,
-            boolean read, boolean readingListSwappable) {
+            boolean read) {
         mId = id;
         mTitle = title;
         mUrl = url;
@@ -50,7 +37,6 @@ public class BookmarkItem {
         mIsManaged = isManaged;
         mDateAdded = dateAdded;
         mRead = read;
-        mReadingListSwappable = readingListSwappable;
     }
 
     /** Returns the title of the bookmark item. */
@@ -90,11 +76,6 @@ public class BookmarkItem {
     }
 
     /** Returns whether this bookmark can be moved */
-    public boolean isMovable() {
-        return mReadingListSwappable || isReorderable();
-    }
-
-    /** Returns whether this bookmark can be moved */
     public boolean isReorderable() {
         return isEditable() && mId.getType() == BookmarkType.NORMAL;
     }
@@ -123,6 +104,7 @@ public class BookmarkItem {
     }
 
     // TODO(https://crbug.com/1019217): Remove when BookmarkModel is stubbed in tests instead.
+    @VisibleForTesting
     public void forceEditableForTesting() {
         mForceEditableForTesting = true;
     }

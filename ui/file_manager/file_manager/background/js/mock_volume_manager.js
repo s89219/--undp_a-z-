@@ -1,8 +1,8 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.m.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
 
 import {MockEntry, MockFileSystem} from '../../common/js/mock_entry.js';
 import {str, util} from '../../common/js/util.js';
@@ -75,7 +75,14 @@ export class MockVolumeManager {
         str('DOWNLOADS_DIRECTORY_LABEL'));
   }
 
-  /** @override */
+  getFuseBoxOnlyFilterEnabled() {
+    return false;
+  }
+
+  getMediaStoreFilesOnlyFilterEnabled() {
+    return false;
+  }
+
   dispose() {}
 
   /**
@@ -117,9 +124,13 @@ export class MockVolumeManager {
    */
   getLocationInfo(entry) {
     if (util.isFakeEntry(entry)) {
+      const isReadOnly =
+          entry.rootType !== VolumeManagerCommon.RootType.RECENT &&
+          entry.rootType !== VolumeManagerCommon.RootType.TRASH;
       return new EntryLocationImpl(
           this.volumeInfoList.item(0),
-          /** @type {!FakeEntry} */ (entry).rootType, true, true);
+          /** @type {!FakeEntry} */ (entry).rootType, /* isRootType= */ true,
+          isReadOnly);
     }
 
     if (entry.filesystem.name === VolumeManagerCommon.VolumeType.DRIVE) {
@@ -158,7 +169,6 @@ export class MockVolumeManager {
   /**
    * @param {VolumeManagerCommon.VolumeType} volumeType Volume type.
    * @return {?VolumeInfo} Volume info.
-   * @override
    */
   getCurrentProfileVolumeInfo(volumeType) {
     for (let i = 0; i < this.volumeInfoList.length; i++) {
@@ -202,7 +212,9 @@ export class MockVolumeManager {
     // If there's no label set it to volumeId to make it shorter to write
     // tests.
     const volumeInfo = new VolumeInfoImpl(
-        type, volumeId, fileSystem,
+        type,
+        volumeId,
+        fileSystem,
         '',                                         // error
         '',                                         // deviceType
         devicePath || '',                           // devicePath
@@ -218,12 +230,22 @@ export class MockVolumeManager {
         diskFileSystemType,                         // diskFileSystemType
         {},                                         // iconSet
         '',                                         // driveLabel
-        remoteMountPath);                           // remoteMountPath
+        remoteMountPath,                            // remoteMountPath
+        undefined,                                  // vmType
+    );
+
 
     return volumeInfo;
   }
 
+  /**
+   * @return {!Promise<!VolumeInfo>}
+   */
   async mountArchive(fileUrl, password) {
+    throw new Error('Not implemented');
+  }
+
+  async cancelMounting(fileUrl) {
     throw new Error('Not implemented');
   }
 
@@ -231,7 +253,7 @@ export class MockVolumeManager {
     throw new Error('Not implemented');
   }
 
-  configure(volumeInfo) {
+  async configure(volumeInfo) {
     throw new Error('Not implemented');
   }
 
@@ -243,27 +265,40 @@ export class MockVolumeManager {
     throw new Error('Not implemented');
   }
 
+  /**
+   * @return {boolean}
+   */
   dispatchEvent(event) {
     throw new Error('Not implemented');
+  }
+
+  /**
+   * @return {boolean}
+   */
+  hasDisabledVolumes() {
+    return false;
+  }
+
+  /**
+   * @return {boolean}
+   */
+  isDisabled(volume) {
+    return false;
   }
 }
 
 /** @private {?VolumeManager} */
 MockVolumeManager.instance_ = null;
 
-/** @override */
 MockVolumeManager.prototype.getVolumeInfo =
     VolumeManagerImpl.prototype.getVolumeInfo;
 
-/** @override */
 MockVolumeManager.prototype.getDefaultDisplayRoot =
     VolumeManagerImpl.prototype.getDefaultDisplayRoot;
 
-/** @override */
 MockVolumeManager.prototype.findByDevicePath =
     VolumeManagerImpl.prototype.findByDevicePath;
 
-/** @override */
 MockVolumeManager.prototype.whenVolumeInfoReady =
     VolumeManagerImpl.prototype.whenVolumeInfoReady;
 

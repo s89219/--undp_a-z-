@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,6 +39,14 @@ class AppDiscoveryService : public KeyedService {
   // Queries for apps of the requested |result_type|.
   // |callback| is called when a response to the request is ready.
   void GetApps(ResultType result_type, ResultCallback callback);
+
+  // Queries for an app's icon, identified by |app_id|.
+  // |callback| is called when a response to the request is ready.
+  // Virtual for testing.
+  virtual void GetIcon(const std::string& app_id,
+                       int32_t size_hint_in_dip,
+                       ResultType result_type,
+                       GetIconCallback callback);
 
  private:
   std::unique_ptr<AppFetcherManager> app_fetcher_manager_;

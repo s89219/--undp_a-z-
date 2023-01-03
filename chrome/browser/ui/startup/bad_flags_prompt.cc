@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,11 +18,13 @@
 #include "chrome/browser/infobars/simple_alert_infobar_creator.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/webauthn/webauthn_switches.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/autofill/core/common/autofill_switches.h"
+#include "components/history_clusters/core/file_clustering_backend.h"
 #include "components/infobars/content/content_infobar_manager.h"
 #include "components/infobars/core/infobar_delegate.h"
 #include "components/network_session_configurator/common/network_switches.h"
@@ -40,6 +42,7 @@
 #include "services/network/public/cpp/network_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/resource/scoped_startup_resource_bundle.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/android/flags/bad_flags_snackbar_manager.h"
@@ -144,16 +147,37 @@ static const char* kBadFlags[] = {
     // origins.
     switches::kIsolatedAppOrigins,
 
+    // This flag tells Chrome to automatically install an Isolated Web App in
+    // developer mode. The flag should contain the path to an unsigned Web
+    // Bundle containing the IWA. Paths will be resolved relative to the
+    // current working directory.
+    switches::kInstallIsolatedWebAppFromFile,
+
+    // This flag tells Chrome to automatically install an Isolated Web App in
+    // developer mode. The flag should contain an HTTP(S) URL that all of the
+    // app's requests will be proxied to.
+    switches::kInstallIsolatedWebAppFromUrl,
+
     // Allows the specified origin to make Web Authentication API requests on
     // behalf of other origins, if a corresponding Google-internal
     // platform-level enterprise policy is also applied.
     webauthn::switches::kRemoteProxiedRequestsAllowedAdditionalOrigin,
+
+    // When a file is specified as part of this flag, this sideloads machine
+    // learning model output used by the History Clusters service and should
+    // only be used for testing purposes.
+    history_clusters::switches::kClustersOverrideFile,
 };
 #endif  // !BUILDFLAG(IS_ANDROID)
 
 // Dangerous feature flags in about:flags for which to display a warning that
 // "stability and security will suffer".
 static const base::Feature* kBadFeatureFlagsInAboutFlags[] = {
+    // These features enables experimental support for isolated web apps, which
+    // unlock capabilities with a high potential for security / privacy abuse.
+    &features::kIsolatedWebApps,
+    &features::kIsolatedWebAppDevMode,
+
     &features::kWebBundlesFromNetwork,
 #if BUILDFLAG(IS_ANDROID)
     &chrome::android::kCommandLineOnNonRooted,
@@ -222,28 +246,16 @@ void MaybeShowInvalidUserDataDirWarningDialog() {
 
   startup_metric_utils::SetNonBrowserUIDisplayed();
 
-  // Ensure the ResourceBundle is initialized for string resource access.
-  bool cleanup_resource_bundle = false;
-  if (!ui::ResourceBundle::HasSharedInstance()) {
-    cleanup_resource_bundle = true;
-    std::string locale = l10n_util::GetApplicationLocale(std::string());
-    const char kUserDataDirDialogFallbackLocale[] = "en-US";
-    if (locale.empty())
-      locale = kUserDataDirDialogFallbackLocale;
-    ui::ResourceBundle::InitSharedInstanceWithLocale(
-        locale, NULL, ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
-  }
-
+  // Ensure there is an instance of ResourceBundle that is initialized for
+  // localized string resource accesses.
+  ui::ScopedStartupResourceBundle startup_resource_bundle;
   const std::u16string& title =
       l10n_util::GetStringUTF16(IDS_CANT_WRITE_USER_DIRECTORY_TITLE);
   const std::u16string& message = l10n_util::GetStringFUTF16(
       IDS_CANT_WRITE_USER_DIRECTORY_SUMMARY, user_data_dir.LossyDisplayName());
 
-  if (cleanup_resource_bundle)
-    ui::ResourceBundle::CleanupSharedInstance();
-
   // More complex dialogs cannot be shown before the earliest calls here.
-  ShowWarningMessageBox(NULL, title, message);
+  ShowWarningMessageBox(nullptr, title, message);
 }
 
 }  // namespace chrome

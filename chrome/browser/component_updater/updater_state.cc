@@ -1,5 +1,4 @@
-
-// Copyright (c) 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +11,7 @@
 
 #include "base/check.h"
 #include "base/enterprise_util.h"
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/json/values_util.h"
@@ -22,7 +22,7 @@
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/updater/updater_scope.h"
-#include "chrome/updater/util.h"
+#include "chrome/updater/util/util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace component_updater {
@@ -51,9 +51,9 @@ std::unique_ptr<UpdaterState::StateReader> UpdaterState::StateReader::Create(
         // Create a `StateReaderChromiumUpdater` instance only if a prefs.json
         // file for the updater can be found and parsed successfully.
         const absl::optional<base::FilePath> global_prefs_dir =
-            updater::GetBaseDirectory(is_machine
-                                          ? updater::UpdaterScope::kSystem
-                                          : updater::UpdaterScope::kUser);
+            updater::GetBaseDataDirectory(is_machine
+                                              ? updater::UpdaterScope::kSystem
+                                              : updater::UpdaterScope::kUser);
         if (!global_prefs_dir)
           return nullptr;
         std::string contents;

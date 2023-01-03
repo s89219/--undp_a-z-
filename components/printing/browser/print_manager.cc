@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,6 +40,11 @@ void PrintManager::DidShowPrintDialog() {}
 void PrintManager::DidPrintDocument(mojom::DidPrintDocumentParamsPtr params,
                                     DidPrintDocumentCallback callback) {
   std::move(callback).Run(false);
+}
+
+void PrintManager::IsPrintingEnabled(IsPrintingEnabledCallback callback) {
+  // Assume printing is enabled by default.
+  std::move(callback).Run(true);
 }
 
 void PrintManager::ShowInvalidPrinterSettingsError() {}

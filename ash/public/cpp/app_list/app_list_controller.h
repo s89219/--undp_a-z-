@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,9 +56,6 @@ class ASH_PUBLIC_EXPORT AppListController {
   // Clears any previously set app list or search model.
   virtual void ClearActiveModel() = 0;
 
-  // Notifies sync service has finished processing sync changes.
-  virtual void NotifyProcessSyncChangesFinished() = 0;
-
   // Dismisses the app list.
   virtual void DismissAppList() = 0;
 
@@ -69,7 +66,9 @@ class ASH_PUBLIC_EXPORT AppListController {
       GetAppInfoDialogBoundsCallback callback) = 0;
 
   // Shows the app list.
-  virtual void ShowAppList() = 0;
+  virtual void ShowAppList(AppListShowSource source) = 0;
+
+  virtual AppListShowSource LastAppListShowSource() = 0;
 
   // Returns the app list window or nullptr if it is not visible.
   virtual aura::Window* GetWindow() = 0;
@@ -93,10 +92,6 @@ class ASH_PUBLIC_EXPORT AppListController {
       const absl::optional<AppListSortOrder>& new_order,
       bool animate,
       base::OnceClosure update_position_closure) = 0;
-
-  // Hides the continue section. Sets a pref so the section stays hidden across
-  // restarts.
-  virtual void HideContinueSection() = 0;
 
  protected:
   AppListController();

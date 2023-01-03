@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -137,7 +137,7 @@ TEST(ExtensionBuilderTest, Background) {
 TEST(ExtensionBuilderTest, MergeManifest) {
   DictionaryBuilder connectable;
   connectable.Set("matches", ListBuilder().Append("*://example.com/*").Build());
-  std::unique_ptr<base::DictionaryValue> connectable_value =
+  base::Value::Dict connectable_value =
       DictionaryBuilder()
           .Set("externally_connectable", connectable.Build())
           .Build();

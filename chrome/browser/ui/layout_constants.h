@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -118,6 +118,9 @@ enum LayoutInset {
   // The padding around icons used in Download bubbles.
   DOWNLOAD_ICON,
 
+  // The padding around rows used in Download bubbles.
+  DOWNLOAD_ROW,
+
   // The padding used around the icon inside the LocationBar. The full width of
   // the icon would be LOCATION_BAR_ICON_SIZE + 2 * inset.width(). The full
   // height of the icon would be LOCATION_BAR_ICON_SIZE + 2 * inset.height().
@@ -143,12 +146,6 @@ enum LayoutInset {
 };
 
 int GetLayoutConstant(LayoutConstant constant);
-#if BUILDFLAG(IS_MAC)
-// Use this function instead of GetLayoutConstant() for Cocoa browser.
-// This will handle Cocoa specific layout constants. For non Cocoa specific
-// constants, it will call GetLayoutConstant() anyway.
-int GetCocoaLayoutConstant(LayoutConstant constant);
-#endif
 
 gfx::Insets GetLayoutInsets(LayoutInset inset);
 

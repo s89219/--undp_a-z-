@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #endif
 
 #import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/lens/lens_browser_agent.h"
 #import "ios/chrome/browser/main/test_browser.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/open_new_tab_command.h"
@@ -30,6 +31,7 @@ class AccountConsistencyBrowserAgentTest : public PlatformTest {
 
     application_commands_mock_ =
         OCMStrictProtocolMock(@protocol(ApplicationCommands));
+    LensBrowserAgent::CreateForBrowser(browser_.get());
     WebNavigationBrowserAgent::CreateForBrowser(browser_.get());
     AccountConsistencyBrowserAgent::CreateForBrowser(
         browser_.get(), nil, application_commands_mock_);
@@ -71,6 +73,7 @@ TEST_F(AccountConsistencyBrowserAgentTest, OnGoIncognitoWithNoURL) {
 
 // Tests the command sent by OnGoIncognito() when there is a valid URL.
 TEST_F(AccountConsistencyBrowserAgentTest, OnGoIncognitoWithURL) {
+  // This URL is not opened.
   GURL url("http://www.example.com");
   __block OpenNewTabCommand* received_command = nil;
   OCMExpect([application_commands_mock_

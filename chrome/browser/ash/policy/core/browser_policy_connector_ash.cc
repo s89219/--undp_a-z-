@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/components/attestation/attestation_flow_adaptive.h"
-#include "ash/components/cryptohome/system_salt_getter.h"
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/settings/cros_settings_provider.h"
-#include "ash/components/settings/timezone_settings.h"
-#include "ash/components/tpm/install_attributes.h"
 #include "ash/constants/ash_paths.h"
 #include "base/bind.h"
 #include "base/check.h"
@@ -28,7 +22,6 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/ash/attestation/attestation_ca_client.h"
 #include "chrome/browser/ash/notifications/adb_sideloading_policy_change_notification.h"
 #include "chrome/browser/ash/policy/active_directory/active_directory_migration_manager.h"
@@ -72,13 +65,19 @@
 #include "chrome/browser/policy/networking/device_network_configuration_updater_ash.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/ash/components/attestation/attestation_flow_adaptive.h"
+#include "chromeos/ash/components/cryptohome/system_salt_getter.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/session_manager/session_manager_client.h"
 #include "chromeos/ash/components/dbus/upstart/upstart_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/session_manager/session_manager_client.h"
-#include "chromeos/network/network_cert_loader.h"
-#include "chromeos/network/network_handler.h"
-#include "chromeos/network/onc/onc_certificate_importer_impl.h"
-#include "chromeos/system/statistics_provider.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
+#include "chromeos/ash/components/network/network_cert_loader.h"
+#include "chromeos/ash/components/network/network_handler.h"
+#include "chromeos/ash/components/network/onc/onc_certificate_importer_impl.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/settings/cros_settings_provider.h"
+#include "chromeos/ash/components/settings/timezone_settings.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
 #include "components/policy/core/common/cloud/resource_cache.h"
@@ -121,10 +120,6 @@ std::unique_ptr<ash::attestation::AttestationFlow> CreateAttestationFlow() {
       std::make_unique<ash::attestation::AttestationCAClient>());
 }
 
-// This is the constant that exists on the server side. It corresponds to
-// the type of enrollment license.
-constexpr char kKioskSkuName[] = "GOOGLE.CHROME_KIOSK_ANNUAL";
-
 }  // namespace
 
 // static
@@ -141,7 +136,7 @@ BrowserPolicyConnectorAsh::BrowserPolicyConnectorAsh()
 
   // DBusThreadManager or DeviceSettingsService may be
   // uninitialized on unit tests.
-  if (chromeos::DBusThreadManager::IsInitialized() &&
+  if (ash::DBusThreadManager::IsInitialized() &&
       ash::DeviceSettingsService::IsInitialized()) {
     std::unique_ptr<DeviceCloudPolicyStoreAsh> device_cloud_policy_store =
         std::make_unique<DeviceCloudPolicyStoreAsh>(
@@ -159,7 +154,7 @@ BrowserPolicyConnectorAsh::BrowserPolicyConnectorAsh()
               device_active_directory_policy_manager_));
     } else {
       state_keys_broker_ = std::make_unique<ServerBackedStateKeysBroker>(
-          chromeos::SessionManagerClient::Get());
+          ash::SessionManagerClient::Get());
 
       const base::FilePath device_policy_external_data_path =
           base::PathService::CheckedGet(ash::DIR_DEVICE_POLICY_EXTERNAL_DATA);
@@ -172,7 +167,8 @@ BrowserPolicyConnectorAsh::BrowserPolicyConnectorAsh()
 
       device_cloud_policy_manager_ = new DeviceCloudPolicyManagerAsh(
           std::move(device_cloud_policy_store),
-          std::move(external_data_manager), base::ThreadTaskRunnerHandle::Get(),
+          std::move(external_data_manager),
+          base::SingleThreadTaskRunner::GetCurrentDefault(),
           state_keys_broker_.get());
       providers_for_init_.push_back(
           base::WrapUnique<ConfigurationPolicyProvider>(
@@ -211,8 +207,8 @@ void BrowserPolicyConnectorAsh::Init(
   if (!ash::InstallAttributes::Get()->IsActiveDirectoryManaged()) {
     device_local_account_policy_service_ =
         std::make_unique<DeviceLocalAccountPolicyService>(
-            chromeos::SessionManagerClient::Get(),
-            ash::DeviceSettingsService::Get(), ash::CrosSettings::Get(),
+            ash::SessionManagerClient::Get(), ash::DeviceSettingsService::Get(),
+            ash::CrosSettings::Get(),
             affiliated_invalidation_service_provider_.get(),
             CreateBackgroundTaskRunner(), CreateBackgroundTaskRunner(),
             CreateBackgroundTaskRunner(), url_loader_factory);
@@ -221,7 +217,7 @@ void BrowserPolicyConnectorAsh::Init(
     // Initialize state keys and enrollment ID upload mechanisms to DM Server in
     // Active Directory mode.
     state_keys_broker_ = std::make_unique<ServerBackedStateKeysBroker>(
-        chromeos::SessionManagerClient::Get());
+        ash::SessionManagerClient::Get());
     active_directory_device_state_uploader_ =
         std::make_unique<ActiveDirectoryDeviceStateUploader>(
             /*client_id=*/GetInstallAttributes()->GetDeviceId(),
@@ -255,14 +251,13 @@ void BrowserPolicyConnectorAsh::Init(
   device_network_configuration_updater_ =
       DeviceNetworkConfigurationUpdaterAsh::CreateForDevicePolicy(
           GetPolicyService(),
-          chromeos::NetworkHandler::Get()
-              ->managed_network_configuration_handler(),
-          chromeos::NetworkHandler::Get()->network_device_handler(),
+          ash::NetworkHandler::Get()->managed_network_configuration_handler(),
+          ash::NetworkHandler::Get()->network_device_handler(),
           ash::CrosSettings::Get(),
           DeviceNetworkConfigurationUpdaterAsh::DeviceAssetIDFetcher());
   // NetworkCertLoader may be not initialized in tests.
-  if (chromeos::NetworkCertLoader::IsInitialized()) {
-    chromeos::NetworkCertLoader::Get()->SetDevicePolicyCertificateProvider(
+  if (ash::NetworkCertLoader::IsInitialized()) {
+    ash::NetworkCertLoader::Get()->SetDevicePolicyCertificateProvider(
         device_network_configuration_updater_.get());
   }
 
@@ -283,7 +278,7 @@ void BrowserPolicyConnectorAsh::Init(
   device_dock_mac_address_source_handler_ =
       std::make_unique<DeviceDockMacAddressHandler>(
           ash::CrosSettings::Get(),
-          chromeos::NetworkHandler::Get()->network_device_handler());
+          ash::NetworkHandler::Get()->network_device_handler());
 
   device_wifi_allowed_handler_ =
       std::make_unique<DeviceWiFiAllowedHandler>(ash::CrosSettings::Get());
@@ -295,7 +290,7 @@ void BrowserPolicyConnectorAsh::Init(
   device_scheduled_update_checker_ =
       std::make_unique<DeviceScheduledUpdateChecker>(
           ash::CrosSettings::Get(),
-          chromeos::NetworkHandler::Get()->network_state_handler(),
+          ash::NetworkHandler::Get()->network_state_handler(),
           std::make_unique<ScheduledTaskExecutorImpl>(
               update_checker_internal::kUpdateCheckTimerTag));
 
@@ -349,9 +344,8 @@ void BrowserPolicyConnectorAsh::Shutdown() {
   system_proxy_handler_.reset();
 
   // NetworkCertLoader may be not initialized in tests.
-  if (chromeos::NetworkCertLoader::IsInitialized()) {
-    chromeos::NetworkCertLoader::Get()->SetDevicePolicyCertificateProvider(
-        nullptr);
+  if (ash::NetworkCertLoader::IsInitialized()) {
+    ash::NetworkCertLoader::Get()->SetDevicePolicyCertificateProvider(nullptr);
   }
   device_network_configuration_updater_.reset();
 
@@ -521,7 +515,7 @@ void BrowserPolicyConnectorAsh::OnDeviceCloudPolicyManagerConnected() {
   // DeviceCloudPolicyInitializer might still be on the call stack, so we
   // should delete the initializer after this function returns.
   device_cloud_policy_initializer_->Shutdown();
-  base::ThreadTaskRunnerHandle::Get()->DeleteSoon(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->DeleteSoon(
       FROM_HERE, std::move(device_cloud_policy_initializer_));
 
   if (!device_cert_provisioning_scheduler_) {
@@ -537,12 +531,6 @@ void BrowserPolicyConnectorAsh::OnDeviceCloudPolicyManagerConnected() {
             cloud_policy_client,
             affiliated_invalidation_service_provider_.get());
   }
-}
-
-void BrowserPolicyConnectorAsh::OnDeviceCloudPolicyManagerDisconnected() {
-  DCHECK(!device_cloud_policy_initializer_);
-
-  RestartDeviceCloudPolicyInitializer();
 }
 
 void BrowserPolicyConnectorAsh::OnDeviceCloudPolicyManagerGotRegistry() {
@@ -587,7 +575,7 @@ void BrowserPolicyConnectorAsh::RestartDeviceCloudPolicyInitializer() {
           state_keys_broker_.get(),
           device_cloud_policy_manager_->device_store(),
           device_cloud_policy_manager_,
-          chromeos::system::StatisticsProvider::GetInstance());
+          ash::system::StatisticsProvider::GetInstance());
   device_cloud_policy_initializer_->Init();
 }
 

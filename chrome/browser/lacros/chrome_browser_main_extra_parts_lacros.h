@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,21 +9,30 @@
 
 #include <memory>
 
+#include "chrome/browser/lacros/sync/sync_crosapi_manager_lacros.h"
+
 class ArcIconCache;
 class AutomationManagerLacros;
 class BrowserServiceLacros;
+class ChromeKioskLaunchControllerLacros;
 class DeskTemplateClientLacros;
+class DeviceLocalAccountExtensionInstallerLacros;
 class DriveFsCache;
 class DownloadControllerClientLacros;
 class ForceInstalledTrackerLacros;
+class FullscreenControllerClientLacros;
 class LacrosButterBar;
 class LacrosExtensionAppsController;
 class LacrosExtensionAppsPublisher;
+class LacrosFileSystemProvider;
 class KioskSessionServiceLacros;
 class FieldTrialObserver;
+class NetworkChangeManagerBridge;
 class QuickAnswersController;
 class StandaloneBrowserTestController;
-class SyncExplicitPassphraseClientLacros;
+class TabletModePageBehavior;
+class UiMetricRecorderLacros;
+class VpnExtensionTrackerLacros;
 class WebAuthnRequestRegistrarLacros;
 
 namespace arc {
@@ -40,6 +49,10 @@ class WebPageInfoProviderLacros;
 namespace content {
 class ScreenOrientationDelegate;
 }  // namespace content
+
+namespace video_conference {
+class VideoConferenceManagerClientImpl;
+}  // namespace video_conference
 
 // Browser initialization for Lacros.
 class ChromeBrowserMainExtraPartsLacros : public ChromeBrowserMainExtraParts {
@@ -68,6 +81,10 @@ class ChromeBrowserMainExtraPartsLacros : public ChromeBrowserMainExtraParts {
   // Handles requests for desk template data from ash-chrome.
   std::unique_ptr<DeskTemplateClientLacros> desk_template_client_;
 
+  // Handles queries regarding full screen control from ash-chrome.
+  std::unique_ptr<FullscreenControllerClientLacros>
+      fullscreen_controller_client_;
+
   // Handles search queries from ash-chrome.
   std::unique_ptr<crosapi::SearchControllerLacros> search_controller_;
 
@@ -83,9 +100,21 @@ class ChromeBrowserMainExtraPartsLacros : public ChromeBrowserMainExtraParts {
   // Sends lacros installation status of force-installed extensions to ash.
   std::unique_ptr<ForceInstalledTrackerLacros> force_installed_tracker_;
 
+  // Receives and handles network change status.
+  std::unique_ptr<NetworkChangeManagerBridge> network_change_manager_bridge_;
+
+  // Sends lacros load/unload events of Vpn extensions to ash.
+  std::unique_ptr<VpnExtensionTrackerLacros> vpn_extension_tracker_;
+
+  std::unique_ptr<ChromeKioskLaunchControllerLacros>
+      chrome_kiosk_launch_controller_;
+
   // Manages the resources used in the web Kiosk session, and sends window
   // status changes of lacros-chrome to ash when necessary.
   std::unique_ptr<KioskSessionServiceLacros> kiosk_session_service_;
+
+  std::unique_ptr<DeviceLocalAccountExtensionInstallerLacros>
+      device_local_account_extension_installer_;
 
   // Provides ArcIconCache impl.
   std::unique_ptr<arc::ArcIconCacheDelegateProvider>
@@ -127,16 +156,29 @@ class ChromeBrowserMainExtraPartsLacros : public ChromeBrowserMainExtraParts {
   std::unique_ptr<content::ScreenOrientationDelegate>
       screen_orientation_delegate_;
 
-  // Responsible for sharing sync explicit passphrase between Ash and Lacros.
-  std::unique_ptr<SyncExplicitPassphraseClientLacros>
-      sync_explicit_passphrase_client_;
-
   // Handles WebAuthn request id generation.
   std::unique_ptr<WebAuthnRequestRegistrarLacros>
       webauthn_request_registrar_lacros_;
 
   // Handles Quick answers requests from the Lacros browser.
   std::unique_ptr<QuickAnswersController> quick_answers_controller_;
+
+  // Updates Blink preferences on tablet mode state change.
+  std::unique_ptr<TabletModePageBehavior> tablet_mode_page_behavior_;
+
+  // Forwards file system provider events to extensions.
+  std::unique_ptr<LacrosFileSystemProvider> file_system_provider_;
+
+  // Records UI metrics such as dropped frame percentage.
+  std::unique_ptr<UiMetricRecorderLacros> ui_metric_recorder_;
+
+  // Tracks videoconference apps and notifies VideoConferenceManagerAsh of
+  // changes to the permissions or capturing statuses of these apps.
+  std::unique_ptr<video_conference::VideoConferenceManagerClientImpl>
+      video_conference_manager_client_;
+
+  // Controls sync-related Crosapi clients.
+  SyncCrosapiManagerLacros sync_crosapi_manager_;
 };
 
 #endif  // CHROME_BROWSER_LACROS_CHROME_BROWSER_MAIN_EXTRA_PARTS_LACROS_H_

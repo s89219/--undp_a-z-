@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/cxx20_erase_list.h"
 #include "base/files/file_util.h"
 #include "base/test/scoped_feature_list.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -66,6 +67,32 @@ class DumpAccessibilityTestBase
     RunTest(test_file, dir.c_str());
   }
 
+  template <std::vector<ui::AXApiType::Type> TestPasses(),
+            ui::AXApiType::TypeConstant type>
+  static std::vector<ui::AXApiType::Type> TestPassesExcept() {
+    std::vector<ui::AXApiType::Type> passes = TestPasses();
+    base::Erase(passes, type);
+    return passes;
+  }
+
+  template <ui::AXApiType::TypeConstant type>
+  static std::vector<ui::AXApiType::Type> TreeTestPassesExcept() {
+    return TestPassesExcept<ui::AXInspectTestHelper::TreeTestPasses, type>();
+  }
+
+  template <ui::AXApiType::TypeConstant type>
+  static std::vector<ui::AXApiType::Type> EventTestPassesExcept() {
+    return TestPassesExcept<ui::AXInspectTestHelper::EventTestPasses, type>();
+  }
+
+  static std::vector<ui::AXApiType::Type> TreeTestPassesExceptUIA() {
+    return TreeTestPassesExcept<ui::AXApiType::kWinUIA>();
+  }
+
+  static std::vector<ui::AXApiType::Type> EventTestPassesExceptUIA() {
+    return EventTestPassesExcept<ui::AXApiType::kWinUIA>();
+  }
+
  protected:
   void SetUpCommandLine(base::CommandLine* command_line) override;
   void SetUpOnMainThread() override;
@@ -89,8 +116,9 @@ class DumpAccessibilityTestBase
   virtual void OnDiffFailed() {}
 
   // Choose which feature flags to enable or disable.
-  virtual void ChooseFeatures(std::vector<base::Feature>* enabled_features,
-                              std::vector<base::Feature>* disabled_features);
+  virtual void ChooseFeatures(
+      std::vector<base::test::FeatureRef>* enabled_features,
+      std::vector<base::test::FeatureRef>* disabled_features);
 
   //
   // Helpers
@@ -160,6 +188,20 @@ class DumpAccessibilityTestBase
   // Wait for default action, expected text and then end of test signal.
   void WaitForFinalTreeContents();
 
+  // Creates a new secure test server that can be used in place of the default
+  // HTTP embedded_test_server defined in BrowserTestBase. The new test server
+  // can then be retrieved using the same embedded_test_server() method used
+  // to get the BrowserTestBase HTTP server.
+  void UseHttpsTestServer();
+
+  // This will return either the https test server or the
+  // default one specified in BrowserTestBase, depending on if an https test
+  // server was created by calling UseHttpsTestServer().
+  net::EmbeddedTestServer* embedded_test_server() {
+    return (https_test_server_) ? https_test_server_.get()
+                                : BrowserTestBase::embedded_test_server();
+  }
+
  private:
   BrowserAccessibility* FindNodeInSubtree(BrowserAccessibility& node,
                                           const std::string& name) const;
@@ -169,7 +211,7 @@ class DumpAccessibilityTestBase
       const char* attr,
       const std::string& value) const;
 
-  std::vector<std::string> CollectAllFrameUrls(
+  std::map<std::string, unsigned> CollectAllFrameUrls(
       const std::vector<std::string>& skip_urls);
 
   // Wait until all initial content is completely loaded, included within
@@ -177,10 +219,15 @@ class DumpAccessibilityTestBase
   void WaitForAllFramesLoaded();
 
   void OnEventRecorded(const std::string& event) const {
-    LOG(INFO) << "++ Platform event: " << event;
+    VLOG(1) << "++ Platform event: " << event;
   }
 
   bool has_performed_default_actions_ = false;
+
+  // Secure test server, isn't created by default. Needs to be
+  // created using UseHttpsTestServer() and then called with
+  // embedded_test_server().
+  std::unique_ptr<net::EmbeddedTestServer> https_test_server_;
 };
 
 }  // namespace content

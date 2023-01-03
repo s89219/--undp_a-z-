@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +30,7 @@ class IntentChipButton : public OmniboxChipButton {
 
  private:
   bool GetShowChip() const;
-  bool GetChipCollapsed() const;
+  bool GetChipExpanded() const;
   ui::ImageModel GetAppIcon() const;
   void HandlePressed();
 
@@ -38,7 +38,10 @@ class IntentChipButton : public OmniboxChipButton {
 
   // OmniboxChipButton:
   ui::ImageModel GetIconImageModel() const override;
+  const gfx::VectorIcon& GetIcon() const override;
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
 
+  bool pending_promo_ = false;
   const raw_ptr<Browser> browser_;
   const raw_ptr<PageActionIconView::Delegate> delegate_;
 };

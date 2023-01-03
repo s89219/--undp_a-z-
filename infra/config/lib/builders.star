@@ -1,4 +1,4 @@
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -62,54 +62,16 @@ def os_enum(dimension, category):
 
 os = struct(
     ANDROID = os_enum("Android", os_category.ANDROID),
-    LINUX_TRUSTY = os_enum("Ubuntu-14.04", os_category.LINUX),
-    LINUX_XENIAL = os_enum("Ubuntu-16.04", os_category.LINUX),
     LINUX_BIONIC = os_enum("Ubuntu-18.04", os_category.LINUX),
     LINUX_FOCAL = os_enum("Ubuntu-20.04", os_category.LINUX),
-    # xenial -> bionic migration
-    # * If a builder does not already explicitly set an os value, use
-    #   LINUX_BIONIC_REMOVE or LINUX_XENIAL_OR_BIONIC_REMOVE
-    # * If a builder explicitly sets LINUX_DEFAULT, use
-    #   LINUX_BIONIC_SWITCH_TO_DEFAULT or
-    #   LINUX_XENIAL_OR_BIONIC_SWITCH_TO_DEFAULT
-    #
-    # When the migration is complete, LINUX_DEFAULT can be switched to
-    # Ubunutu-18.04, all instances of LINUX_BIONIC_REMOVE can be removed and all
-    # instances of LINUX_BIONIC_SWITCH_TO_DEFAULT can be replaced with
-    # LINUX_DEFAULT, the only changes to the generated files should be
-    # Ubuntu-16.04|Ubuntu-18.04 -> Ubuntu-18.04
-    LINUX_DEFAULT = os_enum("Ubuntu-16.04", os_category.LINUX),
-    # 100% switch to bionic
-    LINUX_BIONIC_REMOVE = os_enum("Ubuntu-18.04", os_category.LINUX),
-    LINUX_BIONIC_SWITCH_TO_DEFAULT = os_enum("Ubuntu-18.04", os_category.LINUX),
-    # Staged switch to bionic: we can gradually shift the matching capacity
-    # towards bionic and the builder will continue to run on whatever is
-    # available
-    LINUX_XENIAL_OR_BIONIC_REMOVE = os_enum(
-        "Ubuntu-16.04|Ubuntu-18.04",
-        os_category.LINUX,
-    ),
-    LINUX_XENIAL_OR_BIONIC_SWITCH_TO_DEFAULT = os_enum(
-        "Ubuntu-16.04|Ubuntu-18.04",
-        os_category.LINUX,
-    ),
-    MAC_10_12 = os_enum("Mac-10.12", os_category.MAC),
-    MAC_10_13 = os_enum("Mac-10.13", os_category.MAC),
-    MAC_10_14 = os_enum("Mac-10.14", os_category.MAC),
+    LINUX_DEFAULT = os_enum("Ubuntu-18.04", os_category.LINUX),
     MAC_10_15 = os_enum("Mac-10.15", os_category.MAC),
-    MAC_11 = os_enum("Mac-11", os_category.MAC),
     MAC_12 = os_enum("Mac-12", os_category.MAC),
-    MAC_DEFAULT = os_enum("Mac-11", os_category.MAC),
+    MAC_13 = os_enum("Mac-13", os_category.MAC),
+    MAC_DEFAULT = os_enum("Mac-12", os_category.MAC),
     MAC_ANY = os_enum("Mac", os_category.MAC),
-    MAC_BETA = os_enum("Mac-12", os_category.MAC),
-    WINDOWS_7 = os_enum("Windows-7", os_category.WINDOWS),
-    WINDOWS_8_1 = os_enum("Windows-8.1", os_category.WINDOWS),
     WINDOWS_10 = os_enum("Windows-10", os_category.WINDOWS),
-    WINDOWS_10_1703 = os_enum("Windows-10-15063", os_category.WINDOWS),
-    WINDOWS_10_1909 = os_enum("Windows-10-18363", os_category.WINDOWS),
-    WINDOWS_10_20h2 = os_enum("Windows-10-19042", os_category.WINDOWS),
     WINDOWS_11 = os_enum("Windows-11", os_category.WINDOWS),
-    WINDOWS_11_21h2 = os_enum("Windows-11-22000", os_category.WINDOWS),
     WINDOWS_DEFAULT = os_enum("Windows-10", os_category.WINDOWS),
     WINDOWS_ANY = os_enum("Windows", os_category.WINDOWS),
 )
@@ -161,6 +123,22 @@ goma = struct(
     ),
 )
 
+reclient = struct(
+    instance = struct(
+        DEFAULT_TRUSTED = "rbe-chromium-trusted",
+        TEST_TRUSTED = "rbe-chromium-trusted-test",
+        DEFAULT_UNTRUSTED = "rbe-chromium-untrusted",
+        TEST_UNTRUSTED = "rbe-chromium-untrusted-test",
+    ),
+    jobs = struct(
+        DEFAULT = 250,
+        LOW_JOBS_FOR_CI = 80,
+        HIGH_JOBS_FOR_CI = 500,
+        LOW_JOBS_FOR_CQ = 150,
+        HIGH_JOBS_FOR_CQ = 300,
+    ),
+)
+
 def _rotation(name):
     return branches.value({branches.MAIN: [name]})
 
@@ -168,9 +146,12 @@ def _rotation(name):
 # Arbitrary elements can't be added, new rotations must be added in SoM code
 sheriff_rotations = struct(
     ANDROID = _rotation("android"),
+    ANGLE = _rotation("angle"),
     CHROMIUM = _rotation("chromium"),
+    CFT = _rotation("cft"),
     FUCHSIA = _rotation("fuchsia"),
     CHROMIUM_CLANG = _rotation("chromium.clang"),
+    CHROMIUM_FUZZ = _rotation("chromium.fuzz"),
     CHROMIUM_GPU = _rotation("chromium.gpu"),
     IOS = _rotation("ios"),
 )
@@ -192,10 +173,23 @@ xcode = struct(
     x12e262 = xcode_enum("12e262"),
     # Default Xcode 13 for chromium iOS.
     x13main = xcode_enum("13c100"),
-    # A newer Xcode version used on beta bots.
-    x13betabots = xcode_enum("13e113"),
+    # A newer Xcode 13 version used on beta bots.
+    x13betabots = xcode_enum("13f17a"),
+    # Xcode14 RC will be used to build Main iOS
+    x14main = xcode_enum("14b47b"),
+    # A newer Xcode 14 RC  used on beta bots.
+    x14betabots = xcode_enum("14b47b"),
     # in use by ios-webkit-tot
     x13wk = xcode_enum("13a1030dwk"),
+)
+
+# Free disk space in a machine reserved for build tasks.
+# The values in this enum will be used to populate bot dimension "free_space",
+# and each bot will allocate a corresponding amount of free disk space based on
+# the value of the dimension through "bot_config.py".
+free_space = struct(
+    standard = "standard",
+    high = "high",
 )
 
 ################################################################################
@@ -227,19 +221,26 @@ def _goma_property(*, goma_backend, goma_debug, goma_enable_ats, goma_jobs):
     if goma_jobs != None:
         goma_properties["jobs"] = goma_jobs
 
-    goma_properties["use_luci_auth"] = True
-
     return goma_properties
 
 def _code_coverage_property(
         *,
+        coverage_gs_bucket,
         use_clang_coverage,
         use_java_coverage,
         use_javascript_coverage,
         coverage_exclude_sources,
         coverage_test_types,
-        export_coverage_to_zoss):
+        export_coverage_to_zoss,
+        generate_blame_list):
     code_coverage = {}
+
+    coverage_gs_bucket = defaults.get_value(
+        "coverage_gs_bucket",
+        coverage_gs_bucket,
+    )
+    if coverage_gs_bucket:
+        code_coverage["coverage_gs_bucket"] = coverage_gs_bucket
 
     use_clang_coverage = defaults.get_value(
         "use_clang_coverage",
@@ -277,9 +278,18 @@ def _code_coverage_property(
     if export_coverage_to_zoss:
         code_coverage["export_coverage_to_zoss"] = export_coverage_to_zoss
 
+    generate_blame_list = defaults.get_value(
+        "generate_blame_list",
+        generate_blame_list,
+    )
+    if generate_blame_list:
+        code_coverage["generate_blame_list"] = generate_blame_list
+
     return code_coverage or None
 
-def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_service, publish_trace, cache_silo, ensure_verified):
+_VALID_REPROXY_ENV_PREFIX_LIST = ["RBE_", "GLOG_", "GOMA_"]
+
+def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_service, publish_trace, cache_silo, ensure_verified, bootstrap_env, scandeps_server):
     reclient = {}
     instance = defaults.get_value("reclient_instance", instance)
     if not instance:
@@ -299,6 +309,17 @@ def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_servi
                 fail("Environment variables in rewrapper_env must start with " +
                      "'RBE_', got '%s'" % k)
         reclient["rewrapper_env"] = rewrapper_env
+    bootstrap_env = defaults.get_value("reclient_bootstrap_env", bootstrap_env)
+    if bootstrap_env:
+        for k in bootstrap_env:
+            if not any([k.startswith(prefix) for prefix in _VALID_REPROXY_ENV_PREFIX_LIST]):
+                fail("Environment variables in bootstrap_env must start with one of (" +
+                     ", ".join(_VALID_REPROXY_ENV_PREFIX_LIST) +
+                     "), got '%s'" % k)
+        reclient["bootstrap_env"] = bootstrap_env
+    scandeps_server = defaults.get_value("reclient_scandeps_server", scandeps_server)
+    if scandeps_server:
+        reclient["scandeps_server"] = scandeps_server
     profiler_service = defaults.get_value("reclient_profiler_service", profiler_service)
     if profiler_service:
         reclient["profiler_service"] = profiler_service
@@ -310,7 +331,32 @@ def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_servi
     ensure_verified = defaults.get_value("reclient_ensure_verified", ensure_verified)
     if ensure_verified:
         reclient["ensure_verified"] = True
-    return reclient or None
+
+    return reclient
+
+def _resultdb_settings(*, resultdb_enable, resultdb_bigquery_exports, resultdb_index_by_timestamp):
+    resultdb_enable = defaults.get_value("resultdb_enable", resultdb_enable)
+    if not resultdb_enable:
+        return None
+
+    history_options = None
+    resultdb_index_by_timestamp = defaults.get_value(
+        "resultdb_index_by_timestamp",
+        resultdb_index_by_timestamp,
+    )
+    if resultdb_index_by_timestamp:
+        history_options = resultdb.history_options(
+            by_timestamp = resultdb_index_by_timestamp,
+        )
+
+    return resultdb.settings(
+        enable = True,
+        bq_exports = defaults.get_value(
+            "resultdb_bigquery_exports",
+            resultdb_bigquery_exports,
+        ),
+        history_options = history_options,
+    )
 
 ################################################################################
 # Builder defaults and function                                                #
@@ -324,6 +370,7 @@ defaults = args.defaults(
     auto_builder_dimension = args.COMPUTE,
     builder_group = None,
     builderless = args.COMPUTE,
+    free_space = None,
     cores = None,
     cpu = None,
     fully_qualified_builder_dimension = False,
@@ -331,28 +378,38 @@ defaults = args.defaults(
     goma_debug = False,
     goma_enable_ats = args.COMPUTE,
     goma_jobs = None,
+    console_view = args.COMPUTE,
     list_view = args.COMPUTE,
     os = None,
     pool = None,
     sheriff_rotations = None,
     xcode = None,
     ssd = args.COMPUTE,
+    coverage_gs_bucket = None,
     use_clang_coverage = False,
     use_java_coverage = False,
     use_javascript_coverage = False,
     coverage_exclude_sources = None,
     coverage_test_types = None,
     export_coverage_to_zoss = False,
+    generate_blame_list = False,
+    resultdb_enable = True,
     resultdb_bigquery_exports = [],
     resultdb_index_by_timestamp = False,
     reclient_instance = None,
     reclient_service = None,
     reclient_jobs = None,
     reclient_rewrapper_env = None,
+    reclient_bootstrap_env = None,
     reclient_profiler_service = None,
     reclient_publish_trace = None,
+    reclient_scandeps_server = False,
     reclient_cache_silo = None,
     reclient_ensure_verified = None,
+
+    # This is to enable luci.buildbucket.omit_python2 experiment.
+    # TODO(crbug.com/1362440): remove this after enabling this in all builders.
+    omit_python2 = True,
 
     # Provide vars for bucket and executable so users don't have to
     # unnecessarily make wrapper functions
@@ -372,6 +429,7 @@ def builder(
         triggered_by = args.DEFAULT,
         os = args.DEFAULT,
         builderless = args.DEFAULT,
+        free_space = args.DEFAULT,
         builder_cache_name = None,
         override_builder_dimension = None,
         auto_builder_dimension = args.DEFAULT,
@@ -393,22 +451,28 @@ def builder(
         goma_debug = args.DEFAULT,
         goma_enable_ats = args.DEFAULT,
         goma_jobs = args.DEFAULT,
+        coverage_gs_bucket = args.DEFAULT,
         use_clang_coverage = args.DEFAULT,
         use_java_coverage = args.DEFAULT,
         use_javascript_coverage = args.DEFAULT,
         coverage_exclude_sources = args.DEFAULT,
         coverage_test_types = args.DEFAULT,
         export_coverage_to_zoss = args.DEFAULT,
+        generate_blame_list = args.DEFAULT,
+        resultdb_enable = args.DEFAULT,
         resultdb_bigquery_exports = args.DEFAULT,
         resultdb_index_by_timestamp = args.DEFAULT,
         reclient_instance = args.DEFAULT,
         reclient_service = args.DEFAULT,
         reclient_jobs = args.DEFAULT,
         reclient_rewrapper_env = args.DEFAULT,
+        reclient_bootstrap_env = args.DEFAULT,
         reclient_profiler_service = args.DEFAULT,
         reclient_publish_trace = args.DEFAULT,
+        reclient_scandeps_server = args.DEFAULT,
         reclient_cache_silo = None,
         reclient_ensure_verified = None,
+        omit_python2 = args.DEFAULT,
         **kwargs):
     """Define a builder.
 
@@ -452,6 +516,10 @@ def builder(
         builderless: a boolean indicating whether the builder runs on
             builderless machines. If True, emits a 'builderless:1' dimension. By
             default, considered True iff `os` refers to a linux OS.
+        free_space: an enum that indicates the amount of free disk space reserved
+            in a machine for incoming build tasks. This value is used to create
+            a "free_space" dimension, and this dimension is appended to only
+            builderless builders.
         override_builder_dimension: a string to assign to the "builder"
             dimension. Ignores any other "builder" and "builderless" dimensions
             that would have been assigned.
@@ -524,6 +592,9 @@ def builder(
             jobs to be used by the builder. Sets the 'jobs' field of the
             '$build/goma' property will be set according to the enum member. By
             default, the 'jobs' considered None.
+        coverage_gs_bucket: a string specifying the GS bucket to upload
+            coverage data to. Will be copied to '$build/code_coverage' property.
+            By default, considered None.
         use_clang_coverage: a boolean indicating whether clang coverage should
             be used. If True, the 'use_clang_coverage" field will be set in the
             '$build/code_coverage' property. By default, considered False.
@@ -543,7 +614,11 @@ def builder(
         export_coverage_to_zoss: a boolean indicating if the raw coverage data
             be exported zoss(and eventually in code search) in code_coverage
             recipe module. Will be copied to '$build/code_coverage' property
-            if set. Be default, considered False.
+            if set. By default, considered False.
+        generate_blame_list: a boolean indicating if blame list data for
+            files whose coverage is known gets generated and exported to GCS.
+            Will be copied to '$build/code_coverage' property if set.
+            By default considered False.
         resultdb_bigquery_exports: a list of resultdb.export_test_results(...)
             specifying parameters for exporting test results to BigQuery. By
             default, do not export.
@@ -564,15 +639,22 @@ def builder(
         reclient_rewrapper_env: a map that sets the rewrapper flags via the
             environment variables. All such vars must start with the "RBE_"
             prefix. Has no effect if reclient_instance is not set.
+        reclient_bootstrap_env: a map that sets the bootstrap flags via the
+            environment variables. All such vars must start with the "RBE_"
+            prefix. Has no effect if reclient_instance is not set.
         reclient_profiler_service: a string indicating service name for
             re-client's cloud profiler. Has no effect if reclient_instance is
             not set.
         reclient_publish_trace: If True, it publish trace by rpl2cloudtrace. Has
             no effect if reclient_instance is not set.
+        reclient_scandeps_server: If true, reproxy should start its own scandeps_server
         reclient_cache_silo: A string indicating a cache siling key to use for
             remote caching. Has no effect if reclient_instance is not set.
         reclient_ensure_verified: If True, it verifies build artifacts. Has no
             effect if reclient_instance is not set.
+        omit_python2: If True, set luci.buildbucket.omit_python2 experiment.
+            TODO(crbug.com/1362440): remove this after enabling this in all
+            builders.
         **kwargs: Additional keyword arguments to forward on to `luci.builder`.
 
     Returns:
@@ -581,7 +663,7 @@ def builder(
 
     # We don't have any need of an explicit dimensions dict,
     # instead we have individual arguments for dimensions
-    if "dimensions" in "kwargs":
+    if "dimensions" in kwargs:
         fail("Explicit dimensions are not supported: " +
              "use builderless, cores, cpu, os or ssd instead")
 
@@ -601,8 +683,9 @@ def builder(
              "use goma_backend, goma_dbug, goma_enable_ats and goma_jobs instead")
     if "$build/code_coverage" in properties:
         fail('Setting "$build/code_coverage" property is not supported: ' +
-             "use use_clang_coverage, use_java_coverage, use_javascript_coverage " +
-             " coverage_exclude_sources, coverage_test_types instead")
+             "use coverage_gs_bucket, use_clang_coverage, use_java_coverage, " +
+             "use_javascript_coverage, coverage_exclude_sources, " +
+             "coverage_test_types instead")
     if "$build/reclient" in properties:
         fail('Setting "$build/reclient" property is not supported: ' +
              "use reclient_instance and reclient_rewrapper_env instead")
@@ -626,6 +709,12 @@ def builder(
             builderless = os != None and os.category in _DEFAULT_BUILDERLESS_OS_CATEGORIES
         if builderless:
             dimensions["builderless"] = "1"
+
+            free_space = defaults.get_value("free_space", free_space)
+            if free_space:
+                dimensions["free_space"] = free_space
+        elif free_space and free_space != args.DEFAULT:
+            fail("\'free_space\' dimension can only be specified for builderless builders")
 
         auto_builder_dimension = defaults.get_value(
             "auto_builder_dimension",
@@ -694,12 +783,14 @@ def builder(
         properties["$build/goma"] = gp
 
     code_coverage = _code_coverage_property(
+        coverage_gs_bucket = coverage_gs_bucket,
         use_clang_coverage = use_clang_coverage,
         use_java_coverage = use_java_coverage,
         use_javascript_coverage = use_javascript_coverage,
         coverage_exclude_sources = coverage_exclude_sources,
         coverage_test_types = coverage_test_types,
         export_coverage_to_zoss = export_coverage_to_zoss,
+        generate_blame_list = generate_blame_list,
     )
     if code_coverage != None:
         properties["$build/code_coverage"] = code_coverage
@@ -709,8 +800,10 @@ def builder(
         service = reclient_service,
         jobs = reclient_jobs,
         rewrapper_env = reclient_rewrapper_env,
+        bootstrap_env = reclient_bootstrap_env,
         profiler_service = reclient_profiler_service,
         publish_trace = reclient_publish_trace,
+        scandeps_server = reclient_scandeps_server,
         cache_silo = reclient_cache_silo,
         ensure_verified = reclient_ensure_verified,
     )
@@ -731,35 +824,32 @@ def builder(
         )]
         properties.setdefault("xcode_build_version", xcode.version)
 
-    history_options = None
-    resultdb_index_by_timestamp = defaults.get_value(
-        "resultdb_index_by_timestamp",
-        resultdb_index_by_timestamp,
-    )
-    if resultdb_index_by_timestamp:
-        history_options = resultdb.history_options(
-            by_timestamp = resultdb_index_by_timestamp,
-        )
-
     kwargs["notifies"] = defaults.get_value("notifies", notifies, merge = args.MERGE_LIST)
 
     triggered_by = defaults.get_value("triggered_by", triggered_by)
     if triggered_by != args.COMPUTE:
         kwargs["triggered_by"] = triggered_by
 
+    experiments = kwargs.pop("experiments", None) or {}
+
+    # TODO: remove this after this experiment is removed from
+    # cr-buildbucket/settings.cfg (http://shortn/_cz2s9ql61X).
+    if defaults.get_value("omit_python2", omit_python2):
+        experiments["luci.buildbucket.omit_python2"] = 100
+    elif "luci.buildbucket.omit_python2" not in experiments:
+        experiments["luci.buildbucket.omit_python2"] = 0
+
     builder = branches.builder(
         name = name,
         branch_selector = branch_selector,
         dimensions = dimensions,
         properties = properties,
-        resultdb_settings = resultdb.settings(
-            enable = True,
-            bq_exports = defaults.get_value(
-                "resultdb_bigquery_exports",
-                resultdb_bigquery_exports,
-            ),
-            history_options = history_options,
+        resultdb_settings = _resultdb_settings(
+            resultdb_enable = resultdb_enable,
+            resultdb_bigquery_exports = resultdb_bigquery_exports,
+            resultdb_index_by_timestamp = resultdb_index_by_timestamp,
         ),
+        experiments = experiments,
         **kwargs
     )
 
@@ -798,7 +888,9 @@ def builder(
 
             console_view = entry.console_view
             if console_view == None:
-                console_view = builder_group
+                console_view = defaults.console_view.get()
+                if console_view == args.COMPUTE:
+                    console_view = builder_group
                 if not console_view:
                     fail("Builder does not have builder group and " +
                          "console_view_entry does not have console view: {}".format(entry))
@@ -835,4 +927,5 @@ builders = struct(
     os = os,
     sheriff_rotations = sheriff_rotations,
     xcode = xcode,
+    free_space = free_space,
 )

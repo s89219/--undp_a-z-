@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,6 @@
 #include <memory>
 #include <utility>
 
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/settings/cros_settings_provider.h"
-#include "ash/components/tpm/install_attributes.h"
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_paths.h"
 #include "ash/constants/ash_switches.h"
@@ -28,6 +25,7 @@
 #include "chrome/browser/ash/attestation/enrollment_certificate_uploader_impl.h"
 #include "chrome/browser/ash/attestation/enrollment_id_upload_manager.h"
 #include "chrome/browser/ash/attestation/machine_certificate_uploader_impl.h"
+#include "chrome/browser/ash/login/reporting/lock_unlock_reporter.h"
 #include "chrome/browser/ash/login/reporting/login_logout_reporter.h"
 #include "chrome/browser/ash/policy/core/device_cloud_policy_store_ash.h"
 #include "chrome/browser/ash/policy/core/policy_pref_names.h"
@@ -39,14 +37,14 @@
 #include "chrome/browser/ash/policy/rsu/lookup_key_uploader.h"
 #include "chrome/browser/ash/policy/server_backed_state/server_backed_state_keys_broker.h"
 #include "chrome/browser/ash/policy/status_collector/device_status_collector.h"
-#include "chrome/browser/ash/policy/status_collector/legacy_device_status_collector.h"
 #include "chrome/browser/ash/policy/status_collector/managed_session_service.h"
 #include "chrome/browser/ash/policy/uploading/heartbeat_scheduler.h"
 #include "chrome/browser/ash/policy/uploading/status_uploader.h"
 #include "chrome/browser/ash/policy/uploading/system_log_uploader.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/system/statistics_provider.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "components/policy/core/common/cloud/cloud_external_data_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
 #include "components/policy/core/common/cloud/cloud_policy_service.h"
@@ -104,6 +102,18 @@ DeviceCloudPolicyManagerAsh::DeviceCloudPolicyManagerAsh(
 
 DeviceCloudPolicyManagerAsh::~DeviceCloudPolicyManagerAsh() = default;
 
+void DeviceCloudPolicyManagerAsh::Init(SchemaRegistry* registry) {
+  ConfigurationPolicyProvider::Init(registry);
+
+  store()->AddObserver(this);
+
+  // If the underlying store is already initialized, pretend it was loaded now.
+  // Note: It is not enough to just copy OnStoreLoaded's contents here because
+  // subclasses can override it.
+  if (store()->is_initialized())
+    OnStoreLoaded(store());
+}
+
 void DeviceCloudPolicyManagerAsh::Initialize(PrefService* local_state) {
   CHECK(local_state);
 
@@ -127,6 +137,7 @@ void DeviceCloudPolicyManagerAsh::RemoveDeviceCloudPolicyManagerObserver(
 // Keep clean up order as the reversed creation order.
 void DeviceCloudPolicyManagerAsh::Shutdown() {
   metric_reporting_manager_.reset();
+  lock_unlock_reporter_.reset();
   login_logout_reporter_.reset();
   user_added_removed_reporter_.reset();
   heartbeat_scheduler_.reset();
@@ -214,10 +225,8 @@ void DeviceCloudPolicyManagerAsh::StartConnection(
   lookup_key_uploader_ = std::make_unique<LookupKeyUploader>(
       device_store(), g_browser_process->local_state(),
       enrollment_certificate_uploader_.get());
-  if (ash::features::IsESimPolicyEnabled()) {
-    euicc_status_uploader_ = std::make_unique<EuiccStatusUploader>(
-        client(), g_browser_process->local_state());
-  }
+  euicc_status_uploader_ = std::make_unique<EuiccStatusUploader>(
+      client(), g_browser_process->local_state());
 
   // Don't create a MachineCertificateUploader or start the
   // AttestationPolicyObserver if machine cert requests are disabled.
@@ -264,26 +273,6 @@ void DeviceCloudPolicyManagerAsh::OnPolicyStoreReady(
   CreateManagedSessionServiceAndReporters();
 }
 
-void DeviceCloudPolicyManagerAsh::Unregister(UnregisterCallback callback) {
-  if (!service()) {
-    LOG(ERROR) << "Tried to unregister but DeviceCloudPolicyManagerAsh is "
-               << "not connected.";
-    std::move(callback).Run(false);
-    return;
-  }
-
-  service()->Unregister(std::move(callback));
-}
-
-void DeviceCloudPolicyManagerAsh::Disconnect() {
-  status_uploader_.reset();
-  syslog_uploader_.reset();
-  heartbeat_scheduler_.reset();
-  core()->Disconnect();
-
-  NotifyDisconnected();
-}
-
 void DeviceCloudPolicyManagerAsh::SetSigninProfileSchemaRegistry(
     SchemaRegistry* schema_registry) {
   DCHECK(!signin_profile_forwarding_schema_registry_);
@@ -304,11 +293,6 @@ void DeviceCloudPolicyManagerAsh::NotifyConnected() {
     observer.OnDeviceCloudPolicyManagerConnected();
 }
 
-void DeviceCloudPolicyManagerAsh::NotifyDisconnected() {
-  for (auto& observer : observers_)
-    observer.OnDeviceCloudPolicyManagerDisconnected();
-}
-
 void DeviceCloudPolicyManagerAsh::NotifyGotRegistry() {
   for (auto& observer : observers_)
     observer.OnDeviceCloudPolicyManagerGotRegistry();
@@ -316,23 +300,9 @@ void DeviceCloudPolicyManagerAsh::NotifyGotRegistry() {
 
 void DeviceCloudPolicyManagerAsh::CreateStatusUploader(
     ManagedSessionService* managed_session_service) {
-  std::unique_ptr<StatusCollector> collector;
-  bool granular_reporting_enabled;
-  ash::CrosSettings* settings = ash::CrosSettings::Get();
-
-  if (!settings->GetBoolean(ash::kEnableDeviceGranularReporting,
-                            &granular_reporting_enabled)) {
-    granular_reporting_enabled = true;
-  }
-
-  if (granular_reporting_enabled) {
-    collector = std::make_unique<DeviceStatusCollector>(
-        local_state_, chromeos::system::StatisticsProvider::GetInstance(),
-        managed_session_service);
-  } else {
-    collector = std::make_unique<LegacyDeviceStatusCollector>(
-        local_state_, chromeos::system::StatisticsProvider::GetInstance());
-  }
+  auto collector = std::make_unique<DeviceStatusCollector>(
+      local_state_, ash::system::StatisticsProvider::GetInstance(),
+      managed_session_service);
 
   status_uploader_ = std::make_unique<StatusUploader>(
       client(), std::move(collector), task_runner_,
@@ -348,6 +318,8 @@ void DeviceCloudPolicyManagerAsh::CreateManagedSessionServiceAndReporters() {
   login_logout_reporter_ = ash::reporting::LoginLogoutReporter::Create(
       managed_session_service_.get());
   user_added_removed_reporter_ = ::reporting::UserAddedRemovedReporter::Create(
+      managed_session_service_.get());
+  lock_unlock_reporter_ = ash::reporting::LockUnlockReporter::Create(
       managed_session_service_.get());
 }
 

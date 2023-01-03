@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,5 @@ BOOL IsPasswordCreationUserEnabled();
 
 // Whether the password manager branding UI update feature is enabled.
 BOOL IsPasswordManagerBrandingUpdateEnable();
-
-// Whether favicons should be displayed.
-BOOL IsFaviconEnabled();
 
 #endif  // IOS_CHROME_CREDENTIAL_PROVIDER_EXTENSION_UI_FEATURE_FLAGS_H_

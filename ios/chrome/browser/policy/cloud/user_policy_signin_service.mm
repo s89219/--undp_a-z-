@@ -1,23 +1,23 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/policy/cloud/user_policy_signin_service.h"
+#import "ios/chrome/browser/policy/cloud/user_policy_signin_service.h"
 
-#include "base/logging.h"
-#include "base/time/time.h"
-#include "components/policy/core/browser/cloud/user_policy_signin_service_util.h"
-#include "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
-#include "components/policy/core/common/policy_pref_names.h"
-#include "components/prefs/pref_service.h"
-#include "components/signin/public/base/consent_level.h"
-#include "components/signin/public/identity_manager/identity_manager.h"
-#include "components/signin/public/identity_manager/primary_account_change_event.h"
-#include "google_apis/gaia/core_account_id.h"
-#include "google_apis/gaia/gaia_auth_util.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/policy/cloud/user_policy_switch.h"
-#include "services/network/public/cpp/shared_url_loader_factory.h"
+#import "base/logging.h"
+#import "base/time/time.h"
+#import "components/policy/core/browser/cloud/user_policy_signin_service_util.h"
+#import "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
+#import "components/policy/core/common/policy_pref_names.h"
+#import "components/prefs/pref_service.h"
+#import "components/signin/public/base/consent_level.h"
+#import "components/signin/public/identity_manager/identity_manager.h"
+#import "components/signin/public/identity_manager/primary_account_change_event.h"
+#import "google_apis/gaia/core_account_id.h"
+#import "google_apis/gaia/gaia_auth_util.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/policy/cloud/user_policy_switch.h"
+#import "services/network/public/cpp/shared_url_loader_factory.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -29,7 +29,7 @@ namespace {
 // chrome/browser/signin/account_id_from_account_info.h to components/ to be
 // able to reuse the helper here.
 //
-// Gets the AccountId from the provided |account_info|.
+// Gets the AccountId from the provided `account_info`.
 AccountId AccountIdFromAccountInfo(const CoreAccountInfo& account_info) {
   if (account_info.email.empty() || account_info.gaia.empty())
     return EmptyAccountId();
@@ -55,6 +55,10 @@ UserPolicySigninService::UserPolicySigninService(
                                   identity_manager,
                                   system_url_loader_factory),
       browser_state_prefs_(browser_state_prefs) {
+  if (identity_manager) {
+    scoped_identity_manager_observation_.Observe(identity_manager);
+  }
+
   TryInitialize();
 }
 
@@ -81,12 +85,6 @@ void UserPolicySigninService::TryInitialize() {
     return;
   }
 
-  // Shutdown the UserCloudPolicyManager when the user signs out. We start
-  // observing the IdentityManager here because we don't want to get signout
-  // notifications until after the profile has started initializing
-  // (http://crbug.com/316229).
-  scoped_identity_manager_observation_.Observe(identity_manager());
-
   if (!IsUserPolicyEnabled() ||
       !CanApplyPolicies(/*check_for_refresh_token=*/false)) {
     // Clear existing user policies if the feature is disabled or if policies
@@ -101,6 +99,13 @@ void UserPolicySigninService::TryInitialize() {
 }
 
 bool UserPolicySigninService::CanApplyPolicies(bool check_for_refresh_token) {
+  if (!browser_state_prefs_->GetBoolean(
+          policy::policy_prefs::kUserPolicyNotificationWasShown)) {
+    // Return false if the user hasn't yet seen the notification about User
+    // Policy.
+    return false;
+  }
+
   return CanApplyPoliciesForSignedInUser(check_for_refresh_token,
                                          GetConsentLevelForRegistration(),
                                          identity_manager());
@@ -118,6 +123,10 @@ void UserPolicySigninService::UpdateLastPolicyCheckTime() {
 
 signin::ConsentLevel UserPolicySigninService::GetConsentLevelForRegistration() {
   return signin::ConsentLevel::kSync;
+}
+
+void UserPolicySigninService::OnUserPolicyNotificationSeen() {
+  TryInitialize();
 }
 
 }  // namespace policy

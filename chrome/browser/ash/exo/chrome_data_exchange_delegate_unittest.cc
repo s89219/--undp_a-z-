@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,11 +24,11 @@
 #include "chrome/browser/ash/guest_os/guest_os_share_path.h"
 #include "chrome/browser/ash/plugin_vm/plugin_vm_util.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chromeos/ash/components/dbus/chunneld/chunneld_client.h"
+#include "chromeos/ash/components/dbus/cicerone/cicerone_client.h"
+#include "chromeos/ash/components/dbus/concierge/concierge_client.h"
 #include "chromeos/ash/components/dbus/seneschal/fake_seneschal_client.h"
 #include "chromeos/ash/components/dbus/seneschal/seneschal_client.h"
-#include "chromeos/dbus/cicerone/cicerone_client.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
 #include "components/exo/shell_surface_util.h"
 #include "content/public/common/drop_data.h"
 #include "content/public/test/browser_task_environment.h"
@@ -72,9 +72,9 @@ void CaptureUTF16(std::string* result,
 class ChromeDataExchangeDelegateTest : public testing::Test {
  public:
   void SetUp() override {
-    chromeos::DBusThreadManager::Initialize();
-    chromeos::CiceroneClient::InitializeFake();
-    chromeos::ConciergeClient::InitializeFake();
+    ChunneldClient::InitializeFake();
+    CiceroneClient::InitializeFake();
+    ConciergeClient::InitializeFake();
     SeneschalClient::InitializeFake();
 
     profile_ = std::make_unique<TestingProfile>();
@@ -118,9 +118,9 @@ class ChromeDataExchangeDelegateTest : public testing::Test {
     test_helper_.reset();
     profile_.reset();
     SeneschalClient::Shutdown();
-    chromeos::ConciergeClient::Shutdown();
-    chromeos::CiceroneClient::Shutdown();
-    chromeos::DBusThreadManager::Shutdown();
+    ConciergeClient::Shutdown();
+    CiceroneClient::Shutdown();
+    ChunneldClient::Shutdown();
   }
 
  protected:
@@ -152,17 +152,17 @@ TEST_F(ChromeDataExchangeDelegateTest, GetDataTransferEndpointType) {
   aura::Window* arc_toplevel = aura::test::CreateTestWindowWithDelegate(
       &delegate_, 0, gfx::Rect(), &container_window);
   arc_toplevel->SetProperty(aura::client::kAppType,
-                            static_cast<int>(ash::AppType::ARC_APP));
-  ASSERT_TRUE(ash::IsArcWindow(arc_toplevel));
+                            static_cast<int>(AppType::ARC_APP));
+  ASSERT_TRUE(IsArcWindow(arc_toplevel));
   aura::Window* arc_window =
       aura::test::CreateTestWindowWithBounds(gfx::Rect(), arc_toplevel);
-  ASSERT_TRUE(ash::IsArcWindow(arc_window->GetToplevelWindow()));
+  ASSERT_TRUE(IsArcWindow(arc_window->GetToplevelWindow()));
 
   // Crostini:
   aura::Window* crostini_toplevel = aura::test::CreateTestWindowWithDelegate(
       &delegate_, 0, gfx::Rect(), &container_window);
   crostini_toplevel->SetProperty(aura::client::kAppType,
-                                 static_cast<int>(ash::AppType::CROSTINI_APP));
+                                 static_cast<int>(AppType::CROSTINI_APP));
   ASSERT_TRUE(crostini::IsCrostiniWindow(crostini_toplevel));
   aura::Window* crostini_window =
       aura::test::CreateTestWindowWithBounds(gfx::Rect(), crostini_toplevel);

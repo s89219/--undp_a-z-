@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include <limits>
 
 #include "base/callback_helpers.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 
@@ -22,14 +23,13 @@
 #include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
+#include "base/memory/ptr_util.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/system/sys_info.h"
-#include "base/task/task_runner_util.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "net/base/net_errors.h"
@@ -86,15 +86,12 @@ SimpleCacheConsistencyResult FileStructureConsistent(
 struct BarrierContext {
   explicit BarrierContext(net::CompletionOnceCallback final_callback,
                           int expected)
-      : final_callback_(std::move(final_callback)),
-        expected(expected),
-        count(0),
-        had_error(false) {}
+      : final_callback_(std::move(final_callback)), expected(expected) {}
 
   net::CompletionOnceCallback final_callback_;
   const int expected;
-  int count;
-  bool had_error;
+  int count = 0;
+  bool had_error = false;
 };
 
 void BarrierCompletionCallbackImpl(
@@ -195,9 +192,7 @@ class SimpleBackendImpl::ActiveEntryProxy
   static std::unique_ptr<SimpleEntryImpl::ActiveEntryProxy> Create(
       int64_t entry_hash,
       SimpleBackendImpl* backend) {
-    std::unique_ptr<SimpleEntryImpl::ActiveEntryProxy> proxy(
-        new ActiveEntryProxy(entry_hash, backend));
-    return proxy;
+    return base::WrapUnique(new ActiveEntryProxy(entry_hash, backend));
   }
 
  private:
@@ -251,7 +246,7 @@ void SimpleBackendImpl::SetTaskRunnerForTesting(
       std::move(task_runner));
 }
 
-net::Error SimpleBackendImpl::Init(CompletionOnceCallback completion_callback) {
+void SimpleBackendImpl::Init(CompletionOnceCallback completion_callback) {
   auto index_task_runner = base::ThreadPool::CreateSequencedTaskRunner(
       {base::MayBlock(), base::WithBaseSyncPrimitives(),
        base::TaskPriority::USER_BLOCKING,
@@ -261,8 +256,8 @@ net::Error SimpleBackendImpl::Init(CompletionOnceCallback completion_callback) {
       base::MakeRefCounted<net::PrioritizedTaskRunner>(kWorkerPoolTaskTraits);
 
   index_ = std::make_unique<SimpleIndex>(
-      base::SequencedTaskRunnerHandle::Get(), cleanup_tracker_.get(), this,
-      GetCacheType(),
+      base::SequencedTaskRunner::GetCurrentDefault(), cleanup_tracker_.get(),
+      this, GetCacheType(),
       std::make_unique<SimpleIndexFile>(
           index_task_runner, file_operations_factory_, GetCacheType(), path_));
   index_->ExecuteWhenReady(
@@ -276,7 +271,6 @@ net::Error SimpleBackendImpl::Init(CompletionOnceCallback completion_callback) {
                      GetCacheType()),
       base::BindOnce(&SimpleBackendImpl::InitializeIndex, AsWeakPtr(),
                      std::move(completion_callback)));
-  return net::ERR_IO_PENDING;
 }
 
 bool SimpleBackendImpl::SetMaxSize(int64_t max_bytes) {
@@ -304,8 +298,7 @@ scoped_refptr<SimplePostDoomWaiterTable> SimpleBackendImpl::OnDoomStart(
 
 void SimpleBackendImpl::DoomEntries(std::vector<uint64_t>* entry_hashes,
                                     net::CompletionOnceCallback callback) {
-  std::unique_ptr<std::vector<uint64_t>> mass_doom_entry_hashes(
-      new std::vector<uint64_t>());
+  auto mass_doom_entry_hashes = std::make_unique<std::vector<uint64_t>>();
   mass_doom_entry_hashes->swap(*entry_hashes);
 
   std::vector<uint64_t> to_doom_individually_hashes;
@@ -632,7 +625,7 @@ class SimpleBackendImpl::SimpleIterator final : public Iterator {
 };
 
 std::unique_ptr<Backend::Iterator> SimpleBackendImpl::CreateIterator() {
-  return std::unique_ptr<Iterator>(new SimpleIterator(AsWeakPtr()));
+  return std::make_unique<SimpleIterator>(AsWeakPtr());
 }
 
 void SimpleBackendImpl::GetStats(base::StringPairs* stats) {
@@ -783,7 +776,7 @@ SimpleBackendImpl::CreateOrFindActiveOrDoomedEntry(
     return nullptr;
 
   std::pair<EntryMap::iterator, bool> insert_result =
-      active_entries_.insert(EntryMap::value_type(entry_hash, NULL));
+      active_entries_.insert(EntryMap::value_type(entry_hash, nullptr));
   EntryMap::iterator& it = insert_result.first;
   const bool did_insert = insert_result.second;
   if (did_insert) {
@@ -844,9 +837,6 @@ EntryResult SimpleBackendImpl::OpenEntryFromHash(uint64_t entry_hash,
 net::Error SimpleBackendImpl::DoomEntryFromHash(
     uint64_t entry_hash,
     CompletionOnceCallback callback) {
-  Entry** entry = new Entry*();
-  std::unique_ptr<Entry*> scoped_entry(entry);
-
   std::vector<SimplePostDoomWaiter>* post_doom =
       post_doom_waiting_->Find(entry_hash);
   if (post_doom) {

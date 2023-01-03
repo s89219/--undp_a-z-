@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,12 +38,21 @@ bool UserEventReporterHelper::ReportingEnabled(
     const std::string& policy_path) const {
   DCHECK_CURRENTLY_ON(::content::BrowserThread::UI);
   bool enabled = false;
-  chromeos::CrosSettings::Get()->GetBoolean(policy_path, &enabled);
+  ash::CrosSettings::Get()->GetBoolean(policy_path, &enabled);
   return enabled;
 }
 
+bool UserEventReporterHelper::IsKioskUser() const {
+  DCHECK_CURRENTLY_ON(::content::BrowserThread::UI);
+  auto* const primary = user_manager::UserManager::Get()->GetPrimaryUser();
+  if (!primary) {
+    return false;
+  }
+  return primary->IsKioskType();
+}
+
 void UserEventReporterHelper::ReportEvent(
-    const google::protobuf::MessageLite* record,
+    std::unique_ptr<const google::protobuf::MessageLite> record,
     Priority priority,
     ReportQueue::EnqueueCallback enqueue_cb) {
   if (!report_queue_) {
@@ -51,7 +60,7 @@ void UserEventReporterHelper::ReportEvent(
         .Run(Status(error::UNAVAILABLE, "Reporting queue is null."));
     return;
   }
-  report_queue_->Enqueue(record, priority, std::move(enqueue_cb));
+  report_queue_->Enqueue(std::move(record), priority, std::move(enqueue_cb));
 }
 
 bool UserEventReporterHelper::IsCurrentUserNew() const {

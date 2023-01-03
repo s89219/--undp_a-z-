@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@ namespace ash {
 // thread (UI thread) which initializes the DBusThreadManager instance.
 class COMPONENT_EXPORT(HIBERMAN_CLIENT) HibermanClient {
  public:
-  using ResumeFromHibernateCallback = VoidDBusMethodCallback;
+  using ResumeFromHibernateCallback = chromeos::VoidDBusMethodCallback;
 
   // Not copyable or movable.
   HibermanClient(const HibermanClient&) = delete;
@@ -42,13 +42,19 @@ class COMPONENT_EXPORT(HIBERMAN_CLIENT) HibermanClient {
   // Actual DBus Methods:
   // Runs the callback as soon as the service becomes available.
   virtual void WaitForServiceToBeAvailable(
-      WaitForServiceToBeAvailableCallback callback) = 0;
+      chromeos::WaitForServiceToBeAvailableCallback callback) = 0;
 
   // Resume from hibernate, if possible. Upon a successful resume from
   // hibernation, this function does not return, as execution continues in the
   // resumed image.
   virtual void ResumeFromHibernate(const std::string& account_id,
                                    ResumeFromHibernateCallback callback) = 0;
+
+  // Resume from hibernate with an auth session, if possible. Upon a successful
+  // resume from hibernation, this function does not return, as execution
+  // continues in the resumed image.
+  virtual void ResumeFromHibernateAS(const std::string& auth_session_id,
+                                     ResumeFromHibernateCallback callback) = 0;
 
  protected:
   // Initialize/Shutdown should be used instead.

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/metrics/user_action_tester.h"
-#include "chrome/browser/ash/login/test/fake_gaia_mixin.h"
+#include "chrome/browser/ash/login/test/device_state_mixin.h"
 #include "chrome/browser/ash/login/test/logged_in_user_mixin.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -31,6 +31,7 @@
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/supervised_user/parent_permission_dialog_view.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/test/base/fake_gaia_mixin.h"
 #include "chrome/test/base/mixin_based_in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
@@ -139,9 +140,8 @@ class ParentPermissionDialogViewTest
     // Set up the identity test environment, which provides fake
     // OAuth refresh tokens.
     identity_test_env_ = std::make_unique<signin::IdentityTestEnvironment>();
-    identity_test_env_->MakeAccountAvailable(
-        ash::FakeGaiaMixin::kFakeUserEmail);
-    identity_test_env_->SetPrimaryAccount(ash::FakeGaiaMixin::kFakeUserEmail,
+    identity_test_env_->MakeAccountAvailable(FakeGaiaMixin::kFakeUserEmail);
+    identity_test_env_->SetPrimaryAccount(FakeGaiaMixin::kFakeUserEmail,
                                           signin::ConsentLevel::kSync);
     identity_test_env_->SetRefreshTokenForPrimaryAccount();
     identity_test_env_->SetAutomaticIssueOfAccessTokens(true);
@@ -259,6 +259,13 @@ class ParentPermissionDialogViewTest
 
   ParentPermissionDialog::Result result_;
 
+  // Emulate consumer ownership (create public owner key file, install
+  // attributes file, etc) so Chrome doesn't need to do it. The current setup is
+  // not sufficient to go through the ownership flow successfully and it's not
+  // essential to the logic under test.
+  ash::DeviceStateMixin device_state_{
+      &mixin_host_,
+      ash::DeviceStateMixin::State::OOBE_COMPLETED_CONSUMER_OWNED};
   ash::LoggedInUserMixin logged_in_user_mixin_{
       &mixin_host_,
       // Simulate Gellerization / Adding Supervision to load extensions.

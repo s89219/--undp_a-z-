@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "components/grit/components_resources.h"
 #include "components/translate/core/browser/translate_url_fetcher.h"
@@ -165,7 +164,7 @@ void TranslateScript::OnScriptFetchComplete(bool success,
     // We'll expire the cached script after some time, to make sure long
     // running browsers still get fixes that might get pushed with newer
     // scripts.
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&TranslateScript::Clear,
                        weak_method_factory_.GetWeakPtr()),

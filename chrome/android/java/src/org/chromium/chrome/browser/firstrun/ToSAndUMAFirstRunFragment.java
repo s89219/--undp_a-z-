@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,8 +58,8 @@ public class ToSAndUMAFirstRunFragment
     private boolean mNativeInitialized;
     private boolean mPolicyServiceInitialized;
     private boolean mTosButtonClicked;
-    // TODO(https://crbug.com/1274145): Rename mAllowCrashUpload field.
-    private boolean mAllowCrashUpload;
+    private boolean mAllowMetricsAndCrashUploading;
+    private boolean mUserInteractedWithUmaCheckbox;
 
     private Button mAcceptButton;
     private CheckBox mSendReportCheckBox;
@@ -94,8 +94,10 @@ public class ToSAndUMAFirstRunFragment
 
         // Register event listeners.
         mAcceptButton.setOnClickListener((v) -> onTosButtonClicked());
-        mSendReportCheckBox.setOnCheckedChangeListener(
-                ((compoundButton, isChecked) -> mAllowCrashUpload = isChecked));
+        mSendReportCheckBox.setOnCheckedChangeListener(((compoundButton, isChecked) -> {
+            mAllowMetricsAndCrashUploading = isChecked;
+            mUserInteractedWithUmaCheckbox = true;
+        }));
 
         // Make TextView links clickable.
         mTosAndPrivacy.setMovementMethod(LinkMovementMethod.getInstance());
@@ -164,13 +166,13 @@ public class ToSAndUMAFirstRunFragment
         assert !isWaitingForNativeAndPolicyInit();
 
         setSpinnerVisible(false);
-        mSendReportCheckBox.setChecked(mAllowCrashUpload);
+        mSendReportCheckBox.setChecked(mAllowMetricsAndCrashUploading);
     }
 
     /** Implements {@link FreUMADialogCoordinator.Listener} */
     @Override
-    public void onAllowCrashUploadChecked(boolean allowCrashUpload) {
-        mAllowCrashUpload = allowCrashUpload;
+    public void onAllowMetricsAndCrashUploadingChecked(boolean allowMetricsAndCrashUploading) {
+        mAllowMetricsAndCrashUploading = allowMetricsAndCrashUploading;
     }
 
     private void updateView() {
@@ -267,12 +269,18 @@ public class ToSAndUMAFirstRunFragment
 
     private void updateReportCheckbox(
             boolean umaDialogMayBeShown, boolean isMetricsReportingDisabledByPolicy) {
-        mAllowCrashUpload = getUmaCheckBoxInitialState();
-        mSendReportCheckBox.setChecked(mAllowCrashUpload);
+        // The user can only interact with the UMA checkbox after it's visible on the screen, in
+        // which case a previous call to this method has already checked the checkbox expected
+        // initial state.
+        if (!mUserInteractedWithUmaCheckbox) {
+            mAllowMetricsAndCrashUploading = getUmaCheckBoxInitialState();
+            mSendReportCheckBox.setChecked(mAllowMetricsAndCrashUploading);
+        }
 
         if (!canShowUmaCheckBox()) {
             if (!umaDialogMayBeShown) {
-                mAllowCrashUpload = (sShowUmaCheckBoxForTesting || VersionInfo.isOfficialBuild())
+                mAllowMetricsAndCrashUploading =
+                        (sShowUmaCheckBoxForTesting || VersionInfo.isOfficialBuild())
                         && !isMetricsReportingDisabledByPolicy;
             }
             mSendReportCheckBox.setVisibility(View.GONE);
@@ -282,7 +290,7 @@ public class ToSAndUMAFirstRunFragment
     private void openUmaDialog() {
         new FreUMADialogCoordinator(requireContext(),
                 ((ModalDialogManagerHolder) getActivity()).getModalDialogManager(), this,
-                mAllowCrashUpload);
+                mAllowMetricsAndCrashUploading);
     }
 
     private void onPolicyServiceInitialized(boolean onDevicePolicyFound) {
@@ -330,7 +338,7 @@ public class ToSAndUMAFirstRunFragment
             RecordHistogram.recordTimesHistogram("MobileFre.TosFragment.SpinnerVisibleDuration",
                     SystemClock.elapsedRealtime() - mTosAcceptedTime);
         }
-        getPageDelegate().acceptTermsOfService(mAllowCrashUpload);
+        getPageDelegate().acceptTermsOfService(mAllowMetricsAndCrashUploading);
         getPageDelegate().advanceToNextPage();
     }
 
@@ -408,7 +416,7 @@ public class ToSAndUMAFirstRunFragment
 
     @VisibleForTesting
     public static void setObserverForTesting(ToSAndUMAFirstRunFragment.Observer observer) {
-        assert sObserver == null;
+        assert observer == null || sObserver == null;
         sObserver = observer;
     }
 }

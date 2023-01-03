@@ -1,9 +1,10 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/cast/cast_notification_controller.h"
 
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/shell.h"
@@ -93,12 +94,13 @@ void CastNotificationController::OnDevicesUpdated(
     data.buttons.push_back(message_center::ButtonInfo(
         l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_CAST_STOP)));
 
-    std::unique_ptr<Notification> notification = CreateSystemNotification(
+    std::unique_ptr<Notification> notification = CreateSystemNotificationPtr(
         message_center::NOTIFICATION_TYPE_SIMPLE, kNotificationId,
         GetNotificationTitle(sink, route), GetNotificationMessage(route),
         std::u16string() /* display_source */, GURL(),
         message_center::NotifierId(
-            message_center::NotifierType::SYSTEM_COMPONENT, kNotifierId),
+            message_center::NotifierType::SYSTEM_COMPONENT, kNotifierId,
+            NotificationCatalogName::kCast),
         data,
         base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
             base::BindRepeating(&CastNotificationController::StopCasting,

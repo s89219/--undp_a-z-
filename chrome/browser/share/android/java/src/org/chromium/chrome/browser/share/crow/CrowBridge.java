@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,8 +37,26 @@ class CrowBridge {
                 url, numDays, (result) -> callback.onResult(new VisitCounts(result[0], result[1])));
     }
 
+    /**
+     * Returns the publication ID for a hostname; empty string if host is not on the allowlist.
+     * @param host The hostname to check against the allowlist.
+     */
+    static String getPublicationIDFromAllowlist(String host) {
+        return CrowBridgeJni.get().getPublicationIDFromAllowlist(host);
+    }
+
+    /**
+     * Returns whether |host| is on the denylist.
+     * @param host The hostname to check against the denylist.
+     */
+    static boolean denylistContainsHost(String host) {
+        return CrowBridgeJni.get().denylistContainsHost(host);
+    }
+
     @NativeMethods
     interface Natives {
         void getRecentVisitCountsToHost(GURL url, int numDays, Callback<int[]> callback);
+        String getPublicationIDFromAllowlist(String host);
+        boolean denylistContainsHost(String host);
     }
 }

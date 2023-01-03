@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,12 +17,14 @@
 #include "chrome/browser/ash/attestation/tpm_challenge_key.h"
 #include "chrome/browser/ash/attestation/tpm_challenge_key_result.h"
 #include "chrome/browser/enterprise/connectors/device_trust/attestation/common/attestation_utils.h"
+#include "chrome/browser/enterprise/connectors/device_trust/common/common_types.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "chromeos/dbus/attestation/attestation_ca.pb.h"
-#include "chromeos/dbus/attestation/attestation_client.h"
-#include "chromeos/dbus/constants/attestation_constants.h"
+#include "chromeos/ash/components/dbus/attestation/attestation_ca.pb.h"
+#include "chromeos/ash/components/dbus/attestation/attestation_client.h"
+#include "chromeos/ash/components/dbus/constants/attestation_constants.h"
+#include "components/device_signals/core/common/signals_constants.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -50,9 +52,7 @@ constexpr char kEncodedChallenge[] =
     "u3W4CMboCswxIxNYRCGrIIVPElE3Yb4QS65mKrg=";
 
 constexpr char kFakeResponse[] = "fake_response";
-
-constexpr char kDeviceId[] = "device-id";
-constexpr char kObfuscatedCustomerId[] = "customer-id";
+constexpr char kDisplayName[] = "display-name";
 
 std::string GetSerializedSignedChallenge() {
   std::string serialized_signed_challenge;
@@ -102,17 +102,16 @@ class AshAttestationServiceTest : public testing::Test {
   void SetUp() override {
     testing::Test::SetUp();
 
-    chromeos::AttestationClient::InitializeFake();
+    ash::AttestationClient::InitializeFake();
 
     mock_challenge_key_ = InjectMockChallengeKey();
     attestation_service_ =
         std::make_unique<AshAttestationService>(&test_profile_);
   }
 
-  std::unique_ptr<attestation::DeviceTrustSignals> CreateSignals() {
-    auto signals = std::make_unique<attestation::DeviceTrustSignals>();
-    signals->set_device_id(kDeviceId);
-    signals->set_obfuscated_customer_id(kObfuscatedCustomerId);
+  base::Value::Dict CreateSignals() {
+    base::Value::Dict signals;
+    signals.Set(device_signals::names::kDisplayName, kDisplayName);
     return signals;
   }
 
@@ -124,12 +123,13 @@ class AshAttestationServiceTest : public testing::Test {
 };
 
 TEST_F(AshAttestationServiceTest, BuildChallengeResponse_Success) {
-  auto signals = CreateSignals();
-
   base::RunLoop run_loop;
-  auto callback =
-      base::BindLambdaForTesting([&](const std::string& challenge_response) {
+  auto callback = base::BindLambdaForTesting(
+      [&](const AttestationResponse& attestation_response) {
+        auto challenge_response = attestation_response.challenge_response;
         ASSERT_FALSE(challenge_response.empty());
+        EXPECT_EQ(attestation_response.result_code,
+                  DTAttestationResult::kSuccess);
         auto parsed_value = ParseValueFromResponse(challenge_response);
         ASSERT_TRUE(parsed_value.has_value());
         EXPECT_EQ(kFakeResponse, parsed_value.value());
@@ -137,20 +137,20 @@ TEST_F(AshAttestationServiceTest, BuildChallengeResponse_Success) {
       });
 
   auto protoChallenge = GetSerializedSignedChallenge();
-  EXPECT_CALL(
-      *mock_challenge_key_,
-      BuildResponse(chromeos::attestation::AttestationKeyType::KEY_DEVICE,
-                    /*profile=*/&test_profile_, /*callback=*/_,
-                    /*challenge=*/protoChallenge,
-                    /*register_key=*/false,
-                    /*key_name_for_spkac=*/std::string(),
-                    /*signals=*/_))
+  EXPECT_CALL(*mock_challenge_key_,
+              BuildResponse(ash::attestation::AttestationKeyType::KEY_DEVICE,
+                            /*profile=*/&test_profile_, /*callback=*/_,
+                            /*challenge=*/protoChallenge,
+                            /*register_key=*/false,
+                            /*key_crypto_type=*/::attestation::KEY_TYPE_RSA,
+                            /*key_name=*/std::string(),
+                            /*signals=*/_))
       .WillOnce(RunOnceCallback<2>(
           ash::attestation::TpmChallengeKeyResult::MakeChallengeResponse(
               kFakeResponse)));
 
   attestation_service_->BuildChallengeResponseForVAChallenge(
-      protoChallenge, std::move(signals), std::move(callback));
+      protoChallenge, CreateSignals(), std::move(callback));
   run_loop.Run();
 }
 

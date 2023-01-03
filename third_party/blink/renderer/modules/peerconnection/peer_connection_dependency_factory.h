@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,8 +81,7 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   std::unique_ptr<RTCPeerConnectionHandler> CreateRTCPeerConnectionHandler(
       RTCPeerConnectionHandlerClient* client,
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-      bool force_encoded_audio_insertable_streams,
-      bool force_encoded_video_insertable_streams);
+      bool encoded_insertable_streams);
 
   // Create a proxy object for a VideoTrackSource that makes sure it's called on
   // the correct threads.
@@ -137,7 +136,8 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   // network threads (rtc::Thread), if they exist. These threads are ensured to
   // exist after an RTCPeerConnectionHandler has been Initialized().
   scoped_refptr<base::SingleThreadTaskRunner> GetWebRtcWorkerTaskRunner();
-  scoped_refptr<base::SingleThreadTaskRunner> GetWebRtcNetworkTaskRunner();
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+  GetWebRtcNetworkTaskRunner();
 
   virtual scoped_refptr<base::SingleThreadTaskRunner>
   GetWebRtcSignalingTaskRunner();
@@ -190,7 +190,6 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   std::unique_ptr<IpcPacketSocketFactory> socket_factory_;
 
   rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
-  scoped_refptr<MetronomeSource> metronome_source_;
 
   // Dispatches all P2P sockets.
   Member<P2PSocketDispatcher> p2p_socket_dispatcher_;
@@ -200,8 +199,6 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   media::GpuVideoAcceleratorFactories* gpu_factories_;
 
   WebrtcVideoPerfReporter webrtc_video_perf_reporter_;
-
-  bool encode_decode_capabilities_reported_ = false;
 
   THREAD_CHECKER(thread_checker_);
 };

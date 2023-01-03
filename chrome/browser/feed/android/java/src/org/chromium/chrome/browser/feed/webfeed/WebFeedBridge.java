@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,12 @@ import java.util.List;
  */
 @JNINamespace("feed")
 public class WebFeedBridge {
+    // Values from web_feeds.proto:
+    public static final int CHANGE_REASON_WEB_PAGE_MENU = 1;
+    public static final int CHANGE_REASON_WEB_PAGE_ACCELERATOR = 2;
+    public static final int CHANGE_REASON_MANAGEMENT = 3;
+    public static final int CHANGE_REASON_RECOMMENDATION_WEB_PAGE_ACCELERATOR = 6;
+
     // Access to JNI test hooks for other libraries. This can go away once more Feed code is
     // migrated to chrome/browser/feed.
     public static org.chromium.base.JniStaticTestMocker<WebFeedBridge.Natives>
@@ -107,7 +113,7 @@ public class WebFeedBridge {
      * @param webFeedId The idenfitier of the Web Feed.
      * @param callback The callback to receive the Web Feed metadata, or null if it is not found.
      */
-    public void getWebFeedMetadata(byte[] webFeedId, Callback<WebFeedMetadata> callback) {
+    public static void getWebFeedMetadata(byte[] webFeedId, Callback<WebFeedMetadata> callback) {
         WebFeedBridgeJni.get().findWebFeedInfoForWebFeedId(webFeedId, callback);
     }
 
@@ -175,30 +181,38 @@ public class WebFeedBridge {
      * Requests to follow of the most relevant Web Feed represented by the provided URL.
      * @param tab The tab with the loaded page that should be followed.
      * @param url The URL that indicates the Web Feed to be followed.
+     * @param webFeedChangeReason The reason for this change, a WebFeedChangeReason value.
      * @param callback The callback to receive the follow results.
      */
-    public static void followFromUrl(Tab tab, GURL url, Callback<FollowResults> callback) {
-        WebFeedBridgeJni.get().followWebFeed(new WebFeedPageInformation(url, tab), callback);
+    public static void followFromUrl(
+            Tab tab, GURL url, int webFeedChangeReason, Callback<FollowResults> callback) {
+        WebFeedBridgeJni.get().followWebFeed(
+                new WebFeedPageInformation(url, tab), webFeedChangeReason, callback);
     }
 
     /**
      * Requests to follow of the Web Feed represented by the provided identifier.
      * @param webFeedId The identifier of the Web Feed to be followed.
+     * @param isDurable Whether the request should be retried if it initially fails.
+     * @param webFeedChangeReason The reason for this change, a WebFeedChangeReason value.
      * @param callback The callback to receive the follow results.
      */
-    public static void followFromId(
-            byte[] webFeedId, boolean isDurable, Callback<FollowResults> callback) {
-        WebFeedBridgeJni.get().followWebFeedById(webFeedId, isDurable, callback);
+    public static void followFromId(byte[] webFeedId, boolean isDurable, int webFeedChangeReason,
+            Callback<FollowResults> callback) {
+        WebFeedBridgeJni.get().followWebFeedById(
+                webFeedId, isDurable, webFeedChangeReason, callback);
     }
 
     /**
      * Requests the unfollowing of the Web Feed subscription from the provided identifier.
      * @param webFeedId The Web Feed identifier.
+     * @param isDurable Whether the request should be retried if it initially fails.
+     * @param webFeedChangeReason The reason for this change, a WebFeedChangeReason value.
      * @param callback The callback to receive the unfollow result.
      */
-    public static void unfollow(
-            byte[] webFeedId, boolean isDurable, Callback<UnfollowResults> callback) {
-        WebFeedBridgeJni.get().unfollowWebFeed(webFeedId, isDurable, callback);
+    public static void unfollow(byte[] webFeedId, boolean isDurable, int webFeedChangeReason,
+            Callback<UnfollowResults> callback) {
+        WebFeedBridgeJni.get().unfollowWebFeed(webFeedId, isDurable, webFeedChangeReason, callback);
     }
 
     /** This is deprecated, do not use. */
@@ -241,11 +255,12 @@ public class WebFeedBridge {
     @VisibleForTesting
     @NativeMethods
     public interface Natives {
-        void followWebFeed(WebFeedPageInformation pageInfo, Callback<FollowResults> callback);
-        void followWebFeedById(
-                byte[] webFeedId, boolean isDurable, Callback<FollowResults> callback);
-        void unfollowWebFeed(
-                byte[] webFeedId, boolean isDurable, Callback<UnfollowResults> callback);
+        void followWebFeed(WebFeedPageInformation pageInfo, int webFeedChangeReason,
+                Callback<FollowResults> callback);
+        void followWebFeedById(byte[] webFeedId, boolean isDurable, int webFeedChangeReason,
+                Callback<FollowResults> callback);
+        void unfollowWebFeed(byte[] webFeedId, boolean isDurable, int webFeedChangeReason,
+                Callback<UnfollowResults> callback);
         void findWebFeedInfoForPage(WebFeedPageInformation pageInfo,
                 @WebFeedPageInformationRequestReason int reason,
                 Callback<WebFeedMetadata> callback);

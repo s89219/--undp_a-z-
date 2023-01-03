@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,14 @@
 #include "ash/quick_pair/fast_pair_handshake/fast_pair_gatt_service_client.h"
 #include "ash/quick_pair/pairing/fast_pair/fast_pair_pairer.h"
 #include "ash/quick_pair/proto/fastpair.pb.h"
-#include "ash/services/quick_pair/public/cpp/decrypted_passkey.h"
-#include "ash/services/quick_pair/public/cpp/decrypted_response.h"
 #include "base/callback.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
+#include "chromeos/ash/services/quick_pair/public/cpp/decrypted_passkey.h"
+#include "chromeos/ash/services/quick_pair/public/cpp/decrypted_response.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -105,13 +106,31 @@ class FastPairPairerImpl : public FastPairPairer,
                            device::BluetoothDevice* device,
                            bool new_paired_status) override;
 
+  // Helper to safely stop |create_bond_timeout_timer_|.
+  // If the timer can be stopped because it is running, this function returns
+  // true. If the timer cannot be stopped, this function returns false,
+  // informing the caller that the timer has expired and the caller should not
+  // proceed with bond creation.
+  bool StopCreateBondTimer(const std::string& callback_name);
+
   // device::BluetoothDevice::Pair callback
   void OnPairConnected(
       absl::optional<device::BluetoothDevice::ConnectErrorCode> error);
 
   // device::BluetoothAdapter::ConnectDevice callbacks
   void OnConnectDevice(device::BluetoothDevice* device);
-  void OnConnectError();
+  void OnConnectError(const std::string& error_message);
+
+  // Callback for timeout on creating a bond with |device_| in
+  // StartPairing.
+  void OnCreateBondTimeout();
+
+  // Callback for timeout on waiting to confirm |device_|'s passkey.
+  void OnConfirmPasskeyTimeout();
+
+  //  FastPairHandshakeLookup::Create callback
+  void OnHandshakeComplete(scoped_refptr<Device> device,
+                           absl::optional<PairFailure> failure);
 
   // FastPairGattServiceClient::WritePasskey callback
   void OnPasskeyResponse(std::vector<uint8_t> response_bytes,
@@ -121,17 +140,22 @@ class FastPairPairerImpl : public FastPairPairer,
   void OnParseDecryptedPasskey(base::TimeTicks decrypt_start_time,
                                const absl::optional<DecryptedPasskey>& passkey);
 
+  // FastPairRepository::IsDeviceSavedToAccount callback
+  void OnIsDeviceSavedToAccount(bool is_device_saved_to_account);
+
   // FastPairRepository::CheckOptInStatus callback
   void OnCheckOptInStatus(nearby::fastpair::OptInStatus status);
+
+  // FastPairRepository::UpdateOptInStatus callback
+  void OnUpdateOptInStatus(bool success);
 
   // Creates a 16-byte array of random bytes with a first byte of 0x04 to
   // signal Fast Pair account key, and then writes to the device.
   void AttemptSendAccountKey();
 
   // FastPairDataEncryptor::WriteAccountKey callback
-  void OnWriteAccountKey(
-      std::array<uint8_t, 16> account_key,
-      absl::optional<device::BluetoothGattService::GattErrorCode> error);
+  void OnWriteAccountKey(std::array<uint8_t, 16> account_key,
+                         absl::optional<AccountKeyFailure> error);
 
   void StartPairing();
 
@@ -156,6 +180,14 @@ class FastPairPairerImpl : public FastPairPairer,
   base::ScopedObservation<device::BluetoothAdapter,
                           device::BluetoothAdapter::Observer>
       adapter_observation_{this};
+
+  // A timer to time the bonding with |device_| in StartPairing and invoke a
+  // timeout if necessary.
+  base::OneShotTimer create_bond_timeout_timer_;
+
+  // A timer which allows this pairer to time out while waiting to confirm
+  // |device_|'s passkey.
+  base::OneShotTimer confirm_passkey_timeout_timer_;
   base::WeakPtrFactory<FastPairPairerImpl> weak_ptr_factory_{this};
 };
 

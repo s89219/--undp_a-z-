@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,9 +46,7 @@ class IOSChromePasswordCheckManager
   class Observer : public base::CheckedObserver {
    public:
     virtual void PasswordCheckStatusChanged(PasswordCheckState state) {}
-    virtual void CompromisedCredentialsChanged(
-        password_manager::InsecureCredentialsManager::CredentialsView
-            credentials) {}
+    virtual void CompromisedCredentialsChanged() {}
   };
 
   // Requests to start a check for compromised passwords.
@@ -65,34 +63,8 @@ class IOSChromePasswordCheckManager
 
   // Obtains all unmuted compromised credentials that are present in the
   // password store.
-  std::vector<password_manager::CredentialWithPassword>
+  std::vector<password_manager::CredentialUIEntry>
   GetUnmutedCompromisedCredentials() const;
-
-  password_manager::SavedPasswordsPresenter::SavedPasswordsView
-  GetAllCredentials() const;
-
-  password_manager::SavedPasswordsPresenter::SavedPasswordsView
-  GetSavedPasswordsFor(
-      const password_manager::CredentialWithPassword& credential) const;
-
-  // Edits |username| and |password| for |form| and its duplicates.
-  bool EditPasswordForm(const password_manager::PasswordForm& form,
-                        const std::u16string& new_username,
-                        const std::u16string& new_password);
-
-  // Adds new password credentials |form| to the store.
-  bool AddPasswordForm(const password_manager::PasswordForm& form);
-
-  // Edits password form using |insecure_credentials_manager_|.
-  void EditCompromisedPasswordForm(const password_manager::PasswordForm& form,
-                                   base::StringPiece password);
-
-  // Deletes |form| and its duplicates.
-  void DeletePasswordForm(const password_manager::PasswordForm& form);
-
-  // Deletes compromised credentials which are related to |form|.
-  void DeleteCompromisedPasswordForm(
-      const password_manager::PasswordForm& form);
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
   void RemoveObserver(Observer* observer) {
@@ -111,14 +83,10 @@ class IOSChromePasswordCheckManager
   ~IOSChromePasswordCheckManager() override;
 
   // password_manager::SavedPasswordsPresenter::Observer:
-  void OnSavedPasswordsChanged(
-      password_manager::SavedPasswordsPresenter::SavedPasswordsView passwords)
-      override;
+  void OnSavedPasswordsChanged() override;
 
   // password_manager::InsecureCredentialsManager::Observer:
-  void OnInsecureCredentialsChanged(
-      password_manager::InsecureCredentialsManager::CredentialsView credentials)
-      override;
+  void OnInsecureCredentialsChanged() override;
 
   // password_manager::BulkLeakCheckServiceInterface::Observer:
   void OnStateChanged(
@@ -133,11 +101,12 @@ class IOSChromePasswordCheckManager
 
   ChromeBrowserState* browser_state_ = nullptr;
 
-  // Handle to the password store, powering both |saved_passwords_presenter_|
-  // and |insecure_credentials_manager_|.
-  scoped_refptr<password_manager::PasswordStoreInterface> password_store_;
+  // Handles to the password stores, powering both `saved_passwords_presenter_`
+  // and `insecure_credentials_manager_`.
+  scoped_refptr<password_manager::PasswordStoreInterface> profile_store_;
+  scoped_refptr<password_manager::PasswordStoreInterface> account_store_;
 
-  // Used by |insecure_credentials_manager_| to obtain the list of saved
+  // Used by `insecure_credentials_manager_` to obtain the list of saved
   // passwords.
   password_manager::SavedPasswordsPresenter saved_passwords_presenter_;
 
@@ -160,12 +129,12 @@ class IOSChromePasswordCheckManager
   // when password check run less than 3 seconds.
   base::Time start_time_;
 
-  // A scoped observer for |saved_passwords_presenter_|.
+  // A scoped observer for `saved_passwords_presenter_`.
   base::ScopedObservation<password_manager::SavedPasswordsPresenter,
                           password_manager::SavedPasswordsPresenter::Observer>
       observed_saved_passwords_presenter_{this};
 
-  // A scoped observer for |insecure_credentials_manager_|.
+  // A scoped observer for `insecure_credentials_manager_`.
   base::ScopedObservation<
       password_manager::InsecureCredentialsManager,
       password_manager::InsecureCredentialsManager::Observer>

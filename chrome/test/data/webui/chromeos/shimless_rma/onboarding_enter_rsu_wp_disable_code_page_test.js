@@ -1,39 +1,28 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {PromiseResolver} from 'chrome://resources/ash/common/promise_resolver.js';
 import {fakeRsuChallengeQrCode} from 'chrome://shimless-rma/fake_data.js';
 import {FakeShimlessRmaService} from 'chrome://shimless-rma/fake_shimless_rma_service.js';
 import {setShimlessRmaServiceForTesting} from 'chrome://shimless-rma/mojo_interface_provider.js';
 import {OnboardingEnterRsuWpDisableCodePage} from 'chrome://shimless-rma/onboarding_enter_rsu_wp_disable_code_page.js';
-import {assertDeepEquals, assertEquals, assertFalse, assertNotReached, assertTrue} from '../../chai_assert.js';
-import {flushTasks} from '../../test_util.js';
+import {ShimlessRma} from 'chrome://shimless-rma/shimless_rma.js';
+import {assertDeepEquals, assertEquals, assertFalse, assertNotReached, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
 
-/**
- * It is not possible to suppress visibility inline so this helper
- * function wraps the access to canvasSize_.
- * @suppress {visibility}
- */
-function suppressedComponentCanvasSize_(component) {
-  return component.canvasSize_;
-}
-
-export function onboardingEnterRsuWpDisableCodePageTest() {
+suite('onboardingEnterRsuWpDisableCodePageTest', function() {
   /** @type {?OnboardingEnterRsuWpDisableCodePage} */
   let component = null;
 
   /** @type {?FakeShimlessRmaService} */
   let service = null;
 
-  suiteSetup(() => {
-    service = new FakeShimlessRmaService();
-    setShimlessRmaServiceForTesting(service);
-  });
-
   setup(() => {
     document.body.innerHTML = '';
+    service = new FakeShimlessRmaService();
+    setShimlessRmaServiceForTesting(service);
   });
 
   teardown(() => {
@@ -82,19 +71,12 @@ export function onboardingEnterRsuWpDisableCodePageTest() {
   });
 
   test('EnterRsuWpDisableCodePageRendersQrCode', async () => {
+    const expectedImgUrlPrefix = 'blob:chrome://shimless-rma/';
+
     await initializeEnterRsuWpDisableCodePage('', '');
 
-    const expectedCanvasSize = 60;
-
-
-    assertEquals(suppressedComponentCanvasSize_(component), expectedCanvasSize);
-    const canvas = component.shadowRoot.querySelector('#qrCodeCanvas');
-    assertTrue(!!canvas);
-    assertEquals(canvas.width, expectedCanvasSize);
-    assertEquals(canvas.height, expectedCanvasSize);
-
-    const context = canvas.getContext('2d');
-    assertTrue(!!context);
+    const qrCodeimg = component.shadowRoot.querySelector('#qrCodeImg');
+    assertTrue(qrCodeimg.src.startsWith(expectedImgUrlPrefix));
   });
 
   test(
@@ -102,14 +84,14 @@ export function onboardingEnterRsuWpDisableCodePageTest() {
       async () => {
         const resolver = new PromiseResolver();
         await initializeEnterRsuWpDisableCodePage('', '');
-        const expectedCode = 'rsu code';
+        const expectedCode = 'RSU CODE';
         let savedCode = '';
         service.setRsuDisableWriteProtectCode = (code) => {
           savedCode = code;
           return resolver.promise;
         };
         const rsuCodeComponent = component.shadowRoot.querySelector('#rsuCode');
-        rsuCodeComponent.value = expectedCode;
+        rsuCodeComponent.value = expectedCode.toLowerCase();
 
         const expectedResult = {foo: 'bar'};
         let savedResult;
@@ -188,4 +170,4 @@ export function onboardingEnterRsuWpDisableCodePageTest() {
 
     assertTrue(nextButtonEventFired);
   });
-}
+});

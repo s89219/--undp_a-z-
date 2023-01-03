@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,7 @@
 import {FakeEntry, FilesAppDirEntry, FilesAppEntry} from '../../externs/files_app_entry_interfaces.js';
 import {VolumeInfo} from '../../externs/volume_info.js';
 
+import {vmTypeToIconName} from './icon_util.js';
 import {VolumeManagerCommon} from './volume_manager_types.js';
 
 /**
@@ -227,8 +228,8 @@ export class EntryList {
    */
   addEntry(entry) {
     this.children_.push(entry);
-    // Only VolumeEntry can have prefix set becuase it sets on VolumeInfo
-    // which's then used on LocationInfo/LocationLine.
+    // Only VolumeEntry can have prefix set because it sets on VolumeInfo,
+    // which is then used on LocationInfo/PathComponent.
     if (entry.type_name == 'VolumeEntry') {
       const volumeEntry = /** @type {VolumeEntry} */ (entry);
       volumeEntry.setPrefix(this);
@@ -346,6 +347,8 @@ export class VolumeEntry {
 
     // TODO(lucmult): consider deriving this from volumeInfo.
     this.rootType = null;
+
+    this.disabled_ = false;
   }
 
   /**
@@ -390,6 +393,23 @@ export class VolumeEntry {
   get isFile() {
     // Defaults to false if root entry isn't resolved yet.
     return this.rootEntry_ ? this.rootEntry_.isFile : false;
+  }
+
+  /**
+   * @return {boolean} if this entry is disabled. This method is only valid for
+   * VolumeEntry instances.
+   */
+  get disabled() {
+    return this.disabled_;
+  }
+
+  /**
+   * Sets the disabled property. This method is only valid for
+   * VolumeEntry instances.
+   * @param {boolean} disabled
+   */
+  set disabled(disabled) {
+    this.disabled_ = disabled;
   }
 
   /**
@@ -444,6 +464,14 @@ export class VolumeEntry {
    * @return {string}
    */
   get iconName() {
+    if (this.volumeInfo_.volumeType ==
+        VolumeManagerCommon.VolumeType.GUEST_OS) {
+      return vmTypeToIconName(this.volumeInfo_.vmType);
+    }
+    if (this.volumeInfo_.volumeType ==
+        VolumeManagerCommon.VolumeType.DOWNLOADS) {
+      return /** @type {string} */ (VolumeManagerCommon.VolumeType.MY_FILES);
+    }
     return /** @type {string} */ (this.volumeInfo_.volumeType);
   }
 
@@ -510,8 +538,8 @@ export class VolumeEntry {
    */
   addEntry(entry) {
     this.children_.push(entry);
-    // Only VolumeEntry can have prefix set becuase it sets on VolumeInfo
-    // which's then used on LocationInfo/LocationLine.
+    // Only VolumeEntry can have prefix set because it sets on VolumeInfo,
+    // which is then used on LocationInfo/PathComponent.
     if (entry.type_name == 'VolumeEntry') {
       const volumeEntry = /** @type {VolumeEntry} */ (entry);
       volumeEntry.setPrefix(this);
@@ -665,6 +693,12 @@ export class FakeEntryImpl {
    * @return {string}
    */
   get iconName() {
+    // When Drive volume isn't available yet, the FakeEntry should show the
+    // "drive" icon.
+    if (this.rootType === VolumeManagerCommon.RootType.DRIVE_FAKE_ROOT) {
+      return /** @type {string}  */ (VolumeManagerCommon.RootType.DRIVE);
+    }
+
     return /** @type{string} */ (this.rootType);
   }
 
@@ -703,8 +737,10 @@ export class GuestOsPlaceholder extends FakeEntryImpl {
   /**
    * @param {string} label Translated text to be displayed to user.
    * @param {number} guest_id Id of the guest
+   * @param {!chrome.fileManagerPrivate.VmType} vm_type Type of the underlying
+   *     VM
    */
-  constructor(label, guest_id) {
+  constructor(label, guest_id, vm_type) {
     super(label, VolumeManagerCommon.RootType.GUEST_OS, undefined, undefined);
 
     /**
@@ -718,14 +754,17 @@ export class GuestOsPlaceholder extends FakeEntryImpl {
      * page can't be checked with "instanceof".
      */
     this.type_name = 'GuestOsPlaceholder';
+
+    this.vm_type = vm_type;
   }
 
   /**
+   * @override
    * String used to determine the icon.
    * @return {string}
    */
   get iconName() {
-    return /** @type{string} */ ('crostini');
+    return vmTypeToIconName(this.vm_type);
   }
 
   /** @override */

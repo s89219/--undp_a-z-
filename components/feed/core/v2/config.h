@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,6 +45,9 @@ struct Config {
   // If no surfaces are attached, the stream model is unloaded after this
   // timeout.
   base::TimeDelta model_unload_timeout = base::Seconds(1);
+  // If no surfaces are attached, the singleWebFeed stream model is cleared
+  // after this timeout.
+  base::TimeDelta single_web_feed_stream_clear_timeout = base::Seconds(60);
   // How far ahead in number of items from last visible item to final item
   // before attempting to load more content.
   int load_more_trigger_lookahead = 5;
@@ -60,9 +63,8 @@ struct Config {
   base::TimeDelta session_id_max_age = base::Days(30);
   // Maximum number of images prefetched per refresh.
   int max_prefetch_image_requests_per_refresh = 50;
-  // The minimum interval from the last time the notice is viewed in order for
-  // it to be considered viewed again.
-  base::TimeDelta minimum_notice_view_interval = base::Minutes(5);
+  // Maximum size of most recent viewed content hash list.
+  int max_most_recent_viewed_content_hashes = 100;
 
   // Configuration for Web Feeds.
 
@@ -105,7 +107,7 @@ struct Config {
   // Until we get the new list contents API working, keep using FeedQuery.
   // TODO(crbug/1152592): remove this when new endpoint is tested enough.
   // Set using snippets-internals, or the --webfeed-legacy-feedquery switch.
-  bool use_feed_query_requests_for_web_feeds = false;
+  bool use_feed_query_requests = false;
 
   // Set of optional capabilities included in requests. See
   // CreateFeedQueryRequest() for required capabilities.
@@ -127,7 +129,7 @@ const Config& GetFeedConfig();
 
 // Sets whether the legacy feed endpoint should be used for Web Feed content
 // fetches.
-void SetUseFeedQueryRequestsForWebFeeds(const bool use_legacy);
+void SetUseFeedQueryRequests(const bool use_legacy);
 
 void SetFeedConfigForTesting(const Config& config);
 void OverrideConfigWithFinchForTesting();

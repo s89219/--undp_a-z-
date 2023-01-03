@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@ import android.content.res.AssetFileDescriptor;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
-import android.os.SystemClock;
+import android.os.PersistableBundle;
 import android.text.Html;
 import android.text.Spanned;
 import android.text.TextUtils;
@@ -39,7 +39,6 @@ import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.compat.ApiHelperForO;
 import org.chromium.base.compat.ApiHelperForP;
 import org.chromium.base.compat.ApiHelperForS;
-import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.task.AsyncTask;
 import org.chromium.components.url_formatter.UrlFormatter;
@@ -68,6 +67,9 @@ public class ClipboardImpl
 
     // This mime type annotates that clipboard contains a text.
     private static final String TEXT_MIME_TYPE = "text/*";
+
+    // This mime type annotates that clipboard contains a plain text.
+    private static final String PLAIN_TEXT_MIME_TYPE = "text/plain";
 
     // This mime type annotates that clipboard contains a PNG image.
     private static final String PNG_MIME_TYPE = "image/png";
@@ -142,8 +144,7 @@ public class ClipboardImpl
             if (!(text instanceof Spanned)) return null;
             Spanned spanned = (Spanned) text;
             if (hasStyleSpan(spanned)) {
-                return ApiCompatibilityUtils.toHtml(
-                        spanned, Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE);
+                return Html.toHtml(spanned, Html.TO_HTML_PARAGRAPH_LINES_CONSECUTIVE);
             }
         }
         return null;
@@ -300,16 +301,12 @@ public class ClipboardImpl
             // Android system clipboard contains an image, but it is not a PNG.
             // Try reading it as a bitmap and encoding to a PNG.
             try {
-                final long startTime = SystemClock.elapsedRealtime();
                 // TODO(crbug.com/1280468): This uses the unsafe ImageDecoder class.
                 Bitmap bitmap = ApiCompatibilityUtils.getBitmapByUri(cr, uri);
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
                 // |quality| is ignored since PNG encoding is lossless. See
                 // https://developer.android.com/reference/android/graphics/Bitmap.CompressFormat#PNG.
                 bitmap.compress(Bitmap.CompressFormat.PNG, /*quality=*/100, baos);
-                RecordHistogram.recordMediumTimesHistogram(
-                        "Android.ClipBoard.getImageDuration.NonPngImages",
-                        SystemClock.elapsedRealtime() - startTime);
                 if (baos.size() > MAX_ALLOWED_PNG_SIZE_BYTES) return null;
 
                 return baos.toByteArray();
@@ -326,12 +323,8 @@ public class ClipboardImpl
                 return null;
             }
             byte[] data = new byte[(int) afd.getLength()];
-            final long startTime = SystemClock.elapsedRealtime();
             fileStream = new FileInputStream(afd.getFileDescriptor());
             fileStream.read(data);
-            RecordHistogram.recordMediumTimesHistogram(
-                    "Android.ClipBoard.getImageDuration.PngImages",
-                    SystemClock.elapsedRealtime() - startTime);
             return data;
         } catch (IOException e) {
             return null;
@@ -370,12 +363,28 @@ public class ClipboardImpl
 
     @Override
     public void setText(final String text) {
-        setPrimaryClipNoException(ClipData.newPlainText("text", text));
+        setText("text", text);
+    }
+
+    @Override
+    public void setText(final String label, final String text) {
+        setPrimaryClipNoException(ClipData.newPlainText(label, text));
     }
 
     @Override
     void setHTMLText(final String html, final String text) {
         setPrimaryClipNoException(ClipData.newHtmlText("html", text, html));
+    }
+
+    @Override
+    public void setPassword(final String password) {
+        ClipData clipData = ClipData.newPlainText("password", password);
+        PersistableBundle extras = new PersistableBundle();
+        // TODO(crbug.com/1334290): Replace to ClipDescription.EXTRA_IS_SENSITIVE once
+        // chromium import Android T SDK.
+        extras.putBoolean("android.content.extra.IS_SENSITIVE", true);
+        clipData.getDescription().setExtras(extras);
+        setPrimaryClipNoException(clipData);
     }
 
     @Override
@@ -495,9 +504,12 @@ public class ClipboardImpl
 
     @Override
     public void copyUrlToClipboard(GURL url) {
-        ClipData clip =
-                new ClipData("url", new String[] {URL_MIME_TYPE}, new ClipData.Item(url.getSpec()));
-        if (setPrimaryClipNoException(clip)) {
+        ClipData clip = new ClipData("url", new String[] {URL_MIME_TYPE, PLAIN_TEXT_MIME_TYPE},
+                new ClipData.Item(url.getSpec()));
+        if (setPrimaryClipNoException(clip) && Build.VERSION.SDK_INT <= Build.VERSION_CODES.S_V2) {
+            // According to
+            // https://developer.android.com/about/versions/13/features/copy-paste?hl=en#duplicate-notifications,
+            // the toast should not been shown on Android T and T+.
             Toast.makeText(mContext, R.string.link_copied, Toast.LENGTH_SHORT).show();
         }
     }

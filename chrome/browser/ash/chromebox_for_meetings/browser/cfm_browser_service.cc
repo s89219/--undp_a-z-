@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,8 @@ namespace ash::cfm {
 
 namespace {
 
-// TODO(https://crbug.com/1164001): remove after the migration to namespace ash.
+// TODO(https://crbug.com/1403174): Remove when namespace of mojoms for CfM are
+// migarted to ash.
 namespace mojom = ::chromeos::cfm::mojom;
 
 static CfmBrowserService* g_browser_service = nullptr;
@@ -71,10 +72,10 @@ void CfmBrowserService::OnBindService(
 
 void CfmBrowserService::GetVariationsData(GetVariationsDataCallback callback) {
   std::string field_trial_parameters =
-      base::FieldTrialList::AllParamsToString(true, &variations::EscapeValue);
+      base::FieldTrialList::AllParamsToString(&variations::EscapeValue);
 
   std::string field_trial_states;
-  base::FieldTrialList::AllStatesToString(&field_trial_states, true);
+  base::FieldTrialList::AllStatesToString(&field_trial_states);
 
   std::string enabled_features;
   std::string disabled_features;

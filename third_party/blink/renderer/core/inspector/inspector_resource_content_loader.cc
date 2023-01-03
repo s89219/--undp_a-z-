@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -178,6 +178,8 @@ void InspectorResourceContentLoader::Start() {
           "use-credentials");
       ResourceRequest manifest_request(link);
       manifest_request.SetMode(network::mojom::RequestMode::kCors);
+      manifest_request.SetTargetAddressSpace(
+          network::mojom::IPAddressSpace::kUnknown);
       // See https://w3c.github.io/manifest/. Use "include" when use_credentials
       // is true, and "omit" otherwise.
       manifest_request.SetCredentialsMode(
@@ -222,7 +224,7 @@ void InspectorResourceContentLoader::Cancel(int client_id) {
 }
 
 InspectorResourceContentLoader::~InspectorResourceContentLoader() {
-  DCHECK(resources_.IsEmpty());
+  DCHECK(resources_.empty());
 }
 
 void InspectorResourceContentLoader::Trace(Visitor* visitor) const {

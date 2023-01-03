@@ -1,11 +1,15 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {NavigatorDelegate, OpenPdfParamsParser, PdfNavigator, WindowOpenDisposition} from 'chrome-extension://mhjfbmdgcfjbbpaeojofohoefgiehjai/pdf_viewer_wrapper.js';
+import {assertNotReached} from 'chrome://resources/js/assert_ts.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 import {getZoomableViewport, MockDocumentDimensions, MockElement, MockSizer, MockViewportChangedCallback} from './test_util.js';
+
+// URL allowed local file access.
+const ALLOWED_URL: string = 'https://test-allowed-domain.com/document.pdf';
 
 class MockNavigatorDelegate extends TestBrowserProxy implements
     NavigatorDelegate {
@@ -14,6 +18,7 @@ class MockNavigatorDelegate extends TestBrowserProxy implements
       'navigateInCurrentTab',
       'navigateInNewTab',
       'navigateInNewWindow',
+      'isAllowedLocalFileAccess',
     ]);
   }
 
@@ -27,6 +32,10 @@ class MockNavigatorDelegate extends TestBrowserProxy implements
 
   navigateInNewWindow(url: string) {
     this.methodCalled('navigateInNewWindow', url);
+  }
+
+  isAllowedLocalFileAccess(url: string): Promise<boolean> {
+    return Promise.resolve(url === ALLOWED_URL);
   }
 }
 
@@ -45,7 +54,25 @@ async function doNavigationUrlTest(
   navigatorDelegate.reset();
   await navigator.navigate(url, disposition);
   chrome.test.assertFalse(viewportChangedCallback.wasCalled);
+
   if (expectedResultUrl === undefined) {
+    // Navigation shouldn't occur.
+    switch (disposition) {
+      case WindowOpenDisposition.CURRENT_TAB:
+        chrome.test.assertEq(
+            0, navigatorDelegate.getCallCount('navigateInCurrentTab'));
+        break;
+      case WindowOpenDisposition.NEW_BACKGROUND_TAB:
+        chrome.test.assertEq(
+            0, navigatorDelegate.getCallCount('navigateInNewTab'));
+        break;
+      case WindowOpenDisposition.NEW_WINDOW:
+        chrome.test.assertEq(
+            0, navigatorDelegate.getCallCount('navigateInNewWindow'));
+        break;
+      default:
+        assertNotReached();
+    }
     return;
   }
 
@@ -254,5 +281,20 @@ chrome.test.runTests([
     await doNavigationUrlTests(url, '', undefined);
 
     chrome.test.succeed();
-  }
+  },
+
+  /**
+   * Test domains and urls have access to file:/// urls when allowed.
+   */
+  async function testNavigateAllowedLocalFileAccess() {
+    await doNavigationUrlTests(
+        ALLOWED_URL, 'file:///bar.pdf', 'file:///bar.pdf');
+
+    const disallowedUrl = 'https://test-disallowed-domain.com/document.pdf';
+
+    await doNavigationUrlTests(disallowedUrl, 'file:///bar.pdf', undefined);
+
+    chrome.test.succeed();
+  },
+
 ]);

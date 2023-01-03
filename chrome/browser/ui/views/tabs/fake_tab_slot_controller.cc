@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,11 +19,9 @@ Tab* FakeTabSlotController::tab_at(int index) const {
   return tab_container_->GetTabAtModelIndex(index);
 }
 
-bool FakeTabSlotController::ToggleTabGroupCollapsedState(
+void FakeTabSlotController::ToggleTabGroupCollapsedState(
     const tab_groups::TabGroupId group,
-    ToggleTabGroupCollapsedStateOrigin origin) {
-  return false;
-}
+    ToggleTabGroupCollapsedStateOrigin origin) {}
 
 bool FakeTabSlotController::IsActiveTab(const Tab* tab) const {
   return active_tab_ == tab;
@@ -106,10 +104,6 @@ absl::optional<int> FakeTabSlotController::GetCustomBackgroundId(
   return absl::nullopt;
 }
 
-gfx::Rect FakeTabSlotController::GetTabAnimationTargetBounds(const Tab* tab) {
-  return tab->bounds();
-}
-
 std::u16string FakeTabSlotController::GetAccessibleTabName(
     const Tab* tab) const {
   return std::u16string();
@@ -142,11 +136,6 @@ tab_groups::TabGroupColorId FakeTabSlotController::GetGroupColorId(
 bool FakeTabSlotController::IsGroupCollapsed(
     const tab_groups::TabGroupId& group) const {
   return tab_strip_controller_->IsGroupCollapsed(group);
-}
-
-absl::optional<int> FakeTabSlotController::GetLastTabInGroup(
-    const tab_groups::TabGroupId& group) const {
-  return tab_strip_controller_->GetLastTabInGroup(group);
 }
 
 SkColor FakeTabSlotController::GetPaintedGroupColor(

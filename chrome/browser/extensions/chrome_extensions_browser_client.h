@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,6 +52,14 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
 
   ~ChromeExtensionsBrowserClient() override;
 
+  // Called by the BrowserProcess to indicate that we should perform any
+  // teardown necessary before being destroyed (e.g. unsubscribing observers, or
+  // any other pre-emptive freeing of resources. Note that we may still receive
+  // calls from other shutting down objects after this call, so this should
+  // primarily be used for things that may need to be cleaned up before other
+  // parts of the browser).
+  void StartTearDown();
+
   // ExtensionsBrowserClient overrides:
   bool IsShuttingDown() override;
   bool AreExtensionsDisabled(const base::CommandLine& command_line,
@@ -64,9 +72,26 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
       content::BrowserContext* context) override;
   content::BrowserContext* GetOriginalContext(
       content::BrowserContext* context) override;
+
+  content::BrowserContext* GetRedirectedContextInIncognito(
+      content::BrowserContext* context,
+      bool force_guest_profile,
+      bool force_system_profile) override;
+  content::BrowserContext* GetContextForRegularAndIncognito(
+      content::BrowserContext* context,
+      bool force_guest_profile,
+      bool force_system_profile) override;
+  content::BrowserContext* GetRegularProfile(
+      content::BrowserContext* context,
+      bool force_guest_profile,
+      bool force_system_profile) override;
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   std::string GetUserIdHashFromContext(
       content::BrowserContext* context) override;
+#endif
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  bool IsFromMainProfile(content::BrowserContext* context) override;
 #endif
   bool IsGuestSession(content::BrowserContext* context) const override;
   bool IsExtensionIncognitoEnabled(
@@ -121,7 +146,7 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
   void BroadcastEventToRenderers(
       events::HistogramValue histogram_value,
       const std::string& event_name,
-      std::unique_ptr<base::ListValue> args,
+      base::Value::List args,
       bool dispatch_to_off_the_record_profiles) override;
   ExtensionCache* GetExtensionCache() override;
   bool IsBackgroundUpdateAllowed() override;
@@ -167,7 +192,6 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
                     int tab_id) const override;
   bool IsExtensionTelemetryServiceEnabled(
       content::BrowserContext* context) const override;
-  bool IsExtensionTelemetryRemoteHostContactedSignalEnabled() const override;
   void NotifyExtensionApiTabExecuteScript(
       content::BrowserContext* context,
       const ExtensionId& extension_id,
@@ -187,6 +211,12 @@ class ChromeExtensionsBrowserClient : public ExtensionsBrowserClient {
                   base::OnceCallback<
                       void(scoped_refptr<base::RefCountedMemory> bitmap_data)>
                       callback) const override;
+  std::vector<content::BrowserContext*> GetRelatedContextsForExtension(
+      content::BrowserContext* browser_context,
+      const Extension& extension) const override;
+  void AddAdditionalAllowedHosts(
+      const PermissionSet& desired_permissions,
+      PermissionSet* granted_permissions) const override;
 
  private:
   friend struct base::LazyInstanceTraitsBase<ChromeExtensionsBrowserClient>;

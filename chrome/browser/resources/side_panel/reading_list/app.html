@@ -21,6 +21,13 @@
     }
   }
 
+  /* Transition required to ensure focus highlight after button press.
+   * See crbug/1358900.
+   */
+  reading-list-item:first-of-type:last-of-type {
+    transition: background 100ms;
+  }
+
   #readingListList {
     margin-block-start: 8px;
     max-height: none;
@@ -33,7 +40,8 @@
             var(--cr-hover-background-color));
     --hover-border-color: var(--border-color);
     border-radius: 4px;
-    margin: 8px 16px 0 16px;
+    font-size: var(--mwb-primary-text-font-size);
+    margin: 16px 16px 0 16px;
     padding: 8px;
     transition: background-color 300ms cubic-bezier(0.4, 0, 0.2, 1);
   }
@@ -128,16 +136,17 @@
     <div id="empty-state-subheader">[[getEmptyStateSubheaderText_()]]</div>
   </div>
   <cr-button id="currentPageActionButton"
-      hidden$="[[!shouldShowCurrentPageActionButton_()]]"
-      aria-label="$i18n{addCurrentTab}"
+      aria-label="[[getCurrentPageActionButtonText_(
+          currentPageActionButtonState_)]]"
       on-click="onCurrentPageActionButtonClick_"
       disabled="[[getCurrentPageActionButtonDisabled_(
           currentPageActionButtonState_)]]">
     <iron-icon id="currentPageActionButtonIcon" aria-hidden="true"
-        icon="cr:add">
+      icon="[[getCurrentPageActionButtonIcon_(
+          currentPageActionButtonState_)]]">
     </iron-icon>
     <div id="currentPageActionButtonText" aria-hidden="true">
-      $i18n{addCurrentTab}
+      [[getCurrentPageActionButtonText_(currentPageActionButtonState_)]]
     </div>
   </cr-button>
   <div id="readingListList">
@@ -146,9 +155,9 @@
       <div hidden="[[!unreadItems_.length]]" class="sub-heading">
         $i18n{unreadHeader}
       </div>
-      <template id="ureadItemsList" is="dom-repeat" items="[[unreadItems_]]">
+      <template id="unreadItemsList" is="dom-repeat" items="[[unreadItems_]]">
         <reading-list-item data-url$="[[item.url.url]]" on-focus="onItemFocus_"
-            aria-label="[[ariaLabel_(item)]]" class="mwb-list-item"
+            aria-label="[[ariaLabel_(item)]]" class="mwb-list-item unread-item"
             data="[[item]]" button-ripples="[[buttonRipples]]" tabindex="0">
         </reading-list-item>
       </template>

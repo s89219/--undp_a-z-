@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@ class SelectorFilterParentScopeTest : public testing::Test {
 };
 
 TEST_F(SelectorFilterParentScopeTest, ParentScope) {
+  HeapVector<CSSSelector> arena;
   GetDocument().body()->setAttribute(html_names::kClassAttr, "match");
   GetDocument().documentElement()->SetIdAttribute("myId");
   auto* div = GetDocument().CreateRawElement(html_names::kDivTag);
@@ -45,12 +46,15 @@ TEST_F(SelectorFilterParentScopeTest, ParentScope) {
       SelectorFilterParentScope div_scope(*div);
       SelectorFilterParentScope::EnsureParentStackIsPushed();
 
-      CSSSelectorList selectors = CSSParser::ParseSelector(
+      base::span<CSSSelector> selector_vector = CSSParser::ParseSelector(
           MakeGarbageCollected<CSSParserContext>(
               kHTMLStandardMode, SecureContextMode::kInsecureContext),
-          nullptr, "html *, body *, .match *, #myId *");
+          /*parent_rule_for_nesting=*/nullptr, nullptr,
+          "html *, body *, .match *, #myId *", arena);
+      CSSSelectorList* selectors =
+          CSSSelectorList::AdoptSelectorVector(selector_vector);
 
-      for (const CSSSelector* selector = selectors.First(); selector;
+      for (const CSSSelector* selector = selectors->First(); selector;
            selector = CSSSelectorList::Next(*selector)) {
         unsigned selector_hashes[max_identifier_hashes];
         filter.CollectIdentifierHashes(*selector, selector_hashes,
@@ -75,12 +79,16 @@ TEST_F(SelectorFilterParentScopeTest, RootScope) {
   SelectorFilterRootScope span_scope(GetDocument().getElementById("y"));
   SelectorFilterParentScope::EnsureParentStackIsPushed();
 
-  CSSSelectorList selectors = CSSParser::ParseSelector(
+  HeapVector<CSSSelector> arena;
+  base::span<CSSSelector> selector_vector = CSSParser::ParseSelector(
       MakeGarbageCollected<CSSParserContext>(
           kHTMLStandardMode, SecureContextMode::kInsecureContext),
-      nullptr, "html *, body *, div *, span *, .x *, #y *");
+      /*parent_rule_for_nesting=*/nullptr, nullptr,
+      "html *, body *, div *, span *, .x *, #y *", arena);
+  CSSSelectorList* selectors =
+      CSSSelectorList::AdoptSelectorVector(selector_vector);
 
-  for (const CSSSelector* selector = selectors.First(); selector;
+  for (const CSSSelector* selector = selectors->First(); selector;
        selector = CSSSelectorList::Next(*selector)) {
     unsigned selector_hashes[max_identifier_hashes];
     filter.CollectIdentifierHashes(*selector, selector_hashes,
@@ -128,12 +136,16 @@ TEST_F(SelectorFilterParentScopeTest, AttributeFilter) {
   SelectorFilterRootScope span_scope(inner);
   SelectorFilterParentScope::EnsureParentStackIsPushed();
 
-  CSSSelectorList selectors = CSSParser::ParseSelector(
+  HeapVector<CSSSelector> arena;
+  base::span<CSSSelector> selector_vector = CSSParser::ParseSelector(
       MakeGarbageCollected<CSSParserContext>(
           kHTMLStandardMode, SecureContextMode::kInsecureContext),
-      nullptr, "[Attr] *, [attr] *, [viewbox] *, [VIEWBOX] *");
+      /*parent_rule_for_nesting=*/nullptr, nullptr,
+      "[Attr] *, [attr] *, [viewbox] *, [VIEWBOX] *", arena);
+  CSSSelectorList* selectors =
+      CSSSelectorList::AdoptSelectorVector(selector_vector);
 
-  for (const CSSSelector* selector = selectors.First(); selector;
+  for (const CSSSelector* selector = selectors->First(); selector;
        selector = CSSSelectorList::Next(*selector)) {
     unsigned selector_hashes[max_identifier_hashes];
     filter.CollectIdentifierHashes(*selector, selector_hashes,

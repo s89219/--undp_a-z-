@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <hb.h>
 
 #include "base/logging.h"
+#include "base/ranges/algorithm.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/caching_word_shaper.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result.h"
@@ -53,7 +54,7 @@ void ShapeResultBloberizer::SetText(const StringView& text,
     CommitPendingRun();
 
   // Any outstanding 'current' state should have been moved to 'pending'.
-  DCHECK(current_character_indexes_.IsEmpty());
+  DCHECK(current_character_indexes_.empty());
 
   DVLOG(4) << "   SetText from: " << from << " to: " << to;
 
@@ -77,7 +78,7 @@ void ShapeResultBloberizer::SetText(const StringView& text,
 }
 
 void ShapeResultBloberizer::CommitText() {
-  if (current_character_indexes_.IsEmpty())
+  if (current_character_indexes_.empty())
     return;
 
   unsigned from = current_character_indexes_[0];
@@ -154,7 +155,7 @@ void ShapeResultBloberizer::CommitText() {
 }
 
 void ShapeResultBloberizer::CommitPendingRun() {
-  if (pending_glyphs_.IsEmpty())
+  if (pending_glyphs_.empty())
     return;
 
   if (pending_canvas_rotation_ != builder_rotation_) {
@@ -164,7 +165,7 @@ void ShapeResultBloberizer::CommitPendingRun() {
     builder_rotation_ = pending_canvas_rotation_;
   }
 
-  if (UNLIKELY(!current_character_indexes_.IsEmpty()))
+  if (UNLIKELY(!current_character_indexes_.empty()))
     CommitText();
 
   SkFont run_font = pending_font_data_->PlatformData().CreateSkFont(
@@ -195,16 +196,15 @@ void ShapeResultBloberizer::CommitPendingRun() {
     DVLOG(4) << "  CommitPendingRun indexes: "
              << base::make_span(pending_utf8_character_indexes_);
     DCHECK_EQ(pending_utf8_character_indexes_.size(), run_size);
-    std::copy(pending_utf8_character_indexes_.begin(),
-              pending_utf8_character_indexes_.end(), buffer.clusters);
-    std::copy(pending_utf8_.begin(), pending_utf8_.end(), buffer.utf8text);
+    base::ranges::copy(pending_utf8_character_indexes_, buffer.clusters);
+    base::ranges::copy(pending_utf8_, buffer.utf8text);
 
     pending_utf8_.Shrink(0);
     pending_utf8_character_indexes_.Shrink(0);
   }
 
-  std::copy(pending_glyphs_.begin(), pending_glyphs_.end(), buffer.glyphs);
-  std::copy(pending_offsets_.begin(), pending_offsets_.end(), buffer.pos);
+  base::ranges::copy(pending_glyphs_, buffer.glyphs);
+  base::ranges::copy(pending_offsets_, buffer.pos);
   pending_glyphs_.Shrink(0);
   pending_offsets_.Shrink(0);
 }
@@ -220,7 +220,7 @@ void ShapeResultBloberizer::CommitPendingBlob() {
 const ShapeResultBloberizer::BlobBuffer& ShapeResultBloberizer::Blobs() {
   CommitPendingRun();
   CommitPendingBlob();
-  DCHECK(pending_glyphs_.IsEmpty());
+  DCHECK(pending_glyphs_.empty());
   DCHECK_EQ(builder_run_count_, 0u);
 
   return blobs_;
@@ -264,6 +264,9 @@ class GlyphCallbackContext {
   STACK_ALLOCATED();
 
  public:
+  GlyphCallbackContext(ShapeResultBloberizer* bloberizer,
+                       const StringView& text)
+      : bloberizer(bloberizer), text(text) {}
   GlyphCallbackContext(const GlyphCallbackContext&) = delete;
   GlyphCallbackContext& operator=(const GlyphCallbackContext&) = delete;
 
@@ -328,6 +331,14 @@ class ClusterCallbackContext {
   STACK_ALLOCATED();
 
  public:
+  ClusterCallbackContext(ShapeResultBloberizer* bloberizer,
+                         const StringView& text,
+                         const GlyphData& emphasis_data,
+                         gfx::PointF glyph_center)
+      : bloberizer(bloberizer),
+        text(text),
+        emphasis_data(emphasis_data),
+        glyph_center(std::move(glyph_center)) {}
   ClusterCallbackContext(const ClusterCallbackContext&) = delete;
   ClusterCallbackContext& operator=(const ClusterCallbackContext&) = delete;
 
@@ -391,7 +402,7 @@ class ClusterStarts {
                          const SimpleFontData*) {
     ClusterStarts* self = static_cast<ClusterStarts*>(context);
 
-    if (self->cluster_starts_.IsEmpty() ||
+    if (self->cluster_starts_.empty() ||
         self->last_seen_character_index_ != character_index) {
       self->cluster_starts_.push_back(character_index);
       self->last_seen_character_index_ = character_index;
@@ -400,11 +411,10 @@ class ClusterStarts {
 
   void Finish(unsigned from, unsigned to) {
     std::sort(cluster_starts_.begin(), cluster_starts_.end());
-    DCHECK_EQ(
-        std::adjacent_find(cluster_starts_.begin(), cluster_starts_.end()),
-        cluster_starts_.end());
+    DCHECK_EQ(base::ranges::adjacent_find(cluster_starts_),
+              cluster_starts_.end());
     DVLOG(4) << "  Cluster starts: " << base::make_span(cluster_starts_);
-    if (!cluster_starts_.IsEmpty()) {
+    if (!cluster_starts_.empty()) {
       // 'from' may point inside a cluster; the least seen index may be larger.
       DCHECK_LE(from, *cluster_starts_.begin());
       DCHECK_LT(*(cluster_starts_.end() - 1), to);

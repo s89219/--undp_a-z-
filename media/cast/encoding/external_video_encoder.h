@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -123,11 +123,9 @@ class SizeAdaptableExternalVideoEncoder final
 // value is related to the complexity of the content of the frame.
 class QuantizerEstimator {
  public:
-  enum {
-    NO_RESULT = -1,
-    MIN_VP8_QUANTIZER = 4,
-    MAX_VP8_QUANTIZER = 63,
-  };
+  static constexpr int NO_RESULT = -1;
+  static constexpr int MIN_VP8_QUANTIZER = 4;
+  static constexpr int MAX_VP8_QUANTIZER = 63;
 
   QuantizerEstimator();
 

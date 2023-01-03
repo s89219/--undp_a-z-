@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,16 +20,16 @@ namespace blink {
 
 namespace {
 
-void ExtractLinks(const cc::PaintOpBuffer* buffer, std::vector<GURL>* links) {
-  for (cc::PaintOpBuffer::Iterator it(buffer); it; ++it) {
-    if (it->GetType() == cc::PaintOpType::Annotate) {
-      auto* annotate_op = static_cast<cc::AnnotateOp*>(*it);
+void ExtractLinks(const PaintRecord& record, std::vector<GURL>* links) {
+  for (const cc::PaintOp& op : record) {
+    if (op.GetType() == cc::PaintOpType::Annotate) {
+      const auto& annotate_op = static_cast<const cc::AnnotateOp&>(op);
       links->push_back(GURL(
-          std::string(reinterpret_cast<const char*>(annotate_op->data->data()),
-                      annotate_op->data->size())));
-    } else if (it->GetType() == cc::PaintOpType::DrawRecord) {
-      auto* record_op = static_cast<cc::DrawRecordOp*>(*it);
-      ExtractLinks(record_op->record.get(), links);
+          std::string(reinterpret_cast<const char*>(annotate_op.data->data()),
+                      annotate_op.data->size())));
+    } else if (op.GetType() == cc::PaintOpType::DrawRecord) {
+      const auto& record_op = static_cast<const cc::DrawRecordOp&>(op);
+      ExtractLinks(record_op.record, links);
     }
   }
 }
@@ -126,7 +126,7 @@ TEST_P(NGBoxFragmentPainterTest, AddUrlRects) {
 
   auto record = builder->EndRecording();
   std::vector<GURL> links;
-  ExtractLinks(record.get(), &links);
+  ExtractLinks(record, &links);
   ASSERT_EQ(links.size(), 2U);
   EXPECT_EQ(links[0].spec(), "https://www.chromium.org/");
   EXPECT_EQ(links[1].spec(), "https://www.wikipedia.org/");
@@ -224,7 +224,7 @@ TEST_P(NGBoxFragmentPainterTest, NodeAtPointWithSvgInline) {
   auto* root = GetDocument().getElementById("svg")->GetLayoutBox();
   HitTestResult result;
   root->NodeAtPoint(result, HitTestLocation(gfx::PointF(256, 192)),
-                    PhysicalOffset(0, 0), kHitTestForeground);
+                    PhysicalOffset(0, 0), HitTestPhase::kForeground);
   EXPECT_EQ(GetDocument().getElementById("pass"), result.InnerElement());
 }
 

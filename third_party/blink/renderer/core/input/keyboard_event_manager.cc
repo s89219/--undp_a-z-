@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -260,13 +260,21 @@ WebInputEventResult KeyboardEventManager::KeyEvent(
     const int kDomKeysDontSend[] = {0x00200309, 0x00200310};
     const int kDomKeysNotCancellabelUnlessInEditor[] = {0x00400031, 0x00400032,
                                                         0x00400033};
-    for (int dom_key : kDomKeysDontSend) {
+    for (uint32_t dom_key : kDomKeysDontSend) {
       if (initial_key_event.dom_key == dom_key)
         send_key_event = false;
     }
 
-    for (int dom_key : kDomKeysNotCancellabelUnlessInEditor) {
-      if (initial_key_event.dom_key == dom_key && !IsEditableElement(*node))
+    for (uint32_t dom_key : kDomKeysNotCancellabelUnlessInEditor) {
+      auto* text_control = ToTextControlOrNull(node);
+      auto* element = DynamicTo<Element>(node);
+      bool is_editable =
+          IsEditable(*node) ||
+          (text_control && !text_control->IsDisabledOrReadOnly()) ||
+          (element &&
+           EqualIgnoringASCIICase(
+               element->FastGetAttribute(html_names::kRoleAttr), "textbox"));
+      if (initial_key_event.dom_key == dom_key && !is_editable)
         event_cancellable = false;
     }
   } else {
@@ -438,7 +446,8 @@ void KeyboardEventManager::DefaultArrowEventHandler(
   if (!page)
     return;
 
-  if (RuntimeEnabledFeatures::FocusgroupEnabled() &&
+  ExecutionContext* context = frame_->GetDocument()->GetExecutionContext();
+  if (RuntimeEnabledFeatures::FocusgroupEnabled(context) &&
       FocusgroupController::HandleArrowKeyboardEvent(event, frame_)) {
     event->SetDefaultHandled();
     return;
@@ -559,12 +568,24 @@ void KeyboardEventManager::DefaultEscapeEventHandler(KeyboardEvent* event) {
     page->GetSpatialNavigationController().HandleEscapeKeyboardEvent(event);
   }
 
+  bool cancel_skipped = false;
+  frame_->DomWindow()->closewatcher_stack()->EscapeKeyHandler(event,
+                                                              &cancel_skipped);
+
   HTMLDialogElement* dialog = frame_->GetDocument()->ActiveModalDialog();
   if (dialog && !RuntimeEnabledFeatures::CloseWatcherEnabled()) {
-    dialog->DispatchEvent(*Event::CreateCancelable(event_type_names::kCancel));
+    auto* cancel_event = Event::CreateCancelable(event_type_names::kCancel);
+    dialog->DispatchEvent(*cancel_event);
+    if (cancel_event->defaultPrevented() && cancel_skipped) {
+      UseCounter::Count(
+          frame_->GetDocument(),
+          WebFeature::kDialogCloseWatcherCancelSkippedAndDefaultPrevented);
+    }
   }
 
-  frame_->DomWindow()->closewatcher_stack()->EscapeKeyHandler(event);
+  auto* target_node = event->GetEventPath()[0].Target()->ToNode();
+  DCHECK(target_node);
+  HTMLElement::HandlePopoverLightDismiss(*event, *target_node);
 }
 
 void KeyboardEventManager::DefaultEnterEventHandler(KeyboardEvent* event) {

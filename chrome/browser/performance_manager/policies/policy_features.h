@@ -1,8 +1,7 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/components/arc/session/arc_session.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/time/time.h"
@@ -10,6 +9,7 @@
 #include "build/chromeos_buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/components/arc/session/arc_session.h"
 #include "base/allocator/buildflags.h"
 #endif
 
@@ -21,38 +21,30 @@ namespace features {
 
 #if BUILDFLAG(IS_WIN)
 // The EmptyWorkingSet feature as used on Windows.
-extern const base::Feature kEmptyWorkingSet;
+BASE_DECLARE_FEATURE(kEmptyWorkingSet);
 #endif  // BUILDFLAG(IS_WIN)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 
 // The trim on Memory Pressure feature will trim a process nodes working set
 // according to the parameters below.
-extern const base::Feature kTrimOnMemoryPressure;
+BASE_DECLARE_FEATURE(kTrimOnMemoryPressure);
 
 // If enabled we will periodically walk procfs looking for ARC++ processes to
 // trim under memory pressure.
-extern const base::Feature kTrimArcOnMemoryPressure;
+BASE_DECLARE_FEATURE(kTrimArcOnMemoryPressure);
 
 // If enabled we will try to trim ARCVM's crosvm under memory pressure.
-extern const base::Feature kTrimArcVmOnMemoryPressure;
+BASE_DECLARE_FEATURE(kTrimArcVmOnMemoryPressure);
 
 // The trim on freeze feature will trim the working set of a process when all
 // frames are frozen.
-extern const base::Feature kTrimOnFreeze;
+BASE_DECLARE_FEATURE(kTrimOnFreeze);
 
 // The graph walk backoff is the _minimum_ backoff time between graph walks
 // under moderate pressure in seconds. By default we will not walk more than
 // once every 2 minutes.
 extern const base::FeatureParam<int> kGraphWalkBackoffTimeSec;
-
-// Specifies the minimum amount of time a parent frame node must be invisible
-// before considering the process node for working set trim.
-extern const base::FeatureParam<int> kNodeInvisibileTimeSec;
-
-// Specifies the minimum amount of time a parent frame node must be invisible
-// before considering the process node for working set trim.
-extern const base::FeatureParam<int> kNodeTrimBackoffTimeSec;
 
 // Specifies the frequency in which we will fetch the arc process list.
 extern const base::FeatureParam<int> kArcProcessListFetchBackoffTimeSec;
@@ -93,15 +85,16 @@ extern const base::FeatureParam<base::TimeDelta> kArcVmTrimBackoffTimeMs;
 // regardless of the user's interactions with ARCVM.
 extern const base::FeatureParam<bool> kTrimArcVmOnCriticalPressure;
 
-// If true then we will trim ARCVM's crosvm once on the first moderate (or
-// critical though unlikely) memory pressure after ARCVM boot. The trimming is
-// done regardless of the user's interactions with ARCVM.
+// If true then we will drop ARCVM guest page caches once on the first moderate
+// (or critical though unlikely) memory pressure after ARCVM boot. The regular
+// trimming (i.e. moving pages to zram) is not performed, and the page cache
+// drop is done regardless of the user's interactions with ARCVM.
 extern const base::FeatureParam<bool>
     kTrimArcVmOnFirstMemoryPressureAfterArcVmBoot;
 
-// If true then we will drop ARCVM guest's page caches when the trimmer does
-// kTrimArcVmOnFirstMemoryPressureAfterArcVmBoot. If false (default), it also
-// trims ARCVM's shared memory.
+// Deprecated.
+// TODO(yusukes): Remove this once ChromeOSARCVMReclaimThrottle.gcl Finch
+// experiment is done.
 extern const base::FeatureParam<bool>
     kOnlyDropCachesOnFirstMemoryPressureAfterArcVmBoot;
 

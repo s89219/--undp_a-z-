@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,9 @@
 #include "base/containers/contains.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_split.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "third_party/cros_system_api/dbus/kerberos/dbus-constants.h"
 
@@ -24,8 +25,8 @@ constexpr base::TimeDelta kTgtValidity = base::Hours(10);
 // Fake renewal lifetime for TGTs.
 constexpr base::TimeDelta kTgtRenewal = base::Hours(24);
 
-// Blacklist for fake config validation.
-const char* const kBlacklistedConfigOptions[] = {
+// Blocklist for fake config validation.
+const char* const kBlocklistedConfigOptions[] = {
     "allow_weak_crypto",
     "ap_req_checksum_type",
     "ccache_type",
@@ -48,9 +49,9 @@ const char* const kBlacklistedConfigOptions[] = {
 };
 
 // Performs a fake validation of a config line by just checking for some
-// non-whitelisted keywords. Returns true if no blacklisted items are contained.
+// non-allowlisted keywords. Returns true if no blocklisted items are contained.
 bool ValidateConfigLine(const std::string& line) {
-  for (const char* option : kBlacklistedConfigOptions) {
+  for (const char* option : kBlocklistedConfigOptions) {
     if (line.find(option) != std::string::npos)
       return false;
   }
@@ -83,7 +84,7 @@ template <class TProto>
 void PostProtoResponse(base::OnceCallback<void(const TProto&)> callback,
                        const TProto& response,
                        base::TimeDelta delay) {
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, base::BindOnce(std::move(callback), response), delay);
 }
 
@@ -117,8 +118,8 @@ FakeKerberosClient::~FakeKerberosClient() = default;
 void FakeKerberosClient::AddAccount(const kerberos::AddAccountRequest& request,
                                     AddAccountCallback callback) {
   MaybeRecordFunctionCallForTesting(__FUNCTION__);
-  auto it = std::find(accounts_.begin(), accounts_.end(),
-                      AccountData(request.principal_name()));
+  auto it =
+      base::ranges::find(accounts_, AccountData(request.principal_name()));
   if (it != accounts_.end()) {
     it->is_managed |= request.is_managed();
     PostResponse(std::move(callback), kerberos::ERROR_DUPLICATE_PRINCIPAL_NAME,
@@ -137,8 +138,8 @@ void FakeKerberosClient::RemoveAccount(
     RemoveAccountCallback callback) {
   MaybeRecordFunctionCallForTesting(__FUNCTION__);
   kerberos::RemoveAccountResponse response;
-  auto it = std::find(accounts_.begin(), accounts_.end(),
-                      AccountData(request.principal_name()));
+  auto it =
+      base::ranges::find(accounts_, AccountData(request.principal_name()));
   if (it == accounts_.end()) {
     response.set_error(kerberos::ERROR_UNKNOWN_PRINCIPAL_NAME);
   } else {
@@ -309,18 +310,20 @@ void FakeKerberosClient::GetKerberosFiles(
   PostProtoResponse(std::move(callback), response, task_delay_);
 }
 
-void FakeKerberosClient::ConnectToKerberosFileChangedSignal(
+base::CallbackListSubscription
+FakeKerberosClient::SubscribeToKerberosFileChangedSignal(
     KerberosFilesChangedCallback callback) {
   MaybeRecordFunctionCallForTesting(__FUNCTION__);
-  DCHECK(!kerberos_files_changed_callback_);
-  kerberos_files_changed_callback_ = callback;
+  DCHECK(callback);
+  return base::CallbackListSubscription();
 }
 
-void FakeKerberosClient::ConnectToKerberosTicketExpiringSignal(
+base::CallbackListSubscription
+FakeKerberosClient::SubscribeToKerberosTicketExpiringSignal(
     KerberosTicketExpiringCallback callback) {
   MaybeRecordFunctionCallForTesting(__FUNCTION__);
-  DCHECK(!kerberos_ticket_expiring_callback_);
-  kerberos_ticket_expiring_callback_ = callback;
+  DCHECK(callback);
+  return base::CallbackListSubscription();
 }
 
 void FakeKerberosClient::SetTaskDelay(base::TimeDelta delay) {
@@ -365,8 +368,7 @@ KerberosClient::TestInterface* FakeKerberosClient::GetTestInterface() {
 
 FakeKerberosClient::AccountData* FakeKerberosClient::GetAccountData(
     const std::string& principal_name) {
-  auto it = std::find(accounts_.begin(), accounts_.end(),
-                      AccountData(principal_name));
+  auto it = base::ranges::find(accounts_, AccountData(principal_name));
   return it != accounts_.end() ? &*it : nullptr;
 }
 

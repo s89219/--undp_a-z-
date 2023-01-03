@@ -1,11 +1,11 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {BrowserServiceImpl, ensureLazyLoaded, ForeignSession, HistorySyncedDeviceCardElement, HistorySyncedDeviceManagerElement} from 'chrome://history/history.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {assertEquals, assertFalse, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks, waitBeforeNextRender} from 'chrome://webui-test/test_util.js';
+import {flushTasks, waitBeforeNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestBrowserService} from './test_browser_service.js';
 import {createSession, createWindow} from './test_util.js';
@@ -32,12 +32,12 @@ suite('<history-synced-device-manager>', function() {
   let element: HistorySyncedDeviceManagerElement;
   let testService: TestBrowserService;
 
-  function setForeignSessions(sessions: Array<ForeignSession>) {
+  function setForeignSessions(sessions: ForeignSession[]) {
     element.sessionList = sessions;
   }
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     window.history.replaceState({}, '', '/');
     testService = new TestBrowserService();
     BrowserServiceImpl.setInstance(testService);
@@ -57,7 +57,7 @@ suite('<history-synced-device-manager>', function() {
   });
 
   test('single card, single window', function() {
-    const sessionList: Array<ForeignSession> = [createSession(
+    const sessionList: ForeignSession[] = [createSession(
         'Nexus 5',
         [createWindow(['http://www.google.com', 'http://example.com'])])];
     setForeignSessions(sessionList);
@@ -74,7 +74,7 @@ suite('<history-synced-device-manager>', function() {
   });
 
   test('two cards, multiple windows', function() {
-    const sessionList: Array<ForeignSession> = [
+    const sessionList: ForeignSession[] = [
       createSession(
           'Nexus 5',
           [createWindow(['http://www.google.com', 'http://example.com'])]),
@@ -82,7 +82,7 @@ suite('<history-synced-device-manager>', function() {
           'Nexus 6',
           [
             createWindow(['http://test.com']),
-            createWindow(['http://www.gmail.com', 'http://badssl.com'])
+            createWindow(['http://www.gmail.com', 'http://badssl.com']),
           ]),
     ];
     setForeignSessions(sessionList);
@@ -112,7 +112,7 @@ suite('<history-synced-device-manager>', function() {
         .then(function() {
           const session1updated = createSession('Chromebook', [
             createWindow(['http://www.example.com', 'http://crbug.com/new']),
-            createWindow(['http://web.site'])
+            createWindow(['http://web.site']),
           ]);
           session1updated.timestamp = 1234;
 
@@ -138,7 +138,7 @@ suite('<history-synced-device-manager>', function() {
   });
 
   test('two cards, multiple windows, search', function() {
-    const sessionList: Array<ForeignSession> = [
+    const sessionList: ForeignSession[] = [
       createSession(
           'Nexus 5',
           [createWindow(['http://www.google.com', 'http://example.com'])]),
@@ -147,7 +147,7 @@ suite('<history-synced-device-manager>', function() {
           [
             createWindow(['http://www.gmail.com', 'http://badssl.com']),
             createWindow(['http://test.com']),
-            createWindow(['http://www.gmail.com', 'http://bagssl.com'])
+            createWindow(['http://www.gmail.com', 'http://bagssl.com']),
           ]),
     ];
     setForeignSessions(sessionList);
@@ -194,7 +194,7 @@ suite('<history-synced-device-manager>', function() {
   });
 
   test('delete a session', function() {
-    const sessionList: Array<ForeignSession> = [
+    const sessionList: ForeignSession[] = [
       createSession('Nexus 5', [createWindow(['http://www.example.com'])]),
       createSession('Pixel C', [createWindow(['http://www.badssl.com'])]),
     ];
@@ -230,7 +230,7 @@ suite('<history-synced-device-manager>', function() {
   });
 
   test('delete a collapsed session', function() {
-    const sessionList: Array<ForeignSession> = [
+    const sessionList: ForeignSession[] = [
       createSession('Nexus 5', [createWindow(['http://www.example.com'])]),
       createSession('Pixel C', [createWindow(['http://www.badssl.com'])]),
     ];
@@ -320,7 +320,7 @@ suite('<history-synced-device-manager>', function() {
           // When user signs in, first show loading message.
           assertNoSyncedTabsMessageShown(element, 'loading');
 
-          const sessionList: Array<ForeignSession> = [];
+          const sessionList: ForeignSession[] = [];
           setForeignSessions(sessionList);
           return flushTasks();
         })
@@ -330,7 +330,7 @@ suite('<history-synced-device-manager>', function() {
           // If no synced tabs are fetched, show 'no synced tabs'.
           assertNoSyncedTabsMessageShown(element, 'noSyncedResults');
 
-          const sessionList: Array<ForeignSession> = [createSession(
+          const sessionList: ForeignSession[] = [createSession(
               'Nexus 5',
               [createWindow(['http://www.google.com', 'http://example.com'])])];
           setForeignSessions(sessionList);

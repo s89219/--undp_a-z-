@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,8 @@
  * safety check child showing the password status.
  */
 import {assertNotReached} from 'chrome://resources/js/assert_ts.js';
-import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
-import {WebUIListenerMixin} from 'chrome://resources/js/web_ui_listener_mixin.js';
+import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
+import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {ChromeCleanupProxy, ChromeCleanupProxyImpl} from '../chrome_cleanup_page/chrome_cleanup_proxy.js';
@@ -20,13 +20,13 @@ import {SafetyCheckCallbackConstants, SafetyCheckChromeCleanerStatus} from './sa
 import {SafetyCheckIconStatus} from './safety_check_child.js';
 import {getTemplate} from './safety_check_chrome_cleaner_child.html.js';
 
-type ChromeCleanerChangedEvent = {
-  newState: SafetyCheckChromeCleanerStatus,
-  displayString: string,
-};
+interface ChromeCleanerChangedEvent {
+  newState: SafetyCheckChromeCleanerStatus;
+  displayString: string;
+}
 
 const SettingsSafetyCheckChromeCleanerChildElementBase =
-    WebUIListenerMixin(I18nMixin(PolymerElement));
+    WebUiListenerMixin(I18nMixin(PolymerElement));
 
 export class SettingsSafetyCheckChromeCleanerChildElement extends
     SettingsSafetyCheckChromeCleanerChildElementBase {
@@ -82,7 +82,7 @@ export class SettingsSafetyCheckChromeCleanerChildElement extends
     super.connectedCallback();
 
     // Register for safety check status updates.
-    this.addWebUIListener(
+    this.addWebUiListener(
         SafetyCheckCallbackConstants.CHROME_CLEANER_CHANGED,
         this.onSafetyCheckChromeCleanerChanged_.bind(this));
   }

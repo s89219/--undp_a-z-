@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include "base/bind.h"
 #include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
@@ -24,6 +25,7 @@
 #include "chrome/browser/metrics/testing/metrics_reporting_pref_helper.h"
 #include "chrome/browser/metrics/testing/sync_metrics_test_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/sync/test/integration/secondary_account_helper.h"
@@ -38,7 +40,7 @@
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_service_impl.h"
 #include "components/sync/driver/sync_token_status.h"
-#include "components/sync/test/fake_server/fake_server_network_resources.h"
+#include "components/sync/test/fake_server_network_resources.h"
 #include "components/ukm/ukm_recorder_observer.h"
 #include "components/ukm/ukm_service.h"
 #include "components/ukm/ukm_test_helper.h"
@@ -63,6 +65,7 @@
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -74,6 +77,11 @@
 #include "chrome/test/base/android/android_browser_test.h"
 #include "content/public/browser/web_contents.h"
 #endif  // !BUILDFLAG(IS_ANDROID)
+
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/profile_picker.h"
+#include "chrome/browser/ui/profile_ui_test_utils.h"
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 
 namespace metrics {
 namespace {
@@ -117,28 +125,28 @@ class TestUkmRecorderObserver : public ukm::UkmRecorderObserver {
   void OnEntryAdded(ukm::mojom::UkmEntryPtr entry) override {}
 
   void OnUpdateSourceURL(ukm::SourceId source_id,
-                         const std::vector<GURL>& urls) override{};
+                         const std::vector<GURL>& urls) override {}
 
   void OnPurgeRecordingsWithUrlScheme(const std::string& url_scheme) override {}
 
-  void OnPurge() override{};
+  void OnPurge() override {}
 
-  void ExpectAllowedStateChanged(bool expected_allowed) {
-    expected_allowed_ = expected_allowed;
+  void ExpectAllowedStateChanged(ukm::UkmConsentState expected_state) {
+    expected_allowed_ = expected_state;
     base::RunLoop loop;
     quit_closure_ = loop.QuitClosure();
     loop.Run();
   }
 
-  void OnUkmAllowedStateChanged(bool allowed) override {
-    if (allowed == expected_allowed_)
+  void OnUkmAllowedStateChanged(ukm::UkmConsentState allowed_state) override {
+    if (allowed_state == expected_allowed_)
       std::move(quit_closure_).Run();
   }
 
  private:
-  bool expected_allowed_;
+  ukm::UkmConsentState expected_allowed_;
   base::OnceClosure quit_closure_;
-  ukm::UkmRecorderImpl* ukm_recorder_;
+  raw_ptr<ukm::UkmRecorderImpl> ukm_recorder_;
 };
 
 #if BUILDFLAG(IS_ANDROID)
@@ -192,17 +200,6 @@ class TestTabModel : public TabModel {
 #endif  // BUILDFLAG(IS_ANDROID)
 
 }  // namespace
-
-// An observer that returns back to test code after a new profile is
-// initialized.
-#if !BUILDFLAG(IS_ANDROID)
-void UnblockOnProfileCreation(base::RunLoop* run_loop,
-                              Profile* profile,
-                              Profile::CreateStatus status) {
-  if (status == Profile::CREATE_STATUS_INITIALIZED)
-    run_loop->Quit();
-}
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 // A helper object for overriding metrics enabled state.
 class MetricsConsentOverride {
@@ -315,11 +312,8 @@ class UkmBrowserTestBase : public SyncTest {
     ProfileManager* profile_manager = g_browser_process->profile_manager();
     base::FilePath new_path =
         profile_manager->GenerateNextProfileDirectoryPath();
-    base::RunLoop run_loop;
-    profile_manager->CreateProfileAsync(
-        new_path, base::BindRepeating(&UnblockOnProfileCreation, &run_loop));
-    run_loop.Run();
-    Profile* profile = profile_manager->GetProfileByPath(new_path);
+    Profile* profile =
+        profiles::testing::CreateProfileSync(profile_manager, new_path);
     SetupMockGaiaResponsesForProfile(profile);
     return profile;
   }
@@ -331,7 +325,7 @@ class UkmBrowserTestBase : public SyncTest {
 
 class UkmBrowserTest : public UkmBrowserTestBase {
  public:
-  UkmBrowserTest() : UkmBrowserTestBase() {}
+  UkmBrowserTest() = default;
 
   UkmBrowserTest(const UkmBrowserTest&) = delete;
   UkmBrowserTest& operator=(const UkmBrowserTest&) = delete;
@@ -355,7 +349,7 @@ class UkmBrowserTest : public UkmBrowserTestBase {
 
 class UkmBrowserTestWithSyncTransport : public UkmBrowserTestBase {
  public:
-  UkmBrowserTestWithSyncTransport() {}
+  UkmBrowserTestWithSyncTransport() = default;
 
   UkmBrowserTestWithSyncTransport(const UkmBrowserTestWithSyncTransport&) =
       delete;
@@ -389,7 +383,7 @@ class UkmBrowserTestWithSyncTransport : public UkmBrowserTestBase {
 class UkmConsentParamBrowserTest : public UkmBrowserTestBase,
                                    public testing::WithParamInterface<bool> {
  public:
-  UkmConsentParamBrowserTest() : UkmBrowserTestBase() {}
+  UkmConsentParamBrowserTest() = default;
 
   UkmConsentParamBrowserTest(const UkmConsentParamBrowserTest&) = delete;
   UkmConsentParamBrowserTest& operator=(const UkmConsentParamBrowserTest&) =
@@ -432,8 +426,8 @@ class UkmBrowserTestWithDemographics
     if (param.enable_feature) {
       scoped_feature_list_.InitWithFeatures(
           // enabled_features
-          {DemographicMetricsProvider::kDemographicMetricsReporting,
-           ukm::UkmService::kReportUserNoisedUserBirthYearAndGender},
+          {kDemographicMetricsReporting,
+           ukm::kReportUserNoisedUserBirthYearAndGender},
           // disabled_features
           {});
     } else {
@@ -441,8 +435,8 @@ class UkmBrowserTestWithDemographics
           // enabled_features
           {},
           // disabled_features
-          {DemographicMetricsProvider::kDemographicMetricsReporting,
-           ukm::UkmService::kReportUserNoisedUserBirthYearAndGender});
+          {kDemographicMetricsReporting,
+           ukm::kReportUserNoisedUserBirthYearAndGender});
     }
   }
 
@@ -450,6 +444,8 @@ class UkmBrowserTestWithDemographics
       delete;
   UkmBrowserTestWithDemographics& operator=(
       const UkmBrowserTestWithDemographics&) = delete;
+
+  PrefService* local_state() { return g_browser_process->local_state(); }
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
@@ -547,8 +543,7 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, RegularPlusGuestCheck) {
   EXPECT_FALSE(ukm_test_helper.IsRecordingEnabled());
 
   CloseBrowserSynchronously(guest_browser);
-  // TODO(crbug/746076): UKM doesn't actually get re-enabled yet.
-  // EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
+  EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
   // Client ID should not have been reset.
   EXPECT_EQ(original_client_id, ukm_test_helper.GetClientId());
 
@@ -557,16 +552,45 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, RegularPlusGuestCheck) {
 }
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
 
-#if !BUILDFLAG(IS_ANDROID)
+// ProfilePicker and System profile do not exist on Chrome Ash and on Android.
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
+// Displaying the ProfilePicker implicitly creates a System Profile.
+// System Profile shouldn't have any effect on the UKM Enable Status.
+IN_PROC_BROWSER_TEST_F(UkmBrowserTest, ProfilePickerCheck) {
+  ukm::UkmTestHelper ukm_test_helper(GetUkmService());
+  MetricsConsentOverride metrics_consent(true);
 
-#if BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)
-// https://crbug.com/1223061
-#define MAYBE_OpenNonSyncCheck DISABLED_OpenNonSyncCheck
-#else
-#define MAYBE_OpenNonSyncCheck OpenNonSyncCheck
-#endif
+  Profile* profile = ProfileManager::GetLastUsedProfileIfLoaded();
+  std::unique_ptr<SyncServiceImplHarness> harness =
+      EnableSyncForProfile(profile);
+
+  Browser* regular_browser = CreateBrowser(profile);
+  ASSERT_TRUE(ukm_test_helper.IsRecordingEnabled());
+
+  // ProfilePicker creates a SystemProfile.
+  ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
+      ProfilePicker::EntryPoint::kProfileMenuManageProfiles));
+  profiles::testing::WaitForPickerWidgetCreated();
+
+  Profile* system_profile =
+      g_browser_process->profile_manager()->GetProfileByPath(
+          ProfileManager::GetSystemProfilePath());
+  ASSERT_TRUE(system_profile);
+  EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
+
+  ProfilePicker::Hide();
+  profiles::testing::WaitForPickerClosed();
+  EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
+
+  harness->service()->GetUserSettings()->SetSyncRequested(false);
+  CloseBrowserSynchronously(regular_browser);
+}
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
+
+// Not applicable to Android as it doesn't have multiple profiles.
+#if !BUILDFLAG(IS_ANDROID)
 // Make sure that UKM is disabled while an non-sync profile's window is open.
-IN_PROC_BROWSER_TEST_F(UkmBrowserTest, MAYBE_OpenNonSyncCheck) {
+IN_PROC_BROWSER_TEST_F(UkmBrowserTest, OpenNonSyncCheck) {
   ukm::UkmTestHelper ukm_test_helper(GetUkmService());
   MetricsConsentOverride metrics_consent(true);
 
@@ -707,9 +731,8 @@ IN_PROC_BROWSER_TEST_P(UkmBrowserTestWithDemographics,
   // Check the log's content and the histogram.
   std::unique_ptr<ukm::Report> report = ukm_test_helper.GetUkmReport();
   if (param.expect_reported_demographics) {
-    EXPECT_EQ(
-        test::GetNoisedBirthYear(*test_profile->GetPrefs(), test_birth_year),
-        report->user_demographics().birth_year());
+    EXPECT_EQ(test::GetNoisedBirthYear(local_state(), test_birth_year),
+              report->user_demographics().birth_year());
     EXPECT_EQ(test_gender, report->user_demographics().gender());
     histogram.ExpectUniqueSample("UKM.UserDemographics.Status",
                                  UserDemographicsStatus::kSuccess, 1);
@@ -959,7 +982,7 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, LogsPreviousSourceId) {
   EXPECT_NE(opener, sync_browser->tab_strip_model()->GetActiveWebContents());
   ukm::SourceId new_id = sync_browser->tab_strip_model()
                              ->GetActiveWebContents()
-                             ->GetMainFrame()
+                             ->GetPrimaryMainFrame()
                              ->GetPageUkmSourceId();
   ukm::UkmSource* new_tab_source = ukm_test_helper.GetSource(new_id);
   EXPECT_NE(nullptr, new_tab_source);
@@ -1006,7 +1029,7 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, LogsOpenerSource) {
   EXPECT_NE(opener, sync_browser->tab_strip_model()->GetActiveWebContents());
   ukm::SourceId new_id = sync_browser->tab_strip_model()
                              ->GetActiveWebContents()
-                             ->GetMainFrame()
+                             ->GetPrimaryMainFrame()
                              ->GetPageUkmSourceId();
   ukm::UkmSource* new_tab_source = ukm_test_helper.GetSource(new_id);
   EXPECT_NE(nullptr, new_tab_source);
@@ -1057,15 +1080,8 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, SingleSyncSignoutCheck) {
 // ChromeOS doesn't have the concept of sign-out so this test doesn't make sense
 // there. Android doesn't have multiple profiles.
 #if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
-
-#if BUILDFLAG(IS_MAC) && defined(ARCH_CPU_ARM64)
-// https://crbug.com/1223061
-#define MAYBE_MultiSyncSignoutCheck DISABLED_MultiSyncSignoutCheck
-#else
-#define MAYBE_MultiSyncSignoutCheck MultiSyncSignoutCheck
-#endif
 // Make sure that UKM is disabled when any profile signs out of Sync.
-IN_PROC_BROWSER_TEST_F(UkmBrowserTest, MAYBE_MultiSyncSignoutCheck) {
+IN_PROC_BROWSER_TEST_F(UkmBrowserTest, MultiSyncSignoutCheck) {
   ukm::UkmTestHelper ukm_test_helper(GetUkmService());
   MetricsConsentOverride metrics_consent(true);
 
@@ -1330,7 +1346,7 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, EvictObsoleteSources) {
   // obsolete. Next report will still contain source 1 because we might have
   // associated entries before it was closed.
   sync_browser->tab_strip_model()->CloseWebContentsAt(
-      1, TabStripModel::CloseTypes::CLOSE_NONE);
+      1, TabCloseTypes::CLOSE_NONE);
 
   ukm_test_helper.BuildAndStoreLog();
   report = ukm_test_helper.GetUkmReport();
@@ -1516,14 +1532,171 @@ IN_PROC_BROWSER_TEST_F(UkmBrowserTest, AllowedStateChanged) {
   EXPECT_FALSE(ukm_test_helper.IsRecordingEnabled());
   EXPECT_FALSE(g_browser_process->GetMetricsServicesManager()
                    ->IsUkmAllowedForAllProfiles());
-  observer.ExpectAllowedStateChanged(false);
+  // Expect nothing to be consented to.
+  observer.ExpectAllowedStateChanged(ukm::UkmConsentState());
 
   consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(true);
   EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
   EXPECT_TRUE(g_browser_process->GetMetricsServicesManager()
                   ->IsUkmAllowedForAllProfiles());
-  observer.ExpectAllowedStateChanged(true);
+  observer.ExpectAllowedStateChanged(ukm::UkmConsentState::All());
 }
 #endif  // !BUILDFLAG(IS_ANDROID)
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+class UkmBrowserTestForAppConsent : public UkmBrowserTestBase {
+ public:
+  UkmBrowserTestForAppConsent() {
+    scoped_feature_list_.InitWithFeatures({ukm::kAppMetricsOnlyRelyOnAppSync},
+                                          {});
+  }
+
+ protected:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(UkmBrowserTestForAppConsent, MetricsClientEnablement) {
+  ukm::UkmService* ukm_service = GetUkmService();
+  ukm::UkmTestHelper ukm_test_helper(ukm_service);
+  MetricsConsentOverride metrics_consent(true);
+  Profile* profile = ProfileManager::GetLastUsedProfileIfLoaded();
+  unified_consent::UnifiedConsentService* consent_service =
+      UnifiedConsentServiceFactory::GetForProfile(profile);
+  std::unique_ptr<SyncServiceImplHarness> harness =
+      EnableSyncForProfile(profile);
+
+  // All consents are on.
+  EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::MSBB));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::EXTENSIONS));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::APPS));
+
+  // Turn off MSBB consent.
+  consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(false);
+
+  // Still have AppKM consent.
+  EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::MSBB));
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::EXTENSIONS));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::APPS));
+
+  // Turn off App-sync.
+  auto* user_settings = harness->service()->GetUserSettings();
+  auto registered_os_sync_types =
+      user_settings->GetRegisteredSelectableOsTypes();
+  registered_os_sync_types.Remove(syncer::UserSelectableOsType::kOsApps);
+  user_settings->SetSelectedOsTypes(false, registered_os_sync_types);
+
+  // UKM recording is now disabled since MSBB and App-sync consent
+  // has been removed.
+  EXPECT_FALSE(ukm_test_helper.IsRecordingEnabled());
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::MSBB));
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::EXTENSIONS));
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::APPS));
+}
+
+IN_PROC_BROWSER_TEST_F(UkmBrowserTestForAppConsent,
+                       ClientIdResetWhenConsentRemoved) {
+  ukm::UkmService* ukm_service = GetUkmService();
+  ukm::UkmTestHelper ukm_test_helper(ukm_service);
+  MetricsConsentOverride metrics_consent(true);
+  Profile* profile = ProfileManager::GetLastUsedProfileIfLoaded();
+  unified_consent::UnifiedConsentService* consent_service =
+      UnifiedConsentServiceFactory::GetForProfile(profile);
+  std::unique_ptr<SyncServiceImplHarness> harness =
+      EnableSyncForProfile(profile);
+  const auto original_client_id = ukm_test_helper.GetClientId();
+  EXPECT_NE(0ul, original_client_id);
+
+  // All consents are on.
+  EXPECT_TRUE(ukm_test_helper.IsRecordingEnabled());
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::MSBB));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::EXTENSIONS));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::APPS));
+
+  // Turn off MSBB consent.
+  consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(false);
+
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::MSBB));
+
+  // Client ID should reset when MSBB is disabled.
+  const auto app_sync_client_id = ukm_test_helper.GetClientId();
+  EXPECT_NE(original_client_id, app_sync_client_id);
+
+  // Turn off app sync.
+  auto* user_settings = harness->service()->GetUserSettings();
+  auto registered_os_sync_types =
+      user_settings->GetRegisteredSelectableOsTypes();
+  registered_os_sync_types.Remove(syncer::UserSelectableOsType::kOsApps);
+  user_settings->SetSelectedOsTypes(false, registered_os_sync_types);
+
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::APPS));
+
+  // Client ID should reset when app sync is disable.
+  const auto final_client_id = ukm_test_helper.GetClientId();
+  EXPECT_NE(app_sync_client_id, final_client_id);
+}
+
+IN_PROC_BROWSER_TEST_F(UkmBrowserTestForAppConsent,
+                       EnsurePurgeOnConsentChange) {
+  ukm::UkmService* ukm_service = GetUkmService();
+  ukm::UkmTestHelper ukm_test_helper(ukm_service);
+  MetricsConsentOverride metrics_consent(true);
+  Profile* profile = ProfileManager::GetLastUsedProfileIfLoaded();
+  unified_consent::UnifiedConsentService* consent_service =
+      UnifiedConsentServiceFactory::GetForProfile(profile);
+  std::unique_ptr<SyncServiceImplHarness> harness =
+      EnableSyncForProfile(profile);
+  Browser* sync_browser = CreateBrowser(profile);
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  const std::vector<GURL> test_urls = {
+      embedded_test_server()->GetURL("/title1.html"),
+      embedded_test_server()->GetURL("/title2.html"),
+      embedded_test_server()->GetURL("/title3.html")};
+
+  // Verify all consents are enabled.
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::MSBB));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::EXTENSIONS));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::APPS));
+
+  int tab_index = 1;
+  // Generate MSBB ukm entries by navigating to some test webpages.
+  for (const auto& url : test_urls) {
+    ASSERT_TRUE(AddTabAtIndexToBrowser(sync_browser, tab_index++,
+                                       GURL(url::kAboutBlankURL),
+                                       ui::PAGE_TRANSITION_TYPED, true));
+    NavigateAndGetSource(url, sync_browser, &ukm_test_helper);
+  }
+
+  // Revoke MSBB consent.
+  consent_service->SetUrlKeyedAnonymizedDataCollectionEnabled(false);
+
+  // Verify that MSBB consent was revoked.
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::MSBB));
+  EXPECT_FALSE(ukm_service->recording_enabled(ukm::EXTENSIONS));
+  EXPECT_TRUE(ukm_service->recording_enabled(ukm::APPS));
+
+  ukm_test_helper.BuildAndStoreLog();
+  const std::unique_ptr<ukm::Report> report = ukm_test_helper.GetUkmReport();
+
+  // Verify that the only sources in the report are APP_ID.
+  // NOTE(crbug/1395143): It was noticed that there was an APP_ID source
+  // generated despite not being explicitly created. No entries are associated
+  // with it though.
+  for (int i = 0; i < report->sources_size(); ++i) {
+    const auto id = report->sources(i).id();
+    EXPECT_EQ(ukm::GetSourceIdType(id), ukm::SourceIdType::APP_ID);
+  }
+
+  // Verify that if an entry exists it is either DEFAULT or APP_ID.
+  // NOTE(crbug/1395144): There were some entries with SourceId of 0, which are
+  // not purged because they do not have a source in the recordings.
+  for (int i = 0; i < report->entries_size(); ++i) {
+    const auto id_type = ukm::GetSourceIdType(report->entries(i).id());
+    EXPECT_EQ(id_type, ukm::SourceIdType::DEFAULT);
+  }
+}
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 }  // namespace metrics

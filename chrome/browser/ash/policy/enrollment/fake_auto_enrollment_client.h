@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,13 @@
 
 class PrefService;
 
+namespace policy::psm {
+class RlweDmserverClient;
+}
+
 namespace policy {
 
 class DeviceManagementService;
-class PsmRlweIdProvider;
 
 // A fake AutoEnrollmentClient. The test code can control its state.
 class FakeAutoEnrollmentClient : public AutoEnrollmentClient {
@@ -51,10 +54,8 @@ class FakeAutoEnrollmentClient : public AutoEnrollmentClient {
         scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
         const std::string& device_serial_number,
         const std::string& device_brand_code,
-        int power_initial,
-        int power_limit,
-        PrivateMembershipRlweClient::Factory* psm_rlwe_client_factory,
-        PsmRlweIdProvider* psm_rlwe_id_provider) override;
+        std::unique_ptr<psm::RlweDmserverClient> psm_rlwe_dmserver_client)
+        override;
 
    private:
     base::RepeatingCallback<void(FakeAutoEnrollmentClient*)>
@@ -71,9 +72,6 @@ class FakeAutoEnrollmentClient : public AutoEnrollmentClient {
   void Start() override;
   // Note: |Retry| is currently a no-op in |FakeAutoEnrollmentClient|.
   void Retry() override;
-  // Note: |CancelAndDeleteSoon| currently immediately deletes this
-  // |FakeAutoEnrollmentClinet|.
-  void CancelAndDeleteSoon() override;
 
   // Sets the state and notifies the |ProgressCallback| passed to the
   // constructor.

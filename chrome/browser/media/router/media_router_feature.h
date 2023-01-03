@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,30 +26,29 @@ bool MediaRouterEnabled(content::BrowserContext* context);
 // process.
 void ClearMediaRouterStoredPrefsForTesting();
 
-#if !BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
+// If enabled, the sink discovery on Caf MRP is run asynchronously when the main
+// thread is idle.
+BASE_DECLARE_FEATURE(kCafMRPDeferredDiscovery);
+#else
 
 // Enables the media router. Can be disabled in tests unrelated to
 // Media Router where it interferes. Can also be useful to disable for local
 // development on Mac because DIAL local discovery opens a local port
 // and triggers a permission prompt.
-extern const base::Feature kMediaRouter;
+BASE_DECLARE_FEATURE(kMediaRouter);
 
 // If enabled, allows Media Router to connect to Cast devices on all IP
 // addresses, not just RFC1918/RFC4193 private addresses. Workaround for
 // https://crbug.com/813974.
-extern const base::Feature kCastAllowAllIPsFeature;
+BASE_DECLARE_FEATURE(kCastAllowAllIPsFeature);
 
 // Determine whether global media controls are used to start and stop casting.
-extern const base::Feature kGlobalMediaControlsCastStartStop;
+BASE_DECLARE_FEATURE(kGlobalMediaControlsCastStartStop);
 
 // If enabled, allows all websites to request to start mirroring via
 // Presentation API. If disabled, only the allowlisted sites can do so.
-extern const base::Feature kAllowAllSitesToInitiateMirroring;
-
-// If enabled, HTTP requests for DIAL can only be made to URLs that contain the
-// target device IP address.
-// TODO(crbug.com/1270509): Remove this base::Feature once fully launched.
-extern const base::Feature kDialEnforceUrlIPAddress;
+BASE_DECLARE_FEATURE(kAllowAllSitesToInitiateMirroring);
 
 // Registers |kMediaRouterCastAllowAllIPs| with local state pref |registry|.
 void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
@@ -73,6 +72,11 @@ bool DialMediaRouteProviderEnabled();
 // Returns true if global media controls are used to start and stop casting and
 // Media Router is enabled for |context|.
 bool GlobalMediaControlsCastStartStopEnabled(content::BrowserContext* context);
+
+// Returns the command-line flag value to override the default mirroring refresh
+// interval, if set.
+// TODO(crbug.com/1394392): Remove this after CastFastRefreshFrames is launched.
+absl::optional<base::TimeDelta> GetMirroringRefreshInterval();
 
 #endif  // !BUILDFLAG(IS_ANDROID)
 

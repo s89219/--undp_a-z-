@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{1 дзень таму}one{# дзень таму}few{# дні таму}many{# дзён таму}other{# дня таму}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{1 хвіліну таму}one{# хвіліну таму}few{# хвіліны таму}many{# хвілін таму}other{# хвіліны таму}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 хв}one{# хв}few{# хв}many{# хв}other{# хв}}</translation>
+<translation id="1181037720776840403">Выдаліць</translation>
 <translation id="1243314992276662751">Запампаваць</translation>
 <translation id="1266864766717917324">Не ўдалося абагуліць змесціва наступнага тыпу: <ph name="CONTENT_TYPE" /></translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Выкарыстоўваць высокую шчыльнасць</translation>
 <translation id="2482878487686419369">Апавяшчэнні</translation>
 <translation id="2497284189126895209">Усе файлы</translation>
-<translation id="2498950423397131220">Рухомая кнопка</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Каліброўка завершана</translation>
 <translation id="252373100621549798">Невядомы дысплэй</translation>

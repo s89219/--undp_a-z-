@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,6 +89,8 @@ class ASH_EXPORT CursorWindowController {
 
   // Gets the cursor container for testing purposes.
   const aura::Window* GetContainerForTest() const;
+  SkColor GetCursorColorForTest() const;
+  gfx::Rect GetBoundsForTest() const;
 
  private:
   friend class CursorWindowControllerTest;

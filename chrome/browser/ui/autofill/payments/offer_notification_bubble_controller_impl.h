@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 
 namespace autofill {
 
-struct AutofillOfferData;
+class AutofillOfferData;
 
 // Implementation of per-tab class to control the offer notification bubble and
 // Omnibox icon.
@@ -107,7 +107,7 @@ class OfferNotificationBubbleControllerImpl
 
   // The Autofill offer being displayed as a bubble. Set when the bubble is
   // requested to be shown via ShowOfferNotificationIfApplicable(~).
-  raw_ptr<const AutofillOfferData> offer_ = nullptr;
+  AutofillOfferData offer_;
 
   // Denotes whether the bubble is shown due to user gesture. If this is true,
   // it means the bubble is a reshown bubble.

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@
 #include "base/location.h"
 #include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/task/task_runner_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "net/base/completion_once_callback.h"
@@ -57,7 +56,7 @@ void DatabaseQuotaClient::GetBucketUsage(const BucketLocator& bucket,
   }
 
   OriginInfo info;
-  if (db_tracker_.GetOriginInfo(
+  if (db_tracker_->GetOriginInfo(
           GetIdentifierFromOrigin(bucket.storage_key.origin()), &info)) {
     std::move(callback).Run(info.TotalSize());
   } else {
@@ -74,7 +73,7 @@ void DatabaseQuotaClient::GetStorageKeysForType(
 
   std::vector<StorageKey> all_storage_keys;
   std::vector<std::string> origin_identifiers;
-  if (db_tracker_.GetAllOriginIdentifiers(&origin_identifiers)) {
+  if (db_tracker_->GetAllOriginIdentifiers(&origin_identifiers)) {
     all_storage_keys.reserve(origin_identifiers.size());
     for (const auto& identifier : origin_identifiers)
       all_storage_keys.emplace_back(
@@ -96,7 +95,7 @@ void DatabaseQuotaClient::DeleteBucketData(const BucketLocator& bucket,
     return;
   }
 
-  db_tracker_.DeleteDataForOrigin(
+  db_tracker_->DeleteDataForOrigin(
       bucket.storage_key.origin(),
       base::BindOnce(
           [](DeleteBucketDataCallback callback, int result) {

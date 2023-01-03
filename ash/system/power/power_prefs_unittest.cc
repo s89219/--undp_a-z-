@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "ash/session/session_controller_impl.h"
 #include "ash/session/test_session_controller_client.h"
 #include "ash/shell.h"
+#include "ash/system/human_presence/human_presence_metrics.h"
 #include "ash/test/ash_test_base.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
@@ -23,8 +24,8 @@
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
-#include "chromeos/components/human_presence/human_presence_configuration.h"
-#include "chromeos/dbus/human_presence/fake_human_presence_dbus_client.h"
+#include "chromeos/ash/components/dbus/human_presence/fake_human_presence_dbus_client.h"
+#include "chromeos/ash/components/human_presence/human_presence_configuration.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power/power_policy_controller.h"
 #include "chromeos/dbus/power_manager/idle.pb.h"
@@ -36,6 +37,8 @@
 #include "components/prefs/testing_pref_store.h"
 
 using session_manager::SessionState;
+
+namespace qd_metrics = ash::quick_dim_metrics;
 
 namespace ash {
 
@@ -141,9 +144,7 @@ std::string GetExpectedPeakShiftPolicyForPrefs(PrefService* prefs) {
 
   std::vector<power_manager::PowerManagementPolicy::PeakShiftDayConfig> configs;
   EXPECT_TRUE(chromeos::PowerPolicyController::GetPeakShiftDayConfigs(
-      base::Value::AsDictionaryValue(
-          *prefs->GetDictionary(prefs::kPowerPeakShiftDayConfig)),
-      &configs));
+      prefs->GetDict(prefs::kPowerPeakShiftDayConfig), &configs));
 
   power_manager::PowerManagementPolicy expected_policy;
   expected_policy.set_peak_shift_battery_percent_threshold(
@@ -164,8 +165,7 @@ std::string GetExpectedAdvancedBatteryChargeModePolicyForPrefs(
       configs;
   EXPECT_TRUE(
       chromeos::PowerPolicyController::GetAdvancedBatteryChargeModeDayConfigs(
-          base::Value::AsDictionaryValue(*prefs->GetDictionary(
-              prefs::kAdvancedBatteryChargeModeDayConfig)),
+          prefs->GetDict(prefs::kAdvancedBatteryChargeModeDayConfig),
           &configs));
 
   power_manager::PowerManagementPolicy expected_policy;
@@ -178,12 +178,10 @@ std::string GetExpectedAdvancedBatteryChargeModePolicyForPrefs(
 
 void DecodeJsonStringAndNormalize(const std::string& json_string,
                                   base::Value* value) {
-  base::JSONReader::ValueWithError parsed_json =
-      base::JSONReader::ReadAndReturnValueWithError(
-          json_string, base::JSON_ALLOW_TRAILING_COMMAS);
-  ASSERT_EQ(parsed_json.error_message, "");
-  ASSERT_TRUE(parsed_json.value);
-  *value = std::move(*parsed_json.value);
+  auto parsed_json = base::JSONReader::ReadAndReturnValueWithError(
+      json_string, base::JSON_ALLOW_TRAILING_COMMAS);
+  ASSERT_TRUE(parsed_json.has_value()) << parsed_json.error().message;
+  *value = std::move(*parsed_json);
 }
 
 void SetQuickDimPreference(bool enabled) {
@@ -220,9 +218,9 @@ class PowerPrefsTest : public NoSessionAshTestBase {
     feature_list_.InitWithFeatures(
         {features::kQuickDim, features::kAdaptiveCharging}, {});
     base::CommandLine::ForCurrentProcess()->AppendSwitch(switches::kHasHps);
-    chromeos::HpsDBusClient::InitializeFake();
-    chromeos::FakeHpsDBusClient::Get()->Reset();
-    chromeos::FakeHpsDBusClient::Get()->set_hps_service_is_available(true);
+    HumanPresenceDBusClient::InitializeFake();
+    FakeHumanPresenceDBusClient::Get()->Reset();
+    FakeHumanPresenceDBusClient::Get()->set_hps_service_is_available(true);
     NoSessionAshTestBase::SetUp();
 
     power_policy_controller_ = chromeos::PowerPolicyController::Get();
@@ -482,9 +480,8 @@ TEST_F(PowerPrefsTest, PeakShift) {
 
   managed_pref_store_->SetBoolean(prefs::kPowerPeakShiftEnabled, true);
   managed_pref_store_->SetInteger(prefs::kPowerPeakShiftBatteryThreshold, 50);
-  managed_pref_store_->SetValue(
-      prefs::kPowerPeakShiftDayConfig,
-      std::make_unique<base::Value>(std::move(day_configs)), 0);
+  managed_pref_store_->SetValue(prefs::kPowerPeakShiftDayConfig,
+                                std::move(day_configs), 0);
 
   EXPECT_EQ(chromeos::PowerPolicyController::GetPeakShiftPolicyDebugString(
                 power_manager_client()->policy()),
@@ -524,9 +521,8 @@ TEST_F(PowerPrefsTest, AdvancedBatteryChargeMode) {
 
   managed_pref_store_->SetBoolean(prefs::kAdvancedBatteryChargeModeEnabled,
                                   true);
-  managed_pref_store_->SetValue(
-      prefs::kAdvancedBatteryChargeModeDayConfig,
-      std::make_unique<base::Value>(std::move(day_configs)), 0);
+  managed_pref_store_->SetValue(prefs::kAdvancedBatteryChargeModeDayConfig,
+                                std::move(day_configs), 0);
 
   EXPECT_EQ(chromeos::PowerPolicyController::
                 GetAdvancedBatteryChargeModePolicyDebugString(
@@ -577,8 +573,8 @@ TEST_F(PowerPrefsTest, AlsLoggingEnabled) {
 TEST_F(PowerPrefsTest, SetQuickDimParams) {
   // Check that DisableHpsSense is called on initialization.
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(chromeos::FakeHpsDBusClient::Get()->disable_hps_sense_count(), 1);
-  EXPECT_EQ(chromeos::FakeHpsDBusClient::Get()->enable_hps_sense_count(), 0);
+  EXPECT_EQ(FakeHumanPresenceDBusClient::Get()->disable_hps_sense_count(), 1);
+  EXPECT_EQ(FakeHumanPresenceDBusClient::Get()->enable_hps_sense_count(), 0);
 
   // This will trigger UpdatePowerPolicyFromPrefs and set correct parameters.
   SetQuickDimPreference(true);
@@ -599,20 +595,20 @@ TEST_F(PowerPrefsTest, SetQuickDimParams) {
 
   // EnableHpsSense should be called when kPowerQuickDimEnabled becomes true.
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(chromeos::FakeHpsDBusClient::Get()->enable_hps_sense_count(), 1);
+  EXPECT_EQ(FakeHumanPresenceDBusClient::Get()->enable_hps_sense_count(), 1);
 
   // DisableHpsSense should be called when kPowerQuickDimEnabled becomes false.
   SetQuickDimPreference(false);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(chromeos::FakeHpsDBusClient::Get()->disable_hps_sense_count(), 2);
+  EXPECT_EQ(FakeHumanPresenceDBusClient::Get()->disable_hps_sense_count(), 2);
 }
 
 TEST_F(PowerPrefsTest, QuickDimMetrics) {
   const char kUserEmail[] = "user@example.net";
 
   // Initial pref loading shouldn't be logged as manual pref change.
-  EXPECT_TRUE(
-      histogram_tester_.GetAllSamples("ChromeOS.HPS.QuickDim.Enabled").empty());
+  EXPECT_TRUE(histogram_tester_.GetAllSamples(qd_metrics::kEnabledHistogramName)
+                  .empty());
 
   // Initial pref value is false, so manually updating it to true should be
   // logged.
@@ -620,12 +616,12 @@ TEST_F(PowerPrefsTest, QuickDimMetrics) {
 
   const std::vector<base::Bucket> login_screen_buckets = {
       base::Bucket(true, 1)};
-  EXPECT_EQ(histogram_tester_.GetAllSamples("ChromeOS.HPS.QuickDim.Enabled"),
+  EXPECT_EQ(histogram_tester_.GetAllSamples(qd_metrics::kEnabledHistogramName),
             login_screen_buckets);
 
   // Loading a new pref service isn't a manual update, so shouldn't be logged.
   SimulateUserLogin(kUserEmail);
-  EXPECT_EQ(histogram_tester_.GetAllSamples("ChromeOS.HPS.QuickDim.Enabled"),
+  EXPECT_EQ(histogram_tester_.GetAllSamples(qd_metrics::kEnabledHistogramName),
             login_screen_buckets);
 
   // We now re-enable the feature, which *is* a manual toggle (because the
@@ -634,7 +630,7 @@ TEST_F(PowerPrefsTest, QuickDimMetrics) {
 
   // Login screen and user have both enabled the feature.
   const std::vector<base::Bucket> user_enable_buckets = {base::Bucket(true, 2)};
-  EXPECT_EQ(histogram_tester_.GetAllSamples("ChromeOS.HPS.QuickDim.Enabled"),
+  EXPECT_EQ(histogram_tester_.GetAllSamples(qd_metrics::kEnabledHistogramName),
             user_enable_buckets);
 
   // Manual disable should also be logged.
@@ -642,26 +638,26 @@ TEST_F(PowerPrefsTest, QuickDimMetrics) {
 
   const std::vector<base::Bucket> user_disable_buckets = {
       base::Bucket(false, 1), base::Bucket(true, 2)};
-  EXPECT_EQ(histogram_tester_.GetAllSamples("ChromeOS.HPS.QuickDim.Enabled"),
+  EXPECT_EQ(histogram_tester_.GetAllSamples(qd_metrics::kEnabledHistogramName),
             user_disable_buckets);
 
   // Redundant pref change shouldn't be logged.
   SetQuickDimPreference(false);
-  EXPECT_EQ(histogram_tester_.GetAllSamples("ChromeOS.HPS.QuickDim.Enabled"),
+  EXPECT_EQ(histogram_tester_.GetAllSamples(qd_metrics::kEnabledHistogramName),
             user_disable_buckets);
 }
 
 TEST_F(PowerPrefsTest, SetAdaptiveChargingParams) {
-  // Should be disabled by default.
-  EXPECT_FALSE(power_manager_client()->policy().adaptive_charging_enabled());
-
-  // Should be enabled after setting the prefs to true.
-  SetAdaptiveChargingPreference(true);
+  // Should be enabled by default.
   EXPECT_TRUE(power_manager_client()->policy().adaptive_charging_enabled());
 
   // Should be disabled after changing the prefs to false.
   SetAdaptiveChargingPreference(false);
   EXPECT_FALSE(power_manager_client()->policy().adaptive_charging_enabled());
+
+  // Should be enabled after setting the prefs to true.
+  SetAdaptiveChargingPreference(true);
+  EXPECT_TRUE(power_manager_client()->policy().adaptive_charging_enabled());
 }
 
 }  // namespace ash

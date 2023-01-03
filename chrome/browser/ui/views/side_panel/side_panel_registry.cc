@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,10 @@
 #include "base/containers/cxx20_erase.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/observer_list.h"
+#include "base/ranges/algorithm.h"
 #include "chrome/browser/ui/views/side_panel/side_panel_registry_observer.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension_id.h"
 
 const char kSidePanelRegistryKey[] = "side_panel_registry_key";
 
@@ -30,12 +32,9 @@ SidePanelRegistry* SidePanelRegistry::Get(content::WebContents* web_contents) {
   return registry;
 }
 
-SidePanelEntry* SidePanelRegistry::GetEntryForId(SidePanelEntry::Id entry_id) {
-  auto it =
-      std::find_if(entries_.begin(), entries_.end(),
-                   [entry_id](const std::unique_ptr<SidePanelEntry>& entry) {
-                     return entry.get()->id() == entry_id;
-                   });
+SidePanelEntry* SidePanelRegistry::GetEntryForKey(
+    const SidePanelEntry::Key& entry_key) {
+  auto it = base::ranges::find(entries_, entry_key, &SidePanelEntry::key);
   return it == entries_.end() ? nullptr : it->get();
 }
 
@@ -58,32 +57,44 @@ void SidePanelRegistry::RemoveObserver(SidePanelRegistryObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
-void SidePanelRegistry::Register(std::unique_ptr<SidePanelEntry> entry) {
+bool SidePanelRegistry::Register(std::unique_ptr<SidePanelEntry> entry) {
+  if (GetEntryForKey(entry->key()))
+    return false;
   for (SidePanelRegistryObserver& observer : observers_)
     observer.OnEntryRegistered(entry.get());
   entry->AddObserver(this);
   entries_.push_back(std::move(entry));
+  return true;
 }
 
-void SidePanelRegistry::Deregister(SidePanelEntry::Id id) {
-  for (auto const& entry : entries_) {
-    if (entry.get()->id() == id) {
-      entry.get()->RemoveObserver(this);
-      if (active_entry_.has_value() &&
-          entry.get()->id() == active_entry_.value()->id()) {
-        active_entry_.reset();
-      }
-      for (SidePanelRegistryObserver& observer : observers_) {
-        observer.OnEntryWillDeregister(entry.get());
-      }
-      RemoveEntry(entry.get());
-      return;
-    }
+bool SidePanelRegistry::Deregister(const SidePanelEntry::Key& key) {
+  auto* entry = GetEntryForKey(key);
+  if (!entry)
+    return false;
+
+  entry->RemoveObserver(this);
+  if (active_entry_.has_value() &&
+      entry->key() == active_entry_.value()->key()) {
+    active_entry_.reset();
   }
+  for (SidePanelRegistryObserver& observer : observers_) {
+    observer.OnEntryWillDeregister(this, entry);
+  }
+  RemoveEntry(entry);
+  return true;
+}
+
+void SidePanelRegistry::SetActiveEntry(SidePanelEntry* entry) {
+  active_entry_ = entry;
 }
 
 void SidePanelRegistry::OnEntryShown(SidePanelEntry* entry) {
   active_entry_ = entry;
+}
+
+void SidePanelRegistry::OnEntryIconUpdated(SidePanelEntry* entry) {
+  for (SidePanelRegistryObserver& observer : observers_)
+    observer.OnEntryIconUpdated(entry);
 }
 
 void SidePanelRegistry::RemoveEntry(SidePanelEntry* entry) {

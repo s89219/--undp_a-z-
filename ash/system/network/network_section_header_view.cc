@@ -1,10 +1,9 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/network/network_section_header_view.h"
 
-#include "ash/constants/ash_features.h"
 #include "ash/public/cpp/bluetooth_config_service.h"
 #include "ash/public/cpp/system_tray_client.h"
 #include "ash/resources/vector_icons/vector_icons.h"
@@ -12,13 +11,13 @@
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/style/icon_button.h"
-#include "ash/system/bluetooth/bluetooth_power_controller.h"
 #include "ash/system/model/system_tray_model.h"
+#include "ash/system/network/network_utils.h"
 #include "ash/system/network/tray_network_state_model.h"
 #include "ash/system/tray/tray_toggle_button.h"
 #include "base/bind.h"
 #include "base/metrics/user_metrics.h"
-#include "chromeos/dbus/hermes/hermes_manager_client.h"
+#include "chromeos/ash/components/dbus/hermes/hermes_manager_client.h"
 #include "chromeos/services/network_config/public/cpp/cros_network_config_util.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
@@ -54,7 +53,7 @@ bool IsCellularDeviceInhibited() {
          chromeos::network_config::mojom::InhibitReason::kNotInhibited;
 }
 
-bool IsCellularSimLocked() {
+bool IsCellularInhibited() {
   const DeviceStateProperties* cellular_device =
       Shell::Get()->system_tray_model()->network_state_model()->GetDevice(
           NetworkType::kCellular);
@@ -96,7 +95,7 @@ bool IsESimSupported() {
   // Check both the SIM slot infos and the number of EUICCs because the former
   // comes from Shill and the latter from Hermes, and so there may be instances
   // where one may be true while they other isn't.
-  if (chromeos::HermesManagerClient::Get()->GetAvailableEuiccs().empty())
+  if (HermesManagerClient::Get()->GetAvailableEuiccs().empty())
     return false;
 
   for (const auto& sim_info : *cellular_device->sim_infos) {
@@ -110,9 +109,8 @@ int GetAddESimTooltipMessageId() {
   const DeviceStateProperties* cellular_device =
       Shell::Get()->system_tray_model()->network_state_model()->GetDevice(
           NetworkType::kCellular);
-  if (!cellular_device) {
-    return 0;
-  }
+
+  DCHECK(cellular_device);
 
   switch (cellular_device->inhibit_reason) {
     case chromeos::network_config::mojom::InhibitReason::kInstallingProfile:
@@ -171,8 +169,9 @@ void NetworkSectionHeaderView::InitializeLayout() {
   TrayPopupUtils::ConfigureAsStickyHeader(this);
   SetLayoutManager(std::make_unique<views::FillLayout>());
   container_ = TrayPopupUtils::CreateSubHeaderRowView(true);
-  container_->AddView(TriView::Container::START,
-                      TrayPopupUtils::CreateMainImageView());
+  container_->AddView(
+      TriView::Container::START,
+      TrayPopupUtils::CreateMainImageView(/*use_wide_layout=*/false));
   AddChildView(container_);
 
   network_row_title_view_ = new NetworkRowTitleView(title_id_);
@@ -206,10 +205,6 @@ MobileSectionHeaderView::MobileSectionHeaderView()
                                DeviceStateType::kEnabled;
   NetworkSectionHeaderView::Init(initially_enabled);
   model()->AddObserver(this);
-
-  if (!ash::features::IsBluetoothRevampEnabled())
-    return;
-
   GetBluetoothConfigService(
       remote_cros_bluetooth_config_.BindNewPipeAndPassReceiver());
 }
@@ -310,6 +305,7 @@ int MobileSectionHeaderView::UpdateToggleAndGetStatusMessage(
 }
 
 void MobileSectionHeaderView::OnToggleToggled(bool is_on) {
+  RecordNetworkTypeToggled(NetworkType::kMobile, is_on);
   DeviceStateType cellular_state =
       model()->GetDeviceState(NetworkType::kCellular);
 
@@ -317,7 +313,7 @@ void MobileSectionHeaderView::OnToggleToggled(bool is_on) {
   // (Tether may be enabled by turning on Bluetooth and turning on
   // 'Get data connection' in the Settings > Mobile data subpage).
   if (cellular_state != DeviceStateType::kUnavailable) {
-    if (is_on && IsCellularSimLocked()) {
+    if (is_on && IsCellularInhibited()) {
       ShowCellularSettings();
       return;
     }
@@ -361,7 +357,7 @@ void MobileSectionHeaderView::AddExtraButtons(bool enabled) {
   add_esim_button_ = new IconButton(
       base::BindRepeating(&MobileSectionHeaderView::AddCellularButtonPressed,
                           base::Unretained(this)),
-      IconButton::Type::kSmall, &icon, GetAddESimTooltipMessageId());
+      IconButton::Type::kMedium, &icon, GetAddESimTooltipMessageId());
   add_esim_button_->SetEnabled(enabled && !IsCellularDeviceInhibited());
   container()->AddView(TriView::Container::END, add_esim_button_);
   UpdateAddESimButtonVisibility();
@@ -370,6 +366,12 @@ void MobileSectionHeaderView::AddExtraButtons(bool enabled) {
 void MobileSectionHeaderView::DeviceStateListChanged() {
   if (!add_esim_button_)
     return;
+
+  if (!IsESimSupported()) {
+    add_esim_button_->SetVisible(/*visible=*/false);
+    return;
+  }
+
   add_esim_button_->SetEnabled(can_add_esim_button_be_enabled_ &&
                                !IsCellularDeviceInhibited());
   add_esim_button_->SetTooltipText(
@@ -389,8 +391,7 @@ void MobileSectionHeaderView::UpdateAddESimButtonVisibility() {
 
   // Adding new cellular networks is disallowed when only policy cellular
   // networks are allowed by admin.
-  if (ash::features::IsESimPolicyEnabled() &&
-      (!global_policy || global_policy->allow_only_policy_cellular_networks)) {
+  if (!global_policy || global_policy->allow_only_policy_cellular_networks) {
     add_esim_button_->SetVisible(/*visible=*/false);
     return;
   }
@@ -405,15 +406,7 @@ void MobileSectionHeaderView::AddCellularButtonPressed() {
 
 void MobileSectionHeaderView::EnableBluetooth() {
   DCHECK(!waiting_for_tether_initialize_);
-
-  if (ash::features::IsBluetoothRevampEnabled()) {
-    remote_cros_bluetooth_config_->SetBluetoothEnabledState(true);
-  } else {
-    Shell::Get()
-        ->bluetooth_power_controller()
-        ->SetPrimaryUserBluetoothPowerSetting(true /* enabled */);
-  }
-
+  remote_cros_bluetooth_config_->SetBluetoothEnabledState(true);
   waiting_for_tether_initialize_ = true;
   enable_bluetooth_timer_.Start(
       FROM_HERE, base::Seconds(kBluetoothTimeoutDelaySeconds),
@@ -459,6 +452,7 @@ const char* WifiSectionHeaderView::GetClassName() const {
 }
 
 void WifiSectionHeaderView::OnToggleToggled(bool is_on) {
+  RecordNetworkTypeToggled(NetworkType::kWiFi, is_on);
   model()->SetNetworkTypeEnabledState(NetworkType::kWiFi, is_on);
 }
 
@@ -466,7 +460,7 @@ void WifiSectionHeaderView::AddExtraButtons(bool enabled) {
   auto* join_button = new IconButton(
       base::BindRepeating(&WifiSectionHeaderView::JoinButtonPressed,
                           base::Unretained(this)),
-      IconButton::Type::kSmall, &vector_icons::kWifiAddIcon,
+      IconButton::Type::kMedium, &vector_icons::kWifiAddIcon,
       IDS_ASH_STATUS_TRAY_OTHER_WIFI);
   join_button->SetEnabled(enabled);
   container()->AddView(TriView::Container::END, join_button);

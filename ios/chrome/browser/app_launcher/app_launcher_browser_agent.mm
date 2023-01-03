@@ -1,18 +1,18 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/app_launcher/app_launcher_browser_agent.h"
 
-#include "base/bind.h"
-#include "base/check.h"
-#include "base/metrics/histogram_macros.h"
+#import "base/bind.h"
+#import "base/check.h"
+#import "base/metrics/histogram_macros.h"
 #import "ios/chrome/browser/app_launcher/app_launcher_tab_helper.h"
 #import "ios/chrome/browser/app_launcher/app_launcher_util.h"
 #import "ios/chrome/browser/mailto_handler/mailto_handler_service.h"
 #import "ios/chrome/browser/mailto_handler/mailto_handler_service_factory.h"
 #import "ios/chrome/browser/main/browser.h"
-#include "ios/chrome/browser/overlays/public/overlay_callback_manager.h"
+#import "ios/chrome/browser/overlays/public/overlay_callback_manager.h"
 #import "ios/chrome/browser/overlays/public/overlay_request.h"
 #import "ios/chrome/browser/overlays/public/overlay_request_queue.h"
 #import "ios/chrome/browser/overlays/public/overlay_response.h"
@@ -22,7 +22,7 @@
 #import "ios/web/public/navigation/navigation_manager.h"
 #import "ios/web/public/web_state.h"
 #import "net/base/mac/url_conversions.h"
-#include "url/gurl.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -35,7 +35,7 @@ using app_launcher_overlays::AllowAppLaunchResponse;
 
 namespace {
 // Records histogram metric on the user's response when prompted to open another
-// application. |user_accepted| should be YES if the user accepted the prompt to
+// application. `user_accepted` should be YES if the user accepted the prompt to
 // launch another application. This call is extracted to a separate function to
 // reduce macro code expansion.
 void RecordUserAcceptedAppLaunchMetric(BOOL user_accepted) {
@@ -58,7 +58,7 @@ void AppLauncherOverlayCallback(base::OnceCallback<void(bool)> completion,
   std::move(completion).Run(user_accepted);
 }
 
-// Launches the app for |url| if |user_accepted| is true.
+// Launches the app for `url` if `user_accepted` is true.
 void LaunchExternalApp(const GURL url, bool user_accepted = true) {
   if (!user_accepted)
     return;

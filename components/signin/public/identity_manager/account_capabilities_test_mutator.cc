@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,12 @@ AccountCapabilitiesTestMutator::AccountCapabilitiesTestMutator(
 const std::vector<std::string>&
 AccountCapabilitiesTestMutator::GetSupportedAccountCapabilityNames() {
   return AccountCapabilities::GetSupportedAccountCapabilityNames();
+}
+
+void AccountCapabilitiesTestMutator::set_can_have_email_address_displayed(
+    bool value) {
+  capabilities_
+      ->capabilities_map_[kCanHaveEmailAddressDisplayedCapabilityName] = value;
 }
 
 void AccountCapabilitiesTestMutator::set_can_offer_extended_chrome_sync_promos(
@@ -36,14 +42,20 @@ void AccountCapabilitiesTestMutator::set_can_stop_parental_supervision(
       value;
 }
 
+void AccountCapabilitiesTestMutator::set_can_toggle_auto_updates(bool value) {
+  capabilities_->capabilities_map_[kCanToggleAutoUpdatesName] = value;
+}
+
+void AccountCapabilitiesTestMutator::set_is_allowed_for_machine_learning(
+    bool value) {
+  capabilities_->capabilities_map_[kIsAllowedForMachineLearningCapabilityName] =
+      value;
+}
+
 void AccountCapabilitiesTestMutator::set_is_subject_to_parental_controls(
     bool value) {
   capabilities_->capabilities_map_[kIsSubjectToParentalControlsCapabilityName] =
       value;
-}
-
-void AccountCapabilitiesTestMutator::set_can_toggle_auto_updates(bool value) {
-  capabilities_->capabilities_map_[kCanToggleAutoUpdatesName] = value;
 }
 
 void AccountCapabilitiesTestMutator::SetAllSupportedCapabilities(bool value) {

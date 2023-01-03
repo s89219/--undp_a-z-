@@ -1,9 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/passwords/bubble_controllers/save_update_bubble_controller.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/default_clock.h"
@@ -153,8 +154,7 @@ SaveUpdateBubbleController::SaveUpdateBubbleController(
 }
 
 SaveUpdateBubbleController::~SaveUpdateBubbleController() {
-  if (!interaction_reported_)
-    OnBubbleClosing();
+  OnBubbleClosing();
 }
 
 void SaveUpdateBubbleController::OnSaveClicked() {
@@ -214,11 +214,8 @@ void SaveUpdateBubbleController::OnGooglePasswordManagerLinkClicked() {
 bool SaveUpdateBubbleController::IsCurrentStateUpdate() const {
   DCHECK(state_ == password_manager::ui::PENDING_PASSWORD_UPDATE_STATE ||
          state_ == password_manager::ui::PENDING_PASSWORD_STATE);
-  return std::any_of(existing_credentials_.begin(), existing_credentials_.end(),
-                     [this](const password_manager::PasswordForm& form) {
-                       return form.username_value ==
-                              pending_password_.username_value;
-                     });
+  return base::Contains(existing_credentials_, pending_password_.username_value,
+                        &password_manager::PasswordForm::username_value);
 }
 
 bool SaveUpdateBubbleController::ShouldShowFooter() const {
@@ -333,10 +330,8 @@ ui::ImageModel SaveUpdateBubbleController::GetPrimaryAccountAvatar(
     account_icon = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
         profiles::GetPlaceholderAvatarIconResourceID());
   }
-  return ui::ImageModel::FromImage(
-      profiles::GetSizedAvatarIcon(account_icon,
-                                   /*is_rectangle=*/true, icon_size_dip,
-                                   icon_size_dip, profiles::SHAPE_CIRCLE));
+  return ui::ImageModel::FromImage(profiles::GetSizedAvatarIcon(
+      account_icon, icon_size_dip, icon_size_dip, profiles::SHAPE_CIRCLE));
 }
 
 bool SaveUpdateBubbleController::DidAuthForAccountStoreOptInFail() const {

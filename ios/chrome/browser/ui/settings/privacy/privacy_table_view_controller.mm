@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,47 +6,55 @@
 
 #import <LocalAuthentication/LocalAuthentication.h>
 
-#include "base/check.h"
+#import "base/check.h"
 #import "base/mac/foundation_util.h"
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
-#include "components/content_settings/core/common/features.h"
-#include "components/handoff/pref_names_ios.h"
+#import "base/metrics/histogram_macros.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
+#import "components/content_settings/core/common/features.h"
+#import "components/handoff/pref_names_ios.h"
 #import "components/prefs/ios/pref_observer_bridge.h"
-#include "components/prefs/pref_change_registrar.h"
-#include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/common/features.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
-#include "components/strings/grit/components_strings.h"
-#include "components/sync/driver/sync_service.h"
-#include "ios/chrome/browser/application_context.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/browsing_data/browsing_data_features.h"
+#import "components/prefs/pref_change_registrar.h"
+#import "components/prefs/pref_service.h"
+#import "components/safe_browsing/core/common/features.h"
+#import "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#import "components/strings/grit/components_strings.h"
+#import "components/sync/driver/sync_service.h"
+#import "ios/chrome/browser/application_context/application_context.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/browsing_data/browsing_data_features.h"
 #import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/net/crurl.h"
 #import "ios/chrome/browser/policy/policy_util.h"
-#include "ios/chrome/browser/pref_names.h"
-#include "ios/chrome/browser/sync/sync_service_factory.h"
+#import "ios/chrome/browser/prefs/pref_names.h"
+#import "ios/chrome/browser/sync/sync_service_factory.h"
 #import "ios/chrome/browser/ui/commands/open_new_tab_command.h"
+#import "ios/chrome/browser/ui/incognito_interstitial/incognito_interstitial_constants.h"
+#import "ios/chrome/browser/ui/settings/elements/enterprise_info_popover_view_controller.h"
+#import "ios/chrome/browser/ui/settings/elements/info_popover_view_controller.h"
 #import "ios/chrome/browser/ui/settings/privacy/privacy_constants.h"
 #import "ios/chrome/browser/ui/settings/privacy/privacy_navigation_commands.h"
 #import "ios/chrome/browser/ui/settings/settings_navigation_controller.h"
 #import "ios/chrome/browser/ui/settings/settings_table_view_controller_constants.h"
 #import "ios/chrome/browser/ui/settings/utils/pref_backed_boolean.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_detail_icon_item.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_info_button_cell.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_info_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_link_header_footer_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_cell.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_header_footer_item.h"
 #import "ios/chrome/browser/ui/table_view/table_view_utils.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/common/string_util.h"
+#import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/reauthentication/reauthentication_protocol.h"
-#include "ios/chrome/grit/ios_chromium_strings.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/l10n/l10n_util_mac.h"
-#include "url/gurl.h"
+#import "ios/chrome/grit/ios_chromium_strings.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ios/components/security_interstitials/https_only_mode/feature.h"
+#import "ui/base/l10n/l10n_util.h"
+#import "ui/base/l10n/l10n_util_mac.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -57,8 +65,10 @@ namespace {
 typedef NS_ENUM(NSInteger, SectionIdentifier) {
   SectionIdentifierPrivacyContent = kSectionIdentifierEnumZero,
   SectionIdentifierSafeBrowsing,
+  SectionIdentifierHTTPSOnlyMode,
   SectionIdentifierWebServices,
   SectionIdentifierIncognitoAuth,
+  SectionIdentifierIncognitoInterstitial,
 };
 
 typedef NS_ENUM(NSInteger, ItemType) {
@@ -67,8 +77,11 @@ typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypePrivacyFooter,
   ItemTypeOtherDevicesHandoff,
   ItemTypeIncognitoReauth,
-  ItemTypeIncognitoReauthFooter,
+  ItemTypeIncognitoReauthDisabled,
   ItemTypePrivacySafeBrowsing,
+  ItemTypeHTTPSOnlyMode,
+  ItemTypeIncognitoInterstitial,
+  ItemTypeIncognitoInterstitialDisabled,
 };
 
 // Only used in this class to openn the Sync and Google services settings.
@@ -79,7 +92,8 @@ const char kSyncSettingsURL[] = "settings://open_sync";
 }  // namespace
 
 @interface PrivacyTableViewController () <BooleanObserver,
-                                          PrefObserverDelegate> {
+                                          PrefObserverDelegate,
+                                          PopoverLabelViewControllerDelegate> {
   ChromeBrowserState* _browserState;  // weak
 
   // Pref observer to track changes to prefs.
@@ -91,10 +105,10 @@ const char kSyncSettingsURL[] = "settings://open_sync";
   TableViewDetailIconItem* _handoffDetailItem;
   // Safe Browsing item.
   TableViewDetailIconItem* _safeBrowsingDetailItem;
-}
 
-// Browser.
-@property(nonatomic, readonly) Browser* browser;
+  // Whether Settings have been dismissed.
+  BOOL _settingsAreDismissed;
+}
 
 // Accessor for the incognito reauth pref.
 @property(nonatomic, strong) PrefBackedBoolean* incognitoReauthPref;
@@ -104,6 +118,18 @@ const char kSyncSettingsURL[] = "settings://open_sync";
 
 // Authentication module used when the user toggles the biometric auth on.
 @property(nonatomic, strong) id<ReauthenticationProtocol> reauthModule;
+
+// Accessor for the HTTPS-Only Mode pref.
+@property(nonatomic, strong) PrefBackedBoolean* HTTPSOnlyModePref;
+
+// The item related to the switch for the "HTTPS Only Mode" setting.
+@property(nonatomic, strong) TableViewSwitchItem* HTTPSOnlyModeItem;
+
+// Accessor for the Incognito interstitial pref.
+@property(nonatomic, strong) PrefBackedBoolean* incognitoInterstitialPref;
+
+// The item related to the Incognito interstitial setting.
+@property(nonatomic, strong) TableViewSwitchItem* incognitoInterstitialItem;
 
 @end
 
@@ -117,15 +143,9 @@ const char kSyncSettingsURL[] = "settings://open_sync";
 
   self = [super initWithStyle:ChromeTableViewStyle()];
   if (self) {
-    _browser = browser;
     _reauthModule = reauthModule;
     _browserState = browser->GetBrowserState();
-    if (base::FeatureList::IsEnabled(safe_browsing::kEnhancedProtection)) {
-      self.title = l10n_util::GetNSString(IDS_IOS_SETTINGS_PRIVACY_TITLE);
-    } else {
-      self.title =
-          l10n_util::GetNSString(IDS_OPTIONS_ADVANCED_SECTION_TITLE_PRIVACY);
-    }
+    self.title = l10n_util::GetNSString(IDS_IOS_SETTINGS_PRIVACY_TITLE);
 
     PrefService* prefService = _browserState->GetPrefs();
 
@@ -144,6 +164,18 @@ const char kSyncSettingsURL[] = "settings://open_sync";
         initWithPrefService:GetApplicationContext()->GetLocalState()
                    prefName:prefs::kIncognitoAuthenticationSetting];
     [_incognitoReauthPref setObserver:self];
+
+    _HTTPSOnlyModePref = [[PrefBackedBoolean alloc]
+        initWithPrefService:prefService
+                   prefName:prefs::kHttpsOnlyModeEnabled];
+    [_HTTPSOnlyModePref setObserver:self];
+
+    if (base::FeatureList::IsEnabled(kIOS3PIntentsInIncognito)) {
+      _incognitoInterstitialPref = [[PrefBackedBoolean alloc]
+          initWithPrefService:browser->GetBrowserState()->GetPrefs()
+                     prefName:prefs::kIncognitoInterstitialEnabled];
+      [_incognitoInterstitialPref setObserver:self];
+    }
   }
   return self;
 }
@@ -168,51 +200,112 @@ const char kSyncSettingsURL[] = "settings://open_sync";
 
 - (void)loadModel {
   [super loadModel];
+  if (_settingsAreDismissed)
+    return;
 
   TableViewModel* model = self.tableViewModel;
   [model addSectionWithIdentifier:SectionIdentifierPrivacyContent];
-  if (base::FeatureList::IsEnabled(safe_browsing::kEnhancedProtection)) {
-    [model addSectionWithIdentifier:SectionIdentifierSafeBrowsing];
+  [model addSectionWithIdentifier:SectionIdentifierSafeBrowsing];
+
+  if (base::FeatureList::IsEnabled(
+          security_interstitials::features::kHttpsOnlyMode)) {
+    [model addSectionWithIdentifier:SectionIdentifierHTTPSOnlyMode];
+    [model addItem:self.HTTPSOnlyModeItem
+        toSectionWithIdentifier:SectionIdentifierHTTPSOnlyMode];
   }
+
   [model addSectionWithIdentifier:SectionIdentifierWebServices];
   [model addSectionWithIdentifier:SectionIdentifierIncognitoAuth];
+  if (base::FeatureList::IsEnabled(kIOS3PIntentsInIncognito)) {
+    [model addSectionWithIdentifier:SectionIdentifierIncognitoInterstitial];
+  }
 
   // Clear Browsing item.
   [model addItem:[self clearBrowsingDetailItem]
       toSectionWithIdentifier:SectionIdentifierPrivacyContent];
 
   // Privacy Safe Browsing item.
-  if (base::FeatureList::IsEnabled(safe_browsing::kEnhancedProtection)) {
-    [model addItem:[self safeBrowsingDetailItem]
-        toSectionWithIdentifier:SectionIdentifierSafeBrowsing];
-    [model setFooter:[self showPrivacyFooterItem]
-        forSectionWithIdentifier:SectionIdentifierIncognitoAuth];
-  } else {
-    [model setFooter:[self showPrivacyFooterItem]
-        forSectionWithIdentifier:SectionIdentifierPrivacyContent];
-  }
+  [model addItem:[self safeBrowsingDetailItem]
+      toSectionWithIdentifier:SectionIdentifierSafeBrowsing];
+  [model setFooter:[self showPrivacyFooterItem]
+      forSectionWithIdentifier:base::FeatureList::IsEnabled(
+                                   kIOS3PIntentsInIncognito)
+                                   ? SectionIdentifierIncognitoInterstitial
+                                   : SectionIdentifierIncognitoAuth];
 
   // Web Services item.
   [model addItem:[self handoffDetailItem]
       toSectionWithIdentifier:SectionIdentifierWebServices];
 
-  // Do not show the incognito authentication setting when Incognito mode is
-  // disabled.
-  if (!IsIncognitoModeDisabled(_browserState->GetPrefs())) {
-    // Incognito authentication item.
-    [model addItem:self.incognitoReauthItem
-        toSectionWithIdentifier:SectionIdentifierIncognitoAuth];
+  // Incognito reauth item is added. If Incognito mode is disabled, or device
+  // authentication is not supported, a disabled version is shown instead with
+  // relevant information as a popover.
+  TableViewItem* incognitoReauthItem =
+      (IsIncognitoModeDisabled(_browserState->GetPrefs()) ||
+       ![self deviceSupportsAuthentication])
+          ? self.incognitoReauthItemDisabled
+          : self.incognitoReauthItem;
+  [model addItem:incognitoReauthItem
+      toSectionWithIdentifier:SectionIdentifierIncognitoAuth];
 
-    // If necessary, add the instuctional footer
-    if ([self shouldShowReauthFooter]) {
-      [model setFooter:[PrivacyTableViewController
-                           newIncognitoReauthSetupPasscodeFooter]
-          forSectionWithIdentifier:SectionIdentifierIncognitoAuth];
-    }
+  // Show "Ask to Open Links from Other Apps in Incognito" setting.
+  if (base::FeatureList::IsEnabled(kIOS3PIntentsInIncognito)) {
+    // Incognito interstitial item is added. If Incognito mode is
+    // disabled or forced, a disabled version is shown with information
+    // to learn more.
+    TableViewItem* incognitoInterstitialItem =
+        (IsIncognitoModeDisabled(_browserState->GetPrefs()) ||
+         IsIncognitoModeForced(_browserState->GetPrefs()))
+            ? self.incognitoInterstitialItemDisabled
+            : self.incognitoInterstitialItem;
+    [model addItem:incognitoInterstitialItem
+        toSectionWithIdentifier:SectionIdentifierIncognitoInterstitial];
   }
 }
 
 #pragma mark - Model Objects
+
+- (TableViewSwitchItem*)HTTPSOnlyModeItem {
+  if (!_HTTPSOnlyModeItem) {
+    _HTTPSOnlyModeItem =
+        [[TableViewSwitchItem alloc] initWithType:ItemTypeHTTPSOnlyMode];
+
+    _HTTPSOnlyModeItem.text =
+        l10n_util::GetNSString(IDS_IOS_SETTINGS_HTTPS_ONLY_MODE_TITLE);
+    _HTTPSOnlyModeItem.detailText =
+        l10n_util::GetNSString(IDS_IOS_SETTINGS_HTTPS_ONLY_MODE_DESCRIPTION);
+    _HTTPSOnlyModeItem.on = [self.HTTPSOnlyModePref value];
+    _HTTPSOnlyModeItem.accessibilityIdentifier = kSettingsHttpsOnlyModeCellId;
+  }
+  return _HTTPSOnlyModeItem;
+}
+
+- (TableViewSwitchItem*)incognitoInterstitialItem {
+  if (!_incognitoInterstitialItem) {
+    _incognitoInterstitialItem = [[TableViewSwitchItem alloc]
+        initWithType:ItemTypeIncognitoInterstitial];
+    _incognitoInterstitialItem.text =
+        l10n_util::GetNSString(IDS_IOS_OPTIONS_ENABLE_INCOGNITO_INTERSTITIAL);
+    _incognitoInterstitialItem.on = self.incognitoInterstitialPref.value;
+    _incognitoInterstitialItem.enabled = YES;
+    _incognitoInterstitialItem.accessibilityIdentifier =
+        kSettingsIncognitoInterstitialId;
+  }
+  return _incognitoInterstitialItem;
+}
+
+- (TableViewInfoButtonItem*)incognitoInterstitialItemDisabled {
+  TableViewInfoButtonItem* itemDisabled = [[TableViewInfoButtonItem alloc]
+      initWithType:ItemTypeIncognitoInterstitialDisabled];
+  itemDisabled.text =
+      l10n_util::GetNSString(IDS_IOS_OPTIONS_ENABLE_INCOGNITO_INTERSTITIAL);
+  itemDisabled.statusText = l10n_util::GetNSString(IDS_IOS_SETTING_OFF);
+  itemDisabled.accessibilityIdentifier =
+      kSettingsIncognitoInterstitialDisabledId;
+  itemDisabled.iconTintColor = [UIColor colorNamed:kGrey300Color];
+  itemDisabled.textColor = [UIColor colorNamed:kTextSecondaryColor];
+  return itemDisabled;
+}
 
 - (TableViewItem*)handoffDetailItem {
   NSString* detailText =
@@ -274,18 +367,6 @@ const char kSyncSettingsURL[] = "settings://open_sync";
   return _safeBrowsingDetailItem;
 }
 
-// Footer to the incognito reauth section that appears when the user has no
-// passcode/biometric auth set up.
-+ (TableViewHeaderFooterItem*)newIncognitoReauthSetupPasscodeFooter {
-  TableViewLinkHeaderFooterItem* setupPasscodeFooter =
-      [[TableViewLinkHeaderFooterItem alloc]
-          initWithType:ItemTypeIncognitoReauthFooter];
-  setupPasscodeFooter.text =
-      l10n_util::GetNSString(IDS_IOS_INCOGNITO_REAUTH_SET_UP_PASSCODE_HINT);
-
-  return setupPasscodeFooter;
-}
-
 - (TableViewSwitchItem*)incognitoReauthItem {
   if (_incognitoReauthItem) {
     return _incognitoReauthItem;
@@ -295,8 +376,19 @@ const char kSyncSettingsURL[] = "settings://open_sync";
   _incognitoReauthItem.text =
       l10n_util::GetNSString(IDS_IOS_INCOGNITO_REAUTH_SETTING_NAME);
   _incognitoReauthItem.on = self.incognitoReauthPref.value;
-  _incognitoReauthItem.enabled = [self deviceSupportsAuthentication];
+  _incognitoReauthItem.enabled = YES;
   return _incognitoReauthItem;
+}
+
+- (TableViewInfoButtonItem*)incognitoReauthItemDisabled {
+  TableViewInfoButtonItem* itemDisabled = [[TableViewInfoButtonItem alloc]
+      initWithType:ItemTypeIncognitoReauthDisabled];
+  itemDisabled.text =
+      l10n_util::GetNSString(IDS_IOS_INCOGNITO_REAUTH_SETTING_NAME);
+  itemDisabled.statusText = l10n_util::GetNSString(IDS_IOS_SETTING_OFF);
+  itemDisabled.iconTintColor = [UIColor colorNamed:kGrey300Color];
+  itemDisabled.textColor = [UIColor colorNamed:kTextSecondaryColor];
+  return itemDisabled;
 }
 
 - (TableViewDetailIconItem*)detailItemWithType:(NSInteger)type
@@ -325,6 +417,32 @@ const char kSyncSettingsURL[] = "settings://open_sync";
   base::RecordAction(base::UserMetricsAction("MobilePrivacySettingsBack"));
 }
 
+- (void)settingsWillBeDismissed {
+  DCHECK(!_settingsAreDismissed);
+
+  // Stop observable prefs.
+  [_incognitoReauthPref stop];
+  _incognitoReauthPref.observer = nil;
+  _incognitoReauthPref = nil;
+  [_HTTPSOnlyModePref stop];
+  _HTTPSOnlyModePref.observer = nil;
+  _HTTPSOnlyModePref = nil;
+  [_incognitoInterstitialPref stop];
+  _incognitoInterstitialPref.observer = nil;
+  _incognitoInterstitialPref = nil;
+
+  // Remove pref changes registrations.
+  _prefChangeRegistrar.RemoveAll();
+
+  // Remove observer bridges.
+  _prefObserverBridge.reset();
+
+  // Clear C++ ivars.
+  _browserState = nullptr;
+
+  _settingsAreDismissed = YES;
+}
+
 #pragma mark - UITableViewDelegate
 
 - (UIView*)tableView:(UITableView*)tableView
@@ -351,6 +469,8 @@ const char kSyncSettingsURL[] = "settings://open_sync";
       [self.handler showClearBrowsingData];
       break;
     case ItemTypePrivacySafeBrowsing:
+      base::RecordAction(base::UserMetricsAction(
+          "SafeBrowsing.Settings.ShowedFromParentSettings"));
       [self.handler showSafeBrowsing];
       break;
     default:
@@ -375,24 +495,54 @@ const char kSyncSettingsURL[] = "settings://open_sync";
     [switchCell.switchView addTarget:self
                               action:@selector(switchTapped:)
                     forControlEvents:UIControlEventTouchUpInside];
+  } else if (itemType == ItemTypeIncognitoReauthDisabled) {
+    TableViewInfoButtonCell* managedCell =
+        base::mac::ObjCCastStrict<TableViewInfoButtonCell>(cell);
+    [managedCell.trailingButton
+               addTarget:self
+                  action:@selector(didTapIncognitoReauthDisabledInfoButton:)
+        forControlEvents:UIControlEventTouchUpInside];
+  } else if (itemType == ItemTypeHTTPSOnlyMode) {
+    TableViewSwitchCell* switchCell =
+        base::mac::ObjCCastStrict<TableViewSwitchCell>(cell);
+    [switchCell.switchView addTarget:self
+                              action:@selector(HTTPSOnlyModeTapped:)
+                    forControlEvents:UIControlEventTouchUpInside];
+  } else if (itemType == ItemTypeIncognitoInterstitial) {
+    TableViewSwitchCell* switchCell =
+        base::mac::ObjCCastStrict<TableViewSwitchCell>(cell);
+    [switchCell.switchView
+               addTarget:self
+                  action:@selector(incognitoInterstitialSwitchTapped:)
+        forControlEvents:UIControlEventTouchUpInside];
+  } else if (itemType == ItemTypeIncognitoInterstitialDisabled) {
+    TableViewInfoButtonCell* managedCell =
+        base::mac::ObjCCastStrict<TableViewInfoButtonCell>(cell);
+    [managedCell.trailingButton
+               addTarget:self
+                  action:@selector
+                  (didTapIncognitoInterstitialDisabledInfoButton:)
+        forControlEvents:UIControlEventTouchUpInside];
   }
-
   return cell;
 }
 
 #pragma mark - PrefObserverDelegate
 
 - (void)onPreferenceChanged:(const std::string&)preferenceName {
+  if (_settingsAreDismissed)
+    return;
+
   if (preferenceName == prefs::kIosHandoffToOtherDevices) {
-    NSString* detailText =
-        _browserState->GetPrefs()->GetBoolean(prefs::kIosHandoffToOtherDevices)
-            ? l10n_util::GetNSString(IDS_IOS_SETTING_ON)
-            : l10n_util::GetNSString(IDS_IOS_SETTING_OFF);
+    NSString* detailText = _browserState->GetPrefs()->GetBoolean(preferenceName)
+                               ? l10n_util::GetNSString(IDS_IOS_SETTING_ON)
+                               : l10n_util::GetNSString(IDS_IOS_SETTING_OFF);
     _handoffDetailItem.detailText = detailText;
     [self reconfigureCellsForItems:@[ _handoffDetailItem ]];
     return;
   }
 
+  DCHECK(_safeBrowsingDetailItem);
   if (preferenceName == prefs::kSafeBrowsingEnabled ||
       preferenceName == prefs::kSafeBrowsingEnhanced) {
     _safeBrowsingDetailItem.detailText = [self safeBrowsingDetailText];
@@ -403,9 +553,15 @@ const char kSyncSettingsURL[] = "settings://open_sync";
 #pragma mark - BooleanObserver
 
 - (void)booleanDidChange:(id<ObservableBoolean>)observableBoolean {
-  // Update the cell.
+  // Update the cells.
   self.incognitoReauthItem.on = self.incognitoReauthPref.value;
   [self reconfigureCellsForItems:@[ self.incognitoReauthItem ]];
+
+  self.HTTPSOnlyModeItem.on = self.HTTPSOnlyModePref.value;
+  [self reconfigureCellsForItems:@[ self.HTTPSOnlyModeItem ]];
+
+  self.incognitoInterstitialItem.on = self.incognitoInterstitialPref.value;
+  [self reconfigureCellsForItems:@[ self.incognitoInterstitialItem ]];
 }
 
 #pragma mark - TableViewLinkHeaderFooterItemDelegate
@@ -422,10 +578,91 @@ const char kSyncSettingsURL[] = "settings://open_sync";
   }
 }
 
-#pragma mark - private
+#pragma mark - PopoverLabelViewControllerDelegate
+
+- (void)didTapLinkURL:(NSURL*)URL {
+  [super view:nil didTapLinkURL:[[CrURL alloc] initWithNSURL:URL]];
+}
+
+#pragma mark - Private
+
+// Called when the user taps on the information button of the disabled Incognito
+// reauth setting's UI cell.
+- (void)didTapIncognitoReauthDisabledInfoButton:(UIButton*)buttonView {
+  NSString* popoverMessage =
+      IsIncognitoModeDisabled(_browserState->GetPrefs())
+          ? l10n_util::GetNSString(IDS_IOS_SNACKBAR_MESSAGE_ICOGNITO_DISABLED)
+          : l10n_util::GetNSString(
+                IDS_IOS_INCOGNITO_REAUTH_SET_UP_PASSCODE_HINT);
+  InfoPopoverViewController* popover =
+      IsIncognitoModeDisabled(_browserState->GetPrefs())
+          ? [[EnterpriseInfoPopoverViewController alloc]
+                initWithMessage:popoverMessage
+                 enterpriseName:nil]
+          : [[InfoPopoverViewController alloc] initWithMessage:popoverMessage];
+
+  [self showInfoPopover:popover forInfoButton:buttonView];
+}
+
+// Called when the user taps on the information button of the disabled Incognito
+// interstitial setting's UI cell.
+- (void)didTapIncognitoInterstitialDisabledInfoButton:(UIButton*)buttonView {
+  NSString* popoverMessage =
+      IsIncognitoModeDisabled(_browserState->GetPrefs())
+          ? l10n_util::GetNSString(IDS_IOS_SNACKBAR_MESSAGE_ICOGNITO_DISABLED)
+          : l10n_util::GetNSString(IDS_IOS_SNACKBAR_MESSAGE_ICOGNITO_FORCED);
+  EnterpriseInfoPopoverViewController* popover =
+      [[EnterpriseInfoPopoverViewController alloc]
+          initWithMessage:popoverMessage
+           enterpriseName:nil];
+
+  [self showInfoPopover:popover forInfoButton:buttonView];
+}
+
+// Shows a contextual bubble explaining that the tapped setting is managed and
+// includes a link to the chrome://management page.
+- (void)showInfoPopover:(PopoverLabelViewController*)popover
+          forInfoButton:(UIButton*)buttonView {
+  popover.delegate = self;
+
+  // Disable the button when showing the bubble.
+  // The button will be enabled when closing the bubble in
+  // (void)popoverPresentationControllerDidDismissPopover: of
+  // EnterpriseInfoPopoverViewController.
+  buttonView.enabled = NO;
+
+  // Set the anchor and arrow direction of the bubble.
+  popover.popoverPresentationController.sourceView = buttonView;
+  popover.popoverPresentationController.sourceRect = buttonView.bounds;
+  popover.popoverPresentationController.permittedArrowDirections =
+      UIPopoverArrowDirectionAny;
+
+  [self presentViewController:popover animated:YES completion:nil];
+}
+
+// Called from the HTTPS-Only Mode setting's UIControlEventTouchUpInside.
+// When this is called, `switchView` already has the updated value:
+// If the switch was off, and user taps it, when this method is called,
+// switchView.on is YES.
+- (void)HTTPSOnlyModeTapped:(UISwitch*)switchView {
+  BOOL isOn = switchView.isOn;
+  [_HTTPSOnlyModePref setValue:isOn];
+}
+
+// Called from the Incognito interstitial setting's UIControlEventTouchUpInside.
+// When this is called, `switchView` already has the updated value:
+// If the switch was off, and user taps it, when this method is called,
+// switchView.on is YES.
+- (void)incognitoInterstitialSwitchTapped:(UISwitch*)switchView {
+  self.incognitoInterstitialPref.value = switchView.on;
+  UMA_HISTOGRAM_ENUMERATION(
+      kIncognitoInterstitialSettingsActionsHistogram,
+      switchView.on ? IncognitoInterstitialSettingsActions::kEnabled
+                    : IncognitoInterstitialSettingsActions::kDisabled);
+}
 
 // Called from the reauthentication setting's UIControlEventTouchUpInside.
-// When this is called, |switchView| already has the updated value:
+// When this is called, `switchView` already has the updated value:
 // If the switch was off, and user taps it, when this method is called,
 // switchView.on is YES.
 - (void)switchTapped:(UISwitch*)switchView {
@@ -453,12 +690,6 @@ const char kSyncSettingsURL[] = "settings://open_sync";
                                  [switchView setOn:enabled animated:YES];
                                  weakSelf.incognitoReauthPref.value = enabled;
                                }];
-}
-
-// Whether the explanatory footer for the incognito reauth setting should be
-// shown. It's shown when the setting cannot be enabled due to the device state.
-- (BOOL)shouldShowReauthFooter {
-  return ![self deviceSupportsAuthentication];
 }
 
 // Checks if the device has Passcode, Face ID, or Touch ID set up.

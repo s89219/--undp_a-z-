@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #ifndef CONTENT_SHELL_BROWSER_SHELL_H_
@@ -116,7 +116,7 @@ class Shell : public WebContentsDelegate, public WebContentsObserver {
                       std::unique_ptr<WebContents> new_contents,
                       const GURL& target_url,
                       WindowOpenDisposition disposition,
-                      const gfx::Rect& initial_rect,
+                      const blink::mojom::WindowFeatures& window_features,
                       bool user_gesture,
                       bool* was_blocked) override;
   void LoadingStateChanged(WebContents* source,
@@ -147,7 +147,6 @@ class Shell : public WebContentsDelegate, public WebContentsObserver {
   JavaScriptDialogManager* GetJavaScriptDialogManager(
       WebContents* source) override;
 #if BUILDFLAG(IS_MAC)
-  void DidNavigatePrimaryMainFramePostCommit(WebContents* contents) override;
   bool HandleKeyboardEvent(WebContents* source,
                            const NativeWebKeyboardEvent& event) override;
 #endif
@@ -216,6 +215,9 @@ class Shell : public WebContentsDelegate, public WebContentsObserver {
 #endif
   void TitleWasSet(NavigationEntry* entry) override;
   void RenderFrameCreated(RenderFrameHost* frame_host) override;
+#if BUILDFLAG(IS_MAC)
+  void PrimaryPageChanged(content::Page& page) override;
+#endif
 
   std::unique_ptr<JavaScriptDialogManager> dialog_manager_;
 

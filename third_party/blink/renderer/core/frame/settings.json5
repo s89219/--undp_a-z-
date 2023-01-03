@@ -311,6 +311,11 @@
       initial: true,
     },
     {
+      name: "placeRTLScrollbarsOnLeftSideInMainFrame",
+      initial: false,
+      invalidate: ["ScrollbarLayout"],
+    },
+    {
       name: "webSecurityEnabled",
       initial: true,
     },
@@ -726,7 +731,7 @@
     {
       name: "viewportStyle",
       initial: "mojom::blink::ViewportStyle::kDefault",
-      invalidate: ["ViewportRule"],
+      invalidate: ["ViewportStyle"],
       type: "mojom::blink::ViewportStyle",
     },
 
@@ -770,10 +775,6 @@
     },
     {
       name: "textTrackWindowColor",
-      type: "String",
-    },
-    {
-      name: "textTrackWindowPadding",
       type: "String",
     },
     {
@@ -1054,5 +1055,10 @@
       initial: true,
       type: "bool",
     },
+    {
+      name: "modalContextMenu",
+      initial: true,
+      type: "bool",
+    }
   ],
 }

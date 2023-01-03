@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,7 +44,7 @@ struct HistogramArgs {
   const char* name;
   int minimum;
   int maximum;
-  uint32_t bucket_count;
+  size_t bucket_count;
 };
 
 // List of metrics to collect using a GroupedHistogram.
@@ -140,7 +140,7 @@ class GroupedHistogram : public base::Histogram {
 void PreregisterHistogram(const char* name,
                           GroupedHistogram::Sample minimum,
                           GroupedHistogram::Sample maximum,
-                          uint32_t bucket_count,
+                          size_t bucket_count,
                           int32_t flags) {
   base::StringPiece name_piece(name);
 

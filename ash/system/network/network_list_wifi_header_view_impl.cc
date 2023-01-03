@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,17 +41,20 @@ void NetworkListWifiHeaderViewImpl::AddExtraButtons() {
   std::unique_ptr<IconButton> join_wifi_button = std::make_unique<IconButton>(
       base::BindRepeating(&NetworkListWifiHeaderViewImpl::JoinWifiButtonPressed,
                           weak_factory_.GetWeakPtr()),
-      IconButton::Type::kSmall, &vector_icons::kWifiAddIcon,
+      IconButton::Type::kMedium, &vector_icons::kWifiAddIcon,
       IDS_ASH_STATUS_TRAY_OTHER_WIFI);
 
   join_wifi_button.get()->SetID(kJoinWifiButtonId);
   join_wifi_button_ = join_wifi_button.get();
-  container()->AddView(TriView::Container::END, join_wifi_button.release());
-};
+  container()->AddViewAt(TriView::Container::END, join_wifi_button.release(),
+                         /*index=*/0);
+}
 
-void NetworkListWifiHeaderViewImpl::SetToggleState(bool enabled, bool is_on) {
+void NetworkListWifiHeaderViewImpl::SetToggleState(bool enabled,
+                                                   bool is_on,
+                                                   bool animate_toggle) {
   join_wifi_button_->SetEnabled(enabled && is_on);
-  NetworkListNetworkHeaderView::SetToggleState(enabled, is_on);
+  NetworkListNetworkHeaderView::SetToggleState(enabled, is_on, animate_toggle);
 }
 
 void NetworkListWifiHeaderViewImpl::OnToggleToggled(bool is_on) {

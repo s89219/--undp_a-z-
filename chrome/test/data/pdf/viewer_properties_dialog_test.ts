@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,15 +46,15 @@ const tests = [
       ['author', 'Chromium Authors'],
       ['subject', 'Testing'],
       ['keywords', 'testing,chromium,pdfium,document,info'],
-      ['created', '2/5/20, 7:39:12 AM'],
-      ['modified', '2/6/20, 1:42:34 AM'],
+      ['created', '2/5/20, 7:39:12\u202fAM'],
+      ['modified', '2/6/20, 1:42:34\u202fAM'],
       ['application', 'Your Preferred Text Editor'],
       ['pdf-producer', 'fixup_pdf_template.py'],
       ['pdf-version', '1.7'],
       ['page-count', '1'],
       ['page-size', '2.78 × 2.78 in (square)'],
       ['fast-web-view', 'No'],
-    ] as [string, string][])
+    ] as Array<[string, string]>)
         .forEach(([field, expectedValue]) => assertField(field, expectedValue));
 
     await ensurePropertiesDialogClose();

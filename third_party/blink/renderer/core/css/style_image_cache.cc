@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,8 @@ StyleFetchedImage* StyleImageCache::CacheStyleImage(Document& document,
   if (result.is_new_entry || !result.stored_value->value) {
     result.stored_value->value = MakeGarbageCollected<StyleFetchedImage>(
         ImageResourceContent::Fetch(params, document.Fetcher()), document,
-        params.GetImageRequestBehavior() == FetchParameters::kDeferImageLoad,
+        params.GetImageRequestBehavior() ==
+            FetchParameters::ImageRequestBehavior::kDeferImageLoad,
         origin_clean == OriginClean::kTrue, is_ad_related, params.Url());
   }
   return result.stored_value->value;

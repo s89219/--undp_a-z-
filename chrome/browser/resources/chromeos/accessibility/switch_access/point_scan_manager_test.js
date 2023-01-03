@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@ SwitchAccessPointScanManagerTest = class extends SwitchAccessE2ETest {
   }
 };
 
-TEST_F(
+AX_TEST_F(
     'SwitchAccessPointScanManagerTest', 'PointScanLeftClick', async function() {
       const website =
           '<input type=checkbox style="width: 800px; height: 800px;">';
@@ -51,8 +51,9 @@ TEST_F(
       await new Promise(verifyChecked(false));
     });
 
-TEST_F(
-    'SwitchAccessPointScanManagerTest', 'PointScanRightClick',
+// TODO(crbug.com/1284450): Flaky.
+AX_TEST_F(
+    'SwitchAccessPointScanManagerTest', 'DISABLED_PointScanRightClick',
     async function() {
       const website = '<p>Kittens r cute</p>';
       const rootWebArea = await this.runWithLoadedTree(website);
@@ -81,7 +82,7 @@ TEST_F(
 
 // Verifies that chrome.accessibilityPrivate.setFocusRings() is not called when
 // point scanning is running.
-TEST_F(
+AX_TEST_F(
     'SwitchAccessPointScanManagerTest', 'PointScanNoFocusRings',
     async function() {
       const sleep = () => {
@@ -92,7 +93,7 @@ TEST_F(
       const rootWebArea = await this.runWithLoadedTree(site);
       let setFocusRingsCallCount = 0;
       // Mock this API to track how many times it's called.
-      chrome.accessibilityPrivate.setFocusRings = (focusRings) => {
+      chrome.accessibilityPrivate.setFocusRings = focusRings => {
         setFocusRingsCallCount += 1;
       };
       assertEquals(0, setFocusRingsCallCount);

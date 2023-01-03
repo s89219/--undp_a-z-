@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,8 @@
 #include "ui/views/controls/link.h"
 #include "ui/views/view.h"
 #include "url/gurl.h"
+
+using QueryReason = content_settings::CookieSettings::QueryReason;
 
 class CookieControlsBubbleViewTest : public DialogBrowserTest {
  public:
@@ -95,7 +97,7 @@ class CookieControlsBubbleViewTest : public DialogBrowserTest {
   PageActionIconView* cookie_controls_icon() { return cookie_controls_icon_; }
 
  private:
-  raw_ptr<PageActionIconView> cookie_controls_icon_;
+  raw_ptr<PageActionIconView, DanglingUntriaged> cookie_controls_icon_;
 };
 
 // Test that cookie icon is not shown when cookies are not blocked.
@@ -116,14 +118,16 @@ IN_PROC_BROWSER_TEST_F(CookieControlsBubbleViewTest, MAYBE_NotWorkingClicked) {
   // Block 3p cookies.
   SetThirdPartyCookieBlocking(true);
   GURL origin = embedded_test_server()->GetURL("a.com", "/");
-  EXPECT_FALSE(cookie_settings()->IsThirdPartyAccessAllowed(origin, nullptr));
+  EXPECT_FALSE(cookie_settings()->IsThirdPartyAccessAllowed(
+      origin, nullptr, QueryReason::kCookies));
 
   // Open bubble.
   ShowUi("NotWorkingClicked");
 
   // Allow cookies for this site by accepting bubble.
   AcceptBubble();
-  EXPECT_TRUE(cookie_settings()->IsThirdPartyAccessAllowed(origin, nullptr));
+  EXPECT_TRUE(cookie_settings()->IsThirdPartyAccessAllowed(
+      origin, nullptr, QueryReason::kCookies));
 }
 
 // Test opening cookie controls bubble while 3p cookies are allowed for this
@@ -134,28 +138,31 @@ IN_PROC_BROWSER_TEST_F(CookieControlsBubbleViewTest, BlockingDisabled) {
   GURL origin = embedded_test_server()->GetURL("a.com", "/");
   cookie_settings()->SetThirdPartyCookieSetting(
       origin, ContentSetting::CONTENT_SETTING_ALLOW);
-  EXPECT_TRUE(cookie_settings()->IsThirdPartyAccessAllowed(origin, nullptr));
+  EXPECT_TRUE(cookie_settings()->IsThirdPartyAccessAllowed(
+      origin, nullptr, QueryReason::kCookies));
 
   // Show bubble.
   ShowUi("");
 
   // Block cookies again by accepting the bubble.
   AcceptBubble();
-  EXPECT_FALSE(cookie_settings()->IsThirdPartyAccessAllowed(origin, nullptr));
+  EXPECT_FALSE(cookie_settings()->IsThirdPartyAccessAllowed(
+      origin, nullptr, QueryReason::kCookies));
 }
 
 // ==================== Pixel tests ====================
 
 // Test opening cookie controls bubble.
-// TODO(https://crbug.com/1309905):  Flakily fails on multiple platforms 
+// TODO(https://crbug.com/1309905):  Flakily fails on multiple platforms
 IN_PROC_BROWSER_TEST_F(CookieControlsBubbleViewTest, DISABLED_InvokeUi_CookiesBlocked) {
   SetThirdPartyCookieBlocking(true);
   ShowAndVerifyUi();
 }
 
 // Test opening cookie controls bubble and clicking on "not working" link.
+// TODO(https://crbug.com/1332525): Flaky on all platforms.
 IN_PROC_BROWSER_TEST_F(CookieControlsBubbleViewTest,
-                       InvokeUi_NotWorkingClicked) {
+                       DISABLED_InvokeUi_NotWorkingClicked) {
   // Block 3p cookies.
   SetThirdPartyCookieBlocking(true);
 

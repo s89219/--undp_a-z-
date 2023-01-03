@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,7 +64,7 @@ TEST_F(CaptivePortalRoutineTest, TestNoCaptivePortal) {
 // Test whether no active networks is reported correctly.
 TEST_F(CaptivePortalRoutineTest, TestNoActiveNetworks) {
   base::RunLoop run_loop;
-  SetUpWiFi(shill::kStateOffline);
+  SetUpWiFi(shill::kStateIdle);
   std::vector<mojom::CaptivePortalProblem> expected_problems = {
       mojom::CaptivePortalProblem::kNoActiveNetworks};
   captive_portal_routine()->RunRoutine(

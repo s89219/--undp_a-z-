@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,6 +28,10 @@ class PlayExtras : public SourceExtras {
   PlayExtras& operator=(const PlayExtras&) = delete;
   ~PlayExtras() override;
 
+  // Result::SourceExtras:
+  std::unique_ptr<SourceExtras> Clone() override;
+  PlayExtras* AsPlayExtras() override;
+
   const std::string& GetPackageName() const;
   const GURL& GetIconUrl() const;
   const std::u16string& GetCategory() const;
@@ -40,10 +44,6 @@ class PlayExtras : public SourceExtras {
   bool GetWasPreviouslyInstalled() const;
   bool GetContainsAds() const;
   bool GetOptimizedForChrome() const;
-
-  // Result::SourceExtras:
-  std::unique_ptr<SourceExtras> Clone() override;
-  PlayExtras* AsPlayExtras() override;
 
  private:
   std::string package_name_;

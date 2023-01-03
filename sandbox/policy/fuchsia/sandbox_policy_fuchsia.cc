@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,13 +12,17 @@
 #include <fuchsia/buildinfo/cpp/fidl.h>
 #include <fuchsia/camera3/cpp/fidl.h>
 #include <fuchsia/fonts/cpp/fidl.h>
+#include <fuchsia/hwinfo/cpp/fidl.h>
 #include <fuchsia/intl/cpp/fidl.h>
+#include <fuchsia/kernel/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
 #include <fuchsia/media/cpp/fidl.h>
 #include <fuchsia/mediacodec/cpp/fidl.h>
 #include <fuchsia/memorypressure/cpp/fidl.h>
 #include <fuchsia/net/interfaces/cpp/fidl.h>
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <fuchsia/tracing/perfetto/cpp/fidl.h>
+#include <fuchsia/tracing/provider/cpp/fidl.h>
 #include <fuchsia/ui/scenic/cpp/fidl.h>
 #include <lib/sys/cpp/component_context.h>
 #include <lib/sys/cpp/service_directory.h>
@@ -75,8 +79,11 @@ struct SandboxConfig {
 // clang-format off
 constexpr auto kMinimalServices = base::make_span((const char* const[]){
     // TODO(crbug.com/1286960): Remove this and/or intl below if an alternative
-    // solution does not require access to the service in all processes.
+    // solution does not require access to the service in all processes. For now
+    // these services are made available everywhere because they are required by
+    // base::SysInfo.
     fuchsia::buildinfo::Provider::Name_,
+    fuchsia::hwinfo::Product::Name_,
 
 // DebugData service is needed only for profiling.
 #if BUILDFLAG(CLANG_PROFILING)
@@ -85,6 +92,7 @@ constexpr auto kMinimalServices = base::make_span((const char* const[]){
 
     fuchsia::intl::PropertyProvider::Name_,
     fuchsia::logger::LogSink::Name_,
+    fuchsia::tracing::perfetto::ProducerConnector::Name_,
 });
 // clang-format on
 
@@ -98,8 +106,10 @@ constexpr SandboxConfig kGpuConfig = {
     base::make_span((const char* const[]){
         // TODO(crbug.com/1224707): Use the fuchsia.scheduler API instead.
         fuchsia::media::ProfileProvider::Name_,
+        fuchsia::mediacodec::CodecFactory::Name_,
         fuchsia::sysmem::Allocator::Name_,
         "fuchsia.vulkan.loader.Loader",
+        fuchsia::tracing::provider::Registry::Name_,
         fuchsia::ui::composition::Allocator::Name_,
         fuchsia::ui::composition::Flatland::Name_,
         fuchsia::ui::scenic::Scenic::Name_,
@@ -109,6 +119,7 @@ constexpr SandboxConfig kGpuConfig = {
 
 constexpr SandboxConfig kNetworkConfig = {
     base::make_span((const char* const[]){
+        "fuchsia.device.NameProvider",
         "fuchsia.net.name.Lookup",
         fuchsia::net::interfaces::State::Name_,
         "fuchsia.posix.socket.Provider",
@@ -119,9 +130,9 @@ constexpr SandboxConfig kNetworkConfig = {
 constexpr SandboxConfig kRendererConfig = {
     base::make_span((const char* const[]){
         fuchsia::fonts::Provider::Name_,
+        fuchsia::kernel::VmexResource::Name_,
         // TODO(crbug.com/1224707): Use the fuchsia.scheduler API instead.
         fuchsia::media::ProfileProvider::Name_,
-        fuchsia::mediacodec::CodecFactory::Name_,
         fuchsia::memorypressure::Provider::Name_,
         fuchsia::sysmem::Allocator::Name_,
         fuchsia::ui::composition::Allocator::Name_,
@@ -138,7 +149,8 @@ constexpr SandboxConfig kVideoCaptureConfig = {
 };
 
 constexpr SandboxConfig kServiceWithJitConfig = {
-    base::span<const char* const>(),
+    base::make_span(
+        (const char* const[]){fuchsia::kernel::VmexResource::Name_}),
     kAmbientMarkVmoAsExecutable,
 };
 

@@ -120,6 +120,7 @@ class CORE_EXPORT ContentSecurityPolicyDelegate : public GarbageCollectedMixin {
   virtual void AddConsoleMessage(ConsoleMessage*) = 0;
   virtual void AddInspectorIssue(AuditsIssue) = 0;
   virtual void DisableEval(const String& error_message) = 0;
+  virtual void SetWasmEvalErrorMessage(const String& error_message) = 0;
   virtual void ReportBlockedScriptExecutionToInspector(
       const String& directive_text) = 0;
   virtual void DidAddContentSecurityPolicies(
@@ -139,6 +140,7 @@ class CORE_EXPORT ContentSecurityPolicy final
     kNavigation,
     kScript,
     kScriptAttribute,
+    kScriptSpeculationRules,  // TODO(https://crbug.com/1382361): Standardize.
     kStyle,
     kStyleAttribute
   };
@@ -320,7 +322,6 @@ class CORE_EXPORT ContentSecurityPolicy final
       ContentSecurityPolicyViolationType,
       std::unique_ptr<SourceLocation>,
       LocalFrame* = nullptr,
-      RedirectStatus = RedirectStatus::kFollowedRedirect,
       Element* = nullptr,
       const String& source = g_empty_string,
       const String& source_prefix = g_empty_string,
@@ -341,6 +342,7 @@ class CORE_EXPORT ContentSecurityPolicy final
   void RequireTrustedTypes();
   bool IsRequireTrustedTypes() const { return require_trusted_types_; }
   String EvalDisabledErrorMessage() const;
+  String WasmEvalDisabledErrorMessage() const;
 
   // Upgrade-Insecure-Requests and Block-All-Mixed-Content are represented in
   // |m_insecureRequestPolicy|
@@ -391,18 +393,6 @@ class CORE_EXPORT ContentSecurityPolicy final
   }
 
   bool HasPolicyFromSource(network::mojom::ContentSecurityPolicySource) const;
-
-  static bool IsScriptDirective(CSPDirectiveName directive_type) {
-    return (directive_type == CSPDirectiveName::ScriptSrc ||
-            directive_type == CSPDirectiveName::ScriptSrcAttr ||
-            directive_type == CSPDirectiveName::ScriptSrcElem);
-  }
-
-  static bool IsStyleDirective(CSPDirectiveName directive_type) {
-    return (directive_type == CSPDirectiveName::StyleSrc ||
-            directive_type == CSPDirectiveName::StyleSrcAttr ||
-            directive_type == CSPDirectiveName::StyleSrcElem);
-  }
 
   void Count(WebFeature feature) const;
 
@@ -484,6 +474,7 @@ class CORE_EXPORT ContentSecurityPolicy final
   network::mojom::blink::WebSandboxFlags sandbox_mask_;
   bool require_trusted_types_;
   String disable_eval_error_message_;
+  String disable_wasm_eval_error_message_;
   mojom::blink::InsecureRequestPolicy insecure_request_policy_;
 
   bool supports_wasm_eval_ = false;

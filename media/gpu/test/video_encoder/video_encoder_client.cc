@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "gpu/config/gpu_driver_bug_workarounds.h"
 #include "gpu/config/gpu_preferences.h"
-#include "gpu/ipc/service/gpu_memory_buffer_factory.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/bitrate.h"
 #include "media/base/media_log.h"
@@ -53,7 +52,7 @@ VideoEncoderClientConfig::VideoEncoderClientConfig(
     VideoCodecProfile output_profile,
     const std::vector<VideoEncodeAccelerator::Config::SpatialLayer>&
         spatial_layers,
-    const VideoBitrateAllocation& bitrate,
+    const VideoBitrateAllocation& bitrate_allocation,
     bool reverse)
     : output_profile(output_profile),
       output_resolution(video->Resolution()),
@@ -63,7 +62,7 @@ VideoEncoderClientConfig::VideoEncoderClientConfig(
       num_spatial_layers(
           std::max(spatial_layers.size(), static_cast<size_t>(1u))),
       spatial_layers(spatial_layers),
-      bitrate(bitrate),
+      bitrate_allocation(bitrate_allocation),
       framerate(video->FrameRate()),
       num_frames_to_encode(video->NumFrames()),
       reverse(reverse) {}
@@ -158,7 +157,6 @@ void VideoEncoderStats::Reset() {
 VideoEncoderClient::VideoEncoderClient(
     const VideoEncoder::EventCallback& event_cb,
     std::vector<std::unique_ptr<BitstreamProcessor>> bitstream_processors,
-    gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory,
     const VideoEncoderClientConfig& config)
     : event_cb_(event_cb),
       bitstream_processors_(std::move(bitstream_processors)),
@@ -167,8 +165,7 @@ VideoEncoderClient::VideoEncoderClient(
       encoder_client_state_(VideoEncoderClientState::kUninitialized),
       current_stats_(encoder_client_config_.framerate,
                      config.num_temporal_layers,
-                     config.num_spatial_layers),
-      gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {
+                     config.num_spatial_layers) {
   DETACH_FROM_SEQUENCE(encoder_client_sequence_checker_);
 
   weak_this_ = weak_this_factory_.GetWeakPtr();
@@ -184,11 +181,9 @@ VideoEncoderClient::~VideoEncoderClient() {
 std::unique_ptr<VideoEncoderClient> VideoEncoderClient::Create(
     const VideoEncoder::EventCallback& event_cb,
     std::vector<std::unique_ptr<BitstreamProcessor>> bitstream_processors,
-    gpu::GpuMemoryBufferFactory* const gpu_memory_buffer_factory,
     const VideoEncoderClientConfig& config) {
-  return base::WrapUnique(
-      new VideoEncoderClient(event_cb, std::move(bitstream_processors),
-                             gpu_memory_buffer_factory, config));
+  return base::WrapUnique(new VideoEncoderClient(
+      event_cb, std::move(bitstream_processors), config));
 }
 
 bool VideoEncoderClient::Initialize(const Video* video) {
@@ -321,8 +316,7 @@ void VideoEncoderClient::RequireBitstreamBuffers(
       encoder_client_config_.input_storage_type ==
               VideoEncodeAccelerator::Config::StorageType::kGpuMemoryBuffer
           ? VideoFrame::STORAGE_GPU_MEMORY_BUFFER
-          : VideoFrame::STORAGE_MOJO_SHARED_BUFFER,
-      gpu_memory_buffer_factory_);
+          : VideoFrame::STORAGE_SHMEM);
 
   output_buffer_size_ = output_buffer_size;
 
@@ -352,9 +346,7 @@ VideoEncoderClient::CreateBitstreamRef(
   auto it = bitstream_buffers_.find(bitstream_buffer_id);
   LOG_ASSERT(it != bitstream_buffers_.end());
   auto decoder_buffer = DecoderBuffer::FromSharedMemoryRegion(
-      base::UnsafeSharedMemoryRegion::TakeHandleForSerialization(
-          it->second.Duplicate()),
-      0u /* offset */, metadata.payload_size_bytes);
+      it->second.Duplicate(), 0u /* offset */, metadata.payload_size_bytes);
   if (!decoder_buffer)
     return nullptr;
   decoder_buffer->set_timestamp(base::Microseconds(frame_index_));
@@ -465,7 +457,10 @@ void VideoEncoderClient::BitstreamBufferProcessed(int32_t bitstream_buffer_id) {
   encoder_->UseOutputBitstreamBuffer(std::move(bitstream_buffer));
 }
 
-void VideoEncoderClient::NotifyError(VideoEncodeAccelerator::Error error) {}
+void VideoEncoderClient::NotifyError(VideoEncodeAccelerator::Error error) {
+  LOG(ERROR) << "NotifyError() is called: " << static_cast<int>(error);
+  FireEvent(VideoEncoder::EncoderEvent::kError);
+}
 
 void VideoEncoderClient::NotifyEncoderInfoChange(const VideoEncoderInfo& info) {
 }
@@ -483,7 +478,7 @@ void VideoEncoderClient::CreateEncoderTask(const Video* video,
   const VideoEncodeAccelerator::Config config(
       video_->PixelFormat(), encoder_client_config_.output_resolution,
       encoder_client_config_.output_profile,
-      Bitrate::ConstantBitrate(encoder_client_config_.bitrate.GetSumBps()),
+      encoder_client_config_.bitrate_allocation.GetSumBitrate(),
       encoder_client_config_.framerate, absl::nullopt /* gop_length */,
       absl::nullopt /* h264_output_level*/, false /* is_constrained_h264 */,
       encoder_client_config_.input_storage_type,
@@ -491,7 +486,8 @@ void VideoEncoderClient::CreateEncoderTask(const Video* video,
       encoder_client_config_.spatial_layers);
 
   encoder_ = GpuVideoEncodeAcceleratorFactory::CreateVEA(
-      config, this, gpu::GpuPreferences(), gpu::GpuDriverBugWorkarounds());
+      config, this, gpu::GpuPreferences(), gpu::GpuDriverBugWorkarounds(),
+      gpu::GPUInfo::GPUDevice());
   *success = (encoder_ != nullptr);
 
   // Initialization is continued once the encoder notifies us of the coded size

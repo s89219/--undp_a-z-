@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,8 @@ public class ChromeNextTabPolicySupplier implements NextTabPolicySupplier {
     @Override
     public @NextTabPolicy Integer get() {
         if (mLayoutStateProvider != null
-                && mLayoutStateProvider.isLayoutVisible(LayoutType.TAB_SWITCHER)) {
+                && (mLayoutStateProvider.isLayoutVisible(LayoutType.TAB_SWITCHER)
+                        || mLayoutStateProvider.isLayoutVisible(LayoutType.START_SURFACE))) {
             return NextTabPolicy.LOCATIONAL;
         } else {
             return NextTabPolicy.HIERARCHICAL;

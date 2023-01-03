@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,8 +41,8 @@
 #include "third_party/blink/public/mojom/sms/webotp_service.mojom-shared.h"
 #include "third_party/blink/public/mojom/sms/webotp_service.mojom.h"
 
-using base::BindLambdaForTesting;
 using absl::optional;
+using base::BindLambdaForTesting;
 using blink::mojom::SmsStatus;
 using blink::mojom::WebOTPService;
 using std::string;
@@ -90,16 +90,16 @@ class Service {
     // up `service_`. A normal std::unique_ptr<T> is not allowed here, since a
     // DocumentService implementation must be deleted by calling one of the
     // `*AndDeleteThis()` methods.
-    service_ = new WebOTPService(&fetcher_, OriginList{origin},
-                                 web_contents->GetMainFrame(),
-                                 service_remote_.BindNewPipeAndPassReceiver());
+    service_ = &WebOTPService::CreateForTesting(
+        &fetcher_, OriginList{origin}, *web_contents->GetPrimaryMainFrame(),
+        service_remote_.BindNewPipeAndPassReceiver());
     service_->SetConsentHandlerForTesting(consent_handler_.get());
   }
 
  public:
   explicit Service(WebContents* web_contents)
       : Service(web_contents,
-                web_contents->GetMainFrame()->GetLastCommittedOrigin(),
+                web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
                 /* avoid showing user prompts */
                 std::make_unique<NoopUserConsentHandler>()) {}
 
@@ -549,7 +549,7 @@ class ServiceWithPrompt : public Service {
  public:
   explicit ServiceWithPrompt(WebContents* web_contents)
       : Service(web_contents,
-                web_contents->GetMainFrame()->GetLastCommittedOrigin(),
+                web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
                 std::make_unique<NiceMock<MockUserConsentHandler>>()) {
     mock_handler_ =
         static_cast<NiceMock<MockUserConsentHandler>*>(consent_handler());
@@ -755,7 +755,7 @@ TEST_F(WebOTPServiceTest, SecondRequestWhilePrompt) {
 
   callback_loop1.Run();
 
-  base::ThreadTaskRunnerHandle::Get()->PostTaskAndReply(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTaskAndReply(
       FROM_HERE, BindLambdaForTesting([&]() {
         service.MakeRequest(BindLambdaForTesting(
             [&callback_loop2](SmsStatus status, const optional<string>& otp) {

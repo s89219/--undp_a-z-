@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,6 +37,7 @@
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/uninstall_reason.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_urls.h"
 #include "ui/base/window_open_disposition.h"
@@ -87,7 +88,7 @@ void LacrosExtensionAppsController::SetPublisher(
 
 void LacrosExtensionAppsController::Uninstall(
     const std::string& app_id,
-    apps::mojom::UninstallSource uninstall_source,
+    apps::UninstallSource uninstall_source,
     bool clear_site_data,
     bool report_abuse) {
   Profile* profile = nullptr;
@@ -160,6 +161,24 @@ void LacrosExtensionAppsController::LoadIcon(const std::string& app_id,
         icon_type, size_hint_in_dip, profile, extension->id(),
         static_cast<apps::IconEffects>(icon_key->icon_effects),
         std::move(callback));
+    return;
+  }
+
+  // On failure, we still run the callback, with the zero IconValue.
+  std::move(callback).Run(std::make_unique<apps::IconValue>());
+}
+
+void LacrosExtensionAppsController::GetCompressedIcon(
+    const std::string& app_id,
+    int32_t size_in_dip,
+    ui::ResourceScaleFactor scale_factor,
+    apps::LoadIconCallback callback) {
+  Profile* profile = nullptr;
+  const extensions::Extension* extension = nullptr;
+  bool success = lacros_extensions_util::DemuxId(app_id, &profile, &extension);
+  if (success) {
+    GetChromeAppCompressedIconData(profile, app_id, size_in_dip, scale_factor,
+                                   std::move(callback));
     return;
   }
 
@@ -299,12 +318,14 @@ void LacrosExtensionAppsController::FinallyLaunch(
   auto params = apps::ConvertCrosapiToLaunchParams(launch_params, profile);
   params.app_id = extension->id();
 
-  if (which_type_.IsChromeApps()) {
+  if (which_type_.IsChromeApps() ||
+      extension_misc::IsQuickOfficeExtension(extension->id())) {
     OpenApplication(profile, std::move(params));
 
     // TODO(https://crbug.com/1225848): Store the resulting instance token,
     // which will be used to close the instance at a later point in time.
     result->instance_id = base::UnguessableToken::Create();
+    result->state = crosapi::mojom::LaunchResultState::kSuccess;
     std::move(callback).Run(std::move(result));
 
   } else if (which_type_.IsExtensions()) {
@@ -341,15 +362,18 @@ void LacrosExtensionAppsController::FinallyLaunch(
 
   } else {
     NOTREACHED();
+    std::move(callback).Run(std::move(result));
   }
 }
 
 void LacrosExtensionAppsController::OnExecuteFileBrowserHandlerComplete(
     crosapi::mojom::LaunchResultPtr result,
     LaunchCallback callback,
-    bool /*success*/) {
+    bool success) {
   // TODO(https://crbug.com/1225848): Store the resulting instance token,
   // which will be used to close the instance at a later point in time.
   result->instance_id = base::UnguessableToken::Create();
+  result->state = success ? crosapi::mojom::LaunchResultState::kSuccess
+                          : crosapi::mojom::LaunchResultState::kFailed;
   std::move(callback).Run(std::move(result));
 }

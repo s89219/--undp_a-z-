@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chromeos/crosapi/mojom/metrics_reporting.mojom.h"
 #include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #include "content/public/test/browser_test.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -47,9 +48,9 @@ IN_PROC_BROWSER_TEST_F(MetricsReportingLacrosBrowserTest, Basics) {
   // We don't assert the initial metrics state because it might vary depending
   // on the ash build type (official vs. not).
   const bool ash_metrics_enabled =
-      lacros_service->init_params()->ash_metrics_enabled;
+      chromeos::BrowserParamsProxy::Get()->AshMetricsEnabled();
   const absl::optional<std::string> ash_metrics_client_id =
-      lacros_service->init_params()->metrics_service_client_id;
+      chromeos::BrowserParamsProxy::Get()->MetricsServiceClientId();
 
   mojo::Remote<mojom::MetricsReporting> metrics_reporting;
   lacros_service->BindMetricsReporting(

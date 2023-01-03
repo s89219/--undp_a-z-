@@ -2,6 +2,7 @@
   :host {
     display: flex;
     flex-direction: column;
+    width: fit-content;
     --tabs-background-color: #fbfbfb;
     --tabs-border-color: #c8c8c8;
     --tabs-hover-text-color: black;
@@ -17,6 +18,12 @@
     padding-top: 14px;
   }
 
+  :host([sticky-tabs]) #tablist {
+    position: sticky;
+    top: 0;
+    z-index: var(--cr-tab-box-tabs-z-index, 1);
+  }
+
   #tablist ::slotted(*) {
     background: var(--tabs-background-color);
     border: 1px solid var(--tabs-background-color);
@@ -25,7 +32,6 @@
     cursor: default;
     display: block;
     margin-inline-start: 0;
-    min-width: 0;
     padding: 4px 9px 4px 10px;
     text-align: center;
     transition: none;
@@ -62,22 +68,23 @@
     box-shadow: none;
     display: flex;
     flex: 1;
+    overflow: hidden;
     padding: 0 20px;
   }
 
-  #tabpanels ::slotted([slot=panels]) {
+  #tabpanels ::slotted([slot=panel]) {
     display: none;
     flex: 1;
   }
 
-  #tabpanels ::slotted([slot=panels][selected]) {
+  #tabpanels ::slotted([slot=panel][selected]) {
     display: block;
   }
 </style>
 
 <div id="tablist">
-  <slot name="tabs"></slot>
+  <slot name="tab"></slot>
 </div>
 <div id="tabpanels">
-  <slot name="panels"></slot>
+  <slot name="panel"></slot>
 </div>

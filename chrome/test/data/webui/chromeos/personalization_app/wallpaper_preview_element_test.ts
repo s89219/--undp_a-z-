@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,9 @@
 import 'chrome://personalization/strings.m.js';
 import 'chrome://webui-test/mojo_webui_test_support.js';
 
-import {WallpaperPreview} from 'chrome://personalization/trusted/personalization_app.js';
-
+import {WallpaperPreview, WallpaperType} from 'chrome://personalization/js/personalization_app.js';
 import {assertEquals, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
-
-import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {baseSetup, initElement} from './personalization_app_test_utils.js';
 import {TestPersonalizationStore} from './test_personalization_store.js';
@@ -89,8 +87,10 @@ suite('WallpaperPreviewTest', function() {
 
     const img = wallpaperPreviewElement.shadowRoot!.querySelector('img');
     assertEquals(
-        `chrome://image/?${wallpaperProvider.currentWallpaper.url.url}`,
-        img!.src);
+        `chrome://personalization/wallpaper.jpg?key=${
+            wallpaperProvider.currentWallpaper.key}`,
+        img!.src,
+        'current wallpaper key is appended to url as query parameter');
   });
 
   test('shows placeholders when image fails to load', async () => {
@@ -117,5 +117,30 @@ suite('WallpaperPreviewTest', function() {
     assertNotEquals('none', placeholder.style.display);
     assertEquals(
         null, wallpaperPreviewElement.shadowRoot!.querySelector('img'));
+  });
+
+  test('shows managed icon when wallpaper is kPolicy', async () => {
+    // Start with non-managed wallpaper.
+    personalizationStore.data.wallpaper.currentSelected =
+        wallpaperProvider.currentWallpaper;
+
+    wallpaperPreviewElement = initElement(WallpaperPreview);
+    await waitAfterNextRender(wallpaperPreviewElement);
+
+    function getManagedIcon(): HTMLElement|null {
+      return wallpaperPreviewElement!.shadowRoot!.querySelector(
+          `iron-icon[icon='personalization:managed']`);
+    }
+
+    assertEquals(null, getManagedIcon(), 'no managed icon visible');
+
+    personalizationStore.data.wallpaper.currentSelected = {
+      ...personalizationStore.data.wallpaper.currentSelected,
+      type: WallpaperType.kPolicy,
+    };
+    personalizationStore.notifyObservers();
+    await waitAfterNextRender(wallpaperPreviewElement);
+
+    assertTrue(!!getManagedIcon(), 'managed icon is shown');
   });
 });

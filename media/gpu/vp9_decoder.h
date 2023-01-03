@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,8 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
+#include "media/base/video_types.h"
 #include "media/filters/vp9_parser.h"
 #include "media/gpu/accelerated_video_decoder.h"
 #include "media/gpu/vp9_picture.h"
@@ -118,7 +119,8 @@ class MEDIA_GPU_EXPORT VP9Decoder : public AcceleratedVideoDecoder {
   explicit VP9Decoder(
       std::unique_ptr<VP9Accelerator> accelerator,
       VideoCodecProfile profile,
-      const VideoColorSpace& container_color_space = VideoColorSpace());
+      const VideoColorSpace& container_color_space = VideoColorSpace(),
+      bool ignore_resolution_changes_to_smaller = false);
 
   VP9Decoder(const VP9Decoder&) = delete;
   VP9Decoder& operator=(const VP9Decoder&) = delete;
@@ -134,6 +136,8 @@ class MEDIA_GPU_EXPORT VP9Decoder : public AcceleratedVideoDecoder {
   gfx::Rect GetVisibleRect() const override;
   VideoCodecProfile GetProfile() const override;
   uint8_t GetBitDepth() const override;
+  VideoChromaSampling GetChromaSampling() const override;
+  absl::optional<gfx::HDRMetadata> GetHDRMetadata() const override;
   size_t GetRequiredNumOfPictures() const override;
   size_t GetNumReferenceFrames() const override;
 
@@ -175,6 +179,11 @@ class MEDIA_GPU_EXPORT VP9Decoder : public AcceleratedVideoDecoder {
   // Color space provided by the container.
   const VideoColorSpace container_color_space_;
 
+  // Many implementors (e.g. Intel and AMD via VA-API) will support changes of
+  // resolution to smaller without reconfiguring the driver (e.g. keeping the
+  // reference frames etc), but others won't.
+  const bool ignore_resolution_changes_to_smaller_ = false;
+
   // Reference frames currently in use.
   Vp9ReferenceFrameVector ref_frames_;
 
@@ -186,6 +195,8 @@ class MEDIA_GPU_EXPORT VP9Decoder : public AcceleratedVideoDecoder {
   VideoCodecProfile profile_;
   // Bit depth of input bitstream.
   uint8_t bit_depth_ = 0;
+  // Chroma subsampling format of input bitstream.
+  VideoChromaSampling chroma_sampling_ = VideoChromaSampling::kUnknown;
 
   // Pending picture for decode when accelerator returns kTryAgain.
   scoped_refptr<VP9Picture> pending_pic_;

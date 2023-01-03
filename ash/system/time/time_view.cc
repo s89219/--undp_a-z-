@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,9 @@
 
 #include <memory>
 
+#include "ash/constants/ash_constants.h"
 #include "ash/constants/ash_features.h"
+#include "ash/constants/ash_switches.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
@@ -31,6 +33,7 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/color/color_id.h"
 #include "ui/events/event.h"
 #include "ui/events/types/event_type.h"
 #include "ui/gfx/geometry/insets.h"
@@ -58,7 +61,7 @@ const int kVerticalClockLeftPadding = 9;
 
 // Padding between the left/right edge of the shelf and the left edge of the
 // vertical clock with date.
-const int kVerticalDateClockHorizontalPadding = 4;
+const int kVerticalDateClockHorizontalPadding = 8;
 
 // Padding on top/bottom of the vertical clock date view.
 const int kVerticalDateVerticalPadding = 2;
@@ -75,6 +78,19 @@ std::u16string FormatDate(const base::Time& time) {
   // Use 'short' month format (e.g., "Oct") followed by non-padded day of
   // month (e.g., "2", "10").
   return base::TimeFormatWithPattern(time, "LLLd");
+}
+
+// Returns the time to show by the time view.
+base::Time GetTimeToShow() {
+  if (!switches::IsStabilizeTimeDependentViewForTestsEnabled())
+    return base::Time::Now();
+
+  // The code below only runs in tests.
+  static base::Time fixed_time;
+  if (fixed_time.is_null())
+    CHECK(base::Time::FromString(kFakeNowTimeStringInPixelTest, &fixed_time));
+
+  return fixed_time;
 }
 
 }  // namespace
@@ -107,22 +123,20 @@ void VerticalDateView::OnThemeChanged() {
 }
 
 void VerticalDateView::UpdateText() {
+  const base::Time time_to_show = GetTimeToShow();
   const std::u16string new_text = calendar_utils::GetDayIntOfMonth(
-      base::Time::Now() +
-      base::Minutes(
-          calendar_utils::GetTimeDifferenceInMinutes(base::Time::Now())));
+      time_to_show + calendar_utils::GetTimeDifference(time_to_show));
   if (text_label_->GetText() == new_text)
     return;
   text_label_->SetText(new_text);
-  text_label_->SetTooltipText(base::TimeFormatFriendlyDate(base::Time::Now()));
-  text_label_->NotifyAccessibilityEvent(ax::mojom::Event::kTextChanged, true);
+  text_label_->SetTooltipText(base::TimeFormatFriendlyDate(time_to_show));
 }
 
 TimeView::TimeView(ClockLayout clock_layout, ClockModel* model, Type type)
     : ActionableView(TrayPopupInkDropStyle::INSET_BOUNDS),
       model_(model),
       type_(type) {
-  SetTimer(base::Time::Now());
+  SetTimer(GetTimeToShow());
   SetFocusBehavior(FocusBehavior::NEVER);
   model_->AddObserver(this);
   switch (type_) {
@@ -133,7 +147,7 @@ TimeView::TimeView(ClockLayout clock_layout, ClockModel* model, Type type)
       SetupDateviews(clock_layout);
       break;
   }
-  UpdateTextInternal(base::Time::Now());
+  UpdateTextInternal(GetTimeToShow());
 }
 
 TimeView::~TimeView() {
@@ -178,6 +192,24 @@ void TimeView::UpdateClockLayout(ClockLayout clock_layout) {
     }
   }
   Layout();
+}
+
+void TimeView::SetTextColorId(ui::ColorId color_id,
+                              bool auto_color_readability_enabled) {
+  auto set_color_id = [&](views::Label* label) {
+    label->SetEnabledColorId(color_id);
+    label->SetAutoColorReadabilityEnabled(auto_color_readability_enabled);
+  };
+
+  switch (type_) {
+    case kTime:
+      set_color_id(horizontal_label_);
+      set_color_id(vertical_label_hours_);
+      set_color_id(vertical_label_minutes_);
+      return;
+    case kDate:
+      set_color_id(horizontal_label_date_);
+  }
 }
 
 void TimeView::SetTextColor(SkColor color,
@@ -264,7 +296,7 @@ void TimeView::OnGestureEvent(ui::GestureEvent* event) {
 }
 
 void TimeView::UpdateText() {
-  base::Time now = base::Time::Now();
+  const base::Time now = GetTimeToShow();
   UpdateTextInternal(now);
   SchedulePaint();
   SetTimer(now);
@@ -287,10 +319,9 @@ void TimeView::UpdateTextInternal(const base::Time& now) {
                         now, model_->hour_clock_type(), base::kKeepAmPm) +
                     u", " + friendly_format_date);
 
-  NotifyAccessibilityEvent(ax::mojom::Event::kTextChanged, true);
-
   switch (type_) {
     case kTime: {
+      // Calculate horizontal clock layout label.
       const std::u16string current_time =
           base::TimeFormatTimeOfDayWithHourClockType(
               now, model_->hour_clock_type(), base::kDropAmPm);
@@ -299,26 +330,17 @@ void TimeView::UpdateTextInternal(const base::Time& now) {
           horizontal_label_->GetText().length() != current_time.length();
       horizontal_label_->SetText(current_time);
       horizontal_label_->SetTooltipText(friendly_format_date);
-      horizontal_label_->NotifyAccessibilityEvent(
-          ax::mojom::Event::kTextChanged, true);
 
       // Calculate vertical clock layout labels.
-      const size_t colon_pos = current_time.find(u":");
-      std::u16string hour = current_time.substr(0, colon_pos);
-      const std::u16string minute = current_time.substr(colon_pos + 1);
+      std::u16string current_hours =
+          (model_->hour_clock_type() == base::k24HourClock)
+              ? calendar_utils::GetTwentyFourHourClockHours(now)
+              : calendar_utils::GetTwelveHourClockHours(now);
+      const std::u16string current_minutes = calendar_utils::GetMinutes(now);
 
-      // Sometimes pad single-digit hours with a zero for aesthetic reasons.
-      if (hour.length() == 1 &&
-          model_->hour_clock_type() == base::k24HourClock &&
-          !base::i18n::IsRTL())
-        hour = u"0" + hour;
+      vertical_label_hours_->SetText(current_hours);
+      vertical_label_minutes_->SetText(current_minutes);
 
-      vertical_label_hours_->SetText(hour);
-      vertical_label_minutes_->SetText(minute);
-      vertical_label_hours_->NotifyAccessibilityEvent(
-          ax::mojom::Event::kTextChanged, true);
-      vertical_label_minutes_->NotifyAccessibilityEvent(
-          ax::mojom::Event::kTextChanged, true);
       Layout();
 
       // When the `new_label` text does not have the some length as the
@@ -332,8 +354,6 @@ void TimeView::UpdateTextInternal(const base::Time& now) {
       const std::u16string current_date = FormatDate(now);
       horizontal_label_date_->SetText(current_date);
       horizontal_label_date_->SetTooltipText(friendly_format_date);
-      horizontal_label_date_->NotifyAccessibilityEvent(
-          ax::mojom::Event::kTextChanged, true);
       date_view_->UpdateText();
     }
   }
@@ -384,15 +404,15 @@ void TimeView::SetupSubviews(ClockLayout clock_layout) {
       vertical_view_->AddChildView(std::make_unique<views::Label>());
   SetupLabel(vertical_label_hours_);
   vertical_label_hours_->SetBorder(views::CreateEmptyBorder(
-      gfx::Insets::TLBR(0, 0, 0, kVerticalDateClockHorizontalPadding)));
+      gfx::Insets::VH(0, kVerticalDateClockHorizontalPadding)));
 
   vertical_label_minutes_ =
       vertical_view_->AddChildView(std::make_unique<views::Label>());
   SetupLabel(vertical_label_minutes_);
   // Pull the minutes up closer to the hours by using a negative top border.
-  vertical_label_minutes_->SetBorder(views::CreateEmptyBorder(
-      gfx::Insets::TLBR(kVerticalClockMinutesTopOffset, 0, 0,
-                        kVerticalDateClockHorizontalPadding)));
+  vertical_label_minutes_->SetBorder(views::CreateEmptyBorder(gfx::Insets::TLBR(
+      kVerticalClockMinutesTopOffset, kVerticalDateClockHorizontalPadding, 0,
+      kVerticalDateClockHorizontalPadding)));
 
   SetLayoutManager(std::make_unique<views::FillLayout>());
   AddChildView(clock_layout == ClockLayout::HORIZONTAL_CLOCK

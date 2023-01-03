@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "apps/app_lifetime_monitor.h"
 #include "base/callback_forward.h"
 #include "base/mac/scoped_cftyperef.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/apps/app_shim/app_shim_host_bootstrap_mac.h"
 #include "chrome/browser/apps/app_shim/app_shim_host_mac.h"
@@ -307,6 +308,7 @@ class AppShimManager : public AppShimHostBootstrap::Client,
   bool LoadAndLaunchApp_TryExistingProfileStates(
       const base::FilePath& profile_path,
       const LoadAndLaunchAppParams& params,
+      const std::map<base::FilePath, int>& profiles_with_handlers,
       LoadAndLaunchAppCallback* launch_callback);
   void LoadAndLaunchApp_OnProfilesAndAppReady(
       const std::vector<base::FilePath>& profile_paths_to_launch,
@@ -349,15 +351,20 @@ class AppShimManager : public AppShimHostBootstrap::Client,
   // Update the application dock menu for the specified host.
   void UpdateApplicationDockMenu(Profile* profile, ProfileState* profile_state);
 
-  std::unique_ptr<Delegate> delegate_;
-
   // Retrieve the ProfileState for a given (Profile, AppId) pair. If one
   // does not exist, create one.
   ProfileState* GetOrCreateProfileState(Profile* profile,
                                         const web_app::AppId& app_id);
 
+  // Returns a mapping of profile paths to how many of the files and urls passed
+  // in in `params` each profile can handle.
+  static std::map<base::FilePath, int> GetProfilesWithMatchingHandlers(
+      const LoadAndLaunchAppParams& params);
+
+  std::unique_ptr<Delegate> delegate_;
+
   // Weak, reset during OnBeginTearDown.
-  ProfileManager* profile_manager_ = nullptr;
+  raw_ptr<ProfileManager> profile_manager_ = nullptr;
 
   // Map from extension id to the state for that app.
   std::map<std::string, std::unique_ptr<AppState>> apps_;

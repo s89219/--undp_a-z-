@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/location.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -54,6 +53,24 @@ namespace echo_offer {
 
 void RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterDictionaryPref(prefs::kEchoCheckedOffers);
+}
+
+// Removes empty dictionaries from |dict|, potentially nested.
+// Does not modify empty lists.
+void RemoveEmptyValueDicts(base::Value::Dict& dict) {
+  auto it = dict.begin();
+  while (it != dict.end()) {
+    base::Value& value = it->second;
+    if (value.is_dict()) {
+      base::Value::Dict& sub_dict = value.GetDict();
+      RemoveEmptyValueDicts(sub_dict);
+      if (sub_dict.empty()) {
+        it = dict.erase(it);
+        continue;
+      }
+    }
+    it++;
+  }
 }
 
 }  // namespace echo_offer
@@ -111,7 +128,7 @@ EchoPrivateGetRegistrationCodeFunction::Run() {
 
 void EchoPrivateGetRegistrationCodeFunction::RespondWithResult(
     const std::string& result) {
-  Respond(OneArgument(base::Value(result)));
+  Respond(WithArguments(result));
 }
 
 EchoPrivateSetOfferInfoFunction::EchoPrivateSetOfferInfoFunction() {}
@@ -124,13 +141,12 @@ ExtensionFunction::ResponseAction EchoPrivateSetOfferInfoFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params);
 
   const std::string& service_id = params->id;
-  std::unique_ptr<base::DictionaryValue> dict =
-      params->offer_info.additional_properties.DeepCopyWithoutEmptyChildren();
+  base::Value::Dict dict = params->offer_info.additional_properties.Clone();
+  chromeos::echo_offer::RemoveEmptyValueDicts(dict);
 
   PrefService* local_state = g_browser_process->local_state();
-  DictionaryPrefUpdate offer_update(local_state, prefs::kEchoCheckedOffers);
-  offer_update->SetKey("echo." + service_id,
-                       base::Value::FromUniquePtrValue(std::move(dict)));
+  ScopedDictPrefUpdate offer_update(local_state, prefs::kEchoCheckedOffers);
+  offer_update->Set("echo." + service_id, std::move(dict));
   return RespondNow(NoArguments());
 }
 
@@ -145,17 +161,16 @@ ExtensionFunction::ResponseAction EchoPrivateGetOfferInfoFunction::Run() {
 
   const std::string& service_id = params->id;
   PrefService* local_state = g_browser_process->local_state();
-  const base::Value* offer_infos =
-      local_state->GetDictionary(prefs::kEchoCheckedOffers);
+  const base::Value::Dict& offer_infos =
+      local_state->GetDict(prefs::kEchoCheckedOffers);
 
-  const base::Value* offer_info =
-      offer_infos->FindDictKey("echo." + service_id);
-  if (!offer_info) {
+  const base::Value* offer_info = offer_infos.Find("echo." + service_id);
+  if (!offer_info || !offer_info->is_dict()) {
     return RespondNow(Error("Not found"));
   }
 
   echo_api::GetOfferInfo::Results::Result result;
-  result.additional_properties.MergeDictionary(offer_info);
+  result.additional_properties.Merge(offer_info->GetDict().Clone());
   return RespondNow(
       ArgumentList(echo_api::GetOfferInfo::Results::Create(result)));
 }
@@ -191,7 +206,7 @@ ExtensionFunction::ResponseAction EchoPrivateGetOobeTimestampFunction::Run() {
 
 void EchoPrivateGetOobeTimestampFunction::RespondWithResult(
     const std::string& timestamp) {
-  Respond(OneArgument(base::Value(timestamp)));
+  Respond(WithArguments(timestamp));
 }
 
 EchoPrivateGetUserConsentFunction::EchoPrivateGetUserConsentFunction() =
@@ -265,5 +280,5 @@ ExtensionFunction::ResponseAction EchoPrivateGetUserConsentFunction::Run() {
 }
 
 void EchoPrivateGetUserConsentFunction::Finalize(bool consent) {
-  Respond(OneArgument(base::Value(consent)));
+  Respond(WithArguments(consent));
 }

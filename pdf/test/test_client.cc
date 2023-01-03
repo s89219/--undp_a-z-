@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 
 #include "base/time/time.h"
 #include "pdf/document_layout.h"
-#include "pdf/ppapi_migration/url_loader.h"
+#include "pdf/loader/url_loader.h"
 #include "third_party/skia/include/core/SkColor.h"
 
 namespace chrome_pdf {
@@ -53,7 +53,7 @@ bool TestClient::IsPrintPreview() const {
   return false;
 }
 
-SkColor TestClient::GetBackgroundColor() {
+SkColor TestClient::GetBackgroundColor() const {
   return SK_ColorTRANSPARENT;
 }
 

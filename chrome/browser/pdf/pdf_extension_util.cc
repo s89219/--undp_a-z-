@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,10 +19,6 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "chrome/browser/ash/login/ui/login_display_host.h"
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-
 namespace pdf_extension_util {
 
 namespace {
@@ -32,7 +28,7 @@ const char kNameTag[] = "<NAME>";
 
 // Adds strings that are used both by the stand-alone PDF Viewer and the Print
 // Preview PDF Viewer.
-void AddCommonStrings(base::Value* dict) {
+void AddCommonStrings(base::Value::Dict* dict) {
   static constexpr webui::LocalizedString kPdfResources[] = {
       {"errorDialogTitle", IDS_PDF_ERROR_DIALOG_TITLE},
       {"pageLoadFailed", IDS_PDF_PAGE_LOAD_FAILED},
@@ -45,13 +41,13 @@ void AddCommonStrings(base::Value* dict) {
       {"twoUpViewEnable", IDS_PDF_TWO_UP_VIEW_ENABLE},
   };
   for (const auto& resource : kPdfResources)
-    dict->SetStringKey(resource.name, l10n_util::GetStringUTF16(resource.id));
+    dict->Set(resource.name, l10n_util::GetStringUTF16(resource.id));
 
-  dict->SetStringKey("presetZoomFactors", zoom::GetPresetZoomFactorsAsJSON());
+  dict->Set("presetZoomFactors", zoom::GetPresetZoomFactorsAsJSON());
 }
 
 // Adds strings that are used only by the stand-alone PDF Viewer.
-void AddPdfViewerStrings(base::Value* dict) {
+void AddPdfViewerStrings(base::Value::Dict* dict) {
   static constexpr webui::LocalizedString kPdfResources[] = {
     {"annotationsShowToggle", IDS_PDF_ANNOTATIONS_SHOW_TOGGLE},
     {"bookmarks", IDS_PDF_BOOKMARKS},
@@ -84,6 +80,10 @@ void AddPdfViewerStrings(base::Value* dict) {
     {"propertiesPdfVersion", IDS_PDF_PROPERTIES_PDF_VERSION},
     {"propertiesSubject", IDS_PDF_PROPERTIES_SUBJECT},
     {"propertiesTitle", IDS_PDF_PROPERTIES_TITLE},
+    {"rotationStateLabel0", IDS_PDF_ROTATION_STATE_LABEL_0},
+    {"rotationStateLabel90", IDS_PDF_ROTATION_STATE_LABEL_90},
+    {"rotationStateLabel180", IDS_PDF_ROTATION_STATE_LABEL_180},
+    {"rotationStateLabel270", IDS_PDF_ROTATION_STATE_LABEL_270},
     {"thumbnailPageAriaLabel", IDS_PDF_THUMBNAIL_PAGE_ARIA_LABEL},
     {"tooltipDocumentOutline", IDS_PDF_TOOLTIP_DOCUMENT_OUTLINE},
     {"tooltipDownload", IDS_PDF_TOOLTIP_DOWNLOAD},
@@ -147,16 +147,16 @@ void AddPdfViewerStrings(base::Value* dict) {
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   };
   for (const auto& resource : kPdfResources)
-    dict->SetStringKey(resource.name, l10n_util::GetStringUTF16(resource.id));
+    dict->Set(resource.name, l10n_util::GetStringUTF16(resource.id));
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   std::u16string edit_string = l10n_util::GetStringUTF16(IDS_EDIT);
   base::Erase(edit_string, '&');
-  dict->SetStringKey("editButton", edit_string);
+  dict->Set("editButton", edit_string);
 #endif
 
   webui::SetLoadTimeDataDefaults(g_browser_process->GetApplicationLocale(),
-                                 static_cast<base::DictionaryValue*>(dict));
+                                 dict);
 }
 
 }  // namespace
@@ -173,7 +173,7 @@ std::string GetManifest() {
   return manifest_contents;
 }
 
-void AddStrings(PdfViewerContext context, base::Value* dict) {
+void AddStrings(PdfViewerContext context, base::Value::Dict* dict) {
   AddCommonStrings(dict);
   if (context == PdfViewerContext::kPdfViewer ||
       context == PdfViewerContext::kAll) {
@@ -185,16 +185,20 @@ void AddStrings(PdfViewerContext context, base::Value* dict) {
   }
 }
 
-void AddAdditionalData(bool enable_annotations, base::Value* dict) {
+void AddAdditionalData(bool enable_printing,
+                       bool enable_annotations,
+                       base::Value::Dict* dict) {
+  // NOTE: This function should not include any data used for $i18n{}
+  // replacements. The i18n string resources should be added using AddStrings()
+  // above instead.
   bool printing_enabled = true;
   bool annotations_enabled = false;
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  // For Chrome OS, enable printing only if we are not at OOBE.
-  printing_enabled = !ash::LoginDisplayHost::default_host();
+  printing_enabled = enable_printing;
   annotations_enabled = enable_annotations;
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-  dict->SetKey("printingEnabled", base::Value(printing_enabled));
-  dict->SetKey("pdfAnnotationsEnabled", base::Value(annotations_enabled));
+  dict->Set("printingEnabled", printing_enabled);
+  dict->Set("pdfAnnotationsEnabled", annotations_enabled);
 }
 
 }  // namespace pdf_extension_util

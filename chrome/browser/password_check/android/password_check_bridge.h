@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,6 @@
 #include "chrome/browser/password_check/android/password_check_manager.h"
 #include "chrome/browser/password_check/android/password_check_ui_status.h"
 #include "chrome/browser/profiles/profile_manager.h"
-
-namespace password_manager {
-class PasswordChangeSuccessTracker;
-}  // namespace password_manager
 
 // C++ counterpart of |PasswordCheckBridge.java|. Used to mediate the
 // communication between the UI and the password check logic.
@@ -74,12 +70,6 @@ class PasswordCheckBridge : public PasswordCheckManager::Observer {
   // Called by Java when the bridge is no longer needed. Destructs itself.
   void Destroy(JNIEnv* env);
 
-  // Checks if script refreshment is finished.
-  bool AreScriptsRefreshed(JNIEnv* env) const;
-
-  // Invokes scripts refreshment.
-  void RefreshScripts(JNIEnv* env);
-
   // Called by the check manager when the saved passwords have been first loaded
   // in memory. `count` is the number of saved passwords.
   void OnSavedPasswordsFetched(int count) override;
@@ -97,22 +87,7 @@ class PasswordCheckBridge : public PasswordCheckManager::Observer {
   void OnPasswordCheckProgressChanged(int already_processed,
                                       int remaining_in_queue) override;
 
-  // Called by Java to register the start of an automated password change flow.
-  void OnAutomatedPasswordChangeStarted(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& credential);
-
-  // Called by Java to register the start of a manual password change flow.
-  void OnManualPasswordChangeStarted(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& credential);
-
  private:
-  // Wraps the call to the factory function to obtain the |KeyedService|
-  // instance for |PasswordChangeSuccessTracker|.
-  password_manager::PasswordChangeSuccessTracker*
-  GetPasswordChangeSuccessTracker();
-
   // The corresponding java object.
   base::android::ScopedJavaGlobalRef<jobject> java_bridge_;
 

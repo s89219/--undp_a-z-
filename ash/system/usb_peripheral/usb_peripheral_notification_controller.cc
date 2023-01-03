@@ -1,10 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/usb_peripheral/usb_peripheral_notification_controller.h"
 
 #include "ash/constants/ash_pref_names.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/new_window_delegate.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/resources/vector_icons/vector_icons.h"
@@ -66,7 +67,8 @@ void OnCableNotificationClicked(const std::string& notification_id,
 
   if (button_index) {
     NewWindowDelegate::GetInstance()->OpenUrl(
-        GURL(landing_page), NewWindowDelegate::OpenUrlFrom::kUserInteraction);
+        GURL(landing_page), NewWindowDelegate::OpenUrlFrom::kUserInteraction,
+        NewWindowDelegate::Disposition::kNewForegroundTab);
   }
 
   message_center::MessageCenter::Get()->RemoveNotification(notification_id,
@@ -109,7 +111,7 @@ void UsbPeripheralNotificationController::OnInvalidDpCableWarning() {
       l10n_util::GetStringUTF16(IDS_ASH_USB_NOTIFICATION_V2_LEARN_MORE)));
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kUsbPeripheralInvalidDpCableNotificationId,
           l10n_util::GetStringUTF16(
@@ -119,7 +121,8 @@ void UsbPeripheralNotificationController::OnInvalidDpCableWarning() {
           /*display_source=*/std::u16string(), GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierUsbPeripheral),
+              kNotifierUsbPeripheral,
+              NotificationCatalogName::kUSBPeripheralInvalidDpCable),
           optional,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(&OnCableNotificationClicked,
@@ -141,7 +144,7 @@ void UsbPeripheralNotificationController::OnInvalidUSB4ValidTBTCableWarning() {
       l10n_util::GetStringUTF16(IDS_ASH_USB_NOTIFICATION_V2_LEARN_MORE)));
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kUsbPeripheralInvalidUSB4ValidTBTCableNotificationId,
           l10n_util::GetStringUTF16(
@@ -151,7 +154,8 @@ void UsbPeripheralNotificationController::OnInvalidUSB4ValidTBTCableWarning() {
           /*display_source=*/std::u16string(), GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierUsbPeripheral),
+              kNotifierUsbPeripheral,
+              NotificationCatalogName::kUSBPeripheralInvalidUSB4ValidTBTCable),
           optional,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(
@@ -175,7 +179,7 @@ void UsbPeripheralNotificationController::OnInvalidUSB4CableWarning() {
       l10n_util::GetStringUTF16(IDS_ASH_USB_NOTIFICATION_V2_LEARN_MORE)));
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kUsbPeripheralInvalidUSB4CableNotificationId,
           l10n_util::GetStringUTF16(
@@ -185,7 +189,8 @@ void UsbPeripheralNotificationController::OnInvalidUSB4CableWarning() {
           /*display_source=*/std::u16string(), GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierUsbPeripheral),
+              kNotifierUsbPeripheral,
+              NotificationCatalogName::kUSBPeripheralInvalidUSB4Cable),
           optional,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(&OnCableNotificationClicked,
@@ -208,7 +213,7 @@ void UsbPeripheralNotificationController::OnInvalidTBTCableWarning() {
       l10n_util::GetStringUTF16(IDS_ASH_USB_NOTIFICATION_V2_LEARN_MORE)));
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kUsbPeripheralInvalidTBTCableNotificationId,
           l10n_util::GetStringUTF16(
@@ -218,7 +223,8 @@ void UsbPeripheralNotificationController::OnInvalidTBTCableWarning() {
           /*display_source=*/std::u16string(), GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierUsbPeripheral),
+              kNotifierUsbPeripheral,
+              NotificationCatalogName::kUSBPeripheralInvalidTBTCable),
           optional,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(&OnCableNotificationClicked,
@@ -240,7 +246,7 @@ void UsbPeripheralNotificationController::OnSpeedLimitingCableWarning() {
       l10n_util::GetStringUTF16(IDS_ASH_USB_NOTIFICATION_V2_LEARN_MORE)));
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kUsbPeripheralSpeedLimitingCableNotificationId,
           l10n_util::GetStringUTF16(
@@ -250,7 +256,8 @@ void UsbPeripheralNotificationController::OnSpeedLimitingCableWarning() {
           /*display_source=*/std::u16string(), GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierUsbPeripheral),
+              kNotifierUsbPeripheral,
+              NotificationCatalogName::kUSBPeripheralSpeedLimitingCable),
           optional,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(

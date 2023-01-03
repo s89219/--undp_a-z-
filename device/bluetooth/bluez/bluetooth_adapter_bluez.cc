@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -40,11 +39,16 @@
 #include "device/bluetooth/bluez/bluetooth_local_gatt_service_bluez.h"
 #include "device/bluetooth/bluez/bluetooth_pairing_bluez.h"
 #include "device/bluetooth/bluez/bluetooth_socket_bluez.h"
+#include "device/bluetooth/bluez/bluez_features.h"
+#if BUILDFLAG(IS_CHROMEOS)
+#include "device/bluetooth/chromeos_platform_features.h"
+#endif // BUILDFLAG(IS_CHROMEOS)
 #include "device/bluetooth/dbus/bluetooth_adapter_client.h"
 #include "device/bluetooth/dbus/bluetooth_admin_policy_client.h"
 #include "device/bluetooth/dbus/bluetooth_agent_manager_client.h"
 #include "device/bluetooth/dbus/bluetooth_agent_service_provider.h"
 #include "device/bluetooth/dbus/bluetooth_battery_client.h"
+#include "device/bluetooth/dbus/bluetooth_debug_manager_client.h"
 #include "device/bluetooth/dbus/bluetooth_device_client.h"
 #include "device/bluetooth/dbus/bluetooth_gatt_application_service_provider.h"
 #include "device/bluetooth/dbus/bluetooth_gatt_manager_client.h"
@@ -228,7 +232,7 @@ void BluetoothAdapterBlueZ::Initialize(base::OnceClosure callback) {
 
   // Can't initialize the adapter until DBus clients are ready.
   if (bluez::BluezDBusManager::Get()->IsObjectManagerSupportKnown()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&BluetoothAdapterBlueZ::Init,
                                   weak_ptr_factory_.GetWeakPtr()));
     return;
@@ -318,7 +322,7 @@ void BluetoothAdapterBlueZ::Shutdown() {
 
 BluetoothAdapterBlueZ::BluetoothAdapterBlueZ()
     : initialized_(false), dbus_is_shutdown_(false) {
-  ui_task_runner_ = base::ThreadTaskRunnerHandle::Get();
+  ui_task_runner_ = base::SingleThreadTaskRunner::GetCurrentDefault();
   socket_thread_ = device::BluetoothSocketThread::Get();
 }
 
@@ -356,12 +360,10 @@ void BluetoothAdapterBlueZ::Init() {
   DCHECK(agent_.get());
 
 #if BUILDFLAG(IS_CHROMEOS)
-  if (chromeos::features::IsBluetoothAdvertisementMonitoringEnabled()) {
-    advertisement_monitor_application_provider_ =
-        BluetoothAdvertisementMonitorApplicationServiceProvider::Create(
-            system_bus,
-            dbus::ObjectPath(kAdvertisementMonitorApplicationObjectPath));
-  }
+  advertisement_monitor_application_provider_ =
+      BluetoothAdvertisementMonitorApplicationServiceProvider::Create(
+          system_bus,
+          dbus::ObjectPath(kAdvertisementMonitorApplicationObjectPath));
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
   std::vector<dbus::ObjectPath> object_paths = bluez::BluezDBusManager::Get()
@@ -377,12 +379,49 @@ void BluetoothAdapterBlueZ::Init() {
 #endif  // BUILDFLAG(IS_CHROMEOS)
   }
   initialized_ = true;
+
+#if BUILDFLAG(IS_CHROMEOS)
+  bluez::BluezDBusManager::Get()
+      ->GetBluetoothDebugManagerClient()
+      ->SetDevCoredump(
+          base::FeatureList::IsEnabled(
+              chromeos::bluetooth::features::kBluetoothCoredump),
+          base::BindOnce(&BluetoothAdapterBlueZ::OnSetDevCoredumpSuccess,
+                         weak_ptr_factory_.GetWeakPtr()),
+          base::BindOnce(&BluetoothAdapterBlueZ::OnSetDevCoredumpError,
+                         weak_ptr_factory_.GetWeakPtr()));
+#endif // BUILDFLAG(IS_CHROMEOS)
+
+  bluez::BluezDBusManager::Get()
+      ->GetBluetoothDebugManagerClient()
+      ->SetLLPrivacy(
+          base::FeatureList::IsEnabled(bluez::features::kLinkLayerPrivacy),
+          base::BindOnce(&BluetoothAdapterBlueZ::OnSetLLPrivacySuccess,
+                         weak_ptr_factory_.GetWeakPtr()),
+          base::BindOnce(&BluetoothAdapterBlueZ::OnSetLLPrivacyError,
+                         weak_ptr_factory_.GetWeakPtr()));
+
   std::move(init_callback_).Run();
 }
 
 BluetoothAdapterBlueZ::~BluetoothAdapterBlueZ() {
   Shutdown();
 }
+
+#if BUILDFLAG(IS_CHROMEOS)
+void BluetoothAdapterBlueZ::OnSetDevCoredumpSuccess() {
+  bool flag = base::FeatureList::IsEnabled(
+      chromeos::bluetooth::features::kBluetoothCoredump);
+  BLUETOOTH_LOG(DEBUG) << "Bluetooth devcoredump state set to " << flag;
+}
+
+void BluetoothAdapterBlueZ::OnSetDevCoredumpError(
+    const std::string& error_name,
+    const std::string& error_message) {
+  BLUETOOTH_LOG(ERROR) << "Failed to update bluetooth devcoredump state: "
+                       << error_name << ": " << error_message;
+}
+#endif // BUILDFLAG(IS_CHROMEOS)
 
 std::string BluetoothAdapterBlueZ::GetAddress() const {
   if (!IsPresent())
@@ -665,7 +704,7 @@ void BluetoothAdapterBlueZ::ConnectDevice(
     const std::string& address,
     const absl::optional<device::BluetoothDevice::AddressType>& address_type,
     ConnectDeviceCallback callback,
-    ErrorCallback error_callback) {
+    ConnectDeviceErrorCallback error_callback) {
   DCHECK(bluez::BluezDBusManager::Get());
 
   absl::optional<BluetoothAdapterClient::AddressType> client_address_type;
@@ -885,6 +924,9 @@ void BluetoothAdapterBlueZ::DevicePropertyChanged(
       property_name == properties->address.name() ||
       property_name == properties->name.name() ||
       property_name == properties->paired.name() ||
+#if BUILDFLAG(IS_CHROMEOS)
+      property_name == properties->bonded.name() ||
+#endif
       property_name == properties->trusted.name() ||
       property_name == properties->connected.name() ||
       property_name == properties->uuids.name() ||
@@ -927,6 +969,12 @@ void BluetoothAdapterBlueZ::DevicePropertyChanged(
     }
     NotifyDevicePairedChanged(device_bluez, properties->paired.value());
   }
+
+#if BUILDFLAG(IS_CHROMEOS)
+  if (property_name == properties->bonded.name()) {
+    NotifyDeviceBondedChanged(device_bluez, properties->bonded.value());
+  }
+#endif
 
   // UMA connection counting
   if (property_name == properties->connected.name()) {
@@ -1124,6 +1172,18 @@ void BluetoothAdapterBlueZ::Cancel() {
   DCHECK(IsPresent());
   DCHECK(agent_.get());
   BLUETOOTH_LOG(EVENT) << "Cancel";
+}
+
+void BluetoothAdapterBlueZ::OnSetLLPrivacySuccess() {
+  bool flag = base::FeatureList::IsEnabled(bluez::features::kLinkLayerPrivacy);
+  BLUETOOTH_LOG(DEBUG) << "LL Privacy value set to " << flag;
+}
+
+void BluetoothAdapterBlueZ::OnSetLLPrivacyError(
+    const std::string& error_name,
+    const std::string& error_message) {
+  BLUETOOTH_LOG(ERROR) << "Failed to enable LL Privacy: " << error_name << ": "
+                       << error_message;
 }
 
 void BluetoothAdapterBlueZ::OnRegisterAgent() {
@@ -1522,7 +1582,7 @@ void BluetoothAdapterBlueZ::RegisterGattService(
     BLUETOOTH_LOG(ERROR)
         << "Re-registering a service that is already registered!";
     std::move(error_callback)
-        .Run(device::BluetoothGattService::GATT_ERROR_FAILED);
+        .Run(device::BluetoothGattService::GattErrorCode::kFailed);
     return;
   }
 
@@ -1548,7 +1608,7 @@ void BluetoothAdapterBlueZ::UnregisterGattService(
         << "Unregistering a service that isn't registered! path: "
         << service->object_path().value();
     std::move(error_callback)
-        .Run(device::BluetoothGattService::GATT_ERROR_FAILED);
+        .Run(device::BluetoothGattService::GattErrorCode::kFailed);
     return;
   }
 
@@ -1590,10 +1650,6 @@ std::unique_ptr<device::BluetoothLowEnergyScanSession>
 BluetoothAdapterBlueZ::StartLowEnergyScanSession(
     std::unique_ptr<device::BluetoothLowEnergyScanFilter> filter,
     base::WeakPtr<device::BluetoothLowEnergyScanSession::Delegate> delegate) {
-  if (!chromeos::features::IsBluetoothAdvertisementMonitoringEnabled()) {
-    return nullptr;
-  }
-
   DCHECK(filter);
 
   dbus::ObjectPath monitor_path = dbus::ObjectPath(
@@ -1637,9 +1693,6 @@ BluetoothAdapterBlueZ::StartLowEnergyScanSession(
 
 BluetoothAdapter::LowEnergyScanSessionHardwareOffloadingStatus
 BluetoothAdapterBlueZ::GetLowEnergyScanSessionHardwareOffloadingStatus() {
-  if (!chromeos::features::IsBluetoothAdvertisementMonitoringEnabled())
-    return LowEnergyScanSessionHardwareOffloadingStatus::kNotSupported;
-
   if (!IsPresent())
     return LowEnergyScanSessionHardwareOffloadingStatus::kUndetermined;
 
@@ -2110,10 +2163,10 @@ void BluetoothAdapterBlueZ::OnConnectDevice(
 }
 
 void BluetoothAdapterBlueZ::OnConnectDeviceError(
-    ErrorCallback error_callback,
+    ConnectDeviceErrorCallback error_callback,
     const std::string& error_name,
     const std::string& error_message) {
-  std::move(error_callback).Run();
+  std::move(error_callback).Run(error_message);
 }
 
 void BluetoothAdapterBlueZ::UpdateDeviceAdminPolicyFromAdminPolicyClient(
@@ -2184,8 +2237,7 @@ void BluetoothAdapterBlueZ::UpdateDeviceBatteryLevelFromBatteryClient(
 void BluetoothAdapterBlueZ::
     RegisterAdvertisementMonitorApplicationServiceProvider() {
   if (is_advertisement_monitor_application_provider_registered_ ||
-      !IsPresent() ||
-      !chromeos::features::IsBluetoothAdvertisementMonitoringEnabled()) {
+      !IsPresent()) {
     return;
   }
   BLUETOOTH_LOG(EVENT) << __func__;

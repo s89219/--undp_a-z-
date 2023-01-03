@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,16 +11,17 @@
 #include "chrome/browser/ash/policy/reporting/user_event_reporter_helper.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
+#include "chromeos/ash/components/login/auth/public/auth_failure.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 #include "components/user_manager/user.h"
-#include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_names.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace ash {
 namespace reporting {
+
 namespace {
 
 constexpr char kLoginLogoutReporterDictionary[] =
@@ -92,23 +93,19 @@ LoginFailureReason GetLoginFailureReasonForReport(
     case AuthFailure::NETWORK_AUTH_FAILED:
     case AuthFailure::ALLOWLIST_CHECK_FAILED:
     case AuthFailure::AUTH_DISABLED:
+    case AuthFailure::CRYPTOHOME_RECOVERY_SERVICE_ERROR:
     case AuthFailure::NUM_FAILURE_REASONS:
       return LoginFailureReason::UNKNOWN_LOGIN_FAILURE_REASON;
   }
 }
+
 }  // namespace
 
-// static
-const base::Feature
-    LoginLogoutReporter::kEnableKioskAndGuestLoginLogoutReporting{
-        "EnableKioskAndGuestLoginLogoutReporting",
-        base::FEATURE_ENABLED_BY_DEFAULT};
-
 AccountId LoginLogoutReporter::Delegate::GetLastLoginAttemptAccountId() const {
-  if (!ash::ExistingUserController::current_controller()) {
+  if (!ExistingUserController::current_controller()) {
     return EmptyAccountId();
   }
-  return ash::ExistingUserController::current_controller()
+  return ExistingUserController::current_controller()
       ->GetLastLoginAttemptAccountId();
 }
 
@@ -162,11 +159,6 @@ void LoginLogoutReporter::MaybeReportEvent(LoginLogoutRecord record,
   }
 
   const LoginLogoutSessionType session_type = GetSessionType(account_id);
-  if (!base::FeatureList::IsEnabled(kEnableKioskAndGuestLoginLogoutReporting) &&
-      (session_type == LoginLogoutSessionType::GUEST_SESSION ||
-       session_type == LoginLogoutSessionType::KIOSK_SESSION)) {
-    return;
-  }
   record.set_event_timestamp_sec(clock_->Now().ToTimeT());
   record.set_session_type(session_type);
   const std::string& user_email = account_id.GetUserEmail();
@@ -177,7 +169,9 @@ void LoginLogoutReporter::MaybeReportEvent(LoginLogoutRecord record,
              reporter_helper_->ShouldReportUser(user_email)) {
     record.mutable_affiliated_user()->set_user_email(user_email);
   }
-  reporter_helper_->ReportEvent(&record, ::reporting::Priority::SECURITY);
+  reporter_helper_->ReportEvent(
+      std::make_unique<LoginLogoutRecord>(std::move(record)),
+      ::reporting::Priority::SECURITY);
 }
 
 void LoginLogoutReporter::OnLogin(Profile* profile) {
@@ -210,23 +204,21 @@ void LoginLogoutReporter::OnLoginFailure(const AuthFailure& error) {
 void LoginLogoutReporter::OnKioskLoginFailure() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  if (!base::FeatureList::IsEnabled(kEnableKioskAndGuestLoginLogoutReporting) ||
-      !reporter_helper_->ReportingEnabled(kReportDeviceLoginLogout) ||
+  if (!reporter_helper_->ReportingEnabled(kReportDeviceLoginLogout) ||
       !GetLocalState()) {
     return;
   }
 
-  DictionaryPrefUpdate dict_update(GetLocalState(),
+  ScopedDictPrefUpdate dict_update(GetLocalState(),
                                    kLoginLogoutReporterDictionary);
-  dict_update->GetDict().Set(kKioskLoginFailureTimestamp,
-                             static_cast<int>(clock_->Now().ToTimeT()));
+  dict_update->Set(kKioskLoginFailureTimestamp,
+                   static_cast<int>(clock_->Now().ToTimeT()));
 }
 
 void LoginLogoutReporter::MaybeReportKioskLoginFailure() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  if (!base::FeatureList::IsEnabled(kEnableKioskAndGuestLoginLogoutReporting) ||
-      !GetLocalState()) {
+  if (!GetLocalState()) {
     return;
   }
 
@@ -244,10 +236,10 @@ void LoginLogoutReporter::MaybeReportKioskLoginFailure() {
     return;
   }
 
-  LoginLogoutRecord record;
-  record.set_event_timestamp_sec(last_kiosk_login_failure_timestamp.value());
-  record.set_session_type(LoginLogoutSessionType::KIOSK_SESSION);
-  record.mutable_login_event()->mutable_failure();
+  auto record = std::make_unique<LoginLogoutRecord>();
+  record->set_event_timestamp_sec(last_kiosk_login_failure_timestamp.value());
+  record->set_session_type(LoginLogoutSessionType::KIOSK_SESSION);
+  record->mutable_login_event()->mutable_failure();
 
   auto enqueue_cb = base::BindOnce([](::reporting::Status status) {
     if (!status.ok()) {
@@ -259,16 +251,16 @@ void LoginLogoutReporter::MaybeReportKioskLoginFailure() {
     if (!GetLocalState()) {
       return;
     }
-    DictionaryPrefUpdate dict_update(GetLocalState(),
+    ScopedDictPrefUpdate dict_update(GetLocalState(),
                                      kLoginLogoutReporterDictionary);
-    dict_update->RemoveKey(kKioskLoginFailureTimestamp);
+    dict_update->Remove(kKioskLoginFailureTimestamp);
   });
 
   // Enqueue callback should run on the UI thread (current thread) to access
   // pref service.
   reporter_helper_->ReportEvent(
-      &record, ::reporting::Priority::SECURITY,
-      base::BindPostTask(base::ThreadTaskRunnerHandle::Get(),
+      std::move(record), ::reporting::Priority::SECURITY,
+      base::BindPostTask(base::SingleThreadTaskRunner::GetCurrentDefault(),
                          std::move(enqueue_cb)));
 }
 

@@ -1,8 +1,8 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {TestBrowserProxy} from '../../test_browser_proxy.js';
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 /**
  * @fileoverview Fake implementation of ReceiveManagerInterface for testing.
@@ -47,14 +47,14 @@ export class FakeReceiveManager extends TestBrowserProxy {
         description: '',
         fileCount: 0,
         shareType: 0,
-      }
+      },
     };
     const metadata = {
       'status': nearbyShare.mojom.TransferStatus.kAwaitingLocalConfirmation,
       progress: 0.0,
       token: connectionToken,
       is_original: true,
-      is_final_status: false
+      is_final_status: false,
     };
     this.observer_.onTransferUpdate(target, metadata);
     return target;

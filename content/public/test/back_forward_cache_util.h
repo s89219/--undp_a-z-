@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,17 +63,17 @@ void DisableBackForwardCacheForTesting(
 // testing (enables the cache, sets timeouts, etc.)
 // Optionally, |additional_params| can be passed to specify additional
 // features and parameters that will be in the returned structure.
-std::vector<base::test::ScopedFeatureList::FeatureAndParams>
+std::vector<base::test::FeatureRefAndParams>
 DefaultEnabledBackForwardCacheParametersForTests();
 
-std::vector<base::test::ScopedFeatureList::FeatureAndParams>
+std::vector<base::test::FeatureRefAndParams>
 DefaultEnabledBackForwardCacheParametersForTests(
-    const std::vector<base::test::ScopedFeatureList::FeatureAndParams>&
-        additional_params);
+    const std::vector<base::test::FeatureRefAndParams>& additional_params);
 
 // Returns a vector of features to disable by default when testing with the
 // BackForwardCache.
-std::vector<base::Feature> DefaultDisabledBackForwardCacheParametersForTests();
+std::vector<base::test::FeatureRef>
+DefaultDisabledBackForwardCacheParametersForTests();
 
 }  // namespace content
 

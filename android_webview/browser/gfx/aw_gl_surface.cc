@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,10 +13,14 @@
 
 namespace android_webview {
 
-AwGLSurface::AwGLSurface(bool is_angle) : is_angle_(is_angle) {}
+AwGLSurface::AwGLSurface(gl::GLDisplayEGL* display, bool is_angle)
+    : gl::GLSurfaceEGL(display), is_angle_(is_angle) {}
 
-AwGLSurface::AwGLSurface(scoped_refptr<gl::GLSurface> surface)
-    : is_angle_(false), wrapped_surface_(std::move(surface)) {}
+AwGLSurface::AwGLSurface(gl::GLDisplayEGL* display,
+                         scoped_refptr<gl::GLSurface> surface)
+    : gl::GLSurfaceEGL(display),
+      is_angle_(false),
+      wrapped_surface_(std::move(surface)) {}
 
 AwGLSurface::~AwGLSurface() {
   Destroy();
@@ -52,7 +56,8 @@ unsigned int AwGLSurface::GetBackingFramebufferObject() {
   return ScopedAppGLStateRestore::Current()->framebuffer_binding_ext();
 }
 
-gfx::SwapResult AwGLSurface::SwapBuffers(PresentationCallback callback) {
+gfx::SwapResult AwGLSurface::SwapBuffers(PresentationCallback callback,
+                                         gfx::FrameData data) {
   DCHECK(!pending_presentation_callback_);
   pending_presentation_callback_ = std::move(callback);
   return gfx::SwapResult::SWAP_ACK;

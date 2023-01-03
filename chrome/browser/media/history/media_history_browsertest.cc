@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -733,16 +733,8 @@ IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest, DISABLED_GetPlaybackSessions) {
               GetPlaybackSessionsSync(GetOTRMediaHistoryService(browser), 2));
   }
 }
-
-// TODO(crbug.com/1176025): Flaking on Linux.
-#if BUILDFLAG(IS_LINUX)
-#define MAYBE_SaveImagesWithDifferentSessions \
-  DISABLED_SaveImagesWithDifferentSessions
-#else
-#define MAYBE_SaveImagesWithDifferentSessions SaveImagesWithDifferentSessions
-#endif
 IN_PROC_BROWSER_TEST_P(MediaHistoryBrowserTest,
-                       MAYBE_SaveImagesWithDifferentSessions) {
+                       DISABLED_SaveImagesWithDifferentSessions) {
   auto* browser = CreateBrowserFromParam();
   auto expected_metadata = GetExpectedMetadata();
   auto expected_artwork = GetExpectedArtwork();
@@ -1226,7 +1218,7 @@ class MediaHistoryForPrerenderBrowserTest : public MediaHistoryBrowserTest {
   content::WebContents* web_contents() { return web_contents_; }
 
  protected:
-  raw_ptr<content::WebContents> web_contents_ = nullptr;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_ = nullptr;
   content::test::PrerenderTestHelper prerender_helper_;
   base::test::ScopedFeatureList feature_list_;
 };

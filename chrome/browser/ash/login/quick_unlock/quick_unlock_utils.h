@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,15 @@ enum class FingerprintLocation {
   KEYBOARD_TOP_RIGHT = 3,
   RIGHT_SIDE = 4,
   LEFT_SIDE = 5,
-  UNKNOWN = 6,
+  LEFT_OF_POWER_BUTTON_TOP_RIGHT = 6,
+  UNKNOWN = 7,
+};
+
+// Struct that holds the description string IDs shown during the fingerprint
+// setup.
+struct FingerprintDescriptionStrings {
+  int description_id = 0;
+  int description_child_id = 0;
 };
 
 // Override quick unlock checks for testing.
@@ -131,22 +139,11 @@ FingerprintLocation GetFingerprintLocation();
 // screen and the settings.
 void AddFingerprintResources(content::WebUIDataSource* html_source);
 
+// Returns the resource IDs for the fingerprint setup description strings.
+FingerprintDescriptionStrings GetFingerprintDescriptionStrings(
+    FingerprintLocation location);
+
 }  // namespace quick_unlock
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-namespace quick_unlock {
-using ::ash::quick_unlock::AddFingerprintResources;
-using ::ash::quick_unlock::FingerprintLocation;
-using ::ash::quick_unlock::GetFingerprintLocation;
-using ::ash::quick_unlock::IsFingerprintEnabled;
-using ::ash::quick_unlock::IsPinDisabledByPolicy;
-using ::ash::quick_unlock::IsPinEnabled;
-using ::ash::quick_unlock::Purpose;
-using ::ash::quick_unlock::TestApi;
-}  // namespace quick_unlock
-}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_QUICK_UNLOCK_QUICK_UNLOCK_UTILS_H_

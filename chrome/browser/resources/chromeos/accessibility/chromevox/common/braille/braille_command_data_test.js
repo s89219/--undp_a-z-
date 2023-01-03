@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,8 @@ ChromeVoxBrailleCommandDataTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   async setUpDeferred() {
     await super.setUpDeferred();
+
+    // Alphabetical based on file path.
     await importModule(
         'BrailleCommandData',
         '/chromevox/common/braille/braille_command_data.js');
@@ -19,7 +21,7 @@ ChromeVoxBrailleCommandDataTest = class extends ChromeVoxNextE2ETest {
 };
 
 
-SYNC_TEST_F('ChromeVoxBrailleCommandDataTest', 'Duplicates', function() {
+AX_TEST_F('ChromeVoxBrailleCommandDataTest', 'Duplicates', function() {
   try {
     BrailleCommandData.DOT_PATTERN_TO_COMMAND = [];
     BrailleCommandData.init_();

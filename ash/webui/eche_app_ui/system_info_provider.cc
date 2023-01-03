@@ -1,10 +1,9 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/webui/eche_app_ui/system_info_provider.h"
 
-#include "ash/components/multidevice/logging/logging.h"
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/tablet_mode.h"
 #include "ash/public/cpp/tablet_mode_observer.h"
@@ -13,6 +12,7 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
 
 namespace ash {
@@ -24,6 +24,11 @@ const char kJsonTabletModeKey[] = "tablet_mode";
 const char kJsonWifiConnectionStateKey[] = "wifi_connection_state";
 const char kJsonDebugModeKey[] = "debug_mode";
 const char kJsonGaiaIdKey[] = "gaia_id";
+const char kJsonDeviceTypeKey[] = "device_type";
+const char kJsonMeasureLatencyKey[] = "measure_latency";
+const char kJsonSendStartSignalingKey[] = "send_start_signaling";
+const char kJsonDisableStunServerKey[] = "disable_stun_server";
+const char kJsonCheckAndroidNetworkInfoKey[] = "check_android_network_info";
 
 using chromeos::network_config::mojom::ConnectionStateType;
 // TODO(https://crbug.com/1164001): remove when it moved to ash.
@@ -71,6 +76,8 @@ void SystemInfoProvider::GetSystemInfo(
   json_dictionary.SetBoolKey(kJsonTabletModeKey,
                              TabletMode::Get()->InTabletMode());
   json_dictionary.SetStringKey(kJsonGaiaIdKey, system_info_->GetGaiaId());
+  json_dictionary.SetStringKey(kJsonDeviceTypeKey,
+                               system_info_->GetDeviceType());
   auto found_type = CONNECTION_STATE_TYPE.find(wifi_connection_state_);
   std::string connecton_state_string =
       found_type == CONNECTION_STATE_TYPE.end() ? "" : found_type->second;
@@ -79,6 +86,22 @@ void SystemInfoProvider::GetSystemInfo(
   json_dictionary.SetBoolKey(
       kJsonDebugModeKey,
       base::FeatureList::IsEnabled(features::kEcheSWADebugMode));
+
+  json_dictionary.SetBoolKey(
+      kJsonMeasureLatencyKey,
+      base::FeatureList::IsEnabled(features::kEcheSWAMeasureLatency));
+
+  json_dictionary.SetBoolKey(
+      kJsonSendStartSignalingKey,
+      base::FeatureList::IsEnabled(features::kEcheSWASendStartSignaling));
+
+  json_dictionary.SetBoolKey(
+      kJsonDisableStunServerKey,
+      base::FeatureList::IsEnabled(features::kEcheSWADisableStunServer));
+
+  json_dictionary.SetBoolKey(
+      kJsonCheckAndroidNetworkInfoKey,
+      base::FeatureList::IsEnabled(features::kEcheSWACheckAndroidNetworkInfo));
 
   std::string json_message;
   base::JSONWriter::Write(json_dictionary, &json_message);
@@ -114,6 +137,24 @@ void SystemInfoProvider::SetTabletModeChanged(bool enabled) {
 
   PA_LOG(VERBOSE) << "OnReceivedTabletModeChanged:" << enabled;
   observer_remote_->OnReceivedTabletModeChanged(enabled);
+}
+
+void SystemInfoProvider::SetAndroidDeviceNetworkInfoChanged(
+    bool is_different_network,
+    bool android_device_on_cellular) {
+  PA_LOG(INFO) << "echeapi SystemInfoProvider "
+                  "SetAndroidDeviceNetworkInfoChanged is_different_network:"
+               << is_different_network;
+  PA_LOG(INFO)
+      << "echeapi SystemInfoProvider "
+         "SetAndroidDeviceNetworkInfoChanged android_device_on_cellular:"
+      << android_device_on_cellular;
+  if (!observer_remote_.is_bound())
+    return;
+
+  PA_LOG(VERBOSE) << "OnAndroidDeviceNetworkInfoChanged";
+  observer_remote_->OnAndroidDeviceNetworkInfoChanged(
+      is_different_network, android_device_on_cellular);
 }
 
 // TabletModeObserver implementation:

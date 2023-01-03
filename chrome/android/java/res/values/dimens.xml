@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2014 The Chromium Authors. All rights reserved.
-     Use of this source code is governed by a BSD-style license that can be
-     found in the LICENSE file. -->
+<!--
+Copyright 2014 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
 
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Accessibility tab switcher -->
@@ -26,9 +28,6 @@
     <!-- Text size of descriptive controls on an infobar. -->
     <dimen name="infobar_descriptive_text_size">14sp</dimen>
 
-    <!-- Dimension applied to SyncErrorInfoBar icon. -->
-    <dimen name="sync_error_infobar_icon_size">48dp</dimen>
-
     <!-- Dimensions for compact translate infobar. -->
     <dimen name="infobar_translate_fade_edge_length">18dp</dimen>
 
@@ -40,8 +39,8 @@
     <dimen name="overlay_panel_caption_spacing">1.5dp</dimen>
 
     <!-- Contextual Search dimensions -->
-    <dimen name="contextual_search_bar_banner_padding">12dp</dimen>
     <dimen name="contextual_search_bar_image_size">36dp</dimen>
+    <dimen name="contextual_search_minimum_base_page_height">600dp</dimen>
     <dimen name="contextual_search_text_layer_min_height">
         @dimen/overlay_panel_text_layer_min_height
     </dimen>
@@ -134,14 +133,12 @@
     <dimen name="signin_chooser_padding">16dp</dimen>
     <dimen name="signin_screen_top_padding">50dp</dimen>
 
-    <!-- Autofill tooltip dimensions -->
-    <dimen name="autofill_tooltip_horizontal_padding">16dp</dimen>
-    <dimen name="autofill_tooltip_vertical_padding">16dp</dimen>
-
     <!-- ModalDialogView dimensions -->
     <dimen name="tab_modal_scrim_vertical_margin">16dp</dimen>
 
     <!-- Full Screen Dimensions -->
+    <dimen name="fullscreen_toast_elevation">@dimen/custom_tabs_elevation</dimen>
+
     <!-- Should match toolbar_height_no_shadow -->
     <dimen name="control_container_height">56dp</dimen>
     <dimen name="custom_tabs_control_container_height">56dp</dimen>
@@ -156,24 +153,29 @@
     <dimen name="find_in_page_popup_margin_end">62dp</dimen>
 
     <!-- NTP dimensions -->
-    <dimen name="tile_grid_layout_max_width">504dp</dimen>
-    <dimen name="tile_grid_layout_padding_top">24dp</dimen>
-    <dimen name="tile_grid_layout_no_logo_padding_top">20dp</dimen>
+    <dimen name="tile_grid_layout_top_margin">24dp</dimen>
+    <dimen name="tile_grid_layout_top_margin_push_down_small">36dp</dimen>
+    <dimen name="tile_grid_layout_top_margin_push_down_large">54dp</dimen>
+    <dimen name="tile_grid_layout_top_margin_pull_up">16dp</dimen>
+    <dimen name="tile_grid_layout_no_logo_top_margin">20dp</dimen>
     <dimen name="tile_grid_layout_bleed">8dp</dimen>
     <dimen name="tile_grid_layout_vertical_spacing">6dp</dimen>
+    <dimen name="tile_grid_layout_vertical_spacing_push_down_small">24dp</dimen>
+    <dimen name="tile_grid_layout_vertical_spacing_push_down_large">36dp</dimen>
     <dimen name="tile_grid_layout_min_horizontal_spacing">4dp</dimen>
-    <dimen name="tile_grid_layout_bottom_margin">16dp</dimen>
+    <dimen name="tile_grid_layout_bottom_margin">24dp</dimen>
+    <dimen name="tile_grid_layout_bottom_margin_push_down_small">48dp</dimen>
+    <dimen name="tile_grid_layout_bottom_margin_push_down_large">64dp</dimen>
+    <dimen name="tile_grid_layout_bottom_margin_pull_up">24dp</dimen>
+    <dimen name="tile_carousel_layout_bottom_margin">24dp</dimen>
     <dimen name="ntp_logo_height">100dp</dimen>
     <dimen name="ntp_logo_margin_top">26dp</dimen>
-    <dimen name="duet_ntp_logo_top_margin">-16dp</dimen>
+    <dimen name="ntp_logo_margin_bottom">23dp</dimen>
     <dimen name="ntp_search_box_height">48dp</dimen>
+    <dimen name="ntp_search_box_bottom_margin">1dp</dimen>
     <dimen name="ntp_search_box_transition_length">16dp</dimen>
-    <dimen name="experimental_explore_sites_radius">8dp</dimen>
-    <dimen name="experimental_explore_sites_padding">8dp</dimen>
-    <dimen name="experimental_explore_sites_margin">16dp</dimen>
-    <dimen name="experimental_explore_sites_spacing">12dp</dimen>
     <dimen name="snippets_article_header_height">40dp</dimen>
-    <dimen name="snippets_article_header_menu_size">56dp</dimen>
+    <dimen name="snippets_article_header_menu_size">48dp</dimen>
     <dimen name="content_suggestions_card_bottom_margin">12dp</dimen>
     <!-- This is in sp because we want the icon to scale with the TextView it sits alongside. -->
     <dimen name="md_incognito_ntp_line_spacing">6sp</dimen>
@@ -248,6 +250,7 @@
     <dimen name="recent_tabs_show_history_item_size">60dp</dimen>
     <dimen name="recent_tabs_foreign_session_group_item_height">64dp</dimen>
     <dimen name="recent_tabs_default_group_item_height">48dp</dimen>
+    <dimen name="recent_tabs_count_text_size">10dp</dimen>
 
     <!-- Bookmarks dimensions -->
     <dimen name="bookmark_folder_item_left">16dp</dimen>
@@ -276,7 +279,19 @@
     <dimen name="custom_tabs_bottom_bar_max_height">120dp</dimen>
     <dimen name="custom_tabs_screenshot_height">300dp</dimen>
     <dimen name="custom_tabs_screenshot_width">190dp</dimen>
-    <dimen name="custom_tabs_top_corner_round_radius">16dp</dimen>
+    <dimen name="custom_tabs_handle_height">16dp</dimen>
+    <dimen name="custom_tabs_elevation">8dp</dimen>
+    <dimen name="custom_tabs_shadow_offset">4dp</dimen>
+    <dimen name="custom_tabs_outline_width">1dp</dimen>
+    <dimen name="custom_tabs_default_corner_radius">16dp</dimen>
+
+    <dimen name="custom_tabs_menu_footer_icon_size">16dp</dimen>
+    <dimen name="custom_tabs_menu_footer_margin_horizontal">8dp</dimen>
+    <dimen name="custom_tabs_menu_footer_margin_vertical">12dp</dimen>
+
+    <dimen name="custom_tabs_toast_branding_icon_size">28dp</dimen>
+    <dimen name="custom_tabs_toast_branding_height">50dp</dimen>
+    <dimen name="custom_tabs_toast_branding_padding">16dp</dimen>
 
     <!-- Account chooser dialog dimensions -->
     <dimen name="account_chooser_dialog_margin">24dp</dimen>
@@ -303,6 +318,9 @@
     <dimen name="sync_promo_view_padding">16dp</dimen>
     <!-- 18dp padding is added to each side of the remove button to limit the image width to 20dp (56dp - 2 * 18dp). -->
     <dimen name="history_item_remove_button_lateral_padding">18dp</dimen>
+    <!-- The List/Journeys toggle in the history UI is laid out at 40 dp (less than the typical minimum of 48dp)
+         but has its touch target expanded by 4dp on top and bottom to compensate. -->
+    <dimen name="history_toggle_added_touch_target_height">4dp</dimen>
 
     <!-- Context Menu Dimensions -->
     <!-- Prevent the chip from reaching the edges of the screen for long translations. -->
@@ -376,8 +394,6 @@
 
     <!-- Overflow Menu Dimensions -->
     <dimen name="overflow_menu_divider_line_padding">5dp</dimen>
-    <!-- top padding(12dp) + icon size(20dp) + bottom padding(12dp) -->
-    <dimen name="overflow_menu_managed_by_min_height">44dp</dimen>
     <dimen name="overflow_menu_update_min_height">40sp</dimen>
     <dimen name="overflow_menu_update_padding">12dp</dimen>
 
@@ -420,4 +436,11 @@
     <dimen name="virtual_card_enrollment_dialog_google_issuer_message_margin_top">8dp</dimen>
     <dimen name="virtual_card_enrollment_dialog_card_art_width">32dp</dimen>
     <dimen name="virtual_card_enrollment_dialog_card_art_height">20dp</dimen>
+
+    <!-- Section tab dimensions -->
+    <dimen name="section_tab_background_corner_radius">60dp</dimen>
+    <dimen name="section_tab_bezel_width">2dp</dimen>
+
+    <!-- Price Drop dimensions -->
+    <dimen name="price_drop_spotted_iph_ntp_tabswitcher_y_inset">4dp</dimen>
 </resources>

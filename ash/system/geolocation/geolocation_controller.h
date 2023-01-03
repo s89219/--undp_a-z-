@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,13 @@
 #include <string>
 
 #include "ash/ash_export.h"
-#include "ash/components/geolocation/simple_geolocation_provider.h"
-#include "ash/components/settings/timezone_settings.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chromeos/ash/components/geolocation/simple_geolocation_provider.h"
+#include "chromeos/ash/components/settings/timezone_settings.h"
+#include "chromeos/dbus/power/power_manager_client.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 namespace base {
@@ -45,7 +46,8 @@ struct SimpleGeoposition {
 // TODO(crbug.com/1272178): `GeolocationController` should observe the sleep
 // and update next request time.
 class ASH_EXPORT GeolocationController
-    : public chromeos::system::TimezoneSettings::Observer {
+    : public system::TimezoneSettings::Observer,
+      public chromeos::PowerManagerClient::Observer {
  public:
   class Observer : public base::CheckedObserver {
    public:
@@ -79,8 +81,11 @@ class ASH_EXPORT GeolocationController
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
-  // chromeos::system::TimezoneSettings::Observer:
+  // system::TimezoneSettings::Observer:
   void TimezoneChanged(const icu::TimeZone& timezone) override;
+
+  // chromeos::PowerManagerClient::Observer:
+  void SuspendDone(base::TimeDelta sleep_duration) override;
 
   // Returns sunset and sunrise time calculated from `geoposition_`. If the
   // position is not set, returns the default sunset 6 PM and sunrise 6 AM.

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,15 +26,16 @@ namespace {
 // grants blink::PermissionType::SENSORS requests.
 class TestPermissionManager : public MockPermissionManager {
  public:
-  void RequestPermission(
-      blink::PermissionType permission,
-      RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin,
+  void RequestPermissionsFromCurrentDocument(
+      const std::vector<blink::PermissionType>& permissions,
+      content::RenderFrameHost* render_frame_host,
       bool user_gesture,
-      base::OnceCallback<void(blink::mojom::PermissionStatus)> callback)
+      base::OnceCallback<
+          void(const std::vector<blink::mojom::PermissionStatus>&)> callback)
       override {
-    ASSERT_EQ(permission, blink::PermissionType::SENSORS);
-    std::move(callback).Run(blink::mojom::PermissionStatus::GRANTED);
+    ASSERT_EQ(permissions.size(), 1ul);
+    ASSERT_EQ(permissions[0], blink::PermissionType::SENSORS);
+    std::move(callback).Run({blink::mojom::PermissionStatus::GRANTED});
   }
 };
 
@@ -122,7 +123,7 @@ TEST_F(SensorProviderProxyImplTest, DestructionOrderWithOngoingCallback) {
   set_fake_sensor_provider(std::move(intercepting_fake_sensor_provider));
 
   mojo::Remote<device::mojom::SensorProvider> provider;
-  contents()->GetMainFrame()->GetSensorProvider(
+  contents()->GetPrimaryMainFrame()->GetSensorProvider(
       provider.BindNewPipeAndPassReceiver());
 
   base::RunLoop run_loop;

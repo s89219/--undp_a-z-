@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -41,6 +41,8 @@ config("zlib_internal_config") {
 }
 
 source_set("zlib_common_headers") {
+  visibility = [ ":*" ]
+
   sources = [
     "chromeconf.h",
     "deflate.h",
@@ -142,7 +144,7 @@ if (use_arm_neon_optimizations) {
       if (!is_win && !is_clang) {
         assert(!use_thin_lto,
                "ThinLTO fails mixing different module-level targets")
-        cflags_c = [ "-march=armv8-a+crc" ]
+        cflags_c = [ "-march=armv8-a+aes+crc" ]
       }
 
       sources = [
@@ -197,6 +199,7 @@ source_set("zlib_inflate_chunk_simd") {
   # style function declarations, which triggers warning C4131.
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
+  configs += [ ":zlib_warnings" ]
 
   public_configs = [ ":zlib_inflate_chunk_simd_config" ]
 
@@ -263,8 +266,12 @@ source_set("zlib_slide_hash_simd") {
 }
 
 config("zlib_warnings") {
-  if (is_clang && use_x86_x64_optimizations) {
-    cflags = [ "-Wno-incompatible-pointer-types" ]
+  if (is_clang) {
+    cflags = [
+      "-Wno-deprecated-non-prototype",
+      "-Wno-incompatible-pointer-types",
+      "-Wunused-variable",
+    ]
   }
 }
 
@@ -367,8 +374,11 @@ config("minizip_warnings") {
   visibility = [ ":*" ]
 
   if (is_clang) {
-    # zlib uses `if ((a == b))` for some reason.
-    cflags = [ "-Wno-parentheses-equality" ]
+    cflags = [
+      # zlib uses `if ((a == b))` for some reason.
+      "-Wno-parentheses-equality",
+      "-Wno-deprecated-non-prototype",
+    ]
   }
 }
 
@@ -432,7 +442,11 @@ if (!is_win || target_os != "winuwp") {
     sources = [ "contrib/minizip/minizip.c" ]
 
     if (is_clang) {
-      cflags = [ "-Wno-incompatible-pointer-types-discards-qualifiers" ]
+      cflags = [
+        "-Wno-incompatible-pointer-types-discards-qualifiers",
+
+        "-Wno-deprecated-non-prototype",
+      ]
     }
 
     if (!is_debug) {
@@ -452,7 +466,10 @@ if (!is_win || target_os != "winuwp") {
     sources = [ "contrib/minizip/miniunz.c" ]
 
     if (is_clang) {
-      cflags = [ "-Wno-incompatible-pointer-types-discards-qualifiers" ]
+      cflags = [
+        "-Wno-incompatible-pointer-types-discards-qualifiers",
+        "-Wno-deprecated-non-prototype",
+      ]
     }
 
     if (!is_debug) {

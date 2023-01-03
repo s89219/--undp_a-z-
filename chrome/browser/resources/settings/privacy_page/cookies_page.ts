@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,35 +8,35 @@
  * settings.
  */
 
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import 'chrome://resources/cr_elements/cr_link_row/cr_link_row.js';
 import 'chrome://resources/cr_elements/cr_toast/cr_toast.js';
 import '../controls/settings_toggle_button.js';
-import '../icons.js';
+import '../icons.html.js';
 import '../prefs/prefs.js';
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 import '../site_settings/site_list.js';
 import './collapse_radio_button.js';
 import './do_not_track_toggle.js';
 import '../controls/settings_radio_group.js';
 
 import {CrToastElement} from 'chrome://resources/cr_elements/cr_toast/cr_toast.js';
+import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
+import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {focusWithoutInk} from 'chrome://resources/js/cr/ui/focus_without_ink.m.js';
-import {I18nMixin, I18nMixinInterface} from 'chrome://resources/js/i18n_mixin.js';
-import {WebUIListenerMixin, WebUIListenerMixinInterface} from 'chrome://resources/js/web_ui_listener_mixin.js';
+import {focusWithoutInk} from 'chrome://resources/js/focus_without_ink.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsRadioGroupElement} from '../controls/settings_radio_group.js';
+import {FocusConfig} from '../focus_config.js';
 import {loadTimeData} from '../i18n_setup.js';
 import {MetricsBrowserProxy, MetricsBrowserProxyImpl, PrivacyElementInteractions} from '../metrics_browser_proxy.js';
-import {PrefsMixin, PrefsMixinInterface} from '../prefs/prefs_mixin.js';
+import {PrefsMixin} from '../prefs/prefs_mixin.js';
 import {routes} from '../route.js';
-import {Route, RouteObserverMixin, RouteObserverMixinInterface, Router} from '../router.js';
-import {ContentSetting, ContentSettingsTypes} from '../site_settings/constants.js';
+import {Route, RouteObserverMixin, Router} from '../router.js';
+import {ContentSetting, ContentSettingsTypes, CookieControlsMode} from '../site_settings/constants.js';
 import {CookiePrimarySetting} from '../site_settings/site_settings_prefs_browser_proxy.js';
 
-import {SettingsCollapseRadioButtonElement} from './collapse_radio_button.js';
 import {getTemplate} from './cookies_page.html.js';
 
 /**
@@ -51,26 +51,14 @@ enum NetworkPredictionOptions {
   DEFAULT = 1,
 }
 
-type FocusConfig = Map<string, (string|(() => void))>;
-
 export interface SettingsCookiesPageElement {
   $: {
-    allowAll: SettingsCollapseRadioButtonElement,
-    blockAll: SettingsCollapseRadioButtonElement,
-    blockThirdPartyIncognito: SettingsCollapseRadioButtonElement,
-    blockThirdParty: SettingsCollapseRadioButtonElement,
-    primarySettingGroup: SettingsRadioGroupElement,
     toast: CrToastElement,
   };
 }
 
-const SettingsCookiesPageElementBase =
-    RouteObserverMixin(
-        WebUIListenerMixin(I18nMixin(PrefsMixin(PolymerElement)))) as {
-      new (): PolymerElement & I18nMixinInterface &
-          WebUIListenerMixinInterface & PrefsMixinInterface &
-          RouteObserverMixinInterface,
-    };
+const SettingsCookiesPageElementBase = RouteObserverMixin(
+    WebUiListenerMixin(I18nMixin(PrefsMixin(PolymerElement))));
 
 export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
   static get is() {
@@ -108,6 +96,12 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
         value: CookiePrimarySetting,
       },
 
+      /** Cookie control modes for use in bindings. */
+      cookieControlsModeEnum_: {
+        type: Object,
+        value: CookieControlsMode,
+      },
+
       /**
        * Used for HTML bindings. This is defined as a property rather than
        * within the ready callback, because the value needs to be available
@@ -141,53 +135,50 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
         },
       },
 
-      enableConsolidatedSiteStorageControls_: {
-        type: Boolean,
-        value: () =>
-            loadTimeData.getBoolean('consolidatedSiteStorageControlsEnabled'),
-      },
-
       focusConfig: {
         type: Object,
         observer: 'focusConfigChanged_',
+      },
+
+      enableFirstPartySetsUI_: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('firstPartySetsUIEnabled'),
+      },
+
+      isPrivacySandboxSettings4_: {
+        type: Boolean,
+        value: () => loadTimeData.getBoolean('isPrivacySandboxSettings4'),
       },
     };
   }
 
   static get observers() {
     return [`onGeneratedPrefsUpdated_(prefs.generated.cookie_session_only,
-        prefs.generated.cookie_primary_setting)`];
+        prefs.generated.cookie_primary_setting,
+        prefs.generated.cookie_default_content_setting)`];
   }
 
   searchTerm: string;
   private cookiesContentSettingType_: ContentSettingsTypes;
   private exceptionListsReadOnly_: boolean;
   private blockAllPref_: chrome.settingsPrivate.PrefObject;
-  private enableConsolidatedSiteStorageControls_: boolean;
   focusConfig: FocusConfig;
+  private isPrivacySandboxSettings4_: boolean;
 
   private metricsBrowserProxy_: MetricsBrowserProxy =
       MetricsBrowserProxyImpl.getInstance();
 
   private focusConfigChanged_(_newConfig: FocusConfig, oldConfig: FocusConfig) {
     assert(!oldConfig);
-    assert(
-        this.enableConsolidatedSiteStorageControls_ ?
-            routes.SITE_SETTINGS_ALL :
-            routes.SITE_SETTINGS_SITE_DATA);
     const selectSiteDataLinkRow = () => {
-      const toFocus = this.shadowRoot!.querySelector('#site-data-trigger');
+      const toFocus =
+          this.shadowRoot!.querySelector<HTMLElement>('#site-data-trigger');
       assert(toFocus);
       focusWithoutInk(toFocus);
     };
-    if (this.enableConsolidatedSiteStorageControls_) {
-      this.focusConfig.set(
-          `${routes.SITE_SETTINGS_ALL.path}_${routes.COOKIES.path}`,
-          selectSiteDataLinkRow);
-    } else {
-      this.focusConfig.set(
-          routes.SITE_SETTINGS_SITE_DATA.path, selectSiteDataLinkRow);
-    }
+    this.focusConfig.set(
+        `${routes.SITE_SETTINGS_ALL.path}_${routes.COOKIES.path}`,
+        selectSiteDataLinkRow);
   }
 
   override currentRouteChanged(route: Route) {
@@ -196,21 +187,37 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
     }
   }
 
-  private getSiteDataLabel_(): string {
-    return this.enableConsolidatedSiteStorageControls_ ?
-        this.i18n('cookiePageAllSitesLink') :
-        this.i18n('siteSettingsCookieLink');
+  // <if expr="not chromeos_ash">
+  private getClearOnExitSubLabel_(): string {
+    // <if expr="chromeos_lacros">
+    if (loadTimeData.getBoolean('isSecondaryUser')) {
+      return '';
+    }
+    // </if>
+
+    return this.i18n('cookiePageClearOnExitDesc');
   }
+  // </if>
 
   private onSiteDataClick_() {
-    if (this.enableConsolidatedSiteStorageControls_) {
-      Router.getInstance().navigateTo(routes.SITE_SETTINGS_ALL);
-    } else {
-      Router.getInstance().navigateTo(routes.SITE_SETTINGS_SITE_DATA);
-    }
+    Router.getInstance().navigateTo(routes.SITE_SETTINGS_ALL);
   }
 
   private onGeneratedPrefsUpdated_() {
+    if (this.isPrivacySandboxSettings4_) {
+      // If the default cookie content setting is managed, the exception lists
+      // should be disabled. `profile.cookie_controls_mode` doesn't control the
+      // ability to create exceptions but the content setting does.
+      const defaultContentSettingPref =
+          this.getPref('generated.cookie_default_content_setting');
+      this.exceptionListsReadOnly_ = defaultContentSettingPref.enforcement ===
+          chrome.settingsPrivate.Enforcement.ENFORCED;
+      return;
+    }
+
+    // TODO(crbug.com/1378703): Clean up after the feature is launched and these
+    // generated preferences are deprecated. New page won't have 'session only'
+    // controls.
     const sessionOnlyPref = this.getPref('generated.cookie_session_only');
 
     // If the clear on exit toggle is managed this implies a content setting
@@ -229,15 +236,53 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
         'blockAllPref_',
         Object.assign(this.getPref('generated.cookie_primary_setting'), {
           controlledBy: sessionOnlyPref.controlledBy,
-          controlledByName: sessionOnlyPref.controlledByName
+          controlledByName: sessionOnlyPref.controlledByName,
         }));
+  }
+
+  private onCookieControlsModeChanged_() {
+    // TODO(crbug.com/1378703): Use this.$.primarySettingGroup after the feature
+    // is launched and element isn't in dom-if anymore.
+    const primarySettingGroup: SettingsRadioGroupElement =
+        this.shadowRoot!.querySelector('#primarySettingGroup')!;
+
+    const selection = Number(primarySettingGroup.selected);
+    // TODO(crbug.com/1378703): Record metrics based on the selection.
+
+    // If this change resulted in the user now blocking 3P cookies where they
+    // previously were not, and any of privacy sandbox APIs are enabled,
+    // the privacy sandbox toast should be shown.
+    const currentCookieControlsMode =
+        this.getPref('profile.cookie_controls_mode').value;
+    const areAnyPrivacySandboxApisEnabled =
+        this.getPref('privacy_sandbox.m1.topics_enabled').value ||
+        this.getPref('privacy_sandbox.m1.fledge_enabled').value ||
+        this.getPref('privacy_sandbox.m1.fledge_enabled').value;
+    const areThirdPartyCookiesAllowed =
+        currentCookieControlsMode === CookieControlsMode.OFF ||
+        currentCookieControlsMode === CookieControlsMode.INCOGNITO_ONLY;
+
+    if (areAnyPrivacySandboxApisEnabled && areThirdPartyCookiesAllowed &&
+        selection === CookieControlsMode.BLOCK_THIRD_PARTY) {
+      if (!loadTimeData.getBoolean('isPrivacySandboxRestricted')) {
+        this.$.toast.show();
+      }
+      this.metricsBrowserProxy_.recordAction(
+          'Settings.PrivacySandbox.Block3PCookies');
+    } else {
+      this.$.toast.hide();
+    }
+
+    primarySettingGroup.sendPrefChange();
   }
 
   /**
    * Record interaction metrics for the primary cookie radio setting.
    */
   private onCookiePrimarySettingChanged_() {
-    const selection = Number(this.$.primarySettingGroup.selected);
+    const primarySettingGroup: SettingsRadioGroupElement =
+        this.shadowRoot!.querySelector('#primarySettingGroup')!;
+    const selection = Number(primarySettingGroup.selected);
     if (selection === CookiePrimarySetting.ALLOW_ALL) {
       this.metricsBrowserProxy_.recordSettingsPageHistogram(
           PrivacyElementInteractions.COOKIES_ALL);
@@ -258,9 +303,7 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
     const currentCookieSetting =
         this.getPref('generated.cookie_primary_setting').value;
     const privacySandboxEnabled =
-        loadTimeData.getBoolean('privacySandboxSettings3Enabled') ?
-        this.getPref('privacy_sandbox.apis_enabled_v2').value :
-        this.getPref('privacy_sandbox.apis_enabled').value;
+        this.getPref('privacy_sandbox.apis_enabled_v2').value;
 
     if (privacySandboxEnabled &&
         (currentCookieSetting === CookiePrimarySetting.ALLOW_ALL ||
@@ -279,7 +322,7 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
       this.$.toast.hide();
     }
 
-    this.$.primarySettingGroup.sendPrefChange();
+    primarySettingGroup.sendPrefChange();
   }
 
   private onClearOnExitChange_() {
@@ -301,9 +344,20 @@ export class SettingsCookiesPageElement extends SettingsCookiesPageElementBase {
     this.metricsBrowserProxy_.recordAction(
         'Settings.PrivacySandbox.OpenedFromCookiesPageToast');
     this.$.toast.hide();
+    // TODO(crbug.com/1378703): Open new privacy sandbox settings page.
     // TODO(crbug/1159942): Replace this with an ordinary OpenWindowProxy call.
     this.shadowRoot!.querySelector<HTMLAnchorElement>(
                         '#privacySandboxLink')!.click();
+  }
+
+  private firstPartySetsToggleDisabled_() {
+    if (this.isPrivacySandboxSettings4_) {
+      return this.getPref('profile.cookie_controls_mode').value !==
+          CookieControlsMode.BLOCK_THIRD_PARTY;
+    }
+
+    return this.getPref('generated.cookie_primary_setting').value !==
+        CookiePrimarySetting.BLOCK_THIRD_PARTY;
   }
 }
 

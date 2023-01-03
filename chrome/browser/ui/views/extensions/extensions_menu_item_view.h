@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,9 +30,6 @@ class Combobox;
 class SiteAccessMenuItemView : public views::FlexLayoutView {
  public:
   METADATA_HEADER(SiteAccessMenuItemView);
-
-  static constexpr int kMenuItemHeightDp = 40;
-  static constexpr gfx::Size kIconSize{28, 28};
 
   SiteAccessMenuItemView(
       Browser* browser,
@@ -86,10 +83,6 @@ DEFINE_VIEW_BUILDER(/* no export */, SiteAccessMenuItemView)
 class InstalledExtensionMenuItemView : public views::FlexLayoutView {
  public:
   METADATA_HEADER(InstalledExtensionMenuItemView);
-
-  // TODO(emiliapaz): Consider moving these variables outside this class.
-  static constexpr int kMenuItemHeightDp = 40;
-  static constexpr gfx::Size kIconSize{28, 28};
 
   InstalledExtensionMenuItemView(
       Browser* browser,

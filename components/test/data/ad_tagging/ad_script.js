@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,8 +35,12 @@ function createAdFramePromise(url, name, sbox_attr) {
   });
 }
 
-function windowOpenFromAdScript() {
-  window.open();
+function windowOpenFromAdScript(url) {
+  window.open(url);
+}
+
+function navigateIframeFromAdScript(name, url) {
+  document.getElementsByName(name)[0].src = url;
 }
 
 async function createDocWrittenAdFrame(name, base_url) {

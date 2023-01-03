@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
+#include "base/task/sequenced_task_runner.h"
 #include "storage/browser/blob/shareable_file_reference.h"
 #include "storage/browser/file_system/copy_or_move_hook_delegate.h"
 #include "storage/browser/file_system/file_system_backend.h"
@@ -19,6 +20,7 @@
 #include "storage/browser/file_system/file_system_url.h"
 #include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/file_system/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -300,16 +302,17 @@ bool AsyncFileTestHelper::DirectoryExists(FileSystemContext* context,
 }
 
 blink::mojom::QuotaStatusCode AsyncFileTestHelper::GetUsageAndQuota(
-    QuotaManager* quota_manager,
-    const url::Origin& origin,
+    QuotaManagerProxy* quota_manager_proxy,
+    const blink::StorageKey& storage_key,
     FileSystemType type,
     int64_t* usage,
     int64_t* quota) {
   blink::mojom::QuotaStatusCode status =
       blink::mojom::QuotaStatusCode::kUnknown;
   base::RunLoop run_loop;
-  quota_manager->GetUsageAndQuota(
-      blink::StorageKey(origin), FileSystemTypeToQuotaStorageType(type),
+  quota_manager_proxy->GetUsageAndQuota(
+      storage_key, FileSystemTypeToQuotaStorageType(type),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindOnce(&DidGetUsageAndQuota, &status, usage, quota,
                      run_loop.QuitWhenIdleClosure()));
   run_loop.Run();

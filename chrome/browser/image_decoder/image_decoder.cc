@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,8 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
-#include "content/public/browser/browser_task_traits.h"
-#include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_channel.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 #include "services/data_decoder/public/cpp/decode_image.h"
@@ -50,8 +48,6 @@ void DecodeImage(ImageDataType image_data,
                  data_decoder::DecodeImageCallback callback,
                  scoped_refptr<base::SequencedTaskRunner> callback_task_runner,
                  data_decoder::DataDecoder* data_decoder) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
-
   base::span<const uint8_t> image_data_span(
       base::as_bytes(base::make_span(image_data)));
 
@@ -73,7 +69,7 @@ void DecodeImage(ImageDataType image_data,
 }  // namespace
 
 ImageDecoder::ImageRequest::ImageRequest()
-    : task_runner_(base::ThreadTaskRunnerHandle::Get()) {
+    : task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
 
@@ -85,7 +81,7 @@ ImageDecoder::ImageRequest::ImageRequest(
 
 ImageDecoder::ImageRequest::ImageRequest(
     data_decoder::DataDecoder* data_decoder)
-    : task_runner_(base::ThreadTaskRunnerHandle::Get()),
+    : task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       data_decoder_(data_decoder) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
@@ -168,17 +164,10 @@ void ImageDecoder::StartWithOptionsImpl(
                                     base::Unretained(this)),
                      request_id);
 
-  // NOTE: There exist ImageDecoder consumers which implicitly rely on this
-  // operation happening on a thread which always has a ThreadTaskRunnerHandle.
-  // We arbitrarily use the IO thread here to match details of the legacy
-  // implementation.
-  content::GetIOThreadTaskRunner({})->PostTask(
-      FROM_HERE,
-      base::BindOnce(&DecodeImage<ImageDataType>, std::move(image_data), codec,
-                     shrink_to_fit, desired_image_frame_size,
-                     std::move(callback),
-                     base::WrapRefCounted(image_request->task_runner()),
-                     image_request->data_decoder()));
+  DecodeImage<ImageDataType>(std::move(image_data), codec, shrink_to_fit,
+                             desired_image_frame_size, std::move(callback),
+                             image_request->task_runner(),
+                             image_request->data_decoder());
 }
 
 template void ImageDecoder::StartWithOptionsImpl(ImageRequest*,

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,11 @@ const ConnectionStateType kFakeWifiConnectionState =
     ConnectionStateType::kConnected;
 const bool kFakeDebugMode = false;
 const char kFakeGaiaId[] = "123";
+const char kFakeDeviceType[] = "Chromebook";
+const bool kFakeMeasureLatency = false;
+const bool kFakeSendStartSignaling = true;
+const bool kFakeDisableStunServer = false;
+const bool kFakeCheckAndroidNetworkInfo = false;
 
 void ParseJson(const std::string& json,
                std::string& device_name,
@@ -34,35 +39,58 @@ void ParseJson(const std::string& json,
                bool& tablet_mode,
                std::string& wifi_connection_state,
                bool& debug_mode,
-               std::string& gaia_id) {
-  std::unique_ptr<base::Value> message_value =
-      base::JSONReader::ReadDeprecated(json);
-  base::DictionaryValue* message_dictionary;
-  message_value->GetAsDictionary(&message_dictionary);
+               std::string& gaia_id,
+               std::string& device_type,
+               bool& measure_latency,
+               bool& send_start_signaling,
+               bool& disable_stun_server,
+               bool& check_android_network_info) {
+  absl::optional<base::Value> message_value = base::JSONReader::Read(json);
+  base::Value::Dict* message_dictionary = message_value->GetIfDict();
   const std::string* device_name_ptr =
-      message_dictionary->FindStringKey(kJsonDeviceNameKey);
+      message_dictionary->FindString(kJsonDeviceNameKey);
   if (device_name_ptr)
     device_name = *device_name_ptr;
   const std::string* board_name_ptr =
-      message_dictionary->FindStringKey(kJsonBoardNameKey);
+      message_dictionary->FindString(kJsonBoardNameKey);
   if (board_name_ptr)
     board_name = *board_name_ptr;
   absl::optional<bool> tablet_mode_opt =
-      message_dictionary->FindBoolKey(kJsonTabletModeKey);
+      message_dictionary->FindBool(kJsonTabletModeKey);
   if (tablet_mode_opt.has_value())
     tablet_mode = tablet_mode_opt.value();
   const std::string* wifi_connection_state_ptr =
-      message_dictionary->FindStringKey(kJsonWifiConnectionStateKey);
+      message_dictionary->FindString(kJsonWifiConnectionStateKey);
   if (wifi_connection_state_ptr)
     wifi_connection_state = *wifi_connection_state_ptr;
   absl::optional<bool> debug_mode_opt =
-      message_dictionary->FindBoolKey(kJsonDebugModeKey);
+      message_dictionary->FindBool(kJsonDebugModeKey);
   if (debug_mode_opt.has_value())
     debug_mode = debug_mode_opt.value();
   const std::string* gaia_id_ptr =
-      message_dictionary->FindStringKey(kJsonGaiaIdKey);
+      message_dictionary->FindString(kJsonGaiaIdKey);
   if (gaia_id_ptr)
     gaia_id = *gaia_id_ptr;
+  const std::string* device_type_ptr =
+      message_dictionary->FindString(kJsonDeviceTypeKey);
+  if (device_type_ptr)
+    device_type = *device_type_ptr;
+  absl::optional<bool> measure_latency_opt =
+      message_dictionary->FindBool(kJsonMeasureLatencyKey);
+  if (measure_latency_opt.has_value())
+    measure_latency = measure_latency_opt.value();
+  absl::optional<bool> send_start_signaling_opt =
+      message_dictionary->FindBool(kJsonSendStartSignalingKey);
+  if (send_start_signaling_opt.has_value())
+    send_start_signaling = send_start_signaling_opt.value();
+  absl::optional<bool> disable_stun_server_opt =
+      message_dictionary->FindBool(kJsonDisableStunServerKey);
+  if (disable_stun_server_opt.has_value())
+    disable_stun_server = disable_stun_server_opt.value();
+  absl::optional<bool> check_android_network_info_opt =
+      message_dictionary->FindBool(kJsonCheckAndroidNetworkInfoKey);
+  if (check_android_network_info_opt.has_value())
+    check_android_network_info = check_android_network_info_opt.value();
 }
 
 class TaskRunner {
@@ -127,6 +155,7 @@ class FakeObserver : public mojom::SystemInfoObserver {
     return num_backlight_state_calls_;
   }
   size_t num_tablet_state_calls() const { return num_tablet_state_calls_; }
+  size_t num_android_state_calls() const { return num_android_state_calls_; }
 
   // mojom::SystemInfoObserver:
   void OnScreenBacklightStateChanged(
@@ -145,6 +174,15 @@ class FakeObserver : public mojom::SystemInfoObserver {
     }
   }
 
+  void OnAndroidDeviceNetworkInfoChanged(
+      bool is_different_network,
+      bool android_device_on_cellular) override {
+    ++num_android_state_calls_;
+    if (task_runner_) {
+      task_runner_->Finish();
+    }
+  }
+
   static void setTaskRunner(TaskRunner* task_runner) {
     task_runner_ = task_runner;
   }
@@ -154,6 +192,7 @@ class FakeObserver : public mojom::SystemInfoObserver {
  private:
   size_t num_backlight_state_calls_ = 0;
   size_t num_tablet_state_calls_ = 0;
+  size_t num_android_state_calls_ = 0;
   static TaskRunner* task_runner_;
 };
 
@@ -193,6 +232,7 @@ class SystemInfoProviderTest : public testing::Test {
                                                  .SetDeviceName(kFakeDeviceName)
                                                  .SetBoardName(kFakeBoardName)
                                                  .SetGaiaId(kFakeGaiaId)
+                                                 .SetDeviceType(kFakeDeviceType)
                                                  .Build(),
                                              remote_cros_network_config_.get());
     fake_observer_ = std::make_unique<FakeObserver>();
@@ -220,6 +260,10 @@ class SystemInfoProviderTest : public testing::Test {
         ash::ScreenBacklightState::OFF);
   }
 
+  void SetAndroidDeviceNetworkInfoChanged() {
+    system_info_provider_->SetAndroidDeviceNetworkInfoChanged(false, false);
+  }
+
   void OnTabletModeStarted() { system_info_provider_->OnTabletModeStarted(); }
 
   void OnTabletModeEnded() { system_info_provider_->OnTabletModeEnded(); }
@@ -241,6 +285,9 @@ class SystemInfoProviderTest : public testing::Test {
   size_t GetNumBacklightStateObserverCalls() const {
     return fake_observer_->num_backlight_state_calls();
   }
+  size_t GetNumAndroidStateObserverCalls() const {
+    return fake_observer_->num_android_state_calls();
+  }
   TaskRunner task_runner_;
 
  private:
@@ -257,11 +304,18 @@ TEST_F(SystemInfoProviderTest, GetSystemInfoHasCorrectJson) {
   std::string wifi_connection_state = "";
   bool debug_mode = true;
   std::string gaia_id = "";
+  std::string device_type = "";
+  bool measure_latency = true;
+  bool send_start_signaling = false;
+  bool disable_stun_server = true;
+  bool check_android_network_info = true;
 
   GetSystemInfo();
   std::string json = Callback::GetSystemInfo();
   ParseJson(json, device_name, board_name, tablet_mode, wifi_connection_state,
-            debug_mode, gaia_id);
+            debug_mode, gaia_id, device_type, measure_latency,
+            send_start_signaling, disable_stun_server,
+            check_android_network_info);
 
   EXPECT_EQ(device_name, kFakeDeviceName);
   EXPECT_EQ(board_name, kFakeBoardName);
@@ -269,6 +323,11 @@ TEST_F(SystemInfoProviderTest, GetSystemInfoHasCorrectJson) {
   EXPECT_EQ(wifi_connection_state, "connected");
   EXPECT_EQ(debug_mode, kFakeDebugMode);
   EXPECT_EQ(gaia_id, kFakeGaiaId);
+  EXPECT_EQ(device_type, kFakeDeviceType);
+  EXPECT_EQ(measure_latency, kFakeMeasureLatency);
+  EXPECT_EQ(send_start_signaling, kFakeSendStartSignaling);
+  EXPECT_EQ(disable_stun_server, kFakeDisableStunServer);
+  EXPECT_EQ(check_android_network_info, kFakeCheckAndroidNetworkInfo);
 }
 
 TEST_F(SystemInfoProviderTest, ObserverCalledWhenBacklightChanged) {
@@ -293,6 +352,15 @@ TEST_F(SystemInfoProviderTest, ObserverCalledWhenTabletModeEnded) {
   task_runner_.WaitForResult();
 
   EXPECT_EQ(1u, GetNumTabletStateObserverCalls());
+}
+
+TEST_F(SystemInfoProviderTest,
+       ObserverCalledWhenAndroidDeviceNetworkStateChanged) {
+  FakeObserver::setTaskRunner(&task_runner_);
+  SetAndroidDeviceNetworkInfoChanged();
+  task_runner_.WaitForResult();
+
+  EXPECT_EQ(1u, GetNumAndroidStateObserverCalls());
 }
 
 }  // namespace eche_app

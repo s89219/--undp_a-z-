@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,8 @@ bool StructTraits<gpu::mojom::GpuDeviceDataView, gpu::GPUInfo::GPUDevice>::Read(
          data.ReadLuid(&out->luid) &&
 #endif  // BUILDFLAG(IS_WIN)
          data.ReadDriverVendor(&out->driver_vendor) &&
-         data.ReadDriverVersion(&out->driver_version);
+         data.ReadDriverVersion(&out->driver_version) &&
+         data.ReadGpuPreference(&out->gpu_preference);
 }
 
 // static
@@ -443,6 +444,7 @@ bool StructTraits<gpu::mojom::GpuInfoDataView, gpu::GPUInfo>::Read(
 #if BUILDFLAG(IS_WIN)
   out->d3d12_feature_level = data.d3d12_feature_level();
   out->vulkan_version = data.vulkan_version();
+  out->shared_image_d3d = data.shared_image_d3d();
 #endif
 
   return data.ReadInitializationTime(&out->initialization_time) &&

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/browser/ui/side_search/side_search_config.h"
 #include "chrome/browser/ui/side_search/side_search_side_contents_helper.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -71,8 +72,20 @@ class SideSearchTabContentsHelper
   content::WebContents* OpenURLFromTab(
       content::WebContents* source,
       const content::OpenURLParams& params) override;
+  content::WebContents* GetTabWebContents() override;
+  void CarryOverSideSearchStateToNewTab(
+      const GURL& search_url,
+      content::WebContents* new_web_contents) override;
 
   // content::WebContentsObserver:
+  void DidOpenRequestedURL(content::WebContents* new_contents,
+                           content::RenderFrameHost* source_render_frame_host,
+                           const GURL& url,
+                           const content::Referrer& referrer,
+                           WindowOpenDisposition disposition,
+                           ui::PageTransition transition,
+                           bool started_from_context_menu,
+                           bool renderer_initiated) override;
   void DidStartNavigation(
       content::NavigationHandle* navigation_handle) override;
   void DidFinishNavigation(
@@ -85,6 +98,10 @@ class SideSearchTabContentsHelper
   // currently exist.
   content::WebContents* GetSidePanelContents();
 
+  // Flags whether or not the current search journey was automatically triggered
+  // (i.e. the user did not explicitly open the side panel).
+  void SetAutoTriggered(bool auto_triggered);
+
   // Called by clients as a hint to the tab helper to clear away its
   // `side_panel_contents_` if it exists. Caching strategies can leverage this
   // hint and reset the `side_panel_contents_` at some later point in time.
@@ -94,6 +111,12 @@ class SideSearchTabContentsHelper
   // navigation entry.
   bool CanShowSidePanelForCommittedNavigation();
 
+  // This is called to log the duration between when the side panel was made
+  // available to the first time it was opened for the `last_search_url_`. This
+  // resets the `available_timer_` to avoid logging multiple times in the case a
+  // user closes and opens the panel repeatedly for the same `last_search_url_`.
+  void MaybeRecordDurationSidePanelAvailableToFirstOpen();
+
   void SetDelegate(base::WeakPtr<Delegate> delegate);
 
   const absl::optional<SidePanelRedirectInfo>&
@@ -101,7 +124,9 @@ class SideSearchTabContentsHelper
     return side_panel_initiated_redirect_info_;
   }
 
-  bool returned_to_previous_srp() const { return returned_to_previous_srp_; }
+  int returned_to_previous_srp_count() const {
+    return returned_to_previous_srp_count_;
+  }
 
   bool toggled_open() const { return toggled_open_; }
   void set_toggled_open(bool toggled_open) { toggled_open_ = toggled_open; }
@@ -114,6 +139,14 @@ class SideSearchTabContentsHelper
   }
 
   const absl::optional<GURL>& last_search_url() { return last_search_url_; }
+
+  // Takes the search URL passed from context menu and opens search results in
+  // side panel.
+  void OpenSidePanelFromContextMenuSearch(const GURL& url);
+
+  // Returns true when the side panel can be actually opened from context menu
+  // option.
+  bool CanShowSidePanelFromContextMenuSearch();
 
  private:
   friend class content::WebContentsUserData<SideSearchTabContentsHelper>;
@@ -147,11 +180,11 @@ class SideSearchTabContentsHelper
   // The last Google search URL encountered by this tab contents.
   absl::optional<GURL> last_search_url_;
 
-  // Whether the last search url was the result of the user navigating back
-  // to the previously visisted search url. Used to detect cases where the
-  // side search panel would be of use to the user and thus could benefit
-  // of IPH promo.
-  bool returned_to_previous_srp_ = false;
+  // Counts the number of times the user has returned to the `last_search_url_`
+  // via back navigation. This is used to detect cases where the side search
+  // panel would be of use to the user and is used to show an IPH promo and
+  // automatically trigger the side panel.
+  int returned_to_previous_srp_count_ = 0;
 
   // A flag to track whether the current tab has its side panel toggled open.
   // Only used with the kSideSearchStatePerTab flag.
@@ -172,6 +205,27 @@ class SideSearchTabContentsHelper
   // Used to test if the side panel SRP for `last_search_url_` is currently
   // available. Reset every time `TestSRPAvailability()` is called.
   std::unique_ptr<network::SimpleURLLoader> simple_loader_;
+
+  // Time since the side panel became available for the `last_search_url_`.
+  absl::optional<base::ElapsedTimer> available_timer_;
+
+  // True if the side panel could be shown for the previously committed
+  // navigation.
+  bool could_show_for_last_committed_navigation_ = false;
+
+  // Tracks whether the page action icon has animated-in its label text. Track
+  // this to ensure we only show the label at most once per tab.
+  bool page_action_label_shown_ = false;
+
+  // Tracks the number of times the page action icon has animated-in its label
+  // text for this tab.
+  int page_action_label_shown_count_ = 0;
+
+  // Tracks if we can show the page action label when the entrypoint is
+  // revealed. This is set to true after a navigation to a SRP and reset when
+  // the entrypoint for the current SRP is shown. This is done to ensure we only
+  // show the label text at most once for a given SRP.
+  bool can_show_page_action_label_ = false;
 
   base::ScopedObservation<SideSearchConfig, SideSearchConfig::Observer>
       config_observation_{this};

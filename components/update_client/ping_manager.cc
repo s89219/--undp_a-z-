@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/bind.h"
 #include "base/check_op.h"
 #include "base/location.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "components/update_client/component.h"
 #include "components/update_client/configurator.h"
 #include "components/update_client/persisted_data.h"
@@ -75,7 +75,7 @@ void PingSender::SendPing(const Component& component,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   if (component.events().empty()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), kErrorNoEvents, ""));
     return;
   }
@@ -87,7 +87,7 @@ void PingSender::SendPing(const Component& component,
     RemoveUnsecureUrls(&urls);
 
   if (urls.empty()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), kErrorNoUrl, ""));
     return;
   }
@@ -98,7 +98,8 @@ void PingSender::SendPing(const Component& component,
   apps.push_back(MakeProtocolApp(
       component.id(), component.crx_component()->version,
       component.crx_component()->ap, component.crx_component()->brand,
-      config_->GetLang(), component.crx_component()->install_source,
+      config_->GetLang(), metadata.GetInstallDate(component.id()),
+      component.crx_component()->install_source,
       component.crx_component()->install_location,
       component.crx_component()->fingerprint,
       component.crx_component()->installer_attributes,

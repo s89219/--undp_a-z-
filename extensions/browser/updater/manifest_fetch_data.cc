@@ -1,9 +1,10 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "extensions/browser/updater/manifest_fetch_data.h"
 
+#include <iterator>
 #include <vector>
 
 #include "base/check.h"
@@ -34,7 +35,7 @@ const char kOtherLocation[] = "other";
 const char kInvalidLocation[] = "invalid";
 
 void AddEnabledStateToPing(std::string* ping_value,
-                      const ManifestFetchData::PingData* ping_data) {
+                           const DownloadPingData* ping_data) {
   *ping_value += "&e=" + std::string(ping_data->is_enabled ? "1" : "0");
   if (!ping_data->is_enabled) {
     // Add a dr=<number> param for each bit set in disable reasons.
@@ -100,13 +101,12 @@ ManifestFetchData::ManifestFetchData(const GURL& update_url,
                                      const std::string& brand_code,
                                      const std::string& base_query_params,
                                      PingMode ping_mode,
-                                     FetchPriority fetch_priority)
+                                     DownloadFetchPriority fetch_priority)
     : base_url_(update_url),
       full_url_(update_url),
       brand_code_(brand_code),
       ping_mode_(ping_mode),
-      fetch_priority_(fetch_priority),
-      is_all_external_policy_download_(false) {
+      fetch_priority_(fetch_priority) {
   UpdateFullUrl(base_query_params);
   request_ids_.insert(request_id);
 }
@@ -137,11 +137,11 @@ ManifestFetchData::~ManifestFetchData() = default;
 // (Note that '=' is %3D and '&' is %26 when urlencoded.)
 bool ManifestFetchData::AddExtension(const std::string& id,
                                      const std::string& version,
-                                     const PingData* ping_data,
+                                     const DownloadPingData* ping_data,
                                      const std::string& update_url_data,
                                      const std::string& install_source,
                                      ManifestLocation extension_location,
-                                     FetchPriority fetch_priority) {
+                                     DownloadFetchPriority fetch_priority) {
   DCHECK(!is_all_external_policy_download_ ||
          extension_location == ManifestLocation::kExternalPolicyDownload);
   if (extensions_data_.find(id) != extensions_data_.end()) {
@@ -149,7 +149,7 @@ bool ManifestFetchData::AddExtension(const std::string& id,
     return false;
   }
 
-  if (fetch_priority_ != FOREGROUND) {
+  if (fetch_priority_ != DownloadFetchPriority::kForeground) {
     fetch_priority_ = fetch_priority;
   }
 
@@ -179,7 +179,7 @@ bool ManifestFetchData::AddExtension(const std::string& id,
       parts.push_back(base::StringPrintf("brand=%s", brand_code_.c_str()));
 
     std::string ping_value;
-    pings_[id] = PingData(0, 0, false, 0);
+    pings_[id] = DownloadPingData(0, 0, false, 0);
     if (ping_data) {
       if (ping_data->rollcall_days == kNeverPinged ||
           ping_data->rollcall_days > 0) {
@@ -220,6 +220,10 @@ bool ManifestFetchData::AddExtension(const std::string& id,
   return true;
 }
 
+void ManifestFetchData::AddAssociatedTask(ExtensionDownloaderTask task) {
+  associated_tasks_.emplace_back(std::move(task));
+}
+
 void ManifestFetchData::UpdateFullUrl(const std::string& base_query_params) {
   std::string query =
       full_url_.has_query() ? full_url_.query() + "&" : std::string();
@@ -243,7 +247,7 @@ void ManifestFetchData::RemoveExtensions(const ExtensionIdSet& id_to_remove,
       continue;
     const ExtensionData& extension_data = data.second;
     auto it = pings_.find(extension_id);
-    const PingData* optional_ping_data =
+    const DownloadPingData* optional_ping_data =
         it != pings_.end() ? &(it->second) : nullptr;
     AddExtension(extension_id, extension_data.version.GetString(),
                  optional_ping_data, extension_data.update_url_data,
@@ -278,16 +282,23 @@ bool ManifestFetchData::DidPing(const std::string& extension_id,
   return value == kNeverPinged || value > 0;
 }
 
-void ManifestFetchData::Merge(const ManifestFetchData& other) {
-  DCHECK(full_url() == other.full_url());
-  if (fetch_priority_ != FOREGROUND) {
-    fetch_priority_ = other.fetch_priority_;
+void ManifestFetchData::Merge(std::unique_ptr<ManifestFetchData> other) {
+  DCHECK(full_url() == other->full_url());
+  if (fetch_priority_ != DownloadFetchPriority::kForeground) {
+    fetch_priority_ = other->fetch_priority_;
   }
-  request_ids_.insert(other.request_ids_.begin(), other.request_ids_.end());
+  request_ids_.insert(other->request_ids_.begin(), other->request_ids_.end());
+  associated_tasks_.insert(
+      associated_tasks_.end(),
+      std::make_move_iterator(other->associated_tasks_.begin()),
+      std::make_move_iterator(other->associated_tasks_.end()));
 }
 
 void ManifestFetchData::set_is_all_external_policy_download() {
   is_all_external_policy_download_ = true;
 }
 
+std::vector<ExtensionDownloaderTask> ManifestFetchData::TakeAssociatedTasks() {
+  return std::move(associated_tasks_);
+}
 }  // namespace extensions

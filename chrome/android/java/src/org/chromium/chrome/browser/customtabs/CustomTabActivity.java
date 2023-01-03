@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,9 +28,9 @@ import androidx.browser.customtabs.CustomTabsSessionToken;
 import org.chromium.base.IntentUtils;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.BackupSigninProcessor;
 import org.chromium.chrome.browser.LaunchIntentDispatcher;
 import org.chromium.chrome.browser.app.metrics.LaunchCauseMetrics;
-import org.chromium.chrome.browser.autofill_assistant.AutofillAssistantFacade;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider.CustomTabsUiType;
 import org.chromium.chrome.browser.customtabs.content.CustomTabActivityTabProvider;
@@ -90,8 +90,8 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     protected BaseCustomTabActivityComponent createComponent(
             ChromeActivityCommonsModule commonsModule) {
         BaseCustomTabActivityComponent component = super.createComponent(commonsModule);
-        mOpenTimeRecorder = new CustomTabsOpenTimeRecorder(
-                getLifecycleDispatcher(), mNavigationController, this::isFinishing);
+        mOpenTimeRecorder = new CustomTabsOpenTimeRecorder(getLifecycleDispatcher(),
+                mNavigationController, this::isFinishing, mIntentDataProvider);
         return component;
     }
 
@@ -149,8 +149,18 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     }
 
     @Override
+    protected void onFirstDrawComplete() {
+        super.onFirstDrawComplete();
+
+        FontPreloader.getInstance().onFirstDrawCustomTabActivity();
+    }
+
+    @Override
     public void finishNativeInitialization() {
-        if (!mIntentDataProvider.isInfoPage()) FirstRunSignInProcessor.start(this);
+        if (!mIntentDataProvider.isInfoPage()) {
+            FirstRunSignInProcessor.openSyncSettingsIfScheduled(this);
+            BackupSigninProcessor.start(this);
+        }
 
         mConnection.showSignInToastIfNecessary(mSession, getIntent());
 
@@ -163,13 +173,6 @@ public class CustomTabActivity extends BaseCustomTabActivity {
                 });
 
         super.finishNativeInitialization();
-
-        // We start the Autofill Assistant after the call to super.finishNativeInitialization() as
-        // this will initialize the BottomSheet that is used to embed the Autofill Assistant bottom
-        // bar.
-        if (AutofillAssistantFacade.isAutofillAssistantEnabled(getInitialIntent())) {
-            AutofillAssistantFacade.start(this);
-        }
     }
 
     @Override
@@ -224,7 +227,7 @@ public class CustomTabActivity extends BaseCustomTabActivity {
     @Override
     public boolean onMenuOrKeyboardAction(int id, boolean fromMenu) {
         if (id == R.id.bookmark_this_page_id) {
-            addOrEditBookmark(getActivityTab());
+            mTabBookmarkerSupplier.get().addOrEditBookmark(getActivityTab());
             RecordUserAction.record("MobileMenuAddToBookmarks");
             return true;
         } else if (id == R.id.open_in_browser_id) {
@@ -241,7 +244,8 @@ public class CustomTabActivity extends BaseCustomTabActivity {
             if (tab == null) return false;
             String publisher = TrustedCdn.getContentPublisher(tab);
             new ChromePageInfo(getModalDialogManagerSupplier(), publisher, OpenedFromSource.MENU,
-                    () -> mRootUiCoordinator.getMerchantTrustSignalsCoordinatorSupplier().get())
+                    mRootUiCoordinator.getMerchantTrustSignalsCoordinatorSupplier()::get,
+                    mRootUiCoordinator.getEphemeralTabCoordinatorSupplier())
                     .show(tab, ChromePageInfoHighlight.noHighlight());
             return true;
         }
@@ -255,16 +259,6 @@ public class CustomTabActivity extends BaseCustomTabActivity {
             return new IncognitoCustomTabIntentDataProvider(intent, this, colorScheme);
         }
         return new CustomTabIntentDataProvider(intent, this, colorScheme);
-    }
-
-    @Override
-    public boolean supportsAppMenu() {
-        // The media viewer has no default menu items, so if there are also no custom items, we
-        // should disable the menu altogether.
-        if (mIntentDataProvider.isMediaViewer() && mIntentDataProvider.getMenuTitles().isEmpty()) {
-            return false;
-        }
-        return super.supportsAppMenu();
     }
 
     /**
@@ -306,15 +300,6 @@ public class CustomTabActivity extends BaseCustomTabActivity {
         }
 
         return super.requiresFirstRunToBeCompleted(intent);
-    }
-
-    /**
-     * @return The package name of the Trusted Web Activity, if the activity is a TWA; null
-     * otherwise.
-     */
-    @Nullable
-    public String getTwaPackage() {
-        return mTwaCoordinator == null ? null : mTwaCoordinator.getTwaPackage();
     }
 
     @Override

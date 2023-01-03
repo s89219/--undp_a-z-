@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,6 +98,28 @@ function updateVerboseLogging(enabled) {
 
 function updateMirroring(enabled) {
   $('mirroring-toggle').checked = enabled;
+}
+
+function updateBulkPinning(enabled) {
+  $('bulk-pinning-toggle').checked = enabled;
+  $('bulk-pinning-setup-stage').innerText = '?';
+  $('bulk-pinning-setup-stage-error').innerText = '?';
+  $('bulk-pinning-available-disk-space').innerText = '?';
+  $('bulk-pinning-required-disk-space').innerText = '?';
+  $('bulk-pinning-pinned-disk-space').innerText = '?';
+}
+
+function onBulkPinningProgress(progress) {
+  const isBulkPinningEnabled = $('bulk-pinning-toggle').checked;
+  if (!isBulkPinningEnabled) {
+    return;
+  }
+  $('bulk-pinning-setup-stage').innerText = progress.stage;
+  $('bulk-pinning-setup-stage-error').innerText = progress.setupError;
+  $('bulk-pinning-available-disk-space').innerText =
+      progress.availableDiskSpace;
+  $('bulk-pinning-required-disk-space').innerText = progress.requiredDiskSpace;
+  $('bulk-pinning-pinned-disk-space').innerText = progress.pinnedDiskSpace;
 }
 
 function updateStartupArguments(args) {
@@ -363,6 +385,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
   $('mirroring-toggle').addEventListener('change', function(e) {
     chrome.send('setMirroringEnabled', [e.target.checked]);
+  });
+
+  $('bulk-pinning-toggle').addEventListener('change', function(e) {
+    chrome.send('setBulkPinningEnabled', [e.target.checked]);
   });
 
   $('startup-arguments-form').addEventListener('submit', function(e) {

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@ class PriceField : public FormField {
  public:
   static std::unique_ptr<FormField> Parse(AutofillScanner* scanner,
                                           const LanguageCode& page_language,
-                                          PredictionSource prediction_source,
+                                          PatternSource pattern_source,
                                           LogManager* log_manager);
   explicit PriceField(const AutofillField* field);
 
@@ -33,7 +33,7 @@ class PriceField : public FormField {
   PriceField& operator=(const PriceField&) = delete;
 
  protected:
-  void AddClassifications(FieldCandidatesMap* field_candidates) const override;
+  void AddClassifications(FieldCandidatesMap& field_candidates) const override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(PriceFieldTest, ParsePrice);

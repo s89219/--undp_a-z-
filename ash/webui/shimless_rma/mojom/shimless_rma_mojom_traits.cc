@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,8 @@
 
 #include "base/notreached.h"
 #include "chromeos/ash/components/dbus/rmad/rmad.pb.h"
-#include "chromeos/dbus/update_engine/update_engine.pb.h"
-#include "chromeos/dbus/update_engine/update_engine_client.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine.pb.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine_client.h"
 #include "mojo/public/cpp/bindings/enum_traits.h"
 
 namespace mojo {
@@ -217,6 +217,10 @@ MojomRmadErrorCode EnumTraits<MojomRmadErrorCode, ProtoRmadErrorCode>::ToMojom(
       return MojomRmadErrorCode::kCannotWrite;
     case ProtoRmadErrorCode::RMAD_ERROR_CANNOT_SAVE_LOG:
       return MojomRmadErrorCode::kCannotSaveLog;
+    case ProtoRmadErrorCode::RMAD_ERROR_CANNOT_RECORD_BROWSER_ACTION:
+      return MojomRmadErrorCode::kCannotRecordBrowserAction;
+    case ProtoRmadErrorCode::RMAD_ERROR_USB_NOT_FOUND:
+      return MojomRmadErrorCode::kUsbNotFound;
 
     case ProtoRmadErrorCode::RMAD_ERROR_NOT_SET:
     default:
@@ -368,6 +372,12 @@ bool EnumTraits<MojomRmadErrorCode, ProtoRmadErrorCode>::FromMojom(
     case MojomRmadErrorCode::kCannotSaveLog:
       *out = ProtoRmadErrorCode::RMAD_ERROR_CANNOT_SAVE_LOG;
       return true;
+    case MojomRmadErrorCode::kCannotRecordBrowserAction:
+      *out = ProtoRmadErrorCode::RMAD_ERROR_CANNOT_RECORD_BROWSER_ACTION;
+      return true;
+    case MojomRmadErrorCode::kUsbNotFound:
+      *out = ProtoRmadErrorCode::RMAD_ERROR_USB_NOT_FOUND;
+      return true;
 
     case MojomRmadErrorCode::kNotSet:
       NOTREACHED();
@@ -403,6 +413,10 @@ EnumTraits<MojomOsUpdateOperation, ProtoOsUpdateOperation>::ToMojom(
       return MojomOsUpdateOperation::kDisabled;
     case update_engine::NEED_PERMISSION_TO_UPDATE:
       return MojomOsUpdateOperation::kNeedPermissionToUpdate;
+    case update_engine::CLEANUP_PREVIOUS_UPDATE:
+      return MojomOsUpdateOperation::kCleanupPreviousUpdate;
+    case update_engine::UPDATED_BUT_DEFERRED:
+      return MojomOsUpdateOperation::kUpdatedButDeferred;
     case update_engine::ERROR:
     case update_engine::Operation_INT_MIN_SENTINEL_DO_NOT_USE_:
     case update_engine::Operation_INT_MAX_SENTINEL_DO_NOT_USE_:
@@ -450,6 +464,12 @@ bool EnumTraits<MojomOsUpdateOperation, ProtoOsUpdateOperation>::FromMojom(
       return true;
     case MojomOsUpdateOperation::kNeedPermissionToUpdate:
       *out = update_engine::NEED_PERMISSION_TO_UPDATE;
+      return true;
+    case MojomOsUpdateOperation::kCleanupPreviousUpdate:
+      *out = update_engine::CLEANUP_PREVIOUS_UPDATE;
+      return true;
+    case MojomOsUpdateOperation::kUpdatedButDeferred:
+      *out = update_engine::UPDATED_BUT_DEFERRED;
       return true;
   }
   NOTREACHED();
@@ -706,6 +726,8 @@ EnumTraits<MojomWpDisableAction, ProtoWpDisableAction>::ToMojom(
     case rmad::WriteProtectDisableCompleteState::
         RMAD_WP_DISABLE_COMPLETE_KEEP_DEVICE_OPEN:
       return MojomWpDisableAction::kCompleteKeepDeviceOpen;
+    case rmad::WriteProtectDisableCompleteState::RMAD_WP_DISABLE_COMPLETE_NO_OP:
+      return MojomWpDisableAction::kCompleteNoOp;
     case rmad::WriteProtectDisableCompleteState::RMAD_WP_DISABLE_UNKNOWN:
       return MojomWpDisableAction::kUnknown;
 
@@ -733,6 +755,10 @@ bool EnumTraits<MojomWpDisableAction, ProtoWpDisableAction>::FromMojom(
     case MojomWpDisableAction::kCompleteKeepDeviceOpen:
       *out = rmad::WriteProtectDisableCompleteState::
           RMAD_WP_DISABLE_COMPLETE_KEEP_DEVICE_OPEN;
+      return true;
+    case MojomWpDisableAction::kCompleteNoOp:
+      *out = rmad::WriteProtectDisableCompleteState::
+          RMAD_WP_DISABLE_COMPLETE_NO_OP;
       return true;
 
     case MojomWpDisableAction::kUnknown:
@@ -805,6 +831,18 @@ EnumTraits<MojomProvisioningError, ProtoProvisioningError>::ToMojom(
       return MojomProvisioningError::kCannotWrite;
     case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_GENERATE_SECRET:
       return MojomProvisioningError::kGenerateSecret;
+    case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_BASE_ACCELEROMETER:
+      return MojomProvisioningError::kMissingBaseAccelerometer;
+    case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_LID_ACCELEROMETER:
+      return MojomProvisioningError::kMissingLidAccelerometer;
+    case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_BASE_GYROSCOPE:
+      return MojomProvisioningError::kMissingBaseGyroscope;
+    case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_LID_GYROSCOPE:
+      return MojomProvisioningError::kMissingLidGyroscope;
+    case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_CR50:
+      return MojomProvisioningError::kCr50;
+    case rmad::ProvisionStatus::RMAD_PROVISION_ERROR_GBB:
+      return MojomProvisioningError::kGbb;
 
     default:
       NOTREACHED();
@@ -836,6 +874,26 @@ bool EnumTraits<MojomProvisioningError, ProtoProvisioningError>::FromMojom(
       return true;
     case MojomProvisioningError::kGenerateSecret:
       *out = rmad::ProvisionStatus::RMAD_PROVISION_ERROR_GENERATE_SECRET;
+      return true;
+    case MojomProvisioningError::kMissingBaseAccelerometer:
+      *out = rmad::ProvisionStatus::
+          RMAD_PROVISION_ERROR_MISSING_BASE_ACCELEROMETER;
+      return true;
+    case MojomProvisioningError::kMissingLidAccelerometer:
+      *out =
+          rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_LID_ACCELEROMETER;
+      return true;
+    case MojomProvisioningError::kMissingBaseGyroscope:
+      *out = rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_BASE_GYROSCOPE;
+      return true;
+    case MojomProvisioningError::kMissingLidGyroscope:
+      *out = rmad::ProvisionStatus::RMAD_PROVISION_ERROR_MISSING_LID_GYROSCOPE;
+      return true;
+    case MojomProvisioningError::kCr50:
+      *out = rmad::ProvisionStatus::RMAD_PROVISION_ERROR_CR50;
+      return true;
+    case MojomProvisioningError::kGbb:
+      *out = rmad::ProvisionStatus::RMAD_PROVISION_ERROR_GBB;
       return true;
   }
   NOTREACHED();

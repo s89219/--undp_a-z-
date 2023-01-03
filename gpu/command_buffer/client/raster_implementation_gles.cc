@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -200,6 +200,7 @@ void RasterImplementationGLES::WritePixels(const gpu::Mailbox& dest_mailbox,
 void RasterImplementationGLES::ConvertYUVAMailboxesToRGB(
     const gpu::Mailbox& dest_mailbox,
     SkYUVColorSpace planes_yuv_color_space,
+    const SkColorSpace* planes_rgb_color_space,
     SkYUVAInfo::PlaneConfig plane_config,
     SkYUVAInfo::Subsampling subsampling,
     const gpu::Mailbox yuva_plane_mailboxes[]) {
@@ -216,7 +217,7 @@ void RasterImplementationGLES::ConvertRGBAToYUVAMailboxes(
 }
 
 void RasterImplementationGLES::BeginRasterCHROMIUM(
-    GLuint sk_color,
+    SkColor4f sk_color_4f,
     GLboolean needs_clear,
     GLuint msaa_sample_count,
     MsaaMode msaa_mode,
@@ -236,8 +237,7 @@ void RasterImplementationGLES::RasterCHROMIUM(
     const gfx::Vector2dF& post_translate,
     const gfx::Vector2dF& post_scale,
     bool requires_clear,
-    size_t* max_op_size_hint,
-    bool preserve_recording) {
+    size_t* max_op_size_hint) {
   NOTREACHED();
 }
 
@@ -263,10 +263,12 @@ void RasterImplementationGLES::ReadbackARGBPixelsAsync(
     const gpu::Mailbox& source_mailbox,
     GLenum source_target,
     GrSurfaceOrigin src_origin,
+    const gfx::Size& source_size,
+    const gfx::Point& source_starting_point,
     const SkImageInfo& dst_info,
     GLuint dst_row_bytes,
     unsigned char* out,
-    base::OnceCallback<void(GrSurfaceOrigin, bool)> readback_done) {
+    base::OnceCallback<void(bool)> readback_done) {
   DCHECK(!readback_done.is_null());
   DCHECK(dst_info.colorType() == kRGBA_8888_SkColorType ||
          dst_info.colorType() == kBGRA_8888_SkColorType);
@@ -277,23 +279,47 @@ void RasterImplementationGLES::ReadbackARGBPixelsAsync(
   BeginSharedImageAccessDirectCHROMIUM(
       texture_id, GL_SHARED_IMAGE_ACCESS_MODE_READ_CHROMIUM);
 
+  // Convert bottom-left GL coordinates to top-left coordinates expected
+  // by RI clients.
+  bool flip_y;
+  gfx::Point starting_point(source_starting_point);
+  switch (src_origin) {
+    case kTopLeft_GrSurfaceOrigin:
+      flip_y = false;
+      break;
+    case kBottomLeft_GrSurfaceOrigin:
+      // Since RI clients always expect top-left origin, two things need to be
+      // done when texture's origin is bottom-left.
+
+      // 1. Rows in the output buffer need to be switched vertically.
+      flip_y = true;
+
+      // 2. Starting of a target rectangle needs to be adjusted from top-left
+      //    to bottom-left. That's how glReadPixels expects it.
+      // It's okay if we accidentally go negative here, glReadPixels checks
+      // its input.
+      starting_point.set_y(source_size.height() - starting_point.y() -
+                           dst_gfx_size.height());
+      break;
+  }
+
   GetGLHelper()->ReadbackTextureAsync(
-      texture_id, source_target, dst_gfx_size, out, format,
+      texture_id, source_target, starting_point, dst_gfx_size, out,
+      dst_row_bytes, flip_y, format,
       base::BindOnce(&RasterImplementationGLES::OnReadARGBPixelsAsync,
                      weak_ptr_factory_.GetWeakPtr(), texture_id,
-                     std::move(readback_done), src_origin));
+                     std::move(readback_done)));
 }
 
 void RasterImplementationGLES::OnReadARGBPixelsAsync(
     GLuint texture_id,
-    base::OnceCallback<void(GrSurfaceOrigin, bool)> readback_done,
-    GrSurfaceOrigin source_origin,
+    base::OnceCallback<void(bool)> readback_done,
     bool success) {
   DCHECK(texture_id);
   EndSharedImageAccessDirectCHROMIUM(texture_id);
   DeleteGpuRasterTexture(texture_id);
 
-  std::move(readback_done).Run(source_origin, success);
+  std::move(readback_done).Run(success);
 }
 
 void RasterImplementationGLES::ReadbackYUVPixelsAsync(

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,6 +41,7 @@ void AddExamplesColorMixers(ui::ColorProvider* color_provider,
   mixer[Ids::kColorLabelExampleUpperShadow] = {SK_ColorRED};
   mixer[Ids::kColorLabelExampleCustomBackground] = {SK_ColorLTGRAY};
   mixer[Ids::kColorLabelExampleCustomBorder] = {SK_ColorGRAY};
+  mixer[Ids::kColorMenuButtonExampleBorder] = {SK_ColorGRAY};
   mixer[Ids::kColorMultilineExampleBorder] = {SK_ColorGRAY};
   mixer[Ids::kColorMultilineExampleColorRange] = {SK_ColorRED};
   mixer[Ids::kColorMultilineExampleForeground] = {SK_ColorBLACK};

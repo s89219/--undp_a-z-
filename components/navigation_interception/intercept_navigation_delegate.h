@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,8 @@
 #include "base/android/jni_weak_ref.h"
 #include "base/supports_user_data.h"
 #include "components/navigation_interception/intercept_navigation_throttle.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
 #include "ui/base/page_transition_types.h"
 
 namespace content {
@@ -70,11 +72,18 @@ class InterceptNavigationDelegate : public base::SupportsUserData::Data {
 
   bool ShouldIgnoreNavigation(content::NavigationHandle* navigation_handle);
 
-  void HandleExternalProtocolDialog(
+  // See ContentBrowserClient::HandleExternalProtocol for the semantics around
+  // |out_factory|.
+  virtual void HandleSubframeExternalProtocol(
       const GURL& url,
       ui::PageTransition page_transition,
       bool has_user_gesture,
-      const absl::optional<url::Origin>& initiating_origin);
+      const absl::optional<url::Origin>& initiating_origin,
+      mojo::PendingRemote<network::mojom::URLLoaderFactory>* out_factory);
+
+  // To be called when a main frame requests a resource with a user gesture (eg.
+  // xrh, fetch, etc.)
+  void OnResourceRequestWithGesture();
 
  private:
   JavaObjectWeakGlobalRef weak_jdelegate_;

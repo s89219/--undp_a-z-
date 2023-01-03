@@ -40,6 +40,7 @@ class StyleRequest {
 
  public:
   enum RequestType { kForRenderer, kForComputedStyle };
+  enum RulesToInclude { kUAOnly, kAll };
 
   StyleRequest() = default;
 
@@ -55,6 +56,7 @@ class StyleRequest {
   ScrollbarPart scrollbar_part{kNoPart};
   CustomScrollbar* scrollbar{nullptr};
   AtomicString pseudo_argument{g_null_atom};
+  RulesToInclude rules_to_include{kAll};
 
   explicit StyleRequest(const ComputedStyle* parent_override)
       : parent_override(parent_override),
@@ -68,7 +70,7 @@ class StyleRequest {
         pseudo_id(pseudo_id),
         pseudo_argument(pseudo_argument) {
     DCHECK(!IsTransitionPseudoElement(pseudo_id) ||
-           pseudo_id == kPseudoIdPageTransition || pseudo_argument);
+           pseudo_id == kPseudoIdViewTransition || pseudo_argument);
   }
 
   StyleRequest(PseudoId pseudo_id,

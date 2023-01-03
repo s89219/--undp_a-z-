@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/observer_list_types.h"
 #include "components/autofill/core/common/gaia_id_hash.h"
 #include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store_util.h"
 
 namespace password_manager {
 
@@ -67,15 +68,18 @@ class FormFetcher {
       const = 0;
 
   // Returns all PasswordForm entries that have insecure features.
-  virtual const std::vector<const PasswordForm*>& GetInsecureCredentials()
-      const = 0;
+  // Do not store the result of this call. The pointers become invalid if `this`
+  // receives new results from a password store.
+  virtual std::vector<const PasswordForm*> GetInsecureCredentials() const = 0;
 
-  // Non-federated matches obtained from the backend. Valid only if GetState()
-  // returns NOT_WAITING.
+  // Non-federated matches obtained from the backend.
+  // Do not store the result of this call. The pointers become invalid if `this`
+  // receives new results from a password store.
   virtual std::vector<const PasswordForm*> GetNonFederatedMatches() const = 0;
 
-  // Federated matches obtained from the backend. Valid only if GetState()
-  // returns NOT_WAITING.
+  // Federated matches obtained from the backend.
+  // Do not store the result of this call. The pointers become invalid if `this`
+  // receives new results from a password store.
   virtual std::vector<const PasswordForm*> GetFederatedMatches() const = 0;
 
   // Whether there are blocklisted matches in the backend. Valid only if
@@ -103,6 +107,11 @@ class FormFetcher {
   // Creates a copy of |*this| with contains the same credentials without the
   // need for calling Fetch().
   virtual std::unique_ptr<FormFetcher> Clone() = 0;
+
+  // Returns an error if it occurred during login retrieval from the
+  // profile store.
+  virtual absl::optional<PasswordStoreBackendError>
+  GetProfileStoreBackendError() const = 0;
 };
 
 }  // namespace password_manager

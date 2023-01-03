@@ -1,13 +1,13 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/credential_provider_extension/ui/credential_list_view_controller.h"
 
-#include "base/mac/foundation_util.h"
-#include "base/numerics/safe_conversions.h"
-#include "ios/chrome/common/app_group/app_group_constants.h"
-#include "ios/chrome/common/app_group/app_group_metrics.h"
+#import "base/mac/foundation_util.h"
+#import "base/numerics/safe_conversions.h"
+#import "ios/chrome/common/app_group/app_group_constants.h"
+#import "ios/chrome/common/app_group/app_group_metrics.h"
 #import "ios/chrome/common/credential_provider/credential.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/elements/highlight_button.h"
@@ -45,25 +45,6 @@ UIColor* BackgroundColor() {
 @end
 
 @implementation CredentialListCell
-
-- (instancetype)initWithStyle:(UITableViewCellStyle)style
-              reuseIdentifier:(NSString*)reuseIdentifier {
-  self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
-  if (self) {
-    [self addInteraction:[[ViewPointerInteraction alloc] init]];
-  }
-  return self;
-}
-
-@end
-
-// This cell just adds a simple hover pointer interaction to the TableViewCell.
-// TODO(crbug.com/1300569): Remove this when kEnableFaviconForPasswords flag is
-// removed.
-@interface LegacyCredentialListCell : UITableViewCell
-@end
-
-@implementation LegacyCredentialListCell
 
 - (instancetype)initWithStyle:(UITableViewCellStyle)style
               reuseIdentifier:(NSString*)reuseIdentifier {
@@ -232,7 +213,6 @@ UIColor* BackgroundColor() {
   UITableViewCell* cell =
       [tableView dequeueReusableCellWithIdentifier:kCredentialCellIdentifier];
 
-  if (IsFaviconEnabled()) {
     if (!cell) {
       cell =
           [[CredentialListCell alloc] initWithStyle:UITableViewCellStyleDefault
@@ -267,23 +247,6 @@ UIColor* BackgroundColor() {
     [credentialCell.faviconView
         configureWithAttributes:self.defaultWorldIconAttributes];
     return credentialCell;
-  } else {
-    if (!cell) {
-      cell = [[LegacyCredentialListCell alloc]
-            initWithStyle:UITableViewCellStyleSubtitle
-          reuseIdentifier:kCredentialCellIdentifier];
-      cell.accessoryView = [self infoIconButton];
-    }
-
-    cell.textLabel.text = credential.serviceName;
-    cell.textLabel.textColor = [UIColor colorNamed:kTextPrimaryColor];
-    cell.detailTextLabel.text = credential.user;
-    cell.detailTextLabel.textColor = [UIColor colorNamed:kTextSecondaryColor];
-    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-    cell.backgroundColor = [UIColor colorNamed:kBackgroundColor];
-    cell.accessibilityTraits |= UIAccessibilityTraitButton;
-    return cell;
-  }
 }
 
 // Asynchronously loads favicon for given index path. The loads are cancelled
@@ -434,8 +397,8 @@ UIColor* BackgroundColor() {
   [self.delegate showDetailsForCredential:credential];
 }
 
-// Returns number of sections to display based on |suggestedPasswords| and
-// |allPasswords|. If no sections with data, returns 1 for the 'no data' banner.
+// Returns number of sections to display based on `suggestedPasswords` and
+// `allPasswords`. If no sections with data, returns 1 for the 'no data' banner.
 - (int)numberOfSections {
   if ([self numberOfRowsInSuggestedPasswordSection] == 0 ||
       [self.allPasswords count] == 0) {

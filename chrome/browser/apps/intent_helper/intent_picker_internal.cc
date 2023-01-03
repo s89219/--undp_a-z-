@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,12 @@
 #include <utility>
 
 #include "chrome/browser/apps/intent_helper/page_transition_util.h"
-#include "chrome/browser/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+#include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/intent_picker_tab_helper.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
@@ -78,8 +78,8 @@ std::vector<IntentPickerAppInfo> FindPwaForUrl(
     return apps;
 
   auto* const provider = web_app::WebAppProvider::GetForWebApps(profile);
-  if (provider->registrar().GetAppUserDisplayMode(*app_id) ==
-      web_app::UserDisplayMode::kBrowser) {
+  if (provider->registrar_unsafe().GetAppUserDisplayMode(*app_id) ==
+      web_app::mojom::UserDisplayMode::kBrowser) {
     return apps;
   }
 
@@ -90,7 +90,7 @@ std::vector<IntentPickerAppInfo> FindPwaForUrl(
   // Prefer the web and place apps of type PWA before apps of type ARC.
   // TODO(crbug.com/824598): deterministically sort this list.
   apps.emplace(apps.begin(), PickerEntryType::kWeb, icon_model, *app_id,
-               provider->registrar().GetAppShortName(*app_id));
+               provider->registrar_unsafe().GetAppShortName(*app_id));
 
   return apps;
 }
@@ -213,6 +213,7 @@ PickerEntryType GetPickerEntryType(AppType app_type) {
     case AppType::kStandaloneBrowserChromeApp:
     case AppType::kRemote:
     case AppType::kBorealis:
+    case AppType::kBruschetta:
     case AppType::kStandaloneBrowserExtension:
       break;
     case AppType::kArc:

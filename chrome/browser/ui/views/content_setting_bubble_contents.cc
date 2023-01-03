@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -82,8 +82,8 @@ class MediaComboboxModel : public ui::ComboboxModel {
   int GetDeviceIndex(const blink::MediaStreamDevice& device) const;
 
   // ui::ComboboxModel:
-  int GetItemCount() const override;
-  std::u16string GetItemAt(int index) const override;
+  size_t GetItemCount() const override;
+  std::u16string GetItemAt(size_t index) const override;
 
  private:
   blink::mojom::MediaStreamType type_;
@@ -183,11 +183,11 @@ int MediaComboboxModel::GetDeviceIndex(
   return 0;
 }
 
-int MediaComboboxModel::GetItemCount() const {
-  return std::max(1, static_cast<int>(GetDevices().size()));
+size_t MediaComboboxModel::GetItemCount() const {
+  return std::max(size_t{1}, GetDevices().size());
 }
 
-std::u16string MediaComboboxModel::GetItemAt(int index) const {
+std::u16string MediaComboboxModel::GetItemAt(size_t index) const {
   return GetDevices().empty()
              ? l10n_util::GetStringUTF16(IDS_MEDIA_MENU_NO_DEVICE_TITLE)
              : base::UTF8ToUTF16(GetDevices()[index].name);
@@ -404,13 +404,6 @@ ContentSettingBubbleContents::~ContentSettingBubbleContents() {
 
 void ContentSettingBubbleContents::WindowClosing() {
   if (content_setting_bubble_model_) {
-    if (GetWidget()->closed_reason() ==
-            views::Widget::ClosedReason::kEscKeyPressed ||
-        GetWidget()->closed_reason() ==
-            views::Widget::ClosedReason::kCloseButtonClicked) {
-      content_setting_bubble_model_->OnBubbleDismissedByUser();
-    }
-
     content_setting_bubble_model_->CommitChanges();
   }
 }
@@ -452,14 +445,6 @@ std::u16string ContentSettingBubbleContents::GetWindowTitle() const {
 
 bool ContentSettingBubbleContents::ShouldShowCloseButton() const {
   return true;
-}
-
-void ContentSettingBubbleContents::OnWidgetDestroying(views::Widget* widget) {
-  if (widget->closed_reason() == views::Widget::ClosedReason::kEscKeyPressed ||
-      widget->closed_reason() ==
-          views::Widget::ClosedReason::kCloseButtonClicked) {
-    content_setting_bubble_model_->OnBubbleDismissedByUser();
-  }
 }
 
 void ContentSettingBubbleContents::Init() {
@@ -687,7 +672,8 @@ void ContentSettingBubbleContents::OnPerformAction(views::Combobox* combobox) {
   MediaComboboxModel* model =
       static_cast<MediaComboboxModel*>(combobox->GetModel());
   content_setting_bubble_model_->OnMediaMenuClicked(
-      model->type(), model->GetDevices()[combobox->GetSelectedIndex()].id);
+      model->type(),
+      model->GetDevices()[combobox->GetSelectedIndex().value()].id);
 }
 
 BEGIN_METADATA(ContentSettingBubbleContents, views::BubbleDialogDelegateView)

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@ import org.chromium.base.ContextUtils;
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.AsyncTask;
 import org.chromium.components.browser_ui.util.ConversionUtils;
+import org.chromium.components.content_settings.ContentSettingValues;
 import org.chromium.components.webapps.WebApkDistributor;
 
 import java.io.File;
@@ -152,10 +153,17 @@ public class WebApkUmaRecorder {
                 HISTOGRAM_LAUNCH_TO_SPLASHSCREEN_HIDDEN, durationMs);
     }
 
-    /** Records whether a WebAPK has permission to display notifications. */
-    public static void recordNotificationPermissionStatus(boolean permissionEnabled) {
-        RecordHistogram.recordBooleanHistogram(
-                "WebApk.Notification.Permission.Status", permissionEnabled);
+    /** Records the notification permission status for a WebAPK. */
+    public static void recordNotificationPermissionStatus(@ContentSettingValues int settingValue) {
+        RecordHistogram.recordEnumeratedHistogram("WebApk.Notification.Permission.Status2",
+                settingValue, ContentSettingValues.NUM_SETTINGS);
+    }
+
+    /** Records the notification permission request result for a WebAPK. */
+    public static void recordNotificationPermissionRequestResult(
+            @ContentSettingValues int settingValue) {
+        RecordHistogram.recordEnumeratedHistogram("WebApk.Notification.PermissionRequestResult",
+                settingValue, ContentSettingValues.NUM_SETTINGS);
     }
 
     /**
@@ -182,14 +190,6 @@ public class WebApkUmaRecorder {
     public static void recordGooglePlayUpdateResult(@GooglePlayInstallResult int result) {
         RecordHistogram.recordEnumeratedHistogram("WebApk.Update.GooglePlayUpdateResult", result,
                 GooglePlayInstallResult.NUM_ENTRIES);
-    }
-
-    /** Records the duration of a WebAPK session (from launch/foreground to background). */
-    public static void recordWebApkSessionDuration(
-            @WebApkDistributor int distributor, long duration) {
-        RecordHistogram.recordLongTimesHistogram(
-                "WebApk.Session.TotalDuration2." + getWebApkDistributorUmaSuffix(distributor),
-                duration);
     }
 
     /** Records the current Shell APK version. */

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,9 +25,9 @@ class DeskTemplateClientLacros : public crosapi::mojom::DeskTemplateClient {
       const gfx::Rect& bounds,
       const ui::mojom::WindowShowState show_state,
       crosapi::mojom::DeskTemplateStatePtr additional_state) override;
-  void GetTabStripModelUrls(uint32_t serial,
-                            const std::string& window_unique_id,
-                            GetTabStripModelUrlsCallback callback) override;
+  void GetBrowserInformation(uint32_t serial,
+                             const std::string& window_unique_id,
+                             GetBrowserInformationCallback callback) override;
   void GetFaviconImage(const GURL& url,
                        GetFaviconImageCallback callback) override;
 

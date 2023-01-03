@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,8 +32,6 @@ class LayerTreeHostFiltersPixelTest
   // generating separate base line file paths.
   const char* GetRendererSuffix() {
     switch (renderer_type_) {
-      case viz::RendererType::kGL:
-        return "gl";
       case viz::RendererType::kSkiaGL:
         return "skia_gl";
       case viz::RendererType::kSkiaVk:
@@ -151,12 +149,9 @@ TEST_P(LayerTreeHostFiltersPixelTest, BackdropFilterInvalid) {
 }
 
 TEST_P(LayerTreeHostFiltersPixelTest, BackdropFilterBlurRadius) {
-#if BUILDFLAG(IS_FUCHSIA)
-  // TODO(crbug.com/1311459): This test case fails on SwiftShader FEMU due
-  // to a new implementation of log/exp functions in SwiftShader. We should
-  // re-enable the test case once the bug is fixed.
+#if defined(MEMORY_SANITIZER)
   if (renderer_type() == viz::RendererType::kSkiaVk) {
-    GTEST_SKIP();
+    GTEST_SKIP() << "TODO(crbug.com/1324336): Uninitialized data error";
   }
 #endif
   if (use_software_renderer()) {
@@ -180,7 +175,9 @@ TEST_P(LayerTreeHostFiltersPixelTest, BackdropFilterBlurRadius) {
   gfx::RRectF backdrop_filter_bounds(gfx::RectF(gfx::SizeF(blur->bounds())), 0);
   blur->SetBackdropFilterBounds(backdrop_filter_bounds);
 
-#if BUILDFLAG(IS_WIN) || defined(ARCH_CPU_ARM64)
+#if BUILDFLAG(IS_FUCHSIA)
+  pixel_comparator_ = std::make_unique<FuzzyPixelOffByOneComparator>(false);
+#elif BUILDFLAG(IS_WIN) || defined(ARCH_CPU_ARM64)
   // Windows and ARM64 have 436 pixels off by 1: crbug.com/259915
   float percentage_pixels_large_error = 1.09f;  // 436px / (200*200)
   float percentage_pixels_small_error = 0.0f;
@@ -249,6 +246,11 @@ TEST_P(LayerTreeHostFiltersPixelTest, BackdropFilterBlurRounded) {
 }
 
 TEST_P(LayerTreeHostFiltersPixelTest, BackdropFilterBlurOutsets) {
+#if defined(MEMORY_SANITIZER)
+  if (renderer_type() == viz::RendererType::kSkiaVk) {
+    GTEST_SKIP() << "TODO(crbug.com/1324336): Uninitialized data error";
+  }
+#endif
   scoped_refptr<SolidColorLayer> background = CreateSolidColorLayer(
       gfx::Rect(200, 200), SK_ColorWHITE);
 
@@ -553,14 +555,6 @@ TEST_P(LayerTreeHostFiltersPixelTest, ImageFilterClipped) {
 }
 
 TEST_P(LayerTreeHostFiltersPixelTest, ImageFilterScaled) {
-#if BUILDFLAG(IS_FUCHSIA)
-  // TODO(crbug.com/1311459): This test case fails on SwiftShader FEMU due
-  // to a new implementation of log/exp functions in SwiftShader. We should
-  // re-enable the test case once the bug is fixed.
-  if (renderer_type() == viz::RendererType::kSkiaVk) {
-    GTEST_SKIP();
-  }
-#endif
   scoped_refptr<SolidColorLayer> background =
       CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorWHITE);
 
@@ -599,7 +593,11 @@ TEST_P(LayerTreeHostFiltersPixelTest, ImageFilterScaled) {
   filter->SetBackdropFilters(filters);
   filter->ClearBackdropFilterBounds();
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS_ASH) || \
+#if BUILDFLAG(IS_FUCHSIA)
+  if (renderer_type() == viz::RendererType::kSkiaVk) {
+    pixel_comparator_ = std::make_unique<FuzzyPixelOffByOneComparator>(false);
+  }
+#elif BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || \
     defined(_MIPS_ARCH_LOONGSON) || defined(ARCH_CPU_ARM64)
 #if BUILDFLAG(IS_WIN)
   // Windows has 153 pixels off by at most 2: crbug.com/225027
@@ -610,7 +608,7 @@ TEST_P(LayerTreeHostFiltersPixelTest, ImageFilterScaled) {
     percentage_pixels_large_error = 0.415f;  // 166px / (200*200)
     large_error_allowed = 1;
   }
-#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS_ASH)
+#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
   // There's a 1 pixel error on MacOS and ChromeOS
   float percentage_pixels_large_error = 0.0025f;  // 1px / (200*200)
   int large_error_allowed = 1;
@@ -639,6 +637,11 @@ TEST_P(LayerTreeHostFiltersPixelTest, ImageFilterScaled) {
 }
 
 TEST_P(LayerTreeHostFiltersPixelTest, BackdropFilterRotated) {
+  if (renderer_type() == viz::RendererType::kSkiaVk) {
+    // TODO(crbug.com/1354678): The vulkan expected image requires rebasing
+    // after Skia roll, so skip this test until then.
+    return;
+  }
   // Add a white background with a rotated red rect in the center.
   scoped_refptr<SolidColorLayer> background =
       CreateSolidColorLayer(gfx::Rect(200, 200), SK_ColorWHITE);
@@ -900,13 +903,13 @@ TEST_P(LayerTreeHostFiltersPixelTest, RotatedDropShadowFilter) {
   child->SetTransform(transform);
   FilterOperations filters;
   filters.Append(FilterOperation::CreateDropShadowFilter(
-      gfx::Point(10.0f, 10.0f), 0.0f, SK_ColorBLACK));
+      gfx::Point(10.0f, 10.0f), 0.0f, SkColors::kBlack));
   child->SetFilters(filters);
 
   background->AddChild(child);
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || \
-    defined(ARCH_CPU_ARM64) || defined(USE_OZONE)
+    defined(ARCH_CPU_ARM64) || BUILDFLAG(IS_OZONE)
 #if defined(ARCH_CPU_ARM64) && \
     (BUILDFLAG(IS_WIN) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_MAC))
   // Windows, macOS, and Fuchsia on ARM64 has some pixels difference.
@@ -914,7 +917,7 @@ TEST_P(LayerTreeHostFiltersPixelTest, RotatedDropShadowFilter) {
   float percentage_pixels_large_error = 0.89f;
   float average_error_allowed_in_bad_pixels = 5.f;
   int large_error_allowed = 17;
-#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || defined(USE_OZONE)
+#elif BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_OZONE)
   // There's a 1 pixel error on MacOS and ChromeOS
   float percentage_pixels_large_error = 0.00111112f;  // 1px / (300*300)
   float average_error_allowed_in_bad_pixels = 1.f;

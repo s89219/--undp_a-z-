@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "base/trace_event/process_memory_dump.h"
 #include "base/trace_event/trace_event.h"
 #include "build/chromeos_buildflags.h"
+#include "cc/base/features.h"
 #include "cc/base/histograms.h"
 #include "cc/paint/display_item_list.h"
 #include "cc/paint/paint_canvas.h"
@@ -150,9 +151,10 @@ GpuRasterBufferProvider::GpuRasterBufferProvider(
       tile_format_(tile_format),
       max_tile_size_(max_tile_size),
       pending_raster_queries_(pending_raster_queries),
-      random_generator_(static_cast<uint32_t>(base::RandUint64())),
-      bernoulli_distribution_(raster_metric_probability),
-      is_using_raw_draw_(features::IsUsingRawDraw()) {
+      raster_metric_probability_(raster_metric_probability),
+      is_using_raw_draw_(features::IsUsingRawDraw()),
+      is_using_dmsaa_(
+          base::FeatureList::IsEnabled(features::kUseDMSAAForTiles)) {
   DCHECK(pending_raster_queries);
   DCHECK(compositor_context_provider);
   DCHECK(worker_context_provider);
@@ -288,8 +290,8 @@ void GpuRasterBufferProvider::RasterBufferImpl::PlaybackOnWorkerThreadInternal(
       client_->worker_context_provider_->RasterInterface();
   DCHECK(ri);
 
-  const bool measure_raster_metric =
-      client_->bernoulli_distribution_(client_->random_generator_);
+  const bool measure_raster_metric = client_->metrics_subsampler_.ShouldSample(
+      client_->raster_metric_probability_);
 
   gfx::Rect playback_rect = raster_full_rect;
   if (resource_has_previous_content_) {
@@ -351,7 +353,7 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
   if (backing_->mailbox.IsZero()) {
     DCHECK(!backing_->returned_sync_token.HasData());
     auto* sii = client_->worker_context_provider_->SharedImageInterface();
-    uint32_t flags = gpu::SHARED_IMAGE_USAGE_DISPLAY |
+    uint32_t flags = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ |
                      gpu::SHARED_IMAGE_USAGE_RASTER |
                      gpu::SHARED_IMAGE_USAGE_OOP_RASTERIZATION;
     if (backing_->overlay_candidate) {
@@ -372,9 +374,11 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
   }
 
   // Assume legacy MSAA if sample count is positive.
-  gpu::raster::MsaaMode msaa_mode = playback_settings.msaa_sample_count > 0
-                                        ? gpu::raster::kMSAA
-                                        : gpu::raster::kNoMSAA;
+  gpu::raster::MsaaMode msaa_mode =
+      playback_settings.msaa_sample_count > 0
+          ? (client_->is_using_dmsaa_ ? gpu::raster::kDMSAA
+                                      : gpu::raster::kMSAA)
+          : gpu::raster::kNoMSAA;
   // msaa_sample_count should be 1, 2, 4, 8, 16, 32, 64,
   // and log2(msaa_sample_count) should be [0,6].
   // If playback_settings.msaa_sample_count <= 0, the MSAA is not used. It is
@@ -389,12 +393,14 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
   bool is_raw_draw_backing =
       client_->is_using_raw_draw_ && !backing_->overlay_candidate;
   bool use_lcd_text = playback_settings.use_lcd_text && !is_raw_draw_backing;
+
   ri->BeginRasterCHROMIUM(
       raster_source->background_color(), mailbox_needs_clear,
       playback_settings.msaa_sample_count, msaa_mode, use_lcd_text,
       playback_settings.visible, color_space_, backing_->mailbox.name);
+
   gfx::Vector2dF recording_to_raster_scale = transform.scale();
-  recording_to_raster_scale.Scale(1 / raster_source->recording_scale_factor());
+  recording_to_raster_scale.InvScale(raster_source->recording_scale_factor());
   gfx::Size content_size = raster_source->GetContentSize(transform.scale());
 
   // TODO(enne): could skip the clear on new textures, as the service side has
@@ -406,12 +412,6 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
       playback_rect, transform.translation(), recording_to_raster_scale,
       raster_source->requires_clear(),
       const_cast<RasterSource*>(raster_source)->max_op_size_hint());
-  UMA_HISTOGRAM_COUNTS_1000(
-      "Gpu.Rasterization.Raster.NumPaintOps",
-      raster_source->GetDisplayItemList()->num_paint_ops());
-  UMA_HISTOGRAM_COUNTS_100(
-      "Gpu.Rasterization.Raster.NumSlowPaths",
-      raster_source->GetDisplayItemList()->num_slow_paths());
   ri->EndRasterCHROMIUM();
 
   // TODO(ericrk): Handle unpremultiply+dither for 4444 cases.

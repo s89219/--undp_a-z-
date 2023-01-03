@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 
 #include "base/test/test_reg_util_win.h"
 #include "base/win/registry.h"
-#include "chrome/chrome_elf/chrome_elf_constants.h"
+#include "chrome/chrome_elf/blocklist_constants.h"
 #include "chrome/chrome_elf/nt_registry/nt_registry.h"
 #include "chrome/install_static/install_util.h"
 #include "testing/gtest/include/gtest/gtest.h"

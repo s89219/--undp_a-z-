@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,6 +55,9 @@ void AnalyzeZipFile(base::File zip_file,
   bool timeout = false;
   results->file_count = 0;
   results->directory_count = 0;
+
+  bool has_encrypted = false;
+  bool has_aes_encrypted = false;
   while (const zip::ZipReader::Entry* const entry = reader.Next()) {
     if (base::Time::Now() - start_time >
         base::Milliseconds(kZipAnalysisTimeoutMs)) {
@@ -82,6 +85,14 @@ void AnalyzeZipFile(base::File zip_file,
       results->directory_count++;
     else
       results->file_count++;
+
+    has_encrypted |= entry->is_encrypted;
+    has_aes_encrypted |= entry->uses_aes_encryption;
+  }
+
+  if (has_encrypted) {
+    base::UmaHistogramBoolean("SBClientDownload.EncryptedZipUsesAes",
+                              has_aes_encrypted);
   }
 
   if (timeout) {
@@ -89,7 +100,7 @@ void AnalyzeZipFile(base::File zip_file,
   } else if (reader.ok()) {
     results->analysis_result = ArchiveAnalysisResult::kValid;
   } else {
-    results->analysis_result = ArchiveAnalysisResult::kUnknown;
+    results->analysis_result = ArchiveAnalysisResult::kFailedDuringIteration;
   }
 
   results->success = reader.ok() && !timeout;

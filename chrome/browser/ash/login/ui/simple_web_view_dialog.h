@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,9 +59,6 @@ class SimpleWebViewDialog : public views::View,
 
   // Inits view. Should be attached to a Widget before call.
   void Init();
-
-  // views::View:
-  gfx::Size GetMinimumSize() const override;
 
   // Implements content::PageNavigator:
   content::WebContents* OpenURL(const content::OpenURLParams& params) override;

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,15 +33,10 @@ class LiveCaptionUnavailabilityNotifier
           media::mojom::MediaFoundationRendererNotifier>,
       public media::mojom::MediaFoundationRendererObserver {
  public:
-  LiveCaptionUnavailabilityNotifier(
-      content::RenderFrameHost* frame_host,
-      mojo::PendingReceiver<media::mojom::MediaFoundationRendererNotifier>
-          pending_receiver);
   LiveCaptionUnavailabilityNotifier(const LiveCaptionUnavailabilityNotifier&) =
       delete;
   LiveCaptionUnavailabilityNotifier& operator=(
       const LiveCaptionUnavailabilityNotifier&) = delete;
-  ~LiveCaptionUnavailabilityNotifier() override;
 
   // static
   static void Create(
@@ -55,6 +50,12 @@ class LiveCaptionUnavailabilityNotifier
           observer) override;
 
  private:
+  LiveCaptionUnavailabilityNotifier(
+      content::RenderFrameHost& frame_host,
+      mojo::PendingReceiver<media::mojom::MediaFoundationRendererNotifier>
+          pending_receiver);
+  ~LiveCaptionUnavailabilityNotifier() override;
+
   friend class LiveCaptionUnavailabilityNotifierTest;
   content::WebContents* GetWebContents();
 

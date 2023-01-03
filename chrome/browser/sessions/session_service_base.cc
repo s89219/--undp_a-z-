@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -331,6 +331,15 @@ void SessionServiceBase::SetWindowAppName(const SessionID& window_id,
   ScheduleCommand(sessions::CreateSetWindowAppNameCommand(window_id, app_name));
 }
 
+void SessionServiceBase::SetPinnedState(const SessionID& window_id,
+                                        const SessionID& tab_id,
+                                        bool is_pinned) {
+  if (!ShouldTrackChangesToWindow(window_id))
+    return;
+
+  ScheduleCommand(sessions::CreatePinnedStateCommand(tab_id, is_pinned));
+}
+
 bool SessionServiceBase::ShouldUseDelayedSave() {
   return should_use_delayed_save_;
 }
@@ -549,6 +558,11 @@ void SessionServiceBase::BuildCommandsForTab(
     command_storage_manager()->AppendRebuildCommand(
         sessions::CreateSetTabIndexInWindowCommand(session_id,
                                                    index_in_window));
+  }
+
+  if (is_pinned) {
+    command_storage_manager()->AppendRebuildCommand(
+        sessions::CreatePinnedStateCommand(session_id, true));
   }
 
   // Record the association between the sessionStorage namespace and the tab.

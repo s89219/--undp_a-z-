@@ -1,4 +1,4 @@
-// Copyright (c) 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,19 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/ui/ui_features.h"
+#include "chrome/browser/web_data_service_factory.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/sync/base/command_line_switches.h"
+#include "components/sync/base/features.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/driver/data_type_controller.h"
 #include "components/sync/driver/sync_service_impl.h"
@@ -27,13 +31,13 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/constants/ash_features.h"
+#include "chrome/browser/ash/app_list/app_list_syncable_service_factory.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/sync/wifi_configuration_sync_service_factory.h"
-#include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
-#include "chromeos/components/sync_wifi/wifi_configuration_sync_service.h"
-#include "chromeos/dbus/shill/shill_clients.h"
-#include "chromeos/dbus/shill/shill_manager_client.h"
-#include "chromeos/network/network_handler.h"
+#include "chromeos/ash/components/dbus/shill/shill_clients.h"
+#include "chromeos/ash/components/dbus/shill/shill_manager_client.h"
+#include "chromeos/ash/components/network/network_handler.h"
+#include "chromeos/ash/components/sync_wifi/wifi_configuration_sync_service.h"
 #include "chromeos/services/network_config/public/cpp/cros_network_config_test_helper.h"
 #endif
 
@@ -54,9 +58,10 @@ class SyncServiceFactoryTest : public testing::Test {
                               HistoryServiceFactory::GetDefaultFactory());
     builder.AddTestingFactory(SyncServiceFactory::GetInstance(),
                               SyncServiceFactory::GetDefaultFactory());
-    profile_ = builder.Build();
     // Some services will only be created if there is a WebDataService.
-    profile_->CreateWebDataService();
+    builder.AddTestingFactory(WebDataServiceFactory::GetInstance(),
+                              WebDataServiceFactory::GetDefaultFactory());
+    profile_ = builder.Build();
   }
 
   void TearDown() override {
@@ -70,9 +75,9 @@ class SyncServiceFactoryTest : public testing::Test {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   SyncServiceFactoryTest() {
     // Fake network stack is required for WIFI_CONFIGURATIONS datatype.
-    chromeos::NetworkHandler::Initialize();
+    ash::NetworkHandler::Initialize();
   }
-  ~SyncServiceFactoryTest() override { chromeos::NetworkHandler::Shutdown(); }
+  ~SyncServiceFactoryTest() override { ash::NetworkHandler::Shutdown(); }
 #else
   SyncServiceFactoryTest() = default;
   ~SyncServiceFactoryTest() override = default;
@@ -80,7 +85,7 @@ class SyncServiceFactoryTest : public testing::Test {
 
   // Returns the collection of default datatypes.
   syncer::ModelTypeSet DefaultDatatypes() {
-    static_assert(38 == syncer::GetNumModelTypes(),
+    static_assert(45 == syncer::GetNumModelTypes(),
                   "When adding a new type, you probably want to add it here as "
                   "well (assuming it is already enabled).");
 
@@ -92,6 +97,9 @@ class SyncServiceFactoryTest : public testing::Test {
     // ChromeSyncClient types.
     datatypes.Put(syncer::READING_LIST);
     datatypes.Put(syncer::SECURITY_EVENTS);
+    if (base::FeatureList::IsEnabled(syncer::kSyncSegmentationDataType)) {
+      datatypes.Put(syncer::SEGMENTATION);
+    }
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
     datatypes.Put(syncer::SUPERVISED_USER_SETTINGS);
@@ -110,6 +118,14 @@ class SyncServiceFactoryTest : public testing::Test {
     datatypes.Put(syncer::SEARCH_ENGINES);
 #endif  // !BUILDFLAG(IS_ANDROID)
 
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+    BUILDFLAG(IS_WIN)
+    if (features::kTabGroupsSaveSyncIntegration.Get()) {
+      datatypes.Put(syncer::SAVED_TAB_GROUP);
+    }
+#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
+        // BUILDFLAG(IS_WIN)
+
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_WIN)
     datatypes.Put(syncer::DICTIONARY);
 #endif
@@ -119,11 +135,12 @@ class SyncServiceFactoryTest : public testing::Test {
     if (arc::IsArcAllowedForProfile(profile())) {
       datatypes.Put(syncer::ARC_PACKAGE);
     }
-    if (chromeos::features::IsSyncSettingsCategorizationEnabled()) {
-      datatypes.Put(syncer::OS_PREFERENCES);
-      datatypes.Put(syncer::OS_PRIORITY_PREFERENCES);
-    }
+    datatypes.Put(syncer::OS_PREFERENCES);
+    datatypes.Put(syncer::OS_PRIORITY_PREFERENCES);
     datatypes.Put(syncer::PRINTERS);
+    if (ash::features::IsOAuthIppEnabled()) {
+      datatypes.Put(syncer::PRINTERS_AUTHORIZATION_SERVERS);
+    }
     datatypes.Put(syncer::WIFI_CONFIGURATIONS);
     datatypes.Put(syncer::WORKSPACE_DESK);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
@@ -136,7 +153,13 @@ class SyncServiceFactoryTest : public testing::Test {
     datatypes.Put(syncer::AUTOFILL_WALLET_METADATA);
     datatypes.Put(syncer::AUTOFILL_WALLET_OFFER);
     datatypes.Put(syncer::BOOKMARKS);
+    if (base::FeatureList::IsEnabled(syncer::kSyncEnableContactInfoDataType)) {
+      datatypes.Put(syncer::CONTACT_INFO);
+    }
     datatypes.Put(syncer::DEVICE_INFO);
+    if (base::FeatureList::IsEnabled(syncer::kSyncEnableHistoryDataType)) {
+      datatypes.Put(syncer::HISTORY);
+    }
     datatypes.Put(syncer::HISTORY_DELETE_DIRECTIVES);
     datatypes.Put(syncer::PREFERENCES);
     datatypes.Put(syncer::PRIORITY_PREFERENCES);
@@ -175,7 +198,7 @@ TEST_F(SyncServiceFactoryTest, DisableSyncFlag) {
 // and properly initialized.
 TEST_F(SyncServiceFactoryTest, CreateSyncServiceImplDefault) {
   syncer::SyncServiceImpl* sync_service =
-      SyncServiceFactory::GetAsSyncServiceImplForProfile(profile());
+      SyncServiceFactory::GetAsSyncServiceImplForProfileForTesting(profile());
   syncer::ModelTypeSet types = sync_service->GetRegisteredDataTypesForTest();
   const syncer::ModelTypeSet default_types = DefaultDatatypes();
   EXPECT_EQ(default_types.Size(), types.Size());

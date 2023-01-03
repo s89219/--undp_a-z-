@@ -1,4 +1,4 @@
-# Copyright 2022 The Chromium Authors. All rights reserved.
+# Copyright 2022 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -18,6 +18,7 @@ source_set("safe_browsing") {
     "safe_browsing_service_impl.mm",
     "safe_browsing_tab_helper.h",
     "safe_browsing_tab_helper.mm",
+    "safe_browsing_tab_helper_delegate.h",
     "safe_browsing_unsafe_resource_container.h",
     "safe_browsing_unsafe_resource_container.mm",
     "url_checker_delegate_impl.h",
@@ -26,6 +27,7 @@ source_set("safe_browsing") {
 
   deps = [
     "//base",
+    "//build:branding_buildflags",
     "//components/keyed_service/core",
     "//components/keyed_service/ios",
     "//components/prefs",

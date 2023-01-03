@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@ import org.chromium.content_public.browser.GlobalRenderFrameHostId;
 import org.chromium.content_public.browser.LifecycleState;
 import org.chromium.content_public.browser.PermissionsPolicyFeature;
 import org.chromium.content_public.browser.RenderFrameHost;
-import org.chromium.content_public.browser.WebAuthnCredentialDetails;
 import org.chromium.mojo.bindings.Interface;
 import org.chromium.url.GURL;
 import org.chromium.url.Origin;
@@ -68,7 +67,7 @@ public class MockRenderFrameHost implements RenderFrameHost {
     }
 
     @Override
-    public boolean isRenderFrameCreated() {
+    public boolean isRenderFrameLive() {
         return false;
     }
 
@@ -91,10 +90,6 @@ public class MockRenderFrameHost implements RenderFrameHost {
     }
 
     @Override
-    public void onCredentialsDetailsListReceived(
-            List<WebAuthnCredentialDetails> credentialList, Callback<byte[]> callback) {}
-
-    @Override
     public GlobalRenderFrameHostId getGlobalRenderFrameHostId() {
         return new GlobalRenderFrameHostId(-1, -1);
     }
@@ -103,4 +98,7 @@ public class MockRenderFrameHost implements RenderFrameHost {
     public int getLifecycleState() {
         return LifecycleState.ACTIVE;
     }
+
+    @Override
+    public void insertVisualStateCallback(Callback<Boolean> callback) {}
 }

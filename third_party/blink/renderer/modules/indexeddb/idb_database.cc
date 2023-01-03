@@ -30,8 +30,10 @@
 #include <utility>
 
 #include "base/atomic_sequence_num.h"
+#include "base/feature_list.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/indexeddb/web_idb_types.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
@@ -102,13 +104,14 @@ IDBDatabase::IDBDatabase(
       connection_lifetime_(std::move(connection_lifetime)),
       event_queue_(
           MakeGarbageCollected<EventQueue>(context, TaskType::kDatabaseAccess)),
-      callbacks_receiver_(this, context),
-      feature_handle_for_scheduler_(
-          context
-              ? context->GetScheduler()->RegisterFeature(
-                    SchedulingPolicy::Feature::kIndexedDBConnection,
-                    {SchedulingPolicy::DisableBackForwardCache()})
-              : FrameOrWorkerScheduler::SchedulingAffectingFeatureHandle()) {
+      callbacks_receiver_(this, context) {
+  if (!base::FeatureList::IsEnabled(
+          features::kAllowPageWithIDBConnectionInBFCache) &&
+      context) {
+    feature_handle_for_scheduler_ = context->GetScheduler()->RegisterFeature(
+        SchedulingPolicy::Feature::kIndexedDBConnection,
+        {SchedulingPolicy::DisableBackForwardCache()});
+  }
   callbacks_receiver_.Bind(std::move(callbacks_receiver),
                            context->GetTaskRunner(TaskType::kDatabaseAccess));
 }
@@ -165,7 +168,7 @@ void IDBDatabase::TransactionFinished(const IDBTransaction* transaction) {
     version_change_transaction_ = nullptr;
   }
 
-  if (close_pending_ && transactions_.IsEmpty())
+  if (close_pending_ && transactions_.empty())
     CloseConnection();
 }
 
@@ -260,7 +263,7 @@ IDBObjectStore* IDBDatabase::createObjectStore(
   }
 
   if (auto_increment && ((key_path.GetType() == mojom::IDBKeyPathType::String &&
-                          key_path.GetString().IsEmpty()) ||
+                          key_path.GetString().empty()) ||
                          key_path.GetType() == mojom::IDBKeyPathType::Array)) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kInvalidAccessError,
@@ -368,7 +371,7 @@ IDBTransaction* IDBDatabase::transaction(
     return nullptr;
   }
 
-  if (scope.IsEmpty()) {
+  if (scope.empty()) {
     exception_state.ThrowDOMException(DOMExceptionCode::kInvalidAccessError,
                                       "The storeNames parameter was empty.");
     return nullptr;
@@ -429,13 +432,13 @@ void IDBDatabase::close() {
   close_pending_ = true;
   feature_handle_for_scheduler_.reset();
 
-  if (transactions_.IsEmpty())
+  if (transactions_.empty())
     CloseConnection();
 }
 
 void IDBDatabase::CloseConnection() {
   DCHECK(close_pending_);
-  DCHECK(transactions_.IsEmpty());
+  DCHECK(transactions_.empty());
 
   if (backend_) {
     backend_->Close();

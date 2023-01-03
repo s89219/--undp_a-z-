@@ -1,23 +1,21 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// clang-format off
-// #import 'chrome://os-settings/strings.m.js';
-// #import 'chrome://resources/cr_components/chromeos/network/network_config.m.js';
+import 'chrome://os-settings/strings.m.js';
+import 'chrome://resources/ash/common/network/network_config.js';
 
-// #import {keyEventOn} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
-// #import {FakeNetworkConfig} from 'chrome://test/chromeos/fake_network_config_mojom.js';
-// #import {MojoInterfaceProviderImpl} from 'chrome://resources/cr_components/chromeos/network/mojo_interface_provider.m.js';
-// #import {OncMojo} from 'chrome://resources/cr_components/chromeos/network/onc_mojo.m.js';
-// #import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-// #import {eventToPromise} from '../../../test_util.js';
-// clang-format on
+import {MojoInterfaceProviderImpl} from 'chrome://resources/ash/common/network/mojo_interface_provider.js';
+import {OncMojo} from 'chrome://resources/ash/common/network/onc_mojo.js';
+import {CrosNetworkConfigRemote, HiddenSsidMode, SecurityType, VpnType} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/cros_network_config.mojom-webui.js';
+import {NetworkType, OncSource} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/network_types.mojom-webui.js';
+import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {FakeNetworkConfig} from 'chrome://test/chromeos/fake_network_config_mojom.js';
 
 suite('network-config', function() {
-  var networkConfig;
+  let networkConfig;
 
-  /** @type {?chromeos.networkConfig.mojom.CrosNetworkConfigRemote} */
+  /** @type {?CrosNetworkConfigRemote} */
   let mojoApi_ = null;
 
   const kCaHash = 'CAHASH';
@@ -33,7 +31,7 @@ suite('network-config', function() {
 
   suiteSetup(function() {
     mojoApi_ = new FakeNetworkConfig();
-    network_config.MojoInterfaceProviderImpl.getInstance().remote_ = mojoApi_;
+    MojoInterfaceProviderImpl.getInstance().remote_ = mojoApi_;
   });
 
   function setNetworkConfig(properties) {
@@ -57,7 +55,7 @@ suite('network-config', function() {
   function initNetworkConfig() {
     document.body.appendChild(networkConfig);
     networkConfig.init();
-    Polymer.dom.flush();
+    flush();
   }
 
   function initNetworkConfigWithCerts(hasServerCa, hasUserCert) {
@@ -69,7 +67,7 @@ suite('network-config', function() {
         pemOrId: kCaPem,
         availableForNetworkAuth: true,
         hardwareBacked: true,
-        deviceWide: true
+        deviceWide: true,
       });
     }
     if (hasUserCert) {
@@ -78,7 +76,7 @@ suite('network-config', function() {
         pemOrId: kUserCertId,
         availableForNetworkAuth: true,
         hardwareBacked: true,
-        deviceWide: false
+        deviceWide: false,
       });
     }
     mojoApi_.setCertificatesForTest(serverCas, userCerts);
@@ -86,7 +84,7 @@ suite('network-config', function() {
   }
 
   function flushAsync() {
-    Polymer.dom.flush();
+    flush();
     return new Promise(resolve => {
       networkConfig.async(resolve);
     });
@@ -106,7 +104,7 @@ suite('network-config', function() {
   suite('New WiFi Config', function() {
     setup(function() {
       mojoApi_.resetForTest();
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kWiFi);
+      setNetworkType(NetworkType.kWiFi);
       initNetworkConfig();
     });
 
@@ -123,11 +121,64 @@ suite('network-config', function() {
 
     test('Passphrase field shows', function() {
       assertFalse(!!networkConfig.$$('#wifi-passphrase'));
-      networkConfig.$$('#security').value =
-          chromeos.networkConfig.mojom.SecurityType.kWpaPsk;
+      networkConfig.$$('#security').value = SecurityType.kWpaPsk;
       return flushAsync().then(() => {
         assertTrue(!!networkConfig.$$('#wifi-passphrase'));
       });
+    });
+
+    // Syntactic sugar for running test twice with different values for the
+    // enableHiddenNetworkMigration feature flag.
+    [true, false].forEach(isHiddenNetworkMigrationEnabled => {
+      test(
+          'New networks are explicitly not hidden when logged in', async () => {
+            loadTimeData.overrideValues({
+              'enableHiddenNetworkMigration': isHiddenNetworkMigrationEnabled,
+            });
+
+            // Simulate the dialog being opened while a user is logged in.
+            networkConfig.isLoggedIn_ = true;
+
+            await flushAsync();
+
+            networkConfig.save();
+
+            await flushAsync();
+
+            const props = mojoApi_.getPropertiesToSetForTest();
+            if (isHiddenNetworkMigrationEnabled) {
+              assertEquals(
+                  props.typeConfig.wifi.hiddenSsid, HiddenSsidMode.kDisabled);
+            } else {
+              assertEquals(
+                  props.typeConfig.wifi.hiddenSsid, HiddenSsidMode.kAutomatic);
+            }
+          });
+    });
+
+    // Syntactic sugar for running test twice with different values for the
+    // enableHiddenNetworkMigration feature flag.
+    [true, false].forEach(isHiddenNetworkMigrationEnabled => {
+      test(
+          'New networks are explicitly not hidden when not logged in',
+          async () => {
+            loadTimeData.overrideValues({
+              'enableHiddenNetworkMigration': isHiddenNetworkMigrationEnabled,
+            });
+
+            // Simulate the dialog being opened when the user is not logged in.
+            networkConfig.isLoggedIn_ = false;
+
+            await flushAsync();
+
+            networkConfig.save();
+
+            await flushAsync();
+
+            assertEquals(
+                mojoApi_.getPropertiesToSetForTest().typeConfig.wifi.hiddenSsid,
+                HiddenSsidMode.kAutomatic);
+          });
     });
   });
 
@@ -135,11 +186,10 @@ suite('network-config', function() {
     setup(function() {
       mojoApi_.resetForTest();
       const wifi1 = OncMojo.getDefaultManagedProperties(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi, 'someguid', '');
+          NetworkType.kWiFi, 'someguid', '');
       wifi1.name = OncMojo.createManagedString('somename');
-      wifi1.source = chromeos.networkConfig.mojom.OncSource.kDevice;
-      wifi1.typeProperties.wifi.security =
-          chromeos.networkConfig.mojom.SecurityType.kWepPsk;
+      wifi1.source = OncSource.kDevice;
+      wifi1.typeProperties.wifi.security = SecurityType.kWepPsk;
       wifi1.typeProperties.wifi.ssid.activeValue = '11111111111';
       wifi1.typeProperties.wifi.passphrase = {activeValue: 'test_passphrase'};
       setNetworkConfig(wifi1);
@@ -178,8 +228,27 @@ suite('network-config', function() {
         assertTrue(!!networkConfig.error);
 
         passwordInput.fire('keypress');
-        Polymer.dom.flush();
+        flush();
         assertFalse(!!networkConfig.error);
+      });
+    });
+
+    // Syntactic sugar for running test twice with different values for the
+    // enableHiddenNetworkMigration feature flag.
+    [true, false].forEach(isHiddenNetworkMigrationEnabled => {
+      test('Networks\' hidden SSID mode is not overwritten', async () => {
+        loadTimeData.overrideValues(
+            {'enableHiddenNetworkMigration': isHiddenNetworkMigrationEnabled});
+
+        await flushAsync();
+
+        networkConfig.save();
+
+        await flushAsync();
+
+        const props = mojoApi_.getPropertiesToSetForTest();
+        assertEquals(
+            props.typeConfig.wifi.hiddenSsid, HiddenSsidMode.kAutomatic);
       });
     });
   });
@@ -187,7 +256,7 @@ suite('network-config', function() {
   suite('IKEv2', function() {
     setup(function() {
       mojoApi_.resetForTest();
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kVPN);
+      setNetworkType(NetworkType.kVPN);
     });
 
     teardown(function() {
@@ -207,7 +276,7 @@ suite('network-config', function() {
       initNetworkConfig();
 
       networkConfig.set('vpnType_', 'IKEv2');
-      Polymer.dom.flush();
+      flush();
       assertEquals(3, networkConfig.get('ipsecAuthTypeItems_').length);
       assertTrue(!!networkConfig.$$('#ipsec-auth-type'));
       assertFalse(!!networkConfig.$$('#l2tp-username-input'));
@@ -222,7 +291,7 @@ suite('network-config', function() {
       assertTrue(!!networkConfig.$$('#ipsec-remote-id-input'));
 
       networkConfig.set('ipsecAuthType_', 'PSK');
-      Polymer.dom.flush();
+      flush();
       assertTrue(!!networkConfig.$$('#ipsec-psk-input'));
       assertFalse(!!networkConfig.$$('#vpnServerCa'));
       assertFalse(!!networkConfig.$$('#vpnUserCert'));
@@ -232,7 +301,7 @@ suite('network-config', function() {
       assertTrue(!!networkConfig.$$('#ipsec-remote-id-input'));
 
       networkConfig.set('ipsecAuthType_', 'Cert');
-      Polymer.dom.flush();
+      flush();
       assertFalse(!!networkConfig.$$('#ipsec-psk-input'));
       assertTrue(!!networkConfig.$$('#vpnServerCa'));
       assertTrue(!!networkConfig.$$('#vpnUserCert'));
@@ -302,7 +371,7 @@ suite('network-config', function() {
       initNetworkConfig();
       networkConfig.set('vpnType_', 'IKEv2');
       networkConfig.set('ipsecAuthType_', 'PSK');
-      Polymer.dom.flush();
+      flush();
 
       setMandatoryFields();
       const configProperties = networkConfig.get('configProperties_');
@@ -311,10 +380,9 @@ suite('network-config', function() {
       assertTrue(networkConfig.vpnIsConfigured_());
 
       let props = networkConfig.getPropertiesToSet_();
-      const mojom = chromeos.networkConfig.mojom;
       assertEquals(kTestVpnName, props.name);
       assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-      assertEquals(mojom.VpnType.kIKEv2, props.typeConfig.vpn.type.value);
+      assertEquals(VpnType.kIKEv2, props.typeConfig.vpn.type.value);
       assertEquals('PSK', props.typeConfig.vpn.ipSec.authenticationType);
       assertEquals(2, props.typeConfig.vpn.ipSec.ikeVersion);
       assertFalse(props.typeConfig.vpn.ipSec.saveCredentials);
@@ -336,10 +404,9 @@ suite('network-config', function() {
     // Checks if values are read correctly for an existing service of PSK
     // authentication.
     test('Existing PSK', function() {
-      const mojom = chromeos.networkConfig.mojom;
       const ikev2 = OncMojo.getDefaultManagedProperties(
-          mojom.NetworkType.kVPN, 'someguid', kTestVpnName);
-      ikev2.typeProperties.vpn.type = mojom.VpnType.kIKEv2;
+          NetworkType.kVPN, 'someguid', kTestVpnName);
+      ikev2.typeProperties.vpn.type = VpnType.kIKEv2;
       ikev2.typeProperties.vpn.host = {activeValue: kTestVpnHost};
       ikev2.typeProperties.vpn.ipSec = {
         authenticationType: {activeValue: 'PSK'},
@@ -361,7 +428,7 @@ suite('network-config', function() {
         assertEquals('someguid', props.guid);
         assertEquals(kTestVpnName, props.name);
         assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-        assertEquals(mojom.VpnType.kIKEv2, props.typeConfig.vpn.type.value);
+        assertEquals(VpnType.kIKEv2, props.typeConfig.vpn.type.value);
         assertEquals('PSK', props.typeConfig.vpn.ipSec.authenticationType);
         assertEquals(2, props.typeConfig.vpn.ipSec.ikeVersion);
         assertEquals('local-id', props.typeConfig.vpn.ipSec.localIdentity);
@@ -388,10 +455,9 @@ suite('network-config', function() {
           assertTrue(networkConfig.vpnIsConfigured_());
 
           const props = networkConfig.getPropertiesToSet_();
-          const mojom = chromeos.networkConfig.mojom;
           assertEquals(kTestVpnName, props.name);
           assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-          assertEquals(mojom.VpnType.kIKEv2, props.typeConfig.vpn.type.value);
+          assertEquals(VpnType.kIKEv2, props.typeConfig.vpn.type.value);
           assertEquals('Cert', props.typeConfig.vpn.ipSec.authenticationType);
           assertEquals(2, props.typeConfig.vpn.ipSec.ikeVersion);
           assertEquals(1, props.typeConfig.vpn.ipSec.serverCaPems.length);
@@ -407,10 +473,9 @@ suite('network-config', function() {
     // Checks if values are read correctly for an existing service of
     // certificate authentication.
     test('Existing Cert', function() {
-      const mojom = chromeos.networkConfig.mojom;
       const ikev2 = OncMojo.getDefaultManagedProperties(
-          mojom.NetworkType.kVPN, 'someguid', kTestVpnName);
-      ikev2.typeProperties.vpn.type = mojom.VpnType.kIKEv2;
+          NetworkType.kVPN, 'someguid', kTestVpnName);
+      ikev2.typeProperties.vpn.type = VpnType.kIKEv2;
       ikev2.typeProperties.vpn.host = {activeValue: kTestVpnHost};
       ikev2.typeProperties.vpn.ipSec = {
         authenticationType: {activeValue: 'Cert'},
@@ -431,11 +496,10 @@ suite('network-config', function() {
           assertEquals(kUserHash1, networkConfig.selectedUserCertHash_);
 
           const props = networkConfig.getPropertiesToSet_();
-          const mojom = chromeos.networkConfig.mojom;
           assertEquals('someguid', props.guid);
           assertEquals(kTestVpnName, props.name);
           assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-          assertEquals(mojom.VpnType.kIKEv2, props.typeConfig.vpn.type.value);
+          assertEquals(VpnType.kIKEv2, props.typeConfig.vpn.type.value);
           assertEquals('Cert', props.typeConfig.vpn.ipSec.authenticationType);
           assertEquals(2, props.typeConfig.vpn.ipSec.ikeVersion);
           assertEquals(1, props.typeConfig.vpn.ipSec.serverCaPems.length);
@@ -471,10 +535,9 @@ suite('network-config', function() {
           networkConfig.set('selectedServerCaHash_', kCaHash);
 
           let props = networkConfig.getPropertiesToSet_();
-          const mojom = chromeos.networkConfig.mojom;
           assertEquals(kTestVpnName, props.name);
           assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-          assertEquals(mojom.VpnType.kIKEv2, props.typeConfig.vpn.type.value);
+          assertEquals(VpnType.kIKEv2, props.typeConfig.vpn.type.value);
           assertEquals('EAP', props.typeConfig.vpn.ipSec.authenticationType);
           assertEquals(2, props.typeConfig.vpn.ipSec.ikeVersion);
           assertEquals(1, props.typeConfig.vpn.ipSec.serverCaPems.length);
@@ -494,10 +557,9 @@ suite('network-config', function() {
     });
 
     test('Existing EAP', function() {
-      const mojom = chromeos.networkConfig.mojom;
       const ikev2 = OncMojo.getDefaultManagedProperties(
-          mojom.NetworkType.kVPN, 'someguid', kTestVpnName);
-      ikev2.typeProperties.vpn.type = mojom.VpnType.kIKEv2;
+          NetworkType.kVPN, 'someguid', kTestVpnName);
+      ikev2.typeProperties.vpn.type = VpnType.kIKEv2;
       ikev2.typeProperties.vpn.host = {activeValue: kTestVpnHost};
       ikev2.typeProperties.vpn.ipSec = {
         authenticationType: {activeValue: 'EAP'},
@@ -523,11 +585,10 @@ suite('network-config', function() {
           assertEquals(kCaHash, networkConfig.selectedServerCaHash_);
 
           const props = networkConfig.getPropertiesToSet_();
-          const mojom = chromeos.networkConfig.mojom;
           assertEquals('someguid', props.guid);
           assertEquals(kTestVpnName, props.name);
           assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-          assertEquals(mojom.VpnType.kIKEv2, props.typeConfig.vpn.type.value);
+          assertEquals(VpnType.kIKEv2, props.typeConfig.vpn.type.value);
           assertEquals('EAP', props.typeConfig.vpn.ipSec.authenticationType);
           assertEquals(2, props.typeConfig.vpn.ipSec.ikeVersion);
           assertEquals(1, props.typeConfig.vpn.ipSec.serverCaPems.length);
@@ -544,7 +605,7 @@ suite('network-config', function() {
   suite('L2TP/IPsec', function() {
     setup(function() {
       mojoApi_.resetForTest();
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kVPN);
+      setNetworkType(NetworkType.kVPN);
     });
 
     teardown(function() {
@@ -568,7 +629,7 @@ suite('network-config', function() {
       // PSK input should appear and the dropdowns for server CA and user
       // certificate should be hidden.
       networkConfig.set('vpnType_', 'L2TP_IPsec');
-      Polymer.dom.flush();
+      flush();
       assertEquals(2, networkConfig.get('ipsecAuthTypeItems_').length);
       assertEquals('PSK', networkConfig.ipsecAuthType_);
       assertFalse(!!networkConfig.$$('#ipsec-local-id-input'));
@@ -582,7 +643,7 @@ suite('network-config', function() {
       // Switch the authentication type to Cert. The PSK input should be hidden
       // and the dropdowns for server CA and user certificate should appear.
       networkConfig.set('ipsecAuthType_', 'Cert');
-      Polymer.dom.flush();
+      flush();
       assertFalse(!!networkConfig.$$('#ipsec-psk-input'));
       assertTrue(!!networkConfig.$$('#ipsec-auth-type'));
       assertTrue(!!networkConfig.$$('#l2tp-username-input'));
@@ -659,7 +720,7 @@ suite('network-config', function() {
     test('PSK', function() {
       initNetworkConfig();
       networkConfig.set('vpnType_', 'L2TP_IPsec');
-      Polymer.dom.flush();
+      flush();
 
       setMandatoryFields();
       const configProperties = networkConfig.get('configProperties_');
@@ -668,10 +729,9 @@ suite('network-config', function() {
       assertTrue(networkConfig.vpnIsConfigured_());
 
       let props = networkConfig.getPropertiesToSet_();
-      const mojom = chromeos.networkConfig.mojom;
       assertEquals(kTestVpnName, props.name);
       assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-      assertEquals(mojom.VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
+      assertEquals(VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
       assertEquals('PSK', props.typeConfig.vpn.ipSec.authenticationType);
       assertEquals(1, props.typeConfig.vpn.ipSec.ikeVersion);
       assertFalse(props.typeConfig.vpn.ipSec.saveCredentials);
@@ -688,10 +748,9 @@ suite('network-config', function() {
     // Checks if values are read correctly for an existing service of PSK
     // authentication.
     test('Existing PSK', function() {
-      const mojom = chromeos.networkConfig.mojom;
       const l2tp = OncMojo.getDefaultManagedProperties(
-          mojom.NetworkType.kVPN, 'someguid', kTestVpnName);
-      l2tp.typeProperties.vpn.type = mojom.VpnType.kL2TPIPsec;
+          NetworkType.kVPN, 'someguid', kTestVpnName);
+      l2tp.typeProperties.vpn.type = VpnType.kL2TPIPsec;
       l2tp.typeProperties.vpn.host = {activeValue: kTestVpnHost};
       l2tp.typeProperties.vpn.ipSec = {
         authenticationType: {activeValue: 'PSK'},
@@ -715,7 +774,7 @@ suite('network-config', function() {
         assertEquals('someguid', props.guid);
         assertEquals(kTestVpnName, props.name);
         assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-        assertEquals(mojom.VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
+        assertEquals(VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
         assertEquals('PSK', props.typeConfig.vpn.ipSec.authenticationType);
         assertEquals(1, props.typeConfig.vpn.ipSec.ikeVersion);
         assertEquals(undefined, props.typeConfig.vpn.ipSec.eap);
@@ -745,11 +804,9 @@ suite('network-config', function() {
           assertTrue(networkConfig.vpnIsConfigured_());
 
           const props = networkConfig.getPropertiesToSet_();
-          const mojom = chromeos.networkConfig.mojom;
           assertEquals(kTestVpnName, props.name);
           assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-          assertEquals(
-              mojom.VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
+          assertEquals(VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
           assertEquals('Cert', props.typeConfig.vpn.ipSec.authenticationType);
           assertEquals(1, props.typeConfig.vpn.ipSec.ikeVersion);
           assertEquals(1, props.typeConfig.vpn.ipSec.serverCaPems.length);
@@ -768,10 +825,9 @@ suite('network-config', function() {
     // Checks if values are read correctly for an existing service of
     // certificate authentication.
     test('Existing Cert', function() {
-      const mojom = chromeos.networkConfig.mojom;
       const l2tp = OncMojo.getDefaultManagedProperties(
-          mojom.NetworkType.kVPN, 'someguid', kTestVpnName);
-      l2tp.typeProperties.vpn.type = mojom.VpnType.kL2TPIPsec;
+          NetworkType.kVPN, 'someguid', kTestVpnName);
+      l2tp.typeProperties.vpn.type = VpnType.kL2TPIPsec;
       l2tp.typeProperties.vpn.host = {activeValue: kTestVpnHost};
       l2tp.typeProperties.vpn.ipSec = {
         authenticationType: {activeValue: 'Cert'},
@@ -800,7 +856,7 @@ suite('network-config', function() {
         assertEquals('someguid', props.guid);
         assertEquals(kTestVpnName, props.name);
         assertEquals(kTestVpnHost, props.typeConfig.vpn.host);
-        assertEquals(mojom.VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
+        assertEquals(VpnType.kL2TPIPsec, props.typeConfig.vpn.type.value);
         assertEquals('Cert', props.typeConfig.vpn.ipSec.authenticationType);
         assertEquals(1, props.typeConfig.vpn.ipSec.ikeVersion);
         assertEquals(1, props.typeConfig.vpn.ipSec.serverCaPems.length);
@@ -821,7 +877,7 @@ suite('network-config', function() {
   suite('OpenVPN', function() {
     setup(function() {
       mojoApi_.resetForTest();
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kVPN);
+      setNetworkType(NetworkType.kVPN);
     });
 
     teardown(function() {
@@ -841,9 +897,9 @@ suite('network-config', function() {
 
       // Switch the VPN type to another and back again. Items should not change.
       networkConfig.set('vpnType_', 'L2TP_IPsec');
-      Polymer.dom.flush();
+      flush();
       networkConfig.set('vpnType_', 'OpenVPN');
-      Polymer.dom.flush();
+      flush();
       assertFalse(!!networkConfig.$$('#ipsec-auth-type'));
       assertFalse(!!networkConfig.$$('#l2tp-username-input'));
       assertTrue(!!networkConfig.$$('#openvpn-username-input'));
@@ -880,7 +936,7 @@ suite('network-config', function() {
   suite('WireGuard', function() {
     setup(function() {
       mojoApi_.resetForTest();
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kVPN);
+      setNetworkType(NetworkType.kVPN);
       initNetworkConfig();
     });
 
@@ -891,11 +947,11 @@ suite('network-config', function() {
     test('Switch VPN Type', function() {
       const configProperties = networkConfig.get('configProperties_');
       networkConfig.set('vpnType_', 'OpenVPN');
-      Polymer.dom.flush();
+      flush();
       assertFalse(!!configProperties.typeConfig.vpn.wireguard);
       assertFalse(!!networkConfig.$$('#wireguard-ip-input'));
       networkConfig.set('vpnType_', 'WireGuard');
-      Polymer.dom.flush();
+      flush();
       assertFalse(!!configProperties.typeConfig.vpn.openvpn);
       assertTrue(!!configProperties.typeConfig.vpn.wireguard);
       assertTrue(!!networkConfig.$$('#wireguard-ip-input'));
@@ -903,7 +959,7 @@ suite('network-config', function() {
 
     test('Switch key config type', function() {
       networkConfig.set('vpnType_', 'WireGuard');
-      Polymer.dom.flush();
+      flush();
       assertFalse(!!networkConfig.$$('#wireguardPrivateKeyInput'));
       networkConfig.set('wireguardKeyType_', 'UserInput');
       return flushAsync().then(() => {
@@ -911,41 +967,66 @@ suite('network-config', function() {
       });
     });
 
-    test('Enable Connect', function() {
+    test('Enable Connect', async function() {
       networkConfig.set('vpnType_', 'WireGuard');
-      Polymer.dom.flush();
+      await flushAsync();
       assertFalse(networkConfig.enableConnect);
+
       networkConfig.set('ipAddressInput_', '10.10.0.1');
       const configProperties = networkConfig.get('configProperties_');
       configProperties.name = 'test-wireguard';
       const peer = configProperties.typeConfig.vpn.wireguard.peers[0];
       peer.publicKey = 'KFhwdv4+jKpSXMW6xEUVtOe4Mo8l/xOvGmshmjiHx1Y=';
-      assertFalse(networkConfig.vpnIsConfigured_());
+      networkConfig.notifyPath(
+          `configProperties_.typeConfig.vpn.wireguard.peers.0.publicKey`);
+      await flushAsync();
+      assertFalse(networkConfig.enableConnect);
+
       peer.endpoint = '192.168.66.66:32000';
       peer.allowedIps = '0.0.0.0/0';
-      assertTrue(networkConfig.vpnIsConfigured_());
+      networkConfig.notifyPath(
+          `configProperties_.typeConfig.vpn.wireguard.peers.0.endpoint`);
+      await flushAsync();
+      assertTrue(networkConfig.enableConnect);
+
       peer.presharedKey = 'invalid_key';
-      assertFalse(networkConfig.vpnIsConfigured_());
+      networkConfig.notifyPath(
+          `configProperties_.typeConfig.vpn.wireguard.peers.0.presharedKey`);
+      await flushAsync();
+      assertFalse(networkConfig.enableConnect);
+
       peer.presharedKey = '';
-      assertTrue(networkConfig.vpnIsConfigured_());
+      networkConfig.notifyPath(
+          `configProperties_.typeConfig.vpn.wireguard.peers.0.presharedKey`);
+      await flushAsync();
+      assertTrue(networkConfig.enableConnect);
+
+      networkConfig.set('ipAddressInput_', '10.10.0.1/32');
+      networkConfig.notifyPath(`configProperties_.ipAddressInput_`);
+      await flushAsync();
+      assertFalse(networkConfig.enableConnect);
+
+      networkConfig.set('ipAddressInput_', '10.10.0.1');
+      networkConfig.notifyPath(`configProperties_.ipAddressInput_`);
+      await flushAsync();
+      assertTrue(networkConfig.enableConnect);
     });
   });
 
   suite('Existing WireGuard', function() {
     setup(function() {
       mojoApi_.resetForTest();
-      const wg1 = OncMojo.getDefaultManagedProperties(
-          chromeos.networkConfig.mojom.NetworkType.kVPN, 'someguid', '');
-      wg1.typeProperties.vpn.type =
-          chromeos.networkConfig.mojom.VpnType.kWireGuard;
+      const wg1 =
+          OncMojo.getDefaultManagedProperties(NetworkType.kVPN, 'someguid', '');
+      wg1.typeProperties.vpn.type = VpnType.kWireGuard;
       wg1.typeProperties.vpn.wireguard = {
         peers: {
           activeValue: [{
             publicKey: 'KFhwdv4+jKpSXMW6xEUVtOe4Mo8l/xOvGmshmjiHx1Y=',
             endpoint: '192.168.66.66:32000',
             allowedIps: '0.0.0.0/0',
-          }]
-        }
+          }],
+        },
       };
       wg1.staticIpConfig = {ipAddress: {activeValue: '10.10.0.1'}};
       setNetworkConfig(wg1);
@@ -1013,9 +1094,7 @@ suite('network-config', function() {
 
     test('New Config: Login or guest', function() {
       // Insecure networks are always shared so test a secure config.
-      setNetworkType(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi,
-          chromeos.networkConfig.mojom.SecurityType.kWepPsk);
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWepPsk);
       setLoginOrGuest();
       initNetworkConfig();
       return flushAsync().then(() => {
@@ -1028,9 +1107,7 @@ suite('network-config', function() {
 
     test('New Config: Kiosk', function() {
       // Insecure networks are always shared so test a secure config.
-      setNetworkType(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi,
-          chromeos.networkConfig.mojom.SecurityType.kWepPsk);
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWepPsk);
       setKiosk();
       initNetworkConfig();
       return flushAsync().then(() => {
@@ -1042,7 +1119,7 @@ suite('network-config', function() {
     });
 
     test('New Config: Authenticated, Not secure', function() {
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kWiFi);
+      setNetworkType(NetworkType.kWiFi);
       setAuthenticated();
       initNetworkConfig();
       return flushAsync().then(() => {
@@ -1054,9 +1131,7 @@ suite('network-config', function() {
     });
 
     test('New Config: Authenticated, Secure', function() {
-      setNetworkType(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi,
-          chromeos.networkConfig.mojom.SecurityType.kWepPsk);
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWepPsk);
       setAuthenticated();
       initNetworkConfig();
       return flushAsync().then(() => {
@@ -1069,7 +1144,7 @@ suite('network-config', function() {
 
     test('New Config: Authenticated, Not secure to secure', async function() {
       // set default to insecure network
-      setNetworkType(chromeos.networkConfig.mojom.NetworkType.kWiFi);
+      setNetworkType(NetworkType.kWiFi);
       setAuthenticated();
       initNetworkConfig();
       await flushAsync();
@@ -1079,8 +1154,7 @@ suite('network-config', function() {
       assertTrue(share.checked);
 
       // change to secure network
-      networkConfig.securityType_ =
-          chromeos.networkConfig.mojom.SecurityType.kWepPsk;
+      networkConfig.securityType_ = SecurityType.kWepPsk;
       await flushAsync();
       assertTrue(!!share);
       assertFalse(share.disabled);
@@ -1090,10 +1164,9 @@ suite('network-config', function() {
     // Existing networks hide the shared control in the config UI.
     test('Existing Hides Shared', function() {
       const wifi1 = OncMojo.getDefaultManagedProperties(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi, 'someguid', '');
-      wifi1.source = chromeos.networkConfig.mojom.OncSource.kUser;
-      wifi1.typeProperties.wifi.security =
-          chromeos.networkConfig.mojom.SecurityType.kWepPsk;
+          NetworkType.kWiFi, 'someguid', '');
+      wifi1.source = OncSource.kUser;
+      wifi1.typeProperties.wifi.security = SecurityType.kWepPsk;
       setNetworkConfig(wifi1);
       setAuthenticated();
       initNetworkConfig();
@@ -1104,17 +1177,14 @@ suite('network-config', function() {
 
     test('Ethernet', function() {
       const eth = OncMojo.getDefaultManagedProperties(
-          chromeos.networkConfig.mojom.NetworkType.kEthernet, 'ethernetguid',
-          '');
+          NetworkType.kEthernet, 'ethernetguid', '');
       eth.typeProperties.ethernet.authentication =
           OncMojo.createManagedString('None');
       setNetworkConfig(eth);
       initNetworkConfig();
       return flushAsync().then(() => {
         assertEquals('ethernetguid', networkConfig.guid);
-        assertEquals(
-            chromeos.networkConfig.mojom.SecurityType.kNone,
-            networkConfig.securityType_);
+        assertEquals(SecurityType.kNone, networkConfig.securityType_);
         const outer = networkConfig.$$('#outer');
         assertFalse(!!outer);
       });
@@ -1122,19 +1192,17 @@ suite('network-config', function() {
 
     test('Ethernet EAP', function() {
       const eth = OncMojo.getDefaultManagedProperties(
-          chromeos.networkConfig.mojom.NetworkType.kEthernet, 'eapguid', '');
+          NetworkType.kEthernet, 'eapguid', '');
       eth.typeProperties.ethernet.authentication =
           OncMojo.createManagedString('8021x');
       eth.typeProperties.ethernet.eap = {
-        outer: OncMojo.createManagedString('PEAP')
+        outer: OncMojo.createManagedString('PEAP'),
       };
       setNetworkConfig(eth);
       initNetworkConfig();
       return flushAsync().then(() => {
         assertEquals('eapguid', networkConfig.guid);
-        assertEquals(
-            chromeos.networkConfig.mojom.SecurityType.kWpaEap,
-            networkConfig.securityType_);
+        assertEquals(SecurityType.kWpaEap, networkConfig.securityType_);
         assertEquals(
             'PEAP',
             networkConfig.managedProperties.typeProperties.ethernet.eap.outer
@@ -1152,11 +1220,11 @@ suite('network-config', function() {
 
     test('Ethernet input fires enter event on keydown', function() {
       const eth = OncMojo.getDefaultManagedProperties(
-          chromeos.networkConfig.mojom.NetworkType.kEthernet, 'eapguid', '');
+          NetworkType.kEthernet, 'eapguid', '');
       eth.typeProperties.ethernet.authentication =
           OncMojo.createManagedString('8021x');
       eth.typeProperties.ethernet.eap = {
-        outer: OncMojo.createManagedString('PEAP')
+        outer: OncMojo.createManagedString('PEAP'),
       };
       setNetworkConfig(eth);
       initNetworkConfig();
@@ -1185,9 +1253,7 @@ suite('network-config', function() {
     }
 
     test('WiFi EAP-TLS No Certs', function() {
-      setNetworkType(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi,
-          chromeos.networkConfig.mojom.SecurityType.kWpaEap);
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWpaEap);
       setAuthenticated();
       initNetworkConfig();
       networkConfig.shareNetwork_ = false;
@@ -1205,23 +1271,21 @@ suite('network-config', function() {
     });
 
     test('WiFi EAP-TLS Certs', function() {
-      setNetworkType(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi,
-          chromeos.networkConfig.mojom.SecurityType.kWpaEap);
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWpaEap);
       setAuthenticated();
       mojoApi_.setCertificatesForTest(
           [{
             hash: kCaHash,
             availableForNetworkAuth: true,
             hardwareBacked: true,
-            deviceWide: true
+            deviceWide: true,
           }],
           [{
             hash: kUserHash1,
             pemOrId: kUserCertId,
             availableForNetworkAuth: true,
             hardwareBacked: true,
-            deviceWide: false
+            deviceWide: false,
           }]);
       initNetworkConfig();
       networkConfig.shareNetwork_ = false;
@@ -1236,16 +1300,14 @@ suite('network-config', function() {
     });
 
     test('WiFi EAP-TLS Certs Shared', function() {
-      setNetworkType(
-          chromeos.networkConfig.mojom.NetworkType.kWiFi,
-          chromeos.networkConfig.mojom.SecurityType.kWpaEap);
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWpaEap);
       setAuthenticated();
       mojoApi_.setCertificatesForTest(
           [{
             hash: kCaHash,
             availableForNetworkAuth: true,
             hardwareBacked: true,
-            deviceWide: true
+            deviceWide: true,
           }],
           [
             {
@@ -1253,15 +1315,15 @@ suite('network-config', function() {
               pemOrId: kUserCertId,
               availableForNetworkAuth: true,
               hardwareBacked: true,
-              deviceWide: false
+              deviceWide: false,
             },
             {
               hash: kUserHash2,
               pemOrId: kUserCertId,
               availableForNetworkAuth: true,
               hardwareBacked: true,
-              deviceWide: true
-            }
+              deviceWide: true,
+            },
           ]);
       initNetworkConfig();
       networkConfig.shareNetwork_ = true;
@@ -1274,6 +1336,54 @@ suite('network-config', function() {
           assertEquals(kUserHash2, networkConfig.selectedUserCertHash_);
         });
       });
+    });
+
+    test('WiFi PEAP No Certs', async function() {
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWpaEap);
+      setAuthenticated();
+      initNetworkConfig();
+      networkConfig.shareNetwork_ = false;
+      networkConfig.set('eapProperties_.outer', 'PEAP');
+      await mojoApi_.whenCalled('getNetworkCertificates');
+      await flushAsync();
+      const outer = networkConfig.$$('#outer');
+      assertEquals('PEAP', outer.value);
+      // 'default' Server CA should be selected in case of no certificates
+      assertEquals('default', networkConfig.selectedServerCaHash_);
+      // 'no-user-cert' is selected as user certificate because a
+      // user certificate is not needed for PEAP
+      assertEquals('no-user-cert', networkConfig.selectedUserCertHash_);
+    });
+
+    test('WiFi PEAP Certs', async function() {
+      setNetworkType(NetworkType.kWiFi, SecurityType.kWpaEap);
+      setAuthenticated();
+      mojoApi_.setCertificatesForTest(
+          [{
+            hash: kCaHash,
+            availableForNetworkAuth: true,
+            hardwareBacked: true,
+            deviceWide: true,
+          }],
+          [{
+            hash: kUserHash1,
+            pemOrId: kUserCertId,
+            availableForNetworkAuth: true,
+            hardwareBacked: true,
+            deviceWide: false,
+          }]);
+      initNetworkConfig();
+      networkConfig.shareNetwork_ = false;
+      networkConfig.set('eapProperties_.outer', 'PEAP');
+      await mojoApi_.whenCalled('getNetworkCertificates');
+      await flushAsync();
+      const outer = networkConfig.$$('#outer');
+      assertEquals('PEAP', outer.value);
+      // The first Server CA should be selected.
+      assertEquals(kCaHash, networkConfig.selectedServerCaHash_);
+      // 'no-user-cert' is selected as user certificate because a
+      // user certificate is not needed for PEAP
+      assertEquals('no-user-cert', networkConfig.selectedUserCertHash_);
     });
   });
 });

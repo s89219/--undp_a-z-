@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_ASH_SYSTEM_LOGS_REVEN_LOG_SOURCE_H_
 
 #include "base/memory/weak_ptr.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
 #include "components/feedback/system_logs/system_logs_source.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
@@ -27,9 +27,9 @@ class RevenLogSource : public SystemLogsSource {
  private:
   void OnTelemetryInfoProbeResponse(
       SysLogsSourceCallback callback,
-      chromeos::cros_healthd::mojom::TelemetryInfoPtr info_ptr);
+      ash::cros_healthd::mojom::TelemetryInfoPtr info_ptr);
 
-  mojo::Remote<chromeos::cros_healthd::mojom::CrosHealthdProbeService>
+  mojo::Remote<ash::cros_healthd::mojom::CrosHealthdProbeService>
       probe_service_;
 
   base::WeakPtrFactory<RevenLogSource> weak_ptr_factory_{this};

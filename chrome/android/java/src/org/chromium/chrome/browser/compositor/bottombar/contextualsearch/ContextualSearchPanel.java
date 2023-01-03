@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,11 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.ColorDrawable;
+import android.view.ViewGroup;
+import android.widget.ImageView;
 
+import androidx.annotation.ColorInt;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.Px;
@@ -34,6 +38,7 @@ import org.chromium.chrome.browser.layouts.scene_layer.SceneOverlayLayer;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.toolbar.ToolbarManager;
+import org.chromium.chrome.browser.toolbar.top.ToolbarLayout;
 import org.chromium.components.browser_ui.widget.chips.ChipProperties;
 import org.chromium.components.browser_ui.widget.scrim.ScrimCoordinator;
 import org.chromium.components.browser_ui.widget.scrim.ScrimProperties;
@@ -41,6 +46,7 @@ import org.chromium.ui.base.LocalizationUtils;
 import org.chromium.ui.base.WindowAndroid;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.resources.ResourceManager;
+import org.chromium.ui.util.ColorUtils;
 
 import java.util.List;
 
@@ -62,9 +68,8 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     interface ContextualSearchPromoHost extends ContextualSearchPanelSectionHost {
         /**
          * Notifies that the user has opted in.
-         * @param wasMandatory Whether the Promo was mandatory.
          */
-        void onPromoOptIn(boolean wasMandatory);
+        void onPromoOptIn();
 
         /**
          * Notifies that the user has opted out.
@@ -133,9 +138,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      */
     private PropertyModel mScrimProperties;
 
-    /** Whether the current SERP (Search Result Page) is due to the In-Content Related Searches. */
-    private boolean mIsRelatedSearchesInContentSerp;
-
     /** Whether we have started collapsing the panel. */
     private boolean mDidStartCollapsing;
 
@@ -199,9 +201,8 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     public SceneOverlayLayer getUpdatedSceneOverlayTree(
             RectF viewport, RectF visibleViewport, ResourceManager resourceManager, float yOffset) {
         super.getUpdatedSceneOverlayTree(viewport, visibleViewport, resourceManager, yOffset);
-        mSceneLayer.update(resourceManager, this, getSearchBarControl(), getBarBannerControl(),
-                getPromoControl(), getRelatedSearchesInBarControl(),
-                getRelatedSearchesInContentControl(), getImageControl());
+        mSceneLayer.update(resourceManager, this, getSearchBarControl(), getPromoControl(),
+                getRelatedSearchesInBarControl(), getImageControl());
 
         return mSceneLayer;
     }
@@ -247,25 +248,12 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
         mPanelMetrics.onPanelStateChanged(
                 fromState, toState, reason, Profile.getLastUsedRegularProfile());
 
-        if (toState == PanelState.PEEKED
-                && (fromState == PanelState.CLOSED || fromState == PanelState.UNDEFINED)) {
-            // If the Bar Banner is visible, it should animate when the SearchBar peeks.
-            if (getBarBannerControl().isVisible()) {
-                getBarBannerControl().animateAppearance();
-            }
-        }
-
         if (toState == PanelState.CLOSED || toState == PanelState.UNDEFINED) {
             mManagementDelegate.onPanelFinishedShowing();
         }
 
         super.setPanelState(toState, reason);
         mDidStartCollapsing = false;
-    }
-
-    @Override
-    protected boolean isSupportedState(@PanelState int state) {
-        return canDisplayContentInPanel() || state != PanelState.MAXIMIZED;
     }
 
     @Override
@@ -391,8 +379,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
         super.destroyComponents();
         destroyPromoControl();
         destroyInBarRelatedSearchesControl();
-        destroyInContentRelatedSearchesControl();
-        destroyBarBannerControl();
         destroySearchBarControl();
     }
 
@@ -418,9 +404,7 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
 
     @Override
     public void notifyBarTouched(float x) {
-        if (canDisplayContentInPanel()) {
-            getOverlayPanelContent().showContent();
-        }
+        getOverlayPanelContent().showContent();
     }
 
     @Override
@@ -445,18 +429,17 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
 
     @Override
     public float getContentY() {
-        return getOffsetY() + getBarContainerHeight() + getRelatedSearchesHeightDps(false)
-                + getPromoHeightPx() * mPxToDp;
+        return getOffsetY() + getBarContainerHeight() + getPromoHeightPx() * mPxToDp;
     }
 
     @Override
     public float getBarContainerHeight() {
-        return getBarHeight() + getBarBannerControl().getHeightPx();
+        return getBarHeight();
     }
 
     @Override
     protected float getPeekedHeight() {
-        return getBarHeight() + getBarBannerControl().getHeightPeekingPx() * mPxToDp;
+        return getBarHeight();
     }
 
     @Override
@@ -490,7 +473,8 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     }
 
     @Override
-    protected void animatePanelToState(
+    @VisibleForTesting
+    public void animatePanelToState(
             @Nullable @PanelState Integer state, @StateChangeReason int reason, long duration) {
         // If the in bar chip showing animation is running, do not run the new panel animation
         // unless it needs to animate to a different state.
@@ -504,7 +488,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
                         || getPanelState() == PanelState.MAXIMIZED)) {
             mManagementDelegate.onPanelCollapsing();
             getRelatedSearchesInBarControl().onPanelCollapsing();
-            getRelatedSearchesInContentControl().onPanelCollapsing();
         }
 
         super.animatePanelToState(state, reason, duration);
@@ -526,9 +509,9 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      * @param isActive Whether the promo is active.
      */
     @Override
-    public void setIsPromoActive(boolean isActive, boolean isMandatory) {
+    public void setIsPromoActive(boolean isActive) {
         if (isActive) {
-            getPromoControl().show(isMandatory);
+            getPromoControl().show();
         } else {
             getPromoControl().hide();
         }
@@ -539,41 +522,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     @Override
     public void clearRelatedSearches() {
         getRelatedSearchesInBarControl().hide();
-        getRelatedSearchesInContentControl().hide();
-    }
-
-    /**
-     * Shows the Bar Banner.
-     */
-    public void showBarBanner() {
-        getBarBannerControl().show();
-    }
-
-    /**
-     * Hides the Bar Banner.
-     */
-    public void hideBarBanner() {
-        getBarBannerControl().hide();
-    }
-
-    /**
-     * @return Whether the Bar Banner is visible.
-     */
-    @VisibleForTesting
-    public boolean isBarBannerVisible() {
-        return getBarBannerControl().isVisible();
-    }
-
-    /**
-     * Called after the panel has navigated to prefetched Search Results.
-     * If the user has the panel open then they will see the prefetched result starting to load.
-     * Currently this just logs the time between the start of the search until the results start to
-     * render in the Panel.
-     * @param didResolve Whether the search required the Search Term to be resolved.
-     */
-    @Override
-    public void onPanelNavigatedToPrefetchedSearch(boolean didResolve) {
-        mPanelMetrics.onPanelNavigatedToPrefetchedSearch(didResolve);
     }
 
     /**
@@ -595,12 +543,9 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
         mShouldPromoteToTabAfterMaximizing = true;
         super.maximizePanel(reason);
         if (reason == StateChangeReason.SERP_NAVIGATION) {
-            RelatedSearchesControl activeRelatedSearches = mIsRelatedSearchesInContentSerp
-                    ? getRelatedSearchesInContentControl()
-                    : getRelatedSearchesInBarControl();
+            RelatedSearchesControl activeRelatedSearches = getRelatedSearchesInBarControl();
             ContextualSearchUma.logSerpResultClicked(
                     activeRelatedSearches.isShowingRelatedSearchSerp());
-            mIsRelatedSearchesInContentSerp = false;
         }
     }
 
@@ -623,11 +568,8 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
         super.closePanel(reason, animate);
         mHasContentBeenTouched = false;
         if (reason == StateChangeReason.TAB_PROMOTION) {
-            RelatedSearchesControl activeRelatedSearches = mIsRelatedSearchesInContentSerp
-                    ? getRelatedSearchesInContentControl()
-                    : getRelatedSearchesInBarControl();
+            RelatedSearchesControl activeRelatedSearches = getRelatedSearchesInBarControl();
             ContextualSearchUma.logTabPromotion(activeRelatedSearches.isShowingRelatedSearchSerp());
-            mIsRelatedSearchesInContentSerp = false;
         }
     }
 
@@ -727,22 +669,15 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      *        or {@code 0}.
      * @param relatedSearchesInBar Related Searches suggestions to be displayed in the Bar.
      * @param showDefaultSearchInBar Whether the first query is the default query in the bar.
-     * @param relatedSearchesInContent Related Searches suggestions to be displayed in the content
-     *        portion of the Panel.
-     * @param showDefaultSearchInContent Whether the first query is the default query in the
-     *         content.
      */
     @VisibleForTesting
     @Override
     public void onSearchTermResolved(String searchTerm, String thumbnailUrl, String quickActionUri,
             int quickActionCategory, @CardTag int cardTagEnum,
-            @Nullable List<String> relatedSearchesInBar, boolean showDefaultSearchInBar,
-            @Nullable List<String> relatedSearchesInContent, boolean showDefaultSearchInContent) {
+            @Nullable List<String> relatedSearchesInBar, boolean showDefaultSearchInBar) {
         onSearchTermResolved(searchTerm, null, thumbnailUrl, quickActionUri, quickActionCategory,
                 cardTagEnum, relatedSearchesInBar, showDefaultSearchInBar,
-                ChipProperties.SHOW_WHOLE_TEXT /* defaultQueryInBarTextMaxWidthPx */,
-                relatedSearchesInContent, showDefaultSearchInContent,
-                ChipProperties.SHOW_WHOLE_TEXT /* defaultQueryInContentTextMaxWidthPx */);
+                ChipProperties.SHOW_WHOLE_TEXT /* defaultQueryInBarTextMaxWidthPx */);
     }
 
     /**
@@ -757,26 +692,15 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      * @param relatedSearchesInBar Related Searches suggestions to be displayed in the Bar.
      * @param showDefaultSearchInBar Whether the first query is the default query in the bar.
      * @param defaultQueryInBarTextMaxWidthPx The bar's default query text max width in pixels.
-     * @param relatedSearchesInContent Related Searches suggestions to be displayed in the content
-     *        portion of the Panel.
-     * @param showDefaultSearchInContent Whether the first query is the default query in the
-     *         content.
-     * @param defaultQueryInContentTextMaxWidthPx The content's default query text max width in
-     *         pixels.
      */
     @Override
     public void onSearchTermResolved(String searchTerm, @Nullable String pronunciation,
             String thumbnailUrl, String quickActionUri, int quickActionCategory,
             @CardTag int cardTagEnum, @Nullable List<String> relatedSearchesInBar,
-            boolean showDefaultSearchInBar, @Px int defaultQueryInBarTextMaxWidthPx,
-            @Nullable List<String> relatedSearchesInContent, boolean showDefaultSearchInContent,
-            @Px int defaultQueryInContentTextMaxWidthPx) {
+            boolean showDefaultSearchInBar, @Px int defaultQueryInBarTextMaxWidthPx) {
         boolean hadInBarSuggestions = getRelatedSearchesInBarControl().hasReleatedSearchesToShow();
         getRelatedSearchesInBarControl().setRelatedSearchesSuggestions(
                 relatedSearchesInBar, showDefaultSearchInBar, defaultQueryInBarTextMaxWidthPx);
-        getRelatedSearchesInContentControl().setRelatedSearchesSuggestions(relatedSearchesInContent,
-                showDefaultSearchInContent, defaultQueryInContentTextMaxWidthPx);
-        mPanelMetrics.onSearchTermResolved();
         if (ChromeFeatureList.isEnabled(ChromeFeatureList.RELATED_SEARCHES_IN_BAR)) {
             if (getRelatedSearchesInBarControl().hasReleatedSearchesToShow()
                     != hadInBarSuggestions) {
@@ -861,8 +785,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
 
         getPromoControl().onUpdateFromCloseToPeek(percentage);
         getRelatedSearchesInBarControl().onUpdateFromCloseToPeek(percentage);
-        getRelatedSearchesInContentControl().onUpdateFromCloseToPeek(percentage);
-        getBarBannerControl().onUpdateFromCloseToPeek(percentage);
         getSearchBarControl().onUpdateFromCloseToPeek(percentage);
         mDidStartCollapsing = false;
     }
@@ -875,13 +797,10 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
             mDidStartCollapsing = true;
             mManagementDelegate.onPanelCollapsing();
             getRelatedSearchesInBarControl().onPanelCollapsing();
-            getRelatedSearchesInContentControl().onPanelCollapsing();
         }
 
         getPromoControl().onUpdateFromPeekToExpand(percentage);
         getRelatedSearchesInBarControl().onUpdateFromPeekToExpand(percentage);
-        getRelatedSearchesInContentControl().onUpdateFromPeekToExpand(percentage);
-        getBarBannerControl().onUpdateFromPeekToExpand(percentage);
         getSearchBarControl().onUpdateFromPeekToExpand(percentage);
     }
 
@@ -891,8 +810,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
 
         getPromoControl().onUpdateFromExpandToMaximize(percentage);
         getRelatedSearchesInBarControl().onUpdateFromExpandToMaximize(percentage);
-        getRelatedSearchesInContentControl().onUpdateFromExpandToMaximize(percentage);
-        getBarBannerControl().onUpdateFromExpandToMaximize(percentage);
         getSearchBarControl().onUpdateFromExpandToMaximize(percentage);
     }
 
@@ -903,12 +820,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
         }
         if (getRelatedSearchesInBarControl().isVisible()) {
             getRelatedSearchesInBarControl().invalidate(true);
-        }
-        if (getRelatedSearchesInContentControl().isVisible()) {
-            getRelatedSearchesInContentControl().invalidate(true);
-        }
-        if (getBarBannerControl().isVisible()) {
-            getBarBannerControl().onResized(this);
         }
 
         // NOTE(pedrosimonetti): We cannot tell where the selection will be after the
@@ -933,6 +844,7 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
         // Details in https://crbug.com/848922.
         float statusBarAlpha =
                 (maxBrightness - basePageBrightness) / (maxBrightness - minBrightness);
+        if (!getCanHideAndroidBrowserControls()) scrimAndroidToolbar(statusBarAlpha);
         if (statusBarAlpha == 0.0) {
             if (mScrimCoordinator != null) mScrimCoordinator.hideScrim(false);
             mScrimProperties = null;
@@ -955,6 +867,39 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
             }
             mScrimCoordinator.setAlpha(statusBarAlpha);
         }
+    }
+
+    private void scrimAndroidToolbar(float scrimFraction) {
+        int toolbarColor = mToolbarManager.getToolbar().getPrimaryColor();
+        if (scrimFraction > 0.f) {
+            toolbarColor = getScrimmedColor(mActivity, toolbarColor, scrimFraction);
+        }
+        ToolbarLayout toolbarLayout = (ToolbarLayout) mActivity.findViewById(R.id.toolbar);
+        ColorDrawable toolbarBackground = (ColorDrawable) toolbarLayout.getBackground();
+        toolbarBackground.setColor(toolbarColor);
+
+        scrimImage(R.id.drag_handlebar, R.color.drag_handlebar_color_baseline, scrimFraction);
+        scrimImage(R.id.toolbar_hairline, R.color.divider_line_bg_color_baseline, scrimFraction);
+    }
+
+    private void scrimImage(int viewId, int colorId, float scrimFraction) {
+        ImageView view = (ImageView) mActivity.findViewById(viewId);
+        if (view == null) return;
+        int baseColor = mActivity.getColor(colorId);
+        if (scrimFraction > 0.f) {
+            view.setColorFilter(getScrimmedColor(mActivity, baseColor, scrimFraction));
+        } else {
+            view.clearColorFilter();
+        }
+    }
+
+    private static @ColorInt int getScrimmedColor(
+            Context context, @ColorInt int baseColor, float scrimFraction) {
+        int scrimColor = context.getResources().getColor(R.color.default_scrim_color);
+        float scrimColorAlpha = (scrimColor >>> 24) / 255f;
+        int scrimColorOpaque = scrimColor & 0xFF000000;
+        return ColorUtils.getColorWithOverlay(
+                baseColor, scrimColorOpaque, scrimFraction * scrimColorAlpha, false);
     }
 
     // ============================================================================================
@@ -1033,33 +978,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     }
 
     // ============================================================================================
-    // Bar Banner
-    // ============================================================================================
-
-    private ContextualSearchBarBannerControl mBarBannerControl;
-
-    /**
-     * Creates the ContextualSearchBarBannerControl, if needed.
-     */
-    private ContextualSearchBarBannerControl getBarBannerControl() {
-        if (mBarBannerControl == null) {
-            mBarBannerControl = new ContextualSearchBarBannerControl(
-                    this, mContext, mContainerView, mResourceLoader);
-        }
-        return mBarBannerControl;
-    }
-
-    /**
-     * Destroys the ContextualSearchBarBannerControl.
-     */
-    private void destroyBarBannerControl() {
-        if (mBarBannerControl != null) {
-            mBarBannerControl.destroy();
-            mBarBannerControl = null;
-        }
-    }
-
-    // ============================================================================================
     // Promo
     // ============================================================================================
 
@@ -1086,9 +1004,8 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      */
     private ContextualSearchPromoControl getPromoControl() {
         if (mPromoControl == null) {
-            mPromoControl =
-                    new ContextualSearchPromoControl(this, getContextualSearchPromoHost(),
-                            mContext, mContainerView, mResourceLoader);
+            mPromoControl = new ContextualSearchPromoControl(this, getContextualSearchPromoHost(),
+                    mContext, getCoordinatorView(), mResourceLoader);
         }
         return mPromoControl;
     }
@@ -1113,9 +1030,7 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
                 @Override
                 public float getYPositionPx() {
                     // Needs to enumerate anything that can appear above it in the panel.
-                    return Math.round((getOffsetY() + getBarContainerHeight()
-                                              + getRelatedSearchesHeightDps(false))
-                            / mPxToDp);
+                    return Math.round((getOffsetY() + getBarContainerHeight()) / mPxToDp);
                 }
 
                 @Override
@@ -1125,24 +1040,23 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
                 }
 
                 @Override
-                public void onPromoOptIn(boolean wasMandatory) {
-                    if (wasMandatory) {
-                        getOverlayPanelContent().showContent();
-                        expandPanel(StateChangeReason.OPTIN);
-                    }
-                }
+                public void onPromoOptIn() {}
 
                 @Override
-                public void onPromoOptOut() {
-                    if (!ChromeFeatureList.isEnabled(
-                                ChromeFeatureList.CONTEXTUAL_SEARCH_NEW_SETTINGS)) {
-                        closePanel(OverlayPanel.StateChangeReason.OPTOUT, true);
-                    }
-                }
+                public void onPromoOptOut() {}
             };
         }
 
         return mPromoHost;
+    }
+
+    private ViewGroup getCoordinatorView() {
+        ViewGroup result = mContainerView;
+        // Use the coordinator inside of the container if we can get it. See crbug.com/1258902.
+        ViewGroup coordinator = mContainerView.findViewById(org.chromium.chrome.R.id.coordinator);
+        // Returns null in tests. TODO(donnd): figure out why - tests should have the same views.
+        if (coordinator != null) result = coordinator;
+        return result;
     }
 
     // ============================================================================================
@@ -1155,65 +1069,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      */
     boolean isDelayedIntelligenceActive() {
         return mManagementDelegate.isDelayedIntelligenceActive();
-    }
-
-    // ============================================================================================
-    // The Related Searches Control that appears as a Panel-Section
-    // ============================================================================================
-
-    private RelatedSearchesControl mRelatedSearchesInContentControl;
-    private RelatedSearchesSectionHost mRelatedSearchesInContentHost;
-
-    /**
-     * Creates the RelatedSearchesControl to be shown in the content area of the Panel, if needed.
-     */
-    @VisibleForTesting
-    public RelatedSearchesControl getRelatedSearchesInContentControl() {
-        if (mRelatedSearchesInContentControl == null) {
-            mRelatedSearchesInContentControl =
-                    new RelatedSearchesControl(this, getRelatedSearchesInContentHost(), false,
-                            mContext, mContainerView, mResourceLoader);
-        }
-        return mRelatedSearchesInContentControl;
-    }
-
-    /**
-     * Destroys the RelatedSearchesControl that appears in the content area of the Panel.
-     */
-    private void destroyInContentRelatedSearchesControl() {
-        if (mRelatedSearchesInContentControl != null) {
-            mRelatedSearchesInContentControl.destroy();
-            mRelatedSearchesInContentControl = null;
-        }
-    }
-
-    /**
-     * @return An implementation of {@link RelatedSearchesSectionHost}.
-     */
-    private RelatedSearchesSectionHost getRelatedSearchesInContentHost() {
-        if (mRelatedSearchesInContentHost == null) {
-            mRelatedSearchesInContentHost = new RelatedSearchesSectionHost() {
-                @Override
-                public float getYPositionPx() {
-                    // Nothing can appear above it in the panel.
-                    return Math.round((getOffsetY() + getBarContainerHeight()) / mPxToDp);
-                }
-
-                @Override
-                public void onPanelSectionSizeChange(boolean hasStarted) {
-                    // This section currently doesn't change size, so we can ignore this.
-                }
-
-                @Override
-                public void onSuggestionClicked(int selectionIndex) {
-                    // Only one suggestion should be selected among all our RS controls.
-                    getRelatedSearchesInBarControl().clearSelectedSuggestions();
-                    mManagementDelegate.onRelatedSearchesSuggestionClicked(selectionIndex, false);
-                    mIsRelatedSearchesInContentSerp = true;
-                }
-            };
-        }
-        return mRelatedSearchesInContentHost;
     }
 
     // ============================================================================================
@@ -1230,7 +1085,7 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     public RelatedSearchesControl getRelatedSearchesInBarControl() {
         if (mRelatedSearchesInBarControl == null) {
             mRelatedSearchesInBarControl = new RelatedSearchesControl(this,
-                    getRelatedSearchesInBarHost(), true, mContext, mContainerView, mResourceLoader);
+                    getRelatedSearchesInBarHost(), mContext, getCoordinatorView(), mResourceLoader);
         }
         return mRelatedSearchesInBarControl;
     }
@@ -1260,18 +1115,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      */
     float getInBarRelatedSearchesMaximumHeightDps() {
         return getRelatedSearchesInBarControl().getMaximumHeightPx() * mPxToDp;
-    }
-
-    /**
-     * Returns the height of the Related Searches carousel for either the in-bar position or
-     * the in-panel position. Either one could have a variable height due to animation.
-     * @param isRelatedSearchesInBar Whether we want the in-bar carousel height or not.
-     * @return Current height of this section in DPs.
-     */
-    float getRelatedSearchesHeightDps(boolean isRelatedSearchesInBar) {
-        return isRelatedSearchesInBar
-                ? getRelatedSearchesInBarControl().getHeightPx() * mPxToDp
-                : getRelatedSearchesInContentControl().getHeightPx() * mPxToDp;
     }
 
     /**
@@ -1306,10 +1149,7 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
 
                 @Override
                 public void onSuggestionClicked(int selectionIndex) {
-                    // Only one suggestion should be selected among all our RS controls.
-                    getRelatedSearchesInContentControl().clearSelectedSuggestions();
-                    mManagementDelegate.onRelatedSearchesSuggestionClicked(selectionIndex, true);
-                    mIsRelatedSearchesInContentSerp = false;
+                    mManagementDelegate.onRelatedSearchesSuggestionClicked(selectionIndex);
                 }
             };
         }
@@ -1319,13 +1159,6 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
     // ============================================================================================
     // Panel Content
     // ============================================================================================
-
-    /**
-     * @return Whether the content can be displayed in the panel.
-     */
-    public boolean canDisplayContentInPanel() {
-        return !getPromoControl().isMandatory();
-    }
 
     @Override
     public void onTouchSearchContentViewAck() {
@@ -1346,7 +1179,7 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
      * @return Whether the panel content can be displayed in a new tab.
      */
     public boolean canPromoteToNewTab() {
-        return mActivityType == ActivityType.TABBED && canDisplayContentInPanel();
+        return mActivityType == ActivityType.TABBED;
     }
 
     // ============================================================================================
@@ -1389,5 +1222,17 @@ public class ContextualSearchPanel extends OverlayPanel implements ContextualSea
                 updatePanelForExpansion(1.0f);
                 break;
         }
+    }
+
+    @Override
+    @VisibleForTesting
+    public boolean getCanHideAndroidBrowserControls() {
+        return super.getCanHideAndroidBrowserControls();
+    }
+
+    @Override
+    @VisibleForTesting
+    public OverlayPanelContent getOverlayPanelContent() {
+        return super.getOverlayPanelContent();
     }
 }

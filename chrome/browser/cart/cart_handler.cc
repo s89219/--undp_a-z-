@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,22 +6,26 @@
 
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_functions.h"
-#include "chrome/browser/cart/cart_db_content.pb.h"
 #include "chrome/browser/cart/cart_service.h"
 #include "chrome/browser/cart/cart_service_factory.h"
+#include "chrome/browser/new_tab_page/new_tab_page_util.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "components/commerce/core/commerce_feature_list.h"
+#include "components/commerce/core/proto/cart_db_content.pb.h"
 #include "components/search/ntp_features.h"
 
 CartHandler::CartHandler(
     mojo::PendingReceiver<chrome_cart::mojom::CartHandler> handler,
-    Profile* profile)
+    Profile* profile,
+    content::WebContents* web_contents)
     : handler_(this, std::move(handler)),
-      cart_service_(CartServiceFactory::GetForProfile(profile)) {}
+      cart_service_(CartServiceFactory::GetForProfile(profile)),
+      web_contents_(web_contents) {}
 
 CartHandler::~CartHandler() = default;
 
 void CartHandler::GetMerchantCarts(GetMerchantCartsCallback callback) {
-  DCHECK(base::FeatureList::IsEnabled(ntp_features::kNtpChromeCartModule));
+  DCHECK(IsCartModuleEnabled());
   if (base::GetFieldTrialParamValueByFeature(
           ntp_features::kNtpChromeCartModule,
           ntp_features::kNtpChromeCartModuleDataParam) == "fake") {
@@ -65,6 +69,11 @@ void CartHandler::RestoreRemovedCart(const GURL& cart_url,
 void CartHandler::GetCartDataCallback(GetMerchantCartsCallback callback,
                                       bool success,
                                       std::vector<CartDB::KeyAndValue> res) {
+  DCHECK(success);
+  if (!success) {
+    std::move(callback).Run({});
+    return;
+  }
   std::vector<chrome_cart::mojom::MerchantCartPtr> carts;
   bool show_discount = cart_service_->IsCartDiscountEnabled();
   for (CartDB::KeyAndValue proto_pair : res) {
@@ -128,7 +137,8 @@ void CartHandler::OnDiscountConsentContinued() {
 void CartHandler::ShowNativeConsentDialog(
     ShowNativeConsentDialogCallback callback) {
   cart_service_->InterestedInDiscountConsent();
-  cart_service_->ShowNativeConsentDialog(std::move(callback));
+  cart_service_->ShowNativeConsentDialog(
+      chrome::FindBrowserWithWebContents(web_contents_), std::move(callback));
 }
 
 void CartHandler::GetDiscountEnabled(GetDiscountEnabledCallback callback) {

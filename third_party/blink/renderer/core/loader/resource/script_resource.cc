@@ -257,7 +257,7 @@ String ScriptResource::TextForInspector() const {
   return "";
 }
 
-SingleCachedMetadataHandler* ScriptResource::CacheHandler() {
+CachedMetadataHandler* ScriptResource::CacheHandler() {
   return cached_metadata_handler_;
 }
 
@@ -273,10 +273,10 @@ void ScriptResource::SetSerializedCachedMetadata(mojo_base::BigBuffer data) {
           // It's safe to access unchecked cached metadata here, because the
           // ScriptCacheConsumer result will be ignored if the cached metadata
           // check fails later.
-          SingleCachedMetadataHandler::kAllowUnchecked)) {
+          CachedMetadataHandler::kAllowUnchecked)) {
     cache_consumer_ = MakeGarbageCollected<ScriptCacheConsumer>(
-        V8CodeCache::GetCachedMetadata(
-            CacheHandler(), SingleCachedMetadataHandler::kAllowUnchecked),
+        V8CodeCache::GetCachedMetadata(CacheHandler(),
+                                       CachedMetadataHandler::kAllowUnchecked),
         Url(), InspectorId());
     AdvanceConsumeCacheState(ConsumeCacheState::kRunningOffThread);
   } else {
@@ -414,7 +414,7 @@ void ScriptResource::ResponseBodyReceived(
   CheckStreamingState();
   CHECK(!ErrorOccurred());
 
-  streamer_ = MakeGarbageCollected<ScriptStreamer>(
+  streamer_ = MakeGarbageCollected<ResourceScriptStreamer>(
       this, std::move(data_pipe), response_body_loader_client,
       std::move(stream_text_decoder_), loader_task_runner);
   CHECK_EQ(no_streamer_reason_, ScriptStreamer::NotStreamingReason::kInvalid);
@@ -423,12 +423,16 @@ void ScriptResource::ResponseBodyReceived(
 
 void ScriptResource::DidReceiveDecodedData(
     const String& data,
-    std::unique_ptr<ParkableStringImpl::SecureDigest> digest) {
+    std::unique_ptr<DecodedDataInfo> info) {
   // Web snapshots use RawSourceText(), and don't need the decoded data.
   if (IsWebSnapshot())
     return;
 
-  source_text_ = ParkableString(data.Impl(), std::move(digest));
+  if (!info)
+    return;
+
+  source_text_ = ParkableString(
+      data.Impl(), std::move(To<ScriptDecodedDataInfo>(info.get())->digest_));
   SetDecodedSize(source_text_.CharactersSizeInBytes());
 }
 
@@ -484,12 +488,12 @@ void ScriptResource::SetEncoding(const String& chs) {
   }
 }
 
-ScriptStreamer* ScriptResource::TakeStreamer() {
+ResourceScriptStreamer* ScriptResource::TakeStreamer() {
   CHECK(IsLoaded());
   if (!streamer_)
     return nullptr;
 
-  ScriptStreamer* streamer = streamer_;
+  ResourceScriptStreamer* streamer = streamer_;
   // A second use of the streamer is not possible, so we null it out and disable
   // streaming for subsequent uses.
   streamer_ = nullptr;

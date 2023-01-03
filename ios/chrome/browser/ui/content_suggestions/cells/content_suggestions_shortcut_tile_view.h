@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,17 +13,17 @@
 // optionally supports a badge, for example for reading list new item count.
 @interface ContentSuggestionsShortcutTileView : ContentSuggestionsTileView
 
-// Initializes and configures the view with |config|.
+// Initializes and configures the view with `config`.
 - (instancetype)initWithConfiguration:
     (ContentSuggestionsMostVisitedActionItem*)config;
 
-// Update the number shown in badge.
-- (void)updateCount:(NSInteger)count;
+// Updates the configuration for this view to the new `config`.
+- (void)updateConfiguration:(ContentSuggestionsMostVisitedActionItem*)config;
 
 // View for action icon.
 @property(nonatomic, strong, readonly) UIImageView* iconView;
 
-// Container view for |countLabel|.
+// Container view for `countLabel`.
 @property(nonatomic, strong, readonly) UIView* countContainer;
 
 // Number shown in badge that is on the top trailing side of cell.

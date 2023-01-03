@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -424,7 +424,7 @@ class End2EndTest : public ::testing::Test {
     audio_sender_config_.receiver_ssrc = 2;
     audio_sender_config_.max_playout_delay = kTargetPlayoutDelay;
     audio_sender_config_.rtp_payload_type = RtpPayloadType::AUDIO_OPUS;
-    audio_sender_config_.use_external_encoder = false;
+    audio_sender_config_.use_hardware_encoder = false;
     audio_sender_config_.rtp_timebase = kDefaultAudioSamplingRate;
     audio_sender_config_.channels = kAudioChannels;
     audio_sender_config_.max_bitrate = kDefaultAudioEncoderBitrate;
@@ -457,7 +457,7 @@ class End2EndTest : public ::testing::Test {
     video_sender_config_.receiver_ssrc = 4;
     video_sender_config_.max_playout_delay = kTargetPlayoutDelay;
     video_sender_config_.rtp_payload_type = RtpPayloadType::VIDEO_VP8;
-    video_sender_config_.use_external_encoder = false;
+    video_sender_config_.use_hardware_encoder = false;
     video_sender_config_.rtp_timebase = kVideoFrequency;
     video_sender_config_.max_bitrate = 50000;
     video_sender_config_.min_bitrate = 10000;

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,11 @@
 #include <algorithm>
 #include <utility>
 
-#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
+#include "chrome/browser/password_manager/chrome_webauthn_credentials_delegate_factory.h"
 #include "chrome/browser/webauthn/authenticator_request_dialog_model.h"
 #include "chrome/browser/webauthn/webauthn_pref_names.h"
 #include "chrome/browser/webauthn/webauthn_switches.h"
@@ -20,16 +20,23 @@
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/authenticator_request_client_delegate.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/test/navigation_simulator.h"
 #include "content/public/test/web_contents_tester.h"
 #include "device/fido/cable/cable_discovery_data.h"
 #include "device/fido/features.h"
 #include "device/fido/fido_constants.h"
-#include "device/fido/fido_device_authenticator.h"
 #include "device/fido/fido_discovery_factory.h"
 #include "device/fido/fido_request_handler_base.h"
 #include "device/fido/fido_transport_protocol.h"
 #include "device/fido/test_callback_receiver.h"
+#include "device/fido/virtual_ctap2_device.h"
+#include "device/fido/virtual_fido_device_authenticator.h"
+#include "net/ssl/ssl_info.h"
+#include "net/test/cert_test_util.h"
+#include "net/test/test_data_directory.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 #if BUILDFLAG(IS_WIN)
 #include "device/fido/win/authenticator.h"
@@ -43,6 +50,8 @@
 
 namespace {
 
+static constexpr char kRelyingPartyID[] = "example.com";
+
 class ChromeAuthenticatorRequestDelegateTest
     : public ChromeRenderViewHostTestHarness {};
 
@@ -53,6 +62,11 @@ class TestAuthenticatorModelObserver final
       AuthenticatorRequestDialogModel* model)
       : model_(model) {
     last_step_ = model_->current_step();
+  }
+  ~TestAuthenticatorModelObserver() override {
+    if (model_) {
+      model_->RemoveObserver(this);
+    }
   }
 
   AuthenticatorRequestDialogModel::Step last_step() { return last_step_; }
@@ -120,11 +134,11 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, IndividualAttestation) {
     PrefService* prefs =
         Profile::FromBrowserContext(GetBrowserContext())->GetPrefs();
     if (!test.permit_attestation_policy_values.empty()) {
-      std::vector<base::Value> policy_values;
+      base::Value::List policy_values;
       for (const std::string& v : test.permit_attestation_policy_values)
-        policy_values.emplace_back(v);
-      prefs->Set(prefs::kSecurityKeyPermitAttestation,
-                 base::Value(std::move(policy_values)));
+        policy_values.Append(v);
+      prefs->SetList(prefs::kSecurityKeyPermitAttestation,
+                     std::move(policy_values));
     } else {
       prefs->ClearPref(prefs::kSecurityKeyPermitAttestation);
     }
@@ -141,15 +155,15 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, CableConfiguration) {
   class DiscoveryFactory : public device::FidoDiscoveryFactory {
    public:
     void set_cable_data(
-        device::FidoRequestType request_type,
-        std::vector<device::CableDiscoveryData> cable_data,
+        device::CableRequestType request_type,
+        std::vector<device::CableDiscoveryData> data,
         const absl::optional<std::array<uint8_t, device::cablev2::kQRKeySize>>&
             qr_generator_key,
-        std::vector<std::unique_ptr<device::cablev2::Pairing>> v2_pairings)
+        std::vector<std::unique_ptr<device::cablev2::Pairing>> pairings)
         override {
-      this->cable_data = std::move(cable_data);
-      this->qr_key = qr_generator_key;
-      this->v2_pairings = std::move(v2_pairings);
+      cable_data = std::move(data);
+      qr_key = qr_generator_key;
+      v2_pairings = std::move(pairings);
     }
 
     void set_android_accessory_params(
@@ -181,10 +195,7 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, CableConfiguration) {
     k3rdParty,
   };
 
-  // TODO(crbug.com/1052397): Revisit the macro expression once build flag
-  // switch of lacros-chrome is complete. If updating this, also update
-  // ChromeAuthenticatorRequestDelegate.
-#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_LINUX)
   // On Linux, some configurations aren't supported because of bluez
   // limitations. This macro maps the expected result in that case.
 #define NONE_ON_LINUX(r) (Result::kNone)
@@ -195,39 +206,78 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, CableConfiguration) {
   const struct {
     const char* origin;
     std::vector<device::CableDiscoveryData> extensions;
+    device::CableRequestType request_type;
+    absl::optional<device::ResidentKeyRequirement> resident_key_requirement;
     Result expected_result;
   } kTests[] = {
       {
           "https://example.com",
           {},
+          device::CableRequestType::kGetAssertion,
+          absl::nullopt,
           Result::k3rdParty,
       },
       {
           // Extensions should be ignored on a 3rd-party site.
           "https://example.com",
           {v1_extension},
+          device::CableRequestType::kGetAssertion,
+          absl::nullopt,
           Result::k3rdParty,
       },
       {
           // Extensions should be ignored on a 3rd-party site.
           "https://example.com",
           {v2_extension},
+          device::CableRequestType::kGetAssertion,
+          absl::nullopt,
           Result::k3rdParty,
       },
       {
-          // a.g.c should not get caBLE without an extension
+          // a.g.c should still be able to get 3rd-party caBLE
+          // if it doesn't send an extension in an assertion request.
           "https://accounts.google.com",
           {},
+          device::CableRequestType::kGetAssertion,
+          absl::nullopt,
+          Result::k3rdParty,
+      },
+      {
+          // ... but not for non-discoverable registration.
+          "https://accounts.google.com",
+          {},
+          device::CableRequestType::kMakeCredential,
+          device::ResidentKeyRequirement::kDiscouraged,
           Result::kNone,
+      },
+      {
+          // ... but yes for rk=preferred
+          "https://accounts.google.com",
+          {},
+          device::CableRequestType::kMakeCredential,
+          device::ResidentKeyRequirement::kPreferred,
+          Result::k3rdParty,
+      },
+      {
+          // ... or rk=required.
+          "https://accounts.google.com",
+          {},
+          device::CableRequestType::kDiscoverableMakeCredential,
+          device::ResidentKeyRequirement::kRequired,
+          Result::k3rdParty,
       },
       {
           "https://accounts.google.com",
           {v1_extension},
+          device::CableRequestType::kGetAssertion,
+          absl::nullopt,
           NONE_ON_LINUX(Result::kV1),
       },
       {
           "https://accounts.google.com",
           {v2_extension},
+          device::CableRequestType::kGetAssertion,
+          absl::nullopt,
           Result::kServerLink,
       },
   };
@@ -242,7 +292,7 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, CableConfiguration) {
     delegate.SetRelyingPartyId(/*rp_id=*/"example.com");
     delegate.SetPassEmptyUsbDeviceManagerForTesting(true);
     delegate.ConfigureCable(url::Origin::Create(GURL(test.origin)),
-                            device::FidoRequestType::kGetAssertion,
+                            test.request_type, test.resident_key_requirement,
                             test.extensions, &discovery_factory);
 
     switch (test.expected_result) {
@@ -286,6 +336,13 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, CableConfiguration) {
 }
 
 TEST_F(ChromeAuthenticatorRequestDelegateTest, ConditionalUI) {
+  // The RenderFrame has to be live for the ChromeWebAuthnCredentialsDelegate to
+  // be created.
+  content::WebContentsTester::For(web_contents())
+      ->NavigateAndCommit(GURL("https://example.com"));
+  ChromeWebAuthnCredentialsDelegateFactory::CreateForWebContents(
+      web_contents());
+
   // Enabling conditional mode should cause the modal dialog to stay hidden at
   // the beginning of a request. An omnibar icon might be shown instead.
   for (bool conditional_ui : {true, false}) {
@@ -300,7 +357,7 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, ConditionalUI) {
     delegate.OnTransportAvailabilityEnumerated(
         AuthenticatorRequestDialogModel::TransportAvailabilityInfo());
     EXPECT_EQ(observer.last_step() ==
-                  AuthenticatorRequestDialogModel::Step::kLocationBarBubble,
+                  AuthenticatorRequestDialogModel::Step::kConditionalMediation,
               conditional_ui);
   }
 }
@@ -330,8 +387,6 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest,
 }
 
 TEST_F(ChromeAuthenticatorRequestDelegateTest, MaybeGetRelyingPartyIdOverride) {
-  constexpr char kCryptotokenOrigin[] =
-      "chrome-extension://kmendfapggjehodndflmmgagdbamhnfd";
   constexpr char kTestExtensionOrigin[] = "chrome-extension://abcdef";
   ChromeWebAuthenticationDelegate delegate;
   static const struct {
@@ -341,7 +396,6 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, MaybeGetRelyingPartyIdOverride) {
   } kTests[] = {
       {"example.com", "https://example.com", absl::nullopt},
       {"foo.com", "https://example.com", absl::nullopt},
-      {"foobar.com", kCryptotokenOrigin, absl::nullopt},
       {"abcdef", kTestExtensionOrigin, kTestExtensionOrigin},
       {"example.com", kTestExtensionOrigin, kTestExtensionOrigin},
   };
@@ -352,8 +406,23 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, MaybeGetRelyingPartyIdOverride) {
   }
 }
 
+// Tests that attestation is returned if the virtual environment is enabled and
+// the UI is disabled.
+// Regression test for crbug.com/1342458
+TEST_F(ChromeAuthenticatorRequestDelegateTest, VirtualEnvironmentAttestation) {
+  ChromeAuthenticatorRequestDelegate delegate(main_rfh());
+  delegate.DisableUI();
+  delegate.SetVirtualEnvironment(true);
+  device::VirtualFidoDeviceAuthenticator authenticator(
+      std::make_unique<device::VirtualCtap2Device>());
+  device::test::ValueCallbackReceiver<bool> cb;
+  delegate.ShouldReturnAttestation(kRelyingPartyID, &authenticator,
+                                   /*is_enterprise_attestation=*/false,
+                                   cb.callback());
+  EXPECT_TRUE(cb.value());
+}
+
 #if BUILDFLAG(IS_MAC)
-API_AVAILABLE(macos(10.12.2))
 std::string TouchIdMetadataSecret(ChromeWebAuthenticationDelegate& delegate,
                                   content::BrowserContext* browser_context) {
   return delegate.GetTouchIdAuthenticatorConfig(browser_context)
@@ -361,46 +430,37 @@ std::string TouchIdMetadataSecret(ChromeWebAuthenticationDelegate& delegate,
 }
 
 TEST_F(ChromeAuthenticatorRequestDelegateTest, TouchIdMetadataSecret) {
-  if (__builtin_available(macOS 10.12.2, *)) {
-    ChromeWebAuthenticationDelegate delegate;
-    std::string secret = TouchIdMetadataSecret(delegate, GetBrowserContext());
-    EXPECT_EQ(secret.size(), 32u);
-    // The secret should be stable.
-    EXPECT_EQ(secret, TouchIdMetadataSecret(delegate, GetBrowserContext()));
-  }
+  ChromeWebAuthenticationDelegate delegate;
+  std::string secret = TouchIdMetadataSecret(delegate, GetBrowserContext());
+  EXPECT_EQ(secret.size(), 32u);
+  // The secret should be stable.
+  EXPECT_EQ(secret, TouchIdMetadataSecret(delegate, GetBrowserContext()));
 }
 
 TEST_F(ChromeAuthenticatorRequestDelegateTest,
        TouchIdMetadataSecret_EqualForSameProfile) {
-  if (__builtin_available(macOS 10.12.2, *)) {
-    // Different delegates on the same BrowserContext (Profile) should return
-    // the same secret.
-    ChromeWebAuthenticationDelegate delegate1;
-    ChromeWebAuthenticationDelegate delegate2;
-    EXPECT_EQ(TouchIdMetadataSecret(delegate1, GetBrowserContext()),
-              TouchIdMetadataSecret(delegate2, GetBrowserContext()));
-  }
+  // Different delegates on the same BrowserContext (Profile) should return
+  // the same secret.
+  ChromeWebAuthenticationDelegate delegate1;
+  ChromeWebAuthenticationDelegate delegate2;
+  EXPECT_EQ(TouchIdMetadataSecret(delegate1, GetBrowserContext()),
+            TouchIdMetadataSecret(delegate2, GetBrowserContext()));
 }
 
 TEST_F(ChromeAuthenticatorRequestDelegateTest,
        TouchIdMetadataSecret_NotEqualForDifferentProfiles) {
-  if (__builtin_available(macOS 10.12.2, *)) {
-    // Different profiles have different secrets.
-    auto other_browser_context = CreateBrowserContext();
-    ChromeWebAuthenticationDelegate delegate;
-    EXPECT_NE(TouchIdMetadataSecret(delegate, GetBrowserContext()),
-              TouchIdMetadataSecret(delegate, other_browser_context.get()));
-    // Ensure this second secret is actually valid.
-    EXPECT_EQ(
-        32u,
-        TouchIdMetadataSecret(delegate, other_browser_context.get()).size());
-  }
+  // Different profiles have different secrets.
+  auto other_browser_context = CreateBrowserContext();
+  ChromeWebAuthenticationDelegate delegate;
+  EXPECT_NE(TouchIdMetadataSecret(delegate, GetBrowserContext()),
+            TouchIdMetadataSecret(delegate, other_browser_context.get()));
+  // Ensure this second secret is actually valid.
+  EXPECT_EQ(
+      32u, TouchIdMetadataSecret(delegate, other_browser_context.get()).size());
 }
 #endif  // BUILDFLAG(IS_MAC)
 
 #if BUILDFLAG(IS_WIN)
-
-static constexpr char kRelyingPartyID[] = "example.com";
 
 // Tests that ShouldReturnAttestation() returns with true if |authenticator|
 // is the Windows native WebAuthn API with WEBAUTHN_API_VERSION_2 or higher,
@@ -427,6 +487,11 @@ TEST_F(ChromeAuthenticatorRequestDelegateTest, ShouldPromptForAttestationWin) {
 class ChromeAuthenticatorRequestDelegateWindowsBehaviorTest
     : public ChromeAuthenticatorRequestDelegateTest {
  public:
+  ChromeAuthenticatorRequestDelegateWindowsBehaviorTest() {
+    scoped_feature_list_.InitAndDisableFeature(
+        device::kWebAuthnNewDiscoverableCredentialsUi);
+  }
+
   void CreateObjectsUnderTest() {
     delegate_.emplace(main_rfh());
     delegate_->SetRelyingPartyId("example.com");
@@ -441,9 +506,7 @@ class ChromeAuthenticatorRequestDelegateWindowsBehaviorTest
   absl::optional<ChromeAuthenticatorRequestDelegate> delegate_;
   absl::optional<TestAuthenticatorModelObserver> observer_;
 
- private:
-  base::test::ScopedFeatureList scoped_feature_list_{
-      device::kWebAuthPhoneSupport};
+  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 TEST_F(ChromeAuthenticatorRequestDelegateWindowsBehaviorTest,
@@ -457,8 +520,7 @@ TEST_F(ChromeAuthenticatorRequestDelegateWindowsBehaviorTest,
   AuthenticatorRequestDialogModel::TransportAvailabilityInfo tai;
   tai.has_win_native_api_authenticator = true;
   tai.win_native_api_authenticator_id = "ID";
-  tai.available_transports.insert(
-      device::FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy);
+  tai.available_transports.insert(device::FidoTransportProtocol::kHybrid);
 
   CreateObjectsUnderTest();
   delegate_->dialog_model()->set_cable_transport_info(
@@ -576,6 +638,85 @@ TEST_F(OriginMayUseRemoteDesktopClientOverrideTest,
   EXPECT_FALSE(delegate.OriginMayUseRemoteDesktopClientOverride(
       browser_context(),
       url::Origin::Create(GURL("https://other.example.com"))));
+}
+
+class DisableWebAuthnWithBrokenCertsTest
+    : public ChromeAuthenticatorRequestDelegateTest {
+ protected:
+  base::test::ScopedFeatureList scoped_feature_list_{
+      device::kDisableWebAuthnWithBrokenCerts};
+};
+
+TEST_F(DisableWebAuthnWithBrokenCertsTest, SecurityLevelNotAcceptable) {
+  GURL url("https://doofenshmirtz.evil");
+  ChromeWebAuthenticationDelegate delegate;
+  auto simulator =
+      content::NavigationSimulator::CreateBrowserInitiated(url, web_contents());
+  net::SSLInfo ssl_info;
+  ssl_info.cert_status = net::CERT_STATUS_DATE_INVALID;
+  ssl_info.cert =
+      net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
+  simulator->SetSSLInfo(std::move(ssl_info));
+  simulator->Commit();
+  EXPECT_FALSE(delegate.IsSecurityLevelAcceptableForWebAuthn(
+      main_rfh(), url::Origin::Create(url)));
+}
+
+TEST_F(DisableWebAuthnWithBrokenCertsTest, ExtensionSupported) {
+  GURL url("chrome-extension://extensionid");
+  ChromeWebAuthenticationDelegate delegate;
+  auto simulator =
+      content::NavigationSimulator::CreateBrowserInitiated(url, web_contents());
+  net::SSLInfo ssl_info;
+  ssl_info.cert_status = net::CERT_STATUS_DATE_INVALID;
+  ssl_info.cert =
+      net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
+  simulator->SetSSLInfo(std::move(ssl_info));
+  simulator->Commit();
+  EXPECT_TRUE(delegate.IsSecurityLevelAcceptableForWebAuthn(
+      main_rfh(), url::Origin::Create(url)));
+}
+
+TEST_F(DisableWebAuthnWithBrokenCertsTest, EnterpriseOverride) {
+  PrefService* prefs =
+      Profile::FromBrowserContext(GetBrowserContext())->GetPrefs();
+  prefs->SetBoolean(webauthn::pref_names::kAllowWithBrokenCerts, true);
+  GURL url("https://doofenshmirtz.evil");
+  ChromeWebAuthenticationDelegate delegate;
+  auto simulator =
+      content::NavigationSimulator::CreateBrowserInitiated(url, web_contents());
+  net::SSLInfo ssl_info;
+  ssl_info.cert_status = net::CERT_STATUS_DATE_INVALID;
+  ssl_info.cert =
+      net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
+  simulator->SetSSLInfo(std::move(ssl_info));
+  simulator->Commit();
+  EXPECT_TRUE(delegate.IsSecurityLevelAcceptableForWebAuthn(
+      main_rfh(), url::Origin::Create(url)));
+}
+
+TEST_F(DisableWebAuthnWithBrokenCertsTest, Localhost) {
+  GURL url("http://localhost");
+  ChromeWebAuthenticationDelegate delegate;
+  auto simulator =
+      content::NavigationSimulator::CreateBrowserInitiated(url, web_contents());
+  EXPECT_TRUE(delegate.IsSecurityLevelAcceptableForWebAuthn(
+      main_rfh(), url::Origin::Create(url)));
+}
+
+TEST_F(DisableWebAuthnWithBrokenCertsTest, SecurityLevelAcceptable) {
+  GURL url("https://owca.org");
+  ChromeWebAuthenticationDelegate delegate;
+  auto simulator =
+      content::NavigationSimulator::CreateBrowserInitiated(url, web_contents());
+  net::SSLInfo ssl_info;
+  ssl_info.cert_status = 0;  // ok.
+  ssl_info.cert =
+      net::ImportCertFromFile(net::GetTestCertsDirectory(), "ok_cert.pem");
+  simulator->SetSSLInfo(std::move(ssl_info));
+  simulator->Commit();
+  EXPECT_TRUE(delegate.IsSecurityLevelAcceptableForWebAuthn(
+      main_rfh(), url::Origin::Create(url)));
 }
 
 }  // namespace

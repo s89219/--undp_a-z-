@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,6 @@ namespace reporting {
 
 using OptionalMetricCallback =
     base::OnceCallback<void(absl::optional<MetricData>)>;
-using MetricCallback = base::OnceCallback<void(MetricData)>;
-using MetricRepeatingCallback = base::RepeatingCallback<void(MetricData)>;
 
 // A sampler is an object capable of collecting metrics data of a given type.
 // Metrics data can be either Information or Telemetry.
@@ -30,21 +28,7 @@ using MetricRepeatingCallback = base::RepeatingCallback<void(MetricData)>;
 class Sampler {
  public:
   virtual ~Sampler() = default;
-  // TODO(b/209638899): Remove after all samplers are migrated to
-  // |MaybeCollect|.
-  virtual void Collect(MetricCallback callback);
-  virtual void MaybeCollect(OptionalMetricCallback callback);
-};
-
-// A `MetricEventObserver` object should observe events and report them using
-// the `MetricRepeatingCallback` set using `SetOnEventObservedCallback`.
-// Whether the object should observe/report events is controlled by is_enabled
-// set using `SetReportingEnabled`.
-class MetricEventObserver {
- public:
-  virtual ~MetricEventObserver() = default;
-  virtual void SetOnEventObservedCallback(MetricRepeatingCallback cb) = 0;
-  virtual void SetReportingEnabled(bool is_enabled) = 0;
+  virtual void MaybeCollect(OptionalMetricCallback callback) = 0;
 };
 
 }  // namespace reporting

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,6 +54,7 @@ class ChromeSyncClient : public browser_sync::BrowserSyncClient {
   syncer::DeviceInfoSyncService* GetDeviceInfoSyncService() override;
   favicon::FaviconService* GetFaviconService() override;
   history::HistoryService* GetHistoryService() override;
+  ReadingListModel* GetReadingListModel() override;
   send_tab_to_self::SendTabToSelfSyncService* GetSendTabToSelfSyncService()
       override;
   sync_sessions::SessionSyncService* GetSessionSyncService() override;
@@ -70,11 +71,6 @@ class ChromeSyncClient : public browser_sync::BrowserSyncClient {
   syncer::SyncTypePreferenceProvider* GetPreferenceProvider() override;
   void OnLocalSyncTransportDataCleared() override;
 
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-  // Allow app sync on profiles other than the main profile.
-  static void SkipMainProfileCheckForTesting();
-#endif
-
  private:
   // Convenience function used during controller creation.
   base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
@@ -82,16 +78,15 @@ class ChromeSyncClient : public browser_sync::BrowserSyncClient {
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   // Creates the ModelTypeController for syncer::APPS.
-  std::unique_ptr<syncer::ModelTypeController> CreateAppsModelTypeController(
-      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::ModelTypeController> CreateAppsModelTypeController();
 
   // Creates the ModelTypeController for syncer::APP_SETTINGS.
   std::unique_ptr<syncer::ModelTypeController>
   CreateAppSettingsModelTypeController(syncer::SyncService* sync_service);
 
   // Creates the ModelTypeController for syncer::WEB_APPS.
-  std::unique_ptr<syncer::ModelTypeController> CreateWebAppsModelTypeController(
-      syncer::SyncService* sync_service);
+  std::unique_ptr<syncer::ModelTypeController>
+  CreateWebAppsModelTypeController();
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
   const raw_ptr<Profile> profile_;

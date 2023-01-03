@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,9 +30,9 @@ std::unique_ptr<SharedStorageOptions> SharedStorageOptions::Create() {
       blink::features::kMaxSharedStorageIteratorBatchSize.Get(),
       blink::features::kSharedStorageBitBudget.Get(),
       blink::features::kSharedStorageBudgetInterval.Get(),
-      blink::features::kSharedStorageStaleOriginPurgeInitialInterval.Get(),
-      blink::features::kSharedStorageStaleOriginPurgeRecurringInterval.Get(),
-      blink::features::kSharedStorageOriginStalenessThreshold.Get());
+      blink::features::kSharedStorageStalePurgeInitialInterval.Get(),
+      blink::features::kSharedStorageStalePurgeRecurringInterval.Get(),
+      blink::features::kSharedStorageStalenessThreshold.Get());
 }
 
 SharedStorageOptions::SharedStorageOptions(
@@ -44,9 +44,9 @@ SharedStorageOptions::SharedStorageOptions(
     int max_iterator_batch_size,
     int bit_budget,
     base::TimeDelta budget_interval,
-    base::TimeDelta stale_origin_purge_initial_interval,
-    base::TimeDelta stale_origin_purge_recurring_interval,
-    base::TimeDelta origin_staleness_threshold)
+    base::TimeDelta stale_purge_initial_interval,
+    base::TimeDelta stale_purge_recurring_interval,
+    base::TimeDelta staleness_threshold)
     : max_page_size(max_page_size),
       max_cache_size(max_cache_size),
       max_entries_per_origin(max_entries_per_origin),
@@ -55,10 +55,9 @@ SharedStorageOptions::SharedStorageOptions(
       max_iterator_batch_size(max_iterator_batch_size),
       bit_budget(bit_budget),
       budget_interval(budget_interval),
-      stale_origin_purge_initial_interval(stale_origin_purge_initial_interval),
-      stale_origin_purge_recurring_interval(
-          stale_origin_purge_recurring_interval),
-      origin_staleness_threshold(origin_staleness_threshold) {
+      stale_purge_initial_interval(stale_purge_initial_interval),
+      stale_purge_recurring_interval(stale_purge_recurring_interval),
+      staleness_threshold(staleness_threshold) {
   DCHECK(IsValidPageSize(max_page_size));
   DCHECK_GT(max_entries_per_origin, 0);
   DCHECK_GT(max_string_length, 0);
@@ -66,16 +65,17 @@ SharedStorageOptions::SharedStorageOptions(
   DCHECK_GT(max_iterator_batch_size, 0);
   DCHECK_GT(bit_budget, 0);
   DCHECK(budget_interval.is_positive());
-  DCHECK(stale_origin_purge_initial_interval.is_positive());
-  DCHECK(stale_origin_purge_recurring_interval.is_positive());
-  DCHECK(origin_staleness_threshold.is_positive());
+  DCHECK(stale_purge_initial_interval.is_positive());
+  DCHECK(stale_purge_recurring_interval.is_positive());
+  DCHECK(staleness_threshold.is_positive());
 }
 
 std::unique_ptr<SharedStorageDatabaseOptions>
 SharedStorageOptions::GetDatabaseOptions() {
   return std::make_unique<SharedStorageDatabaseOptions>(
       max_page_size, max_cache_size, max_entries_per_origin, max_string_length,
-      max_init_tries, max_iterator_batch_size, bit_budget, budget_interval);
+      max_init_tries, max_iterator_batch_size, bit_budget, budget_interval,
+      staleness_threshold);
 }
 
 SharedStorageDatabaseOptions::SharedStorageDatabaseOptions(
@@ -86,7 +86,8 @@ SharedStorageDatabaseOptions::SharedStorageDatabaseOptions(
     int max_init_tries,
     int max_iterator_batch_size,
     int bit_budget,
-    base::TimeDelta budget_interval)
+    base::TimeDelta budget_interval,
+    base::TimeDelta staleness_threshold)
     : max_page_size(max_page_size),
       max_cache_size(max_cache_size),
       max_entries_per_origin(max_entries_per_origin),
@@ -94,7 +95,8 @@ SharedStorageDatabaseOptions::SharedStorageDatabaseOptions(
       max_init_tries(max_init_tries),
       max_iterator_batch_size(max_iterator_batch_size),
       bit_budget(bit_budget),
-      budget_interval(budget_interval) {
+      budget_interval(budget_interval),
+      staleness_threshold(staleness_threshold) {
   DCHECK(IsValidPageSize(max_page_size));
   DCHECK_GT(max_entries_per_origin, 0);
   DCHECK_GT(max_string_length, 0);
@@ -102,6 +104,7 @@ SharedStorageDatabaseOptions::SharedStorageDatabaseOptions(
   DCHECK_GT(max_iterator_batch_size, 0);
   DCHECK_GT(bit_budget, 0);
   DCHECK(budget_interval.is_positive());
+  DCHECK(staleness_threshold.is_positive());
 }
 
 }  // namespace storage

@@ -1,13 +1,13 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/shelf/home_to_overview_nudge_controller.h"
 
+#include "ash/controls/contextual_nudge.h"
+#include "ash/controls/contextual_tooltip.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/session/session_controller_impl.h"
-#include "ash/shelf/contextual_nudge.h"
-#include "ash/shelf/contextual_tooltip.h"
 #include "ash/shelf/hotseat_widget.h"
 #include "ash/shelf/scrollable_shelf_view.h"
 #include "ash/shelf/shelf.h"
@@ -203,8 +203,6 @@ void HomeToOverviewNudgeController::ShowNudge() {
       nullptr, hotseat_widget_->GetNativeWindow()->parent(),
       ContextualNudge::Position::kBottom, gfx::Insets(kNudgeMargins),
       l10n_util::GetStringUTF16(IDS_ASH_HOME_TO_OVERVIEW_CONTEXTUAL_NUDGE),
-      AshColorProvider::Get()->GetContentLayerColor(
-          AshColorProvider::ContentLayerType::kTextColorPrimary),
       base::BindRepeating(&HomeToOverviewNudgeController::HandleNudgeTap,
                           weak_factory_.GetWeakPtr()));
 

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,11 +51,14 @@ base::File OpenFile(const base::FilePath& pb_path) {
   return base::File(pb_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
 }
 
-absl::optional<base::FilePath>& GetConfigPathInstance() {
+absl::optional<std::pair<base::FilePath, base::Version>>&
+GetConfigPathInstance() {
   // Contains nullopt until registration is complete. Afterward, contains the
-  // FilePath for the component file, or an empty FilePath if no component was
-  // installed at startup.
-  static base::NoDestructor<absl::optional<base::FilePath>> instance;
+  // FilePath and version for the component file, or empty FilePath and version
+  // if no component was installed at startup.
+  static base::NoDestructor<
+      absl::optional<std::pair<base::FilePath, base::Version>>>
+      instance;
   return *instance;
 }
 
@@ -77,7 +80,8 @@ void SetFirstPartySetsConfig(SetsReadyOnceCallback on_sets_ready) {
     return;
   }
 
-  const absl::optional<base::FilePath>& instance_path = GetConfigPathInstance();
+  const absl::optional<std::pair<base::FilePath, base::Version>>&
+      instance_path = GetConfigPathInstance();
   if (!instance_path.has_value()) {
     // Registration not is complete yet. The policy's `on_sets_ready_` callback
     // will still be invoked once registration is done, so we don't bother to
@@ -85,9 +89,10 @@ void SetFirstPartySetsConfig(SetsReadyOnceCallback on_sets_ready) {
     return;
   }
 
-  if (instance_path->empty()) {
+  if (instance_path->first.empty()) {
     // Registration is complete, but no component version exists on disk.
-    std::move(on_sets_ready).Run(base::File());
+    DCHECK(!instance_path->second.IsValid());
+    std::move(on_sets_ready).Run(base::Version(), base::File());
     return;
   }
 
@@ -95,7 +100,8 @@ void SetFirstPartySetsConfig(SetsReadyOnceCallback on_sets_ready) {
   // network navigations at startup.
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock(), GetTaskPriority()},
-      base::BindOnce(&OpenFile, *instance_path), std::move(on_sets_ready));
+      base::BindOnce(&OpenFile, instance_path->first),
+      base::BindOnce(std::move(on_sets_ready), instance_path->second));
 }
 
 std::string BoolToString(bool b) {
@@ -108,7 +114,7 @@ namespace component_updater {
 
 void FirstPartySetsComponentInstallerPolicy::OnRegistrationComplete() {
   if (!GetConfigPathInstance().has_value())
-    GetConfigPathInstance() = base::FilePath();
+    GetConfigPathInstance() = std::make_pair(base::FilePath(), base::Version());
   SetFirstPartySetsConfig(std::move(on_sets_ready_));
 }
 
@@ -136,7 +142,7 @@ bool FirstPartySetsComponentInstallerPolicy::RequiresNetworkEncryption() const {
 
 update_client::CrxInstaller::Result
 FirstPartySetsComponentInstallerPolicy::OnCustomInstall(
-    const base::Value& manifest,
+    const base::Value::Dict& manifest,
     const base::FilePath& install_dir) {
   return update_client::CrxInstaller::Result(0);  // Nothing custom here.
 }
@@ -151,21 +157,22 @@ base::FilePath FirstPartySetsComponentInstallerPolicy::GetInstalledPath(
 void FirstPartySetsComponentInstallerPolicy::ComponentReady(
     const base::Version& version,
     const base::FilePath& install_dir,
-    base::Value manifest) {
+    base::Value::Dict manifest) {
   if (install_dir.empty() || GetConfigPathInstance().has_value())
     return;
 
   VLOG(1) << "First-Party Sets Component ready, version " << version.GetString()
           << " in " << install_dir.value();
 
-  GetConfigPathInstance() = GetInstalledPath(install_dir);
+  GetConfigPathInstance() =
+      std::make_pair(GetInstalledPath(install_dir), version);
 
   SetFirstPartySetsConfig(std::move(on_sets_ready_));
 }
 
 // Called during startup and installation before ComponentReady().
 bool FirstPartySetsComponentInstallerPolicy::VerifyInstallation(
-    const base::Value& manifest,
+    const base::Value::Dict& manifest,
     const base::FilePath& install_dir) const {
   // No need to actually validate the sets here, since we'll do the validation
   // in the Network Service.
@@ -207,10 +214,11 @@ void RegisterFirstPartySetsComponent(ComponentUpdateService* cus) {
   VLOG(1) << "Registering First-Party Sets component.";
 
   auto policy = std::make_unique<FirstPartySetsComponentInstallerPolicy>(
-      /*on_sets_ready=*/base::BindOnce([](base::File sets_file) {
+      /*on_sets_ready=*/base::BindOnce([](base::Version version,
+                                          base::File sets_file) {
         VLOG(1) << "Received First-Party Sets";
         content::FirstPartySetsHandler::GetInstance()->SetPublicFirstPartySets(
-            std::move(sets_file));
+            version, std::move(sets_file));
       }));
 
   FirstPartySetsComponentInstallerPolicy* raw_policy = policy.get();
@@ -230,11 +238,13 @@ void RegisterFirstPartySetsComponent(ComponentUpdateService* cus) {
 
 // static
 void FirstPartySetsComponentInstallerPolicy::WriteComponentForTesting(
+    base::Version version,
     const base::FilePath& install_dir,
     base::StringPiece contents) {
   CHECK(base::WriteFile(GetInstalledPath(install_dir), contents));
 
-  GetConfigPathInstance() = GetInstalledPath(install_dir);
+  GetConfigPathInstance() =
+      std::make_pair(GetInstalledPath(install_dir), std::move(version));
 }
 
 }  // namespace component_updater

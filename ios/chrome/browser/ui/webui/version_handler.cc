@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,8 +27,7 @@ void VersionHandler::HandleRequestVariationInfo(const base::Value::List& args) {
   CHECK_EQ(2U, args.size());
   std::string callback_id = args[0].GetString();
 
-  base::Value response(base::Value::Type::DICTIONARY);
-  response.SetKey(version_ui::kKeyVariationsList,
-                  version_ui::GetVariationsList());
+  base::Value::Dict response;
+  response.Set(version_ui::kKeyVariationsList, version_ui::GetVariationsList());
   web_ui()->ResolveJavascriptCallback(base::Value(callback_id), response);
 }

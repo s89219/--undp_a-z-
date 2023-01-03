@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,13 @@
 
 #import "ios/chrome/browser/ui/gestures/layout_switcher.h"
 #import "ios/chrome/browser/ui/incognito_reauth/incognito_reauth_consumer.h"
-#import "ios/chrome/browser/ui/tab_switcher/tab_grid/grid/grid_consumer.h"
+#import "ios/chrome/browser/ui/tab_switcher/tab_collection_consumer.h"
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/grid/grid_theme.h"
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/tab_grid_paging.h"
 #import "ios/chrome/browser/ui/thumb_strip/thumb_strip_supporting.h"
 
-@protocol GridContextMenuProvider;
-@protocol GridDragDropHandler;
+@protocol TabContextMenuProvider;
+@protocol TabCollectionDragDropHandler;
 @protocol GridEmptyView;
 @protocol GridImageDataSource;
 @protocol GridShareableItemsProvider;
@@ -26,27 +26,43 @@
 @protocol ThumbStripCommands;
 @protocol SuggestedActionsDelegate;
 
+// Key of the UMA IOS.TabSwitcher.DragDropTabs histogram.
+extern const char kUmaDragDropTabs[];
+
+// Values of the UMA IOS.TabSwitcher.DragDropTabs histogram. These values are
+// persisted to logs. Entries should not be renumbered and numeric values should
+// never be reused.
+enum class DragDropTabs {
+  // A tab is dragged.
+  kDragBegin = 0,
+  // A tab is dropped at the same index position.
+  kDragEndAtSameIndex = 1,
+  // A tab is dropped at a new index position
+  kDragEndAtNewIndex = 2,
+  kMaxValue = kDragEndAtNewIndex
+};
+
 // Protocol used to relay relevant user interactions from a grid UI.
 @protocol GridViewControllerDelegate
-// Tells the delegate that the item with |itemID| was selected in
-// |gridViewController|.
+// Tells the delegate that the item with `itemID` was selected in
+// `gridViewController`.
 - (void)gridViewController:(GridViewController*)gridViewController
        didSelectItemWithID:(NSString*)itemID;
-// Tells the delegate that the item with |itemID| was closed in
-// |gridViewController|.
+// Tells the delegate that the item with `itemID` was closed in
+// `gridViewController`.
 - (void)gridViewController:(GridViewController*)gridViewController
         didCloseItemWithID:(NSString*)itemID;
-// Tells the delegate that the plus sign was tapped in |gridViewController|,
+// Tells the delegate that the plus sign was tapped in `gridViewController`,
 // i.e., there was an intention to create a new item.
 - (void)didTapPlusSignInGridViewController:
     (GridViewController*)gridViewController;
-// Tells the delegate that the item at |sourceIndex| was moved to
-// |destinationIndex|.
+// Tells the delegate that the item at `sourceIndex` was moved to
+// `destinationIndex`.
 - (void)gridViewController:(GridViewController*)gridViewController
          didMoveItemWithID:(NSString*)itemID
                    toIndex:(NSUInteger)destinationIndex;
-// Tells the delegate that the the number of items in |gridViewController|
-// changed to |count|.
+// Tells the delegate that the the number of items in `gridViewController`
+// changed to `count`.
 - (void)gridViewController:(GridViewController*)gridViewController
         didChangeItemCount:(NSUInteger)count;
 
@@ -70,13 +86,16 @@
 // Tells the delegate that the grid view controller cells did end dragging.
 - (void)gridViewControllerDragSessionDidEnd:
     (GridViewController*)gridViewController;
+// Tells the delegate that the grid view controller did scroll.
+- (void)gridViewControllerScrollViewDidScroll:
+    (GridViewController*)gridViewController;
 
 @end
 
 // A view controller that contains a grid of items.
-@interface GridViewController : UIViewController <GridConsumer,
-                                                  LayoutSwitcher,
+@interface GridViewController : UIViewController <LayoutSwitcher,
                                                   IncognitoReauthConsumer,
+                                                  TabCollectionConsumer,
                                                   ThumbStripSupporting>
 // The gridView is accessible to manage the content inset behavior.
 @property(nonatomic, readonly) UIScrollView* gridView;
@@ -101,7 +120,7 @@
 // Delegate is informed of user interactions in the grid UI.
 @property(nonatomic, weak) id<GridViewControllerDelegate> delegate;
 // Handles drag and drop interactions that involved the model layer.
-@property(nonatomic, weak) id<GridDragDropHandler> dragDropHandler;
+@property(nonatomic, weak) id<TabCollectionDragDropHandler> dragDropHandler;
 // Data source for images.
 @property(nonatomic, weak) id<GridImageDataSource> imageDataSource;
 // Data source for acquiring data to power PriceCardView
@@ -118,7 +137,7 @@
 // biometric authentication.
 @property(nonatomic, assign) BOOL contentNeedsAuthentication;
 // Provider of context menu configurations for the tabs in the grid.
-@property(nonatomic, weak) id<GridContextMenuProvider> menuProvider;
+@property(nonatomic, weak) id<TabContextMenuProvider> menuProvider;
 // Provider of shareable state for tabs in the grid.
 @property(nonatomic, weak) id<GridShareableItemsProvider>
     shareableItemsProvider;
@@ -130,7 +149,7 @@
 @property(nonatomic, readonly)
     NSArray<NSString*>* selectedShareableItemIDsForEditing;
 
-// Whether or not all items are selected. NO if |mode| is not
+// Whether or not all items are selected. NO if `mode` is not
 // TabGridModeSelection.
 @property(nonatomic, readonly) BOOL allItemsSelectedForEditing;
 
@@ -147,11 +166,11 @@
 // Notifies the grid that it is about to be dismissed.
 - (void)prepareForDismissal;
 
-// Selects all items in the grid for editing. No-op if |mode| is not
+// Selects all items in the grid for editing. No-op if `mode` is not
 // TabGridModeSelection.
 - (void)selectAllItemsForEditing;
 
-// Deselects all items in the grid for editing. No-op if |mode| is not
+// Deselects all items in the grid for editing. No-op if `mode` is not
 // TabGridModeSelection.
 - (void)deselectAllItemsForEditing;
 

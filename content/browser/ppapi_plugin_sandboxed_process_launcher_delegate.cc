@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 
 #if BUILDFLAG(IS_WIN)
 #include "base/win/windows_version.h"
+#include "sandbox/policy/features.h"
 #include "sandbox/policy/win/sandbox_win.h"
 #include "sandbox/win/src/process_mitigations.h"
 #include "sandbox/win/src/sandbox_policy.h"
@@ -20,30 +21,44 @@
 
 namespace content {
 #if BUILDFLAG(IS_WIN)
+std::string PpapiPluginSandboxedProcessLauncherDelegate::GetSandboxTag() {
+  return sandbox::policy::SandboxWin::GetSandboxTagForDelegate(
+      "ppapi", GetSandboxType());
+}
+
 bool PpapiPluginSandboxedProcessLauncherDelegate::PreSpawnTarget(
     sandbox::TargetPolicy* policy) {
+  sandbox::TargetConfig* config = policy->GetConfig();
+  if (config->IsConfigured())
+    return true;
+
   // The Pepper process is as locked-down as a renderer except that it can
   // create the server side of Chrome pipes.
   sandbox::ResultCode result;
-  result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
-                           sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
-                           L"\\\\.\\pipe\\chrome.*");
-  if (result != sandbox::SBOX_ALL_OK)
-    return false;
-
 #if !defined(NACL_WIN64)
   // We don't support PPAPI win32k lockdown prior to Windows 10.
   if (base::win::GetVersion() >= base::win::Version::WIN10) {
-    result = sandbox::policy::SandboxWin::AddWin32kLockdownPolicy(policy);
+    result = sandbox::policy::SandboxWin::AddWin32kLockdownPolicy(config);
     if (result != sandbox::SBOX_ALL_OK)
       return false;
   }
 #endif  // !defined(NACL_WIN64)
 
   // No plugins can generate executable code.
-  sandbox::MitigationFlags flags = policy->GetDelayedProcessMitigations();
+  sandbox::MitigationFlags flags = config->GetDelayedProcessMitigations();
   flags |= sandbox::MITIGATION_DYNAMIC_CODE_DISABLE;
-  if (sandbox::SBOX_ALL_OK != policy->SetDelayedProcessMitigations(flags))
+  if (sandbox::SBOX_ALL_OK != config->SetDelayedProcessMitigations(flags))
+    return false;
+
+  if (base::FeatureList::IsEnabled(
+          sandbox::policy::features::kChromePipeLockdown)) {
+    return true;
+  }
+
+  result = config->AddRule(sandbox::SubSystem::kNamedPipes,
+                           sandbox::Semantics::kNamedPipesAllowAny,
+                           L"\\\\.\\pipe\\chrome.*");
+  if (result != sandbox::SBOX_ALL_OK)
     return false;
 
   return true;

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,11 +20,11 @@ var<private> quadUV : array<vec2<f32>, 4> = array<vec2<f32>, 4>(
     vec2<f32>(1.0, 1.0));
 
 struct VertexOutput {
-  @builtin(position) Position : vec4<f32>;
-  @location(0) fragUV : vec2<f32>;
-};
+  @builtin(position) Position : vec4<f32>,
+  @location(0) fragUV : vec2<f32>,
+}
 
-@stage(vertex)
+@vertex
 fn main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
   var output: VertexOutput;
   output.Position = quadPos[VertexIndex];
@@ -37,14 +37,14 @@ fn main(@builtin(vertex_index) VertexIndex : u32) -> VertexOutput {
 @group(0) @binding(0) var mySampler: sampler;
 @group(0) @binding(1) var myTexture: texture_2d<f32>;
 
-@stage(fragment)
+@fragment
 fn main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
   return textureSample(myTexture, mySampler, fragUV);
 }
 `,
 
     fragmentClear: `
-@stage(fragment)
+@fragment
 fn main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
   return vec4<f32>(1.0, 1.0, 1.0, 1.0);
 }
@@ -54,15 +54,15 @@ fn main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
 @group(0) @binding(0) var mySampler: sampler;
 @group(0) @binding(1) var myTexture: texture_external;
 
-@stage(fragment)
+@fragment
 fn main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
-  return textureSampleLevel(myTexture, mySampler, fragUV);
+  return textureSampleBaseClampToEdge(myTexture, mySampler, fragUV);
 }
 `,
   };
 
   return {
-    init: async function(gpuCanvas) {
+    init: async function(gpuCanvas, has_alpha = true) {
       const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
       if (!adapter) {
         console.error('navigator.gpu && navigator.gpu.requestAdapter failed');
@@ -85,6 +85,7 @@ fn main(@location(0) fragUV : vec2<f32>) -> @location(0) vec4<f32> {
         device: device,
         format: outputFormat,
         usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+        alphaMode: has_alpha ? "premultiplied" : "opaque",
       });
 
       return [device, context];

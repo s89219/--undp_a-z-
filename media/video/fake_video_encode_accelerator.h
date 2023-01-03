@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,7 +84,10 @@ class FakeVideoEncodeAccelerator : public VideoEncodeAccelerator {
 
   void SupportResize() { resize_supported_ = true; }
 
+  void NotifyEncoderInfoChange(const VideoEncoderInfo& info);
+
  private:
+  void DoNotifyEncoderInfoChange(const VideoEncoderInfo& info);
   void DoRequireBitstreamBuffers(unsigned int input_count,
                                  const gfx::Size& input_coded_size,
                                  size_t output_buffer_size) const;

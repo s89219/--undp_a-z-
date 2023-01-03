@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,9 @@ template <typename T>
 struct DefaultSingletonTraits;
 }
 
-// Contains information about installed image editor component.
 namespace image_editor {
+
+// Contains information about installed image editor component.
 class ImageEditorComponentInfo {
  public:
   static ImageEditorComponentInfo* GetInstance();

@@ -105,7 +105,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
   bool AllowImage(bool images_enabled, const KURL&) const override;
 
   void PopulateResourceRequest(ResourceType,
-                               const ClientHintsPreferences&,
                                const FetchParameters::ResourceWidth&,
                                ResourceRequest&,
                                const ResourceLoaderOptions&) override;
@@ -114,9 +113,10 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
 
   // Exposed for testing.
   void ModifyRequestForCSP(ResourceRequest&);
-  void AddClientHintsIfNecessary(const ClientHintsPreferences&,
-                                 const FetchParameters::ResourceWidth&,
+  void AddClientHintsIfNecessary(const FetchParameters::ResourceWidth&,
                                  ResourceRequest&);
+
+  void AddReducedAcceptLanguageIfNecessary(ResourceRequest&);
 
   FetchContext* Detach() override;
 
@@ -128,9 +128,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
       ResourceType type,
       const FetchInitiatorInfo& initiator_info) override;
 
-  mojo::PendingReceiver<mojom::blink::WorkerTimingContainer>
-  TakePendingWorkerTimingReceiver(int request_id) override;
-
   // LoadingBehaviorObserver overrides:
   void DidObserveLoadingBehavior(LoadingBehaviorFlag) override;
 
@@ -140,6 +137,10 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
   mojom::blink::ContentSecurityNotifier& GetContentSecurityNotifier() const;
 
   ExecutionContext* GetExecutionContext() const override;
+
+  void UpdateSubresourceLoadMetrics(
+      uint32_t number_of_subresources_loaded,
+      uint32_t number_of_subresource_loads_handled_by_service_worker) override;
 
  private:
   friend class FrameFetchContextTest;
@@ -173,6 +174,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
       override;
   bool ShouldBlockFetchByMixedContentCheck(
       mojom::blink::RequestContextType request_context,
+      network::mojom::blink::IPAddressSpace target_address_space,
       const absl::optional<ResourceRequest::RedirectInfo>& redirect_info,
       const KURL& url,
       ReportingDisposition reporting_disposition,
@@ -182,7 +184,6 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
 
   const KURL& Url() const override;
   ContentSecurityPolicy* GetContentSecurityPolicy() const override;
-  void AddConsoleMessage(ConsoleMessage*) const override;
 
   WebContentSettingsClient* GetContentSettingsClient() const;
   Settings* GetSettings() const;
@@ -193,6 +194,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
   const PermissionsPolicy* GetPermissionsPolicy() const override;
   const ClientHintsPreferences GetClientHintsPreferences() const;
   float GetDevicePixelRatio() const;
+  String GetReducedAcceptLanguage() const;
 
   enum class ClientHintsMode { kLegacy, kStandard };
   bool ShouldSendClientHint(ClientHintsMode mode,

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,20 +56,18 @@ int CalculateLoadFlags(int load_flags,
 
 }  // namespace
 
-CronetURLRequest::CronetURLRequest(
-    CronetContext* context,
-    std::unique_ptr<Callback> callback,
-    const GURL& url,
-    net::RequestPriority priority,
-    bool disable_cache,
-    bool disable_connection_migration,
-    bool enable_metrics,
-    bool traffic_stats_tag_set,
-    int32_t traffic_stats_tag,
-    bool traffic_stats_uid_set,
-    int32_t traffic_stats_uid,
-    net::Idempotency idempotency,
-    net::NetworkChangeNotifier::NetworkHandle network)
+CronetURLRequest::CronetURLRequest(CronetContext* context,
+                                   std::unique_ptr<Callback> callback,
+                                   const GURL& url,
+                                   net::RequestPriority priority,
+                                   bool disable_cache,
+                                   bool disable_connection_migration,
+                                   bool traffic_stats_tag_set,
+                                   int32_t traffic_stats_tag,
+                                   bool traffic_stats_uid_set,
+                                   int32_t traffic_stats_uid,
+                                   net::Idempotency idempotency,
+                                   net::handles::NetworkHandle network)
     : context_(context),
       network_tasks_(std::move(callback),
                      url,
@@ -77,7 +75,6 @@ CronetURLRequest::CronetURLRequest(
                      CalculateLoadFlags(context->default_load_flags(),
                                         disable_cache,
                                         disable_connection_migration),
-                     enable_metrics,
                      traffic_stats_tag_set,
                      traffic_stats_tag,
                      traffic_stats_uid_set,
@@ -146,6 +143,10 @@ void CronetURLRequest::FollowDeferredRedirect() {
 }
 
 bool CronetURLRequest::ReadData(net::IOBuffer* raw_read_buffer, int max_size) {
+  // TODO(https://crbug.com/1335423): Change to DCHECK() or remove after bug
+  // is fixed.
+  CHECK(max_size == 0 || (raw_read_buffer && raw_read_buffer->data()));
+
   scoped_refptr<net::IOBuffer> read_buffer(raw_read_buffer);
   context_->PostTaskToNetworkThread(
       FROM_HERE,
@@ -180,20 +181,18 @@ CronetURLRequest::NetworkTasks::NetworkTasks(
     const GURL& url,
     net::RequestPriority priority,
     int load_flags,
-    bool enable_metrics,
     bool traffic_stats_tag_set,
     int32_t traffic_stats_tag,
     bool traffic_stats_uid_set,
     int32_t traffic_stats_uid,
     net::Idempotency idempotency,
-    net::NetworkChangeNotifier::NetworkHandle network)
+    net::handles::NetworkHandle network)
     : callback_(std::move(callback)),
       initial_url_(url),
       initial_priority_(priority),
       initial_load_flags_(load_flags),
       received_byte_count_from_redirects_(0l),
       error_reported_(false),
-      enable_metrics_(enable_metrics),
       metrics_reported_(false),
       traffic_stats_tag_set_(traffic_stats_tag_set),
       traffic_stats_tag_(traffic_stats_tag),
@@ -399,22 +398,27 @@ void CronetURLRequest::NetworkTasks::MaybeReportMetrics() {
   // be a native URLRequest. In this case, the caller gets the exception
   // immediately, and the onFailed callback isn't called, so don't report
   // metrics either.
-  if (!enable_metrics_ || metrics_reported_ || !url_request_) {
+  if (metrics_reported_ || !url_request_) {
     return;
   }
   metrics_reported_ = true;
   net::LoadTimingInfo metrics;
   url_request_->GetLoadTimingInfo(&metrics);
+  net::NetErrorDetails net_error_details;
+  url_request_->PopulateNetErrorDetails(&net_error_details);
   callback_->OnMetricsCollected(
       metrics.request_start_time, metrics.request_start,
-      metrics.connect_timing.dns_start, metrics.connect_timing.dns_end,
+      metrics.connect_timing.domain_lookup_start,
+      metrics.connect_timing.domain_lookup_end,
       metrics.connect_timing.connect_start, metrics.connect_timing.connect_end,
       metrics.connect_timing.ssl_start, metrics.connect_timing.ssl_end,
       metrics.send_start, metrics.send_end, metrics.push_start,
       metrics.push_end, metrics.receive_headers_end, base::TimeTicks::Now(),
       metrics.socket_reused, url_request_->GetTotalSentBytes(),
       received_byte_count_from_redirects_ +
-          url_request_->GetTotalReceivedBytes());
+          url_request_->GetTotalReceivedBytes(),
+      net_error_details.quic_connection_migration_attempted,
+      net_error_details.quic_connection_migration_successful);
 }
 
 void CronetURLRequest::NetworkTasks::MaybeReportMetricsAndRunCallback(

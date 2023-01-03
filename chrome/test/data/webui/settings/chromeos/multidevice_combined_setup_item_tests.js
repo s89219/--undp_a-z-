@@ -1,11 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {MultiDeviceFeatureState, SyncBrowserProxyImpl} from 'chrome://os-settings/chromeos/os_settings.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 import {TestSyncBrowserProxy} from './test_os_sync_browser_proxy.js';
 
@@ -30,7 +30,8 @@ suite('Multidevice', function() {
   });
 
   test('Setup button is disabled when PhoneHub is disabled.', async () => {
-    let button = combinedSetupItem.$$('cr-button[slot=feature-controller]');
+    let button = combinedSetupItem.shadowRoot.querySelector(
+        'cr-button[slot=feature-controller]');
     assertTrue(!!button);
     assertFalse(button.disabled);
 
@@ -39,7 +40,8 @@ suite('Multidevice', function() {
         {phoneHubState: MultiDeviceFeatureState.DISABLED_BY_USER});
     flush();
 
-    button = combinedSetupItem.$$('cr-button[slot=feature-controller]');
+    button = combinedSetupItem.shadowRoot.querySelector(
+        'cr-button[slot=feature-controller]');
     assertTrue(!!button);
     assertTrue(button.disabled);
   });

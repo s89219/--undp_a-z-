@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,38 +8,50 @@
 
 namespace share {
 
-const base::Feature kPersistShareHubOnAppSwitch{
-    "PersistShareHubOnAppSwitch", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kSharingDesktopScreenshotsEdit{
-    "SharingDesktopScreenshotsEdit", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kUpcomingSharingFeatures{"UpcomingSharingFeatures",
-                                             base::FEATURE_DISABLED_BY_DEFAULT};
+BASE_FEATURE(kPersistShareHubOnAppSwitch,
+             "PersistShareHubOnAppSwitch",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kScreenshotsForAndroidV2,
+             "ScreenshotsForAndroidV2",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kSharingDesktopScreenshotsEdit,
+             "SharingDesktopScreenshotsEdit",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kUpcomingSharingFeatures,
+             "UpcomingSharingFeatures",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kShareToGoogleCollections,
+             "ShareToGoogleCollections",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kCormorant, "Cormorant", base::FEATURE_DISABLED_BY_DEFAULT);
+
+#if BUILDFLAG(IS_ANDROID)
+BASE_FEATURE(kCrowLaunchTab,
+             "ShareCrowLaunchTab",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(IS_ANDROID)
 
 #if !BUILDFLAG(IS_ANDROID)
-const base::Feature kDesktopSharePreview{"DesktopSharePreview",
-                                         base::FEATURE_DISABLED_BY_DEFAULT};
-extern const char kDesktopSharePreviewVariant_HQ[] = "HQ";
-extern const char kDesktopSharePreviewVariant_HQFavicon[] = "HQFavicon";
-extern const char kDesktopSharePreviewVariant_HQFaviconFallback[] =
-    "HQFaviconFallback";
-extern const char kDesktopSharePreviewVariant_HQFallback[] = "HQFallback";
+BASE_FEATURE(kDesktopSharePreview,
+             "DesktopSharePreview",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+extern const char kDesktopSharePreviewVariant16[] = "16";
+extern const char kDesktopSharePreviewVariant40[] = "40";
+extern const char kDesktopSharePreviewVariant72[] = "72";
 
 const base::FeatureParam<std::string> kDesktopSharePreviewVariant{
-    &kDesktopSharePreview, "variant",
-    kDesktopSharePreviewVariant_HQFaviconFallback};
+    &kDesktopSharePreview, "variant", kDesktopSharePreviewVariant16};
 
 namespace {
 
 DesktopSharePreviewVariant DesktopSharePreviewVariantFromName(
     const std::string& name) {
-  if (name == kDesktopSharePreviewVariant_HQ)
-    return DesktopSharePreviewVariant::kEnabledHQ;
-  if (name == kDesktopSharePreviewVariant_HQFavicon)
-    return DesktopSharePreviewVariant::kEnabledHQFavicon;
-  if (name == kDesktopSharePreviewVariant_HQFaviconFallback)
-    return DesktopSharePreviewVariant::kEnabledHQFaviconFallback;
-  if (name == kDesktopSharePreviewVariant_HQFallback)
-    return DesktopSharePreviewVariant::kEnabledHQFallback;
+  if (name == kDesktopSharePreviewVariant16)
+    return DesktopSharePreviewVariant::kEnabled16;
+  if (name == kDesktopSharePreviewVariant40)
+    return DesktopSharePreviewVariant::kEnabled40;
+  if (name == kDesktopSharePreviewVariant72)
+    return DesktopSharePreviewVariant::kEnabled72;
   return DesktopSharePreviewVariant::kDisabled;
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,9 @@
 #include "components/autofill/core/browser/data_model/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/autofill/core/browser/test_autofill_manager_waiter.h"
 #include "content/public/test/test_utils.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 namespace autofill {
 
@@ -82,7 +84,7 @@ void SetTestProfile(Profile* base_profile, const AutofillProfile& profile) {
 void SetTestProfiles(Profile* base_profile,
                      std::vector<AutofillProfile>* profiles) {
   PdmChangeWaiter observer(base_profile);
-  GetPersonalDataManager(base_profile)->SetProfiles(profiles);
+  GetPersonalDataManager(base_profile)->SetProfilesForAllSources(profiles);
   observer.Wait();
 }
 
@@ -127,20 +129,32 @@ void WaitForPersonalDataManagerToBeLoaded(Profile* base_profile) {
 
 void GenerateTestAutofillPopup(
     AutofillExternalDelegate* autofill_external_delegate) {
-  int query_id = 1;
   FormData form;
-  FormFieldData field;
-  field.is_focusable = true;
-  field.should_autocomplete = true;
+  form.url = GURL("https://foo.com/bar");
+  form.fields.emplace_back();
+  form.fields.front().is_focusable = true;
+  form.fields.front().should_autocomplete = true;
   gfx::RectF bounds(100.f, 100.f);
 
   ContentAutofillDriver* driver = static_cast<ContentAutofillDriver*>(
       absl::get<AutofillDriver*>(autofill_external_delegate->GetDriver()));
-  driver->AskForValuesToFill(query_id, form, field, bounds, false);
+  AutofillManager* manager = driver->autofill_manager();
+  mojom::AutofillDriver* mojo_driver = driver;
+  TestAutofillManagerWaiter waiter(
+      *manager, {&AutofillManager::Observer::OnAfterAskForValuesToFill});
+  mojo_driver->AskForValuesToFill(form, form.fields.front(), bounds,
+                                  AutoselectFirstSuggestion(false),
+                                  FormElementWasClicked(false));
+  ASSERT_TRUE(waiter.Wait());
+  ASSERT_EQ(1u, manager->form_structures().size());
+  // `form.host_frame` and `form.url` have only been set by
+  // ContentAutofillDriver::AskForValuesToFill().
+  form = manager->form_structures().begin()->second->ToFormData();
 
   std::vector<Suggestion> suggestions = {Suggestion(u"Test suggestion")};
   autofill_external_delegate->OnSuggestionsReturned(
-      query_id, suggestions, /*autoselect_first_suggestion=*/false);
+      form.fields.front().global_id(), suggestions,
+      AutoselectFirstSuggestion(false));
 }
 
 }  // namespace autofill

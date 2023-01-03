@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,9 @@ namespace {
 void FetchPageCanonicalUrl(
     const PageInformation& page_info,
     base::OnceCallback<void(const absl::optional<::GURL>&)> callback) {
-  DCHECK(page_info.web_contents->GetMainFrame()->IsRenderFrameCreated());
-  page_info.web_contents->GetMainFrame()->GetCanonicalUrl(std::move(callback));
+  DCHECK(page_info.web_contents->GetPrimaryMainFrame()->IsRenderFrameLive());
+  page_info.web_contents->GetPrimaryMainFrame()->GetCanonicalUrl(
+      std::move(callback));
 }
 
 }  // namespace
@@ -36,7 +37,7 @@ void WebFeedPageInformationFetcher::Start(
 
   // Make sure the renderer still exists, i.e., not crashed, since this may
   // be triggered asynchronously.
-  if (!page_info.web_contents->GetMainFrame()->IsRenderFrameCreated()) {
+  if (!page_info.web_contents->GetPrimaryMainFrame()->IsRenderFrameLive()) {
     std::move(callback).Run(WebFeedPageInformation());
     return;
   }
@@ -46,13 +47,13 @@ void WebFeedPageInformationFetcher::Start(
   auto self = base::MakeRefCounted<WebFeedPageInformationFetcher>(
       page_info, std::move(callback));
 
-  FetchRssLinks(page_info.url, page_info.web_contents,
-                base::BindOnce(&WebFeedPageInformationFetcher::OnRssFetched,
-                               base::RetainedRef(self.get())));
+  FetchRssLinks(
+      page_info.url, page_info.web_contents,
+      base::BindOnce(&WebFeedPageInformationFetcher::OnRssFetched, self));
   FetchPageCanonicalUrl(
       page_info,
       base::BindOnce(&WebFeedPageInformationFetcher::OnCanonicalUrlFetched,
-                     base::RetainedRef(self.get())));
+                     self));
 }
 
 WebFeedPageInformationFetcher::WebFeedPageInformationFetcher(

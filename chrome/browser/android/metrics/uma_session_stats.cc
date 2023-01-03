@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -138,9 +138,10 @@ void UmaSessionStats::OnStartup() {
 // static
 void UmaSessionStats::RegisterSyntheticFieldTrial(
     const std::string& trial_name,
-    const std::string& group_name) {
-  ChromeMetricsServiceAccessor::RegisterSyntheticFieldTrial(trial_name,
-                                                            group_name);
+    const std::string& group_name,
+    variations::SyntheticTrialAnnotationMode annotation_mode) {
+  ChromeMetricsServiceAccessor::RegisterSyntheticFieldTrial(
+      trial_name, group_name, annotation_mode);
 }
 
 // static
@@ -301,10 +302,13 @@ static void JNI_UmaSessionStats_RegisterExternalExperiment(
 static void JNI_UmaSessionStats_RegisterSyntheticFieldTrial(
     JNIEnv* env,
     const JavaParamRef<jstring>& jtrial_name,
-    const JavaParamRef<jstring>& jgroup_name) {
+    const JavaParamRef<jstring>& jgroup_name,
+    int annotation_mode) {
   std::string trial_name(ConvertJavaStringToUTF8(env, jtrial_name));
   std::string group_name(ConvertJavaStringToUTF8(env, jgroup_name));
-  UmaSessionStats::RegisterSyntheticFieldTrial(trial_name, group_name);
+  UmaSessionStats::RegisterSyntheticFieldTrial(
+      trial_name, group_name,
+      static_cast<variations::SyntheticTrialAnnotationMode>(annotation_mode));
 }
 
 static void JNI_UmaSessionStats_RecordTabCountPerLoad(

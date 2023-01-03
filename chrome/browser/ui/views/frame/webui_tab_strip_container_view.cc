@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bar_view.h"
-#include "chrome/browser/ui/views/chrome_view_class_properties.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/frame/top_container_view.h"
@@ -467,7 +466,7 @@ WebUITabStripContainerView::WebUITabStripContainerView(
 }
 
 WebUITabStripContainerView::~WebUITabStripContainerView() {
-  content::WebContentsObserver::Observe(nullptr);
+  DeinitializeWebView();
   // The TabCounter button uses |this| as a listener. We need to make
   // sure we outlive it.
   delete new_tab_button_;
@@ -662,8 +661,8 @@ void WebUITabStripContainerView::EndDragToOpen(
 void WebUITabStripContainerView::NewTabButtonPressed(const ui::Event& event) {
   chrome::ExecuteCommand(browser_view_->browser(), IDC_NEW_TAB);
   UMA_HISTOGRAM_ENUMERATION("Tab.NewTab",
-                            TabStripModel::NEW_TAB_BUTTON_IN_TOOLBAR_FOR_TOUCH,
-                            TabStripModel::NEW_TAB_ENUM_COUNT);
+                            NewTabTypes::NEW_TAB_BUTTON_IN_TOOLBAR_FOR_TOUCH,
+                            NewTabTypes::NEW_TAB_ENUM_COUNT);
 }
 
 void WebUITabStripContainerView::TabCounterPressed(const ui::Event& event) {
@@ -695,9 +694,9 @@ void WebUITabStripContainerView::SetContainerTargetVisibility(
     if (web_view_->GetWebContents()->IsCrashed())
       InitializeWebView();
 
-    immersive_revealed_lock_.reset(
+    immersive_revealed_lock_ =
         browser_view_->immersive_mode_controller()->GetRevealedLock(
-            ImmersiveModeController::ANIMATE_REVEAL_YES));
+            ImmersiveModeController::ANIMATE_REVEAL_YES);
 
     SetVisible(true);
     PreferredSizeChanged();
@@ -835,10 +834,6 @@ TabStripUILayout WebUITabStripContainerView::GetLayout() {
   return TabStripUILayout::CalculateForWebViewportSize(tab_contents_size);
 }
 
-SkColor WebUITabStripContainerView::GetColor(int id) const {
-  return GetThemeProvider()->GetColor(id);
-}
-
 SkColor WebUITabStripContainerView::GetColorProviderColor(
     ui::ColorId id) const {
   return GetColorProvider()->GetColor(id);
@@ -938,8 +933,20 @@ void WebUITabStripContainerView::InitializeWebView() {
   task_manager::WebContentsTags::CreateForTabContents(
       web_view_->web_contents());
 
-  if (TabStripUI* tab_strip_ui = GetTabStripUI(web_view_->GetWebContents()))
+  if (TabStripUI* tab_strip_ui = GetTabStripUI(web_view_->GetWebContents())) {
+    // References to the |browser_view_->browser()| and |this| are borrowed
+    // here, and will be released |DeinitializeWebView|.
     tab_strip_ui->Initialize(browser_view_->browser(), this);
+  }
 
   content::WebContentsObserver::Observe(web_view_->GetWebContents());
+}
+
+void WebUITabStripContainerView::DeinitializeWebView() {
+  content::WebContentsObserver::Observe(nullptr);
+
+  if (TabStripUI* tab_strip_ui = GetTabStripUI(web_view_->GetWebContents())) {
+    // See corresponding comments from InitializeWebView().
+    tab_strip_ui->Deinitialize();
+  }
 }

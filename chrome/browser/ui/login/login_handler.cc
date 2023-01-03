@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-#include "chrome/browser/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+#include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "components/autofill/core/browser/logging/log_manager.h"
 #include "components/no_state_prefetch/browser/no_state_prefetch_contents.h"
@@ -399,10 +399,11 @@ PasswordForm LoginHandler::MakeInputForPasswordManager(
     const GURL& request_url,
     const net::AuthChallengeInfo& auth_info) {
   PasswordForm dialog_form;
-  if (base::LowerCaseEqualsASCII(auth_info.scheme, net::kBasicAuthScheme)) {
+  if (base::EqualsCaseInsensitiveASCII(auth_info.scheme,
+                                       net::kBasicAuthScheme)) {
     dialog_form.scheme = PasswordForm::Scheme::kBasic;
-  } else if (base::LowerCaseEqualsASCII(auth_info.scheme,
-                                        net::kDigestAuthScheme)) {
+  } else if (base::EqualsCaseInsensitiveASCII(auth_info.scheme,
+                                              net::kDigestAuthScheme)) {
     dialog_form.scheme = PasswordForm::Scheme::kDigest;
   } else {
     dialog_form.scheme = PasswordForm::Scheme::kOther;
@@ -571,7 +572,7 @@ void LoginHandler::BuildViewAndNotify(
     const std::u16string& explanation,
     LoginHandler::LoginModelData* login_model_data) {
   if (login_model_data)
-    password_form_ = login_model_data->form;
+    password_form_ = *login_model_data->form;
   base::WeakPtr<LoginHandler> guard = weak_factory_.GetWeakPtr();
   BuildViewImpl(authority, explanation, login_model_data);
   // BuildViewImpl may call Cancel, which may delete this object, so check a

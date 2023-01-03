@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,22 +7,22 @@
  * 'personalization-options' contains several toggles related to
  * personalizations.
  */
-import '//resources/cr_elements/cr_button/cr_button.m.js';
-import '//resources/cr_elements/cr_toggle/cr_toggle.m.js';
+import '//resources/cr_elements/cr_button/cr_button.js';
+import '//resources/cr_elements/cr_toggle/cr_toggle.js';
 import '../controls/settings_toggle_button.js';
 import '../people_page/signout_dialog.js';
 import '../prefs/prefs.js';
 // <if expr="not chromeos_ash">
 import '../relaunch_confirmation_dialog.js';
 // </if>
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 // <if expr="not chromeos_ash">
 import '//resources/cr_elements/cr_toast/cr_toast.js';
 
 // </if>
 
 import {CrToastElement} from '//resources/cr_elements/cr_toast/cr_toast.js';
-import {WebUIListenerMixin} from '//resources/js/web_ui_listener_mixin.js';
+import {WebUiListenerMixin} from '//resources/cr_elements/web_ui_listener_mixin.js';
 import {PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
@@ -46,7 +46,7 @@ export interface SettingsPersonalizationOptionsElement {
 }
 
 const SettingsPersonalizationOptionsElementBase =
-    RelaunchMixin(WebUIListenerMixin(PrefsMixin(PolymerElement)));
+    RelaunchMixin(WebUiListenerMixin(PrefsMixin(PolymerElement)));
 
 export class SettingsPersonalizationOptionsElement extends
     SettingsPersonalizationOptionsElementBase {
@@ -65,11 +65,6 @@ export class SettingsPersonalizationOptionsElement extends
         notify: true,
       },
 
-      /**
-       * TODO(dpapad): Restore actual type !PrivacyPageVisibility after this
-       * file is no longer reused by chrome://os-settings. Dictionary defining
-       * page visibility.
-       */
       pageVisibility: Object,
 
       syncStatus: Object,
@@ -97,13 +92,12 @@ export class SettingsPersonalizationOptionsElement extends
         computed: 'computeSyncFirstSetupInProgress_(syncStatus)',
       },
 
-      // <if expr="not chromeos_ash and not chromeos_lacros">
+      // <if expr="not is_chromeos">
       signinAvailable_: {
         type: Boolean,
         value: () => loadTimeData.getBoolean('signinAvailable'),
       },
       // </if>
-
     };
   }
 
@@ -111,14 +105,14 @@ export class SettingsPersonalizationOptionsElement extends
   syncStatus: SyncStatus;
 
   // <if expr="_google_chrome and not chromeos_ash">
-  private metricsReportingPref_: chrome.settingsPrivate.PrefObject;
+  private metricsReportingPref_: chrome.settingsPrivate.PrefObject<boolean>;
   private showRestart_: boolean;
   // </if>
 
   private showSignoutDialog_: boolean;
   private syncFirstSetupInProgress_: boolean;
 
-  // <if expr="not chromeos_ash and not chromeos_lacros">
+  // <if expr="not is_chromeos">
   private signinAvailable_: boolean;
   // </if>
 
@@ -129,13 +123,24 @@ export class SettingsPersonalizationOptionsElement extends
     return !!this.syncStatus && !!this.syncStatus.firstSetupInProgress;
   }
 
+  private showPriceEmailNotificationsToggle_(): boolean {
+    // Only show the toggle when the user signed in.
+    return loadTimeData.getBoolean('changePriceEmailNotificationsEnabled') &&
+        !!this.syncStatus && !!this.syncStatus.signedIn;
+  }
+
+  private getPriceEmailNotificationsPrefDesc_(): string {
+    const username = this.syncStatus!.signedInUsername || '';
+    return loadTimeData.getStringF('priceEmailNotificationsPrefDesc', username);
+  }
+
   override ready() {
     super.ready();
 
     // <if expr="_google_chrome and not chromeos_ash">
     const setMetricsReportingPref = (metricsReporting: MetricsReporting) =>
         this.setMetricsReportingPref_(metricsReporting);
-    this.addWebUIListener('metrics-reporting-change', setMetricsReportingPref);
+    this.addWebUiListener('metrics-reporting-change', setMetricsReportingPref);
     this.browserProxy_.getMetricsReporting().then(setMetricsReportingPref);
     // </if>
   }
@@ -174,7 +179,7 @@ export class SettingsPersonalizationOptionsElement extends
 
   private setMetricsReportingPref_(metricsReporting: MetricsReporting) {
     const hadPreviousPref = this.metricsReportingPref_.value !== undefined;
-    const pref: chrome.settingsPrivate.PrefObject = {
+    const pref: chrome.settingsPrivate.PrefObject<boolean> = {
       key: '',
       type: chrome.settingsPrivate.PrefType.BOOLEAN,
       value: metricsReporting.enabled,
@@ -198,13 +203,6 @@ export class SettingsPersonalizationOptionsElement extends
   // </if>
 
   private showSearchSuggestToggle_(): boolean {
-    // <if expr="chromeos_ash">
-    if (loadTimeData.getBoolean('syncSettingsCategorizationEnabled') &&
-        loadTimeData.getBoolean('isOSSettings')) {
-      // Should be hidden in OS settings.
-      return false;
-    }
-    // </if>
     if (this.pageVisibility === undefined) {
       // pageVisibility isn't defined in non-Guest profiles (crbug.com/1288911).
       return true;
@@ -213,27 +211,10 @@ export class SettingsPersonalizationOptionsElement extends
   }
 
   // <if expr="chromeos_ash">
-  private showMetricsReportingAsLink_(): boolean {
-    // If SyncSettingsCategorization is enabled, browser settings should show
-    // a link to the OS settings.
-    return loadTimeData.getBoolean('syncSettingsCategorizationEnabled') &&
-        !loadTimeData.getBoolean('isOSSettings');
-  }
-
   private onMetricsReportingLinkClick_() {
     window.location.href = loadTimeData.getString('osSyncSetupSettingsUrl');
   }
   // </if>
-
-  private showUrlCollectionToggle_(): boolean {
-    // <if expr="chromeos_ash">
-    if (loadTimeData.getBoolean('syncSettingsCategorizationEnabled')) {
-      // Should be hidden in OS settings.
-      return !loadTimeData.getBoolean('isOSSettings');
-    }
-    // </if>
-    return true;
-  }
 
   // <if expr="_google_chrome">
   private onUseSpellingServiceToggle_(event: Event) {
@@ -244,33 +225,19 @@ export class SettingsPersonalizationOptionsElement extends
     }
   }
 
+  // <if expr="not chromeos_ash">
   private showSpellCheckControlToggle_(): boolean {
-    // <if expr="chromeos_ash">
-    if (loadTimeData.getBoolean('syncSettingsCategorizationEnabled') &&
-        !loadTimeData.getBoolean('isOSSettings')) {
-      // The toggle should be hidden in Ash Browser settings page
-      // (it shows a link to the OS Settings page instead).
-      return false;
-    }
-    // </if>
     return (
         !!(this.prefs as {spellcheck?: any}).spellcheck &&
-        (this.getPref('spellcheck.dictionaries').value as Array<string>)
-                .length > 0);
+        this.getPref<string[]>('spellcheck.dictionaries').value.length > 0);
   }
+  // </if><!-- not chromeos -->
 
   // <if expr="chromeos_ash">
   private showSpellCheckControlLink_(): boolean {
-    if (!loadTimeData.getBoolean('syncSettingsCategorizationEnabled')) {
-      return false;
-    }
-    if (loadTimeData.getBoolean('isOSSettings')) {
-      return false;  // Should be hidden in OS settings.
-    }
     return (
         !!(this.prefs as {spellcheck?: any}).spellcheck &&
-        (this.getPref('spellcheck.dictionaries').value as Array<string>)
-                .length > 0);
+        this.getPref<string[]>('spellcheck.dictionaries').value.length > 0);
   }
 
   private onUseSpellingServiceLinkClick_() {
@@ -280,13 +247,6 @@ export class SettingsPersonalizationOptionsElement extends
   // </if><!-- _google_chrome -->
 
   private shouldShowDriveSuggest_(): boolean {
-    // <if expr="chromeos_ash">
-    if (loadTimeData.getBoolean('syncSettingsCategorizationEnabled') &&
-        loadTimeData.getBoolean('isOSSettings')) {
-      // Should be hidden in OS settings.
-      return false;
-    }
-    // </if>
     return loadTimeData.getBoolean('driveSuggestAvailable') &&
         !!this.syncStatus && !!this.syncStatus.signedIn &&
         this.syncStatus.statusAction !== StatusAction.REAUTHENTICATE;

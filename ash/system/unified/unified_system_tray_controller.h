@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "ash/system/time/calendar_model.h"
 #include "ash/system/unified/unified_system_tray_model.h"
 #include "base/memory/scoped_refptr.h"
+#include "quick_settings_view.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/compositor/throughput_tracker.h"
 #include "ui/gfx/geometry/point.h"
@@ -27,6 +28,10 @@ class PrefService;
 namespace gfx {
 class SlideAnimation;
 }  // namespace gfx
+
+namespace views {
+class View;
+}  // namespace views
 
 namespace ash {
 
@@ -47,6 +52,15 @@ class ASH_EXPORT UnifiedSystemTrayController
       public UnifiedVolumeSliderController::Delegate,
       public UnifiedMediaControlsController::Delegate {
  public:
+  class Observer : public base::CheckedObserver {
+   public:
+    // Gets called when `ShowCalendarView`, right as animations starts.
+    virtual void OnOpeningCalendarView() {}
+
+    // Gets called when leaving from the calendar view to main view.
+    virtual void OnTransitioningFromCalendarToMainView() {}
+  };
+
   explicit UnifiedSystemTrayController(
       scoped_refptr<UnifiedSystemTrayModel> model,
       UnifiedSystemTrayBubble* bubble = nullptr,
@@ -58,11 +72,15 @@ class ASH_EXPORT UnifiedSystemTrayController
 
   ~UnifiedSystemTrayController() override;
 
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
   // Registers pref to preserve tray expanded state between reboots.
   static void RegisterProfilePrefs(PrefRegistrySimple* registry);
 
-  // Create the view. The created view is unowned.
-  UnifiedSystemTrayView* CreateView();
+  // Create the view in the bubble.
+  std::unique_ptr<UnifiedSystemTrayView> CreateUnifiedQuickSettingsView();
+  std::unique_ptr<QuickSettingsView> CreateQuickSettingsView(int max_height);
 
   // Sign out from the current user. Called from the view.
   void HandleSignOutAction();
@@ -145,6 +163,9 @@ class ASH_EXPORT UnifiedSystemTrayController
   // Collapse the tray without animating.
   void CollapseWithoutAnimating();
 
+  // Return whether a detailed view is currently being shown.
+  bool IsDetailedViewShown() const;
+
   // SessionObserver:
   void OnActiveUserPrefServiceChanged(PrefService* pref_service) override;
 
@@ -181,8 +202,10 @@ class ASH_EXPORT UnifiedSystemTrayController
 
  private:
   friend class SystemTrayTestApi;
-  friend class UnifiedSystemTrayControllerTest;
+  friend class UnifiedBrightnessViewTest;
   friend class UnifiedMessageCenterBubbleTest;
+  friend class UnifiedSystemTrayControllerTest;
+  friend class UnifiedVolumeViewTest;
 
   // How the expanded state is toggled. The enum is used to back an UMA
   // histogram and should be treated as append-only.
@@ -202,6 +225,11 @@ class ASH_EXPORT UnifiedSystemTrayController
   // Initialize feature pod controllers and their views.
   // If you want to add a new feature pod item, you have to add here.
   void InitFeaturePods();
+
+  // Initialize feature pod controllers and their tile views.
+  // Temporarily only adds two feature tiles and other placeholder tiles.
+  // TODO(b/252871301): Create each feature's tile.
+  void InitFeatureTiles();
 
   // Add the feature pod controller and its view.
   void AddFeaturePodItem(std::unique_ptr<FeaturePodControllerBase> controller);
@@ -233,11 +261,14 @@ class ASH_EXPORT UnifiedSystemTrayController
   // views::AnimationDelegateViews:
   base::TimeDelta GetAnimationDurationForReporting() const override;
 
+  bool ShouldShowDeferredUpdateDialog() const;
+
   // Model that stores UI specific variables. Unowned.
   scoped_refptr<UnifiedSystemTrayModel> model_;
 
   // Unowned. Owned by Views hierarchy.
   UnifiedSystemTrayView* unified_view_ = nullptr;
+  QuickSettingsView* quick_settings_view_ = nullptr;
 
   // Unowned.
   UnifiedSystemTrayBubble* bubble_ = nullptr;
@@ -259,10 +290,12 @@ class ASH_EXPORT UnifiedSystemTrayController
 
   // Controller of volume slider. Owned.
   std::unique_ptr<UnifiedVolumeSliderController> volume_slider_controller_;
+  views::View* unified_volume_view_ = nullptr;
 
   // Controller of brightness slider. Owned.
   std::unique_ptr<UnifiedBrightnessSliderController>
       brightness_slider_controller_;
+  views::View* unified_brightness_view_ = nullptr;
 
   // If the previous state is expanded or not. Only valid during dragging (from
   // BeginDrag to EndDrag).
@@ -285,6 +318,8 @@ class ASH_EXPORT UnifiedSystemTrayController
   bool showing_audio_detailed_view_ = false;
 
   bool showing_calendar_view_ = false;
+
+  base::ObserverList<Observer> observers_;
 };
 
 }  // namespace ash

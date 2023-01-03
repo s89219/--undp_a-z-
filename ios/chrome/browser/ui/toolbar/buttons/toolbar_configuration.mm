@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,11 +24,19 @@
 }
 
 - (UIColor*)NTPBackgroundColor {
-  return ntp_home::kNTPBackgroundColor();
+  return ntp_home::NTPBackgroundColor();
 }
 
 - (UIColor*)backgroundColor {
   return [UIColor colorNamed:kBackgroundColor];
+}
+
+- (UIColor*)focusedBackgroundColor {
+  return [UIColor colorNamed:kGroupedPrimaryBackgroundColor];
+}
+
+- (UIColor*)focusedLocationBarBackgroundColor {
+  return [UIColor colorNamed:kTextfieldFocusedBackgroundColor];
 }
 
 - (UIColor*)buttonsTintColor {
@@ -39,12 +47,20 @@
   return [UIColor colorNamed:@"tab_toolbar_button_color_highlighted"];
 }
 
+- (UIColor*)buttonsTintColorIPHHighlighted {
+  return [UIColor colorNamed:kSolidButtonTextColor];
+}
+
 - (UIColor*)buttonsSpotlightColor {
   return [UIColor colorNamed:@"tab_toolbar_button_halo_color"];
 }
 
 - (UIColor*)dimmedButtonsSpotlightColor {
   return [UIColor colorNamed:@"tab_toolbar_button_halo_color"];
+}
+
+- (UIColor*)buttonsIPHHighlightColor {
+  return [UIColor colorNamed:kBlueColor];
 }
 
 - (UIColor*)locationBarBackgroundColorWithVisibility:(CGFloat)visibilityFactor {

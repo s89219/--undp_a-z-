@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 
 import org.chromium.base.Callback;
-import org.chromium.base.ContextUtils;
 import org.chromium.base.PackageUtils;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.NativeMethods;
@@ -170,7 +169,7 @@ public class WebApkInstaller {
     }
 
     private boolean isWebApkInstalled(String packageName) {
-        return PackageUtils.isPackageInstalled(ContextUtils.getApplicationContext(), packageName);
+        return PackageUtils.isPackageInstalled(packageName);
     }
 
     @NativeMethods

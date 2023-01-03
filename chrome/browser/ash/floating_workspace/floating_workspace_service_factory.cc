@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,10 @@
 
 #include "base/no_destructor.h"
 #include "chrome/browser/ash/floating_workspace/floating_workspace_service.h"
-#include "chrome/browser/ash/floating_workspace/floating_workspace_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/desk_sync_service_factory.h"
 #include "chrome/browser/sync/session_sync_service_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace ash {
 
@@ -29,9 +28,8 @@ FloatingWorkspaceService* FloatingWorkspaceServiceFactory::GetForProfile(
 }
 
 FloatingWorkspaceServiceFactory::FloatingWorkspaceServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "FloatingWorkspaceServiceFactory",
-          BrowserContextDependencyManager::GetInstance()) {
+    : ProfileKeyedServiceFactory("FloatingWorkspaceServiceFactory") {
+  DependsOn(DeskSyncServiceFactory::GetInstance());
   DependsOn(SessionSyncServiceFactory::GetInstance());
   DependsOn(SyncServiceFactory::GetInstance());
 }
@@ -40,7 +38,10 @@ FloatingWorkspaceServiceFactory::~FloatingWorkspaceServiceFactory() = default;
 
 KeyedService* FloatingWorkspaceServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  return new FloatingWorkspaceService(Profile::FromBrowserContext(context));
+  raw_ptr<FloatingWorkspaceService> service =
+      new FloatingWorkspaceService(Profile::FromBrowserContext(context));
+  service->Init();
+  return service;
 }
 
 }  // namespace ash

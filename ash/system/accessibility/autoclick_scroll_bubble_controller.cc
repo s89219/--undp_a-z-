@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -188,7 +188,7 @@ void AutoclickScrollBubbleController::ShowBubble(
   DCHECK(!bubble_view_);
 
   TrayBubbleView::InitParams init_params;
-  init_params.delegate = this;
+  init_params.delegate = GetWeakPtr();
   // Anchor within the overlay container.
   init_params.parent_window =
       Shell::GetContainer(Shell::GetPrimaryRootWindow(),
@@ -203,7 +203,6 @@ void AutoclickScrollBubbleController::ShowBubble(
       0, kBubbleMenuPadding, kBubbleMenuPadding, kBubbleMenuPadding);
   init_params.preferred_width = kAutoclickScrollMenuSizeDips;
   init_params.max_height = kAutoclickScrollMenuSizeDips;
-  init_params.has_shadow = false;
   init_params.translucent = true;
   bubble_view_ = new AutoclickScrollBubbleView(init_params);
   bubble_view_->SetArrow(alignment);
@@ -212,8 +211,13 @@ void AutoclickScrollBubbleController::ShowBubble(
   scroll_view_->SetBorder(views::CreateEmptyBorder(
       gfx::Insets::TLBR(kUnifiedTopShortcutSpacing, 0, 0, 0)));
   bubble_view_->AddChildView(scroll_view_);
-  scroll_view_->SetPaintToLayer();
-  scroll_view_->layer()->SetFillsBoundsOpaquely(false);
+
+  // In dark light mode, we switch TrayBubbleView to use a textured layer
+  // instead of solid color layer, so no need to create an extra layer here.
+  if (!features::IsDarkLightModeEnabled()) {
+    scroll_view_->SetPaintToLayer();
+    scroll_view_->layer()->SetFillsBoundsOpaquely(false);
+  }
 
   bubble_widget_ = views::BubbleDialogDelegateView::CreateBubble(bubble_view_);
   TrayBackgroundView::InitializeBubbleAnimations(bubble_widget_);

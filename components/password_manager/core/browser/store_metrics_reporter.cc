@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,11 @@
 #include <memory>
 
 #include "base/metrics/histogram_functions.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/threading/sequenced_task_runner_handle.h"
-#include "components/password_manager/core/browser/android_affiliation/affiliation_utils.h"
+#include "components/password_manager/core/browser/affiliation/affiliation_utils.h"
 #include "components/password_manager/core/browser/password_feature_manager.h"
 #include "components/password_manager/core/browser/password_manager_features_util.h"
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
@@ -18,7 +18,9 @@
 #include "components/password_manager/core/browser/password_reuse_manager.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
 #include "components/password_manager/core/browser/password_sync_util.h"
+#include "components/password_manager/core/common/password_manager_features.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
+#include "components/sync/base/features.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_urls.h"
 
@@ -76,7 +78,7 @@ void LogNumberOfAccountsForScheme(base::StringPiece suffix_for_store,
                                   int sample) {
   base::UmaHistogramCustomCounts(
       base::StrCat({kPasswordManager, suffix_for_store,
-                    ".TotalAccountsHiRes2.WithScheme.", scheme}),
+                    ".TotalAccountsHiRes3.WithScheme.", scheme}),
       sample, 1, 1000, 100);
 }
 
@@ -113,7 +115,7 @@ void ReportNumberOfAccountsMetrics(
     }
 
     constexpr base::StringPiece kAccountsPerSiteSuffix =
-        ".AccountsPerSiteHiRes2";
+        ".AccountsPerSiteHiRes3";
 
     if (password_type == PasswordForm::Type::kGenerated) {
       total_generated_accounts += accounts_per_site;
@@ -136,7 +138,7 @@ void ReportNumberOfAccountsMetrics(
   }
 
   static constexpr base::StringPiece kTotalAccountsByTypeSuffix =
-      ".TotalAccountsHiRes2.ByType";
+      ".TotalAccountsHiRes3.ByType";
 
   LogAccountStatHiRes(
       base::StrCat({kPasswordManager, store_suffix, kTotalAccountsByTypeSuffix,
@@ -154,7 +156,7 @@ void ReportNumberOfAccountsMetrics(
       total_user_created_accounts + total_generated_accounts);
 
   LogAccountStatHiRes(
-      base::StrCat({kPasswordManager, store_suffix, ".BlacklistedSitesHiRes2",
+      base::StrCat({kPasswordManager, store_suffix, ".BlacklistedSitesHiRes3",
                     custom_passphrase_suffix}),
       blocklisted_sites);
 }
@@ -195,6 +197,35 @@ void ReportLoginsWithSchemesMetrics(
   LogNumberOfAccountsForScheme(suffix_for_store, "Other", other_logins);
 }
 
+void ReportPasswordNotesMetrics(
+    bool is_account_store,
+    const std::vector<std::unique_ptr<PasswordForm>>& forms) {
+  if (!base::FeatureList::IsEnabled(syncer::kPasswordNotesWithBackup)) {
+    return;
+  }
+
+  base::StringPiece suffix_for_store =
+      GetMetricsSuffixForStore(is_account_store);
+
+  int credentials_with_non_empty_notes_count =
+      base::ranges::count_if(forms, [](const auto& form) {
+        return base::ranges::any_of(
+            form->notes, [](const auto& note) { return !note.value.empty(); });
+      });
+
+  base::UmaHistogramCounts1000(
+      base::StrCat({kPasswordManager, suffix_for_store,
+                    ".PasswordNotes.CountCredentialsWithNonEmptyNotes2"}),
+      credentials_with_non_empty_notes_count);
+
+  const std::string histogram_name =
+      base::StrCat({kPasswordManager, suffix_for_store,
+                    ".PasswordNotes.CountNotesPerCredential2"});
+  base::ranges::for_each(forms, [histogram_name](const auto& form) {
+    base::UmaHistogramCounts100(histogram_name, form->notes.size());
+  });
+}
+
 void ReportTimesPasswordUsedMetrics(
     bool is_account_store,
     bool custom_passphrase_sync_enabled,
@@ -208,7 +239,7 @@ void ReportTimesPasswordUsedMetrics(
     const int times_used = form->times_used;
 
     static constexpr base::StringPiece kTimesPasswordUsedSuffix =
-        ".TimesPasswordUsed2";
+        ".TimesPasswordUsed3";
 
     if (type == PasswordForm::Type::kGenerated) {
       LogTimesUsedStat(
@@ -233,11 +264,11 @@ void ReportTimesPasswordUsedMetrics(
 void ReportSyncingAccountStateMetrics(
     const std::string& sync_username,
     const std::vector<std::unique_ptr<PasswordForm>>& forms) {
-  std::string signon_realm =
-      GaiaUrls::GetInstance()->gaia_url().DeprecatedGetOriginAsURL().spec();
+  const GURL gaia_signon_realm =
+      GaiaUrls::GetInstance()->gaia_origin().GetURL();
   bool syncing_account_saved = base::ranges::any_of(
-      forms, [&signon_realm, &sync_username](const auto& form) {
-        return signon_realm == form->signon_realm &&
+      forms, [&gaia_signon_realm, &sync_username](const auto& form) {
+        return gaia_signon_realm == GURL(form->signon_realm) &&
                gaia::AreEmailsSame(sync_username,
                                    base::UTF16ToUTF8(form->username_value));
       });
@@ -250,7 +281,7 @@ void ReportSyncingAccountStateMetrics(
                  ? SyncingAccountState::kSyncingAndSyncPasswordSaved
                  : SyncingAccountState::kSyncingAndSyncPasswordNotSaved);
   base::UmaHistogramEnumeration(
-      base::StrCat({kPasswordManager, ".SyncingAccountState2"}),
+      base::StrCat({kPasswordManager, ".SyncingAccountState3"}),
       sync_account_state);
 }
 
@@ -287,10 +318,10 @@ void ReportDuplicateCredentialsMetrics(
   }
 
   base::UmaHistogramCustomCounts(
-      base::StrCat({kPasswordManager, ".CredentialsWithDuplicates2"}),
+      base::StrCat({kPasswordManager, ".CredentialsWithDuplicates3"}),
       credentials_with_duplicates, 0, 32, 6);
   base::UmaHistogramCustomCounts(
-      base::StrCat({kPasswordManager, ".CredentialsWithMismatchedDuplicates2"}),
+      base::StrCat({kPasswordManager, ".CredentialsWithMismatchedDuplicates3"}),
       credentials_with_mismatched_duplicates, 0, 32, 6);
 }
 
@@ -298,23 +329,23 @@ void ReportPasswordIssuesMetrics(
     BulkCheckDone bulk_check_done,
     const std::vector<std::unique_ptr<PasswordForm>>& forms) {
   int count_leaked = base::ranges::count_if(forms, [](const auto& form) {
-    return !form->password_issues.contains(InsecureType::kLeaked);
+    return form->password_issues.contains(InsecureType::kLeaked);
   });
   base::UmaHistogramCounts100(
-      base::StrCat({kPasswordManager, ".CompromisedCredentials2.CountLeaked"}),
+      base::StrCat({kPasswordManager, ".CompromisedCredentials3.CountLeaked"}),
       count_leaked);
   if (bulk_check_done) {
     base::UmaHistogramCounts100(
         base::StrCat({kPasswordManager,
-                      ".CompromisedCredentials2.CountLeakedAfterBulkCheck"}),
+                      ".CompromisedCredentials3.CountLeakedAfterBulkCheck"}),
         count_leaked);
   }
 
   int count_phished = base::ranges::count_if(forms, [](const auto& form) {
-    return !form->password_issues.contains(InsecureType::kPhished);
+    return form->password_issues.contains(InsecureType::kPhished);
   });
   base::UmaHistogramCounts100(
-      base::StrCat({kPasswordManager, ".CompromisedCredentials2.CountPhished"}),
+      base::StrCat({kPasswordManager, ".CompromisedCredentials3.CountPhished"}),
       count_phished);
 }
 
@@ -379,21 +410,30 @@ void ReportMultiStoreMetrics(
   if (is_opted_in) {
     base::UmaHistogramCounts100(
         base::StrCat(
-            {kPasswordManager, ".AccountStoreVsProfileStore3.Additional"}),
+            {kPasswordManager, ".AccountStoreVsProfileStore4.Additional"}),
         additional);
     base::UmaHistogramCounts100(
         base::StrCat(
-            {kPasswordManager, ".AccountStoreVsProfileStore3.Missing"}),
+            {kPasswordManager, ".AccountStoreVsProfileStore4.Missing"}),
         missing);
     base::UmaHistogramCounts100(
         base::StrCat(
-            {kPasswordManager, ".AccountStoreVsProfileStore3.Identical"}),
+            {kPasswordManager, ".AccountStoreVsProfileStore4.Identical"}),
         identical);
     base::UmaHistogramCounts100(
         base::StrCat(
-            {kPasswordManager, ".AccountStoreVsProfileStore3.Conflicting"}),
+            {kPasswordManager, ".AccountStoreVsProfileStore4.Conflicting"}),
         conflicting);
   }
+}
+
+void ReportBiometricAuthenticationBeforeFillingMetrics(PrefService* prefs) {
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+  base::UmaHistogramBoolean(
+      base::StrCat({kPasswordManager, ".BiometricAuthBeforeFillingEnabled2"}),
+      prefs->GetBoolean(
+          password_manager::prefs::kBiometricAuthenticationBeforeFilling));
+#endif
 }
 
 }  // namespace
@@ -423,8 +463,8 @@ StoreMetricsReporter::StoreMetricsReporter(
     // StoreMetricReporterHelper. Therefore, `done_callback_` must be called
     // asynchronously to avoid moving the StoreMetricsReporter pointer to a
     // destroyed unique_ptr.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                     std::move(done_callback_));
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(done_callback_));
     return;
   }
 
@@ -446,8 +486,10 @@ StoreMetricsReporter::StoreMetricsReporter(
   is_opted_in_ = features_util::IsOptedInForAccountStorage(prefs, sync_service);
 
   base::UmaHistogramBoolean(
-      base::StrCat({kPasswordManager, ".Enabled3"}),
+      base::StrCat({kPasswordManager, ".Enabled4"}),
       prefs->GetBoolean(password_manager::prefs::kCredentialsEnableService));
+
+  ReportBiometricAuthenticationBeforeFillingMetrics(prefs);
 
   // May be null in tests.
   if (profile_store) {
@@ -465,8 +507,8 @@ StoreMetricsReporter::StoreMetricsReporter(
 
   if (!profile_store_ && !account_store_) {
     // There is nothing else to report.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                     std::move(done_callback_));
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(done_callback_));
   }
 }
 
@@ -526,6 +568,7 @@ void StoreMetricsReporter::ReportStoreMetrics(
   ReportLoginsWithSchemesMetrics(is_account_store, results);
   ReportTimesPasswordUsedMetrics(is_account_store,
                                  custom_passphrase_sync_enabled_, results);
+  ReportPasswordNotesMetrics(is_account_store, results);
 
   // The remaining metrics are not recorded for the account store:
   // - SyncingAccountState2 just doesn't make sense, since syncing users only

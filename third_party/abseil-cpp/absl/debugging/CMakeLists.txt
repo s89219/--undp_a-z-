@@ -14,6 +14,8 @@
 # limitations under the License.
 #
 
+find_library(EXECINFO_LIBRARY execinfo)
+
 absl_cc_library(
   NAME
     stacktrace
@@ -33,10 +35,13 @@ absl_cc_library(
     "stacktrace.cc"
   COPTS
     ${ABSL_DEFAULT_COPTS}
+  LINKOPTS
+    $<$<BOOL:${EXECINFO_LIBRARY}>:${EXECINFO_LIBRARY}>
   DEPS
     absl::debugging_internal
     absl::config
     absl::core_headers
+    absl::raw_logging_internal
   PUBLIC
 )
 
@@ -57,7 +62,7 @@ absl_cc_library(
     ${ABSL_DEFAULT_COPTS}
   LINKOPTS
     ${ABSL_DEFAULT_LINKOPTS}
-    $<$<BOOL:${MINGW}>:"dbghelp">
+    $<$<BOOL:${MINGW}>:-ldbghelp>
   DEPS
     absl::debugging_internal
     absl::demangle_internal
@@ -126,7 +131,6 @@ absl_cc_library(
     absl::base
     absl::config
     absl::core_headers
-    absl::errno_saver
     absl::raw_logging_internal
   PUBLIC
 )

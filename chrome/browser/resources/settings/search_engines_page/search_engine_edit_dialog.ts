@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,20 +6,27 @@
  * @fileoverview 'settings-search-engine-edit-dialog' is a component for adding
  * or editing a search engine entry.
  */
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
-import 'chrome://resources/cr_elements/cr_input/cr_input.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
+import 'chrome://resources/cr_elements/cr_input/cr_input.js';
 
-import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
-import {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.m.js';
-import {WebUIListenerMixin} from 'chrome://resources/js/web_ui_listener_mixin.js';
+import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
+import {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
+import {WebUiListenerMixin} from 'chrome://resources/cr_elements/web_ui_listener_mixin.js';
 import {microTask, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {loadTimeData} from '../i18n_setup.js';
 
 import {getTemplate} from './search_engine_edit_dialog.html.js';
 import {SearchEngine, SearchEnginesBrowserProxy, SearchEnginesBrowserProxyImpl, SearchEnginesInfo} from './search_engines_browser_proxy.js';
+
+/**
+ * The |modelIndex| to use when a new search engine is added. Must match
+ * with kNewSearchEngineIndex constant specified at
+ * chrome/browser/ui/webui/settings/search_engines_handler.cc
+ */
+const DEFAULT_MODEL_INDEX: number = -1;
 
 export interface SettingsSearchEngineEditDialogElement {
   $: {
@@ -33,7 +40,7 @@ export interface SettingsSearchEngineEditDialogElement {
 }
 
 const SettingsSearchEngineEditDialogElementBase =
-    WebUIListenerMixin(PolymerElement);
+    WebUiListenerMixin(PolymerElement);
 
 export class SettingsSearchEngineEditDialogElement extends
     SettingsSearchEngineEditDialogElementBase {
@@ -57,14 +64,7 @@ export class SettingsSearchEngineEditDialogElement extends
       keyword_: String,
       queryUrl_: String,
       dialogTitle_: String,
-      keywordFieldLabel_: String,
       actionButtonText_: String,
-
-      isActiveSearchEnginesFlagEnabled_: {
-        type: Boolean,
-        value: () =>
-            loadTimeData.getBoolean('isActiveSearchEnginesFlagEnabled'),
-      },
     };
   }
 
@@ -73,23 +73,9 @@ export class SettingsSearchEngineEditDialogElement extends
   private keyword_: string;
   private queryUrl_: string;
   private dialogTitle_: string;
-  private keywordFieldLabel_: string;
   private actionButtonText_: string;
   private browserProxy_: SearchEnginesBrowserProxy =
       SearchEnginesBrowserProxyImpl.getInstance();
-  DEFAULT_MODEL_INDEX: number;
-  private isActiveSearchEnginesFlagEnabled_: boolean;
-
-  constructor() {
-    super();
-
-    /**
-     * The |modelIndex| to use when a new search engine is added. Must match
-     * with kNewSearchEngineIndex constant specified at
-     * chrome/browser/ui/webui/settings/search_engines_handler.cc
-     */
-    this.DEFAULT_MODEL_INDEX = -1;
-  }
 
   override ready() {
     super.ready();
@@ -109,15 +95,11 @@ export class SettingsSearchEngineEditDialogElement extends
       this.actionButtonText_ = loadTimeData.getString('add');
     }
 
-    this.keywordFieldLabel_ = this.isActiveSearchEnginesFlagEnabled_ ?
-        loadTimeData.getString('searchEnginesShortcut') :
-        loadTimeData.getString('searchEnginesKeyword');
-
     this.addEventListener('cancel', () => {
       this.browserProxy_.searchEngineEditCancelled();
     });
 
-    this.addWebUIListener(
+    this.addWebUiListener(
         'search-engines-changed', this.enginesChanged_.bind(this));
   }
 
@@ -126,7 +108,7 @@ export class SettingsSearchEngineEditDialogElement extends
 
     microTask.run(() => this.updateActionButtonState_());
     this.browserProxy_.searchEngineEditStarted(
-        this.model ? this.model.modelIndex : this.DEFAULT_MODEL_INDEX);
+        this.model ? this.model.modelIndex : DEFAULT_MODEL_INDEX);
     this.$.dialog.showModal();
   }
 
@@ -180,7 +162,9 @@ export class SettingsSearchEngineEditDialogElement extends
 
   private updateActionButtonState_() {
     const allValid = [
-      this.$.searchEngine, this.$.keyword, this.$.queryUrl
+      this.$.searchEngine,
+      this.$.keyword,
+      this.$.queryUrl,
     ].every(function(inputElement) {
       return !inputElement.invalid && inputElement.value.length > 0;
     });

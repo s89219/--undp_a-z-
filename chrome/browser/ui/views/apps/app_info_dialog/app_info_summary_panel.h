@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,7 +75,7 @@ class AppInfoSummaryPanel : public AppInfoPanel,
   std::vector<GURL> GetLicenseUrls() const;
 
   // UI elements on the dialog.
-  raw_ptr<views::Label> size_value_ = nullptr;
+  raw_ptr<views::Label, DanglingUntriaged> size_value_ = nullptr;
 
   std::unique_ptr<LaunchOptionsComboboxModel> launch_options_combobox_model_;
   raw_ptr<views::Combobox> launch_options_combobox_ = nullptr;

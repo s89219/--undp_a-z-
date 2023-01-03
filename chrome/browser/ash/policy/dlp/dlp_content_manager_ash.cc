@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@
 #include "base/containers/cxx20_erase.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_confidential_contents.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_content_restriction_set.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_histogram_helper.h"
@@ -113,6 +113,11 @@ void DlpContentManagerAsh::OnWindowDestroying(aura::Window* window) {
   MaybeChangeOnScreenRestrictions();
 }
 
+void DlpContentManagerAsh::OnWindowTitleChanged(aura::Window* window) {
+  CheckRunningVideoCapture();
+  CheckRunningScreenShares();
+}
+
 DlpContentRestrictionSet DlpContentManagerAsh::GetOnScreenPresentRestrictions()
     const {
   return on_screen_restrictions_;
@@ -160,7 +165,7 @@ void DlpContentManagerAsh::OnVideoCaptureStarted(const ScreenshotArea& area) {
     //  onscreen restrictions.
     MaybeReportEvent(info.restriction_info,
                      DlpRulesManager::Restriction::kScreenshot);
-    running_video_capture_info_->reported_confidential_contents.UnionWith(
+    running_video_capture_info_->reported_confidential_contents.InsertOrUpdate(
         info.confidential_contents);
   }
   if (IsWarn(info.restriction_info) && reporting_manager_) {
@@ -372,7 +377,7 @@ void DlpContentManagerAsh::OnScreenRestrictionsChanged(
   if (removed_restrictions.GetRestrictionLevel(
           DlpContentRestriction::kPrivacyScreen) ==
       DlpRulesManager::Level::kBlock) {
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(
             &DlpContentManagerAsh::MaybeRemovePrivacyScreenEnforcement,
@@ -642,7 +647,7 @@ void DlpContentManagerAsh::CheckRunningVideoCapture() {
     //  onscreen restrictions.
     MaybeReportEvent(info.restriction_info,
                      DlpRulesManager::Restriction::kScreenshot);
-    running_video_capture_info_->reported_confidential_contents.UnionWith(
+    running_video_capture_info_->reported_confidential_contents.InsertOrUpdate(
         info.confidential_contents);
   }
 
@@ -659,7 +664,7 @@ void DlpContentManagerAsh::CheckRunningVideoCapture() {
     // capture to proceed.
     RemoveAllowedContents(info.confidential_contents,
                           DlpRulesManager::Restriction::kScreenshot);
-    running_video_capture_info_->confidential_contents.UnionWith(
+    running_video_capture_info_->confidential_contents.InsertOrUpdate(
         info.confidential_contents);
     running_video_capture_info_->had_warning_restriction = true;
     return;

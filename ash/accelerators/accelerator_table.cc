@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,24 +63,33 @@ static_assert(kDeprecatedAcceleratorsLength ==
 
 const AcceleratorData kDebugAcceleratorData[] = {
     {true, ui::VKEY_N, kDebugModifier, TOGGLE_WIFI},
+    {true, ui::VKEY_C, kDebugModifier, DEBUG_DUMP_CALENDAR_MODEL},
     {true, ui::VKEY_X, kDebugModifier, DEBUG_KEYBOARD_BACKLIGHT_TOGGLE},
     {true, ui::VKEY_M, kDebugModifier, DEBUG_MICROPHONE_MUTE_TOGGLE},
     {true, ui::VKEY_O, kDebugModifier, DEBUG_SHOW_TOAST},
+    {true, ui::VKEY_Z, kDebugModifier, DEBUG_SYSTEM_UI_STYLE_VIEWER},
     {true, ui::VKEY_P, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN,
      DEBUG_TOGGLE_TOUCH_PAD},
     {true, ui::VKEY_T, ui::EF_COMMAND_DOWN | ui::EF_SHIFT_DOWN,
      DEBUG_TOGGLE_TOUCH_SCREEN},
     {true, ui::VKEY_T, kDebugModifier, DEBUG_TOGGLE_TABLET_MODE},
+    {true, ui::VKEY_A, kDebugModifier,
+     DEBUG_TOGGLE_VIDEO_CONFERENCE_CAMERA_TRAY_ICON},
     {true, ui::VKEY_B, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN,
      DEBUG_TOGGLE_WALLPAPER_MODE},
     {true, ui::VKEY_L, kDebugModifier, DEBUG_PRINT_LAYER_HIERARCHY},
     {true, ui::VKEY_V, kDebugModifier, DEBUG_PRINT_VIEW_HIERARCHY},
     {true, ui::VKEY_W, kDebugModifier, DEBUG_PRINT_WINDOW_HIERARCHY},
+    {true, ui::VKEY_9, kDebugModifier, DEBUG_TOGGLE_GLANCEABLES},
     {true, ui::VKEY_B, kDebugModifier, DEBUG_TOGGLE_SHOW_DEBUG_BORDERS},
     {true, ui::VKEY_F, kDebugModifier, DEBUG_TOGGLE_SHOW_FPS_COUNTER},
     {true, ui::VKEY_P, kDebugModifier, DEBUG_TOGGLE_SHOW_PAINT_RECTS},
     {true, ui::VKEY_K, kDebugModifier, DEBUG_TRIGGER_CRASH},
     {true, ui::VKEY_G, kDebugModifier, DEBUG_TOGGLE_HUD_DISPLAY},
+    {true, ui::VKEY_D, kDebugModifier, DEBUG_TOGGLE_DARK_MODE},
+    {true, ui::VKEY_OEM_4, kDebugModifier, DEBUG_TUCK_FLOATED_WINDOW_LEFT},
+    {true, ui::VKEY_OEM_6, kDebugModifier, DEBUG_TUCK_FLOATED_WINDOW_RIGHT},
+    {true, ui::VKEY_Y, kDebugModifier, DEBUG_TOGGLE_DYNAMIC_COLOR},
 };
 
 const size_t kDebugAcceleratorDataLength = std::size(kDebugAcceleratorData);
@@ -124,8 +133,10 @@ const size_t kDeveloperAcceleratorDataLength =
 
 const AcceleratorAction kPreferredActions[] = {
     // Window cycling accelerators.
-    CYCLE_BACKWARD_MRU,  // Shift+Alt+Tab
-    CYCLE_FORWARD_MRU,   // Alt+Tab
+    CYCLE_BACKWARD_MRU,               // Shift+Alt+Tab
+    CYCLE_FORWARD_MRU,                // Alt+Tab
+    CYCLE_SAME_APP_WINDOWS_BACKWARD,  // Shift+Alt+Backtick
+    CYCLE_SAME_APP_WINDOWS_FORWARD,   // Alt+Backtick
 };
 
 const size_t kPreferredActionsLength = std::size(kPreferredActions);
@@ -216,6 +227,7 @@ const size_t kActionsAllowedAtPowerMenuLength =
 const AcceleratorAction kActionsAllowedAtModalWindow[] = {
     BRIGHTNESS_DOWN,
     BRIGHTNESS_UP,
+    DEBUG_DUMP_CALENDAR_MODEL,
     DEBUG_KEYBOARD_BACKLIGHT_TOGGLE,
     DEBUG_MICROPHONE_MUTE_TOGGLE,
     DEBUG_TOGGLE_TOUCH_PAD,
@@ -296,6 +308,7 @@ const size_t kRepeatableActionsLength = std::size(kRepeatableActions);
 const AcceleratorAction kActionsAllowedInAppModeOrPinnedMode[] = {
     BRIGHTNESS_DOWN,
     BRIGHTNESS_UP,
+    DEBUG_DUMP_CALENDAR_MODEL,
     DEBUG_KEYBOARD_BACKLIGHT_TOGGLE,
     DEBUG_MICROPHONE_MUTE_TOGGLE,
     DEBUG_PRINT_LAYER_HIERARCHY,
@@ -319,6 +332,7 @@ const AcceleratorAction kActionsAllowedInAppModeOrPinnedMode[] = {
     MEDIA_REWIND,
     MEDIA_STOP,
     MICROPHONE_MUTE_TOGGLE,
+    PASTE_CLIPBOARD_HISTORY_PLAIN_TEXT,
     POWER_PRESSED,
     POWER_RELEASED,
     PRINT_UI_HIERARCHIES,
@@ -388,6 +402,7 @@ const size_t kActionsNeedingWindowLength = std::size(kActionsNeedingWindow);
 const AcceleratorAction kActionsKeepingMenuOpen[] = {
     BRIGHTNESS_DOWN,
     BRIGHTNESS_UP,
+    DEBUG_DUMP_CALENDAR_MODEL,
     DEBUG_KEYBOARD_BACKLIGHT_TOGGLE,
     DEBUG_MICROPHONE_MUTE_TOGGLE,
     DEBUG_TOGGLE_TOUCH_PAD,
@@ -412,6 +427,7 @@ const AcceleratorAction kActionsKeepingMenuOpen[] = {
     MEDIA_REWIND,
     MEDIA_STOP,
     MICROPHONE_MUTE_TOGGLE,
+    PASTE_CLIPBOARD_HISTORY_PLAIN_TEXT,
     PRINT_UI_HIERARCHIES,
     PRIVACY_SCREEN_TOGGLE,
     SWITCH_TO_LAST_USED_IME,
@@ -420,7 +436,6 @@ const AcceleratorAction kActionsKeepingMenuOpen[] = {
     TAKE_SCREENSHOT,
     TAKE_WINDOW_SCREENSHOT,
     TOGGLE_APP_LIST,
-    TOGGLE_APP_LIST_FULLSCREEN,
     TOGGLE_CAPS_LOCK,
     TOGGLE_CLIPBOARD_HISTORY,
     TOGGLE_DICTATION,

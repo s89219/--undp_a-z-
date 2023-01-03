@@ -1,15 +1,15 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/infobars/modals/infobar_save_card_table_view_controller.h"
 
 #import "base/feature_list.h"
-#include "base/mac/foundation_util.h"
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
+#import "base/mac/foundation_util.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
 #import "components/autofill/core/common/autofill_features.h"
-#include "ios/chrome/browser/infobars/infobar_metrics_recorder.h"
+#import "ios/chrome/browser/infobars/infobar_metrics_recorder.h"
 #import "ios/chrome/browser/net/crurl.h"
 #import "ios/chrome/browser/ui/autofill/cells/target_account_item.h"
 #import "ios/chrome/browser/ui/autofill/save_card_infobar_metrics_recorder.h"
@@ -23,9 +23,9 @@
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/table_view/table_view_cells_constants.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "url/gurl.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -368,7 +368,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
 
 #pragma mark - Private Methods
 
-// Updates |self.saveCardButtonItem| enabled state taking into account the
+// Updates `self.saveCardButtonItem` enabled state taking into account the
 // current editable items.
 - (void)updateSaveCardButtonState {
   BOOL newButtonState = [self isCurrentInputValid];
@@ -483,7 +483,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   return YES;
 }
 
-// YES if |cardholderName| is valid.
+// YES if `cardholderName` is valid.
 - (BOOL)isCardholderNameValid:(NSString*)cardholderName {
   // Check that the name is not empty or only whitespace.
   NSCharacterSet* set = [NSCharacterSet whitespaceCharacterSet];
@@ -493,7 +493,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   return YES;
 }
 
-// YES if |expirationMonth| is valid for |expirationYear|.
+// YES if `expirationMonth` is valid for `expirationYear`.
 - (BOOL)isExpirationMonthValid:(NSString*)expirationMonth
                        forYear:(NSString*)expirationYear {
   NSNumber* expirationMonthNumber = [self numberFromString:expirationMonth];
@@ -512,7 +512,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   return YES;
 }
 
-// YES if |expirationYear| is valid for the current date.
+// YES if `expirationYear` is valid for the current date.
 - (BOOL)isExpirationYearValid:(NSString*)expirationYear {
   NSNumber* expirationYearNumber = [self numberFromString:expirationYear];
   if (!expirationYearNumber)
@@ -537,7 +537,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
   return [[self numberFromString:yearString] intValue];
 }
 
-// Converts |string| into an NSNumber. returns nil if |string| is invalid.
+// Converts `string` into an NSNumber. returns nil if `string` is invalid.
 - (NSNumber*)numberFromString:(NSString*)string {
   NSNumberFormatter* numberFormatter = [[NSNumberFormatter alloc] init];
   numberFormatter.numberStyle = NSNumberFormatterDecimalStyle;

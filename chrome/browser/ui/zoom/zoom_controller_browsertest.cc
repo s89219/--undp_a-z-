@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/signin/login_ui_test_utils.h"
 #include "chrome/browser/ui/zoom/chrome_zoom_level_prefs.h"
@@ -94,14 +95,15 @@ IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest,
   double old_zoom_level = zoom_controller->GetZoomLevel();
   double new_zoom_level = old_zoom_level + 0.5;
 
-  content::RenderProcessHost* host = web_contents->GetMainFrame()->GetProcess();
+  content::RenderProcessHost* host =
+      web_contents->GetPrimaryMainFrame()->GetProcess();
   {
     content::RenderProcessHostWatcher crash_observer(
         host, content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
     host->Shutdown(0);
     crash_observer.Wait();
   }
-  EXPECT_FALSE(web_contents->GetMainFrame()->IsRenderFrameLive());
+  EXPECT_FALSE(web_contents->GetPrimaryMainFrame()->IsRenderFrameLive());
 
   // The following attempt to change the zoom level for a crashed tab should
   // fail.
@@ -174,7 +176,7 @@ IN_PROC_BROWSER_TEST_F(ZoomControllerBrowserTest,
 
     content::WebContentsDestroyedWatcher destroyed_watcher(web_contents);
     tab_strip->CloseWebContentsAt(tab_strip->active_index(),
-                                  TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
+                                  TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
     destroyed_watcher.Wait();
   }
   EXPECT_EQ(1, tab_strip->count());
@@ -441,7 +443,7 @@ class ZoomControllerForPrerenderingTest : public ZoomControllerBrowserTest,
   bool is_on_zoom_changed_called_ = false;
 
   content::test::PrerenderTestHelper prerender_helper_;
-  raw_ptr<ZoomController> zoom_controller_;
+  raw_ptr<ZoomController, DanglingUntriaged> zoom_controller_;
 };
 
 IN_PROC_BROWSER_TEST_F(ZoomControllerForPrerenderingTest,

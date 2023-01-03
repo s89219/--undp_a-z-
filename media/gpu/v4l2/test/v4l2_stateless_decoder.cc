@@ -1,8 +1,6 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-#include <linux/videodev2.h>
 
 #include <iostream>
 #include <sstream>
@@ -10,19 +8,28 @@
 
 #include "base/command_line.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/hash/md5.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
-#include "media/base/video_types.h"
-#include "media/filters/ivf_parser.h"
+// AV1 stateless decoding not supported upstream yet
+#if BUILDFLAG(IS_CHROMEOS)
 #include "media/gpu/v4l2/test/av1_decoder.h"
+#endif
+#include "media/gpu/v4l2/test/h264_decoder.h"
 #include "media/gpu/v4l2/test/video_decoder.h"
+#include "media/gpu/v4l2/test/vp8_decoder.h"
 #include "media/gpu/v4l2/test/vp9_decoder.h"
 
+// AV1 stateless decoding not supported upstream yet
+#if BUILDFLAG(IS_CHROMEOS)
 using media::v4l2_test::Av1Decoder;
+#endif
+using media::v4l2_test::H264Decoder;
 using media::v4l2_test::VideoDecoder;
+using media::v4l2_test::Vp8Decoder;
 using media::v4l2_test::Vp9Decoder;
 
 namespace {
@@ -33,7 +40,7 @@ constexpr char kUsageMsg[] =
     "           [--frames=<number of frames to decode>]\n"
     "           [--v=<log verbosity>]\n"
     "           [--output_path_prefix=<output files path prefix>]\n"
-    "           [--md5]\n"
+    "           [--md5=<md_log_path>]\n"
     "           [--visible]\n"
     "           [--help]\n";
 
@@ -52,10 +59,11 @@ constexpr char kHelpMsg[] =
     "        written. For example, setting <path> to \"test/test_\" would \n"
     "        result in output files of the form \"test/test_000000.yuv\",\n"
     "       \"test/test_000001.yuv\", etc.\n"
-    "    --md5\n"
-    "        Optional. If specified, prints the md5 of each decoded (and\n"
-    "        visible, if --visible is specified) frame in I420 format to\n"
-    "        stdout.\n"
+    "    --md5=<path>\n"
+    "        Optional. If specified, computes md5 checksum. If specified\n"
+    "        with argument, prints the md5 checksum of each decoded (and\n"
+    "        visible, if --visible is specified) frame in I420 format\n"
+    "        to specified file. Verbose level 2 will display md5 checksums.\n"
     "    --visible\n"
     "        Optional. If specified, computes md5 hash values only for\n"
     "        visible frames.\n"
@@ -64,29 +72,20 @@ constexpr char kHelpMsg[] =
 
 }  // namespace
 
-// For stateless API, fourcc |VP9F| is needed instead of |VP90| for VP9 codec.
-// Fourcc |AV1F| is needed instead of |AV10| for AV1 codec.
-// https://www.kernel.org/doc/html/latest/userspace-api/media/v4l/pixfmt-compressed.html
-// Converts fourcc |VP90| or |AV01| from file header to fourcc |VP9F| or |AV1F|,
-// which is a format supported on driver.
-uint32_t FileFourccToDriverFourcc(uint32_t header_fourcc) {
-  if (header_fourcc == V4L2_PIX_FMT_VP9) {
-    LOG(INFO) << "OUTPUT format mapped from VP90 to VP9F.";
-    return V4L2_PIX_FMT_VP9_FRAME;
-  } else if (header_fourcc == V4L2_PIX_FMT_AV1) {
-    LOG(INFO) << "OUTPUT format mapped from AV01 to AV1F.";
-    return V4L2_PIX_FMT_AV1_FRAME;
-  }
-
-  return header_fourcc;
-}
-
 // Computes the md5 of given I420 data |yuv_plane| and prints the md5 to stdout.
 // This functionality is needed for tast tests.
-void ComputeAndPrintMd5hash(const std::vector<char>& yuv_plane) {
+void ComputeAndPrintMD5hash(const std::vector<char>& yuv_plane, const base::FilePath md5_log_location) {
   base::MD5Digest md5_digest;
   base::MD5Sum(yuv_plane.data(), yuv_plane.size(), &md5_digest);
-  std::cout << MD5DigestToBase16(md5_digest) << std::endl;
+  std::string md5_digest_b16 = MD5DigestToBase16(md5_digest);
+
+  if (!md5_log_location.empty()) {
+    if (!PathExists(md5_log_location))
+      WriteFile(md5_log_location, md5_digest_b16 + "\n");
+    else
+      AppendToFile(md5_log_location, md5_digest_b16 + "\n");
+  }
+  VLOG(2) << md5_digest_b16;
 }
 
 // Creates the appropriate decoder for |stream|, which points to IVF data.
@@ -95,31 +94,23 @@ std::unique_ptr<VideoDecoder> CreateVideoDecoder(
     const base::MemoryMappedFile& stream) {
   CHECK(stream.IsValid());
 
-  // Set up video parser.
-  auto ivf_parser = std::make_unique<media::IvfParser>();
-  media::IvfFileHeader file_header{};
+  std::unique_ptr<VideoDecoder> decoder;
 
-  if (!ivf_parser->Initialize(stream.data(), stream.length(), &file_header)) {
-    LOG(ERROR) << "Couldn't initialize IVF parser";
-    return nullptr;
-  }
+// AV1 stateless decoding not supported upstream yet
+#if BUILDFLAG(IS_CHROMEOS)
+  decoder = Av1Decoder::Create(stream);
+#endif
 
-  // Create appropriate decoder for codec.
-  VLOG(1) << "Creating decoder with codec "
-          << media::FourccToString(file_header.fourcc);
+  if (!decoder)
+    decoder = Vp9Decoder::Create(stream);
 
-  const auto driver_codec_fourcc = FileFourccToDriverFourcc(file_header.fourcc);
+  if (!decoder)
+    decoder = H264Decoder::Create(stream);
 
-  if (driver_codec_fourcc == V4L2_PIX_FMT_AV1_FRAME) {
-    return Av1Decoder::Create(std::move(ivf_parser), file_header);
-  } else if (driver_codec_fourcc == V4L2_PIX_FMT_VP9_FRAME) {
-    return Vp9Decoder::Create(std::move(ivf_parser), file_header);
-  }
+  if (!decoder)
+    decoder = Vp8Decoder::Create(stream);
 
-  LOG(ERROR) << "Codec " << media::FourccToString(file_header.fourcc)
-             << " not supported.\n"
-             << kUsageMsg;
-  return nullptr;
+  return decoder;
 }
 
 int main(int argc, char** argv) {
@@ -142,26 +133,40 @@ int main(int argc, char** argv) {
       cmd->GetSwitchValueASCII("output_path_prefix");
 
   const base::FilePath video_path = cmd->GetSwitchValuePath("video");
-  if (video_path.empty())
-    LOG(FATAL) << "No input video path provided to decode.\n" << kUsageMsg;
+  if (video_path.empty()) {
+    LOG(ERROR) << "No input video path provided to decode.\n" << kUsageMsg;
+    return EXIT_FAILURE;
+  }
 
   const std::string frames = cmd->GetSwitchValueASCII("frames");
   int n_frames;
   if (frames.empty()) {
     n_frames = 0;
   } else if (!base::StringToInt(frames, &n_frames) || n_frames <= 0) {
-    LOG(FATAL) << "Number of frames to decode must be positive integer, got "
+    LOG(ERROR) << "Number of frames to decode must be positive integer, got "
                << frames;
+    return EXIT_FAILURE;
+  }
+
+  const base::FilePath md5_log_location = cmd->GetSwitchValuePath("md5");
+
+  // Deletes md5 log file if it already exists.
+  if (PathExists(md5_log_location)) {
+    DeleteFile(md5_log_location);
   }
 
   // Set up video stream.
   base::MemoryMappedFile stream;
-  if (!stream.Initialize(video_path))
-    LOG(FATAL) << "Couldn't open file: " << video_path;
+  if (!stream.Initialize(video_path)) {
+    LOG(ERROR) << "Couldn't open file: " << video_path;
+    return EXIT_FAILURE;
+  }
 
   const std::unique_ptr<VideoDecoder> dec = CreateVideoDecoder(stream);
-  if (!dec)
-    LOG(FATAL) << "Failed to create decoder for file: " << video_path;
+  if (!dec) {
+    LOG(ERROR) << "Failed to create decoder for file: " << video_path;
+    return EXIT_FAILURE;
+  }
 
   dec->Initialize();
 
@@ -177,6 +182,9 @@ int main(int argc, char** argv) {
     if (res == VideoDecoder::kEOStream) {
       LOG(INFO) << "End of stream.";
       break;
+    } else if (res == VideoDecoder::kError) {
+      LOG(ERROR) << "Unable to decode next frame.";
+      return EXIT_FAILURE;
     }
 
     if (cmd->HasSwitch("visible") && !dec->LastDecodedFrameVisible())
@@ -187,7 +195,7 @@ int main(int argc, char** argv) {
     yuv_plane.insert(yuv_plane.end(), v_plane.begin(), v_plane.end());
 
     if (cmd->HasSwitch("md5"))
-      ComputeAndPrintMd5hash(yuv_plane);
+      ComputeAndPrintMD5hash(yuv_plane, md5_log_location);
 
     if (!has_output_file)
       continue;
@@ -196,9 +204,7 @@ int main(int argc, char** argv) {
         base::StringPrintf("%s%.6d.yuv", output_file_prefix.c_str(), i));
     base::File output_file(
         filename, base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
-    output_file.WriteAtCurrentPos(y_plane.data(), size.GetArea());
-    output_file.WriteAtCurrentPos(u_plane.data(), size.GetArea() / 4);
-    output_file.WriteAtCurrentPos(v_plane.data(), size.GetArea() / 4);
+    output_file.Write(0, yuv_plane.data(), yuv_plane.size());
   }
 
   return EXIT_SUCCESS;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "ui/views/examples/examples_window.h"
 #include "ui/views/layout/flex_layout.h"
 #include "ui/views/layout/flex_layout_types.h"
+#include "ui/views/layout/flex_layout_view.h"
 #include "ui/views/view_class_properties.h"
 
 using base::ASCIIToUTF16;
@@ -28,11 +29,17 @@ namespace views::examples {
 
 namespace {
 
-ui::TableColumn TestTableColumn(int id, const std::string& title) {
+ui::TableColumn TestTableColumn(
+    int id,
+    const std::u16string& title,
+    ui::TableColumn::Alignment alignment = ui::TableColumn::LEFT,
+    float percent = 0.0) {
   ui::TableColumn column;
   column.id = id;
-  column.title = ASCIIToUTF16(title.c_str());
+  column.title = title;
   column.sortable = true;
+  column.alignment = alignment;
+  column.percent = percent;
   return column;
 }
 
@@ -54,60 +61,60 @@ void TableExample::CreateExampleView(View* container) {
       ->SetOrientation(LayoutOrientation::kVertical);
   observer_.Observe(container);
 
-  std::vector<ui::TableColumn> columns;
-  columns.push_back(TestTableColumn(0, "Fruit"));
-  columns[0].percent = 1;
-  columns.push_back(TestTableColumn(1, "Color"));
-  columns.push_back(TestTableColumn(2, "Origin"));
-  columns.push_back(TestTableColumn(3, "Price"));
-  columns.back().alignment = ui::TableColumn::RIGHT;
-
   auto full_flex = FlexSpecification(MinimumFlexSizeRule::kScaleToZero,
                                      MaximumFlexSizeRule::kUnbounded)
                        .WithWeight(1);
 
+  const auto make_checkbox =
+      [](const std::u16string& label, int id, raw_ptr<TableView>* table,
+         raw_ptr<Checkbox>* checkbox, FlexSpecification full_flex) {
+        return Builder<Checkbox>()
+            .CopyAddressTo(checkbox)
+            .SetText(label)
+            .SetCallback(base::BindRepeating(
+                [](int id, TableView* table, Checkbox* checkbox) {
+                  table->SetColumnVisibility(id, checkbox->GetChecked());
+                },
+                id, *table, *checkbox))
+            .SetChecked(true)
+            .SetProperty(kFlexBehaviorKey, full_flex);
+      };
+
   // Make table
-  auto table = std::make_unique<TableView>(this, columns, ICON_AND_TEXT, true);
-  table->SetGrouper(this);
-  table->set_observer(this);
-  table_ = table.get();
-  container
-      ->AddChildView(TableView::CreateScrollViewWithTable(std::move(table)))
-      ->SetProperty(views::kFlexBehaviorKey, full_flex);
-
-  auto* button_panel = container->AddChildView(std::make_unique<View>());
-  button_panel->SetLayoutManager(std::make_unique<views::FlexLayout>())
-      ->SetOrientation(LayoutOrientation::kHorizontal);
-
-  const auto make_checkbox = [&](std::u16string label, int id) {
-    auto* const checkbox =
-        button_panel->AddChildView(std::make_unique<Checkbox>(
-            std::move(label), Button::PressedCallback()));
-    checkbox->SetCallback(base::BindRepeating(
-        [](TableView* table, int id, Checkbox* checkbox) {
-          table->SetColumnVisibility(id, checkbox->GetChecked());
-        },
-        base::Unretained(table_), id, checkbox));
-    checkbox->SetChecked(true);
-    return checkbox;
-  };
-  column1_visible_checkbox_ = make_checkbox(u"Fruit column visible", 0);
-  column2_visible_checkbox_ = make_checkbox(u"Color column visible", 1);
-  column3_visible_checkbox_ = make_checkbox(u"Origin column visible", 2);
-  column4_visible_checkbox_ = make_checkbox(u"Price column visible", 3);
-
-  for (View* child : button_panel->children())
-    child->SetProperty(views::kFlexBehaviorKey, full_flex);
+  Builder<View>(container)
+      .AddChildren(
+          TableView::CreateScrollViewBuilderWithTable(
+              Builder<TableView>()
+                  .CopyAddressTo(&table_)
+                  .SetModel(this)
+                  .SetTableType(ICON_AND_TEXT)
+                  .SetColumns(
+                      {TestTableColumn(0, u"Fruit", ui::TableColumn::LEFT, 1.0),
+                       TestTableColumn(1, u"Color"),
+                       TestTableColumn(2, u"Origin"),
+                       TestTableColumn(3, u"Price", ui::TableColumn::RIGHT)})
+                  .SetGrouper(this)
+                  .SetObserver(this))
+              .SetProperty(kFlexBehaviorKey, full_flex),
+          Builder<FlexLayoutView>()
+              .SetOrientation(LayoutOrientation::kHorizontal)
+              .AddChildren(
+                  make_checkbox(u"Fruit column visible", 0, &table_,
+                                &column1_visible_checkbox_, full_flex),
+                  make_checkbox(u"Color column visible", 1, &table_,
+                                &column2_visible_checkbox_, full_flex),
+                  make_checkbox(u"Origin column visible", 2, &table_,
+                                &column3_visible_checkbox_, full_flex),
+                  make_checkbox(u"Price column visible", 3, &table_,
+                                &column4_visible_checkbox_, full_flex)))
+      .BuildChildren();
 }
 
-int TableExample::RowCount() {
+size_t TableExample::RowCount() {
   return 10;
 }
 
-std::u16string TableExample::GetText(int row, int column_id) {
-  if (row == -1)
-    return std::u16string();
-
+std::u16string TableExample::GetText(size_t row, int column_id) {
   const char* const cells[5][4] = {
       {"Orange", "Orange", "South America", "$5"},
       {"Apple", "Green", "Canada", "$3"},
@@ -118,16 +125,13 @@ std::u16string TableExample::GetText(int row, int column_id) {
   return ASCIIToUTF16(cells[row % 5][column_id]);
 }
 
-ui::ImageModel TableExample::GetIcon(int row) {
+ui::ImageModel TableExample::GetIcon(size_t row) {
   SkBitmap row_icon = row % 2 ? icon1_ : icon2_;
   return ui::ImageModel::FromImageSkia(
       gfx::ImageSkia::CreateFrom1xBitmap(row_icon));
 }
 
-std::u16string TableExample::GetTooltip(int row) {
-  if (row == -1)
-    return std::u16string();
-
+std::u16string TableExample::GetTooltip(size_t row) {
   const char* const tooltips[5] = {
       "Orange - Orange you glad I didn't say banana?",
       "Apple - An apple a day keeps the doctor away",
@@ -140,7 +144,7 @@ std::u16string TableExample::GetTooltip(int row) {
 
 void TableExample::SetObserver(ui::TableModelObserver* observer) {}
 
-void TableExample::GetGroupRange(int model_index, GroupRange* range) {
+void TableExample::GetGroupRange(size_t model_index, GroupRange* range) {
   if (model_index < 2) {
     range->start = 0;
     range->length = 2;
@@ -154,15 +158,11 @@ void TableExample::GetGroupRange(int model_index, GroupRange* range) {
 }
 
 void TableExample::OnSelectionChanged() {
-  PrintStatus("Selected: %s",
-              base::UTF16ToASCII(GetText(table_->selection_model().active(), 0))
-                  .c_str());
+  PrintStatus("Selected: %s", SelectedColumnName().c_str());
 }
 
 void TableExample::OnDoubleClick() {
-  PrintStatus("Double Click: %s",
-              base::UTF16ToASCII(GetText(table_->selection_model().active(), 0))
-                  .c_str());
+  PrintStatus("Double Click: %s", SelectedColumnName().c_str());
 }
 
 void TableExample::OnMiddleClick() {}
@@ -183,6 +183,13 @@ void TableExample::OnViewThemeChanged(View* observed_view) {
 
 void TableExample::OnViewIsDeleting(View* observed_view) {
   observer_.Reset();
+}
+
+std::string TableExample::SelectedColumnName() {
+  return table_->selection_model().active().has_value()
+             ? base::UTF16ToASCII(
+                   GetText(table_->selection_model().active().value(), 0))
+             : std::string("<None>");
 }
 
 }  // namespace views::examples

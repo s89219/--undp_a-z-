@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -208,6 +208,14 @@ public class IPHCommandBuilder {
      * @return an (@see IPHCommand) containing the accumulated state of this builder.
      */
     public IPHCommand build() {
+        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.ENABLE_IPH)) {
+            return null;
+        }
+
+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.ANDROID_SCROLL_OPTIMIZATIONS)) {
+            return buildLazy();
+        }
+
         try (TraceEvent te = TraceEvent.scoped("IPHCommandBuilder::build")) {
             if (mOnDismissCallback == null) {
                 mOnDismissCallback = NO_OP_RUNNABLE;
@@ -220,28 +228,45 @@ public class IPHCommandBuilder {
                 mOnBlockedCallback = NO_OP_RUNNABLE;
             }
 
-            boolean disableIPH = !ChromeFeatureList.isEnabled(ChromeFeatureList.ENABLE_IPH);
-
             if (mContentString == null) {
                 assert mResources != null;
-                mContentString = disableIPH ? "" : mResources.getString(mStringId);
+                mContentString = mResources.getString(mStringId);
             }
 
             if (mAccessibilityText == null) {
                 assert mResources != null;
-                mAccessibilityText = disableIPH ? "" : mResources.getString(mAccessibilityStringId);
+                mAccessibilityText = mResources.getString(mAccessibilityStringId);
             }
 
             if (mInsetRect == null && mAnchorRect == null) {
-                int yInsetPx = disableIPH ? 14
-                                          : mResources.getDimensionPixelOffset(
-                                                  R.dimen.iph_text_bubble_menu_anchor_y_inset);
+                int yInsetPx = mResources.getDimensionPixelOffset(
+                        R.dimen.iph_text_bubble_menu_anchor_y_inset);
                 mInsetRect = new Rect(0, 0, 0, yInsetPx);
             }
 
             return new IPHCommand(mFeatureName, mContentString, mAccessibilityText, mDismissOnTouch,
                     mAnchorView, mOnDismissCallback, mOnShowCallback, mOnBlockedCallback,
                     mInsetRect, mAutoDismissTimeout, mViewRectProvider, mHighlightParams,
+                    mAnchorRect, mRemoveArrow, mPreferredVerticalOrientation);
+        }
+    }
+
+    public IPHCommand buildLazy() {
+        try (TraceEvent te = TraceEvent.scoped("IPHCommandBuilder::buildLazy")) {
+            if (mOnDismissCallback == null) {
+                mOnDismissCallback = NO_OP_RUNNABLE;
+            }
+            if (mOnShowCallback == null) {
+                mOnShowCallback = NO_OP_RUNNABLE;
+            }
+
+            if (mOnBlockedCallback == null) {
+                mOnBlockedCallback = NO_OP_RUNNABLE;
+            }
+
+            return new IPHCommand(mResources, mFeatureName, mStringId, mAccessibilityStringId,
+                    mDismissOnTouch, mAnchorView, mOnDismissCallback, mOnShowCallback,
+                    mOnBlockedCallback, mAutoDismissTimeout, mViewRectProvider, mHighlightParams,
                     mAnchorRect, mRemoveArrow, mPreferredVerticalOrientation);
         }
     }

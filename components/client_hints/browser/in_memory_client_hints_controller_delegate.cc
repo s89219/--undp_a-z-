@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -91,13 +91,24 @@ bool InMemoryClientHintsControllerDelegate::IsJavaScriptAllowed(
 }
 
 bool InMemoryClientHintsControllerDelegate::AreThirdPartyCookiesBlocked(
-    const GURL& url) {
+    const GURL& url,
+    content::RenderFrameHost* rfh) {
   return are_third_party_cookies_blocked_callback_.Run(url);
 }
 
 blink::UserAgentMetadata
 InMemoryClientHintsControllerDelegate::GetUserAgentMetadata() {
   return user_agent_metadata_;
+}
+
+void InMemoryClientHintsControllerDelegate::SetMostRecentMainFrameViewportSize(
+    const gfx::Size& viewport_size) {
+  viewport_size_ = viewport_size;
+}
+
+gfx::Size
+InMemoryClientHintsControllerDelegate::GetMostRecentMainFrameViewportSize() {
+  return viewport_size_;
 }
 
 }  // namespace client_hints

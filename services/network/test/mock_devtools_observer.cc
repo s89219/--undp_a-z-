@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,8 @@ void MockDevToolsObserver::OnRawRequest(
     const net::CookieAccessResultList& cookies_with_access_result,
     std::vector<network::mojom::HttpRawHeaderPairPtr> headers,
     const base::TimeTicks timestamp,
-    network::mojom::ClientSecurityStatePtr client_security_state) {
+    network::mojom::ClientSecurityStatePtr client_security_state,
+    network::mojom::OtherPartitionInfoPtr site_has_cookie_in_other_partition) {
   raw_request_cookies_.insert(raw_request_cookies_.end(),
                               cookies_with_access_result.begin(),
                               cookies_with_access_result.end());
@@ -55,6 +56,7 @@ void MockDevToolsObserver::OnRawResponse(
   devtools_request_id_ = devtools_request_id;
   resource_address_space_ = resource_address_space;
 
+  response_headers_ = std::move(headers);
   raw_response_headers_ = raw_response_headers;
   raw_response_http_status_code_ = http_status_code;
 

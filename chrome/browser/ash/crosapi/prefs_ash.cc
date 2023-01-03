@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,8 @@
 #include "base/bind.h"
 #include "base/check.h"
 #include "base/no_destructor.h"
-#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/components/quick_answers/public/cpp/quick_answers_prefs.h"
@@ -20,7 +21,6 @@
 #include "components/metrics/metrics_pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "components/user_manager/user_manager.h"
-#include "content/public/browser/notification_service.h"
 
 namespace crosapi {
 namespace {
@@ -29,27 +29,29 @@ namespace {
 // corresponding paths in the prefstore. Initialized on first use.
 const std::string& GetProfilePrefNameForPref(mojom::PrefPath path) {
   static base::NoDestructor<std::map<mojom::PrefPath, std::string>>
-      profile_prefpath_to_name(
-          {{mojom::PrefPath::kAccessibilitySpokenFeedbackEnabled,
-            ash::prefs::kAccessibilitySpokenFeedbackEnabled},
-           {mojom::PrefPath::kQuickAnswersEnabled,
-            quick_answers::prefs::kQuickAnswersEnabled},
-           {mojom::PrefPath::kQuickAnswersConsentStatus,
-            quick_answers::prefs::kQuickAnswersConsentStatus},
-           {mojom::PrefPath::kQuickAnswersDefinitionEnabled,
-            quick_answers::prefs::kQuickAnswersDefinitionEnabled},
-           {mojom::PrefPath::kQuickAnswersTranslationEnabled,
-            quick_answers::prefs::kQuickAnswersTranslationEnabled},
-           {mojom::PrefPath::kQuickAnswersUnitConversionEnabled,
-            quick_answers::prefs::kQuickAnswersUnitConversionEnabled},
-           {mojom::PrefPath::kQuickAnswersNoticeImpressionCount,
-            quick_answers::prefs::kQuickAnswersNoticeImpressionCount},
-           {mojom::PrefPath::kQuickAnswersNoticeImpressionDuration,
-            quick_answers::prefs::kQuickAnswersNoticeImpressionDuration},
-           {mojom::PrefPath::kPreferredLanguages,
-            language::prefs::kPreferredLanguages},
-           {mojom::PrefPath::kApplicationLocale,
-            language::prefs::kApplicationLocale}});
+      profile_prefpath_to_name({
+          {mojom::PrefPath::kAccessibilitySpokenFeedbackEnabled,
+           ash::prefs::kAccessibilitySpokenFeedbackEnabled},
+          {mojom::PrefPath::kQuickAnswersEnabled,
+           quick_answers::prefs::kQuickAnswersEnabled},
+          {mojom::PrefPath::kQuickAnswersConsentStatus,
+           quick_answers::prefs::kQuickAnswersConsentStatus},
+          {mojom::PrefPath::kQuickAnswersDefinitionEnabled,
+           quick_answers::prefs::kQuickAnswersDefinitionEnabled},
+          {mojom::PrefPath::kQuickAnswersTranslationEnabled,
+           quick_answers::prefs::kQuickAnswersTranslationEnabled},
+          {mojom::PrefPath::kQuickAnswersUnitConversionEnabled,
+           quick_answers::prefs::kQuickAnswersUnitConversionEnabled},
+          {mojom::PrefPath::kQuickAnswersNoticeImpressionCount,
+           quick_answers::prefs::kQuickAnswersNoticeImpressionCount},
+          {mojom::PrefPath::kQuickAnswersNoticeImpressionDuration,
+           quick_answers::prefs::kQuickAnswersNoticeImpressionDuration},
+          {mojom::PrefPath::kPreferredLanguages,
+           language::prefs::kPreferredLanguages},
+          {mojom::PrefPath::kApplicationLocale,
+           language::prefs::kApplicationLocale},
+          {mojom::PrefPath::kSharedStorage, prefs::kSharedStorage},
+      });
   auto pref_name = profile_prefpath_to_name->find(path);
   DCHECK(pref_name != profile_prefpath_to_name->end());
   return pref_name->second;
@@ -89,49 +91,30 @@ const std::string& GetExtensionPrefNameForPref(mojom::PrefPath path) {
            {mojom::PrefPath::kAccessibilitySwitchAccessEnabled,
             ash::prefs::kAccessibilitySwitchAccessEnabled},
            {mojom::PrefPath::kAccessibilityVirtualKeyboardEnabled,
-            ash::prefs::kAccessibilityVirtualKeyboardEnabled}});
+            ash::prefs::kAccessibilityVirtualKeyboardEnabled},
+           {mojom::PrefPath::kProtectedContentDefault,
+            prefs::kProtectedContentDefault}});
   auto pref_name = extension_prefpath_to_name->find(path);
   DCHECK(pref_name != extension_prefpath_to_name->end());
   return pref_name->second;
 }
 
-// On non login case, ProfileManager::GetPrimaryUserProfile() returns
-// a Profile instance which is different from logged in user profile.
-Profile* GetPrimaryLoggedInUserProfile() {
-  // Check login state first.
-  if (!user_manager::UserManager::IsInitialized() ||
-      !user_manager::UserManager::Get()->IsUserLoggedIn()) {
-    return nullptr;
-  }
-
-  return ProfileManager::GetPrimaryUserProfile();
-}
-
 }  // namespace
 
 PrefsAsh::PrefsAsh(ProfileManager* profile_manager, PrefService* local_state)
-    : profile_manager_(profile_manager), local_state_(local_state) {
-  DCHECK(profile_manager_);
+    : local_state_(local_state) {
+  DCHECK(profile_manager);
   DCHECK(local_state_);
 
-  notification_registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
-                              content::NotificationService::AllSources());
+  on_app_terminating_subscription_ =
+      browser_shutdown::AddAppTerminatingCallback(
+          base::BindOnce(&PrefsAsh::OnAppTerminating, base::Unretained(this)));
 
-  profile_manager_->AddObserver(this);
+  profile_manager_observation_.Observe(profile_manager);
   local_state_registrar_.Init(local_state_);
-
-  Profile* primary_profile = GetPrimaryLoggedInUserProfile();
-  if (primary_profile)
-    OnPrimaryProfileReady(primary_profile);
 }
 
-PrefsAsh::~PrefsAsh() {
-  // Remove this observer, if the Primary logged in profile is not yet created.
-  // On actual shutdown, the ProfileManager will destruct before CrosapiManager.
-  if (ProfileManagerObserver::IsInObserverList() && profile_manager_) {
-    profile_manager_->RemoveObserver(this);
-  }
-}
+PrefsAsh::~PrefsAsh() = default;
 
 void PrefsAsh::BindReceiver(mojo::PendingReceiver<mojom::Prefs> receiver) {
   receivers_.Add(this, std::move(receiver));
@@ -140,7 +123,7 @@ void PrefsAsh::BindReceiver(mojo::PendingReceiver<mojom::Prefs> receiver) {
 void PrefsAsh::GetPref(mojom::PrefPath path, GetPrefCallback callback) {
   auto state = GetState(path);
   const base::Value* value =
-      state ? state->pref_service->Get(state->path) : nullptr;
+      state ? &state->pref_service->GetValue(state->path) : nullptr;
   std::move(callback).Run(value ? absl::optional<base::Value>(value->Clone())
                                 : absl::nullopt);
 }
@@ -157,12 +140,12 @@ void PrefsAsh::GetExtensionPrefWithControl(
     return;
   }
 
-  const base::Value* value = state->pref_service->Get(state->path);
+  const base::Value& value = state->pref_service->GetValue(state->path);
 
   if (!state->is_extension_controlled_pref) {
     // Not extension controlled
     std::move(callback).Run(
-        absl::optional<base::Value>(value->Clone()),
+        absl::optional<base::Value>(value.Clone()),
         mojom::PrefControlState::kNotExtensionControlledPrefPath);
     return;
   }
@@ -182,7 +165,7 @@ void PrefsAsh::GetExtensionPrefWithControl(
     // Lacros could control this.
     pref_control_state = mojom::PrefControlState::kLacrosExtensionControllable;
   }
-  std::move(callback).Run(absl::optional<base::Value>(value->Clone()),
+  std::move(callback).Run(absl::optional<base::Value>(value.Clone()),
                           pref_control_state);
 }
 
@@ -217,7 +200,7 @@ void PrefsAsh::AddObserver(mojom::PrefPath path,
                            mojo::PendingRemote<mojom::PrefObserver> observer) {
   auto state = GetState(path);
   const base::Value* value =
-      state ? state->pref_service->Get(state->path) : nullptr;
+      state ? &state->pref_service->GetValue(state->path) : nullptr;
   if (!value) {
     return;
   }
@@ -240,18 +223,18 @@ void PrefsAsh::AddObserver(mojom::PrefPath path,
 }
 
 void PrefsAsh::OnProfileAdded(Profile* profile) {
-  Profile* primary_profile = GetPrimaryLoggedInUserProfile();
-  if (!primary_profile) {
-    // Primary profile is not yet available. Wait for another invocation
-    // to capture its creation.
+  if (!ash::ProfileHelper::IsPrimaryProfile(profile)) {
     return;
   }
 
-  OnPrimaryProfileReady(primary_profile);
+  OnPrimaryProfileReady(profile);
 }
 
 absl::optional<PrefsAsh::State> PrefsAsh::GetState(mojom::PrefPath path) {
   switch (path) {
+    case mojom::PrefPath::kUnknown:
+      LOG(WARNING) << "Unknown pref path: " << path;
+      return absl::nullopt;
     case mojom::PrefPath::kMetricsReportingEnabled:
       return State{local_state_, &local_state_registrar_, false,
                    metrics::prefs::kMetricsReportingEnabled};
@@ -264,7 +247,8 @@ absl::optional<PrefsAsh::State> PrefsAsh::GetState(mojom::PrefPath path) {
     case mojom::PrefPath::kQuickAnswersNoticeImpressionCount:
     case mojom::PrefPath::kQuickAnswersNoticeImpressionDuration:
     case mojom::PrefPath::kPreferredLanguages:
-    case mojom::PrefPath::kApplicationLocale: {
+    case mojom::PrefPath::kApplicationLocale:
+    case mojom::PrefPath::kSharedStorage: {
       if (!profile_prefs_registrar_) {
         LOG(WARNING) << "Primary profile is not yet initialized";
         return absl::nullopt;
@@ -279,9 +263,15 @@ absl::optional<PrefsAsh::State> PrefsAsh::GetState(mojom::PrefPath path) {
     case mojom::PrefPath::kDnsOverHttpsMode:
       return State{local_state_, &local_state_registrar_, false,
                    prefs::kDnsOverHttpsMode};
+    case mojom::PrefPath::kDnsOverHttpsSalt:
+      return State{local_state_, &local_state_registrar_, false,
+                   prefs::kDnsOverHttpsSalt};
     case mojom::PrefPath::kDnsOverHttpsTemplates:
       return State{local_state_, &local_state_registrar_, false,
                    prefs::kDnsOverHttpsTemplates};
+    case mojom::PrefPath::kDnsOverHttpsTemplatesWithIdentifiers:
+      return State{local_state_, &local_state_registrar_, false,
+                   prefs::kDnsOverHttpsTemplatesWithIdentifiers};
     case mojom::PrefPath::kDockedMagnifierEnabled:
     case mojom::PrefPath::kAccessibilityAutoclickEnabled:
     case mojom::PrefPath::kAccessibilityCaretHighlightEnabled:
@@ -296,22 +286,21 @@ absl::optional<PrefsAsh::State> PrefsAsh::GetState(mojom::PrefPath path) {
     case mojom::PrefPath::kExtensionAccessibilitySpokenFeedbackEnabled:
     case mojom::PrefPath::kAccessibilityStickyKeysEnabled:
     case mojom::PrefPath::kAccessibilitySwitchAccessEnabled:
-    case mojom::PrefPath::kAccessibilityVirtualKeyboardEnabled: {
+    case mojom::PrefPath::kAccessibilityVirtualKeyboardEnabled:
+    case mojom::PrefPath::kProtectedContentDefault: {
       if (!profile_prefs_registrar_) {
         LOG(WARNING) << "Primary profile is not yet initialized";
         return absl::nullopt;
       }
       std::string pref_name = GetExtensionPrefNameForPref(path);
-      return State{profile_prefs_registrar_->prefs(), nullptr, true, pref_name};
+      return State{profile_prefs_registrar_->prefs(),
+                   profile_prefs_registrar_.get(), true, pref_name};
     }
-    default:
-      LOG(WARNING) << "Unknown pref path: " << path;
-      return absl::nullopt;
   }
 }
 
 void PrefsAsh::OnProfileManagerDestroying() {
-  profile_manager_ = nullptr;
+  profile_manager_observation_.Reset();
 }
 
 void PrefsAsh::OnProfileWillBeDestroyed(Profile* profile) {
@@ -319,17 +308,10 @@ void PrefsAsh::OnProfileWillBeDestroyed(Profile* profile) {
   profile_prefs_registrar_.reset();
 }
 
-void PrefsAsh::Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_APP_TERMINATING, type);
-  profile_prefs_registrar_.reset();
-}
-
 void PrefsAsh::OnPrefChanged(mojom::PrefPath path) {
   auto state = GetState(path);
   const base::Value* value =
-      state ? state->pref_service->Get(state->path) : nullptr;
+      state ? &state->pref_service->GetValue(state->path) : nullptr;
   if (value) {
     for (auto& observer : observers_[path]) {
       observer->OnPrefChanged(value->Clone());
@@ -348,9 +330,13 @@ void PrefsAsh::OnDisconnect(mojom::PrefPath path, mojo::RemoteSetElementId id) {
 }
 
 void PrefsAsh::OnPrimaryProfileReady(Profile* profile) {
-  profile_manager_->RemoveObserver(this);
+  profile_manager_observation_.Reset();
   profile_prefs_registrar_ = std::make_unique<PrefChangeRegistrar>();
   profile_prefs_registrar_->Init(profile->GetPrefs());
+}
+
+void PrefsAsh::OnAppTerminating() {
+  profile_prefs_registrar_.reset();
 }
 
 }  // namespace crosapi

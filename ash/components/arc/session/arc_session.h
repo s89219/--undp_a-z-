@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@
 #include "base/callback_forward.h"
 #include "base/observer_list.h"
 
-namespace chromeos {
+namespace ash {
 class SchedulerConfigurationManagerBase;
 }
 
@@ -58,8 +58,7 @@ class ArcSession {
   static std::unique_ptr<ArcSession> Create(
       ArcBridgeService* arc_bridge_service,
       version_info::Channel channel,
-      chromeos::SchedulerConfigurationManagerBase*
-          scheduler_configuration_manager,
+      ash::SchedulerConfigurationManagerBase* scheduler_configuration_manager,
       AdbSideloadingAvailabilityDelegate*
           adb_sideloading_availability_delegate);
 
@@ -109,6 +108,8 @@ class ArcSession {
   virtual void TrimVmMemory(TrimVmMemoryCallback callback, int page_limit) = 0;
 
   virtual void SetDefaultDeviceScaleFactor(float scale_factor) = 0;
+
+  virtual void SetUseVirtioBlkData(bool use_virtio_blk_data) = 0;
 
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);

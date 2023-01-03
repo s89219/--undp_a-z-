@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,7 +51,7 @@ class DelegateImpl : public MetricsReportingAsh::Delegate {
   }
 
  private:
-  const raw_ptr<metrics::MetricsService> metrics_service_;
+  const raw_ptr<metrics::MetricsService, DanglingUntriaged> metrics_service_;
 };
 
 absl::optional<std::string> MaybeGetClientId(

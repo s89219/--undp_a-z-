@@ -1,4 +1,4 @@
-// Copyright (c) 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
@@ -38,13 +39,14 @@ class SimpleFileTrackerTest : public DiskCacheTest {
   // create/delete SimpleSynchronousEntry objects.
   class SyncEntryDeleter {
    public:
-    SyncEntryDeleter(SimpleFileTrackerTest* fixture) : fixture_(fixture) {}
+    explicit SyncEntryDeleter(SimpleFileTrackerTest* fixture)
+        : fixture_(fixture) {}
     void operator()(SimpleSynchronousEntry* entry) {
       fixture_->DeleteSyncEntry(entry);
     }
 
    private:
-    SimpleFileTrackerTest* fixture_;
+    raw_ptr<SimpleFileTrackerTest> fixture_;
   };
 
   using SyncEntryPointer =
@@ -230,8 +232,8 @@ TEST_F(SimpleFileTrackerTest, PointerStability) {
               borrow->Write(0, msg.data(), msg.size()));
   }
 
-  for (int i = 0; i < kEntries; ++i)
-    file_tracker_.Close(entries[i].get(), SimpleFileTracker::SubFile::FILE_0);
+  for (const auto& entry : entries)
+    file_tracker_.Close(entry.get(), SimpleFileTracker::SubFile::FILE_0);
 
   // Verify the file.
   std::string verify;

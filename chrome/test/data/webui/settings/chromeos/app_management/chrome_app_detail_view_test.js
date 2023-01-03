@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,8 @@
 
 import {AppManagementStore, updateSelectedAppId} from 'chrome://os-settings/chromeos/os_settings.js';
 import {setupFakeHandler, replaceStore, replaceBody} from './test_util.js';
-import {flushTasks} from 'chrome://test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {AppType} from 'chrome://resources/cr_components/app_management/app_management.mojom-webui.js';
 
 suite('<app-management-chrome-app-detail-view>', () => {
   let chromeAppDetailView;
@@ -17,8 +18,8 @@ suite('<app-management-chrome-app-detail-view>', () => {
     replaceStore();
 
     const chromeOptions = {
-      type: appManagement.mojom.AppType.kExtension,
-      permissions: {}
+      type: AppType.kExtension,
+      permissions: {},
     };
 
     // Add an chrome app, and make it the currently selected app.
@@ -39,7 +40,8 @@ suite('<app-management-chrome-app-detail-view>', () => {
     assertEquals(
         AppManagementStore.getInstance().data.selectedAppId,
         chromeAppDetailView.app_.id);
-    assertTrue(!!chromeAppDetailView.$$('app-management-pin-to-shelf-item'));
-    assertTrue(!!chromeAppDetailView.$$('#more-settings'));
+    assertTrue(!!chromeAppDetailView.shadowRoot.querySelector(
+        'app-management-pin-to-shelf-item'));
+    assertTrue(!!chromeAppDetailView.shadowRoot.querySelector('#moreSettings'));
   });
 });

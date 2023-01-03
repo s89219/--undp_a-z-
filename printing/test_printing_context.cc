@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@
 #include "printing/mojom/print.mojom.h"
 #include "printing/print_settings.h"
 #include "printing/printing_context.h"
+#include "printing/units.h"
 #include "ui/gfx/geometry/size.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -24,6 +25,17 @@
 #endif
 
 namespace printing {
+
+namespace {
+
+#if BUILDFLAG(IS_WIN)
+void CaptureResult(mojom::ResultCode& capture_result,
+                   mojom::ResultCode result) {
+  capture_result = result;
+}
+#endif
+
+}  // namespace
 
 TestPrintingContextDelegate::TestPrintingContextDelegate() = default;
 
@@ -103,8 +115,11 @@ mojom::ResultCode TestPrintingContext::UseDefaultSettings() {
 }
 
 gfx::Size TestPrintingContext::GetPdfPaperSizeDeviceUnits() {
-  NOTIMPLEMENTED();
-  return gfx::Size();
+  // Default to A4 paper size, which is an alternative to Letter size that is
+  // often used as the fallback size for some platform-specific
+  // implementations.
+  return gfx::Size(kA4WidthInch * settings_->device_units_per_inch(),
+                   kA4HeightInch * settings_->device_units_per_inch());
 }
 
 mojom::ResultCode TestPrintingContext::UpdatePrinterSettings(
@@ -113,7 +128,11 @@ mojom::ResultCode TestPrintingContext::UpdatePrinterSettings(
 #if BUILDFLAG(IS_MAC)
   DCHECK(!printer_settings.external_preview) << "Not implemented";
 #endif
+
+  // Windows is special case where system dialog can be shown from here.
+#if !BUILDFLAG(IS_WIN)
   DCHECK(!printer_settings.show_system_dialog) << "Not implemented";
+#endif
 
   // The printer name is to be embedded in the printing context's existing
   // settings.
@@ -136,6 +155,16 @@ mojom::ResultCode TestPrintingContext::UpdatePrinterSettings(
     settings_->advanced_settings().emplace(item.first, item.second.Clone());
 #endif
 
+#if BUILDFLAG(IS_WIN)
+  if (printer_settings.show_system_dialog) {
+    mojom::ResultCode result = mojom::ResultCode::kFailed;
+    AskUserForSettings(printer_settings.page_count, /*has_selection=*/false,
+                       /*is_scripted=*/false,
+                       base::BindOnce(&CaptureResult, std::ref(result)));
+    return result;
+  }
+#endif
+
   return mojom::ResultCode::kSuccess;
 }
 
@@ -143,11 +172,18 @@ mojom::ResultCode TestPrintingContext::NewDocument(
     const std::u16string& document_name) {
   DCHECK(!in_print_job_);
 
+  if (!new_document_called_.is_null())
+    new_document_called_.Run();
+
   abort_printing_ = false;
   in_print_job_ = true;
 
-  if (!skip_system_calls() && new_document_blocked_by_permissions_)
-    return mojom::ResultCode::kAccessDenied;
+  if (!skip_system_calls()) {
+    if (new_document_fails_)
+      return mojom::ResultCode::kFailed;
+    if (new_document_blocked_by_permissions_)
+      return mojom::ResultCode::kAccessDenied;
+  }
 
   // No-op.
   return mojom::ResultCode::kSuccess;
@@ -163,6 +199,11 @@ mojom::ResultCode TestPrintingContext::RenderPage(const PrintedPage& page,
 
   if (render_page_blocked_by_permissions_)
     return mojom::ResultCode::kAccessDenied;
+
+  if (render_page_fail_for_page_number_.has_value() &&
+      *render_page_fail_for_page_number_ == page.page_number()) {
+    return mojom::ResultCode::kFailed;
+  }
 
   // No-op.
   return mojom::ResultCode::kSuccess;

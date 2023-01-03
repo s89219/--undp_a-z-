@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
-#include "content/browser/indexed_db/indexed_db_factory_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/transaction_impl.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
@@ -41,20 +41,18 @@ const char kTransactionAlreadyExists[] = "Transaction already exists";
 }  // namespace
 
 DatabaseImpl::DatabaseImpl(std::unique_ptr<IndexedDBConnection> connection,
-                           const storage::BucketLocator& bucket_locator,
+                           const storage::BucketInfo& bucket,
                            IndexedDBDispatcherHost* dispatcher_host,
                            scoped_refptr<base::SequencedTaskRunner> idb_runner)
     : dispatcher_host_(dispatcher_host),
       indexed_db_context_(dispatcher_host->context()),
       connection_(std::move(connection)),
-      bucket_locator_(bucket_locator),
+      bucket_info_(bucket),
       idb_runner_(std::move(idb_runner)) {
   DCHECK(idb_runner_->RunsTasksInCurrentSequence());
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(connection_);
-  // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
-  indexed_db_context_->ConnectionOpened(bucket_locator_.storage_key,
-                                        connection_.get());
+  indexed_db_context_->ConnectionOpened(bucket_locator());
 }
 
 DatabaseImpl::~DatabaseImpl() {
@@ -64,13 +62,10 @@ DatabaseImpl::~DatabaseImpl() {
     status = connection_->AbortTransactionsAndClose(
         IndexedDBConnection::CloseErrorHandling::kAbortAllReturnLastError);
   }
-  // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
-  indexed_db_context_->ConnectionClosed(bucket_locator_.storage_key,
-                                        connection_.get());
+  indexed_db_context_->ConnectionClosed(bucket_locator());
   if (!status.ok()) {
-    // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
     indexed_db_context_->GetIDBFactory()->OnDatabaseError(
-        bucket_locator_.storage_key, status, "Error during rollbacks.");
+        bucket_locator(), status, "Error during rollbacks.");
   }
 }
 
@@ -130,16 +125,28 @@ void DatabaseImpl::CreateTransaction(
     return;
   }
 
+  if (durability == blink::mojom::IDBTransactionDurability::Default) {
+    switch (bucket_info_.durability) {
+      case blink::mojom::BucketDurability::kStrict:
+        durability = blink::mojom::IDBTransactionDurability::Strict;
+        break;
+      case blink::mojom::BucketDurability::kRelaxed:
+        durability = blink::mojom::IDBTransactionDurability::Relaxed;
+        break;
+    }
+  }
+
   IndexedDBTransaction* transaction = connection_->CreateTransaction(
       transaction_id,
       std::set<int64_t>(object_store_ids.begin(), object_store_ids.end()), mode,
-      new IndexedDBBackingStore::Transaction(
-          connection_->database()->backing_store()->AsWeakPtr(), durability,
-          mode));
+      connection_->database()
+          ->backing_store()
+          ->CreateTransaction(durability, mode)
+          .release());
   connection_->database()->RegisterAndScheduleTransaction(transaction);
 
   dispatcher_host_->CreateAndBindTransactionImpl(
-      std::move(transaction_receiver), bucket_locator_,
+      std::move(transaction_receiver), bucket_locator(),
       transaction->AsWeakPtr());
 }
 
@@ -152,9 +159,8 @@ void DatabaseImpl::Close() {
       IndexedDBConnection::CloseErrorHandling::kReturnOnFirstError);
 
   if (!status.ok()) {
-    // TODO(crbug.com/1218100): Propagate BucketLocator to callee.
     indexed_db_context_->GetIDBFactory()->OnDatabaseError(
-        bucket_locator_.storage_key, status, "Error during rollbacks.");
+        bucket_locator(), status, "Error during rollbacks.");
   }
 }
 
@@ -475,7 +481,7 @@ void DatabaseImpl::OpenCursor(
   transaction->ScheduleTask(
       BindWeakOperation(&IndexedDBDatabase::OpenCursorOperation,
                         connection_->database()->AsWeakPtr(), std::move(params),
-                        bucket_locator_, dispatcher_host_->AsWeakPtr()));
+                        bucket_locator(), dispatcher_host_->AsWeakPtr()));
 }
 
 void DatabaseImpl::Count(
@@ -487,8 +493,8 @@ void DatabaseImpl::Count(
         pending_callbacks) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      dispatcher_host_->AsWeakPtr(), bucket_locator_,
-      std::move(pending_callbacks), idb_runner_);
+      dispatcher_host_->AsWeakPtr(), bucket_info_, std::move(pending_callbacks),
+      idb_runner_);
   if (!connection_->IsConnected())
     return;
 
@@ -521,8 +527,8 @@ void DatabaseImpl::DeleteRange(
         pending_callbacks) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      dispatcher_host_->AsWeakPtr(), bucket_locator_,
-      std::move(pending_callbacks), idb_runner_);
+      dispatcher_host_->AsWeakPtr(), bucket_info_, std::move(pending_callbacks),
+      idb_runner_);
   if (!connection_->IsConnected())
     return;
 
@@ -553,8 +559,8 @@ void DatabaseImpl::GetKeyGeneratorCurrentNumber(
         pending_callbacks) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      dispatcher_host_->AsWeakPtr(), bucket_locator_,
-      std::move(pending_callbacks), idb_runner_);
+      dispatcher_host_->AsWeakPtr(), bucket_info_, std::move(pending_callbacks),
+      idb_runner_);
   if (!connection_->IsConnected())
     return;
 
@@ -585,8 +591,8 @@ void DatabaseImpl::Clear(
         pending_callbacks) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      dispatcher_host_->AsWeakPtr(), bucket_locator_,
-      std::move(pending_callbacks), idb_runner_);
+      dispatcher_host_->AsWeakPtr(), bucket_info_, std::move(pending_callbacks),
+      idb_runner_);
   if (!connection_->IsConnected())
     return;
 

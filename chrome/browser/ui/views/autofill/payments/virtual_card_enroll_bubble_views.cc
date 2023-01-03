@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -62,8 +62,10 @@ void VirtualCardEnrollBubbleViews::Show(DisplayReason reason) {
 
 void VirtualCardEnrollBubbleViews::Hide() {
   CloseBubble();
-  if (controller_)
-    controller_->OnBubbleClosed(closed_reason_);
+  if (controller_) {
+    controller_->OnBubbleClosed(
+        GetPaymentsBubbleClosedReasonFromWidget(GetWidget()));
+  }
   controller_ = nullptr;
 }
 
@@ -105,15 +107,10 @@ std::u16string VirtualCardEnrollBubbleViews::GetWindowTitle() const {
 
 void VirtualCardEnrollBubbleViews::WindowClosing() {
   if (controller_) {
-    controller_->OnBubbleClosed(closed_reason_);
+    controller_->OnBubbleClosed(
+        GetPaymentsBubbleClosedReasonFromWidget(GetWidget()));
     controller_ = nullptr;
   }
-}
-
-void VirtualCardEnrollBubbleViews::OnWidgetClosing(views::Widget* widget) {
-  LocationBarBubbleDelegateView::OnWidgetDestroying(widget);
-  closed_reason_ = GetPaymentsBubbleClosedReasonFromWidgetClosedReason(
-      widget->closed_reason());
 }
 
 void VirtualCardEnrollBubbleViews::Init() {
@@ -129,7 +126,7 @@ void VirtualCardEnrollBubbleViews::Init() {
     auto* const explanation_label =
         AddChildView(std::make_unique<views::StyledLabel>());
     explanation_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    explanation_label->SetTextContext(CONTEXT_DIALOG_BODY_TEXT_SMALL);
+    explanation_label->SetTextContext(views::style::CONTEXT_DIALOG_BODY_TEXT);
     explanation_label->SetDefaultTextStyle(views::style::STYLE_SECONDARY);
     explanation_label->SetText(explanation);
 
@@ -150,7 +147,7 @@ void VirtualCardEnrollBubbleViews::Init() {
   auto* description_view =
       AddChildView(std::make_unique<views::BoxLayoutView>());
   description_view->SetBetweenChildSpacing(
-      provider->GetDistanceMetric(views::DISTANCE_RELATED_BUTTON_HORIZONTAL));
+      provider->GetDistanceMetric(views::DISTANCE_RELATED_CONTROL_HORIZONTAL));
   description_view->SetMainAxisAlignment(
       views::BoxLayout::MainAxisAlignment::kStart);
 
@@ -159,38 +156,36 @@ void VirtualCardEnrollBubbleViews::Init() {
 
   CreditCard card = virtual_card_enrollment_fields.credit_card;
 
-  card_network_icon_ =
+  auto* card_image =
       description_view->AddChildView(std::make_unique<views::ImageView>());
-  card_network_icon_->SetImage(virtual_card_enrollment_fields.card_art_image);
-  card_network_icon_->SetTooltipText(card.NetworkForDisplay());
+  card_image->SetImage(virtual_card_enrollment_fields.card_art_image);
+  card_image->SetTooltipText(l10n_util::GetStringUTF16(
+      IDS_AUTOFILL_VIRTUAL_CARD_ENROLLMENT_CARD_IMAGE_TOOLTIP));
 
-  const std::u16string card_info =
-      card.CardIdentifierStringForAutofillDisplay();
-
-  const std::u16string card_label_text =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_VIRTUAL_CARD_ENTRY_PREFIX) +
-      u"\n" +
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_VIRTUAL_CARD_ENTRY_PREFIX_TWO) +
-      u" " + card_info;
-
-  auto* const card_identifier_label =
-      description_view->AddChildView(std::make_unique<views::StyledLabel>());
-  card_identifier_label->SetTextContext(CONTEXT_DIALOG_BODY_TEXT_SMALL);
-  card_identifier_label->SetDefaultTextStyle(views::style::STYLE_PRIMARY);
-  card_identifier_label->SetText(card_label_text);
-
-  uint32_t length =
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_VIRTUAL_CARD_ENTRY_PREFIX_TWO)
-          .length() +
-      card_info.length() +
-      1;  // one added for space between string and card info.
-
-  uint32_t offset = card_label_text.length() - length;
-
-  views::StyledLabel::RangeStyleInfo linked_styling;
-  linked_styling.text_style = views::style::STYLE_SECONDARY;
-  card_identifier_label->AddStyleRange(gfx::Range(offset, offset + length),
-                                       linked_styling);
+  auto* const card_identifier_view =
+      description_view->AddChildView(std::make_unique<views::BoxLayoutView>());
+  card_identifier_view->SetOrientation(
+      views::BoxLayout::Orientation::kVertical);
+  card_identifier_view->SetCrossAxisAlignment(
+      views::BoxLayout::CrossAxisAlignment::kStart);
+  auto* card_name_4digits_view = card_identifier_view->AddChildView(
+      std::make_unique<views::BoxLayoutView>());
+  card_name_4digits_view->SetOrientation(
+      views::BoxLayout::Orientation::kHorizontal);
+  card_name_4digits_view->SetBetweenChildSpacing(
+      provider->GetDistanceMetric(DISTANCE_RELATED_LABEL_HORIZONTAL_LIST));
+  auto* card_name_label =
+      card_name_4digits_view->AddChildView(std::make_unique<views::Label>(
+          card.CardNameForAutofillDisplay(),
+          views::style::CONTEXT_DIALOG_BODY_TEXT, views::style::STYLE_PRIMARY));
+  card_name_4digits_view->SetFlexForView(card_name_label, /*flex=*/1);
+  card_name_4digits_view->AddChildView(std::make_unique<views::Label>(
+      card.ObfuscatedNumberWithVisibleLastFourDigits(),
+      views::style::CONTEXT_DIALOG_BODY_TEXT, views::style::STYLE_PRIMARY));
+  card_identifier_view->AddChildView(std::make_unique<views::Label>(
+      l10n_util::GetStringUTF16(IDS_AUTOFILL_VIRTUAL_CARD_ENTRY_PREFIX),
+      ChromeTextContext::CONTEXT_DIALOG_BODY_TEXT_SMALL,
+      views::style::STYLE_SECONDARY));
 }
 
 std::unique_ptr<views::View>
@@ -208,14 +203,16 @@ VirtualCardEnrollBubbleViews::CreateLegalMessageView() {
 
   DCHECK(!google_legal_message.empty());
   legal_message_view->AddChildView(std::make_unique<LegalMessageView>(
-      google_legal_message,
+      google_legal_message, /*user_email=*/absl::nullopt,
+      /*user_avatar=*/absl::nullopt,
       base::BindRepeating(
           &VirtualCardEnrollBubbleViews::GoogleLegalMessageClicked,
           base::Unretained(this))));
 
   if (!issuser_legal_message.empty()) {
     legal_message_view->AddChildView(std::make_unique<LegalMessageView>(
-        issuser_legal_message,
+        issuser_legal_message, /*user_email=*/absl::nullopt,
+        /*user_avatar=*/absl::nullopt,
         base::BindRepeating(
             &VirtualCardEnrollBubbleViews::IssuerLegalMessageClicked,
             base::Unretained(this))));

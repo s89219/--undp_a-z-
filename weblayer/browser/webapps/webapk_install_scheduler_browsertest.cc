@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "weblayer/browser/webapps/webapk_install_scheduler.h"
 
 #include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "components/webapps/browser/android/shortcut_info.h"
 #include "components/webapps/browser/android/webapk/webapk_types.h"
@@ -79,7 +80,7 @@ class TestWebApkInstallScheduler : public WebApkInstallScheduler {
   }
 
   void PostTaskToRunSuccessCallback() {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&TestWebApkInstallScheduler::OnResult,
                                   base::Unretained(this),
                                   webapps::WebApkInstallResult::SUCCESS));
@@ -173,11 +174,11 @@ class WebApkInstallSchedulerTest : public WebLayerBrowserTest {
   }
 
  private:
-  content::WebContents* web_contents_;
+  raw_ptr<content::WebContents> web_contents_;
 
   net::EmbeddedTestServer test_server_;
 
-  void OnInstallFinished(GURL manifest_url) {}
+  void OnInstallFinished(GURL manifest_url, GURL manifest_id) {}
 };
 
 // Test building the WebAPK-proto is succeeding.

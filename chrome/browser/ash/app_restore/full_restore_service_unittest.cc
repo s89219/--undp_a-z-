@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,8 @@
 #include "components/sync/model/syncable_service.h"
 #include "components/sync/protocol/entity_specifics.pb.h"
 #include "components/sync/protocol/preference_specifics.pb.h"
-#include "components/sync/test/model/fake_sync_change_processor.h"
-#include "components/sync/test/model/sync_error_factory_mock.h"
+#include "components/sync/test/fake_sync_change_processor.h"
+#include "components/sync/test/sync_error_factory_mock.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "content/public/test/browser_task_environment.h"
@@ -53,8 +53,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/message_center/public/cpp/notification.h"
 
-namespace ash {
-namespace full_restore {
+namespace ash::full_restore {
 
 namespace {
 
@@ -81,12 +80,9 @@ syncer::SyncData CreateRestoreOnStartupPrefSyncData(
 
 syncer::SyncData CreateRestoreAppsAndPagesPrefSyncData(RestoreOption value) {
   sync_pb::EntitySpecifics specifics;
-  sync_pb::PreferenceSpecifics* pref =
-      features::IsSyncSettingsCategorizationEnabled()
-          ? specifics.mutable_os_preference()->mutable_preference()
-          : specifics.mutable_preference();
   SetPrefValue(kRestoreAppsAndPagesPrefName,
-               base::Value(static_cast<int>(value)), pref);
+               base::Value(static_cast<int>(value)),
+               specifics.mutable_os_preference()->mutable_preference());
   return syncer::SyncData::CreateRemoteData(
       specifics, syncer::ClientTagHash::FromHashed("unused"));
 }
@@ -219,10 +215,7 @@ class FullRestoreServiceTest : public testing::Test {
           std::make_unique<syncer::FakeSyncChangeProcessor>(),
           std::make_unique<syncer::SyncErrorFactoryMock>());
 
-      if (!features::IsSyncSettingsCategorizationEnabled())
-        return;
-      // If SyncSettingsCategorization is enabled, OS_PREFERENCES sync should be
-      // started separately.
+      // OS_PREFERENCES sync should be started separately.
       syncer::SyncableService* os_sync_service =
           profile()->GetTestingPrefService()->GetSyncableService(
               syncer::OS_PREFERENCES);
@@ -233,21 +226,16 @@ class FullRestoreServiceTest : public testing::Test {
       return;
     }
 
-    if (features::IsSyncSettingsCategorizationEnabled()) {
-      syncer::SyncDataList os_sync_data_list;
-      os_sync_data_list.push_back(CreateRestoreAppsAndPagesPrefSyncData(
-          maybe_restore_apps_and_pages_value.value()));
-      syncer::SyncableService* os_sync_service =
-          profile()->GetTestingPrefService()->GetSyncableService(
-              syncer::OS_PREFERENCES);
-      os_sync_service->MergeDataAndStartSyncing(
-          syncer::OS_PREFERENCES, os_sync_data_list,
-          std::make_unique<syncer::FakeSyncChangeProcessor>(),
-          std::make_unique<syncer::SyncErrorFactoryMock>());
-    } else {
-      sync_data_list.push_back(CreateRestoreAppsAndPagesPrefSyncData(
-          maybe_restore_apps_and_pages_value.value()));
-    }
+    syncer::SyncDataList os_sync_data_list;
+    os_sync_data_list.push_back(CreateRestoreAppsAndPagesPrefSyncData(
+        maybe_restore_apps_and_pages_value.value()));
+    syncer::SyncableService* os_sync_service =
+        profile()->GetTestingPrefService()->GetSyncableService(
+            syncer::OS_PREFERENCES);
+    os_sync_service->MergeDataAndStartSyncing(
+        syncer::OS_PREFERENCES, os_sync_data_list,
+        std::make_unique<syncer::FakeSyncChangeProcessor>(),
+        std::make_unique<syncer::SyncErrorFactoryMock>());
 
     sync_service->MergeDataAndStartSyncing(
         syncer::PREFERENCES, sync_data_list,
@@ -271,11 +259,9 @@ class FullRestoreServiceTest : public testing::Test {
     os_change_list.push_back(syncer::SyncChange(
         FROM_HERE, syncer::SyncChange::ACTION_UPDATE,
         CreateRestoreAppsAndPagesPrefSyncData(restore_apps_and_pages_value)));
-    syncer::ModelType model_type =
-        features::IsSyncSettingsCategorizationEnabled() ? syncer::OS_PREFERENCES
-                                                        : syncer::PREFERENCES;
     syncer::SyncableService* os_sync_service =
-        profile()->GetTestingPrefService()->GetSyncableService(model_type);
+        profile()->GetTestingPrefService()->GetSyncableService(
+            syncer::OS_PREFERENCES);
     os_sync_service->ProcessSyncChanges(FROM_HERE, os_change_list);
   }
 
@@ -618,6 +604,23 @@ TEST_F(FullRestoreServiceTestHavingFullRestoreFile, AskEveryTimeAndRestore) {
   VerifyNotification(false, false);
 
   FullRestoreService::MaybeCloseNotification(profile());
+}
+
+// If the OS restore setting is 'Ask every time' and glanceables are enabled,
+// the notification is not shown.
+TEST_F(FullRestoreServiceTestHavingFullRestoreFile,
+       AskEveryTimeWithGlanceables) {
+  base::test::ScopedFeatureList feature_list(features::kGlanceables);
+
+  profile()->GetPrefs()->SetInteger(
+      kRestoreAppsAndPagesPrefName,
+      static_cast<int>(RestoreOption::kAskEveryTime));
+  CreateFullRestoreServiceForTesting();
+
+  EXPECT_EQ(RestoreOption::kAskEveryTime, GetRestoreOption());
+
+  VerifyNotification(/*has_crash_notification=*/false,
+                     /*has_restore_notification=*/false);
 }
 
 // If the OS restore setting is 'Ask every time', after reboot, show the restore
@@ -1026,5 +1029,4 @@ TEST_F(FullRestoreServiceMultipleUsersTest, TwoUsersLoginWithActiveUserLogin) {
   VerifyRestoreInitSettingHistogram(RestoreOption::kAskEveryTime, 2);
 }
 
-}  // namespace full_restore
-}  // namespace ash
+}  // namespace ash::full_restore

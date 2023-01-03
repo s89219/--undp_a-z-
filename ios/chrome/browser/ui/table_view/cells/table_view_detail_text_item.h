@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,10 +24,13 @@ typedef NS_ENUM(NSInteger, TableViewDetailTextCellAccessorySymbol) {
 // Text Alignment for the cell's textLabel. Default is NSTextAlignmentNatural.
 @property(nonatomic, assign) NSTextAlignment textAlignment;
 
+// YES if multiple lines are allowed in the detail text.
+@property(nonatomic, assign) BOOL allowMultilineDetailText;
+
 // UIColor for the cell's textLabel. Default is
 // [UIColor colorNamed:kTextPrimaryColor]. ChromeTableViewStyler's
-// |cellTitleColor| takes precedence over the default color, but not over
-// |textColor|.
+// `cellTitleColor` takes precedence over the default color, but not over
+// `textColor`.
 @property(nonatomic, strong) UIColor* textColor;
 // Main text to be displayed.
 @property(nonatomic, strong) NSString* text;
@@ -39,7 +42,7 @@ typedef NS_ENUM(NSInteger, TableViewDetailTextCellAccessorySymbol) {
 @property(nonatomic, strong) NSString* detailText;
 
 // The accessory symbol associated with this item.
-// The default color is |kTextQuaternaryColor| and is not currently
+// The default color is `kTextQuaternaryColor` and is not currently
 // configurable.
 @property(nonatomic, assign)
     TableViewDetailTextCellAccessorySymbol accessorySymbol;
@@ -57,6 +60,9 @@ typedef NS_ENUM(NSInteger, TableViewDetailTextCellAccessorySymbol) {
 
 // The detail text to display.
 @property(nonatomic, readonly, strong) UILabel* detailTextLabel;
+
+// YES if multiple lines are allowed in the detail text.
+@property(nonatomic, assign) BOOL allowMultilineDetailText;
 
 @end
 

@@ -1,518 +1,481 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/constants/ash_features.h"
-#include "ash/constants/ash_switches.h"
-#include "base/strings/strcat.h"
-#include "base/strings/string_piece_forward.h"
-#include "base/strings/stringprintf.h"
+#include "ash/shelf/shelf.h"
+#include "ash/shelf/shelf_widget.h"
+#include "ash/shell.h"
+#include "ash/test/ash_test_base.h"
+#include "base/run_loop.h"
 #include "base/test/bind.h"
+#include "base/token.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/ash/system_extensions/api/test_support/system_extensions_api_browsertest.h"
+#include "chrome/browser/ash/system_extensions/api/window_management/cros_window_management_test_helper.test-mojom.h"
+#include "chrome/browser/ash/system_web_apps/test_support/test_system_web_app_installation.h"
+#include "chrome/browser/ui/ash/system_web_apps/system_web_app_ui_utils.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/web_applications/system_web_app_ui_utils.h"
-#include "chrome/browser/web_applications/system_web_apps/test/test_system_web_app_installation.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/web_applications/test/app_registry_cache_waiter.h"
+#include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "content/public/common/content_switches.h"
+#include "components/user_manager/user.h"
+#include "components/user_manager/user_manager.h"
+#include "content/public/browser/console_message.h"
+#include "content/public/browser/service_worker_context.h"
+#include "content/public/browser/service_worker_context_observer.h"
+#include "content/public/browser/storage_partition.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
-#include "content/public/test/test_navigation_observer.h"
-#include "ui/aura/window.h"
+#include "mojo/public/cpp/bindings/unique_receiver_set.h"
+#include "ui/aura/window_delegate.h"
+#include "ui/base/ui_base_features.h"
+#include "ui/display/test/display_manager_test_api.h"
+#include "ui/events/test/event_generator.h"
+
+namespace ash {
 
 namespace {
 
-static constexpr char kEventListenerCode[] = R"(
-  self.addEventListener('message', async (event) => {
-    try {
-      await cros_test();
-      event.source.postMessage("PASS");
-    } catch (e) {
-      console.log(e.message);
-      event.source.postMessage("FAIL - Check console LOGS");
-    }
-  });
-)";
+static constexpr const char kTestsDir[] =
+    "chrome/browser/ash/system_extensions/api/window_management/test";
+static constexpr const char kManifestTemplate[] = R"(
+{
+  "name": "Test Window Manager Extension",
+  "short_name": "Test",
+  "service_worker_url": "/%s",
+  "id": "01020304",
+  "type": "window-management"
+})";
 
-static constexpr char kPostTestStart[] = R"(
-  async function startTest() {
-    const saw_message = new Promise(resolve => {
-      navigator.serviceWorker.onmessage = event => {
-        resolve(event.data);
-      };
-    });
-    const registration = await navigator.serviceWorker.ready;
-    registration.active.postMessage('test');
-    return await saw_message;
-  }
+Profile* GetProfile() {
+  user_manager::User* active_user =
+      user_manager::UserManager::Get()->GetActiveUser();
+  DCHECK(active_user);
+  auto* profile = ProfileHelper::Get()->GetProfileByUser(active_user);
+  DCHECK(profile);
+  return profile;
+}
 
-  if (document.readyState !== "complete") {
-    window.onload = startTest();
-  } else {
-    startTest();
-  }
-)";
+base::UnguessableToken GetUnguessableToken(base::StringPiece str) {
+  absl::optional<base::Token> token = base::Token::FromString(str);
+  DCHECK(token.has_value());
 
-class CrosWindowBrowserTest : public InProcessBrowserTest {
+  return base::UnguessableToken::Deserialize(token->high(), token->low());
+}
+
+// Class used to wait for InstanceRegistry events.
+class InstanceRegistryEventWaiter : public apps::InstanceRegistry::Observer {
  public:
-  CrosWindowBrowserTest() {
-    feature_list_.InitAndEnableFeature(ash::features::kSystemExtensions);
+  InstanceRegistryEventWaiter() {
+    instance_registry_observation_.Observe(
+        &apps::AppServiceProxyFactory::GetForProfile(GetProfile())
+             ->InstanceRegistry());
+  }
 
+  ~InstanceRegistryEventWaiter() override = default;
+
+  // Returns the id of the next window that gets created.
+  base::UnguessableToken WaitForCreation() {
+    run_loop_.Run();
+    return window_id_.value();
+  }
+
+  // apps::InstanceRegistry::Observer
+  void OnInstanceUpdate(const apps::InstanceUpdate& update) override {
+    if (!update.IsCreation())
+      return;
+
+    window_id_ = update.InstanceId();
+    instance_registry_observation_.Reset();
+    run_loop_.Quit();
+  }
+
+  void OnInstanceRegistryWillBeDestroyed(
+      apps::InstanceRegistry* cache) override {
+    // This class is created and destroyed during tests so it will always be
+    // destroyed by the time the InstanceRegistry is destroyed.
+    NOTREACHED();
+  }
+
+ private:
+  base::ScopedObservation<apps::InstanceRegistry,
+                          apps::InstanceRegistry::Observer>
+      instance_registry_observation_{this};
+
+  // This waiter is used from within Mojo method implementations which would
+  // result in nested run loops which would hang the test. Allow nestable tasks
+  // to get around this.
+  base::RunLoop run_loop_{base::RunLoop::Type::kNestableTasksAllowed};
+  absl::optional<base::UnguessableToken> window_id_;
+};
+
+// Class used by tests to perform actions on the browser side.
+class CrosWindowManagementTestHelper
+    : public system_extensions_test::mojom::CrosWindowManagementTestHelper {
+ public:
+  explicit CrosWindowManagementTestHelper(
+      TestSystemWebAppInstallation& swa_installation)
+      : swa_installation_(swa_installation) {}
+  ~CrosWindowManagementTestHelper() override = default;
+
+  void OpenSystemWebAppWindow(
+      OpenSystemWebAppWindowCallback callback) override {
+    InstanceRegistryEventWaiter waiter;
+    ash::LaunchSystemWebAppAsync(GetProfile(), swa_installation_->GetType());
+    base::UnguessableToken window_id = waiter.WaitForCreation();
+    std::move(callback).Run(window_id.ToString());
+  }
+
+  void OpenBrowserWindow(OpenBrowserWindowCallback callback) override {
+    InstanceRegistryEventWaiter waiter;
+    chrome::NewEmptyWindow(GetProfile());
+    base::UnguessableToken window_id = waiter.WaitForCreation();
+    std::move(callback).Run(window_id.ToString());
+  }
+
+  void CloseBrowserWindow(const std::string& id,
+                          CloseBrowserWindowCallback callback) override {
+    apps::AppServiceProxy* proxy =
+        apps::AppServiceProxyFactory::GetForProfile(GetProfile());
+    CHECK(proxy->InstanceRegistry().ForOneInstance(
+        GetUnguessableToken(id),
+        [callback =
+             std::move(callback)](const apps::InstanceUpdate& update) mutable {
+          Browser* browser = chrome::FindBrowserWithWindow(
+              update.Window()->GetToplevelWindow());
+          CHECK(browser);
+
+          chrome::CloseWindow(browser);
+          std::move(callback).Run();
+        }));
+  }
+
+  void SetDisplays(const std::string& displays,
+                   SetDisplaysCallback callback) override {
+    display::test::DisplayManagerTestApi(ash::Shell::Get()->display_manager())
+        .UpdateDisplay(displays);
+
+    std::move(callback).Run();
+  }
+
+  void GetMinimumSize(const std::string& id,
+                      GetMinimumSizeCallback callback) override {
+    apps::AppServiceProxy* proxy =
+        apps::AppServiceProxyFactory::GetForProfile(GetProfile());
+    CHECK(proxy->InstanceRegistry().ForOneInstance(
+        GetUnguessableToken(id),
+        [callback =
+             std::move(callback)](const apps::InstanceUpdate& update) mutable {
+          std::move(callback).Run(update.Window()
+                                      ->GetToplevelWindow()
+                                      ->delegate()
+                                      ->GetMinimumSize());
+        }));
+  }
+
+  void GetShelfHeight(GetShelfHeightCallback callback) override {
+    gfx::Rect shelf_bounds =
+        AshTestBase::GetPrimaryShelf()->shelf_widget()->GetVisibleShelfBounds();
+
+    std::move(callback).Run(shelf_bounds.height());
+  }
+
+  void SimulatePressKey(ui::mojom::KeyboardCode keyboard_code,
+                        int32_t modifiers,
+                        SimulatePressKeyCallback callback) override {
+    ui::test::EventGenerator generator(
+        ash::Shell::Get()->GetPrimaryRootWindow());
+    generator.PressKey(static_cast<ui::KeyboardCode>(keyboard_code), modifiers);
+
+    std::move(callback).Run();
+  }
+
+  void SimulateReleaseKey(ui::mojom::KeyboardCode keyboard_code,
+                          int32_t modifiers,
+                          SimulateReleaseKeyCallback callback) override {
+    ui::test::EventGenerator generator(
+        ash::Shell::Get()->GetPrimaryRootWindow());
+    generator.ReleaseKey(static_cast<ui::KeyboardCode>(keyboard_code),
+                         modifiers);
+
+    std::move(callback).Run();
+  }
+
+ private:
+  raw_ref<TestSystemWebAppInstallation> swa_installation_;
+};
+
+class CrosWindowManagementBrowserTest : public SystemExtensionsApiBrowserTest {
+ public:
+  CrosWindowManagementBrowserTest()
+      : SystemExtensionsApiBrowserTest(
+            {.tests_dir = kTestsDir,
+             .manifest_template = kManifestTemplate,
+             .additional_src_files = {"chrome/test/data/system_extensions/"
+                                      "cros_window_test_utils.js"},
+             .additional_gen_files = {
+                 "gen/chrome/browser/ash/system_extensions/api/"
+                 "window_management/"
+                 "cros_window_management_test_helper.test-mojom-lite.js",
+                 "gen/ui/events/mojom/keyboard_codes.mojom-lite.js",
+                 "gen/ui/events/mojom/event_constants.mojom-lite.js",
+                 "gen/ui/gfx/geometry/mojom/geometry.mojom-lite.js",
+             }}) {
     installation_ =
-        web_app::TestSystemWebAppInstallation::SetUpStandaloneSingleWindowApp();
-  }
-  ~CrosWindowBrowserTest() override = default;
+        TestSystemWebAppInstallation::SetUpStandaloneSingleWindowApp();
 
-  // TODO(b/210737979):
-  // Remove switch toggles when service workers are supported on
-  // chrome-untrusted://
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    InProcessBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(ash::switches::kSystemExtensionsDebug);
-    command_line->AppendSwitchASCII(
-        switches::kEnableBlinkFeatures,
-        "BlinkExtensionChromeOS,BlinkExtensionChromeOSWindowManagement");
-  }
-
-  void RunTest(base::StringPiece test_code) {
-    // Initialize embedded test server.
-    ASSERT_TRUE(embedded_test_server()->InitializeAndListen());
-
-    // Serve dependencies for the service worker (i.e. asserts).
-    embedded_test_server()->ServeFilesFromSourceDirectory(
-        base::FilePath("third_party/blink/web_tests/resources"));
-
-    // Register test code with listener and dependencies as .js file.
-    const std::string js_code =
-        base::StrCat({"self.importScripts('/testharness.js',"
-                      "'/testharness-helpers.js',"
-                      "'/system_extensions/cros_window_test_utils.js');",
-                      test_code, kEventListenerCode});
-    embedded_test_server()->RegisterRequestHandler(base::BindLambdaForTesting(
-        [js_code](const net::test_server::HttpRequest& request)
-            -> std::unique_ptr<net::test_server::HttpResponse> {
-          if (request.relative_url != "/test_service_worker.js") {
-            return nullptr;
-          }
-          std::unique_ptr<net::test_server::BasicHttpResponse> http_response(
-              std::make_unique<net::test_server::BasicHttpResponse>());
-          http_response->set_code(net::HTTP_OK);
-          http_response->set_content(js_code);
-          http_response->set_content_type("text/javascript");
-          return std::move(http_response);
+    AddRendererInterface(base::BindLambdaForTesting(
+        [this](mojo::PendingReceiver<
+               system_extensions_test::mojom::CrosWindowManagementTestHelper>
+                   pending_receiver) {
+          auto test_helper = std::make_unique<CrosWindowManagementTestHelper>(
+              this->swa_installation());
+          this->test_helpers_.Add(std::move(test_helper),
+                                  std::move(pending_receiver));
         }));
 
-    // Register test code js as service worker.
-    embedded_test_server()->StartAcceptingConnections();
-    EXPECT_TRUE(ui_test_utils::NavigateToURL(
-        browser(), embedded_test_server()->GetURL(
-                       "/service_worker/create_service_worker.html")));
-    EXPECT_EQ("DONE",
-              EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                     "register('/test_service_worker.js');"));
-
-    // Post message to service worker listener to trigger test and evaluate.
-    EXPECT_EQ("PASS",
-              EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                     kPostTestStart));
+    // Needed because otherwise ChromeOS remaps some accelerators e.g.
+    // to other keys e.g. "Alt + Arrow up" to "Home".
+    feature_list_.InitAndEnableFeature(::features::kDeprecateAltBasedSixPack);
   }
 
  protected:
-  std::unique_ptr<web_app::TestSystemWebAppInstallation> installation_;
+  TestSystemWebAppInstallation& swa_installation() { return *installation_; }
+
+  // Installs and launches a Web App that opens in a tab.
+  void InstallAndLaunchBrowserWebApp() {
+    ASSERT_TRUE(embedded_test_server()->Start());
+
+    const GURL start_url =
+        embedded_test_server()->GetURL("/web_apps/basic.html");
+
+    // Install a web app with `browser` display mode, so that it launched
+    // in a tab in regular browser window.
+    auto web_app_info = std::make_unique<WebAppInstallInfo>();
+    web_app_info->start_url = start_url;
+    web_app_info->user_display_mode = web_app::mojom::UserDisplayMode::kBrowser;
+    const web_app::AppId app_id = web_app::test::InstallWebApp(
+        browser()->profile(), std::move(web_app_info));
+    web_app::AppReadinessWaiter(browser()->profile(), app_id).Await();
+
+    // Launch app through App Service proxy and wait for it to open.
+    auto* const proxy =
+        apps::AppServiceProxyFactory::GetForProfile(browser()->profile());
+
+    ui_test_utils::TabAddedWaiter waiter(browser());
+    proxy->Launch(app_id,
+                  /*event_flags=*/0, apps::LaunchSource::kFromAppListGrid);
+    waiter.Wait();
+  }
 
  private:
+  mojo::UniqueReceiverSet<
+      system_extensions_test::mojom::CrosWindowManagementTestHelper>
+      test_helpers_;
+  std::unique_ptr<TestSystemWebAppInstallation> installation_;
+
   base::test::ScopedFeatureList feature_list_;
 };
 
 }  // namespace
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowSetOrigin) {
-  const char test_code[] = R"(
-async function cros_test() {
-  let [window] = await chromeos.windowManagement.windows();
-
-  const newBounds = DOMRect.fromRect(window.bounds);
-  newBounds.x += 10;
-  newBounds.y += 10;
-
-  window.setOrigin(newBounds.x, newBounds.y);
-  {
-    let [window] = await chromeos.windowManagement.windows();
-    assert_weak_equals(window.bounds, newBounds,
-        `SetOrigin should set origin without changing bounds`);
-  }
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosScreenProperties) {
+  RunTest("cros_screen_properties.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowSetBounds) {
-  const char test_code[] = R"(
-async function cros_test() {
-  let [window] = await chromeos.windowManagement.windows();
-
-  const newBounds = DOMRect.fromRect(window.bounds);
-  newBounds.x += 10;
-  newBounds.y += 10;
-  newBounds.width -= 100;
-  newBounds.height -= 100;
-
-  await setBoundsAndTest(newBounds);
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowMoveTo) {
+  RunTest("cros_window_move_to.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowSetFullscreen) {
-  const char test_code[] = R"(
-async function cros_test() {
-  // Check that the window begins in a non-fullscreen state.
-  await assertWindowState("normal");
-
-  // Check that window can be fullscreened and repeating maintains fullscreen.
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(true);
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowMoveBy) {
+  RunTest("cros_window_move_by.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, FullscreenMinMax) {
-  const char test_code[] = R"(
-async function cros_test() {
-  // Check that window begins in non-fullscreen state.
-  await assertWindowState("normal");
-
-  // Minimized->Fullscreen->Maximized->Minimized
-  await minimizeAndTest();
-  await setFullscreenAndTest(true);
-  await maximizeAndTest();
-  await minimizeAndTest();
-
-  // Reversing above: Minimized<-Fullscreen<-Maximized<-Minimized
-  await maximizeAndTest();
-  await setFullscreenAndTest(true);
-  await minimizeAndTest();
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowResizeTo) {
+  RunTest("cros_window_resize_to.js");
 }
 
-// When unsetting fullscreen from a previously normal or maximized window,
-// the window state should return to its previous state.
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, UnsetFullscreenNonMinimized) {
-  const char test_code[] = R"(
-async function cros_test() {
-  await assertWindowState("normal");
-
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(false);
-  await assertWindowState("normal");
-
-  await maximizeAndTest();
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(false);
-  await assertWindowState("maximized");
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowResizeBy) {
+  RunTest("cros_window_resize_by.js");
 }
 
-// When unsetting fullscreen from a previously minimized window,
-// the window state should return to the last non-minimized state.
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, UnsetFullscreenMinimized) {
-  const char test_code[] = R"(
-async function cros_test() {
-  await assertWindowState("normal");
-
-  // Normal->Minimized->Fullscreen should unfullscreen to normal.
-  await minimizeAndTest();
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(false);
-  await assertWindowState("normal");
-
-  // Normal->Fullscreen->Minimized->Fullscreen should unfullscreen to normal.
-  await setFullscreenAndTest(true);
-  await minimizeAndTest();
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(false);
-  await assertWindowState("normal");
-
-  // Maximized->Minimized->Fullscreen should unfullscreen to normal.
-  await maximizeAndTest();
-  await minimizeAndTest();
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(false);
-  await assertWindowState("maximized");
-
-  // Maximized->Fullscreen->Minimized->Fullscreen should unfullscreen to normal.
-  await setFullscreenAndTest(true);
-  await minimizeAndTest();
-  await setFullscreenAndTest(true);
-  await setFullscreenAndTest(false);
-  await assertWindowState("maximized");
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowResizeBy_OverrideMinimumSize) {
+  RunTest("cros_window_resize_by_override_minimum_size.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowMaximize) {
-  const char test_code[] = R"(
-async function cros_test() {
-  await assertWindowState("normal");
-
-  await maximizeAndTest();
-
-  // Repeating maximize should not change any properties.
-  await maximizeAndTest();
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowResizeTo_OverrideMinimumSize) {
+  RunTest("cros_window_resize_to_override_minimum_size.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowMinimize) {
-  const char test_code[] = R"(
-async function cros_test() {
-  await assertWindowState("normal");
-
-  await minimizeAndTest();
-
-  // Repeating minimize should not change any properties.
-  await minimizeAndTest();
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowSetFullscreen) {
+  RunTest("cros_window_set_fullscreen.js");
 }
 
-// Checks that focusing a non-visible unfocused window correctly sets focus.
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowFocusSingle) {
-  const char test_code[] = R"(
-async function cros_test() {
-  await assertWindowState("normal");
-  {
-    let [window] = await chromeos.windowManagement.windows();
-    assert_true(window.isFocused);
-  }
-
-  await minimizeAndTest();
-  {
-    let [window] = await chromeos.windowManagement.windows();
-    assert_false(window.isFocused);
-  }
-
-  await focusAndTest();
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, FullScreenMinMax) {
+  RunTest("fullscreen_min_max.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowFocusMulti) {
-  // Open browser instance to take focus.
-  chrome::NewWindow(browser());
-
-  const char test_code[] = R"(
-async function cros_test() {
-  // async window retriever with stable window ordering after first retrieval.
-  let getWindows;
-
-  {
-    let [first_window, second_window] =
-        await chromeos.windowManagement.windows();
-    getWindows = async function() {
-      let [first_returned_window, second_returned_window] =
-          await chromeos.windowManagement.windows();
-      assert_equals(first_window.id, first_returned_window.id);
-      assert_equals(second_window.id, second_returned_window.id);
-      return [first_returned_window, second_returned_window];
-    };
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // When focusing 1st window, it should have sole focus.
-    first_window.focus();
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    assert_true(first_window.isFocused);
-    assert_false(second_window.isFocused);
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // When focusing 2nd window, it should have sole focus.
-    second_window.focus();
-
-    [first_window, second_window] = await getWindows();
-    assert_false(first_window.isFocused);
-    assert_true(second_window.isFocused);
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // Fullscreening a window does not focus an unfocused window.
-    first_window.setFullscreen(true);
-
-    [first_window, second_window] = await getWindows();
-    assert_false(first_window.isFocused);
-    assert_true(second_window.isFocused);
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // We can focus a fullscreen window.
-    first_window.focus();
-
-    [first_window, second_window] = await getWindows();
-    assert_true(first_window.isFocused);
-    assert_false(second_window.isFocused);
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // We can focus another window on top of a fullscreen window.
-    second_window.focus();
-
-    [first_window, second_window] = await getWindows();
-    assert_false(first_window.isFocused);
-    assert_true(second_window.isFocused);
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // Minimizing focused window should pass focus to next window.
-    second_window.minimize();
-
-    [first_window, second_window] = await getWindows();
-    assert_true(first_window.isFocused);
-    assert_false(second_window.isFocused);
-  }
-
-  {
-    let [first_window, second_window] = await getWindows();
-    // Minimizing remaining window should lose focus.
-    first_window.minimize();
-
-    [first_window, second_window] = await getWindows();
-    assert_false(first_window.isFocused);
-    assert_false(second_window.isFocused);
-  }
-}
-  )";
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       UnsetFullscreenNonMinimized) {
+  RunTest("unset_fullscreen_non_minimized.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowClose) {
-  // Open browser instance to close outside of service worker.
-  chrome::NewWindow(browser());
-
-  aura::Window* initial = browser()->window()->GetNativeWindow();
-  aura::Window* new_window =
-      BrowserList::GetInstance()->GetLastActive()->window()->GetNativeWindow();
-
-  ASSERT_NE(initial, new_window);
-
-  // Set target id to crosWindow id of newly opened window as per instance
-  // registry.
-  std::string target_id;
-
-  apps::AppServiceProxy* proxy =
-      apps::AppServiceProxyFactory::GetForProfile(browser()->profile());
-  proxy->InstanceRegistry().ForEachInstance(
-      [&target_id, &new_window](const apps::InstanceUpdate& update) {
-        if (update.Window()->GetToplevelWindow() == new_window) {
-          CHECK(target_id.empty());
-          target_id = update.InstanceId().ToString();
-        }
-      });
-
-  std::string test_code = base::StringPrintf(R"(
-async function cros_test() {
-  let windows = await chromeos.windowManagement.windows();
-  assert_equals(windows.length, 2);
-
-  let window_to_close = windows.find(window => window.id === "%1$s");
-  assert_not_equals(undefined, window_to_close,
-      `Could not find window with id: (%1$s);`);
-  window_to_close.close();
-
-  // TODO(b/221123297): Currently test will flake on close under stress.
-  // Defer testing until on close event implemented
-  // windows = await chromeos.windowManagement.windows();
-  // assert_equals(windows.length, 1);
-}
-  )",
-                                             target_id.c_str());
-
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       UnsetFullscreenMinimized) {
+  RunTest("unset_fullscreen_minimized.js");
 }
 
-IN_PROC_BROWSER_TEST_F(CrosWindowBrowserTest, CrosWindowSWACrashTest) {
-  // Finish installation of Sample SWA.
-  installation_->WaitForAppInstall();
-
-  // Wait for Sample SWA window to open.
-  content::TestNavigationObserver navigation_observer(
-      installation_->GetAppUrl());
-  navigation_observer.StartWatchingNewWebContents();
-
-  web_app::LaunchSystemWebAppAsync(browser()->profile(),
-                                   installation_->GetType());
-
-  navigation_observer.Wait();
-
-  // Initial window contains service worker. Track new window as test subject.
-  aura::Window* initial = browser()->window()->GetNativeWindow();
-  aura::Window* new_window =
-      BrowserList::GetInstance()->GetLastActive()->window()->GetNativeWindow();
-
-  ASSERT_NE(initial, new_window);
-
-  // Set target id to crosWindow id of newly opened window as per instance
-  // registry.
-  std::string target_id;
-
-  apps::AppServiceProxy* proxy =
-      apps::AppServiceProxyFactory::GetForProfile(browser()->profile());
-  proxy->InstanceRegistry().ForEachInstance(
-      [&target_id, &new_window](const apps::InstanceUpdate& update) {
-        if (update.Window()->GetToplevelWindow() == new_window) {
-          CHECK(target_id.empty());
-          target_id = update.InstanceId().ToString();
-        }
-      });
-
-  std::string test_code = base::StringPrintf(R"(
-async function cros_test() {
-  let windows = await chromeos.windowManagement.windows();
-  assert_equals(windows.length, 2);
-
-  let swa_window = windows.find(window => window.id === "%1$s");
-  assert_not_equals(undefined, swa_window,
-      `Could not find window with id: (%1$s);`);
-
-  swa_window.minimize();
-  swa_window.focus();
-  swa_window.maximize();
-  swa_window.setFullscreen(true);
-  swa_window.close();
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowMaximize) {
+  RunTest("cros_window_maximize.js");
 }
-  )",
-                                             target_id.c_str());
 
-  RunTest(test_code);
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowMinimize) {
+  RunTest("cros_window_minimize.js");
 }
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowRestore) {
+  RunTest("cros_window_restore.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowRestoreWithHistory) {
+  RunTest("cros_window_restore_with_history.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowFocusSingle) {
+  RunTest("cros_window_focus_single.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowFocusMulti) {
+  RunTest("cros_window_focus_multi.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowClose) {
+  RunTest("cros_window_close.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, WindowOpenedEvent) {
+  RunTest("window_opened_event.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowWebAppTab) {
+  InstallAndLaunchBrowserWebApp();
+
+  // Unfocus the web app.
+  chrome::SelectPreviousTab(browser());
+
+  // Run test which calls .getWindows().
+  RunTest("cros_window_web_app_tab.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, IgnoreWebAppTabs) {
+  InstallAndLaunchBrowserWebApp();
+
+  RunTest("cros_ignore_web_app_tabs.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CacheGetWindowsReturnsProperty) {
+  RunTest("cache_get_windows_returns_property.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowSWACrashTest) {
+  // Calling this from inside a Mojo method implementation causes a nested loop
+  // and the test hangs. Call it here instead.
+  swa_installation().WaitForAppInstall();
+  RunTest("cros_window_swa_crash_test.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowPendingCallsToGetAllWindowsShouldNotCrash) {
+  RunTest("cros_window_pending_calls_to_get_all_windows_should_not_crash.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowPendingCallsToGetWindowShouldNotCrash) {
+  RunTest("cros_window_pending_calls_to_get_window_should_not_crash.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowPendingCallsToGetWidgetShouldNotCrash) {
+  RunTest("cros_window_pending_calls_to_get_widget_should_not_crash.js");
+}
+
+// Tests that the CrosWindowManagement object is an EventTarget.
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosWindowManagementEventTarget) {
+  RunTest("cros_window_manager_event_target.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CrosAcceleratorEventIdl) {
+  RunTest("cros_accelerator_event_idl.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, CrosWindowEventIdl) {
+  RunTest("cros_window_event_idl.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, StartEvent) {
+  RunTest("cros_start_event.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       CloseOutsideOfExtension) {
+  RunTest("close_outside_of_extension.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest, AcceleratorEvent) {
+  RunTest("accelerator_event.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       AcceleratorEvent_Repeat) {
+  RunTest("accelerator_event_repeat.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       AcceleratorEvent_NoEvent) {
+  RunTest("accelerator_event_no_event.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       AcceleratorEvent_Shift) {
+  RunTest("accelerator_event_shift.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       AcceleratorEvent_ReleaseKey) {
+  RunTest("accelerator_event_release_key.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       AcceleratorEvent_ArrowKeys) {
+  RunTest("accelerator_event_arrow_keys.js");
+}
+
+IN_PROC_BROWSER_TEST_F(CrosWindowManagementBrowserTest,
+                       AcceleratorEvent_WakeUpWorker) {
+  InitMultiRunTest("accelerator_event_wake_up_sw.js");
+  WaitForRun("First run");
+
+  StopServiceWorkers();
+
+  // Dispatch event. The Service Worker should wake up and fire an event.
+  ui::test::EventGenerator generator(ash::Shell::Get()->GetPrimaryRootWindow());
+  generator.PressKey(ui::KeyboardCode::VKEY_A,
+                     ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN);
+
+  WaitForRun("Test event properties");
+}
+
+}  //  namespace ash

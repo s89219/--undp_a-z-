@@ -1,21 +1,22 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_TEST_BASE_IN_PROCESS_BROWSER_TEST_H_
 #define CHROME_TEST_BASE_IN_PROCESS_BROWSER_TEST_H_
 
+#include <map>
 #include <memory>
 #include <string>
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
 #include "base/run_loop.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "components/feature_engagement/test/scoped_iph_feature_list.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -51,6 +52,10 @@ namespace views {
 class ViewsDelegate;
 }
 #endif  // defined(TOOLKIT_VIEWS)
+
+namespace display {
+class Screen;
+}
 
 class Browser;
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -175,6 +180,13 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   // PreRunTestOnMainThread().
   void SelectFirstBrowser();
 
+  // This function is used to record a set of properties for a test case in
+  // gtest result and that will be used by resultDB. The map's key value pair
+  // are defined by each test case. For use case check this bug:
+  // https://crbug.com/1365899
+  // The final value of the result is the format of key1=value1;key2=value2.
+  void RecordPropertyFromMap(const std::map<std::string, std::string>& tags);
+
  protected:
   // Closes the given browser and waits for it to release all its resources.
   void CloseBrowserSynchronously(Browser* browser);
@@ -225,7 +237,7 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   [[nodiscard]] virtual bool SetUpUserDataDirectory();
 
   // Initializes the display::Screen instance.
-  virtual void SetScreenInstance() {}
+  virtual void SetScreenInstance();
 
   // BrowserTestBase:
   void PreRunTestOnMainThread() override;
@@ -314,6 +326,10 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   FakeAccountManagerUI* GetFakeAccountManagerUI() const;
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
+  std::unique_ptr<display::Screen> screen_;
+#endif
+
  private:
   void Initialize();
 
@@ -326,7 +342,10 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   // If no browser is created in BrowserMain(), then |browser_| will remain
   // nullptr unless SelectFirstBrowser() is called after the creation of the
   // first browser instance at a later time.
-  raw_ptr<Browser> browser_ = nullptr;
+  //
+  // TODO(crbug.com/1298696): browser_tests breaks with MTECheckedPtr
+  // enabled. Triage.
+  raw_ptr<Browser, DanglingUntriagedDegradeToNoOpWhenMTE> browser_ = nullptr;
 
   // Used to run the process until the BrowserProcess signals the test to quit.
   std::unique_ptr<base::RunLoop> run_loop_;
@@ -347,8 +366,19 @@ class InProcessBrowserTest : public content::BrowserTestBase {
 
   base::test::ScopedFeatureList scoped_feature_list_;
 
+  // In-product help can conflict with tests' expected window activation and
+  // focus. This disables all IPH by default.
+  //
+  // This was previously done by disabling all IPH features, but that destroyed
+  // all field trials that included an IPH because overriding any feature
+  // touched by a field trial disables the field trial (see crbug.com/1381669).
+  //
+  // Individual tests can re-enable IPH using another ScopedIphFeatureList.
+  feature_engagement::test::ScopedIphFeatureList block_all_iph_feature_list_;
+
 #if BUILDFLAG(IS_MAC)
-  base::mac::ScopedNSAutoreleasePool* autorelease_pool_ = nullptr;
+  raw_ptr<base::mac::ScopedNSAutoreleasePool, DanglingUntriaged>
+      autorelease_pool_ = nullptr;
   std::unique_ptr<ScopedBundleSwizzlerMac> bundle_swizzler_;
 
   // Enable fake full keyboard access by default, so that tests don't depend on

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,20 +16,23 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.MathUtils;
+import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.ntp.FeedPositionUtils;
 import org.chromium.chrome.browser.suggestions.SiteSuggestion;
 
 /**
  * A layout that arranges tiles in a grid.
  */
 public class MostVisitedTilesGridLayout extends FrameLayout {
-    private final int mVerticalSpacing;
     private final int mMinHorizontalSpacing;
     private final int mMaxHorizontalSpacing;
     private final int mMaxWidth;
 
+    private int mVerticalSpacing;
     private int mMaxRows;
     private int mMaxColumns;
+    private boolean mSearchProviderHasLogo = true;
 
     /**
      * Constructor for inflating from XML.
@@ -41,7 +44,8 @@ public class MostVisitedTilesGridLayout extends FrameLayout {
         super(context, attrs);
 
         Resources res = getResources();
-        mVerticalSpacing = res.getDimensionPixelOffset(R.dimen.tile_grid_layout_vertical_spacing);
+        mVerticalSpacing =
+                getResources().getDimensionPixelOffset(getGridMVTVerticalSpacingResourcesId());
         TypedArray styledAttrs =
                 context.obtainStyledAttributes(attrs, R.styleable.MostVisitedTilesGridLayout);
         mMinHorizontalSpacing = styledAttrs.getDimensionPixelOffset(
@@ -174,5 +178,31 @@ public class MostVisitedTilesGridLayout extends FrameLayout {
             if (suggestion.equals(tileView.getData())) return tileView;
         }
         return null;
+    }
+
+    // TODO(crbug.com/1329288): Remove this method when the Feed position experiment is cleaned up.
+    void setSearchProviderHasLogo(boolean searchProviderHasLogo) {
+        if (mSearchProviderHasLogo == searchProviderHasLogo) return;
+
+        mSearchProviderHasLogo = searchProviderHasLogo;
+        mVerticalSpacing =
+                getResources().getDimensionPixelOffset(getGridMVTVerticalSpacingResourcesId());
+    }
+
+    // TODO(crbug.com/1329288): Remove this method when the Feed position experiment is cleaned up.
+    private int getGridMVTVerticalSpacingResourcesId() {
+        if (!LibraryLoader.getInstance().isInitialized() || !mSearchProviderHasLogo) {
+            return R.dimen.tile_grid_layout_vertical_spacing;
+        }
+
+        if (FeedPositionUtils.isFeedPushDownLargeEnabled()) {
+            return R.dimen.tile_grid_layout_vertical_spacing_push_down_large;
+        }
+
+        if (FeedPositionUtils.isFeedPushDownSmallEnabled()) {
+            return R.dimen.tile_grid_layout_vertical_spacing_push_down_small;
+        }
+
+        return R.dimen.tile_grid_layout_vertical_spacing;
     }
 }

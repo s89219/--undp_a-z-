@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,9 @@
 #include <tuple>
 
 #include "base/callback_forward.h"
+#include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "content/browser/interest_group/interest_group_permissions_cache.h"
 #include "net/base/network_isolation_key.h"
 #include "services/data_decoder/public/cpp/data_decoder.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
@@ -37,7 +39,6 @@ namespace content {
 //   pending operations the renderer sends to the browser process at a time.
 // * Add detailed error information to DevTools or as a Promise failure on
 //   rejection.
-// * Add rate limiting in some manner in a way that avoids leaking information.
 // * Figure out integration with IsInterestGroupAPIAllowed() - e.g., for
 //   cross-origin iframes, there are 3 origins (top-level frame, iframe,
 //   interest group frame). Currently we're not considering iframe origin at
@@ -88,12 +89,12 @@ class CONTENT_EXPORT InterestGroupPermissionsChecker {
                         network::mojom::URLLoaderFactory& url_loader_factory,
                         PermissionsCheckCallback permissions_check_callback);
 
+  void ClearCache();
+
+  InterestGroupPermissionsCache& cache_for_testing() { return cache_; }
+
  private:
-  // Permissions associated with an interest group origin.
-  struct Permissions {
-    bool can_join = false;
-    bool can_leave = false;
-  };
+  using Permissions = InterestGroupPermissionsCache::Permissions;
 
   // Two permissions checks with the same key can use the same .well-known
   // response, though they may have a different associated Operation.
@@ -134,9 +135,6 @@ class CONTENT_EXPORT InterestGroupPermissionsChecker {
 
     // Used to fetch the .well-known URL.
     std::unique_ptr<network::SimpleURLLoader> simple_url_loader;
-
-    // Used to decode the .well-known URL's response body.
-    data_decoder::DataDecoder data_decoder;
   };
 
   // A map of interest group origins to their ActiveRequests.
@@ -162,6 +160,9 @@ class CONTENT_EXPORT InterestGroupPermissionsChecker {
   static bool AllowsOperation(Permissions permissions, Operation operation);
 
   ActiveRequestMap active_requests_;
+  InterestGroupPermissionsCache cache_;
+
+  base::WeakPtrFactory<InterestGroupPermissionsChecker> weak_factory_{this};
 };
 
 }  // namespace content

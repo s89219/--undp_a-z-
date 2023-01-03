@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,11 @@
 
 #include <memory>
 
-#include "base/command_line.h"
 #include "components/version_info/channel.h"
+
+namespace base {
+class CommandLine;
+}  // namespace base
 
 namespace enterprise_connectors {
 
@@ -22,7 +25,7 @@ class KeyRotationManager;
 // process and the `channel` is the build channel (i.e stable, dev, etc).
 bool RotateDeviceTrustKey(
     std::unique_ptr<KeyRotationManager> key_rotation_manager,
-    const base::CommandLine* command_line,
+    const base::CommandLine& command_line,
     version_info::Channel channel);
 
 }  // namespace enterprise_connectors

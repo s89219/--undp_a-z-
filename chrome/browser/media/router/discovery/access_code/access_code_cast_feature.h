@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,16 +7,17 @@
 
 #include "base/feature_list.h"
 #include "build/build_config.h"
+#include "chrome/browser/profiles/profile.h"
 
 class PrefRegistrySimple;
-class PrefService;
 
 namespace base {
 class TimeDelta;
 }
 
 namespace features {
-extern const base::Feature kAccessCodeCastRememberDevices;
+BASE_DECLARE_FEATURE(kAccessCodeCastRememberDevices);
+BASE_DECLARE_FEATURE(kAccessCodeCastTabSwitchingUI);
 }
 
 namespace media_router {
@@ -43,14 +44,6 @@ constexpr char kAccessCodeCastDeviceDuration[] =
 constexpr char kAccessCodeCastDevices[] =
     "media_router.access_code_cast.devices";
 
-// Pref that keeps track of which cast devices were discovered on which
-// networks. It is registered as a dictionary pref with each key being a
-// std::string network_id and value being a list of MediaSink::Id. Whenever a
-// device is added or updated, this dictionary will be updated with that device.
-// If the device expires it will be removed from that network list.
-constexpr char kAccessCodeCastDiscoveredNetworks[] =
-    "media_router.access_code_cast.discovered_networks";
-
 // Pref that keeps track of when a cast device is added. It is be registered
 // as a dictionary pref with each key being a MediaSink::Id and value being a
 // base::Time.
@@ -64,11 +57,15 @@ void RegisterAccessCodeProfilePrefs(PrefRegistrySimple* registry);
 
 // Returns true if this user is allowed to use Access Codes & QR codes to
 // discover cast devices.
-bool GetAccessCodeCastEnabledPref(PrefService* pref_service);
+bool GetAccessCodeCastEnabledPref(Profile* profile);
 
 // Returns the duration that a scanned cast device is allowed to remain
 // in the cast list.
-base::TimeDelta GetAccessCodeDeviceDurationPref(PrefService* pref_service);
+base::TimeDelta GetAccessCodeDeviceDurationPref(Profile* profile);
+
+// Returns true if this user is allowed to use Access Codes & QR codes to
+// discover cast devices, and AccessCodeCastTabSwitchingUI flag is enabled.
+bool IsAccessCodeCastTabSwitchingUiEnabled(Profile* profile);
 
 #endif  // !BUILDFLAG(IS_ANDROID)
 

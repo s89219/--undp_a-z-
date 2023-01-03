@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
 #include "chrome/browser/web_applications/external_install_options.h"
-#include "chrome/browser/web_applications/externally_installed_web_app_prefs.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
@@ -58,12 +57,12 @@ class WebAppFileHandlerRegistrationLinuxBrowserTest
   }
 
   WebAppRegistrar& registrar() {
-    return WebAppProvider::GetForTest(browser()->profile())->registrar();
+    return WebAppProvider::GetForTest(browser()->profile())->registrar_unsafe();
   }
 
   void InstallApp(ExternalInstallOptions install_options) {
-    auto result = web_app::ExternallyManagedAppManagerInstall(
-        browser()->profile(), install_options);
+    auto result = ExternallyManagedAppManagerInstall(browser()->profile(),
+                                                     install_options);
     result_code_ = result.code;
   }
 
@@ -95,7 +94,8 @@ IN_PROC_BROWSER_TEST_F(
   base::RunLoop run_loop;
   UpdateMimeInfoDatabaseOnLinuxCallback callback = base::BindLambdaForTesting(
       [&expected_file_contents, &path_reached, &run_loop](
-          base::FilePath filename, std::string file_contents) {
+          base::FilePath filename, std::string xdg_command,
+          std::string file_contents) {
         EXPECT_EQ(file_contents, expected_file_contents);
         path_reached = true;
         run_loop.Quit();

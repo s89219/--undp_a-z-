@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -107,6 +107,9 @@ class ANIMATION_EXPORT Tween {
   static double CalculateValue(Type type, double state);
 
   // Conveniences for getting a value between a start and end point.
+  static SkColor4f ColorValueBetween(double value,
+                                     SkColor4f start,
+                                     SkColor4f target);
   static SkColor ColorValueBetween(double value, SkColor start, SkColor target);
   static double DoubleValueBetween(double value, double start, double target);
   static float FloatValueBetween(double value, float start, float target);

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@ TEST(BrowserIOThreadDelegateTest, CanPostTasksToThread) {
   thread.StartWithOptions(std::move(options));
 
   auto runner =
-      handle->GetBrowserTaskRunner(BrowserTaskQueues::QueueType::kDefault);
+      handle->GetBrowserTaskRunner(BrowserTaskQueues::QueueType::kUserBlocking);
 
   base::WaitableEvent event;
   runner->PostTask(FROM_HERE, base::BindOnce(&base::WaitableEvent::Signal,

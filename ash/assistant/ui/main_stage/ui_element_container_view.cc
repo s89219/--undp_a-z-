@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "ash/assistant/ui/assistant_ui_constants.h"
 #include "ash/assistant/ui/assistant_view_delegate.h"
 #include "ash/assistant/ui/assistant_view_ids.h"
-#include "ash/assistant/ui/colors/assistant_colors_util.h"
 #include "ash/assistant/ui/main_stage/animated_container_view.h"
 #include "ash/assistant/ui/main_stage/assistant_ui_element_view.h"
 #include "ash/assistant/ui/main_stage/assistant_ui_element_view_factory.h"
@@ -23,7 +22,7 @@
 #include "base/callback.h"
 #include "base/time/time.h"
 #include "cc/base/math_util.h"
-#include "chromeos/services/assistant/public/cpp/features.h"
+#include "chromeos/ash/services/assistant/public/cpp/features.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/aura/window.h"
 #include "ui/base/metadata/metadata_header_macros.h"
@@ -88,8 +87,7 @@ END_METADATA
 
 UiElementContainerView::UiElementContainerView(AssistantViewDelegate* delegate)
     : AnimatedContainerView(delegate),
-      view_factory_(std::make_unique<AssistantUiElementViewFactory>(delegate)),
-      use_dark_light_mode_colors_(assistant::UseDarkLightModeColors()) {
+      view_factory_(std::make_unique<AssistantUiElementViewFactory>(delegate)) {
   SetID(AssistantViewID::kUiElementContainer);
   InitLayout();
 }
@@ -137,7 +135,7 @@ void UiElementContainerView::OnContentsPreferredSizeChanged(
 
 void UiElementContainerView::InitLayout() {
   // Content.
-  const int horizontal_margin = assistant::ui::GetHorizontalMargin();
+  const int horizontal_margin = assistant::ui::kHorizontalMargin;
   content_view()->SetLayoutManager(std::make_unique<views::BoxLayout>(
       views::BoxLayout::Orientation::kVertical,
       gfx::Insets::TLBR(0, horizontal_margin, kPaddingBottomDip,
@@ -224,6 +222,14 @@ std::unique_ptr<ElementAnimator> UiElementContainerView::HandleUiElement(
 
   // Add the view to the hierarchy and prepare its animation layer for entry.
   auto* view_ptr = content_view()->AddChildView(std::move(view));
+
+  // If this runs in test, AssistantCardElement can use TestAshWebView. It does
+  // not return a native view. We cannot obtain a layer for animation. We want
+  // to add it to the UI tree as a test is going to interact with it. But we
+  // skip an animation.
+  if (is_card && !view_ptr->GetLayerForAnimating())
+    return nullptr;
+
   view_ptr->GetLayerForAnimating()->SetOpacity(0.f);
 
   // Return the animator that will be used to animate the view.
@@ -252,12 +258,8 @@ void UiElementContainerView::OnOverflowIndicatorVisibilityChanged(
 }
 
 SkColor UiElementContainerView::GetOverflowIndicatorBackgroundColor() const {
-  if (use_dark_light_mode_colors_) {
-    return ColorProvider::Get()->GetContentLayerColor(
-        ColorProvider::ContentLayerType::kSeparatorColor);
-  }
-
-  return gfx::kGoogleGrey300;
+  return ColorProvider::Get()->GetContentLayerColor(
+      ColorProvider::ContentLayerType::kSeparatorColor);
 }
 
 }  // namespace ash

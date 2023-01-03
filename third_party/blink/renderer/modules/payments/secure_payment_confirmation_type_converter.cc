@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_arraybuffer_arraybufferview.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_payment_credential_instrument.h"
 #include "third_party/blink/renderer/modules/credentialmanagement/credential_manager_type_converters.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
@@ -58,6 +57,8 @@ TypeConverter<payments::mojom::blink::SecurePaymentConfirmationRequestPtr,
   output->rp_id = input->rpId();
   if (input->hasPayeeName())
     output->payee_name = input->payeeName();
+
+  output->show_opt_out = input->getShowOptOutOr(false);
 
   return output;
 }

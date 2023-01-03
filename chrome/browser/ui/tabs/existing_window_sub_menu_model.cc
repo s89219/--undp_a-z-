@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -106,11 +106,11 @@ ExistingWindowSubMenuModel::BuildMenuItemInfoVectorForBrowsers(
         browser->GetWindowTitleForMaxWidth(kWindowTitleForMenuMaxWidth);
     menu_item_infos.emplace_back(window_title);
     menu_item_infos.back().may_have_mnemonics = false;
-    menu_item_infos.back().target_index = static_cast<int>(i);
+    menu_item_infos.back().target_index = i;
   }
   return menu_item_infos;
 }
 
-void ExistingWindowSubMenuModel::ExecuteExistingCommand(int target_index) {
+void ExistingWindowSubMenuModel::ExecuteExistingCommand(size_t target_index) {
   model()->ExecuteAddToExistingWindowCommand(GetContextIndex(), target_index);
 }

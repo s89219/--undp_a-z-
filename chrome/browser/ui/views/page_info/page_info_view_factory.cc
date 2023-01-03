@@ -1,22 +1,30 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/page_info/page_info_view_factory.h"
 
+#include <memory>
+#include <string>
+
+#include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/page_info/chrome_page_info_ui_delegate.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/page_info/page_info_about_this_site_content_view.h"
 #include "chrome/browser/ui/views/page_info/page_info_ad_personalization_content_view.h"
+#include "chrome/browser/ui/views/page_info/page_info_cookies_content_view.h"
 #include "chrome/browser/ui/views/page_info/page_info_main_view.h"
 #include "chrome/browser/ui/views/page_info/page_info_navigation_handler.h"
 #include "chrome/browser/ui/views/page_info/page_info_permission_content_view.h"
 #include "chrome/browser/ui/views/page_info/page_info_security_content_view.h"
+#include "components/page_info/core/features.h"
 #include "components/page_info/core/proto/about_this_site_metadata.pb.h"
 #include "components/page_info/page_info.h"
 #include "components/permissions/permission_util.h"
@@ -32,7 +40,6 @@
 #include "ui/views/controls/separator.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/flex_layout.h"
-#include "ui/views/layout/grid_layout.h"
 #include "ui/views/vector_icons.h"
 
 constexpr int PageInfoViewFactory::kMinBubbleWidth;
@@ -123,7 +130,8 @@ std::unique_ptr<views::View> PageInfoViewFactory::CreateMainPageView(
 std::unique_ptr<views::View> PageInfoViewFactory::CreateSecurityPageView() {
   return std::make_unique<PageInfoSubpageView>(
       CreateSubpageHeader(
-          l10n_util::GetStringUTF16(IDS_PAGE_INFO_SECURITY_SUBPAGE_HEADER)),
+          l10n_util::GetStringUTF16(IDS_PAGE_INFO_SECURITY_SUBPAGE_HEADER),
+          presenter_->GetSiteNameOrAppNameToDisplay()),
       std::make_unique<PageInfoSecurityContentView>(
           presenter_, /*is_standalone_page=*/true));
 }
@@ -131,7 +139,8 @@ std::unique_ptr<views::View> PageInfoViewFactory::CreateSecurityPageView() {
 std::unique_ptr<views::View> PageInfoViewFactory::CreatePermissionPageView(
     ContentSettingsType type) {
   return std::make_unique<PageInfoSubpageView>(
-      CreateSubpageHeader(PageInfoUI::PermissionTypeToUIString(type)),
+      CreateSubpageHeader(PageInfoUI::PermissionTypeToUIString(type),
+                          presenter_->GetSiteNameOrAppNameToDisplay()),
       std::make_unique<PageInfoPermissionContentView>(presenter_, ui_delegate_,
                                                       type));
 }
@@ -140,7 +149,8 @@ std::unique_ptr<views::View> PageInfoViewFactory::CreateAboutThisSitePageView(
     const page_info::proto::SiteInfo& info) {
   return std::make_unique<PageInfoSubpageView>(
       CreateSubpageHeader(
-          l10n_util::GetStringUTF16(IDS_PAGE_INFO_ABOUT_THIS_SITE_HEADER)),
+          l10n_util::GetStringUTF16(IDS_PAGE_INFO_ABOUT_THIS_SITE_HEADER),
+          presenter_->GetSiteNameOrAppNameToDisplay()),
       std::make_unique<PageInfoAboutThisSiteContentView>(presenter_,
                                                          ui_delegate_, info));
 }
@@ -149,13 +159,24 @@ std::unique_ptr<views::View>
 PageInfoViewFactory::CreateAdPersonalizationPageView() {
   return std::make_unique<PageInfoSubpageView>(
       CreateSubpageHeader(
-          l10n_util::GetStringUTF16(IDS_PAGE_INFO_AD_PERSONALIZATION_HEADER)),
+          l10n_util::GetStringUTF16(IDS_PAGE_INFO_AD_PERSONALIZATION_HEADER),
+          presenter_->GetSiteNameOrAppNameToDisplay()),
       std::make_unique<PageInfoAdPersonalizationContentView>(presenter_,
                                                              ui_delegate_));
 }
 
+// TODO(crbug.com/1346305): Use translatable strings instead of hardcoded one.
+std::unique_ptr<views::View> PageInfoViewFactory::CreateCookiesPageView() {
+  return std::make_unique<PageInfoSubpageView>(
+      CreateSubpageHeader(
+          l10n_util::GetStringUTF16(IDS_PAGE_INFO_COOKIES_HEADER),
+          presenter_->GetSiteNameOrAppNameToDisplay()),
+      std::make_unique<PageInfoCookiesContentView>(presenter_));
+}
+
 std::unique_ptr<views::View> PageInfoViewFactory::CreateSubpageHeader(
-    std::u16string title) {
+    std::u16string title,
+    std::u16string subtitle) {
   ChromeLayoutProvider* layout_provider = ChromeLayoutProvider::Get();
   views::FlexSpecification stretch_specification =
       views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
@@ -196,15 +217,18 @@ std::unique_ptr<views::View> PageInfoViewFactory::CreateSubpageHeader(
       std::make_unique<views::Label>(title, views::style::CONTEXT_DIALOG_TITLE,
                                      views::style::STYLE_SECONDARY));
   title_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  auto* subtitle_label =
-      label_wrapper->AddChildView(std::make_unique<views::Label>(
-          presenter_->GetSimpleSiteName(), views::style::CONTEXT_LABEL,
-          views::style::STYLE_SECONDARY,
-          gfx::DirectionalityMode::DIRECTIONALITY_AS_URL));
-  subtitle_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  subtitle_label->SetAllowCharacterBreak(true);
-  subtitle_label->SetMultiLine(true);
-  subtitle_label->SetProperty(views::kFlexBehaviorKey, stretch_specification);
+
+  if (!subtitle.empty()) {
+    auto* subtitle_label =
+        label_wrapper->AddChildView(std::make_unique<views::Label>(
+            subtitle, views::style::CONTEXT_LABEL,
+            views::style::STYLE_SECONDARY,
+            gfx::DirectionalityMode::DIRECTIONALITY_AS_URL));
+    subtitle_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    subtitle_label->SetAllowCharacterBreak(true);
+    subtitle_label->SetMultiLine(true);
+    subtitle_label->SetProperty(views::kFlexBehaviorKey, stretch_specification);
+  }
 
   auto close_button = views::BubbleFrameView::CreateCloseButton(
       base::BindRepeating(&PageInfoNavigationHandler::CloseBubble,
@@ -225,6 +249,9 @@ const ui::ImageModel PageInfoViewFactory::GetPermissionIcon(
   switch (info.type) {
     case ContentSettingsType::COOKIES:
       icon = &vector_icons::kCookieIcon;
+      break;
+    case ContentSettingsType::FEDERATED_IDENTITY_API:
+      icon = &vector_icons::kAccountCircleIcon;
       break;
     case ContentSettingsType::IMAGES:
       icon = &vector_icons::kPhotoIcon;
@@ -293,7 +320,7 @@ const ui::ImageModel PageInfoViewFactory::GetPermissionIcon(
     case ContentSettingsType::AR:
       icon = &vector_icons::kVrHeadsetIcon;
       break;
-    case ContentSettingsType::WINDOW_PLACEMENT:
+    case ContentSettingsType::WINDOW_MANAGEMENT:
       icon = &vector_icons::kSelectWindowIcon;
       break;
     case ContentSettingsType::LOCAL_FONTS:
@@ -333,7 +360,7 @@ const ui::ImageModel PageInfoViewFactory::GetChosenObjectIcon(
   // TODO(https://crbug.com/1048860): Check the connected status of devices and
   // change the icon to one that reflects that status.
   const gfx::VectorIcon* icon = &gfx::kNoneIcon;
-  switch (object.ui_info.content_settings_type) {
+  switch (object.ui_info->content_settings_type) {
     case ContentSettingsType::USB_CHOOSER_DATA:
       icon = &vector_icons::kUsbIcon;
       break;
@@ -414,6 +441,12 @@ const ui::ImageModel PageInfoViewFactory::GetAboutThisSiteIcon() {
 }
 
 // static
+const ui::ImageModel PageInfoViewFactory::GetAboutThisPageIcon() {
+  return ui::ImageModel::FromVectorIcon(views::kInfoIcon, ui::kColorIcon,
+                                        GetIconSize());
+}
+
+// static
 const ui::ImageModel PageInfoViewFactory::GetHistoryIcon() {
   return ui::ImageModel::FromVectorIcon(vector_icons::kHistoryIcon,
                                         ui::kColorIcon, GetIconSize());
@@ -434,4 +467,50 @@ const ui::ImageModel PageInfoViewFactory::GetManagedPermissionIcon(
           : vector_icons::kBusinessIcon;
   return ui::ImageModel::FromVectorIcon(managed_vector_icon, ui::kColorIcon,
                                         GetIconSize());
+}
+
+// static
+const ui::ImageModel PageInfoViewFactory::GetBlockingThirdPartyCookiesIcon() {
+  return ui::ImageModel::FromVectorIcon(kEyeCrossedIcon, ui::kColorIcon,
+                                        GetIconSize());
+}
+
+// static
+const ui::ImageModel PageInfoViewFactory::GetFpsIcon() {
+  return ui::ImageModel::FromVectorIcon(vector_icons::kTenancyIcon,
+                                        ui::kColorIcon, GetIconSize());
+}
+
+// static
+const ui::ImageModel PageInfoViewFactory::GetEnforcedCookieControlsIcon(
+    CookieControlsEnforcement enforcement) {
+  switch (enforcement) {
+    case CookieControlsEnforcement::kEnforcedByExtension:
+      return GetEnforcedByExtensionIcon();
+    case CookieControlsEnforcement::kEnforcedByPolicy:
+      return GetEnforcedByPolicyIcon();
+    case CookieControlsEnforcement::kEnforcedByCookieSetting:
+      return GetEnforcedBySettingsIcon();
+    case CookieControlsEnforcement::kNoEnforcement:
+      NOTREACHED();
+      return ui::ImageModel();
+  }
+}
+
+// static
+const ui::ImageModel PageInfoViewFactory::GetEnforcedByPolicyIcon() {
+  return ui::ImageModel::FromVectorIcon(vector_icons::kBusinessIcon,
+                                        ui::kColorIcon, GetIconSize());
+}
+
+// static
+const ui::ImageModel PageInfoViewFactory::GetEnforcedByExtensionIcon() {
+  return ui::ImageModel::FromVectorIcon(vector_icons::kExtensionIcon,
+                                        ui::kColorIcon, GetIconSize());
+}
+
+// static
+const ui::ImageModel PageInfoViewFactory::GetEnforcedBySettingsIcon() {
+  return ui::ImageModel::FromVectorIcon(vector_icons::kSettingsIcon,
+                                        ui::kColorIcon, GetIconSize());
 }

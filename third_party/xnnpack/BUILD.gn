@@ -1,4 +1,4 @@
-# Copyright 2022 The Chromium Authors. All rights reserved.
+# Copyright 2022 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -16,10 +16,13 @@
 
 config("xnnpack_config") {
   include_dirs = [
+    "//third_party/pthreadpool/src/include",
     "src/deps/clog/include",
     "src/include",
     "src/src",
   ]
+
+  cflags = [ "-Wno-unused-function" ]
 
   defines = [
     # Don't enable this without first talking to Chrome Security!
@@ -28,9 +31,11 @@ config("xnnpack_config") {
     "XNN_ENABLE_JIT=0",
 
     "XNN_ENABLE_ASSEMBLY=1",
+    "XNN_ENABLE_GEMM_M_SPECIALIZATION=1",
     "XNN_ENABLE_MEMOPT=1",
     "XNN_ENABLE_SPARSE=1",
     "XNN_LOG_LEVEL=0",
+    "XNN_LOG_TO_STDIO=0",
   ]
 }
 source_set("xnnpack") {
@@ -46,8 +51,10 @@ source_set("xnnpack") {
     "src/src/datatype-strings.c",
     "src/src/indirection.c",
     "src/src/init.c",
+    "src/src/log.c",
     "src/src/memory-planner.c",
     "src/src/memory.c",
+    "src/src/microparams-init.c",
     "src/src/mutex.c",
     "src/src/node-type.c",
     "src/src/normalization.c",
@@ -56,7 +63,6 @@ source_set("xnnpack") {
     "src/src/operator-strings.c",
     "src/src/operator-utils.c",
     "src/src/packing.c",
-    "src/src/params-init.c",
     "src/src/params.c",
     "src/src/runtime.c",
     "src/src/subgraph.c",
@@ -68,6 +74,7 @@ source_set("xnnpack") {
     ":amalgam_avx",
     ":amalgam_avx512f",
     ":amalgam_avx512f-avx512cd-avx512bw-avx512dq-avx512vl",
+    ":amalgam_avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vbmi",
     ":amalgam_f16c",
     ":amalgam_f16c-fma",
     ":amalgam_f16c-fma-avx2",
@@ -92,7 +99,6 @@ source_set("xnnpack") {
     ":subgraph",
     ":tables",
     ":u8-lut32norm",
-    ":x32-depthtospace2d-chw2hwc",
     ":x8-lut",
     ":xx-copy",
     ":xx-transpose",
@@ -153,6 +159,32 @@ source_set("amalgam_avx512f-avx512cd-avx512bw-avx512dq-avx512vl") {
   ]
 
   sources = [ "src/src/amalgam/avx512skx.c" ]
+
+  configs -= [ "//build/config/compiler:chromium_code" ]
+  configs += [ "//build/config/compiler:no_chromium_code" ]
+  configs += [ "//build/config/sanitizers:cfi_icall_generalize_pointers" ]
+
+  deps = [
+    "//third_party/cpuinfo",
+    "//third_party/fp16",
+    "//third_party/fxdiv",
+    "//third_party/pthreadpool",
+  ]
+
+  public_configs = [ ":xnnpack_config" ]
+}
+
+source_set("amalgam_avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vbmi") {
+  cflags = [
+    "-mavx512bw",
+    "-mavx512cd",
+    "-mavx512dq",
+    "-mavx512f",
+    "-mavx512vbmi",
+    "-mavx512vl",
+  ]
+
+  sources = [ "src/src/amalgam/avx512vbmi.c" ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
@@ -327,16 +359,16 @@ source_set("operators") {
     "src/src/operators/convolution-nchw.c",
     "src/src/operators/convolution-nhwc.c",
     "src/src/operators/deconvolution-nhwc.c",
-    "src/src/operators/depth-to-space-nchw2nhwc.c",
-    "src/src/operators/depth-to-space-nhwc.c",
     "src/src/operators/fully-connected-nc.c",
     "src/src/operators/global-average-pooling-ncw.c",
     "src/src/operators/global-average-pooling-nwc.c",
     "src/src/operators/lut-elementwise-nc.c",
     "src/src/operators/max-pooling-nhwc.c",
+    "src/src/operators/post-operation.c",
     "src/src/operators/prelu-nc.c",
     "src/src/operators/resize-bilinear-nchw.c",
     "src/src/operators/resize-bilinear-nhwc.c",
+    "src/src/operators/slice-nd.c",
     "src/src/operators/softmax-nc.c",
     "src/src/operators/transpose-nd.c",
     "src/src/operators/unary-elementwise-nc.c",
@@ -646,6 +678,7 @@ source_set("subgraph") {
     "src/src/subgraph/concatenate.c",
     "src/src/subgraph/convert.c",
     "src/src/subgraph/convolution-2d.c",
+    "src/src/subgraph/copy.c",
     "src/src/subgraph/deconvolution-2d.c",
     "src/src/subgraph/depth-to-space.c",
     "src/src/subgraph/depthwise-convolution-2d.c",
@@ -654,7 +687,7 @@ source_set("subgraph") {
     "src/src/subgraph/even-split.c",
     "src/src/subgraph/floor.c",
     "src/src/subgraph/fully-connected.c",
-    "src/src/subgraph/global-average-pooling-2d.c",
+    "src/src/subgraph/global-average-pooling.c",
     "src/src/subgraph/hardswish.c",
     "src/src/subgraph/leaky-relu.c",
     "src/src/subgraph/max-pooling-2d.c",
@@ -665,12 +698,15 @@ source_set("subgraph") {
     "src/src/subgraph/prelu.c",
     "src/src/subgraph/sigmoid.c",
     "src/src/subgraph/softmax.c",
+    "src/src/subgraph/space-to-depth-2d.c",
     "src/src/subgraph/square-root.c",
     "src/src/subgraph/square.c",
     "src/src/subgraph/squared-difference.c",
     "src/src/subgraph/static-constant-pad.c",
     "src/src/subgraph/static-reshape.c",
     "src/src/subgraph/static-resize-bilinear-2d.c",
+    "src/src/subgraph/static-slice.c",
+    "src/src/subgraph/static-transpose.c",
     "src/src/subgraph/subtract.c",
     "src/src/subgraph/unpooling-2d.c",
     "src/src/subgraph/validation.c",
@@ -701,6 +737,7 @@ source_set("tables") {
     "src/src/tables/exp2minus-k-over-4.c",
     "src/src/tables/exp2minus-k-over-64.c",
     "src/src/tables/exp2minus-k-over-8.c",
+    "src/src/tables/vlog.c",
   ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
@@ -721,25 +758,6 @@ source_set("u8-lut32norm") {
   cflags = []
 
   sources = [ "src/src/u8-lut32norm/scalar.c" ]
-
-  configs -= [ "//build/config/compiler:chromium_code" ]
-  configs += [ "//build/config/compiler:no_chromium_code" ]
-  configs += [ "//build/config/sanitizers:cfi_icall_generalize_pointers" ]
-
-  deps = [
-    "//third_party/cpuinfo",
-    "//third_party/fp16",
-    "//third_party/fxdiv",
-    "//third_party/pthreadpool",
-  ]
-
-  public_configs = [ ":xnnpack_config" ]
-}
-
-source_set("x32-depthtospace2d-chw2hwc") {
-  cflags = []
-
-  sources = [ "src/src/x32-depthtospace2d-chw2hwc/scalar.c" ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]

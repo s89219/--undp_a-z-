@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,7 +58,7 @@ class OnDeviceHeadProvider : public AutocompleteProvider {
   // matches the given AutocompleteInput.
   void DoSearch(std::unique_ptr<OnDeviceHeadProviderParams> params);
   // SearchDone: called after DoSearch, fills |matches_| with the suggestions
-  // fetches by DoSearch and then calls OnProviderUpdate.
+  // fetches by DoSearch and then calls NotifyListeners.
   void SearchDone(std::unique_ptr<OnDeviceHeadProviderParams> params);
 
   // Helper functions to read model filename from the static
@@ -73,7 +73,6 @@ class OnDeviceHeadProvider : public AutocompleteProvider {
       std::unique_ptr<OnDeviceHeadProviderParams> params);
 
   raw_ptr<AutocompleteProviderClient> client_;
-  raw_ptr<AutocompleteProviderListener> listener_;
 
   // The task runner dedicated for on device head model operations which is
   // added to offload expensive operations out of the UI sequence.

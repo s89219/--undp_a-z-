@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,9 +11,9 @@
 
 #include "base/bind.h"
 #include "base/run_loop.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "media/capture/video/blob_utils.h"
 #include "media/capture/video/chromeos/camera_buffer_factory.h"
 #include "media/capture/video/chromeos/camera_device_context.h"
@@ -38,15 +38,18 @@ namespace {
 
 class MockStreamCaptureInterface : public StreamCaptureInterface {
  public:
-  void ProcessCaptureRequest(cros::mojom::Camera3CaptureRequestPtr request,
-                             base::OnceCallback<void(int32_t)> callback) {
+  void ProcessCaptureRequest(
+      cros::mojom::Camera3CaptureRequestPtr request,
+      base::OnceCallback<void(int32_t)> callback) override {
     DoProcessCaptureRequest(request, callback);
   }
   MOCK_METHOD2(DoProcessCaptureRequest,
                void(cros::mojom::Camera3CaptureRequestPtr& request,
                     base::OnceCallback<void(int32_t)>& callback));
 
-  void Flush(base::OnceCallback<void(int32_t)> callback) { DoFlush(callback); }
+  void Flush(base::OnceCallback<void(int32_t)> callback) override {
+    DoFlush(callback);
+  }
   MOCK_METHOD1(DoFlush, void(base::OnceCallback<void(int32_t)>& callback));
 };
 
@@ -105,7 +108,7 @@ class RequestManagerTest : public ::testing::Test {
               [](const uint8_t* buffer, const uint32_t bytesused,
                  const VideoCaptureFormat& capture_format,
                  const int rotation) { return mojom::Blob::New(); }),
-          base::ThreadTaskRunnerHandle::Get(),
+          base::SingleThreadTaskRunner::GetCurrentDefault(),
           cros::mojom::CAMERA_DEVICE_API_VERSION_3_5);
     }
   }

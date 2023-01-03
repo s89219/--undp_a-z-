@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,6 +31,7 @@
 #include "third_party/blink/renderer/core/page/focus_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
+#include "third_party/blink/renderer/core/scroll/scroll_into_view_util.h"
 #include "third_party/blink/renderer/platform/geometry/layout_rect.h"
 
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
@@ -186,7 +187,7 @@ bool SpatialNavigationController::HandleArrowKeyboardEvent(
   // suggestions.
   if (RuntimeEnabledFeatures::FocuslessSpatialNavigationEnabled()) {
     if (focused) {
-      if (HasEditableStyle(*focused) || focused->IsTextControl())
+      if (IsEditable(*focused) || focused->IsTextControl())
         return true;
     }
   }
@@ -468,8 +469,8 @@ void SpatialNavigationController::MoveInterestTo(Node* next_node) {
       LayoutObject* layout_object = interest_element_->GetLayoutObject();
       DCHECK(layout_object);
 
-      layout_object->ScrollRectToVisible(
-          element->BoundingBoxForScrollIntoView(),
+      scroll_into_view_util::ScrollRectToVisible(
+          *layout_object, element->BoundingBoxForScrollIntoView(),
           ScrollAlignment::CreateScrollIntoViewParams());
     }
 
@@ -545,7 +546,7 @@ bool SpatialNavigationController::IsValidCandidate(
   // almost certainly don't want to actually interest it. Doing so leads to
   // issues since the document/body will likely contain most of the other
   // content on the page.
-  if (frame->IsMainFrame()) {
+  if (frame->IsOutermostMainFrame()) {
     if (IsA<HTMLHtmlElement>(element) || IsA<HTMLBodyElement>(element))
       return false;
   }

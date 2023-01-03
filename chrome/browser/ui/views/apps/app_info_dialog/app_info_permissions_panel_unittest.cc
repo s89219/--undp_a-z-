@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,7 +39,7 @@ class AppInfoPermissionsPanelTest : public testing::Test {
  protected:
   AppInfoPermissionsPanelTest() {}
 
-  std::unique_ptr<base::DictionaryValue> ValidAppManifest() {
+  base::Value::Dict ValidAppManifest() {
     return extensions::DictionaryBuilder()
         .Set("name", "Test App Name")
         .Set("version", "2.0")

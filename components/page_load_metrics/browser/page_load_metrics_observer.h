@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer_delegate.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer_interface.h"
@@ -24,14 +25,6 @@
 #include "url/gurl.h"
 
 namespace page_load_metrics {
-
-// Get bucketed value of viewport initial scale from given MobileFriendliness
-// metrics.
-int GetBucketedViewportInitialScale(const blink::MobileFriendliness& mf);
-
-// Get bucketed value of hardcoded viewport width from given MobileFriendliness
-// metrics.
-int GetBucketedViewportHardcodedWidth(const blink::MobileFriendliness& mf);
 
 // Information related to whether an associated action, such as a navigation or
 // an abort, was initiated by a user. Clicking a link or tapping on a UI
@@ -89,24 +82,10 @@ struct PageRenderData {
   // dependent (see comments on page_render_data_ and main_frame_render_data_
   // in PageLoadMetricsUpdateDispatcher).
   float layout_shift_score_before_input_or_scroll = 0;
-
-  // How many LayoutBlock instances were created.
-  uint64_t all_layout_block_count = 0;
-
-  // How many LayoutNG-based LayoutBlock instances were created.
-  uint64_t ng_layout_block_count = 0;
-
-  // How many times LayoutObject::UpdateLayout() is called.
-  uint64_t all_layout_call_count = 0;
-
-  // How many times LayoutNG-based LayoutObject::UpdateLayout() is called.
-  uint64_t ng_layout_call_count = 0;
 };
 
 // Information related to layout shift normalization for different strategies.
 struct NormalizedCLSData {
-  NormalizedCLSData() = default;
-
   // Maximum CLS of session windows. The gap between two consecutive shifts is
   // not bigger than 1000ms and the maximum window size is 5000ms.
   float session_windows_gap1000ms_max5000ms_max_cls = 0.0;
@@ -136,13 +115,9 @@ class PageLoadMetricsObserver : public PageLoadMetricsObserverInterface {
 
   static bool IsStandardWebPageMimeType(const std::string& mime_type);
 
-  // Gets/Sets the delegate. The delegate must outlive the observer and is
-  // normally set when the observer is first registered for the page load. The
-  // delegate can only be set once.
-  const PageLoadMetricsObserverDelegate& GetDelegate() const;
-  void SetDelegate(PageLoadMetricsObserverDelegate*);
-
   // PageLoadMetricsObserverInterface implementation:
+  const PageLoadMetricsObserverDelegate& GetDelegate() const override;
+  void SetDelegate(PageLoadMetricsObserverDelegate*) override;
   const char* GetObserverName() const override;
   ObservePolicy OnStart(content::NavigationHandle* navigation_handle,
                         const GURL& currently_committed_url,
@@ -171,11 +146,14 @@ class PageLoadMetricsObserver : public PageLoadMetricsObserverInterface {
       const std::string& mime_type) const override;
   void OnTimingUpdate(content::RenderFrameHost* subframe_rfh,
                       const mojom::PageLoadTiming& timing) override {}
-  void OnMobileFriendlinessUpdate(
-      const blink::MobileFriendliness& mobile_friendliness) override {}
+  void OnSoftNavigationCountUpdated() override {}
   void OnInputTimingUpdate(
       content::RenderFrameHost* subframe_rfh,
       const mojom::InputTiming& input_timing_delta) override {}
+  void OnPageInputTimingUpdate(uint64_t num_interactions,
+                               uint64_t num_input_events) override {}
+  void OnPageRenderDataUpdate(const mojom::FrameRenderDataUpdate& render_data,
+                              bool is_main_frame) override {}
   void OnSubFrameRenderDataUpdate(
       content::RenderFrameHost* subframe_rfh,
       const mojom::FrameRenderDataUpdate& render_data) override {}
@@ -186,7 +164,6 @@ class PageLoadMetricsObserver : public PageLoadMetricsObserverInterface {
   void OnDomContentLoadedEventStart(
       const mojom::PageLoadTiming& timing) override {}
   void OnLoadEventStart(const mojom::PageLoadTiming& timing) override {}
-  void OnFirstLayout(const mojom::PageLoadTiming& timing) override {}
   void OnParseStart(const mojom::PageLoadTiming& timing) override {}
   void OnParseStop(const mojom::PageLoadTiming& timing) override {}
   void OnFirstPaintInPage(const mojom::PageLoadTiming& timing) override {}
@@ -221,6 +198,10 @@ class PageLoadMetricsObserver : public PageLoadMetricsObserverInterface {
   void OnMainFrameIntersectionRectChanged(
       content::RenderFrameHost* rfh,
       const gfx::Rect& main_frame_intersection_rect) override {}
+  void OnMainFrameViewportRectChanged(
+      const gfx::Rect& main_frame_viewport_rect) override {}
+  void OnMainFrameImageAdRectsChanged(const base::flat_map<int, gfx::Rect>&
+                                          main_frame_image_ad_rects) override {}
   ObservePolicy FlushMetricsOnAppEnterBackground(
       const mojom::PageLoadTiming& timing) override;
   void OnComplete(const mojom::PageLoadTiming& timing) override {}
@@ -255,9 +236,10 @@ class PageLoadMetricsObserver : public PageLoadMetricsObserverInterface {
       content::NavigationHandle* navigation_handle) override {}
   void OnV8MemoryChanged(
       const std::vector<MemoryUpdate>& memory_updates) override {}
+  void OnSharedStorageWorkletHostCreated() override {}
 
  private:
-  PageLoadMetricsObserverDelegate* delegate_ = nullptr;
+  raw_ptr<PageLoadMetricsObserverDelegate> delegate_ = nullptr;
 };
 
 }  // namespace page_load_metrics

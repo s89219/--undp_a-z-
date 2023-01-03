@@ -1,19 +1,19 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/icons.m.js';
+import 'chrome://resources/cr_elements/icons.html.js';
 import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 import './shimless_rma_shared_css.js';
 import './base_page.js';
 import './icons.js';
 
-import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/ash/common/i18n_behavior.js';
 import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getShimlessRmaService} from './mojo_interface_provider.js';
 import {HardwareVerificationStatusObserverInterface, HardwareVerificationStatusObserverReceiver, ShimlessRmaServiceInterface, StateResult} from './shimless_rma_types.js';
-import {enableNextButton, executeThenTransitionState} from './shimless_rma_util.js';
+import {enableNextButton, executeThenTransitionState, focusPageTitle} from './shimless_rma_util.js';
 
 /**
  * @fileoverview
@@ -81,10 +81,10 @@ export class OnboardingLandingPage extends OnboardingLandingPageBase {
       },
 
       /**
-       * After the cancel button is clicked, true until the next state is
+       * After the exit button is clicked, true until the next state is
        * processed. It is set back to false by shimless_rma.js.
        */
-      landingCancelButtonClicked: {
+      confirmExitButtonClicked: {
         type: Boolean,
         value: false,
       },
@@ -116,9 +116,11 @@ export class OnboardingLandingPage extends OnboardingLandingPageBase {
   /** @override */
   ready() {
     super.ready();
+
+    focusPageTitle(this);
   }
 
-  /** @return {!Promise<StateResult>} */
+  /** @return {!Promise<{stateResult: !StateResult}>} */
   onNextButtonClick() {
     if (!this.verificationInProgress_) {
       return this.shimlessRmaService_.beginFinalization();
@@ -146,13 +148,11 @@ export class OnboardingLandingPage extends OnboardingLandingPageBase {
   /**
    * @protected
    */
-  onLandingCancelButtonClicked_(e) {
+  onLandingExitButtonClicked_(e) {
     e.preventDefault();
 
-    this.landingCancelButtonClicked = true;
-
     this.dispatchEvent(new CustomEvent(
-        'click-cancel-button',
+        'click-exit-button',
         {
           bubbles: true,
           composed: true,

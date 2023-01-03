@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,15 @@ ChromeVoxOptionsTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   async setUpDeferred() {
     await super.setUpDeferred();
-    await importModule('AbstractTts', '/chromevox/common/abstract_tts.js');
+
+    // Alphabetical based on file path.
+    await importModule(
+        'CommandHandlerInterface',
+        '/chromevox/background/command_handler_interface.js');
+    await importModule('TtsSettings', '/chromevox/common/tts_types.js');
     await importModule('EventGenerator', '/common/event_generator.js');
+    await importModule('KeyCode', '/common/key_code.js');
+    await importModule('LocalStorage', '/common/local_storage.js');
   }
 
   async loadOptionsPage() {
@@ -29,7 +36,7 @@ ChromeVoxOptionsTest = class extends ChromeVoxNextE2ETest {
       const desktop =
           await new Promise(resolve => chrome.automation.getDesktop(resolve));
       desktop.addEventListener(
-          EventType.LOAD_COMPLETE, (evt) => {
+          EventType.LOAD_COMPLETE, evt => {
             if (evt.target.docUrl.indexOf('options/options.html') === -1 ||
                 !evt.target.docLoaded) {
               return;
@@ -50,13 +57,13 @@ ChromeVoxOptionsTest = class extends ChromeVoxNextE2ETest {
 };
 
 // TODO(crbug.com/1318133): Test times out flakily.
-TEST_F(
+AX_TEST_F(
     'ChromeVoxOptionsTest', 'DISABLED_NumberReadingStyleSelect',
     async function() {
       const [mockFeedback, evt] = await this.loadOptionsPage();
       const numberStyleSelect = evt.target.find({
         role: RoleType.POP_UP_BUTTON,
-        attributes: {name: 'Read numbers as:'}
+        attributes: {name: 'Read numbers as:'},
       });
       assertNotNullNorUndefined(numberStyleSelect);
       mockFeedback.call(numberStyleSelect.focus.bind(numberStyleSelect))
@@ -66,7 +73,7 @@ TEST_F(
 
           // Before selecting the menu option.
           .call(() => {
-            assertEquals('asWords', localStorage['numberReadingStyle']);
+            assertEquals('asWords', LocalStorage.get('numberReadingStyle'));
           })
 
           .call(press(KeyCode.DOWN))
@@ -74,15 +81,15 @@ TEST_F(
           .call(press(KeyCode.RETURN))
           .expectSpeech('Digits', 'Collapsed')
           .call(() => {
-            assertEquals('asDigits', localStorage['numberReadingStyle']);
-          })
+            assertEquals('asDigits', LocalStorage.get('numberReadingStyle'));
+          });
 
-          .replay();
+      await mockFeedback.replay();
     });
 
 // TODO(crbug.com/1128926, crbug.com/1172387):
 // Test times out flakily.
-TEST_F(
+AX_TEST_F(
     'ChromeVoxOptionsTest', 'DISABLED_PunctuationEchoSelect', async function() {
       const [mockFeedback, evt] = await this.loadOptionsPage();
       const PUNCTUATION_ECHO_NONE = '0';
@@ -90,7 +97,7 @@ TEST_F(
       const PUNCTUATION_ECHO_ALL = '2';
       const punctuationEchoSelect = evt.target.find({
         role: RoleType.POP_UP_BUTTON,
-        attributes: {name: 'Punctuation echo:'}
+        attributes: {name: 'Punctuation echo:'},
       });
       assertNotNullNorUndefined(punctuationEchoSelect);
       mockFeedback.call(punctuationEchoSelect.focus.bind(punctuationEchoSelect))
@@ -102,7 +109,7 @@ TEST_F(
           .call(() => {
             assertEquals(
                 PUNCTUATION_ECHO_NONE,
-                localStorage[AbstractTts.PUNCTUATION_ECHO]);
+                LocalStorage.get(TtsSettings.PUNCTUATION_ECHO));
           })
 
           .call(press(KeyCode.DOWN))
@@ -112,7 +119,7 @@ TEST_F(
           .call(() => {
             assertEquals(
                 PUNCTUATION_ECHO_SOME,
-                localStorage[AbstractTts.PUNCTUATION_ECHO]);
+                LocalStorage.get(TtsSettings.PUNCTUATION_ECHO));
           })
 
           .call(press(KeyCode.DOWN))
@@ -120,20 +127,20 @@ TEST_F(
           .call(() => {
             assertEquals(
                 PUNCTUATION_ECHO_ALL,
-                localStorage[AbstractTts.PUNCTUATION_ECHO]);
-          })
+                LocalStorage.get(TtsSettings.PUNCTUATION_ECHO));
+          });
 
-          .replay();
+      await mockFeedback.replay();
     });
 
 // TODO(crbug.com/1128926, crbug.com/1172387):
 // Test times out flakily.
-TEST_F('ChromeVoxOptionsTest', 'DISABLED_SmartStickyMode', async function() {
+AX_TEST_F('ChromeVoxOptionsTest', 'DISABLED_SmartStickyMode', async function() {
   const [mockFeedback, evt] = await this.loadOptionsPage();
   const smartStickyModeCheckbox = evt.target.find({
     role: RoleType.CHECK_BOX,
     attributes:
-        {name: 'Turn off sticky mode when editing text (Smart Sticky Mode)'}
+        {name: 'Turn off sticky mode when editing text (Smart Sticky Mode)'},
   });
   assertNotNullNorUndefined(smartStickyModeCheckbox);
   mockFeedback.call(smartStickyModeCheckbox.focus.bind(smartStickyModeCheckbox))
@@ -141,40 +148,40 @@ TEST_F('ChromeVoxOptionsTest', 'DISABLED_SmartStickyMode', async function() {
           'Turn off sticky mode when editing text (Smart Sticky Mode)',
           'Check box', 'Checked')
       .call(() => {
-        assertEquals('true', localStorage['smartStickyMode']);
+        assertEquals('true', LocalStorage.get('smartStickyMode'));
       })
       .call(smartStickyModeCheckbox.doDefault.bind(smartStickyModeCheckbox))
       .expectSpeech(
           'Turn off sticky mode when editing text (Smart Sticky Mode)',
           'Check box', 'Not checked')
       .call(() => {
-        assertEquals('false', localStorage['smartStickyMode']);
-      })
+        assertEquals('false', LocalStorage.get('smartStickyMode'));
+      });
 
-      .replay();
+  await mockFeedback.replay();
 });
 
 // TODO(crbug.com/1169396, crbug.com/1172387):
 // Test times out or crashes flakily.
-TEST_F('ChromeVoxOptionsTest', 'DISABLED_UsePitchChanges', async function() {
+AX_TEST_F('ChromeVoxOptionsTest', 'DISABLED_UsePitchChanges', async function() {
   const [mockFeedback, evt] = await this.loadOptionsPage();
   const pitchChangesCheckbox = evt.target.find({
     role: RoleType.CHECK_BOX,
     attributes: {
       name: 'Change pitch when speaking element types and quoted, ' +
-          'deleted, bolded, parenthesized, or capitalized text.'
-    }
+          'deleted, bolded, parenthesized, or capitalized text.',
+    },
   });
   const capitalStrategySelect = evt.target.find({
     role: RoleType.POP_UP_BUTTON,
-    attributes: {name: 'When reading capitals:'}
+    attributes: {name: 'When reading capitals:'},
   });
   assertNotNullNorUndefined(pitchChangesCheckbox);
   assertNotNullNorUndefined(capitalStrategySelect);
 
   // Assert initial pref values.
-  assertEquals('true', localStorage['usePitchChanges']);
-  assertEquals('increasePitch', localStorage['capitalStrategy']);
+  assertEquals('true', LocalStorage.get('usePitchChanges'));
+  assertEquals('increasePitch', LocalStorage.get('capitalStrategy'));
 
   mockFeedback.call(pitchChangesCheckbox.focus.bind(pitchChangesCheckbox))
       .expectSpeech(
@@ -187,11 +194,11 @@ TEST_F('ChromeVoxOptionsTest', 'DISABLED_UsePitchChanges', async function() {
               'deleted, bolded, parenthesized, or capitalized text.',
           'Check box', 'Not checked')
       .call(() => {
-        assertEquals('false', localStorage['usePitchChanges']);
+        assertEquals('false', LocalStorage.get('usePitchChanges'));
         // Toggling usePitchChanges affects capitalStrategy. Ensure that
         // the preference has been changed and that the 'Increase pitch'
         // option is hidden.
-        assertEquals('announceCapitals', localStorage['capitalStrategy']);
+        assertEquals('announceCapitals', LocalStorage.get('capitalStrategy'));
 
         // Open the menu first in order to assert this.
         // const increasePitchOption = evt.target.find({
@@ -210,11 +217,11 @@ TEST_F('ChromeVoxOptionsTest', 'DISABLED_UsePitchChanges', async function() {
               'deleted, bolded, parenthesized, or capitalized text.',
           'Check box', 'Checked')
       .call(() => {
-        assertEquals('true', localStorage['usePitchChanges']);
+        assertEquals('true', LocalStorage.get('usePitchChanges'));
         // Ensure that the capitalStrategy preference is restored to its
         // initial setting and that the 'Increase pitch' option is visible
         // again.
-        assertEquals('increasePitch', localStorage['capitalStrategy']);
+        assertEquals('increasePitch', LocalStorage.get('capitalStrategy'));
 
         // Open the menu first in order to assert this.
         // const increasePitchOption = evt.target.find({
@@ -226,5 +233,5 @@ TEST_F('ChromeVoxOptionsTest', 'DISABLED_UsePitchChanges', async function() {
       })
       .call(capitalStrategySelect.focus.bind(capitalStrategySelect))
       .expectSpeech('When reading capitals:', 'Increase pitch', 'Collapsed');
-  mockFeedback.replay();
+  await mockFeedback.replay();
 });

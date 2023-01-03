@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,10 +45,9 @@ public class LinkToTextIPHController {
      *         will be rendered.
      * @param TabModelSelector The {@link TabModelSelector} to open a new tab.
      */
-    public LinkToTextIPHController(
-            ObservableSupplier<Tab> tabSupplier, TabModelSelector tabModelSelector) {
+    public LinkToTextIPHController(ObservableSupplier<Tab> tabSupplier,
+            TabModelSelector tabModelSelector, ObservableSupplier<Profile> profileSupplier) {
         mTabModelSelector = tabModelSelector;
-        mTracker = TrackerFactory.getTrackerForProfile(Profile.getLastUsedRegularProfile());
         mCurrentTabObserver = new CurrentTabObserver(tabSupplier, new EmptyTabObserver() {
             @Override
             public void onPageLoadFinished(Tab tab, GURL url) {
@@ -59,6 +58,16 @@ public class LinkToTextIPHController {
 
                 if (!LinkToTextHelper.hasTextFragment(url)) return;
 
+                Profile profile = profileSupplier.get();
+                // In some cases, ProfileSupplier.get() will return null. See
+                // https://crbug.com/1346710 and https://crbug.com/1353138.
+                if (profile == null) {
+                    profile = Profile.getLastUsedRegularProfile();
+                }
+                if (profile == null) {
+                    return;
+                }
+                mTracker = TrackerFactory.getTrackerForProfile(profile);
                 if (!mTracker.wouldTriggerHelpUI(FEATURE_NAME)) {
                     return;
                 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,8 +98,9 @@ class ExtensionCrashRecoveryTest : public extensions::ExtensionBrowserTest {
     ASSERT_TRUE(extension_host);
     extensions::ProcessManager::FrameSet frames =
         GetProcessManager()->GetAllFrames();
-    ASSERT_NE(frames.end(),
-              frames.find(extension_host->host_contents()->GetMainFrame()));
+    ASSERT_NE(
+        frames.end(),
+        frames.find(extension_host->host_contents()->GetPrimaryMainFrame()));
     ASSERT_FALSE(GetProcessManager()->GetAllFrames().empty());
     ASSERT_TRUE(extension_host->IsRendererLive());
     extensions::ProcessMap* process_map =

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,9 +28,9 @@ class FakeDownloadTask final : public DownloadTask {
   // DownloadTask finals:
   WebState* GetWebState() final;
   DownloadTask::State GetState() const final;
-  void Start(const base::FilePath& path, Destination destination_hint) final;
+  void Start(const base::FilePath& path) final;
   void Cancel() final;
-  NSData* GetResponseData() const final;
+  void GetResponseData(ResponseDataReadCallback callback) const final;
   const base::FilePath& GetResponsePath() const final;
   NSString* GetIdentifier() const final;
   const GURL& GetOriginalUrl() const final;

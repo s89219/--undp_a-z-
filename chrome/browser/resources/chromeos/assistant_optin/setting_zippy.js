@@ -1,18 +1,25 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* #js_imports_placeholder */
+import '//resources/cr_elements/cr_toggle/cr_toggle.js';
+import '../components/common_styles/oobe_common_styles.css.js';
+import './assistant_common_styles.css.js';
 
-/**
- * @polymer
- */
-class SettingZippy extends Polymer.Element {
+import {html, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {AssistantNativeIconType} from './utils.js';
+
+
+/** @polymer */
+class SettingZippy extends PolymerElement {
   static get is() {
     return 'setting-zippy';
   }
 
-  /* #html_template_placeholder */
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
   static get properties() {
     return {
@@ -26,24 +33,19 @@ class SettingZippy extends Polymer.Element {
         value: false,
       },
 
-      expandStyle: {
-        type: Boolean,
-        value: false,
-      },
-
-      toggleStyle: {
-        type: Boolean,
-        value: false,
-      },
-
-      popupStyle: {
-        type: Boolean,
-        value: false,
-      },
-
       cardStyle: {
         type: Boolean,
         value: false,
+      },
+
+      nativeIconType: {
+        type: Number,
+        value: AssistantNativeIconType.NONE,
+      },
+
+      nativeIconLabel: {
+        type: String,
+        value: null,
       },
     };
   }
@@ -76,6 +78,22 @@ class SettingZippy extends Polymer.Element {
       </style>
     <body><img id="icon" aria-label="` +
         imageLabel + `" src="` + iconUri + '"></body></html>';
+  }
+
+  shouldUseWebviewIcon_(iconSrc, nativeIconType) {
+    return iconSrc !== null && nativeIconType === AssistantNativeIconType.NONE;
+  }
+
+  shouldUseWAANativeIcon_(nativeIconType) {
+    return nativeIconType === AssistantNativeIconType.WAA;
+  }
+
+  shouldUseDANativeIcon_(nativeIconType) {
+    return nativeIconType === AssistantNativeIconType.DA;
+  }
+
+  shouldUseInfoNativeIcon_(nativeIconType) {
+    return nativeIconType === AssistantNativeIconType.INFO;
   }
 }
 

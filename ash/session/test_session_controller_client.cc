@@ -1,10 +1,9 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/session/test_session_controller_client.h"
 
-#include <algorithm>
 #include <string>
 
 #include "ash/login/login_screen_controller.h"
@@ -15,9 +14,10 @@
 #include "ash/wallpaper/wallpaper_controller_impl.h"
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "components/account_id/account_id.h"
 #include "components/prefs/pref_service.h"
 #include "components/session_manager/session_manager_types.h"
@@ -189,7 +189,7 @@ void TestSessionControllerClient::LockScreen() {
 }
 
 void TestSessionControllerClient::UnlockScreen() {
-  SetSessionState(session_manager::SessionState::ACTIVE);
+  RequestHideLockScreen();
 }
 
 void TestSessionControllerClient::FlushForTest() {
@@ -221,15 +221,23 @@ void TestSessionControllerClient::RequestLockScreen() {
     Shell::Get()->login_screen_controller()->ShowLockScreen();
   }
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&TestSessionControllerClient::SetSessionState,
                                 weak_ptr_factory_.GetWeakPtr(),
                                 session_manager::SessionState::LOCKED));
 }
 
+void TestSessionControllerClient::RequestHideLockScreen() {
+  SetSessionState(session_manager::SessionState::ACTIVE);
+}
+
 void TestSessionControllerClient::RequestSignOut() {
   Reset();
   ++request_sign_out_count_;
+}
+
+void TestSessionControllerClient::RequestRestartForUpdate() {
+  ++request_restart_for_update_count_;
 }
 
 void TestSessionControllerClient::AttemptRestartChrome() {
@@ -272,11 +280,10 @@ void TestSessionControllerClient::CycleActiveUser(
     session_id = 1u;
 
   // Maps session id to AccountId and call SwitchActiveUser.
-  auto it =
-      std::find_if(sessions.begin(), sessions.end(),
-                   [session_id](const std::unique_ptr<UserSession>& session) {
-                     return session && session->session_id == session_id;
-                   });
+  auto it = base::ranges::find_if(
+      sessions, [session_id](const std::unique_ptr<UserSession>& session) {
+        return session && session->session_id == session_id;
+      });
   if (it == sessions.end()) {
     NOTREACHED();
     return;
@@ -311,6 +318,10 @@ PrefService* TestSessionControllerClient::GetUserPrefService(
 
 bool TestSessionControllerClient::IsEnterpriseManaged() const {
   return is_enterprise_managed_;
+}
+
+absl::optional<int> TestSessionControllerClient::GetExistingUsersCount() const {
+  return existing_users_count_;
 }
 
 void TestSessionControllerClient::DoSwitchUser(const AccountId& account_id,

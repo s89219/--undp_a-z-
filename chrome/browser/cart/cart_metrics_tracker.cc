@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,7 @@ void CartMetricsTracker::TabChangedAt(content::WebContents* contents,
   if (last_interacted_url_) {
     if (last_interacted_url_ == contents->GetVisibleURL()) {
       ukm::builders::Shopping_ChromeCart(
-          contents->GetMainFrame()->GetPageUkmSourceId())
+          contents->GetPrimaryMainFrame()->GetPageUkmSourceId())
           .SetVisitCart(true)
           .Record(ukm::UkmRecorder::Get());
     }

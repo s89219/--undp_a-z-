@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,20 +39,21 @@ network::mojom::ContentSecurityPolicyPtr MakeTestCSP() {
 }
 
 // Returns non-default policies for use in tests.
-std::unique_ptr<PolicyContainerPolicies> MakeTestPolicies() {
+PolicyContainerPolicies MakeTestPolicies() {
   std::vector<network::mojom::ContentSecurityPolicyPtr> csp_list;
   csp_list.push_back(MakeTestCSP());
-  return std::make_unique<PolicyContainerPolicies>(
+  return PolicyContainerPolicies(
       network::mojom::ReferrerPolicy::kAlways,
       network::mojom::IPAddressSpace::kPublic,
       /*is_web_secure_context=*/true, std::move(csp_list),
       network::CrossOriginOpenerPolicy(), network::CrossOriginEmbedderPolicy(),
-      network::mojom::WebSandboxFlags::kNone);
+      network::mojom::WebSandboxFlags::kNone,
+      /*is_credentialless=*/false,
+      /*can_navigate_top_without_user_gesture=*/true);
 }
 
 // Shorthand.
-scoped_refptr<PolicyContainerHost> NewHost(
-    std::unique_ptr<PolicyContainerPolicies> policies) {
+scoped_refptr<PolicyContainerHost> NewHost(PolicyContainerPolicies policies) {
   return base::MakeRefCounted<PolicyContainerHost>(std::move(policies));
 }
 
@@ -76,7 +77,7 @@ class NavigationPolicyContainerBuilderTest
  protected:
   void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
-    contents()->GetMainFrame()->InitializeRenderFrameIfNeeded();
+    contents()->GetPrimaryMainFrame()->InitializeRenderFrameIfNeeded();
   }
 };
 
@@ -142,8 +143,8 @@ TEST_F(NavigationPolicyContainerBuilderTest, SetCrossOriginOpenerPolicy) {
 // container host.
 TEST_F(NavigationPolicyContainerBuilderTest, DefaultFinalPolicies) {
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
-  builder.ComputePolicies(GURL(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePolicies(GURL(), false, network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
   PolicyContainerPolicies expected_policies;
   EXPECT_EQ(builder.FinalPolicies(), expected_policies);
@@ -161,12 +162,13 @@ TEST_F(NavigationPolicyContainerBuilderTest, FinalPoliciesNormalUrl) {
 
   builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kPublic);
   builder.AddContentSecurityPolicy(MakeTestCSP());
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // Verifies the final policies when the URL of the document to commit is
@@ -175,12 +177,13 @@ TEST_F(NavigationPolicyContainerBuilderTest,
        FinalPoliciesAboutBlankWithoutInitiator) {
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
   builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kPublic);
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // Verifies the final policies when the URL of the document to commit is
@@ -190,20 +193,20 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
   builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kPublic);
   builder.AddContentSecurityPolicy(MakeTestCSP());
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // This test verifies the default final policies on error pages.
 TEST_F(NavigationPolicyContainerBuilderTest, DefaultFinalPoliciesForErrorPage) {
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePoliciesForError();
 
   // Error pages commit with default policies, mostly ignoring the delivered
   // policies and the document's URL.
@@ -216,8 +219,7 @@ TEST_F(NavigationPolicyContainerBuilderTest, ErrorPageIPAddressSpace) {
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
 
   builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kPublic);
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePoliciesForError();
 
   PolicyContainerPolicies expected_policies;
   expected_policies.ip_address_space = network::mojom::IPAddressSpace::kPublic;
@@ -235,11 +237,11 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   expected_policies.ip_address_space = network::mojom::IPAddressSpace::kPrivate;
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
   EXPECT_EQ(builder.FinalPolicies(), expected_policies);
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePoliciesForError();
   EXPECT_EQ(builder.FinalPolicies(), expected_policies);
 }
 
@@ -251,11 +253,11 @@ TEST_F(NavigationPolicyContainerBuilderTest,
       network::mojom::ContentSecurityPolicy::New());
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
   EXPECT_THAT(builder.FinalPolicies().content_security_policies, SizeIs(1));
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePoliciesForError();
   EXPECT_THAT(builder.FinalPolicies().content_security_policies, SizeIs(0));
 }
 
@@ -276,46 +278,44 @@ TEST_F(NavigationPolicyContainerBuilderTest,
 // associated to the given frame token, or resets those policies when given
 // nullptr.
 TEST_F(NavigationPolicyContainerBuilderTest, InitiatorPoliciesWithInitiator) {
-  std::unique_ptr<PolicyContainerPolicies> initiator_policies =
-      MakeTestPolicies();
+  PolicyContainerPolicies initiator_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* initiator = contents()->GetMainFrame();
-  initiator->SetPolicyContainerHost(NewHost(initiator_policies->Clone()));
+  TestRenderFrameHost* initiator = contents()->GetPrimaryMainFrame();
+  initiator->SetPolicyContainerHost(NewHost(initiator_policies.Clone()));
 
   // Force implicit conversion from LocalFrameToken to UnguessableToken.
   const blink::LocalFrameToken& token = initiator->GetFrameToken();
   NavigationPolicyContainerBuilder builder(nullptr, &token, nullptr);
 
   EXPECT_THAT(builder.InitiatorPolicies(),
-              Pointee(Eq(ByRef(*initiator_policies))));
+              Pointee(Eq(ByRef(initiator_policies))));
 }
 
 // Verifies that when the URL of the document to commit is `about:blank`, the
 // builder's final policies are copied from the initiator.
 TEST_F(NavigationPolicyContainerBuilderTest,
        FinalPoliciesAboutBlankWithInitiator) {
-  std::unique_ptr<PolicyContainerPolicies> initiator_policies =
-      MakeTestPolicies();
+  PolicyContainerPolicies initiator_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* initiator = contents()->GetMainFrame();
-  initiator->SetPolicyContainerHost(NewHost(initiator_policies->Clone()));
+  TestRenderFrameHost* initiator = contents()->GetPrimaryMainFrame();
+  initiator->SetPolicyContainerHost(NewHost(initiator_policies.Clone()));
 
   // Force implicit conversion from LocalFrameToken to UnguessableToken.
   const blink::LocalFrameToken& token = initiator->GetFrameToken();
   NavigationPolicyContainerBuilder builder(nullptr, &token, nullptr);
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *initiator_policies);
+  EXPECT_EQ(builder.FinalPolicies(), initiator_policies);
 }
 
 // Verifies that when the URL of the document to commit is `blob:.*`, the
 // builder's final policies are copied from the initiator.
 TEST_F(NavigationPolicyContainerBuilderTest, FinalPoliciesBlobWithInitiator) {
-  std::unique_ptr<PolicyContainerPolicies> initiator_policies =
-      MakeTestPolicies();
-  TestRenderFrameHost* initiator = contents()->GetMainFrame();
-  initiator->SetPolicyContainerHost(NewHost(initiator_policies->Clone()));
+  PolicyContainerPolicies initiator_policies = MakeTestPolicies();
+  TestRenderFrameHost* initiator = contents()->GetPrimaryMainFrame();
+  initiator->SetPolicyContainerHost(NewHost(initiator_policies.Clone()));
 
   // Force implicit conversion from LocalFrameToken to UnguessableToken.
   const blink::LocalFrameToken& token = initiator->GetFrameToken();
@@ -323,9 +323,10 @@ TEST_F(NavigationPolicyContainerBuilderTest, FinalPoliciesBlobWithInitiator) {
 
   builder.ComputePolicies(
       GURL("blob:https://example.com/016ece86-b7f9-4b07-88c2-a0e36b7f1dd6"),
-      false, network::mojom::WebSandboxFlags::kNone);
+      false, network::mojom::WebSandboxFlags::kNone,
+      /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *initiator_policies);
+  EXPECT_EQ(builder.FinalPolicies(), initiator_policies);
 }
 
 // Verifies that when the URL of the document to commit is `about:blank`, the
@@ -333,11 +334,10 @@ TEST_F(NavigationPolicyContainerBuilderTest, FinalPoliciesBlobWithInitiator) {
 // delivered policies are merged.
 TEST_F(NavigationPolicyContainerBuilderTest,
        FinalPoliciesAboutBlankWithInitiatorAndAdditionalCSP) {
-  std::unique_ptr<PolicyContainerPolicies> initiator_policies =
-      MakeTestPolicies();
+  PolicyContainerPolicies initiator_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* initiator = contents()->GetMainFrame();
-  initiator->SetPolicyContainerHost(NewHost(initiator_policies->Clone()));
+  TestRenderFrameHost* initiator = contents()->GetPrimaryMainFrame();
+  initiator->SetPolicyContainerHost(NewHost(initiator_policies.Clone()));
 
   // Force implicit conversion from LocalFrameToken to UnguessableToken.
   const blink::LocalFrameToken& token = initiator->GetFrameToken();
@@ -347,12 +347,11 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   network::mojom::ContentSecurityPolicyPtr test_csp = MakeTestCSP();
   builder.AddContentSecurityPolicy(test_csp.Clone());
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  // Append the CPS to the `initiator_policies` just for testing equality
-  // later.
-  initiator_policies->content_security_policies.push_back(std::move(test_csp));
-  EXPECT_EQ(builder.FinalPolicies(), *initiator_policies);
+  initiator_policies.content_security_policies.push_back(std::move(test_csp));
+  EXPECT_EQ(builder.FinalPolicies(), initiator_policies);
 }
 
 // Verifies that ParentPolicies returns nullptr in the absence of a parent.
@@ -365,30 +364,31 @@ TEST_F(NavigationPolicyContainerBuilderTest, ParentPoliciesWithoutParent) {
 // Verifies that ParentPolicies returns a pointer to a copy of the parent's
 // policies.
 TEST_F(NavigationPolicyContainerBuilderTest, ParentPoliciesWithParent) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
-  parent->SetPolicyContainerHost(NewHost(parent_policies->Clone()));
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
+  parent->SetPolicyContainerHost(NewHost(parent_policies.Clone()));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
 
-  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(*parent_policies))));
+  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(parent_policies))));
 }
 
 // Verifies that when the the URL of the document to commit is `about:srcdoc`,
 // the builder's final policies are copied from the parent.
 TEST_F(NavigationPolicyContainerBuilderTest,
        FinalPoliciesAboutSrcdocWithParent) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
-  parent->SetPolicyContainerHost(NewHost(parent_policies->Clone()));
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
+  parent->SetPolicyContainerHost(NewHost(parent_policies.Clone()));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
   builder.ComputePolicies(AboutSrcdocUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *parent_policies);
+  EXPECT_EQ(builder.FinalPolicies(), parent_policies);
 }
 
 // Verifies that when a document has a potentially-trustworthy origin and no
@@ -399,14 +399,14 @@ TEST_F(NavigationPolicyContainerBuilderTest,
 
   builder.SetIsOriginPotentiallyTrustworthy(true);
 
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
-  EXPECT_TRUE(delivered_policies->is_web_secure_context);
+  EXPECT_TRUE(delivered_policies.is_web_secure_context);
 
-  builder.ComputePolicies(GURL(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePolicies(GURL(), false, network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // Verifies that when a document has a non-potentially-trustworthy origin and no
@@ -417,24 +417,24 @@ TEST_F(NavigationPolicyContainerBuilderTest,
 
   builder.SetIsOriginPotentiallyTrustworthy(false);
 
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
-  EXPECT_FALSE(delivered_policies->is_web_secure_context);
+  EXPECT_FALSE(delivered_policies.is_web_secure_context);
 
-  builder.ComputePolicies(GURL(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePolicies(GURL(), false, network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // Verifies that when a document has a potentially-trustworthy origin and a
 // parent that is not a secure context, then it is not a secure context.
 TEST_F(NavigationPolicyContainerBuilderTest,
        IsWebSecureContextTrustworthyOriginNonSecureParent) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
-  parent_policies->is_web_secure_context = false;
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
+  parent_policies.is_web_secure_context = false;
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
   parent->SetPolicyContainerHost(NewHost(std::move(parent_policies)));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
@@ -442,7 +442,8 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   builder.SetIsOriginPotentiallyTrustworthy(true);
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
   EXPECT_FALSE(builder.FinalPolicies().is_web_secure_context);
 }
@@ -451,48 +452,50 @@ TEST_F(NavigationPolicyContainerBuilderTest,
 // parent that is a secure context, then it is not a secure context.
 TEST_F(NavigationPolicyContainerBuilderTest,
        IsWebSecureContextNonTrustworthyOriginSecureParent) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
-  parent_policies->is_web_secure_context = true;
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
+  parent_policies.is_web_secure_context = true;
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
   parent->SetPolicyContainerHost(NewHost(std::move(parent_policies)));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
 
   builder.SetIsOriginPotentiallyTrustworthy(false);
 
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
-  EXPECT_FALSE(delivered_policies->is_web_secure_context);
+  EXPECT_FALSE(delivered_policies.is_web_secure_context);
 
   builder.ComputePolicies(GURL("http://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // Verifies that when a document has a potentially-trustworthy origin and a
 // parent that is a secure context, then it is a secure context.
 TEST_F(NavigationPolicyContainerBuilderTest,
        IsWebSecureContextTrustworthyOriginSecureParent) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
-  parent_policies->is_web_secure_context = true;
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
+  parent_policies.is_web_secure_context = true;
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
   parent->SetPolicyContainerHost(NewHost(std::move(parent_policies)));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
 
   builder.SetIsOriginPotentiallyTrustworthy(true);
 
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies =
+  PolicyContainerPolicies delivered_policies =
       builder.DeliveredPoliciesForTesting().Clone();
-  EXPECT_TRUE(delivered_policies->is_web_secure_context);
+  EXPECT_TRUE(delivered_policies.is_web_secure_context);
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *delivered_policies);
+  EXPECT_EQ(builder.FinalPolicies(), delivered_policies);
 }
 
 // Verifies that when the the URL of the document to commit is `about:srcdoc`,
@@ -500,10 +503,10 @@ TEST_F(NavigationPolicyContainerBuilderTest,
 // delivered policies are merged.
 TEST_F(NavigationPolicyContainerBuilderTest,
        FinalPoliciesAboutSrcdocWithParentAndAdditionalCSP) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
-  parent->SetPolicyContainerHost(NewHost(parent_policies->Clone()));
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
+  parent->SetPolicyContainerHost(NewHost(parent_policies.Clone()));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
 
@@ -511,124 +514,127 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   network::mojom::ContentSecurityPolicyPtr test_csp = MakeTestCSP();
   builder.AddContentSecurityPolicy(test_csp.Clone());
   builder.ComputePolicies(AboutSrcdocUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  // Append the CPS to the `parent_policies` just for testing equality
-  // later.
-  parent_policies->content_security_policies.push_back(std::move(test_csp));
-  EXPECT_EQ(builder.FinalPolicies(), *parent_policies);
+  parent_policies.content_security_policies.push_back(std::move(test_csp));
+  EXPECT_EQ(builder.FinalPolicies(), parent_policies);
 }
 
 // Calling ComputePolicies() twice triggers a DCHECK.
 TEST_F(NavigationPolicyContainerBuilderTest, ComputePoliciesTwiceDCHECK) {
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
   GURL url("https://foo.test");
-  builder.ComputePolicies(url, false, network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePolicies(url, false, network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
   EXPECT_DCHECK_DEATH(builder.ComputePolicies(
-      url, false, network::mojom::WebSandboxFlags::kNone));
+      url, false, network::mojom::WebSandboxFlags::kNone,
+      /*is_credentialless=*/false));
 }
 
 // Calling ComputePolicies() followed by ComputePoliciesForError() is supported.
 TEST_F(NavigationPolicyContainerBuilderTest, ComputePoliciesThenError) {
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
+  builder.ComputePoliciesForError();
 }
 
 // After ComputePolicies() or ComputePoliciesForError(), the initiator policies
 // are still accessible.
 TEST_F(NavigationPolicyContainerBuilderTest,
        AccessInitiatorAfterComputingPolicies) {
-  std::unique_ptr<PolicyContainerPolicies> initiator_policies =
-      MakeTestPolicies();
-  TestRenderFrameHost* initiator = contents()->GetMainFrame();
-  initiator->SetPolicyContainerHost(NewHost(initiator_policies->Clone()));
+  PolicyContainerPolicies initiator_policies = MakeTestPolicies();
+  TestRenderFrameHost* initiator = contents()->GetPrimaryMainFrame();
+  initiator->SetPolicyContainerHost(NewHost(initiator_policies.Clone()));
   const blink::LocalFrameToken& token = initiator->GetFrameToken();
 
   NavigationPolicyContainerBuilder builder(nullptr, &token, nullptr);
   EXPECT_THAT(builder.InitiatorPolicies(),
-              Pointee(Eq(ByRef(*initiator_policies))));
+              Pointee(Eq(ByRef(initiator_policies))));
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
   EXPECT_THAT(builder.InitiatorPolicies(),
-              Pointee(Eq(ByRef(*initiator_policies))));
+              Pointee(Eq(ByRef(initiator_policies))));
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePoliciesForError();
   EXPECT_THAT(builder.InitiatorPolicies(),
-              Pointee(Eq(ByRef(*initiator_policies))));
+              Pointee(Eq(ByRef(initiator_policies))));
 }
 
 // After ComputePolicies() or ComputePoliciesForError(), the parent
 // policies are still accessible.
 TEST_F(NavigationPolicyContainerBuilderTest,
        AccessParentAfterComputingPolicies) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
-  parent->SetPolicyContainerHost(NewHost(parent_policies->Clone()));
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
+  parent->SetPolicyContainerHost(NewHost(parent_policies.Clone()));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
-  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(*parent_policies))));
+  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(parent_policies))));
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
-  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(*parent_policies))));
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
+  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(parent_policies))));
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
-  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(*parent_policies))));
+  builder.ComputePoliciesForError();
+  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(parent_policies))));
 }
 
 // Verifies that the parent policies are preserved on
 // ResetForCrossDocumentRestart.
 TEST_F(NavigationPolicyContainerBuilderTest,
        ResetForCrossDocumentRestartParentPolicies) {
-  std::unique_ptr<PolicyContainerPolicies> parent_policies = MakeTestPolicies();
+  PolicyContainerPolicies parent_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* parent = contents()->GetMainFrame();
-  parent->SetPolicyContainerHost(NewHost(parent_policies->Clone()));
+  TestRenderFrameHost* parent = contents()->GetPrimaryMainFrame();
+  parent->SetPolicyContainerHost(NewHost(parent_policies.Clone()));
 
   NavigationPolicyContainerBuilder builder(parent, nullptr, nullptr);
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
   EXPECT_EQ(builder.FinalPolicies(), PolicyContainerPolicies());
 
   builder.ResetForCrossDocumentRestart();
-  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(*parent_policies))));
-  builder.ComputePolicies(AboutSrcdocUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+  EXPECT_THAT(builder.ParentPolicies(), Pointee(Eq(ByRef(parent_policies))));
 
-  EXPECT_EQ(builder.FinalPolicies(), *parent_policies);
+  builder.ComputePolicies(AboutSrcdocUrl(), false,
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
+  EXPECT_EQ(builder.FinalPolicies(), parent_policies);
 }
 
 // Verifies that the initiator policies are preserved on
 // ResetForCrossDocumentRestart.
 TEST_F(NavigationPolicyContainerBuilderTest,
        ResetForCrossDocumentRestartInitiatorPolicies) {
-  std::unique_ptr<PolicyContainerPolicies> initiator_policies =
-      MakeTestPolicies();
+  PolicyContainerPolicies initiator_policies = MakeTestPolicies();
 
-  TestRenderFrameHost* initiator = contents()->GetMainFrame();
-  initiator->SetPolicyContainerHost(NewHost(initiator_policies->Clone()));
+  TestRenderFrameHost* initiator = contents()->GetPrimaryMainFrame();
+  initiator->SetPolicyContainerHost(NewHost(initiator_policies.Clone()));
 
   // Force implicit conversion from LocalFrameToken to UnguessableToken.
   const blink::LocalFrameToken& token = initiator->GetFrameToken();
   NavigationPolicyContainerBuilder builder(nullptr, &token, nullptr);
 
   builder.ComputePolicies(GURL("https://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
   EXPECT_EQ(builder.FinalPolicies(), PolicyContainerPolicies());
 
   builder.ResetForCrossDocumentRestart();
   EXPECT_THAT(builder.InitiatorPolicies(),
-              Pointee(Eq(ByRef(*initiator_policies))));
+              Pointee(Eq(ByRef(initiator_policies))));
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *initiator_policies);
+  EXPECT_EQ(builder.FinalPolicies(), initiator_policies);
 }
 
 }  // namespace

@@ -1,10 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {InputController} from '/accessibility_common/dictation/input_controller.js';
-import {Macro, MacroError} from '/accessibility_common/dictation/macros/macro.js';
-import {MacroName} from '/accessibility_common/dictation/macros/macro_names.js';
+import {InputController} from '../input_controller.js';
+
+import {Macro, MacroError} from './macro.js';
+import {MacroName} from './macro_names.js';
 
 /**
  * Macro that inputs text at the current cursor position.
@@ -35,7 +36,7 @@ export class InputTextViewMacro extends Macro {
   }
 
   /** @override */
-  runMacro() {
+  run() {
     if (!this.inputController_.isActive()) {
       return this.createRunMacroResult_(
           /*isSuccess=*/ false, MacroError.FAILED_ACTUATION);

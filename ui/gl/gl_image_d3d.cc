@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,6 @@ namespace gl {
 GLImageD3D::GLImageD3D(const gfx::Size& size,
                        unsigned internal_format,
                        unsigned data_type,
-                       const gfx::ColorSpace& color_space,
                        Microsoft::WRL::ComPtr<ID3D11Texture2D> texture,
                        size_t array_slice,
                        size_t plane_index,
@@ -33,15 +32,13 @@ GLImageD3D::GLImageD3D(const gfx::Size& size,
       array_slice_(array_slice),
       plane_index_(plane_index),
       swap_chain_(std::move(swap_chain)) {
-  GLImage::SetColorSpace(color_space);
   DCHECK(texture_);
 }
 
 GLImageD3D::~GLImageD3D() {
   if (egl_image_ != EGL_NO_IMAGE_KHR) {
-    if (eglDestroyImageKHR(
-            GLSurfaceEGL::GetGLDisplayEGL()->GetHardwareDisplay(),
-            egl_image_) == EGL_FALSE) {
+    if (eglDestroyImageKHR(GLSurfaceEGL::GetGLDisplayEGL()->GetDisplay(),
+                           egl_image_) == EGL_FALSE) {
       DLOG(ERROR) << "Error destroying EGLImage: "
                   << ui::GetLastEGLErrorString();
     }
@@ -58,7 +55,7 @@ bool GLImageD3D::Initialize() {
                             static_cast<EGLint>(plane_index_),
                             EGL_NONE};
   egl_image_ =
-      eglCreateImageKHR(GLSurfaceEGL::GetGLDisplayEGL()->GetHardwareDisplay(),
+      eglCreateImageKHR(GLSurfaceEGL::GetGLDisplayEGL()->GetDisplay(),
                         EGL_NO_CONTEXT, EGL_D3D11_TEXTURE_ANGLE,
                         static_cast<EGLClientBuffer>(texture_.Get()), attribs);
   if (egl_image_ == EGL_NO_IMAGE_KHR) {
@@ -68,19 +65,8 @@ bool GLImageD3D::Initialize() {
   return true;
 }
 
-// static
-GLImageD3D* GLImageD3D::FromGLImage(GLImage* image) {
-  if (!image || image->GetType() != Type::D3D)
-    return nullptr;
-  return static_cast<GLImageD3D*>(image);
-}
-
 GLImage::Type GLImageD3D::GetType() const {
   return Type::D3D;
-}
-
-GLImage::BindOrCopy GLImageD3D::ShouldBindOrCopy() {
-  return GLImage::BIND;
 }
 
 void* GLImageD3D::GetEGLImage() const {
@@ -103,10 +89,6 @@ bool GLImageD3D::BindTexImage(unsigned target) {
   DCHECK_NE(egl_image_, EGL_NO_IMAGE_KHR);
   glEGLImageTargetTexture2DOES(target, egl_image_);
   return glGetError() == static_cast<GLenum>(GL_NO_ERROR);
-}
-
-bool GLImageD3D::CopyTexImage(unsigned target) {
-  return false;
 }
 
 bool GLImageD3D::CopyTexSubImage(unsigned target,

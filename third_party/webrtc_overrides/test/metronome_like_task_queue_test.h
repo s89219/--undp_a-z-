@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/webrtc/api/task_queue/task_queue_factory.h"
 #include "third_party/webrtc/rtc_base/system/rtc_export.h"
-#include "third_party/webrtc/rtc_base/task_utils/to_queued_task.h"
 
 namespace blink {
 

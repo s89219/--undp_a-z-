@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,8 @@ export class PhotoAspectRatioSettings extends BaseSettings {
   private readonly menu: HTMLElement;
 
   private focusedDeviceId: string|null = null;
+
+  private menuScrollTop = 0;
 
   constructor(readonly cameraManager: CameraManager) {
     super(ViewName.PHOTO_ASPECT_RATIO_SETTINGS);
@@ -65,6 +67,7 @@ export class PhotoAspectRatioSettings extends BaseSettings {
       }
     }
     setupI18nElements(this.menu);
+    this.menu.scrollTop = this.menuScrollTop;
   }
 
   private addAspectRatioItem(
@@ -87,6 +90,7 @@ export class PhotoAspectRatioSettings extends BaseSettings {
     if (!input.checked) {
       input.addEventListener('click', (event) => {
         this.focusedDeviceId = deviceId;
+        this.menuScrollTop = this.menu.scrollTop;
         this.cameraManager.setPrefPhotoAspectRatioSet(
             deviceId, option.aspectRatioSet);
         event.preventDefault();

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,7 @@ class FakeRebootNotificationsScheduler : public RebootNotificationsScheduler {
 
   int GetShowDialogCalls() const;
   int GetShowNotificationCalls() const;
+  int GetCloseNotificationCalls() const;
   void SetUptime(base::TimeDelta uptime);
   void SimulateRebootButtonClick();
   void SetWaitFullRestoreInit(bool should_wait);
@@ -45,7 +46,8 @@ class FakeRebootNotificationsScheduler : public RebootNotificationsScheduler {
 
   bool ShouldWaitFullRestoreInit() const override;
 
-  int show_dialog_calls_ = 0, show_notification_calls_ = 0;
+  int show_dialog_calls_ = 0, show_notification_calls_ = 0,
+      close_notification_calls_ = 0;
   bool wait_full_restore_init_ = false;
   const base::Clock* clock_;
   // Default uptime for test is 10h.

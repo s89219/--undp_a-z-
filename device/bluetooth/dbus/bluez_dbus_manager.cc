@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -239,7 +239,7 @@ void BluezDBusManager::OnFlossObjectManagerSupported(dbus::Response* response) {
   DVLOG(1) << "Floss manager present. Making sure Floss is enabled/disabled.";
   floss_manager_client_ = floss::FlossManagerClient::Create();
   floss_manager_client_->Init(GetSystemBus(), floss::kManagerInterface,
-                              std::string());
+                              /*adapter_index=*/0);
 }
 
 void BluezDBusManager::OnFlossObjectManagerNotSupported(
@@ -255,10 +255,8 @@ void BluezDBusManager::InitializeClients() {
   client_bundle_->bluetooth_admin_policy_client()->Init(GetSystemBus(),
                                                         bluetooth_service_name);
 #if BUILDFLAG(IS_CHROMEOS)
-  if (chromeos::features::IsBluetoothAdvertisementMonitoringEnabled()) {
-    client_bundle_->bluetooth_advertisement_monitor_manager_client()->Init(
-        GetSystemBus(), bluetooth_service_name);
-  }
+  client_bundle_->bluetooth_advertisement_monitor_manager_client()->Init(
+      GetSystemBus(), bluetooth_service_name);
 #endif  // BUILDFLAG(IS_CHROMEOS)
   client_bundle_->bluetooth_agent_manager_client()->Init(
       GetSystemBus(), bluetooth_service_name);

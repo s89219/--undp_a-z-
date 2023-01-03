@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/prefs/pref_member.h"
-#include "ios/chrome/browser/ios_chrome_io_thread.h"
+#include "ios/chrome/browser/browser_state/ios_chrome_io_thread.h"
 #include "ios/chrome/browser/net/net_types.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/http/http_cache.h"
@@ -106,7 +106,7 @@ class ChromeBrowserStateIOData {
     std::unique_ptr<net::ProxyConfigService> proxy_config_service;
 
     // SystemCookieStore should be initialized from the UI thread as it depends
-    // on the |browser_state|.
+    // on the `browser_state`.
     std::unique_ptr<net::SystemCookieStore> system_cookie_store;
 
     // The browser state this struct was populated from. It's passed as a void*
@@ -118,10 +118,10 @@ class ChromeBrowserStateIOData {
 
   void InitializeOnUIThread(ChromeBrowserState* browser_state);
 
-  // Called when the ChromeBrowserState is destroyed. |context_getters| must
+  // Called when the ChromeBrowserState is destroyed. `context_getters` must
   // include all URLRequestContextGetters that refer to the
   // ChromeBrowserStateIOData's URLRequestContexts. Triggers destruction of the
-  // ChromeBrowserStateIOData and shuts down |context_getters| safely on the IO
+  // ChromeBrowserStateIOData and shuts down `context_getters` safely on the IO
   // thread.
   // TODO(mmenke):  Passing all those URLRequestContextGetters around like this
   //     is really silly.  Can we do something cleaner?

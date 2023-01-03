@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,9 @@
 #include "ash/ash_export.h"
 #include "ash/public/cpp/tablet_mode_observer.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
+#include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "chromeos/dbus/power/power_manager_client.h"
 #include "ui/display/display.h"
 #include "ui/display/display_observer.h"
 
@@ -19,8 +21,10 @@ namespace ash {
 //
 // This controller tracks the physical state of the device and signals observers
 // when it enters or leaves non-standard orientations.
-class ASH_EXPORT HpsOrientationController : public TabletModeObserver,
-                                            public display::DisplayObserver {
+class ASH_EXPORT HumanPresenceOrientationController
+    : public TabletModeObserver,
+      public display::DisplayObserver,
+      public chromeos::PowerManagerClient::Observer {
  public:
   class Observer : public base::CheckedObserver {
    public:
@@ -30,11 +34,12 @@ class ASH_EXPORT HpsOrientationController : public TabletModeObserver,
     virtual void OnOrientationChanged(bool suitable_for_hps) = 0;
   };
 
-  HpsOrientationController();
-  HpsOrientationController(const HpsOrientationController& other) = delete;
-  HpsOrientationController& operator=(const HpsOrientationController& other) =
-      delete;
-  ~HpsOrientationController() override;
+  HumanPresenceOrientationController();
+  HumanPresenceOrientationController(
+      const HumanPresenceOrientationController& other) = delete;
+  HumanPresenceOrientationController& operator=(
+      const HumanPresenceOrientationController& other) = delete;
+  ~HumanPresenceOrientationController() override;
 
   // Start or stop listening for changes to device orientation status.
   void AddObserver(Observer* observer);
@@ -52,9 +57,17 @@ class ASH_EXPORT HpsOrientationController : public TabletModeObserver,
   void OnDisplayMetricsChanged(const display::Display& display,
                                uint32_t changed_metrics) override;
 
-  // Updates the internal state of the controller, and notifies observers if the
-  // state has changed.
-  void UpdateOrientation(bool physical_tablet_state, bool display_rotated);
+  // chromeos::PowerManagerClient::Observer:
+  void LidEventReceived(chromeos::PowerManagerClient::LidState state,
+                        base::TimeTicks timestamp) override;
+  void OnReceiveSwitchStates(
+      absl::optional<chromeos::PowerManagerClient::SwitchStates> switch_states);
+
+  // Updates the internal state of the controller, and notifies observers if
+  // the state has changed.
+  void UpdateOrientation(bool physical_tablet_state,
+                         bool display_rotated,
+                         bool lid_closed);
 
   // If the device is physically configured like a tablet, we will sense frames
   // from atypical angles. Note this is different from tablet mode in general,
@@ -68,12 +81,20 @@ class ASH_EXPORT HpsOrientationController : public TabletModeObserver,
   // frames.
   bool display_rotated_ = false;
 
+  // Device with close lid captures unusable frames.
+  bool lid_closed_ = false;
+
   // Clients listening for orientation status changes.
   base::ObserverList<Observer> observers_;
 
   base::ScopedObservation<TabletModeController, TabletModeObserver>
       tablet_mode_observation_{this};
   display::ScopedDisplayObserver display_observation_{this};
+  base::ScopedObservation<chromeos::PowerManagerClient,
+                          chromeos::PowerManagerClient::Observer>
+      power_manager_client_observation_{this};
+
+  base::WeakPtrFactory<HumanPresenceOrientationController> weak_factory_{this};
 };
 
 }  // namespace ash

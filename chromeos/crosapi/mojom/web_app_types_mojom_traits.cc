@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -69,6 +69,10 @@ crosapi::mojom::WebAppInstallResultCode EnumTraits<
     case webapps::InstallResultCode::kAppNotInRegistrarAfterCommit:
       return crosapi::mojom::WebAppInstallResultCode::
           kAppNotInRegistrarAfterCommit;
+    case webapps::InstallResultCode::kHaltedBySyncUninstall:
+      return crosapi::mojom::WebAppInstallResultCode::kHaltedBySyncUninstall;
+    case webapps::InstallResultCode::kInstallURLInvalid:
+      return crosapi::mojom::WebAppInstallResultCode::kInstallURLInvalid;
   };
 }
 
@@ -151,6 +155,12 @@ bool EnumTraits<crosapi::mojom::WebAppInstallResultCode,
       return true;
     case crosapi::mojom::WebAppInstallResultCode::kAppNotInRegistrarAfterCommit:
       *output = webapps::InstallResultCode::kAppNotInRegistrarAfterCommit;
+      return true;
+    case crosapi::mojom::WebAppInstallResultCode::kHaltedBySyncUninstall:
+      *output = webapps::InstallResultCode::kHaltedBySyncUninstall;
+      return true;
+    case crosapi::mojom::WebAppInstallResultCode::kInstallURLInvalid:
+      *output = webapps::InstallResultCode::kInstallURLInvalid;
       return true;
   };
 

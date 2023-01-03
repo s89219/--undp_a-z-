@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,6 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.FeatureList;
-import org.chromium.base.test.BaseJUnit4ClassRunner;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
@@ -26,6 +25,8 @@ import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.layouts.animation.CompositorAnimationHandler;
+import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
+import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.components.browser_ui.widget.chips.ChipProperties;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
@@ -35,10 +36,10 @@ import java.util.List;
 /**
  * Tests the Related Searches Feature of Contextual Search using instrumentation tests.
  */
-@RunWith(BaseJUnit4ClassRunner.class)
+@RunWith(ChromeJUnit4ClassRunner.class)
 // NOTE: Disable online detection so we we'll default to online on test bots with no network.
-@CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE,
-        ContextualSearchFieldTrial.ONLINE_DETECTION_DISABLED})
+@CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
+@EnableFeatures({ChromeFeatureList.CONTEXTUAL_SEARCH_DISABLE_ONLINE_DETECTION})
 @Restriction(RESTRICTION_TYPE_NON_LOW_END_DEVICE)
 @Batch(Batch.PER_CLASS)
 public class ContextualSearchRelatedSearchesTest extends ContextualSearchInstrumentationBase {
@@ -158,7 +159,7 @@ public class ContextualSearchRelatedSearchesTest extends ContextualSearchInstrum
         Assert.assertTrue("Related Searches results should have been returned but were not!",
                 !resolvedSearchTerm.relatedSearchesJson().isEmpty());
         // Select a chip in the Bar, which should expand the panel.
-        tapPeekingBarToExpandAndAssert();
+        expandPanelAndAssert();
 
         CriteriaHelper.pollUiThread(() -> {
             Criteria.checkThat(
@@ -194,7 +195,7 @@ public class ContextualSearchRelatedSearchesTest extends ContextualSearchInstrum
         Assert.assertTrue("Related Searches results should have been returned but were not!",
                 !resolvedSearchTerm.relatedSearchesJson().isEmpty());
         // Select a chip in the Bar, which should expand the panel.
-        tapPeekingBarToExpandAndAssert();
+        expandPanelAndAssert();
 
         CriteriaHelper.pollUiThread(() -> {
             Criteria.checkThat(
@@ -227,9 +228,7 @@ public class ContextualSearchRelatedSearchesTest extends ContextualSearchInstrum
                 ()
                         -> mPanel.onSearchTermResolved("obscure · əbˈskyo͝or", null, null,
                                 QuickActionCategory.NONE, ResolvedSearchTerm.CardTag.CT_DEFINITION,
-                                inBarSuggestions, false /* showDefaultSearchInBar */,
-                                null /* relatedSearchesInContent */,
-                                false /* showDefaultSearchInContent */));
+                                inBarSuggestions, false /* showDefaultSearchInBar */));
         boolean didPanelGetTaller = mPanel.getHeight() > normalHeight;
         Assert.assertTrue(
                 "Related Searches should show in a taller Bar when there's a definition card, "

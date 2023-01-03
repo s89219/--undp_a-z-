@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{1 dag gelede}other{# dae gelede}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{1 minuut gelede}other{# minute gelede}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 m.}other{# m.}}</translation>
+<translation id="1181037720776840403">Verwyder</translation>
 <translation id="1243314992276662751">Laai op</translation>
 <translation id="1266864766717917324">Kon nie <ph name="CONTENT_TYPE" /> deel nie.</translation>
 <translation id="1269641567813814718">Windows</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Gebruik hoë digtheid</translation>
 <translation id="2482878487686419369">Kennisgewings</translation>
 <translation id="2497284189126895209">Alle lêers</translation>
-<translation id="2498950423397131220">Sweef</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Kalibrering is voltooi</translation>
 <translation id="252373100621549798">Onbekende skerm</translation>

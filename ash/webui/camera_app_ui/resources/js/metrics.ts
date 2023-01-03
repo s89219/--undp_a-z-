@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@ import {State} from './state.js';
 import {
   AspectRatioSet,
   Facing,
+  LocalStorageKey,
   Mode,
   PerfEvent,
   PerfInformation,
@@ -20,8 +21,7 @@ import {
   Resolution,
   VideoResolutionLevel,
 } from './type.js';
-import {GAHelper} from './untrusted_ga_helper.js';
-import * as util from './util.js';
+import {getGAHelper} from './untrusted_scripts.js';
 import {WaitableEvent} from './waitable_event.js';
 
 /**
@@ -32,9 +32,6 @@ const GA_ID = 'UA-134822711-1';
 let baseDimen: Map<number, number|string>|null = null;
 
 const ready = new WaitableEvent();
-
-const gaHelper =
-    util.createUntrustedJSModule<GAHelper>('/js/untrusted_ga_helper.js');
 
 /**
  * Send the event to GA backend.
@@ -60,13 +57,20 @@ async function sendEvent(
     assignDimension(event, dimen);
   }
 
+  if (event.eventValue !== undefined && !Number.isInteger(event.eventValue)) {
+    // Round the duration here since GA expects that the value is an
+    // integer. Reference:
+    // https://support.google.com/analytics/answer/1033068
+    event.eventValue = Math.round(event.eventValue);
+  }
+
   await ready.wait();
 
   // This value reflects the logging consent option in OS settings.
   const canSendMetrics =
       await ChromeHelper.getInstance().isMetricsAndCrashReportingEnabled();
   if (canSendMetrics) {
-    (await gaHelper).sendGAEvent(event);
+    (await getGAHelper()).sendGAEvent(event);
   }
 }
 
@@ -78,7 +82,7 @@ async function sendEvent(
  */
 export async function setMetricsEnabled(enabled: boolean): Promise<void> {
   await ready.wait();
-  await (await gaHelper).setMetricsEnabled(GA_ID, enabled);
+  await (await getGAHelper()).setMetricsEnabled(GA_ID, enabled);
 }
 
 const SCHEMA_VERSION = 3;
@@ -129,6 +133,7 @@ enum MetricDimension {
   DOC_FIX_TYPE = 33,
   RESOLUTION_LEVEL = 34,
   ASPECT_RATIO_SET = 35,
+  DOC_PAGE_COUNT = 36,
 }
 
 /**
@@ -154,14 +159,14 @@ export async function initMetrics(): Promise<void> {
     [MetricDimension.SCHEMA_VERSION, SCHEMA_VERSION],
   ]);
 
-  const GA_LOCAL_STORAGE_KEY = 'google-analytics.analytics.user-id';
-  const clientId = localStorage.getString(GA_LOCAL_STORAGE_KEY);
+  const clientId = localStorage.getString(LocalStorageKey.GA_USER_ID);
 
   function setClientId(id: string) {
-    localStorage.set(GA_LOCAL_STORAGE_KEY, id);
+    localStorage.set(LocalStorageKey.GA_USER_ID, id);
   }
 
-  await (await gaHelper).initGA(GA_ID, clientId, Comlink.proxy(setClientId));
+  await (await getGAHelper())
+      .initGA(GA_ID, clientId, Comlink.proxy(setClientId));
   ready.signal();
 }
 
@@ -405,10 +410,7 @@ export function sendPerfEvent({event, duration, perfInfo = {}}: PerfEventParam):
         eventCategory: 'perf',
         eventAction: event,
         eventLabel: facing,
-        // Round the duration here since GA expects that the value is an
-        // integer. Reference:
-        // https://support.google.com/analytics/answer/1033068
-        eventValue: Math.round(duration),
+        eventValue: duration,
       },
       new Map([
         [MetricDimension.RESOLUTION, `${resolution}`],
@@ -528,4 +530,78 @@ export function sendOpenPTZPanelEvent(
         [MetricDimension.SUPPORT_TILT, capabilities.tilt],
         [MetricDimension.SUPPORT_ZOOM, capabilities.zoom],
       ]));
+}
+
+/**
+ * TODO(b/223089758): Remove `DocResultType` and `DocFixType` and mark the
+ * dimensions as obsolete once multi-page document scanning feature is fully
+ * landed.
+ */
+export enum DocScanFixType {
+  NONE = 0,
+  CORNER = 0b1,
+  ROTATION = 0b10,
+}
+
+export enum DocScanResultActionType {
+  CANCEL = 'cancel',
+  SAVE_AS_PDF = 'save-as-pdf',
+  SAVE_AS_PHOTO = 'save-as-photo',
+  SHARE = 'share',
+}
+
+/**
+ * Sends the multi-page document scanning result event. The actions will either
+ * remove all pages (cancel) or generate files from pages (save/share).
+ */
+export function sendDocScanResultEvent(
+    action: DocScanResultActionType,
+    fixType: DocScanFixType,
+    fixCount: number,
+    pageCount: number,
+    ): void {
+  sendEvent(
+      {
+        eventCategory: 'doc-scan',
+        eventAction: action,
+        eventValue: fixCount,
+      },
+      new Map([
+        [MetricDimension.DOC_FIX_TYPE, fixType],
+        [MetricDimension.DOC_PAGE_COUNT, pageCount],
+      ]));
+}
+
+export enum DocScanActionType {
+  ADD_PAGE = 'add-page',
+  DELETE_PAGE = 'delete-page',
+  FIX = 'fix',
+}
+
+/**
+ * Sends the multi-page document scanning event.
+ */
+export function sendDocScanEvent(action: DocScanActionType): void {
+  sendEvent({
+    eventCategory: 'doc-scan',
+    eventAction: action,
+  });
+}
+
+export enum LowStorageActionType {
+  MANAGE_STORAGE_AUTO_STOP = 'manage-storage-auto-stop',
+  MANAGE_STORAGE_CANNOT_START = 'manage-storage-cannot-start',
+  SHOW_AUTO_STOP_DIALOG = 'show-auto-stop-dialog',
+  SHOW_CANNOT_START_DIALOG = 'show-cannot-start-dialog',
+  SHOW_WARNING_MSG = 'show-warning-msg',
+}
+
+/**
+ * Sends low-storage handling event.
+ */
+export function sendLowStorageEvent(action: LowStorageActionType): void {
+  sendEvent({
+    eventCategory: 'low-storage',
+    eventAction: action,
+  });
 }

@@ -1,108 +1,22 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/web_applications/commands/web_app_command.h"
 
 #include "base/atomic_sequence_num.h"
+#include "base/functional/callback_forward.h"
+#include "chrome/browser/web_applications/locks/app_lock.h"
+#include "chrome/browser/web_applications/locks/full_system_lock.h"
+#include "chrome/browser/web_applications/locks/noop_lock.h"
+#include "chrome/browser/web_applications/locks/shared_web_contents_lock.h"
+#include "chrome/browser/web_applications/locks/shared_web_contents_with_app_lock.h"
+#include "chrome/browser/web_applications/locks/web_app_lock_manager.h"
 #include "chrome/browser/web_applications/web_app_command_manager.h"
-#include "components/services/storage/indexed_db/locks/leveled_lock_range.h"
 
 namespace web_app {
 
-namespace {
-// Creates a `LeveledLockRange` that only includes the provided string `key`
-content::LeveledLockRange StringToLockRange(std::string key) {
-  return content::LeveledLockRange{key, key + static_cast<char>(0)};
-}
-
-enum KeysOnStaticLevel {
-  kFullSystem = 0,
-  kBackgroundWebContents = 1,
-  kNoOp = 2,
-};
-
-}  // namespace
-
-WebAppCommandLock::WebAppCommandLock(base::flat_set<AppId> app_ids,
-                                     LockType lock_type,
-                                     LockRequestSet lock_requests)
-    : app_ids_(std::move(app_ids)),
-      lock_type_(lock_type),
-      lock_requests_(std::move(lock_requests)) {}
-
-WebAppCommandLock::WebAppCommandLock(const WebAppCommandLock& lock) = default;
-
-WebAppCommandLock::~WebAppCommandLock() = default;
-
-// static
-WebAppCommandLock WebAppCommandLock::CreateForFullSystemLock() {
-  LockRequestSet lock_requests;
-  lock_requests.emplace(
-      static_cast<int>(LockLevel::kStatic),
-      StringToLockRange(base::NumberToString(KeysOnStaticLevel::kFullSystem)),
-      content::LeveledLockManager::LockType::kExclusive);
-  return WebAppCommandLock({}, LockType::kFullSystem, std::move(lock_requests));
-}
-
-// static
-WebAppCommandLock WebAppCommandLock::CreateForBackgroundWebContentsLock() {
-  LockRequestSet lock_requests;
-  lock_requests.emplace(static_cast<int>(LockLevel::kStatic),
-                        StringToLockRange(base::NumberToString(
-                            KeysOnStaticLevel::kBackgroundWebContents)),
-                        content::LeveledLockManager::LockType::kExclusive);
-  lock_requests.emplace(
-      static_cast<int>(LockLevel::kStatic),
-      StringToLockRange(base::NumberToString(KeysOnStaticLevel::kFullSystem)),
-      content::LeveledLockManager::LockType::kShared);
-  return WebAppCommandLock({}, LockType::kBackgroundWebContents,
-                           std::move(lock_requests));
-}
-
-// static
-WebAppCommandLock WebAppCommandLock::CreateForAppLock(
-    base::flat_set<AppId> app_ids) {
-  LockRequestSet lock_requests;
-  lock_requests.emplace(
-      static_cast<int>(LockLevel::kStatic),
-      StringToLockRange(base::NumberToString(KeysOnStaticLevel::kFullSystem)),
-      content::LeveledLockManager::LockType::kShared);
-
-  for (const auto& app_id : app_ids) {
-    lock_requests.emplace(static_cast<int>(LockLevel::kApp),
-                          StringToLockRange(app_id),
-                          content::LeveledLockManager::LockType::kExclusive);
-  }
-  return WebAppCommandLock(app_ids, LockType::kApp, std::move(lock_requests));
-}
-
-// static
-WebAppCommandLock WebAppCommandLock::CreateForNoOpLock() {
-  LockRequestSet lock_requests;
-  lock_requests.emplace(
-      static_cast<int>(LockLevel::kStatic),
-      StringToLockRange(base::NumberToString(KeysOnStaticLevel::kNoOp)),
-      content::LeveledLockManager::LockType::kShared);
-  return WebAppCommandLock({}, LockType::kNoOp, std::move(lock_requests));
-}
-
-bool WebAppCommandLock::IsAppLocked(const AppId& app_id) const {
-  switch (lock_type_) {
-    case LockType::kFullSystem:
-      return true;
-    case LockType::kBackgroundWebContents:
-      return false;
-    case LockType::kApp:
-      return app_ids_.contains(app_id);
-    case LockType::kNoOp:
-      return false;
-      NOTREACHED();
-  }
-}
-
-WebAppCommand::WebAppCommand(WebAppCommandLock command_lock)
-    : command_lock_(std::move(command_lock)) {
+WebAppCommand::WebAppCommand(const std::string& name) : name_(name) {
   DETACH_FROM_SEQUENCE(command_sequence_checker_);
   // We don't have an easy way to enforce construction of class on the
   // WebAppProvider sequence without requiring a UI thread in unittests, so just
@@ -112,27 +26,67 @@ WebAppCommand::WebAppCommand(WebAppCommandLock command_lock)
 }
 WebAppCommand::~WebAppCommand() = default;
 
+content::WebContents* WebAppCommand::GetInstallingWebContents() {
+  return nullptr;
+}
+
 void WebAppCommand::SignalCompletionAndSelfDestruct(
     CommandResult result,
     base::OnceClosure completion_callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(command_sequence_checker_);
   // Surround the check in an if-statement to avoid evaluating the debug value
   // every time.
-  if (!command_manager_) {
-    CHECK(command_manager_)
+  if (!command_manager()) {
+    CHECK(command_manager())
         << "Command was never started: " << ToDebugValue().DebugString();
   }
-  command_manager_->OnCommandComplete(this, result,
-                                      std::move(completion_callback));
+  command_manager()->OnCommandComplete(this, result,
+                                       std::move(completion_callback));
 }
 
-void WebAppCommand::Start(WebAppCommandManager* command_manager) {
-  command_manager_ = command_manager;
-  Start();
+WebAppCommandManager* WebAppCommand::command_manager() const {
+  return command_manager_;
 }
 
 base::WeakPtr<WebAppCommand> WebAppCommand::AsWeakPtr() {
   return weak_factory_.GetWeakPtr();
 }
+
+template <typename LockType>
+WebAppCommandTemplate<LockType>::WebAppCommandTemplate(const std::string& name)
+    : WebAppCommand(name) {}
+
+template <typename LockType>
+WebAppCommandTemplate<LockType>::~WebAppCommandTemplate() = default;
+
+template <typename LockType>
+void WebAppCommandTemplate<LockType>::RequestLock(
+    WebAppCommandManager* command_manager,
+    WebAppLockManager* lock_manager,
+    LockAcquiredCallback on_lock_acquired) {
+  lock_manager->AcquireLock(
+      lock_description(),
+      base::BindOnce(&WebAppCommandTemplate::PrepareForStart,
+                     weak_factory_.GetWeakPtr(), command_manager,
+                     std::move(on_lock_acquired)));
+}
+
+template <typename LockType>
+void WebAppCommandTemplate<LockType>::PrepareForStart(
+    WebAppCommandManager* command_manager,
+    LockAcquiredCallback on_lock_acquired,
+    std::unique_ptr<LockType> lock) {
+  command_manager_ = command_manager;
+
+  std::move(on_lock_acquired)
+      .Run(base::BindOnce(&WebAppCommandTemplate::StartWithLock,
+                          weak_factory_.GetWeakPtr(), std::move(lock)));
+}
+
+template class WebAppCommandTemplate<NoopLock>;
+template class WebAppCommandTemplate<SharedWebContentsLock>;
+template class WebAppCommandTemplate<AppLock>;
+template class WebAppCommandTemplate<SharedWebContentsWithAppLock>;
+template class WebAppCommandTemplate<FullSystemLock>;
 
 }  // namespace web_app

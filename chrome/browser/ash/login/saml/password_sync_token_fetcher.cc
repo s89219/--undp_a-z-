@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -211,6 +211,11 @@ void PasswordSyncTokenFetcher::FetchSyncToken(const std::string& access_token) {
           "order to sync user's password and update the token."
         data: "Access token and token_type."
         destination: GOOGLE_OWNED_SERVICE
+      }
+      policy {
+        cookies_allowed: NO
+        policy_exception_justification:
+          "No policies implemented yet."
       })");
   auto resource_request = std::make_unique<network::ResourceRequest>();
   switch (request_type_) {
@@ -343,8 +348,7 @@ void PasswordSyncTokenFetcher::ProcessValidTokenResponse(
         consumer_->OnApiCallFailed(ErrorType::kGetNoList);
         return;
       }
-      base::Value::ConstListView list_of_tokens =
-          token_list_entry->GetListDeprecated();
+      const base::Value::List& list_of_tokens = token_list_entry->GetList();
       if (list_of_tokens.size() > 0) {
         const auto* sync_token_value =
             list_of_tokens[0].FindKeyOfType(kToken, base::Value::Type::STRING);

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/logging.h"
 #include "base/strings/strcat.h"
 #include "content/services/auction_worklet/auction_v8_helper.h"
 #include "gin/converter.h"
@@ -25,10 +24,13 @@
 
 namespace auction_worklet {
 
-RegisterAdBeaconBindings::RegisterAdBeaconBindings(
-    AuctionV8Helper* v8_helper,
-    v8::Local<v8::ObjectTemplate> global_template)
-    : v8_helper_(v8_helper) {
+RegisterAdBeaconBindings::RegisterAdBeaconBindings(AuctionV8Helper* v8_helper)
+    : v8_helper_(v8_helper) {}
+
+RegisterAdBeaconBindings::~RegisterAdBeaconBindings() = default;
+
+void RegisterAdBeaconBindings::FillInGlobalTemplate(
+    v8::Local<v8::ObjectTemplate> global_template) {
   v8::Local<v8::External> v8_this =
       v8::External::New(v8_helper_->isolate(), this);
   v8::Local<v8::FunctionTemplate> v8_template = v8::FunctionTemplate::New(
@@ -39,7 +41,10 @@ RegisterAdBeaconBindings::RegisterAdBeaconBindings(
                        v8_template);
 }
 
-RegisterAdBeaconBindings::~RegisterAdBeaconBindings() = default;
+void RegisterAdBeaconBindings::Reset() {
+  ad_beacon_map_.clear();
+  first_call_ = true;
+}
 
 void RegisterAdBeaconBindings::RegisterAdBeacon(
     const v8::FunctionCallbackInfo<v8::Value>& args) {

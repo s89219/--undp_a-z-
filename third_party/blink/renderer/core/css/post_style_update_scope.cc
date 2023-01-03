@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
-#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -19,21 +18,19 @@ PostStyleUpdateScope* PostStyleUpdateScope::current_ = nullptr;
 
 PostStyleUpdateScope::AnimationData*
 PostStyleUpdateScope::CurrentAnimationData() {
-  if (!RuntimeEnabledFeatures::CSSDelayedAnimationUpdatesEnabled())
-    return nullptr;
   return current_ ? &current_->animation_data_ : nullptr;
 }
 
 PostStyleUpdateScope::PostStyleUpdateScope(Document& document)
     : document_(document) {
-  if (!current_)
+  if (!current_) {
     current_ = this;
+  }
 }
 
 PostStyleUpdateScope::~PostStyleUpdateScope() {
   if (current_ == this) {
-    if (RuntimeEnabledFeatures::CSSDelayedAnimationUpdatesEnabled())
-      Apply();
+    Apply();
     document_.ClearFocusedElementIfNeeded();
     current_ = nullptr;
   }
@@ -48,12 +45,13 @@ void PostStyleUpdateScope::Apply() {
 
   for (auto& element : pending) {
     ElementAnimations* element_animations = element->GetElementAnimations();
-    if (!element_animations)
+    if (!element_animations) {
       continue;
+    }
     element_animations->CssAnimations().MaybeApplyPendingUpdate(element.Get());
   }
 
-  DCHECK(animation_data_.elements_with_pending_updates_.IsEmpty())
+  DCHECK(animation_data_.elements_with_pending_updates_.empty())
       << "MaybeApplyPendingUpdate must not set further pending updates";
 }
 
@@ -73,8 +71,9 @@ void PostStyleUpdateScope::AnimationData::StoreOldStyleIfNeeded(
 const ComputedStyle* PostStyleUpdateScope::AnimationData::GetOldStyle(
     Element& element) const {
   auto iter = old_styles_.find(&element);
-  if (iter == old_styles_.end())
+  if (iter == old_styles_.end()) {
     return element.GetComputedStyle();
+  }
   return iter->value.get();
 }
 

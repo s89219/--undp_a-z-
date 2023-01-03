@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -524,6 +524,12 @@ std::string FullRestoreSaveHandler::GetAppId(aura::Window* window) {
     return iter != window_id_to_app_restore_info_.end() ? iter->second.second
                                                         : std::string();
   }
+}
+
+int FullRestoreSaveHandler::GetLacrosChromeAppWindowId(
+    aura::Window* window) const {
+  DCHECK(lacros_save_handler_);
+  return lacros_save_handler_->GetLacrosChromeAppWindowId(window);
 }
 
 std::unique_ptr<app_restore::AppLaunchInfo>

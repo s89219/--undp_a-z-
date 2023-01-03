@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -132,9 +132,10 @@ class WebAppTestRegistryObserverAdapter : public AppRegistrarObserver {
   void OnWebAppsWillBeUpdatedFromSync(
       const std::vector<const WebApp*>& new_apps_state) override;
   void OnWebAppProfileWillBeDeleted(const AppId& app_id) override;
-  void OnWebAppLastBadgingTimeChanged(const web_app::AppId& app_id,
+  void OnWebAppLastBadgingTimeChanged(const AppId& app_id,
                                       const base::Time& time) override;
   void OnWebAppProtocolSettingsChanged() override;
+  void OnAppRegistrarDestroyed() override;
 
  protected:
   // Helper method for subclasses to allow easy waiting on `wait_loop_`.

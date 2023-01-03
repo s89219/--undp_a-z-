@@ -244,7 +244,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type,
   origin_ = origin;
   last_event_id_ = last_event_id;
   source_ = source;
-  if (ports.IsEmpty()) {
+  if (ports.empty()) {
     ports_ = nullptr;
   } else {
     ports_ = MakeGarbageCollected<MessagePortArray>();
@@ -382,6 +382,12 @@ bool MessageEvent::IsLockedToAgentCluster() const {
     return false;
   }
   return data_as_serialized_script_value_->Value()->IsLockedToAgentCluster();
+}
+
+bool MessageEvent::CanDeserializeIn(ExecutionContext* execution_context) const {
+  return data_type_ != kDataTypeSerializedScriptValue ||
+         data_as_serialized_script_value_->Value()->CanDeserializeIn(
+             execution_context);
 }
 
 void MessageEvent::EntangleMessagePorts(ExecutionContext* context) {

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -182,6 +182,9 @@ void RecordRecordingStartsWithCamera(bool starts_with_camera,
 
 // Records the number of camera disconnections during recording.
 void RecordCameraDisconnectionsDuringRecordings(int num_camera_disconnections);
+
+// Records the given `num_camera_connected`.
+void RecordNumberOfConnectedCameras(int num_camera_connected);
 
 // Records the duration of camera becoming available again after camera
 // disconnection.

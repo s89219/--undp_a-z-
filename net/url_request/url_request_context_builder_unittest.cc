@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,11 @@
 
 #include "base/callback_helpers.h"
 #include "base/run_loop.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "net/base/mock_network_change_notifier.h"
-#include "net/base/network_isolation_key.h"
+#include "net/base/network_anonymization_key.h"
 #include "net/base/request_priority.h"
 #include "net/base/test_completion_callback.h"
 #include "net/dns/host_resolver.h"
@@ -45,7 +46,6 @@
 
 #if BUILDFLAG(ENABLE_REPORTING)
 #include "base/files/scoped_temp_dir.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "net/extras/sqlite/sqlite_persistent_reporting_and_nel_store.h"
 #include "net/reporting/reporting_context.h"
 #include "net/reporting/reporting_policy.h"
@@ -63,16 +63,17 @@ class MockHttpAuthHandlerFactory : public HttpAuthHandlerFactory {
       : return_code_(return_code), supported_scheme_(supported_scheme) {}
   ~MockHttpAuthHandlerFactory() override = default;
 
-  int CreateAuthHandler(HttpAuthChallengeTokenizer* challenge,
-                        HttpAuth::Target target,
-                        const SSLInfo& ssl_info,
-                        const NetworkIsolationKey& network_isolation_key,
-                        const url::SchemeHostPort& scheme_host_port,
-                        CreateReason reason,
-                        int nonce_count,
-                        const NetLogWithSource& net_log,
-                        HostResolver* host_resolver,
-                        std::unique_ptr<HttpAuthHandler>* handler) override {
+  int CreateAuthHandler(
+      HttpAuthChallengeTokenizer* challenge,
+      HttpAuth::Target target,
+      const SSLInfo& ssl_info,
+      const NetworkAnonymizationKey& network_anonymization_key,
+      const url::SchemeHostPort& scheme_host_port,
+      CreateReason reason,
+      int nonce_count,
+      const NetLogWithSource& net_log,
+      HostResolver* host_resolver,
+      std::unique_ptr<HttpAuthHandler>* handler) override {
     handler->reset();
 
     return challenge->auth_scheme() == supported_scheme_
@@ -144,7 +145,7 @@ TEST_F(URLRequestContextBuilderTest, DefaultHttpAuthHandlerFactory) {
   EXPECT_EQ(OK,
             context->http_auth_handler_factory()->CreateAuthHandlerFromString(
                 "basic", HttpAuth::AUTH_SERVER, null_ssl_info,
-                NetworkIsolationKey(), scheme_host_port, NetLogWithSource(),
+                NetworkAnonymizationKey(), scheme_host_port, NetLogWithSource(),
                 host_resolver_.get(), &handler));
 }
 
@@ -161,21 +162,21 @@ TEST_F(URLRequestContextBuilderTest, CustomHttpAuthHandlerFactory) {
   EXPECT_EQ(kBasicReturnCode,
             context->http_auth_handler_factory()->CreateAuthHandlerFromString(
                 "ExtraScheme", HttpAuth::AUTH_SERVER, null_ssl_info,
-                NetworkIsolationKey(), scheme_host_port, NetLogWithSource(),
+                NetworkAnonymizationKey(), scheme_host_port, NetLogWithSource(),
                 host_resolver_.get(), &handler));
 
   // Verify that the default basic handler isn't present
   EXPECT_EQ(ERR_UNSUPPORTED_AUTH_SCHEME,
             context->http_auth_handler_factory()->CreateAuthHandlerFromString(
                 "basic", HttpAuth::AUTH_SERVER, null_ssl_info,
-                NetworkIsolationKey(), scheme_host_port, NetLogWithSource(),
+                NetworkAnonymizationKey(), scheme_host_port, NetLogWithSource(),
                 host_resolver_.get(), &handler));
 
   // Verify that a handler isn't returned for a bogus scheme.
   EXPECT_EQ(ERR_UNSUPPORTED_AUTH_SCHEME,
             context->http_auth_handler_factory()->CreateAuthHandlerFromString(
                 "Bogus", HttpAuth::AUTH_SERVER, null_ssl_info,
-                NetworkIsolationKey(), scheme_host_port, NetLogWithSource(),
+                NetworkAnonymizationKey(), scheme_host_port, NetLogWithSource(),
                 host_resolver_.get(), &handler));
 }
 
@@ -199,7 +200,7 @@ TEST_F(URLRequestContextBuilderTest, ShutDownNELAndReportingWithPendingUpload) {
       std::make_unique<SQLitePersistentReportingAndNelStore>(
           scoped_temp_dir.GetPath().Append(
               FILE_PATH_LITERAL("ReportingAndNelStore")),
-          base::ThreadTaskRunnerHandle::Get(),
+          base::SingleThreadTaskRunner::GetCurrentDefault(),
           base::ThreadPool::CreateSequencedTaskRunner(
               {base::MayBlock(),
                net::GetReportingAndNelStoreBackgroundSequencePriority(),
@@ -241,7 +242,7 @@ TEST_F(URLRequestContextBuilderTest, ShutdownHostResolverWithPendingRequest) {
 
   std::unique_ptr<HostResolver::ResolveHostRequest> request =
       context->host_resolver()->CreateRequest(
-          HostPortPair("example.com", 1234), NetworkIsolationKey(),
+          HostPortPair("example.com", 1234), NetworkAnonymizationKey(),
           NetLogWithSource(), absl::nullopt);
   TestCompletionCallback callback;
   int rv = request->Start(callback.callback());
@@ -290,7 +291,7 @@ TEST_F(URLRequestContextBuilderTest, BindToNetworkFinalConfiguration) {
 
   // The actual network handle doesn't really matter, this test just wants to
   // check that all the pieces are in place and configured correctly.
-  constexpr NetworkChangeNotifier::NetworkHandle network = 2;
+  constexpr handles::NetworkHandle network = 2;
   auto scoped_mock_network_change_notifier =
       std::make_unique<test::ScopedMockNetworkChangeNotifier>();
   test::MockNetworkChangeNotifier* mock_ncn =
@@ -320,6 +321,38 @@ TEST_F(URLRequestContextBuilderTest, BindToNetworkFinalConfiguration) {
 
   const auto* network_session_params = context->GetNetworkSessionParams();
   EXPECT_TRUE(network_session_params->ignore_ip_address_changes);
+#else   // !BUILDFLAG(IS_ANDROID)
+  GTEST_SKIP() << "BindToNetwork is supported only on Android";
+#endif  // BUILDFLAG(IS_ANDROID)
+}
+
+TEST_F(URLRequestContextBuilderTest, BindToNetworkCustomManagerOptions) {
+#if BUILDFLAG(IS_ANDROID)
+  if (base::android::BuildInfo::GetInstance()->sdk_int() <
+      base::android::SDK_VERSION_MARSHMALLOW) {
+    GTEST_SKIP()
+        << "BindToNetwork is supported starting from Android Marshmallow";
+  }
+
+  // The actual network handle doesn't really matter, this test just wants to
+  // check that all the pieces are in place and configured correctly.
+  constexpr handles::NetworkHandle network = 2;
+  auto scoped_mock_network_change_notifier =
+      std::make_unique<test::ScopedMockNetworkChangeNotifier>();
+  test::MockNetworkChangeNotifier* mock_ncn =
+      scoped_mock_network_change_notifier->mock_network_change_notifier();
+  mock_ncn->ForceNetworkHandlesSupported();
+
+  // Set non-default value for check_ipv6_on_wifi and check that this is what
+  // HostResolverManager receives.
+  HostResolver::ManagerOptions options;
+  options.check_ipv6_on_wifi = !options.check_ipv6_on_wifi;
+  builder_.BindToNetwork(network, options);
+  std::unique_ptr<URLRequestContext> context = builder_.Build();
+  EXPECT_EQ(context->host_resolver()
+                ->GetManagerForTesting()
+                ->check_ipv6_on_wifi_for_testing(),
+            options.check_ipv6_on_wifi);
 #else   // !BUILDFLAG(IS_ANDROID)
   GTEST_SKIP() << "BindToNetwork is supported only on Android";
 #endif  // BUILDFLAG(IS_ANDROID)

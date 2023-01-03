@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "base/containers/queue.h"
 #include "base/files/file.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "storage/browser/file_system/file_system_context.h"
 #include "storage/browser/file_system/file_system_operation_runner.h"
 
@@ -121,6 +120,8 @@ void RecursiveOperationDelegate::DidReadDirectory(const FileSystemURL& parent,
     FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
         parent.storage_key(), parent.mount_type(),
         parent.virtual_path().Append(entries[i].name));
+    if (parent.bucket().has_value())
+      url.SetBucket(parent.bucket().value());
     if (entries[i].type == filesystem::mojom::FsFileType::DIRECTORY)
       pending_directory_stack_.top().push(url);
     else
@@ -148,7 +149,7 @@ void RecursiveOperationDelegate::ProcessPendingFiles() {
 
   // Run ProcessFile.
   scoped_refptr<base::SingleThreadTaskRunner> current_task_runner =
-      base::ThreadTaskRunnerHandle::Get();
+      base::SingleThreadTaskRunner::GetCurrentDefault();
   if (!pending_files_.empty()) {
     current_task_runner->PostTask(
         FROM_HERE,

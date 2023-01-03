@@ -1,6 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+import {ChromeEventHandler} from '../../common/chrome_event_handler.js';
+import {EventHandler} from '../../common/event_handler.js';
+import {RectUtil} from '../../common/rect_util.js';
 
 const EventType = chrome.automation.EventType;
 const RoleType = chrome.automation.RoleType;
@@ -88,6 +92,9 @@ export class Magnifier {
         [], chrome.automation.EventType.MOUSE_DRAGGED,
         event => this.onMouseMovedOrDragged_(event));
 
+    /** @private {?function()} */
+    this.onLoadDesktopCallbackForTest_ = null;
+
     this.init_();
   }
 
@@ -124,6 +131,10 @@ export class Magnifier {
       this.onMouseMovedHandler_.start();
       this.onMouseDraggedHandler_.setNodes(desktop);
       this.onMouseDraggedHandler_.start();
+      if (this.onLoadDesktopCallbackForTest_) {
+        this.onLoadDesktopCallbackForTest_();
+        this.onLoadDesktopCallbackForTest_ = null;
+      }
     });
 
     this.onMagnifierBoundsChangedHandler_.start();
@@ -137,7 +148,7 @@ export class Magnifier {
     }, Magnifier.IGNORE_FOCUS_UPDATES_INITIALIZATION_MS);
 
     chrome.commandLinePrivate.hasSwitch(
-        'enable-magnifier-debug-draw-rect', (enabled) => {
+        'enable-magnifier-debug-draw-rect', enabled => {
           if (enabled) {
             this.magnifierDebugDrawRect_ = true;
           }
@@ -153,7 +164,7 @@ export class Magnifier {
       chrome.accessibilityPrivate.setFocusRings([{
         rects: [bounds],
         type: chrome.accessibilityPrivate.FocusType.GLOW,
-        color: '#22d'
+        color: '#22d',
       }]);
     }
   }
@@ -170,10 +181,10 @@ export class Magnifier {
    * @private
    */
   updateFromPrefs_(prefs) {
-    prefs.forEach((pref) => {
+    prefs.forEach(pref => {
       switch (pref.key) {
         case Magnifier.Prefs.SCREEN_MAGNIFIER_FOCUS_FOLLOWING:
-          this.screenMagnifierFocusFollowing_ = !!pref.value;
+          this.screenMagnifierFocusFollowing_ = Boolean(pref.value);
           break;
         default:
           return;
@@ -288,6 +299,20 @@ export class Magnifier {
   onMouseMovedOrDragged_(event) {
     this.lastMouseMovedTime_ = new Date();
     this.mouseLocation_ = {x: event.mouseX, y: event.mouseY};
+  }
+
+  /**
+   * Used by C++ tests to ensure Magnifier load is competed.
+   * @param {!function()} callback Callback for when desktop is loaded from
+   * automation.
+   */
+  setOnLoadDesktopCallbackForTest(callback) {
+    if (!this.focusHandler_.listening()) {
+      this.onLoadDesktopCallbackForTest_ = callback;
+      return;
+    }
+    // Desktop already loaded.
+    callback();
   }
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,7 +45,6 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/public/activation_change_observer.h"
-#include "ui/wm/public/wm_public_export.h"
 
 using ash::ArcNotificationItem;
 using ash::ArcNotificationSurface;
@@ -234,9 +233,8 @@ TEST_F(ArcAccessibilityHelperBridgeTest, AnnouncementEvent) {
 
   ASSERT_EQ(1, helper_bridge->GetEventCount(event_name));
   ASSERT_EQ(event_name, helper_bridge->last_event->event_name);
-  base::Value::ConstListView arg =
-      helper_bridge->last_event->event_args->GetListDeprecated()[0]
-          .GetListDeprecated();
+  const base::Value::List& arg =
+      helper_bridge->last_event->event_args[0].GetList();
   ASSERT_EQ(1U, arg.size());
   ASSERT_EQ(announce_text, arg[0].GetString());
 }
@@ -265,9 +263,8 @@ TEST_F(ArcAccessibilityHelperBridgeTest, NotificationStateChangedEvent) {
 
   ASSERT_EQ(1, helper_bridge->GetEventCount(event_name));
   ASSERT_EQ(event_name, helper_bridge->last_event->event_name);
-  base::Value::ConstListView arg =
-      helper_bridge->last_event->event_args->GetListDeprecated()[0]
-          .GetListDeprecated();
+  const base::Value::List& arg =
+      helper_bridge->last_event->event_args[0].GetList();
   ASSERT_EQ(1U, arg.size());
   ASSERT_EQ(toast_text, arg[0].GetString());
 

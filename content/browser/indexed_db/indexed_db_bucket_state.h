@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 #include "base/time/clock.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "components/services/storage/indexed_db/locks/disjoint_range_lock_manager.h"
+#include "components/services/storage/indexed_db/locks/partitioned_lock_manager.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "content/browser/indexed_db/indexed_db_bucket_state_handle.h"
 #include "content/browser/indexed_db/indexed_db_task_helper.h"
@@ -28,7 +28,7 @@
 namespace content {
 class IndexedDBBackingStore;
 class IndexedDBDatabase;
-class IndexedDBFactoryImpl;
+class IndexedDBFactory;
 class IndexedDBPreCloseTaskQueue;
 class TransactionalLevelDBFactory;
 
@@ -36,14 +36,14 @@ constexpr const char kIDBCloseImmediatelySwitch[] = "idb-close-immediately";
 
 // This is an emergency kill switch to use with Finch if the feature needs to be
 // shut off.
-CONTENT_EXPORT extern const base::Feature kCompactIDBOnClose;
+CONTENT_EXPORT BASE_DECLARE_FEATURE(kCompactIDBOnClose);
 
 // IndexedDBBucketState manages the per-bucket IndexedDB state, and
 // contains the backing store for the bucket.
 //
 // This class is expected to manage its own lifetime by using the
 // `destruct_myself_` closure, which is expected to destroy this object in the
-// parent IndexedDBFactoryImpl (and remove it from any collections, etc).
+// parent IndexedDBFactory (and remove it from any collections, etc).
 // However, IndexedDBBucketState should still handle destruction without the
 // use of that closure when the storage partition is destructed.
 //
@@ -100,7 +100,7 @@ class CONTENT_EXPORT IndexedDBBucketState {
       TransactionalLevelDBFactory* transactional_leveldb_factory,
       base::Time* earliest_global_sweep_time,
       base::Time* earliest_global_compaction_time,
-      std::unique_ptr<DisjointRangeLockManager> lock_manager,
+      std::unique_ptr<PartitionedLockManager> lock_manager,
       TasksAvailableCallback notify_tasks_callback,
       TearDownCallback tear_down_callback,
       std::unique_ptr<IndexedDBBackingStore> backing_store);
@@ -109,8 +109,6 @@ class CONTENT_EXPORT IndexedDBBucketState {
   IndexedDBBucketState& operator=(const IndexedDBBucketState&) = delete;
 
   ~IndexedDBBucketState();
-
-  void AbortAllTransactions(bool compact);
 
   void ForceClose();
 
@@ -137,7 +135,7 @@ class CONTENT_EXPORT IndexedDBBucketState {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return databases_;
   }
-  DisjointRangeLockManager* lock_manager() {
+  PartitionedLockManager* lock_manager() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
     return lock_manager_.get();
   }
@@ -170,7 +168,7 @@ class CONTENT_EXPORT IndexedDBBucketState {
   }
 
  private:
-  friend IndexedDBFactoryImpl;
+  friend IndexedDBFactory;
   friend IndexedDBBucketStateHandle;
 
   // Test needs access to ShouldRunTombstoneSweeper.
@@ -230,13 +228,13 @@ class CONTENT_EXPORT IndexedDBBucketState {
   bool running_tasks_ = false;
   bool task_run_scheduled_ = false;
 
-  // This is safe because it is owned by IndexedDBFactoryImpl, which owns this
+  // This is safe because it is owned by IndexedDBFactory, which owns this
   // object.
   raw_ptr<base::Time> earliest_global_sweep_time_;
   raw_ptr<base::Time> earliest_global_compaction_time_;
   ClosingState closing_stage_ = ClosingState::kNotClosing;
   base::OneShotTimer close_timer_;
-  const std::unique_ptr<DisjointRangeLockManager> lock_manager_;
+  const std::unique_ptr<PartitionedLockManager> lock_manager_;
   std::unique_ptr<IndexedDBBackingStore> backing_store_;
 
   DBMap databases_;

@@ -1,19 +1,19 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <memory>
 
-#include "ash/components/login/auth/user_context.h"
-#include "ash/components/settings/cros_settings_names.h"
 #include "chrome/browser/ash/login/login_manager_test.h"
 #include "chrome/browser/ash/login/test/device_state_mixin.h"
 #include "chrome/browser/ash/login/test/login_manager_mixin.h"
 #include "chrome/browser/ash/login/test/session_manager_state_waiter.h"
 #include "chrome/browser/ash/login/test/user_policy_mixin.h"
 #include "chrome/browser/ash/policy/core/device_policy_cros_browser_test.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_chromeos.h"
+#include "chrome/browser/lifetime/termination_notification.h"
+#include "chromeos/ash/components/login/auth/public/user_context.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
 #include "components/user_manager/user_manager.h"
@@ -93,14 +93,14 @@ IN_PROC_BROWSER_TEST_F(UserAllowlistPolicyTest, ShutdownIfNotAllowed) {
 
   LoginRegularUser();
 
-  content::WindowedNotificationObserver termination_waiter(
-      chrome::NOTIFICATION_APP_TERMINATING,
-      content::NotificationService::AllSources());
+  base::RunLoop run_loop;
+  auto subscription =
+      browser_shutdown::AddAppTerminatingCallback(run_loop.QuitClosure());
 
   // Only school users are allowed. Regular user session should be terminated.
   AllowUniqueUserToSignIn(kSchoolAllowlist);
-  EXPECT_TRUE(chrome::IsAttemptingShutdown());
-  termination_waiter.Wait();
+  EXPECT_TRUE(chrome::IsSendingStopRequestToSessionManager());
+  run_loop.Run();
 }
 
 }  // namespace ash

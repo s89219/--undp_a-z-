@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{1 diwrnod yn ôl}zero{# diwrnod yn ôl}two{# ddiwrnod yn ôl}few{# diwrnod yn ôl}many{# diwrnod yn ôl}other{# diwrnod yn ôl}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{1 funud yn ôl}zero{# munud yn ôl}two{# funud yn ôl}few{# munud yn ôl}many{# munud yn ôl}other{# munud yn ôl}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1m}zero{#m}two{#f}few{#m}many{#m}other{#m}}</translation>
+<translation id="1181037720776840403">Dileu</translation>
 <translation id="1243314992276662751">Uwchlwytho</translation>
 <translation id="1266864766717917324">Ni ellid rhannu <ph name="CONTENT_TYPE" /></translation>
 <translation id="1269641567813814718">Ennill</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Defnyddio dwysedd uchel</translation>
 <translation id="2482878487686419369">Hysbysiadau</translation>
 <translation id="2497284189126895209">Pob Ffeil</translation>
-<translation id="2498950423397131220">Arnofio</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Wedi gorffen calibradu</translation>
 <translation id="252373100621549798">Sgrîn Anhysbys</translation>

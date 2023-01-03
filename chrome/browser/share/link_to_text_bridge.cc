@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,7 @@ ukm::SourceId GetSourceId(
     const base::android::JavaParamRef<jobject>& j_web_contents) {
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(j_web_contents);
-  return web_contents->GetMainFrame()->GetPageUkmSourceId();
+  return web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId();
 }
 }  // namespace
 

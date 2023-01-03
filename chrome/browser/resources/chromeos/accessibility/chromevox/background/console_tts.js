@@ -1,30 +1,27 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
- * @fileoverview A TTS engine that writes to window.console.
+ * @fileoverview A TTS engine that writes to globalThis.console.
  */
+import {SpeechLog} from '../common/log_types.js';
+import {TtsInterface} from '../common/tts_interface.js';
+import {QueueMode, TtsCategory} from '../common/tts_types.js';
 
-/**
- * @implements {TtsInterface}
- */
+import {LogStore} from './logging/log_store.js';
+import {ChromeVoxPrefs} from './prefs.js';
+
+/** @implements {TtsInterface} */
 export class ConsoleTts {
   constructor() {
     /**
      * True if the console TTS is enabled by the user.
-     * @type {boolean}
-     * @private
+     * @private {boolean}
      */
-    this.enabled_ = false;
-  }
-
-  /** @return {!ConsoleTts} */
-  static getInstance() {
-    if (!ConsoleTts.instance_) {
-      ConsoleTts.instance_ = new ConsoleTts();
-    }
-    return ConsoleTts.instance_;
+    this.enabled_ =
+        ChromeVoxPrefs.instance.getPrefs()['enableSpeechLogging'] ===
+        String(true);
   }
 
   /**
@@ -41,7 +38,7 @@ export class ConsoleTts {
       }
 
       const speechLog = new SpeechLog(textString, queueMode, category);
-      LogStore.getInstance().writeLog(speechLog);
+      LogStore.instance.writeLog(speechLog);
       console.log(speechLog.toString());
     }
     return this;
@@ -100,11 +97,5 @@ export class ConsoleTts {
   resetTextToSpeechSettings() {}
 }
 
-/** @private {!ConsoleTts} */
+/** @private {ConsoleTts} */
 ConsoleTts.instance_;
-
-chrome.runtime.onMessage.addListener((message, sender, respond) => {
-  if (message.target === 'ConsoleTts' && message.action === 'getInstance') {
-    respond(ConsoleTts.getInstance());
-  }
-});

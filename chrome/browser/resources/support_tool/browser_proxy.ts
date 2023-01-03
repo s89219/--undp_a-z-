@@ -1,40 +1,40 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {sendWithPromise} from 'chrome://resources/js/cr.m.js';
+import {sendWithPromise} from 'chrome://resources/js/cr.js';
 
-export type DataCollectorItem = {
-  name: string,
-  isIncluded: boolean,
-  protoEnum: number,
-};
+export interface DataCollectorItem {
+  name: string;
+  isIncluded: boolean;
+  protoEnum: number;
+}
 
-export type IssueDetails = {
-  caseId: string,
-  emailAddress: string,
-  issueDescription: string,
-};
+export interface IssueDetails {
+  caseId: string;
+  emailAddress: string;
+  issueDescription: string;
+}
 
-export type PIIDataItem = {
-  piiTypeDescription: string,
-  piiType: number,
-  detectedData: string,
-  count: number,
-  keep: boolean,
-  expandDetails: boolean,
-};
+export interface PiiDataItem {
+  piiTypeDescription: string;
+  piiType: number;
+  detectedData: string;
+  count: number;
+  keep: boolean;
+  expandDetails: boolean;
+}
 
-export type StartDataCollectionResult = {
-  success: boolean,
-  errorMessage: string,
-};
+export interface StartDataCollectionResult {
+  success: boolean;
+  errorMessage: string;
+}
 
-export type UrlGenerationResult = {
-  success: boolean,
-  url: string,
-  errorMessage: string,
-};
+export interface UrlGenerationResult {
+  success: boolean;
+  url: string;
+  errorMessage: string;
+}
 
 export interface BrowserProxy {
   /**
@@ -52,11 +52,11 @@ export interface BrowserProxy {
 
   cancelDataCollection(): void;
 
-  startDataExport(piiItems: PIIDataItem[]): void;
+  startDataExport(piiItems: PiiDataItem[]): void;
 
   showExportedDataInFolder(): void;
 
-  generateCustomizedURL(caseId: string, dataCollectors: DataCollectorItem[]):
+  generateCustomizedUrl(caseId: string, dataCollectors: DataCollectorItem[]):
       Promise<UrlGenerationResult>;
 }
 
@@ -82,7 +82,7 @@ export class BrowserProxyImpl implements BrowserProxy {
     chrome.send('cancelDataCollection');
   }
 
-  startDataExport(piiItems: PIIDataItem[]) {
+  startDataExport(piiItems: PiiDataItem[]) {
     chrome.send('startDataExport', [piiItems]);
   }
 
@@ -90,8 +90,8 @@ export class BrowserProxyImpl implements BrowserProxy {
     chrome.send('showExportedDataInFolder');
   }
 
-  generateCustomizedURL(caseId: string, dataCollectors: DataCollectorItem[]) {
-    return sendWithPromise('generateCustomizedURL', caseId, dataCollectors);
+  generateCustomizedUrl(caseId: string, dataCollectors: DataCollectorItem[]) {
+    return sendWithPromise('generateCustomizedUrl', caseId, dataCollectors);
   }
 
   static getInstance(): BrowserProxy {

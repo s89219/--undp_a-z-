@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,19 +7,6 @@
 
 // ESLint doesn't like "declare class" without jsdoc.
 /* eslint-disable require-jsdoc */
-
-// This is currently a Chrome only API, and the spec is still in working draft
-// stage.
-// https://developer.mozilla.org/en-US/docs/Web/API/UIEvent/sourceCapabilities
-
-interface UIEvent extends Event {
-  readonly sourceCapabilities: InputDeviceCapabilities|null;
-}
-
-interface InputDeviceCapabilities {
-  readonly firesTouchEvents: boolean;
-  readonly pointerMovementScrolls: boolean;
-}
 
 // File System Access API: This is currently a Chrome only API, and the spec is
 // still in working draft stage.
@@ -175,55 +162,6 @@ interface DetectedBarcode {
 type BarcodeFormat =
     'aztec'|'codabar'|'code_39'|'code_93'|'code_128'|'data_matrix'|'ean_8'|
     'ean_13'|'itf'|'pdf417'|'qr_code'|'unknown'|'upc_a'|'upc_e';
-
-// Trusted Types, this spec is still in draft stage.
-// https://w3c.github.io/webappsec-trusted-types/dist/spec/
-interface TrustedScriptURL {
-  toJSON(): string;
-}
-
-interface TrustedHTML {
-  toJSON(): string;
-}
-
-interface TrustedScript {
-  toJSON(): string;
-}
-
-interface TrustedTypePolicyOptions {
-  createHTML?: CreateHTMLCallback;
-  createScript?: CreateScriptCallback;
-  createScriptURL?: CreateScriptURLCallback;
-}
-
-type CreateHTMLCallback = (input: string, arguments: any) => string;
-type CreateScriptCallback = (input: string, arguments: any) => string;
-type CreateScriptURLCallback = (input: string, arguments: any) => string;
-
-interface TrustedTypePolicy {
-  readonly name: string;
-  createHTML(input: string, arguments?: any): TrustedHTML;
-  createScript(input: string, arguments?: any): TrustedScript;
-  createScriptURL(input: string, arguments?: any): TrustedScriptURL;
-}
-
-interface TrustedTypePolicyFactory {
-  createPolicy(policyName: string, policyOptions?: TrustedTypePolicyOptions):
-      TrustedTypePolicy;
-  isHTML(value: any): boolean;
-  isScript(value: any): boolean;
-  isScriptURL(value: any): boolean;
-  readonly emptyHTML: TrustedHTML;
-  readonly emptyScript: TrustedScript;
-  getAttributeType(
-      tagName: string, attribute: string, elementNs?: string,
-      attrNs?: string): string;
-  getPropertyType(tagName: string, property: string, elementNs?: string):
-      string;
-  readonly defaultPolicy: TrustedTypePolicy;
-}
-
-declare const trustedTypes: TrustedTypePolicyFactory;
 
 // Web Workers API interface. This is included in lib.webworker.d.ts and
 // available if we enable lib: ["webworker"] in tsconfig.json, but it conflicts

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,15 @@ ChromeVoxPortalsTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   get featureList() {
     return {enabled: ['blink::features::kPortals']};
+  }
+
+  /** @override */
+  async setUpDeferred() {
+    await super.setUpDeferred();
+
+    // Alphabetical based on file path.
+    await importModule(
+        'ChromeVoxState', '/chromevox/background/chromevox_state.js');
   }
 
   get testServer() {
@@ -64,9 +73,9 @@ ChromeVoxPortalsTest = class extends ChromeVoxNextE2ETest {
   }
 };
 
-TEST_F('ChromeVoxPortalsTest', 'ShouldFocusPortal', async function() {
+AX_TEST_F('ChromeVoxPortalsTest', 'ShouldFocusPortal', async function() {
   const root = await this.runWithLoadedTree(null, {
-    url: `${testRunnerParams.testServerBaseUrl}portal/portal-and-button.html`
+    url: `${testRunnerParams.testServerBaseUrl}portal/portal-and-button.html`,
   });
   const portal = root.find({role: RoleType.PORTAL});
   const button = root.find({role: RoleType.BUTTON});
@@ -89,9 +98,9 @@ TEST_F('ChromeVoxPortalsTest', 'ShouldFocusPortal', async function() {
       () => this.waitForPortal(portal).then(afterPortalIsReady));
 });
 
-TEST_F('ChromeVoxPortalsTest', 'PortalName', async function() {
+AX_TEST_F('ChromeVoxPortalsTest', 'PortalName', async function() {
   const root = await this.runWithLoadedTree(null, {
-    url: `${testRunnerParams.testServerBaseUrl}portal/portal-with-text.html`
+    url: `${testRunnerParams.testServerBaseUrl}portal/portal-with-text.html`,
   });
   const portal = root.find({role: RoleType.PORTAL});
   assertEquals(RoleType.PORTAL, portal.role);

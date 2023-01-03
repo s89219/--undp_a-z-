@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -150,8 +150,6 @@ class PrintRenderFrameHelper
   // printing is build-in. This method is used by CEF.
   static void DisablePreview();
 
-  bool IsPrintingEnabled() const;
-
   void PrintNode(const blink::WebNode& node);
 
   // Get the scale factor. Returns |input_scale_factor| if it is valid and
@@ -256,7 +254,8 @@ class PrintRenderFrameHelper
 
   // printing::mojom::PrintRenderFrame:
   void PrintRequestedPages() override;
-  void PrintWithParams(mojom::PrintPagesParamsPtr params) override;
+  void PrintWithParams(mojom::PrintPagesParamsPtr params,
+                       PrintWithParamsCallback callback) override;
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
   void PrintForSystemDialog() override;
   void SetPrintPreviewUI(
@@ -264,13 +263,13 @@ class PrintRenderFrameHelper
   void InitiatePrintPreview(
       mojo::PendingAssociatedRemote<mojom::PrintRenderer> print_renderer,
       bool has_selection) override;
-  void PrintPreview(base::Value settings) override;
+  void PrintPreview(base::Value::Dict settings) override;
   void OnPrintPreviewDialogClosed() override;
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
   void PrintFrameContent(mojom::PrintFrameContentParamsPtr params,
                          PrintFrameContentCallback callback) override;
   void PrintingDone(bool success) override;
-  void SetPrintingEnabled(bool enabled) override;
+  void ConnectToPdfRenderer() override;
   void PrintNodeUnderContextMenu() override;
 #if BUILDFLAG(ENABLE_PRINT_CONTENT_ANALYSIS)
   void SnapshotForContentAnalysis(
@@ -352,7 +351,7 @@ class PrintRenderFrameHelper
   // name, number of copies, page range, etc.
   bool UpdatePrintSettings(blink::WebLocalFrame* frame,
                            const blink::WebNode& node,
-                           const base::Value::Dict& passed_job_settings);
+                           base::Value::Dict passed_job_settings);
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)
 
   // Returns final print settings from the user.
@@ -467,6 +466,9 @@ class PrintRenderFrameHelper
   void QuitScriptedPrintPreviewRunLoop();
   void QuitGetPrintSettingsFromUserRunLoop();
 
+  // Resets internal state
+  void Reset();
+
   // WebView used only to print the selection.
   std::unique_ptr<PrepareFrameAndViewForPrint> prep_frame_view_;
   bool reset_prep_frame_view_ = false;
@@ -475,8 +477,6 @@ class PrintRenderFrameHelper
   gfx::Rect printer_printable_area_;
   bool is_print_ready_metafile_sent_ = false;
   bool ignore_css_margins_ = false;
-
-  bool is_printing_enabled_ = true;
 
   // Let the browser process know of a printing failure. Only set to false when
   // the failure came from the browser in the first place.
@@ -487,7 +487,7 @@ class PrintRenderFrameHelper
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   // Settings used by a PrintRenderer to create a preview document.
-  base::Value print_renderer_job_settings_;
+  base::Value::Dict print_renderer_job_settings_;
 
   // Used to render print documents from an external source (ARC, Crostini,
   // etc.).
@@ -570,6 +570,7 @@ class PrintRenderFrameHelper
     void SetIsForArc(bool is_for_arc);
 #endif
     void set_error(enum PrintPreviewErrorBuckets error);
+    void set_error_details(const std::string& details);
 
     // Getters
     // Original frame for which preview was requested.
@@ -590,6 +591,7 @@ class PrintRenderFrameHelper
     MetafileSkia* metafile();
     ContentProxySet* typeface_content_info();
     int last_error() const;
+    const std::string& last_error_details() const;
 
    private:
     enum State {
@@ -643,6 +645,7 @@ class PrintRenderFrameHelper
     base::TimeTicks begin_time_;
 
     enum PrintPreviewErrorBuckets error_ = PREVIEW_ERROR_NONE;
+    std::string error_details_;
 
     State state_ = UNINITIALIZED;
   };
@@ -693,6 +696,9 @@ class PrintRenderFrameHelper
   //   called. This is a store for the RequestPrintPreview() call and its
   //   parameters so that it can be invoked after DidStopLoading.
   base::OnceClosure on_stop_loading_closure_;
+
+  // This is used to report PrintWithParams() call result.
+  PrintWithParamsCallback print_with_params_callback_;
 
   // Stores the quit closures of Mojo responses.
   scoped_refptr<ClosuresForMojoResponse> closures_for_mojo_responses_;

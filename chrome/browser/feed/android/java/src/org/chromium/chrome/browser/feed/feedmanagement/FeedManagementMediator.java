@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
-import android.os.Build;
 import android.provider.Browser;
 import android.view.View;
 import android.view.View.OnClickListener;
@@ -133,9 +132,7 @@ public class FeedManagementMediator {
         ComponentName fakeComponentName = new ComponentName(mContext.getPackageName(), "FakeClass");
         fakeIntent.setComponent(fakeComponentName);
         int mutabililtyFlag = 0;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            mutabililtyFlag = ApiHelperForM.getPendingIntentImmutableFlag();
-        }
+        mutabililtyFlag = ApiHelperForM.getPendingIntentImmutableFlag();
         return PendingIntent.getActivity(mContext, 0, fakeIntent, mutabililtyFlag);
     }
 

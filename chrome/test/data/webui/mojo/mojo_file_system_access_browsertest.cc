@@ -1,15 +1,16 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
+#include "base/test/test_file_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "chrome/browser/bad_message.h"
-#include "chrome/browser/chrome_browser_interface_binders.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -25,6 +26,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_controller_factory.h"
+#include "content/public/browser/web_ui_controller_interface_binder.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/extra_mojo_js_features.mojom.h"
@@ -196,7 +198,7 @@ class MojoFileSystemAccessBrowserTest : public InProcessBrowserTest {
         mojo::BinderMapWithContext<content::RenderFrameHost*>* map) override {
       ChromeContentBrowserClient::RegisterBrowserInterfaceBindersForFrame(
           render_frame_host, map);
-      chrome::internal::RegisterWebUIControllerInterfaceBinder<
+      content::RegisterWebUIControllerInterfaceBinder<
           ::test::mojom::MojoFileSystemAccessTest, MojoFileSystemAccessUI>(map);
     }
   };
@@ -225,7 +227,14 @@ IN_PROC_BROWSER_TEST_F(MojoFileSystemAccessBrowserTest, CanResolveFilePath) {
   // Create a test file.
   base::ScopedAllowBlockingForTesting allow_blocking;
   base::ScopedTempDir temp_directory;
-  ASSERT_TRUE(temp_directory.CreateUniqueTempDir());
+
+  // Create a scoped directory under %TEMP% instead of using
+  // `base::ScopedTempDir::CreateUniqueTempDir`.
+  // `base::ScopedTempDir::CreateUniqueTempDir` creates a path under
+  // %ProgramFiles% on Windows when running as Admin, which is a blocked path
+  // (`kBlockedPaths`). This can fail some of the tests.
+  ASSERT_TRUE(temp_directory.CreateUniqueTempDirUnderPath(
+      base::GetTempDirForTesting()));
   base::FilePath temp_file;
   ASSERT_TRUE(
       base::CreateTemporaryFileInDir(temp_directory.GetPath(), &temp_file));

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "ash/constants/ash_features.h"
 #include "base/memory/raw_ptr.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/chromeos_buildflags.h"
@@ -15,6 +14,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/test/event_generator.h"
+#include "ui/events/test/test_event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/image/image_unittest_util.h"
@@ -30,10 +30,16 @@
 #include "ui/views/animation/test/ink_drop_impl_test_api.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/radio_button.h"
+#include "ui/views/test/ax_event_counter.h"
 #include "ui/views/test/button_test_api.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget_utils.h"
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/constants/ash_features.h"
+#include "chromeos/constants/chromeos_features.h"
+#endif  // IS_CHROMEOS_ASH
 
 namespace message_center {
 
@@ -100,12 +106,6 @@ class NotificationTestDelegate : public NotificationDelegate {
   bool disable_notification_called_ = false;
 };
 
-class DummyEvent : public ui::Event {
- public:
-  DummyEvent() : Event(ui::ET_UNKNOWN, base::TimeTicks(), 0) {}
-  ~DummyEvent() override = default;
-};
-
 }  // namespace
 
 class NotificationViewTest : public views::ViewObserver,
@@ -122,11 +122,14 @@ class NotificationViewTest : public views::ViewObserver,
   void SetUp() override {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     // Since ash will use ash::AshNotificationView instead of
-    // message_center::NotificationView when kNotificationsRefresh is enabled,
-    // these unit tests are only applicable when the feature is disabled.
+    // message_center::NotificationView when
+    // kNotificationsRefresh/kDarkLightMode is enabled, these unit tests are
+    // only applicable when the features are disabled.
     scoped_feature_list_ = std::make_unique<base::test::ScopedFeatureList>();
-    scoped_feature_list_->InitAndDisableFeature(
-        ash::features::kNotificationsRefresh);
+    scoped_feature_list_->InitWithFeatures(
+        /*enabled_features=*/{},
+        /*disabled_features=*/{ash::features::kNotificationsRefresh,
+                               chromeos::features::kDarkLightMode});
 #endif  // IS_CHROMEOS_ASH
 
     views::ViewsTestBase::SetUp();
@@ -159,11 +162,11 @@ class NotificationViewTest : public views::ViewObserver,
   std::unique_ptr<Notification> CreateSimpleNotificationWithRichData(
       const RichNotificationData& optional_fields) const {
     std::unique_ptr<Notification> notification = std::make_unique<Notification>(
-        NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
-        u"title", u"message",
-        ui::ImageModel::FromImage(CreateTestImage(80, 80)), u"display source",
-        GURL(), NotifierId(NotifierType::APPLICATION, "extension_id"),
-        optional_fields, delegate_);
+        NOTIFICATION_TYPE_SIMPLE, std::string(kDefaultNotificationId), u"title",
+        u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
+        u"display source", GURL(),
+        NotifierId(NotifierType::APPLICATION, "extension_id"), optional_fields,
+        delegate_);
     notification->set_small_image(CreateTestImage(16, 16));
     notification->set_image(CreateTestImage(320, 240));
 
@@ -242,7 +245,7 @@ class NotificationViewTest : public views::ViewObserver,
 
   // Toggle inline settings with a dummy event.
   void ToggleInlineSettings() {
-    notification_view_->ToggleInlineSettings(DummyEvent());
+    notification_view_->ToggleInlineSettings(ui::test::TestEvent());
   }
 
  protected:
@@ -314,8 +317,8 @@ class NotificationViewTest : public views::ViewObserver,
 TEST_F(NotificationViewTest, UpdateViewsOrderingTest) {
   EXPECT_NE(nullptr, title_view());
   EXPECT_NE(nullptr, message_label());
-  EXPECT_EQ(0, left_content()->GetIndexOf(title_view()));
-  EXPECT_EQ(1, left_content()->GetIndexOf(message_label()));
+  EXPECT_EQ(0u, left_content()->GetIndexOf(title_view()));
+  EXPECT_EQ(1u, left_content()->GetIndexOf(message_label()));
 
   std::unique_ptr<Notification> notification = CreateSimpleNotification();
   notification->set_title(std::u16string());
@@ -324,7 +327,7 @@ TEST_F(NotificationViewTest, UpdateViewsOrderingTest) {
 
   EXPECT_EQ(nullptr, title_view());
   EXPECT_NE(nullptr, message_label());
-  EXPECT_EQ(0, left_content()->GetIndexOf(message_label()));
+  EXPECT_EQ(0u, left_content()->GetIndexOf(message_label()));
 
   notification->set_title(u"title");
 
@@ -332,8 +335,8 @@ TEST_F(NotificationViewTest, UpdateViewsOrderingTest) {
 
   EXPECT_NE(nullptr, title_view());
   EXPECT_NE(nullptr, message_label());
-  EXPECT_EQ(0, left_content()->GetIndexOf(title_view()));
-  EXPECT_EQ(1, left_content()->GetIndexOf(message_label()));
+  EXPECT_EQ(0u, left_content()->GetIndexOf(title_view()));
+  EXPECT_EQ(1u, left_content()->GetIndexOf(message_label()));
 }
 
 TEST_F(NotificationViewTest, CreateOrUpdateTitle) {
@@ -607,6 +610,9 @@ TEST_F(NotificationViewTest, InkDropClipRect) {
 }
 
 TEST_F(NotificationViewTest, AppIconWebAppNotification) {
+  MessageCenter::Get()->RemoveAllNotifications(/*by_user=*/false,
+                                               MessageCenter::RemoveType::ALL);
+
   const GURL web_app_url(kWebAppUrl);
 
   NotifierId notifier_id(web_app_url, /*title=*/u"web app title");
@@ -619,8 +625,8 @@ TEST_F(NotificationViewTest, AppIconWebAppNotification) {
   data.settings_button_handler = SettingsButtonHandler::INLINE;
 
   std::unique_ptr<Notification> notification = std::make_unique<Notification>(
-      NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
-      u"title", u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
+      NOTIFICATION_TYPE_SIMPLE, std::string(kDefaultNotificationId), u"title",
+      u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
       u"display source", GURL(), notifier_id, data, delegate_);
   notification->set_small_image(gfx::Image::CreateFrom1xBitmap(small_bitmap));
   notification->set_image(CreateTestImage(320, 240));
@@ -741,13 +747,14 @@ TEST_F(NotificationViewTest, TestDeleteOnDisableNotification) {
   notification->set_type(NOTIFICATION_TYPE_SIMPLE);
   UpdateNotificationViews(*notification);
 
-  notification_view()->OnSettingsButtonPressed(DummyEvent());
-  block_all_button()->NotifyClick(DummyEvent());
+  notification_view()->OnSettingsButtonPressed(ui::test::TestEvent());
+  block_all_button()->NotifyClick(ui::test::TestEvent());
 
   // After DisableNotification() is called, |notification_view| can be deleted.
   // https://crbug.com/924922
   set_delete_on_notification_removed(true);
-  views::test::ButtonTestApi(settings_done_button()).NotifyClick(DummyEvent());
+  views::test::ButtonTestApi(settings_done_button())
+      .NotifyClick(ui::test::TestEvent());
 }
 
 // Tests that action buttons (e.g. the inline reply button) ignores the
@@ -781,6 +788,41 @@ TEST_F(NotificationViewTest, TestAccentColorTextFlagAffectsActionButtons) {
         notification_view()->GetActionButtonColorForTesting(action_button),
         data.accent_color);
   }
+}
+
+TEST_F(NotificationViewTest, UpdateFiresAccessibilityEvents) {
+  views::test::AXEventCounter counter(views::AXEventManager::Get());
+  std::unique_ptr<Notification> notification = CreateSimpleNotification();
+
+  // Setting the title does not result in a text-changed accessibility event
+  // being fired on the notification view.
+  notification->set_title(u"first title");
+  EXPECT_EQ(
+      0, counter.GetCount(ax::mojom::Event::kTextChanged, notification_view()));
+
+  // Updating the view after changing the title should cause one text-changed
+  // event to be fired on the notification view.
+  UpdateNotificationViews(*notification);
+  EXPECT_EQ(
+      1, counter.GetCount(ax::mojom::Event::kTextChanged, notification_view()));
+
+  counter.ResetAllCounts();
+
+  // If we update the view and the title hasn't actually changed, there should
+  // not be a text-changed event fired on the notification view.
+  notification->set_title(u"first title");
+  UpdateNotificationViews(*notification);
+  EXPECT_EQ(
+      0, counter.GetCount(ax::mojom::Event::kTextChanged, notification_view()));
+
+  counter.ResetAllCounts();
+
+  // Because the title has been changed again, updating the view should cause
+  // one text-changed event to be fired on the notification view.
+  notification->set_title(u"second title");
+  UpdateNotificationViews(*notification);
+  EXPECT_EQ(
+      1, counter.GetCount(ax::mojom::Event::kTextChanged, notification_view()));
 }
 
 }  // namespace message_center

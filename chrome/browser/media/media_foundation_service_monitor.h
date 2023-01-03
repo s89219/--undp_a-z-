@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,8 +21,13 @@ class MediaFoundationServiceMonitor final
   // Register the pref used in this class.
   static void RegisterPrefs(PrefRegistrySimple* registry);
 
-  // Returns whether hardware secure decryption should be disabled according to
-  // the date stored in "Local State".
+  // Returns the earliest time when hardware secure decryption should be
+  // re-enabled after previous `disabled_times`.
+  static base::Time GetEarliestEnableTime(
+      std::vector<base::Time> disabled_times);
+
+  // Same as above, but uses base::Time::Now() as the `current_time`, and get
+  // `disabled_times` from "Local State".
   static bool IsHardwareSecureDecryptionDisabledByPref();
 
   // Returns the MediaFoundationServiceMonitor singleton.
@@ -48,7 +53,7 @@ class MediaFoundationServiceMonitor final
   // Called when a significant playback or error happened when using
   // MediaFoundationCdm.
   void OnSignificantPlayback();
-  void OnPlaybackOrCdmError();
+  void OnPlaybackOrCdmError(HRESULT hr);
 
  private:
   // Make constructor/destructor private since this is a singleton.

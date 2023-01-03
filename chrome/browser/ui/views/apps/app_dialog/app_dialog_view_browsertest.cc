@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,12 +13,12 @@
 #include "base/test/bind.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_icon.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_list_prefs.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_utils.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_icon.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/apps/app_dialog/app_block_dialog_view.h"
@@ -74,8 +74,6 @@ class AppDialogViewBrowserTest : public DialogBrowserTest {
   apps::AppServiceProxy* app_service_proxy() { return app_service_proxy_; }
 
   bool IsAppPaused() {
-    app_service_proxy()->FlushMojoCallsForTesting();
-
     bool is_app_paused = false;
     app_service_proxy()->AppRegistryCache().ForOneApp(
         app_id(), [&is_app_paused](const apps::AppUpdate& update) {
@@ -107,10 +105,8 @@ class AppDialogViewBrowserTest : public DialogBrowserTest {
       app_service_proxy_->SetDialogCreatedCallbackForTesting(
           run_loop.QuitClosure());
       app_instance_->SendRefreshAppList(apps);
-      app_service_proxy_->FlushMojoCallsForTesting();
-      app_service_proxy_->Launch(
-          app_id_, ui::EventFlags::EF_NONE,
-          apps::mojom::LaunchSource::kFromChromeInternal);
+      app_service_proxy_->Launch(app_id_, ui::EF_NONE,
+                                 apps::LaunchSource::kFromChromeInternal);
     } else {
       std::map<std::string, apps::PauseData> pause_data;
       pause_data[app_id_].hours = 3;
@@ -126,7 +122,6 @@ class AppDialogViewBrowserTest : public DialogBrowserTest {
     EXPECT_EQ(ui::DIALOG_BUTTON_OK, ActiveView(name)->GetDialogButtons());
 
     if (name == "block") {
-      app_service_proxy_->FlushMojoCallsForTesting();
       bool state_is_set = false;
       app_service_proxy_->AppRegistryCache().ForOneApp(
           app_id_, [&state_is_set](const apps::AppUpdate& update) {

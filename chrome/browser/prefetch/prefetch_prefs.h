@@ -1,9 +1,16 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_PREFETCH_PREFETCH_PREFS_H_
 #define CHROME_BROWSER_PREFETCH_PREFETCH_PREFS_H_
+
+#include "base/feature_list.h"
+#include "content/public/browser/preloading.h"
+
+namespace content {
+class WebContents;
+}  // namespace content
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -12,7 +19,6 @@ class PrefRegistrySyncable;
 class PrefService;
 
 namespace prefetch {
-
 // Enum describing when to allow network predictions.  The numerical value is
 // stored in the prefs file, therefore the same enum with the same order must be
 // used by the platform-dependent components.
@@ -45,15 +51,28 @@ enum class PreloadPagesState {
 };
 
 // Returns the PreloadPagesState corresponding to the NetworkPredictionOptions
-// setting persisted in prefs.
+// setting persisted in prefs. Note that this will return the pref value
+// regardless of whether preloading is disabled via Finch. Prefer using
+// IsSomePreloadingEnabled in most cases.
 PreloadPagesState GetPreloadPagesState(const PrefService& prefs);
 
 // Converts the given PreloadPagesState to a NetworkPredictionOptions and
 // persist it in prefs.
 void SetPreloadPagesState(PrefService* prefs, PreloadPagesState state);
 
-// Returns true if preloading is not entirely disabled.
-bool IsSomePreloadingEnabled(const PrefService& prefs);
+// Returns PreloadingEligibility:kEligible if preloading is not entirely
+// disabled. Returns the first blocking reason encountered otherwise.
+// TODO(crbug/1391411): Audit the all callsites whether the default_value =
+// nullptr is suitable.
+content::PreloadingEligibility IsSomePreloadingEnabled(
+    const PrefService& prefs,
+    content::WebContents* web_contents = nullptr);
+
+// Returns PreloadingEligibility:kEligible if preloading is not entirely
+// disabled. Returns the first blocking reason encountered otherwise.
+// Ignores the PreloadingHoldback Finch feature.
+content::PreloadingEligibility IsSomePreloadingEnabledIgnoringFinch(
+    const PrefService& prefs);
 
 void RegisterPredictionOptionsProfilePrefs(
     user_prefs::PrefRegistrySyncable* registry);

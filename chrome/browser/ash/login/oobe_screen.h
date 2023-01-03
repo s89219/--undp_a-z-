@@ -1,4 +1,4 @@
-// Copyright (c) 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,9 +30,12 @@ struct OobeScreenId {
   // Create an identifier from a string.
   // TODO(https://crbug.com/1312880): Remove this.
   explicit OobeScreenId(const std::string& id);
+
   // Create an identifier from a statically created identifier. This is implicit
   // to make StaticOobeScreenId act more like OobeScreenId.
   OobeScreenId(const StaticOobeScreenId& id);
+
+  OobeScreenId(const std::string& id, const std::string& api_prefix);
 
   std::string name;
   std::string external_api_prefix;
@@ -60,12 +63,5 @@ struct StaticOobeScreenId {
 inline constexpr StaticOobeScreenId OOBE_SCREEN_UNKNOWN{"unknown"};
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::OobeScreenId;
-using ::ash::StaticOobeScreenId;
-}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_OOBE_SCREEN_H_

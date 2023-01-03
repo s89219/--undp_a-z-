@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,17 +25,15 @@
 #include "base/strings/stringprintf.h"
 #include "base/task/current_thread.h"
 #include "base/task/single_thread_task_executor.h"
-#include "base/task/task_runner_util.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "crypto/rsa_private_key.h"
 #include "net/base/hex_utils.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/port_util.h"
-#include "net/cert/internal/extended_key_usage.h"
-#include "net/cert/test_root_certs.h"
+#include "net/cert/pki/extended_key_usage.h"
 #include "net/log/net_log_source.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/ssl_server_socket.h"
@@ -277,18 +275,14 @@ EmbeddedTestServer::EmbeddedTestServer() : EmbeddedTestServer(TYPE_HTTP) {}
 
 EmbeddedTestServer::EmbeddedTestServer(Type type,
                                        HttpConnection::Protocol protocol)
-    : is_using_ssl_(type == TYPE_HTTPS),
-      protocol_(protocol),
-      connection_listener_(nullptr),
-      port_(0),
-      cert_(CERT_OK) {
+    : is_using_ssl_(type == TYPE_HTTPS), protocol_(protocol) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // HTTP/2 is only valid by negotiation via TLS ALPN
   DCHECK(protocol_ != HttpConnection::Protocol::kHttp2 || type == TYPE_HTTPS);
 
   if (!is_using_ssl_)
     return;
-  RegisterTestCerts();
+  scoped_test_root_ = RegisterTestCerts();
 }
 
 EmbeddedTestServer::~EmbeddedTestServer() {
@@ -303,12 +297,12 @@ EmbeddedTestServer::~EmbeddedTestServer() {
   }
 }
 
-void EmbeddedTestServer::RegisterTestCerts() {
+ScopedTestRoot EmbeddedTestServer::RegisterTestCerts() {
   base::ScopedAllowBlockingForTesting allow_blocking;
-  TestRootCerts* root_certs = TestRootCerts::GetInstance();
-  bool added_root_certs = root_certs->AddFromFile(GetRootCertPemPath());
-  DCHECK(added_root_certs)
-      << "Failed to install root cert from EmbeddedTestServer";
+  auto root = ImportCertFromFile(GetRootCertPemPath());
+  if (!root)
+    return ScopedTestRoot();
+  return ScopedTestRoot(root.get());
 }
 
 void EmbeddedTestServer::SetConnectionListener(
@@ -432,6 +426,16 @@ bool EmbeddedTestServer::GenerateCertAndKey() {
 
     leaf = CertBuilder::FromFile(certs_dir.AppendASCII("ok_cert.pem"),
                                  intermediate.get());
+    // Workaround for weird CertVerifyProcWin issue where if too many
+    // intermediates with the same key are fetched by AIA any further
+    // verifications using that key will fail. See
+    // https://crbug.com/1328060. Since generating ECDSA keys is cheap, just do
+    // this on all configurations rather than restricting to Windows, though
+    // this hack can be removed once we delete CertVerifyProcWin.
+    if (cert_config_.intermediate == IntermediateType::kByAIA) {
+      intermediate->GenerateECKey();
+      leaf->SetSignatureAlgorithm(SignatureAlgorithm::kEcdsaSha256);
+    }
   } else {
     leaf = CertBuilder::FromFile(certs_dir.AppendASCII("ok_cert.pem"),
                                  static_root.get());
@@ -964,10 +968,10 @@ void EmbeddedTestServer::RemoveConnection(
 
 bool EmbeddedTestServer::PostTaskToIOThreadAndWait(base::OnceClosure closure) {
   // Note that PostTaskAndReply below requires
-  // base::ThreadTaskRunnerHandle::Get() to return a task runner for posting
-  // the reply task. However, in order to make EmbeddedTestServer universally
-  // usable, it needs to cope with the situation where it's running on a
-  // thread on which a task executor is not (yet) available or has been
+  // base::SingleThreadTaskRunner::GetCurrentDefault() to return a task runner
+  // for posting the reply task. However, in order to make EmbeddedTestServer
+  // universally usable, it needs to cope with the situation where it's running
+  // on a thread on which a task executor is not (yet) available or has been
   // destroyed already.
   //
   // To handle this situation, create temporary task executor to support the
@@ -991,10 +995,10 @@ bool EmbeddedTestServer::PostTaskToIOThreadAndWait(base::OnceClosure closure) {
 bool EmbeddedTestServer::PostTaskToIOThreadAndWaitWithResult(
     base::OnceCallback<bool()> task) {
   // Note that PostTaskAndReply below requires
-  // base::ThreadTaskRunnerHandle::Get() to return a task runner for posting
-  // the reply task. However, in order to make EmbeddedTestServer universally
-  // usable, it needs to cope with the situation where it's running on a
-  // thread on which a task executor is not (yet) available or has been
+  // base::SingleThreadTaskRunner::GetCurrentDefault() to return a task runner
+  // for posting the reply task. However, in order to make EmbeddedTestServer
+  // universally usable, it needs to cope with the situation where it's running
+  // on a thread on which a task executor is not (yet) available or has been
   // destroyed already.
   //
   // To handle this situation, create temporary task executor to support the
@@ -1007,8 +1011,8 @@ bool EmbeddedTestServer::PostTaskToIOThreadAndWaitWithResult(
 
   base::RunLoop run_loop;
   bool task_result = false;
-  if (!base::PostTaskAndReplyWithResult(
-          io_thread_->task_runner().get(), FROM_HERE, std::move(task),
+  if (!io_thread_->task_runner()->PostTaskAndReplyWithResult(
+          FROM_HERE, std::move(task),
           base::BindOnce(base::BindLambdaForTesting([&](bool result) {
             task_result = result;
             run_loop.Quit();

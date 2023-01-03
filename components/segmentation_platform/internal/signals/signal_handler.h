@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,9 @@
 
 #include <memory>
 
-#include "components/optimization_guide/proto/models.pb.h"
+#include "base/callback.h"
+#include "base/containers/flat_set.h"
+#include "components/segmentation_platform/public/proto/segmentation_platform.pb.h"
 
 namespace history {
 class HistoryService;
@@ -29,14 +31,13 @@ class SignalHandler {
   SignalHandler();
   ~SignalHandler();
 
-  SignalHandler(SignalHandler&) = delete;
-  SignalHandler& operator=(SignalHandler&) = delete;
+  SignalHandler(const SignalHandler&) = delete;
+  SignalHandler& operator=(const SignalHandler&) = delete;
 
-  void Initialize(
-      StorageService* storage_service,
-      history::HistoryService* history_service,
-      const std::vector<optimization_guide::proto::OptimizationTarget>&
-          segment_ids);
+  void Initialize(StorageService* storage_service,
+                  history::HistoryService* history_service,
+                  const base::flat_set<proto::SegmentId>& segment_ids,
+                  base::RepeatingClosure model_refresh_callback);
 
   void TearDown();
 

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@
  */
 
 // Requires functions from base.js and common.js
+
+import {getSurroundingText} from '//ios/web/js_features/context_menu/resources/surrounding_text.js';
 
 // The minimum opacity for an element to be considered as opaque. Elements
 // with a higher opacity will prevent selection of images underneath.
@@ -28,7 +30,6 @@ var MAX_SEARCH_DEPTH = 8;
  *                     {@code referrerPolicy} The referrer policy to use for
  *                         navigations away from the current page.
  *                     {@code innerText} The inner text of the link.
- *                     {@code boundingBox} The bounding box of the element.
  *                   }.
  */
 var getResponseForLinkElement = function(element) {
@@ -37,7 +38,6 @@ var getResponseForLinkElement = function(element) {
     href: getElementHref_(element),
     referrerPolicy: getReferrerPolicy_(element),
     innerText: element.innerText,
-    boundingBox: getElementBoundingBox_(element)
   };
 };
 
@@ -50,15 +50,10 @@ var getResponseForLinkElement = function(element) {
  *                     {@code src} The src of the image.
  *                     {@code referrerPolicy} The referrer policy to use for
  *                         navigations away from the current page.
- *                     {@code boundingBox} The bounding box of the element.
  *                     {@code title} (optional) The title of the image, if one
  *                         exists.
  *                     {@code href} (optional) The URL of the link, if one
  *                         exists.
- *                     {@code naturalWidth} (optional) The natural width of
- *                         the image, if one exists.
- *                     {@code naturalHeight} (optional) The natural height of
- *                         the image, if one exists.
  *                   }.
  */
 var getResponseForImageElement = function(element, src) {
@@ -66,7 +61,6 @@ var getResponseForImageElement = function(element, src) {
     tagName: 'img',
     src: src,
     referrerPolicy: getReferrerPolicy_(),
-    boundingBox: getElementBoundingBox_(element)
   };
   var parent = element.parentNode;
   // Copy the title, if any.
@@ -95,14 +89,6 @@ var getResponseForImageElement = function(element, src) {
     }
     parent = parent.parentNode;
   }
-  // Copy the image natural width, if any.
-  if (element.naturalWidth) {
-    result.naturalWidth = element.naturalWidth;
-  }
-  // Copy the image natural height, if any.
-  if (element.naturalHeight) {
-    result.naturalHeight = element.naturalHeight;
-  }
   return result;
 };
 
@@ -113,6 +99,8 @@ var getResponseForImageElement = function(element, src) {
  *                 coordinates.
  * @param {number} y Vertical center of the selected point in page
  *                 coordinates.
+ * @param {bool} Enables getting the surrounding characters if
+ *               true.
  * @return {!Object} An object of the form {
  *                     {@code tagName} tag name of the text element.
  *                     {@code innerText} The inner text of the link.
@@ -120,11 +108,12 @@ var getResponseForImageElement = function(element, src) {
  *                         innertText.
  *                   }.
  */
-var getResponseForTextElement = function(element, x, y) {
+var getResponseForTextElement = function(
+    element, x, y, extractSurroundingText) {
   var result = {
     tagName: element.tagName,
-    boundingBox: getElementBoundingBox_(element),
   };
+
   // caretRangeFromPoint is custom WebKit method.
   if (document.caretRangeFromPoint) {
     var range = document.caretRangeFromPoint(x, y);
@@ -133,11 +122,17 @@ var getResponseForTextElement = function(element, x, y) {
       if (textNode.nodeType == 3) {
         result.textOffset = range.startOffset;
         result.innerText = textNode.nodeValue;
+
+        if (extractSurroundingText) {
+          var textAndStartPos = getSurroundingText(range);
+          result.surroundingText = textAndStartPos['text'];
+          result.surroundingTextOffset = textAndStartPos['pos'];
+        }
       }
     }
   }
   return result;
-}
+};
 
 /**
  * Finds the url of the image or link under the selected point. Sends details
@@ -151,8 +146,11 @@ var getResponseForTextElement = function(element, x, y) {
  *                 coordinates.
  * @param {number} y Vertical center of the selected point in page
  *                 coordinates.
+ * @param {bool} Enables getting the surrounding characters if
+ *               true.
  */
-__gCrWeb['findElementAtPointInPageCoordinates'] = function(requestId, x, y) {
+__gCrWeb['findElementAtPointInPageCoordinates'] = function(
+    requestId, x, y, extractSurroundingText) {
   var hitCoordinates = spiralCoordinates_(x, y);
   var processedElements = new Set();
   var firstDefaultElement = [];
@@ -181,8 +179,11 @@ __gCrWeb['findElementAtPointInPageCoordinates'] = function(requestId, x, y) {
   }
 
   if (firstDefaultElement.length > 0) {
-    sendFindElementAtPointResponse(requestId, getResponseForTextElement(
-      firstDefaultElement[0], x - window.pageXOffset, y - window.pageYOffset));
+    sendFindElementAtPointResponse(
+        requestId,
+        getResponseForTextElement(
+            firstDefaultElement[0], x - window.pageXOffset,
+            y - window.pageYOffset, extractSurroundingText));
     return;
   }
 
@@ -476,30 +477,6 @@ var getElementHref_ = function(element) {
   return href;
 };
 
-/**
- * Returns the client bounding box of the given element.
- * @param {HTMLElement} element to retrieve the bounding box
- * @return {!Object} An object of the form {
- *                     {@code x} The x coordinate of the bounding box origin.
- *                     {@code y} The y coordinate of the bounding box origin.
- *                     {@code width} The width of the bounding box size.
- *                     {@code height} The height of the bounding box size.
- *                   }.
- */
-var getElementBoundingBox_ = function(element) {
-  var boundingBox = element.getBoundingClientRect();
-  if (boundingBox) {
-    return {
-      x: boundingBox.x,
-      y: boundingBox.y,
-      width: boundingBox.width,
-      height: boundingBox.height
-    };
-  }
-  else {
-    return null;
-  }
-};
 
 /**
  * Checks if the element is effectively transparent and should be skipped when

@@ -1,13 +1,13 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {CrSettingsPrefs, Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {waitAfterNextRender} from 'chrome://test/test_util.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('SearchSubpage', function() {
   /** @type {SearchSubpageElement} */
@@ -40,49 +40,55 @@ suite('SearchSubpage', function() {
   });
 
   test('definitionToggleVisibility', function() {
-    let button = page.$$('#quick-answers-definition-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-definition-enable');
     assertFalse(!!button);
 
     page.setPrefValue('settings.quick_answers.enabled', true);
     flush();
 
-    button = page.$$('#quick-answers-definition-enable');
+    button = page.shadowRoot.querySelector('#quick-answers-definition-enable');
     assertTrue(!!button);
   });
 
   test('translationToggleVisibility', function() {
-    let button = page.$$('#quick-answers-translation-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-translation-enable');
     assertFalse(!!button);
 
     page.setPrefValue('settings.quick_answers.enabled', true);
     flush();
 
-    button = page.$$('#quick-answers-translation-enable');
+    button = page.shadowRoot.querySelector('#quick-answers-translation-enable');
     assertTrue(!!button);
   });
 
   test('unitConversionToggleVisibility', function() {
-    let button = page.$$('#quick-answers-unit-conversion-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable');
     assertFalse(!!button);
 
     page.setPrefValue('settings.quick_answers.enabled', true);
     flush();
 
-    button = page.$$('#quick-answers-unit-conversion-enable');
+    button =
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable');
     assertTrue(!!button);
   });
 
   test('toggleQuickAnswers', function() {
     flush();
-    const button = page.$$('#quick-answers-enable');
+    const button = page.shadowRoot.querySelector('#quick-answers-enable');
     assertTrue(!!button);
     assertFalse(button.disabled);
     assertFalse(button.checked);
 
-    let definition_button = page.$$('#quick-answers-definition-enable');
-    let translation_button = page.$$('#quick-answers-translation-enable');
+    let definition_button =
+        page.shadowRoot.querySelector('#quick-answers-definition-enable');
+    let translation_button =
+        page.shadowRoot.querySelector('#quick-answers-translation-enable');
     let unit_conversion_button =
-        page.$$('#quick-answers-unit-conversion-enable');
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable');
     assertFalse(!!definition_button);
     assertFalse(!!translation_button);
     assertFalse(!!unit_conversion_button);
@@ -92,22 +98,26 @@ suite('SearchSubpage', function() {
     flush();
     assertTrue(button.checked);
 
-    definition_button = page.$$('#quick-answers-definition-enable');
-    translation_button = page.$$('#quick-answers-translation-enable');
-    unit_conversion_button = page.$$('#quick-answers-unit-conversion-enable');
+    definition_button =
+        page.shadowRoot.querySelector('#quick-answers-definition-enable');
+    translation_button =
+        page.shadowRoot.querySelector('#quick-answers-translation-enable');
+    unit_conversion_button =
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable');
     assertTrue(!!definition_button);
     assertTrue(!!translation_button);
     assertTrue(!!unit_conversion_button);
   });
 
   test('toggleQuickAnswersDefinition', function() {
-    let button = page.$$('#quick-answers-definition-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-definition-enable');
     assertFalse(!!button);
     page.setPrefValue('settings.quick_answers.enabled', true);
     page.setPrefValue('settings.quick_answers.definition.enabled', false);
     flush();
 
-    button = page.$$('#quick-answers-definition-enable');
+    button = page.shadowRoot.querySelector('#quick-answers-definition-enable');
     assertTrue(!!button);
     assertFalse(button.disabled);
     assertFalse(button.checked);
@@ -119,13 +129,14 @@ suite('SearchSubpage', function() {
   });
 
   test('toggleQuickAnswersTranslation', function() {
-    let button = page.$$('#quick-answers-translation-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-translation-enable');
     assertFalse(!!button);
     page.setPrefValue('settings.quick_answers.enabled', true);
     page.setPrefValue('settings.quick_answers.translation.enabled', false);
     flush();
 
-    button = page.$$('#quick-answers-translation-enable');
+    button = page.shadowRoot.querySelector('#quick-answers-translation-enable');
     assertTrue(!!button);
     assertFalse(button.disabled);
     assertFalse(button.checked);
@@ -138,13 +149,14 @@ suite('SearchSubpage', function() {
   });
 
   test('clickLanguageSettingsLink', function() {
-    let button = page.$$('#quick-answers-translation-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-translation-enable');
     assertFalse(!!button);
     page.setPrefValue('settings.quick_answers.enabled', true);
     page.setPrefValue('settings.quick_answers.translation.enabled', false);
     flush();
 
-    button = page.$$('#quick-answers-translation-enable');
+    button = page.shadowRoot.querySelector('#quick-answers-translation-enable');
     assertTrue(!!button);
     assertFalse(button.disabled);
     assertFalse(button.checked);
@@ -165,13 +177,15 @@ suite('SearchSubpage', function() {
   });
 
   test('toggleQuickAnswersUnitConversion', function() {
-    let button = page.$$('#quick-answers-unit-conversion-enable');
+    let button =
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable');
     assertFalse(!!button);
     page.setPrefValue('settings.quick_answers.enabled', true);
     page.setPrefValue('settings.quick_answers.unit_conversion.enabled', false);
     flush();
 
-    button = page.$$('#quick-answers-unit-conversion-enable');
+    button =
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable');
     assertTrue(!!button);
     assertFalse(button.disabled);
     assertFalse(button.checked);
@@ -188,16 +202,11 @@ suite('SearchSubpage', function() {
     params.append('settingId', '600');
     Router.getInstance().navigateTo(routes.SEARCH_SUBPAGE, params);
 
-    let deepLinkElement;
-    if (loadTimeData.getBoolean('syncSettingsCategorizationEnabled')) {
-      const browserSearchSettingsLink =
-          page.$$('settings-search-engine').$$('#browserSearchSettingsLink');
-      deepLinkElement =
-          browserSearchSettingsLink.shadowRoot.querySelector('cr-icon-button');
-    } else {
-      deepLinkElement =
-          page.$$('settings-search-engine').$$('#searchSelectionDialogButton');
-    }
+    const browserSearchSettingsLink =
+        page.shadowRoot.querySelector('settings-search-engine')
+            .shadowRoot.querySelector('#browserSearchSettingsLink');
+    const deepLinkElement =
+        browserSearchSettingsLink.shadowRoot.querySelector('cr-icon-button');
     assertTrue(!!deepLinkElement);
     await waitAfterNextRender(deepLinkElement);
     assertEquals(
@@ -211,7 +220,8 @@ suite('SearchSubpage', function() {
     Router.getInstance().navigateTo(routes.SEARCH_SUBPAGE, params);
 
     const deepLinkElement =
-        page.$$('#quick-answers-enable').shadowRoot.querySelector('cr-toggle');
+        page.shadowRoot.querySelector('#quick-answers-enable')
+            .shadowRoot.querySelector('cr-toggle');
     assertTrue(!!deepLinkElement);
     await waitAfterNextRender(deepLinkElement);
     assertEquals(
@@ -227,8 +237,9 @@ suite('SearchSubpage', function() {
     params.append('settingId', '609');
     Router.getInstance().navigateTo(routes.SEARCH_SUBPAGE, params);
 
-    const deepLinkElement = page.$$('#quick-answers-definition-enable')
-                                .shadowRoot.querySelector('cr-toggle');
+    const deepLinkElement =
+        page.shadowRoot.querySelector('#quick-answers-definition-enable')
+            .shadowRoot.querySelector('cr-toggle');
     assertTrue(!!deepLinkElement);
     await waitAfterNextRender(deepLinkElement);
     assertEquals(
@@ -244,8 +255,9 @@ suite('SearchSubpage', function() {
     params.append('settingId', '610');
     Router.getInstance().navigateTo(routes.SEARCH_SUBPAGE, params);
 
-    const deepLinkElement = page.$$('#quick-answers-translation-enable')
-                                .shadowRoot.querySelector('cr-toggle');
+    const deepLinkElement =
+        page.shadowRoot.querySelector('#quick-answers-translation-enable')
+            .shadowRoot.querySelector('cr-toggle');
     assertTrue(!!deepLinkElement);
     await waitAfterNextRender(deepLinkElement);
     assertEquals(
@@ -261,8 +273,9 @@ suite('SearchSubpage', function() {
     params.append('settingId', '611');
     Router.getInstance().navigateTo(routes.SEARCH_SUBPAGE, params);
 
-    const deepLinkElement = page.$$('#quick-answers-unit-conversion-enable')
-                                .shadowRoot.querySelector('cr-toggle');
+    const deepLinkElement =
+        page.shadowRoot.querySelector('#quick-answers-unit-conversion-enable')
+            .shadowRoot.querySelector('cr-toggle');
     assertTrue(!!deepLinkElement);
     await waitAfterNextRender(deepLinkElement);
     assertEquals(

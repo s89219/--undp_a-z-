@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "base/check_op.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/containers/fixed_flat_map.h"
@@ -19,6 +20,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/task/thread_pool.h"
@@ -85,9 +87,6 @@ ListInfos GetListInfos() {
   const bool kSyncAlways = true;
   const bool kSyncNever = false;
 
-  const bool kAccuracyTipsEnabled =
-      base::FeatureList::IsEnabled(kAccuracyTipsFeature);
-
   return ListInfos({
       ListInfo(kSyncOnDesktopBuilds, "IpMalware.store", GetIpMalwareId(),
                SB_THREAT_TYPE_UNUSED),
@@ -120,9 +119,6 @@ ListInfos GetListInfos() {
                "UrlHighConfidenceAllowlist.store",
                GetUrlHighConfidenceAllowlistId(),
                SB_THREAT_TYPE_HIGH_CONFIDENCE_ALLOWLIST),
-      ListInfo(kSyncOnChromeDesktopBuilds && kAccuracyTipsEnabled,
-               "UrlAccuracyTips.store", GetUrlAccuracyTipsId(),
-               SB_THREAT_TYPE_ACCURACY_TIPS),
   });
   // NOTE(vakh): IMPORTANT: Please make sure that the server already supports
   // any list before adding it to this list otherwise the prefix updates break
@@ -161,8 +157,6 @@ ThreatSeverity GetThreatSeverity(const ListIdentifier& list_id) {
       return 4;
     case BILLING:
       return 15;
-    case ACCURACY_TIPS:
-      return 1000;
     case CSD_DOWNLOAD_WHITELIST:
     case POTENTIALLY_HARMFUL_APPLICATION:
     case SOCIAL_ENGINEERING_PUBLIC:
@@ -258,10 +252,8 @@ void RenameOldStoreFiles(const ListInfos& list_infos,
 
     const base::FilePath old_store_path = base_path.AppendASCII(old_name);
     // Is the old filename also being used for a valid V4Store?
-    auto it = std::find_if(
-        std::begin(list_infos), std::end(list_infos),
-        [&old_name](ListInfo const& li) { return li.filename() == old_name; });
-    bool old_filename_in_use = list_infos.end() != it;
+    bool old_filename_in_use =
+        base::Contains(list_infos, old_name, &ListInfo::filename);
     base::UmaHistogramBoolean("SafeBrowsing.V4Store.OldFileNameInUse" +
                                   GetUmaSuffixForStore(old_store_path),
                               old_filename_in_use);
@@ -314,7 +306,7 @@ V4LocalDatabaseManager::PendingCheck::PendingCheck(
     Client* client,
     ClientCallbackType client_callback_type,
     const StoresToCheck& stores_to_check,
-    const std::set<FullHash>& full_hashes_set)
+    const std::set<FullHashStr>& full_hashes_set)
     : client(client),
       client_callback_type(client_callback_type),
       most_severe_threat_type(SB_THREAT_TYPE_SAFE),
@@ -324,7 +316,9 @@ V4LocalDatabaseManager::PendingCheck::PendingCheck(
   full_hash_threat_types.assign(full_hashes.size(), SB_THREAT_TYPE_SAFE);
 }
 
-V4LocalDatabaseManager::PendingCheck::~PendingCheck() = default;
+V4LocalDatabaseManager::PendingCheck::~PendingCheck() {
+  DCHECK(!is_in_pending_checks);
+}
 
 // static
 const V4LocalDatabaseManager*
@@ -398,18 +392,14 @@ void V4LocalDatabaseManager::CancelCheck(Client* client) {
   DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
   DCHECK(enabled_);
 
-  auto pending_it = std::find_if(
-      std::begin(pending_checks_), std::end(pending_checks_),
-      [client](const PendingCheck* check) { return check->client == client; });
+  auto pending_it =
+      base::ranges::find(pending_checks_, client, &PendingCheck::client);
   if (pending_it != pending_checks_.end()) {
-    pending_checks_.erase(pending_it);
+    RemovePendingCheck(pending_it);
   }
 
   auto queued_it =
-      std::find_if(std::begin(queued_checks_), std::end(queued_checks_),
-                   [&client](const std::unique_ptr<PendingCheck>& check) {
-                     return check->client == client;
-                   });
+      base::ranges::find(queued_checks_, client, &PendingCheck::client);
   if (queued_it != queued_checks_.end()) {
     queued_checks_.erase(queued_it);
   }
@@ -471,7 +461,7 @@ bool V4LocalDatabaseManager::CheckDownloadUrl(
 }
 
 bool V4LocalDatabaseManager::CheckExtensionIDs(
-    const std::set<FullHash>& extension_ids,
+    const std::set<FullHashStr>& extension_ids,
     Client* client) {
   DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
 
@@ -507,9 +497,8 @@ bool V4LocalDatabaseManager::CheckResourceUrl(const GURL& url, Client* client) {
   return HandleCheck(std::move(check));
 }
 
-AsyncMatch V4LocalDatabaseManager::CheckUrlForHighConfidenceAllowlist(
-    const GURL& url,
-    Client* client) {
+bool V4LocalDatabaseManager::CheckUrlForHighConfidenceAllowlist(
+    const GURL& url) {
   DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
 
   StoresToCheck stores_to_check({GetUrlHighConfidenceAllowlistId()});
@@ -528,33 +517,20 @@ AsyncMatch V4LocalDatabaseManager::CheckUrlForHighConfidenceAllowlist(
       (!all_stores_available && is_artificial_prefix_empty)) {
     // NOTE(vakh): If Safe Browsing isn't enabled yet, or if the URL isn't a
     // navigation URL, or if the allowlist isn't ready yet, or if the allowlist
-    // is too small, return MATCH. The full URL check won't be performed, but
-    // hash-based check will still be done. If any artificial matches are
-    // present, consider the allowlist as ready.
-    return AsyncMatch::MATCH;
-  }
-
-  std::unique_ptr<PendingCheck> check = std::make_unique<PendingCheck>(
-      client, ClientCallbackType::CHECK_HIGH_CONFIDENCE_ALLOWLIST,
-      stores_to_check, std::vector<GURL>(1, url));
-
-  return HandleAllowlistCheck(std::move(check));
-}
-
-bool V4LocalDatabaseManager::CheckUrlForAccuracyTips(const GURL& url,
-                                                     Client* client) {
-  DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
-
-  StoresToCheck stores_to_check({GetUrlAccuracyTipsId()});
-  if (!AreAnyStoresAvailableNow(stores_to_check) || !CanCheckUrl(url)) {
+    // is too small, return that there is a match. The full URL check won't be
+    // performed, but hash-based check will still be done. If any artificial
+    // matches are present, consider the allowlist as ready.
     return true;
   }
 
   std::unique_ptr<PendingCheck> check = std::make_unique<PendingCheck>(
-      client, ClientCallbackType::CHECK_ACCURACY_TIPS, stores_to_check,
+      nullptr, ClientCallbackType::CHECK_OTHER, stores_to_check,
       std::vector<GURL>(1, url));
 
-  return HandleCheck(std::move(check));
+  AsyncMatch result =
+      HandleAllowlistCheck(std::move(check), /*allow_async_check=*/false);
+  DCHECK_NE(AsyncMatch::ASYNC, result);
+  return result == AsyncMatch::MATCH;
 }
 
 bool V4LocalDatabaseManager::CheckUrlForSubresourceFilter(const GURL& url,
@@ -598,7 +574,7 @@ AsyncMatch V4LocalDatabaseManager::CheckCsdAllowlistUrl(const GURL& url,
       client, ClientCallbackType::CHECK_CSD_ALLOWLIST, stores_to_check,
       std::vector<GURL>(1, url));
 
-  return HandleAllowlistCheck(std::move(check));
+  return HandleAllowlistCheck(std::move(check), /*allow_async_check=*/true);
 }
 
 bool V4LocalDatabaseManager::MatchDownloadAllowlistUrl(const GURL& url) {
@@ -621,7 +597,7 @@ bool V4LocalDatabaseManager::MatchMalwareIP(const std::string& ip_address) {
     return false;
   }
 
-  FullHash hashed_encoded_ip;
+  FullHashStr hashed_encoded_ip;
   if (!V4ProtocolManagerUtil::IPAddressToEncodedIPV6Hash(ip_address,
                                                          &hashed_encoded_ip)) {
     return false;
@@ -636,10 +612,6 @@ ThreatSource V4LocalDatabaseManager::GetThreatSource() const {
 }
 
 bool V4LocalDatabaseManager::IsDownloadProtectionEnabled() const {
-  return true;
-}
-
-bool V4LocalDatabaseManager::IsSupported() const {
   return true;
 }
 
@@ -666,13 +638,13 @@ void V4LocalDatabaseManager::StopOnIOThread(bool shutdown) {
 
   current_local_database_manager_ = nullptr;
 
-  pending_checks_.clear();
-
-  RespondSafeToQueuedChecks();
+  RespondSafeToQueuedAndPendingChecks();
 
   // Delete the V4Database. Any pending writes to disk are completed.
   // This operation happens on the task_runner on which v4_database_ operates
   // and doesn't block the IO thread.
+  if (v4_database_)
+    v4_database_->StopOnIO();
   v4_database_.reset();
 
   // Delete the V4UpdateProtocolManager.
@@ -753,7 +725,7 @@ void V4LocalDatabaseManager::GetArtificialPrefixMatches(
   for (const auto& full_hash : check->full_hashes) {
     for (const StoreAndHashPrefix& artificial_store_and_hash_prefix :
          artificially_marked_store_and_hash_prefixes_) {
-      FullHash artificial_full_hash =
+      FullHashStr artificial_full_hash =
           artificial_store_and_hash_prefix.hash_prefix;
       DCHECK_EQ(crypto::kSHA256Length, artificial_full_hash.size());
       if (artificial_full_hash == full_hash &&
@@ -787,11 +759,11 @@ bool V4LocalDatabaseManager::GetPrefixMatches(
 
 void V4LocalDatabaseManager::GetSeverestThreatTypeAndMetadata(
     const std::vector<FullHashInfo>& full_hash_infos,
-    const std::vector<FullHash>& full_hashes,
+    const std::vector<FullHashStr>& full_hashes,
     std::vector<SBThreatType>* full_hash_threat_types,
     SBThreatType* most_severe_threat_type,
     ThreatMetadata* metadata,
-    FullHash* matching_full_hash) {
+    FullHashStr* matching_full_hash) {
   UMA_HISTOGRAM_COUNTS_100("SafeBrowsing.V4LocalDatabaseManager.ThreatInfoSize",
                            full_hash_infos.size());
   ThreatSeverity most_severe_yet = kLeastSeverity;
@@ -799,8 +771,7 @@ void V4LocalDatabaseManager::GetSeverestThreatTypeAndMetadata(
     ThreatSeverity severity = GetThreatSeverity(fhi.list_id);
     SBThreatType threat_type = GetSBThreatTypeForList(fhi.list_id);
 
-    const auto& it =
-        std::find(full_hashes.begin(), full_hashes.end(), fhi.full_hash);
+    const auto& it = base::ranges::find(full_hashes, fhi.full_hash);
     DCHECK(it != full_hashes.end());
     (*full_hash_threat_types)[it - full_hashes.begin()] = threat_type;
 
@@ -828,9 +799,7 @@ std::unique_ptr<StoreStateMap> V4LocalDatabaseManager::GetStoreStateMap() {
 // Returns the SBThreatType corresponding to a given SafeBrowsing list.
 SBThreatType V4LocalDatabaseManager::GetSBThreatTypeForList(
     const ListIdentifier& list_id) {
-  auto it = std::find_if(
-      std::begin(list_infos_), std::end(list_infos_),
-      [&list_id](ListInfo const& li) { return li.list_id() == list_id; });
+  auto it = base::ranges::find(list_infos_, list_id, &ListInfo::list_id);
   DCHECK(list_infos_.end() != it);
   DCHECK_NE(SB_THREAT_TYPE_SAFE, it->sb_threat_type());
   DCHECK_NE(SB_THREAT_TYPE_UNUSED, it->sb_threat_type());
@@ -838,7 +807,8 @@ SBThreatType V4LocalDatabaseManager::GetSBThreatTypeForList(
 }
 
 AsyncMatch V4LocalDatabaseManager::HandleAllowlistCheck(
-    std::unique_ptr<PendingCheck> check) {
+    std::unique_ptr<PendingCheck> check,
+    bool allow_async_check) {
   // We don't bother queuing allowlist checks since the DB will
   // normally be available already -- allowlists are used after page load,
   // and navigations are blocked until the DB is ready and dequeues checks.
@@ -864,6 +834,9 @@ AsyncMatch V4LocalDatabaseManager::HandleAllowlistCheck(
     }
   }
 
+  if (!allow_async_check) {
+    return AsyncMatch::NO_MATCH;
+  }
   ScheduleFullHashCheck(std::move(check));
   return AsyncMatch::ASYNC;
 }
@@ -894,7 +867,7 @@ void V4LocalDatabaseManager::PopulateArtificialDatabase() {
     while (tokenizer.GetNext()) {
       ListIdentifier artificial_list_id(GetCurrentPlatformType(), URL,
                                         switch_and_threat_type.second);
-      FullHash full_hash =
+      FullHashStr full_hash =
           V4ProtocolManagerUtil::GetFullHash(GURL(tokenizer.token_piece()));
       artificially_marked_store_and_hash_prefixes_.emplace_back(
           artificial_list_id, full_hash);
@@ -909,7 +882,7 @@ void V4LocalDatabaseManager::ScheduleFullHashCheck(
   // Add check to pending_checks_ before scheduling PerformFullHashCheck so that
   // even if the client calls CancelCheck before PerformFullHashCheck gets
   // called, the check can be found in pending_checks_.
-  pending_checks_.insert(check.get());
+  AddPendingCheck(check.get());
 
   // If the full hash matches one from the artificial list, don't send the
   // request to the server.
@@ -938,11 +911,11 @@ void V4LocalDatabaseManager::ScheduleFullHashCheck(
 }
 
 bool V4LocalDatabaseManager::HandleHashSynchronously(
-    const FullHash& hash,
+    const FullHashStr& hash,
     const StoresToCheck& stores_to_check) {
   DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
 
-  std::set<FullHash> hashes{hash};
+  std::set<FullHashStr> hashes{hash};
   std::unique_ptr<PendingCheck> check = std::make_unique<PendingCheck>(
       nullptr, ClientCallbackType::CHECK_OTHER, stores_to_check, hashes);
 
@@ -982,7 +955,7 @@ void V4LocalDatabaseManager::OnFullHashResponse(
       full_hash_infos, check->full_hashes, &check->full_hash_threat_types,
       &check->most_severe_threat_type, &check->url_metadata,
       &check->matching_full_hash);
-  pending_checks_.erase(it);
+  RemovePendingCheck(it);
   RespondToClient(std::move(check));
 }
 
@@ -990,15 +963,20 @@ void V4LocalDatabaseManager::PerformFullHashCheck(
     std::unique_ptr<PendingCheck> check) {
   DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
 
-  DCHECK(enabled_);
   DCHECK(!check->full_hash_to_store_and_hash_prefixes.empty());
 
-  FullHashToStoreAndHashPrefixesMap full_hash_to_store_and_hash_prefixes =
-      check->full_hash_to_store_and_hash_prefixes;
-  v4_get_hash_protocol_manager_->GetFullHashes(
-      full_hash_to_store_and_hash_prefixes, list_client_states_,
-      base::BindOnce(&V4LocalDatabaseManager::OnFullHashResponse,
-                     weak_factory_.GetWeakPtr(), std::move(check)));
+  // If we're not enabled, we're in the middle of shutdown, so silently drop the
+  // check.
+  if (enabled_) {
+    FullHashToStoreAndHashPrefixesMap full_hash_to_store_and_hash_prefixes =
+        check->full_hash_to_store_and_hash_prefixes;
+    v4_get_hash_protocol_manager_->GetFullHashes(
+        full_hash_to_store_and_hash_prefixes, list_client_states_,
+        base::BindOnce(&V4LocalDatabaseManager::OnFullHashResponse,
+                       weak_factory_.GetWeakPtr(), std::move(check)));
+  } else {
+    DCHECK(pending_checks_.empty());
+  }
 }
 
 void V4LocalDatabaseManager::ProcessQueuedChecks() {
@@ -1012,26 +990,37 @@ void V4LocalDatabaseManager::ProcessQueuedChecks() {
     if (!GetPrefixMatches(it)) {
       RespondToClient(std::move(it));
     } else {
-      pending_checks_.insert(it.get());
+      AddPendingCheck(it.get());
       PerformFullHashCheck(std::move(it));
     }
   }
 }
 
-void V4LocalDatabaseManager::RespondSafeToQueuedChecks() {
+void V4LocalDatabaseManager::RespondSafeToQueuedAndPendingChecks() {
   DCHECK(io_task_runner()->RunsTasksInCurrentSequence());
 
   // Steal the queue to protect against reentrant CancelCheck() calls.
   QueuedChecks checks;
   checks.swap(queued_checks_);
-
   for (std::unique_ptr<PendingCheck>& it : checks) {
     RespondToClient(std::move(it));
   }
-}
 
+  // Clear pending_checks_ up front and iterate through a copy to avoid the
+  // possibility of concurrent modifications while iterating.
+  PendingChecks pending_checks = CopyAndRemoveAllPendingChecks();
+  for (PendingCheck* it : pending_checks) {
+    // We don't own the unique pointer for the pending check, so we do not
+    // perform cleanup on it while responding to the client.
+    RespondToClientWithoutPendingCheckCleanup(it);
+  }
+}
 void V4LocalDatabaseManager::RespondToClient(
     std::unique_ptr<PendingCheck> check) {
+  RespondToClientWithoutPendingCheckCleanup(check.get());
+}
+void V4LocalDatabaseManager::RespondToClientWithoutPendingCheckCleanup(
+    PendingCheck* check) {
   DCHECK(check);
 
   switch (check->client_callback_type) {
@@ -1046,16 +1035,6 @@ void V4LocalDatabaseManager::RespondToClient(
       check->client->OnCheckDownloadUrlResult(check->urls,
                                               check->most_severe_threat_type);
       break;
-
-    case ClientCallbackType::CHECK_HIGH_CONFIDENCE_ALLOWLIST: {
-      DCHECK_EQ(1u, check->urls.size());
-      bool did_match_allowlist = check->most_severe_threat_type ==
-                                 SB_THREAT_TYPE_HIGH_CONFIDENCE_ALLOWLIST;
-      DCHECK(did_match_allowlist ||
-             check->most_severe_threat_type == SB_THREAT_TYPE_SAFE);
-      check->client->OnCheckUrlForHighConfidenceAllowlist(did_match_allowlist);
-      break;
-    }
 
     case ClientCallbackType::CHECK_RESOURCE_URL:
       DCHECK_EQ(1u, check->urls.size());
@@ -1077,21 +1056,13 @@ void V4LocalDatabaseManager::RespondToClient(
     case ClientCallbackType::CHECK_EXTENSION_IDS: {
       DCHECK_EQ(check->full_hash_threat_types.size(),
                 check->full_hashes.size());
-      std::set<FullHash> unsafe_extension_ids;
+      std::set<FullHashStr> unsafe_extension_ids;
       for (size_t i = 0; i < check->full_hash_threat_types.size(); i++) {
         if (check->full_hash_threat_types[i] == SB_THREAT_TYPE_EXTENSION) {
           unsafe_extension_ids.insert(check->full_hashes[i]);
         }
       }
       check->client->OnCheckExtensionsResult(unsafe_extension_ids);
-      break;
-    }
-
-    case ClientCallbackType::CHECK_ACCURACY_TIPS: {
-      DCHECK_EQ(1u, check->urls.size());
-      bool should_show_accuracy_tip =
-          check->most_severe_threat_type == SB_THREAT_TYPE_ACCURACY_TIPS;
-      check->client->OnCheckUrlForAccuracyTip(should_show_accuracy_tip);
       break;
     }
 
@@ -1172,6 +1143,27 @@ void V4LocalDatabaseManager::UpdateListClientStates(
   list_client_states_.clear();
   V4ProtocolManagerUtil::GetListClientStatesFromStoreStateMap(
       store_state_map, &list_client_states_);
+}
+
+void V4LocalDatabaseManager::AddPendingCheck(PendingCheck* check) {
+  check->is_in_pending_checks = true;
+  pending_checks_.insert(check);
+}
+
+void V4LocalDatabaseManager::RemovePendingCheck(
+    PendingChecks::const_iterator it) {
+  (*it)->is_in_pending_checks = false;
+  pending_checks_.erase(it);
+}
+
+V4LocalDatabaseManager::PendingChecks
+V4LocalDatabaseManager::CopyAndRemoveAllPendingChecks() {
+  PendingChecks pending_checks;
+  pending_checks.swap(pending_checks_);
+  for (PendingCheck* check : pending_checks) {
+    check->is_in_pending_checks = false;
+  }
+  return pending_checks;
 }
 
 }  // namespace safe_browsing

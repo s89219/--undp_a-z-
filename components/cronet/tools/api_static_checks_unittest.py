@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright 2016 The Chromium Authors. All rights reserved.
+# Copyright 2016 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -71,7 +71,8 @@ def capture_output():
 
 class ApiStaticCheckUnitTest(unittest.TestCase):
   def setUp(self):
-    self.temp_dir = tempfile.mkdtemp()
+    self.exe_path = os.path.join(REPOSITORY_ROOT, 'out')
+    self.temp_dir = tempfile.mkdtemp(dir=self.exe_path)
     os.chdir(self.temp_dir)
     os.mkdir('android')
     with open(INTERFACE_API_VERSION_FILENAME, 'w') \

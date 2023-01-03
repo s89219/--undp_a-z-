@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,14 +7,14 @@
 
 #include <ostream>
 
-#include "ash/components/phonehub/multidevice_feature_access_manager.h"
-#include "ash/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
-#include "ash/services/secure_channel/public/cpp/client/connection_manager.h"
 #include "ash/webui/eche_app_ui/apps_access_manager.h"
 #include "ash/webui/eche_app_ui/eche_connector.h"
 #include "ash/webui/eche_app_ui/eche_message_receiver.h"
 #include "ash/webui/eche_app_ui/feature_status.h"
 #include "ash/webui/eche_app_ui/feature_status_provider.h"
+#include "chromeos/ash/components/phonehub/multidevice_feature_access_manager.h"
+#include "chromeos/ash/services/multidevice_setup/public/cpp/multidevice_setup_client.h"
+#include "chromeos/ash/services/secure_channel/public/cpp/client/connection_manager.h"
 
 class PrefRegistrySimple;
 class PrefService;
@@ -52,6 +52,7 @@ class AppsAccessManagerImpl
   AccessStatus GetAccessStatus() const override;
   void SetAccessStatusInternal(AccessStatus access_status) override;
   void OnSetupRequested() override;
+  void NotifyAppsAccessCanceled() override;
 
   // EcheMessageReceiver::Observer:
   void OnGetAppsAccessStateResponseReceived(
@@ -59,6 +60,8 @@ class AppsAccessManagerImpl
   void OnSendAppsSetupResponseReceived(
       proto::SendAppsSetupResponse apps_setup_response) override;
   void OnStatusChange(proto::StatusChangeType status_change_type) override {}
+  void OnAppPolicyStateChange(
+      proto::AppStreamingPolicy app_policy_state) override;
 
   // FeatureStatusProvider::Observer:
   void OnFeatureStatusChanged() override;
@@ -69,12 +72,15 @@ class AppsAccessManagerImpl
   void AttemptAppsAccessStateRequest();
   void GetAppsAccessStateRequest();
   void SendShowAppsAccessSetupRequest();
-  void UpdateFeatureEnabledState(AccessStatus access_status);
+  void UpdateFeatureEnabledState(AccessStatus previous_access_status,
+                                 AccessStatus current_access_status);
   bool IsWaitingForAccessToInitiallyEnableApps() const;
+  bool IsPhoneHubEnabled() const;
   bool IsEligibleForOnboarding(FeatureStatus feature_status) const;
   void UpdateSetupOperationState();
+  void LogAppsSetupResponse(proto::Result apps_setup_result);
 
-  AccessStatus ComputeAppsAccessState(proto::AppsAccessState apps_access_state);
+  AccessStatus ComputeAppsAccessState();
 
   FeatureStatus current_feature_status_;
   ConnectionStatus current_connection_status_;
@@ -85,6 +91,10 @@ class AppsAccessManagerImpl
   multidevice_setup::MultiDeviceSetupClient* multidevice_setup_client_;
   secure_channel::ConnectionManager* connection_manager_;
   bool initialized_ = false;
+  proto::AppStreamingPolicy current_app_policy_state_ =
+      proto::AppStreamingPolicy::APP_POLICY_UNKNOWN;
+  proto::AppsAccessState current_apps_access_state_ =
+      proto::AppsAccessState::ACCESS_UNKNOWN;
 };
 
 }  // namespace eche_app

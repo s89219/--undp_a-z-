@@ -1,15 +1,17 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {NetworkListObserverRemote, NetworkStateObserverRemote} from 'chrome://diagnostics/diagnostics_types.js';
+import 'chrome://resources/mojo/mojo/public/js/mojo_bindings_lite.js';
+
 import {fakeCellularNetwork, fakeEthernetNetwork, fakeNetworkGuidInfoList, fakeWifiNetwork} from 'chrome://diagnostics/fake_data.js';
 import {FakeNetworkHealthProvider} from 'chrome://diagnostics/fake_network_health_provider.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {NetworkListObserverRemote, NetworkStateObserverRemote} from 'chrome://diagnostics/network_health_provider.mojom-webui.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 
-import {assertDeepEquals, assertEquals, assertTrue} from '../../chai_assert.js';
+import {assertDeepEquals, assertEquals, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
 
-export function fakeNetworkHealthProviderTestSuite() {
+suite('fakeNetworkHealthProviderTestSuite', function() {
   /** @type {?FakeNetworkHealthProvider} */
   let provider = null;
 
@@ -49,7 +51,7 @@ export function fakeNetworkHealthProviderTestSuite() {
               completeResolver.resolve();
             }
             whichSample++;
-          }
+          },
         });
 
     provider.observeNetworkList(networkListObserverRemote);
@@ -73,7 +75,7 @@ export function fakeNetworkHealthProviderTestSuite() {
           onNetworkStateChanged: (network) => {
             assertDeepEquals(fakeCellularNetwork, network);
             resolver.resolve();
-          }
+          },
         });
 
     provider.observeNetwork(networkStateObserverRemote, 'cellularGuid');
@@ -93,7 +95,7 @@ export function fakeNetworkHealthProviderTestSuite() {
           onNetworkStateChanged: (network) => {
             assertDeepEquals(fakeWifiNetwork, network);
             wifiResolver.resolve();
-          }
+          },
         });
 
     const ethernetNetworkStateObserverRemote =
@@ -101,7 +103,7 @@ export function fakeNetworkHealthProviderTestSuite() {
           onNetworkStateChanged: (network) => {
             assertDeepEquals(fakeEthernetNetwork, network);
             ethernetResolver.resolve();
-          }
+          },
         });
 
     provider.observeNetwork(wifiNetworkStateObserverRemote, 'wifiGuid');
@@ -112,4 +114,4 @@ export function fakeNetworkHealthProviderTestSuite() {
                 ethernetNetworkStateObserverRemote, 'ethernetGuid'))
         .then(() => ethernetResolver.promise);
   });
-}
+});

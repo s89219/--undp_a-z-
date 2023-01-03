@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,19 +14,20 @@
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
 #include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/segmentation_platform/model_provider_factory_impl.h"
 #include "chrome/browser/segmentation_platform/segmentation_platform_config.h"
 #include "chrome/browser/segmentation_platform/segmentation_platform_profile_observer.h"
 #include "chrome/browser/segmentation_platform/ukm_database_client.h"
+#include "chrome/browser/sync/device_info_sync_service_factory.h"
 #include "chrome/common/chrome_constants.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
-#include "components/metrics_services_manager/metrics_services_manager.h"
+#include "components/segmentation_platform/embedder/model_provider_factory_impl.h"
 #include "components/segmentation_platform/internal/dummy_segmentation_platform_service.h"
 #include "components/segmentation_platform/internal/segmentation_platform_service_impl.h"
 #include "components/segmentation_platform/internal/ukm_data_manager.h"
 #include "components/segmentation_platform/public/config.h"
 #include "components/segmentation_platform/public/features.h"
 #include "components/segmentation_platform/public/model_provider.h"
+#include "components/segmentation_platform/public/proto/model_metadata.pb.h"
+#include "components/sync_device_info/device_info_sync_service.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/storage_partition.h"
 
@@ -34,6 +35,21 @@ namespace segmentation_platform {
 namespace {
 const char kSegmentationPlatformProfileObserverKey[] =
     "segmentation_platform_profile_observer";
+
+std::unique_ptr<processing::InputDelegateHolder> SetUpInputDelegates(
+    std::vector<std::unique_ptr<Config>>& configs) {
+  auto input_delegate_holder =
+      std::make_unique<processing::InputDelegateHolder>();
+  for (auto& config : configs) {
+    for (auto& id : config->input_delegates) {
+      input_delegate_holder->SetDelegate(id.first, std::move(id.second));
+    }
+  }
+
+  // Add shareable input delegates here.
+
+  return input_delegate_holder;
+}
 
 }  // namespace
 
@@ -51,11 +67,10 @@ SegmentationPlatformService* SegmentationPlatformServiceFactory::GetForProfile(
 }
 
 SegmentationPlatformServiceFactory::SegmentationPlatformServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "SegmentationPlatformService",
-          BrowserContextDependencyManager::GetInstance()) {
+    : ProfileKeyedServiceFactory("SegmentationPlatformService") {
   DependsOn(OptimizationGuideKeyedServiceFactory::GetInstance());
   DependsOn(HistoryServiceFactory::GetInstance());
+  DependsOn(DeviceInfoSyncServiceFactory::GetInstance());
 }
 
 SegmentationPlatformServiceFactory::~SegmentationPlatformServiceFactory() =
@@ -82,19 +97,27 @@ KeyedService* SegmentationPlatformServiceFactory::BuildServiceInstanceFor(
       profile->GetDefaultStoragePartition()->GetProtoDatabaseProvider();
   params->clock = base::DefaultClock::GetInstance();
 
-  params->model_provider = std::make_unique<ModelProviderFactoryImpl>(
-      optimization_guide, params->task_runner);
   params->ukm_data_manager =
       UkmDatabaseClient::GetInstance().GetUkmDataManager();
   params->profile_prefs = profile->GetPrefs();
-  params->local_state = g_browser_process->local_state();
-  params->configs = GetSegmentationPlatformConfig();
-
+  params->configs = GetSegmentationPlatformConfig(context);
+  params->input_delegate_holder = SetUpInputDelegates(params->configs);
+  params->field_trial_register = std::make_unique<FieldTrialRegisterImpl>();
+  params->model_provider = std::make_unique<ModelProviderFactoryImpl>(
+      optimization_guide, params->configs, params->task_runner);
+  // Guaranteed to outlive the SegmentationPlatformService, which depends on the
+  // DeviceInfoSynceService.
+  params->device_info_tracker =
+      DeviceInfoSyncServiceFactory::GetForProfile(profile)
+          ->GetDeviceInfoTracker();
   auto* service = new SegmentationPlatformServiceImpl(std::move(params));
 
-  service->SetUserData(kSegmentationPlatformProfileObserverKey,
-                       std::make_unique<SegmentationPlatformProfileObserver>(
-                           service, g_browser_process->profile_manager()));
+  // Profile manager can be null in unit tests.
+  if (g_browser_process->profile_manager()) {
+    service->SetUserData(kSegmentationPlatformProfileObserverKey,
+                         std::make_unique<SegmentationPlatformProfileObserver>(
+                             service, g_browser_process->profile_manager()));
+  }
 
   return service;
 }

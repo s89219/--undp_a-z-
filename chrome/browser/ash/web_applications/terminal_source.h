@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,10 +30,7 @@ class TerminalSource : public content::URLDataSource {
   ~TerminalSource() override;
 
  private:
-  TerminalSource(Profile* profile,
-                 std::string source,
-                 std::string default_file,
-                 bool ssh_allowed);
+  TerminalSource(Profile* profile, std::string source, bool ssh_allowed);
 
   // content::URLDataSource:
   std::string GetSource() override;
@@ -41,11 +38,13 @@ class TerminalSource : public content::URLDataSource {
       const GURL& url,
       const content::WebContents::Getter& wc_getter,
       content::URLDataSource::GotDataCallback callback) override;
-  std::string GetMimeType(const std::string& path) override;
+  std::string GetMimeType(const GURL& url) override;
   bool ShouldServeMimeTypeAsContentTypeHeader() override;
   const ui::TemplateReplacements* GetReplacements() override;
   std::string GetContentSecurityPolicy(
       network::mojom::CSPDirectiveName directive) override;
+  std::string GetCrossOriginOpenerPolicy() override;
+  std::string GetCrossOriginEmbedderPolicy() override;
 
   Profile* profile_;
   std::string source_;

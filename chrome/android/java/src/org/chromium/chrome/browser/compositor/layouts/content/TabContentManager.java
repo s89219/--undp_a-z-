@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
+import android.util.Size;
 import android.view.View;
 import android.view.ViewGroup.MarginLayoutParams;
 
@@ -302,12 +303,15 @@ public class TabContentManager {
             topMargin = params.topMargin;
         }
 
+        int width = (int) ((viewToDraw.getMeasuredWidth() + leftMargin) * mThumbnailScale);
+        int height = (int) ((viewToDraw.getMeasuredHeight() + topMargin - overlayTranslateY)
+                * mThumbnailScale);
+        if (width <= 0 || height <= 0) {
+            return null;
+        }
+
         try {
-            bitmap = Bitmap.createBitmap(
-                    (int) ((viewToDraw.getMeasuredWidth() + leftMargin) * mThumbnailScale),
-                    (int) ((viewToDraw.getMeasuredHeight() + topMargin - overlayTranslateY)
-                            * mThumbnailScale),
-                    Bitmap.Config.ARGB_8888);
+            bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
         } catch (OutOfMemoryError ex) {
             return null;
         }
@@ -325,32 +329,23 @@ public class TabContentManager {
     }
 
     /**
-     * @param tabId The id of the {@link Tab} to check for a full sized thumbnail of.
-     * @return      Whether or not there is a full sized cached thumbnail for the {@link Tab}
-     *              identified by {@code tabId}.
-     */
-    public boolean hasFullCachedThumbnail(int tabId) {
-        if (mNativeTabContentManager == 0) return false;
-        return TabContentManagerJni.get().hasFullCachedThumbnail(
-                mNativeTabContentManager, TabContentManager.this, tabId);
-    }
-
-    /**
      * Call to get a thumbnail for a given tab through a {@link Callback}. If there is
      * no up-to-date thumbnail on disk for the given tab, callback returns null.
      * @param tabId The ID of the tab to get the thumbnail for.
+     * @param thumbnailSize Desired size of thumbnail received by callback. Use default values if
+     *         null.
      * @param callback The callback to send the {@link Bitmap} with. Can be called up to twice when
      *                 {@code forceUpdate}; otherwise always called exactly once.
      * @param forceUpdate Whether to obtain the thumbnail from the live content.
      * @param writeBack When {@code forceUpdate}, whether to write the thumbnail to cache.
      */
-    public void getTabThumbnailWithCallback(@NonNull int tabId, @NonNull Callback<Bitmap> callback,
-            boolean forceUpdate, boolean writeBack) {
+    public void getTabThumbnailWithCallback(@NonNull int tabId, @Nullable Size thumbnailSize,
+            @NonNull Callback<Bitmap> callback, boolean forceUpdate, boolean writeBack) {
         if (!mSnapshotsEnabled) return;
 
         if (!forceUpdate) {
             assert !writeBack : "writeBack is ignored if not forceUpdate";
-            getTabThumbnailFromDisk(tabId, callback);
+            getTabThumbnailFromDisk(tabId, thumbnailSize, callback);
             return;
         }
 
@@ -358,7 +353,7 @@ public class TabContentManager {
 
         // Reading thumbnail from disk is faster than taking screenshot from live Tab, so fetch
         // that first even if |forceUpdate|.
-        getTabThumbnailFromDisk(tabId, (diskBitmap) -> {
+        getTabThumbnailFromDisk(tabId, thumbnailSize, (diskBitmap) -> {
             if (diskBitmap != null) callback.onResult(diskBitmap);
 
             if (mTabFinder == null) return;
@@ -420,13 +415,52 @@ public class TabContentManager {
     }
 
     @VisibleForTesting
-    public static Bitmap getJpegForTab(int tabId) {
+    public static Bitmap getJpegForTab(int tabId, @Nullable Size thumbnailSize) {
         File file = getTabThumbnailFileJpeg(tabId);
         if (!file.isFile()) return null;
-        return BitmapFactory.decodeFile(file.getPath());
+        if (thumbnailSize == null || thumbnailSize.getWidth() <= 0
+                || thumbnailSize.getHeight() <= 0) {
+            return BitmapFactory.decodeFile(file.getPath());
+        }
+        return resizeJpeg(file.getPath(), thumbnailSize);
     }
 
-    private void getTabThumbnailFromDisk(@NonNull int tabId, @NonNull Callback<Bitmap> callback) {
+    /**
+     * See https://developer.android.com/topic/performance/graphics/load-bitmap#load-bitmap.
+     * @param path Path of jpeg file.
+     * @param thumbnailSize Desired thumbnail size to resize to.
+     * @return Resized bitmap.
+     */
+    private static Bitmap resizeJpeg(String path, Size thumbnailSize) {
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(path, options);
+
+        // Raw height and width of image
+        final int height = options.outHeight;
+        final int width = options.outWidth;
+        int inSampleSize = 1;
+
+        if (height > thumbnailSize.getHeight() || width > thumbnailSize.getWidth()) {
+            final int halfHeight = height / 2;
+            final int halfWidth = width / 2;
+
+            // Calculate the largest inSampleSize value that is a power of 2 and keeps both
+            // height and width larger than the requested height and width.
+            while ((halfHeight / inSampleSize) >= thumbnailSize.getHeight()
+                    && (halfWidth / inSampleSize) >= thumbnailSize.getWidth()) {
+                inSampleSize *= 2;
+            }
+        }
+        options.inSampleSize = inSampleSize;
+
+        // Decode bitmap with inSampleSize set
+        options.inJustDecodeBounds = false;
+        return BitmapFactory.decodeFile(path, options);
+    }
+
+    private void getTabThumbnailFromDisk(
+            @NonNull int tabId, @Nullable Size thumbnailSize, @NonNull Callback<Bitmap> callback) {
         mOnTheFlyRequests++;
         mRequests++;
         // Try JPEG thumbnail first before using the more costly
@@ -435,7 +469,7 @@ public class TabContentManager {
         new AsyncTask<Bitmap>() {
             @Override
             public Bitmap doInBackground() {
-                return getJpegForTab(tabId);
+                return getJpegForTab(tabId, thumbnailSize);
             }
 
             @Override
@@ -449,6 +483,7 @@ public class TabContentManager {
                 }
                 if (jpeg != null) {
                     if (ALLOW_TO_REFETCH_TAB_THUMBNAIL_VARIATION.getValue()) {
+                        // TODO(crbug.com/1344354): compare the height instead of pixel tolerance.
                         double jpegAspectRatio = jpeg.getHeight() == 0
                                 ? 0
                                 : 1.0 * jpeg.getWidth() / jpeg.getHeight();
@@ -657,8 +692,6 @@ public class TabContentManager {
 
         void attachTab(long nativeTabContentManager, TabContentManager caller, Tab tab, int tabId);
         void detachTab(long nativeTabContentManager, TabContentManager caller, Tab tab, int tabId);
-        boolean hasFullCachedThumbnail(
-                long nativeTabContentManager, TabContentManager caller, int tabId);
         void captureThumbnail(long nativeTabContentManager, TabContentManager caller, Object tab,
                 float thumbnailScale, boolean writeToCache, double aspectRatio,
                 Callback<Bitmap> callback);

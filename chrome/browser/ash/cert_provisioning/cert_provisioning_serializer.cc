@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -130,15 +130,13 @@ bool DeserializeCertProfile(const base::Value& parent_value,
   return is_ok;
 }
 
-base::Value SerializePublicKey(const std::string& public_key) {
-  std::string public_key_str;
-  base::Base64Encode(public_key, &public_key_str);
-  return base::Value(std::move(public_key_str));
+base::Value SerializePublicKey(const std::vector<uint8_t>& public_key) {
+  return base::Value(base::Base64Encode(public_key));
 }
 
 bool DeserializePublicKey(const base::Value& parent_value,
                           const char* value_name,
-                          std::string* dst) {
+                          std::vector<uint8_t>* dst) {
   const base::Value* serialized_public_key =
       parent_value.FindKeyOfType(value_name, base::Value::Type::STRING);
 
@@ -146,7 +144,14 @@ bool DeserializePublicKey(const base::Value& parent_value,
     return false;
   }
 
-  return base::Base64Decode(serialized_public_key->GetString(), dst);
+  absl::optional<std::vector<uint8_t>> public_key =
+      base::Base64Decode(serialized_public_key->GetString());
+  if (!public_key) {
+    return false;
+  }
+  *dst = std::move(*public_key);
+
+  return true;
 }
 
 }  // namespace
@@ -154,24 +159,21 @@ bool DeserializePublicKey(const base::Value& parent_value,
 void CertProvisioningSerializer::SerializeWorkerToPrefs(
     PrefService* pref_service,
     const CertProvisioningWorkerImpl& worker) {
-  DictionaryPrefUpdate scoped_dict_updater(
+  ScopedDictPrefUpdate scoped_dict_updater(
       pref_service, GetPrefNameForSerialization(worker.cert_scope_));
-  base::Value* saved_workers = scoped_dict_updater.Get();
-  DCHECK(saved_workers);
-  saved_workers->SetKey(worker.cert_profile_.profile_id,
-                        SerializeWorker(worker));
+  base::Value::Dict& saved_workers = scoped_dict_updater.Get();
+  saved_workers.Set(worker.cert_profile_.profile_id, SerializeWorker(worker));
 }
 
 void CertProvisioningSerializer::DeleteWorkerFromPrefs(
     PrefService* pref_service,
     const CertProvisioningWorkerImpl& worker) {
-  DictionaryPrefUpdate scoped_dict_updater(
+  ScopedDictPrefUpdate scoped_dict_updater(
       pref_service, GetPrefNameForSerialization(worker.cert_scope_));
 
-  base::Value* saved_workers = scoped_dict_updater.Get();
-  DCHECK(saved_workers);
+  base::Value::Dict& saved_workers = scoped_dict_updater.Get();
 
-  saved_workers->RemoveKey(worker.cert_profile_.profile_id);
+  saved_workers.Remove(worker.cert_profile_.profile_id);
 }
 
 // Serialization scheme:

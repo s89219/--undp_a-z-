@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,6 @@ import android.graphics.Rect;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.Drawable;
 import android.text.SpannableString;
-import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.view.View;
 import android.widget.Button;
@@ -26,14 +25,11 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.StringRes;
-import androidx.annotation.VisibleForTesting;
 
 import com.google.android.material.color.MaterialColors;
 
 import org.chromium.base.Callback;
-import org.chromium.chrome.browser.tab.TabLaunchType;
-import org.chromium.chrome.browser.tabmodel.TabCreator;
-import org.chromium.chrome.browser.tabmodel.document.TabDelegate;
+import org.chromium.chrome.browser.customtabs.CustomTabActivity;
 import org.chromium.chrome.browser.ui.android.webid.AccountSelectionProperties.AccountProperties;
 import org.chromium.chrome.browser.ui.android.webid.AccountSelectionProperties.AutoSignInCancelButtonProperties;
 import org.chromium.chrome.browser.ui.android.webid.AccountSelectionProperties.ContinueButtonProperties;
@@ -52,6 +48,7 @@ import org.chromium.ui.text.NoUnderlineClickableSpan;
 import org.chromium.ui.text.SpanApplier;
 import org.chromium.ui.util.ColorUtils;
 import org.chromium.ui.widget.ButtonCompat;
+import org.chromium.url.GURL;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,19 +61,6 @@ class AccountSelectionViewBinder {
     private static final String TAG = "AccountSelectionView";
 
     /**
-     * The size of the maskable icon's safe zone as a fraction of the icon's edge size as defined
-     * in https://www.w3.org/TR/appmanifest/
-     */
-    private static final float MASKABLE_ICON_SAFE_ZONE_DIAMETER_RATIO = 0.8f;
-
-    private static TabCreator sTabCreatorForTesting;
-
-    @VisibleForTesting
-    static void setTabCreatorForTesting(TabCreator creator) {
-        sTabCreatorForTesting = creator;
-    }
-
-    /**
      * Returns bitmap with the maskable bitmap's safe zone as defined in
      * https://www.w3.org/TR/appmanifest/ cropped in a circle.
      * @param resources the Resources used to set initial target density.
@@ -87,10 +71,10 @@ class AccountSelectionViewBinder {
      */
     public static Drawable createBitmapWithMaskableIconSafeZone(
             Resources resources, Bitmap bitmap, int outBitmapSize) {
-        int cropWidth =
-                (int) Math.floor(bitmap.getWidth() * MASKABLE_ICON_SAFE_ZONE_DIAMETER_RATIO);
-        int cropHeight =
-                (int) Math.floor(bitmap.getHeight() * MASKABLE_ICON_SAFE_ZONE_DIAMETER_RATIO);
+        int cropWidth = (int) Math.floor(
+                bitmap.getWidth() * AccountSelectionBridge.MASKABLE_ICON_SAFE_ZONE_DIAMETER_RATIO);
+        int cropHeight = (int) Math.floor(
+                bitmap.getHeight() * AccountSelectionBridge.MASKABLE_ICON_SAFE_ZONE_DIAMETER_RATIO);
         int cropX = (int) Math.floor((bitmap.getWidth() - cropWidth) / 2.0f);
         int cropY = (int) Math.floor((bitmap.getHeight() - cropHeight) / 2.0f);
 
@@ -159,20 +143,15 @@ class AccountSelectionViewBinder {
         }
     }
 
-    static void openTab(String url) {
-        TabCreator tabCreator = (sTabCreatorForTesting == null)
-                ? new TabDelegate(/* incognito */ false)
-                : sTabCreatorForTesting;
-        tabCreator.launchUrl(url, TabLaunchType.FROM_CHROME_UI);
-    }
-
-    static SpanApplier.SpanInfo createLink(Context context, String url, String tag) {
-        if (TextUtils.isEmpty(url)) return null;
+    static SpanApplier.SpanInfo createLink(
+            Context context, String tag, GURL url, Runnable clickRunnable) {
+        if (GURL.isEmptyOrInvalid(url)) return null;
 
         String startTag = "<" + tag + ">";
         String endTag = "</" + tag + ">";
         Callback<View> onClickCallback = v -> {
-            openTab(url);
+            CustomTabActivity.showInfoPage(context, url.getSpec());
+            clickRunnable.run();
         };
         return new SpanApplier.SpanInfo(
                 startTag, endTag, new NoUnderlineClickableSpan(context, onClickCallback));
@@ -190,24 +169,28 @@ class AccountSelectionViewBinder {
                     model.get(DataSharingConsentProperties.PROPERTIES);
 
             Context context = view.getContext();
-            SpanApplier.SpanInfo privacyPolicySpan =
-                    createLink(context, properties.mPrivacyPolicyUrl, "link_privacy_policy");
-            SpanApplier.SpanInfo termsOfServiceSpan =
-                    createLink(context, properties.mTermsOfServiceUrl, "link_terms_of_service");
+            SpanApplier.SpanInfo privacyPolicySpan = createLink(context, "link_privacy_policy",
+                    properties.mPrivacyPolicyUrl, properties.mPrivacyPolicyClickRunnable);
+            SpanApplier.SpanInfo termsOfServiceSpan = createLink(context, "link_terms_of_service",
+                    properties.mTermsOfServiceUrl, properties.mTermsOfServiceClickRunnable);
 
-            int consentTextId = termsOfServiceSpan == null
-                    ? R.string.account_selection_data_sharing_consent_no_tos
-                    : R.string.account_selection_data_sharing_consent;
-            String consentText = String.format(
-                    context.getString(consentTextId), properties.mFormattedIdpEtldPlusOne);
+            int consentTextId;
+            if (privacyPolicySpan == null && termsOfServiceSpan == null) {
+                consentTextId = R.string.account_selection_data_sharing_consent_no_pp_or_tos;
+            } else if (privacyPolicySpan == null) {
+                consentTextId = R.string.account_selection_data_sharing_consent_no_pp;
+            } else if (termsOfServiceSpan == null) {
+                consentTextId = R.string.account_selection_data_sharing_consent_no_tos;
+            } else {
+                consentTextId = R.string.account_selection_data_sharing_consent;
+            }
+            String consentText =
+                    String.format(context.getString(consentTextId), properties.mIdpForDisplay);
 
-            // |privacyPolicySpan| cannot be null due to the following:
-            // 1. We check that the privacy URL is valid in
-            // FederatedAuthRequestImpl::OnClientMetadataResponseReceived(), and an empty URL is
-            // invalid.
-            // 2. createLink() only returns null if the provided URL is empty.
             List<SpanApplier.SpanInfo> spans = new ArrayList<>();
-            spans.add(privacyPolicySpan);
+            if (privacyPolicySpan != null) {
+                spans.add(privacyPolicySpan);
+            }
             if (termsOfServiceSpan != null) {
                 spans.add(termsOfServiceSpan);
             }
@@ -335,15 +318,14 @@ class AccountSelectionViewBinder {
      * @param key The key of the property to be bound.
      */
     static void bindHeaderView(PropertyModel model, View view, PropertyKey key) {
-        if (key == HeaderProperties.FORMATTED_RP_ETLD_PLUS_ONE
-                || key == HeaderProperties.FORMATTED_IDP_ETLD_PLUS_ONE
+        if (key == HeaderProperties.RP_FOR_DISPLAY || key == HeaderProperties.IDP_FOR_DISPLAY
                 || key == HeaderProperties.TYPE) {
             Resources resources = view.getResources();
             TextView headerTitleText = view.findViewById(R.id.header_title);
             HeaderProperties.HeaderType headerType = model.get(HeaderProperties.TYPE);
             String title = computeHeaderTitle(resources, headerType,
-                    model.get(HeaderProperties.FORMATTED_RP_ETLD_PLUS_ONE),
-                    model.get(HeaderProperties.FORMATTED_IDP_ETLD_PLUS_ONE));
+                    model.get(HeaderProperties.RP_FOR_DISPLAY),
+                    model.get(HeaderProperties.IDP_FOR_DISPLAY));
             headerTitleText.setText(title);
 
             // Make instructions for closing the bottom sheet part of the header's content

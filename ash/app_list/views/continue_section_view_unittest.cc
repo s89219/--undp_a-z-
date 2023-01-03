@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,27 +23,21 @@
 #include "ash/app_list/views/apps_grid_view_test_api.h"
 #include "ash/app_list/views/continue_task_view.h"
 #include "ash/app_list/views/recent_apps_view.h"
-#include "ash/app_list/views/remove_task_feedback_dialog.h"
 #include "ash/app_list/views/scrollable_apps_grid_view.h"
 #include "ash/app_list/views/search_box_view.h"
-#include "ash/app_list/views/search_result_page_anchored_dialog.h"
-#include "ash/app_list/views/search_result_page_dialog_controller.h"
-#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
-#include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/test/layer_animation_stopped_waiter.h"
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/compositor/test/layer_animation_stopped_waiter.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/animation/ink_drop.h"
@@ -81,7 +75,7 @@ void WaitForAllChildrenAnimationsToComplete(views::View* view) {
     bool found_animation = false;
     for (views::View* child : view->children()) {
       if (child->layer() && child->layer()->GetAnimator()->is_animating()) {
-        LayerAnimationStoppedWaiter waiter;
+        ui::LayerAnimationStoppedWaiter waiter;
         waiter.Wait(child->layer());
         found_animation = true;
         break;
@@ -97,12 +91,7 @@ class ContinueSectionViewTestBase : public AshTestBase {
  public:
   explicit ContinueSectionViewTestBase(bool tablet_mode)
       : AshTestBase(base::test::TaskEnvironment::TimeSource::MOCK_TIME),
-        tablet_mode_(tablet_mode) {
-    scoped_feature_list_.InitWithFeatures(
-        {features::kLauncherAppSort, features::kProductivityLauncher,
-         app_list_features::kFeedbackOnContinueSectionRemove},
-        {});
-  }
+        tablet_mode_(tablet_mode) {}
   ~ContinueSectionViewTestBase() override = default;
 
   void TearDown() override {
@@ -231,11 +220,13 @@ class ContinueSectionViewTestBase : public AshTestBase {
     if (tablet_mode_param()) {
       // Convert to tablet mode to show fullscren launcher.
       Shell::Get()->tablet_mode_controller()->SetEnabledForTest(true);
-      Shell::Get()->app_list_controller()->ShowAppList();
+      Shell::Get()->app_list_controller()->ShowAppList(
+          AppListShowSource::kSearchKey);
       test_api_ = std::make_unique<test::AppsGridViewTestApi>(
           GetAppListTestHelper()->GetRootPagedAppsGridView());
     } else {
-      Shell::Get()->app_list_controller()->ShowAppList();
+      Shell::Get()->app_list_controller()->ShowAppList(
+          AppListShowSource::kSearchKey);
       test_api_ = std::make_unique<test::AppsGridViewTestApi>(
           GetAppListTestHelper()->GetScrollableAppsGridView());
     }
@@ -271,15 +262,13 @@ class ContinueSectionViewTestBase : public AshTestBase {
   }
 
   gfx::RectF GetTargetLayerBounds(views::View* view) {
-    gfx::RectF bounds(view->layer()->GetTargetBounds());
-    view->layer()->GetTargetTransform().TransformRect(&bounds);
-    return bounds;
+    return view->layer()->GetTargetTransform().MapRect(
+        gfx::RectF(view->layer()->GetTargetBounds()));
   }
 
   gfx::RectF GetCurrentLayerBounds(views::View* view) {
-    gfx::RectF bounds(view->layer()->bounds());
-    view->layer()->transform().TransformRect(&bounds);
-    return bounds;
+    return view->layer()->transform().MapRect(
+        gfx::RectF(view->layer()->bounds()));
   }
 
   std::vector<gfx::RectF> GetCurrentLayerBoundsForAllTaskViews() {
@@ -298,22 +287,10 @@ class ContinueSectionViewTestBase : public AshTestBase {
 
     GetContinueSectionView()->GetWidget()->LayoutRootViewIfNecessary();
     SimulateRightClickOrLongPressOn(continue_task_view);
-    EXPECT_TRUE(continue_task_view->IsMenuShowing());
+    EXPECT_TRUE(continue_task_view->IsMenuShowing()) << index;
     continue_task_view->ExecuteCommand(ContinueTaskCommandId::kRemoveResult,
-                                       ui::EventFlags::EF_NONE);
-  }
-
-  SearchResultPageAnchoredDialog* GetSearchViewAnchoredDialog() {
-    if (Shell::Get()->tablet_mode_controller()->InTabletMode())
-      return GetAppListTestHelper()->GetFullscreenSearchPageDialog();
-    return GetAppListTestHelper()->GetBubbleSearchPageDialog();
-  }
-
-  RemoveTaskFeedbackDialog* GetFeedbackDialog() {
-    SearchResultPageAnchoredDialog* dialog = GetSearchViewAnchoredDialog();
-    return dialog ? static_cast<RemoveTaskFeedbackDialog*>(
-                        dialog->widget()->widget_delegate())
-                  : nullptr;
+                                       ui::EF_NONE);
+    EXPECT_FALSE(continue_task_view->IsMenuShowing());
   }
 
   test::AppsGridViewTestApi* test_api() { return test_api_.get(); }
@@ -323,7 +300,6 @@ class ContinueSectionViewTestBase : public AshTestBase {
 
   absl::optional<ui::ScopedAnimationDurationScaleMode> animation_duration_;
   std::unique_ptr<test::AppsGridViewTestApi> test_api_;
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 class ContinueSectionViewTest : public ContinueSectionViewTestBase,
@@ -370,9 +346,7 @@ class ContinueSectionViewWithReorderNudgeTest
           ->toast_container_for_test();
     }
 
-    return GetAppListTestHelper()
-        ->GetAppsContainerView()
-        ->toast_container_for_test();
+    return GetAppListTestHelper()->GetAppsContainerView()->toast_container();
   }
 };
 
@@ -779,262 +753,11 @@ TEST_P(ContinueSectionViewTest, OpenWithContextMenuOption) {
   SimulateRightClickOrLongPressOn(continue_task_view);
   EXPECT_TRUE(continue_task_view->IsMenuShowing());
   continue_task_view->ExecuteCommand(ContinueTaskCommandId::kOpenResult,
-                                     ui::EventFlags::EF_NONE);
+                                     ui::EF_NONE);
 
   // The item was activated.
   TestAppListClient* client = GetAppListTestHelper()->app_list_client();
   EXPECT_EQ("id1", client->last_opened_search_result());
-}
-
-TEST_P(ContinueSectionViewTest, SelectCancelOptionCloseDialogNoRemove) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  ASSERT_TRUE(GetFeedbackDialog());
-  GestureTapOn(GetFeedbackDialog()->cancel_button_for_test());
-
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-  std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
-  EXPECT_TRUE(invoked_actions.empty());
-}
-
-TEST_P(ContinueSectionViewTest, SelectRemoveOptionCloseDialogAndRemove) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  ASSERT_TRUE(GetFeedbackDialog());
-  GestureTapOn(GetFeedbackDialog()->remove_button_for_test());
-
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-  std::vector<TestAppListClient::SearchResultActionId> expected_actions = {
-      {"id1", SearchResultActionType::kRemove}};
-  std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
-  EXPECT_EQ(expected_actions, invoked_actions);
-}
-
-TEST_P(ContinueSectionViewTest, RemoveResultShowsFeedbackDialogOnce) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id4", AppListSearchResultType::kZeroStateFile);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(1)->result()->id(), "id2");
-  RemoveSearchResultWithContextMenuAt(1);
-
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  RemoveTaskFeedbackDialog* dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-  GestureTapOn(dialog->all_suggestions_option_for_test());
-  GestureTapOn(dialog->remove_button_for_test());
-
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  VerifyResultViewsUpdated();
-
-  // Click on another result and remove it.
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  // Feedback Dialog should not show the second time.
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  // Both items were removed.
-  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-  std::vector<TestAppListClient::SearchResultActionId> expected_actions = {
-      {"id2", SearchResultActionType::kRemove},
-      {"id1", SearchResultActionType::kRemove}};
-  std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
-  EXPECT_EQ(expected_actions, invoked_actions);
-}
-
-TEST_P(ContinueSectionViewTest, RemoveResultShowsFeedbackUntilFeedbackSent) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id4", AppListSearchResultType::kZeroStateFile);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(1)->result()->id(), "id2");
-  RemoveSearchResultWithContextMenuAt(1);
-
-  // Feedback dialog should show. Confirm without sending feedback.
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  RemoveTaskFeedbackDialog* dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-  GestureTapOn(dialog->remove_button_for_test());
-
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  VerifyResultViewsUpdated();
-
-  // Click on another result and remove it.
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  // Feedback Dialog should show a second time. Send feedback.
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-  GestureTapOn(dialog->all_suggestions_option_for_test());
-  GestureTapOn(dialog->remove_button_for_test());
-
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  VerifyResultViewsUpdated();
-
-  // Click on another result and remove it.
-  EXPECT_EQ(GetResultViewAt(2)->result()->id(), "id3");
-  RemoveSearchResultWithContextMenuAt(2);
-
-  // Feedback Dialog should not show.
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-
-  // Both items were removed.
-  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-  std::vector<TestAppListClient::SearchResultActionId> expected_actions = {
-      {"id2", SearchResultActionType::kRemove},
-      {"id1", SearchResultActionType::kRemove},
-      {"id3", SearchResultActionType::kRemove}};
-  std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
-  EXPECT_EQ(expected_actions, invoked_actions);
-}
-
-TEST_P(ContinueSectionViewTest,
-       RemoveResultShowsFeedbackDialogAgainIfCancelled) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id4", AppListSearchResultType::kZeroStateFile);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(1)->result()->id(), "id2");
-  RemoveSearchResultWithContextMenuAt(1);
-
-  // Cancel the Feedback Dialog, result should not have been removed.
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  ASSERT_TRUE(GetFeedbackDialog());
-  GestureTapOn(GetFeedbackDialog()->cancel_button_for_test());
-
-  EXPECT_FALSE(GetSearchViewAnchoredDialog());
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(1)->result()->id(), "id2");
-  RemoveSearchResultWithContextMenuAt(1);
-
-  // Feedback Dialog should show again.
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  ASSERT_TRUE(GetFeedbackDialog());
-  GestureTapOn(GetFeedbackDialog()->remove_button_for_test());
-
-  // Items was removed.
-  TestAppListClient* client = GetAppListTestHelper()->app_list_client();
-  std::vector<TestAppListClient::SearchResultActionId> expected_actions = {
-      {"id2", SearchResultActionType::kRemove}};
-  std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
-  EXPECT_EQ(expected_actions, invoked_actions);
-}
-
-TEST_P(ContinueSectionViewTest, SecondaryPanelOnFeedbackDialogStartsHidden) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  RemoveTaskFeedbackDialog* dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-  EXPECT_FALSE(dialog->secondary_options_panel_for_test()->GetVisible());
-}
-
-TEST_P(ContinueSectionViewTest,
-       SingleSuggestionOnFeedbackDialogShowsSecondaryPanel) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  RemoveTaskFeedbackDialog* dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-
-  // Click on single suggestion option. Panel should show.
-  GestureTapOn(dialog->single_suggestion_option_for_test());
-  EXPECT_TRUE(dialog->secondary_options_panel_for_test()->GetVisible());
-}
-
-TEST_P(ContinueSectionViewTest,
-       AllSuggestionsOnFeedbackDialogHidesSecondaryPanel) {
-  AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
-  AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
-  AddSearchResult("id3", AppListSearchResultType::kZeroStateDrive);
-
-  EnsureLauncherShown();
-
-  VerifyResultViewsUpdated();
-
-  EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
-  RemoveSearchResultWithContextMenuAt(0);
-
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  RemoveTaskFeedbackDialog* dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-
-  // Show the secondary options panel by clicking on single suggestion option.
-  GestureTapOn(dialog->single_suggestion_option_for_test());
-  EXPECT_TRUE(dialog->secondary_options_panel_for_test()->GetVisible());
-
-  // Click on all suggestions option. Panel should hide.
-  GestureTapOn(dialog->all_suggestions_option_for_test());
-  EXPECT_FALSE(dialog->secondary_options_panel_for_test()->GetVisible());
 }
 
 TEST_P(ContinueSectionViewTest, RemoveWithContextMenuOption) {
@@ -1049,15 +772,11 @@ TEST_P(ContinueSectionViewTest, RemoveWithContextMenuOption) {
   EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
   RemoveSearchResultWithContextMenuAt(0);
 
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  ASSERT_TRUE(GetFeedbackDialog());
-  GestureTapOn(GetFeedbackDialog()->remove_button_for_test());
-
   TestAppListClient* client = GetAppListTestHelper()->app_list_client();
   std::vector<TestAppListClient::SearchResultActionId> expected_actions = {
       {"id1", SearchResultActionType::kRemove}};
   std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
+      client->GetAndResetInvokedResultActions();
   EXPECT_EQ(expected_actions, invoked_actions);
 }
 
@@ -1076,23 +795,15 @@ TEST_P(ContinueSectionViewTest, ResultRemovedLogsMetricInBucket) {
   EXPECT_EQ(GetResultViewAt(0)->result()->id(), "id1");
   RemoveSearchResultWithContextMenuAt(0);
 
-  ASSERT_TRUE(GetSearchViewAnchoredDialog());
-  RemoveTaskFeedbackDialog* dialog = GetFeedbackDialog();
-  ASSERT_TRUE(dialog);
-  GestureTapOn(dialog->all_suggestions_option_for_test());
-  GestureTapOn(dialog->remove_button_for_test());
-
   EXPECT_EQ(GetResultViewAt(1)->result()->id(), "id2");
   RemoveSearchResultWithContextMenuAt(1);
-
-  ASSERT_FALSE(GetSearchViewAnchoredDialog());
 
   TestAppListClient* client = GetAppListTestHelper()->app_list_client();
   std::vector<TestAppListClient::SearchResultActionId> expected_actions = {
       {"id1", SearchResultActionType::kRemove},
       {"id2", SearchResultActionType::kRemove}};
   std::vector<TestAppListClient::SearchResultActionId> invoked_actions =
-      client->GetAndClearInvokedResultActions();
+      client->GetAndResetInvokedResultActions();
   EXPECT_EQ(expected_actions, invoked_actions);
 
   EXPECT_EQ(1, histogram_tester.GetBucketCount(
@@ -1485,9 +1196,7 @@ TEST_P(ContinueSectionViewWithReorderNudgeTest, TimeDismissPrivacyNotice) {
             AppListToastType::kReorderNudge);
 }
 
-// TODO(crbug.com/1317428): Switch to ContinueSectionViewWithReorderNudgeTest
-// when this feature works in tablet mode.
-TEST_F(ContinueSectionViewClamshellModeTest,
+TEST_P(ContinueSectionViewWithReorderNudgeTest,
        HidingContinueSectionHidesPrivacyNotice) {
   AddSearchResult("id1", AppListSearchResultType::kZeroStateFile);
   AddSearchResult("id2", AppListSearchResultType::kZeroStateDrive);
@@ -2383,7 +2092,7 @@ TEST_F(ContinueSectionViewClamshellModeTest, AnimatesOutAfterRemovingResults) {
   EXPECT_EQ(0.0f, privacy_notice->layer()->GetTargetOpacity());
   EXPECT_TRUE(privacy_notice->layer()->GetAnimator()->is_animating());
 
-  LayerAnimationStoppedWaiter waiter;
+  ui::LayerAnimationStoppedWaiter waiter;
   waiter.Wait(privacy_notice->layer());
 
   VerifyResultViewsUpdated();
@@ -2411,7 +2120,7 @@ TEST_P(ContinueSectionViewTest, AnimatesPrivacyNoticeAccept) {
   EXPECT_EQ(0.0f, privacy_notice->layer()->GetTargetOpacity());
   EXPECT_TRUE(privacy_notice->layer()->GetAnimator()->is_animating());
 
-  LayerAnimationStoppedWaiter waiter;
+  ui::LayerAnimationStoppedWaiter waiter;
   waiter.Wait(privacy_notice->layer());
 
   ContinueTaskContainerView* container_view =
@@ -2422,6 +2131,59 @@ TEST_P(ContinueSectionViewTest, AnimatesPrivacyNoticeAccept) {
   EXPECT_FALSE(IsPrivacyNoticeVisible());
 
   EXPECT_TRUE(GetContinueSectionView()->GetVisible());
+}
+
+// Regression test for https://crbug.com/1326237.
+TEST_F(ContinueSectionViewClamshellModeTest,
+       RemoveSearchResultWhileAnimatingContinueSection) {
+  ResetPrivacyNoticePref();
+  InitializeForAnimationTest(/*result_count=*/3);
+
+  EXPECT_TRUE(IsPrivacyNoticeVisible());
+  EXPECT_EQ(GetAppListNudgeController()->current_nudge(),
+            AppListNudgeController::NudgeType::kPrivacyNotice);
+
+  AppListToastView* privacy_notice =
+      GetContinueSectionView()->GetPrivacyNoticeForTest();
+
+  GestureTapOn(privacy_notice->toast_button());
+
+  EXPECT_EQ(1.0f, privacy_notice->layer()->opacity());
+  EXPECT_EQ(0.0f, privacy_notice->layer()->GetTargetOpacity());
+  EXPECT_TRUE(privacy_notice->layer()->GetAnimator()->is_animating());
+
+  RemoveSearchResultAt(0);
+
+  EXPECT_EQ(0.0f, privacy_notice->layer()->GetTargetOpacity());
+  EXPECT_TRUE(privacy_notice->layer()->GetAnimator()->is_animating());
+
+  ui::LayerAnimationStoppedWaiter waiter;
+  waiter.Wait(privacy_notice->layer());
+
+  WaitForAllChildrenAnimationsToComplete(
+      GetContinueSectionView()->suggestions_container());
+  EXPECT_FALSE(IsPrivacyNoticeVisible());
+
+  EXPECT_FALSE(GetContinueSectionView()->GetVisible());
+}
+
+// Regression test for https://crbug.com/1357434.
+TEST_F(ContinueSectionViewClamshellModeTest,
+       CloseLauncherWhileAnimatingPrivacyToastDoesNotCrash) {
+  ResetPrivacyNoticePref();
+  InitializeForAnimationTest(/*result_count=*/3);
+  ASSERT_TRUE(IsPrivacyNoticeVisible());
+
+  AppListToastView* privacy_toast =
+      GetContinueSectionView()->GetPrivacyNoticeForTest();
+  ASSERT_TRUE(privacy_toast);
+
+  // Tap on the "OK" button to start the toast dismiss animation.
+  GestureTapOn(privacy_toast->toast_button());
+  EXPECT_TRUE(privacy_toast->layer()->GetAnimator()->is_animating());
+
+  HideLauncher();
+  // No crash.
 }
 
 }  // namespace

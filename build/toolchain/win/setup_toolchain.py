@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 #
@@ -63,7 +63,7 @@ def _ExtractImportantEnvironment(output_of_set):
           # exist. This ensures a (relatively) clear error message if the
           # required SDK is not installed.
           for part in setting.split(';'):
-            if not os.path.exists(part):
+            if not os.path.exists(part) and len(part) != 0:
               raise Exception(
                   'Path "%s" from environment variable "%s" does not exist. '
                   'Make sure the necessary SDK is installed.' % (part, envvar))
@@ -289,7 +289,7 @@ def main():
 
       if (environment_block_name != ''):
         env_block = _FormatAsEnvironmentBlock(env)
-        with open(environment_block_name, 'w') as f:
+        with open(environment_block_name, 'w', encoding='utf8') as f:
           f.write(env_block)
 
   print('vc_bin_dir = ' + gn_helpers.ToGNString(vc_bin_dir))

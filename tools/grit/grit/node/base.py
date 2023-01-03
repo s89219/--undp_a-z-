@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -251,10 +251,9 @@ class Node(object):
     # Check that |file| does not point to a TypeScript (.ts) file, as those
     # files should not be included in the final build.
     if self.attrs.get('file'):
-      assert not self.attrs.get('file').endswith(
-          '.ts'
-      ), 'TypeScript files should not be added to Grit: Found \'%s\'' % self.attrs.get(
-          'file')
+      assert not self.attrs.get('file').endswith('.ts'), (
+          'TypeScript files should not be added to Grit: Found \'%s\'' %
+          self.attrs.get('file'))
 
   def GetCdata(self):
     '''Returns all CDATA of this element, concatenated into a single
@@ -480,6 +479,16 @@ class Node(object):
   @classmethod
   def EvaluateExpression(cls, expr, defs, target_platform, extra_variables={}):
     '''Worker for EvaluateCondition (below) and conditions in XTB files.'''
+
+    if target_platform == 'chromeos':
+      assert defs.get('chromeos_ash', False) != defs.get(
+          'chromeos_lacros',
+          False), 'The chromeos target must be either ash or lacros'
+    else:
+      assert not defs.get('chromeos_ash', False) and not defs.get(
+          'chromeos_lacros',
+          False), 'Non-chromeos targets cannot be ash or lacros'
+
     if expr in cls.eval_expr_cache:
       code, variables_in_expr = cls.eval_expr_cache[expr]
     else:
@@ -500,6 +509,8 @@ class Node(object):
 
       elif name == 'is_linux':
         value = target_platform == 'linux'
+      elif name == 'is_chromeos':
+        value = target_platform == 'chromeos'
       elif name == 'is_macosx':
         value = target_platform == 'darwin'
       elif name == 'is_win':
@@ -514,7 +525,8 @@ class Node(object):
         value = 'bsd' in target_platform
       elif name == 'is_posix':
         value = (target_platform in ('linux', 'darwin', 'sunos5', 'android',
-                                     'ios') or 'bsd' in target_platform)
+                                     'ios', 'chromeos')
+                 or 'bsd' in target_platform)
 
       elif name == 'pp_ifdef':
         def pp_ifdef(symbol):
@@ -655,7 +667,7 @@ class Node(object):
                                self._COMPRESS_BY_DEFAULT_EXTENSIONS))
 
     if compress == 'gzip' or compress_by_default:
-      # We only use rsyncable compression on Linux.
+      # We only use rsyncable compression for platforms built on Linux.
       if sys.platform == 'linux':
         return grit.format.gzip_string.GzipStringRsyncable(data)
       return grit.format.gzip_string.GzipString(data)

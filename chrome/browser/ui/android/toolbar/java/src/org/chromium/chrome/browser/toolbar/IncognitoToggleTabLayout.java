@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -116,14 +116,6 @@ public class IncognitoToggleTabLayout extends TabLayout implements TabCountObser
         mTabCountProvider.addObserverAndTrigger(this);
     }
 
-    public ImageView getIncognitoButtonIcon() {
-        return mIncognitoButtonIcon;
-    }
-
-    public ImageView getStandardButtonIcon() {
-        return mStandardButtonIcon;
-    }
-
     /**
      * Update the visual state based on number of normal (non-incognito) tabs present.
      * @param tabCount The number of normal tabs.
@@ -187,8 +179,10 @@ public class IncognitoToggleTabLayout extends TabLayout implements TabCountObser
     }
 
     private void updateTabSwitcherDrawableCount() {
-        mTabSwitcherDrawable.updateForTabCount(
-                mTabModelSelector.getTabModelFilterProvider().getTabModelFilter(false).getCount(),
-                false);
+        final int tabCount = mTabModelSelector.getTabModelFilterProvider()
+                                     .getTabModelFilter(
+                                             /*isIncognito=*/false)
+                                     .getTotalTabCount();
+        mTabSwitcherDrawable.updateForTabCount(tabCount, false);
     }
 }

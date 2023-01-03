@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/components/tpm/install_attributes.h"
 #include "base/barrier_closure.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
@@ -19,11 +18,12 @@
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
-#include "chromeos/dbus/shill/shill_service_client.h"
-#include "chromeos/network/managed_network_configuration_handler.h"
-#include "chromeos/network/network_handler.h"
-#include "chromeos/network/network_profile_handler.h"
-#include "chromeos/network/network_state_handler.h"
+#include "chromeos/ash/components/dbus/shill/shill_service_client.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
+#include "chromeos/ash/components/network/managed_network_configuration_handler.h"
+#include "chromeos/ash/components/network/network_handler.h"
+#include "chromeos/ash/components/network/network_profile_handler.h"
+#include "chromeos/ash/components/network/network_state_handler.h"
 #include "components/onc/onc_constants.h"
 #include "dbus/object_path.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -349,17 +349,16 @@ class RollbackNetworkConfig::Importer : public DeviceSettingsService::Observer,
 
 RollbackNetworkConfig::Importer::Importer() {
   DeviceSettingsService::Get()->AddObserver(this);
-  chromeos::NetworkHandler::Get()
-      ->managed_network_configuration_handler()
-      ->AddObserver(this);
+  NetworkHandler::Get()->managed_network_configuration_handler()->AddObserver(
+      this);
 }
 
 RollbackNetworkConfig::Importer::~Importer() {
   if (DeviceSettingsService::Get()) {
     DeviceSettingsService::Get()->RemoveObserver(this);
   }
-  if (chromeos::NetworkHandler::Get()) {
-    chromeos::NetworkHandler::Get()
+  if (NetworkHandler::Get()) {
+    NetworkHandler::Get()
         ->managed_network_configuration_handler()
         ->RemoveObserver(this);
   }
@@ -383,7 +382,7 @@ void RollbackNetworkConfig::Importer::Import(const std::string& network_config,
   }
 
   auto barrier_closure = base::BarrierClosure(
-      network_list->GetListDeprecated().size(),
+      network_list->GetList().size(),
       base::BindOnce(&RollbackNetworkConfig::Importer::AllNetworksConfigured,
                      weak_factory_.GetWeakPtr(), std::move(callback)));
 
@@ -393,7 +392,7 @@ void RollbackNetworkConfig::Importer::Import(const std::string& network_config,
 
   bool ownership_taken = IsOwnershipTaken();
 
-  for (base::Value& network : network_list->GetListDeprecated()) {
+  for (base::Value& network : network_list->GetList()) {
     if (!ownership_taken) {
       ManagedOncConfigureActivePartAsDeviceWide(network.Clone(),
                                                 finished_a_network);
@@ -469,8 +468,7 @@ RollbackNetworkConfig::RollbackNetworkConfig() = default;
 RollbackNetworkConfig::~RollbackNetworkConfig() = default;
 
 void RollbackNetworkConfig::BindReceiver(
-    mojo::PendingReceiver<
-        chromeos::rollback_network_config::mojom::RollbackNetworkConfig>
+    mojo::PendingReceiver<rollback_network_config::mojom::RollbackNetworkConfig>
         receiver) {
   receivers_.Add(this, std::move(receiver));
 }

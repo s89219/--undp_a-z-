@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,7 @@ FrameNavigationEntry::FrameNavigationEntry(
     const absl::optional<url::Origin>& origin,
     const Referrer& referrer,
     const absl::optional<url::Origin>& initiator_origin,
+    const absl::optional<GURL>& initiator_base_url,
     const std::vector<GURL>& redirect_chain,
     const blink::PageState& page_state,
     const std::string& method,
@@ -47,6 +48,7 @@ FrameNavigationEntry::FrameNavigationEntry(
       committed_origin_(origin),
       referrer_(referrer),
       initiator_origin_(initiator_origin),
+      initiator_base_url_(initiator_base_url),
       redirect_chain_(redirect_chain),
       page_state_(page_state),
       bindings_(kInvalidBindings),
@@ -68,11 +70,12 @@ scoped_refptr<FrameNavigationEntry> FrameNavigationEntry::Clone() const {
   copy->UpdateEntry(
       frame_unique_name_, item_sequence_number_, document_sequence_number_,
       navigation_api_key_, site_instance_.get(), nullptr, url_,
-      committed_origin_, referrer_, initiator_origin_, redirect_chain_,
-      page_state_, method_, post_id_, nullptr /* blob_url_loader_factory */,
+      committed_origin_, referrer_, initiator_origin_, initiator_base_url_,
+      redirect_chain_, page_state_, method_, post_id_,
+      nullptr /* blob_url_loader_factory */,
       nullptr /* web_bundle_navigation_info */,
       nullptr /* subresource_web_bundle_navigation_info */,
-      policy_container_policies_ ? policy_container_policies_->Clone()
+      policy_container_policies_ ? policy_container_policies_->ClonePtr()
                                  : nullptr,
       protect_url_in_navigation_api_);
   // |bindings_| gets only updated through the SetBindings API, not through
@@ -92,6 +95,7 @@ void FrameNavigationEntry::UpdateEntry(
     const absl::optional<url::Origin>& origin,
     const Referrer& referrer,
     const absl::optional<url::Origin>& initiator_origin,
+    const absl::optional<GURL>& initiator_base_url,
     const std::vector<GURL>& redirect_chain,
     const blink::PageState& page_state,
     const std::string& method,
@@ -113,6 +117,7 @@ void FrameNavigationEntry::UpdateEntry(
   committed_origin_ = origin;
   referrer_ = referrer;
   initiator_origin_ = initiator_origin;
+  initiator_base_url_ = initiator_base_url;
   page_state_ = page_state;
   method_ = method;
   post_id_ = post_id;

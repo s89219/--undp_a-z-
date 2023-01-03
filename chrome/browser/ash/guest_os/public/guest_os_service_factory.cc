@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include "chrome/browser/ash/guest_os/public/guest_os_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace guest_os {
 
@@ -30,9 +29,7 @@ GuestOsServiceFactory* GuestOsServiceFactory::GetInstance() {
 }
 
 GuestOsServiceFactory::GuestOsServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "GuestOsService",
-          BrowserContextDependencyManager::GetInstance()) {}
+    : ProfileKeyedServiceFactory("GuestOsService") {}
 
 GuestOsServiceFactory::~GuestOsServiceFactory() = default;
 

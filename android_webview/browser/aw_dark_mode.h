@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@ class AwDarkMode : public content::WebContentsObserver,
       const base::android::JavaParamRef<jobject>& jcaller);
 
   bool is_force_dark_applied() const { return is_force_dark_applied_; }
+  bool prefers_dark_from_theme() const { return prefers_dark_from_theme_; }
 
  private:
   // content::WebContentsObserver

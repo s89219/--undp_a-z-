@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chromeos/ui/base/tablet_state.h"
 #include "chromeos/ui/base/window_properties.h"
+#include "chromeos/ui/base/window_state_type.h"
 #include "chromeos/ui/frame/immersive/immersive_revealed_lock.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/aura/client/aura_constants.h"
@@ -29,7 +30,6 @@
 
 #if !BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/ui/ash/window_pin_util.h"
-#include "chromeos/ui/base/window_state_type.h"
 #else
 #include "chrome/browser/ui/lacros/window_properties.h"
 #endif
@@ -113,10 +113,11 @@ int ImmersiveModeControllerChromeos::GetTopContainerVerticalOffset(
                           (visible_fraction_ - 1));
 }
 
-ImmersiveRevealedLock* ImmersiveModeControllerChromeos::GetRevealedLock(
-    AnimateReveal animate_reveal) {
-  return new ImmersiveRevealedLockChromeos(controller_.GetRevealedLock(
-      ToImmersiveFullscreenControllerAnimateReveal(animate_reveal)));
+std::unique_ptr<ImmersiveRevealedLock>
+ImmersiveModeControllerChromeos::GetRevealedLock(AnimateReveal animate_reveal) {
+  return std::make_unique<ImmersiveRevealedLockChromeos>(
+      controller_.GetRevealedLock(
+          ToImmersiveFullscreenControllerAnimateReveal(animate_reveal)));
 }
 
 void ImmersiveModeControllerChromeos::OnFindBarVisibleBoundsChanged(
@@ -144,10 +145,19 @@ void ImmersiveModeControllerChromeos::OnWidgetActivationChanged(
   if (platform_util::IsBrowserLockedFullscreen(browser_view_->browser()))
     return;
 
+  // TODO(sammiequon): Investigate if we can move immersive mode logic to the
+  // browser non client frame view.
+  DCHECK_EQ(browser_view_->frame(), widget);
+  if (widget->GetNativeWindow()->GetProperty(chromeos::kWindowStateTypeKey) ==
+      chromeos::WindowStateType::kFloated) {
+    chromeos::ImmersiveFullscreenController::EnableForWidget(widget, false);
+    return;
+  }
+
   // Enable immersive mode if the widget is activated. Do not disable immersive
   // mode if the widget deactivates, but is not minimized.
   chromeos::ImmersiveFullscreenController::EnableForWidget(
-      browser_view_->frame(), active || !widget->IsMinimized());
+      widget, active || !widget->IsMinimized());
 }
 
 void ImmersiveModeControllerChromeos::LayoutBrowserRootView() {

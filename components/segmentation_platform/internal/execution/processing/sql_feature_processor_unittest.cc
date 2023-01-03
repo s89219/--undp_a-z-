@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,12 @@
 #include "base/test/gmock_callback_support.h"
 #include "base/test/simple_test_clock.h"
 #include "base/test/task_environment.h"
-#include "components/optimization_guide/proto/models.pb.h"
 #include "components/segmentation_platform/internal/database/mock_ukm_database.h"
 #include "components/segmentation_platform/internal/database/ukm_types.h"
 #include "components/segmentation_platform/internal/execution/processing/feature_processor_state.h"
-#include "components/segmentation_platform/internal/proto/model_metadata.pb.h"
+#include "components/segmentation_platform/public/input_delegate.h"
+#include "components/segmentation_platform/public/proto/model_metadata.pb.h"
+#include "components/segmentation_platform/public/proto/segmentation_platform.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::test::RunOnceCallback;
@@ -49,18 +50,18 @@ class SqlFeatureProcessorTest : public testing::Test {
     return custom_input;
   }
 
-  proto::SqlFeature CreateSqlFeature(
-      const std::string& sql,
-      const std::vector<proto::CustomInput>& custom_inputs) {
-    proto::SqlFeature sql_feature;
-    sql_feature.set_sql(sql);
+  Data CreateSqlFeature(const std::string& sql,
+                        const std::vector<proto::CustomInput>& custom_inputs) {
+    proto::InputFeature input;
+    proto::SqlFeature* sql_feature = input.mutable_sql_feature();
+    sql_feature->set_sql(sql);
     for (const proto::CustomInput& custom_input : custom_inputs) {
-      auto* bind_value = sql_feature.add_bind_values();
+      auto* bind_value = sql_feature->add_bind_values();
       auto* value = bind_value->mutable_value();
       bind_value->set_param_type(proto::SqlFeature::BindValue::BOOL);
       *value = custom_input;
     }
-    return sql_feature;
+    return Data(input);
   }
 
   void ExpectQueryResult(
@@ -71,6 +72,7 @@ class SqlFeatureProcessorTest : public testing::Test {
     // Initialize the sql feature processor.
     std::unique_ptr<SqlFeatureProcessor> processor =
         std::make_unique<SqlFeatureProcessor>(std::move(data), clock_.Now(),
+                                              &input_delegate_holder_,
                                               ukm_database_.get());
 
     EXPECT_CALL(*ukm_database_, RunReadonlyQueries)
@@ -107,6 +109,7 @@ class SqlFeatureProcessorTest : public testing::Test {
   base::test::TaskEnvironment task_envåironment_{
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   base::SimpleTestClock clock_;
+  InputDelegateHolder input_delegate_holder_;
   std::unique_ptr<FeatureProcessorState> feature_processor_state_;
   std::unique_ptr<MockUkmDatabase> ukm_database_;
 };
@@ -115,7 +118,7 @@ TEST_F(SqlFeatureProcessorTest, EmptyBindValues) {
   // Set up a single empty sql feature.
   SqlFeatureProcessor::QueryList data;
   constexpr char kSqlQuery[] = "some sql query";
-  data[0] = CreateSqlFeature(kSqlQuery, {});
+  data.emplace(0, CreateSqlFeature(kSqlQuery, {}));
 
   // Construct the expected processed bind values based on the given data.
   base::flat_map<SqlFeatureProcessor::FeatureIndex, CustomSqlQuery>
@@ -133,13 +136,15 @@ TEST_F(SqlFeatureProcessorTest, EmptyBindValues) {
 TEST_F(SqlFeatureProcessorTest, SingleSqlFeatureWithBindValues) {
   // Set up a single empty sql feature.
   SqlFeatureProcessor::QueryList data;
-  constexpr char kSqlQuery[] = "some sql query";
+  constexpr char kSqlQuery[] = "some sql query with three bind value ? ? ?";
   std::vector<float> custom_default_values = {1, 2, 3};
-  data[0] = CreateSqlFeature(
-      kSqlQuery,
-      {CreateCustomInput(1, proto::CustomInput::FILL_PREDICTION_TIME, {}),
-       CreateCustomInput(2, proto::CustomInput::UNKNOWN_FILL_POLICY,
-                         custom_default_values)});
+  data.emplace(
+      0,
+      CreateSqlFeature(
+          kSqlQuery,
+          {CreateCustomInput(1, proto::CustomInput::FILL_PREDICTION_TIME, {}),
+           CreateCustomInput(2, proto::CustomInput::UNKNOWN_FILL_POLICY,
+                             custom_default_values)}));
 
   // Construct the expected processed bind values based on the given data.
   base::flat_map<SqlFeatureProcessor::FeatureIndex, CustomSqlQuery>
@@ -161,23 +166,27 @@ TEST_F(SqlFeatureProcessorTest, MultipleSqlFeatures) {
   // Set up a single empty sql feature.
   SqlFeatureProcessor::QueryList data;
   constexpr char kSqlQuery[] = "some sql query";
+  constexpr char kSqlQueryWithBindValue[] =
+      "some sql query with one bind value ?";
   std::vector<float> custom_default_values = {1, 2, 3};
-  data[0] = CreateSqlFeature(
-      kSqlQuery,
-      {CreateCustomInput(1, proto::CustomInput::FILL_PREDICTION_TIME, {})});
-  data[1] = CreateSqlFeature(kSqlQuery, {});
-  data[2] = CreateSqlFeature(
-      kSqlQuery,
-      {CreateCustomInput(1, proto::CustomInput::FILL_PREDICTION_TIME, {})});
+  data.emplace(0, CreateSqlFeature(
+                      kSqlQueryWithBindValue,
+                      {CreateCustomInput(
+                          1, proto::CustomInput::FILL_PREDICTION_TIME, {})}));
+  data.emplace(1, CreateSqlFeature(kSqlQuery, {}));
+  data.emplace(2, CreateSqlFeature(
+                      kSqlQueryWithBindValue,
+                      {CreateCustomInput(
+                          1, proto::CustomInput::FILL_PREDICTION_TIME, {})}));
 
   // Construct the expected processed bind values based on the given data.
   base::flat_map<SqlFeatureProcessor::FeatureIndex, CustomSqlQuery>
       processed_queries;
   processed_queries[0] =
-      CustomSqlQuery(kSqlQuery, {ProcessedValue(clock_.Now())});
+      CustomSqlQuery(kSqlQueryWithBindValue, {ProcessedValue(clock_.Now())});
   processed_queries[1] = CustomSqlQuery(kSqlQuery, {});
   processed_queries[2] =
-      CustomSqlQuery(kSqlQuery, {ProcessedValue(clock_.Now())});
+      CustomSqlQuery(kSqlQueryWithBindValue, {ProcessedValue(clock_.Now())});
 
   // Construct a result to be returned when the correct processed queries are
   // sent.

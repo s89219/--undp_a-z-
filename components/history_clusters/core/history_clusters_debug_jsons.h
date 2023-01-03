@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,12 @@ std::string GetDebugJSONForClusters(
     const std::vector<history::Cluster>& clusters);
 
 template <typename T>
-std::string GetDebugJSONForKeywordSet(const std::unordered_set<T>& keyword_set);
+std::string GetDebugJSONForUrlKeywordSet(
+    const std::unordered_set<T>& keyword_set);
+
+std::string GetDebugJSONForKeywordMap(
+    const std::unordered_map<std::u16string, history::ClusterKeywordData>&
+        keyword_to_data_map);
 
 }  // namespace history_clusters
 

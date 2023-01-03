@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/test/scoped_mock_time_message_loop_task_runner.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -17,8 +18,10 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/live_caption/pref_names.h"
 #include "components/live_caption/views/caption_bubble.h"
 #include "components/live_caption/views/caption_bubble_controller_views.h"
+#include "components/prefs/pref_service.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/test/browser_test.h"
 #include "media/mojo/mojom/speech_recognition_service.mojom.h"
@@ -29,6 +32,7 @@
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -49,7 +53,8 @@ class CaptionBubbleControllerViewsTest : public InProcessBrowserTest {
 
   CaptionBubbleControllerViews* GetController() {
     if (!controller_)
-      controller_ = std::make_unique<CaptionBubbleControllerViews>();
+      controller_ = std::make_unique<CaptionBubbleControllerViews>(
+          browser()->profile()->GetPrefs());
     return controller_.get();
   }
 
@@ -100,6 +105,16 @@ class CaptionBubbleControllerViewsTest : public InProcessBrowserTest {
                        : nullptr;
   }
 
+  views::Button* GetPinButton() {
+    return controller_ ? controller_->caption_bubble_->pin_button_.get()
+                       : nullptr;
+  }
+
+  views::Button* GetUnpinButton() {
+    return controller_ ? controller_->caption_bubble_->unpin_button_.get()
+                       : nullptr;
+  }
+
   views::View* GetErrorMessage() {
     return controller_
                ? controller_->caption_bubble_->generic_error_message_.get()
@@ -132,6 +147,11 @@ class CaptionBubbleControllerViewsTest : public InProcessBrowserTest {
     return controller_ && controller_->IsWidgetVisibleForTesting();
   }
 
+  bool HasMediaFoundationError() {
+    return controller_ &&
+           controller_->caption_bubble_->HasMediaFoundationError();
+  }
+
   void DestroyController() { controller_.reset(nullptr); }
 
   void ClickButton(views::Button* button) {
@@ -146,6 +166,12 @@ class CaptionBubbleControllerViewsTest : public InProcessBrowserTest {
   }
 
   bool OnPartialTranscription(std::string text) {
+    // TODO(crbug.com/1351722): This is a workaround for some tests which were
+    // passing by side effect of the AccessibilityChecker's checks. The full
+    // analysis can be found in the bug.
+    if (auto* label = GetLabel())
+      label->GetTooltipText(gfx::Point());
+
     return OnPartialTranscription(text, GetCaptionBubbleContext());
   }
 
@@ -156,6 +182,12 @@ class CaptionBubbleControllerViewsTest : public InProcessBrowserTest {
   }
 
   bool OnFinalTranscription(std::string text) {
+    // TODO(crbug.com/1351722): This is a workaround for some tests which were
+    // passing by side effect of the AccessibilityChecker's checks. The full
+    // analysis can be found in the bug.
+    if (auto* label = GetLabel())
+      label->GetTooltipText(gfx::Point());
+
     return OnFinalTranscription(text, GetCaptionBubbleContext());
   }
 
@@ -169,7 +201,20 @@ class CaptionBubbleControllerViewsTest : public InProcessBrowserTest {
 
   void OnError(CaptionBubbleContext* caption_bubble_context) {
     GetController()->OnError(
-        caption_bubble_context, CaptionBubbleErrorType::GENERIC,
+        caption_bubble_context, CaptionBubbleErrorType::kGeneric,
+        base::RepeatingClosure(),
+        base::BindRepeating(
+            [](CaptionBubbleErrorType error_type, bool checked) {}));
+  }
+
+  void OnMediaFoundationError() {
+    OnMediaFoundationError(GetCaptionBubbleContext());
+  }
+
+  void OnMediaFoundationError(CaptionBubbleContext* caption_bubble_context) {
+    GetController()->OnError(
+        caption_bubble_context,
+        CaptionBubbleErrorType::kMediaFoundationRendererUnsupported,
         base::RepeatingClosure(),
         base::BindRepeating(
             [](CaptionBubbleErrorType error_type, bool checked) {}));
@@ -799,12 +844,12 @@ IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest, ChangeMedia) {
   EXPECT_TRUE(IsWidgetVisible());
   EXPECT_EQ("Polar bears are the largest carnivores on land", GetLabelText());
 
-  // Close the bubble. Check that the bubble is still visible with media 1.
+  // Close the bubble. Check that the bubble is still closed.
   ClickButton(GetCloseButton());
   EXPECT_FALSE(IsWidgetVisible());
   OnPartialTranscription("A snail can sleep for two years", media_1.get());
-  EXPECT_TRUE(IsWidgetVisible());
-  EXPECT_EQ("A snail can sleep for two years", GetLabelText());
+  EXPECT_FALSE(IsWidgetVisible());
+  EXPECT_EQ("", GetLabelText());
 
   // Send a transcription from media 0. Check that the bubble is still closed.
   OnPartialTranscription("carnivores on land", media_0);
@@ -843,6 +888,8 @@ IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest,
 
 IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest, ExpandsAndCollapses) {
   int line_height = 24;
+  EXPECT_FALSE(browser()->profile()->GetPrefs()->GetBoolean(
+      prefs::kLiveCaptionBubbleExpanded));
 
   OnPartialTranscription("Seahorses are monogamous");
   EXPECT_TRUE(GetExpandButton()->GetVisible());
@@ -853,6 +900,8 @@ IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest, ExpandsAndCollapses) {
   EXPECT_TRUE(GetCollapseButton()->GetVisible());
   EXPECT_FALSE(GetExpandButton()->GetVisible());
   EXPECT_EQ(7 * line_height, GetLabel()->GetBoundsInScreen().height());
+  EXPECT_TRUE(browser()->profile()->GetPrefs()->GetBoolean(
+      prefs::kLiveCaptionBubbleExpanded));
 
   // Switch media. The bubble should remain expanded.
   auto media_1 = CaptionBubbleContextBrowser::Create(
@@ -878,6 +927,29 @@ IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest, ExpandsAndCollapses) {
   EXPECT_TRUE(GetExpandButton()->GetVisible());
   EXPECT_FALSE(GetCollapseButton()->GetVisible());
   EXPECT_EQ(line_height, GetLabel()->GetBoundsInScreen().height());
+}
+
+IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest, PinAndUnpin) {
+  base::ScopedMockTimeMessageLoopTaskRunner test_task_runner;
+  SetTickClockForTesting(test_task_runner->GetMockTickClock());
+  EXPECT_FALSE(browser()->profile()->GetPrefs()->GetBoolean(
+      prefs::kLiveCaptionBubblePinned));
+
+  OnPartialTranscription(
+      "Sea otters have the densest fur of any mammal at about 1 million hairs "
+      "per square inch.");
+  EXPECT_TRUE(GetPinButton()->GetVisible());
+  EXPECT_FALSE(GetUnpinButton()->GetVisible());
+
+  ClickButton(GetPinButton());
+  EXPECT_FALSE(GetPinButton()->GetVisible());
+  EXPECT_TRUE(GetUnpinButton()->GetVisible());
+  EXPECT_TRUE(browser()->profile()->GetPrefs()->GetBoolean(
+      prefs::kLiveCaptionBubblePinned));
+
+  ASSERT_TRUE(GetBubble()->GetInactivityTimerForTesting()->IsRunning());
+  test_task_runner->FastForwardBy(base::Seconds(15));
+  EXPECT_TRUE(IsWidgetVisible());
 }
 
 IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest, NonAsciiCharacter) {
@@ -1041,12 +1113,16 @@ IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest,
   test_task_runner->FastForwardBy(base::Seconds(4));
   EXPECT_TRUE(IsWidgetVisible());
 
-  // TODO(crbug.com/1055150): Test that widget doesn't hide when focused. It
-  // works in app but the tests aren't working.
+  // Test that widget doesn't hide when focused.
+  views::test::WidgetActivationWaiter waiter(GetCaptionWidget(), true);
+  GetCaptionWidget()->Activate();
+  waiter.Wait();
+  test_task_runner->FastForwardBy(base::Seconds(10));
+  EXPECT_TRUE(IsWidgetVisible());
 }
 
 // TODO(https://crbug.com/1207312): Flaky test.
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 #define MAYBE_ClearsTextAfterInactivity DISABLED_ClearsTextAfterInactivity
 #else
 #define MAYBE_ClearsTextAfterInactivity ClearsTextAfterInactivity
@@ -1099,6 +1175,37 @@ IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest,
   EXPECT_EQ(0, browser()->tab_strip_model()->active_index());
   // TODO(crbug.com/1055150): Test that browser window is active. It works in
   // app but the tests aren't working.
+}
+
+IN_PROC_BROWSER_TEST_F(CaptionBubbleControllerViewsTest,
+                       ErrorHidesAfterInactivity) {
+  // Use a ScopedMockTimeMessageLoopTaskRunner to test the inactivity timer with
+  // a mock tick clock that replaces the default tick clock with mock time.
+  base::ScopedMockTimeMessageLoopTaskRunner test_task_runner;
+  SetTickClockForTesting(test_task_runner->GetMockTickClock());
+
+  OnError();
+  EXPECT_TRUE(IsWidgetVisible());
+  EXPECT_FALSE(HasMediaFoundationError());
+  EXPECT_EQ("", GetLabelText());
+  ASSERT_TRUE(GetBubble()->GetInactivityTimerForTesting()->IsRunning());
+
+  // Verify that the caption bubble hides due to inactivity.
+  test_task_runner->FastForwardBy(base::Seconds(15));
+  EXPECT_FALSE(IsWidgetVisible());
+  EXPECT_EQ("", GetLabelText());
+
+  OnMediaFoundationError();
+  EXPECT_TRUE(IsWidgetVisible());
+  EXPECT_TRUE(HasMediaFoundationError());
+  EXPECT_EQ("", GetLabelText());
+  ASSERT_TRUE(GetBubble()->GetInactivityTimerForTesting()->IsRunning());
+
+  // The Media Foundation renderer unsupported error should not hide to due
+  // inactivity.
+  test_task_runner->FastForwardBy(base::Seconds(15));
+  EXPECT_TRUE(IsWidgetVisible());
+  EXPECT_EQ("", GetLabelText());
 }
 
 }  // namespace captions

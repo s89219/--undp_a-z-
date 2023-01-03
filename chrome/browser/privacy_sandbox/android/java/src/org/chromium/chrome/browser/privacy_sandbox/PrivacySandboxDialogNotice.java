@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,7 @@ public class PrivacySandboxDialogNotice extends Dialog implements View.OnClickLi
 
     @Override
     public void show() {
-        PrivacySandboxBridge.dialogActionOccurred(DialogAction.NOTICE_SHOWN);
+        PrivacySandboxBridge.promptActionOccurred(PromptAction.NOTICE_SHOWN);
         super.show();
     }
 
@@ -46,12 +46,12 @@ public class PrivacySandboxDialogNotice extends Dialog implements View.OnClickLi
     public void onClick(View view) {
         int id = view.getId();
         if (id == R.id.ack_button) {
-            PrivacySandboxBridge.dialogActionOccurred(DialogAction.NOTICE_ACKNOWLEDGE);
+            PrivacySandboxBridge.promptActionOccurred(PromptAction.NOTICE_ACKNOWLEDGE);
             dismiss();
         } else if (id == R.id.settings_button) {
-            PrivacySandboxBridge.dialogActionOccurred(DialogAction.NOTICE_OPEN_SETTINGS);
+            PrivacySandboxBridge.promptActionOccurred(PromptAction.NOTICE_OPEN_SETTINGS);
             dismiss();
-            PrivacySandboxSettingsFragmentV3.launchPrivacySandboxSettings(
+            PrivacySandboxSettingsBaseFragment.launchPrivacySandboxSettings(
                     mContext, mSettingsLauncher, PrivacySandboxReferrer.PRIVACY_SANDBOX_NOTICE);
         }
     }

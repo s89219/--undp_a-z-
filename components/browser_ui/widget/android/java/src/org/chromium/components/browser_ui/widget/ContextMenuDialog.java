@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -188,6 +188,7 @@ public class ContextMenuDialog extends AlwaysDismissedDialog {
                     mPopupWindow.setSmartAnchorWithMaxWidth(true);
                     mPopupWindow.setVerticalOverlapAnchor(true);
                     mPopupWindow.setOutsideTouchable(false);
+                    mPopupWindow.setAnimateFromAnchor(true);
                     // Set popup focusable so the screen reader can announce the popup properly.
                     if (mAccessibilityUtil != null
                             && mAccessibilityUtil.isTouchExplorationEnabled()) {

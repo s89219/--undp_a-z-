@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,8 @@ import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.assertion.ViewAssertions.doesNotExist;
 import static androidx.test.espresso.assertion.ViewAssertions.matches;
 import static androidx.test.espresso.matcher.ViewMatchers.hasDescendant;
-import static androidx.test.espresso.matcher.ViewMatchers.hasSibling;
 import static androidx.test.espresso.matcher.ViewMatchers.isChecked;
 import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
-import static androidx.test.espresso.matcher.ViewMatchers.withChild;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
 import static androidx.test.espresso.matcher.ViewMatchers.withParent;
 import static androidx.test.espresso.matcher.ViewMatchers.withText;
@@ -28,15 +26,17 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import static org.chromium.chrome.browser.privacy_sandbox.PrivacySandboxTestUtils.clickImageButtonNextToText;
+import static org.chromium.chrome.browser.privacy_sandbox.PrivacySandboxTestUtils.withTopic;
+
 import android.os.Bundle;
 import android.view.View;
 
+import androidx.annotation.Nullable;
 import androidx.annotation.StringRes;
 import androidx.test.espresso.contrib.RecyclerViewActions;
 import androidx.test.filters.SmallTest;
 
-import org.hamcrest.BaseMatcher;
-import org.hamcrest.Description;
 import org.hamcrest.Matcher;
 import org.junit.After;
 import org.junit.Before;
@@ -51,6 +51,7 @@ import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.JniMocker;
+import org.chromium.base.test.util.PayloadCallbackHelper;
 import org.chromium.base.test.util.UserActionTester;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
@@ -65,9 +66,12 @@ import org.chromium.ui.test.util.RenderTestRule;
 import org.chromium.ui.test.util.ViewUtils;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
-/** Tests {@link PrivacySandboxSettingsFragment}. */
+/**
+ * Tests {@link PrivacySandboxSettingsFragment}.
+ */
 @RunWith(ChromeJUnit4ClassRunner.class)
 @Batch(Batch.PER_CLASS)
 @CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
@@ -110,6 +114,11 @@ public final class PrivacySandboxSettingsFragmentV3Test {
     public void setUp() {
         mFakePrivacySandboxBridge = new FakePrivacySandboxBridge();
         mocker.mock(PrivacySandboxBridgeJni.TEST_HOOKS, mFakePrivacySandboxBridge);
+
+        mFakePrivacySandboxBridge.setCurrentTopTopics("Foo", "Bar");
+        mFakePrivacySandboxBridge.setBlockedTopics("BlockedFoo", "BlockedBar");
+        mFakePrivacySandboxBridge.setCurrentFledgeSites("example.com", "example2.com");
+        mFakePrivacySandboxBridge.setBlockedFledgeSites("blocked.com", "blocked2.com");
     }
 
     @After
@@ -121,7 +130,7 @@ public final class PrivacySandboxSettingsFragmentV3Test {
 
     private void openPrivacySandboxSettings() {
         Bundle fragmentArgs = new Bundle();
-        fragmentArgs.putInt(PrivacySandboxSettingsFragment.PRIVACY_SANDBOX_REFERRER,
+        fragmentArgs.putInt(PrivacySandboxSettingsFragmentV3.PRIVACY_SANDBOX_REFERRER,
                 PrivacySandboxReferrer.PRIVACY_SETTINGS);
         mSettingsActivityTestRule.startSettingsActivity(fragmentArgs);
         ViewUtils.onViewWaiting(withText(R.string.privacy_sandbox_trials_title));
@@ -132,12 +141,6 @@ public final class PrivacySandboxSettingsFragmentV3Test {
         onView(withText(text)).check(((v, e) -> view[0] = v.getRootView()));
         TestThreadUtils.runOnUiThreadBlocking(() -> RenderTestRule.sanitize(view[0]));
         return view[0];
-    }
-
-    private void clickImageButtonNextToText(String text) {
-        // Click on the image_button of the preference with |text|.
-        onView(allOf(withId(R.id.image_button), withParent(hasSibling(withChild(withText(text))))))
-                .perform(click());
     }
 
     private void scrollToSetting(Matcher<View> matcher) {
@@ -163,6 +166,7 @@ public final class PrivacySandboxSettingsFragmentV3Test {
     @Feature({"RenderTest"})
     public void testRenderAdPersonalizationView() throws IOException {
         mFakePrivacySandboxBridge.setCurrentTopTopics("Generated sample data", "More made up data");
+        mFakePrivacySandboxBridge.setCurrentFledgeSites("a.com", "b.com");
         openPrivacySandboxSettings();
         onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
         mRenderTestRule.render(getRootView(R.string.privacy_sandbox_topic_interests_subtitle),
@@ -241,7 +245,6 @@ public final class PrivacySandboxSettingsFragmentV3Test {
     @Test
     @SmallTest
     public void testAdPersonalizationView() throws IOException {
-        mUserActionTester = new UserActionTester();
         openPrivacySandboxSettings();
         onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
         onView(withText(R.string.privacy_sandbox_remove_interest_title))
@@ -249,6 +252,15 @@ public final class PrivacySandboxSettingsFragmentV3Test {
         onView(withText(R.string.privacy_sandbox_ad_personalization_description_trials_on))
                 .check(matches(isDisplayed()));
         onView(withText(R.string.privacy_sandbox_topic_empty_state)).check(doesNotExist());
+        onView(withText(R.string.privacy_sandbox_fledge_empty_state)).check(doesNotExist());
+    }
+
+    @Test
+    @SmallTest
+    public void testAdPersonalizationTopics() throws IOException {
+        openPrivacySandboxSettings();
+        mUserActionTester = new UserActionTester();
+        onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
 
         clickImageButtonNextToText("Foo");
         assertThat(PrivacySandboxBridge.getCurrentTopTopics(), not(hasItem(withTopic("Foo"))));
@@ -264,18 +276,52 @@ public final class PrivacySandboxSettingsFragmentV3Test {
         onView(withText(R.string.privacy_sandbox_topic_empty_state)).check(matches(isDisplayed()));
     }
 
+    @Nullable
+    private List<String> getFledgeSites() {
+        PayloadCallbackHelper<List<String>> callbackHelper = new PayloadCallbackHelper<>();
+        PrivacySandboxBridge.getFledgeJoiningEtldPlusOneForDisplay(callbackHelper::notifyCalled);
+        return callbackHelper.getOnlyPayloadBlocking();
+    }
+
+    @Test
+    @SmallTest
+    public void testAdPersonalizationFledge() throws IOException {
+        openPrivacySandboxSettings();
+        mUserActionTester = new UserActionTester();
+        onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
+
+        scrollToSetting(withText("example.com"));
+        clickImageButtonNextToText("example.com");
+        assertThat(getFledgeSites(), not(hasItem("example.com")));
+        assertThat(PrivacySandboxBridge.getBlockedFledgeJoiningTopFramesForDisplay(),
+                hasItem("example.com"));
+        onView(withText(R.string.privacy_sandbox_remove_site_snackbar))
+                .check(matches(isDisplayed()));
+        assertThat(mUserActionTester.getActions(),
+                hasItems("Settings.PrivacySandbox.AdPersonalization.Opened",
+                        "Settings.PrivacySandbox.AdPersonalization.SiteRemoved"));
+        onView(withText(R.string.privacy_sandbox_fledge_empty_state)).check(doesNotExist());
+
+        clickImageButtonNextToText("example2.com");
+        onView(withText(R.string.privacy_sandbox_fledge_empty_state)).check(matches(isDisplayed()));
+    }
+
     @Test
     @SmallTest
     public void testAdPersonalizationEmptyView() throws IOException {
         // Set no current or blocked topics.
         mFakePrivacySandboxBridge.setCurrentTopTopics();
         mFakePrivacySandboxBridge.setBlockedTopics();
+        mFakePrivacySandboxBridge.setCurrentFledgeSites();
+        mFakePrivacySandboxBridge.setBlockedFledgeSites();
         openPrivacySandboxSettings();
         onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
         onView(withText(R.string.privacy_sandbox_ad_personalization_description_no_items))
                 .check(matches(isDisplayed()));
         onView(withText(R.string.privacy_sandbox_remove_interest_title)).check(doesNotExist());
+        onView(withText(R.string.privacy_sandbox_remove_sites_title)).check(doesNotExist());
         onView(withText(R.string.privacy_sandbox_topic_empty_state)).check(matches(isDisplayed()));
+        onView(withText(R.string.privacy_sandbox_fledge_empty_state)).check(matches(isDisplayed()));
     }
 
     @Test
@@ -329,9 +375,9 @@ public final class PrivacySandboxSettingsFragmentV3Test {
 
     @Test
     @SmallTest
-    public void testRemovedInterestsView() throws IOException {
-        mUserActionTester = new UserActionTester();
+    public void testRemovedInterestsViewForTopics() throws IOException {
         openPrivacySandboxSettings();
+        mUserActionTester = new UserActionTester();
         onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
         onView(withText(R.string.privacy_sandbox_remove_interest_title)).perform(click());
 
@@ -352,6 +398,30 @@ public final class PrivacySandboxSettingsFragmentV3Test {
 
     @Test
     @SmallTest
+    public void testRemovedInterestsViewForFledge() throws IOException {
+        openPrivacySandboxSettings();
+        mUserActionTester = new UserActionTester();
+        onView(withText(R.string.privacy_sandbox_ad_personalization_title)).perform(click());
+        onView(withText(R.string.privacy_sandbox_remove_interest_title)).perform(click());
+
+        scrollToSetting(withText("blocked2.com"));
+        clickImageButtonNextToText("blocked.com");
+        assertThat(getFledgeSites(), hasItem("blocked.com"));
+        assertThat(PrivacySandboxBridge.getBlockedFledgeJoiningTopFramesForDisplay(),
+                not(hasItem("blocked.com")));
+        onView(withText(R.string.privacy_sandbox_add_site_snackbar)).check(matches(isDisplayed()));
+        assertThat(mUserActionTester.getActions(),
+                hasItems("Settings.PrivacySandbox.RemovedInterests.Opened",
+                        "Settings.PrivacySandbox.RemovedInterests.SiteAdded"));
+        onView(withText(R.string.privacy_sandbox_removed_sites_empty_state)).check(doesNotExist());
+
+        clickImageButtonNextToText("blocked2.com");
+        onView(withText(R.string.privacy_sandbox_removed_sites_empty_state))
+                .check(matches(isDisplayed()));
+    }
+
+    @Test
+    @SmallTest
     public void testCreateActivityFromPrivacySettings() {
         openPrivacySandboxSettings();
         assertEquals("Total histogram count wrong", 1,
@@ -365,7 +435,7 @@ public final class PrivacySandboxSettingsFragmentV3Test {
     @SmallTest
     public void testCreateActivityFromCookiesSnackbar() {
         Bundle fragmentArgs = new Bundle();
-        fragmentArgs.putInt(PrivacySandboxSettingsFragment.PRIVACY_SANDBOX_REFERRER,
+        fragmentArgs.putInt(PrivacySandboxSettingsFragmentV3.PRIVACY_SANDBOX_REFERRER,
                 PrivacySandboxReferrer.COOKIES_SNACKBAR);
         mSettingsActivityTestRule.startSettingsActivity(fragmentArgs);
 
@@ -374,19 +444,5 @@ public final class PrivacySandboxSettingsFragmentV3Test {
         assertEquals("Cookies snackbar referrer histogram count wrong", 1,
                 mHistogramTestRule.getHistogramValueCount(
                         REFERRER_HISTOGRAM, PrivacySandboxReferrer.COOKIES_SNACKBAR));
-    }
-
-    private static Matcher<Topic> withTopic(String name) {
-        return new BaseMatcher<Topic>() {
-            @Override
-            public boolean matches(Object o) {
-                return ((Topic) o).getName().equals(name);
-            }
-
-            @Override
-            public void describeTo(Description description) {
-                description.appendText("Should contain " + name);
-            }
-        };
     }
 }

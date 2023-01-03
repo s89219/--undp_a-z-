@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,24 @@
  */
 
 import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
 import 'chrome://resources/cr_elements/cr_link_row/cr_link_row.js';
-import 'chrome://resources/cr_elements/shared_style_css.m.js';
-import 'chrome://resources/cr_elements/shared_vars_css.m.js';
+import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+import 'chrome://resources/cr_elements/cr_shared_vars.css.js';
 import 'chrome://resources/polymer/v3_0/iron-flex-layout/iron-flex-layout-classes.js';
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 import '../controls/settings_toggle_button.js';
 import '../prefs/prefs.js';
 import './credit_card_edit_dialog.js';
-import './passwords_shared_css.js';
+import './passwords_shared.css.js';
 import './payments_list.js';
 import './virtual_card_unenroll_dialog.js';
 
 import {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
+import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {focusWithoutInk} from 'chrome://resources/js/cr/ui/focus_without_ink.m.js';
-import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
+import {focusWithoutInk} from 'chrome://resources/js/focus_without_ink.js';
+import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
@@ -141,8 +141,8 @@ export class SettingsPaymentsSectionElement extends
   }
 
   prefs: {[key: string]: any};
-  creditCards: Array<chrome.autofillPrivate.CreditCardEntry>;
-  upiIds: Array<string>;
+  creditCards: chrome.autofillPrivate.CreditCardEntry[];
+  upiIds: string[];
   private userIsFidoVerifiable_: boolean;
   private activeCreditCard_: chrome.autofillPrivate.CreditCardEntry|null;
   private showCreditCardDialog_: boolean;
@@ -181,25 +181,27 @@ export class SettingsPaymentsSectionElement extends
 
     // Create listener function.
     const setCreditCardsListener =
-        (cardList: Array<chrome.autofillPrivate.CreditCardEntry>) => {
+        (cardList: chrome.autofillPrivate.CreditCardEntry[]) => {
           this.creditCards = cardList;
         };
 
     // Update |userIsFidoVerifiable_| based on the availability of a platform
     // authenticator.
-    if (window.PublicKeyCredential) {
-      window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-          .then(r => {
-            this.userIsFidoVerifiable_ = this.userIsFidoVerifiable_ && r;
-          });
-    }
+    this.paymentsManager_.isUserVerifyingPlatformAuthenticatorAvailable().then(
+        r => {
+          if (r === null) {
+            return;
+          }
+
+          this.userIsFidoVerifiable_ = this.userIsFidoVerifiable_ && r;
+        });
 
     const setPersonalDataListener: PersonalDataChangedListener =
         (_addressList, cardList) => {
           this.creditCards = cardList;
         };
 
-    const setUpiIdsListener = (upiIdList: Array<string>) => {
+    const setUpiIdsListener = (upiIdList: string[]) => {
       this.upiIds = upiIdList;
     };
 
@@ -207,8 +209,8 @@ export class SettingsPaymentsSectionElement extends
     this.setPersonalDataListener_ = setPersonalDataListener;
 
     // Request initial data.
-    this.paymentsManager_.getCreditCardList(setCreditCardsListener);
-    this.paymentsManager_.getUpiIdList(setUpiIdsListener);
+    this.paymentsManager_.getCreditCardList().then(setCreditCardsListener);
+    this.paymentsManager_.getUpiIdList().then(setUpiIdsListener);
 
     // Listen for changes.
     this.paymentsManager_.setPersonalDataManagerListener(
@@ -354,8 +356,8 @@ export class SettingsPaymentsSectionElement extends
   /**
    * Listens for the enable-authentication event, and calls the private API.
    */
-  private setFIDOAuthenticationEnabledState_() {
-    this.paymentsManager_.setCreditCardFIDOAuthEnabledState(
+  private setFidoAuthenticationEnabledState_() {
+    this.paymentsManager_.setCreditCardFidoAuthEnabledState(
         this.shadowRoot!
             .querySelector<SettingsToggleButtonElement>(
                 '#autofillCreditCardFIDOAuthToggle')!.checked);
@@ -365,7 +367,7 @@ export class SettingsPaymentsSectionElement extends
    * @return Whether to show the migration button.
    */
   private checkIfMigratable_(
-      creditCards: Array<chrome.autofillPrivate.CreditCardEntry>,
+      creditCards: chrome.autofillPrivate.CreditCardEntry[],
       creditCardEnabled: boolean): boolean {
     // If migration prerequisites are not met, return false.
     if (!this.migrationEnabled_) {

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,12 +60,17 @@ class FakeFastPairPresenter : public ash::quick_pair::FastPairPresenter {
 
   void RemoveNotifications() override { removed_ = true; }
 
+  void ExtendNotification() override { notification_extended_ = true; }
+
   bool removed() { return removed_; }
+
+  bool notification_extended() { return notification_extended_; }
 
  private:
   bool show_pairing_ = false;
   bool removed_ = false;
   bool show_pairing_failed_ = false;
+  bool notification_extended_ = false;
 };
 
 class FakeFastPairPresenterFactory
@@ -277,6 +282,16 @@ TEST_F(UIBrokerImplTest, RemoveNotifications_Retroactive) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_TRUE(presenter_factory_->fake_fast_pair_presenter()->removed());
+}
+
+TEST_F(UIBrokerImplTest, ExtendNotifications) {
+  auto device = base::MakeRefCounted<Device>(kValidModelId, kTestDeviceAddress,
+                                             Protocol::kFastPairInitial);
+  ui_broker_->ExtendNotification();
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_TRUE(
+      presenter_factory_->fake_fast_pair_presenter()->notification_extended());
 }
 
 }  // namespace quick_pair

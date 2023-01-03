@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,10 @@ enum class ParseStatusCode : StatusCodeType {
   kFailedToParseSignedDecimalFloatingPoint,
   kFailedToParseDecimalResolution,
   kFailedToParseQuotedString,
+  kFailedToParseByteRange,
+  kFailedToParseStableId,
+  kFailedToParseInstreamId,
+  kFailedToParseAudioChannels,
   kInvalidPlaylistVersion,
   kUnknownPlaylistType,
   kMalformedAttributeList,
@@ -28,10 +32,12 @@ enum class ParseStatusCode : StatusCodeType {
   kInvalidUri,
   kPlaylistMissingM3uTag,
   kMediaPlaylistMissingTargetDuration,
+  kTargetDurationExceedsMax,
   kMediaSegmentMissingInfTag,
   kMediaSegmentExceedsTargetDuration,
   kPlaylistHasDuplicateTags,
   kPlaylistHasUnsupportedVersion,
+  kPlaylistHasVersionMismatch,
   kMediaPlaylistHasMultivariantPlaylistTag,
   kMultivariantPlaylistHasMediaPlaylistTag,
   kVariableUndefined,
@@ -40,6 +46,22 @@ enum class ParseStatusCode : StatusCodeType {
   kImportedVariableUndefined,
   kXStreamInfTagNotFollowedByUri,
   kVariantMissingStreamInfTag,
+  kMediaSegmentBeforeMediaSequenceTag,
+  kMediaSegmentBeforeDiscontinuitySequenceTag,
+  kDiscontinuityTagBeforeDiscontinuitySequenceTag,
+  kByteRangeRequiresOffset,
+  kByteRangeInvalid,
+  kValueOverflowsTimeDelta,
+  kPlaylistOverflowsTimeDelta,
+  kSkipBoundaryTooLow,
+  kHoldBackDistanceTooLow,
+  kPartTargetDurationExceedsTargetDuration,
+  kPartHoldBackDistanceTooLow,
+  kPartInfTagWithoutPartHoldBack,
+  kPlaylistHasUnexpectedDeltaUpdate,
+  kRenditionGroupHasMultipleDefaultRenditions,
+  kRenditionGroupHasDuplicateRenditionNames,
+  kRenditionGroupDoesNotExist,
 };
 
 struct ParseStatusTraits {

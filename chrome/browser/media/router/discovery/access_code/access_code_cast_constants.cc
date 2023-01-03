@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,10 +57,10 @@ constexpr char kJsonDevMode[] = "devMode";
 constexpr char kJsonError[] = "error";
 constexpr char kJsonErrorCode[] = "code";
 constexpr char kJsonErrorMessage[] = "message";
+
+constexpr char kAccessCodeCastFlagParamType[] = "access_code_cast_duration_s";
 namespace switches {
 constexpr char kDiscoveryEndpointSwitch[] = "access-code-cast-url";
-constexpr char kAccessCodeCastDeviceDurationSwitch[] =
-    "access-code-cast-device-duration";
 
 }  // namespace switches
 }  // namespace media_router

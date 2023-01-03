@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,15 +42,14 @@ class QuickUnlockUtilsUnitTest : public testing::Test {
     pref_service_factory_.set_user_prefs(pref_store_);
   }
 
-  void SetValues(base::Value quick_unlock_modes, base::Value webauthn_factors) {
-    pref_store_->SetValue(
-        prefs::kQuickUnlockModeAllowlist,
-        std::make_unique<base::Value>(std::move(quick_unlock_modes)),
-        /*flags=*/0);
-    pref_store_->SetValue(
-        prefs::kWebAuthnFactors,
-        std::make_unique<base::Value>(std::move(webauthn_factors)),
-        /*flags=*/0);
+  void SetValues(base::Value::List quick_unlock_modes,
+                 base::Value::List webauthn_factors) {
+    pref_store_->SetValue(prefs::kQuickUnlockModeAllowlist,
+                          base::Value(std::move(quick_unlock_modes)),
+                          /*flags=*/0);
+    pref_store_->SetValue(prefs::kWebAuthnFactors,
+                          base::Value(std::move(webauthn_factors)),
+                          /*flags=*/0);
   }
 
   std::unique_ptr<PrefService> GetPrefService() {
@@ -78,9 +77,9 @@ TEST_F(QuickUnlockUtilsUnitTest, DefaultPrefIsEnableAll) {
 }
 
 TEST_F(QuickUnlockUtilsUnitTest, DisableAll) {
-  base::Value::ListStorage quick_unlock_none;
-  base::Value::ListStorage webauthn_none;
-  SetValues(base::Value(quick_unlock_none), base::Value(webauthn_none));
+  base::Value::List quick_unlock_none;
+  base::Value::List webauthn_none;
+  SetValues(std::move(quick_unlock_none), std::move(webauthn_none));
   auto pref_service = GetPrefService();
   EXPECT_TRUE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kAny));
   EXPECT_TRUE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kUnlock));
@@ -97,10 +96,10 @@ TEST_F(QuickUnlockUtilsUnitTest, DisableAll) {
 // purposes kUnlock and kWebAuthn are independently controlled by the two
 // prefs.
 TEST_F(QuickUnlockUtilsUnitTest, QuickUnlockAllWebAuthnEmpty) {
-  base::Value::ListStorage quick_unlock_all;
-  quick_unlock_all.emplace_back(kFactorsOptionAll);
-  base::Value::ListStorage webauthn_none;
-  SetValues(base::Value(quick_unlock_all), base::Value(webauthn_none));
+  base::Value::List quick_unlock_all;
+  quick_unlock_all.Append(kFactorsOptionAll);
+  base::Value::List webauthn_none;
+  SetValues(std::move(quick_unlock_all), std::move(webauthn_none));
   auto pref_service = GetPrefService();
   EXPECT_FALSE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kAny));
   EXPECT_FALSE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kUnlock));
@@ -114,10 +113,10 @@ TEST_F(QuickUnlockUtilsUnitTest, QuickUnlockAllWebAuthnEmpty) {
 }
 
 TEST_F(QuickUnlockUtilsUnitTest, QuickUnlockEmptyWebAuthnAll) {
-  base::Value::ListStorage quick_unlock_none;
-  base::Value::ListStorage webauthn_all;
-  webauthn_all.emplace_back(kFactorsOptionAll);
-  SetValues(base::Value(quick_unlock_none), base::Value(webauthn_all));
+  base::Value::List quick_unlock_none;
+  base::Value::List webauthn_all;
+  webauthn_all.Append(kFactorsOptionAll);
+  SetValues(std::move(quick_unlock_none), std::move(webauthn_all));
   auto pref_service = GetPrefService();
   EXPECT_FALSE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kAny));
   EXPECT_TRUE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kUnlock));
@@ -131,11 +130,11 @@ TEST_F(QuickUnlockUtilsUnitTest, QuickUnlockEmptyWebAuthnAll) {
 }
 
 TEST_F(QuickUnlockUtilsUnitTest, QuickUnlockPinWebAuthnFingerprint) {
-  base::Value::ListStorage quick_unlock_pin;
-  quick_unlock_pin.emplace_back(kFactorsOptionPin);
-  base::Value::ListStorage webauthn_fingerprint;
-  webauthn_fingerprint.emplace_back(kFactorsOptionFingerprint);
-  SetValues(base::Value(quick_unlock_pin), base::Value(webauthn_fingerprint));
+  base::Value::List quick_unlock_pin;
+  quick_unlock_pin.Append(kFactorsOptionPin);
+  base::Value::List webauthn_fingerprint;
+  webauthn_fingerprint.Append(kFactorsOptionFingerprint);
+  SetValues(std::move(quick_unlock_pin), std::move(webauthn_fingerprint));
   auto pref_service = GetPrefService();
   EXPECT_FALSE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kAny));
   EXPECT_FALSE(IsPinDisabledByPolicy(pref_service.get(), Purpose::kUnlock));

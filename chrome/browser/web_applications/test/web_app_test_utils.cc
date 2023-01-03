@@ -1,35 +1,77 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/web_applications/test/web_app_test_utils.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <ostream>
 #include <random>
+#include <set>
+#include <string>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
+#include "base/bind.h"
+#include "base/check.h"
+#include "base/check_op.h"
+#include "base/containers/flat_map.h"
+#include "base/containers/flat_set.h"
 #include "base/json/json_reader.h"
+#include "base/location.h"
+#include "base/memory/scoped_refptr.h"
+#include "base/numerics/clamped_math.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/run_loop.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/web_applications/externally_installed_web_app_prefs.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/proto/web_app_os_integration_state.pb.h"
 #include "chrome/browser/web_applications/test/web_app_test_observers.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_chromeos_data.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registry_update.h"
+#include "chrome/browser/web_applications/web_app_sync_bridge.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "chrome/common/pref_names.h"
+#include "components/prefs/pref_service.h"
+#include "components/services/app_service/public/cpp/file_handler.h"
+#include "components/services/app_service/public/cpp/icon_info.h"
+#include "components/services/app_service/public/cpp/protocol_handler_info.h"
+#include "components/services/app_service/public/cpp/share_target.h"
 #include "components/services/app_service/public/cpp/url_handler_info.h"
-#include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/storage_partition.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "third_party/blink/public/common/manifest/manifest.h"
+#include "third_party/blink/public/common/permissions_policy/origin_with_possible_wildcards.h"
+#include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "third_party/blink/public/common/permissions_policy/policy_helper_public.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "third_party/blink/public/mojom/manifest/capture_links.mojom-shared.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace {
 
@@ -153,7 +195,9 @@ blink::ParsedPermissionsPolicy CreateRandomPermissionsPolicy(
 
       const auto origin =
           url::Origin::Create(GURL("https://app-" + suffix_str + ".com/"));
-      permissions_policy[i].allowed_origins.push_back(origin);
+      permissions_policy[i].allowed_origins.emplace_back(
+          origin,
+          /*has_subdomain_wildcard=*/false);
     }
   }
   return permissions_policy;
@@ -268,6 +312,32 @@ std::vector<IconSizes> CreateRandomDownloadedShortcutsMenuIconsSizes(
 
 }  // namespace
 
+std::string GetExternalPrefMigrationTestName(
+    const ::testing::TestParamInfo<ExternalPrefMigrationTestCases>& info) {
+  switch (info.param) {
+    case ExternalPrefMigrationTestCases::kDisableMigrationReadPref:
+      return "DisableMigration_ReadFromPrefs";
+    case ExternalPrefMigrationTestCases::kDisableMigrationReadDB:
+      return "DisableMigration_ReadFromDB";
+    case ExternalPrefMigrationTestCases::kEnableMigrationReadPref:
+      return "EnableMigration_ReadFromPrefs";
+    case ExternalPrefMigrationTestCases::kEnableMigrationReadDB:
+      return "EnableMigration_ReadFromDB";
+  }
+}
+
+std::string GetOsIntegrationSubManagersTestName(
+    const ::testing::TestParamInfo<OsIntegrationSubManagersState>& info) {
+  switch (info.param) {
+    case OsIntegrationSubManagersState::kSaveStateToDB:
+      return "OSIntegrationSubManagers_SaveStateToDB";
+    case OsIntegrationSubManagersState::kSaveStateAndExecute:
+      return "OSIntegrationSubManagers_SaveStateAndExecute";
+    case OsIntegrationSubManagersState::kDisabled:
+      return "OSIntegrationSubManagers_Disabled";
+  }
+}
+
 std::unique_ptr<WebApp> CreateWebApp(const GURL& start_url,
                                      WebAppManagement::Type source_type) {
   const AppId app_id = GenerateAppId(/*manifest_id=*/absl::nullopt, start_url);
@@ -275,14 +345,15 @@ std::unique_ptr<WebApp> CreateWebApp(const GURL& start_url,
   auto web_app = std::make_unique<WebApp>(app_id);
   web_app->SetStartUrl(start_url);
   web_app->AddSource(source_type);
-  web_app->SetUserDisplayMode(UserDisplayMode::kStandalone);
+  web_app->SetUserDisplayMode(mojom::UserDisplayMode::kStandalone);
   web_app->SetName("Name");
 
   return web_app;
 }
 
 std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
-                                           const uint32_t seed) {
+                                           const uint32_t seed,
+                                           bool allow_system_source) {
   RandomHelper random(seed);
 
   const std::string seed_str = base::NumberToString(seed);
@@ -304,10 +375,11 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
   std::vector<WebAppManagement::Type> management_types;
 
   // Generate all possible permutations of field values in a random way:
-  if (AreSystemWebAppsSupported() && random.next_bool()) {
+  if (allow_system_source && random.next_bool()) {
     app->AddSource(WebAppManagement::kSystem);
     management_types.push_back(WebAppManagement::kSystem);
   }
+
   if (random.next_bool()) {
     app->AddSource(WebAppManagement::kPolicy);
     management_types.push_back(WebAppManagement::kPolicy);
@@ -327,6 +399,22 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
   if (random.next_bool()) {
     app->AddSource(WebAppManagement::kSubApp);
     management_types.push_back(WebAppManagement::kSubApp);
+  }
+  if (random.next_bool()) {
+    app->AddSource(WebAppManagement::kKiosk);
+    management_types.push_back(WebAppManagement::kKiosk);
+  }
+  if (random.next_bool()) {
+    app->AddSource(WebAppManagement::kCommandLine);
+    management_types.push_back(WebAppManagement::kCommandLine);
+  }
+  if (random.next_bool()) {
+    app->AddSource(WebAppManagement::kOem);
+    management_types.push_back(WebAppManagement::kOem);
+  }
+  if (random.next_bool()) {
+    app->AddSource(WebAppManagement::kOneDriveIntegration);
+    management_types.push_back(WebAppManagement::kOneDriveIntegration);
   }
 
   // Must always be at least one source.
@@ -356,9 +444,9 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
   app->SetIsLocallyInstalled(random.next_bool());
   app->SetIsFromSyncAndPendingInstallation(random.next_bool());
 
-  const UserDisplayMode user_display_modes[3] = {UserDisplayMode::kBrowser,
-                                                 UserDisplayMode::kStandalone,
-                                                 UserDisplayMode::kTabbed};
+  const mojom::UserDisplayMode user_display_modes[3] = {
+      mojom::UserDisplayMode::kBrowser, mojom::UserDisplayMode::kStandalone,
+      mojom::UserDisplayMode::kTabbed};
   app->SetUserDisplayMode(user_display_modes[random.next_uint(3)]);
 
   const base::Time last_badging_time =
@@ -428,6 +516,10 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
   app->SetProtocolHandlers(CreateRandomProtocolHandlers(random.next_uint()));
   app->SetUrlHandlers(CreateRandomUrlHandlers(random.next_uint()));
   if (random.next_bool()) {
+    app->SetLockScreenStartUrl(scope.Resolve(
+        "lock_screen_start_url" + base::NumberToString(random.next_uint())));
+  }
+  if (random.next_bool()) {
     app->SetNoteTakingNewNoteUrl(
         scope.Resolve("new_note" + base::NumberToString(random.next_uint())));
   }
@@ -478,7 +570,7 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
 
   if (random.next_bool()) {
     app->SetLaunchHandler(
-        LaunchHandler{random.next_enum<LaunchHandler::RouteTo>()});
+        LaunchHandler{random.next_enum<LaunchHandler::ClientMode>()});
   }
 
   const base::Time manifest_update_time =
@@ -487,8 +579,6 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
 
   if (random.next_bool())
     app->SetParentAppId(base::NumberToString(random.next_uint()));
-
-  app->SetHandleLinks(random.next_enum<blink::mojom::HandleLinks>());
 
   if (random.next_bool())
     app->SetPermissionsPolicy(CreateRandomPermissionsPolicy(random));
@@ -508,11 +598,13 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
     chromeos_data->show_in_management = cros_random.next_bool();
     chromeos_data->is_disabled = cros_random.next_bool();
     chromeos_data->oem_installed = cros_random.next_bool();
+    // Comply with DCHECK that system apps cannot be OEM installed.
+    if (app->IsSystemApp())
+      chromeos_data->oem_installed = false;
     app->SetWebAppChromeOsData(std::move(chromeos_data));
   }
 
-  base::flat_map<WebAppManagement::Type, WebApp::ExternalManagementConfig>
-      management_to_external_config;
+  WebApp::ExternalConfigMap management_to_external_config;
   for (WebAppManagement::Type type : management_types) {
     if (type == WebAppManagement::kSync)
       continue;
@@ -532,6 +624,52 @@ std::unique_ptr<WebApp> CreateRandomWebApp(const GURL& base_url,
   app->SetAppSizeInBytes(random.next_uint());
   app->SetDataSizeInBytes(random.next_uint());
 
+  if (random.next_bool()) {
+    blink::Manifest::TabStrip tab_strip;
+    tab_strip.home_tab =
+        random.next_enum<blink::mojom::TabStripMemberVisibility>();
+    if (random.next_bool()) {
+      blink::Manifest::NewTabButtonParams new_tab_button_params;
+      if (random.next_bool()) {
+        new_tab_button_params.url = scope.Resolve(
+            "new_tab_button_url" + base::NumberToString(random.next_uint()));
+      }
+      tab_strip.new_tab_button = new_tab_button_params;
+    } else {
+      tab_strip.new_tab_button =
+          random.next_enum<blink::mojom::TabStripMemberVisibility>();
+    }
+    app->SetTabStrip(std::move(tab_strip));
+  }
+
+  app->SetAlwaysShowToolbarInFullscreen(random.next_bool());
+
+  if (random.next_bool()) {
+    // TODO(crbug.com/1403844): Fill this up randomly to use in
+    // WebAppDatabaseTests.
+    proto::WebAppOsIntegrationState state;
+    app->SetCurrentOsIntegrationStates(state);
+  }
+
+  if (random.next_bool()) {
+    using IsolationDataContent = decltype(IsolationData::content);
+    constexpr size_t kNumContentTypes =
+        absl::variant_size<IsolationDataContent>::value;
+    auto path = base::FilePath::FromUTF8Unsafe(seed_str);
+    IsolationDataContent content_types[] = {
+        IsolationData::InstalledBundle{.path = path},
+        IsolationData::DevModeBundle{.path = path},
+        IsolationData::DevModeProxy{
+            .proxy_url = url::Origin::Create(
+                GURL(base::StrCat({"https://proxy-", seed_str, ".com/"})))},
+    };
+    static_assert(std::size(content_types) == kNumContentTypes);
+
+    IsolationData isolation_data(
+        content_types[random.next_uint(kNumContentTypes)]);
+    app->SetIsolationData(isolation_data);
+  }
+
   return app;
 }
 
@@ -539,7 +677,7 @@ void TestAcceptDialogCallback(
     content::WebContents* initiator_web_contents,
     std::unique_ptr<WebAppInstallInfo> web_app_info,
     WebAppInstallationAcceptanceCallback acceptance_callback) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(acceptance_callback), true /*accept*/,
                                 std::move(web_app_info)));
 }
@@ -548,7 +686,7 @@ void TestDeclineDialogCallback(
     content::WebContents* initiator_web_contents,
     std::unique_ptr<WebAppInstallInfo> web_app_info,
     WebAppInstallationAcceptanceCallback acceptance_callback) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(acceptance_callback),
                                 false /*accept*/, std::move(web_app_info)));
 }
@@ -583,12 +721,64 @@ void CheckServiceWorkerStatus(const GURL& url,
 }
 
 void SetWebAppSettingsListPref(Profile* profile, const base::StringPiece pref) {
-  base::JSONReader::ValueWithError result =
-      base::JSONReader::ReadAndReturnValueWithError(
-          pref, base::JSONParserOptions::JSON_ALLOW_TRAILING_COMMAS);
-  DCHECK(result.value && result.value->is_list()) << result.error_message;
-  profile->GetPrefs()->Set(prefs::kWebAppSettings, std::move(*result.value));
+  auto result = base::JSONReader::ReadAndReturnValueWithError(
+      pref, base::JSONParserOptions::JSON_ALLOW_TRAILING_COMMAS);
+  DCHECK(result.has_value()) << result.error().message;
+  DCHECK(result->is_list());
+  profile->GetPrefs()->Set(prefs::kWebAppSettings, std::move(*result));
 }
+
+void AddInstallUrlData(PrefService* pref_service,
+                       WebAppSyncBridge* sync_bridge,
+                       const AppId& app_id,
+                       const GURL& url,
+                       const ExternalInstallSource& source) {
+  ScopedRegistryUpdate update(sync_bridge);
+  WebApp* app_to_update = update->UpdateApp(app_id);
+  DCHECK(app_to_update);
+
+  // Adding external app data (source and URL) to web_app DB.
+  app_to_update->AddInstallURLToManagementExternalConfigMap(
+      ConvertExternalInstallSourceToSource(source), url);
+
+  // Add to legacy external pref storage.
+  // TODO(crbug.com/1339965): Clean up after external pref migration is
+  // complete.
+  ExternallyInstalledWebAppPrefs(pref_service).Insert(url, app_id, source);
+}
+
+void AddInstallUrlAndPlaceholderData(PrefService* pref_service,
+                                     WebAppSyncBridge* sync_bridge,
+                                     const AppId& app_id,
+                                     const GURL& url,
+                                     const ExternalInstallSource& source,
+                                     bool is_placeholder) {
+  ScopedRegistryUpdate update(sync_bridge);
+  ExternallyInstalledWebAppPrefs prefs(pref_service);
+  WebApp* app_to_update = update->UpdateApp(app_id);
+  DCHECK(app_to_update);
+
+  // Adding install_url, source and placeholder information to the web_app DB.
+  app_to_update->AddExternalSourceInformation(
+      ConvertExternalInstallSourceToSource(source), url, is_placeholder);
+
+  // Add to legacy external pref storage.
+  // TODO(crbug.com/1339965): Clean up after external pref migration is
+  // complete.
+  prefs.Insert(url, app_id, source);
+  prefs.SetIsPlaceholder(url, is_placeholder);
+}
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+ScopedSkipMainProfileCheck::ScopedSkipMainProfileCheck() {
+  EXPECT_FALSE(IsMainProfileCheckSkippedForTesting());
+  SetSkipMainProfileCheckForTesting(/*skip_check=*/true);
+}
+
+ScopedSkipMainProfileCheck::~ScopedSkipMainProfileCheck() {
+  SetSkipMainProfileCheckForTesting(/*skip_check=*/false);
+}
+#endif
 
 }  // namespace test
 }  // namespace web_app

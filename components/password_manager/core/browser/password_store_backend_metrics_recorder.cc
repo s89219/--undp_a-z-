@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@ namespace password_manager {
 namespace {
 constexpr char kMetricPrefix[] = "PasswordManager.PasswordStore";
 
-bool ShouldRecordLatency(
+bool HasRunToCompletion(
     PasswordStoreBackendMetricsRecorder::SuccessStatus success_status) {
   switch (success_status) {
     case PasswordStoreBackendMetricsRecorder::SuccessStatus::kSuccess:
@@ -37,7 +37,9 @@ PasswordStoreBackendMetricsRecorder::PasswordStoreBackendMetricsRecorder(
     BackendInfix backend_infix,
     MetricInfix metric_infix)
     : backend_infix_(std::move(backend_infix)),
-      metric_infix_(std::move(metric_infix)) {}
+      metric_infix_(std::move(metric_infix)) {
+  RecordRequestStatus(StoreBackendRequestStatus::kRequestIssued);
+}
 
 PasswordStoreBackendMetricsRecorder::PasswordStoreBackendMetricsRecorder(
     PasswordStoreBackendMetricsRecorder&&) = default;
@@ -53,8 +55,11 @@ void PasswordStoreBackendMetricsRecorder::RecordMetrics(
     SuccessStatus success_status,
     absl::optional<ErrorFromPasswordStoreOrAndroidBackend> error) const {
   RecordSuccess(success_status);
-  if (ShouldRecordLatency(success_status)) {
+  if (HasRunToCompletion(success_status)) {
     RecordLatency();
+    RecordRequestStatus(StoreBackendRequestStatus::kCompleted);
+  } else {
+    RecordRequestStatus(StoreBackendRequestStatus::kTimeout);
   }
   if (error.has_value()) {
     DCHECK_NE(success_status, SuccessStatus::kSuccess);
@@ -67,6 +72,12 @@ void PasswordStoreBackendMetricsRecorder::RecordMetrics(
 base::TimeDelta
 PasswordStoreBackendMetricsRecorder::GetElapsedTimeSinceCreation() const {
   return base::Time::Now() - start_;
+}
+
+void PasswordStoreBackendMetricsRecorder::RecordRequestStatus(
+    StoreBackendRequestStatus request_status) const {
+  base::UmaHistogramEnumeration(GetBackendMetricName(), request_status);
+  base::UmaHistogramEnumeration(GetOverallMetricName(), request_status);
 }
 
 void PasswordStoreBackendMetricsRecorder::RecordSuccess(
@@ -87,6 +98,12 @@ void PasswordStoreBackendMetricsRecorder::RecordErrorCode(
   if (backend_error.type == AndroidBackendErrorType::kExternalError) {
     DCHECK(backend_error.api_error_code.has_value());
     RecordApiErrorCode(backend_error.api_error_code.value());
+    LOG(ERROR) << "Password Manager API call for " << metric_infix_
+               << " failed with error code: "
+               << backend_error.api_error_code.value();
+  }
+  if (backend_error.connection_result_code.has_value()) {
+    RecordConnectionResultCode(backend_error.connection_result_code.value());
   }
 }
 
@@ -103,14 +120,30 @@ void PasswordStoreBackendMetricsRecorder::RecordApiErrorCode(
   base::UmaHistogramSparse(BuildMetricName("APIError"), api_error_code);
 }
 
+void PasswordStoreBackendMetricsRecorder::RecordConnectionResultCode(
+    int connection_result_code) const {
+  base::UmaHistogramSparse(
+      base::StrCat({kMetricPrefix, "AndroidBackend.ConnectionResultCode"}),
+      connection_result_code);
+  base::UmaHistogramSparse(BuildMetricName("ConnectionResultCode"),
+                           connection_result_code);
+}
+
+std::string PasswordStoreBackendMetricsRecorder::GetBackendMetricName() const {
+  return base::StrCat({kMetricPrefix, *backend_infix_, ".", *metric_infix_});
+}
+
 std::string PasswordStoreBackendMetricsRecorder::BuildMetricName(
     base::StringPiece suffix) const {
-  return base::StrCat(
-      {kMetricPrefix, *backend_infix_, ".", *metric_infix_, ".", suffix});
+  return base::StrCat({GetBackendMetricName(), ".", suffix});
+}
+
+std::string PasswordStoreBackendMetricsRecorder::GetOverallMetricName() const {
+  return base::StrCat({kMetricPrefix, "Backend.", *metric_infix_});
 }
 
 std::string PasswordStoreBackendMetricsRecorder::BuildOverallMetricName(
     base::StringPiece suffix) const {
-  return base::StrCat({kMetricPrefix, "Backend.", *metric_infix_, ".", suffix});
+  return base::StrCat({GetOverallMetricName(), ".", suffix});
 }
 }  // namespace password_manager

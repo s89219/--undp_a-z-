@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -177,24 +177,6 @@ ExtensionSyncService::MergeDataAndStartSyncing(
     if (extension_sync_data &&
         !ExtensionPrefs::Get(profile_)->NeedsSync(extension_sync_data->id())) {
       ApplySyncData(*extension_sync_data);
-    }
-  }
-
-  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
-  std::unique_ptr<ExtensionSet> all_extensions =
-      registry->GenerateInstalledExtensionsSet();
-  for (const auto& extension : *all_extensions) {
-    if (extension->from_deprecated_bookmark()) {
-      // Deleting deprecated bookmark apps.
-      const std::string& id = extension->id();
-      std::u16string error;
-      bool uninstalled = extension_service()->UninstallExtension(
-          id, extensions::UNINSTALL_REASON_SYNC, &error);
-      if (!uninstalled) {
-        LOG(WARNING) << "Failed to uninstall bookmark apps with id '" << id
-                     << "' : " << error;
-      }
-      base::UmaHistogramBoolean("Extensions.UninstallBookmarkApp", uninstalled);
     }
   }
 

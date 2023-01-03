@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,6 @@
 
 #include <vector>
 
-#include "ash/components/multidevice/logging/logging.h"
-#include "ash/components/multidevice/remote_device_test_util.h"
-#include "ash/components/phonehub/fake_phone_hub_manager.h"
-#include "ash/components/phonehub/phone_hub_manager.h"
-#include "ash/services/device_sync/public/cpp/fake_device_sync_client.h"
-#include "ash/services/multidevice_setup/public/cpp/fake_multidevice_setup_client.h"
-#include "ash/services/secure_channel/public/cpp/client/fake_secure_channel_client.h"
-#include "ash/services/secure_channel/public/cpp/client/presence_monitor_client.h"
-#include "ash/services/secure_channel/public/cpp/client/presence_monitor_client_impl.h"
 #include "ash/webui/eche_app_ui/eche_stream_status_change_handler.h"
 #include "ash/webui/eche_app_ui/launch_app_helper.h"
 #include "ash/webui/eche_app_ui/system_info.h"
@@ -22,6 +13,15 @@
 #include "base/callback_helpers.h"
 #include "base/run_loop.h"
 #include "base/test/task_environment.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
+#include "chromeos/ash/components/multidevice/remote_device_test_util.h"
+#include "chromeos/ash/components/phonehub/fake_phone_hub_manager.h"
+#include "chromeos/ash/components/phonehub/phone_hub_manager.h"
+#include "chromeos/ash/services/device_sync/public/cpp/fake_device_sync_client.h"
+#include "chromeos/ash/services/multidevice_setup/public/cpp/fake_multidevice_setup_client.h"
+#include "chromeos/ash/services/secure_channel/public/cpp/client/fake_secure_channel_client.h"
+#include "chromeos/ash/services/secure_channel/public/cpp/client/presence_monitor_client.h"
+#include "chromeos/ash/services/secure_channel/public/cpp/client/presence_monitor_client_impl.h"
 #include "components/prefs/testing_pref_service.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #include "device/bluetooth/dbus/fake_bluetooth_debug_manager_client.h"
@@ -33,18 +33,19 @@ namespace ash {
 namespace eche_app {
 
 namespace {
-void CloseEcheAppFunction() {}
-
 void LaunchEcheAppFunction(const absl::optional<int64_t>& notification_id,
                            const std::string& package_name,
                            const std::u16string& visible_name,
                            const absl::optional<int64_t>& user_id,
-                           const gfx::Image& icon) {}
+                           const gfx::Image& icon,
+                           const std::u16string& phone_name) {}
 
 void LaunchNotificationFunction(
     const absl::optional<std::u16string>& title,
     const absl::optional<std::u16string>& message,
     std::unique_ptr<LaunchAppHelper::NotificationInfo> info) {}
+
+void CloseNotificationFunction(const std::string& notification_id) {}
 
 class FakePresenceMonitorClient : public secure_channel::PresenceMonitorClient {
  public:
@@ -68,6 +69,7 @@ const char kFakeDeviceName[] = "Someone's Chromebook";
 const char kFakeBoardName[] = "atlas";
 const char kFakeGaiaId[] = "123";
 const size_t kNumTestDevices = 3;
+const char kFakeDeviceType[] = "Chromebook";
 
 class EcheAppManagerTest : public testing::Test {
  public:
@@ -113,13 +115,14 @@ class EcheAppManagerTest : public testing::Test {
             .SetDeviceName(kFakeDeviceName)
             .SetBoardName(kFakeBoardName)
             .SetGaiaId(kFakeGaiaId)
+            .SetDeviceType(kFakeDeviceType)
             .Build(),
         fake_phone_hub_manager_.get(), fake_device_sync_client_.get(),
         fake_multidevice_setup_client_.get(), fake_secure_channel_client_.get(),
         std::move(fake_presence_monitor_client),
         base::BindRepeating(&LaunchEcheAppFunction),
-        base::BindRepeating(&CloseEcheAppFunction),
-        base::BindRepeating(&LaunchNotificationFunction));
+        base::BindRepeating(&LaunchNotificationFunction),
+        base::BindRepeating(&CloseNotificationFunction));
   }
 
   mojo::Remote<mojom::SignalingMessageExchanger>&

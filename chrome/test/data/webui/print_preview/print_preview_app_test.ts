@@ -1,14 +1,12 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {DuplexMode, NativeInitialSettings, NativeLayerImpl, PluginProxyImpl, PrintPreviewAppElement} from 'chrome://print/print_preview.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
-
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
-// <if expr="chromeos_ash or chromeos_lacros">
+// <if expr="is_chromeos">
 import {setNativeLayerCrosInstance} from './native_layer_cros_stub.js';
 // </if>
 
@@ -23,7 +21,7 @@ const print_preview_app_test = {
     DestinationsManaged: 'destinations managed',
     HeaderFooterManaged: 'header footer managed',
     CssBackgroundManaged: 'css background managed',
-    SheetsManaged: 'sheets managed'
+    SheetsManaged: 'sheets managed',
   },
 };
 
@@ -72,17 +70,17 @@ suite(print_preview_app_test.suiteName, function() {
 
   setup(function() {
     // Stub out the native layer and the plugin.
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     nativeLayer = new NativeLayerStub();
     NativeLayerImpl.setInstance(nativeLayer);
-    // <if expr="chromeos_ash or chromeos_lacros">
+    // <if expr="is_chromeos">
     setNativeLayerCrosInstance();
     // </if>
     pluginProxy = new TestPluginProxy();
     PluginProxyImpl.setInstance(pluginProxy);
   });
 
-  test(assert(print_preview_app_test.TestNames.PrintPresets), async () => {
+  test(print_preview_app_test.TestNames.PrintPresets, async () => {
     await initialize();
     assertEquals(1, page.settings.copies.value);
     assertFalse(page.settings.duplex.value);
@@ -97,37 +95,28 @@ suite(print_preview_app_test.suiteName, function() {
     assertFalse(page.getSetting('copies').setFromUi);
   });
 
-  test(
-      assert(print_preview_app_test.TestNames.DestinationsManaged),
-      async () => {
-        initialSettings.destinationsManaged = true;
-        await initialize();
-        const sidebar =
-            page.shadowRoot!.querySelector('print-preview-sidebar')!;
-        assertTrue(sidebar.controlsManaged);
-      });
+  test(print_preview_app_test.TestNames.DestinationsManaged, async () => {
+    initialSettings.destinationsManaged = true;
+    await initialize();
+    const sidebar = page.shadowRoot!.querySelector('print-preview-sidebar')!;
+    assertTrue(sidebar.controlsManaged);
+  });
 
-  test(
-      assert(print_preview_app_test.TestNames.HeaderFooterManaged),
-      async () => {
-        initialSettings.policies = {headerFooter: {allowedMode: true}};
-        await initialize();
-        const sidebar =
-            page.shadowRoot!.querySelector('print-preview-sidebar')!;
-        assertTrue(sidebar.controlsManaged);
-      });
+  test(print_preview_app_test.TestNames.HeaderFooterManaged, async () => {
+    initialSettings.policies = {headerFooter: {allowedMode: true}};
+    await initialize();
+    const sidebar = page.shadowRoot!.querySelector('print-preview-sidebar')!;
+    assertTrue(sidebar.controlsManaged);
+  });
 
-  test(
-      assert(print_preview_app_test.TestNames.CssBackgroundManaged),
-      async () => {
-        initialSettings.policies = {cssBackground: {allowedMode: 1}};
-        await initialize();
-        const sidebar =
-            page.shadowRoot!.querySelector('print-preview-sidebar')!;
-        assertTrue(sidebar.controlsManaged);
-      });
+  test(print_preview_app_test.TestNames.CssBackgroundManaged, async () => {
+    initialSettings.policies = {cssBackground: {allowedMode: 1}};
+    await initialize();
+    const sidebar = page.shadowRoot!.querySelector('print-preview-sidebar')!;
+    assertTrue(sidebar.controlsManaged);
+  });
 
-  test(assert(print_preview_app_test.TestNames.SheetsManaged), async () => {
+  test(print_preview_app_test.TestNames.SheetsManaged, async () => {
     initialSettings.policies = {sheets: {value: 2}};
     await initialize();
     const sidebar = page.shadowRoot!.querySelector('print-preview-sidebar')!;

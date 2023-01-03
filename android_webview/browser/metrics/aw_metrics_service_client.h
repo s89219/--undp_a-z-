@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,12 @@ enum class BackfillInstallDate {
   kPersistedPackageManagerInstallDate = 2,
   kMaxValue = kPersistedPackageManagerInstallDate,
 };
+
+// The amount of delay before calculating and recording the app data directory
+// size, intended for avoiding IO contention when an app is initializing.
+//
+// Visible for testing.
+extern const base::TimeDelta kRecordAppDataDirectorySizeDelay;
 
 // AwMetricsServiceClient is a singleton which manages WebView metrics
 // collection.
@@ -148,7 +154,7 @@ class AwMetricsServiceClient : public ::metrics::AndroidMetricsServiceClient,
 
   static void RegisterMetricsPrefs(PrefRegistrySimple* registry);
 
-  AwMetricsServiceClient(std::unique_ptr<Delegate> delegate);
+  explicit AwMetricsServiceClient(std::unique_ptr<Delegate> delegate);
 
   AwMetricsServiceClient(const AwMetricsServiceClient&) = delete;
   AwMetricsServiceClient& operator=(const AwMetricsServiceClient&) = delete;

@@ -1,14 +1,18 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/browser_view/tab_lifecycle_mediator.h"
 
 #import "ios/chrome/browser/download/download_manager_tab_helper.h"
+#import "ios/chrome/browser/download/pass_kit_tab_helper.h"
+#import "ios/chrome/browser/itunes_urls/itunes_urls_handler_tab_helper.h"
 #import "ios/chrome/browser/overscroll_actions/overscroll_actions_tab_helper.h"
 #import "ios/chrome/browser/passwords/password_tab_helper.h"
 #import "ios/chrome/browser/prerender/prerender_service.h"
 #import "ios/chrome/browser/snapshots/snapshot_tab_helper.h"
+#import "ios/chrome/browser/ui/commands/command_dispatcher.h"
+#import "ios/chrome/browser/ui/commands/web_content_commands.h"
 #import "ios/chrome/browser/ui/download/download_manager_coordinator.h"
 #import "ios/chrome/browser/ui/side_swipe/side_swipe_controller.h"
 #import "ios/chrome/browser/web_state_list/web_state_dependency_installation_observer.h"
@@ -17,7 +21,7 @@
 #import "ios/chrome/browser/webui/net_export_tab_helper.h"
 #import "ios/chrome/browser/webui/net_export_tab_helper_delegate.h"
 #import "ios/web/public/deprecated/crw_web_controller_util.h"
-#include "ui/base/device_form_factor.h"
+#import "ui/base/device_form_factor.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -33,6 +37,9 @@
   // Delegate object for many tab helpers.
   __weak id<CommonTabHelperDelegate> _delegate;
 
+  // Delegate object for Snapshot Generator.
+  __weak id<SnapshotGeneratorDelegate> _snapshotGeneratorDelegate;
+
   // Other tab helper dependencies.
   PrerenderService* _prerenderService;
   __weak SideSwipeController* _sideSwipeController;
@@ -44,6 +51,8 @@
 
 - (instancetype)initWithWebStateList:(WebStateList*)webStateList
                             delegate:(id<CommonTabHelperDelegate>)delegate
+           snapshotGeneratorDelegate:
+               (id<SnapshotGeneratorDelegate>)snapshotGeneratorDelegate
                         dependencies:(TabLifecycleDependencies)dependencies {
   if (self = [super init]) {
     _prerenderService = dependencies.prerenderService;
@@ -56,6 +65,7 @@
     // Set the delegate before any of the dependency observers, because they
     // will do delegate installation on creation.
     _delegate = delegate;
+    _snapshotGeneratorDelegate = snapshotGeneratorDelegate;
 
     _dependencyInstallerBridge =
         std::make_unique<WebStateDependencyInstallerBridge>(self, webStateList);
@@ -79,7 +89,8 @@
   // Only realized webstates should have dependencies installed.
   DCHECK(webState->IsRealized());
 
-  SnapshotTabHelper::FromWebState(webState)->SetDelegate(_delegate);
+  SnapshotTabHelper::FromWebState(webState)->SetDelegate(
+      _snapshotGeneratorDelegate);
 
   if (PasswordTabHelper* passwordTabHelper =
           PasswordTabHelper::FromWebState(webState)) {
@@ -88,9 +99,7 @@
     passwordTabHelper->SetDispatcher(_commandDispatcher);
   }
 
-  if (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET) {
-    OverscrollActionsTabHelper::FromWebState(webState)->SetDelegate(_delegate);
-  }
+  OverscrollActionsTabHelper::FromWebState(webState)->SetDelegate(_delegate);
 
   web_deprecated::SetSwipeRecognizerProvider(webState, _sideSwipeController);
 
@@ -100,6 +109,13 @@
       _downloadManagerCoordinator);
 
   NetExportTabHelper::FromWebState(webState)->SetDelegate(_tabHelperDelegate);
+
+  id<WebContentCommands> webContentsHandler =
+      HandlerForProtocol(_commandDispatcher, WebContentCommands);
+  ITunesUrlsHandlerTabHelper::FromWebState(webState)->SetWebContentsHandler(
+      webContentsHandler);
+  PassKitTabHelper::FromWebState(webState)->SetWebContentsHandler(
+      webContentsHandler);
 }
 
 - (void)uninstallDependencyForWebState:(web::WebState*)webState {
@@ -117,9 +133,7 @@
     passwordTabHelper->SetDispatcher(nil);
   }
 
-  if (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET) {
-    OverscrollActionsTabHelper::FromWebState(webState)->SetDelegate(nil);
-  }
+  OverscrollActionsTabHelper::FromWebState(webState)->SetDelegate(nil);
 
   web_deprecated::SetSwipeRecognizerProvider(webState, nil);
 

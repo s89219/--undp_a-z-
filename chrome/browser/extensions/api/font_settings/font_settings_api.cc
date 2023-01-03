@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/extensions/api/preference/preference_helpers.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/font_pref_change_notifier_factory.h"
@@ -32,6 +31,8 @@
 #include "content/public/browser/font_list_async.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs_helper.h"
+#include "extensions/browser/extension_prefs_helper_factory.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 
@@ -158,7 +159,7 @@ void FontSettingsEventRouter::OnFontNamePrefChanged(
     return;
   }
   std::string font_name = pref->GetValue()->GetString();
-  base::ListValue args;
+  base::Value::List args;
   base::Value::Dict dict;
   dict.Set(kFontIdKey, font_name);
   dict.Set(kGenericFamilyKey, generic_family);
@@ -167,7 +168,7 @@ void FontSettingsEventRouter::OnFontNamePrefChanged(
 
   extensions::preference_helpers::DispatchEventToExtensions(
       profile_, events::FONT_SETTINGS_ON_FONT_CHANGED,
-      fonts::OnFontChanged::kEventName, &args,
+      fonts::OnFontChanged::kEventName, std::move(args),
       extensions::mojom::APIPermissionID::kFontSettings, false, pref_name);
 }
 
@@ -180,13 +181,13 @@ void FontSettingsEventRouter::OnFontPrefChanged(
       pref_name);
   CHECK(pref);
 
-  base::ListValue args;
+  base::Value::List args;
   base::Value::Dict dict;
   dict.Set(key, pref->GetValue()->Clone());
   args.Append(std::move(dict));
 
   extensions::preference_helpers::DispatchEventToExtensions(
-      profile_, histogram_value, event_name, &args,
+      profile_, histogram_value, event_name, std::move(args),
       extensions::mojom::APIPermissionID::kFontSettings, false, pref_name);
 }
 
@@ -221,7 +222,7 @@ ExtensionFunction::ResponseAction FontSettingsClearFontFunction::Run() {
   // Ensure |pref_path| really is for a registered per-script font pref.
   EXTENSION_FUNCTION_VALIDATE(profile->GetPrefs()->FindPreference(pref_path));
 
-  PreferenceAPI::Get(profile)->RemoveExtensionControlledPref(
+  ExtensionPrefsHelper::Get(profile)->RemoveExtensionControlledPref(
       extension_id(), pref_path, kExtensionPrefsScopeRegular);
   return RespondNow(NoArguments());
 }
@@ -257,7 +258,7 @@ ExtensionFunction::ResponseAction FontSettingsGetFontFunction::Run() {
   base::Value::Dict result;
   result.Set(kFontIdKey, font_name);
   result.Set(kLevelOfControlKey, level_of_control);
-  return RespondNow(OneArgument(base::Value(std::move(result))));
+  return RespondNow(WithArguments(std::move(result)));
 }
 
 ExtensionFunction::ResponseAction FontSettingsSetFontFunction::Run() {
@@ -275,7 +276,7 @@ ExtensionFunction::ResponseAction FontSettingsSetFontFunction::Run() {
   // Ensure |pref_path| really is for a registered font pref.
   EXTENSION_FUNCTION_VALIDATE(profile->GetPrefs()->FindPreference(pref_path));
 
-  PreferenceAPI::Get(profile)->SetExtensionControlledPref(
+  ExtensionPrefsHelper::Get(profile)->SetExtensionControlledPref(
       extension_id(), pref_path, kExtensionPrefsScopeRegular,
       base::Value(params->details.font_id));
   return RespondNow(NoArguments());
@@ -288,21 +289,21 @@ ExtensionFunction::ResponseAction FontSettingsGetFontListFunction::Run() {
 }
 
 void FontSettingsGetFontListFunction::FontListHasLoaded(
-    std::unique_ptr<base::ListValue> list) {
-  ExtensionFunction::ResponseValue response = CopyFontsToResult(list.get());
+    base::Value::List list) {
+  ExtensionFunction::ResponseValue response = CopyFontsToResult(list);
   Respond(std::move(response));
 }
 
 ExtensionFunction::ResponseValue
-FontSettingsGetFontListFunction::CopyFontsToResult(base::ListValue* fonts) {
+FontSettingsGetFontListFunction::CopyFontsToResult(
+    const base::Value::List& fonts) {
   base::Value::List result;
-  for (const auto& entry : fonts->GetListDeprecated()) {
+  for (const auto& entry : fonts) {
     if (!entry.is_list()) {
       NOTREACHED();
       return Error("");
     }
-    const base::Value::ConstListView font_list_value =
-        entry.GetListDeprecated();
+    const base::Value::List& font_list_value = entry.GetList();
 
     if (font_list_value.size() < 2 || !font_list_value[0].is_string() ||
         !font_list_value[1].is_string()) {
@@ -318,7 +319,7 @@ FontSettingsGetFontListFunction::CopyFontsToResult(base::ListValue* fonts) {
     result.Append(std::move(font_name));
   }
 
-  return OneArgument(base::Value(std::move(result)));
+  return WithArguments(std::move(result));
 }
 
 ExtensionFunction::ResponseAction ClearFontPrefExtensionFunction::Run() {
@@ -326,7 +327,7 @@ ExtensionFunction::ResponseAction ClearFontPrefExtensionFunction::Run() {
   if (profile->IsOffTheRecord())
     return RespondNow(Error(kSetFromIncognitoError));
 
-  PreferenceAPI::Get(profile)->RemoveExtensionControlledPref(
+  ExtensionPrefsHelper::Get(profile)->RemoveExtensionControlledPref(
       extension_id(), GetPrefName(), kExtensionPrefsScopeRegular);
   return RespondNow(NoArguments());
 }
@@ -348,7 +349,7 @@ ExtensionFunction::ResponseAction GetFontPrefExtensionFunction::Run() {
   base::Value::Dict result;
   result.Set(GetKey(), pref->GetValue()->Clone());
   result.Set(kLevelOfControlKey, level_of_control);
-  return RespondNow(OneArgument(base::Value(std::move(result))));
+  return RespondNow(WithArguments(std::move(result)));
 }
 
 ExtensionFunction::ResponseAction SetFontPrefExtensionFunction::Run() {
@@ -359,10 +360,10 @@ ExtensionFunction::ResponseAction SetFontPrefExtensionFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(args().size() >= 1);
   EXTENSION_FUNCTION_VALIDATE(args()[0].is_dict());
   const base::Value& details = args()[0];
-  const base::Value* value = details.FindKey(GetKey());
+  const base::Value* value = details.GetDict().Find(GetKey());
   EXTENSION_FUNCTION_VALIDATE(value);
 
-  PreferenceAPI::Get(profile)->SetExtensionControlledPref(
+  ExtensionPrefsHelper::Get(profile)->SetExtensionControlledPref(
       extension_id(), GetPrefName(), kExtensionPrefsScopeRegular,
       value->Clone());
   return RespondNow(NoArguments());

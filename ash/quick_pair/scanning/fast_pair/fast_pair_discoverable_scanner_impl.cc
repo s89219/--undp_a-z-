@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,19 +14,17 @@
 #include "ash/quick_pair/common/logging.h"
 #include "ash/quick_pair/common/pair_failure.h"
 #include "ash/quick_pair/common/protocol.h"
-#include "ash/quick_pair/fast_pair_handshake/fast_pair_handshake.h"
-#include "ash/quick_pair/fast_pair_handshake/fast_pair_handshake_lookup.h"
 #include "ash/quick_pair/repository/fast_pair_repository.h"
-#include "ash/services/quick_pair/quick_pair_process.h"
-#include "ash/services/quick_pair/quick_pair_process_manager.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/check.h"
 #include "base/containers/flat_set.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/string_util.h"
-#include "chromeos/network/network_handler.h"
-#include "chromeos/network/network_state_handler.h"
+#include "chromeos/ash/components/network/network_handler.h"
+#include "chromeos/ash/components/network/network_state_handler.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process_manager.h"
 #include "device/bluetooth//bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_device.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -35,6 +33,31 @@ namespace {
 
 constexpr char kNearbyShareModelId[] = "fc128e";
 constexpr int kMaxParseModelIdRetryCount = 5;
+
+bool IsValidDeviceType(const nearby::fastpair::Device& device) {
+  // TODO: Filter out based on solidified Fast Pair configuration list once
+  // available.
+  return device.device_type() == nearby::fastpair::DeviceType::HEADPHONES ||
+         device.device_type() == nearby::fastpair::DeviceType::SPEAKER ||
+         device.device_type() ==
+             nearby::fastpair::DeviceType::TRUE_WIRELESS_HEADPHONES ||
+         device.device_type() ==
+             nearby::fastpair::DeviceType::DEVICE_TYPE_UNSPECIFIED;
+}
+
+bool IsSupportedNotificationType(const nearby::fastpair::Device& device) {
+  // We only allow-list notification types that should trigger a pairing
+  // notification, since we currently only support pairing. We include
+  // NOTIFICATION_TYPE_UNSPECIFIED to handle the case where a Provider is
+  // advertising incorrectly and conservatively allow it to show a notification,
+  // matching Android behavior.
+  return device.notification_type() == nearby::fastpair::NotificationType::
+                                           NOTIFICATION_TYPE_UNSPECIFIED ||
+         device.notification_type() ==
+             nearby::fastpair::NotificationType::FAST_PAIR ||
+         device.notification_type() ==
+             nearby::fastpair::NotificationType::FAST_PAIR_ONE;
+}
 
 }  // namespace
 
@@ -81,13 +104,12 @@ FastPairDiscoverableScannerImpl::FastPairDiscoverableScannerImpl(
       found_callback_(std::move(found_callback)),
       lost_callback_(std::move(lost_callback)) {
   observation_.Observe(scanner_.get());
-  chromeos::NetworkHandler::Get()->network_state_handler()->AddObserver(
-      this, FROM_HERE);
+  NetworkHandler::Get()->network_state_handler()->AddObserver(this, FROM_HERE);
 }
 
 FastPairDiscoverableScannerImpl::~FastPairDiscoverableScannerImpl() {
-  chromeos::NetworkHandler::Get()->network_state_handler()->RemoveObserver(
-      this, FROM_HERE);
+  NetworkHandler::Get()->network_state_handler()->RemoveObserver(this,
+                                                                 FROM_HERE);
 }
 
 void FastPairDiscoverableScannerImpl::OnDeviceFound(
@@ -169,35 +191,29 @@ void FastPairDiscoverableScannerImpl::OnDeviceMetadataRetrieved(
     return;
   }
 
+  // Ignore advertisements that aren't for Fast Pair but leverage the service
+  // UUID.
+  if (!IsValidDeviceType(device_metadata->GetDetails())) {
+    QP_LOG(WARNING)
+        << __func__
+        << ": Invalid device type for Fast Pair. Ignoring this advertisement";
+    return;
+  }
+
+  // Ignore advertisements for unsupported notification types, such as
+  // APP_LAUNCH which should launch a companion app instead of beginning Fast
+  // Pair.
+  if (!IsSupportedNotificationType(device_metadata->GetDetails())) {
+    QP_LOG(WARNING) << __func__
+                    << ": Unsupported notification type for Fast Pair. "
+                       "Ignoring this advertisement";
+    return;
+  }
+
   auto device = base::MakeRefCounted<Device>(model_id, address,
                                              Protocol::kFastPairInitial);
 
   QP_LOG(INFO) << __func__ << ": Id: " << model_id;
-
-  // Anti-spoofing keys were introduced in Fast Pair v2, so if this isn't
-  // available then the device is v1.
-  if (device_metadata->GetDetails()
-          .anti_spoofing_key_pair()
-          .public_key()
-          .empty()) {
-    NotifyDeviceFound(std::move(device));
-    return;
-  }
-
-  FastPairHandshakeLookup::GetInstance()->Create(
-      adapter_, device,
-      base::BindOnce(&FastPairDiscoverableScannerImpl::OnHandshakeComplete,
-                     weak_pointer_factory_.GetWeakPtr()));
-}
-
-void FastPairDiscoverableScannerImpl::OnHandshakeComplete(
-    scoped_refptr<Device> device,
-    absl::optional<PairFailure> failure) {
-  if (failure) {
-    QP_LOG(WARNING) << __func__ << ": Handshake failed with " << device
-                    << " because: " << failure.value();
-    return;
-  }
 
   NotifyDeviceFound(std::move(device));
 }
@@ -205,20 +221,30 @@ void FastPairDiscoverableScannerImpl::OnHandshakeComplete(
 void FastPairDiscoverableScannerImpl::NotifyDeviceFound(
     scoped_refptr<Device> device) {
   device::BluetoothDevice* classic_device =
-      device->classic_address()
+      device->classic_address().has_value()
           ? adapter_->GetDevice(device->classic_address().value())
           : nullptr;
+
+  if (classic_device && classic_device->IsPaired()) {
+    QP_LOG(ERROR) << __func__
+                  << ": A discoverable advertisement "
+                     "was notified for a paired classic device.";
+    return;
+  }
 
   device::BluetoothDevice* ble_device =
       adapter_->GetDevice(device->ble_address);
 
-  bool is_already_paired = (classic_device && classic_device->IsPaired()) ||
-                           (ble_device && ble_device->IsPaired());
-
-  if (is_already_paired) {
-    QP_LOG(INFO) << __func__ << ": Already paired with " << device;
+  if (ble_device && ble_device->IsPaired()) {
+    QP_LOG(ERROR) << __func__
+                  << ": A discoverable advertisement "
+                     "was notified for a paired BLE device.";
     return;
   }
+
+  // TODO(b/242100708): We currently have no way to tell if a device in pairing
+  // mode is already paired to the Chromebook; the BLE device has no information
+  // on the pairing state of the Classic device.
 
   QP_LOG(INFO) << __func__ << ": Running found callback";
   notified_devices_[device->ble_address] = device;
@@ -284,7 +310,7 @@ void FastPairDiscoverableScannerImpl::OnUtilityProcessStopped(
 }
 
 void FastPairDiscoverableScannerImpl::DefaultNetworkChanged(
-    const chromeos::NetworkState* network) {
+    const NetworkState* network) {
   // Only retry when we have an active connected network.
   if (!network || !network->IsConnectedState()) {
     return;

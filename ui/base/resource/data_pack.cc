@@ -1,12 +1,15 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/base/resource/data_pack.h"
 
 #include <errno.h>
+
 #include <algorithm>
+#include <memory>
 #include <set>
+#include <string>
 #include <utility>
 
 #include "base/command_line.h"

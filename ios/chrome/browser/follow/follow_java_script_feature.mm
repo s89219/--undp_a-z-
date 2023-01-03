@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,8 @@
 #error "This file requires ARC support."
 #endif
 
-#include "base/strings/sys_string_conversions.h"
 #import "ios/web/public/js_messaging/web_frame_util.h"
-#include "ios/web/public/web_state.h"
+#import "ios/web/public/web_state.h"
 #import "net/base/mac/url_conversions.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -43,9 +42,8 @@ FollowJavaScriptFeature::FollowJavaScriptFeature()
 
 FollowJavaScriptFeature::~FollowJavaScriptFeature() = default;
 
-void FollowJavaScriptFeature::GetFollowWebPageURLs(
-    web::WebState* web_state,
-    base::OnceCallback<void(FollowWebPageURLs*)> callback) {
+void FollowJavaScriptFeature::GetWebPageURLs(web::WebState* web_state,
+                                             ResultCallback callback) {
   if (!web::GetMainFrame(web_state)) {
     std::move(callback).Run(nil);
     return;
@@ -58,25 +56,28 @@ void FollowJavaScriptFeature::GetFollowWebPageURLs(
       base::Milliseconds(kJavaScriptExecutionTimeoutInMs));
 }
 
-void FollowJavaScriptFeature::HandleResponse(
-    const GURL& url,
-    base::OnceCallback<void(FollowWebPageURLs*)> callback,
-    const base::Value* response) {
+void FollowJavaScriptFeature::HandleResponse(const GURL& url,
+                                             ResultCallback callback,
+                                             const base::Value* response) {
+  NSMutableArray<NSURL*>* rss_urls = nil;
   if (response && response->is_list()) {
-    NSMutableArray* rss_links = [[NSMutableArray alloc] init];
-    for (const auto& link : response->GetListDeprecated()) {
+    for (const auto& link : response->GetList()) {
       if (link.is_string()) {
-        [rss_links addObject:[NSURL URLWithString:base::SysUTF8ToNSString(
-                                                      *link.GetIfString())]];
+        NSURL* nsurl = net::NSURLWithGURL(GURL(link.GetString()));
+        if (nsurl) {
+          if (!rss_urls) {
+            rss_urls = [[NSMutableArray alloc] init];
+          }
+
+          [rss_urls addObject:nsurl];
+        }
       }
     }
-    std::move(callback).Run([[FollowWebPageURLs alloc]
-        initWithWebPageURL:net::NSURLWithGURL(url)
-                  RSSLinks:rss_links]);
-    return;
   }
 
-  std::move(callback).Run([[FollowWebPageURLs alloc]
-      initWithWebPageURL:net::NSURLWithGURL(url)
-                RSSLinks:nil]);
+  WebPageURLs* web_page_urls =
+      [[WebPageURLs alloc] initWithURL:net::NSURLWithGURL(url)
+                               RSSURLs:rss_urls];
+
+  std::move(callback).Run(web_page_urls);
 }

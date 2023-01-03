@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/media/router/discovery/access_code/access_code_cast_constants.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
 #include "components/signin/public/identity_manager/account_info.h"
@@ -24,6 +25,7 @@
 #include "components/user_manager/user_manager.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/storage_partition.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -102,10 +104,12 @@ bool HasSyncError(const std::string& response) {
 AccessCodeCastDiscoveryInterface::AccessCodeCastDiscoveryInterface(
     Profile* profile,
     const std::string& access_code,
-    LoggerImpl* logger)
+    LoggerImpl* logger,
+    signin::IdentityManager* identity_manager)
     : profile_(profile),
       access_code_(access_code),
       logger_(logger),
+      identity_manager_(identity_manager),
       endpoint_fetcher_(CreateEndpointFetcher(access_code)) {
   DCHECK(profile_);
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
@@ -115,10 +119,12 @@ AccessCodeCastDiscoveryInterface::AccessCodeCastDiscoveryInterface(
     Profile* profile,
     const std::string& access_code,
     LoggerImpl* logger,
+    signin::IdentityManager* identity_manager,
     std::unique_ptr<EndpointFetcher> endpoint_fetcher)
     : profile_(profile),
       access_code_(access_code),
       logger_(logger),
+      identity_manager_(identity_manager),
       endpoint_fetcher_(std::move(endpoint_fetcher)) {
   DCHECK(profile_);
 }
@@ -261,10 +267,12 @@ AccessCodeCastDiscoveryInterface::CreateEndpointFetcher(
   discovery_scopes.push_back(kDiscoveryOAuth2Scope);
 
   return std::make_unique<EndpointFetcher>(
-      profile_, kDiscoveryOAuthConsumerName,
+      profile_->GetDefaultStoragePartition()
+          ->GetURLLoaderFactoryForBrowserProcess(),
+      kDiscoveryOAuthConsumerName,
       GURL(base::StrCat({GetDiscoveryUrl(), "/", access_code})), kGetMethod,
       kContentType, discovery_scopes, kTimeoutMs, kEmptyPostData,
-      kTrafficAnnotation);
+      kTrafficAnnotation, identity_manager_);
 }
 
 void AccessCodeCastDiscoveryInterface::ValidateDiscoveryAccessCode(

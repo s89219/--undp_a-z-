@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,13 +29,8 @@ class AppListA11yAnnouncer {
   // deleted.
   void Shutdown();
 
-  // Modifies the announcement view to verbalize that app list transitioned to
-  // peeking state.
-  void AnnouncePeekingState();
-
-  // Modifies the announcement view to verbalize that app list transitioned to
-  // fullscreen state.
-  void AnnounceFullscreenState();
+  // Modifies the announcement view to verbalize that app list is activated.
+  void AnnounceAppListShown();
 
   // Modifies the announcement view to verbalize that the focused view has new
   // updates, based on the item having a notification badge.
@@ -72,8 +67,6 @@ class AppListA11yAnnouncer {
 
   // Modifies the announcement view to verbalize the provided announcement.
   void Announce(const std::u16string& announcement);
-
-  views::View* announcement_view_for_test() { return announcement_view_; }
 
  private:
   // The view used to send accessibility announcements. Owned by the parent's

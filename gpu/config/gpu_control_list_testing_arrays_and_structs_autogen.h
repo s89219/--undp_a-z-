@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -2405,6 +2405,66 @@ const GpuControlList::Device kDevicesForGpuControlTestingEntry78[2] = {
 };
 
 const GpuControlList::More kMoreForEntry78_1440601243 = {
+    GpuControlList::kGLTypeNone,  // gl_type
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr, nullptr},  // gl_version
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr,
+     nullptr},  // pixel_shader_version
+    false,      // in_process_gpu
+    0,          // gl_reset_notification_strategy
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr,
+     nullptr},  // direct_rendering_version
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr, nullptr},  // gpu_count
+    GpuControlList::kDontCare,  // hardware_overlay
+    0,                          // test_group
+    GpuControlList::kDontCare,  // subpixel_font_rendering
+};
+
+const int kFeatureListForGpuControlTestingEntry79[1] = {
+    TEST_FEATURE_0,
+};
+
+const GpuControlList::DriverInfo kDriverInfoForGpuControlTestingEntry79 = {
+    nullptr,  // driver_vendor
+    {GpuControlList::kLE, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, "24.21.13.9826",
+     nullptr},  // driver_version
+};
+
+const GpuControlList::More kMoreForEntry79_1440601243 = {
+    GpuControlList::kGLTypeNone,  // gl_type
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr, nullptr},  // gl_version
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr,
+     nullptr},  // pixel_shader_version
+    false,      // in_process_gpu
+    0,          // gl_reset_notification_strategy
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr,
+     nullptr},  // direct_rendering_version
+    {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, nullptr, nullptr},  // gpu_count
+    GpuControlList::kDontCare,  // hardware_overlay
+    0,                          // test_group
+    GpuControlList::kDontCare,  // subpixel_font_rendering
+};
+
+const int kFeatureListForGpuControlTestingEntry80[1] = {
+    TEST_FEATURE_0,
+};
+
+const GpuControlList::DriverInfo kDriverInfoForGpuControlTestingEntry80 = {
+    nullptr,  // driver_vendor
+    {GpuControlList::kLE, GpuControlList::kVersionStyleNumerical,
+     GpuControlList::kVersionSchemaCommon, "24.21.13.9826",
+     nullptr},  // driver_version
+};
+
+const GpuControlList::More kMoreForEntry80_1440601243 = {
     GpuControlList::kGLTypeNone,  // gl_type
     {GpuControlList::kUnknown, GpuControlList::kVersionStyleNumerical,
      GpuControlList::kVersionSchemaCommon, nullptr, nullptr},  // gl_version

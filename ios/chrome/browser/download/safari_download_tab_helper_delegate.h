@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,12 +10,12 @@
 // Delegate for SafariDownloadTabHelper class.
 @protocol SafariDownloadTabHelperDelegate
 
-// Called to download .mobileconfig file, |fileURL| points to the .mobileconfig
-// file that we are trying to download. |fileURL| cannot be nil.
+// Called to download .mobileconfig file, `fileURL` points to the .mobileconfig
+// file that we are trying to download. `fileURL` cannot be nil.
 - (void)presentMobileConfigAlertFromURL:(NSURL*)fileURL;
 
-// Called to download .ics file, |fileURL| points to the .ics
-// file that we are trying to download. |fileURL| cannot be nil.
+// Called to download .ics file, `fileURL` points to the .ics
+// file that we are trying to download. `fileURL` cannot be nil.
 - (void)presentCalendarAlertFromURL:(NSURL*)fileURL;
 
 @end

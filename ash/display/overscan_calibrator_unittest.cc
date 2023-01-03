@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,8 +23,8 @@ class OverscanCalibratorTest : public AshTestBase {
 
   OverscanCalibrator* StartCalibration(const std::string& id) {
     Shell::Get()->cros_display_config()->OverscanCalibration(
-        id, mojom::DisplayConfigOperation::kStart, gfx::Insets() /* not used */,
-        base::DoNothing());
+        id, crosapi::mojom::DisplayConfigOperation::kStart,
+        gfx::Insets() /* not used */, base::DoNothing());
     return Shell::Get()->cros_display_config()->GetOverscanCalibrator(id);
   }
 };

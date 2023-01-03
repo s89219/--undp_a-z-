@@ -92,13 +92,9 @@ BaseAudioContext::BaseAudioContext(Document* document,
       InspectorHelperMixin(*AudioGraphTracer::FromDocument(*document),
                            String()),
       destination_node_(nullptr),
-      is_resolving_resume_promises_(false),
       task_runner_(document->GetTaskRunner(TaskType::kInternalMedia)),
-      is_cleared_(false),
-      has_posted_cleanup_task_(false),
       deferred_task_handler_(DeferredTaskHandler::Create(
           document->GetTaskRunner(TaskType::kInternalMedia))),
-      context_state_(kSuspended),
       periodic_wave_sine_(nullptr),
       periodic_wave_square_(nullptr),
       periodic_wave_sawtooth_(nullptr),
@@ -126,7 +122,7 @@ void BaseAudioContext::Initialize() {
     destination_node_->Handler().Initialize();
     // TODO(crbug.com/863951).  The audio thread needs some things from the
     // destination handler like the currentTime.  But the audio thread
-    // shouldn't access the |destination_node_| since it's an Oilpan object.
+    // shouldn't access the `destination_node_` since it's an Oilpan object.
     // Thus, get the destination handler, a non-oilpan object, so we can get
     // the items directly from the handler instead of through the destination
     // node.
@@ -331,8 +327,22 @@ ScriptPromise BaseAudioContext::decodeAudioData(
   ArrayBufferContents buffer_contents;
   // Detach the audio array buffer from the main thread and start
   // async decoding of the data.
-  if (audio_data->IsDetachable(isolate) &&
-      audio_data->Transfer(isolate, buffer_contents)) {
+  if (!audio_data->IsDetachable(isolate) || audio_data->IsDetached()) {
+    // If audioData is already detached (neutered) we need to reject the
+    // promise with an error.
+    exception_state.ThrowDOMException(DOMExceptionCode::kDataCloneError,
+                                      "Cannot decode detached ArrayBuffer");
+    // Fall through in order to invoke the error_callback.
+  } else if (!audio_data->Transfer(isolate, buffer_contents, exception_state)) {
+    // Transfer may throw a TypeError, which is not a DOMException. However, the
+    // spec requires throwing a DOMException with kDataCloneError. Hence
+    // re-throw a DOMException.
+    // https://webaudio.github.io/web-audio-api/#dom-baseaudiocontext-decodeaudiodata
+    exception_state.ClearException();
+    exception_state.ThrowDOMException(DOMExceptionCode::kDataCloneError,
+                                      "Cannot transfer the ArrayBuffer");
+    // Fall through in order to invoke the error_callback.
+  } else {  // audio_data->Transfer succeeded.
     DOMArrayBuffer* audio = DOMArrayBuffer::Create(buffer_contents);
 
     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
@@ -344,15 +354,18 @@ ScriptPromise BaseAudioContext::decodeAudioData(
     return promise;
   }
 
-  // If audioData is already detached (neutered) we need to reject the
-  // promise with an error.
-  exception_state.ThrowDOMException(DOMExceptionCode::kDataCloneError,
-                                    "Cannot decode detached ArrayBuffer");
-  v8::Local<v8::Value> error = exception_state.GetException();
+  // Forward the exception to the callback.
+  DCHECK(exception_state.HadException());
   if (error_callback) {
-    error_callback->InvokeAndReportException(
-        this, NativeValueTraits<DOMException>::NativeValue(
-                  script_state->GetIsolate(), error, exception_state));
+    // Use of NonThrowableExceptionState:
+    // 1. The exception being thrown must be a DOMException, hence no chance
+    //   for NativeValueTraits<T>::NativeValue to fail.
+    // 2. `exception_state` already holds an exception being thrown and it's
+    //   wrong to throw another exception in `exception_state`.
+    DOMException* dom_exception = NativeValueTraits<DOMException>::NativeValue(
+        isolate, exception_state.GetException(),
+        NonThrowableExceptionState().ReturnThis());
+    error_callback->InvokeAndReportException(this, dom_exception);
   }
 
   return ScriptPromise();
@@ -399,7 +412,13 @@ void BaseAudioContext::HandleDecodeAudioData(
     }
   }
 
-  // We've resolved the promise.  Remove it now.
+  // Resolving a promise above can result in uninitializing/clearing of the
+  // context. (e.g. dropping an iframe. See crbug.com/1350086)
+  if (is_cleared_) {
+    return;
+  }
+
+  // Otherwise the resolver should exist in the set. Check and remove it.
   DCHECK(decode_audio_resolvers_.Contains(resolver));
   decode_audio_resolvers_.erase(resolver);
 }
@@ -676,8 +695,9 @@ void BaseAudioContext::SetContextState(AudioContextState new_state) {
   if (GetExecutionContext()) {
     GetExecutionContext()
         ->GetTaskRunner(TaskType::kMediaElementEvent)
-        ->PostTask(FROM_HERE, WTF::Bind(&BaseAudioContext::NotifyStateChange,
-                                        WrapPersistent(this)));
+        ->PostTask(FROM_HERE,
+                   WTF::BindOnce(&BaseAudioContext::NotifyStateChange,
+                                 WrapPersistent(this)));
 
     GraphTracer().DidChangeBaseAudioContext(this);
   }
@@ -866,7 +886,7 @@ void BaseAudioContext::NotifyWorkletIsReady() {
   DCHECK(audioWorklet()->IsReady());
 
   {
-    // |audio_worklet_thread_| is constantly peeked by the rendering thread,
+    // `audio_worklet_thread_` is constantly peeked by the rendering thread,
     // So we protect it with the graph lock.
     GraphAutoLocker locker(this);
 
@@ -889,7 +909,7 @@ void BaseAudioContext::UpdateWorkletGlobalScopeOnRenderingThread() {
   DCHECK(!IsMainThread());
 
   if (TryLock()) {
-    // Even when |audio_worklet_thread_| is successfully assigned, the current
+    // Even when `audio_worklet_thread_` is successfully assigned, the current
     // render thread could still be a thread of AudioOutputDevice.  Updates the
     // the global scope only when the thread affinity is correct.
     if (audio_worklet_thread_ && audio_worklet_thread_->IsCurrentThread()) {

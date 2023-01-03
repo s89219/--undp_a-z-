@@ -1,4 +1,4 @@
-// Copyright (c) 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,7 +78,7 @@ bool VulkanInstance::Initialize(
     const std::vector<const char*>& required_layers) {
   if (!BindUnassignedFunctionPointers(vulkan_loader_library_path))
     return false;
-  return InitializeInstace(required_extensions, required_layers);
+  return InitializeInstance(required_extensions, required_layers);
 }
 
 bool VulkanInstance::BindUnassignedFunctionPointers(
@@ -100,7 +100,8 @@ bool VulkanInstance::BindUnassignedFunctionPointers(
     loader_library_ =
         base::LoadNativeLibrary(vulkan_loader_library_path, &error);
     if (!loader_library_) {
-      LOG(ERROR) << "Failed to load vulkan:" << error.ToString();
+      LOG(ERROR) << "Failed to load '" << vulkan_loader_library_path
+                 << "': " << error.ToString();
       return false;
     }
     if (!vulkan_function_pointers
@@ -111,7 +112,7 @@ bool VulkanInstance::BindUnassignedFunctionPointers(
   return true;
 }
 
-bool VulkanInstance::InitializeInstace(
+bool VulkanInstance::InitializeInstance(
     const std::vector<const char*>& required_extensions,
     const std::vector<const char*>& required_layers) {
   if (is_from_angle_)

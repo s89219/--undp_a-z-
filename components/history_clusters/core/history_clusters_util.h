@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,14 +37,14 @@ std::u16string ComputeURLForDisplay(const GURL& normalized_url,
                                     bool trim_after_host = false);
 
 // Stable sorts visits according to score, then reverse-chronologically.
-void StableSortVisits(std::vector<history::ClusterVisit>* visits);
+void StableSortVisits(std::vector<history::ClusterVisit>& visits);
 
 // Erases all clusters that don't match `query`. Also may re-score the visits
 // within matching clusters.
 //
 // If `query` is an empty string, leaves `clusters` unmodified.
 void ApplySearchQuery(const std::string& query,
-                      std::vector<history::Cluster>* clusters);
+                      std::vector<history::Cluster>& clusters);
 
 // If `query` is empty, erases all non-prominent clusters.
 //
@@ -54,8 +54,19 @@ void ApplySearchQuery(const std::string& query,
 // `seen_single_visit_cluster_urls` and this function updates that set.
 void CullNonProminentOrDuplicateClusters(
     std::string query,
-    std::vector<history::Cluster>* clusters,
+    std::vector<history::Cluster>& clusters,
     std::set<GURL>* seen_single_visit_cluster_urls);
+
+// Marks low scoring visits as hidden, and drops them if necessary.
+void HideAndCullLowScoringVisits(std::vector<history::Cluster>& clusters);
+
+// Coalesces the related searches off of individual visits and places them at
+// the cluster level with numerical limits defined by flags.
+void CoalesceRelatedSearches(std::vector<history::Cluster>& clusters);
+
+// Enforces the reverse-chronological invariant of clusters, as well the
+// by-score sorting of visits within clusters. Exposed for testing.
+void SortClusters(std::vector<history::Cluster>* clusters);
 
 }  // namespace history_clusters
 

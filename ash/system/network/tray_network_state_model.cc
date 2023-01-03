@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,8 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/location.h"
+#include "chromeos/services/network_config/public/cpp/cros_network_config_observer.h"
 #include "chromeos/services/network_config/public/cpp/cros_network_config_util.h"
-#include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -53,7 +53,7 @@ NetworkStatePropertiesPtr GetConnectingOrConnected(
 namespace ash {
 
 class TrayNetworkStateModel::Impl
-    : public chromeos::network_config::mojom::CrosNetworkConfigObserver {
+    : public chromeos::network_config::CrosNetworkConfigObserver {
  public:
   explicit Impl(TrayNetworkStateModel* model) : model_(model) {
     GetNetworkConfigService(
@@ -108,6 +108,16 @@ class TrayNetworkStateModel::Impl
     return remote_cros_network_config_.get();
   }
 
+  void ConfigureRemoteForTesting(  // IN-TEST
+      mojo::PendingRemote<chromeos::network_config::mojom::CrosNetworkConfig>
+          cros_network_config) {
+    remote_cros_network_config_.reset();
+    cros_network_config_observer_receiver_.reset();
+    remote_cros_network_config_.Bind(std::move(cros_network_config));
+    remote_cros_network_config_->AddObserver(
+        cros_network_config_observer_receiver_.BindNewPipeAndPassRemote());
+  }
+
  private:
   // CrosNetworkConfigObserver
   void OnActiveNetworksChanged(
@@ -115,10 +125,6 @@ class TrayNetworkStateModel::Impl
     model_->UpdateActiveNetworks(std::move(networks));
     model_->SendActiveNetworkStateChanged();
   }
-
-  void OnNetworkStateChanged(
-      chromeos::network_config::mojom::NetworkStatePropertiesPtr /* network */)
-      override {}
 
   void OnNetworkStateListChanged() override {
     model_->NotifyNetworkListChanged();
@@ -128,8 +134,6 @@ class TrayNetworkStateModel::Impl
   void OnDeviceStateListChanged() override { GetDeviceStateList(); }
 
   void OnVpnProvidersChanged() override { model_->NotifyVpnProvidersChanged(); }
-
-  void OnNetworkCertificatesChanged() override {}
 
   void OnPoliciesApplied(const std::string& userhash) override {
     GetGlobalPolicy();
@@ -160,6 +164,12 @@ TrayNetworkStateModel::TrayNetworkStateModel()
 
 TrayNetworkStateModel::~TrayNetworkStateModel() {
   vpn_list_.reset();
+}
+
+void TrayNetworkStateModel::ConfigureRemoteForTesting(
+    mojo::PendingRemote<chromeos::network_config::mojom::CrosNetworkConfig>
+        cros_network_config) {
+  impl_->ConfigureRemoteForTesting(std::move(cros_network_config));  // IN-TEST
 }
 
 void TrayNetworkStateModel::AddObserver(TrayNetworkStateObserver* observer) {

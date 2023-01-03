@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -207,7 +207,7 @@ class ModelTypeSyncBridge {
   // complete yet or exists behind a feature flag.
   // By default, empty EntitySpecifics is returned.
   virtual sync_pb::EntitySpecifics TrimRemoteSpecificsForCaching(
-      const sync_pb::EntitySpecifics& entity_specifics);
+      const sync_pb::EntitySpecifics& entity_specifics) const;
 
   // Needs to be informed about any model change occurring via Delete() and
   // Put(). The changing metadata should be stored to persistent storage

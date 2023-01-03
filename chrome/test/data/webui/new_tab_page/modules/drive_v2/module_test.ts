@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,10 +14,10 @@ import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 import {installMock} from '../../test_support.js';
 
 suite('NewTabPageModulesDriveModuleTest', () => {
-  let handler: TestBrowserProxy;
+  let handler: TestBrowserProxy<DriveHandlerRemote>;
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     handler = installMock(DriveHandlerRemote, DriveProxy.setHandler);
   });
 
@@ -44,8 +44,8 @@ suite('NewTabPageModulesDriveModuleTest', () => {
           id: '345',
           mimeType: 'application/vnd.google-apps.presentation',
           itemUrl: {url: 'https://caz.com'},
-        }
-      ]
+        },
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
 
@@ -91,7 +91,7 @@ suite('NewTabPageModulesDriveModuleTest', () => {
         {
           title: 'Abc',
         },
-      ]
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
 
@@ -114,7 +114,7 @@ suite('NewTabPageModulesDriveModuleTest', () => {
         {
           title: 'Def',
         },
-      ]
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
 
@@ -140,7 +140,7 @@ suite('NewTabPageModulesDriveModuleTest', () => {
           mimeType: 'application/vnd.google-apps.presentation',
           itemUrl: {url: 'https://abc.com'},
         },
-      ]
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
     const driveModule =
@@ -169,7 +169,7 @@ suite('NewTabPageModulesDriveModuleTest', () => {
               mimeType: 'application/vnd.google-apps.presentation',
               itemUrl: {url: 'https://abc.com'},
             },
-          ]
+          ],
         };
         handler.setResultFor('getFiles', Promise.resolve(data));
         const driveModule =

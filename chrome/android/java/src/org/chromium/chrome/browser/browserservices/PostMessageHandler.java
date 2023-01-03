@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,11 @@ import androidx.browser.customtabs.CustomTabsSessionToken;
 import androidx.browser.customtabs.PostMessageBackend;
 
 import org.chromium.base.ContextUtils;
+import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.base.task.PostTask;
-import org.chromium.chrome.browser.browserservices.verification.OriginVerifier;
-import org.chromium.chrome.browser.browserservices.verification.OriginVerifier.OriginVerificationListener;
 import org.chromium.chrome.browser.tab.Tab;
+import org.chromium.components.digital_asset_links.OriginVerifier;
+import org.chromium.components.digital_asset_links.OriginVerifier.OriginVerificationListener;
 import org.chromium.components.embedder_support.util.Origin;
 import org.chromium.content_public.browser.GlobalRenderFrameHostId;
 import org.chromium.content_public.browser.LifecycleState;
@@ -51,6 +52,7 @@ public class PostMessageHandler implements OriginVerificationListener {
             @Override
             public void onMessage(MessagePayload messagePayload, MessagePort[] sentPorts) {
                 mPostMessageBackend.onPostMessage(messagePayload.getAsString(), null);
+                RecordHistogram.recordBooleanHistogram("CustomTabs.PostMessage.OnMessage", true);
             }
         };
     }
@@ -75,9 +77,9 @@ public class PostMessageHandler implements OriginVerificationListener {
             private boolean mNavigatedOnce;
 
             @Override
-            public void didFinishNavigation(NavigationHandle navigation) {
-                if (mNavigatedOnce && navigation.hasCommitted() && navigation.isInPrimaryMainFrame()
-                        && !navigation.isSameDocument() && mChannel != null) {
+            public void didFinishNavigationInPrimaryMainFrame(NavigationHandle navigation) {
+                if (mNavigatedOnce && navigation.hasCommitted() && !navigation.isSameDocument()
+                        && mChannel != null) {
                     webContents.removeObserver(this);
                     disconnectChannel();
                     return;
@@ -86,17 +88,31 @@ public class PostMessageHandler implements OriginVerificationListener {
             }
 
             @Override
+            public void didFinishNavigationNoop(NavigationHandle navigationHandle) {
+                mNavigatedOnce = true;
+                if (!mNavigatedOnce || !navigationHandle.isInPrimaryMainFrame()) return;
+            }
+
+            @Override
             public void renderProcessGone() {
                 disconnectChannel();
             }
 
             @Override
-            public void documentLoadedInFrame(GlobalRenderFrameHostId rfhId,
-                    boolean isInPrimaryMainFrame, @LifecycleState int rfhLifecycleState) {
-                if (!isInPrimaryMainFrame || mChannel != null) {
+            public void documentLoadedInPrimaryMainFrame(
+                    GlobalRenderFrameHostId rfhId, @LifecycleState int rfhLifecycleState) {
+                if (mChannel != null) {
                     return;
                 }
                 initializeWithWebContents(webContents);
+            }
+
+            @Override
+            public void documentLoadedInFrameNoop(GlobalRenderFrameHostId rfhId,
+                    boolean isInPrimaryMainFrame, @LifecycleState int rfhLifecycleState) {
+                if (!isInPrimaryMainFrame) {
+                    return;
+                }
             }
         };
     }
@@ -152,6 +168,8 @@ public class PostMessageHandler implements OriginVerificationListener {
                 mChannel[0].postMessage(new MessagePayload(message), null);
             }
         });
+        RecordHistogram.recordBooleanHistogram(
+                "CustomTabs.PostMessage.PostMessageFromClientApp", true);
         return CustomTabsService.RESULT_SUCCESS;
     }
 

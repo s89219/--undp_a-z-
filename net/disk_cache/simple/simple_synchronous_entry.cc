@@ -1,10 +1,9 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "net/disk_cache/simple/simple_synchronous_entry.h"
 
-#include <algorithm>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -15,13 +14,15 @@
 #include "base/hash/hash.h"
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/histogram_macros_local.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_piece.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/timer/elapsed_timer.h"
 #include "crypto/secure_hash.h"
 #include "net/base/hash_value.h"
@@ -115,9 +116,7 @@ int FileIndexForSubFile(SimpleFileTracker::SubFile sub_file) {
 class SimpleSynchronousEntry::PrefetchData final {
  public:
   explicit PrefetchData(size_t file_size)
-      : file_size_(file_size),
-        offset_in_file_(0),
-        earliest_requested_offset_(file_size) {}
+      : file_size_(file_size), earliest_requested_offset_(file_size) {}
 
   // Returns true if the specified range within the file has been completely
   // prefetched.  Returns false if any part of the range has not been
@@ -185,7 +184,7 @@ class SimpleSynchronousEntry::PrefetchData final {
   // Prefer to read the prefetch data into a stack buffer to minimize
   // memory pressure on the OS disk cache.
   base::StackVector<char, 1024> buffer_;
-  size_t offset_in_file_;
+  size_t offset_in_file_ = 0;
 
   size_t earliest_requested_offset_;
 };
@@ -196,7 +195,7 @@ class SimpleSynchronousEntry::ScopedFileOperationsBinding final {
                               BackendFileOperations** file_operations)
       : owner_(owner),
         file_operations_(owner->unbound_file_operations_->Bind(
-            base::SequencedTaskRunnerHandle::Get())) {
+            base::SequencedTaskRunner::GetCurrentDefault())) {
     *file_operations = file_operations_.get();
   }
   ~ScopedFileOperationsBinding() {
@@ -204,7 +203,7 @@ class SimpleSynchronousEntry::ScopedFileOperationsBinding final {
   }
 
  private:
-  SimpleSynchronousEntry* const owner_;
+  const raw_ptr<SimpleSynchronousEntry> owner_;
   std::unique_ptr<BackendFileOperations> file_operations_;
 };
 
@@ -216,8 +215,9 @@ using simple_util::GetDataSizeFromFileSize;
 using simple_util::GetFileSizeFromDataSize;
 using simple_util::GetFileIndexFromStreamIndex;
 
-const base::Feature kSimpleCachePrefetchExperiment = {
-    "SimpleCachePrefetchExperiment2", base::FEATURE_DISABLED_BY_DEFAULT};
+BASE_FEATURE(kSimpleCachePrefetchExperiment,
+             "SimpleCachePrefetchExperiment2",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 const char kSimpleCacheFullPrefetchBytesParam[] = "FullPrefetchBytes";
 constexpr base::FeatureParam<int> kSimpleCacheFullPrefetchSize{
@@ -298,10 +298,7 @@ SimpleStreamPrefetchData::~SimpleStreamPrefetchData() = default;
 
 SimpleEntryCreationResults::SimpleEntryCreationResults(
     SimpleEntryStat entry_stat)
-    : sync_entry(nullptr),
-      entry_stat(entry_stat),
-      result(net::OK),
-      created(false) {}
+    : sync_entry(nullptr), entry_stat(entry_stat) {}
 
 SimpleEntryCreationResults::~SimpleEntryCreationResults() = default;
 
@@ -318,10 +315,7 @@ SimpleSynchronousEntry::CRCRecord::CRCRecord(int index_p,
 SimpleSynchronousEntry::ReadRequest::ReadRequest(int index_p,
                                                  int offset_p,
                                                  int buf_len_p)
-    : index(index_p),
-      offset(offset_p),
-      buf_len(buf_len_p),
-      request_update_crc(false) {}
+    : index(index_p), offset(offset_p), buf_len(buf_len_p) {}
 
 SimpleSynchronousEntry::WriteRequest::WriteRequest(int index_p,
                                                    int offset_p,
@@ -494,8 +488,8 @@ int SimpleSynchronousEntry::DeleteEntryFiles(
     net::CacheType cache_type,
     uint64_t entry_hash,
     std::unique_ptr<UnboundBackendFileOperations> unbound_file_operations) {
-  auto file_operations =
-      unbound_file_operations->Bind(base::SequencedTaskRunnerHandle::Get());
+  auto file_operations = unbound_file_operations->Bind(
+      base::SequencedTaskRunner::GetCurrentDefault());
   return DeleteEntryFilesInternal(path, cache_type, entry_hash,
                                   file_operations.get());
 }
@@ -570,8 +564,8 @@ int SimpleSynchronousEntry::TruncateEntryFiles(
     const base::FilePath& path,
     uint64_t entry_hash,
     std::unique_ptr<UnboundBackendFileOperations> unbound_file_operations) {
-  auto file_operations =
-      unbound_file_operations->Bind(base::SequencedTaskRunnerHandle::Get());
+  auto file_operations = unbound_file_operations->Bind(
+      base::SequencedTaskRunner::GetCurrentDefault());
   const bool deleted_well =
       TruncateFilesForEntryHash(path, entry_hash, file_operations.get());
   return deleted_well ? net::OK : net::ERR_FAILED;
@@ -582,14 +576,13 @@ int SimpleSynchronousEntry::DeleteEntrySetFiles(
     const std::vector<uint64_t>* key_hashes,
     const FilePath& path,
     std::unique_ptr<UnboundBackendFileOperations> unbound_file_operations) {
-  auto file_operations =
-      unbound_file_operations->Bind(base::SequencedTaskRunnerHandle::Get());
-  const size_t did_delete_count =
-      std::count_if(key_hashes->begin(), key_hashes->end(),
-                    [&path, &file_operations](const uint64_t& key_hash) {
-                      return SimpleSynchronousEntry::DeleteFilesForEntryHash(
-                          path, key_hash, file_operations.get());
-                    });
+  auto file_operations = unbound_file_operations->Bind(
+      base::SequencedTaskRunner::GetCurrentDefault());
+  const size_t did_delete_count = base::ranges::count_if(
+      *key_hashes, [&path, &file_operations](const uint64_t& key_hash) {
+        return SimpleSynchronousEntry::DeleteFilesForEntryHash(
+            path, key_hash, file_operations.get());
+      });
   return (did_delete_count == key_hashes->size()) ? net::OK : net::ERR_FAILED;
 }
 
@@ -1069,13 +1062,14 @@ void SimpleSynchronousEntry::Close(
     SimpleEntryCloseResults* out_results) {
   // As we delete `this`, we cannot use ScopedFileOperationsBinding here.
   std::unique_ptr<BackendFileOperations> file_operations =
-      unbound_file_operations_->Bind(base::SequencedTaskRunnerHandle::Get());
+      unbound_file_operations_->Bind(
+          base::SequencedTaskRunner::GetCurrentDefault());
   unbound_file_operations_ = nullptr;
   base::ElapsedTimer close_time;
   DCHECK(stream_0_data);
 
-  for (auto it = crc32s_to_write->begin(); it != crc32s_to_write->end(); ++it) {
-    const int stream_index = it->index;
+  for (auto& crc_record : *crc32s_to_write) {
+    const int stream_index = crc_record.index;
     const int file_index = GetFileIndexFromStreamIndex(stream_index);
     if (empty_file_omitted_[file_index])
       continue;
@@ -1110,10 +1104,10 @@ void SimpleSynchronousEntry::Close(
       // Re-compute stream 0 CRC if the data got changed (we may be here even
       // if it didn't change if stream 0's position on disk got changed due to
       // stream 1 write).
-      if (!it->has_crc32) {
-        it->data_crc32 =
+      if (!crc_record.has_crc32) {
+        crc_record.data_crc32 =
             simple_util::Crc32(stream_0_data->data(), entry_stat.data_size(0));
-        it->has_crc32 = true;
+        crc_record.has_crc32 = true;
       }
 
       out_results->estimated_trailer_prefetch_size =
@@ -1124,11 +1118,11 @@ void SimpleSynchronousEntry::Close(
     eof_record.stream_size = entry_stat.data_size(stream_index);
     eof_record.final_magic_number = kSimpleFinalMagicNumber;
     eof_record.flags = 0;
-    if (it->has_crc32)
+    if (crc_record.has_crc32)
       eof_record.flags |= SimpleFileEOF::FLAG_HAS_CRC32;
     if (stream_index == 0)
       eof_record.flags |= SimpleFileEOF::FLAG_HAS_KEY_SHA256;
-    eof_record.data_crc32 = it->data_crc32;
+    eof_record.data_crc32 = crc_record.data_crc32;
     int eof_offset = entry_stat.GetEOFOffsetInFile(key_.size(), stream_index);
     // If stream 0 changed size, the file needs to be resized, otherwise the
     // next open will yield wrong stream sizes. On stream 1 and stream 2 proper
@@ -1186,8 +1180,9 @@ SimpleSynchronousEntry::SimpleSynchronousEntry(
       file_tracker_(file_tracker),
       unbound_file_operations_(std::move(unbound_file_operations)),
       trailer_prefetch_size_(trailer_prefetch_size) {
-  for (int i = 0; i < kSimpleEntryNormalFileCount; ++i)
-    empty_file_omitted_[i] = false;
+  for (bool& empty_file_omitted : empty_file_omitted_) {
+    empty_file_omitted = false;
+  }
 }
 
 SimpleSynchronousEntry::~SimpleSynchronousEntry() {

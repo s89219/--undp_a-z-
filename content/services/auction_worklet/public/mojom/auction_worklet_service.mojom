@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ module auction_worklet.mojom;
 
 import "content/services/auction_worklet/public/mojom/bidder_worklet.mojom";
 import "content/services/auction_worklet/public/mojom/seller_worklet.mojom";
-import "mojo/public/mojom/base/time.mojom";
 import "sandbox/policy/mojom/sandbox.mojom";
 import "services/network/public/mojom/url_loader_factory.mojom";
 import "third_party/blink/public/mojom/interest_group/interest_group_types.mojom";
@@ -18,8 +17,9 @@ struct BrowserSignals {
   url.mojom.Origin seller;
 };
 
-// Used by the browser to load and run FLEDGE worklets in a sandboxed utility
-// process.
+// Used by the browser to load and run FLEDGE worklets. This can run in a
+// sandboxed utility process (non-Android) or inside a regular renderer
+// (Android).
 // See https://github.com/WICG/turtledove/blob/main/FLEDGE.md
 [ServiceSandbox=sandbox.mojom.Sandbox.kServiceWithJit]
 interface AuctionWorkletService {

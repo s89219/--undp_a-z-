@@ -31,11 +31,15 @@
 
 #include "third_party/blink/renderer/core/timing/performance_resource_timing.h"
 
+#include "base/notreached.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/mojom/timing/performance_mark_or_measure.mojom-blink.h"
+#include "third_party/blink/public/mojom/timing/resource_timing.mojom-blink-forward.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_object_builder.h"
+#include "third_party/blink/renderer/core/delivery_type_names.h"
 #include "third_party/blink/renderer/core/performance_entry_names.h"
 #include "third_party/blink/renderer/core/timing/performance.h"
+#include "third_party/blink/renderer/core/timing/performance_entry.h"
 #include "third_party/blink/renderer/core/timing/performance_mark.h"
 #include "third_party/blink/renderer/core/timing/performance_measure.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
@@ -44,18 +48,40 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_timing_info.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
+
+using network::mojom::blink::NavigationDeliveryType;
+
+namespace {
+const AtomicString& GetDeliveryType(
+    NavigationDeliveryType navigation_delivery_type,
+    mojom::blink::CacheState cache_state) {
+  switch (navigation_delivery_type) {
+    case NavigationDeliveryType::kDefault:
+      return cache_state == mojom::blink::CacheState::kNone
+                 ? g_empty_atom
+                 : delivery_type_names::kCache;
+    case NavigationDeliveryType::kNavigationalPrefetch:
+      return delivery_type_names::kNavigationalPrefetch;
+    default:
+      NOTREACHED();
+      return g_empty_atom;
+  }
+}
+}  // namespace
 
 PerformanceResourceTiming::PerformanceResourceTiming(
     const mojom::blink::ResourceTimingInfo& info,
     base::TimeTicks time_origin,
     bool cross_origin_isolated_capability,
     const AtomicString& initiator_type,
-    mojo::PendingReceiver<mojom::blink::WorkerTimingContainer>
-        worker_timing_receiver,
-    ExecutionContext* context)
+    ExecutionContext* context,
+    DOMWindow* source)
     : PerformanceEntry(AtomicString(info.name),
                        Performance::MonotonicTimeToDOMHighResTimeStamp(
                            time_origin,
@@ -66,13 +92,21 @@ PerformanceResourceTiming::PerformanceResourceTiming(
                            time_origin,
                            info.response_end,
                            info.allow_negative_values,
-                           cross_origin_isolated_capability)),
-      initiator_type_(initiator_type.IsEmpty()
+                           cross_origin_isolated_capability),
+                       PerformanceEntry::GetNavigationId(context),
+                       source),
+      initiator_type_(initiator_type.empty()
                           ? fetch_initiator_type_names::kOther
                           : initiator_type),
+      delivery_type_(
+          GetDeliveryType(NavigationDeliveryType::kDefault, info.cache_state)),
       alpn_negotiated_protocol_(
           static_cast<String>(info.alpn_negotiated_protocol)),
       connection_info_(static_cast<String>(info.connection_info)),
+      content_type_(static_cast<String>(info.content_type)),
+      render_blocking_status_(info.render_blocking_status
+                                  ? RenderBlockingStatusType::kBlocking
+                                  : RenderBlockingStatusType::kNonBlocking),
       time_origin_(time_origin),
       cross_origin_isolated_capability_(cross_origin_isolated_capability),
       timing_(ResourceLoadTiming::FromMojo(info.timing.get())),
@@ -83,47 +117,44 @@ PerformanceResourceTiming::PerformanceResourceTiming(
       cache_state_(info.cache_state),
       encoded_body_size_(info.encoded_body_size),
       decoded_body_size_(info.decoded_body_size),
+      response_status_(info.response_status),
       did_reuse_connection_(info.did_reuse_connection),
       allow_timing_details_(info.allow_timing_details),
       allow_redirect_details_(info.allow_redirect_details),
       allow_negative_value_(info.allow_negative_values),
       is_secure_transport_(info.is_secure_transport),
       server_timing_(
-          PerformanceServerTiming::FromParsedServerTiming(info.server_timing)),
-      worker_timing_receiver_(this, context) {
+          PerformanceServerTiming::FromParsedServerTiming(info.server_timing)) {
   DCHECK(context);
-  worker_timing_receiver_.Bind(
-      std::move(worker_timing_receiver),
-      context->GetTaskRunner(TaskType::kMiscPlatformAPI));
 }
 
 // This constructor is for PerformanceNavigationTiming.
-// TODO(https://crbug.com/900700): Set a Mojo pending receiver for
-// WorkerTimingContainer in |worker_timing_receiver_| when a service worker
-// controls a page.
+// The navigation_id for navigation timing is always 1.
 PerformanceResourceTiming::PerformanceResourceTiming(
     const AtomicString& name,
     base::TimeTicks time_origin,
     bool cross_origin_isolated_capability,
+    mojom::blink::CacheState cache_state,
     bool is_secure_transport,
     HeapVector<Member<PerformanceServerTiming>> server_timing,
-    ExecutionContext* context)
-    : PerformanceEntry(name, 0.0, 0.0),
+    ExecutionContext* context,
+    NavigationDeliveryType navigation_delivery_type,
+    DOMWindow* source)
+    : PerformanceEntry(name, 0.0, 0.0, kNavigationIdDefaultValue, source),
+      delivery_type_(GetDeliveryType(navigation_delivery_type, cache_state)),
       time_origin_(time_origin),
       cross_origin_isolated_capability_(cross_origin_isolated_capability),
       context_type_(mojom::blink::RequestContextType::HYPERLINK),
       request_destination_(network::mojom::RequestDestination::kDocument),
+      cache_state_(cache_state),
       is_secure_transport_(is_secure_transport),
-      server_timing_(std::move(server_timing)),
-      worker_timing_receiver_(this, context) {
+      server_timing_(std::move(server_timing)) {
   DCHECK(context);
-  worker_timing_receiver_.Bind(
-      mojo::NullReceiver(), context->GetTaskRunner(TaskType::kMiscPlatformAPI));
 }
 
 PerformanceResourceTiming::~PerformanceResourceTiming() = default;
 
-AtomicString PerformanceResourceTiming::entryType() const {
+const AtomicString& PerformanceResourceTiming::entryType() const {
   return performance_entry_names::kResource;
 }
 
@@ -172,6 +203,31 @@ uint64_t PerformanceResourceTiming::GetDecodedBodySize() const {
 
 AtomicString PerformanceResourceTiming::initiatorType() const {
   return initiator_type_;
+}
+
+AtomicString PerformanceResourceTiming::deliveryType() const {
+  if (!AllowTimingDetails())
+    return g_empty_atom;
+  return delivery_type_;
+}
+
+AtomicString PerformanceResourceTiming::renderBlockingStatus() const {
+  switch (render_blocking_status_) {
+    case RenderBlockingStatusType::kBlocking:
+      return "blocking";
+    case RenderBlockingStatusType::kNonBlocking:
+      return "non-blocking";
+  }
+  NOTREACHED();
+  return "non-blocking";
+}
+
+AtomicString PerformanceResourceTiming::contentType() const {
+  return content_type_;
+}
+
+uint16_t PerformanceResourceTiming::responseStatus() const {
+  return response_status_;
 }
 
 AtomicString PerformanceResourceTiming::AlpnNegotiatedProtocol() const {
@@ -304,11 +360,11 @@ DOMHighResTimeStamp PerformanceResourceTiming::domainLookupStart() const {
   if (!AllowTimingDetails())
     return 0.0;
   ResourceLoadTiming* timing = GetResourceLoadTiming();
-  if (!timing || timing->DnsStart().is_null())
+  if (!timing || timing->DomainLookupStart().is_null())
     return fetchStart();
 
   return Performance::MonotonicTimeToDOMHighResTimeStamp(
-      TimeOrigin(), timing->DnsStart(), AllowNegativeValue(),
+      TimeOrigin(), timing->DomainLookupStart(), AllowNegativeValue(),
       CrossOriginIsolatedCapability());
 }
 
@@ -316,11 +372,11 @@ DOMHighResTimeStamp PerformanceResourceTiming::domainLookupEnd() const {
   if (!AllowTimingDetails())
     return 0.0;
   ResourceLoadTiming* timing = GetResourceLoadTiming();
-  if (!timing || timing->DnsEnd().is_null())
+  if (!timing || timing->DomainLookupEnd().is_null())
     return domainLookupStart();
 
   return Performance::MonotonicTimeToDOMHighResTimeStamp(
-      TimeOrigin(), timing->DnsEnd(), AllowNegativeValue(),
+      TimeOrigin(), timing->DomainLookupEnd(), AllowNegativeValue(),
       CrossOriginIsolatedCapability());
 }
 
@@ -334,8 +390,8 @@ DOMHighResTimeStamp PerformanceResourceTiming::connectStart() const {
 
   // connectStart includes any DNS time, so we may need to trim that off.
   base::TimeTicks connect_start = timing->ConnectStart();
-  if (!timing->DnsEnd().is_null())
-    connect_start = timing->DnsEnd();
+  if (!timing->DomainLookupEnd().is_null())
+    connect_start = timing->DomainLookupEnd();
 
   return Performance::MonotonicTimeToDOMHighResTimeStamp(
       TimeOrigin(), connect_start, AllowNegativeValue(),
@@ -381,7 +437,7 @@ DOMHighResTimeStamp PerformanceResourceTiming::requestStart() const {
   if (!AllowTimingDetails())
     return 0.0;
   ResourceLoadTiming* timing = GetResourceLoadTiming();
-  if (!timing)
+  if (!timing || timing->SendStart().is_null())
     return connectEnd();
 
   return Performance::MonotonicTimeToDOMHighResTimeStamp(
@@ -442,15 +498,21 @@ PerformanceResourceTiming::serverTiming() const {
   return server_timing_;
 }
 
-const HeapVector<Member<PerformanceEntry>>&
-PerformanceResourceTiming::workerTiming() const {
-  return worker_timing_;
-}
-
 void PerformanceResourceTiming::BuildJSONValue(V8ObjectBuilder& builder) const {
   PerformanceEntry::BuildJSONValue(builder);
+  ExecutionContext* execution_context =
+      ExecutionContext::From(builder.GetScriptState());
   builder.AddString("initiatorType", initiatorType());
+  if (RuntimeEnabledFeatures::DeliveryTypeEnabled(execution_context)) {
+    builder.AddString("deliveryType", deliveryType());
+  }
   builder.AddString("nextHopProtocol", nextHopProtocol());
+  if (RuntimeEnabledFeatures::RenderBlockingStatusEnabled()) {
+    builder.AddString("renderBlockingStatus", renderBlockingStatus());
+  }
+  if (RuntimeEnabledFeatures::ResourceTimingContentTypeEnabled()) {
+    builder.AddString("contentType", contentType());
+  }
   builder.AddNumber("workerStart", workerStart());
   builder.AddNumber("redirectStart", redirectStart());
   builder.AddNumber("redirectEnd", redirectEnd());
@@ -458,66 +520,25 @@ void PerformanceResourceTiming::BuildJSONValue(V8ObjectBuilder& builder) const {
   builder.AddNumber("domainLookupStart", domainLookupStart());
   builder.AddNumber("domainLookupEnd", domainLookupEnd());
   builder.AddNumber("connectStart", connectStart());
-  builder.AddNumber("connectEnd", connectEnd());
   builder.AddNumber("secureConnectionStart", secureConnectionStart());
+  builder.AddNumber("connectEnd", connectEnd());
   builder.AddNumber("requestStart", requestStart());
   builder.AddNumber("responseStart", responseStart());
   builder.AddNumber("responseEnd", responseEnd());
   builder.AddNumber("transferSize", transferSize());
   builder.AddNumber("encodedBodySize", encodedBodySize());
   builder.AddNumber("decodedBodySize", decodedBodySize());
+  if (RuntimeEnabledFeatures::ResourceTimingResponseStatusEnabled()) {
+    builder.AddNumber("responseStatus", responseStatus());
+  }
 
   ScriptState* script_state = builder.GetScriptState();
   builder.Add("serverTiming", FreezeV8Object(ToV8(serverTiming(), script_state),
                                              script_state->GetIsolate()));
-  builder.Add("workerTiming", FreezeV8Object(ToV8(workerTiming(), script_state),
-                                             script_state->GetIsolate()));
-}
-
-void PerformanceResourceTiming::AddPerformanceEntry(
-    mojom::blink::PerformanceMarkOrMeasurePtr
-        mojo_performance_mark_or_measure) {
-  // TODO(https://crbug.com/900700): Wait until the end of fetch event to stop
-  // appearing incomplete PerformanceResourceTiming. Incomplete |workerTiming|
-  // will be exposed in the case that FetchEvent#addPerformanceEntry is called
-  // after PerformanceResourceTiming is constructed. This may cause different
-  // results of |workerTiming| in accessing it at the different time.
-
-  NonThrowableExceptionState exception_state;
-  WTF::AtomicString name(mojo_performance_mark_or_measure->name);
-
-  scoped_refptr<SerializedScriptValue> serialized_detail =
-      SerializedScriptValue::NullValue();
-  if (mojo_performance_mark_or_measure->detail) {
-    serialized_detail = SerializedScriptValue::Create(
-        reinterpret_cast<const char*>(
-            mojo_performance_mark_or_measure->detail->data()),
-        mojo_performance_mark_or_measure->detail->size());
-  }
-
-  switch (mojo_performance_mark_or_measure->entry_type) {
-    // TODO(yoav): Pipe in unsafe timers for traces, in case this is an
-    // important use case.
-    case mojom::blink::PerformanceMarkOrMeasure::EntryType::kMark:
-      worker_timing_.emplace_back(MakeGarbageCollected<PerformanceMark>(
-          name, mojo_performance_mark_or_measure->start_time, base::TimeTicks(),
-          serialized_detail, exception_state));
-      break;
-    case mojom::blink::PerformanceMarkOrMeasure::EntryType::kMeasure:
-      ScriptState* script_state;
-      worker_timing_.emplace_back(MakeGarbageCollected<PerformanceMeasure>(
-          script_state, name, mojo_performance_mark_or_measure->start_time,
-          mojo_performance_mark_or_measure->start_time +
-              mojo_performance_mark_or_measure->duration,
-          serialized_detail, exception_state));
-      break;
-  }
 }
 
 void PerformanceResourceTiming::Trace(Visitor* visitor) const {
   visitor->Trace(server_timing_);
-  visitor->Trace(worker_timing_);
-  visitor->Trace(worker_timing_receiver_);
   PerformanceEntry::Trace(visitor);
 }
 

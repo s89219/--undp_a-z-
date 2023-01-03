@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -245,9 +245,24 @@ bool MediaFoundationStreamWrapper::HasEnded() const {
   return stream_ended_;
 }
 
+void MediaFoundationStreamWrapper::SetLastStartPosition(
+    const PROPVARIANT* start_position) {
+  // Events such as MF_MEDIA_ENGINE_EVENT_SEEKED may send a start position
+  // with VT_EMPTY, this event should be ignored since it is not a valid start
+  // time. Only VT_I8 will be used based on start of presentation:
+  // https://learn.microsoft.com/en-us/windows/win32/api/mfidl/nf-mfidl-imfmediasession-start
+  if (start_position->vt == VT_I8) {
+    base::AutoLock auto_lock(lock_);
+    last_start_time_ = start_position->hVal.QuadPart;
+  }
+}
+
 HRESULT MediaFoundationStreamWrapper::QueueStartedEvent(
     const PROPVARIANT* start_position) {
   DVLOG_FUNC(2);
+
+  // Save the new start position in the stream.
+  SetLastStartPosition(start_position);
 
   state_ = State::kStarted;
   RETURN_IF_FAILED(mf_media_event_queue_->QueueEventParamVar(
@@ -258,6 +273,9 @@ HRESULT MediaFoundationStreamWrapper::QueueStartedEvent(
 HRESULT MediaFoundationStreamWrapper::QueueSeekedEvent(
     const PROPVARIANT* start_position) {
   DVLOG_FUNC(2);
+
+  // Save the new start position in the stream.
+  SetLastStartPosition(start_position);
 
   state_ = State::kStarted;
   RETURN_IF_FAILED(mf_media_event_queue_->QueueEventParamVar(
@@ -307,9 +325,9 @@ void MediaFoundationStreamWrapper::ProcessRequestsIfPossible() {
     return;
   }
 
-  if (!demuxer_stream_ || pending_stream_read_) {
+  if (!demuxer_stream_ || pending_stream_read_)
     return;
-  }
+
   demuxer_stream_->Read(
       base::BindOnce(&MediaFoundationStreamWrapper::OnDemuxerStreamRead,
                      weak_factory_.GetWeakPtr()));
@@ -326,6 +344,8 @@ HRESULT MediaFoundationStreamWrapper::ServiceSampleRequest(
   if (buffer->end_of_stream()) {
     if (!enabled_) {
       DVLOG_FUNC(2) << "Ignoring EOS for disabled stream";
+      // token not dropped to reflect an outstanding request that stream wrapper
+      // should service when the stream is enabled
       return S_OK;
     }
     DVLOG_FUNC(2) << "End of stream";
@@ -348,28 +368,60 @@ HRESULT MediaFoundationStreamWrapper::ServiceSampleRequest(
     RETURN_IF_FAILED(mf_media_event_queue_->QueueEventParamUnk(
         MEMediaSample, GUID_NULL, S_OK, mf_sample.Get()));
   }
+
+  pending_sample_request_tokens_.pop();
+
   return S_OK;
 }
 
 bool MediaFoundationStreamWrapper::ServicePostFlushSampleRequest() {
   DVLOG_FUNC(3);
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  HRESULT hr = S_OK;
 
   base::AutoLock auto_lock(lock_);
-  if ((flushed_ && state_ != State::kStarted) || post_flush_buffers_.empty()) {
+  if (flushed_ && state_ == State::kStarted &&
+      last_start_time_ != kInvalidTime) {
+    // Video may freeze during consecutive backward seek since MF does not
+    // cancel previous pending seek, while Chromium's source starts new seek
+    // immediately. MF's seek finishes when a sample's timestamp is equal to
+    // or greater than seek time. Thus it would cause video to freeze until
+    // source send samples with timestamps matching the previous pending seek.
+
+    // MEStreamTick event notifies a gap in data and notify downstream
+    // components not to expect any data at the specified time, allowing
+    // downstream components to cancel the first seek
+    // https://learn.microsoft.com/en-us/windows/win32/medfound/mestreamtick
+
+    // Stream ticks are continuously sent until flush completes to make sure
+    // all downsteam components have been rid of stale samples.
+    PROPVARIANT var;
+    PropVariantInit(&var);
+    var.vt = VT_I8;
+    var.hVal.QuadPart = last_start_time_;
+    hr = mf_media_event_queue_->QueueEventParamVar(MEStreamTick, GUID_NULL,
+                                                   S_OK, &var);
+    if (FAILED(hr)) {
+      // Failure would indicate mf no longer accepts events, such as when
+      // shutdown is called, thus stream ticks should no longer be needed.
+      DLOG(WARNING) << "Failed to queue stream tick: " << PrintHr(hr);
+    }
+    return false;
+
+  } else if ((flushed_ && state_ != State::kStarted) ||
+             post_flush_buffers_.empty()) {
     return false;
   }
 
   DCHECK(!pending_sample_request_tokens_.empty());
   ComPtr<IUnknown> request_token = pending_sample_request_tokens_.front();
-  HRESULT hr = ServiceSampleRequest(request_token.Get(),
-                                    post_flush_buffers_.front().get());
+  hr = ServiceSampleRequest(request_token.Get(),
+                            post_flush_buffers_.front().get());
   if (FAILED(hr)) {
     DLOG(WARNING) << "Failed to service post flush sample: " << PrintHr(hr);
     return false;
   }
 
-  pending_sample_request_tokens_.pop();
   post_flush_buffers_.pop();
   return true;
 }
@@ -417,7 +469,6 @@ void MediaFoundationStreamWrapper::OnDemuxerStreamRead(
                       << ": ServiceSampleRequest failed: " << PrintHr(hr);
           return;
         }
-        pending_sample_request_tokens_.pop();
       }
     } else if (status == DemuxerStream::Status::kConfigChanged) {
       DVLOG_FUNC(2) << "Stream config changed, AreFormatChangesEnabled="

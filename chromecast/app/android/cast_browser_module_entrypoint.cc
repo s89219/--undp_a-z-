@@ -1,11 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/android/jni_generator/jni_generator_helper.h"
 #include "base/android/jni_utils.h"
-#include "chromecast/android/cast_shell_jni_registration.h"
 #include "chromecast/app/cast_main_delegate.h"
+#include "chromecast/cast_shell_jni_registration_generated.h"
 #include "content/public/app/content_main.h"
 #include "content/public/browser/android/compositor.h"
 

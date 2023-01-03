@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,8 +95,7 @@ class ReadingListSectionHeader {
         int paddingTop = read ? context.getResources().getDimensionPixelSize(
                                  R.dimen.bookmark_reading_list_section_header_padding_top)
                               : 0;
-        return BookmarkListEntry.createSectionHeader(
-                title, /*description=*/null, paddingTop, context);
+        return BookmarkListEntry.createSectionHeader(title, paddingTop, context);
     }
 
     private static void recordMetrics(List<BookmarkListEntry> listItems) {

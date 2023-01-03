@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -323,16 +323,19 @@ void GpuControlList::Entry::LogControlListMatch(
                                 control_list_logging_name.c_str());
 }
 
-bool GpuControlList::DriverInfo::Contains(const GPUInfo& gpu_info) const {
-  const GPUInfo::GPUDevice& active_gpu = gpu_info.active_gpu();
-  if (StringMismatch(active_gpu.driver_vendor, driver_vendor)) {
-    return false;
+bool GpuControlList::DriverInfo::Contains(
+    const std::vector<GPUInfo::GPUDevice>& gpus) const {
+  for (auto& gpu : gpus) {
+    if (StringMismatch(gpu.driver_vendor, driver_vendor))
+      continue;
+
+    if (driver_version.IsSpecified() && !gpu.driver_version.empty() &&
+        !driver_version.Contains(gpu.driver_version)) {
+      continue;
+    }
+    return true;
   }
-  if (driver_version.IsSpecified() && !active_gpu.driver_version.empty() &&
-      !driver_version.Contains(active_gpu.driver_version)) {
-    return false;
-  }
-  return true;
+  return false;
 }
 
 bool GpuControlList::GLStrings::Contains(const GPUInfo& gpu_info) const {
@@ -446,33 +449,34 @@ bool GpuControlList::Conditions::Contains(OsType target_os_type,
     if (os_version.IsSpecified() && !os_version.Contains(target_os_version))
       return false;
   }
+
+  std::vector<GPUInfo::GPUDevice> candidates;
+  switch (multi_gpu_category) {
+    case kMultiGpuCategoryPrimary:
+      candidates.push_back(gpu_info.gpu);
+      break;
+    case kMultiGpuCategorySecondary:
+      candidates = gpu_info.secondary_gpus;
+      break;
+    case kMultiGpuCategoryAny:
+      candidates = gpu_info.secondary_gpus;
+      candidates.push_back(gpu_info.gpu);
+      break;
+    case kMultiGpuCategoryActive:
+    case kMultiGpuCategoryNone:
+      // If gpu category is not specified, default to the active gpu.
+      if (gpu_info.gpu.active || gpu_info.secondary_gpus.empty())
+        candidates.push_back(gpu_info.gpu);
+      for (auto& gpu : gpu_info.secondary_gpus) {
+        if (gpu.active)
+          candidates.push_back(gpu);
+      }
+      if (candidates.empty())
+        candidates.push_back(gpu_info.gpu);
+  }
+
   if (vendor_id != 0 || intel_gpu_series_list_size > 0 ||
       intel_gpu_generation.IsSpecified()) {
-    std::vector<GPUInfo::GPUDevice> candidates;
-    switch (multi_gpu_category) {
-      case kMultiGpuCategoryPrimary:
-        candidates.push_back(gpu_info.gpu);
-        break;
-      case kMultiGpuCategorySecondary:
-        candidates = gpu_info.secondary_gpus;
-        break;
-      case kMultiGpuCategoryAny:
-        candidates = gpu_info.secondary_gpus;
-        candidates.push_back(gpu_info.gpu);
-        break;
-      case kMultiGpuCategoryActive:
-      case kMultiGpuCategoryNone:
-        // If gpu category is not specified, default to the active gpu.
-        if (gpu_info.gpu.active || gpu_info.secondary_gpus.empty())
-          candidates.push_back(gpu_info.gpu);
-        for (size_t ii = 0; ii < gpu_info.secondary_gpus.size(); ++ii) {
-          if (gpu_info.secondary_gpus[ii].active)
-            candidates.push_back(gpu_info.secondary_gpus[ii]);
-        }
-        if (candidates.empty())
-          candidates.push_back(gpu_info.gpu);
-    }
-
     bool found = false;
     if (intel_gpu_series_list_size > 0) {
       for (size_t ii = 0; !found && ii < candidates.size(); ++ii) {
@@ -557,8 +561,22 @@ bool GpuControlList::Conditions::Contains(OsType target_os_type,
     case kMultiGpuStyleNone:
       break;
   }
-  if (driver_info && !driver_info->Contains(gpu_info)) {
-    return false;
+
+  if (driver_info) {
+    // We don't have a reliable way to check driver version without
+    // also checking for vendor.
+    DCHECK(vendor_id != 0 || candidates.size() < 2);
+
+    // Remove candidate GPUs made by different vendors.
+    auto behind_last =
+        std::remove_if(candidates.begin(), candidates.end(),
+                       [vendor_id = vendor_id](const GPUInfo::GPUDevice& gpu) {
+                         return (vendor_id && vendor_id != gpu.vendor_id);
+                       });
+    candidates.erase(behind_last, candidates.end());
+
+    if (!driver_info->Contains(candidates))
+      return false;
   }
   if (gl_strings && !gl_strings->Contains(gpu_info)) {
     return false;
@@ -644,9 +662,9 @@ bool GpuControlList::Entry::NeedsMoreInfo(const GPUInfo& gpu_info,
   return false;
 }
 
-void GpuControlList::Entry::GetFeatureNames(
-    base::Value& feature_names,
+base::Value::List GpuControlList::Entry::GetFeatureNames(
     const FeatureMap& feature_map) const {
+  base::Value::List feature_names;
   for (size_t ii = 0; ii < feature_size; ++ii) {
     auto iter = feature_map.find(features[ii]);
     DCHECK(iter != feature_map.end());
@@ -657,6 +675,7 @@ void GpuControlList::Entry::GetFeatureNames(
         base::StringPrintf("disable(%s)", disabled_extensions[ii]);
     feature_names.Append(name);
   }
+  return feature_names;
 }
 
 GpuControlList::GpuControlList(const GpuControlListData& data)
@@ -781,28 +800,27 @@ std::vector<std::string> GpuControlList::GetDisabledWebGLExtensions() {
                                   disabled_webgl_extensions.end());
 }
 
-void GpuControlList::GetReasons(base::Value& problem_list,
+void GpuControlList::GetReasons(base::Value::List& problem_list,
                                 const std::string& tag,
                                 const std::vector<uint32_t>& entries) const {
   for (auto index : entries) {
     DCHECK_LT(index, entry_count_);
     const Entry& entry = entries_[index];
-    auto problem = base::Value(base::Value::Type::DICTIONARY);
+    base::Value::Dict problem;
 
-    problem.SetStringKey("description", entry.description);
+    problem.Set("description", entry.description);
 
-    auto cr_bugs = base::Value(base::Value::Type::LIST);
+    base::Value::List cr_bugs;
     for (size_t jj = 0; jj < entry.cr_bug_size; ++jj)
       cr_bugs.Append(
           base::Int64ToValue(static_cast<int64_t>(entry.cr_bugs[jj])));
-    problem.SetKey("crBugs", std::move(cr_bugs));
+    problem.Set("crBugs", std::move(cr_bugs));
 
-    auto features = base::Value(base::Value::Type::LIST);
-    entry.GetFeatureNames(features, feature_map_);
-    problem.SetKey("affectedGpuSettings", std::move(features));
+    base::Value::List features = entry.GetFeatureNames(feature_map_);
+    problem.Set("affectedGpuSettings", std::move(features));
 
     DCHECK(tag == "workarounds" || tag == "disabledFeatures");
-    problem.SetStringKey("tag", tag);
+    problem.Set("tag", tag);
 
     problem_list.Append(std::move(problem));
   }

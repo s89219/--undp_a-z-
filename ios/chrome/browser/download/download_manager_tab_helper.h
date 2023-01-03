@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,10 +30,10 @@ class DownloadManagerTabHelper
 
   ~DownloadManagerTabHelper() override;
 
-  // Asynchronously downloads a file using the given |task|.
+  // Asynchronously downloads a file using the given `task`.
   virtual void Download(std::unique_ptr<web::DownloadTask> task);
 
-  // Returns |true| after Download() was called, |false| after the task was
+  // Returns `true` after Download() was called, `false` after the task was
   // cancelled.
   bool has_download_task() const { return task_.get(); }
 
@@ -42,7 +42,7 @@ class DownloadManagerTabHelper
 
  protected:
   // Allow subclassing from DownloadManagerTabHelper for testing purposes.
-  DownloadManagerTabHelper(web::WebState* web_state);
+  explicit DownloadManagerTabHelper(web::WebState* web_state);
 
  private:
   friend class web::WebStateUserData<DownloadManagerTabHelper>;
@@ -58,7 +58,7 @@ class DownloadManagerTabHelper
   // Returns key for using with NetworkActivityIndicatorManager.
   NSString* GetNetworkActivityKey() const;
 
-  // Assigns |task| to |task_|; replaces the current download if exists;
+  // Assigns `task` to `task_`; replaces the current download if exists;
   // instructs the delegate that download has started.
   void DidCreateDownload(std::unique_ptr<web::DownloadTask> task);
 

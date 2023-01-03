@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ suite('CategorySettingExceptions', function() {
   setup(function() {
     browserProxy = new TestSiteSettingsPrefsBrowserProxy();
     SiteSettingsPrefsBrowserProxyImpl.setInstance(browserProxy);
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     testElement = document.createElement('category-setting-exceptions');
     document.body.appendChild(testElement);
   });
@@ -56,13 +56,13 @@ suite('CategorySettingExceptions', function() {
   test(
       'all lists are read-only if the default policy is set by policy',
       async function() {
-        document.body.innerHTML = '';
+        document.body.innerHTML = window.trustedTypes!.emptyHTML;
         const policyPref = createSiteSettingsPrefs(
             [
               createContentSettingTypeToValuePair(
                   ContentSettingsTypes.COOKIES, createDefaultContentSetting({
                     setting: ContentSetting.ALLOW,
-                    source: ContentSettingProvider.POLICY
+                    source: ContentSettingProvider.POLICY,
                   })),
             ],
             []);
@@ -90,7 +90,7 @@ suite('CategorySettingExceptions', function() {
   test(
       'all lists are not read-only if the default policy is set by user',
       async function() {
-        document.body.innerHTML = '';
+        document.body.innerHTML = window.trustedTypes!.emptyHTML;
         const dummyPref = createSiteSettingsPrefs(
             [
               createContentSettingTypeToValuePair(

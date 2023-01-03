@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@
 
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_renderer_data.h"
 #include "chrome/browser/ui/views/tabs/tab_slot_view.h"
@@ -97,6 +96,7 @@ class Tab : public gfx::AnimationDelegate,
   void PaintChildren(const views::PaintInfo& info) override;
   void OnPaint(gfx::Canvas* canvas) override;
   void AddedToWidget() override;
+  void RemovedFromWidget() override;
   void OnFocus() override;
   void OnBlur() override;
   void OnThemeChanged() override;
@@ -124,9 +124,6 @@ class Tab : public gfx::AnimationDelegate,
 
   // Called when the alert indicator has changed states.
   void AlertStateChanged();
-
-  // Called when the frame state color changes.
-  void FrameColorsChanged();
 
   // Called when the selected state changes.
   void SelectedStateChanged();
@@ -186,6 +183,8 @@ class Tab : public gfx::AnimationDelegate,
     return showing_close_button_;
   }
 
+  raw_ptr<TabCloseButton> close_button() { return close_button_; }
+
  private:
   class TabCloseButtonObserver;
   friend class AlertIndicatorButtonTest;
@@ -193,8 +192,8 @@ class Tab : public gfx::AnimationDelegate,
   friend class TabStripTestBase;
   FRIEND_TEST_ALL_PREFIXES(TabStripTest, TabCloseButtonVisibility);
   FRIEND_TEST_ALL_PREFIXES(TabTest, TitleTextHasSufficientContrast);
-  FRIEND_TEST_ALL_PREFIXES(TabHoverCardBubbleViewBrowserTest,
-                           WidgetVisibleOnTabCloseButtonFocusAfterTabFocus);
+  FRIEND_TEST_ALL_PREFIXES(TabHoverCardInteractiveUiTest,
+                           HoverCardVisibleOnTabCloseButtonFocusAfterTabFocus);
 
   // Invoked from Layout to adjust the position of the favicon or alert
   // indicator for pinned tabs. The visual_width parameter is how wide the
@@ -289,6 +288,8 @@ class Tab : public gfx::AnimationDelegate,
   // Freezing token held while the tab is collapsed.
   std::unique_ptr<performance_manager::freezing::FreezingVoteToken>
       freezing_token_;
+
+  base::CallbackListSubscription paint_as_active_subscription_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TABS_TAB_H_

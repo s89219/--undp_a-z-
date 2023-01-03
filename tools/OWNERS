@@ -7,6 +7,7 @@
 
 set noparent
 brucedawson@chromium.org
+dpranke@google.com
 thakis@chromium.org
 
 per-file add_header*.py=dcheng@chromium.org
@@ -24,8 +25,6 @@ per-file check_git_config.py=iannucci@chromium.org
 per-file check_grd_for_unused_strings.py=estade@chromium.org
 
 per-file gyp-explain.py=thakis@chromium.org
-
-per-file gypv8sh.py=jochen@chromium.org
 
 per-file include_tracer.py=thakis@chromium.org
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_AUDIO_PARAM_HANDLER_H_
 
 #include <sys/types.h>
+
 #include <atomic>
 
 #include "base/memory/scoped_refptr.h"
@@ -98,9 +99,6 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
   // Return a nice name for the AudioParam.
   String GetParamName() const;
 
-  static const double kDefaultSmoothingConstant;
-  static const double kSnapThreshold;
-
   static scoped_refptr<AudioParamHandler> Create(BaseAudioContext& context,
                                                  AudioParamType param_type,
                                                  double default_value,
@@ -142,19 +140,6 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
   float DefaultValue() const { return static_cast<float>(default_value_); }
   float MinValue() const { return min_value_; }
   float MaxValue() const { return max_value_; }
-
-  // Value smoothing:
-
-  // When a new value is set with setValue(), in our internal use of the
-  // parameter we don't immediately jump to it.  Instead we smoothly approach
-  // this value to avoid glitching.
-  float SmoothedValue();
-
-  // Smoothly exponentially approaches to (de-zippers) the desired value.
-  // Returns true if smoothed value has already snapped exactly to value.
-  bool Smooth();
-
-  void ResetSmoothedValue() { timeline_.SetSmoothedValue(IntrinsicValue()); }
 
   // An AudioParam needs sample accurate processing if there are
   // automations scheduled or if there are connections.
@@ -200,7 +185,7 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
   AudioParamType param_type_;
   // Name of the AudioParam. This is only used for printing out more informative
   // warnings, and only used for AudioWorklets.  All others have a name derived
-  // from the |param_type_|.  Worklets need custom names because they're defined
+  // from the `param_type_`.  Worklets need custom names because they're defined
   // by the user.
   String custom_param_name_;
 
@@ -212,7 +197,7 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
 
   // The automation rate of the AudioParam (k-rate or a-rate)
   AutomationRate automation_rate_;
-  // |rate_mode_| determines if the user can change the automation rate to a
+  // `rate_mode_` determines if the user can change the automation rate to a
   // different value.
   const AutomationRateMode rate_mode_;
 
@@ -222,7 +207,7 @@ class AudioParamHandler final : public ThreadSafeRefCounted<AudioParamHandler>,
 
   AudioParamTimeline timeline_;
 
-  // The destination node used to get necessary information like the smaple rate
+  // The destination node used to get necessary information like the sample rate
   // and context time.
   scoped_refptr<AudioDestinationHandler> destination_handler_;
 

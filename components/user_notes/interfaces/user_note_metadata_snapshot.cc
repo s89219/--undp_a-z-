@@ -1,8 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/user_notes/interfaces/user_note_metadata_snapshot.h"
+
+#include <ostream>
 
 #include "components/user_notes/model/user_note_metadata.h"
 
@@ -10,7 +12,14 @@ namespace user_notes {
 
 UserNoteMetadataSnapshot::UserNoteMetadataSnapshot() = default;
 
+UserNoteMetadataSnapshot::UserNoteMetadataSnapshot(
+    UserNoteMetadataSnapshot&& other) = default;
+
 UserNoteMetadataSnapshot::~UserNoteMetadataSnapshot() = default;
+
+bool UserNoteMetadataSnapshot::IsEmpty() {
+  return url_map_.size() == 0;
+}
 
 void UserNoteMetadataSnapshot::AddEntry(
     const GURL& url,

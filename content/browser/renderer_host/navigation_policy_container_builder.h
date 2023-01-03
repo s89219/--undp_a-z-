@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,8 @@
 #include "base/unguessable_token.h"
 #include "content/browser/renderer_host/policy_container_host.h"
 #include "content/common/content_export.h"
-#include "services/network/public/mojom/ip_address_space.mojom-shared.h"
+#include "services/network/public/mojom/ip_address_space.mojom-forward.h"
+#include "services/network/public/mojom/web_sandbox_flags.mojom-forward.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/frame/policy_container.mojom.h"
 #include "url/gurl.h"
@@ -122,15 +123,9 @@ class CONTENT_EXPORT NavigationPolicyContainerBuilder {
   // Sets final policies to defaults suitable for error pages, and builds a
   // policy container host.
   //
-  // `is_inside_mhtml` specifies whether the navigation loads an MHTML document
-  // or a subframe of an MHTML document. This influences computed sandbox flags.
-  // `frame_sandbox_flags` represents the frame's sandbox flags.
-  //
   // This method must only be called once. However it can be called after
   // `ComputePolicies()`.
-  void ComputePoliciesForError(
-      bool is_inside_mhtml,
-      network::mojom::WebSandboxFlags frame_sandbox_flags);
+  void ComputePoliciesForError();
 
   // Sets final policies to their correct values and builds a policy container
   // host.
@@ -148,7 +143,8 @@ class CONTENT_EXPORT NavigationPolicyContainerBuilder {
   // called later, in which case it overrides the final policies.
   void ComputePolicies(const GURL& url,
                        bool is_inside_mhtml,
-                       network::mojom::WebSandboxFlags frame_sandbox_flags);
+                       network::mojom::WebSandboxFlags frame_sandbox_flags,
+                       bool is_credentialless);
 
   // Returns a reference to the policies of the new document, i.e. the policies
   // in the policy container host to be committed.
@@ -177,11 +173,15 @@ class CONTENT_EXPORT NavigationPolicyContainerBuilder {
   // due to another navigation committing in the meantime.
   void ResetForCrossDocumentRestart();
 
- private:
   // Whether either of `ComputePolicies()` or `ComputePoliciesForError()` has
   // been called yet.
   bool HasComputedPolicies() const;
 
+  // Modifies the bit that would allow top-level navigation without sticky
+  // user activation.
+  void SetAllowTopNavigationWithoutUserGesture(bool allow_top);
+
+ private:
   // Sets `delivered_policies_.is_web_secure_context` to its final value.
   //
   // Helper for `ComputePolicies()`.
@@ -200,28 +200,27 @@ class CONTENT_EXPORT NavigationPolicyContainerBuilder {
   // Helper for `ComputePolicies()` and `ComputePoliciesForError()`.
   void ComputeSandboxFlags(bool is_inside_mhtml,
                            network::mojom::WebSandboxFlags frame_sandbox_flags,
-                           PolicyContainerPolicies* policies);
+                           PolicyContainerPolicies& policies);
 
   // Sets `host_`.
-  void SetFinalPolicies(std::unique_ptr<PolicyContainerPolicies> policies);
+  void SetFinalPolicies(PolicyContainerPolicies policies);
 
   // Helper for `FinalizePolicies()`. Appends the delivered Content Security
-  // Policies to `policies` and returns them.
-  std::unique_ptr<PolicyContainerPolicies> IncorporateDeliveredPolicies(
-      const GURL& url,
-      std::unique_ptr<PolicyContainerPolicies> policies);
+  // Policies to `policies`.
+  void IncorporateDeliveredPolicies(const GURL& url,
+                                    PolicyContainerPolicies& policies);
 
   // Helper for `FinalizePolicies()`. Returns, depending on `url`, the policies
   // that this document inherits from parent/initiator.
-  std::unique_ptr<PolicyContainerPolicies> ComputeInheritedPolicies(
-      const GURL& url);
+  PolicyContainerPolicies ComputeInheritedPolicies(const GURL& url);
 
   // Helper for `FinalizePolicies()`. Returns, depending on `url`, the final
   // policies for the document that is going to be committed.
-  std::unique_ptr<PolicyContainerPolicies> ComputeFinalPolicies(
+  PolicyContainerPolicies ComputeFinalPolicies(
       const GURL& url,
       bool is_inside_mhtml,
-      network::mojom::WebSandboxFlags frame_sandbox_flags);
+      network::mojom::WebSandboxFlags frame_sandbox_flags,
+      bool is_credentialless);
 
   // The policies of the parent document, if any.
   const std::unique_ptr<PolicyContainerPolicies> parent_policies_;
@@ -236,7 +235,7 @@ class CONTENT_EXPORT NavigationPolicyContainerBuilder {
   //
   // See the comment on `SetIsOriginPotentiallyTrustworthy()` regarding this
   // member's `is_web_secure_context` field.
-  std::unique_ptr<PolicyContainerPolicies> delivered_policies_;
+  PolicyContainerPolicies delivered_policies_;
 
   // Nullptr until `ComputePolicies()` or `ComputePoliciesForError()` is
   // called, then moved from by `TakePolicyContainerHost()`.

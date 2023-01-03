@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,10 +25,8 @@ namespace file_manager {
 namespace file_tasks {
 namespace {
 
-static constexpr auto VM_TERMINA =
-    guest_os::GuestOsRegistryService::VmType::ApplicationList_VmType_TERMINA;
-static constexpr auto PLUGIN_VM =
-    guest_os::GuestOsRegistryService::VmType::ApplicationList_VmType_PLUGIN_VM;
+static constexpr auto VM_TERMINA = guest_os::VmType::TERMINA;
+static constexpr auto PLUGIN_VM = guest_os::VmType::PLUGIN_VM;
 
 }  // namespace
 
@@ -57,12 +55,12 @@ class GuestOsFileTasksTest : public testing::Test {
               const std::string& name,
               const std::vector<std::string>& mimes,
               const std::vector<std::string>& extensions,
-              guest_os::GuestOsRegistryService::VmType vm_type) {
+              guest_os::VmType vm_type) {
     // crostini.registry {<id>: {container_name: "penguin", name: {"": <name>},
     //                           mime_types: [<mime>,], vm_name: "termina"}}
-    DictionaryPrefUpdate update(profile_.GetPrefs(),
+    ScopedDictPrefUpdate update(profile_.GetPrefs(),
                                 guest_os::prefs::kGuestOsRegistry);
-    base::Value* registry = update.Get();
+    base::Value::Dict& registry = update.Get();
     base::Value app(base::Value::Type::DICTIONARY);
     app.SetKey("container_name", base::Value("penguin"));
     base::Value mime_list(base::Value::Type::LIST);
@@ -78,7 +76,7 @@ class GuestOsFileTasksTest : public testing::Test {
     app.SetKey("name", std::move(name_dict));
     app.SetKey("vm_name", base::Value("termina"));
     app.SetIntKey("vm_type", static_cast<int>(vm_type));
-    registry->SetKey(id, std::move(app));
+    registry.Set(id, std::move(app));
   }
 
   void AddEntry(const std::string& path, const std::string& mime) {
@@ -93,10 +91,10 @@ class GuestOsFileTasksTest : public testing::Test {
 
   void AddMime(const std::string& file_ext, const std::string& mime) {
     // crostini.mime_types.termina.penguin.<file_ext>: <mime>
-    DictionaryPrefUpdate update(profile_.GetPrefs(),
+    ScopedDictPrefUpdate update(profile_.GetPrefs(),
                                 guest_os::prefs::kGuestOsMimeTypes);
-    base::Value* mimes = update.Get();
-    mimes->SetStringPath("termina.penguin." + file_ext, mime);
+    base::Value::Dict& mimes = update.Get();
+    mimes.SetByDottedPath("termina.penguin." + file_ext, mime);
   }
 
   content::BrowserTaskEnvironment task_environment_;
@@ -105,7 +103,7 @@ class GuestOsFileTasksTest : public testing::Test {
   std::vector<GURL> urls_;
   std::vector<std::string> app_ids_;
   std::vector<std::string> app_names_;
-  std::vector<guest_os::GuestOsRegistryService::VmType> app_vm_types_;
+  std::vector<guest_os::VmType> app_vm_types_;
   crostini::FakeCrostiniFeatures fake_crostini_features_;
   plugin_vm::FakePluginVmFeatures fake_plugin_vm_features_;
 };

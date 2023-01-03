@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,9 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/test/web_app_test_observers.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
@@ -42,12 +42,16 @@ class DisplayModeChangeWaiter : public AppRegistrarObserver {
   explicit DisplayModeChangeWaiter(WebAppRegistrar& registrar) {
     observation_.Observe(&registrar);
   }
+
   void OnWebAppUserDisplayModeChanged(
       const AppId& app_id,
-      UserDisplayMode user_display_mode) override {
+      mojom::UserDisplayMode user_display_mode) override {
     run_loop_.Quit();
   }
+
   void Wait() { run_loop_.Run(); }
+
+  void OnAppRegistrarDestroyed() override { NOTREACHED(); }
 
  private:
   base::RunLoop run_loop_;
@@ -74,7 +78,7 @@ class TwoClientWebAppsSyncTest : public WebAppsSyncTestBase {
   }
 
   const WebAppRegistrar& GetRegistrar(Profile* profile) {
-    return WebAppProvider::GetForTest(profile)->registrar();
+    return WebAppProvider::GetForTest(profile)->registrar_unsafe();
   }
 
   bool AllProfilesHaveSameWebAppIds() {
@@ -84,8 +88,9 @@ class TwoClientWebAppsSyncTest : public WebAppsSyncTestBase {
       if (!app_ids) {
         app_ids = profile_app_ids;
       } else {
-        if (app_ids != profile_app_ids)
+        if (app_ids != profile_app_ids) {
           return false;
+        }
       }
     }
     return true;
@@ -388,12 +393,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientWebAppsSyncTest, SyncUsingIconUrlFallback) {
     base::RunLoop run_loop;
     WebAppProvider::GetForTest(dest_profile)
         ->icon_manager()
-        .ReadSmallestIconAny(
-            synced_app_id, 192,
-            base::BindLambdaForTesting([&run_loop](SkBitmap bitmap) {
-              EXPECT_EQ(bitmap.getColor(0, 0), SK_ColorBLUE);
-              run_loop.Quit();
-            }));
+        .ReadSmallestIcon(
+            synced_app_id, {IconPurpose::ANY}, 192,
+            base::BindLambdaForTesting(
+                [&run_loop](IconPurpose purpose, SkBitmap bitmap) {
+                  EXPECT_EQ(purpose, IconPurpose::ANY);
+                  EXPECT_EQ(bitmap.getColor(0, 0), SK_ColorBLUE);
+                  run_loop.Quit();
+                }));
     run_loop.Run();
   }
 
@@ -412,24 +419,25 @@ IN_PROC_BROWSER_TEST_F(TwoClientWebAppsSyncTest, SyncUserDisplayModeChange) {
   info.description = u"Test description";
   info.start_url = GURL("http://www.chromium.org/path");
   info.scope = GURL("http://www.chromium.org/");
-  info.user_display_mode = UserDisplayMode::kStandalone;
+  info.user_display_mode = mojom::UserDisplayMode::kStandalone;
   AppId app_id = apps_helper::InstallWebApp(GetProfile(0), info);
 
   EXPECT_EQ(install_observer.Wait(), app_id);
   EXPECT_TRUE(AllProfilesHaveSameWebAppIds());
 
   auto* provider1 = WebAppProvider::GetForTest(GetProfile(1));
-  WebAppRegistrar& registrar1 = provider1->registrar();
+  WebAppRegistrar& registrar1 = provider1->registrar_unsafe();
   EXPECT_EQ(registrar1.GetAppUserDisplayMode(app_id),
-            UserDisplayMode::kStandalone);
+            mojom::UserDisplayMode::kStandalone);
 
   DisplayModeChangeWaiter display_mode_change_waiter(registrar1);
-  provider1->sync_bridge().SetAppUserDisplayMode(app_id,
-                                                 UserDisplayMode::kTabbed,
-                                                 /*is_user_action=*/true);
+  provider1->sync_bridge_unsafe().SetAppUserDisplayMode(
+      app_id, mojom::UserDisplayMode::kTabbed,
+      /*is_user_action=*/true);
   display_mode_change_waiter.Wait();
 
-  EXPECT_EQ(registrar1.GetAppUserDisplayMode(app_id), UserDisplayMode::kTabbed);
+  EXPECT_EQ(registrar1.GetAppUserDisplayMode(app_id),
+            mojom::UserDisplayMode::kTabbed);
 }
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)

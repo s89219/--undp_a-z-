@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,8 +26,8 @@ class UkmDatabaseImpl : public UkmDatabase {
   explicit UkmDatabaseImpl(const base::FilePath& database_path);
   ~UkmDatabaseImpl() override;
 
-  UkmDatabaseImpl(UkmDatabaseImpl&) = delete;
-  UkmDatabaseImpl& operator=(UkmDatabaseImpl&) = delete;
+  UkmDatabaseImpl(const UkmDatabaseImpl&) = delete;
+  UkmDatabaseImpl& operator=(const UkmDatabaseImpl&) = delete;
 
   void InitDatabase(SuccessCallback callback) override;
   void StoreUkmEntry(ukm::mojom::UkmEntryPtr ukm_entry) override;

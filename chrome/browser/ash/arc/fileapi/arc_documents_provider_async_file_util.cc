@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -295,7 +295,7 @@ ArcDocumentsProviderAsyncFileUtil::~ArcDocumentsProviderAsyncFileUtil() =
 void ArcDocumentsProviderAsyncFileUtil::CreateOrOpen(
     std::unique_ptr<storage::FileSystemOperationContext> context,
     const storage::FileSystemURL& url,
-    int file_flags,
+    uint32_t file_flags,
     CreateOrOpenCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // TODO(nya): Implement this function if it is ever called.
@@ -379,7 +379,8 @@ void ArcDocumentsProviderAsyncFileUtil::Truncate(
     int64_t length,
     StatusCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  // Truncate() doesn't work well on ARC++ P.
+  // Truncate() doesn't work well on ARC P/R container. It works on ARCVM R+
+  // because the mojo proxy for ARCVM implements the feature.
   // TODO(b/223247850) Fix this.
   if (!IsArcVmEnabled()) {
     // HACK: Return FILE_OK even though we do nothing here.

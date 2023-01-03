@@ -1,9 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/firmware_update/firmware_update_notification_controller.h"
 
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/new_window_delegate.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/public/cpp/system_tray_client.h"
@@ -86,18 +87,14 @@ FirmwareUpdateNotificationController::FirmwareUpdateNotificationController(
     message_center::MessageCenter* message_center)
     : message_center_(message_center) {
   DCHECK(message_center_);
-}
-
-FirmwareUpdateNotificationController::~FirmwareUpdateNotificationController() {
-  if (ash::FirmwareUpdateManager::IsInitialized())
-    ash::FirmwareUpdateManager::Get()->RemoveObserver(this);
-}
-
-void FirmwareUpdateNotificationController::
-    OnFirmwareUpdateManagerInitialized() {
   DCHECK(ash::FirmwareUpdateManager::IsInitialized());
 
   ash::FirmwareUpdateManager::Get()->AddObserver(this);
+}
+
+FirmwareUpdateNotificationController::~FirmwareUpdateNotificationController() {
+  DCHECK(ash::FirmwareUpdateManager::IsInitialized());
+  ash::FirmwareUpdateManager::Get()->RemoveObserver(this);
 }
 
 void FirmwareUpdateNotificationController::NotifyFirmwareUpdateAvailable() {
@@ -106,7 +103,7 @@ void FirmwareUpdateNotificationController::NotifyFirmwareUpdateAvailable() {
       message_center::ButtonInfo(l10n_util::GetStringUTF16(
           IDS_ASH_FIRMWARE_UPDATE_NOTIFICATION_UPDATE_BUTTON_TEXT)));
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kFirmwareUpdateNotificationId,
           l10n_util::GetStringUTF16(
@@ -116,7 +113,8 @@ void FirmwareUpdateNotificationController::NotifyFirmwareUpdateAvailable() {
           /*display_source=*/std::u16string(), GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierFirmwareUpdate),
+              kNotifierFirmwareUpdate,
+              NotificationCatalogName::kFirmwareUpdate),
           optional,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(
@@ -128,7 +126,7 @@ void FirmwareUpdateNotificationController::NotifyFirmwareUpdateAvailable() {
 }
 
 void FirmwareUpdateNotificationController::OnFirmwareUpdateReceived() {
-  if (ShouldShowNotification()) {
+  if (should_show_notification_for_test_ || ShouldShowNotification()) {
     NotifyFirmwareUpdateAvailable();
   }
 }

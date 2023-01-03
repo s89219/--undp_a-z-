@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,10 +27,6 @@ const char kStabilityKernelCrashCount[] =
 // Total number of external user process crashes since the last report.
 const char kStabilityOtherUserCrashCount[] =
     "user_experience_metrics.stability.other_user_crash_count";
-
-// Number of times a renderer process crashed since the last report.
-const char kStabilityRendererCrashCount[] =
-    "user_experience_metrics.stability.renderer_crash_count";
 
 // Total number of unclean system shutdowns since the last report.
 const char kStabilitySystemUncleanShutdownCount[] =

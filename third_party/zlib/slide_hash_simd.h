@@ -1,6 +1,6 @@
 /* slide_hash_simd.h
  *
- * Copyright 2022 The Chromium Authors. All rights reserved.
+ * Copyright 2022 The Chromium Authors
  * Use of this source code is governed by a BSD-style license that can be
  * found in the Chromium source repository LICENSE file.
  */
@@ -78,7 +78,8 @@ local INLINE void slide_hash_simd(
     Assert(sizeof(Pos) == 2, "Pos type size error: should be 2 bytes");
     Assert(sizeof(ush) == 2, "ush type size error: should be 2 bytes");
 
-    Assert(hash_size == (ush)hash_size, "Hash table size error");
+    Assert(hash_size <= (1 << 16), "Hash table maximum size error");
+    Assert(hash_size >= (1 << 8), "Hash table minimum size error");
     Assert(w_size == (ush)w_size, "Prev table size error");
 
     /*

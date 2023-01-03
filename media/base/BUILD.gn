@@ -1,4 +1,4 @@
-# Copyright 2014 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -31,6 +31,10 @@ source_set("base") {
   # we can just include //media/base/mac in media_subcomponent_deps.
   if (is_apple) {
     visibility += [ "//media/base/mac" ]
+  }
+
+  if (is_win) {
+    visibility += [ "//media/base/win:color_space_util_win" ]
   }
 
   if (is_android) {
@@ -67,6 +71,8 @@ source_set("base") {
     "audio_encoder.h",
     "audio_fifo.cc",
     "audio_fifo.h",
+    "audio_glitch_info.cc",
+    "audio_glitch_info.h",
     "audio_hash.cc",
     "audio_hash.h",
     "audio_power_monitor.cc",
@@ -105,6 +111,7 @@ source_set("base") {
     "byte_queue.h",
     "callback_holder.h",
     "callback_registry.h",
+    "callback_timeout_helpers.h",
     "cdm_callback_promise.cc",
     "cdm_callback_promise.h",
     "cdm_config.cc",
@@ -133,7 +140,10 @@ source_set("base") {
     "container_names.h",
     "content_decryption_module.cc",
     "content_decryption_module.h",
+    "converting_audio_fifo.cc",
+    "converting_audio_fifo.h",
     "crc_16.h",
+    "cross_origin_data_source.h",
     "data_buffer.cc",
     "data_buffer.h",
     "data_source.cc",
@@ -173,10 +183,10 @@ source_set("base") {
     "format_utils.h",
     "frame_rate_estimator.cc",
     "frame_rate_estimator.h",
+    "key_system_info.cc",
+    "key_system_info.h",
     "key_system_names.cc",
     "key_system_names.h",
-    "key_system_properties.cc",
-    "key_system_properties.h",
     "key_systems.cc",
     "key_systems.h",
     "localized_strings.cc",
@@ -206,6 +216,8 @@ source_set("base") {
     "media_observer.h",
     "media_permission.cc",
     "media_permission.h",
+    "media_player_logging_id.cc",
+    "media_player_logging_id.h",
     "media_resource.cc",
     "media_resource.h",
     "media_serializers.h",
@@ -241,8 +253,6 @@ source_set("base") {
     "null_video_sink.h",
     "offloading_audio_encoder.cc",
     "offloading_audio_encoder.h",
-    "offloading_video_encoder.cc",
-    "offloading_video_encoder.h",
     "output_device_info.cc",
     "output_device_info.h",
     "overlay_info.cc",
@@ -313,8 +323,6 @@ source_set("base") {
     "timestamp_constants.h",
     "tuneable.cc",
     "tuneable.h",
-    "unaligned_shared_memory.cc",
-    "unaligned_shared_memory.h",
     "use_after_free_checker.h",
     "user_input_monitor.cc",
     "user_input_monitor.h",
@@ -409,7 +417,7 @@ source_set("base") {
     deps += [ "//third_party/libvpx" ]
   }
 
-  if (is_linux && !is_chromecast) {
+  if (is_linux && !is_castos) {
     sources += [ "user_input_monitor_linux.cc" ]
   } else if (is_mac) {
     sources += [ "user_input_monitor_mac.cc" ]
@@ -448,11 +456,9 @@ source_set("base") {
     ]
   }
 
-  # TODO(ziyangch): Check |is_chromecast| first when using cast media pipeline
-  # on Android cast devices.
   if (is_android) {
     sources += [ "demuxer_memory_limit_android.cc" ]
-  } else if (is_chromecast) {
+  } else if (is_castos) {
     sources += [ "demuxer_memory_limit_cast.cc" ]
   } else if (is_fuchsia) {
     sources += [ "demuxer_memory_limit_low.cc" ]
@@ -562,6 +568,7 @@ source_set("unit_tests") {
     "audio_converter_unittest.cc",
     "audio_discard_helper_unittest.cc",
     "audio_fifo_unittest.cc",
+    "audio_glitch_info_unittest.cc",
     "audio_hash_unittest.cc",
     "audio_latency_unittest.cc",
     "audio_parameters_unittest.cc",
@@ -578,9 +585,11 @@ source_set("unit_tests") {
     "bitrate_unittest.cc",
     "callback_holder_unittest.cc",
     "callback_registry_unittest.cc",
+    "callback_timeout_helpers_unittest.cc",
     "channel_mixer_unittest.cc",
     "channel_mixing_matrix_unittest.cc",
     "container_names_unittest.cc",
+    "converting_audio_fifo_unittest.cc",
     "crc_16_unittest.cc",
     "data_buffer_unittest.cc",
     "decoder_buffer_queue_unittest.cc",
@@ -600,7 +609,6 @@ source_set("unit_tests") {
     "multi_channel_resampler_unittest.cc",
     "null_video_sink_unittest.cc",
     "offloading_audio_encoder_unittest.cc",
-    "offloading_video_encoder_unittest.cc",
     "pipeline_impl_unittest.cc",
     "ranges_unittest.cc",
     "reentrancy_checker_unittest.cc",
@@ -618,7 +626,6 @@ source_set("unit_tests") {
     "text_renderer_unittest.cc",
     "time_delta_interpolator_unittest.cc",
     "tuneable_unittest.cc",
-    "unaligned_shared_memory_unittest.cc",
     "user_input_monitor_unittest.cc",
     "vector_math_unittest.cc",
     "video_aspect_ratio_unittest.cc",
@@ -650,7 +657,7 @@ source_set("unit_tests") {
     "//ui/gfx",
   ]
 
-  if (is_apple) {
+  if (is_mac) {
     deps += [ "//media/base/mac:unit_tests" ]
   }
 
@@ -666,7 +673,7 @@ source_set("unit_tests") {
     ]
   }
 
-  if (is_chromecast && !is_android) {
+  if (is_castos) {
     sources += [ "demuxer_memory_limit_cast_unittest.cc" ]
   }
 }

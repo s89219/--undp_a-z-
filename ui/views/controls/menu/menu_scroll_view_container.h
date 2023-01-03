@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,10 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/view.h"
+
+namespace gfx {
+class RoundedCornersF;
+}  // namespace gfx
 
 namespace views {
 
@@ -65,6 +69,12 @@ class MenuScrollViewContainer : public View {
 
   // Returns the last item in the menu if it is of type HIGHLIGHTED.
   MenuItemView* GetFootnote() const;
+
+  // Calcultes the rounded corners of the view based on: either the
+  // `rounded_corners()` if it's set in `MenuController`, or the
+  // `CornerRadiusForMenu` in the `MenuConfig` if `rounded_corners()` is not
+  // set.
+  gfx::RoundedCornersF GetRoundedCorners() const;
 
   class MenuScrollView;
 

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -79,6 +79,25 @@ class ServiceWorkerLiveVersionRefImpl
   std::vector<int64_t /*resource_id*/> purgeable_resources_;
   mojo::ReceiverSet<mojom::ServiceWorkerLiveVersionRef> receivers_;
 };
+
+// static
+mojo::SelfOwnedReceiverRef<mojom::ServiceWorkerStorageControl>
+ServiceWorkerStorageControlImpl::Create(
+    mojo::PendingReceiver<mojom::ServiceWorkerStorageControl> receiver,
+    const base::FilePath& user_data_directory,
+    scoped_refptr<base::SequencedTaskRunner> database_task_runner) {
+  return mojo::MakeSelfOwnedReceiver(
+      base::WrapUnique(new ServiceWorkerStorageControlImpl(
+          user_data_directory, std::move(database_task_runner))),
+      std::move(receiver));
+}
+
+ServiceWorkerStorageControlImpl::ServiceWorkerStorageControlImpl(
+    const base::FilePath& user_data_directory,
+    scoped_refptr<base::SequencedTaskRunner> database_task_runner)
+    : storage_(ServiceWorkerStorage::Create(user_data_directory,
+                                            std::move(database_task_runner))),
+      receiver_(this) {}
 
 ServiceWorkerStorageControlImpl::ServiceWorkerStorageControlImpl(
     const base::FilePath& user_data_directory,
@@ -245,6 +264,15 @@ void ServiceWorkerStorageControlImpl::UpdateNavigationPreloadHeader(
     UpdateNavigationPreloadHeaderCallback callback) {
   storage_->UpdateNavigationPreloadHeader(registration_id, key, value,
                                           std::move(callback));
+}
+
+void ServiceWorkerStorageControlImpl::UpdateFetchHandlerType(
+    int64_t registration_id,
+    const blink::StorageKey& key,
+    blink::mojom::ServiceWorkerFetchHandlerType type,
+    UpdateFetchHandlerTypeCallback callback) {
+  storage_->UpdateFetchHandlerType(registration_id, key, type,
+                                   std::move(callback));
 }
 
 void ServiceWorkerStorageControlImpl::GetNewRegistrationId(

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,31 +21,25 @@ class InfobarOverlayRequestConfig
 
   // The infobar that triggered this OverlayRequest.
   InfoBarIOS* infobar() const { return infobar_.get(); }
-  // |infobar_|'s type.
+  // `infobar_`'s type.
   InfobarType infobar_type() const { return infobar_type_; }
-  // Whether |infobar_| has a badge.
+  // Whether `infobar_` has a badge.
   bool has_badge() const { return has_badge_; }
-  // Whether the |infobar_| banner should be presented for a longer time.
+  // Whether the `infobar_` banner should be presented for a longer time.
   bool is_high_priority() const { return is_high_priority_; }
   // The overlay type for this infobar OverlayRequest.
   InfobarOverlayType overlay_type() const { return overlay_type_; }
-  // Whether the |infobar_| banner presented duration is set to a longer time.
-  // This is for specific features. Whether a feature is using the long duraion
-  // banner is guarded by the feature flag kEnableLongMessageDuration.
-  bool use_long_duration() const { return use_long_duration_; }
 
  private:
   OVERLAY_USER_DATA_SETUP(InfobarOverlayRequestConfig);
   explicit InfobarOverlayRequestConfig(InfoBarIOS* infobar,
                                        InfobarOverlayType overlay_type,
-                                       bool is_high_priority,
-                                       bool use_long_duration = false);
+                                       bool is_high_priority);
 
   base::WeakPtr<InfoBarIOS> infobar_ = nullptr;
   InfobarType infobar_type_;
   bool has_badge_ = false;
   bool is_high_priority_ = false;
-  bool use_long_duration_ = false;
   InfobarOverlayType overlay_type_;
 };
 

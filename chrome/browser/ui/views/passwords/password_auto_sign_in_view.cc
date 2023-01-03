@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,7 @@ PasswordAutoSignInView::PasswordAutoSignInView(
           l10n_util::GetStringUTF16(IDS_MANAGE_PASSWORDS_AUTO_SIGNIN_TITLE_MD),
           form.username_value, &form,
           GetURLLoaderForMainFrame(web_contents).get(),
-          web_contents->GetMainFrame()->GetLastCommittedOrigin(),
+          web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin(),
           views::style::STYLE_HINT, views::style::STYLE_PRIMARY));
   credential->SetEnabled(false);
 

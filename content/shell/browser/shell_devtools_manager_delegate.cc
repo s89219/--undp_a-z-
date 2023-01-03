@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -199,11 +199,13 @@ void ShellDevToolsManagerDelegate::ClientDetached(
   clients_.erase(channel->GetClient());
 }
 
-scoped_refptr<DevToolsAgentHost>
-ShellDevToolsManagerDelegate::CreateNewTarget(const GURL& url) {
+scoped_refptr<DevToolsAgentHost> ShellDevToolsManagerDelegate::CreateNewTarget(
+    const GURL& url,
+    bool for_tab) {
   Shell* shell = Shell::CreateNewWindow(browser_context_, url, nullptr,
                                         Shell::GetShellDefaultSize());
-  return DevToolsAgentHost::GetOrCreateFor(shell->web_contents());
+  return for_tab ? DevToolsAgentHost::GetOrCreateForTab(shell->web_contents())
+                 : DevToolsAgentHost::GetOrCreateFor(shell->web_contents());
 }
 
 std::string ShellDevToolsManagerDelegate::GetDiscoveryPageHTML() {

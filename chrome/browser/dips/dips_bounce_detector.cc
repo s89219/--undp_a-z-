@@ -1,124 +1,448 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/dips/dips_bounce_detector.h"
 
+#include <cmath>
 #include <vector>
 
+#include "base/functional/bind.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/time/default_clock.h"
+#include "base/time/default_tick_clock.h"
+#include "base/time/time.h"
 #include "chrome/browser/dips/cookie_access_filter.h"
-#include "components/site_engagement/content/site_engagement_service.h"
+#include "chrome/browser/dips/dips_redirect_info.h"
+#include "chrome/browser/dips/dips_service.h"
+#include "chrome/browser/dips/dips_utils.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/cookie_access_details.h"
 #include "content/public/browser/navigation_handle.h"
+#include "content/public/browser/navigation_handle_user_data.h"
+#include "services/metrics/public/cpp/ukm_recorder.h"
 
 using content::NavigationHandle;
 
+ServerBounceDetectionState::ServerBounceDetectionState() = default;
+ServerBounceDetectionState::~ServerBounceDetectionState() = default;
+ServerBounceDetectionState::ServerBounceDetectionState(
+    NavigationHandle& navigation_handle) {}
+
+NAVIGATION_HANDLE_USER_DATA_KEY_IMPL(ServerBounceDetectionState);
+
+ClientBounceDetectionState::ClientBounceDetectionState(
+    const ClientBounceDetectionState& other) = default;
+ClientBounceDetectionState::~ClientBounceDetectionState() = default;
+ClientBounceDetectionState::ClientBounceDetectionState(
+    GURL url,
+    std::string site,
+    base::TimeTicks load_time) {
+  this->previous_url = std::move(url);
+  this->current_site = std::move(site);
+  this->page_load_time = load_time;
+}
+
 namespace {
 
-// BounceDetectionState gets attached to NavigationHandle (which is a
-// SupportsUserData subclass) to store data needed to detect stateful server
-// redirects.
-class BounceDetectionState : public base::SupportsUserData::Data {
- public:
-  // The WebContents' previously committed URL at the time the navigation
-  // started. Needed in case a parallel navigation commits.
-  GURL initial_url;
-  CookieAccessFilter filter;
-};
+// The amount of time since finishing navigation to a page that a client-side
+// redirect must happen within to count as a bounce (provided that all other
+// criteria are met as well).
+const int kBounceThresholdSeconds = 10;
 
-const char kBounceDetectionStateKey[] = "BounceDetectionState";
+inline void UmaHistogramTimeToBounce(base::TimeDelta sample) {
+  base::UmaHistogramTimes("Privacy.DIPS.TimeFromNavigationCommitToClientBounce",
+                          sample);
+}
 
 }  // namespace
 
-DIPSBounceDetector::DIPSBounceDetector(content::WebContents* web_contents)
-    : content::WebContentsObserver(web_contents),
-      content::WebContentsUserData<DIPSBounceDetector>(*web_contents),
-      site_engagement_service_(site_engagement::SiteEngagementService::Get(
-          web_contents->GetBrowserContext())),
-      // It's safe to use unretained because the callback is owned by this.
-      stateful_server_redirect_handler_(
-          base::BindRepeating(&DIPSBounceDetector::HandleStatefulServerRedirect,
-                              base::Unretained(this))),
-      // It's safe to use unretained because the callback is owned by this.
-      stateful_redirect_handler_(
-          base::BindRepeating(&DIPSBounceDetector::HandleStatefulRedirect,
-                              base::Unretained(this))) {}
-
-DIPSBounceDetector::~DIPSBounceDetector() = default;
-
-void DIPSBounceDetector::HandleStatefulRedirect(const GURL& prev_url,
-                                                const GURL& url,
-                                                const GURL& next_url,
-                                                CookieAccessType access) {
-  double score = site_engagement_service_->GetScore(url);
-  (void)score;
-  // TODO: fire UKM metric
-}
-
-void DIPSBounceDetector::HandleStatefulServerRedirect(
-    const GURL& prev_url,
-    content::NavigationHandle* navigation_handle,
-    int redirect_index,
-    CookieAccessType access) {
-  const auto& redirect_chain = navigation_handle->GetRedirectChain();
-  const GURL& url = redirect_chain[redirect_index];
-  // We are called from DidFinishNavigation() so GetURL() returns the final URL.
-  // XXX For 204 No Content responses, should we actually use `prev_url`, since
-  // it's what the user actually sees?
-  const GURL& next_url = navigation_handle->GetURL();
-  stateful_redirect_handler_.Run(prev_url, url, next_url, access);
-}
-
-void DIPSBounceDetector::DidStartNavigation(
-    NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInPrimaryMainFrame()) {
+/* static */
+void DIPSWebContentsObserver::MaybeCreateForWebContents(
+    content::WebContents* web_contents) {
+  auto* dips_service = DIPSService::Get(web_contents->GetBrowserContext());
+  if (!dips_service) {
     return;
   }
 
-  auto state = std::make_unique<BounceDetectionState>();
-  state->initial_url = web_contents()->GetLastCommittedURL();
-  navigation_handle->SetUserData(kBounceDetectionStateKey, std::move(state));
+  DIPSWebContentsObserver::CreateForWebContents(web_contents, dips_service);
 }
 
-void DIPSBounceDetector::OnCookiesAccessed(
+DIPSWebContentsObserver::DIPSWebContentsObserver(
+    content::WebContents* web_contents,
+    DIPSService* dips_service)
+    : content::WebContentsObserver(web_contents),
+      content::WebContentsUserData<DIPSWebContentsObserver>(*web_contents),
+      dips_service_(dips_service),
+      detector_(this,
+                base::DefaultTickClock::GetInstance(),
+                base::DefaultClock::GetInstance()) {}
+
+DIPSWebContentsObserver::~DIPSWebContentsObserver() = default;
+
+const base::TimeDelta DIPSBounceDetector::kInteractionUpdateInterval =
+    base::Minutes(1);
+
+DIPSBounceDetector::DIPSBounceDetector(DIPSBounceDetectorDelegate* delegate,
+                                       const base::TickClock* tick_clock,
+                                       const base::Clock* clock)
+    : tick_clock_(tick_clock),
+      clock_(clock),
+      delegate_(delegate),
+      // It's safe to use Unretained because the callback is owned by the
+      // DIPSRedirectContext which is owned by `this`, and the delegate must
+      // outlive `this`.
+      redirect_context_(
+          base::BindRepeating(&DIPSBounceDetectorDelegate::HandleRedirectChain,
+                              base::Unretained(delegate)),
+          /*initial_url=*/GURL::EmptyGURL()) {}
+
+DIPSBounceDetector::~DIPSBounceDetector() = default;
+
+DIPSBounceDetectorDelegate::~DIPSBounceDetectorDelegate() = default;
+
+DIPSNavigationHandle::~DIPSNavigationHandle() = default;
+
+ukm::SourceId DIPSNavigationHandle::GetRedirectSourceId(int index) const {
+  return ukm::UkmRecorder::GetSourceIdForRedirectUrl(
+      base::PassKey<DIPSNavigationHandle>(), GetRedirectChain()[index]);
+}
+
+DIPSRedirectContext::DIPSRedirectContext(DIPSRedirectChainHandler handler,
+                                         const GURL& initial_url)
+    : handler_(handler), initial_url_(initial_url) {}
+
+DIPSRedirectContext::~DIPSRedirectContext() = default;
+
+void DIPSRedirectContext::Append(
+    bool committed,
+    DIPSNavigationStart navigation_start,
+    std::vector<DIPSRedirectInfoPtr>&& server_redirects,
+    GURL final_url) {
+  if (committed) {
+    Append(std::move(navigation_start), std::move(server_redirects));
+  } else {
+    DIPSRedirectContext temp_context(handler_, initial_url_);
+    temp_context.Append(std::move(navigation_start),
+                        std::move(server_redirects));
+    temp_context.EndChain(std::move(final_url));
+  }
+}
+
+void DIPSRedirectContext::Append(
+    DIPSNavigationStart navigation_start,
+    std::vector<DIPSRedirectInfoPtr>&& server_redirects) {
+  // If there was a client-side redirect, grow the chain. Otherwise, end it.
+  if (absl::holds_alternative<DIPSRedirectInfoPtr>(navigation_start)) {
+    auto& client_redirect = absl::get<DIPSRedirectInfoPtr>(navigation_start);
+    DCHECK_EQ(client_redirect->redirect_type, DIPSRedirectType::kClient);
+    redirects_.push_back(std::move(client_redirect));
+  } else {
+    auto& client_url = absl::get<GURL>(navigation_start);
+    // This is the most common reason for redirect chains
+    // to terminate. Other reasons include: (1) navigations
+    // that don't commit and (2) the user closing the tab
+    // (i.e., WCO::WebContentsDestroyed())
+    EndChain(std::move(client_url));
+  }
+
+  // Server-side redirects always grow the chain.
+  for (auto& redirect : server_redirects) {
+    DCHECK_EQ(redirect->redirect_type, DIPSRedirectType::kServer);
+    redirects_.push_back(std::move(redirect));
+  }
+}
+
+void DIPSRedirectContext::EndChain(GURL url) {
+  if (!redirects_.empty()) {
+    // Uncommitted chains may omit earlier (committed) redirects in the chain,
+    // so |redirects_.size()| may not tell us the correct chain length. Instead,
+    // use the index of the last item in the chain (since it was generated based
+    // on the committed chain length).
+    auto chain = std::make_unique<DIPSRedirectChainInfo>(
+        initial_url_, url, redirects_.back()->index + 1);
+    handler_.Run(std::move(redirects_), std::move(chain));
+    // note: redirects_ is now guaranteed to be empty
+  }
+
+  initial_url_ = std::move(url);
+}
+
+void DIPSWebContentsObserver::RecordEvent(DIPSRecordedEvent event,
+                                          const GURL& url,
+                                          const base::Time& time) {
+  switch (event) {
+    case DIPSRecordedEvent::kStorage: {
+      dips_service_->storage()
+          ->AsyncCall(&DIPSStorage::RecordStorage)
+          .WithArgs(url, time, dips_service_->GetCookieMode());
+      return;
+    }
+    case DIPSRecordedEvent::kInteraction: {
+      dips_service_->storage()
+          ->AsyncCall(&DIPSStorage::RecordInteraction)
+          .WithArgs(url, time, dips_service_->GetCookieMode());
+      return;
+    }
+  }
+}
+
+const GURL& DIPSWebContentsObserver::GetLastCommittedURL() const {
+  return web_contents()->GetLastCommittedURL();
+}
+
+ukm::SourceId DIPSWebContentsObserver::GetPageUkmSourceId() const {
+  return web_contents()->GetPrimaryMainFrame()->GetPageUkmSourceId();
+}
+
+void DIPSWebContentsObserver::HandleRedirectChain(
+    std::vector<DIPSRedirectInfoPtr> redirects,
+    DIPSRedirectChainInfoPtr chain) {
+  dips_service_->HandleRedirectChain(std::move(redirects), std::move(chain));
+}
+
+// A thin wrapper around NavigationHandle to implement DIPSNavigationHandle.
+class DIPSNavigationHandleImpl : public DIPSNavigationHandle {
+ public:
+  explicit DIPSNavigationHandleImpl(NavigationHandle* handle)
+      : handle_(handle) {}
+
+  bool HasUserGesture() const override {
+    return handle_->HasUserGesture() || !handle_->IsRendererInitiated();
+  }
+
+  ServerBounceDetectionState* GetServerState() override {
+    return ServerBounceDetectionState::GetOrCreateForNavigationHandle(*handle_);
+  }
+
+  bool HasCommitted() const override { return handle_->HasCommitted(); }
+
+  const GURL& GetPreviousPrimaryMainFrameURL() const override {
+    return handle_->GetPreviousPrimaryMainFrameURL();
+  }
+
+  const std::vector<GURL>& GetRedirectChain() const override {
+    return handle_->GetRedirectChain();
+  }
+
+ private:
+  raw_ptr<NavigationHandle> handle_;
+};
+
+void DIPSWebContentsObserver::DidStartNavigation(
+    NavigationHandle* navigation_handle) {
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
+      navigation_handle->IsSameDocument()) {
+    return;
+  }
+
+  DIPSNavigationHandleImpl dips_handle(navigation_handle);
+  detector_.DidStartNavigation(&dips_handle);
+}
+
+void DIPSBounceDetector::DidStartNavigation(
+    DIPSNavigationHandle* navigation_handle) {
+  base::TimeTicks now = tick_clock_->NowTicks();
+
+  DIPSRedirectInfoPtr client_redirect;
+  if (client_detection_state_.has_value()) {
+    base::TimeDelta bounce_time = now - client_detection_state_->page_load_time;
+
+    if (!navigation_handle->HasUserGesture() &&
+        (bounce_time <
+         base::TimeDelta(base::Seconds(kBounceThresholdSeconds)))) {
+      // Time between page load and client-side redirect starting is only
+      // tracked for stateful bounces.
+      if (client_detection_state_->cookie_access_type >
+          CookieAccessType::kNone) {
+        UmaHistogramTimeToBounce(bounce_time);
+      }
+
+      client_redirect = std::make_unique<DIPSRedirectInfo>(
+          /*url=*/delegate_->GetLastCommittedURL(),
+          /*redirect_type=*/DIPSRedirectType::kClient,
+          /*access_type=*/client_detection_state_->cookie_access_type,
+          /*index=*/redirect_context_.size(),
+          /*source_id=*/
+          delegate_->GetPageUkmSourceId(),
+          /*time=*/clock_->Now(),
+          /*client_bounce_delay=*/bounce_time,
+          /*has_sticky_activation=*/
+          client_detection_state_->last_activation_time.has_value());
+      // We cannot append |client_redirect| to |redirect_context_| immediately,
+      // because we don't know if the navigation will commit. We must wait until
+      // DidFinishNavigation().
+    }
+    // Similarly, we can't call redirect_context_->EndChain() yet even if this
+    // navigation isn't a redirect. (Technically, if more than
+    // kBounceThresholdSeconds time has passed, we can be certain that the chain
+    // has ended; but for code simplicity, we ignore that.)
+  }
+
+  ServerBounceDetectionState* server_state =
+      navigation_handle->GetServerState();
+
+  if (client_redirect) {
+    server_state->navigation_start = std::move(client_redirect);
+  } else {
+    server_state->navigation_start = delegate_->GetLastCommittedURL();
+  }
+}
+
+void DIPSWebContentsObserver::OnCookiesAccessed(
+    content::RenderFrameHost* render_frame_host,
+    const content::CookieAccessDetails& details) {
+  if (!render_frame_host->IsInPrimaryMainFrame()) {
+    return;
+  }
+
+  detector_.OnClientCookiesAccessed(details.url, details.type);
+}
+
+void DIPSBounceDetector::OnClientCookiesAccessed(const GURL& url,
+                                                 CookieOperation op) {
+  if (op == CookieOperation::kChange) {
+    delegate_->RecordEvent(DIPSRecordedEvent::kStorage, url, clock_->Now());
+  }
+  if (client_detection_state_ &&
+      GetSiteForDIPS(url) == client_detection_state_->current_site) {
+    client_detection_state_->cookie_access_type =
+        client_detection_state_->cookie_access_type |
+        (op == CookieOperation::kChange ? CookieAccessType::kWrite
+                                        : CookieAccessType::kRead);
+  }
+}
+
+void DIPSWebContentsObserver::OnCookiesAccessed(
     NavigationHandle* navigation_handle,
     const content::CookieAccessDetails& details) {
   if (!navigation_handle->IsInPrimaryMainFrame()) {
     return;
   }
 
-  auto* state = static_cast<BounceDetectionState*>(
-      navigation_handle->GetUserData(kBounceDetectionStateKey));
+  DIPSNavigationHandleImpl dips_handle(navigation_handle);
+  detector_.OnServerCookiesAccessed(&dips_handle, details.url, details.type);
+}
+
+void DIPSBounceDetector::OnServerCookiesAccessed(
+    DIPSNavigationHandle* navigation_handle,
+    const GURL& url,
+    CookieOperation op) {
+  if (op == CookieOperation::kChange) {
+    delegate_->RecordEvent(DIPSRecordedEvent::kStorage, url, clock_->Now());
+  }
+  ServerBounceDetectionState* state = navigation_handle->GetServerState();
   if (state) {
-    state->filter.AddAccess(details.url, details.type);
+    state->filter.AddAccess(url, op);
   }
 }
 
-void DIPSBounceDetector::DidFinishNavigation(
+void DIPSWebContentsObserver::DidFinishNavigation(
     NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInPrimaryMainFrame()) {
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
+      navigation_handle->IsSameDocument()) {
     return;
   }
 
-  // We can be sure OnCookiesAccessed() was called for all redirects at this
-  // point.
-  auto* state = static_cast<BounceDetectionState*>(
-      navigation_handle->GetUserData(kBounceDetectionStateKey));
-  if (state && !state->filter.is_empty()) {
-    std::vector<CookieAccessType> access_types;
-    if (!state->filter.Filter(navigation_handle->GetRedirectChain(),
-                              &access_types)) {
-      // We failed to map all the OnCookiesAccessed calls to the redirect chain.
-      // TODO(rtarpine): report metrics to see if this happens in practice
-      DCHECK(false) << "CookieAccessFilter failed to map all accesses";
+  DIPSNavigationHandleImpl dips_handle(navigation_handle);
+  detector_.DidFinishNavigation(&dips_handle);
+}
+
+void DIPSBounceDetector::DidFinishNavigation(
+    DIPSNavigationHandle* navigation_handle) {
+  base::TimeTicks now = tick_clock_->NowTicks();
+  // Iff the primary page changed, reset the client detection state while
+  // storing the page load time and previous_url. A primary page change is
+  // verified by checking IsInPrimaryMainFrame, !IsSameDocument, and
+  // HasCommitted. HasCommitted is the only one not previously checked here.
+  if (navigation_handle->HasCommitted()) {
+    client_detection_state_ = ClientBounceDetectionState(
+        navigation_handle->GetPreviousPrimaryMainFrameURL(),
+        GetSiteForDIPS(navigation_handle->GetURL()), now);
+  }
+
+  ServerBounceDetectionState* server_state =
+      navigation_handle->GetServerState();
+
+  if (!server_state) {
+    return;
+  }
+
+  std::vector<DIPSRedirectInfoPtr> redirects;
+  std::vector<CookieAccessType> access_types;
+  server_state->filter.Filter(navigation_handle->GetRedirectChain(),
+                              &access_types);
+
+  for (size_t i = 0; i < access_types.size() - 1; i++) {
+    redirects.push_back(std::make_unique<DIPSRedirectInfo>(
+        /*url=*/navigation_handle->GetRedirectChain()[i],
+        /*redirect_type=*/DIPSRedirectType::kServer,
+        /*access_type=*/access_types[i],
+        /*index=*/
+        absl::holds_alternative<DIPSRedirectInfoPtr>(
+            server_state->navigation_start)
+            ? redirect_context_.size() + i + 1
+            : i,
+        /*source_id=*/navigation_handle->GetRedirectSourceId(i),
+        /*time=*/clock_->Now()));
+  }
+
+  // This call handles all the logic for terminating the redirect chain when
+  // applicable, and using a temporary redirect context if the navigation didn't
+  // commit.
+  redirect_context_.Append(navigation_handle->HasCommitted(),
+                           std::move(server_state->navigation_start),
+                           std::move(redirects), navigation_handle->GetURL());
+
+  if (navigation_handle->HasCommitted()) {
+    // The last entry in navigation_handle->GetRedirectChain() is actually the
+    // page being committed (i.e., not a redirect). If its HTTP request or
+    // response accessed cookies, record this in our client detection state.
+    client_detection_state_->cookie_access_type = access_types.back();
+  }
+}
+// TODO(kaklilu): Follow up on how this interacts with Fenced Frames.
+void DIPSWebContentsObserver::FrameReceivedUserActivation(
+    content::RenderFrameHost* render_frame_host) {
+  // Ignore iframe activations since we only care for its associated main-frame
+  // interactions on the top-level site.
+  if (!render_frame_host->IsInPrimaryMainFrame()) {
+    return;
+  }
+
+  detector_.OnUserActivation();
+}
+
+void DIPSBounceDetector::OnUserActivation() {
+  GURL url = delegate_->GetLastCommittedURL();
+  if (!url.SchemeIsHTTPOrHTTPS()) {
+    return;
+  }
+
+  base::Time now = clock_->Now();
+  if (client_detection_state_.has_value()) {
+    // To decrease the number of writes made to the database, after a user
+    // activation event on the page, new activation events will not be recorded
+    // for the next |kInteractionUpdateInterval|.
+    if (client_detection_state_->last_activation_time.has_value() &&
+        (now - client_detection_state_->last_activation_time.value()) <
+            kInteractionUpdateInterval) {
       return;
     }
 
-    for (size_t i = 0; i < access_types.size() - 1; i++) {
-      stateful_server_redirect_handler_.Run(
-          state->initial_url, navigation_handle, i, access_types[i]);
-    }
+    client_detection_state_->last_activation_time = now;
   }
+
+  delegate_->RecordEvent(DIPSRecordedEvent::kInteraction, url, now);
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(DIPSBounceDetector);
+void DIPSWebContentsObserver::WebContentsDestroyed() {
+  detector_.BeforeDestruction();
+}
+
+void DIPSBounceDetector::BeforeDestruction() {
+  // Handle the current chain before the tab closes and the state is lost.
+  redirect_context_.EndChain(delegate_->GetLastCommittedURL());
+}
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(DIPSWebContentsObserver);

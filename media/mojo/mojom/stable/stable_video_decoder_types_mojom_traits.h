@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,44 @@
 #define MEDIA_MOJO_MOJOM_STABLE_STABLE_VIDEO_DECODER_TYPES_MOJOM_TRAITS_H_
 
 #include "base/notreached.h"
+#include "media/base/cdm_context.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_metadata.h"
 #include "media/mojo/mojom/stable/stable_video_decoder_types.mojom.h"
 #include "mojo/public/cpp/bindings/optional_as_pointer.h"
 
 namespace mojo {
+
+template <>
+struct EnumTraits<media::stable::mojom::CdmContextEvent,
+                  ::media::CdmContext::Event> {
+  static media::stable::mojom::CdmContextEvent ToMojom(
+      ::media::CdmContext::Event input) {
+    switch (input) {
+      case ::media::CdmContext::Event::kHasAdditionalUsableKey:
+        return media::stable::mojom::CdmContextEvent::kHasAdditionalUsableKey;
+      case ::media::CdmContext::Event::kHardwareContextReset:
+        return media::stable::mojom::CdmContextEvent::kHardwareContextReset;
+    }
+
+    NOTREACHED();
+    return media::stable::mojom::CdmContextEvent::kHasAdditionalUsableKey;
+  }
+
+  static bool FromMojom(media::stable::mojom::CdmContextEvent input,
+                        ::media::CdmContext::Event* output) {
+    switch (input) {
+      case media::stable::mojom::CdmContextEvent::kHasAdditionalUsableKey:
+        *output = ::media::CdmContext::Event::kHasAdditionalUsableKey;
+        return true;
+      case media::stable::mojom::CdmContextEvent::kHardwareContextReset:
+        *output = ::media::CdmContext::Event::kHardwareContextReset;
+        return true;
+    }
+    NOTREACHED();
+    return false;
+  }
+};
 
 template <>
 struct EnumTraits<media::stable::mojom::ColorSpacePrimaryID,
@@ -173,6 +205,8 @@ struct EnumTraits<media::stable::mojom::ColorSpaceTransferID,
         return media::stable::mojom::ColorSpaceTransferID::kCustomHDR;
       case gfx::ColorSpace::TransferID::PIECEWISE_HDR:
         return media::stable::mojom::ColorSpaceTransferID::kPiecewiseHDR;
+      case gfx::ColorSpace::TransferID::SCRGB_LINEAR_80_NITS:
+        return media::stable::mojom::ColorSpaceTransferID::kScrgbLinear80Nits;
     }
 
     NOTREACHED();
@@ -258,6 +292,9 @@ struct EnumTraits<media::stable::mojom::ColorSpaceTransferID,
         return true;
       case media::stable::mojom::ColorSpaceTransferID::kPiecewiseHDR:
         *output = gfx::ColorSpace::TransferID::PIECEWISE_HDR;
+        return true;
+      case media::stable::mojom::ColorSpaceTransferID::kScrgbLinear80Nits:
+        *output = gfx::ColorSpace::TransferID::SCRGB_LINEAR_80_NITS;
         return true;
     }
 
@@ -416,13 +453,13 @@ struct StructTraits<media::stable::mojom::ColorSpaceDataView, gfx::ColorSpace> {
 template <>
 struct StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
                     gfx::ColorVolumeMetadata> {
-  static const gfx::PointF& primary_r(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF primary_r(const gfx::ColorVolumeMetadata& input);
 
-  static const gfx::PointF& primary_g(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF primary_g(const gfx::ColorVolumeMetadata& input);
 
-  static const gfx::PointF& primary_b(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF primary_b(const gfx::ColorVolumeMetadata& input);
 
-  static const gfx::PointF& white_point(const gfx::ColorVolumeMetadata& input);
+  static gfx::PointF white_point(const gfx::ColorVolumeMetadata& input);
 
   static float luminance_max(const gfx::ColorVolumeMetadata& input);
 
@@ -500,6 +537,44 @@ struct StructTraits<media::stable::mojom::DecryptConfigDataView,
 
   static bool Read(media::stable::mojom::DecryptConfigDataView input,
                    std::unique_ptr<media::DecryptConfig>* output);
+};
+
+template <>
+struct EnumTraits<media::stable::mojom::DecryptStatus,
+                  ::media::Decryptor::Status> {
+  static media::stable::mojom::DecryptStatus ToMojom(
+      ::media::Decryptor::Status input) {
+    switch (input) {
+      case ::media::Decryptor::Status::kSuccess:
+        return media::stable::mojom::DecryptStatus::kSuccess;
+      case ::media::Decryptor::Status::kNoKey:
+        return media::stable::mojom::DecryptStatus::kNoKey;
+      case ::media::Decryptor::Status::kNeedMoreData:
+        return media::stable::mojom::DecryptStatus::kFailure;
+      case ::media::Decryptor::Status::kError:
+        return media::stable::mojom::DecryptStatus::kFailure;
+    }
+
+    NOTREACHED();
+    return media::stable::mojom::DecryptStatus::kFailure;
+  }
+
+  static bool FromMojom(media::stable::mojom::DecryptStatus input,
+                        ::media::Decryptor::Status* output) {
+    switch (input) {
+      case media::stable::mojom::DecryptStatus::kSuccess:
+        *output = ::media::Decryptor::Status::kSuccess;
+        return true;
+      case media::stable::mojom::DecryptStatus::kNoKey:
+        *output = ::media::Decryptor::Status::kNoKey;
+        return true;
+      case media::stable::mojom::DecryptStatus::kFailure:
+        *output = ::media::Decryptor::Status::kError;
+        return true;
+    }
+    NOTREACHED();
+    return false;
+  }
 };
 
 template <>
@@ -606,7 +681,7 @@ struct StructTraits<media::stable::mojom::MediaLogRecordDataView,
 
   static media::MediaLogRecord::Type type(const media::MediaLogRecord& input);
 
-  static const base::Value& params(const media::MediaLogRecord& input);
+  static const base::Value::Dict& params(const media::MediaLogRecord& input);
 
   static base::TimeTicks time(const media::MediaLogRecord& input);
 
@@ -1062,7 +1137,6 @@ struct EnumTraits<media::stable::mojom::VideoDecoderType,
       case ::media::VideoDecoderType::kDav1d:
       case ::media::VideoDecoderType::kFuchsia:
       case ::media::VideoDecoderType::kMediaCodec:
-      case ::media::VideoDecoderType::kGav1:
       case ::media::VideoDecoderType::kD3D11:
       case ::media::VideoDecoderType::kBroker:
         return media::stable::mojom::VideoDecoderType::kUnknown;
@@ -1238,6 +1312,8 @@ struct EnumTraits<media::stable::mojom::VideoPixelFormat,
         return media::stable::mojom::VideoPixelFormat::kPixelFormatYUV422AP10;
       case ::media::VideoPixelFormat::PIXEL_FORMAT_YUV444AP10:
         return media::stable::mojom::VideoPixelFormat::kPixelFormatYUV444AP10;
+      case ::media::VideoPixelFormat::PIXEL_FORMAT_NV12A:
+        return media::stable::mojom::VideoPixelFormat::kPixelFormatNV12A;
     }
 
     NOTREACHED();
@@ -1356,6 +1432,9 @@ struct EnumTraits<media::stable::mojom::VideoPixelFormat,
         return true;
       case media::stable::mojom::VideoPixelFormat::kPixelFormatYUV444AP10:
         *output = ::media::VideoPixelFormat::PIXEL_FORMAT_YUV444AP10;
+        return true;
+      case media::stable::mojom::VideoPixelFormat::kPixelFormatNV12A:
+        *output = ::media::VideoPixelFormat::PIXEL_FORMAT_NV12A;
         return true;
     }
 

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,11 +63,8 @@ TEST_F(FileSystemProviderOperationsExecuteActionTest, Execute) {
   util::StatusCallbackLog callback_log;
 
   ExecuteAction execute_action(
-      NULL, file_system_info_, entry_paths_, kActionId,
+      &dispatcher, file_system_info_, entry_paths_, kActionId,
       base::BindOnce(&util::LogStatusCallback, &callback_log));
-  execute_action.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(execute_action.Execute(kRequestId));
 
@@ -76,10 +73,10 @@ TEST_F(FileSystemProviderOperationsExecuteActionTest, Execute) {
   EXPECT_EQ(extensions::api::file_system_provider::OnExecuteActionRequested::
                 kEventName,
             event->event_name);
-  base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(1u, event_args->GetListDeprecated().size());
+  const base::Value::List& event_args = event->event_args;
+  ASSERT_EQ(1u, event_args.size());
 
-  const base::Value* options_as_value = &event_args->GetListDeprecated()[0];
+  const base::Value* options_as_value = &event_args[0];
   ASSERT_TRUE(options_as_value->is_dict());
 
   ExecuteActionRequestedOptions options;
@@ -98,11 +95,8 @@ TEST_F(FileSystemProviderOperationsExecuteActionTest, Execute_NoListener) {
   util::StatusCallbackLog callback_log;
 
   ExecuteAction execute_action(
-      NULL, file_system_info_, entry_paths_, kActionId,
+      &dispatcher, file_system_info_, entry_paths_, kActionId,
       base::BindOnce(&util::LogStatusCallback, &callback_log));
-  execute_action.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_FALSE(execute_action.Execute(kRequestId));
 }
@@ -112,11 +106,8 @@ TEST_F(FileSystemProviderOperationsExecuteActionTest, OnSuccess) {
   util::StatusCallbackLog callback_log;
 
   ExecuteAction execute_action(
-      NULL, file_system_info_, entry_paths_, kActionId,
+      &dispatcher, file_system_info_, entry_paths_, kActionId,
       base::BindOnce(&util::LogStatusCallback, &callback_log));
-  execute_action.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(execute_action.Execute(kRequestId));
 
@@ -131,11 +122,8 @@ TEST_F(FileSystemProviderOperationsExecuteActionTest, OnError) {
   util::StatusCallbackLog callback_log;
 
   ExecuteAction execute_action(
-      NULL, file_system_info_, entry_paths_, kActionId,
+      &dispatcher, file_system_info_, entry_paths_, kActionId,
       base::BindOnce(&util::LogStatusCallback, &callback_log));
-  execute_action.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(execute_action.Execute(kRequestId));
 

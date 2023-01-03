@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,11 +54,7 @@ class MockQuotaClient : public mojom::QuotaClient {
   //  Adds bucket data the client has usage for.
   void AddBucketsData(const std::map<BucketLocator, int64_t>& mock_data);
 
-  // To modify mock data in this client.
-  void ModifyStorageKeyAndNotify(const blink::StorageKey& storage_key,
-                                 blink::mojom::StorageType type,
-                                 int64_t delta);
-  void ModifyBucketAndNotify(BucketId bucket_id, int64_t delta);
+  void ModifyBucketAndNotify(const BucketLocator& bucket, int64_t delta);
 
   void AddBucketToErrorSet(const BucketLocator& bucket);
 
@@ -85,7 +81,7 @@ class MockQuotaClient : public mojom::QuotaClient {
   const scoped_refptr<QuotaManagerProxy> quota_manager_proxy_;
   const QuotaClientType client_type_;
 
-  std::map<BucketLocator, int64_t> bucket_data_;
+  std::map<BucketLocator, int64_t, CompareBucketLocators> bucket_data_;
   std::map<std::pair<blink::StorageKey, blink::mojom::StorageType>, int64_t>
       unmigrated_storage_key_data_;
   std::set<BucketLocator> error_buckets_;

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,6 +45,29 @@ parentMessagePipe.registerHandler(Message.STREAM_ACTION, async (message) => {
   }
   streamActionCallback(/** @type {!StreamAction} */ (message.action));
 });
+
+let virtualKeyboardCallback = null;
+parentMessagePipe.registerHandler(
+    Message.IS_VIRTUAL_KEYBOARD_ENABLED, async (message) => {
+      if (!virtualKeyboardCallback || !message.isVirtualKeyboardEnabled) {
+        return;
+      }
+
+      virtualKeyboardCallback(
+          /** @type {boolean} */ (message.isVirtualKeyboardEnabled));
+    });
+
+let androidNetworkInfoCallback = null;
+parentMessagePipe.registerHandler(
+    Message.ANDROID_NETWORK_INFO, async (message) => {
+      if (!androidNetworkInfoCallback) {
+        return;
+      }
+
+      androidNetworkInfoCallback(
+          /** @type {boolean} */ (message.isDifferentNetwork),
+          /** @type {boolean} */ (message.androidDeviceOnCellular));
+    });
 
 // The implementation of echeapi.d.ts
 const EcheApiBindingImpl = new (class {
@@ -101,6 +124,11 @@ const EcheApiBindingImpl = new (class {
         Message.SHOW_NOTIFICATION, {title, message, notificationType});
   }
 
+  showToast(text) {
+    console.log('echeapi receiver.js showToast');
+    parentMessagePipe.sendMessage(Message.SHOW_TOAST, {text});
+  }
+
   startStreaming() {
     console.log('echeapi receiver.js startStreaming');
     parentMessagePipe.sendMessage(Message.START_STREAMING);
@@ -121,6 +149,16 @@ const EcheApiBindingImpl = new (class {
   onStreamAction(callback) {
     console.log('echeapi receiver.js onStreamAction');
     streamActionCallback = callback;
+  }
+
+  onReceivedVirtualKeyboardChanged(callback) {
+    console.log('echeapi receiver.js onReceivedVirtualKeyboardChanged');
+    virtualKeyboardCallback = callback;
+  }
+
+  onAndroidDeviceNetworkInfoChanged(callback) {
+    console.log('echeapi receiver.js onAndroidDeviceNetworkInfoChanged');
+    androidNetworkInfoCallback = callback;
   }
 })();
 
@@ -149,6 +187,8 @@ echeapi.system.registerNotificationReceiver =
     EcheApiBindingImpl.onReceivedNotification.bind(EcheApiBindingImpl);
 echeapi.system.showCrOSNotification =
     EcheApiBindingImpl.showNotification.bind(EcheApiBindingImpl);
+echeapi.system.showToast =
+    EcheApiBindingImpl.showToast.bind(EcheApiBindingImpl);
 echeapi.system.startStreaming =
     EcheApiBindingImpl.startStreaming.bind(EcheApiBindingImpl);
 echeapi.system.sendTimeHistogram =
@@ -157,5 +197,11 @@ echeapi.system.sendEnumHistogram =
     EcheApiBindingImpl.sendEnumHistogram.bind(EcheApiBindingImpl);
 echeapi.system.registerStreamActionReceiver =
     EcheApiBindingImpl.onStreamAction.bind(EcheApiBindingImpl);
+echeapi.system.registerVirtualKeyboardChangedReceiver =
+    EcheApiBindingImpl.onReceivedVirtualKeyboardChanged.bind(
+        EcheApiBindingImpl);
+echeapi.system.registerAndroidNetworkInfoChangedReceiver =
+    EcheApiBindingImpl.onAndroidDeviceNetworkInfoChanged.bind(
+        EcheApiBindingImpl);
 window['echeapi'] = echeapi;
 console.log('echeapi receiver.js finish bind the implementation of echeapi');

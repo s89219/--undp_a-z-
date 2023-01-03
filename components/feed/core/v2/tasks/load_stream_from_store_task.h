@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "components/feed/core/proto/v2/wire/reliability_logging_enums.pb.h"
@@ -42,7 +43,7 @@ class LoadStreamFromStoreTask : public offline_pages::Task {
     // How long since the loaded content was fetched from the server.
     // May be zero if content is not loaded.
     base::TimeDelta content_age;
-    ContentIdSet content_ids;
+    ContentHashSet content_ids;
 
     // Loading result to be logged by
     // LaunchReliabilityLogger::LogCacheReadEnd().
@@ -85,7 +86,7 @@ class LoadStreamFromStoreTask : public offline_pages::Task {
 
   LoadStreamStatus stale_reason_ = LoadStreamStatus::kNoStatus;
   LoadType load_type_;
-  FeedStream& feed_stream_;
+  const raw_ref<FeedStream> feed_stream_;
   StreamType stream_type_;
   raw_ptr<FeedStore> store_;  // Unowned.
   bool ignore_staleness_ = false;
@@ -98,7 +99,7 @@ class LoadStreamFromStoreTask : public offline_pages::Task {
   std::unique_ptr<StreamModelUpdateRequest> update_request_;
   std::vector<feedstore::StoredAction> pending_actions_;
   base::TimeDelta content_age_;
-  ContentIdSet content_ids_;
+  ContentHashSet content_ids_;
 
   base::WeakPtrFactory<LoadStreamFromStoreTask> weak_ptr_factory_{this};
 };

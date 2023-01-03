@@ -93,24 +93,32 @@ struct ImageDrawOptions {
                             RespectImageOrientationEnum respect_orientation,
                             Image::ImageClampingMode clamping_mode,
                             Image::ImageDecodingMode decode_mode,
-                            bool apply_dark_mode)
+                            bool apply_dark_mode,
+                            bool may_be_lcp_candidate)
       : dark_mode_filter(dark_mode_filter),
         sampling_options(sampling_options),
         respect_orientation(respect_orientation),
         clamping_mode(clamping_mode),
         decode_mode(decode_mode),
-        apply_dark_mode(apply_dark_mode) {}
+        apply_dark_mode(apply_dark_mode),
+        may_be_lcp_candidate(may_be_lcp_candidate) {}
   DarkModeFilter* dark_mode_filter = nullptr;
   SkSamplingOptions sampling_options;
   RespectImageOrientationEnum respect_orientation = kRespectImageOrientation;
   Image::ImageClampingMode clamping_mode = Image::kClampImageToSourceRect;
   Image::ImageDecodingMode decode_mode = Image::kSyncDecode;
   bool apply_dark_mode = false;
+  bool may_be_lcp_candidate = false;
 };
 
 struct AutoDarkMode {
   AutoDarkMode(DarkModeFilter::ElementRole role, bool enabled)
       : role(role), enabled(enabled) {}
+
+  AutoDarkMode(DarkModeFilter::ElementRole role,
+               bool enabled,
+               SkColor contrast_color)
+      : role(role), enabled(enabled), contrast_color(contrast_color) {}
 
   explicit AutoDarkMode(const ImageDrawOptions& draw_options)
       : role(DarkModeFilter::ElementRole::kBackground),
@@ -123,6 +131,7 @@ struct AutoDarkMode {
 
   DarkModeFilter::ElementRole role;
   bool enabled;
+  SkColor contrast_color = 0;
 };
 
 struct ImageAutoDarkMode : AutoDarkMode {
@@ -138,6 +147,20 @@ struct ImageAutoDarkMode : AutoDarkMode {
   }
 
   DarkModeFilter::ImageType image_type;
+};
+
+struct ImagePaintTimingInfo {
+  explicit ImagePaintTimingInfo(bool image_may_be_lcp_candidate)
+      : image_may_be_lcp_candidate(image_may_be_lcp_candidate) {}
+  ImagePaintTimingInfo(bool image_may_be_lcp_candidate,
+                       bool report_paint_timing)
+      : image_may_be_lcp_candidate(image_may_be_lcp_candidate),
+        report_paint_timing(report_paint_timing) {}
+  ImagePaintTimingInfo() = default;
+  bool image_may_be_lcp_candidate = false;
+  // Whether |PaintController::SetImagePainted| should be called if the image
+  // is painted.
+  bool report_paint_timing = true;
 };
 
 class PLATFORM_EXPORT GraphicsContext {
@@ -307,33 +330,39 @@ class PLATFORM_EXPORT GraphicsContext {
                   float line_width,
                   const AutoDarkMode& auto_dark_mode);
 
-  void DrawRecord(sk_sp<const PaintRecord>);
-  void CompositeRecord(sk_sp<PaintRecord>,
+  void DrawRecord(PaintRecord);
+  void CompositeRecord(PaintRecord,
                        const gfx::RectF& dest,
                        const gfx::RectF& src,
                        SkBlendMode);
-
-  void DrawImage(Image*,
+  void DrawImage(Image&,
                  Image::ImageDecodingMode,
                  const ImageAutoDarkMode& auto_dark_mode,
+                 const ImagePaintTimingInfo& paint_timing_info,
                  const gfx::RectF& dest_rect,
                  const gfx::RectF* src_rect = nullptr,
                  SkBlendMode = SkBlendMode::kSrcOver,
-                 RespectImageOrientationEnum = kRespectImageOrientation);
-  void DrawImageRRect(Image*,
+                 RespectImageOrientationEnum = kRespectImageOrientation,
+                 Image::ImageClampingMode clamping_mode =
+                     Image::ImageClampingMode::kClampImageToSourceRect);
+  void DrawImageRRect(Image&,
                       Image::ImageDecodingMode,
                       const ImageAutoDarkMode& auto_dark_mode,
+                      const ImagePaintTimingInfo& paint_timing_info,
                       const FloatRoundedRect& dest,
                       const gfx::RectF& src_rect,
                       SkBlendMode = SkBlendMode::kSrcOver,
-                      RespectImageOrientationEnum = kRespectImageOrientation);
-  void DrawImageTiled(Image* image,
+                      RespectImageOrientationEnum = kRespectImageOrientation,
+                      Image::ImageClampingMode clamping_mode =
+                          Image::ImageClampingMode::kClampImageToSourceRect);
+  void DrawImageTiled(Image& image,
                       const gfx::RectF& dest_rect,
                       const ImageTilingInfo& tiling_info,
                       const ImageAutoDarkMode& auto_dark_mode,
+                      const ImagePaintTimingInfo& paint_timing_info,
                       SkBlendMode = SkBlendMode::kSrcOver,
                       RespectImageOrientationEnum = kRespectImageOrientation);
-
+  void SetImagePainted(bool report_paint_timing);
   // These methods write to the canvas.
   // Also drawLine(const gfx::Point& point1, const gfx::Point& point2) and
   // fillRoundedRect().
@@ -430,25 +459,24 @@ class PLATFORM_EXPORT GraphicsContext {
                        const AutoDarkMode& auto_dark_mode,
                        const cc::PaintFlags* flags = nullptr);
 
-  // beginLayer()/endLayer() behave like save()/restore() for CTM and clip
-  // states. Apply SkBlendMode when the layer is composited on the backdrop
-  // (i.e. endLayer()).
-  void BeginLayer(float opacity = 1.0f,
-                  SkBlendMode = SkBlendMode::kSrcOver,
-                  const gfx::RectF* = nullptr,
-                  ColorFilter = kColorFilterNone,
-                  sk_sp<PaintFilter> = nullptr);
+  // BeginLayer()/EndLayer() behave like Save()/Restore() for CTM and clip
+  // states. Apply opacity, blend mode, filter when the layer is composited on
+  // the backdrop (i.e. EndLayer()).
+  void BeginLayer(float opacity = 1.0f);
+  void BeginLayer(SkBlendMode);
+  void BeginLayer(ColorFilter);
+  void BeginLayer(sk_sp<PaintFilter>);
   void EndLayer();
 
   // Instead of being dispatched to the active canvas, draw commands following
   // beginRecording() are stored in a display list that can be replayed at a
-  // later time. Pass in the bounding rectangle for the content in the list.
-  void BeginRecording(const gfx::RectF&);
+  // later time.
+  void BeginRecording();
 
   // Returns a record with any recorded draw commands since the prerequisite
   // call to beginRecording().  The record is guaranteed to be non-null (but
   // not necessarily non-empty), even when the context is disabled.
-  sk_sp<PaintRecord> EndRecording();
+  PaintRecord EndRecording();
 
   void SetDrawLooper(sk_sp<SkDrawLooper>);
 
@@ -483,11 +511,11 @@ class PLATFORM_EXPORT GraphicsContext {
   // ---------- End transformation methods -----------------
 
   cc::PaintFlags::FilterQuality ComputeFilterQuality(
-      Image*,
+      Image&,
       const gfx::RectF& dest,
       const gfx::RectF& src) const;
 
-  SkSamplingOptions ComputeSamplingOptions(Image* image,
+  SkSamplingOptions ComputeSamplingOptions(Image& image,
                                            const gfx::RectF& dest,
                                            const gfx::RectF& src) const {
     return cc::PaintFlags::FilterQualityToSkSamplingOptions(
@@ -553,14 +581,13 @@ class PLATFORM_EXPORT GraphicsContext {
   template <typename DrawTextFunc>
   void DrawTextPasses(const AutoDarkMode& auto_dark_mode, const DrawTextFunc&);
 
-  void SaveLayer(const SkRect* bounds, const cc::PaintFlags*);
-  void RestoreLayer();
+  void BeginLayer(const cc::PaintFlags&);
 
   // SkCanvas wrappers.
   void ClipRRect(const SkRRect&,
                  AntiAliasingMode = kNotAntiAliased,
                  SkClipOp = SkClipOp::kIntersect);
-  void Concat(const SkMatrix&);
+  void Concat(const SkM44&);
 
   // Apply deferred paint state saves
   void RealizePaintSave() {
@@ -581,10 +608,6 @@ class PLATFORM_EXPORT GraphicsContext {
 
   class DarkModeFlags;
 
-  bool ShouldDrawDarkModeTextContrastOutline(
-      const cc::PaintFlags& original_flags,
-      const DarkModeFlags& dark_flags) const;
-
   // This is owned by paint_recorder_. Never delete this object.
   // Drawing operations are allowed only after the first BeginRecording() which
   // initializes this to not null.
@@ -593,7 +616,7 @@ class PLATFORM_EXPORT GraphicsContext {
   PaintController& paint_controller_;
 
   // Paint states stack. The state controls the appearance of drawn content, so
-  // this stack enables local drawing state changes with save()/restore() calls.
+  // this stack enables local drawing state changes with Save()/Restore() calls.
   // We do not delete from this stack to avoid memory churn.
   Vector<std::unique_ptr<GraphicsContextState>> paint_state_stack_;
 

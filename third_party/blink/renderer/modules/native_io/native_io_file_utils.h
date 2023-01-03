@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <memory>
 
+#include "base/check_op.h"
 #include "base/sequence_checker.h"
 #include "base/types/pass_key.h"
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer/array_buffer_contents.h"
@@ -26,7 +27,8 @@ int NativeIOOperationSize(const DOMArrayBufferView& buffer);
 // transfer fails.
 DOMArrayBufferView* TransferToNewArrayBufferView(
     v8::Isolate* isolate,
-    NotShared<DOMArrayBufferView> source);
+    NotShared<DOMArrayBufferView> source,
+    ExceptionState& exception_state);
 
 // Provides cross-thread access to the buffer backing a DOMArrayBufferView.
 //
@@ -56,7 +58,8 @@ class NativeIODataBuffer {
   // Returns nullptr if detaching failed.
   static std::unique_ptr<NativeIODataBuffer> Create(
       ScriptState* script_state,
-      NotShared<DOMArrayBufferView> source);
+      NotShared<DOMArrayBufferView> source,
+      ExceptionState& exception_state);
 
   // Exposed for std::make_unique. Instances should be obtained from Create().
   NativeIODataBuffer(ArrayBufferContents contents,

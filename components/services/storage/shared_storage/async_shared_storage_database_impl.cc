@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "base/files/file_util.h"
+#include "base/memory/ptr_util.h"
 #include "base/time/time.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
 #include "components/services/storage/shared_storage/shared_storage_options.h"
@@ -27,7 +28,7 @@ AsyncSharedStorageDatabaseImpl::Create(
     scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
     scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy,
     std::unique_ptr<SharedStorageDatabaseOptions> options) {
-  return absl::WrapUnique(new AsyncSharedStorageDatabaseImpl(
+  return base::WrapUnique(new AsyncSharedStorageDatabaseImpl(
       std::move(db_path), std::move(blocking_task_runner),
       std::move(special_storage_policy), std::move(options)));
 }
@@ -155,7 +156,7 @@ void AsyncSharedStorageDatabaseImpl::Entries(
 }
 
 void AsyncSharedStorageDatabaseImpl::PurgeMatchingOrigins(
-    OriginMatcherFunction origin_matcher,
+    StorageKeyPolicyMatcherFunction storage_key_policy,
     base::Time begin,
     base::Time end,
     base::OnceCallback<void(OperationResult)> callback,
@@ -163,26 +164,26 @@ void AsyncSharedStorageDatabaseImpl::PurgeMatchingOrigins(
   DCHECK(callback);
   DCHECK(database_);
   database_.AsyncCall(&SharedStorageDatabase::PurgeMatchingOrigins)
-      .WithArgs(std::move(origin_matcher), begin, end, perform_storage_cleanup)
+      .WithArgs(std::move(storage_key_policy), begin, end,
+                perform_storage_cleanup)
       .Then(std::move(callback));
 }
 
-void AsyncSharedStorageDatabaseImpl::PurgeStaleOrigins(
-    base::TimeDelta window_to_be_deemed_active,
+void AsyncSharedStorageDatabaseImpl::PurgeStale(
     base::OnceCallback<void(OperationResult)> callback) {
   DCHECK(callback);
   DCHECK(database_);
-  database_.AsyncCall(&SharedStorageDatabase::PurgeStaleOrigins)
-      .WithArgs(window_to_be_deemed_active)
+  database_.AsyncCall(&SharedStorageDatabase::PurgeStale)
       .Then(std::move(callback));
 }
 
 void AsyncSharedStorageDatabaseImpl::FetchOrigins(
-    base::OnceCallback<void(std::vector<mojom::StorageUsageInfoPtr>)>
-        callback) {
+    base::OnceCallback<void(std::vector<mojom::StorageUsageInfoPtr>)> callback,
+    bool exclude_empty_origins) {
   DCHECK(callback);
   DCHECK(database_);
   database_.AsyncCall(&SharedStorageDatabase::FetchOrigins)
+      .WithArgs(exclude_empty_origins)
       .Then(std::move(callback));
 }
 
@@ -203,6 +204,46 @@ void AsyncSharedStorageDatabaseImpl::GetRemainingBudget(
   DCHECK(callback);
   DCHECK(database_);
   database_.AsyncCall(&SharedStorageDatabase::GetRemainingBudget)
+      .WithArgs(std::move(context_origin))
+      .Then(std::move(callback));
+}
+
+void AsyncSharedStorageDatabaseImpl::GetCreationTime(
+    url::Origin context_origin,
+    base::OnceCallback<void(TimeResult)> callback) {
+  DCHECK(callback);
+  DCHECK(database_);
+  database_.AsyncCall(&SharedStorageDatabase::GetCreationTime)
+      .WithArgs(std::move(context_origin))
+      .Then(std::move(callback));
+}
+
+void AsyncSharedStorageDatabaseImpl::GetMetadata(
+    url::Origin context_origin,
+    base::OnceCallback<void(SharedStorageDatabase::MetadataResult)> callback) {
+  DCHECK(callback);
+  DCHECK(database_);
+  database_.AsyncCall(&SharedStorageDatabase::GetMetadata)
+      .WithArgs(std::move(context_origin))
+      .Then(std::move(callback));
+}
+
+void AsyncSharedStorageDatabaseImpl::GetEntriesForDevTools(
+    url::Origin context_origin,
+    base::OnceCallback<void(EntriesResult)> callback) {
+  DCHECK(callback);
+  DCHECK(database_);
+  database_.AsyncCall(&SharedStorageDatabase::GetEntriesForDevTools)
+      .WithArgs(std::move(context_origin))
+      .Then(std::move(callback));
+}
+
+void AsyncSharedStorageDatabaseImpl::ResetBudgetForDevTools(
+    url::Origin context_origin,
+    base::OnceCallback<void(OperationResult)> callback) {
+  DCHECK(callback);
+  DCHECK(database_);
+  database_.AsyncCall(&SharedStorageDatabase::ResetBudgetForDevTools)
       .WithArgs(std::move(context_origin))
       .Then(std::move(callback));
 }
@@ -228,14 +269,26 @@ void AsyncSharedStorageDatabaseImpl::DBStatusForTesting(
       .Then(std::move(callback));
 }
 
+void AsyncSharedStorageDatabaseImpl::OverrideCreationTimeForTesting(
+    url::Origin context_origin,
+    base::Time new_creation_time,
+    base::OnceCallback<void(bool)> callback) {
+  DCHECK(callback);
+  DCHECK(database_);
+  database_.AsyncCall(&SharedStorageDatabase::OverrideCreationTimeForTesting)
+      .WithArgs(std::move(context_origin), new_creation_time)
+      .Then(std::move(callback));
+}
+
 void AsyncSharedStorageDatabaseImpl::OverrideLastUsedTimeForTesting(
     url::Origin context_origin,
+    std::u16string key,
     base::Time new_last_used_time,
     base::OnceCallback<void(bool)> callback) {
   DCHECK(callback);
   DCHECK(database_);
   database_.AsyncCall(&SharedStorageDatabase::OverrideLastUsedTimeForTesting)
-      .WithArgs(std::move(context_origin), new_last_used_time)
+      .WithArgs(std::move(context_origin), key, new_last_used_time)
       .Then(std::move(callback));
 }
 
@@ -250,6 +303,7 @@ void AsyncSharedStorageDatabaseImpl::OverrideSpecialStoragePolicyForTesting(
 void AsyncSharedStorageDatabaseImpl::OverrideClockForTesting(
     base::Clock* clock,
     base::OnceClosure callback) {
+  DCHECK(callback);
   DCHECK(database_);
   database_.AsyncCall(&SharedStorageDatabase::OverrideClockForTesting)
       .WithArgs(clock)

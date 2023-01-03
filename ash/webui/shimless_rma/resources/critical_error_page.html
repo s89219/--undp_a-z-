@@ -5,7 +5,7 @@
   }
 
   #navigationButtonWrapper {
-    bottom: var(--footer-height);
+    bottom: var(--header-footer-height);
     position: absolute;
   }
 
@@ -15,7 +15,7 @@
 </style>
 <base-page>
   <div slot="left-pane">
-    <h1>[[i18n('criticalErrorTitleText')]]</h1>
+    <h1 tabindex="-1">[[i18n('criticalErrorTitleText')]]</h1>
     <div class="icon-message">
       <iron-icon icon="shimless-icon:warning" class="warning-icon small-icon">
       </iron-icon>
@@ -35,8 +35,9 @@
     </div>
   </div>
   <div slot="right-pane">
-    <div class="illustration-wrapper">
-      <img class="illustration" src="illustrations/error.svg">
+    <div class="illustration-wrapper" aria-hidden="true">
+      <img class="illustration" src="illustrations/error.svg"
+          alt="[[i18n('errorAltText')]]">
     </div>
   </div>
 </base-page>

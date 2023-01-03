@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include <cstring>
 
 #include "ash/accessibility/accessibility_controller_impl.h"
-#include "ash/capture_mode/capture_mode_button.h"
 #include "ash/capture_mode/capture_mode_camera_preview_view.h"
 #include "ash/capture_mode/capture_mode_constants.h"
 #include "ash/capture_mode/capture_mode_controller.h"
@@ -32,6 +31,7 @@
 #include "base/callback_helpers.h"
 #include "base/check.h"
 #include "base/containers/contains.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "media/capture/video/video_capture_device_descriptor.h"
@@ -71,8 +71,6 @@ constexpr base::TimeDelta kCameraPreviewFadeOutDuration =
 constexpr base::TimeDelta kCameraPreviewFadeInDuration =
     base::Milliseconds(150);
 
-constexpr float kCameraPreviewScaleUpFactor = 0.8f;
-
 // Defines a map type to map a camera model ID (or display name) to the number
 // of cameras of that model that are currently connected.
 using ModelIdToCountMap = std::map<std::string, int>;
@@ -105,10 +103,8 @@ bool DidDevicesChange(
   ModelIdToCountMap cam_models_map;
   for (const auto& incoming_camera : incoming_list) {
     const auto& device_id = incoming_camera.descriptor.device_id;
-    const auto iter = std::find_if(current_list.begin(), current_list.end(),
-                                   [device_id](const CameraInfo& info) {
-                                     return info.device_id == device_id;
-                                   });
+    const auto iter =
+        base::ranges::find(current_list, device_id, &CameraInfo::device_id);
     if (iter == current_list.end())
       return true;
 
@@ -171,16 +167,15 @@ bool ShouldCameraActLikeAMirror(const CameraInfo& camera_info) {
 // nullptr if no such item exists.
 const CameraInfo* GetCameraInfoById(const CameraId& id,
                                     const CameraInfoList& list) {
-  const auto iter = std::find_if(
-      list.begin(), list.end(),
-      [&id](const CameraInfo& info) { return info.camera_id == id; });
+  const auto iter = base::ranges::find(list, id, &CameraInfo::camera_id);
   return iter == list.end() ? nullptr : &(*iter);
 }
 
 // Returns the widget init params needed to create the camera preview widget.
 views::Widget::InitParams CreateWidgetParams(const gfx::Rect& bounds) {
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-  params.parent = CaptureModeController::Get()->GetCameraPreviewParentWindow();
+  params.parent =
+      CaptureModeController::Get()->GetOnCaptureSurfaceWidgetParentWindow();
   params.bounds = bounds;
   params.name = "CameraPreviewWidget";
   return params;
@@ -193,7 +188,7 @@ void AdjustBoundsWithinConfinedBounds(const gfx::Rect& confined_bounds,
   const int x = preview_bounds.x();
   if (int offset = x - confined_bounds.x(); offset < 0) {
     preview_bounds.set_x(x - offset);
-  } else if (int offset = confined_bounds.right() - preview_bounds.right();
+  } else if (offset = confined_bounds.right() - preview_bounds.right();
              offset < 0) {
     preview_bounds.set_x(x + offset);
   }
@@ -201,7 +196,7 @@ void AdjustBoundsWithinConfinedBounds(const gfx::Rect& confined_bounds,
   const int y = preview_bounds.y();
   if (int offset = y - confined_bounds.y(); offset < 0) {
     preview_bounds.set_y(y - offset);
-  } else if (int offset = confined_bounds.bottom() - preview_bounds.bottom();
+  } else if (offset = confined_bounds.bottom() - preview_bounds.bottom();
              offset < 0) {
     preview_bounds.set_y(y + offset);
   }
@@ -328,7 +323,8 @@ class CameraPreviewTargeter : public aura::WindowTargeter {
           camera_preview_window_->GetBoundsInScreen();
       const gfx::Point camera_preview_center_point =
           camera_preview_bounds.CenterPoint();
-      const int camera_preview_radius = camera_preview_bounds.width() / 2;
+      const int camera_preview_radius = camera_preview_bounds.width() / 2 -
+                                        capture_mode::kCameraPreviewBorderSize;
 
       // Check if events are outside of the camera preview circle by comparing
       // if the distance between screen location and center of camera preview is
@@ -347,6 +343,14 @@ class CameraPreviewTargeter : public aura::WindowTargeter {
  private:
   aura::Window* const camera_preview_window_;
 };
+
+capture_mode_util::AnimationParams BuildCameraVisibilityAnimationParams(
+    bool target_visibility,
+    bool apply_scale_up_animation) {
+  return {target_visibility ? kCameraPreviewFadeInDuration
+                            : kCameraPreviewFadeOutDuration,
+          gfx::Tween::LINEAR, apply_scale_up_animation};
+}
 
 }  // namespace
 
@@ -421,8 +425,17 @@ void CaptureModeCameraController::RemoveObserver(Observer* observer) {
 }
 
 void CaptureModeCameraController::MaybeSelectFirstCamera() {
-  if (!selected_camera_.is_valid() && !available_cameras_.empty())
+  if (!selected_camera_.is_valid() && !available_cameras_.empty()) {
     SetSelectedCamera(available_cameras_[0].camera_id);
+    did_make_camera_auto_selection_ = true;
+  }
+}
+
+void CaptureModeCameraController::MaybeRevertAutoCameraSelection() {
+  if (did_make_camera_auto_selection_) {
+    SetSelectedCamera(CameraId());
+    did_make_camera_auto_selection_ = false;
+  }
 }
 
 bool CaptureModeCameraController::IsCameraDisabledByPolicy() const {
@@ -488,7 +501,7 @@ void CaptureModeCameraController::MaybeReparentPreviewWidget() {
 
   const bool was_visible_before = camera_preview_widget_->IsVisible();
   auto* controller = CaptureModeController::Get();
-  auto* parent = controller->GetCameraPreviewParentWindow();
+  auto* parent = controller->GetOnCaptureSurfaceWidgetParentWindow();
   DCHECK(parent);
   if (parent != native_window->parent())
     views::Widget::ReparentNativeView(native_window, parent);
@@ -520,7 +533,7 @@ void CaptureModeCameraController::MaybeUpdatePreviewWidget(bool animate) {
 
   auto* controller = CaptureModeController::Get();
   DCHECK(controller->IsActive() || controller->is_recording_in_progress());
-  const gfx::Rect confine_bounds = controller->GetCameraPreviewConfineBounds();
+  const gfx::Rect confine_bounds = controller->GetCaptureSurfaceConfineBounds();
 
   const capture_mode_util::CameraPreviewSizeSpecs size_specs =
       capture_mode_util::CalculateCameraPreviewSizeSpecs(
@@ -546,12 +559,22 @@ void CaptureModeCameraController::MaybeUpdatePreviewWidget(bool animate) {
           CalculatePreviewWidgetTargetBounds(confine_bounds, size_specs.size),
           animate);
 
-  const bool did_visibility_change = SetCameraPreviewVisibility(
-      size_specs.should_be_visible, should_animate_visibility);
+  const bool did_visibility_change = capture_mode_util::SetWidgetVisibility(
+      camera_preview_widget_.get(), size_specs.should_be_visible,
+      !should_animate_visibility
+          ? absl::nullopt
+          : absl::make_optional<capture_mode_util::AnimationParams>(
+                BuildCameraVisibilityAnimationParams(
+                    /*target_visibility=*/size_specs.should_be_visible,
+                    /*apply_scale_up_animation=*/is_first_bounds_update_)));
 
-  if (controller->IsActive() && (did_visibility_change || did_bounds_change)) {
+  if (controller->IsActive() && !controller->is_recording_in_progress()) {
     controller->capture_mode_session()
-        ->OnCameraPreviewBoundsOrVisibilityChanged();
+        ->OnCameraPreviewBoundsOrVisibilityChanged(
+            /*capture_surface_became_too_small=*/size_specs
+                .is_surface_too_small,
+            /*did_bounds_or_visibility_change=*/did_visibility_change ||
+                did_bounds_change);
   }
 
   if (did_bounds_change) {
@@ -583,7 +606,7 @@ void CaptureModeCameraController::ContinueDraggingPreview(
   current_bounds.Offset(
       gfx::ToRoundedVector2d(screen_location - previous_location_in_screen_));
   AdjustBoundsWithinConfinedBounds(
-      CaptureModeController::Get()->GetCameraPreviewConfineBounds(),
+      CaptureModeController::Get()->GetCaptureSurfaceConfineBounds(),
       current_bounds);
   camera_preview_widget_->SetBounds(current_bounds);
   previous_location_in_screen_ = screen_location;
@@ -613,6 +636,10 @@ void CaptureModeCameraController::ToggleCameraPreviewSize() {
   DCHECK(camera_preview_view_);
   is_camera_preview_collapsed_ = !is_camera_preview_collapsed_;
   MaybeUpdatePreviewWidget(/*animate=*/true);
+}
+
+void CaptureModeCameraController::OnCaptureSessionStarted() {
+  GetCameraDevices();
 }
 
 void CaptureModeCameraController::OnRecordingStarted(
@@ -660,8 +687,8 @@ void CaptureModeCameraController::OnFrameHandlerFatalError() {
 }
 
 void CaptureModeCameraController::OnShuttingDown() {
-  // At this point `CaptureModeController` should have already ended any ongoing
-  // recording, and there should be no camera previews available.
+  // This should destroy any camera preview if present.
+  SetShouldShowPreview(false);
   DCHECK(!should_show_preview_);
   DCHECK(!camera_preview_widget_);
 
@@ -678,6 +705,13 @@ void CaptureModeCameraController::PseudoFocusCameraPreview() {
 
   camera_preview_view_->PseudoFocus();
   camera_preview_view_->UpdateA11yOverrideWindow();
+}
+
+void CaptureModeCameraController::OnActiveUserSessionChanged() {
+  if (!did_first_user_login_) {
+    did_first_user_login_ = true;
+    GetCameraDevices();
+  }
 }
 
 void CaptureModeCameraController::OnDevicesChanged(
@@ -705,7 +739,7 @@ void CaptureModeCameraController::ReconnectToVideoSourceProvider() {
 }
 
 void CaptureModeCameraController::GetCameraDevices() {
-  if (is_shutting_down_)
+  if (is_shutting_down_ || !did_first_user_login_)
     return;
 
   DCHECK(video_source_provider_remote_);
@@ -731,6 +765,14 @@ void CaptureModeCameraController::OnCameraDevicesReceived(
   if (on_camera_list_received_for_test_) {
     deferred_runner.ReplaceClosure(
         std::move(on_camera_list_received_for_test_));
+  }
+
+  const bool should_report_cameras_number =
+      !did_report_number_of_cameras_before_ ||
+      (devices.size() != available_cameras_.size());
+  if (should_report_cameras_number) {
+    did_report_number_of_cameras_before_ = true;
+    RecordNumberOfConnectedCameras(devices.size());
   }
 
   if (!DidDevicesChange(devices, available_cameras_))
@@ -877,7 +919,7 @@ gfx::Rect CaptureModeCameraController::CalculatePreviewWidgetTargetBounds(
   aura::Window* parent =
       camera_preview_widget_
           ? camera_preview_widget_->GetNativeWindow()->parent()
-          : controller->GetCameraPreviewParentWindow();
+          : controller->GetOnCaptureSurfaceWidgetParentWindow();
   DCHECK(parent);
   const gfx::Rect collision_rect_screen =
       GetCollisionAvoidanceRect(parent->GetRootWindow());
@@ -974,7 +1016,7 @@ CaptureModeCameraController::CalculateSnapPositionOnDragEnded() const {
       GetCurrentBoundsMatchingConfineBoundsCoordinates().CenterPoint();
   const gfx::Point center_point_of_confine_bounds =
       CaptureModeController::Get()
-          ->GetCameraPreviewConfineBounds()
+          ->GetCaptureSurfaceConfineBounds()
           .CenterPoint();
 
   if (center_point_of_preview_widget.x() < center_point_of_confine_bounds.x()) {
@@ -1014,103 +1056,6 @@ void CaptureModeCameraController::RunPostRefreshCameraPreview(
     UpdateFloatingPanelBoundsIfNeeded(
         camera_preview_widget_->GetNativeWindow()->GetRootWindow());
   }
-}
-
-bool CaptureModeCameraController::SetCameraPreviewVisibility(
-    bool target_visibility,
-    bool animate) {
-  DCHECK(camera_preview_widget_);
-
-  // Note that we use `aura::Window::TargetVisibility()` rather than
-  // `views::Widget::IsVisible()` (which in turn uses
-  // `aura::Window::IsVisible()`). The reason is because the latter takes into
-  // account whether window's layer is drawn or not. We want to calculate the
-  // current visibility only based on the actual visibility of the window
-  // itself, so that we can correctly compare it against `target_visibility`.
-  // Note that the preview may be a child of the unparented container (which is
-  // always hidden), yet the preview's window is shown.
-  const bool current_visibility =
-      camera_preview_widget_->GetNativeWindow()->TargetVisibility() &&
-      camera_preview_widget_->GetLayer()->GetTargetOpacity() > 0.f;
-  if (target_visibility == current_visibility)
-    return false;
-
-  if (animate) {
-    if (target_visibility)
-      FadeInCameraPreview();
-    else
-      FadeOutCameraPreview();
-  } else {
-    if (target_visibility)
-      camera_preview_widget_->Show();
-    else
-      camera_preview_widget_->Hide();
-  }
-
-  capture_mode_util::TriggerAccessibilityAlertSoon(
-      current_visibility ? IDS_ASH_SCREEN_CAPTURE_CAMERA_PREVIEW_HIDDEN
-                         : IDS_ASH_SCREEN_CAPTURE_CAMERA_PREVIEW_ON);
-  return true;
-}
-
-void CaptureModeCameraController::FadeInCameraPreview() {
-  DCHECK(camera_preview_widget_);
-  auto* layer = camera_preview_widget_->GetLayer();
-  DCHECK(!camera_preview_widget_->GetNativeWindow()->TargetVisibility() ||
-         layer->GetTargetOpacity() < 1.f);
-
-  if (!camera_preview_widget_->GetNativeWindow()->TargetVisibility())
-    camera_preview_widget_->Show();
-  if (layer->opacity() == 1.f)
-    layer->SetOpacity(0.f);
-
-  if (is_first_bounds_update_) {
-    layer->SetTransform(capture_mode_util::GetScaleTransformAboutCenter(
-        layer, kCameraPreviewScaleUpFactor));
-  }
-
-  views::AnimationBuilder builder;
-  auto& animation_sequence_block =
-      builder
-          .SetPreemptionStrategy(
-              ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET)
-          .Once()
-          .SetDuration(kCameraPreviewFadeInDuration)
-          .SetOpacity(layer, 1.f, gfx::Tween::LINEAR);
-
-  // We should only set transform here if `is_first_bounds_update_` is true,
-  // otherwise, it may mess up with the snap animation in
-  // `SetCameraPreviewBounds`.
-  if (is_first_bounds_update_) {
-    animation_sequence_block.SetTransform(layer, gfx::Transform(),
-                                          gfx::Tween::ACCEL_20_DECEL_100);
-  }
-}
-
-void CaptureModeCameraController::FadeOutCameraPreview() {
-  DCHECK(camera_preview_widget_);
-  DCHECK(camera_preview_widget_->GetNativeWindow()->TargetVisibility());
-
-  auto* layer = camera_preview_widget_->GetLayer();
-  DCHECK_EQ(layer->GetTargetOpacity(), 1.f);
-
-  views::AnimationBuilder()
-      .OnEnded(base::BindOnce(
-          [](base::WeakPtr<CaptureModeCameraController> controller) {
-            if (!controller || !controller->camera_preview_widget_)
-              return;
-            // Please notice, the order matters here. If we set the layer's
-            // opacity back to 1.f before calling `Hide`, flickering can be
-            // seen.
-            controller->camera_preview_widget_->Hide();
-            controller->camera_preview_widget_->GetLayer()->SetOpacity(1.f);
-          },
-          weak_ptr_factory_.GetWeakPtr()))
-      .SetPreemptionStrategy(
-          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET)
-      .Once()
-      .SetDuration(kCameraPreviewFadeOutDuration)
-      .SetOpacity(layer, 0.f, gfx::Tween::LINEAR);
 }
 
 bool CaptureModeCameraController::SetCameraPreviewBounds(

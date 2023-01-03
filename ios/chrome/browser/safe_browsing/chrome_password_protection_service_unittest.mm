@@ -1,46 +1,46 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/safe_browsing/chrome_password_protection_service.h"
 
-#include <memory>
-#include <string>
-#include <vector>
+#import <memory>
+#import <string>
+#import <vector>
 
-#include "base/memory/scoped_refptr.h"
-#include "base/strings/utf_string_conversions.h"
-#include "base/test/mock_callback.h"
-#include "base/values.h"
-#include "components/keyed_service/core/service_access_type.h"
-#include "components/password_manager/core/browser/mock_password_store_interface.h"
-#include "components/password_manager/core/browser/password_manager_metrics_util.h"
-#include "components/password_manager/core/browser/password_manager_test_utils.h"
-#include "components/password_manager/core/browser/password_reuse_detector.h"
-#include "components/prefs/pref_service.h"
-#include "components/safe_browsing/core/browser/password_protection/metrics_util.h"
-#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
-#include "components/signin/public/identity_manager/account_info.h"
-#include "components/signin/public/identity_manager/identity_test_environment.h"
-#include "components/strings/grit/components_strings.h"
-#include "components/sync/protocol/gaia_password_reuse.pb.h"
-#include "components/sync_user_events/fake_user_event_service.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#include "ios/chrome/browser/history/history_service_factory.h"
-#include "ios/chrome/browser/passwords/ios_chrome_password_store_factory.h"
+#import "base/memory/scoped_refptr.h"
+#import "base/strings/utf_string_conversions.h"
+#import "base/test/mock_callback.h"
+#import "base/values.h"
+#import "components/keyed_service/core/service_access_type.h"
+#import "components/password_manager/core/browser/mock_password_store_interface.h"
+#import "components/password_manager/core/browser/password_manager_metrics_util.h"
+#import "components/password_manager/core/browser/password_manager_test_utils.h"
+#import "components/password_manager/core/browser/password_reuse_detector.h"
+#import "components/prefs/pref_service.h"
+#import "components/safe_browsing/core/browser/password_protection/metrics_util.h"
+#import "components/safe_browsing/core/common/safe_browsing_prefs.h"
+#import "components/signin/public/identity_manager/account_info.h"
+#import "components/signin/public/identity_manager/identity_test_environment.h"
+#import "components/strings/grit/components_strings.h"
+#import "components/sync/protocol/gaia_password_reuse.pb.h"
+#import "components/sync_user_events/fake_user_event_service.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/history/history_service_factory.h"
+#import "ios/chrome/browser/passwords/ios_chrome_password_store_factory.h"
 #import "ios/chrome/browser/safe_browsing/safe_browsing_metrics_collector_factory.h"
-#include "ios/chrome/browser/sync/ios_user_event_service_factory.h"
-#include "ios/components/security_interstitials/safe_browsing/fake_safe_browsing_service.h"
-#include "ios/web/public/navigation/referrer.h"
+#import "ios/chrome/browser/sync/ios_user_event_service_factory.h"
+#import "ios/components/security_interstitials/safe_browsing/fake_safe_browsing_service.h"
+#import "ios/web/public/navigation/referrer.h"
 #import "ios/web/public/test/fakes/fake_navigation_manager.h"
 #import "ios/web/public/test/fakes/fake_web_state.h"
-#include "ios/web/public/test/web_task_environment.h"
+#import "ios/web/public/test/web_task_environment.h"
 #import "ios/web/public/web_state.h"
-#include "testing/gmock/include/gmock/gmock.h"
-#include "testing/platform_test.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/page_transition_types.h"
-#include "url/gurl.h"
+#import "testing/gmock/include/gmock/gmock.h"
+#import "testing/platform_test.h"
+#import "ui/base/l10n/l10n_util.h"
+#import "ui/base/page_transition_types.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -388,11 +388,11 @@ TEST_F(ChromePasswordProtectionServiceTest,
       GURL("https://www.mydomain.com")));
 
   // Verify URL is allowed after setting allowlist in prefs.
-  base::Value allowlist(base::Value::Type::LIST);
+  base::Value::List allowlist;
   allowlist.Append("mydomain.com");
   allowlist.Append("mydomain.net");
-  browser_state_->GetPrefs()->Set(prefs::kSafeBrowsingAllowlistDomains,
-                                  allowlist);
+  browser_state_->GetPrefs()->SetList(prefs::kSafeBrowsingAllowlistDomains,
+                                      std::move(allowlist));
   EXPECT_TRUE(service_->IsURLAllowlistedForPasswordEntry(
       GURL("https://www.mydomain.com")));
 
@@ -414,10 +414,10 @@ TEST_F(ChromePasswordProtectionServiceTest,
       prefs::kPasswordProtectionChangePasswordURL);
   EXPECT_FALSE(service_->IsURLAllowlistedForPasswordEntry(
       GURL("https://www.mydomain.com")));
-  base::Value login_urls(base::Value::Type::LIST);
+  base::Value::List login_urls;
   login_urls.Append("https://mydomain.com/login.html");
-  browser_state_->GetPrefs()->Set(prefs::kPasswordProtectionLoginURLs,
-                                  login_urls);
+  browser_state_->GetPrefs()->SetList(prefs::kPasswordProtectionLoginURLs,
+                                      std::move(login_urls));
   EXPECT_TRUE(service_->IsURLAllowlistedForPasswordEntry(
       GURL("https://mydomain.com/login.html#ref?user_name=alice")));
 }
@@ -572,11 +572,11 @@ TEST_F(ChromePasswordProtectionServiceTest, VerifyGetPingNotSentReason) {
     browser_state_->GetPrefs()->SetInteger(
         prefs::kPasswordProtectionWarningTrigger,
         safe_browsing::PHISHING_REUSE);
-    base::Value allowlist(base::Value::Type::LIST);
+    base::Value::List allowlist;
     allowlist.Append("mydomain.com");
     allowlist.Append("mydomain.net");
-    browser_state_->GetPrefs()->Set(prefs::kSafeBrowsingAllowlistDomains,
-                                    allowlist);
+    browser_state_->GetPrefs()->SetList(prefs::kSafeBrowsingAllowlistDomains,
+                                        std::move(allowlist));
     EXPECT_EQ(RequestOutcome::MATCHED_ENTERPRISE_ALLOWLIST,
               service_->GetPingNotSentReason(
                   LoginReputationClientRequest::PASSWORD_REUSE_EVENT,

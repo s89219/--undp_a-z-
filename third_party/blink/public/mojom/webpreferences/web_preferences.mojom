@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@ import "third_party/blink/public/mojom/css/preferred_color_scheme.mojom";
 import "third_party/blink/public/mojom/css/preferred_contrast.mojom";
 import "third_party/blink/public/mojom/v8_cache_options.mojom";
 import "url/mojom/url.mojom";
-import "url/mojom/origin.mojom";
 import "mojo/public/mojom/base/string16.mojom";
 
 enum PointerType {
@@ -123,7 +122,6 @@ struct WebPreferences {
   bool allow_scripts_to_close_windows;
   bool remote_fonts_enabled;
   bool javascript_can_access_clipboard;
-  bool xslt_enabled;
   // We don't use dns_prefetching_enabled to disable DNS prefetching.  Instead,
   // we disable the feature at a lower layer so that we catch non-WebKit uses
   // of DNS prefetch as well.
@@ -144,6 +142,7 @@ struct WebPreferences {
   bool privileged_webgl_extensions_enabled;
   bool webgl_errors_to_console_enabled;
   bool hide_scrollbars;
+  bool enable_webkit_scrollbar_styling;
   bool accelerated_2d_canvas_enabled;
   bool canvas_2d_layers_enabled;
   bool antialiased_2d_canvas_disabled;
@@ -206,6 +205,10 @@ struct WebPreferences {
   V8CacheOptions v8_cache_options;
   bool record_whole_document;
 
+  // If true, stylus handwriting recognition to text input will be available in
+  // editable input fields which are non-password type.
+  bool stylus_handwriting_enabled;
+
   // This flags corresponds to a Page's Settings' setCookieEnabled state. It
   // only controls whether or not the "document.cookie" field is properly
   // connected to the backing store, for instance if you wanted to be able to
@@ -242,8 +245,6 @@ struct WebPreferences {
   // around WebVTT text tracks.
   // Window color can be any legal CSS color descriptor.
   string text_track_window_color;
-  // Window padding is in em.
-  string text_track_window_padding;
   // Window radius is in pixels.
   string text_track_window_radius;
 
@@ -345,9 +346,13 @@ struct WebPreferences {
   // Don't accelerate small canvases to avoid crashes TODO(crbug.com/1004304)
   bool disable_accelerated_small_canvases;
 
+  // Disable the Web Authentication (WebAuthn) API.
+  // TODO(crbug.com/1284805): Remove once WebView supports WebAuthn.
   [EnableIf=is_android]
-  // Disable the Web Authentication (WebAuthn) API. Only enabled on Android
-  // because the only context where it might be disabled is WebView/WebLayer.
+  bool disable_webauthn;
+  // TODO(crbug.com/1382970): Remove once all Content embedders on Fuchsia
+  // support WebAuthn.
+  [EnableIf=is_fuchsia]
   bool disable_webauthn;
 
   // Enable forcibly modifying content rendering to result in a light on dark
@@ -433,4 +438,15 @@ struct WebPreferences {
 
   // Controls whether WebXR's immersive-ar is allowed.
   bool webxr_immersive_ar_allowed;
+
+  // Whether lookup of frames in the associated WebView (e.g. lookup via
+  // window.open or via <a target=...>) should be renderer-wide (i.e. going
+  // beyond the usual opener-relationship-based BrowsingInstance boundaries).
+  bool renderer_wide_named_frame_lookup;
+
+  bool strict_mime_type_check_for_worker_scripts_enabled = true;
+
+  // Whether modal context menu is used. A modal context menu meaning it is
+  // blocking user's access to the background web content.
+  bool modal_context_menu = true;
 };

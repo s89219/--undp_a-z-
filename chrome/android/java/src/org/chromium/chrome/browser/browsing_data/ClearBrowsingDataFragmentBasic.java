@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -225,7 +225,7 @@ public class ClearBrowsingDataFragmentBasic extends ClearBrowsingDataFragment {
 
     private boolean isHistorySyncEnabled() {
         SyncService syncService = SyncService.get();
-        return syncService != null && syncService.isSyncRequested()
+        return syncService != null && syncService.isSyncFeatureEnabled()
                 && syncService.getActiveDataTypes().contains(ModelType.HISTORY_DELETE_DIRECTIVES);
     }
 

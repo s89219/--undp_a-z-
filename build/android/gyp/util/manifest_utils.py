@@ -1,4 +1,4 @@
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -63,6 +63,7 @@ def ParseManifest(path):
     manifest_node = doc.getroot()
   else:
     manifest_node = doc.find('manifest')
+  assert manifest_node is not None, 'Manifest is none for path ' + path
 
   app_node = doc.find('application')
   if app_node is None:
@@ -130,7 +131,8 @@ def AssertPackage(manifest_node, package):
   manifest.
   """
   package_value = GetPackage(manifest_node)
-  if package_value is None or package is None:
+  if package_value is None or package is None or (
+      package_value == 'no.manifest.configured'):
     return
   assert package_value == package, (
       'Package in Android manifest is %s but we expect %s' % (package_value,

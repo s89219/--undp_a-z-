@@ -1,4 +1,4 @@
-# Copyright 2018 The Chromium Authors. All rights reserved.
+# Copyright 2018 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -195,6 +195,29 @@
       ]
     },
   },
+  '12l-x64-emulator': {
+    '$mixin_append': {
+      'args': [
+        '--avd-config=../../tools/android/avd/proto/generic_android32_foldable.textpb',
+      ],
+    },
+    'swarming': {
+      # soft affinity so that bots with caches will be picked first
+      'optional_dimensions': {
+        '60': [
+          {
+            'caches': 'generic_android32_foldable',
+          }
+        ],
+      },
+      'named_caches': [
+        {
+          'name': 'generic_android32_foldable',
+          'path': '.android_emulator/generic_android32_foldable',
+        },
+      ]
+    },
+  },
   'android_r': {
     'swarming': {
       'dimensions': {
@@ -205,7 +228,7 @@
   'android_t': {
     'swarming': {
       'dimensions': {
-        'device_os': 'T',
+        'device_os': 'TP1A.220624.021',
       },
     },
   },
@@ -216,11 +239,25 @@
       },
     },
   },
+  'blink_tests_write_run_histories': {
+    '$mixin_append': {
+      'args': [
+        '--write-run-histories-to=${ISOLATED_OUTDIR}/run_histories.json',
+      ],
+    },
+  },
   'bullhead': {
     'swarming': {
       'dimensions': {
         'device_type': 'bullhead',
         'os': 'Android',
+      },
+    },
+  },
+  'chrome-finch-swarming-pool': {
+    'swarming': {
+      'dimensions': {
+        'pool': 'chrome.tests.finch',
       },
     },
   },
@@ -265,6 +302,11 @@
         },
       ],
     },
+    '$mixin_append': {
+      'args': [
+        '--magic-vm-cache=magic_cros_vm_cache',
+      ],
+    },
   },
   'chromeos-betty': {
     'swarming': {
@@ -293,6 +335,11 @@
         },
       ],
     },
+    '$mixin_append': {
+      'args': [
+        '--magic-vm-cache=magic_cros_vm_cache',
+      ],
+    },
   },
   'chromeos-jacuzzi': {
     'swarming': {
@@ -310,6 +357,12 @@
         'pool': 'chromium.tests',
       },
     },
+  },
+  'chromeos-kevin-skylab': {
+    'cros_board': 'kevin',
+    'cros_img': 'kevin-public/R110-15277.0.0',
+    'bucket': 'chromiumos-image-archive',
+    'timeout_sec': 10800,
   },
   'chromeos-octopus': {
     'swarming': {
@@ -346,6 +399,11 @@
         },
       ],
     },
+    '$mixin_append': {
+      'args': [
+        '--magic-vm-cache=magic_cros_reven_vm_cache',
+      ],
+    },
   },
   'chromeos-zork': {
     'swarming': {
@@ -365,18 +423,6 @@
       'service_account': 'chromium-tester@chops-service-accounts.iam.gserviceaccount.com',
     },
   },
-  'chromium-webrtc-rel-7': {
-    'perf_builder_name_alias': 'chromium-webrtc-rel-7',
-  },
-  'chromium-webrtc-rel-linux': {
-    'perf_builder_name_alias': 'chromium-webrtc-rel-linux',
-  },
-  'chromium-webrtc-rel-mac': {
-    'perf_builder_name_alias': 'chromium-webrtc-rel-mac',
-  },
-  'chromium-webrtc-rel-win10': {
-    'perf_builder_name_alias': 'chromium-webrtc-rel-win10',
-  },
   # Used for invert CQ tests selection. Adding ci_only: False to
   # test_suite_exceptions.pyl to select tests that are allowed on CQ builders.
   'ci_only': {
@@ -391,6 +437,9 @@
         '--exclusive-device-type-preference=discrete,integrated',
       ],
     },
+  },
+  'disable_check_flakiness_web_tests': {
+     'check_flakiness_for_new_tests': False,
   },
   'disable_field_trial_config_for_earl_grey': {
     '$mixin_append': {
@@ -412,7 +461,7 @@
         'device_os': None,
         'device_type': None,
         'pool': 'chromium.tests.avd',
-        'machine_type': 'n1-standard-4|e2-standard-4',
+        'cores': '4',
       },
     },
   },
@@ -422,7 +471,7 @@
         'device_os': None,
         'device_type': None,
         'pool': 'chromium.tests.avd',
-        'machine_type': 'e2-standard-8',
+        'cores': '8',
       },
     },
   },
@@ -431,6 +480,13 @@
       'args': [
         '--ram-size-mb=16384',
       ],
+    },
+  },
+  'finch-chromium-swarming-pool': {
+    'swarming': {
+      'dimensions': {
+        'pool': 'chromium.tests.finch',
+      },
     },
   },
   'flame': {
@@ -450,13 +506,12 @@
       ],
     },
   },
-  'fuchsia-test-pool': {
-    # This pool is dedicated to test the test infra of fuchsia in chromium.
-    'swarming': {
-      'dimensions': {
-        'pool': 'chromium.tests.fuchsia',
-      },
-    },
+  'fuchsia-test-workstation': {
+    '$mixin_append': {
+      'args': [
+        '--custom-image=workstation_eng.qemu-x64',
+      ],
+    }
   },
   'fuchsia_logs': {
     '$mixin_append': {
@@ -476,30 +531,6 @@
     'swarming': {
       'dimensions': {
         'pool': 'chromium.tests.gpu',
-      },
-    },
-  },
-  'gtest_run_disabled': {
-    '$mixin_append': {
-      'args': [
-        '--gtest_also_run_disabled_tests',
-      ],
-    },
-  },
-  'gtest_run_disabled_only': {
-    '$mixin_append': {
-      'args': [
-        '--gtest_also_run_disabled_tests',
-        '--gtest_filter=*DISABLE*',
-      ],
-    },
-  },
-  'hammerhead': {
-    # Nexus 5
-    'swarming': {
-      'dimensions': {
-        'device_type': 'hammerhead',
-        'os': 'Android',
       },
     },
   },
@@ -524,8 +555,7 @@
   'ios_output_disabled_tests': {
     '$mixin_append': {
       'args': [
-        '--args-json',
-        '{"test_args": ["--write-compiled-tests-json-to-writable-path"]}'
+        '--output-disabled-tests',
       ],
     },
   },
@@ -572,25 +602,25 @@
       },
     },
   },
-  'ios_runtime_cache_15_2': {
+  'ios_runtime_cache_15_5': {
     '$mixin_append': {
       'swarming': {
         'named_caches': [
           {
-            'name': 'runtime_ios_15_2',
-            'path': 'Runtime-ios-15.2',
+            'name': 'runtime_ios_15_5',
+            'path': 'Runtime-ios-15.5',
           },
         ],
       },
     },
   },
-  'ios_runtime_cache_15_4': {
+  'ios_runtime_cache_16_1': {
     '$mixin_append': {
       'swarming': {
         'named_caches': [
           {
-            'name': 'runtime_ios_15_4',
-            'path': 'Runtime-ios-15.4',
+            'name': 'runtime_ios_16_1',
+            'path': 'Runtime-ios-16.1',
           },
         ],
       },
@@ -598,6 +628,14 @@
   },
   'isolate_profile_data': {
     'isolate_profile_data': True,
+  },
+  'junit-swarming': {
+    'swarming': {
+      'dimensions': {
+        'cores': '8',
+        'pool': 'chromium.tests',
+      },
+    },
   },
   'kitkat-x86-emulator': {
     '$mixin_append': {
@@ -649,6 +687,8 @@
       },
     },
   },
+  # TODO(crbug.com/1260217): Remove the xenial mixin once the MSAN bots have
+  # migrated to focal.
   'linux-xenial': {
     'swarming': {
       'dimensions': {
@@ -656,50 +696,31 @@
       },
     },
   },
-  'linux-xenial-or-bionic': {
-    'swarming': {
-      'dimensions': {
-        'os': 'Ubuntu-16.04|Ubuntu-18.04',
-      },
-    },
-  },
   'linux_amd_rx_5500_xt': {
     'swarming': {
       'dimensions': {
         'gpu': '1002:7340',
-        'os': 'Ubuntu',
-        'pool': 'chromium.tests.gpu.experimental',
-      },
-    },
-  },
-  'linux_intel_hd_630_experimental': {
-    # Similar to stable, but with a newer Mesa version.
-    'swarming': {
-      'dimensions': {
-        'gpu': '8086:5912-20.0.8',
-        'os': 'Ubuntu-18.04.5',
+        'os': 'Ubuntu-18.04.6',
         'pool': 'chromium.tests.gpu',
       },
     },
   },
-  'linux_intel_hd_630_stable': {
+  'linux_intel_uhd_630_experimental': {
     'swarming': {
       'dimensions': {
-        'gpu': '8086:5912-19.0.2',
-        'os': 'Ubuntu-19.04',
+        'gpu': '8086:9bc5-20.0.8',
+        'os': 'Ubuntu-18.04.6',
         'pool': 'chromium.tests.gpu',
-      }
+      },
     }
   },
   'linux_intel_uhd_630_stable': {
     'swarming': {
       'dimensions': {
-        'gpu': '8086:3e92-20.0.8',
-        'os': 'Ubuntu-18.04.5',
+        'gpu': '8086:9bc5-20.0.8',
+        'os': 'Ubuntu-18.04.6',
         'pool': 'chromium.tests.gpu',
       },
-      # Increase max pending time to 2 hours due to lack of capacity.
-      'expiration': 7200,
     }
   },
   'linux_nvidia_gtx_1660_experimental': {
@@ -748,22 +769,6 @@
       'mac-release/sizes',
     ],
   },
-  'mac_10.11': {
-    'swarming': {
-      'dimensions': {
-        'cpu': 'x86-64',
-        'os': 'Mac-10.11',
-      },
-    },
-  },
-  'mac_10.12': {
-    'swarming': {
-      'dimensions': {
-        'cpu': 'x86-64',
-        'os': 'Mac-10.12.6',
-      },
-    },
-  },
   'mac_10.13': {
     'swarming': {
       'dimensions': {
@@ -804,7 +809,7 @@
       },
     },
   },
-  'mac_12_beta_arm64': {
+  'mac_12_arm64': {
     'swarming': {
       'dimensions': {
         'cpu': 'arm64',
@@ -812,10 +817,12 @@
       },
     },
   },
-  'mac_12_beta_x64': {
+  # TODO (crbug/1351123): Adding ONLY for iOS to specify T2 only due to xcode14
+  'mac_12_t2_x64': {
     'swarming': {
       'dimensions': {
         'cpu': 'x86-64',
+        'mac_model': 'Macmini8,1',
         'os': 'Mac-12',
       },
     },
@@ -828,13 +835,41 @@
       },
     },
   },
-  'mac_arm64_apple_m1_gpu': {
+  'mac_arm64_apple_m1_gpu_experimental': {
     'swarming': {
       'dimensions': {
         'cpu': 'arm64',
-        'os': 'Mac-11',
+        'mac_model': 'Macmini9,1',
+        'os': 'Mac-12.5.1',
         'pool': 'chromium.tests',
         'display_attached': '1',
+      },
+    },
+  },
+  'mac_arm64_apple_m1_gpu_stable': {
+    'swarming': {
+      'dimensions': {
+        'cpu': 'arm64',
+        'mac_model': 'Macmini9,1',
+        'os': 'Mac-12.5',
+        'pool': 'chromium.tests',
+        'display_attached': '1',
+      },
+    },
+  },
+  'mac_beta_arm64': {
+    'swarming': {
+      'dimensions': {
+        'cpu': 'arm64',
+        'os': 'Mac-13',
+      },
+    },
+  },
+  'mac_beta_x64': {
+    'swarming': {
+      'dimensions': {
+        'cpu': 'x86-64',
+        'os': 'Mac-13',
       },
     },
   },
@@ -843,7 +878,7 @@
       'dimensions': {
         'cpu': 'x86-64',
         'gpu': '8086:3e9b',
-        'os': 'Mac-11.5.2',
+        'os': 'Mac-12.5.1',
         'display_attached': '1',
       },
     },
@@ -853,7 +888,7 @@
       'dimensions': {
         'cpu': 'x86-64',
         'gpu': '8086:3e9b',
-        'os': 'Mac-11.5.2',
+        'os': 'Mac-12.5',
         'display_attached': '1',
       },
     },
@@ -863,7 +898,7 @@
       'dimensions': {
         'cpu': 'x86-64',
         'gpu': '1002:679e',
-        'os': 'Mac-10.12.6',
+        'os': 'Mac-12.4',
         'pool': 'chromium.tests.gpu',
         'display_attached': '1',
       },
@@ -935,7 +970,7 @@
     'swarming': {
       'dimension_sets': [
          {
-           'os': 'Mac-10.15',
+           'os': 'Mac-12',
            'cpu': 'x86-64',
          },
       ],
@@ -971,13 +1006,6 @@
       ]
     },
   },
-  'marshmallow_generic': {
-    'swarming': {
-      'dimensions': {
-        'device_os': 'M',
-      },
-    },
-  },
   'mdarcy': {
     # NVIDIA Shield TV 2019
     'swarming': {
@@ -994,6 +1022,13 @@
       },
     },
   },
+  'nougat': {
+    'swarming': {
+      'dimensions': {
+        'device_os': 'N2G48C',
+      },
+    },
+  },
   'nougat-x86-emulator': {
     '$mixin_append': {
       'args': [
@@ -1005,23 +1040,16 @@
       'optional_dimensions': {
         '60': [
           {
-            'caches': 'generic_android25',
+            'caches': 'generic_android24',
           }
         ],
       },
       'named_caches': [
         {
-          'name': 'generic_android25',
-          'path': '.android_emulator/generic_android25',
+          'name': 'generic_android24',
+          'path': '.android_emulator/generic_android24',
         },
       ]
-    },
-  },
-  'nougat_generic': {
-    'swarming': {
-      'dimensions': {
-        'device_os': 'N',
-      },
     },
   },
   'oreo-x86-emulator': {
@@ -1110,6 +1138,35 @@
       },
     },
   },
+  'record_failed_tests': {
+    '$mixin_append': {
+      'args': [
+        '--record-video',
+        'failed_only',
+      ],
+    },
+  },
+  's_generic': {
+    'swarming': {
+      'dimensions': {
+        'device_os': 'S',
+      },
+    },
+  },
+  'samsung_a13': {
+    'swarming': {
+      'dimensions': {
+        'device_type': 'a13',
+      },
+    },
+  },
+  'samsung_a23': {
+    'swarming': {
+      'dimensions': {
+        'device_type': 'a23',
+      },
+    },
+  },
   'skia_gold_test': {
     '$mixin_append': {
       'args': [
@@ -1167,7 +1224,7 @@
       ],
       'linux_args': [
         '--no-xvfb',
-        '--additional-driver-flag=--enable-features=UseSkiaRenderer,Vulkan',
+        '--additional-driver-flag=--enable-features=Vulkan',
       ],
     },
     'merge': {
@@ -1180,6 +1237,17 @@
       'enable': True,
     },
   },
+  'webgpu_telemetry_cts': {
+    '$mixin_append': {
+      'args': [
+        '--extra-browser-args=--force_high_performance_gpu',
+        '$$MAGIC_SUBSTITUTION_GPUParallelJobs',
+      ],
+      'linux_args': [
+        '--extra-browser-args=--enable-features=Vulkan',
+      ],
+    },
+  },
   'win10': {
     'swarming': {
       'dimensions': {
@@ -1187,10 +1255,10 @@
       },
     },
   },
-  'win10-1909': {
+  'win10-any': {
     'swarming': {
       'dimensions': {
-        'os': 'Windows-10-18363',
+        'os': 'Windows-10',
       },
     },
   },
@@ -1208,15 +1276,6 @@
       'dimensions': {
         'cpu': 'x86-64',
         'gpu': 'none',
-        'os': 'Windows-10',
-        'pool': 'chromium.tests.gpu',
-      },
-    },
-  },
-  'win10_intel_hd_630_experimental': {
-    'swarming': {
-      'dimensions': {
-        'gpu': '8086:5912-26.20.100.8141|8086:3e92-26.20.100.8141',
         'os': 'Windows-10',
         'pool': 'chromium.tests.gpu',
       },
@@ -1243,6 +1302,15 @@
           'pool': 'chromium.tests.gpu',
         },
       ],
+    },
+  },
+  'win10_intel_uhd_630_experimental': {
+    'swarming': {
+      'dimensions': {
+        'gpu': '8086:9bc5-31.0.101.2111',
+        'os': 'Windows-10',
+        'pool': 'chromium.tests.gpu',
+      },
     },
   },
   'win10_nvidia_gtx_1660_experimental': {
@@ -1291,24 +1359,6 @@
       },
     },
   },
-  'win7_amd_r7_240': {
-    'swarming': {
-      'dimensions': {
-        'gpu': '1002:6613',
-        'os': 'Windows-2008ServerR2-SP1',
-        'pool': 'chromium.tests.gpu',
-      },
-    },
-  },
-  'win7_nvidia_quadro_p400': {
-    'swarming': {
-      'dimensions': {
-        'gpu': '10de:1cb3-24.21.14.1195',
-        'os': 'Windows-2008ServerR2-SP1',
-        'pool': 'chromium.tests.gpu',
-      },
-    },
-  },
   'x86-32': {
     'swarming': {
       'dimensions': {
@@ -1323,55 +1373,45 @@
       },
     },
   },
-  # xcode 12.4 gm seed
-  'xcode_12d4e': {
+  # Default Xcode 14 beta.
+  'xcode_14_beta': {
     '$mixin_append': {
       'args': [
         '--xcode-build-version',
-        '12d4e'
-      ],
-      'swarming': {
-        'named_caches': [
-          {
-            'name': 'xcode_ios_12d4e',
-            'path': 'Xcode.app',
-          },
-        ],
-      },
-
-    },
-  },
-  # Xcode 13 used on beta bots.
-  'xcode_13_beta_bots': {
-    '$mixin_append': {
-      'args': [
-        '--xcode-build-version',
-        '13e113'
+        '14b47b'
       ],
     },
     'swarming': {
       'named_caches': [
         {
-          'name': 'xcode_ios_13e113',
+          'name': 'xcode_ios_14b47b',
           'path': 'Xcode.app',
         },
       ],
     },
   },
-  # Default Xcode 13 on main.
-  'xcode_13_main': {
+  # Xcode 14 on iOS main.
+  'xcode_14_main': {
     '$mixin_append': {
       'args': [
         '--xcode-build-version',
-        '13c100'
+        '14b47b'
       ],
     },
     'swarming': {
       'named_caches': [
         {
-          'name': 'xcode_ios_13c100',
+          'name': 'xcode_ios_14b47b',
           'path': 'Xcode.app',
         },
+      ],
+    },
+  },
+  'xcode_14_readline_timeout': {
+    '$mixin_append': {
+      'args': [
+        '--readline-timeout',
+        '600',
       ],
     },
   },

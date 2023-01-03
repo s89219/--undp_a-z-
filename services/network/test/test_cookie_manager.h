@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,10 +64,6 @@ class TestCookieManager : public network::mojom::CookieManager {
       SetStorageAccessGrantSettingsCallback callback) override {}
 
   void DispatchCookieChange(const net::CookieChangeInfo& change);
-
-  // TODO(crbug.com/1296161): Delete this when the partitioned cookies origin
-  // trial is over.
-  void ConvertPartitionedCookiesToUnpartitioned(const GURL& url) override {}
 
  private:
   // List of observers receiving cookie change notifications.

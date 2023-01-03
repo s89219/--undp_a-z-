@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -95,7 +95,7 @@ String PermissionNameToString(PermissionName name) {
       return "nfc";
     case PermissionName::STORAGE_ACCESS:
       return "storage_access";
-    case PermissionName::WINDOW_PLACEMENT:
+    case PermissionName::WINDOW_MANAGEMENT:
       return "window_placement";
     case PermissionName::LOCAL_FONTS:
       return "local_fonts";
@@ -123,11 +123,11 @@ PermissionDescriptorPtr CreateMidiPermissionDescriptor(bool sysex) {
 
 PermissionDescriptorPtr CreateClipboardPermissionDescriptor(
     PermissionName name,
-    bool allow_without_gesture,
-    bool allow_without_sanitization) {
+    bool has_user_gesture,
+    bool will_be_sanitized) {
   auto descriptor = CreatePermissionDescriptor(name);
   auto clipboard_extension = mojom::blink::ClipboardPermissionDescriptor::New(
-      allow_without_gesture, allow_without_sanitization);
+      has_user_gesture, will_be_sanitized);
   descriptor->extension =
       mojom::blink::PermissionDescriptorExtension::NewClipboard(
           std::move(clipboard_extension));
@@ -235,8 +235,10 @@ PermissionDescriptorPtr ParsePermissionDescriptor(
             script_state->GetIsolate(), raw_descriptor.V8Value(),
             exception_state);
     return CreateClipboardPermissionDescriptor(
-        permission_name, clipboard_permission->allowWithoutGesture(),
-        clipboard_permission->allowWithoutSanitization());
+        permission_name,
+        /*has_user_gesture=*/!clipboard_permission->allowWithoutGesture(),
+        /*will_be_sanitized=*/
+        !clipboard_permission->allowWithoutSanitization());
   }
   if (name == "payment-handler")
     return CreatePermissionDescriptor(PermissionName::PAYMENT_HANDLER);
@@ -273,12 +275,7 @@ PermissionDescriptorPtr ParsePermissionDescriptor(
     return CreatePermissionDescriptor(PermissionName::STORAGE_ACCESS);
   }
   if (name == "window-placement") {
-    if (!RuntimeEnabledFeatures::WindowPlacementEnabled(
-            ExecutionContext::From(script_state))) {
-      exception_state.ThrowTypeError("Window Placement is not enabled.");
-      return nullptr;
-    }
-    return CreatePermissionDescriptor(PermissionName::WINDOW_PLACEMENT);
+    return CreatePermissionDescriptor(PermissionName::WINDOW_MANAGEMENT);
   }
   if (name == "local-fonts") {
     if (!RuntimeEnabledFeatures::FontAccessEnabled(

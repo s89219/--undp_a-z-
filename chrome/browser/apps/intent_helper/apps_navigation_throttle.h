@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,6 +44,10 @@ class AppsNavigationThrottle : public content::NavigationThrottle {
   virtual bool ShouldShowDisablePage(content::NavigationHandle* handle);
 
   virtual ThrottleCheckResult MaybeShowCustomResult();
+
+  virtual bool ShouldOverrideUrlLoadingForOfficeExperiment(
+      const GURL& previous_url,
+      const GURL& current_url);
 
   bool navigate_from_link() const;
 

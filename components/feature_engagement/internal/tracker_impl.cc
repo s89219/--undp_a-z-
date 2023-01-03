@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,10 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/no_destructor.h"
+#include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "components/feature_engagement/internal/availability_model_impl.h"
 #include "components/feature_engagement/internal/chrome_variations_configuration.h"
@@ -177,16 +179,12 @@ void TrackerImpl::NotifyEvent(const std::string& event) {
 }
 
 bool TrackerImpl::ShouldTriggerHelpUI(const base::Feature& feature) {
-  if (!base::FeatureList::IsEnabled(feature_engagement::kEnableIPH)) {
-    return false;
-  }
-
   return ShouldTriggerHelpUIWithSnooze(feature).ShouldShowIph();
 }
 
 TrackerImpl::TriggerDetails TrackerImpl::ShouldTriggerHelpUIWithSnooze(
     const base::Feature& feature) {
-  if (!base::FeatureList::IsEnabled(feature_engagement::kEnableIPH)) {
+  if (IsFeatureBlockedByTest(feature)) {
     return TriggerDetails(false, false);
   }
 
@@ -225,10 +223,19 @@ TrackerImpl::TriggerDetails TrackerImpl::ShouldTriggerHelpUIWithSnooze(
     should_show_iph = result.NoErrors();
   }
 
+  if (should_show_iph) {
+    DCHECK(start_times_.find(feature.name) == start_times_.end());
+    start_times_[feature.name] = time_provider_->Now();
+  }
+
   return TriggerDetails(should_show_iph, result.should_show_snooze);
 }
 
 bool TrackerImpl::WouldTriggerHelpUI(const base::Feature& feature) const {
+  if (IsFeatureBlockedByTest(feature)) {
+    return false;
+  }
+
   FeatureConfig feature_config = configuration_->GetFeatureConfig(feature);
   ConditionValidator::Result result = condition_validator_->MeetsConditions(
       feature, feature_config, *event_model_, *availability_model_,
@@ -282,13 +289,18 @@ Tracker::TriggerState TrackerImpl::GetTriggerState(
 
 void TrackerImpl::Dismissed(const base::Feature& feature) {
   DVLOG(2) << "Dismissing " << feature.name;
+  DCHECK(!IsFeatureBlockedByTest(feature));
+
   condition_validator_->NotifyDismissed(feature);
   stats::RecordUserDismiss();
+  RecordShownTime(feature);
 }
 
 void TrackerImpl::DismissedWithSnooze(
     const base::Feature& feature,
     absl::optional<SnoozeAction> snooze_action) {
+  DCHECK(!IsFeatureBlockedByTest(feature));
+
   FeatureConfig feature_config = configuration_->GetFeatureConfig(feature);
   if (snooze_action == SnoozeAction::SNOOZED) {
     event_model_->IncrementSnooze(feature_config.trigger.name,
@@ -299,6 +311,7 @@ void TrackerImpl::DismissedWithSnooze(
   }
   if (snooze_action.has_value())
     stats::RecordUserSnoozeAction(snooze_action.value());
+  RecordShownTime(feature);
 }
 
 std::unique_ptr<DisplayLockHandle> TrackerImpl::AcquireDisplayLock() {
@@ -351,7 +364,7 @@ bool TrackerImpl::IsInitialized() const {
 
 void TrackerImpl::AddOnInitializedCallback(OnInitializedCallback callback) {
   if (IsInitializationFinished()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), IsInitialized()));
     return;
   }
@@ -389,11 +402,48 @@ void TrackerImpl::MaybePostInitializedCallbacks() {
   DVLOG(2) << "Initialization finished.";
 
   for (auto& callback : on_initialized_callbacks_) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), IsInitialized()));
   }
 
   on_initialized_callbacks_.clear();
+}
+
+void TrackerImpl::RecordShownTime(const base::Feature& feature) {
+  std::string feature_name = feature.name;
+  auto iter = start_times_.find(feature_name);
+  if (iter == start_times_.end())
+    return;
+
+  UmaHistogramTimes("InProductHelp.ShownTime." + feature_name,
+                    time_provider_->Now() - iter->second);
+  start_times_.erase(feature_name);
+}
+
+// static
+bool TrackerImpl::IsFeatureBlockedByTest(const base::Feature& feature) {
+  auto& data = GetAllowedTestFeatureMap();
+  // Refcount for nullptr is the number of active ScopedIphFeatureList.
+  if (!data[nullptr]) {
+    return false;
+  }
+
+  // If the refcount for the feature is nonzero, then it is explicitly allowed.
+  if (data[&feature]) {
+    return false;
+  }
+
+  // At least one ScopedIphFeatureList is active and this feature is not
+  // explicitly allowed.
+  return true;
+}
+
+// static
+std::map<const base::Feature*, size_t>&
+TrackerImpl::GetAllowedTestFeatureMap() {
+  static base::NoDestructor<std::map<const base::Feature*, size_t>> instance{
+      {std::make_pair(nullptr, 0)}};
+  return *instance;
 }
 
 }  // namespace feature_engagement

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@ extern NSString* const kConfirmationAlertSecondaryActionAccessibilityIdentifier;
 // in a scroll view for cases when the content doesn't fit in the screen.
 // The view controller can have up to three action buttons, which are position
 // in the bottom. They are arranged, from top to bottom,
-// |primaryActionString|, |secondaryActionString|, |tertiaryActionString|.
+// `primaryActionString`, `secondaryActionString`, `tertiaryActionString`.
 // Setting those properties will make those buttons be added to the view
 // controller.
 @interface ConfirmationAlertViewController : UIViewController
@@ -48,7 +48,7 @@ extern NSString* const kConfirmationAlertSecondaryActionAccessibilityIdentifier;
 // The text for the tertiary action. Must be set before the view is loaded.
 @property(nonatomic, copy) NSString* tertiaryActionString;
 
-// The image. Must be set before the view is loaded.
+// The image. May be updated after the view is loaded.
 @property(nonatomic, strong) UIImage* image;
 
 // Sets the custom spacing between the top and the image, if there is no
@@ -70,6 +70,10 @@ extern NSString* const kConfirmationAlertSecondaryActionAccessibilityIdentifier;
 // view is loaded.
 @property(nonatomic) BOOL helpButtonAvailable;
 
+// Set to YES to enclose the image in a frame with a shadow and a corner badge
+// with a green checkmark. Must be set before the view is loaded. Default is NO.
+@property(nonatomic) BOOL imageEnclosedWithShadowAndBadge;
+
 // When set, this value will be set as the accessibility label for the help
 // button.
 @property(nonatomic, copy) NSString* helpButtonAccessibilityLabel;
@@ -87,6 +91,14 @@ extern NSString* const kConfirmationAlertSecondaryActionAccessibilityIdentifier;
 
 // The action handler for interactions in this View Controller.
 @property(nonatomic, weak) id<ConfirmationAlertActionHandler> actionHandler;
+
+// Updates the style of the secondary title label. The default implementation
+// does nothing, but subclasses can override to customize the styling if needed.
+- (void)updateStylingForSecondaryTitleLabel:(UILabel*)secondaryTitleLabel;
+
+// Updates the style of the subtitle label. The default implementation does
+// nothing, but subclasses can override to customize the styling if needed.
+- (void)updateStylingForSubtitleLabel:(UILabel*)subtitleLabel;
 
 @end
 

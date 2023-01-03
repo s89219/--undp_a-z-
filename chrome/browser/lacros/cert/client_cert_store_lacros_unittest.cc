@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 
 #include <memory>
 
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/gmock_callback_support.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "chrome/browser/certificate_provider/certificate_provider.h"
 #include "chrome/browser/lacros/cert/cert_db_initializer.h"
 #include "content/public/test/browser_task_environment.h"
 #include "net/ssl/ssl_cert_request_info.h"
@@ -54,7 +55,7 @@ class ClientCertStoreLacrosTest : public ::testing::Test {
   void FakeGetClientCerts(
       const net::SSLCertRequestInfo& cert_request_info,
       ClientCertStoreLacros::ClientCertListCallback callback) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), net::ClientCertIdentityList()));
   }
@@ -112,7 +113,7 @@ TEST_F(ClientCertStoreLacrosTest, WaitsForInitialization) {
   // Create ClientCertStoreLacros.
   MockClientCertStore* underlying_store = nullptr;
   auto cert_store_lacros = std::make_unique<ClientCertStoreLacros>(
-      &cert_db_initializer_, CreateMockStore(&underlying_store));
+      nullptr, &cert_db_initializer_, CreateMockStore(&underlying_store));
 
   // Request client certs.
   GetCertsCallbackObserver get_certs_callback_observer;
@@ -141,7 +142,7 @@ TEST_F(ClientCertStoreLacrosTest, RunsImmediatelyIfReady) {
   // Create ClientCertStoreLacros.
   MockClientCertStore* underlying_store = nullptr;
   auto cert_store_lacros = std::make_unique<ClientCertStoreLacros>(
-      &cert_db_initializer_, CreateMockStore(&underlying_store));
+      nullptr, &cert_db_initializer_, CreateMockStore(&underlying_store));
 
   // Imitate signal from cert_db_initializer_ that the initialization is
   // done before calling `GetClientCerts`.
@@ -174,7 +175,7 @@ TEST_F(ClientCertStoreLacrosTest, QueueMultupleRequests) {
   // Create ClientCertStoreLacros.
   MockClientCertStore* underlying_store = nullptr;
   auto cert_store_lacros = std::make_unique<ClientCertStoreLacros>(
-      &cert_db_initializer_, CreateMockStore(&underlying_store));
+      nullptr, &cert_db_initializer_, CreateMockStore(&underlying_store));
 
   // Request client certs for every cert request.
 
@@ -218,7 +219,7 @@ TEST_F(ClientCertStoreLacrosTest, DeletedFromLastCallback) {
   // Create ClientCertStoreLacros.
   MockClientCertStore* underlying_store = nullptr;
   auto cert_store_lacros = std::make_unique<ClientCertStoreLacros>(
-      &cert_db_initializer_, CreateMockStore(&underlying_store));
+      nullptr, &cert_db_initializer_, CreateMockStore(&underlying_store));
 
   // Request client certs a couple of times.
   GetCertsCallbackObserver get_certs_callback_observer_1;
@@ -272,7 +273,7 @@ TEST_F(ClientCertStoreLacrosTest, HandlesReentrancy) {
   // Create ClientCertStoreLacros.
   MockClientCertStore* underlying_store = nullptr;
   auto cert_store_lacros = std::make_unique<ClientCertStoreLacros>(
-      &cert_db_initializer_, CreateMockStore(&underlying_store));
+      nullptr, &cert_db_initializer_, CreateMockStore(&underlying_store));
 
   GetCertsCallbackObserver get_certs_callback_observer_1;
   GetCertsCallbackObserver get_certs_callback_observer_2;

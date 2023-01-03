@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,11 +65,9 @@ namespace apps {
   return delta_ && !delta_->VALUE.CHECK() &&      \
          (!state_ || (delta_->VALUE != state_->VALUE));
 
-#define MAYBE_RETURN_OPTIONAL_VALUE_CHANGED(VALUE)        \
-  if (ShouldUseNonMojom()) {                              \
-    return delta_ && delta_->VALUE.has_value() &&         \
-           (!state_ || (delta_->VALUE != state_->VALUE)); \
-  }
+#define RETURN_OPTIONAL_VALUE_CHANGED(VALUE)    \
+  return delta_ && delta_->VALUE.has_value() && \
+         (!state_ || (delta_->VALUE != state_->VALUE));
 
 #define PRINT_OPTIONAL_VALUE(VALUE) \
   (app.VALUE().has_value() ? (app.VALUE().value() ? "true" : "false") : "null")
@@ -80,11 +78,11 @@ namespace apps {
 #define CONCAT(l, r) CONCAT_(l, r)
 
 #define ARC_COUNT_(_0, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, \
-                   _14, _15, N, ...)                                           \
+                   _14, _15, _16, N, ...)                                      \
   N
-#define ARG_COUNT(...)                                                         \
-  ARC_COUNT_(0, ##__VA_ARGS__, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, \
-             1, 0)
+#define ARG_COUNT(...)                                                       \
+  ARC_COUNT_(0, ##__VA_ARGS__, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, \
+             3, 2, 1, 0)
 
 // Go through all items in enum to generate code for each element.
 #define DOARG1(FUNC, CLASSNAME, ELEM) FUNC(CLASSNAME, ELEM)
@@ -116,6 +114,8 @@ namespace apps {
   DOARG1(FUNC, CLASSNAME, ELEM1) DOARG13(FUNC, CLASSNAME, __VA_ARGS__)
 #define DOARG15(FUNC, CLASSNAME, ELEM1, ...) \
   DOARG1(FUNC, CLASSNAME, ELEM1) DOARG14(FUNC, CLASSNAME, __VA_ARGS__)
+#define DOARG16(FUNC, CLASSNAME, ELEM1, ...) \
+  DOARG1(FUNC, CLASSNAME, ELEM1) DOARG15(FUNC, CLASSNAME, __VA_ARGS__)
 
 #define FOREACH_(FUNC, CLASSNAME, ...) \
   CONCAT(DOARG, ARG_COUNT(__VA_ARGS__))(FUNC, CLASSNAME, __VA_ARGS__)
@@ -142,6 +142,9 @@ namespace apps {
 #define GET_ELEM15(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, \
                    _14, _15, ...)                                          \
   _15
+#define GET_ELEM16(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, _13, \
+                   _14, _15, _16, ...)                                     \
+  _16
 
 // Get last argument.
 #define GET_LAST(...) GET_ELEM(ARG_COUNT(__VA_ARGS__), __VA_ARGS__),

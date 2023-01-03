@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "base/strings/string_piece.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/ash/crostini/crostini_shelf_utils.h"
+#include "chrome/browser/ash/guest_os/guest_os_shelf_utils.h"
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
@@ -27,6 +27,7 @@
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
 #include "components/app_constants/constants.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "components/services/app_service/public/cpp/instance_registry.h"
 #include "components/services/app_service/public/cpp/instance_update.h"
 #include "components/sync/base/model_type.h"
@@ -65,10 +66,9 @@ constexpr auto kAppTypeNameMap =
 // Determines what app type a Chrome App should be logged as based on its launch
 // container and app id. In particular, Chrome apps in tabs are logged as part
 // of Chrome browser.
-apps::AppTypeName GetAppTypeNameForChromeApp(
-    Profile* profile,
-    const std::string& app_id,
-    apps::mojom::LaunchContainer container) {
+apps::AppTypeName GetAppTypeNameForChromeApp(Profile* profile,
+                                             const std::string& app_id,
+                                             apps::LaunchContainer container) {
   if (app_id == app_constants::kChromeAppId) {
     return apps::AppTypeName::kChromeBrowser;
   }
@@ -89,18 +89,17 @@ apps::AppTypeName GetAppTypeNameForChromeApp(
   }
 
   switch (container) {
-    case apps::mojom::LaunchContainer::kLaunchContainerWindow:
+    case apps::LaunchContainer::kLaunchContainerWindow:
       return apps::AppTypeName::kChromeApp;
-    case apps::mojom::LaunchContainer::kLaunchContainerTab:
+    case apps::LaunchContainer::kLaunchContainerTab:
       return apps::AppTypeName::kChromeBrowser;
     default:
       break;
   }
 
-  apps::mojom::LaunchContainer launch_container =
-      extensions::GetLaunchContainer(extensions::ExtensionPrefs::Get(profile),
-                                     extension);
-  if (launch_container == apps::mojom::LaunchContainer::kLaunchContainerTab) {
+  apps::LaunchContainer launch_container = extensions::GetLaunchContainer(
+      extensions::ExtensionPrefs::Get(profile), extension);
+  if (launch_container == apps::LaunchContainer::kLaunchContainerTab) {
     return apps::AppTypeName::kChromeBrowser;
   }
 
@@ -124,7 +123,7 @@ constexpr int kUsageTimeBuckets = 50;
 
 AppTypeName GetAppTypeNameForWebApp(Profile* profile,
                                     const std::string& app_id,
-                                    apps::mojom::LaunchContainer container) {
+                                    apps::LaunchContainer container) {
   AppTypeName default_type_name = web_app::IsWebAppsCrosapiEnabled()
                                       ? AppTypeName::kStandaloneBrowser
                                       : AppTypeName::kChromeBrowser;
@@ -149,9 +148,9 @@ AppTypeName GetAppTypeNameForWebApp(Profile* profile,
   }
 
   switch (container) {
-    case apps::mojom::LaunchContainer::kLaunchContainerWindow:
+    case apps::LaunchContainer::kLaunchContainerWindow:
       return GetWebAppTypeName();
-    case apps::mojom::LaunchContainer::kLaunchContainerTab:
+    case apps::LaunchContainer::kLaunchContainerTab:
       return default_type_name;
     default:
       break;
@@ -164,7 +163,7 @@ AppTypeName GetAppTypeNameForWebApp(Profile* profile,
 AppTypeName GetAppTypeNameForStandaloneBrowserChromeApp(
     Profile* profile,
     const std::string& app_id,
-    apps::mojom::LaunchContainer container) {
+    apps::LaunchContainer container) {
   AppTypeName app_type_name = AppTypeName::kStandaloneBrowser;
   WindowMode window_mode = WindowMode::kUnknown;
   AppServiceProxyFactory::GetForProfile(profile)->AppRegistryCache().ForOneApp(
@@ -185,12 +184,12 @@ AppTypeName GetAppTypeNameForStandaloneBrowserChromeApp(
   }
 
   switch (container) {
-    case apps::mojom::LaunchContainer::kLaunchContainerWindow:
+    case apps::LaunchContainer::kLaunchContainerWindow:
       return AppTypeName::kStandaloneBrowserChromeApp;
-    case apps::mojom::LaunchContainer::kLaunchContainerTab:
+    case apps::LaunchContainer::kLaunchContainerTab:
       return AppTypeName::kStandaloneBrowser;
-    case apps::mojom::LaunchContainer::kLaunchContainerPanelDeprecated:
-    case apps::mojom::LaunchContainer::kLaunchContainerNone:
+    case apps::LaunchContainer::kLaunchContainerPanelDeprecated:
+    case apps::LaunchContainer::kLaunchContainerNone:
       break;
   }
   return window_mode == WindowMode::kWindow ||
@@ -267,9 +266,8 @@ AppTypeName GetAppTypeNameForWebAppWindow(Profile* profile,
     return AppTypeName::kChromeBrowser;
   }
 
-  if (GetAppTypeNameForWebApp(
-          profile, app_id,
-          apps::mojom::LaunchContainer::kLaunchContainerNone) ==
+  if (GetAppTypeNameForWebApp(profile, app_id,
+                              apps::LaunchContainer::kLaunchContainerNone) ==
       AppTypeName::kSystemWeb) {
     return AppTypeName::kSystemWeb;
   }
@@ -317,6 +315,8 @@ AppTypeName GetAppTypeNameForWindow(Profile* profile,
       return apps::AppTypeName::kExtension;
     case AppType::kStandaloneBrowserExtension:
       return apps::AppTypeName::kStandaloneBrowserExtension;
+    case AppType::kBruschetta:
+      return apps::AppTypeName::kBruschetta;
   }
 }
 
@@ -356,6 +356,8 @@ std::string GetAppTypeHistogramName(apps::AppTypeName app_type_name) {
       return kStandaloneBrowserExtensionHistogramName;
     case apps::AppTypeName::kStandaloneBrowserWebApp:
       return kStandaloneBrowserWebAppHistogramName;
+    case apps::AppTypeName::kBruschetta:
+      return kBruschettaHistogramName;
   }
 }
 
@@ -391,6 +393,7 @@ bool ShouldRecordUkmForAppTypeName(AppType app_type) {
     case AppType::kStandaloneBrowserChromeApp:
     case AppType::kStandaloneBrowserExtension:
       return true;
+    case AppType::kBruschetta:
     case AppType::kUnknown:
     case AppType::kMacOs:
     case AppType::kPluginVm:
@@ -403,12 +406,17 @@ int GetUserTypeByDeviceTypeMetrics() {
   const user_manager::User* primary_user =
       user_manager::UserManager::Get()->GetPrimaryUser();
   DCHECK(primary_user);
-  DCHECK(primary_user->is_profile_created());
-  Profile* profile = ash::ProfileHelper::Get()->GetProfileByUser(primary_user);
-  DCHECK(profile);
-
   UserTypeByDeviceTypeMetricsProvider::UserSegment user_segment =
-      UserTypeByDeviceTypeMetricsProvider::GetUserSegment(profile);
+      UserTypeByDeviceTypeMetricsProvider::UserSegment::kUnmanaged;
+  // In some tast tests, primary_user->is_profile_created() might return false
+  // for some unknown reasons.
+  if (primary_user->is_profile_created()) {
+    Profile* profile =
+        ash::ProfileHelper::Get()->GetProfileByUser(primary_user);
+    DCHECK(profile);
+
+    user_segment = UserTypeByDeviceTypeMetricsProvider::GetUserSegment(profile);
+  }
 
   policy::BrowserPolicyConnectorAsh* connector =
       g_browser_process->platform_part()->browser_policy_connector_ash();
@@ -422,7 +430,7 @@ int GetUserTypeByDeviceTypeMetrics() {
 AppTypeName GetAppTypeName(Profile* profile,
                            AppType app_type,
                            const std::string& app_id,
-                           apps::mojom::LaunchContainer container) {
+                           apps::LaunchContainer container) {
   switch (app_type) {
     case AppType::kUnknown:
       return apps::AppTypeName::kUnknown;
@@ -455,6 +463,8 @@ AppTypeName GetAppTypeName(Profile* profile,
       return apps::AppTypeName::kExtension;
     case AppType::kStandaloneBrowserExtension:
       return apps::AppTypeName::kStandaloneBrowserExtension;
+    case AppType::kBruschetta:
+      return apps::AppTypeName::kBruschetta;
   }
 }
 
@@ -466,7 +476,7 @@ AppType GetAppType(Profile* profile, const std::string& app_id) {
   if (type != AppType::kUnknown) {
     return type;
   }
-  if (crostini::IsCrostiniShelfAppId(profile, app_id)) {
+  if (guest_os::IsCrostiniShelfAppId(profile, app_id)) {
     return AppType::kCrostini;
   }
   return AppType::kUnknown;

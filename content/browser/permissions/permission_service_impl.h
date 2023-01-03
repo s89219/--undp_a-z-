@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,6 +63,9 @@ class PermissionServiceImpl : public blink::mojom::PermissionService {
       blink::mojom::PermissionDescriptorPtr permission,
       blink::mojom::PermissionStatus last_known_status,
       mojo::PendingRemote<blink::mojom::PermissionObserver> observer) override;
+  void NotifyEventListener(blink::mojom::PermissionDescriptorPtr permission,
+                           const std::string& event_type,
+                           bool is_added) override;
 
   void OnRequestPermissionsResponse(
       int pending_request_id,

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,6 +44,9 @@ public interface SigninManager {
          * Invoked once all startup checks are done and signing-in becomes allowed, or disallowed.
          */
         default void onSignInAllowedChanged() {}
+
+        /** Notifies observers when {@link #isSignOutAllowed()} value changes. */
+        default void onSignOutAllowedChanged() {}
     }
 
     /**
@@ -85,13 +88,6 @@ public interface SigninManager {
      * @return IdentityManager used by SigninManager.
      */
     IdentityManager getIdentityManager();
-
-    /**
-     * Notifies the SigninManager that the First Run check has completed.
-     *
-     * The user will be allowed to sign-in once this is signaled.
-     */
-    void onFirstRunCheckDone();
 
     /**
      * Returns true if sign in can be started now.
@@ -180,6 +176,11 @@ public interface SigninManager {
      */
     void revokeSyncConsent(@SignoutReason int signoutSource, SignOutCallback signOutCallback,
             boolean forceWipeUserData);
+
+    /**
+     * Returns true if sign out can be started now.
+     */
+    boolean isSignOutAllowed();
 
     /**
      * Invokes signOut with no callback.

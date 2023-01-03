@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,7 +8,7 @@ set -e
 
 if ! command -v gen-bundle > /dev/null 2>&1; then
     echo "gen-bundle is not installed. Please run:"
-    echo "  go get -u github.com/WICG/webpackage/go/bundle/cmd/..."
+    echo "  go install github.com/WICG/webpackage/go/bundle/cmd/...@latest"
     echo '  export PATH=$PATH:$(go env GOPATH)/bin'
     exit 1
 fi
@@ -45,6 +45,18 @@ xxd -p broken_bundle_base_b2.wbn |
   tr -d '\n' |
   sed 's/3a737461747573/3a787878787878/3' |
   xxd -r -p > broken_bundle_broken_script_entry_b2.wbn
+
+gen-bundle \
+  -version b2 \
+  -har foo_url.har \
+  -primaryURL foo://bar/ \
+  -o foo_primary_url_bundle_b2.wbn
+
+gen-bundle \
+  -version b2 \
+  -har foo_url.har \
+  -primaryURL https://test.example.org/ \
+  -o foo_base_url_bundle_b2.wbn
 
 # Generate a WBN which will be used as a cross origin bundle.
 gen-bundle \

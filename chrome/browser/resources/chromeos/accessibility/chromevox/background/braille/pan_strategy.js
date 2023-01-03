@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,74 +6,64 @@
  * @fileoverview Logic for panning a braille display within a line of braille
  * content that might not fit on a single display.
  */
-import {CURSOR_DOTS} from '/chromevox/background/braille/cursor_dots.js';
+import {CURSOR_DOTS} from './cursor_dots.js';
 
 export class PanStrategy {
   constructor() {
-    /**
-     * @type {{rows: number, columns: number}}
-     * @private
-     */
+    /** @private {{rows: number, columns: number}} */
     this.displaySize_ = {rows: 1, columns: 40};
 
     /**
      * Start and end are both inclusive.
-     * @type {!PanStrategy.Range}
-     * @private
+     * @private {!PanStrategy.Range}
      */
     this.viewPort_ = {firstRow: 0, lastRow: 0};
 
     /**
      * The ArrayBuffer holding the braille cells after it's been processed to
      * wrap words that are cut off by the column boundaries.
-     * @type {!ArrayBuffer}
-     * @private
+     * @private {!ArrayBuffer}
      */
     this.wrappedBuffer_ = new ArrayBuffer(0);
 
     /**
      * The original text that corresponds with the braille buffers. There is
      * only one textBuffer that correlates with both fixed and wrapped buffers.
-     * @type {string}
-     * @private
+     * @private {string}
      */
     this.textBuffer_ = '';
 
     /**
      * The ArrayBuffer holding the original braille cells, without being
      * processed to wrap words.
-     * @type {!ArrayBuffer}
-     * @private
+     * @private {!ArrayBuffer}
      */
     this.fixedBuffer_ = new ArrayBuffer(0);
 
     /**
      * The updated mapping from braille cells to text characters for the wrapped
      * buffer.
-     * @type {Array<number>}
-     * @private
+     * @private {Array<number>}
      */
     this.wrappedBrailleToText_ = [];
 
     /**
      * The original mapping from braille cells to text characters.
-     * @type {Array<number>}
-     * @private
+     * @private {Array<number>}
      */
     this.fixedBrailleToText_ = [];
 
     /**
      * Indicates whether the pan strategy is wrapped or fixed. It is wrapped
      * when true.
-     * @type {boolean}
-     * @private
+     * @private {boolean}
      */
     this.panStrategyWrapped_ = false;
 
-    /** @type {{start: (number), end: (number)}} */
+    /** @private {{start: (number), end: (number)}} */
     this.cursor_ = {start: -1, end: -1};
 
-    /** @type {{start: (number), end: (number)}} */
+    /** @private {{start: (number), end: (number)}} */
     this.wrappedCursor_ = {start: -1, end: -1};
   }
 
@@ -81,7 +71,7 @@ export class PanStrategy {
    * Gets the current viewport which is never larger than the current
    * display size and whose end points are always within the limits of
    * the current content.
-   * @type {!PanStrategy.Range}
+   * @return {!PanStrategy.Range}
    */
   get viewPort() {
     return this.viewPort_;
@@ -89,7 +79,7 @@ export class PanStrategy {
 
   /**
    * Gets the current displaySize.
-   * @type {{rows: number, columns: number}}
+   * @return {{rows: number, columns: number}}
    */
   get displaySize() {
     return this.displaySize_;
@@ -103,20 +93,16 @@ export class PanStrategy {
     return {
       brailleOffset: this.viewPort_.firstRow * this.displaySize_.columns,
       textOffset: this.brailleToText
-                      [this.viewPort_.firstRow * this.displaySize_.columns]
+                      [this.viewPort_.firstRow * this.displaySize_.columns],
     };
   }
 
-  /**
-   * @return {number} The number of lines in the fixedBuffer.
-   */
+  /** @return {number} The number of lines in the fixedBuffer. */
   get fixedLineCount() {
     return Math.ceil(this.fixedBuffer_.byteLength / this.displaySize_.columns);
   }
 
-  /**
-   * @return {number} The number of lines in the wrappedBuffer.
-   */
+  /** @return {number} The number of lines in the wrappedBuffer. */
   get wrappedLineCount() {
     return Math.ceil(
         this.wrappedBuffer_.byteLength / this.displaySize_.columns);
@@ -144,7 +130,8 @@ export class PanStrategy {
     const buf =
         this.panStrategyWrapped_ ? this.wrappedBuffer_ : this.fixedBuffer_;
 
-    let startIndex, endIndex;
+    let startIndex;
+    let endIndex;
     if (this.panStrategyWrapped_) {
       startIndex = this.wrappedCursor_.start;
       endIndex = this.wrappedCursor_.end;
@@ -195,9 +182,7 @@ export class PanStrategy {
         brailleToText[index]);
   }
 
-  /**
-   * Sets the current pan strategy and resets the viewport.
-   */
+  /** Sets the current pan strategy and resets the viewport. */
   setPanStrategy(wordWrap) {
     this.panStrategyWrapped_ = wordWrap;
     this.panToPosition_(0);
@@ -369,7 +354,8 @@ export class PanStrategy {
     const contentLength =
         this.panStrategyWrapped_ ? this.wrappedLineCount : this.fixedLineCount;
     if (this.viewPort_.firstRow > 0) {
-      let newStart, newEnd;
+      let newStart;
+      let newEnd;
       if (this.viewPort_.firstRow < this.displaySize_.rows) {
         newStart = 0;
         newEnd = Math.min(this.displaySize_.rows, contentLength);

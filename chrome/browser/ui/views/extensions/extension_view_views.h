@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 #define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSION_VIEW_VIEWS_H_
 
 #include "base/memory/raw_ptr.h"
+#include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "chrome/browser/extensions/extension_view.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -33,6 +35,11 @@ class ExtensionViewViews : public views::WebView,
     virtual gfx::Size GetMaxBounds() = 0;
   };
 
+  class Observer : public base::CheckedObserver {
+   public:
+    virtual void OnViewDestroying() = 0;
+  };
+
   explicit ExtensionViewViews(extensions::ExtensionViewHost* host);
   ExtensionViewViews(const ExtensionViewViews&) = delete;
   ExtensionViewViews& operator=(const ExtensionViewViews&) = delete;
@@ -49,6 +56,10 @@ class ExtensionViewViews : public views::WebView,
   void SetContainer(ExtensionViewViews::Container* container);
   ExtensionViewViews::Container* GetContainer() const;
 
+  // Adds or removes observers.
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
  private:
   // extensions::ExtensionView:
   gfx::NativeView GetNativeView() override;
@@ -61,11 +72,11 @@ class ExtensionViewViews : public views::WebView,
   void OnLoaded() override;
 
   // views::WebView:
-  gfx::NativeCursor GetCursor(const ui::MouseEvent& event) override;
+  ui::Cursor GetCursor(const ui::MouseEvent& event) override;
   void PreferredSizeChanged() override;
   void OnWebContentsAttached() override;
 
-  raw_ptr<extensions::ExtensionViewHost> host_;
+  raw_ptr<extensions::ExtensionViewHost, DanglingUntriaged> host_;
 
   // What we should set the preferred width to once the ExtensionViewViews has
   // loaded.
@@ -80,6 +91,9 @@ class ExtensionViewViews : public views::WebView,
   // A handler to handle unhandled keyboard messages coming back from the
   // renderer process.
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
+
+  // The associated observers.
+  base::ObserverList<Observer> observers_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSION_VIEW_VIEWS_H_

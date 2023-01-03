@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 #include "third_party/blink/public/mojom/autoplay/autoplay.mojom.h"
 
 #if !BUILDFLAG(IS_ANDROID)
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_utils.h"
 #endif
 
@@ -157,10 +158,10 @@ void SoundContentSettingObserver::CheckSoundBlocked(bool is_audible) {
     // page.
     // TODO(https://crbug.com/1103176): For other types of FrameTrees(fenced
     // frames, portals) than prerendering, we should figure a way of not having
-    // to use GetMainFrame here. (pass the source frame somehow)
+    // to use GetPrimaryMainFrame here. (pass the source frame somehow)
     content_settings::PageSpecificContentSettings* settings =
         content_settings::PageSpecificContentSettings::GetForFrame(
-            web_contents()->GetMainFrame());
+            web_contents()->GetPrimaryMainFrame());
     if (settings)
       settings->OnAudioBlocked();
 
@@ -175,7 +176,7 @@ void SoundContentSettingObserver::RecordSiteMutedUKM() {
   logged_site_muted_ukm_ = true;
 
   ukm::builders::Media_SiteMuted(
-      web_contents()->GetMainFrame()->GetPageUkmSourceId())
+      web_contents()->GetPrimaryMainFrame()->GetPageUkmSourceId())
       .SetMuteReason(GetSiteMutedReason())
       .Record(ukm::UkmRecorder::Get());
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,6 +86,15 @@ OverviewSession* GetOverviewSession() {
   auto* session = Shell::Get()->overview_controller()->overview_session();
   DCHECK(session);
   return session;
+}
+
+OverviewGrid* GetOverviewGridForRoot(aura::Window* root) {
+  DCHECK(root->IsRootWindow());
+
+  auto* overview_controller = Shell::Get()->overview_controller();
+  DCHECK(overview_controller->InOverviewSession());
+
+  return overview_controller->overview_session()->GetGridWithRootWindow(root);
 }
 
 const std::vector<std::unique_ptr<OverviewItem>>& GetOverviewItemsForRoot(

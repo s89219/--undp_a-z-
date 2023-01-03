@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 #include "content/browser/indexed_db/indexed_db_database_callbacks.h"
-#include "content/browser/indexed_db/indexed_db_factory_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_pending_connection.h"
 #include "content/browser/indexed_db/transaction_impl.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -38,38 +38,6 @@
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
 namespace content {
-
-namespace {
-
-blink::mojom::IDBStatus GetIndexedDBStatus(leveldb::Status status) {
-  if (status.ok())
-    return blink::mojom::IDBStatus::OK;
-  else if (status.IsNotFound())
-    return blink::mojom::IDBStatus::NotFound;
-  else if (status.IsCorruption())
-    return blink::mojom::IDBStatus::Corruption;
-  else if (status.IsNotSupportedError())
-    return blink::mojom::IDBStatus::NotSupported;
-  else if (status.IsInvalidArgument())
-    return blink::mojom::IDBStatus::InvalidArgument;
-  else
-    return blink::mojom::IDBStatus::IOError;
-}
-
-void CallCompactionStatusCallbackOnIDBThread(
-    IndexedDBDispatcherHost::AbortTransactionsAndCompactDatabaseCallback
-        mojo_callback,
-    leveldb::Status status) {
-  std::move(mojo_callback).Run(GetIndexedDBStatus(status));
-}
-
-void CallAbortStatusCallbackOnIDBThread(
-    IndexedDBDispatcherHost::AbortTransactionsForDatabaseCallback mojo_callback,
-    leveldb::Status status) {
-  std::move(mojo_callback).Run(GetIndexedDBStatus(status));
-}
-
-}  // namespace
 
 // BlobDataItemReader implementation providing a BlobDataItem -> file adapter.
 class IndexedDBDataItemReader : public storage::mojom::BlobDataItemReader {
@@ -130,7 +98,7 @@ class IndexedDBDataItemReader : public storage::mojom::BlobDataItemReader {
     auto* raw_adapter = adapter.get();
 
     // Have the adapter (owning the reader) be owned by the result callback.
-    auto current_task_runner = base::SequencedTaskRunnerHandle::Get();
+    auto current_task_runner = base::SequencedTaskRunner::GetCurrentDefault();
     auto result_callback = base::BindOnce(
         [](std::unique_ptr<FileStreamReaderToDataPipe> reader,
            scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -212,12 +180,27 @@ IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
 
+IndexedDBDispatcherHost::ReceiverContext::ReceiverContext() = default;
+IndexedDBDispatcherHost::ReceiverContext::ReceiverContext(
+    absl::optional<storage::BucketInfo> bucket,
+    mojo::PendingAssociatedRemote<storage::mojom::IndexedDBClientStateChecker>
+        client_state_checker_remote)
+    : bucket(bucket),
+      client_state_checker(
+          base::MakeRefCounted<IndexedDBClientStateCheckerWrapper>(
+              std::move(client_state_checker_remote))) {}
+
+IndexedDBDispatcherHost::ReceiverContext::ReceiverContext(
+    IndexedDBDispatcherHost::ReceiverContext&&) noexcept = default;
+
+IndexedDBDispatcherHost::ReceiverContext::~ReceiverContext() = default;
+
 void IndexedDBDispatcherHost::AddReceiver(
-    absl::optional<storage::BucketLocator> bucket,
+    IndexedDBDispatcherHost::ReceiverContext context,
     mojo::PendingReceiver<blink::mojom::IDBFactory> pending_receiver) {
   DCHECK(IDBTaskRunner()->RunsTasksInCurrentSequence());
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  receivers_.Add(this, std::move(pending_receiver), bucket);
+  receivers_.Add(this, std::move(pending_receiver), std::move(context));
 }
 
 void IndexedDBDispatcherHost::AddDatabaseBinding(
@@ -275,22 +258,23 @@ void IndexedDBDispatcherHost::GetDatabaseInfo(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Return error if failed to retrieve bucket from the QuotaManager.
-  if (!receivers_.current_context().has_value()) {
+  if (!receivers_.current_context().bucket.has_value()) {
     auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-        this->AsWeakPtr(), storage::BucketLocator(),
-        std::move(pending_callbacks), IDBTaskRunner());
+        this->AsWeakPtr(), absl::nullopt, std::move(pending_callbacks),
+        IDBTaskRunner());
     IndexedDBDatabaseError error = IndexedDBDatabaseError(
         blink::mojom::IDBException::kUnknownError, u"Internal error.");
     callbacks->OnError(error);
     return;
   }
 
-  const auto& bucket_locator = *receivers_.current_context();
+  const auto& bucket = *receivers_.current_context().bucket;
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      this->AsWeakPtr(), bucket_locator, std::move(pending_callbacks),
-      IDBTaskRunner());
+      this->AsWeakPtr(), bucket, std::move(pending_callbacks), IDBTaskRunner());
 
-  base::FilePath indexed_db_path = indexed_db_context_->data_path();
+  storage::BucketLocator bucket_locator = bucket.ToBucketLocator();
+  base::FilePath indexed_db_path =
+      indexed_db_context_->GetDataPath(bucket_locator);
   indexed_db_context_->GetIDBFactory()->GetDatabaseInfo(
       std::move(callbacks), bucket_locator, indexed_db_path);
 }
@@ -307,24 +291,25 @@ void IndexedDBDispatcherHost::Open(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Return error if failed to retrieve bucket from the QuotaManager.
-  if (!receivers_.current_context().has_value()) {
+  if (!receivers_.current_context().bucket.has_value()) {
     auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-        this->AsWeakPtr(), storage::BucketLocator(),
-        std::move(pending_callbacks), IDBTaskRunner());
+        this->AsWeakPtr(), absl::nullopt, std::move(pending_callbacks),
+        IDBTaskRunner());
     IndexedDBDatabaseError error = IndexedDBDatabaseError(
         blink::mojom::IDBException::kUnknownError, u"Internal error.");
     callbacks->OnError(error);
     return;
   }
 
-  const auto& bucket_locator = *receivers_.current_context();
+  const auto& bucket = *receivers_.current_context().bucket;
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      this->AsWeakPtr(), bucket_locator, std::move(pending_callbacks),
-      IDBTaskRunner());
+      this->AsWeakPtr(), bucket, std::move(pending_callbacks), IDBTaskRunner());
   auto database_callbacks = base::MakeRefCounted<IndexedDBDatabaseCallbacks>(
       indexed_db_context_, std::move(database_callbacks_remote),
       IDBTaskRunner());
-  base::FilePath indexed_db_path = indexed_db_context_->data_path();
+  storage::BucketLocator bucket_locator = bucket.ToBucketLocator();
+  base::FilePath indexed_db_path =
+      indexed_db_context_->GetDataPath(bucket_locator);
 
   auto create_transaction_callback = base::BindOnce(
       &IndexedDBDispatcherHost::CreateAndBindTransactionImpl, AsWeakPtr(),
@@ -336,8 +321,9 @@ void IndexedDBDispatcherHost::Open(
 
   // TODO(dgrogan): Don't let a non-existing database be opened (and therefore
   // created) if this origin is already over quota.
-  indexed_db_context_->GetIDBFactory()->Open(name, std::move(connection),
-                                             bucket_locator, indexed_db_path);
+  indexed_db_context_->GetIDBFactory()->Open(
+      name, std::move(connection), bucket_locator, indexed_db_path,
+      receivers_.current_context().client_state_checker);
 }
 
 void IndexedDBDispatcherHost::DeleteDatabase(
@@ -347,60 +333,25 @@ void IndexedDBDispatcherHost::DeleteDatabase(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   // Return error if failed to retrieve bucket from the QuotaManager.
-  if (!receivers_.current_context().has_value()) {
+  if (!receivers_.current_context().bucket.has_value()) {
     auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-        this->AsWeakPtr(), storage::BucketLocator(),
-        std::move(pending_callbacks), IDBTaskRunner());
+        this->AsWeakPtr(), absl::nullopt, std::move(pending_callbacks),
+        IDBTaskRunner());
     IndexedDBDatabaseError error = IndexedDBDatabaseError(
         blink::mojom::IDBException::kUnknownError, u"Internal error.");
     callbacks->OnError(error);
     return;
   }
 
-  const auto& bucket_locator = *receivers_.current_context();
+  const auto& bucket = *receivers_.current_context().bucket;
   auto callbacks = base::MakeRefCounted<IndexedDBCallbacks>(
-      this->AsWeakPtr(), bucket_locator, std::move(pending_callbacks),
-      IDBTaskRunner());
+      this->AsWeakPtr(), bucket, std::move(pending_callbacks), IDBTaskRunner());
 
-  base::FilePath indexed_db_path = indexed_db_context_->data_path();
+  storage::BucketLocator bucket_locator = bucket.ToBucketLocator();
+  base::FilePath indexed_db_path =
+      indexed_db_context_->GetDataPath(bucket_locator);
   indexed_db_context_->GetIDBFactory()->DeleteDatabase(
       name, std::move(callbacks), bucket_locator, indexed_db_path, force_close);
-}
-
-void IndexedDBDispatcherHost::AbortTransactionsAndCompactDatabase(
-    AbortTransactionsAndCompactDatabaseCallback mojo_callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // Return error if failed to retrieve bucket from the QuotaManager.
-  if (!receivers_.current_context().has_value()) {
-    std::move(mojo_callback).Run(blink::mojom::IDBStatus::NotFound);
-    return;
-  }
-
-  const auto& bucket_locator = *receivers_.current_context();
-  base::OnceCallback<void(leveldb::Status)> callback_on_io = base::BindOnce(
-      &CallCompactionStatusCallbackOnIDBThread, std::move(mojo_callback));
-
-  indexed_db_context_->GetIDBFactory()->AbortTransactionsAndCompactDatabase(
-      std::move(callback_on_io), bucket_locator);
-}
-
-void IndexedDBDispatcherHost::AbortTransactionsForDatabase(
-    AbortTransactionsForDatabaseCallback mojo_callback) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // Return error if failed to retrieve bucket from the QuotaManager.
-  if (!receivers_.current_context().has_value()) {
-    std::move(mojo_callback).Run(blink::mojom::IDBStatus::NotFound);
-    return;
-  }
-
-  const auto& bucket_locator = *receivers_.current_context();
-  base::OnceCallback<void(leveldb::Status)> callback_on_io = base::BindOnce(
-      &CallAbortStatusCallbackOnIDBThread, std::move(mojo_callback));
-
-  indexed_db_context_->GetIDBFactory()->AbortTransactionsForDatabase(
-      std::move(callback_on_io), bucket_locator);
 }
 
 void IndexedDBDispatcherHost::CreateAndBindTransactionImpl(
@@ -515,14 +466,6 @@ void IndexedDBDispatcherHost::CreateAllExternalObjects(
       }
     }
   }
-}
-
-void IndexedDBDispatcherHost::InvalidateWeakPtrsAndClearBindings() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  weak_factory_.InvalidateWeakPtrs();
-  cursor_receivers_.Clear();
-  database_receivers_.Clear();
-  transaction_receivers_.Clear();
 }
 
 base::SequencedTaskRunner* IndexedDBDispatcherHost::IDBTaskRunner() const {

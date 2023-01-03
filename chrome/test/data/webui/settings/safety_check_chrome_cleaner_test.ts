@@ -1,9 +1,9 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // clang-format off
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {ChromeCleanupProxyImpl} from 'chrome://settings/lazy_load.js';
 import {MetricsBrowserProxyImpl, Router, routes, SafetyCheckCallbackConstants, SafetyCheckChromeCleanerStatus, SafetyCheckIconStatus, SafetyCheckInteractions, SettingsSafetyCheckChromeCleanerChildElement} from 'chrome://settings/settings.js';
@@ -30,16 +30,16 @@ function fireSafetyCheckChromeCleanerEvent(
       SafetyCheckCallbackConstants.CHROME_CLEANER_CHANGED, event);
 }
 
-type AssertSafetyCheckChildParams = {
-  page: HTMLElement,
-  iconStatus: SafetyCheckIconStatus,
-  label: string,
-  buttonLabel?: string,
-  buttonAriaLabel?: string,
-  buttonClass?: string,
-  managedIcon?: boolean,
-  rowClickable?: boolean,
-};
+interface AssertSafetyCheckChildParams {
+  page: HTMLElement;
+  iconStatus: SafetyCheckIconStatus;
+  label: string;
+  buttonLabel?: string;
+  buttonAriaLabel?: string;
+  buttonClass?: string;
+  managedIcon?: boolean;
+  rowClickable?: boolean;
+}
 
 /**
  * Verify that the safety check child inside the page has been configured as
@@ -96,7 +96,7 @@ suite('SafetyCheckChromeCleanerUiTests', function() {
     metricsBrowserProxy = new TestMetricsBrowserProxy();
     MetricsBrowserProxyImpl.setInstance(metricsBrowserProxy);
 
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-safety-check-chrome-cleaner-child');
     document.body.appendChild(page);
     flush();

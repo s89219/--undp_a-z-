@@ -1,12 +1,12 @@
 #!/usr/bin/env vpython3
-# Copyright 2017 The Chromium Authors. All rights reserved.
+# Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Script to check validity of StoryExpectations."""
 
 import logging
 import os
-
+from functools import reduce
 
 from core import benchmark_utils
 from core import benchmark_finders
@@ -48,7 +48,7 @@ def validate_story_names(benchmarks, test_expectations):
     stories.extend([benchmark.Name() + '/' + s.name for s in story_set.stories])
   broken_expectations = test_expectations.check_for_broken_expectations(stories)
   unused_patterns = ''
-  for pattern in set([e.test for e in broken_expectations]):
+  for pattern in {e.test for e in broken_expectations}:
     unused_patterns += ("Expectations with pattern '%s'"
                         " do not apply to any stories\n" % pattern)
   assert not unused_patterns, unused_patterns

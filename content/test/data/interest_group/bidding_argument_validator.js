@@ -1,13 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 function generateBid(
     interestGroup, auctionSignals, perBuyerSignals, trustedBiddingSignals,
-    browserSignals) {
+    browserSignals, directFromSellerSignals) {
   validateInterestGroup(interestGroup);
   validateAuctionSignals(auctionSignals);
   validatePerBuyerSignals(perBuyerSignals);
+  validateDirectFromSellerSignals(directFromSellerSignals);
   validateTrustedBiddingSignals(trustedBiddingSignals);
   validateBrowserSignals(browserSignals);
 
@@ -25,7 +26,7 @@ function validateInterestGroup(interestGroup) {
   if (!interestGroup)
     throw 'No interest group';
 
-  if (Object.keys(interestGroup).length !== 9) {
+  if (Object.keys(interestGroup).length !== 11) {
     throw 'Wrong number of interestGroupFields ' +
         JSON.stringify(interestGroup);
   }
@@ -34,6 +35,18 @@ function validateInterestGroup(interestGroup) {
     throw 'Wrong interestGroup.name ' + interestGroup.name;
   if (!interestGroup.owner.startsWith('https://a.test'))
     throw 'Missing a.test in owner ' + interestGroup.owner;
+
+  if (interestGroup.useBiddingSignalsPrioritization !== true) {
+    throw 'Incorrect useBiddingSignalsPrioritization ' +
+        interestGroup.useBiddingSignalsPrioritization;
+  }
+
+  if (Object.keys(interestGroup.priorityVector).length !== 2 ||
+      interestGroup.priorityVector['foo'] !== 2 ||
+      interestGroup.priorityVector['bar'] !== -11) {
+    throw 'Incorrect priorityVector ' +
+        JSON.stringify(interestGroup.priorityVector);
+  }
 
   if (!interestGroup.biddingLogicUrl.startsWith('https://a.test') ||
       !interestGroup.biddingLogicUrl.endsWith(
@@ -48,8 +61,11 @@ function validateInterestGroup(interestGroup) {
   }
 
   if (!interestGroup.trustedBiddingSignalsUrl.startsWith('https://a.test') ||
-      !interestGroup.trustedBiddingSignalsUrl.includes(
-          'trusted_bidding_signals.json')) {
+      (!interestGroup.trustedBiddingSignalsUrl.includes(
+          'trusted_bidding_signals.json') &&
+       // TODO(mmenke): Remove this once v1 format is no longer supported.
+       !interestGroup.trustedBiddingSignalsUrl.includes(
+          'trusted_bidding_signals_v1.json'))) {
     throw 'Incorrect trustedBiddingSignalsUrl ' +
         interestGroup.trustedBiddingSignalsUrl;
   }
@@ -68,7 +84,7 @@ function validateInterestGroup(interestGroup) {
   // serializing in declaration order.
   const userBiddingSignalsJSON =
       JSON.stringify(interestGroup.userBiddingSignals);
-  if (userBiddingSignalsJSON !== '{"some":"json","data":{"here":[1,2,3]}}')
+  if (userBiddingSignalsJSON !== '{"some":"json","stuff":{"here":[1,2]}}')
     throw 'Wrong userBiddingSignals ' + userBiddingSignalsJSON;
 
   if (interestGroup.ads.length !== 1)
@@ -101,7 +117,22 @@ function validateAuctionSignals(auctionSignals) {
 function validatePerBuyerSignals(perBuyerSignals) {
   const perBuyerSignalsJson = JSON.stringify(perBuyerSignals);
   if (perBuyerSignalsJson !== '{"signalsForBuyer":1}')
-    throw 'Wrong perBuyerSignas ' + perBuyerSignalsJson;
+    throw 'Wrong perBuyerSignals ' + perBuyerSignalsJson;
+}
+
+function validateDirectFromSellerSignals(directFromSellerSignals) {
+  const perBuyerSignalsJSON =
+      JSON.stringify(directFromSellerSignals.perBuyerSignals);
+  if (perBuyerSignalsJSON !== '{"json":"for","buyer":[1]}') {
+    throw 'Wrong directFromSellerSignals.perBuyerSignals ' +
+        perBuyerSignalsJSON;
+  }
+  const auctionSignalsJSON =
+      JSON.stringify(directFromSellerSignals.auctionSignals);
+  if (auctionSignalsJSON !== '{"json":"for","all":["parties"]}') {
+    throw 'Wrong directFromSellerSignals.auctionSignals ' +
+        auctionSignalsJSON;
+  }
 }
 
 function validateTrustedBiddingSignals(trustedBiddingSignals) {

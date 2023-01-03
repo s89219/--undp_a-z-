@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,8 @@ import org.chromium.ui.modelutil.PropertyModel.WritableObjectPropertyKey;
  * UI containing a download ListItem.
  */
 interface DownloadInterstitialProperties extends ListProperties {
-    @IntDef({State.UNKNOWN, State.IN_PROGRESS, State.SUCCESSFUL, State.CANCELLED, State.PAUSED})
+    @IntDef({State.UNKNOWN, State.IN_PROGRESS, State.SUCCESSFUL, State.CANCELLED, State.PAUSED,
+            State.PENDING})
     /**
      * Keeps track of the state of the DownloadInterstitial. This may be different to the state of
      * the offline item displayed within the UI.
@@ -30,6 +31,7 @@ interface DownloadInterstitialProperties extends ListProperties {
         int SUCCESSFUL = 2;
         int CANCELLED = 3;
         int PAUSED = 4;
+        int PENDING = 5;
     }
 
     WritableObjectPropertyKey<OfflineItem> DOWNLOAD_ITEM = new WritableObjectPropertyKey<>();
@@ -52,11 +54,15 @@ interface DownloadInterstitialProperties extends ListProperties {
     WritableObjectPropertyKey<Callback<OfflineItem>> SECONDARY_BUTTON_CALLBACK =
             new WritableObjectPropertyKey<>();
 
+    WritableObjectPropertyKey<Runnable> RELOAD_TAB = new WritableObjectPropertyKey<>();
+
+    WritableBooleanPropertyKey PENDING_MESSAGE_IS_VISIBLE = new WritableBooleanPropertyKey();
+
     PropertyKey[] ALL_KEYS = new PropertyKey[] {ENABLE_ITEM_ANIMATIONS, CALLBACK_OPEN,
             CALLBACK_PAUSE, CALLBACK_RESUME, CALLBACK_CANCEL, CALLBACK_SHARE, CALLBACK_REMOVE,
-            CALLBACK_RENAME, CALLBACK_CHANGE, PROVIDER_VISUALS, PROVIDER_FAVICON,
-            CALLBACK_SELECTION, SELECTION_MODE_ACTIVE, CALLBACK_PAGINATION_CLICK,
-            CALLBACK_GROUP_PAGINATION_CLICK, DOWNLOAD_ITEM, STATE, TITLE_TEXT,
-            PRIMARY_BUTTON_IS_VISIBLE, PRIMARY_BUTTON_TEXT, PRIMARY_BUTTON_CALLBACK,
-            SECONDARY_BUTTON_IS_VISIBLE, SECONDARY_BUTTON_TEXT, SECONDARY_BUTTON_CALLBACK};
+            CALLBACK_RENAME, PROVIDER_VISUALS, PROVIDER_FAVICON, CALLBACK_SELECTION,
+            SELECTION_MODE_ACTIVE, CALLBACK_PAGINATION_CLICK, CALLBACK_GROUP_PAGINATION_CLICK,
+            DOWNLOAD_ITEM, STATE, TITLE_TEXT, PRIMARY_BUTTON_IS_VISIBLE, PRIMARY_BUTTON_TEXT,
+            PRIMARY_BUTTON_CALLBACK, SECONDARY_BUTTON_IS_VISIBLE, SECONDARY_BUTTON_TEXT,
+            SECONDARY_BUTTON_CALLBACK, RELOAD_TAB, PENDING_MESSAGE_IS_VISIBLE};
 }

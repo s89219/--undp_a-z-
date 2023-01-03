@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,6 +32,7 @@ import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisableIf;
 import org.chromium.chrome.browser.contextmenu.ContextMenuCoordinator;
 import org.chromium.chrome.browser.firstrun.FirstRunStatus;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
@@ -55,9 +56,10 @@ import java.util.concurrent.TimeoutException;
  */
 // clang-format off
 @RunWith(ChromeJUnit4ClassRunner.class)
-@DisableIf.Build(sdk_is_less_than = VERSION_CODES.N)
+@DisableIf.Build(sdk_is_less_than = VERSION_CODES.O)
 @CommandLineFlags.Add(ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE)
-@Features.EnableFeatures(ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU)
+@Features.EnableFeatures({ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU,
+                          ChromeFeatureList.CONTEXT_MENU_POPUP_FOR_ALL_SCREEN_SIZES})
 @Batch(Batch.PER_CLASS)
 public class ContextMenuDragTest {
     // clang-format on
@@ -133,8 +135,10 @@ public class ContextMenuDragTest {
     @Test
     @SmallTest
     @CommandLineFlags.
-    Add({"force-fieldtrial-params=Study.Group:DragAndDropMovementThresholdDipParam/"
-            + TEST_MIN_DIST})
+    Add({"enable-features=" + ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU + "<Study",
+            "force-fieldtrials=Study/Group",
+            "force-fieldtrial-params=Study.Group:DragAndDropMovementThresholdDipParam/"
+                    + TEST_MIN_DIST})
     public void
     testTriggerContextMenuWithDrag() throws TimeoutException {
         longPressOpenContextMenu(TEST_IMAGE_ID);

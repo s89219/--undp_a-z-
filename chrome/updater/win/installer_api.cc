@@ -1,10 +1,9 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/updater/win/installer_api.h"
 
-#include <algorithm>
 #include <iterator>
 #include <string>
 
@@ -12,6 +11,7 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/cxx17_backports.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
@@ -19,26 +19,18 @@
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/win/registry.h"
 #include "chrome/updater/constants.h"
 #include "chrome/updater/enum_traits.h"
 #include "chrome/updater/updater_scope.h"
-#include "chrome/updater/util.h"
+#include "chrome/updater/util/util.h"
+#include "chrome/updater/util/win_util.h"
 #include "chrome/updater/win/win_constants.h"
-#include "chrome/updater/win/win_util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace updater {
 namespace {
-
-HKEY RootKey(UpdaterScope updater_scope) {
-  switch (updater_scope) {
-    case UpdaterScope::kUser:
-      return HKEY_CURRENT_USER;
-    case UpdaterScope::kSystem:
-      return HKEY_LOCAL_MACHINE;
-  }
-}
 
 // Opens the registry ClientState subkey for the `app_id`.
 absl::optional<base::win::RegKey> ClientStateAppKeyOpen(
@@ -48,7 +40,7 @@ absl::optional<base::win::RegKey> ClientStateAppKeyOpen(
   std::wstring subkey;
   if (!base::UTF8ToWide(app_id.c_str(), app_id.size(), &subkey))
     return absl::nullopt;
-  base::win::RegKey key(RootKey(updater_scope), CLIENT_STATE_KEY,
+  base::win::RegKey key(UpdaterScopeToHKeyRoot(updater_scope), CLIENT_STATE_KEY,
                         Wow6432(regsam));
   if (key.OpenKey(subkey.c_str(), Wow6432(regsam)) != ERROR_SUCCESS)
     return absl::nullopt;
@@ -65,7 +57,7 @@ absl::optional<base::win::RegKey> ClientStateAppKeyCreate(
   std::wstring subkey;
   if (!base::UTF8ToWide(app_id.c_str(), app_id.size(), &subkey))
     return absl::nullopt;
-  base::win::RegKey key(RootKey(updater_scope), CLIENT_STATE_KEY,
+  base::win::RegKey key(UpdaterScopeToHKeyRoot(updater_scope), CLIENT_STATE_KEY,
                         Wow6432(regsam));
   if (key.CreateKey(subkey.c_str(), Wow6432(regsam)) != ERROR_SUCCESS)
     return absl::nullopt;
@@ -83,8 +75,8 @@ bool ClientStateAppKeyDelete(UpdaterScope updater_scope,
   std::wstring subkey;
   if (!base::UTF8ToWide(app_id.c_str(), app_id.size(), &subkey))
     return false;
-  return base::win::RegKey(RootKey(updater_scope), CLIENT_STATE_KEY,
-                           Wow6432(KEY_WRITE))
+  return base::win::RegKey(UpdaterScopeToHKeyRoot(updater_scope),
+                           CLIENT_STATE_KEY, Wow6432(KEY_WRITE))
              .DeleteKey(subkey.c_str()) == ERROR_SUCCESS;
 }
 
@@ -125,8 +117,7 @@ bool DeleteInstallerOutput(UpdaterScope updater_scope,
   if (!key)
     return false;
   auto delete_value = [&key](const wchar_t* value) {
-    return key->HasValue(value) ? key->DeleteValue(value) == ERROR_SUCCESS
-                                : true;
+    return !key->HasValue(value) || key->DeleteValue(value) == ERROR_SUCCESS;
   };
   const bool results[] = {
       delete_value(kRegValueInstallerProgress),
@@ -136,8 +127,7 @@ bool DeleteInstallerOutput(UpdaterScope updater_scope,
       delete_value(kRegValueInstallerResultUIString),
       delete_value(kRegValueInstallerSuccessLaunchCmdLine),
   };
-  return std::all_of(std::begin(results), std::end(results),
-                     [](auto result) { return result; });
+  return !base::Contains(results, false);
 }
 
 absl::optional<InstallerOutcome> GetInstallerOutcome(
@@ -328,6 +318,7 @@ AppInstallerResult RunApplicationInstaller(
     const base::FilePath& app_installer,
     const std::string& arguments,
     const absl::optional<base::FilePath>& installer_data_file,
+    const base::TimeDelta& timeout,
     InstallProgressCallback progress_callback) {
   if (!base::PathExists(app_installer))
     return AppInstallerResult(kErrorMissingRunableFile);
@@ -349,25 +340,28 @@ AppInstallerResult RunApplicationInstaller(
 
   base::LaunchOptions options;
   options.start_hidden = true;
-  options.environment = {
-      {ENV_GOOGLE_UPDATE_IS_MACHINE,
-       app_info.scope == UpdaterScope::kSystem ? L"1" : L"0"}};
+  options.environment = {{ENV_GOOGLE_UPDATE_IS_MACHINE,
+                          IsSystemInstall(app_info.scope) ? L"1" : L"0"}};
 
   auto process = base::LaunchProcess(cmdline, options);
+  if (!process.IsValid()) {
+    return AppInstallerResult(
+        update_client::InstallError::LAUNCH_PROCESS_FAILED);
+  }
+
   int exit_code = -1;
-  const auto time_begin = base::Time::NowFromSystemTime();
+  const base::ElapsedTimer timer;
   do {
     bool wait_result = process.WaitForExitWithTimeout(
         base::Seconds(kWaitForInstallerProgressSec), &exit_code);
     auto progress = GetInstallerProgress(app_info.scope, app_info.app_id);
-    DVLOG(3) << "installer progress: " << progress;
+    VLOG(3) << "installer progress: " << progress;
     progress_callback.Run(progress);
     if (wait_result) {
       VLOG(1) << "Installer exit code " << exit_code;
       break;
     }
-  } while (base::Time::NowFromSystemTime() - time_begin <=
-           base::Seconds(kWaitForAppInstallerSec));
+  } while (timer.Elapsed() < timeout);
 
   return MakeInstallerResult(
       GetInstallerOutcome(app_info.scope, app_info.app_id), exit_code);

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_LACROS_CERT_CERT_DB_INITIALIZER_IMPL_H_
 
 #include "base/callback_list.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/lacros/cert/cert_db_initializer.h"
 #include "chrome/browser/lacros/cert/cert_db_initializer_io_impl.h"
@@ -13,6 +14,7 @@
 #include "chromeos/lacros/lacros_service.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "crypto/scoped_nss_types.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/cert/cert_database.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -81,26 +83,6 @@ class CertDbInitializerImpl : public CertDbInitializer,
   // certs and doesn't allow any modifications.
   void InitializeReadOnlyCertDb();
 
-  // Initialize with a "legacy" cert database. If Ash-Chrome's CertDatabase
-  // implementation is before M97, then the chaps slot IDs will not be provided.
-  // While this is an unsupported configuration, fail gracefully by using
-  // read-only tokens for the public and private slot.
-  //
-  // Pre-M97 Ash-Chrome sends the path to software NSS database and whether
-  // Lacros-Chrome should load Chaps through `GetCertDatabaseInfo` mojo
-  // interface. M97+ Lacros-Chrome will process that data exactly like Pre-M97
-  // Lacros-Chrome if Ash-Chrome is pre-M97.
-  //
-  // M97+ Ash-Chrome sends whether Lacros-Chrome should load chaps, slot IDs and
-  // whether the system slot should be enabled through `GetCertDatabaseInfo`.
-  // The path to software NSS database is also included in the message, but only
-  // for backwards compatibility, M97+ Lacros-Chrome doesn't read it.
-  // M97+ Ash-Chrome sends the path through `BrowserInitParams` mojo interface.
-  //
-  // TODO(b/200784079): This is backwards compatibility code. It can be
-  // removed in ChromeOS-M100.
-  void LegacyInitializeForMainProfile();
-
   // Queries Ash-Chrome for the user and system slots to use for the profile.
   // Should only be called after the software database has been loaded.
   void DidLoadSoftwareNssDb();
@@ -121,7 +103,7 @@ class CertDbInitializerImpl : public CertDbInitializer,
 
   // This class is a `KeyedService` based on the `Profile`. An instance is
   // created together with a new profile and never outlives it.`
-  Profile* profile_ = nullptr;
+  raw_ptr<Profile> profile_ = nullptr;
   bool is_ready_ = false;
   base::OnceClosureList callbacks_;
 

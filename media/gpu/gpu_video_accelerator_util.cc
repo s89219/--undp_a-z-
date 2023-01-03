@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -137,6 +137,9 @@ GpuVideoAcceleratorUtil::ConvertGpuToMediaEncodeProfiles(
     profile.max_resolution = gpu_profile.max_resolution;
     profile.max_framerate_numerator = gpu_profile.max_framerate_numerator;
     profile.max_framerate_denominator = gpu_profile.max_framerate_denominator;
+    // If VBR is supported in the future, remove this hard-coding of CBR.
+    profile.rate_control_modes = media::VideoEncodeAccelerator::kConstantMode;
+    profile.is_software_codec = gpu_profile.is_software_codec;
     profiles.push_back(profile);
   }
   return profiles;
@@ -155,6 +158,7 @@ GpuVideoAcceleratorUtil::ConvertMediaToGpuEncodeProfiles(
     profile.max_resolution = media_profile.max_resolution;
     profile.max_framerate_numerator = media_profile.max_framerate_numerator;
     profile.max_framerate_denominator = media_profile.max_framerate_denominator;
+    profile.is_software_codec = media_profile.is_software_codec;
     profiles.push_back(profile);
   }
   return profiles;
@@ -184,7 +188,7 @@ void GpuVideoAcceleratorUtil::InsertUniqueEncodeProfiles(
   for (const auto& profile : new_profiles) {
     bool duplicate = false;
     for (const auto& media_profile : *media_profiles) {
-      if (media_profile.profile == profile.profile) {
+      if (media_profile == profile) {
         duplicate = true;
         break;
       }

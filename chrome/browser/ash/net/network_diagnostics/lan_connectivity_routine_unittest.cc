@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,7 +72,7 @@ class LanConnectivityRoutineTest : public ::testing::Test {
     network_state_helper().SetServiceProperty(service_path, key, value);
   }
   const std::string& ethernet_path() const { return ethernet_path_; }
-  chromeos::NetworkStateTestHelper& network_state_helper() {
+  NetworkStateTestHelper& network_state_helper() {
     return cros_network_config_test_helper_.network_state_helper();
   }
   const std::string& wifi_path() const { return wifi_path_; }
@@ -95,7 +95,7 @@ TEST_F(LanConnectivityRoutineTest, TestConnectedLan) {
 }
 
 TEST_F(LanConnectivityRoutineTest, TestDisconnectedLan) {
-  SetUpWiFi(shill::kStateOffline);
+  SetUpWiFi(shill::kStateIdle);
   lan_connectivity_routine()->RunRoutine(
       base::BindOnce(&LanConnectivityRoutineTest::CompareVerdict, weak_ptr(),
                      mojom::RoutineVerdict::kProblem));

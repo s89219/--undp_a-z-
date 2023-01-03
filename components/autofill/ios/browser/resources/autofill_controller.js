@@ -1,20 +1,17 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
-  * @fileoverview Installs Autofill management functions on the __gCrWeb object.
-  *
-  * It scans the DOM, extracting and storing forms and returns a JSON string
-  * representing an array of objects, each of which represents an Autofill form
-  * with information about a form to be filled and/or submitted and it can be
-  * translated to struct FormData
-  * (chromium/src/components/autofill/core/common/form_data.h) for further
-  * processing.
-
-  * TODO(crbug.com/647084): Enable checkTypes error for this file.
-  * @suppress {checkTypes}
-  */
+ * @fileoverview Installs Autofill management functions on the __gCrWeb object.
+ *
+ * It scans the DOM, extracting and storing forms and returns a JSON string
+ * representing an array of objects, each of which represents an Autofill form
+ * with information about a form to be filled and/or submitted and it can be
+ * translated to struct FormData
+ * (chromium/src/components/autofill/core/common/form_data.h) for further
+ * processing.
+ */
 
 /**
  * The autofill data for a form.
@@ -386,7 +383,7 @@ __gCrWeb.autofill.extractNewForms = function(
     minimumRequiredFields, restrictUnownedFieldsToFormlessCheckout) {
   const forms = [];
   // Protect against custom implementation of Array.toJSON in host pages.
-  /** @suppress {checkTypes} */ (function() {
+  (function() {
     forms.toJSON = null;
   })();
 
@@ -556,8 +553,8 @@ __gCrWeb.autofill['fillPredictionData'] = function(data) {
       if (!__gCrWeb.fill.isAutofillableElement(element)) {
         continue;
       }
-      const elementName = __gCrWeb.form.getFieldIdentifier(element);
-      const value = formData[elementName];
+      const elementID = __gCrWeb.fill.getUniqueID(element);
+      const value = formData[elementID];
       if (value) {
         element.placeholder = value;
       }

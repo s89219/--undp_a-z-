@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -296,7 +296,6 @@ public class NoteCreationDialog extends DialogFragment {
         params.setMarginStart(paddingLeft);
         params.setMarginEnd(paddingRight);
         itemView.setLayoutParams(params);
-        itemView.requestLayout();
     }
 
     private void maybeShowToast() {
@@ -368,7 +367,6 @@ public class NoteCreationDialog extends DialogFragment {
                                     (MarginLayoutParams) carouselView.getLayoutParams();
                             params.topMargin = (int) ((viewHeight - templateWidth) / 2);
                             carouselView.setLayoutParams(params);
-                            carouselView.requestLayout();
                         }
                     });
             return;
@@ -378,7 +376,6 @@ public class NoteCreationDialog extends DialogFragment {
         MarginLayoutParams params = (MarginLayoutParams) firstView.getLayoutParams();
         params.topMargin = (int) (minTopMargin + (screenHeight - topMarginOffset) * 0.15f);
         firstView.setLayoutParams(params);
-        firstView.requestLayout();
     }
 
     private void addScrollView() {

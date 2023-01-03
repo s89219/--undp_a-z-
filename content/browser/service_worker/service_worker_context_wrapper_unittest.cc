@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,8 @@
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_browser_context.h"
+#include "net/base/features.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_registration.mojom.h"
 #include "url/origin.h"
@@ -94,7 +94,7 @@ class ServiceWorkerContextWrapperTest : public testing::Test {
     blink::ServiceWorkerStatusCode result;
     base::RunLoop loop;
     registry()->DeleteRegistration(
-        registration, registration->key(),
+        registration,
         base::BindLambdaForTesting([&](blink::ServiceWorkerStatusCode status) {
           result = status;
           loop.Quit();
@@ -110,7 +110,8 @@ class ServiceWorkerContextWrapperTest : public testing::Test {
     storage_control_ =
         std::make_unique<storage::ServiceWorkerStorageControlImpl>(
             user_data_directory_.GetPath(),
-            /*database_task_runner=*/base::ThreadTaskRunnerHandle::Get(),
+            /*database_task_runner=*/
+            base::SingleThreadTaskRunner::GetCurrentDefault(),
             std::move(receiver));
   }
 
@@ -214,21 +215,23 @@ TEST_F(ServiceWorkerContextWrapperTest, DeleteRegistrationsForSameKey) {
 TEST_F(ServiceWorkerContextWrapperTest, DeleteRegistrationsForPartitionedKeys) {
   base::test::ScopedFeatureList scope_feature_list_;
   scope_feature_list_.InitAndEnableFeature(
-      blink::features::kThirdPartyStoragePartitioning);
+      net::features::kThirdPartyStoragePartitioning);
 
   wrapper_->context()->WaitForRegistrationsInitializedForTest();
 
   // Make two registrations for same origin, but different top-level site.
   GURL scope("https://example1.com/abc/");
   url::Origin site1 = url::Origin::Create(GURL("https://site1.example"));
-  blink::StorageKey key1(url::Origin::Create(scope), site1);
+  blink::StorageKey key1 =
+      blink::StorageKey::CreateForTesting(url::Origin::Create(scope), site1);
   GURL script("https://example1.com/abc/sw.js");
   scoped_refptr<ServiceWorkerRegistration> registration1 =
       CreateServiceWorkerRegistrationAndVersion(context(), scope, script, key1,
                                                 /*resource_id=*/1);
 
   url::Origin site2 = url::Origin::Create(GURL("https://site2.example"));
-  blink::StorageKey key2(url::Origin::Create(scope), site2);
+  blink::StorageKey key2 =
+      blink::StorageKey::CreateForTesting(url::Origin::Create(scope), site2);
   scoped_refptr<ServiceWorkerRegistration> registration2 =
       CreateServiceWorkerRegistrationAndVersion(context(), scope, script, key2,
                                                 2);

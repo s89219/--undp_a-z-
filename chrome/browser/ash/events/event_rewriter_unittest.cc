@@ -1,9 +1,10 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <vector>
 
+#include "ash/accelerators/accelerator_controller_impl.h"
 #include "ash/accessibility/sticky_keys/sticky_keys_controller.h"
 #include "ash/accessibility/sticky_keys/sticky_keys_overlay.h"
 #include "ash/constants/ash_features.h"
@@ -34,6 +35,7 @@
 #include "ui/base/ime/ash/fake_ime_keyboard.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/chromeos/events/event_rewriter_chromeos.h"
+#include "ui/chromeos/events/keyboard_capability.h"
 #include "ui/chromeos/events/modifier_key.h"
 #include "ui/chromeos/events/pref_names.h"
 #include "ui/events/devices/device_data_manager.h"
@@ -78,10 +80,10 @@ constexpr char kKbdInvalidCustomTopRowLayout[] = "X X X";
 
 // Values for enum output parameters to IdentifyKeyboard() that do not
 // match any enum types.
-constexpr auto kImpossibleDeviceType =
-    static_cast<ui::EventRewriterChromeOS::DeviceType>(-1);
-constexpr auto kImpossibleKeyboardTopRowLayout =
-    static_cast<ui::EventRewriterChromeOS::KeyboardTopRowLayout>(-1);
+const auto kImpossibleDeviceType =
+    static_cast<ui::KeyboardCapability::DeviceType>(-1);
+const auto kImpossibleKeyboardTopRowLayout =
+    static_cast<ui::KeyboardCapability::KeyboardTopRowLayout>(-1);
 
 class TestEventRewriterContinuation
     : public ui::test::TestEventRewriterContinuation {
@@ -93,12 +95,12 @@ class TestEventRewriterContinuation
       const TestEventRewriterContinuation&) = delete;
 
   ui::EventDispatchDetails SendEvent(const ui::Event* event) override {
-    passthrough_events.push_back(ui::Event::Clone(*event));
+    passthrough_events.push_back(event->Clone());
     return ui::EventDispatchDetails();
   }
 
   ui::EventDispatchDetails SendEventFinally(const ui::Event* event) override {
-    rewritten_events.push_back(ui::Event::Clone(*event));
+    rewritten_events.push_back(event->Clone());
     return ui::EventDispatchDetails();
   }
 
@@ -499,6 +501,34 @@ TEST_F(EventRewriterTest, TestRewriteCommandToControl) {
        {ui::VKEY_LWIN, ui::DomCode::META_RIGHT,
         ui::EF_COMMAND_DOWN | ui::EF_ALT_DOWN, ui::DomKey::META}},
   });
+}
+
+TEST_F(EventRewriterTest, ModifiersNotRemappedWhenSuppressed) {
+  // Remap Control -> Alt.
+  Preferences::RegisterProfilePrefs(prefs()->registry());
+  IntegerPrefMember control;
+  InitModifierKeyPref(&control, ::prefs::kLanguageRemapControlKeyTo,
+                      ui::chromeos::ModifierKey::kAltKey);
+
+  delegate_->SuppressModifierKeyRewrites(false);
+
+  // Pressing Control + B should now be remapped to Alt + B.
+  CheckKeyTestCase(rewriter(),
+                   {ui::ET_KEY_PRESSED,
+                    {ui::VKEY_B, ui::DomCode::US_B, ui::EF_CONTROL_DOWN,
+                     ui::DomKey::Constant<'b'>::Character},
+                    {ui::VKEY_B, ui::DomCode::US_B, ui::EF_ALT_DOWN,
+                     ui::DomKey::Constant<'b'>::Character}});
+
+  delegate_->SuppressModifierKeyRewrites(true);
+
+  // Pressing Control + B should no longer be remapped.
+  CheckKeyTestCase(rewriter(),
+                   {ui::ET_KEY_PRESSED,
+                    {ui::VKEY_B, ui::DomCode::US_B, ui::EF_CONTROL_DOWN,
+                     ui::DomKey::Constant<'b'>::Character},
+                    {ui::VKEY_B, ui::DomCode::US_B, ui::EF_CONTROL_DOWN,
+                     ui::DomKey::Constant<'b'>::Character}});
 }
 
 TEST_F(EventRewriterTest, TestRewriteExternalMetaKey) {
@@ -1292,6 +1322,57 @@ TEST_F(EventRewriterTest, TestRewriteModifiersRemapBackspaceToEscape) {
         ui::DomKey::BACKSPACE},
        {ui::VKEY_ESCAPE, ui::DomCode::ESCAPE, ui::EF_NONE, ui::DomKey::ESCAPE}},
   });
+}
+
+TEST_F(EventRewriterTest,
+       TestRewriteNonModifierToModifierWithRemapBetweenKeyEvents) {
+  // Remap Escape to Alt.
+  Preferences::RegisterProfilePrefs(prefs()->registry());
+  IntegerPrefMember escape;
+  InitModifierKeyPref(&escape, ::prefs::kLanguageRemapEscapeKeyTo,
+                      ui::chromeos::ModifierKey::kAltKey);
+
+  SetupKeyboard("Internal Keyboard");
+
+  // Press Escape.
+  EXPECT_EQ(
+      GetExpectedResultAsString(ui::ET_KEY_PRESSED, ui::VKEY_MENU,
+                                ui::DomCode::ALT_LEFT, ui::EF_ALT_DOWN,
+                                ui::DomKey::ALT, kNoScanCode),
+      GetRewrittenEventAsString(rewriter(), ui::ET_KEY_PRESSED, ui::VKEY_ESCAPE,
+                                ui::DomCode::ESCAPE, ui::EF_NONE,
+                                ui::DomKey::ESCAPE, kNoScanCode));
+
+  // Remap Escape to Control before releasing Escape.
+  InitModifierKeyPref(&escape, ::prefs::kLanguageRemapEscapeKeyTo,
+                      ui::chromeos::ModifierKey::kControlKey);
+
+  // Release Escape.
+  EXPECT_EQ(
+      GetExpectedResultAsString(ui::ET_KEY_RELEASED, ui::VKEY_ESCAPE,
+                                ui::DomCode::ESCAPE, ui::EF_NONE,
+                                ui::DomKey::ESCAPE, kNoScanCode),
+      GetRewrittenEventAsString(rewriter(), ui::ET_KEY_RELEASED,
+                                ui::VKEY_ESCAPE, ui::DomCode::ESCAPE,
+                                ui::EF_NONE, ui::DomKey::ESCAPE, kNoScanCode));
+
+  // Press A, expect that Alt is not stickied.
+  EXPECT_EQ(
+      GetExpectedResultAsString(
+          ui::ET_KEY_PRESSED, ui::VKEY_A, ui::DomCode::US_A, ui::EF_NONE,
+          ui::DomKey::Constant<'a'>::Character, kNoScanCode),
+      GetRewrittenEventAsString(
+          rewriter(), ui::ET_KEY_PRESSED, ui::VKEY_A, ui::DomCode::US_A,
+          ui::EF_NONE, ui::DomKey::Constant<'a'>::Character, kNoScanCode));
+
+  // Release A.
+  EXPECT_EQ(
+      GetExpectedResultAsString(
+          ui::ET_KEY_RELEASED, ui::VKEY_A, ui::DomCode::US_A, ui::EF_NONE,
+          ui::DomKey::Constant<'a'>::Character, kNoScanCode),
+      GetRewrittenEventAsString(
+          rewriter(), ui::ET_KEY_RELEASED, ui::VKEY_A, ui::DomCode::US_A,
+          ui::EF_NONE, ui::DomKey::Constant<'a'>::Character, kNoScanCode));
 }
 
 TEST_F(EventRewriterTest, TestRewriteModifiersRemapToCapsLock) {
@@ -2110,72 +2191,52 @@ TEST_F(EventRewriterTest, TestRewriteSearchNumberToFunctionKeyNoAction) {
        {ui::VKEY_1, ui::DomCode::DIGIT1, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'1'>::Character},
        {ui::VKEY_1, ui::DomCode::DIGIT1, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'1'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'1'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_2, ui::DomCode::DIGIT2, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'2'>::Character},
        {ui::VKEY_2, ui::DomCode::DIGIT2, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'2'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'2'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_3, ui::DomCode::DIGIT3, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'3'>::Character},
        {ui::VKEY_3, ui::DomCode::DIGIT3, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'3'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'3'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_4, ui::DomCode::DIGIT4, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'4'>::Character},
        {ui::VKEY_4, ui::DomCode::DIGIT4, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'4'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'4'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_5, ui::DomCode::DIGIT5, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'5'>::Character},
        {ui::VKEY_5, ui::DomCode::DIGIT5, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'5'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'5'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_6, ui::DomCode::DIGIT6, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'6'>::Character},
        {ui::VKEY_6, ui::DomCode::DIGIT6, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'6'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'6'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_7, ui::DomCode::DIGIT7, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'7'>::Character},
        {ui::VKEY_7, ui::DomCode::DIGIT7, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'7'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'7'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_8, ui::DomCode::DIGIT8, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'8'>::Character},
        {ui::VKEY_8, ui::DomCode::DIGIT8, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'8'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'8'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_9, ui::DomCode::DIGIT9, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'9'>::Character},
        {ui::VKEY_9, ui::DomCode::DIGIT9, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'9'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'9'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_0, ui::DomCode::DIGIT0, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'0'>::Character},
        {ui::VKEY_0, ui::DomCode::DIGIT0, ui::EF_COMMAND_DOWN,
-        ui::DomKey::Constant<'0'>::Character},
-       kKeyboardDeviceId,
-       /*triggers_notification=*/true},
+        ui::DomKey::Constant<'0'>::Character}},
       {ui::ET_KEY_PRESSED,
        {ui::VKEY_OEM_MINUS, ui::DomCode::MINUS, ui::EF_COMMAND_DOWN,
         ui::DomKey::Constant<'-'>::Character},
@@ -3754,7 +3815,7 @@ class EventBuffer : public ui::test::TestEventProcessor {
  private:
   // ui::EventSink overrides:
   ui::EventDispatchDetails OnEventFromSource(ui::Event* event) override {
-    events_.push_back(ui::Event::Clone(*event));
+    events_.push_back(event->Clone());
     return ui::EventDispatchDetails();
   }
 
@@ -4153,8 +4214,11 @@ TEST_F(EventRewriterTest, IdentifyKeyboardUnspecified) {
   bool result = ui::EventRewriterChromeOS::IdentifyKeyboard(
       input_device, &out_type, &out_layout, &scan_code_map);
   EXPECT_TRUE(result);
-  EXPECT_EQ(out_type, ui::EventRewriterChromeOS::kDeviceInternalKeyboard);
-  EXPECT_EQ(out_layout, ui::EventRewriterChromeOS::kKbdTopRowLayoutDefault);
+  EXPECT_EQ(out_type,
+            ui::KeyboardCapability::DeviceType::kDeviceInternalKeyboard);
+  EXPECT_EQ(
+      out_layout,
+      ui::KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault);
   EXPECT_TRUE(scan_code_map.empty());
 }
 
@@ -4171,8 +4235,10 @@ TEST_F(EventRewriterTest, IdentifyKeyboardInvalidLayoutTag) {
   bool result = ui::EventRewriterChromeOS::IdentifyKeyboard(
       input_device, &out_type, &out_layout, &scan_code_map);
   EXPECT_FALSE(result);
-  EXPECT_EQ(out_type, ui::EventRewriterChromeOS::kDeviceUnknown);
-  EXPECT_EQ(out_layout, ui::EventRewriterChromeOS::kKbdTopRowLayoutDefault);
+  EXPECT_EQ(out_type, ui::KeyboardCapability::DeviceType::kDeviceUnknown);
+  EXPECT_EQ(
+      out_layout,
+      ui::KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault);
   EXPECT_TRUE(scan_code_map.empty());
 }
 
@@ -4191,8 +4257,11 @@ TEST_F(EventRewriterTest, IdentifyKeyboardInvalidCustomLayout) {
   // Unparsable custom top row layout attributes are ignored and the
   // keyboard treated as default layout.
   EXPECT_TRUE(result);
-  EXPECT_EQ(out_type, ui::EventRewriterChromeOS::kDeviceInternalKeyboard);
-  EXPECT_EQ(out_layout, ui::EventRewriterChromeOS::kKbdTopRowLayoutDefault);
+  EXPECT_EQ(out_type,
+            ui::KeyboardCapability::DeviceType::kDeviceInternalKeyboard);
+  EXPECT_EQ(
+      out_layout,
+      ui::KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutDefault);
   EXPECT_TRUE(scan_code_map.empty());
 }
 
@@ -4209,9 +4278,11 @@ TEST_F(EventRewriterTest, IdentifyKeyboardExternalChrome) {
   bool result = ui::EventRewriterChromeOS::IdentifyKeyboard(
       input_device, &out_type, &out_layout, &scan_code_map);
   EXPECT_TRUE(result);
-  EXPECT_EQ(out_type,
-            ui::EventRewriterChromeOS::kDeviceExternalChromeOsKeyboard);
-  EXPECT_EQ(out_layout, ui::EventRewriterChromeOS::kKbdTopRowLayout2);
+  EXPECT_EQ(
+      out_type,
+      ui::KeyboardCapability::DeviceType::kDeviceExternalChromeOsKeyboard);
+  EXPECT_EQ(out_layout,
+            ui::KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayout2);
   EXPECT_TRUE(scan_code_map.empty());
 }
 
@@ -4229,8 +4300,11 @@ TEST_F(EventRewriterTest, IdentifyKeyboardCustomLayout) {
       input_device, &out_type, &out_layout, &scan_code_map);
 
   EXPECT_TRUE(result);
-  EXPECT_EQ(out_type, ui::EventRewriterChromeOS::kDeviceInternalKeyboard);
-  EXPECT_EQ(out_layout, ui::EventRewriterChromeOS::kKbdTopRowLayoutCustom);
+  EXPECT_EQ(out_type,
+            ui::KeyboardCapability::DeviceType::kDeviceInternalKeyboard);
+  EXPECT_EQ(
+      out_layout,
+      ui::KeyboardCapability::KeyboardTopRowLayout::kKbdTopRowLayoutCustom);
 
   // Basic inspection to match kKbdDefaultCustomTopRowLayout
   EXPECT_EQ(15u, scan_code_map.size());
@@ -4503,7 +4577,7 @@ TEST_F(EventRewriterAshTest, ScrollEventDispatchImpl) {
 
 class StickyKeysOverlayTest : public EventRewriterAshTest {
  public:
-  StickyKeysOverlayTest() : overlay_(NULL) {}
+  StickyKeysOverlayTest() : overlay_(nullptr) {}
 
   ~StickyKeysOverlayTest() override {}
 
@@ -4782,10 +4856,10 @@ class ExtensionRewriterInputTest : public EventRewriterAshTest,
 
   bool IsSearchKeyAcceleratorReserved() const override { return false; }
   bool NotifyDeprecatedRightClickRewrite() override { return false; }
-  bool NotifyDeprecatedFKeyRewrite() override { return false; }
   bool NotifyDeprecatedSixPackKeyRewrite(ui::KeyboardCode key_code) override {
     return false;
   }
+  void SuppressModifierKeyRewrites(bool should_suppress) override {}
 
   std::map<std::string, int> modifier_remapping_;
   base::flat_set<ui::Accelerator> registered_extension_shortcuts_;

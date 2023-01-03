@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -144,14 +144,11 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtension(
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddApp(const std::string& name) {
-  base::DictionaryValue dictionary;
-  AddDefaultManifestKeys(name, &dictionary);
-  dictionary.SetStringPath(manifest_keys::kApp, "true");
+  base::Value::Dict dictionary;
+  AddDefaultManifestKeys(name, dictionary);
 
-  // TODO(crbug.com/949461): Should use SetStringPath() here, but we currently
-  // depend on the special SetString() behavior that overwrites a previous key
-  // with a new path ("app" or "app.launch" vs "app.launch.web_url").
-  dictionary.SetString(manifest_keys::kLaunchWebURL, "http://example.com");
+  dictionary.SetByDottedPath(manifest_keys::kLaunchWebURL,
+                             "http://example.com");
 
   return AddExtensionWithManifest(dictionary, ManifestLocation::kInternal);
 }
@@ -159,25 +156,25 @@ scoped_refptr<Extension> TestExtensionPrefs::AddApp(const std::string& name) {
 scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithLocation(
     const std::string& name,
     ManifestLocation location) {
-  base::DictionaryValue dictionary;
-  AddDefaultManifestKeys(name, &dictionary);
+  base::Value::Dict dictionary;
+  AddDefaultManifestKeys(name, dictionary);
   return AddExtensionWithManifest(dictionary, location);
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifest(
-    const base::DictionaryValue& manifest,
+    const base::Value::Dict& manifest,
     ManifestLocation location) {
   return AddExtensionWithManifestAndFlags(manifest, location,
                                           Extension::NO_FLAGS);
 }
 
 scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
-    const base::DictionaryValue& manifest,
+    const base::Value::Dict& manifest,
     ManifestLocation location,
     int extra_flags) {
-  std::string name;
-  EXPECT_TRUE(manifest.GetString(manifest_keys::kName, &name));
-  base::FilePath path =  extensions_dir_.AppendASCII(name);
+  const std::string* name = manifest.FindString(manifest_keys::kName);
+  EXPECT_TRUE(name);
+  base::FilePath path = extensions_dir_.AppendASCII(*name);
   std::string errors;
   scoped_refptr<Extension> extension =
       Extension::Create(path, location, manifest, extra_flags, &errors);
@@ -223,11 +220,10 @@ ChromeAppSorting* TestExtensionPrefs::app_sorting() {
 }
 
 void TestExtensionPrefs::AddDefaultManifestKeys(const std::string& name,
-                                                base::DictionaryValue* dict) {
-  DCHECK(dict);
-  dict->SetStringPath(manifest_keys::kName, name);
-  dict->SetStringPath(manifest_keys::kVersion, "0.1");
-  dict->SetIntPath(manifest_keys::kManifestVersion, 2);
+                                                base::Value::Dict& dict) {
+  dict.Set(manifest_keys::kName, name);
+  dict.Set(manifest_keys::kVersion, "0.1");
+  dict.Set(manifest_keys::kManifestVersion, 2);
 }
 
 }  // namespace extensions

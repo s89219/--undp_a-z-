@@ -1,26 +1,26 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import <XCTest/XCTest.h>
 #import "ios/testing/earl_grey/earl_grey_test.h"
 
-#include "base/bind.h"
-#include "base/ios/ios_util.h"
-#include "base/memory/ptr_util.h"
-#include "base/strings/sys_string_conversions.h"
+#import "base/bind.h"
+#import "base/ios/ios_util.h"
+#import "base/memory/ptr_util.h"
+#import "base/strings/sys_string_conversions.h"
 #import "base/test/ios/wait_util.h"
-#include "components/version_info/version_info.h"
+#import "components/version_info/version_info.h"
 #import "ios/chrome/browser/ui/popup_menu/popup_menu_constants.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey_ui.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
-#include "ios/web/common/user_agent.h"
-#include "net/test/embedded_test_server/embedded_test_server.h"
-#include "net/test/embedded_test_server/http_request.h"
-#include "net/test/embedded_test_server/http_response.h"
+#import "ios/web/common/user_agent.h"
+#import "net/test/embedded_test_server/embedded_test_server.h"
+#import "net/test/embedded_test_server/http_request.h"
+#import "net/test/embedded_test_server/http_response.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -129,17 +129,13 @@ GREYElementInteraction* RequestDesktopButton() {
 #pragma mark - Tests
 
 // Test that tapping the prerendered suggestions opens it.
-- (void)testTapPrerenderSuggestions {
+// TODO(crbug.com/1315304): Reenable.
+- (void)DISABLED_testTapPrerenderSuggestions {
   // TODO(crbug.com/793306): Re-enable the test on iPad once the alternate
   // letters problem is fixed.
   if ([ChromeEarlGrey isIPadIdiom]) {
     EARL_GREY_TEST_DISABLED(
         @"Disabled for iPad due to alternate letters educational screen.");
-  }
-
-  // TODO(crbug.com/1315304): Reenable.
-  if ([ChromeEarlGrey isNewOmniboxPopupEnabled]) {
-    EARL_GREY_TEST_DISABLED(@"Disabled for new popup");
   }
 
   [self addURLToHistory];
@@ -162,7 +158,6 @@ GREYElementInteraction* RequestDesktopButton() {
     return self->_visitCounter == visitCountBeforePrerender + 1;
   });
   GREYAssertTrue(prerendered, @"Prerender did not happen");
-
   // Make sure the omnibox is autocompleted.
   [[EarlGrey
       selectElementWithMatcher:grey_allOf(grey_accessibilityLabel(pageString),
@@ -173,19 +168,11 @@ GREYElementInteraction* RequestDesktopButton() {
 
   // Open the suggestion. The suggestion needs to be the first suggestion to
   // have the prerenderer activated.
-  id<GREYMatcher> rowMatcher =
-      [ChromeEarlGrey isNewOmniboxPopupEnabled]
-          ? grey_allOf(
-                grey_accessibilityValue(pageString),
-                grey_ancestor(grey_accessibilityID(@"omnibox suggestion 0 0")),
-                chrome_test_util::OmniboxPopupRow(), grey_sufficientlyVisible(),
-                nil)
-          : grey_allOf(grey_descendant(
-                           chrome_test_util::StaticTextWithAccessibilityLabel(
-                               pageString)),
-                       grey_accessibilityID(@"omnibox suggestion 0 0"),
-                       chrome_test_util::OmniboxPopupRow(),
-                       grey_sufficientlyVisible(), nil);
+  id<GREYMatcher> rowMatcher = grey_allOf(
+      grey_accessibilityValue(pageString),
+      grey_ancestor(grey_accessibilityID(@"omnibox suggestion 0 0")),
+      chrome_test_util::OmniboxPopupRow(), grey_sufficientlyVisible(), nil);
+
   [[EarlGrey selectElementWithMatcher:rowMatcher] performAction:grey_tap()];
 
   [ChromeEarlGrey waitForWebStateContainingText:kPageLoadedString];
@@ -252,79 +239,6 @@ GREYElementInteraction* RequestDesktopButton() {
   // The content of the page can be cached, check the button also.
   [ChromeEarlGreyUI openToolsMenu];
   [RequestDesktopButton() assertWithMatcher:grey_notNil()];
-}
-
-@end
-
-// Test case for the prerender, except new popup flag is enabled.
-@interface NewOmniboxPopupPrerenderTestCase : PrerenderTestCase {
-  // Which variant of the new popup flag to use.
-  std::string _variant;
-}
-
-@end
-
-@implementation NewOmniboxPopupPrerenderTestCase
-
-- (AppLaunchConfiguration)appConfigurationForTestCase {
-  AppLaunchConfiguration config = [super appConfigurationForTestCase];
-
-  config.additional_args.push_back(
-      "--enable-features=" + std::string(kIOSOmniboxUpdatedPopupUI.name) + "<" +
-      std::string(kIOSOmniboxUpdatedPopupUI.name));
-
-  config.additional_args.push_back(
-      "--force-fieldtrials=" + std::string(kIOSOmniboxUpdatedPopupUI.name) +
-      "/Test");
-
-  config.additional_args.push_back(
-      "--force-fieldtrial-params=" +
-      std::string(kIOSOmniboxUpdatedPopupUI.name) + ".Test:" +
-      std::string(kIOSOmniboxUpdatedPopupUIVariationName) + "/" + _variant);
-
-  return config;
-}
-
-@end
-
-// Test case for the prerender, except new popup flag is enabled with variant 1.
-@interface NewOmniboxPopupPrerenderVariant1TestCase
-    : NewOmniboxPopupPrerenderTestCase
-@end
-
-@implementation NewOmniboxPopupPrerenderVariant1TestCase
-
-- (void)setUp {
-  _variant = std::string(kIOSOmniboxUpdatedPopupUIVariation1);
-
-  // |appConfigurationForTestCase| is called during [super setUp], and
-  // depends on _variant.
-  [super setUp];
-}
-
-// This is currently needed to prevent this test case from being ignored.
-- (void)testEmpty {
-}
-
-@end
-
-// Test case for the prerender, except new popup flag is enabled with variant 2.
-@interface NewOmniboxPopupPrerenderVariant2TestCase
-    : NewOmniboxPopupPrerenderTestCase
-@end
-
-@implementation NewOmniboxPopupPrerenderVariant2TestCase
-
-- (void)setUp {
-  _variant = std::string(kIOSOmniboxUpdatedPopupUIVariation2);
-
-  // |appConfigurationForTestCase| is called during [super setUp], and
-  // depends on _variant.
-  [super setUp];
-}
-
-// This is currently needed to prevent this test case from being ignored.
-- (void)testEmpty {
 }
 
 @end

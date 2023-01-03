@@ -1,10 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/apps/digital_goods/digital_goods_impl.h"
 
 #include "chrome/browser/apps/digital_goods/util.h"
+#include "components/digital_goods/mojom/digital_goods.mojom.h"
 #include "content/public/browser/render_frame_host.h"
 
 namespace {

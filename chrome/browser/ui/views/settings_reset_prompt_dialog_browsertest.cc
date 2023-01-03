@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -192,7 +192,7 @@ class SettingsResetPromptDialogCloseTest : public DialogBrowserTest {
   void DismissUi() override { dialog_->Close(); }
 
  private:
-  raw_ptr<SettingsResetPromptDialog> dialog_ = nullptr;
+  raw_ptr<SettingsResetPromptDialog, DanglingUntriaged> dialog_ = nullptr;
 };
 
 IN_PROC_BROWSER_TEST_F(SettingsResetPromptDialogCloseTest,

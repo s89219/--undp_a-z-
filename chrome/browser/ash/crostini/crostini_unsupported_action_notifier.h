@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,7 @@ class CrostiniUnsupportedActionNotifier
     virtual bool IsVirtualKeyboardVisible();
 
     // Shows a toast to the user.
-    virtual void ShowToast(const ash::ToastData& toast_data);
+    virtual void ShowToast(ash::ToastData toast_data);
 
     // Gets a human-friendly name for the given input method descriptor
     // in the current display language.

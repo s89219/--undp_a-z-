@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -124,6 +124,12 @@ bool TaskManagerView::IsColumnVisible(int column_id) const {
 }
 
 void TaskManagerView::SetColumnVisibility(int column_id, bool new_visibility) {
+  // Check if there is at least 1 visible column before changing the visibility.
+  // If this column would be the last column to be visible and its hiding, then
+  // prevent this column visibility change. see crbug.com/1320307 for details.
+  if (!new_visibility && tab_table_->visible_columns().size() <= 1)
+    return;
+
   tab_table_->SetColumnVisibility(column_id, new_visibility);
 }
 
@@ -230,7 +236,8 @@ void TaskManagerView::WindowClosing() {
   table_model_->StoreColumnsSettings();
 }
 
-void TaskManagerView::GetGroupRange(int model_index, views::GroupRange* range) {
+void TaskManagerView::GetGroupRange(size_t model_index,
+                                    views::GroupRange* range) {
   table_model_->GetRowsGroupRange(model_index, &range->start, &range->length);
 }
 
@@ -365,9 +372,10 @@ void TaskManagerView::InitAlwaysOnTopState() {
 }
 
 void TaskManagerView::ActivateSelectedTab() {
-  const int active_row = tab_table_->selection_model().active();
-  if (active_row != ui::ListSelectionModel::kUnselectedIndex)
-    table_model_->ActivateTask(active_row);
+  const absl::optional<size_t> active_row =
+      tab_table_->selection_model().active();
+  if (active_row.has_value())
+    table_model_->ActivateTask(active_row.value());
 }
 
 void TaskManagerView::SelectTaskOfActiveTab(Browser* browser) {
@@ -383,11 +391,9 @@ void TaskManagerView::RetrieveSavedAlwaysOnTopState() {
   if (!g_browser_process->local_state())
     return;
 
-  if (const base::Value* dictionary =
-          g_browser_process->local_state()->GetDictionary(GetWindowName())) {
-    is_always_on_top_ =
-        dictionary->FindBoolKey("always_on_top").value_or(false);
-  }
+  const base::Value::Dict& dictionary =
+      g_browser_process->local_state()->GetDict(GetWindowName());
+  is_always_on_top_ = dictionary.FindBool("always_on_top").value_or(false);
 }
 
 BEGIN_METADATA(TaskManagerView, views::DialogDelegateView)

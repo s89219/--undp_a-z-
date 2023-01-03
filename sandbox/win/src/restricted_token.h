@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright 2010 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -176,13 +176,13 @@ class RestrictedToken {
   // Add a SID to the default DACL. These SIDs are added regardless of the
   // SetLockdownDefaultDacl state.
   DWORD AddDefaultDaclSid(const base::win::Sid& sid,
-                          SecurityAccessMode access_mode,
+                          base::win::SecurityAccessMode access_mode,
                           ACCESS_MASK access);
 
   // Add a SID to the default DACL. These SIDs are added regardless of the
   // SetLockdownDefaultDacl state.
   DWORD AddDefaultDaclSid(base::win::WellKnownSid known_sid,
-                          SecurityAccessMode access_mode,
+                          base::win::SecurityAccessMode access_mode,
                           ACCESS_MASK access);
 
  private:
@@ -191,7 +191,8 @@ class RestrictedToken {
   // The list of sids to mark as Deny Only in the restricted token.
   std::vector<base::win::Sid> sids_for_deny_only_;
   // The list of sids to add to the default DACL of the restricted token.
-  std::vector<std::tuple<base::win::Sid, SecurityAccessMode, ACCESS_MASK>>
+  std::vector<
+      std::tuple<base::win::Sid, base::win::SecurityAccessMode, ACCESS_MASK>>
       sids_for_default_dacl_;
   // The token to restrict. Can only be set in a constructor.
   base::win::ScopedHandle effective_token_;

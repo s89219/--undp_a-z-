@@ -1,15 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.ui.android.webid;
 
-import android.content.Context;
-
 import org.chromium.chrome.browser.ui.android.webid.data.Account;
 import org.chromium.chrome.browser.ui.android.webid.data.ClientIdMetadata;
 import org.chromium.chrome.browser.ui.android.webid.data.IdentityProviderMetadata;
-import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
+import org.chromium.content.webid.IdentityRequestDialogDismissReason;
+import org.chromium.url.GURL;
 
 import java.util.List;
 
@@ -27,27 +26,19 @@ public interface AccountSelectionComponent {
          * Called when the user select one of the accounts shown in the
          * AccountSelectionComponent.
          */
-        void onAccountSelected(Account account);
+        void onAccountSelected(GURL idpConfigUrl, Account account);
 
         /**
          * Called when the user dismisses the AccountSelectionComponent. Not called if a suggestion
          * was selected.
          */
-        void onDismissed(boolean shouldEmbargo);
+        void onDismissed(@IdentityRequestDialogDismissReason int dismissReason);
 
         /**
          * Called when the user cancels auto sign in.
          */
         void onAutoSignInCancelled();
     }
-
-    /**
-     * Initializes the component.
-     * @param context A {@link Context} to create views and retrieve resources.
-     * @param sheetController A {@link BottomSheetController} used to show/hide the sheet.
-     * @param delegate A {@link Delegate} that handles dismiss events.
-     */
-    void initialize(Context context, BottomSheetController sheetController, Delegate delegate);
 
     /**
      * Displays the given accounts in a new bottom sheet.
@@ -63,7 +54,7 @@ public interface AccountSelectionComponent {
             boolean isAutoSignIn);
 
     /**
-     * Hides the outstanding bottom sheet.
+     * Closes the outstanding bottom sheet.
      */
-    void hideBottomSheet();
+    void close();
 }

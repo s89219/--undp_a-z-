@@ -1,10 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "net/cert/internal/system_trust_store.h"
 
-#include "net/cert/internal/parsed_certificate.h"
+#include "net/cert/pki/parsed_certificate.h"
 #include "net/cert/x509_certificate.h"
 #include "net/cert/x509_util.h"
 #include "net/net_buildflags.h"
@@ -19,7 +19,7 @@
 namespace net {
 
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
-#include "net/data/ssl/chrome_root_store/chrome-root-store-test-data-inc.cc"
+#include "net/data/ssl/chrome_root_store/chrome-root-store-test-data-inc.cc"  // nogncheck
 
 TEST(SystemTrustStoreChrome, SystemDistrustOverridesChromeTrust) {
   CertificateList certs = CreateCertificateListFromFile(
@@ -27,7 +27,7 @@ TEST(SystemTrustStoreChrome, SystemDistrustOverridesChromeTrust) {
       "test_store.certs", X509Certificate::FORMAT_PEM_CERT_SEQUENCE);
   ASSERT_GE(certs.size(), 1u);
 
-  scoped_refptr<ParsedCertificate> root = ParsedCertificate::Create(
+  std::shared_ptr<const ParsedCertificate> root = ParsedCertificate::Create(
       bssl::UpRef(certs[0]->cert_buffer()),
       x509_util::DefaultParseCertificateOptions(), nullptr);
   ASSERT_TRUE(root);
@@ -37,7 +37,8 @@ TEST(SystemTrustStoreChrome, SystemDistrustOverridesChromeTrust) {
 
   std::unique_ptr<TrustStoreChrome> test_trust_store_chrome =
       TrustStoreChrome::CreateTrustStoreForTesting(
-          base::span<const ChromeRootCertInfo>(kChromeRootCertList));
+          base::span<const ChromeRootCertInfo>(kChromeRootCertList),
+          /*version=*/1);
 
   std::unique_ptr<SystemTrustStore> system_trust_store_chrome =
       CreateSystemTrustStoreChromeForTesting(

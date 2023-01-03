@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,7 +58,7 @@ public class EditorTextField extends FrameLayout implements EditorFieldView, Vie
 
     public EditorTextField(Context context, final EditorFieldModel fieldModel,
             OnEditorActionListener actionListener, @Nullable InputFilter filter,
-            @Nullable TextWatcher formatter) {
+            @Nullable TextWatcher formatter, boolean focusAndShowKeyboard) {
         super(context);
         assert fieldModel.getInputTypeHint() != EditorFieldModel.INPUT_TYPE_HINT_DROPDOWN;
         mEditorFieldModel = fieldModel;
@@ -120,13 +120,25 @@ public class EditorTextField extends FrameLayout implements EditorFieldView, Vie
         mInput.setOnFocusChangeListener(new OnFocusChangeListener() {
             @Override
             public void onFocusChange(View v, boolean hasFocus) {
-                // Validate the field when the user de-focuses it.
                 if (hasFocus) {
+                    // Show the keyboard based on focusAndShowKeyboard parameter, after receiving
+                    // focus for the first time.
+                    if (focusAndShowKeyboard && !mHasFocusedAtLeastOnce) {
+                        // Set the cursor position to the end of the text in text input
+                        // when autofocused with focusAndShowKeyboard.
+                        mInput.setSelection(mInput.getText().length());
+                        InputMethodManager imm =
+                                (InputMethodManager) v.getContext().getSystemService(
+                                        Context.INPUT_METHOD_SERVICE);
+                        imm.showSoftInput(v, /* flags= */ 0);
+                    }
                     mHasFocusedAtLeastOnce = true;
                 } else if (mHasFocusedAtLeastOnce) {
+                    // Validate the field when the user de-focuses it.
                     // Show no errors until the user has already tried to edit the field once.
                     updateDisplayedError(!mEditorFieldModel.isValid());
                 }
+
                 if (mEditorFieldModel.hasLengthCounter()) {
                     mInputLayout.setCounterEnabled(hasFocus);
                 }
@@ -200,6 +212,10 @@ public class EditorTextField extends FrameLayout implements EditorFieldView, Vie
                 // Show the keyboard with numbers and phone-related symbols.
                 mInput.setInputType(InputType.TYPE_CLASS_PHONE);
                 break;
+            case EditorFieldModel.INPUT_TYPE_HINT_NUMERIC:
+                // Show the keyboard with only numbers.
+                mInput.setInputType(InputType.TYPE_CLASS_NUMBER);
+                break;
             case EditorFieldModel.INPUT_TYPE_HINT_EMAIL:
                 mInput.setInputType(
                         InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
@@ -224,10 +240,30 @@ public class EditorTextField extends FrameLayout implements EditorFieldView, Vie
                         | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
                         | InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS);
                 break;
+            case EditorFieldModel.INPUT_TYPE_HINT_PASSWORD:
+                // Password field with an option to toggle the visibility
+                mInput.setInputType(
+                        InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+                mInputLayout.setPasswordVisibilityToggleEnabled(true);
+                break;
+            case EditorFieldModel.INPUT_TYPE_HINT_NUMERIC_PIN:
+                // Numeric pin field with an option to toggle the visibility
+                mInput.setInputType(
+                        InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_VARIATION_PASSWORD);
+                mInputLayout.setPasswordVisibilityToggleEnabled(true);
+                break;
             default:
                 mInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS
                         | InputType.TYPE_TEXT_VARIATION_POSTAL_ADDRESS);
                 break;
+        }
+
+        // Request focus and show soft input keyboard based on the |focusAndShowKeyboard| parameter.
+        if (focusAndShowKeyboard) {
+            mInput.post(mInput::requestFocus);
+            // The keyboard will be shown in the onFocusChanged listener of mInput as the
+            // InputMethodManager instance requires the view to be focused for the showSoftInput
+            // to work.
         }
     }
 

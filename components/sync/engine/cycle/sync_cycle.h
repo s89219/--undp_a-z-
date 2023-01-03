@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,10 +68,6 @@ class SyncCycle {
     // Called for the syncer to respond to the error sent by the server.
     virtual void OnSyncProtocolError(
         const SyncProtocolError& sync_protocol_error) = 0;
-
-    // Called when the server wants to change the number of hints the client
-    // will buffer locally.
-    virtual void OnReceivedClientInvalidationHintBufferSize(int size) = 0;
 
     // Called when server wants to schedule a retry GU.
     virtual void OnReceivedGuRetryDelay(const base::TimeDelta& delay) = 0;

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,15 +8,15 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/android/android_theme_resources.h"
 #include "chrome/browser/android/resource_mapper.h"
 #include "chrome/browser/download/android/download_dialog_utils.h"
 #include "chrome/browser/download/android/jni_headers/DangerousDownloadDialogBridge_jni.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/generated_resources.h"
-#include "content/public/browser/download_item_utils.h"
 #include "ui/android/window_android.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -38,9 +38,8 @@ DangerousDownloadDialogBridge::~DangerousDownloadDialogBridge() {
 
 void DangerousDownloadDialogBridge::Show(download::DownloadItem* download_item,
                                          ui::WindowAndroid* window_android) {
-  // Don't shown dangerous download again if it is already showing.
-  if (std::find(download_items_.begin(), download_items_.end(),
-                download_item) != download_items_.end()) {
+  // Don't show dangerous download again if it is already showing.
+  if (base::Contains(download_items_, download_item)) {
     return;
   }
   if (!window_android) {
@@ -52,11 +51,6 @@ void DangerousDownloadDialogBridge::Show(download::DownloadItem* download_item,
 
   JNIEnv* env = base::android::AttachCurrentThread();
 
-  content::BrowserContext* browser_context =
-      content::DownloadItemUtils::GetBrowserContext(download_item);
-  bool isOffTheRecord =
-      Profile::FromBrowserContext(browser_context)->IsOffTheRecord();
-
   Java_DangerousDownloadDialogBridge_showDialog(
       env, java_object_, window_android->GetJavaObject(),
       base::android::ConvertUTF8ToJavaString(env, download_item->GetGuid()),
@@ -64,14 +58,12 @@ void DangerousDownloadDialogBridge::Show(download::DownloadItem* download_item,
           env,
           base::UTF8ToUTF16(download_item->GetFileNameToReportUser().value())),
       download_item->GetTotalBytes(),
-      ResourceMapper::MapToJavaDrawableId(IDR_ANDROID_INFOBAR_WARNING),
-      isOffTheRecord);
+      ResourceMapper::MapToJavaDrawableId(IDR_ANDROID_INFOBAR_WARNING));
 }
 
 void DangerousDownloadDialogBridge::OnDownloadDestroyed(
     download::DownloadItem* download_item) {
-  auto iter =
-      std::find(download_items_.begin(), download_items_.end(), download_item);
+  auto iter = base::ranges::find(download_items_, download_item);
   if (iter != download_items_.end())
     download_items_.erase(iter);
 }

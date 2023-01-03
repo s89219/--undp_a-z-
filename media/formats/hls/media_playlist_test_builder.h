@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,15 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/location.h"
+#include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
 #include "media/formats/hls/media_playlist.h"
 #include "media/formats/hls/media_segment.h"
 #include "media/formats/hls/playlist_test_builder.h"
+#include "media/formats/hls/test_util.h"
+#include "media/formats/hls/types.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace media::hls {
 
@@ -72,7 +77,7 @@ class MediaPlaylistTestBuilder : public PlaylistTestBuilder<MediaPlaylist> {
   void VerifyExpectations(const MediaPlaylist& playlist,
                           const base::Location& from) const override;
 
-  const MultivariantPlaylist* parent_ = nullptr;
+  raw_ptr<const MultivariantPlaylist> parent_ = nullptr;
   std::vector<SegmentExpectations> segment_expectations_;
 };
 
@@ -87,14 +92,100 @@ inline void HasType(absl::optional<PlaylistType> type,
 inline void HasTargetDuration(base::TimeDelta value,
                               const base::Location& from,
                               const MediaPlaylist& playlist) {
-  EXPECT_EQ(playlist.GetTargetDuration(), value) << from.ToString();
+  EXPECT_TRUE(RoughlyEqual(playlist.GetTargetDuration(), value))
+      << from.ToString();
+}
+
+// Checks that the value of `GetComputedDuration()` matches the given value.
+inline void HasComputedDuration(base::TimeDelta value,
+                                const base::Location& from,
+                                const MediaPlaylist& playlist) {
+  EXPECT_TRUE(RoughlyEqual(playlist.GetComputedDuration(), value))
+      << from.ToString();
+}
+
+// Checks that the value of `GetPartialSegmentInfo()` matches the given value.
+inline void HasPartialSegmentInfo(
+    absl::optional<MediaPlaylist::PartialSegmentInfo> partial_segment_info,
+    const base::Location& from,
+    const MediaPlaylist& playlist) {
+  ASSERT_EQ(partial_segment_info.has_value(),
+            playlist.GetPartialSegmentInfo().has_value())
+      << from.ToString();
+  if (partial_segment_info.has_value()) {
+    EXPECT_TRUE(RoughlyEqual(partial_segment_info->target_duration,
+                             playlist.GetPartialSegmentInfo()->target_duration))
+        << from.ToString();
+  }
+}
+
+// Checks the media playlist's `HasMediaSequenceTag` property against
+// the given value.
+inline void HasMediaSequenceTag(bool value,
+                                const base::Location& from,
+                                const MediaPlaylist& playlist) {
+  EXPECT_EQ(playlist.HasMediaSequenceTag(), value) << from.ToString();
+}
+
+// Checks that the value of `GetSkipBoundary()` matches the given value.
+inline void HasSkipBoundary(absl::optional<base::TimeDelta> value,
+                            const base::Location& from,
+                            const MediaPlaylist& playlist) {
+  EXPECT_TRUE(RoughlyEqual(playlist.GetSkipBoundary(), value))
+      << from.ToString();
+}
+
+// Checks that the value of `CanSkipDateRanges()` matches the given value.
+inline void CanSkipDateRanges(bool value,
+                              const base::Location& from,
+                              const MediaPlaylist& playlist) {
+  EXPECT_EQ(playlist.CanSkipDateRanges(), value) << from.ToString();
+}
+
+// Checks that the value of `GetHoldBackDistance()` matches the given value.
+inline void HasHoldBackDistance(base::TimeDelta value,
+                                const base::Location& from,
+                                const MediaPlaylist& playlist) {
+  EXPECT_TRUE(RoughlyEqual(playlist.GetHoldBackDistance(), value))
+      << from.ToString();
+}
+
+// Checks that the value of `GetPartHoldBackDistance()` matches the given value.
+inline void HasPartHoldBackDistance(absl::optional<base::TimeDelta> value,
+                                    const base::Location& from,
+                                    const MediaPlaylist& playlist) {
+  EXPECT_TRUE(RoughlyEqual(playlist.GetPartHoldBackDistance(), value))
+      << from.ToString();
+}
+
+// Checks that the value of `CanBlockReload()` matches the given value.
+inline void CanBlockReload(bool value,
+                           const base::Location& from,
+                           const MediaPlaylist& playlist) {
+  EXPECT_EQ(playlist.CanBlockReload(), value) << from.ToString();
 }
 
 // Checks that the latest media segment has the given duration.
-inline void HasDuration(types::DecimalFloatingPoint duration,
+inline void HasDuration(base::TimeDelta duration,
                         const base::Location& from,
                         const MediaSegment& segment) {
-  EXPECT_DOUBLE_EQ(segment.GetDuration(), duration) << from.ToString();
+  EXPECT_TRUE(RoughlyEqual(segment.GetDuration(), duration)) << from.ToString();
+}
+
+// Checks that the latest media segment has the given media sequence number.
+inline void HasMediaSequenceNumber(types::DecimalInteger number,
+                                   const base::Location& from,
+                                   const MediaSegment& segment) {
+  EXPECT_EQ(segment.GetMediaSequenceNumber(), number) << from.ToString();
+}
+
+// Checks that the latest media segment has the given discontinuity sequence
+// number.
+inline void HasDiscontinuitySequenceNumber(types::DecimalInteger number,
+                                           const base::Location& from,
+                                           const MediaSegment& segment) {
+  EXPECT_EQ(segment.GetDiscontinuitySequenceNumber(), number)
+      << from.ToString();
 }
 
 // Checks that the latest media segment has the given URI.
@@ -102,6 +193,59 @@ inline void HasUri(GURL uri,
                    const base::Location& from,
                    const MediaSegment& segment) {
   EXPECT_EQ(segment.GetUri(), uri) << from.ToString();
+}
+
+// Checks that the latest media segment's media initialization segment is
+// equivalent to the given value.
+inline void HasInitializationSegment(
+    scoped_refptr<MediaSegment::InitializationSegment> expected,
+    const base::Location& from,
+    const MediaSegment& segment) {
+  auto actual = segment.GetInitializationSegment();
+  if (actual && expected) {
+    EXPECT_EQ(actual->GetUri(), expected->GetUri()) << from.ToString();
+
+    if (actual->GetByteRange() && expected->GetByteRange()) {
+      EXPECT_EQ(actual->GetByteRange()->GetOffset(),
+                expected->GetByteRange()->GetOffset())
+          << from.ToString();
+      EXPECT_EQ(actual->GetByteRange()->GetLength(),
+                expected->GetByteRange()->GetLength())
+          << from.ToString();
+      EXPECT_EQ(actual->GetByteRange()->GetEnd(),
+                expected->GetByteRange()->GetEnd())
+          << from.ToString();
+    } else {
+      EXPECT_FALSE(actual->GetByteRange() || expected->GetByteRange())
+          << from.ToString();
+    }
+  } else {
+    EXPECT_FALSE(actual || expected) << from.ToString();
+  }
+}
+
+// Checks that the latest media segment has the given byte range.
+inline void HasByteRange(absl::optional<types::ByteRange> range,
+                         const base::Location& from,
+                         const MediaSegment& segment) {
+  ASSERT_EQ(segment.GetByteRange().has_value(), range.has_value())
+      << from.ToString();
+  if (range.has_value()) {
+    EXPECT_EQ(segment.GetByteRange()->GetOffset(), range->GetOffset())
+        << from.ToString();
+    EXPECT_EQ(segment.GetByteRange()->GetLength(), range->GetLength())
+        << from.ToString();
+    EXPECT_EQ(segment.GetByteRange()->GetEnd(), range->GetEnd())
+        << from.ToString();
+  }
+}
+
+// Checks the latest media segment's `GetBitRate` property against the given
+// value.
+inline void HasBitRate(absl::optional<types::DecimalInteger> bitrate,
+                       const base::Location& from,
+                       const MediaSegment& segment) {
+  EXPECT_EQ(segment.GetBitRate(), bitrate);
 }
 
 // Checks the latest media segment's `HasDiscontinuity` property against the
@@ -117,6 +261,20 @@ inline void IsGap(bool value,
                   const base::Location& from,
                   const MediaSegment& segment) {
   EXPECT_EQ(segment.IsGap(), value) << from.ToString();
+}
+
+// Checks the value of `IsEndList` against the given value.
+inline void IsEndList(bool value,
+                      const base::Location& from,
+                      const MediaPlaylist& playlist) {
+  EXPECT_EQ(playlist.IsEndList(), value) << from.ToString();
+}
+
+// Checks the value of `IsIFramesOnly` against the given value.
+inline void IsIFramesOnly(bool value,
+                          const base::Location& from,
+                          const MediaPlaylist& playlist) {
+  EXPECT_EQ(playlist.IsIFramesOnly(), value) << from.ToString();
 }
 
 }  // namespace media::hls

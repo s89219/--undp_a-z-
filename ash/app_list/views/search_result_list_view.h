@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "ash/app_list/views/search_result_view.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
 #include "base/memory/weak_ptr.h"
-#include "base/timer/timer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/views/view.h"
 
@@ -28,7 +27,6 @@ namespace test {
 class SearchResultListViewTest;
 }
 
-class AppListMainView;
 class AppListViewDelegate;
 class SearchResultPageDialogController;
 
@@ -37,10 +35,6 @@ class SearchResultPageDialogController;
 class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
  public:
   enum class SearchResultListType {
-    // kUnified list view contains all search results with the display type
-    // SearchResultDisplayType::kList. No category labels are shown. This should
-    // be used when productivity launcher is disabled.
-    kUnified,
     // kAnswerCard list view contains a single result that has an extremely high
     // chance of being exactly what the user is looking for.
     kAnswerCard,
@@ -77,7 +71,6 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   };
 
   SearchResultListView(
-      AppListMainView* main_view,
       AppListViewDelegate* view_delegate,
       SearchResultPageDialogController* dialog_controller,
       SearchResultView::SearchResultViewType search_result_view_type,
@@ -107,6 +100,8 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   SearchResultView* GetResultViewAt(size_t index) override;
   absl::optional<ResultsAnimationInfo> ScheduleResultAnimations(
       const ResultsAnimationInfo& aggregate_animation_info) override;
+  void AppendShownResultMetadata(
+      std::vector<SearchResultAimationMetadata>* result_metadata_) override;
   bool HasAnimatingChildView() override;
 
   // Fades the view in and animates a vertical transform based on the view's
@@ -115,8 +110,6 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   void ShowViewWithAnimation(views::View* view,
                              int position,
                              bool use_short_animations);
-
-  AppListMainView* app_list_main_view() const { return main_view_; }
 
   // Gets all the SearchResultListTypes that should be used when categorical
   // search is enabled.
@@ -133,22 +126,12 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   friend class test::SearchResultListViewTest;
 
   // Overridden from SearchResultContainerView:
+  void OnSelectedResultChanged() override;
   int DoUpdate() override;
 
   // Overridden from views::View:
   void Layout() override;
   int GetHeightForWidth(int w) const override;
-  void OnThemeChanged() override;
-
-  // Logs the set of recommendations (impressions) that were shown to the user
-  // after a period of time.
-  void LogImpressions();
-
-  // Returns search results specific to Assistant if any are available.
-  std::vector<SearchResult*> GetAssistantResults();
-
-  // Returns regular search results with Assistant search results appended.
-  std::vector<SearchResult*> GetUnifiedSearchResults();
 
   // Fetches the category of results this view should show.
   SearchResult::Category GetSearchCategory();
@@ -159,13 +142,6 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   // Updates the set of results shown in this result list.
   std::vector<SearchResult*> UpdateResultViews();
 
-  // A filter that returns whether a search result should be shown in the
-  // unified search result list.
-  // `for_assistant_results` - When true only assistant results will be
-  // included. When false assistant results are not included.
-  bool FilterResultsForUnifiedList(bool for_assistant_results,
-                                   const SearchResult& result) const;
-
   // A filter that returns whether a search result should be shown in the best
   // matches container.
   bool FilterBestMatches(const SearchResult& result) const;
@@ -175,7 +151,6 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
   bool FilterSearchResultsByCategory(const SearchResult::Category& category,
                                      const SearchResult& result) const;
 
-  AppListMainView* main_view_;          // Owned by views hierarchy.
   AppListViewDelegate* view_delegate_;  // Not owned.
 
   // Whether the result updates will be animated. If set,
@@ -189,10 +164,8 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
 
   // The SearchResultListViewType dictates what kinds of results will be shown.
   absl::optional<SearchResultListType> list_type_ =
-      SearchResultListType::kUnified;
+      SearchResultListType::kBestMatch;
   views::Label* title_label_ = nullptr;  // Owned by view hierarchy.
-  // Used for logging impressions shown to users.
-  base::OneShotTimer impression_timer_;
 
   // The search result list view's location in the
   // productivity_launcher_search_view_'s list of 'search_result_list_view_'.
@@ -215,11 +188,6 @@ class ASH_EXPORT SearchResultListView : public SearchResultContainerView {
 
   // The number of results shown by the list view.
   size_t num_results_ = 0;
-
-  // The most recent container's index within the search UI - the index
-  // indicates the number of result and title views that appear before this
-  // container.
-  int last_container_start_index_ = -1;
 };
 
 }  // namespace ash

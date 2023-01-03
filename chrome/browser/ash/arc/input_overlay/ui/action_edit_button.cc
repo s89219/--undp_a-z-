@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,13 @@
 #include "ash/style/style_util.h"
 #include "chrome/browser/ash/arc/input_overlay/ui/action_view.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/color/color_id.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/highlight_path_generator.h"
 
-namespace arc {
-namespace input_overlay {
+namespace arc::input_overlay {
 namespace {
 // UI specs.
 constexpr SkColor kBackgroundColor = gfx::kGoogleGrey200;
@@ -62,8 +62,7 @@ ActionEditButton::ActionEditButton(PressedCallback callback)
   DCHECK(color_provider);
   if (!focus_ring || !color_provider)
     return;
-  focus_ring->SetColor(color_provider->GetControlsLayerColor(
-      ash::AshColorProvider::ControlsLayerType::kFocusRingColor));
+  focus_ring->SetColorId(ui::kColorAshFocusRing);
   focus_ring->SetHaloThickness(kFocusRingStrokeWidth);
   focus_ring->SetPathGenerator(
       std::make_unique<views::CircleHighlightPathGenerator>(gfx::Insets(0)));
@@ -71,5 +70,4 @@ ActionEditButton::ActionEditButton(PressedCallback callback)
 
 ActionEditButton::~ActionEditButton() = default;
 
-}  // namespace input_overlay
-}  // namespace arc
+}  // namespace arc::input_overlay

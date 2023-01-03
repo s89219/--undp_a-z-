@@ -1,9 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/browser/attribution_reporting/attribution_parser_test_utils.h"
 
+#include <memory>
 #include <ostream>
 
 #include "base/strings/string_piece.h"
@@ -19,11 +20,11 @@ AttributionParserErrorManager::~AttributionParserErrorManager() = default;
 AttributionParserErrorManager::ScopedContext::ScopedContext(ContextPath& path,
                                                             Context context)
     : path_(path) {
-  path_.push_back(context);
+  path_->push_back(context);
 }
 
 AttributionParserErrorManager::ScopedContext::~ScopedContext() {
-  path_.pop_back();
+  path_->pop_back();
 }
 
 AttributionParserErrorManager::ErrorWriter::ErrorWriter(std::ostream& stream)
@@ -46,9 +47,9 @@ void AttributionParserErrorManager::ErrorWriter::operator()(size_t index) {
   stream_ << '[' << index << ']';
 }
 
-AttributionParserErrorManager::ScopedContext
+std::unique_ptr<AttributionParserErrorManager::ScopedContext>
 AttributionParserErrorManager::PushContext(Context context) {
-  return ScopedContext(context_path_, context);
+  return std::make_unique<ScopedContext>(context_path_, context);
 }
 
 AttributionParserErrorManager::ErrorWriter
@@ -56,14 +57,14 @@ AttributionParserErrorManager::Error() {
   has_error_ = true;
 
   if (context_path_.empty())
-    error_stream_ << "input root";
+    *error_stream_ << "input root";
 
-  ErrorWriter writer(error_stream_);
+  ErrorWriter writer(*error_stream_);
   for (Context context : context_path_) {
     absl::visit(writer, context);
   }
 
-  error_stream_ << ": ";
+  *error_stream_ << ": ";
   return writer;
 }
 

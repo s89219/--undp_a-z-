@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,7 +86,7 @@ class PrintJobsCleanupHandlerUnittest : public testing::Test {
     // Set up `MockPrintingManager`.
     print_job_manager_ =
         std::make_unique<ash::TestCupsPrintJobManager>(testing_profile_);
-    auto print_job_database = std::make_unique<TestPrintJobDatabase>();
+    auto print_job_database = std::make_unique<ash::TestPrintJobDatabase>();
     print_job_history_service_ =
         std::make_unique<ash::PrintJobHistoryServiceImpl>(
             std::move(print_job_database), print_job_manager_.get(),

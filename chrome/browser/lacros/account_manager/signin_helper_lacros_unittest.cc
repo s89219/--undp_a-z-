@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,8 @@
 #include <string>
 
 #include "base/containers/flat_set.h"
+#include "base/memory/raw_ptr.h"
 #include "base/test/mock_callback.h"
-#include "base/test/scoped_feature_list.h"
-#include "base/test/task_environment.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/lacros/account_manager/account_profile_mapper.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
@@ -26,12 +25,14 @@
 #include "components/signin/core/browser/account_reconcilor_delegate.h"
 #include "components/signin/core/browser/consistency_cookie_manager.h"
 #include "components/signin/core/browser/mirror_landing_account_reconcilor_delegate.h"
-#include "components/signin/public/base/signin_switches.h"
+#include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/base/test_signin_client.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
 #include "components/signin/public/identity_manager/set_accounts_in_cookie_result.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
+#include "content/public/test/browser_task_environment.h"
+#include "google_apis/gaia/core_account_id.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "services/network/test/test_cookie_manager.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -58,16 +59,22 @@ class MockCookieManager
 
 class TestAccountReconcilor : public AccountReconcilor {
  public:
-  TestAccountReconcilor(signin::IdentityManager* identity_manager,
-                        SigninClient* client)
+  TestAccountReconcilor(
+      signin::IdentityManager* identity_manager,
+      SigninClient* client,
+      account_manager::AccountManagerFacade* account_manager_facade)
       : AccountReconcilor(
             identity_manager,
             client,
-            std::make_unique<
-                signin::MirrorLandingAccountReconcilorDelegate>()) {}
+            account_manager_facade,
+            std::make_unique<signin::MirrorLandingAccountReconcilorDelegate>(
+                identity_manager,
+                client->GetInitialPrimaryAccount().has_value())) {}
 
-  void SimulateSetCookiesFinished() {
-    OnSetAccountsInCookieCompleted(signin::SetAccountsInCookieResult::kSuccess);
+  void SimulateSetCookiesFinished(
+      const std::vector<CoreAccountId>& accounts_to_send) {
+    OnSetAccountsInCookieCompleted(accounts_to_send,
+                                   signin::SetAccountsInCookieResult::kSuccess);
   }
 };
 
@@ -164,12 +171,15 @@ class SigninHelperLacrosTest : public testing::Test {
   const base::FilePath& profile_path() const { return profile_path_; }
 
   void WaitForConsistentReconcilorState() {
-    while (reconcilor_.GetState() != signin_metrics::ACCOUNT_RECONCILOR_OK)
+    while (reconcilor_.GetState() !=
+           signin_metrics::AccountReconcilorState::kOk) {
       base::RunLoop().RunUntilIdle();
+    }
   }
 
-  void SimulateSetCookiesFinished() {
-    reconcilor_.SimulateSetCookiesFinished();
+  void SimulateSetCookiesFinished(
+      const std::vector<CoreAccountId>& accounts_to_send) {
+    reconcilor_.SimulateSetCookiesFinished(accounts_to_send);
   }
 
   ProfileAttributesStorage* storage() {
@@ -187,10 +197,7 @@ class SigninHelperLacrosTest : public testing::Test {
   }
 
  private:
-  base::test::ScopedFeatureList feature_list_{
-      switches::kLacrosNonSyncingProfiles};
-
-  base::test::TaskEnvironment task_environment;
+  content::BrowserTaskEnvironment task_environment;
   account_manager::MockAccountManagerFacade mock_facade_;
   sync_preferences::TestingPrefServiceSyncable prefs_;
   base::FilePath profile_path_;
@@ -206,9 +213,10 @@ class SigninHelperLacrosTest : public testing::Test {
       signin::AccountConsistencyMethod::kDisabled, &signin_client_};
 
   TestAccountReconcilor reconcilor_{identity_test_env_.identity_manager(),
-                                    &signin_client_};
+                                    &signin_client_, &mock_facade_};
 
-  MockCookieManager* cookie_manager_ = nullptr;  // Owned by `signin_client_`.
+  raw_ptr<MockCookieManager> cookie_manager_ =
+      nullptr;  // Owned by `signin_client_`.
 };
 
 // Checks that creating a deleting the helper updates the cookie and that the
@@ -286,7 +294,9 @@ TEST_F(SigninHelperLacrosTest, NoAccountAvailable) {
 
   // The `AccountReconcilor` stops running, cookie is reset.
   ExpectCookieSet("Consistent");
-  SimulateSetCookiesFinished();
+  SimulateSetCookiesFinished(
+      /*accounts_to_send=*/std::vector<CoreAccountId>{
+          CoreAccountId::FromGaiaId(gaia_id)});
 
   testing::Mock::VerifyAndClearExpectations(cookie_manager());
   testing::Mock::VerifyAndClearExpectations(&helper_complete);

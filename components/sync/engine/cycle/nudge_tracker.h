@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,10 +17,6 @@
 #include "components/sync/engine/cycle/data_type_tracker.h"
 #include "components/sync/protocol/sync_enums.pb.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-
-namespace sync_pb {
-class DataTypeProgressMarker;
-}  // namespace sync_pb
 
 namespace syncer {
 
@@ -58,7 +54,9 @@ class NudgeTracker {
 
   // Tells this class that all required update fetching or committing has
   // completed successfully, as the result of a "normal" sync cycle.
-  void RecordSuccessfulSyncCycle(ModelTypeSet types);
+  // Any blocked model types will ignore this, but non-blocked types and the
+  // overall state will still get updated.
+  void RecordSuccessfulSyncCycleIfNotBlocked(ModelTypeSet types);
 
   // Tells this class that the initial sync has happened for the given |types|,
   // generally due to a "configuration" cycle.
@@ -74,9 +72,7 @@ class NudgeTracker {
 
   // Takes note of the receipt of an invalidation notice from the server.
   // Returns the nudge delay for a remote invalidation.
-  base::TimeDelta RecordRemoteInvalidation(
-      ModelType type,
-      std::unique_ptr<SyncInvalidation> invalidation);
+  base::TimeDelta GetRemoteInvalidationDelay(ModelType type) const;
 
   // Take note that an initial sync is pending for this type.
   void RecordInitialSyncRequired(ModelType type);
@@ -102,6 +98,9 @@ class NudgeTracker {
 
   // Removes any throttling and backoff that have expired.
   void UpdateTypeThrottlingAndBackoffState();
+
+  void SetHasPendingInvalidations(ModelType type,
+                                  bool has_pending_invalidations);
 
   // Returns the time of the next type unthrottling or unbackoff.
   base::TimeDelta GetTimeUntilNextUnblock() const;
@@ -138,18 +137,8 @@ class NudgeTracker {
   // information into the GetUpdate request before sending it off to the server.
   void FillProtoMessage(ModelType type, sync_pb::GetUpdateTriggers* msg) const;
 
-  // Fills a ProgressMarker with single legacy notification hint expected by the
-  // sync server.  Newer servers will rely on the data set by FillProtoMessage()
-  // instead of this.
-  void SetLegacyNotificationHint(
-      ModelType type,
-      sync_pb::DataTypeProgressMarker* progress) const;
-
   // Flips the flag if we're due for a retry.
   void SetSyncCycleStartTime(base::TimeTicks now);
-
-  // Adjusts the number of hints that can be stored locally.
-  void SetHintBufferSize(size_t size);
 
   // Schedules a retry GetUpdate request for some time in the future.
   //

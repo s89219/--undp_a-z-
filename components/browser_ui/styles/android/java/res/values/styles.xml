@@ -1,30 +1,33 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2019 The Chromium Authors. All rights reserved.
-     Use of this source code is governed by a BSD-style license that can be
-     found in the LICENSE file. -->
+<!--
+Copyright 2019 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
 
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Control styles -->
     <style name="Widget.BrowserUI.CheckBox" parent="Widget.Material3.CompoundButton.CheckBox">
-        <item name="buttonTint">@color/selection_control_button_tint</item>
+        <item name="buttonTint">@color/selection_control_button_tint_list</item>
         <item name="android:minWidth">0dp</item>
         <item name="android:minHeight">0dp</item>
         <item name="android:textAppearance">@style/TextAppearance.TextMedium.Primary</item>
     </style>
     <style name="Widget.BrowserUI.RadioButton" parent="Widget.Material3.CompoundButton.RadioButton">
-        <item name="buttonTint">@color/selection_control_button_tint</item>
+        <item name="buttonTint">@color/selection_control_button_tint_list</item>
         <item name="android:minWidth">0dp</item>
         <item name="android:minHeight">0dp</item>
         <item name="android:textAppearance">@style/TextAppearance.TextMedium.Primary</item>
     </style>
     <style name="Widget.BrowserUI.Switch" parent="Widget.MaterialComponents.CompoundButton.Switch">
-        <item name="thumbTint">@color/switch_thumb_tint</item>
+        <item name="thumbTint">@color/switch_thumb_tint_list</item>
         <item name="trackTint">@color/switch_track_tint</item>
         <item name="trackTintMode">src_in</item>
     </style>
     <style name="Widget.BrowserUI.Switch.Incognito" parent="Widget.MaterialComponents.CompoundButton.Switch">
-        <item name="thumbTint">@color/switch_thumb_tint_incognito</item>
-        <item name="trackTint">@color/switch_track_tint_incognito</item>
+        <item name="thumbTint">@color/switch_thumb_tint_incognito_baseline_list</item>
+        <item name="trackTint">@color/switch_track_tint_incognito_baseline_list</item>
+
     </style>
     <!-- TextInputLayout style -->
     <style name="Widget.BrowserUI.TextInputLayout" parent="Widget.Design.TextInputLayout">
@@ -101,11 +104,14 @@
         <item name="android:paddingStart">16dp</item>
     </style>
 
-    <style name="ModernToolbar" parent="Widget.MaterialComponents.Toolbar">
+    <style name="ModernToolbar" parent="Base.ModernToolbar">
+    <item name="android:background">@macro/default_bg_color</item>
+    </style>
+
+    <style name="Base.ModernToolbar" parent="Widget.MaterialComponents.Toolbar">
         <item name="titleTextAppearance">@style/TextAppearance.Headline.Primary</item>
         <item name="titleTextColor">@macro/default_text_color</item>
         <item name="windowActionBarOverlay">true</item>
-        <item name="android:background">@macro/default_bg_color</item>
     </style>
 
     <style name="TextButton.OnAccent1" tools:ignore="UnusedResources">
@@ -158,9 +164,6 @@
     </style>
 
     <!-- Accent1 text styles -->
-    <style name="TextAppearance.TextLarge.Accent1">
-        <item name="android:textColor">@color/default_text_color_accent1_tint_list</item>
-    </style>
     <style name="TextAppearance.TextMedium.Accent1">
         <item name="android:textColor">@color/default_text_color_accent1_tint_list</item>
     </style>
@@ -198,10 +201,10 @@
 
     <!-- Chip Text Styles -->
     <style name="TextAppearance.ChipText" parent="TextAppearance.TextAccentMediumThick">
-        <item name="android:textColor">@color/chip_text_color_secondary</item>
+        <item name="android:textColor">@color/chip_text_color_secondary_list</item>
     </style>
     <style name="TextAppearance.ChipHint" parent="TextAppearance.TextAccentMediumThick">
-        <item name="android:textColor">@color/chip_text_color_secondary</item>
+        <item name="android:textColor">@color/chip_text_color_secondary_list</item>
     </style>
 
     <!-- Other text styles -->

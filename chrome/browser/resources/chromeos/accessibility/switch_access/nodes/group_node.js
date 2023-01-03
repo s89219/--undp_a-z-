@@ -1,11 +1,13 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {Navigator} from '/switch_access/navigator.js';
-import {BackButtonNode} from '/switch_access/nodes/back_button_node.js';
-import {SAChildNode, SARootNode} from '/switch_access/nodes/switch_access_node.js';
-import {SAConstants, SwitchAccessMenuAction} from '/switch_access/switch_access_constants.js';
+import {RectUtil} from '../../common/rect_util.js';
+import {Navigator} from '../navigator.js';
+import {SAConstants, SwitchAccessMenuAction} from '../switch_access_constants.js';
+
+import {BackButtonNode} from './back_button_node.js';
+import {SAChildNode, SARootNode} from './switch_access_node.js';
 
 const AutomationNode = chrome.automation.AutomationNode;
 

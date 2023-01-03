@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,10 @@
 #define ASH_SYSTEM_PHONEHUB_CAMERA_ROLL_THUMBNAIL_H_
 
 #include "ash/ash_export.h"
-#include "ash/components/phonehub/camera_roll_item.h"
 #include "ash/system/phonehub/camera_roll_menu_model.h"
 #include "ash/system/phonehub/phone_hub_metrics.h"
+#include "chromeos/ash/components/phonehub/camera_roll_item.h"
+#include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/context_menu_controller.h"
@@ -22,9 +23,10 @@ class CameraRollManager;
 class UserActionRecorder;
 }  // namespace phonehub
 
-class ASH_EXPORT CameraRollThumbnail : public views::ContextMenuController,
-                                       public views::MenuButton {
+class ASH_EXPORT CameraRollThumbnail : public views::MenuButton,
+                                       public views::ContextMenuController {
  public:
+  METADATA_HEADER(CameraRollThumbnail);
   CameraRollThumbnail(const int index,
                       const phonehub::CameraRollItem& item,
                       phonehub::CameraRollManager* camera_roll_manager,
@@ -40,7 +42,6 @@ class ASH_EXPORT CameraRollThumbnail : public views::ContextMenuController,
 
   // views::MenuButton:
   void PaintButtonContents(gfx::Canvas* canvas) override;
-  const char* GetClassName() const override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(CameraRollViewTest, ImageThumbnail);

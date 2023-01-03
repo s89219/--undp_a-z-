@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,20 +8,20 @@
 #include <utility>
 #include <vector>
 
-#include "ash/services/chromebox_for_meetings/public/cpp/fake_service_connection.h"
-#include "ash/services/chromebox_for_meetings/public/cpp/fake_service_context.h"
-#include "ash/services/chromebox_for_meetings/public/cpp/service_connection.h"
-#include "ash/services/chromebox_for_meetings/public/mojom/cfm_service_manager.mojom.h"
-#include "ash/services/chromebox_for_meetings/public/mojom/meet_devices_logger.mojom-shared.h"
-#include "ash/services/chromebox_for_meetings/public/mojom/meet_devices_logger.mojom.h"
 #include "base/bind.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "chromeos/ash/components/chromebox_for_meetings/features.h"
 #include "chromeos/ash/components/dbus/chromebox_for_meetings/fake_cfm_hotline_client.h"
-#include "chromeos/components/chromebox_for_meetings/features/features.h"
+#include "chromeos/ash/services/chromebox_for_meetings/public/cpp/fake_service_connection.h"
+#include "chromeos/ash/services/chromebox_for_meetings/public/cpp/fake_service_context.h"
+#include "chromeos/ash/services/chromebox_for_meetings/public/cpp/service_connection.h"
+#include "chromeos/ash/services/chromebox_for_meetings/public/mojom/cfm_service_manager.mojom.h"
+#include "chromeos/ash/services/chromebox_for_meetings/public/mojom/meet_devices_logger.mojom-shared.h"
+#include "chromeos/ash/services/chromebox_for_meetings/public/mojom/meet_devices_logger.mojom.h"
 #include "components/reporting/util/status.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
@@ -32,7 +32,8 @@
 namespace ash::cfm {
 namespace {
 
-// TODO(https://crbug.com/1164001): remove after the migration to namespace ash.
+// TODO(https://crbug.com/1403174): Remove when namespace of mojoms for CfM are
+// migarted to ash.
 namespace mojom = ::chromeos::cfm::mojom;
 
 class FakeCfmLoggerServiceDelegate : public CfmLoggerService::Delegate {
@@ -79,9 +80,7 @@ class CfmLoggerServiceTest : public testing::Test {
  public:
   CfmLoggerServiceTest() {
     scoped_feature_list_.InitWithFeatures(
-        {chromeos::cfm::features::kMojoServices,
-         chromeos::cfm::features::kCloudLogger},
-        {});
+        {features::kMojoServices, features::kCloudLogger}, {});
   }
   CfmLoggerServiceTest(const CfmLoggerServiceTest&) = delete;
   CfmLoggerServiceTest& operator=(const CfmLoggerServiceTest&) = delete;
@@ -147,9 +146,8 @@ class CfmLoggerServiceTest : public testing::Test {
 
   void DisableLoggerFeature() {
     scoped_feature_list_.Reset();
-    scoped_feature_list_.InitWithFeatures(
-        {chromeos::cfm::features::kMojoServices},
-        {chromeos::cfm::features::kCloudLogger});
+    scoped_feature_list_.InitWithFeatures({features::kMojoServices},
+                                          {features::kCloudLogger});
   }
 
  protected:

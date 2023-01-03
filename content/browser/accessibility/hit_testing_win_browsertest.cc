@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,7 +43,7 @@ class AccessibilityHitTestingWinBrowserTest
   ComPtr<IAccessible> GetWebContentRootIAccessible() {
     ComPtr<IAccessible> content_root;
     GetRootBrowserAccessibilityManager()
-        ->GetRoot()
+        ->GetBrowserAccessibilityRoot()
         ->GetNativeViewAccessible()
         ->QueryInterface(IID_PPV_ARGS(&content_root));
     return content_root;
@@ -83,7 +83,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingWinBrowserTest, AccHitTest) {
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/simple_rectangles.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -147,7 +147,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingWinBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/simple_rectangles.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -203,7 +203,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingWinBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/text_ranges.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");

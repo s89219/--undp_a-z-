@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,6 +28,11 @@ mojom::CookieAccessObserver* URLLoaderContextForTests::GetCookieAccessObserver()
   return nullptr;
 }
 
+mojom::TrustTokenAccessObserver*
+URLLoaderContextForTests::GetTrustTokenAccessObserver() const {
+  return nullptr;
+}
+
 mojom::CrossOriginEmbedderPolicyReporter*
 URLLoaderContextForTests::GetCoepReporter() const {
   return nullptr;
@@ -40,11 +45,6 @@ mojom::DevToolsObserver* URLLoaderContextForTests::GetDevToolsObserver() const {
 mojom::NetworkContextClient* URLLoaderContextForTests::GetNetworkContextClient()
     const {
   return network_context_client_;
-}
-
-mojom::OriginPolicyManager* URLLoaderContextForTests::GetOriginPolicyManager()
-    const {
-  return origin_policy_manager_;
 }
 
 mojom::TrustedURLLoaderHeaderClient*

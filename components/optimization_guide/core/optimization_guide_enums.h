@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -110,9 +110,11 @@ enum class PredictionModelDownloadStatus {
   // The new directory to persist this model version's files could not be
   // created.
   kCouldNotCreateDirectory = 12,
+  // The model info was not saved to model store file.
+  kFailedModelInfoSaving = 13,
 
   // Add new values above this line.
-  kMaxValue = kCouldNotCreateDirectory,
+  kMaxValue = kFailedModelInfoSaving,
 };
 
 // The status for the page content annotations being stored.

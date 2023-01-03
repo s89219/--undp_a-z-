@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,8 +52,8 @@ class TestFCMSyncNetworkChannel : public FCMSyncNetworkChannel {
   void StopListening() override {}
 
   void RequestDetailedStatus(
-      const base::RepeatingCallback<void(const base::DictionaryValue&)>&
-          callback) override {}
+      const base::RepeatingCallback<void(base::Value::Dict)>& callback)
+      override {}
 };
 
 // TODO: Make FCMInvalidationListener class abstract and explicitly make all the
@@ -69,9 +69,9 @@ class FakeFCMInvalidationListener : public FCMInvalidationListener {
   ~FakeFCMInvalidationListener() override = default;
 
   void RequestDetailedStatus(
-      const base::RepeatingCallback<void(const base::DictionaryValue&)>&
-          callback) const override {
-    callback.Run(base::DictionaryValue());
+      const base::RepeatingCallback<void(base::Value::Dict)>& callback)
+      const override {
+    callback.Run(base::Value::Dict());
   }
 };
 
@@ -209,9 +209,9 @@ TEST(FCMInvalidationServiceTest, NotifiesAboutInstanceID) {
 
   // Set up a cached InstanceID aka client ID stored in prefs.
   {
-    DictionaryPrefUpdate update(&delegate->pref_service_,
+    ScopedDictPrefUpdate update(&delegate->pref_service_,
                                 prefs::kInvalidationClientIDCache);
-    update->SetStringKey(kSenderId, "InstanceIDFromPrefs");
+    update->Set(kSenderId, "InstanceIDFromPrefs");
   }
 
   // Create the invalidation service, but do not initialize it yet.
@@ -288,7 +288,7 @@ namespace internal {
 
 class FakeCallbackContainer {
  public:
-  void FakeCallback(const base::DictionaryValue& value) { called_ = true; }
+  void FakeCallback(base::Value::Dict value) { called_ = true; }
 
   bool called_ = false;
   base::WeakPtrFactory<FakeCallbackContainer> weak_ptr_factory_{this};

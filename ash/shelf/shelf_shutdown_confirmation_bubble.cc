@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "base/time/time.h"
 #include "components/strings/grit/components_strings.h"
 #include "components/vector_icons/vector_icons.h"
+#include "ui/accessibility/ax_node_data.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/image_model.h"
@@ -33,9 +34,6 @@
 
 namespace ash {
 namespace {
-
-// The preferred width of the shutdown confirmation bubble's content.
-constexpr int kBubblePreferredWidth = 175;
 
 // The insets of the shutdown confirmation bubble. The value of
 // Insets-leading-side is taken from the system.
@@ -65,14 +63,13 @@ constexpr char kActionDurationHistogramPrefix[] =
 std::string BubbleActionSuffix(
     ShelfShutdownConfirmationBubble::BubbleAction action) {
   switch (action) {
-    case ShelfShutdownConfirmationBubble::kCancelled:
+    case ShelfShutdownConfirmationBubble::BubbleAction::kCancelled:
       return "Cancel";
-    case ShelfShutdownConfirmationBubble::kConfirmed:
+    case ShelfShutdownConfirmationBubble::BubbleAction::kConfirmed:
       return "Confirm";
-    case ShelfShutdownConfirmationBubble::kDismissed:
+    case ShelfShutdownConfirmationBubble::BubbleAction::kDismissed:
       return "Dismiss";
-    case ShelfShutdownConfirmationBubble::kOpened:
-    case ShelfShutdownConfirmationBubble::kMaxValue:
+    case ShelfShutdownConfirmationBubble::BubbleAction::kOpened:
       NOTREACHED();
       return "";
   }
@@ -83,10 +80,9 @@ std::string BubbleActionSuffix(
 ShelfShutdownConfirmationBubble::ShelfShutdownConfirmationBubble(
     views::View* anchor,
     ShelfAlignment alignment,
-    SkColor background_color,
     base::OnceClosure on_confirm_callback,
     base::OnceClosure on_cancel_callback)
-    : ShelfBubble(anchor, alignment, background_color),
+    : ShelfBubble(anchor, alignment),
       bubble_opened_timestamp_(base::TimeTicks::Now()) {
   DCHECK(on_confirm_callback);
   DCHECK(on_cancel_callback);
@@ -144,7 +140,8 @@ ShelfShutdownConfirmationBubble::ShelfShutdownConfirmationBubble(
   auto cancel_button = std::make_unique<PillButton>(
       base::BindRepeating(&ShelfShutdownConfirmationBubble::OnCancelled,
                           base::Unretained(this)),
-      l10n_util::GetStringUTF16(IDS_CANCEL), PillButton::Type::kIconless,
+      l10n_util::GetStringUTF16(IDS_CANCEL),
+      PillButton::Type::kDefaultWithoutIcon,
       /*icon=*/nullptr);
   cancel_button->SetID(static_cast<int>(ButtonId::kCancel));
   cancel_ = button_container->AddChildView(std::move(cancel_button));
@@ -153,7 +150,7 @@ ShelfShutdownConfirmationBubble::ShelfShutdownConfirmationBubble(
       base::BindRepeating(&ShelfShutdownConfirmationBubble::OnConfirmed,
                           base::Unretained(this)),
       l10n_util::GetStringUTF16(IDS_ASH_SHUTDOWN_CONFIRM_BUTTON),
-      PillButton::Type::kIconless, /*icon=*/nullptr);
+      PillButton::Type::kDefaultWithoutIcon, /*icon=*/nullptr);
   confirm_button->SetID(static_cast<int>(ButtonId::kShutdown));
   confirm_ = button_container->AddChildView(std::move(confirm_button));
 
@@ -166,10 +163,12 @@ ShelfShutdownConfirmationBubble::ShelfShutdownConfirmationBubble(
       views::LayoutProvider::Get()->GetCornerRadiusMetric(
           views::Emphasis::kHigh));
   GetBubbleFrameView()->SetBubbleBorder(std::move(bubble_border));
+  GetBubbleFrameView()->SetBackgroundColor(GetBackgroundColor());
   GetWidget()->Show();
 
-  base::UmaHistogramEnumeration(kActionHistogramName,
-                                ShelfShutdownConfirmationBubble::kOpened);
+  base::UmaHistogramEnumeration(
+      kActionHistogramName,
+      ShelfShutdownConfirmationBubble::BubbleAction::kOpened);
 }
 
 ShelfShutdownConfirmationBubble::~ShelfShutdownConfirmationBubble() {
@@ -199,6 +198,17 @@ void ShelfShutdownConfirmationBubble::OnThemeChanged() {
   confirm_->SetEnabledTextColors(button_color);
 }
 
+void ShelfShutdownConfirmationBubble::GetAccessibleNodeData(
+    ui::AXNodeData* node_data) {
+  node_data->role = ax::mojom::Role::kDialog;
+  node_data->SetNameChecked(title_->GetText());
+}
+
+std::u16string ShelfShutdownConfirmationBubble::GetAccessibleWindowTitle()
+    const {
+  return title_->GetText();
+}
+
 void ShelfShutdownConfirmationBubble::OnCancelled() {
   dialog_result_ = DialogResult::kCancelled;
   GetWidget()->Close();
@@ -212,22 +222,20 @@ void ShelfShutdownConfirmationBubble::OnConfirmed() {
 void ShelfShutdownConfirmationBubble::OnClosed() {
   switch (dialog_result_) {
     case DialogResult::kCancelled:
-      ReportBubbleAction(ShelfShutdownConfirmationBubble::kCancelled);
+      ReportBubbleAction(
+          ShelfShutdownConfirmationBubble::BubbleAction::kCancelled);
       std::move(cancel_callback_).Run();
       break;
     case DialogResult::kConfirmed:
-      ReportBubbleAction(ShelfShutdownConfirmationBubble::kConfirmed);
+      ReportBubbleAction(
+          ShelfShutdownConfirmationBubble::BubbleAction::kConfirmed);
       std::move(confirm_callback_).Run();
       break;
     case DialogResult::kNone:
-      ReportBubbleAction(ShelfShutdownConfirmationBubble::kDismissed);
+      ReportBubbleAction(
+          ShelfShutdownConfirmationBubble::BubbleAction::kDismissed);
       break;
   }
-}
-
-gfx::Size ShelfShutdownConfirmationBubble::CalculatePreferredSize() const {
-  return gfx::Size(kBubblePreferredWidth,
-                   GetHeightForWidth(kBubblePreferredWidth));
 }
 
 bool ShelfShutdownConfirmationBubble::ShouldCloseOnPressDown() {

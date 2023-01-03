@@ -1,11 +1,15 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_UI_WEBUI_ACCESS_CODE_CAST_ACCESS_CODE_CAST_DIALOG_H_
 #define CHROME_BROWSER_UI_WEBUI_ACCESS_CODE_CAST_ACCESS_CODE_CAST_DIALOG_H_
 
+#include "base/check_is_test.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/media_router/media_cast_mode.h"
 #include "chrome/browser/ui/media_router/media_route_starter.h"
 #include "components/access_code_cast/common/access_code_cast_metrics.h"
@@ -16,11 +20,21 @@
 #include "url/gurl.h"
 
 namespace content {
-class BrowserContext;
 class WebContents;
 }  // namespace content
 
 namespace media_router {
+
+enum class AccessCodeCastDialogMode {
+  // Dialog opened from the browser. This will match the styling of other
+  // browser dialogs (i.e. Cast dialog), and will be positioned in the center of
+  // the window and overlapping top-chrome.
+  kBrowserStandard = 0,
+  // Dialog is shown system modal, and matches the style for ChromeOS system
+  // dialogs.
+  kSystem = 1,
+};
+
 class AccessCodeCastDialog : public ui::WebDialogDelegate,
                              public views::WidgetObserver {
  public:
@@ -34,18 +48,32 @@ class AccessCodeCastDialog : public ui::WebDialogDelegate,
   static void Show(
       const media_router::CastModeSet& cast_mode_set,
       std::unique_ptr<media_router::MediaRouteStarter> media_route_starter,
-      AccessCodeCastDialogOpenLocation open_location);
+      AccessCodeCastDialogOpenLocation open_location,
+      AccessCodeCastDialogMode dialog_mode =
+          AccessCodeCastDialogMode::kBrowserStandard);
 
   // Show the access code dialog box for desktop mirroring.
   static void ShowForDesktopMirroring(
       AccessCodeCastDialogOpenLocation open_location);
 
+  void CloseDialogWidget();
+
   // views::WidgetObserver:
   void OnWidgetActivationChanged(views::Widget* widget, bool active) override;
 
+  // Blocks the widget automatically closing
+  // when focus changes. This is to counter flaky tests.
+  static void ShouldBlockWidgetActivationChangedForTest(bool should_block) {
+    CHECK_IS_TEST();
+    block_widget_activation_changed_for_test_ = should_block;
+  }
+
+  base::WeakPtr<AccessCodeCastDialog> GetWeakPtr();
+
  protected:
   // Creates default params for showing AccessCodeCastDialog
-  virtual views::Widget::InitParams CreateParams();
+  virtual views::Widget::InitParams CreateParams(
+      AccessCodeCastDialogMode dialog_mode);
 
  private:
   ui::ModalType GetDialogModalType() const override;
@@ -71,7 +99,7 @@ class AccessCodeCastDialog : public ui::WebDialogDelegate,
                                   blink::mojom::MediaStreamType type) override;
 
   // Displays the dialog
-  void ShowWebDialog();
+  void ShowWebDialog(AccessCodeCastDialogMode dialog_mode);
 
   gfx::NativeView GetParentView();
 
@@ -91,8 +119,14 @@ class AccessCodeCastDialog : public ui::WebDialogDelegate,
   // use of the media_route_starter_ pointer after c'tor.
   std::unique_ptr<media_router::MediaRouteStarter> media_route_starter_;
 
-  const raw_ptr<content::WebContents> web_contents_;
-  const raw_ptr<content::BrowserContext> context_;
+  const raw_ptr<content::WebContents, DanglingUntriaged> web_contents_;
+  const raw_ptr<Profile> context_;
+  base::Time dialog_creation_timestamp_;
+  bool closing_dialog_ = false;
+
+  static bool block_widget_activation_changed_for_test_;
+
+  base::WeakPtrFactory<AccessCodeCastDialog> weak_ptr_factory_{this};
 };
 
 }  // namespace media_router

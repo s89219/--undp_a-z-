@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/sequenced_task_runner.h"
@@ -72,6 +73,17 @@ class PlaybackCommandDispatcher
   void ProcessRemotingRpcMessageFromRemote(
       std::unique_ptr<openscreen::cast::RpcMessage> message);
 
+  // Acquires a new handle from |messenger_|.
+  openscreen::cast::RpcMessenger::Handle AcquireHandle();
+
+  // Registers a |handle| with |messenger_| to receive callbacks to
+  // ProcessRemotingRpcMessageFromRemote().
+  void RegisterHandleForCallbacks(
+      openscreen::cast::RpcMessenger::Handle handle);
+
+  // Starts streaming if each expected audio or video config has been received.
+  void MaybeStartStreamingSession();
+
   // Callback for mojom::RendererController::SetPlaybackController() call.
   void OnSetPlaybackControllerDone();
 
@@ -89,15 +101,15 @@ class PlaybackCommandDispatcher
   bool has_set_playback_controller_call_returned_ = false;
   base::OnceCallback<void()> acquire_renderer_cb_;
 
-  openscreen::cast::RpcMessenger* messenger_;
-  openscreen::cast::RpcMessenger::Handle handle_;
+  raw_ptr<openscreen::cast::RpcMessenger> messenger_;
 
   // Multiplexes Renderer commands from a number of senders.
   std::unique_ptr<RendererControlMultiplexer> muxer_;
 
   // Handles translating between Remoting commands (in proto form) and mojo
   // commands.
-  std::unique_ptr<remoting::RendererRpcCallTranslator> call_translator_;
+  std::unique_ptr<remoting::RendererRpcCallTranslator>
+      renderer_call_translator_;
 
   // Handles DemuxerStream interactions.
   std::unique_ptr<remoting::RpcDemuxerStreamHandler> demuxer_stream_handler_;
@@ -105,8 +117,14 @@ class PlaybackCommandDispatcher
   // Handles for the demuxer stream data providers, to be used for dispatching
   // demuxer stream RPC commands.
   absl::optional<StreamingInitializationInfo> streaming_init_info_;
-  Dispatcher* streaming_dispatcher_ = nullptr;
-  const openscreen::cast::ReceiverSession* receiver_session_ = nullptr;
+  raw_ptr<Dispatcher> streaming_dispatcher_ = nullptr;
+  raw_ptr<const openscreen::cast::ReceiverSession> receiver_session_ = nullptr;
+
+  // The mojo API used to configure the renderer controls in the renderer
+  // process. Although this instance is only needed once, it is stored as an
+  // instance variable so that the destruction of this instance is visible to
+  // the Renderer process via the mojo disconnection handler.
+  mojo::AssociatedRemote<mojom::RendererController> control_configuration_;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   base::WeakPtrFactory<PlaybackCommandDispatcher> weak_factory_{this};

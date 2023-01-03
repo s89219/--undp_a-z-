@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,15 +9,18 @@
 
 namespace ash {
 
-class CaptureModeSession;
+class CaptureLabelView;
 class CaptureModeBarView;
+class CaptureModeSession;
 class CaptureModeSettingsView;
-class UserNudgeController;
 class MagnifierGlass;
+class RecordingTypeMenuView;
+class UserNudgeController;
 
 // Wrapper for CaptureModeSession that exposes internal state to test functions.
 class CaptureModeSessionTestApi {
  public:
+  CaptureModeSessionTestApi();
   explicit CaptureModeSessionTestApi(CaptureModeSession* session);
 
   CaptureModeSessionTestApi(CaptureModeSessionTestApi&) = delete;
@@ -28,9 +31,15 @@ class CaptureModeSessionTestApi {
 
   CaptureModeSettingsView* GetCaptureModeSettingsView();
 
+  CaptureLabelView* GetCaptureLabelView();
+
+  RecordingTypeMenuView* GetRecordingTypeMenuView();
+
   views::Widget* GetCaptureModeSettingsWidget();
 
   views::Widget* GetCaptureLabelWidget();
+
+  views::Widget* GetRecordingTypeMenuWidget();
 
   views::Widget* GetDimensionsLabelWidget();
 

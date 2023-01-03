@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,8 +28,6 @@ class PrivacySandboxSettingsDelegateTest : public testing::Test {
         CreateProfileForIdentityTestEnvironment();
     adapter_ =
         std::make_unique<IdentityTestEnvironmentProfileAdaptor>(profile_.get());
-    identity_test_env()->MakePrimaryAccountAvailable(
-        kTestEmail, signin::ConsentLevel::kSignin);
     delegate_ =
         std::make_unique<PrivacySandboxSettingsDelegate>(profile_.get());
   }
@@ -64,9 +62,12 @@ class PrivacySandboxSettingsDelegateTest : public testing::Test {
   std::unique_ptr<PrivacySandboxSettingsDelegate> delegate_;
 };
 
-TEST_F(PrivacySandboxSettingsDelegateTest, CapabilityRestriction) {
-  feature_list()->InitAndEnableFeature(
-      privacy_sandbox::kPrivacySandboxSettings3);
+TEST_F(PrivacySandboxSettingsDelegateTest,
+       CapabilityRestrictionForSignedInUser) {
+  // Sign the user in.
+  identity_test_env()->MakePrimaryAccountAvailable(
+      kTestEmail, signin::ConsentLevel::kSignin);
+
   // Initially the account capability will be in an unknown state, which
   // should be interpreted as no restriction.
   EXPECT_FALSE(delegate()->IsPrivacySandboxRestricted());
@@ -77,74 +78,13 @@ TEST_F(PrivacySandboxSettingsDelegateTest, CapabilityRestriction) {
   EXPECT_TRUE(delegate()->IsPrivacySandboxRestricted());
   SetPrivacySandboxAccountCapability(kTestEmail, true);
   EXPECT_FALSE(delegate()->IsPrivacySandboxRestricted());
-
-  // If the Privacy Sandbox Settings 3 feature is disabled the capability
-  // restriction should not apply.
-  feature_list()->Reset();
-  feature_list()->InitAndDisableFeature(
-      privacy_sandbox::kPrivacySandboxSettings3);
-  SetPrivacySandboxAccountCapability(kTestEmail, false);
-  EXPECT_FALSE(delegate()->IsPrivacySandboxRestricted());
 }
 
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
-TEST_F(PrivacySandboxSettingsDelegateTest, SupervisedUser) {
-  // The sandbox should always be restricted for supervised users.
-  profile()->SetIsSupervisedProfile();
+TEST_F(PrivacySandboxSettingsDelegateTest,
+       CapabilityRestrictionForSignedOutUser) {
   feature_list()->InitAndEnableFeature(
       privacy_sandbox::kPrivacySandboxSettings3);
-  EXPECT_TRUE(delegate()->IsPrivacySandboxRestricted());
-
-  // The capability should not override profile supervision.
-  SetPrivacySandboxAccountCapability(kTestEmail, true);
-  EXPECT_TRUE(delegate()->IsPrivacySandboxRestricted());
-
-  // If the Privacy Sandbox Settings 3 feature is disabled, the supervised
-  // user restriction should not apply.
-  feature_list()->Reset();
-  feature_list()->InitAndDisableFeature(
-      privacy_sandbox::kPrivacySandboxSettings3);
+  // If the user is not signed in to Chrome then we don't use any age signal and
+  // don't restrict the feature.
   EXPECT_FALSE(delegate()->IsPrivacySandboxRestricted());
-}
-#endif
-
-TEST_F(PrivacySandboxSettingsDelegateTest, Confirmation_Release3Enabled) {
-  feature_list()->InitAndEnableFeature(
-      privacy_sandbox::kPrivacySandboxSettings3);
-  EXPECT_FALSE(delegate()->IsPrivacySandboxConfirmed());
-
-  // Manually controlling V1 should not count as confirmation, while V2 should.
-  prefs()->SetBoolean(prefs::kPrivacySandboxManuallyControlled, true);
-  EXPECT_FALSE(delegate()->IsPrivacySandboxConfirmed());
-  prefs()->SetBoolean(prefs::kPrivacySandboxManuallyControlledV2, true);
-  EXPECT_TRUE(delegate()->IsPrivacySandboxConfirmed());
-  prefs()->SetBoolean(prefs::kPrivacySandboxManuallyControlledV2, false);
-
-  // A non-user controlled Privacy Sandbox should count as confirmation.
-  prefs()->SetManagedPref(prefs::kPrivacySandboxApisEnabledV2,
-                          base::Value(true));
-  EXPECT_TRUE(delegate()->IsPrivacySandboxConfirmed());
-  prefs()->RemoveManagedPref(prefs::kPrivacySandboxApisEnabledV2);
-  EXPECT_FALSE(delegate()->IsPrivacySandboxConfirmed());
-
-  // While a consent is not required, seeing a notice should suffice.
-  prefs()->SetBoolean(prefs::kPrivacySandboxNoticeDisplayed, true);
-  EXPECT_TRUE(delegate()->IsPrivacySandboxConfirmed());
-
-  // If a notice is required, it should not suffice.
-  feature_list()->Reset();
-  feature_list()->InitAndEnableFeatureWithParameters(
-      privacy_sandbox::kPrivacySandboxSettings3,
-      {{"consent-required", "true"}});
-  EXPECT_FALSE(delegate()->IsPrivacySandboxConfirmed());
-  prefs()->SetBoolean(prefs::kPrivacySandboxConsentDecisionMade, true);
-  EXPECT_TRUE(delegate()->IsPrivacySandboxConfirmed());
-}
-
-TEST_F(PrivacySandboxSettingsDelegateTest, Confirmation_Release3Disabled) {
-  // If the Privacy Sandbox Settings 3 feature is disabled, no confirmation is
-  // required.
-  feature_list()->InitAndDisableFeature(
-      privacy_sandbox::kPrivacySandboxSettings3);
-  EXPECT_TRUE(delegate()->IsPrivacySandboxConfirmed());
 }

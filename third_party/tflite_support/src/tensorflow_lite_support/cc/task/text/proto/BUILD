@@ -1,6 +1,7 @@
-load("//tensorflow_lite_support/cc/port:build_defs.bzl", "support_cc_proto_library", "support_py_proto_library")
+load("//tensorflow_lite_support/cc/port:build_defs.bzl", "support_py_proto_library")
 
 package(
+    default_applicable_licenses = ["//tensorflow_lite_support:license"],
     default_visibility = ["//tensorflow_lite_support:users"],
     licenses = ["notice"],  # Apache 2.0
 )
@@ -13,7 +14,7 @@ proto_library(
     ],
 )
 
-support_cc_proto_library(
+cc_proto_library(
     name = "nl_classifier_options_cc_proto",
     deps = [
         ":nl_classifier_options_proto",
@@ -112,7 +113,7 @@ proto_library(
     ],
 )
 
-support_cc_proto_library(
+cc_proto_library(
     name = "text_embedder_options_cc_proto",
     deps = [":text_embedder_options_proto"],
 )

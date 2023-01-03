@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,23 +36,6 @@ class ScrollableAreaMockChromeClient : public RenderingTestChromeClient {
     MockUpdateTooltipUnderCursor(&frame, tooltip_text, dir);
   }
 };
-
-HeapVector<Member<ScrollTimelineOffset>> CreateScrollOffsets(
-    ScrollTimelineOffset* start_scroll_offset =
-        MakeGarbageCollected<ScrollTimelineOffset>(
-            CSSNumericLiteralValue::Create(
-                10.0,
-                CSSPrimitiveValue::UnitType::kPixels)),
-    ScrollTimelineOffset* end_scroll_offset =
-        MakeGarbageCollected<ScrollTimelineOffset>(
-            CSSNumericLiteralValue::Create(
-                90.0,
-                CSSPrimitiveValue::UnitType::kPixels))) {
-  HeapVector<Member<ScrollTimelineOffset>> scroll_offsets;
-  scroll_offsets.push_back(start_scroll_offset);
-  scroll_offsets.push_back(end_scroll_offset);
-  return scroll_offsets;
-}
 
 }  // namespace
 
@@ -762,7 +745,7 @@ TEST_P(MAYBE_PaintLayerScrollableAreaTest,
   scrollable_area->SetScrollOffset(ScrollOffset(0, 1),
                                    mojom::blink::ScrollType::kProgrammatic);
   UpdateAllLifecyclePhasesExceptPaint();
-  EXPECT_TRUE(
+  EXPECT_FALSE(
       GetDocument().View()->GetPaintArtifactCompositor()->NeedsUpdate());
   UpdateAllLifecyclePhasesForTest();
   EXPECT_EQ(ScrollOffset(0, 1), scrollable_area->GetScrollOffset());
@@ -1140,7 +1123,7 @@ TEST_P(MAYBE_PaintLayerScrollableAreaTest, CompositedStickyDescendant) {
   EXPECT_EQ(gfx::Vector2dF(0, 50), sticky->FirstFragment()
                                        .PaintProperties()
                                        ->StickyTranslation()
-                                       ->Translation2D());
+                                       ->Get2dTranslation());
 }
 
 TEST_P(MAYBE_PaintLayerScrollableAreaTest, StickyPositionUseCounter) {
@@ -1236,7 +1219,7 @@ TEST_P(MAYBE_PaintLayerScrollableAreaTest, ScrollingBackgroundVisualRect) {
     </div>
   )HTML");
 
-  EXPECT_EQ(gfx::Rect(2, 3, 101, 200),
+  EXPECT_EQ(gfx::Rect(2, 2, 101, 200),
             GetLayoutBoxByElementId("scroller")
                 ->GetScrollableArea()
                 ->ScrollingBackgroundVisualRect(PhysicalOffset()));
@@ -1438,73 +1421,6 @@ TEST_P(MAYBE_PaintLayerScrollableAreaTest, SetSnapContainerDataNeedsUpdate) {
   EXPECT_FALSE(snap_coordinator.AnySnapContainerDataNeedsUpdate());
 }
 
-class ScrollTimelineForTest : public ScrollTimeline {
- public:
-  ScrollTimelineForTest(Document* document,
-                        Element* scroll_source,
-                        HeapVector<Member<ScrollTimelineOffset>>
-                            scroll_offsets = CreateScrollOffsets())
-      : ScrollTimeline(document,
-                       scroll_source,
-                       ScrollTimeline::kVertical,
-                       std::move(scroll_offsets)),
-        invalidated_(false) {}
-  void Invalidate() override {
-    ScrollTimeline::Invalidate();
-    invalidated_ = true;
-  }
-  bool Invalidated() const { return invalidated_; }
-  void ResetInvalidated() { invalidated_ = false; }
-  void Trace(Visitor* visitor) const override {
-    ScrollTimeline::Trace(visitor);
-  }
-
- private:
-  bool invalidated_;
-};
-
-// Verify that scrollable area changes invalidate scroll timeline.
-TEST_P(MAYBE_PaintLayerScrollableAreaTest, ScrollTimelineInvalidation) {
-  SetBodyInnerHTML(R"HTML(
-    <style>
-      #scroller { overflow: scroll; width: 100px; height: 100px; }
-      #spacer { height: 1000px; }
-    </style>
-    <div id='scroller'>
-      <div id ='spacer'></div>
-    </div>
-  )HTML");
-
-  auto* scroller =
-      To<LayoutBoxModelObject>(GetLayoutObjectByElementId("scroller"));
-  PaintLayerScrollableArea* scrollable_area = scroller->GetScrollableArea();
-  scrollable_area->SetScrollOffset(ScrollOffset(0, 20),
-                                   mojom::blink::ScrollType::kProgrammatic);
-  Element* scroller_element = GetElementById("scroller");
-  ScrollTimelineForTest* scroll_timeline =
-      MakeGarbageCollected<ScrollTimelineForTest>(&GetDocument(),
-                                                  scroller_element);
-  scroll_timeline->ResetInvalidated();
-  // Verify that changing scroll offset invalidates scroll timeline.
-  scrollable_area->SetScrollOffset(ScrollOffset(0, 30),
-                                   mojom::blink::ScrollType::kProgrammatic);
-  EXPECT_TRUE(scroll_timeline->Invalidated());
-  scroll_timeline->ResetInvalidated();
-
-  // Verify that changing scroller size invalidates scroll timeline.
-  scroller_element->setAttribute(html_names::kStyleAttr, "height:110px;");
-  UpdateAllLifecyclePhasesForTest();
-  EXPECT_TRUE(scroll_timeline->Invalidated());
-  scroll_timeline->ResetInvalidated();
-
-  // Verify that changing content area size invalidates scroll timeline.
-  Element* spacer_element = GetElementById("spacer");
-  spacer_element->setAttribute(html_names::kStyleAttr, "height:900px;");
-  UpdateAllLifecyclePhasesForTest();
-  EXPECT_TRUE(scroll_timeline->Invalidated());
-  scroll_timeline->ResetInvalidated();
-}
-
 TEST_P(MAYBE_PaintLayerScrollableAreaTest,
        RootScrollbarShouldUseParentOfOverscrollNodeAsTransformNode) {
   auto& document = GetDocument();
@@ -1541,12 +1457,14 @@ TEST_P(MAYBE_PaintLayerScrollableAreaTest,
 
     const auto& paint_chunks = ContentPaintChunks();
     bool found_root_scrollbar = false;
+    const auto* parent_transform =
+        visual_viewport.GetOverscrollElasticityTransformNode()
+            ? visual_viewport.GetOverscrollElasticityTransformNode()->Parent()
+            : visual_viewport.GetPageScaleNode()->Parent();
     for (const auto& chunk : paint_chunks) {
       if (chunk.id == PaintChunk::Id(root_scrollable->VerticalScrollbar()->Id(),
                                      DisplayItem::kScrollbarHitTest)) {
-        EXPECT_EQ(
-            &chunk.properties.Transform(),
-            visual_viewport.GetOverscrollElasticityTransformNode()->Parent());
+        EXPECT_EQ(parent_transform, &chunk.properties.Transform());
         found_root_scrollbar = true;
       }
     }

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,8 +27,8 @@
                 UIGestureRecognizerDelegate,
                 UIScrollViewDelegate>
 
-// |peekedHeight| is the height of the view when peeked (partially revealed).
-// |baseViewHeight| is the height of the base view.
+// `peekedHeight` is the height of the view when peeked (partially revealed).
+// `baseViewHeight` is the height of the base view.
 - (instancetype)initWithPeekedHeight:(CGFloat)peekedHeight
                       baseViewHeight:(CGFloat)baseViewHeight
                         initialState:(ViewRevealState)initialState
@@ -45,7 +45,7 @@
 // handler.
 - (void)addAnimatee:(id<ViewRevealingAnimatee>)animatee;
 
-// Requests the pan handler to transition to |state|. Depending on the
+// Requests the pan handler to transition to `state`. Depending on the
 // internals, this may not happen immediately.
 - (void)setNextState:(ViewRevealState)state
             animated:(BOOL)animated
@@ -71,7 +71,7 @@
 
 @interface ViewRevealingPanGestureRecognizer : UIPanGestureRecognizer
 
-// Inits a custom |UIPanGestureRecognizer| for the given |trigger|.
+// Inits a custom `UIPanGestureRecognizer` for the given `trigger`.
 - (instancetype)initWithTarget:(id)target
                         action:(SEL)action
                        trigger:(ViewRevealTrigger)trigger;

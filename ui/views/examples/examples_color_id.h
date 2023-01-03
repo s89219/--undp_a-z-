@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,6 +32,7 @@
   E_CPONLY(kColorLabelExampleCustomBackground) \
   E_CPONLY(kColorLabelExampleCustomBorder) \
   E_CPONLY(kColorLabelExampleThickBorder) \
+  E_CPONLY(kColorMenuButtonExampleBorder) \
   E_CPONLY(kColorMultilineExampleBorder) \
   E_CPONLY(kColorMultilineExampleColorRange) \
   E_CPONLY(kColorMultilineExampleForeground) \
@@ -73,6 +74,8 @@ enum ExamplesColorIds : ui::ColorId {
 };
 // clang-format on
 
+// Note that this second include is not redundant. The second inclusion of the
+// .inc file serves to undefine the macros the first inclusion defined.
 #include "ui/color/color_id_macros.inc"  // NOLINT
 
 }  // namespace views::examples

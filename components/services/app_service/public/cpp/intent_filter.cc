@@ -1,15 +1,16 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/services/app_service/public/cpp/intent_filter.h"
+#include "url/url_constants.h"
 
 namespace apps {
 
 APP_ENUM_TO_STRING(ConditionType,
                    kScheme,
                    kHost,
-                   kPattern,
+                   kPath,
                    kAction,
                    kMimeType,
                    kFile)
@@ -147,8 +148,8 @@ int IntentFilter::GetFilterMatchLevel() {
       case ConditionType::kHost:
         match_level += static_cast<int>(IntentFilterMatchLevel::kHost);
         break;
-      case ConditionType::kPattern:
-        match_level += static_cast<int>(IntentFilterMatchLevel::kPattern);
+      case ConditionType::kPath:
+        match_level += static_cast<int>(IntentFilterMatchLevel::kPath);
         break;
       case ConditionType::kMimeType:
       case ConditionType::kFile:
@@ -217,7 +218,7 @@ std::set<std::string> IntentFilter::GetSupportedLinksForAppManagement() {
     }
 
     // For path conditions we add each value to the |paths| set.
-    if (condition->condition_type == ConditionType::kPattern) {
+    if (condition->condition_type == ConditionType::kPath) {
       for (auto& condition_value : condition->condition_values) {
         std::string value = condition_value->value;
         // Glob and literal patterns can be printed exactly, but prefix
@@ -239,7 +240,7 @@ std::set<std::string> IntentFilter::GetSupportedLinksForAppManagement() {
   std::set<std::string> supported_links;
   for (auto& host : hosts) {
     for (auto& path : paths) {
-      if (path.front() == '/') {
+      if (!path.empty() && path.front() == '/') {
         supported_links.insert(host + path);
       } else {
         supported_links.insert(host + "/" + path);
@@ -322,10 +323,9 @@ IntentFilters CloneIntentFilters(const IntentFilters& intent_filters) {
   return ret;
 }
 
-base::flat_map<std::string, apps::IntentFilters> CloneIntentFiltersMap(
-    const base::flat_map<std::string, apps::IntentFilters>&
-        intent_filters_map) {
-  base::flat_map<std::string, apps::IntentFilters> ret;
+base::flat_map<std::string, IntentFilters> CloneIntentFiltersMap(
+    const base::flat_map<std::string, IntentFilters>& intent_filters_map) {
+  base::flat_map<std::string, IntentFilters> ret;
   for (const auto& it : intent_filters_map) {
     ret.insert(std::make_pair(it.first, CloneIntentFilters(it.second)));
   }
@@ -362,8 +362,8 @@ ConditionType ConvertMojomConditionTypeToConditionType(
       return ConditionType::kScheme;
     case apps::mojom::ConditionType::kHost:
       return ConditionType::kHost;
-    case apps::mojom::ConditionType::kPattern:
-      return ConditionType::kPattern;
+    case apps::mojom::ConditionType::kPath:
+      return ConditionType::kPath;
     case apps::mojom::ConditionType::kAction:
       return ConditionType::kAction;
     case apps::mojom::ConditionType::kMimeType:
@@ -380,8 +380,8 @@ apps::mojom::ConditionType ConvertConditionTypeToMojomConditionType(
       return apps::mojom::ConditionType::kScheme;
     case ConditionType::kHost:
       return apps::mojom::ConditionType::kHost;
-    case ConditionType::kPattern:
-      return apps::mojom::ConditionType::kPattern;
+    case ConditionType::kPath:
+      return apps::mojom::ConditionType::kPath;
     case ConditionType::kAction:
       return apps::mojom::ConditionType::kAction;
     case ConditionType::kMimeType:
@@ -394,8 +394,6 @@ apps::mojom::ConditionType ConvertConditionTypeToMojomConditionType(
 PatternMatchType ConvertMojomPatternMatchTypeToPatternMatchType(
     const apps::mojom::PatternMatchType& mojom_pattern_match_type) {
   switch (mojom_pattern_match_type) {
-    case apps::mojom::PatternMatchType::kNone:
-      return PatternMatchType::kNone;
     case apps::mojom::PatternMatchType::kLiteral:
       return PatternMatchType::kLiteral;
     case apps::mojom::PatternMatchType::kPrefix:
@@ -416,8 +414,6 @@ PatternMatchType ConvertMojomPatternMatchTypeToPatternMatchType(
 apps::mojom::PatternMatchType ConvertPatternMatchTypeToMojomPatternMatchType(
     const PatternMatchType& pattern_match_type) {
   switch (pattern_match_type) {
-    case PatternMatchType::kNone:
-      return apps::mojom::PatternMatchType::kNone;
     case PatternMatchType::kLiteral:
       return apps::mojom::PatternMatchType::kLiteral;
     case PatternMatchType::kPrefix:
@@ -537,6 +533,28 @@ apps::mojom::IntentFilterPtr ConvertIntentFilterToMojomIntentFilter(
   mojom_intent_filter->activity_name = intent_filter->activity_name;
   mojom_intent_filter->activity_label = intent_filter->activity_label;
   return mojom_intent_filter;
+}
+
+IntentFilters ConvertMojomIntentFiltersToIntentFilters(
+    const std::vector<apps::mojom::IntentFilterPtr>& mojom_intent_filters) {
+  IntentFilters intent_filters;
+  intent_filters.reserve(mojom_intent_filters.size());
+  for (const auto& mojom_intent_filter : mojom_intent_filters) {
+    intent_filters.push_back(
+        ConvertMojomIntentFilterToIntentFilter(mojom_intent_filter));
+  }
+  return intent_filters;
+}
+
+std::vector<apps::mojom::IntentFilterPtr>
+ConvertIntentFiltersToMojomIntentFilters(const IntentFilters& intent_filters) {
+  std::vector<apps::mojom::IntentFilterPtr> mojom_intent_filters;
+  mojom_intent_filters.reserve(intent_filters.size());
+  for (const auto& intent_filter : intent_filters) {
+    mojom_intent_filters.push_back(
+        ConvertIntentFilterToMojomIntentFilter(intent_filter));
+  }
+  return mojom_intent_filters;
 }
 
 }  // namespace apps

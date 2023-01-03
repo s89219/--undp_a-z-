@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chromeos/services/assistant/public/cpp/assistant_service.h"
+#include "chromeos/ash/services/assistant/public/cpp/assistant_service.h"
 #include "net/base/url_util.h"
 #include "url/gurl.h"
 
@@ -21,9 +21,6 @@ namespace assistant {
 namespace util {
 
 namespace {
-
-using chromeos::assistant::AssistantEntryPoint;
-using chromeos::assistant::AssistantQuerySource;
 
 // Supported deep link param keys. These values must be kept in sync with the
 // server. See more details at go/cros-assistant-deeplink.
@@ -387,10 +384,10 @@ absl::optional<GURL> GetAssistantUrl(
 
   switch (type) {
     case DeepLinkType::kLists: {
-      const auto& type = GetDeepLinkParam(params, DeepLinkParam::kType);
+      const auto& type_param = GetDeepLinkParam(params, DeepLinkParam::kType);
       top_level_url =
           std::string("https://assistant.google.com/lists/mainview");
-      by_id_url = (type && type.value().compare("shopping") == 0)
+      by_id_url = (type_param && type_param.value().compare("shopping") == 0)
                       ? std::string("https://shoppinglist.google.com/lists/")
                       : std::string("https://assistant.google.com/lists/list/");
       break;

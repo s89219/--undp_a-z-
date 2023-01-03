@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@
 #include "chrome/browser/notifications/metrics/notification_metrics_logger_factory.h"
 #include "chrome/browser/notifications/notification_display_service.h"
 #include "chrome/browser/notifications/notification_display_service_factory.h"
+#include "chrome/browser/permissions/notifications_engagement_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_context.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
@@ -30,6 +31,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
+#include "components/permissions/features.h"
 #include "components/permissions/permission_uma_util.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -224,6 +226,15 @@ void PlatformNotificationServiceImpl::DisplayNotification(
   permissions::PermissionUmaUtil::RecordPermissionUsage(
       ContentSettingsType::NOTIFICATIONS, profile_, nullptr,
       notification.origin_url());
+
+  if (base::FeatureList::IsEnabled(
+          permissions::features::kNotificationInteractionHistory)) {
+    auto* service =
+        NotificationsEngagementServiceFactory::GetForProfile(profile_);
+    // This service might be missing for incognito profiles and in tests.
+    if (service)
+      service->RecordNotificationDisplayed(notification.origin_url());
+  }
 }
 
 void PlatformNotificationServiceImpl::DisplayPersistentNotification(
@@ -256,6 +267,15 @@ void PlatformNotificationServiceImpl::DisplayPersistentNotification(
 
   NotificationMetricsLoggerFactory::GetForBrowserContext(profile_)
       ->LogPersistentNotificationShown();
+
+  if (base::FeatureList::IsEnabled(
+          permissions::features::kNotificationInteractionHistory)) {
+    auto* service =
+        NotificationsEngagementServiceFactory::GetForProfile(profile_);
+    // This service might be missing for incognito profiles and in tests.
+    if (service)
+      service->RecordNotificationDisplayed(notification.origin_url());
+  }
 
   permissions::PermissionUmaUtil::RecordPermissionUsage(
       ContentSettingsType::NOTIFICATIONS, profile_, nullptr,
@@ -536,13 +556,14 @@ PlatformNotificationServiceImpl::FindWebAppIconAndTitle(
       web_app::WebAppProvider::GetForLocalAppsUnchecked(profile_);
   if (web_app_provider) {
     const absl::optional<web_app::AppId> app_id =
-        web_app_provider->registrar().FindAppWithUrlInScope(web_app_hint_url);
+        web_app_provider->registrar_unsafe().FindAppWithUrlInScope(
+            web_app_hint_url);
     if (app_id) {
       absl::optional<WebAppIconAndTitle> icon_and_title;
       icon_and_title.emplace();
 
       icon_and_title->title = base::UTF8ToUTF16(
-          web_app_provider->registrar().GetAppShortName(*app_id));
+          web_app_provider->registrar_unsafe().GetAppShortName(*app_id));
       icon_and_title->icon =
           web_app_provider->icon_manager().GetMonochromeFavicon(*app_id);
       return icon_and_title;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "base/bind.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_split.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -39,10 +39,10 @@ namespace {
 
 base::Value NetLogQuicPushStreamParams(quic::QuicStreamId stream_id,
                                        const GURL& url) {
-  base::DictionaryValue dict;
-  dict.SetInteger("stream_id", stream_id);
-  dict.SetString("url", url.spec());
-  return std::move(dict);
+  base::Value::Dict dict;
+  dict.Set("stream_id", static_cast<int>(stream_id));
+  dict.Set("url", url.spec());
+  return base::Value(std::move(dict));
 }
 
 void NetLogQuicPushStream(const NetLogWithSource& net_log1,
@@ -62,26 +62,6 @@ QuicHttpStream::QuicHttpStream(
     std::unique_ptr<QuicChromiumClientSession::Handle> session,
     std::set<std::string> dns_aliases)
     : MultiplexedHttpStream(std::move(session)),
-      next_state_(STATE_NONE),
-      stream_(nullptr),
-      request_info_(nullptr),
-      can_send_early_(false),
-      request_body_stream_(nullptr),
-      priority_(MINIMUM_PRIORITY),
-      response_info_(nullptr),
-      has_response_status_(false),
-      response_status_(ERR_UNEXPECTED),
-      response_headers_received_(false),
-      trailing_headers_received_(false),
-      headers_bytes_received_(0),
-      headers_bytes_sent_(0),
-      closed_stream_received_bytes_(0),
-      closed_stream_sent_bytes_(0),
-      closed_is_first_stream_(false),
-      user_buffer_len_(0),
-      session_error_(ERR_UNEXPECTED),
-      found_promise_(false),
-      in_loop_(false),
       dns_aliases_(std::move(dns_aliases)) {}
 
 QuicHttpStream::~QuicHttpStream() {
@@ -110,9 +90,9 @@ HttpResponseInfo::ConnectionInfo QuicHttpStream::ConnectionInfoFromQuicVersion(
       return HttpResponseInfo::CONNECTION_INFO_QUIC_RFC_V1;
     case quic::QUIC_VERSION_RESERVED_FOR_NEGOTIATION:
       return HttpResponseInfo::CONNECTION_INFO_QUIC_999;
-    case quic::QUIC_VERSION_IETF_2_DRAFT_01:
+    case quic::QUIC_VERSION_IETF_2_DRAFT_08:
       DCHECK(quic_version.UsesTls());
-      return HttpResponseInfo::CONNECTION_INFO_QUIC_2_DRAFT_1;
+      return HttpResponseInfo::CONNECTION_INFO_QUIC_2_DRAFT_8;
   }
   NOTREACHED();
   return HttpResponseInfo::CONNECTION_INFO_QUIC_UNKNOWN_VERSION;
@@ -401,6 +381,8 @@ bool QuicHttpStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
     is_first_stream = stream_->IsFirstStream();
     load_timing_info->first_early_hints_time =
         stream_->first_early_hints_time();
+    load_timing_info->receive_headers_start =
+        stream_->headers_received_start_time();
   }
 
   if (is_first_stream) {
@@ -720,8 +702,6 @@ int QuicHttpStream::ProcessResponseHeaders(
 
   response_info_->connection_info =
       ConnectionInfoFromQuicVersion(quic_session()->GetQuicVersion());
-  response_info_->vary_data.Init(*request_info_,
-                                 *response_info_->headers.get());
   response_info_->was_alpn_negotiated = true;
   response_info_->alpn_negotiated_protocol =
       HttpResponseInfo::ConnectionInfoToString(response_info_->connection_info);
@@ -733,7 +713,7 @@ int QuicHttpStream::ProcessResponseHeaders(
   // take care of 0-RTT where request is sent before handshake is confirmed.
   connect_timing_ = quic_session()->GetConnectTiming();
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&QuicHttpStream::ReadTrailingHeaders,
                                 weak_factory_.GetWeakPtr()));
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,19 +12,15 @@
 namespace cast_streaming {
 
 WrappingRendererFactorySelector::WrappingRendererFactorySelector(
-    content::RenderFrame* render_frame) {
-  DCHECK(render_frame);
-  auto receiver = ResourceProvider::GetReceiver(render_frame);
+    ResourceProvider* resource_provider) {
+  DCHECK(resource_provider);
+
   wrapping_factory_ =
       std::make_unique<PlaybackCommandForwardingRendererFactory>(
-          std::move(receiver));
+          resource_provider->GetRendererCommandReceiver());
 }
 
 WrappingRendererFactorySelector::~WrappingRendererFactorySelector() = default;
-
-media::RendererType WrappingRendererFactorySelector::GetCurrentRendererType() {
-  return media::RendererType::kCastStreaming;
-}
 
 media::RendererFactory* WrappingRendererFactorySelector::GetCurrentFactory() {
   DCHECK(wrapping_factory_);

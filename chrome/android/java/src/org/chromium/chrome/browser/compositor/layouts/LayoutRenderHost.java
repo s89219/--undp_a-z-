@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,11 +51,6 @@ public interface LayoutRenderHost {
      * @param color The color of the rect.
      */
     void pushDebugRect(Rect rect, int color);
-
-    /**
-     * Loads the persistent textures if they are not loaded already.
-     */
-    void loadPersitentTextureDataIfNeeded();
 
     /**
      * @return The {@link ResourceManager}.

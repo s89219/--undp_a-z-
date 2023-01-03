@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -1601,13 +1601,22 @@ TEST_P(SQLDatabaseTest, CollectDiagnosticInfo) {
   Statement s(db_->GetCachedStatement(SQL_FROM_HERE, kSimpleSql));
 
   // Error includes the statement.
-  const std::string readonly_info = db_->CollectErrorInfo(SQLITE_READONLY, &s);
-  EXPECT_NE(std::string::npos, readonly_info.find(kSimpleSql));
+  {
+    DatabaseDiagnostics diagnostics;
+    const std::string readonly_info =
+        db_->CollectErrorInfo(SQLITE_READONLY, &s, &diagnostics);
+    EXPECT_NE(std::string::npos, readonly_info.find(kSimpleSql));
+    EXPECT_EQ(diagnostics.sql_statement, kSimpleSql);
+  }
 
-  // Some other error doesn't include the statment.
-  // TODO(shess): This is weak.
-  const std::string full_info = db_->CollectErrorInfo(SQLITE_FULL, nullptr);
-  EXPECT_EQ(std::string::npos, full_info.find(kSimpleSql));
+  // Some other error doesn't include the statement.
+  {
+    DatabaseDiagnostics diagnostics;
+    const std::string full_info =
+        db_->CollectErrorInfo(SQLITE_FULL, nullptr, &diagnostics);
+    EXPECT_EQ(std::string::npos, full_info.find(kSimpleSql));
+    EXPECT_TRUE(diagnostics.sql_statement.empty());
+  }
 
   // A table to see in the SQLITE_ERROR results.
   EXPECT_TRUE(db_->Execute("CREATE TABLE volcano (x)"));
@@ -1616,10 +1625,48 @@ TEST_P(SQLDatabaseTest, CollectDiagnosticInfo) {
   MetaTable meta_table;
   ASSERT_TRUE(meta_table.Init(db_.get(), 4, 4));
 
-  const std::string error_info = db_->CollectErrorInfo(SQLITE_ERROR, &s);
-  EXPECT_NE(std::string::npos, error_info.find(kSimpleSql));
-  EXPECT_NE(std::string::npos, error_info.find("volcano"));
-  EXPECT_NE(std::string::npos, error_info.find("version: 4"));
+  {
+    DatabaseDiagnostics diagnostics;
+    const std::string error_info =
+        db_->CollectErrorInfo(SQLITE_ERROR, &s, &diagnostics);
+    EXPECT_NE(std::string::npos, error_info.find(kSimpleSql));
+    EXPECT_NE(std::string::npos, error_info.find("volcano"));
+    EXPECT_NE(std::string::npos, error_info.find("version: 4"));
+    EXPECT_EQ(diagnostics.sql_statement, kSimpleSql);
+    EXPECT_EQ(diagnostics.version, 4);
+
+    ASSERT_EQ(diagnostics.schema_sql_rows.size(), 2U);
+    EXPECT_EQ(diagnostics.schema_sql_rows[0], "CREATE TABLE volcano (x)");
+    EXPECT_EQ(diagnostics.schema_sql_rows[1],
+              "CREATE TABLE meta(key LONGVARCHAR NOT NULL UNIQUE PRIMARY KEY, "
+              "value LONGVARCHAR)");
+
+    ASSERT_EQ(diagnostics.schema_other_row_names.size(), 1U);
+    EXPECT_EQ(diagnostics.schema_other_row_names[0], "sqlite_autoindex_meta_1");
+  }
+
+  // Test that an error message is included in the diagnostics.
+  {
+    sql::test::ScopedErrorExpecter error_expecter;
+    error_expecter.ExpectError(SQLITE_ERROR);
+    EXPECT_FALSE(
+        db_->Execute("INSERT INTO volcano VALUES ('bound_value1', 42, 1234)"));
+    EXPECT_TRUE(error_expecter.SawExpectedErrors());
+
+    DatabaseDiagnostics diagnostics;
+    const std::string error_info =
+        db_->CollectErrorInfo(SQLITE_ERROR, &s, &diagnostics);
+    // Expect that the error message contains the table name and a column error.
+    EXPECT_NE(diagnostics.error_message.find("table"), std::string::npos);
+    EXPECT_NE(diagnostics.error_message.find("volcano"), std::string::npos);
+    EXPECT_NE(diagnostics.error_message.find("column"), std::string::npos);
+
+    // Expect that bound values are not present.
+    EXPECT_EQ(diagnostics.error_message.find("bound_value1"),
+              std::string::npos);
+    EXPECT_EQ(diagnostics.error_message.find("42"), std::string::npos);
+    EXPECT_EQ(diagnostics.error_message.find("1234"), std::string::npos);
+  }
 }
 
 // Test that a fresh database has mmap enabled by default, if mmap'ed I/O is
@@ -2035,6 +2082,13 @@ TEST_P(SQLDatabaseTest, SchemaFailsAfterCorruptSizeInHeader) {
   }
 }
 
+TEST(SQLEmptyPathDatabaseTest, EmptyPathTest) {
+  Database db;
+  EXPECT_TRUE(db.OpenInMemory());
+  EXPECT_TRUE(db.is_open());
+  EXPECT_TRUE(db.DbPath().empty());
+}
+
 // WAL mode is currently not supported on Fuchsia.
 #if !BUILDFLAG(IS_FUCHSIA)
 INSTANTIATE_TEST_SUITE_P(JournalMode, SQLDatabaseTest, testing::Bool());
@@ -2047,5 +2101,4 @@ INSTANTIATE_TEST_SUITE_P(JournalMode,
                          SQLDatabaseTestExclusiveMode,
                          testing::Values(false));
 #endif
-
 }  // namespace sql

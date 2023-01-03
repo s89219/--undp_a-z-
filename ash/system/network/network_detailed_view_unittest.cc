@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "ash/system/tray/tri_view.h"
 #include "ash/test/ash_test_base.h"
 #include "base/run_loop.h"
+#include "base/test/metrics/user_action_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "mojo/public/cpp/bindings/clone_traits.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -54,9 +55,7 @@ class NetworkDetailedViewTest : public AshTestBase {
         list_type_);
 
     widget_ = CreateFramelessTestWidget();
-    ASSERT_TRUE(widget_->widget_delegate()->CanMaximize());
     widget_->SetFullscreen(true);
-    DCHECK(widget_->IsFullscreen());
     widget_->SetContentsView(network_detailed_view_);
 
     base::RunLoop().RunUntilIdle();
@@ -94,6 +93,13 @@ class NetworkDetailedViewTest : public AshTestBase {
     return network_detailed_view_;
   }
 
+  void CheckHistogramBuckets(int count) {
+    EXPECT_EQ(count, user_action_tester_.GetActionCount(
+                         "ChromeOS.SystemTray.Network.SettingsButtonPressed"));
+    EXPECT_EQ(count, user_action_tester_.GetActionCount(
+                         "StatusArea_Network_Settings"));
+  }
+
  private:
   template <class T>
   T FindViewById(NetworkDetailedView::NetworkDetailedViewChildId id) {
@@ -107,10 +113,13 @@ class NetworkDetailedViewTest : public AshTestBase {
   FakeDetailedViewDelegate fake_detailed_view_delegate_;
   NetworkDetailedView::ListType list_type_;
   base::test::ScopedFeatureList feature_list_;
+  base::UserActionTester user_action_tester_;
 };
 
 TEST_F(NetworkDetailedViewTest, PressingSettingsButtonOpensSettings) {
   views::Button* settings_button = FindSettingsButton();
+
+  CheckHistogramBuckets(/*count=*/0);
 
   GetSessionControllerClient()->SetSessionState(
       session_manager::SessionState::LOCKED);
@@ -118,11 +127,15 @@ TEST_F(NetworkDetailedViewTest, PressingSettingsButtonOpensSettings) {
   EXPECT_EQ(0, GetSystemTrayClient()->show_network_settings_count());
   EXPECT_EQ(0u, fake_detailed_view_delegate()->close_bubble_call_count());
 
+  CheckHistogramBuckets(/*count=*/0);
+
   GetSessionControllerClient()->SetSessionState(
       session_manager::SessionState::ACTIVE);
   LeftClickOn(settings_button);
   EXPECT_EQ(1, GetSystemTrayClient()->show_network_settings_count());
   EXPECT_EQ(1u, fake_detailed_view_delegate()->close_bubble_call_count());
+
+  CheckHistogramBuckets(/*count=*/1);
 }
 
 TEST_F(NetworkDetailedViewTest, PressingInfoButtonOpensInfoBubble) {

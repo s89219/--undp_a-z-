@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SERVICES_NETWORK_TEST_URL_LOADER_CONTEXT_FOR_TESTS_H_
 #define SERVICES_NETWORK_TEST_URL_LOADER_CONTEXT_FOR_TESTS_H_
 
+#include "base/memory/raw_ptr.h"
 #include "services/network/public/cpp/corb/corb_api.h"
 #include "services/network/public/cpp/cors/origin_access_list.h"
 #include "services/network/public/mojom/network_context.mojom.h"
@@ -28,9 +29,6 @@ class URLLoaderContextForTests : public URLLoaderContext {
   void set_network_context_client(mojom::NetworkContextClient* new_value) {
     network_context_client_ = new_value;
   }
-  void set_origin_policy_manager(mojom::OriginPolicyManager* new_value) {
-    origin_policy_manager_ = new_value;
-  }
   void set_url_request_context(net::URLRequestContext* new_value) {
     url_request_context_ = new_value;
   }
@@ -44,10 +42,10 @@ class URLLoaderContextForTests : public URLLoaderContext {
   const cors::OriginAccessList& GetOriginAccessList() const override;
   const mojom::URLLoaderFactoryParams& GetFactoryParams() const override;
   mojom::CookieAccessObserver* GetCookieAccessObserver() const override;
+  mojom::TrustTokenAccessObserver* GetTrustTokenAccessObserver() const override;
   mojom::CrossOriginEmbedderPolicyReporter* GetCoepReporter() const override;
   mojom::DevToolsObserver* GetDevToolsObserver() const override;
   mojom::NetworkContextClient* GetNetworkContextClient() const override;
-  mojom::OriginPolicyManager* GetOriginPolicyManager() const override;
   mojom::TrustedURLLoaderHeaderClient* GetUrlLoaderHeaderClient()
       const override;
   mojom::URLLoaderNetworkServiceObserver* GetURLLoaderNetworkServiceObserver()
@@ -62,9 +60,8 @@ class URLLoaderContextForTests : public URLLoaderContext {
   cors::OriginAccessList origin_access_list_;
   corb::PerFactoryState corb_state_;
 
-  mojom::NetworkContextClient* network_context_client_ = nullptr;
-  mojom::OriginPolicyManager* origin_policy_manager_ = nullptr;
-  net::URLRequestContext* url_request_context_ = nullptr;
+  raw_ptr<mojom::NetworkContextClient> network_context_client_ = nullptr;
+  raw_ptr<net::URLRequestContext> url_request_context_ = nullptr;
   scoped_refptr<ResourceSchedulerClient> resource_scheduler_client_;
 };
 

@@ -1,14 +1,10 @@
 include_rules = [
   "+components/signin/internal/identity_manager/account_capabilities_constants.h",
+  "+components/signin/internal/identity_manager/account_capabilities_fetcher.h",
 ]
 
 specific_include_rules = {
   # TODO(crbug.com/1294160): Remove these dependencies.
-  "^account_consistency_browser_agent.mm": [
-    "+ios/chrome/browser/ui/commands/application_commands.h",
-    "+ios/chrome/browser/ui/commands/open_new_tab_command.h",
-    "+ios/chrome/browser/ui/commands/show_signin_command.h",
-  ],
   "^authentication_service.mm": [
     "+ios/chrome/browser/ui/authentication/signin/signin_utils.h",
   ],

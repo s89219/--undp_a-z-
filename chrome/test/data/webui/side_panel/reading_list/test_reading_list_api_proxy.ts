@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,14 +16,15 @@ export class TestReadingListApiProxy extends TestBrowserProxy implements
   constructor() {
     super([
       'getReadLaterEntries',
-      'openURL',
+      'openUrl',
       'updateReadStatus',
       'addCurrentTab',
+      'markCurrentTabAsRead',
       'removeEntry',
-      'showContextMenuForURL',
+      'showContextMenuForUrl',
       'updateCurrentPageActionButtonState',
-      'showUI',
-      'closeUI',
+      'showUi',
+      'closeUi',
     ]);
 
     this.entries_ = {
@@ -37,8 +38,8 @@ export class TestReadingListApiProxy extends TestBrowserProxy implements
     return Promise.resolve({entries: this.entries_});
   }
 
-  openURL(url: Url, markAsRead: boolean, clickModifiers: ClickModifiers) {
-    this.methodCalled('openURL', [url, markAsRead, clickModifiers]);
+  openUrl(url: Url, markAsRead: boolean, clickModifiers: ClickModifiers) {
+    this.methodCalled('openUrl', [url, markAsRead, clickModifiers]);
   }
 
   updateReadStatus(url: Url, read: boolean) {
@@ -49,24 +50,28 @@ export class TestReadingListApiProxy extends TestBrowserProxy implements
     this.methodCalled('addCurrentTab');
   }
 
+  markCurrentTabAsRead() {
+    this.methodCalled('markCurrentTabAsRead');
+  }
+
   removeEntry(url: Url) {
     this.methodCalled('removeEntry', url);
   }
 
-  showContextMenuForURL(url: Url, locationX: number, locationY: number) {
-    this.methodCalled('showContextMenuForURL', [url, locationX, locationY]);
+  showContextMenuForUrl(url: Url, locationX: number, locationY: number) {
+    this.methodCalled('showContextMenuForUrl', [url, locationX, locationY]);
   }
 
   updateCurrentPageActionButtonState() {
     this.methodCalled('updateCurrentPageActionButtonState');
   }
 
-  showUI() {
-    this.methodCalled('showUI');
+  showUi() {
+    this.methodCalled('showUi');
   }
 
-  closeUI() {
-    this.methodCalled('closeUI');
+  closeUi() {
+    this.methodCalled('closeUi');
   }
 
   getCallbackRouter() {

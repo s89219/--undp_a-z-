@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -79,13 +79,12 @@ std::unique_ptr<Event> CreateOnBeforeNavigateEvent(
   // Only set the parentDocumentId value if we have a parent.
   if (content::RenderFrameHost* parent_frame_host =
           navigation_handle->GetParentFrameOrOuterDocument()) {
-    details.parent_document_id = std::make_unique<std::string>(
-        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString());
+    details.parent_document_id =
+        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString();
   }
-  details.frame_type =
-      ToString(ExtensionApiFrameIdMap::GetFrameType(navigation_handle));
+  details.frame_type = ExtensionApiFrameIdMap::GetFrameType(navigation_handle);
   details.document_lifecycle =
-      ToString(ExtensionApiFrameIdMap::GetDocumentLifecycle(navigation_handle));
+      ExtensionApiFrameIdMap::GetDocumentLifecycle(navigation_handle);
   details.time_stamp = MilliSecondsFromTime(base::Time::Now());
 
   auto event = std::make_unique<Event>(
@@ -168,9 +167,8 @@ void DispatchOnCommitted(events::HistogramValue histogram_value,
 
   content::BrowserContext* browser_context =
       navigation_handle->GetWebContents()->GetBrowserContext();
-  auto event = std::make_unique<Event>(
-      histogram_value, event_name,
-      base::Value(std::move(args)).TakeListDeprecated(), browser_context);
+  auto event = std::make_unique<Event>(histogram_value, event_name,
+                                       std::move(args), browser_context);
   DispatchEvent(browser_context, std::move(event), url);
 }
 
@@ -190,13 +188,12 @@ void DispatchOnDOMContentLoaded(content::WebContents* web_contents,
   // Only set the parentDocumentId value if we have a parent.
   if (content::RenderFrameHost* parent_frame_host =
           frame_host->GetParentOrOuterDocument()) {
-    details.parent_document_id = std::make_unique<std::string>(
-        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString());
+    details.parent_document_id =
+        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString();
   }
-  details.frame_type =
-      ToString(ExtensionApiFrameIdMap::GetFrameType(frame_host));
+  details.frame_type = ExtensionApiFrameIdMap::GetFrameType(frame_host);
   details.document_lifecycle =
-      ToString(ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host));
+      ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host);
   details.time_stamp = MilliSecondsFromTime(base::Time::Now());
 
   content::BrowserContext* browser_context = web_contents->GetBrowserContext();
@@ -223,13 +220,12 @@ void DispatchOnCompleted(content::WebContents* web_contents,
   // Only set the parentDocumentId value if we have a parent.
   if (content::RenderFrameHost* parent_frame_host =
           frame_host->GetParentOrOuterDocument()) {
-    details.parent_document_id = std::make_unique<std::string>(
-        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString());
+    details.parent_document_id =
+        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString();
   }
-  details.frame_type =
-      ToString(ExtensionApiFrameIdMap::GetFrameType(frame_host));
+  details.frame_type = ExtensionApiFrameIdMap::GetFrameType(frame_host);
   details.document_lifecycle =
-      ToString(ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host));
+      ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host);
   details.time_stamp = MilliSecondsFromTime(base::Time::Now());
 
   content::BrowserContext* browser_context = web_contents->GetBrowserContext();
@@ -295,13 +291,12 @@ void DispatchOnErrorOccurred(content::WebContents* web_contents,
   // Only set the parentDocumentId value if we have a parent.
   if (content::RenderFrameHost* parent_frame_host =
           frame_host->GetParentOrOuterDocument()) {
-    details.parent_document_id = std::make_unique<std::string>(
-        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString());
+    details.parent_document_id =
+        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString();
   }
-  details.frame_type =
-      ToString(ExtensionApiFrameIdMap::GetFrameType(frame_host));
+  details.frame_type = ExtensionApiFrameIdMap::GetFrameType(frame_host);
   details.document_lifecycle =
-      ToString(ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host));
+      ExtensionApiFrameIdMap::GetDocumentLifecycle(frame_host);
   details.time_stamp = MilliSecondsFromTime(base::Time::Now());
 
   content::BrowserContext* browser_context = web_contents->GetBrowserContext();
@@ -330,13 +325,12 @@ void DispatchOnErrorOccurred(content::NavigationHandle* navigation_handle) {
   // Only set the parentDocumentId value if we have a parent.
   if (content::RenderFrameHost* parent_frame_host =
           navigation_handle->GetParentFrameOrOuterDocument()) {
-    details.parent_document_id = std::make_unique<std::string>(
-        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString());
+    details.parent_document_id =
+        ExtensionApiFrameIdMap::GetDocumentId(parent_frame_host).ToString();
   }
-  details.frame_type =
-      ToString(ExtensionApiFrameIdMap::GetFrameType(navigation_handle));
+  details.frame_type = ExtensionApiFrameIdMap::GetFrameType(navigation_handle);
   details.document_lifecycle =
-      ToString(ExtensionApiFrameIdMap::GetDocumentLifecycle(navigation_handle));
+      ExtensionApiFrameIdMap::GetDocumentLifecycle(navigation_handle);
   details.time_stamp = MilliSecondsFromTime(base::Time::Now());
 
   content::BrowserContext* browser_context =

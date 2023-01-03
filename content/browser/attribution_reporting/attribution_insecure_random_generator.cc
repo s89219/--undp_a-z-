@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 
 #include "base/bit_cast.h"
 #include "base/check_op.h"
+#include "base/memory/raw_ref.h"
 #include "base/ranges/algorithm.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
 #include "third_party/abseil-cpp/absl/numeric/int128.h"
@@ -35,7 +36,7 @@ double ToDouble(uint64_t state0) {
   // Exponent for double values for [1.0 .. 2.0)
   static const uint64_t kExponentBits = uint64_t{0x3FF0000000000000};
   uint64_t random = (state0 >> 12) | kExponentBits;
-  return bit_cast<double>(random) - 1;
+  return base::bit_cast<double>(random) - 1;
 }
 
 }  // namespace
@@ -100,12 +101,12 @@ void AttributionInsecureRandomGenerator::RandomShuffle(
     static constexpr result_type max() {
       return std::numeric_limits<uint64_t>::max();
     }
-    result_type operator()() const { return gen.RandUint64(); }
+    result_type operator()() const { return gen->RandUint64(); }
 
-    AttributionInsecureRandomGenerator& gen;
+    const raw_ref<AttributionInsecureRandomGenerator> gen;
   };
 
-  base::ranges::shuffle(reports, RandomBitGenerator{.gen = *this});
+  base::ranges::shuffle(reports, RandomBitGenerator{.gen = raw_ref(*this)});
 }
 
 }  // namespace content

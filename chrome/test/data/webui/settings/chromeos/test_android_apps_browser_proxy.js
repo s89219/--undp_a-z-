@@ -1,8 +1,10 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {TestBrowserProxy} from '../../test_browser_proxy.js';
+import {webUIListenerCallback} from 'chrome://resources/ash/common/cr.m.js';
+
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 /** @implements {AndroidAppsBrowserProxy} */
 export class TestAndroidAppsBrowserProxy extends TestBrowserProxy {
@@ -31,6 +33,6 @@ export class TestAndroidAppsBrowserProxy extends TestBrowserProxy {
       playStoreEnabled: playStoreEnabled,
       settingsAppAvailable: settingsAppAvailable,
     };
-    cr.webUIListenerCallback('android-apps-info-update', appsInfo);
+    webUIListenerCallback('android-apps-info-update', appsInfo);
   }
 }

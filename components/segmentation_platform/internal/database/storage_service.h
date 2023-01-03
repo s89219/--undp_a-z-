@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,10 @@
 #include "base/containers/flat_set.h"
 #include "base/memory/raw_ptr.h"
 #include "components/leveldb_proto/public/proto_database.h"
-#include "components/optimization_guide/proto/models.pb.h"
+#include "components/segmentation_platform/public/proto/segmentation_platform.pb.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+
+class PrefService;
 
 namespace base {
 class Clock;
@@ -65,9 +67,9 @@ class StorageService {
                  scoped_refptr<base::SequencedTaskRunner> task_runner,
                  base::Clock* clock,
                  UkmDataManager* ukm_data_manager,
-                 base::flat_set<optimization_guide::proto::OptimizationTarget>
-                     all_segment_ids,
-                 ModelProviderFactory* model_provider_factory);
+                 const base::flat_set<proto::SegmentId>& all_segment_ids,
+                 ModelProviderFactory* model_provider_factory,
+                 PrefService* profile_prefs);
 
   // For tests:
   StorageService(
@@ -79,9 +81,9 @@ class StorageService {
           signal_storage_config_db,
       base::Clock* clock,
       UkmDataManager* ukm_data_manager,
-      base::flat_set<optimization_guide::proto::OptimizationTarget>
-          all_segment_ids,
-      ModelProviderFactory* model_provider_factory);
+      const base::flat_set<proto::SegmentId>& all_segment_ids,
+      ModelProviderFactory* model_provider_factory,
+      PrefService* profile_prefs);
 
   // For tests:
   StorageService(std::unique_ptr<SegmentInfoDatabase> segment_info_database,
@@ -92,8 +94,8 @@ class StorageService {
 
   ~StorageService();
 
-  StorageService(StorageService&) = delete;
-  StorageService& operator=(StorageService&) = delete;
+  StorageService(const StorageService&) = delete;
+  StorageService& operator=(const StorageService&) = delete;
 
   // Initialize all the databases and returns true when all of them are
   // initialized successfully.
@@ -103,6 +105,9 @@ class StorageService {
   // Returns a bitmap of the service status. See `ServiceStatus` enum for the
   // bitmap values.
   int GetServiceStatus() const;
+
+  // Executes all database maintenance tasks.
+  void ExecuteDatabaseMaintenanceTasks(bool is_startup);
 
   DefaultModelManager* default_model_manager() {
     DCHECK(default_model_manager_);
@@ -127,10 +132,6 @@ class StorageService {
   void OnSignalStorageConfigInitialized(bool success);
   bool IsInitializationFinished() const;
   void MaybeFinishInitialization();
-
-  // Executes all database maintenance tasks. This should be invoked after a
-  // short amount of time has passed since initialization happened.
-  void OnExecuteDatabaseMaintenanceTasks();
 
   // Default models.
   std::unique_ptr<DefaultModelManager> default_model_manager_;

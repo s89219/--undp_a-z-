@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,11 +13,11 @@
 #include "chrome/browser/ash/login/oobe_screen.h"
 #include "chrome/browser/ash/login/wizard_context.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
-#include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/network_screen_handler.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "chromeos/network/network_handler.h"
-#include "chromeos/network/network_state_handler.h"
+#include "chromeos/ash/components/network/network_handler.h"
+#include "chromeos/ash/components/network/network_state_handler.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace ash {
@@ -33,50 +33,28 @@ constexpr char kUserActionContinueButtonClicked[] = "continue";
 // static
 std::string NetworkScreen::GetResultString(Result result) {
   switch (result) {
-    case Result::CONNECTED_REGULAR:
-    case Result::CONNECTED_DEMO:
-    case Result::CONNECTED_REGULAR_CONSOLIDATED_CONSENT:
-    case Result::CONNECTED_DEMO_CONSOLIDATED_CONSENT:
+    case Result::CONNECTED:
       return "Connected";
-    case Result::OFFLINE_DEMO:
-      return "OfflineDemoSetup";
-    case Result::BACK_REGULAR:
-    case Result::BACK_DEMO:
-    case Result::BACK_OS_INSTALL:
+    case Result::BACK:
       return "Back";
     case Result::NOT_APPLICABLE:
-    case Result::NOT_APPLICABLE_CONSOLIDATED_CONSENT:
       return BaseScreen::kNotApplicable;
   }
 }
 
-NetworkScreen::NetworkScreen(NetworkScreenView* view,
+NetworkScreen::NetworkScreen(base::WeakPtr<NetworkScreenView> view,
                              const ScreenExitCallback& exit_callback)
     : BaseScreen(NetworkScreenView::kScreenId, OobeScreenPriority::DEFAULT),
-      view_(view),
+      view_(std::move(view)),
       exit_callback_(exit_callback),
-      network_state_helper_(std::make_unique<login::NetworkStateHelper>()) {
-  if (view_)
-    view_->Bind(this);
-}
+      network_state_helper_(std::make_unique<login::NetworkStateHelper>()) {}
 
 NetworkScreen::~NetworkScreen() {
-  if (view_)
-    view_->Unbind();
   connection_timer_.Stop();
   UnsubscribeNetworkNotification();
 }
 
-void NetworkScreen::OnViewDestroyed(NetworkScreenView* view) {
-  if (view_ == view) {
-    view_ = nullptr;
-    // Ownership of NetworkScreen is complicated; ensure that we remove
-    // this as a NetworkStateHandler observer when the view is destroyed.
-    UnsubscribeNetworkNotification();
-  }
-}
-
-bool NetworkScreen::MaybeSkip(WizardContext* context) {
+bool NetworkScreen::MaybeSkip(WizardContext& context) {
   // Skip this screen if the device is connected to Ethernet for the first time
   // in this session.
   return UpdateStatusIfConnectedToEthernet();
@@ -89,19 +67,18 @@ void NetworkScreen::ShowImpl() {
 }
 
 void NetworkScreen::HideImpl() {
-  if (view_)
-    view_->Hide();
   connection_timer_.Stop();
   UnsubscribeNetworkNotification();
 }
 
-void NetworkScreen::OnUserActionDeprecated(const std::string& action_id) {
+void NetworkScreen::OnUserAction(const base::Value::List& args) {
+  const std::string& action_id = args[0].GetString();
   if (action_id == kUserActionContinueButtonClicked) {
     OnContinueButtonClicked();
   } else if (action_id == kUserActionBackButtonClicked) {
     OnBackButtonClicked();
   } else {
-    BaseScreen::OnUserActionDeprecated(action_id);
+    BaseScreen::OnUserAction(args);
   }
 }
 
@@ -135,31 +112,20 @@ void NetworkScreen::SetNetworkStateHelperForTest(
 void NetworkScreen::SubscribeNetworkNotification() {
   if (!is_network_subscribed_) {
     is_network_subscribed_ = true;
-    NetworkHandler::Get()->network_state_handler()->AddObserver(this,
-                                                                FROM_HERE);
+    network_state_handler_observer_.Observe(
+        NetworkHandler::Get()->network_state_handler());
   }
 }
 
 void NetworkScreen::UnsubscribeNetworkNotification() {
   if (is_network_subscribed_) {
     is_network_subscribed_ = false;
-    NetworkHandler::Get()->network_state_handler()->RemoveObserver(this,
-                                                                   FROM_HERE);
+    network_state_handler_observer_.Reset();
   }
 }
 
 void NetworkScreen::NotifyOnConnection() {
-  if (DemoSetupController::IsOobeDemoSetupFlowInProgress()) {
-    if (chromeos::features::IsOobeConsolidatedConsentEnabled())
-      exit_callback_.Run(Result::CONNECTED_DEMO_CONSOLIDATED_CONSENT);
-    else
-      exit_callback_.Run(Result::CONNECTED_DEMO);
-  } else {
-    if (chromeos::features::IsOobeConsolidatedConsentEnabled())
-      exit_callback_.Run(Result::CONNECTED_REGULAR_CONSOLIDATED_CONSENT);
-    else
-      exit_callback_.Run(Result::CONNECTED_REGULAR);
-  }
+  exit_callback_.Run(Result::CONNECTED);
 }
 
 void NetworkScreen::OnConnectionTimeout() {
@@ -173,11 +139,9 @@ void NetworkScreen::OnConnectionTimeout() {
 }
 
 void NetworkScreen::UpdateStatus() {
-  if (!view_)
-    return;
-
   bool is_connected = network_state_helper_->IsConnected();
-  if (is_connected)
+
+  if (view_ && is_connected)
     view_->ClearErrors();
 
   std::u16string network_name = network_state_helper_->GetCurrentNetworkName();
@@ -226,12 +190,7 @@ void NetworkScreen::OnBackButtonClicked() {
   if (view_)
     view_->ClearErrors();
 
-  if (DemoSetupController::IsOobeDemoSetupFlowInProgress())
-    exit_callback_.Run(Result::BACK_DEMO);
-  else if (switches::IsOsInstallAllowed())
-    exit_callback_.Run(Result::BACK_OS_INSTALL);
-  else
-    exit_callback_.Run(Result::BACK_REGULAR);
+  exit_callback_.Run(Result::BACK);
 }
 
 void NetworkScreen::OnContinueButtonClicked() {
@@ -263,18 +222,10 @@ bool NetworkScreen::UpdateStatusIfConnectedToEthernet() {
 
   if (is_hidden()) {
     // Screen not shown yet: skipping it.
-    if (chromeos::features::IsOobeConsolidatedConsentEnabled()) {
-      exit_callback_.Run(Result::NOT_APPLICABLE_CONSOLIDATED_CONSENT);
-    } else {
-      exit_callback_.Run(Result::NOT_APPLICABLE);
-    }
+    exit_callback_.Run(Result::NOT_APPLICABLE);
   } else {
     // Screen already shown: automatically continuing.
-    if (chromeos::features::IsOobeConsolidatedConsentEnabled()) {
-      exit_callback_.Run(Result::CONNECTED_REGULAR_CONSOLIDATED_CONSENT);
-    } else {
-      exit_callback_.Run(Result::CONNECTED_REGULAR);
-    }
+    exit_callback_.Run(Result::CONNECTED);
   }
 
   return true;

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -468,31 +468,6 @@ TEST_F(ArcResizeLockManagerTest, TestCompatWindowSnap) {
   EXPECT_EQ(arc_window->GetProperty(ash::kUnresizableSnappedSizeKey), nullptr);
 
   // Fully-locked window can't be snapped.
-  arc_window->SetProperty(ash::kArcResizeLockTypeKey,
-                          ash::ArcResizeLockType::RESIZE_DISABLED_NONTOGGLABLE);
-  EXPECT_EQ(arc_window->GetProperty(ash::kUnresizableSnappedSizeKey), nullptr);
-}
-
-// TODO(b/215063759): Remove this test after the launch.
-// Tests that compatible window snapping is properly disabled if the flag is
-// disabled.
-TEST_F(ArcResizeLockManagerTest, TestCompatWindowSnapWithFlagDisabled) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature({arc::kCompatSnapFeature});
-
-  auto arc_window = CreateFakeWindow(true);
-  arc_window->SetProperty(ash::kAppIDKey, std::string("app-id"));
-  arc_window->SetProperty(aura::client::kResizeBehaviorKey,
-                          aura::client::kResizeBehaviorNone);
-
-  arc_window->SetProperty(ash::kArcResizeLockTypeKey,
-                          ash::ArcResizeLockType::RESIZE_DISABLED_TOGGLABLE);
-  EXPECT_EQ(arc_window->GetProperty(ash::kUnresizableSnappedSizeKey), nullptr);
-
-  arc_window->SetProperty(ash::kArcResizeLockTypeKey,
-                          ash::ArcResizeLockType::NONE);
-  EXPECT_EQ(arc_window->GetProperty(ash::kUnresizableSnappedSizeKey), nullptr);
-
   arc_window->SetProperty(ash::kArcResizeLockTypeKey,
                           ash::ArcResizeLockType::RESIZE_DISABLED_NONTOGGLABLE);
   EXPECT_EQ(arc_window->GetProperty(ash::kUnresizableSnappedSizeKey), nullptr);

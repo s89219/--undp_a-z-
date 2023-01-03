@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "base/location.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/cookie_store.h"
@@ -72,10 +71,8 @@ DelayedCookieMonsterChangeDispatcher::AddCallbackForAllChanges(
 }
 
 DelayedCookieMonster::DelayedCookieMonster()
-    : cookie_monster_(new CookieMonster(nullptr /* store */,
-                                        nullptr /* netlog */,
-                                        false /* first_party_sets_enabled */)),
-      did_run_(false),
+    : cookie_monster_(std::make_unique<CookieMonster>(nullptr /* store */,
+                                                      nullptr /* netlog */)),
       result_(CookieAccessResult(CookieInclusionStatus(
           CookieInclusionStatus::EXCLUDE_FAILURE_TO_STORE))) {}
 
@@ -108,7 +105,7 @@ void DelayedCookieMonster::SetCanonicalCookieAsync(
                      base::Unretained(this)),
       std::move(cookie_access_result));
   DCHECK_EQ(did_run_, true);
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&DelayedCookieMonster::InvokeSetCookiesCallback,
                      base::Unretained(this), std::move(callback)),
@@ -127,7 +124,7 @@ void DelayedCookieMonster::GetCookieListWithOptionsAsync(
           &DelayedCookieMonster::GetCookieListWithOptionsInternalCallback,
           base::Unretained(this)));
   DCHECK_EQ(did_run_, true);
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&DelayedCookieMonster::InvokeGetCookieListCallback,
                      base::Unretained(this), std::move(callback)),
@@ -216,12 +213,12 @@ std::string CookieURLHelper::Format(const std::string& format_string) const {
 //
 // FlushablePersistentStore
 //
-FlushablePersistentStore::FlushablePersistentStore() : flush_count_(0) {}
+FlushablePersistentStore::FlushablePersistentStore() = default;
 
 void FlushablePersistentStore::Load(LoadedCallback loaded_callback,
                                     const NetLogWithSource& /* net_log */) {
   std::vector<std::unique_ptr<CanonicalCookie>> out_cookies;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(loaded_callback), std::move(out_cookies)));
 }
@@ -259,7 +256,7 @@ FlushablePersistentStore::~FlushablePersistentStore() = default;
 //
 // CallbackCounter
 //
-CallbackCounter::CallbackCounter() : callback_count_(0) {}
+CallbackCounter::CallbackCounter() = default;
 
 void CallbackCounter::Callback() {
   base::AutoLock lock(callback_count_lock_);

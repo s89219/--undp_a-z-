@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,9 +16,12 @@
 #include "ash/public/cpp/kiosk_app_menu.h"
 #include "ash/public/cpp/login_types.h"
 #include "ash/public/cpp/scoped_guest_button_blocker.h"
+#include "ash/public/cpp/shelf_config.h"
 #include "ash/shelf/kiosk_app_instruction_bubble.h"
 #include "ash/shelf/shelf_shutdown_confirmation_bubble.h"
 #include "ash/shutdown_controller_impl.h"
+#include "ash/system/enterprise/enterprise_domain_observer.h"
+#include "ash/system/model/enterprise_domain_model.h"
 #include "ash/tray_action/tray_action.h"
 #include "ash/tray_action/tray_action_observer.h"
 #include "base/memory/weak_ptr.h"
@@ -38,6 +41,7 @@ namespace ash {
 
 enum class LockScreenActionBackgroundState;
 
+class LoginShelfButton;
 class KioskAppsButton;
 class TrayBackgroundView;
 
@@ -47,7 +51,9 @@ class ASH_EXPORT LoginShelfView : public views::View,
                                   public TrayActionObserver,
                                   public LockScreenActionBackgroundObserver,
                                   public ShutdownControllerImpl::Observer,
-                                  public LoginDataDispatcher::Observer {
+                                  public LoginDataDispatcher::Observer,
+                                  public EnterpriseDomainObserver,
+                                  public ShelfConfig::Observer {
  public:
   enum ButtonId {
     kShutdown = 1,          // Shut down the device.
@@ -131,6 +137,9 @@ class ASH_EXPORT LoginShelfView : public views::View,
   void Layout() override;
   void OnThemeChanged() override;
 
+  // ShelfConfig::Observer:
+  void OnShelfConfigUpdated() override;
+
   gfx::Rect get_button_union_bounds() const { return button_union_bounds_; }
 
   // Test API. Returns true if request was successful (i.e. button was
@@ -161,6 +170,10 @@ class ASH_EXPORT LoginShelfView : public views::View,
   // LoginDataDispatcher::Observer:
   void OnUsersChanged(const std::vector<LoginUserInfo>& users) override;
   void OnOobeDialogStateChanged(OobeDialogState state) override;
+
+  // ash::EnterpriseDomainObserver
+  void OnDeviceEnterpriseInfoChanged() override;
+  void OnEnterpriseAccountDomainChanged() override;
 
   // Called when a locale change is detected. Updates the login shelf button
   // strings.
@@ -207,6 +220,8 @@ class ASH_EXPORT LoginShelfView : public views::View,
 
   bool ShouldShowSignInButton() const;
 
+  bool ShouldShowAddUserButton() const;
+
   bool ShouldShowAppsButton() const;
 
   bool ShouldShowGuestAndAppsButtons() const;
@@ -247,6 +262,9 @@ class ASH_EXPORT LoginShelfView : public views::View,
   base::ScopedObservation<LoginDataDispatcher, LoginDataDispatcher::Observer>
       login_data_dispatcher_observation_{this};
 
+  base::ScopedObservation<EnterpriseDomainModel, EnterpriseDomainObserver>
+      enterprise_domain_model_observation_{this};
+
   // The kiosk app button will only be created for the primary display's login
   // shelf.
   KioskAppsButton* kiosk_apps_button_ = nullptr;
@@ -265,6 +283,9 @@ class ASH_EXPORT LoginShelfView : public views::View,
   // letting events that target the "empty space" pass through. These
   // coordinates are local to the view.
   gfx::Rect button_union_bounds_;
+
+  // Maintains a list of LoginShelfButton children of LoginShelfView.
+  std::vector<LoginShelfButton*> login_shelf_buttons_;
 
   // Number of active scoped Guest button blockers.
   int scoped_guest_button_blockers_ = 0;

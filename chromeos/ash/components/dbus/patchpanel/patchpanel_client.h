@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
+#include "base/observer_list_types.h"
 #include "chromeos/ash/components/dbus/patchpanel/patchpanel_service.pb.h"
 #include "chromeos/dbus/common/dbus_client.h"
 #include "dbus/object_proxy.h"
@@ -16,8 +17,16 @@ namespace ash {
 // Simple wrapper around patchpanel DBus API. The method names and protobuf
 // schema used by patchpanel DBus API are defined in
 // third_party/cros_system_api/dbus/patchpanel.
-class COMPONENT_EXPORT(PATCHPANEL) PatchPanelClient : public DBusClient {
+class COMPONENT_EXPORT(PATCHPANEL) PatchPanelClient
+    : public chromeos::DBusClient {
  public:
+  class Observer : public base::CheckedObserver {
+   public:
+    // Called when NetworkConfigurationChanged signal is received, when the
+    // there is a network configuration change.
+    virtual void NetworkConfigurationChanged() {}
+  };
+
   using GetDevicesCallback = base::OnceCallback<void(
       const std::vector<patchpanel::NetworkDevice>& devices)>;
 
@@ -39,6 +48,12 @@ class COMPONENT_EXPORT(PATCHPANEL) PatchPanelClient : public DBusClient {
   // Obtains a list of virtual network interfaces configured and managed by
   // patchpanel.
   virtual void GetDevices(GetDevicesCallback callback) = 0;
+
+  // Adds an observer.
+  virtual void AddObserver(Observer* observer) = 0;
+
+  // Removes an observer if added.
+  virtual void RemoveObserver(Observer* observer) = 0;
 
  protected:
   // Initialize/Shutdown should be used instead.

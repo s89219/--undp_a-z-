@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -106,9 +106,6 @@ bool ExtensionCreator::ValidateManifest(const base::FilePath& extension_dir,
       Extension::FOLLOW_SYMLINKS_ANYWHERE | Extension::ERROR_ON_PRIVATE_KEY;
   if (run_flags & kRequireModernManifestVersion)
     create_flags |= Extension::REQUIRE_MODERN_MANIFEST_VERSION;
-
-  if (run_flags & kBookmarkApp)
-    create_flags |= Extension::FROM_BOOKMARK;
 
   scoped_refptr<Extension> extension(file_util::LoadExtension(
       extension_dir, extension_id,

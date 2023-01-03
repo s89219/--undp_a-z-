@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,9 @@
 #include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/run_loop.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/test_future.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
@@ -73,7 +73,7 @@ class LocalFileSyncContextTest : public testing::Test {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
     in_memory_env_ = leveldb_chrome::NewMemEnv("LocalFileSyncContextTest");
 
-    ui_task_runner_ = base::ThreadTaskRunnerHandle::Get();
+    ui_task_runner_ = base::SingleThreadTaskRunner::GetCurrentDefault();
     io_task_runner_ = content::GetIOThreadTaskRunner({});
     file_task_runner_ = content::GetIOThreadTaskRunner({});
   }
@@ -234,7 +234,7 @@ class LocalFileSyncContextTest : public testing::Test {
                                          in_memory_env_.get(),
                                          io_task_runner_.get(),
                                          file_task_runner_.get());
-    file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+    file_system.SetUp();
     sync_context_ =
         new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
                                  ui_task_runner_.get(), io_task_runner_.get());
@@ -286,7 +286,7 @@ class LocalFileSyncContextTest : public testing::Test {
                                          in_memory_env_.get(),
                                          io_task_runner_.get(),
                                          file_task_runner_.get());
-    file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+    file_system.SetUp();
     sync_context_ =
         new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
                                  ui_task_runner_.get(), io_task_runner_.get());
@@ -375,7 +375,7 @@ TEST_F(LocalFileSyncContextTest, InitializeFileSystemContext) {
                                        in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
 
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
@@ -417,7 +417,7 @@ TEST_F(LocalFileSyncContextTest, CreateDefaultSyncableBucket) {
   CannedSyncableFileSystem file_system(GURL(kOrigin1), in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
 
   sync_context_ = base::MakeRefCounted<LocalFileSyncContext>(
       dir_.GetPath(), in_memory_env_.get(), ui_task_runner_.get(),
@@ -431,10 +431,10 @@ TEST_F(LocalFileSyncContextTest, CreateDefaultSyncableBucket) {
   EXPECT_EQ(base::File::FILE_OK, file_system.OpenFileSystem());
 
   base::test::TestFuture<storage::QuotaErrorOr<storage::BucketInfo>> future;
-  file_system.quota_manager()->proxy()->GetBucket(
+  file_system.quota_manager()->proxy()->GetBucketForTesting(
       blink::StorageKey::CreateFromStringForTesting(kOrigin1),
       storage::kDefaultBucketName, blink::mojom::StorageType::kSyncable,
-      base::SequencedTaskRunnerHandle::Get(), future.GetCallback());
+      base::SequencedTaskRunner::GetCurrentDefault(), future.GetCallback());
 
   const auto result = future.Take();
   EXPECT_TRUE(result.ok());
@@ -456,8 +456,8 @@ TEST_F(LocalFileSyncContextTest, MultipleFileSystemContexts) {
                                         in_memory_env_.get(),
                                         io_task_runner_.get(),
                                         file_task_runner_.get());
-  file_system1.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
-  file_system2.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system1.SetUp();
+  file_system2.SetUp();
 
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
@@ -571,7 +571,7 @@ TEST_F(LocalFileSyncContextTest, DISABLED_PrepareSyncWhileWriting) {
                                        in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
                                ui_task_runner_.get(), io_task_runner_.get());
@@ -634,7 +634,7 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForDeletion) {
                                        in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
 
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
@@ -721,7 +721,7 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForDeletion_ForRoot) {
                                        in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
 
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
@@ -791,7 +791,7 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate) {
                                        in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
 
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),
@@ -942,7 +942,7 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate_NoParent) {
                                        in_memory_env_.get(),
                                        io_task_runner_.get(),
                                        file_task_runner_.get());
-  file_system.SetUp(CannedSyncableFileSystem::QUOTA_ENABLED);
+  file_system.SetUp();
 
   sync_context_ =
       new LocalFileSyncContext(dir_.GetPath(), in_memory_env_.get(),

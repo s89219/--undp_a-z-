@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,12 +30,14 @@ void FindWebFeedInfoForPage(content::WebContents* web_contents,
 
 void FollowWebFeed(
     content::WebContents* web_contents,
+    feedwire::webfeed::WebFeedChangeReason change_reason,
     base::OnceCallback<void(WebFeedSubscriptions::FollowWebFeedResult)>
         callback);
 
 void UnfollowWebFeed(
     const std::string& web_feed_id,
     bool is_durable_request,
+    feedwire::webfeed::WebFeedChangeReason change_reason,
     base::OnceCallback<void(WebFeedSubscriptions::UnfollowWebFeedResult)>
         callback);
 

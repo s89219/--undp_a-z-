@@ -1,18 +1,18 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://test/mojo_webui_test_support.js';
+import 'chrome://webui-test/mojo_webui_test_support.js';
 
 import {adapterBroker, devices, initializeViews, pageManager, sidebarObj} from 'chrome://bluetooth-internals/bluetooth_internals.js';
 import {BluetoothInternalsHandler} from 'chrome://bluetooth-internals/bluetooth_internals.mojom-webui.js';
 import {connectedDevices} from 'chrome://bluetooth-internals/device_broker.js';
-import {Snackbar} from 'chrome://bluetooth-internals/snackbar.js';
+import {dismissSnackbar, getSnackbarStateForTest, showSnackbar} from 'chrome://bluetooth-internals/snackbar.js';
 import {UUID} from 'chrome://bluetooth-internals/uuid.mojom-webui.js';
-import {ValueControl, ValueDataType} from 'chrome://bluetooth-internals/value_control.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
-import {$} from 'chrome://resources/js/util.m.js';
+import {ValueDataType} from 'chrome://bluetooth-internals/value_control.js';
+import {assert, assertNotReached} from 'chrome://resources/js/assert_ts.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
+import {$} from 'chrome://resources/js/util_ts.js';
 
 import {fakeAdapterInfo, fakeCharacteristicInfo1, fakeDeviceInfo1, fakeDeviceInfo2, fakeDeviceInfo3, fakeServiceInfo1, fakeServiceInfo2, TestAdapter, TestBluetoothInternalsHandler, TestDevice} from './test_utils.js';
 
@@ -54,15 +54,16 @@ suite('bluetooth_internals', function() {
       internalsHandler.whenCalled('getAdapter'),
       internalsHandler.adapter.whenCalled('getInfo'),
       internalsHandler.adapter.whenCalled('getDevices'),
-      internalsHandler.adapter.whenCalled('addObserver')
+      internalsHandler.adapter.whenCalled('addObserver'),
     ]);
   });
 
   setup(function() {
-    adapterFieldSet = document.querySelector('#adapter fieldset');
-    deviceTable = document.querySelector('#devices table');
+    adapterFieldSet = document.querySelector('#adapter object-field-set');
+    deviceTable = document.querySelector('#devices device-table')
+                      .shadowRoot.querySelector('table');
     sidebarNode = document.querySelector('#sidebar');
-    devices.splice(0, devices.length);
+    devices.resetForTest();
     adapterBroker.deviceAdded(fakeDeviceInfo1());
     adapterBroker.deviceAdded(fakeDeviceInfo2());
   });
@@ -70,14 +71,14 @@ suite('bluetooth_internals', function() {
   teardown(function() {
     internalsHandler.reset();
     sidebarObj.close();
-    Snackbar.dismiss(true);
+    dismissSnackbar(true);
     connectedDevices.clear();
 
     pageManager.registeredPages.get('adapter').setAdapterInfo(
         fakeAdapterInfo());
 
     for (const pageName of pageManager.registeredPages.keys()) {
-      var page = pageManager.registeredPages.get(pageName);
+      const page = pageManager.registeredPages.get(pageName);
 
       if (pageNames.indexOf(pageName) < 0) {
         page.pageDiv.parentNode.removeChild(page.pageDiv);
@@ -91,13 +92,13 @@ suite('bluetooth_internals', function() {
    * @param {!DeviceInfo} deviceInfo
    */
   function changeDevice(deviceInfo) {
-    var deviceRow = deviceTable.querySelector(
+    const deviceRow = deviceTable.querySelector(
         '#' + escapeDeviceAddress(deviceInfo.address));
-    var nameForDisplayColumn = deviceRow.children[0];
-    var addressColumn = deviceRow.children[1];
-    var rssiColumn = deviceRow.children[2];
-    var serviceUuidsColumn = deviceRow.children[3];
-    var manufacturerDataColumn = deviceRow.children[4];
+    const nameForDisplayColumn = deviceRow.children[0];
+    const addressColumn = deviceRow.children[1];
+    const rssiColumn = deviceRow.children[2];
+    const serviceUuidsColumn = deviceRow.children[3];
+    const manufacturerDataColumn = deviceRow.children[4];
 
     assertTrue(!!nameForDisplayColumn);
     assertTrue(!!addressColumn);
@@ -169,7 +170,7 @@ suite('bluetooth_internals', function() {
    * @param {boolean} expectRemoved
    */
   function expectDeviceRemoved(address, expectRemoved) {
-    var removedRow =
+    const removedRow =
         deviceTable.querySelector('#' + escapeDeviceAddress(address));
 
     assertEquals(expectRemoved, removedRow.classList.contains('removed'));
@@ -179,11 +180,11 @@ suite('bluetooth_internals', function() {
    * Tests whether a device is added successfully and not duplicated.
    */
   test('DeviceAdded', function() {
-    var devices = deviceTable.querySelectorAll('tbody tr');
+    let devices = deviceTable.querySelectorAll('tbody tr');
     assertEquals(EXPECTED_DEVICES, devices.length);
 
     // Copy device info because device collection will not copy this object.
-    var infoCopy = fakeDeviceInfo3();
+    const infoCopy = fakeDeviceInfo3();
     adapterBroker.deviceAdded(infoCopy);
 
     // Same device shouldn't appear twice.
@@ -197,10 +198,10 @@ suite('bluetooth_internals', function() {
    * Tests whether a device is marked properly as removed.
    */
   test('DeviceSetToRemoved', function() {
-    var devices = deviceTable.querySelectorAll('tbody tr');
+    let devices = deviceTable.querySelectorAll('tbody tr');
     assertEquals(EXPECTED_DEVICES, devices.length);
 
-    var fakeDevice = fakeDeviceInfo2();
+    const fakeDevice = fakeDeviceInfo2();
     adapterBroker.deviceRemoved(fakeDevice);
 
     // The number of rows shouldn't change.
@@ -214,16 +215,16 @@ suite('bluetooth_internals', function() {
    * Tests whether a changed device updates the device table properly.
    */
   test('DeviceChanged', function() {
-    var devices = deviceTable.querySelectorAll('tbody tr');
+    const devices = deviceTable.querySelectorAll('tbody tr');
     assertEquals(EXPECTED_DEVICES, devices.length);
 
     // Copy device info because device collection will not copy this object.
-    var newDeviceInfo = fakeDeviceInfo1();
+    const newDeviceInfo = fakeDeviceInfo1();
     newDeviceInfo.nameForDisplay = 'DDDD';
     newDeviceInfo.rssi = {value: -20};
     newDeviceInfo.serviceUuids = [
       {uuid: '00002a05-0000-1000-8000-00805f9b34fb'},
-      {uuid: '0000180d-0000-1000-8000-00805f9b34fb'}
+      {uuid: '0000180d-0000-1000-8000-00805f9b34fb'},
     ];
 
     changeDevice(newDeviceInfo);
@@ -233,19 +234,19 @@ suite('bluetooth_internals', function() {
    * Tests the entire device cycle, added -> updated -> removed -> re-added.
    */
   test('DeviceUpdateCycle', function() {
-    var devices = deviceTable.querySelectorAll('tbody tr');
+    const devices = deviceTable.querySelectorAll('tbody tr');
     assertEquals(EXPECTED_DEVICES, devices.length);
 
     // Copy device info because device collection will not copy this object.
-    var originalDeviceInfo = fakeDeviceInfo3();
+    const originalDeviceInfo = fakeDeviceInfo3();
     adapterBroker.deviceAdded(originalDeviceInfo);
 
-    var newDeviceInfo = fakeDeviceInfo3();
+    const newDeviceInfo = fakeDeviceInfo3();
     newDeviceInfo.nameForDisplay = 'DDDD';
     newDeviceInfo.rssi = {value: -20};
     newDeviceInfo.serviceUuids = [
       {uuid: '00002a05-0000-1000-8000-00805f9b34fb'},
-      {uuid: '0000180d-0000-1000-8000-00805f9b34fb'}
+      {uuid: '0000180d-0000-1000-8000-00805f9b34fb'},
     ];
 
     changeDevice(newDeviceInfo);
@@ -259,30 +260,30 @@ suite('bluetooth_internals', function() {
   });
 
   test('DeviceAddedRssiCheck', function() {
-    var devices = deviceTable.querySelectorAll('tbody tr');
+    const devices = deviceTable.querySelectorAll('tbody tr');
     assertEquals(EXPECTED_DEVICES, devices.length);
 
     // Copy device info because device collection will not copy this object.
-    var newDeviceInfo = fakeDeviceInfo3();
+    const newDeviceInfo = fakeDeviceInfo3();
     adapterBroker.deviceAdded(newDeviceInfo);
 
-    var deviceRow = deviceTable.querySelector(
+    const deviceRow = deviceTable.querySelector(
         '#' + escapeDeviceAddress(newDeviceInfo.address));
-    var rssiColumn = deviceRow.children[2];
+    const rssiColumn = deviceRow.children[2];
     assertEquals('Unknown', rssiColumn.textContent);
 
-    var newDeviceInfo1 = fakeDeviceInfo3();
+    const newDeviceInfo1 = fakeDeviceInfo3();
     newDeviceInfo1.rssi = {value: -42};
     adapterBroker.deviceChanged(newDeviceInfo1);
     assertEquals('-42', rssiColumn.textContent);
 
     // Device table should keep last valid rssi value.
-    var newDeviceInfo2 = fakeDeviceInfo3();
+    const newDeviceInfo2 = fakeDeviceInfo3();
     newDeviceInfo2.rssi = null;
     adapterBroker.deviceChanged(newDeviceInfo2);
     assertEquals('-42', rssiColumn.textContent);
 
-    var newDeviceInfo3 = fakeDeviceInfo3();
+    const newDeviceInfo3 = fakeDeviceInfo3();
     newDeviceInfo3.rssi = {value: -17};
     adapterBroker.deviceChanged(newDeviceInfo3);
     assertEquals('-17', rssiColumn.textContent);
@@ -290,7 +291,7 @@ suite('bluetooth_internals', function() {
 
   /* Sidebar Tests */
   test('Sidebar_Setup', function() {
-    var sidebarItems =
+    const sidebarItems =
         Array.from(sidebarNode.querySelectorAll('.sidebar-content li'));
 
     pageNames.forEach(function(pageName) {
@@ -354,14 +355,14 @@ suite('bluetooth_internals', function() {
       // Let event queue finish.
       setTimeout(function() {
         assertEquals(0, $('snackbar-container').children.length);
-        assertFalse(!!Snackbar.current_);
+        assertFalse(!!getSnackbarStateForTest().current);
         resolve();
       }, 50);
     });
   }
 
   test('Snackbar_ShowTimeout', function(done) {
-    var snackbar1 = Snackbar.show('Message 1');
+    const snackbar1 = showSnackbar('Message 1');
     assertEquals(1, $('snackbar-container').children.length);
 
     snackbar1.addEventListener('dismissed', function() {
@@ -370,30 +371,30 @@ suite('bluetooth_internals', function() {
   });
 
   test('Snackbar_ShowDismiss', function() {
-    var snackbar1 = Snackbar.show('Message 1');
+    const snackbar1 = showSnackbar('Message 1');
     assertEquals(1, $('snackbar-container').children.length);
 
     return whenSnackbarShows(snackbar1)
         .then(function() {
-          return Snackbar.dismiss();
+          return dismissSnackbar();
         })
         .then(finishSnackbarTest);
   });
 
   test('Snackbar_QueueThreeDismiss', function() {
-    var expectedCalls = 3;
-    var actualCalls = 0;
+    const expectedCalls = 3;
+    let actualCalls = 0;
 
-    var snackbar1 = Snackbar.show('Message 1');
-    var snackbar2 = Snackbar.show('Message 2');
-    var snackbar3 = Snackbar.show('Message 3');
+    const snackbar1 = showSnackbar('Message 1');
+    const snackbar2 = showSnackbar('Message 2');
+    const snackbar3 = showSnackbar('Message 3');
 
     assertEquals(1, $('snackbar-container').children.length);
-    assertEquals(2, Snackbar.queue_.length);
+    assertEquals(2, getSnackbarStateForTest().numPending);
 
     function next() {
       actualCalls++;
-      return Snackbar.dismiss();
+      return dismissSnackbar();
     }
 
     whenSnackbarShows(snackbar1).then(next);
@@ -407,15 +408,15 @@ suite('bluetooth_internals', function() {
   });
 
   test('Snackbar_QueueThreeDismissAll', function() {
-    var expectedCalls = 1;
-    var actualCalls = 0;
+    const expectedCalls = 1;
+    const actualCalls = 0;
 
-    var snackbar1 = Snackbar.show('Message 1');
-    var snackbar2 = Snackbar.show('Message 2');
-    var snackbar3 = Snackbar.show('Message 3');
+    const snackbar1 = showSnackbar('Message 1');
+    const snackbar2 = showSnackbar('Message 2');
+    const snackbar3 = showSnackbar('Message 3');
 
     assertEquals(1, $('snackbar-container').children.length);
-    assertEquals(2, Snackbar.queue_.length);
+    assertEquals(2, getSnackbarStateForTest().numPending);
 
     function next() {
       assertTrue(false);
@@ -428,28 +429,29 @@ suite('bluetooth_internals', function() {
 
     return whenSnackbarShows(snackbar1)
         .then(function() {
-          return Snackbar.dismiss(true);
+          return dismissSnackbar(true);
         })
         .then(function() {
-          assertEquals(0, Snackbar.queue_.length);
-          assertFalse(!!Snackbar.current_);
+          assertEquals(0, getSnackbarStateForTest().numPending);
+          assertFalse(!!getSnackbarStateForTest().current);
         })
         .then(finishSnackbarTest);
   });
 
   /* AdapterPage Tests */
   function checkAdapterFieldSet(adapterInfo) {
-    for (var propName in adapterInfo) {
-      var valueCell =
-          adapterFieldSet.querySelector('[data-field="' + propName + '"]');
-      var value = adapterInfo[propName];
+    for (const propName in adapterInfo) {
+      const valueCell = adapterFieldSet.shadowRoot.querySelector(
+          `fieldset [data-field="${propName}"]`);
+      const value = adapterInfo[propName];
 
       if (typeof (value) === 'boolean') {
         assertEquals(value, valueCell.classList.contains('checked'));
       } else if (typeof (value) === 'string') {
         assertEquals(value, valueCell.textContent);
       } else {
-        assert('boolean or string type expected but got ' + typeof (value));
+        assertNotReached(
+            'boolean or string type expected but got ' + typeof (value));
       }
     }
   }
@@ -459,7 +461,7 @@ suite('bluetooth_internals', function() {
   });
 
   test('AdapterPage_AdapterChanged', function() {
-    var adapterInfo = adapterFieldSet.value;
+    const adapterInfo = adapterFieldSet.value;
 
     adapterInfo.present = !adapterInfo.present;
     adapterBroker.presentChanged(adapterInfo.present);
@@ -471,7 +473,7 @@ suite('bluetooth_internals', function() {
   });
 
   test('AdapterPage_AdapterChanged_RepeatTwice', function() {
-    var adapterInfo = adapterFieldSet.value;
+    const adapterInfo = adapterFieldSet.value;
 
     adapterInfo.present = !adapterInfo.present;
     adapterBroker.presentChanged(adapterInfo.present);
@@ -501,14 +503,15 @@ suite('bluetooth_internals', function() {
      'serviceUuids',
      'manufacturerDataMap',
     ].forEach(function(propName) {
-      var valueCell =
-          detailsPage.querySelector('fieldset [data-field="' + propName + '"]');
+      const valueCell =
+          detailsPage.querySelector('object-field-set')
+              .shadowRoot.querySelector(`fieldset [data-field="${propName}"]`);
 
-      var parts = propName.split('.');
-      var value = deviceInfo;
+      const parts = propName.split('.');
+      let value = deviceInfo;
 
       while (value != null && parts.length > 0) {
-        var part = parts.shift();
+        const part = parts.shift();
         value = value[part];
       }
 
@@ -524,24 +527,30 @@ suite('bluetooth_internals', function() {
         assertEquals(value, valueCell.classList.contains('checked'));
       } else if (typeof (value) === 'string') {
         assertEquals(value, valueCell.textContent);
+      } else if (typeof (value) === 'number') {
+        assertEquals(value.toString(), valueCell.textContent);
       } else {
-        assert('boolean or string type expected but got ' + typeof (value));
+        assertNotReached(
+            'boolean, number or string type expected but got ' +
+            typeof (value));
       }
     });
   }
 
   test('DeviceDetailsPage_NewDelete', function() {
-    var device = devices.item(0);
+    const device = devices.item(0);
 
-    var deviceInspectLink =
-        $(device.address).querySelector('[is="action-link"]');
+    // Have to search manually since the device row IDs aren't valid selectors.
+    const deviceRow = Array.from(deviceTable.querySelectorAll('tr'))
+                          .find(row => row.id === device.address);
+    const deviceInspectLink = deviceRow.querySelector('[is="action-link"]');
 
-    var deviceDetailsPageId = 'devices/' + device.address.toLowerCase();
+    const deviceDetailsPageId = 'devices/' + device.address.toLowerCase();
 
     deviceInspectLink.click();
     assertEquals('#' + deviceDetailsPageId, window.location.hash);
 
-    var detailsPage = $(deviceDetailsPageId);
+    let detailsPage = document.getElementById(deviceDetailsPageId);
     assertTrue(!!detailsPage);
 
     return internalsHandler.adapter.deviceImplMap.get(device.address)
@@ -552,22 +561,24 @@ suite('bluetooth_internals', function() {
 
           detailsPage.querySelector('.forget').click();
           assertEquals('#devices', window.location.hash);
-          detailsPage = $(deviceDetailsPageId);
+          detailsPage = document.getElementById(deviceDetailsPageId);
           assertFalse(!!detailsPage);
         });
   });
 
   test('DeviceDetailsPage_NewDelete_FromDevicesPage', function() {
-    var device = devices.item(0);
-    var deviceDetailsPageId = 'devices/' + device.address.toLowerCase();
+    const device = devices.item(0);
+    const deviceDetailsPageId = 'devices/' + device.address.toLowerCase();
 
-    var deviceLinks = $(device.address).querySelectorAll('[is="action-link"]');
+    const deviceRow = Array.from(deviceTable.querySelectorAll('tr'))
+                          .find(row => row.id === device.address);
+    const deviceLinks = deviceRow.querySelectorAll('[is="action-link"]');
 
     // First link is 'Inspect'.
     deviceLinks[0].click();
     assertEquals('#' + deviceDetailsPageId, window.location.hash);
 
-    var detailsPage = $(deviceDetailsPageId);
+    let detailsPage = document.getElementById(deviceDetailsPageId);
     assertTrue(!!detailsPage);
 
     return internalsHandler.adapter.deviceImplMap.get(device.address)
@@ -579,7 +590,7 @@ suite('bluetooth_internals', function() {
           // Second link is 'Forget'.
           deviceLinks[1].click();
           assertEquals('#devices', window.location.hash);
-          detailsPage = $(deviceDetailsPageId);
+          detailsPage = document.getElementById(deviceDetailsPageId);
           assertFalse(!!detailsPage);
         });
   });
@@ -587,70 +598,83 @@ suite('bluetooth_internals', function() {
 
 suite('BluetoothInternalsUnitTests', function() {
   /* Value Control Unit Tests */
-  var aCode = 'a'.charCodeAt(0);
-  var bCode = 'b'.charCodeAt(0);
-  var cCode = 'c'.charCodeAt(0);
+  const aCode = 'a'.charCodeAt(0);
+  const bCode = 'b'.charCodeAt(0);
+  const cCode = 'c'.charCodeAt(0);
 
-  var device1 = fakeDeviceInfo1();
-  var service1 = fakeServiceInfo1();
-  var characteristic1 = fakeCharacteristicInfo1();
-  var valueControl = null;
+  const device1 = fakeDeviceInfo1();
+  const service1 = fakeServiceInfo1();
+  const characteristic1 = fakeCharacteristicInfo1();
+  let valueControl = null;
 
   setup(function() {
-    valueControl = new ValueControl();
-    valueControl.load(device1.address, service1.id, characteristic1);
-    valueControl.typeSelect_.value = ValueDataType.HEXADECIMAL;
+    document.body.innerHTML = window.trustedTypes.emptyHTML;
+    valueControl = document.createElement('value-control');
+    document.body.appendChild(valueControl);
+    valueControl.dataset.options = JSON.stringify({
+      deviceAddress: device1.address,
+      serviceId: service1.id,
+      characteristicId: characteristic1,
+    });
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.HEXADECIMAL;
   });
 
   test('ValueControl_SetValue_Hexadecimal_EmptyArray', function() {
-    valueControl.setValue([]);
-    assertEquals('', valueControl.valueInput_.value);
+    valueControl.dataset.value = JSON.stringify([]);
+    assertEquals('', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_Hexadecimal_OneValue', function() {
-    valueControl.setValue([aCode]);
-    assertEquals('0x61', valueControl.valueInput_.value);
+    valueControl.dataset.value = JSON.stringify([aCode]);
+    assertEquals('0x61', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_Hexadecimal_ThreeValues', function() {
-    valueControl.setValue([aCode, bCode, cCode]);
-    assertEquals('0x616263', valueControl.valueInput_.value);
+    valueControl.dataset.value = JSON.stringify([aCode, bCode, cCode]);
+    assertEquals(
+        '0x616263', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_UTF8_EmptyArray', function() {
-    valueControl.typeSelect_.value = ValueDataType.UTF8;
-    valueControl.setValue([]);
-    assertEquals('', valueControl.valueInput_.value);
+    valueControl.shadowRoot.querySelector('select').value = ValueDataType.UTF8;
+    valueControl.dataset.value = JSON.stringify([]);
+    assertEquals('', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_UTF8_OneValue', function() {
-    valueControl.typeSelect_.value = ValueDataType.UTF8;
-    valueControl.setValue([aCode]);
-    assertEquals('a', valueControl.valueInput_.value);
+    valueControl.shadowRoot.querySelector('select').value = ValueDataType.UTF8;
+    valueControl.dataset.value = JSON.stringify([aCode]);
+    assertEquals('a', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_UTF8_ThreeValues', function() {
-    valueControl.typeSelect_.value = ValueDataType.UTF8;
-    valueControl.setValue([aCode, bCode, cCode]);
-    assertEquals('abc', valueControl.valueInput_.value);
+    valueControl.shadowRoot.querySelector('select').value = ValueDataType.UTF8;
+    valueControl.dataset.value = JSON.stringify([aCode, bCode, cCode]);
+    assertEquals('abc', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_Decimal_EmptyArray', function() {
-    valueControl.typeSelect_.value = ValueDataType.DECIMAL;
-    valueControl.setValue([]);
-    assertEquals('', valueControl.valueInput_.value);
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.DECIMAL;
+    valueControl.dataset.value = JSON.stringify([]);
+    assertEquals('', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_Decimal_OneValue', function() {
-    valueControl.typeSelect_.value = ValueDataType.DECIMAL;
-    valueControl.setValue([aCode]);
-    assertEquals(String(aCode), valueControl.valueInput_.value);
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.DECIMAL;
+    valueControl.dataset.value = JSON.stringify([aCode]);
+    assertEquals(
+        String(aCode), valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_SetValue_Decimal_ThreeValues', function() {
-    valueControl.typeSelect_.value = ValueDataType.DECIMAL;
-    valueControl.setValue([aCode, bCode, cCode]);
-    assertEquals('97-98-99', valueControl.valueInput_.value);
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.DECIMAL;
+    valueControl.dataset.value = JSON.stringify([aCode, bCode, cCode]);
+    assertEquals(
+        '97-98-99', valueControl.shadowRoot.querySelector('input').value);
   });
 
   test('ValueControl_ConvertValue_Hexadecimal_EmptyString', function() {
@@ -670,25 +694,27 @@ suite('BluetoothInternalsUnitTests', function() {
   });
 
   test('ValueControl_ConvertValue_UTF8_EmptyString', function() {
-    valueControl.typeSelect_.value = ValueDataType.UTF8;
+    valueControl.shadowRoot.querySelector('select').value = ValueDataType.UTF8;
     valueControl.value_.setAs(ValueDataType.UTF8, '');
     assertEquals(0, valueControl.value_.getArray().length);
   });
 
   test('ValueControl_ConvertValue_UTF8_ThreeValues', function() {
-    valueControl.typeSelect_.value = ValueDataType.UTF8;
+    valueControl.shadowRoot.querySelector('select').value = ValueDataType.UTF8;
     valueControl.value_.setAs(ValueDataType.UTF8, 'abc');
     assertDeepEquals([aCode, bCode, cCode], valueControl.value_.getArray());
   });
 
   test('ValueControl_ConvertValue_Decimal_EmptyString', function() {
-    valueControl.typeSelect_.value = ValueDataType.DECIMAL;
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.DECIMAL;
     valueControl.value_.setAs(ValueDataType.DECIMAL, '');
     assertEquals(0, valueControl.value_.getArray().length);
   });
 
   test('ValueControl_ConvertValue_Decimal_ThreeValues_Fail', function() {
-    valueControl.typeSelect_.value = ValueDataType.DECIMAL;
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.DECIMAL;
 
     assertThrows(function() {
       valueControl.value_.setAs(ValueDataType.DECIMAL, '97-+-99' /* a-+-c */);
@@ -696,7 +722,8 @@ suite('BluetoothInternalsUnitTests', function() {
   });
 
   test('ValueControl_ConvertValue_Decimal_ThreeValues', function() {
-    valueControl.typeSelect_.value = ValueDataType.DECIMAL;
+    valueControl.shadowRoot.querySelector('select').value =
+        ValueDataType.DECIMAL;
     valueControl.value_.setAs(ValueDataType.DECIMAL, '97-98-99' /* abc */);
     assertDeepEquals([aCode, bCode, cCode], valueControl.value_.getArray());
   });

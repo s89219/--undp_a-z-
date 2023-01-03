@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@ import android.view.Surface;
 import android.view.View;
 import android.widget.FrameLayout;
 
+import org.chromium.base.ContextUtils;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.annotations.CalledByNative;
@@ -27,6 +28,7 @@ import org.chromium.chrome.browser.compositor.layouts.LayoutProvider;
 import org.chromium.chrome.browser.compositor.layouts.LayoutRenderHost;
 import org.chromium.chrome.browser.compositor.layouts.content.TabContentManager;
 import org.chromium.chrome.browser.compositor.resources.StaticResourcePreloads;
+import org.chromium.chrome.browser.compositor.resources.SystemResourcePreloads;
 import org.chromium.chrome.browser.externalnav.IntentWithRequestMetadataHandler;
 import org.chromium.chrome.browser.layouts.scene_layer.SceneLayer;
 import org.chromium.chrome.browser.multiwindow.MultiWindowUtils;
@@ -44,11 +46,8 @@ import org.chromium.ui.resources.ResourceManager;
 public class CompositorView
         extends FrameLayout implements CompositorSurfaceManager.SurfaceManagerCallbackTarget,
                                        WindowAndroid.SelectionHandlesObserver {
-    private static final String TAG = "CompositorView";
-
     // Cache objects that should not be created every frame
     private final Rect mCacheAppRect = new Rect();
-    private final int[] mCacheViewPosition = new int[2];
 
     private CompositorSurfaceManager mCompositorSurfaceManager;
     private boolean mOverlayVideoEnabled;
@@ -66,7 +65,6 @@ public class CompositorView
     private ResourceManager mResourceManager;
 
     // Lazily populated as it is needed.
-    private View mRootActivityView;
     private WindowAndroid mWindowAndroid;
     private TabContentManager mTabContentManager;
 
@@ -94,7 +92,8 @@ public class CompositorView
 
         ScreenStateReceiverWorkaround() {
             IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_OFF);
-            getContext().getApplicationContext().registerReceiver(this, filter);
+            ContextUtils.registerProtectedBroadcastReceiver(
+                    getContext().getApplicationContext(), this, filter);
         }
 
         void shutDown() {
@@ -118,6 +117,10 @@ public class CompositorView
                 mCompositorSurfaceManager.shutDown();
                 createCompositorSurfaceManager();
             }
+        }
+
+        public void clearNeedsReset() {
+            mNeedsReset = false;
         }
     }
 
@@ -194,8 +197,7 @@ public class CompositorView
             mPreviousWindowTop = windowTop;
 
             Activity activity = mWindowAndroid != null ? mWindowAndroid.getActivity().get() : null;
-            boolean isMultiWindow = MultiWindowUtils.getInstance().isLegacyMultiWindow(activity)
-                    || MultiWindowUtils.getInstance().isInMultiWindowMode(activity);
+            boolean isMultiWindow = MultiWindowUtils.getInstance().isInMultiWindowMode(activity);
 
             // If the measured width is the same as the allowed width (i.e. the orientation has
             // not changed) and multi-window mode is off, use the largest measured height seen thus
@@ -442,6 +444,9 @@ public class CompositorView
     public void surfaceCreated(Surface surface) {
         if (mNativeCompositorView == 0) return;
 
+        // if a requested surface is created successfully, CompositorSurfaceManager doesn't need to
+        // be reset.
+        if (mScreenStateReceiver != null) mScreenStateReceiver.clearNeedsReset();
         mFramesUntilHideBackground = 2;
         mHaveSwappedFramesSinceSurfaceCreated = false;
         updateNeedsDidSwapBuffersCallback();
@@ -619,9 +624,8 @@ public class CompositorView
      * Converts the layout into compositor layers. This is to be called on every frame the layout
      * is changing.
      * @param provider               Provides the layout to be rendered.
-     * @param forRotation            Whether or not this is a special draw during a rotation.
      */
-    public void finalizeLayers(final LayoutProvider provider, boolean forRotation) {
+    public void finalizeLayers(final LayoutProvider provider) {
         TraceEvent.begin("CompositorView:finalizeLayers");
         Layout layout = provider.getActiveLayout();
         if (layout == null || mNativeCompositorView == 0) {
@@ -634,6 +638,9 @@ public class CompositorView
             mResourceManager.preloadResources(AndroidResourceType.STATIC,
                     StaticResourcePreloads.getSynchronousResources(getContext()),
                     StaticResourcePreloads.getAsynchronousResources(getContext()));
+            mResourceManager.preloadResources(AndroidResourceType.SYSTEM,
+                    SystemResourcePreloads.getSynchronousResources(),
+                    SystemResourcePreloads.getAsynchronousResources());
             mPreloadedResources = true;
         }
 

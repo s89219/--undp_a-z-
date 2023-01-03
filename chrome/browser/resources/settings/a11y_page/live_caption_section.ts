@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,11 @@
  * other versions of Windows.
  */
 
-import '//resources/cr_elements/shared_style_css.m.js';
+import '//resources/cr_elements/cr_shared_style.css.js';
 import '../controls/settings_toggle_button.js';
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 
-import {WebUIListenerMixin} from '//resources/js/web_ui_listener_mixin.js';
+import {WebUiListenerMixin} from '//resources/cr_elements/web_ui_listener_mixin.js';
 import {PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
@@ -30,16 +30,16 @@ import {getTemplate} from './live_caption_section.html.js';
  * |downloadProgress| is the display-friendly download progress as the language
  *     model is being downloaded.
  */
-type LiveCaptionLanguage = {
-  displayName: string,
-  code: string,
-  downloadProgress: string,
-};
+interface LiveCaptionLanguage {
+  displayName: string;
+  code: string;
+  downloadProgress: string;
+}
 
-type LiveCaptionLanguageList = Array<LiveCaptionLanguage>;
+type LiveCaptionLanguageList = LiveCaptionLanguage[];
 
 const SettingsLiveCaptionElementBase =
-    WebUIListenerMixin(PrefsMixin(PolymerElement));
+    WebUiListenerMixin(PrefsMixin(PolymerElement));
 
 export class SettingsLiveCaptionElement extends SettingsLiveCaptionElementBase {
   static get is() {
@@ -61,7 +61,7 @@ export class SettingsLiveCaptionElement extends SettingsLiveCaptionElementBase {
         type: Boolean,
         value: function() {
           return loadTimeData.getBoolean('enableLiveCaptionMultiLanguage');
-        }
+        },
       },
 
       /**
@@ -130,7 +130,7 @@ export class SettingsLiveCaptionElement extends SettingsLiveCaptionElementBase {
   override ready() {
     super.ready();
 
-    this.addWebUIListener(
+    this.addWebUiListener(
         'soda-download-progress-changed',
         (sodaDownloadProgress: string, languageCode: string) =>
             this.onSodaDownloadProgressChanged_(

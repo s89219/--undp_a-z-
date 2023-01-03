@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,8 +48,10 @@ PrimaryAccountMutatorImpl::PrimaryAccountMutatorImpl(
 PrimaryAccountMutatorImpl::~PrimaryAccountMutatorImpl() {}
 
 PrimaryAccountMutator::PrimaryAccountError
-PrimaryAccountMutatorImpl::SetPrimaryAccount(const CoreAccountId& account_id,
-                                             ConsentLevel consent_level) {
+PrimaryAccountMutatorImpl::SetPrimaryAccount(
+    const CoreAccountId& account_id,
+    ConsentLevel consent_level,
+    signin_metrics::AccessPoint access_point) {
   DCHECK(!account_id.empty());
   AccountInfo account_info = account_tracker_->GetAccountInfo(account_id);
   if (account_info.IsEmpty())
@@ -87,7 +89,8 @@ PrimaryAccountMutatorImpl::SetPrimaryAccount(const CoreAccountId& account_id,
       DCHECK(!primary_account_manager_->HasPrimaryAccount(ConsentLevel::kSync));
       break;
   }
-  primary_account_manager_->SetPrimaryAccountInfo(account_info, consent_level);
+  primary_account_manager_->SetPrimaryAccountInfo(account_info, consent_level,
+                                                  access_point);
   return PrimaryAccountError::kNoError;
 }
 
@@ -98,21 +101,8 @@ bool PrimaryAccountMutatorImpl::CanTransitionFromSyncToSigninConsentLevel()
     case AccountConsistencyMethod::kDice:
       return true;
     case AccountConsistencyMethod::kMirror:
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_ANDROID)
       return true;
-#elif BUILDFLAG(IS_ANDROID)
-      // Android supports users being signed in with sync disabled, with the
-      // exception of child accounts with the kAllowSyncOffForChildAccounts
-      // flag disabled.
-      //
-      // Strictly-speaking we should only look at the value of this flag for
-      // child accounts, however the child account status is not easily
-      // available here and it doesn't matter if we clear the primary account
-      // for non-Child accounts as we don't expose a 'Turn off sync' UI for
-      // them.  As this is a short-lived flag, we leave as-is rather than
-      // plumb through child status here.
-      return base::FeatureList::IsEnabled(
-          switches::kAllowSyncOffForChildAccounts);
 #else
       // TODO(crbug.com/1165785): once kAllowSyncOffForChildAccounts has been
       // rolled out and assuming it has not revealed any issues, make the

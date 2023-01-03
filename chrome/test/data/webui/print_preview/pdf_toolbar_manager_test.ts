@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -101,7 +101,7 @@ function makeTapEvent(x: number, y: number): MouseEvent {
     movementX: 0,
     movementY: 0,
     sourceCapabilities: new InputDeviceCapabilities({firesTouchEvents: true}),
-  } as MouseEventInit);
+  });
   return e;
 }
 
@@ -126,7 +126,7 @@ suite(pdf_toolbar_manager_test.suiteName, function() {
   let callCount: number = 0;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     mockWindow = new MockWindow(1920, 1080);
     zoomToolbar = document.createElement('viewer-zoom-toolbar');

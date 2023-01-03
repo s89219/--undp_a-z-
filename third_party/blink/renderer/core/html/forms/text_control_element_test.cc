@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,7 +68,7 @@ TEST_F(TextControlElementTest, SetSelectionRange) {
 
 TEST_F(TextControlElementTest, SetSelectionRangeDoesNotCauseLayout) {
   Input().Focus();
-  Input().setValue("Hello, input form.");
+  Input().SetValue("Hello, input form.");
   Input().SetSelectionRange(1, 1);
 
   // Force layout if document().updateStyleAndLayoutIgnorePendingStylesheets()
@@ -81,7 +81,7 @@ TEST_F(TextControlElementTest, SetSelectionRangeDoesNotCauseLayout) {
 }
 
 TEST_F(TextControlElementTest, IndexForPosition) {
-  Input().setValue("Hello");
+  Input().SetValue("Hello");
   HTMLElement* inner_editor = Input().InnerEditorElement();
   EXPECT_EQ(5u, TextControlElement::IndexForPosition(
                     inner_editor,

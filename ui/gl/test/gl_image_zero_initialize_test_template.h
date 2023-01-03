@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,8 @@ class GLImageZeroInitializeTest : public GLImageTest<GLImageTestDelegate> {};
 TYPED_TEST_SUITE_P(GLImageZeroInitializeTest);
 
 TYPED_TEST_P(GLImageZeroInitializeTest, ZeroInitialize) {
-  if (this->delegate_.SkipTest())
-    return;
+  if (this->delegate_.SkipTest(this->display_))
+    GTEST_SKIP() << "Skip ZeroInitialize because GL initialization failed";
 
   const gfx::Size image_size(256, 256);
 
@@ -38,14 +38,14 @@ TYPED_TEST_P(GLImageZeroInitializeTest, ZeroInitialize) {
   glBindTexture(target, texture);
 
   // Bind |image| to |texture|.
-  bool rv = image->BindTexImage(target);
+  bool rv = image->BindTexImageForTesting(target);
   EXPECT_TRUE(rv);
 
   // Draw |texture| to viewport.
   internal::DrawTextureQuad(target, image_size);
 
   // Release |image| from |texture|.
-  image->ReleaseTexImage(target);
+  image->ReleaseTexImageForTesting(target);
 
   // Read back pixels to check expectations.
   const uint8_t zero_color[] = {0, 0, 0, 0};

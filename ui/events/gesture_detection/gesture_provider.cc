@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -800,7 +800,7 @@ class GestureProvider::GestureListenerImpl : public ScaleGestureListener,
       float dy = source_pointer_down_event->GetY(source_index) - ev2.GetY(i);
       delta += SubtractSlopRegion(dx, dy);
     }
-    delta.Scale(1.0 / ev2.GetPointerCount());
+    delta.InvScale(ev2.GetPointerCount());
     return delta;
   }
 

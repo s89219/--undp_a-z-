@@ -1,15 +1,16 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/web/web_state/web_state_impl.h"
 
-#include <stddef.h>
-#include <stdint.h>
+#import <stddef.h>
+#import <stdint.h>
 
 #import "base/compiler_specific.h"
-#include "base/debug/dump_without_crashing.h"
+#import "base/debug/dump_without_crashing.h"
 #import "base/feature_list.h"
+#import "base/time/time.h"
 #import "ios/web/common/features.h"
 #import "ios/web/public/js_messaging/web_frame.h"
 #import "ios/web/public/permissions/permissions.h"
@@ -19,6 +20,7 @@
 #import "ios/web/web_state/ui/crw_web_controller.h"
 #import "ios/web/web_state/web_state_impl_realized_web_state.h"
 #import "ios/web/web_state/web_state_impl_serialized_data.h"
+#import "net/base/mac/url_conversions.h"
 #import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -28,20 +30,20 @@
 namespace web {
 namespace {
 
-// With |kEnableUnrealizedWebStates|, detect inefficient usage of WebState
-// realization. Various bugs have triggered the realization of the entire
-// WebStateList. Detect this by checking for the realization of 3 WebStates
-// within one second. Only report this error once per launch.
+// Detect inefficient usage of WebState realization. Various bugs have
+// triggered the realization of the entire WebStateList. Detect this by
+// checking for the realization of 3 WebStates within one second. Only
+// report this error once per launch.
 constexpr size_t kMaxEvents = 3;
-constexpr CFTimeInterval kWindowSizeInSeconds = 1.0f;
+constexpr base::TimeDelta kWindowSize = base::Seconds(1);
 size_t g_last_realized_count = 0;
-CFTimeInterval g_last_creation_time = 0;
-bool g_has_reported_once = false;
 void CheckForOverRealization() {
+  static bool g_has_reported_once = false;
   if (g_has_reported_once)
     return;
-  CFTimeInterval now = CACurrentMediaTime();
-  if (now - g_last_creation_time < kWindowSizeInSeconds) {
+  static base::TimeTicks g_last_creation_time;
+  base::TimeTicks now = base::TimeTicks::Now();
+  if ((now - g_last_creation_time) < kWindowSize) {
     g_last_realized_count++;
     if (g_last_realized_count >= kMaxEvents) {
       base::debug::DumpWithoutCrashing();
@@ -82,8 +84,7 @@ WebStateImpl::WebStateImpl(const CreateParams& params)
 
 WebStateImpl::WebStateImpl(const CreateParams& params,
                            CRWSessionStorage* session_storage) {
-  if (session_storage &&
-      base::FeatureList::IsEnabled(features::kEnableUnrealizedWebStates)) {
+  if (session_storage) {
     saved_ = std::make_unique<SerializedData>(this, params, session_storage);
   } else {
     pimpl_ = std::make_unique<RealizedWebState>(this);
@@ -224,12 +225,6 @@ void WebStateImpl::ShouldAllowRequest(
                                       std::move(callback));
 }
 
-bool WebStateImpl::ShouldAllowErrorPageToBeDisplayed(NSURLResponse* response,
-                                                     bool for_main_frame) {
-  return RealizedState()->ShouldAllowErrorPageToBeDisplayed(response,
-                                                            for_main_frame);
-}
-
 void WebStateImpl::ShouldAllowResponse(
     NSURLResponse* response,
     WebStatePolicyDecider::ResponseInfo response_info,
@@ -264,15 +259,28 @@ void WebStateImpl::ShowRepostFormWarningDialog(
   RealizedState()->ShowRepostFormWarningDialog(std::move(callback));
 }
 
-void WebStateImpl::RunJavaScriptDialog(
+void WebStateImpl::RunJavaScriptAlertDialog(const GURL& origin_url,
+                                            NSString* message_text,
+                                            base::OnceClosure callback) {
+  RealizedState()->RunJavaScriptAlertDialog(origin_url, message_text,
+                                            std::move(callback));
+}
+
+void WebStateImpl::RunJavaScriptConfirmDialog(
     const GURL& origin_url,
-    JavaScriptDialogType javascript_dialog_type,
+    NSString* message_text,
+    base::OnceCallback<void(bool success)> callback) {
+  RealizedState()->RunJavaScriptConfirmDialog(origin_url, message_text,
+                                              std::move(callback));
+}
+
+void WebStateImpl::RunJavaScriptPromptDialog(
+    const GURL& origin_url,
     NSString* message_text,
     NSString* default_prompt_text,
-    DialogClosedCallback callback) {
-  RealizedState()->RunJavaScriptDialog(origin_url, javascript_dialog_type,
-                                       message_text, default_prompt_text,
-                                       std::move(callback));
+    base::OnceCallback<void(NSString* user_input)> callback) {
+  RealizedState()->RunJavaScriptPromptDialog(
+      origin_url, message_text, default_prompt_text, std::move(callback));
 }
 
 bool WebStateImpl::IsJavaScriptDialogRunning() {
@@ -310,8 +318,18 @@ void WebStateImpl::WebFrameBecameUnavailable(const std::string& frame_id) {
   RealizedState()->WebFrameBecameUnavailable(frame_id);
 }
 
+void WebStateImpl::RetrieveExistingFrames() {
+  RealizedState()->RetrieveExistingFrames();
+}
+
 void WebStateImpl::RemoveAllWebFrames() {
   RealizedState()->RemoveAllWebFrames();
+}
+
+void WebStateImpl::RequestPermissionsWithDecisionHandler(
+    NSArray<NSNumber*>* permissions,
+    PermissionDecisionHandler handler) {
+  RealizedState()->RequestPermissionsWithDecisionHandler(permissions, handler);
 }
 
 #pragma mark - WebState implementation
@@ -392,6 +410,10 @@ base::Time WebStateImpl::GetLastActiveTime() const {
                         : saved_->GetLastActiveTime();
 }
 
+base::Time WebStateImpl::GetCreationTime() const {
+  return LIKELY(pimpl_) ? pimpl_->GetCreationTime() : saved_->GetCreationTime();
+}
+
 void WebStateImpl::WasShown() {
   RealizedState()->WasShown();
 }
@@ -469,23 +491,10 @@ CRWSessionStorage* WebStateImpl::BuildSessionStorage() {
                         : saved_->GetSessionStorage();
 }
 
-CRWJSInjectionReceiver* WebStateImpl::GetJSInjectionReceiver() const {
-  return LIKELY(pimpl_) ? pimpl_->GetJSInjectionReceiver() : nullptr;
-}
-
 void WebStateImpl::LoadData(NSData* data,
                             NSString* mime_type,
                             const GURL& url) {
   RealizedState()->LoadData(data, mime_type, url);
-}
-
-void WebStateImpl::ExecuteJavaScript(const std::u16string& javascript) {
-  RealizedState()->ExecuteJavaScript(javascript);
-}
-
-void WebStateImpl::ExecuteJavaScript(const std::u16string& javascript,
-                                     JavaScriptResultCallback callback) {
-  RealizedState()->ExecuteJavaScript(javascript, std::move(callback));
 }
 
 void WebStateImpl::ExecuteUserJavaScript(NSString* javascript) {
@@ -659,6 +668,19 @@ void WebStateImpl::RemovePolicyDecider(WebStatePolicyDecider* decider) {
   // deciders. This makes the call here odd looking, but it's really just
   // managing the list, not setting observers on deciders.
   policy_deciders_.RemoveObserver(decider);
+}
+
+void WebStateImpl::DownloadCurrentPage(NSString* destination_file,
+                                       id<CRWWebViewDownloadDelegate> delegate,
+                                       void (^handler)(id<CRWWebViewDownload>))
+    API_AVAILABLE(ios(14.5)) {
+  CRWWebController* web_controller = GetWebController();
+  NSURLRequest* request =
+      [NSURLRequest requestWithURL:net::NSURLWithGURL(GetLastCommittedURL())];
+  [web_controller downloadCurrentPageWithRequest:request
+                                 destinationPath:destination_file
+                                        delegate:delegate
+                                         handler:handler];
 }
 
 #pragma mark - WebStateImpl private methods

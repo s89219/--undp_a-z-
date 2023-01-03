@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_dispatcher_host.h"
-#include "content/browser/indexed_db/indexed_db_factory_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "storage/browser/blob/blob_storage_context.h"
@@ -242,7 +242,6 @@ void TransactionImpl::Commit(int64_t num_errors_handled) {
     return;
   }
 
-  // TODO(crbug.com/1319644): Propagate BucketLocator to GetBucketUsageAndQuota.
   indexed_db_context_->quota_manager_proxy()->GetUsageAndQuota(
       bucket_locator_.storage_key, blink::mojom::StorageType::kTemporary,
       indexed_db_context_->IDBTaskRunner(),

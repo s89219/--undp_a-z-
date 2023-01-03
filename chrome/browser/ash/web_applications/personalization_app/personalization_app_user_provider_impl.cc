@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,8 +39,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 
@@ -97,6 +96,10 @@ PersonalizationAppUserProviderImpl::PersonalizationAppUserProviderImpl(
   user_image_manager->DownloadProfileImage();
   user_image_file_selector_ =
       std::make_unique<ash::UserImageFileSelector>(web_ui);
+  camera_presence_notifier_ =
+      std::make_unique<CameraPresenceNotifier>(base::BindRepeating(
+          &PersonalizationAppUserProviderImpl::OnCameraPresenceCheckDone,
+          weak_ptr_factory_.GetWeakPtr()));
 }
 
 PersonalizationAppUserProviderImpl::~PersonalizationAppUserProviderImpl() {
@@ -126,20 +129,21 @@ void PersonalizationAppUserProviderImpl::SetUserImageObserver(
   if (!user_manager_observer_.IsObserving())
     user_manager_observer_.Observe(user_manager);
 
-  // Call it manually the first time.
-  OnUserImageChanged(*GetUser(profile_));
+  const auto* user = GetUser(profile_);
+
+  // Call observers manually the first time to initialize state.
+  OnUserImageChanged(*user);
 
   ash::UserImageManager* user_image_manager =
       ash::ChromeUserManager::Get()->GetUserImageManager(
           GetAccountId(profile_));
   const gfx::ImageSkia& profile_image =
       user_image_manager->DownloadedProfileImage();
-  OnUserProfileImageUpdated(*GetUser(profile_), profile_image);
+  OnUserProfileImageUpdated(*user, profile_image);
+  OnUserImageIsEnterpriseManagedChanged(
+      *user, user_image_manager->IsUserImageManaged());
 
-  // Always unbind and rebind the camera check observer to trigger an immediate
-  // |OnCameraPresenceCheckDone|.
-  camera_observer_.Reset();
-  camera_observer_.Observe(ash::CameraPresenceNotifier::GetInstance());
+  camera_presence_notifier_->Start();
 }
 
 void PersonalizationAppUserProviderImpl::GetUserInfo(
@@ -166,7 +170,7 @@ void PersonalizationAppUserProviderImpl::SelectImageFromDisk() {
 
 void PersonalizationAppUserProviderImpl::SelectDefaultImage(int index) {
   if (!ash::default_user_image::IsInCurrentImageSet(index)) {
-    mojo::ReportBadMessage("Invalid user image selected");
+    user_receiver_.ReportBadMessage("Invalid user image selected");
     return;
   }
 
@@ -301,13 +305,23 @@ void PersonalizationAppUserProviderImpl::OnUserImageChanged(
         LOG(ERROR) << "Invalid image index received";
         break;
       }
-      // TODO(b/218602268) support deprecated user image text fields.
       UpdateUserImageObserver(
           ash::personalization_app::mojom::UserImage::NewDefaultImage(
               ash::default_user_image::GetDefaultUserImage(image_index)));
       break;
     }
   }
+}
+
+void PersonalizationAppUserProviderImpl::OnUserImageIsEnterpriseManagedChanged(
+    const user_manager::User& user,
+    bool is_enterprise_managed) {
+  if (user.GetAccountId() != GetUser(profile_)->GetAccountId()) {
+    return;
+  }
+
+  user_image_observer_remote_->OnIsEnterpriseManagedChanged(
+      is_enterprise_managed);
 }
 
 void PersonalizationAppUserProviderImpl::OnUserProfileImageUpdated(
@@ -320,7 +334,9 @@ void PersonalizationAppUserProviderImpl::OnUserProfileImageUpdated(
     return;
 
   user_image_observer_remote_->OnUserProfileImageUpdated(
-      GURL(webui::GetBitmapDataUrl(*profile_image.bitmap())));
+      profile_image.isNull()
+          ? GURL()
+          : GURL(webui::GetBitmapDataUrl(*profile_image.bitmap())));
 }
 
 void PersonalizationAppUserProviderImpl::OnCameraPresenceCheckDone(
@@ -378,6 +394,4 @@ void PersonalizationAppUserProviderImpl::SetUserImageFileSelectorForTesting(
     std::unique_ptr<ash::UserImageFileSelector> file_selector) {
   user_image_file_selector_ = std::move(file_selector);
 }
-
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app

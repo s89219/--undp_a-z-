@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -137,7 +137,7 @@ IN_PROC_BROWSER_TEST_F(FeatureDiscoveryDurationReporterBrowserTest,
 
   // Wait for some time so that the cumulated time is not zero.
   base::RunLoop run_loop;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, run_loop.QuitClosure(), base::Milliseconds(100));
   run_loop.Run();
 }
@@ -153,9 +153,7 @@ IN_PROC_BROWSER_TEST_F(FeatureDiscoveryDurationReporterBrowserTest,
           ->GetProfileByUser(user_manager::UserManager::Get()->GetPrimaryUser())
           ->GetPrefs();
   const base::Value* duration_value =
-      primary_user_pref
-          ->GetDictionary("FeatureDiscoveryReporterObservedFeatures")
-          ->GetDict()
+      primary_user_pref->GetDict("FeatureDiscoveryReporterObservedFeatures")
           .FindDict("kMockFeature")
           ->Find("cumulative_duration");
   absl::optional<base::TimeDelta> duration =

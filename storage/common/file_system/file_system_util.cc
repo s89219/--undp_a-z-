@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -263,8 +263,6 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return "LocalForPlatformApp";
     case kFileSystemTypeForTransientFile:
       return "TransientFile";
-    case kFileSystemTypePluginPrivate:
-      return "PluginPrivate";
     case kFileSystemTypeProvided:
       return "Provided";
     case kFileSystemTypeDeviceMediaAsFileStorage:

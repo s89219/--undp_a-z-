@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "ash/components/audio/cras_audio_handler.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/json/json_writer.h"
@@ -15,6 +14,7 @@
 #include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/test/base/chrome_ash_test_base.h"
+#include "chromeos/ash/components/audio/cras_audio_handler.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace policy {
@@ -35,8 +35,8 @@ em::RemoteCommand GenerateSetVolumeCommandProto(base::TimeDelta age_of_command,
   command_proto.set_command_id(kUniqueID);
   command_proto.set_age_of_command(age_of_command.InMilliseconds());
   std::string payload;
-  base::DictionaryValue root_dict;
-  root_dict.SetIntKey(kVolumeFieldName, volume);
+  base::Value::Dict root_dict;
+  root_dict.Set(kVolumeFieldName, volume);
   base::JSONWriter::Write(root_dict, &payload);
   command_proto.set_payload(payload);
   return command_proto;
@@ -86,8 +86,8 @@ void VerifyResults(base::RunLoop* run_loop,
                    int expected_volume,
                    bool expected_muted) {
   EXPECT_EQ(RemoteCommandJob::SUCCEEDED, job->status());
-  int volume = chromeos::CrasAudioHandler::Get()->GetOutputVolumePercent();
-  bool muted = chromeos::CrasAudioHandler::Get()->IsOutputMuted();
+  int volume = ash::CrasAudioHandler::Get()->GetOutputVolumePercent();
+  bool muted = ash::CrasAudioHandler::Get()->IsOutputMuted();
   EXPECT_EQ(expected_volume, volume);
   EXPECT_EQ(expected_muted, muted);
   run_loop->Quit();

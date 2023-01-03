@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,39 +10,29 @@
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/task_traits.h"
-#include "base/task/thread_pool.h"
 #include "chrome/browser/ash/borealis/borealis_service.h"
 #include "chrome/browser/ash/borealis/borealis_util.h"
 #include "chrome/browser/ash/borealis/borealis_window_manager.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
-#include "content/public/browser/browser_task_traits.h"
-#include "content/public/browser/browser_thread.h"
+#include "chrome/grit/chrome_unscaled_resources.h"
+#include "chrome/grit/generated_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/message_box_view.h"
+#include "ui/views/controls/throbber.h"
 #include "ui/views/layout/box_layout.h"
 
 namespace {
 
 borealis::BorealisSplashScreenView* g_delegate = nullptr;
 
-constexpr int kIconSize = 40;
-
-gfx::Image ReadImageFile(std::string dlc_path) {
-  base::FilePath image_path =
-      base::FilePath(dlc_path.append("/splash_logo.png"));
-  std::string image_data;
-
-  if (!base::ReadFileToString(image_path, &image_data)) {
-    LOG(ERROR) << "Failed to read borealis logo from disk.";
-    return gfx::Image();
-  }
-  return gfx::Image::CreateFrom1xPNGBytes(
-      base::RefCountedString::TakeString(&image_data));
-}
+const SkColor background_color = SkColorSetARGB(255, 53, 51, 50);
+const SkColor text_color = SkColorSetARGB(255, 209, 208, 207);
+const int icon_width = 252;
+const int icon_height = 77;
 
 }  // namespace
 
@@ -85,53 +75,51 @@ BorealisSplashScreenView::BorealisSplashScreenView(Profile* profile)
   views::LayoutProvider* provider = views::LayoutProvider::Get();
 
   std::unique_ptr<views::BoxLayout> layout = std::make_unique<views::BoxLayout>(
-      views::BoxLayout::Orientation::kHorizontal,
-      provider->GetInsetsMetric(views::InsetsMetric::INSETS_DIALOG),
-      provider->GetDistanceMetric(views::DISTANCE_RELATED_CONTROL_HORIZONTAL));
-  layout->set_minimum_cross_axis_size(kIconSize);
+      views::BoxLayout::Orientation::kVertical,
+      gfx::Insets().set_top(150).set_bottom(100), 100);
   layout->set_cross_axis_alignment(
       views::BoxLayout::CrossAxisAlignment::kCenter);
   SetLayoutManager(std::move(layout));
 
-  set_margins(provider->GetDialogInsetsForContentType(
-      views::DialogContentType::kControl, views::DialogContentType::kText));
-  set_fixed_width(views::LayoutProvider::Get()->GetDistanceMetric(
-      views::DISTANCE_MODAL_DIALOG_PREFERRED_WIDTH));
   set_use_custom_frame(true);
   SetBackground(
       views::CreateThemedSolidBackground(kColorBorealisSplashScreenBackground));
 
-  // Get logo path and add it to view.
-  borealis::GetDlcPath(base::BindOnce(&BorealisSplashScreenView::OnGetRootPath,
-                                      weak_factory_.GetWeakPtr()));
+  set_corner_radius(15);
+  set_fixed_width(600);
 
-  views::View* text_view = AddChildView(std::make_unique<views::View>());
-  std::unique_ptr<views::BoxLayout> layout2 =
-      std::make_unique<views::BoxLayout>(
-          views::BoxLayout::Orientation::kHorizontal,
-          provider->GetInsetsMetric(views::InsetsMetric::INSETS_DIALOG),
-          provider->GetDistanceMetric(
-              views::DISTANCE_RELATED_CONTROL_HORIZONTAL));
-  text_view->SetLayoutManager(std::move(layout2));
+  std::unique_ptr<views::ImageView> image_view =
+      std::make_unique<views::ImageView>();
+  constexpr gfx::Size kRegularImageSize(icon_width, icon_height);
+  image_view->SetImage(
+      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          IDR_LOGO_BOREALIS_SPLASH));
+  image_view->SetImageSize(kRegularImageSize);
 
-  std::unique_ptr<views::BoxLayout> text_layout =
-      std::make_unique<views::BoxLayout>(
-          views::BoxLayout::Orientation::kVertical);
-  text_layout->set_cross_axis_alignment(
-      views::BoxLayout::CrossAxisAlignment::kStart);
-  text_view->SetLayoutManager(std::move(text_layout));
-  set_corner_radius(10);
-  set_fixed_width(380);
+  std::unique_ptr<views::BoxLayoutView> image_container =
+      std::make_unique<views::BoxLayoutView>();
+  image_container->AddChildView(std::move(image_view));
+  AddChildViewAt(std::move(image_container), 0);
 
-  steam_label_ = text_view->AddChildView(std::make_unique<views::Label>(
-      u"STEAM FOR CHROMEBOOK",
-      views::Label::CustomFont{gfx::FontList({"Google Sans"}, gfx::Font::NORMAL,
-                                             18, gfx::Font::Weight::NORMAL)}));
+  views::BoxLayoutView* text_view =
+      AddChildView(std::make_unique<views::BoxLayoutView>());
+  text_view->SetOrientation(views::BoxLayout::Orientation::kHorizontal);
+  text_view->SetBetweenChildSpacing(
+      provider->GetDistanceMetric(views::DISTANCE_RELATED_CONTROL_HORIZONTAL));
+  text_view->SetCrossAxisAlignment(
+      views::BoxLayout::CrossAxisAlignment::kCenter);
+
+  std::unique_ptr<views::Throbber> spinner =
+      std::make_unique<views::Throbber>();
+  spinner->Start();
+  text_view->AddChildView(std::move(spinner));
 
   starting_label_ = text_view->AddChildView(std::make_unique<views::Label>(
-      u"STARTING UP...",
+      l10n_util::GetStringUTF16(IDS_BOREALIS_SPLASHSCREEN_MESSAGE),
       views::Label::CustomFont{gfx::FontList({"Google Sans"}, gfx::Font::NORMAL,
                                              18, gfx::Font::Weight::NORMAL)}));
+  starting_label_->SetEnabledColor(text_color);
+  starting_label_->SetBackgroundColor(background_color);
 }
 
 void BorealisSplashScreenView::OnSessionStarted() {
@@ -167,28 +155,8 @@ void BorealisSplashScreenView::OnThemeChanged() {
   const SkColor foreground_color =
       color_provider->GetColor(kColorBorealisSplashScreenForeground);
   GetBubbleFrameView()->SetBackgroundColor(background_color);
-  steam_label_->SetBackgroundColor(background_color);
-  steam_label_->SetEnabledColor(foreground_color);
   starting_label_->SetBackgroundColor(background_color);
   starting_label_->SetEnabledColor(foreground_color);
-}
-
-void BorealisSplashScreenView::OnGetRootPath(const std::string& path) {
-  base::ThreadPool::PostTaskAndReplyWithResult(
-      FROM_HERE, {base::MayBlock(), base::TaskPriority::USER_VISIBLE},
-      base::BindOnce(&ReadImageFile, path),
-      base::BindOnce(&BorealisSplashScreenView::CreateImageView,
-                     weak_factory_.GetWeakPtr()));
-}
-
-void BorealisSplashScreenView::CreateImageView(gfx::Image image) {
-  std::unique_ptr<views::ImageView> image_view =
-      std::make_unique<views::ImageView>();
-  constexpr gfx::Size kRegularImageSize(kIconSize, kIconSize);
-  image_view->SetImage(image.AsImageSkia());
-  image_view->SetImageSize(kRegularImageSize);
-  AddChildViewAt(std::move(image_view), 0);
-  Layout();
 }
 
 }  // namespace borealis

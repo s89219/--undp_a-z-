@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,9 @@ class MultipartDataPipeGetterTest : public testing::Test {
   base::ReadOnlySharedMemoryRegion CreatePage(const std::string& content) {
     base::MappedReadOnlyRegion region =
         base::ReadOnlySharedMemoryRegion::Create(content.size());
-    EXPECT_TRUE(region.IsValid());
+    if (!region.IsValid())
+      return base::ReadOnlySharedMemoryRegion();
+
     std::memcpy(region.mapping.memory(), content.data(), content.size());
     return std::move(region.region);
   }
@@ -108,6 +110,9 @@ class MultipartDataPipeGetterParametrizedTest
   bool is_file_data_pipe() { return GetParam(); }
   bool is_page_data_pipe() { return !GetParam(); }
 
+  // Helper to create a data pipe with its content either in memory or in a
+  // files. If there is no space left on the device, return nullptr so the test
+  // can end early.
   std::unique_ptr<MultipartDataPipeGetter> CreateDataPipeGetter(
       const std::string& content) {
     if (is_file_data_pipe()) {
@@ -119,6 +124,9 @@ class MultipartDataPipeGetterParametrizedTest
                                              std::move(*file));
     } else {
       base::ReadOnlySharedMemoryRegion page = CreatePage(content);
+      if (!page.IsValid())
+        return nullptr;
+
       return MultipartDataPipeGetter::Create("boundary", metadata_,
                                              std::move(page));
     }

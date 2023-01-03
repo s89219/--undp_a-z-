@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "base/timer/timer.h"
 #include "components/cast/message_port/message_port.h"
 #include "components/cast_streaming/browser/cast_message_port_impl.h"
+#include "components/cast_streaming/browser/demuxer_stream_data_provider.h"
 #include "components/cast_streaming/browser/playback_command_dispatcher.h"
 #include "components/cast_streaming/browser/public/receiver_session.h"
 #include "components/cast_streaming/browser/remoting_session_client.h"
@@ -56,6 +57,10 @@ class CastStreamingSession {
     // frame data must be accessed via the |data_pipe| property in StreamInfo.
     virtual void OnVideoBufferReceived(
         media::mojom::DecoderBufferPtr buffer) = 0;
+
+    // Called when a session is being renegotiated but has not yet completed
+    // configuration.
+    virtual void OnSessionReinitializationPending() = 0;
 
     // Called on receiver session reinitialization. It is guaranteed that at
     // least one of |audio_stream_info| or |video_stream_info| will be set.
@@ -100,11 +105,13 @@ class CastStreamingSession {
   // lifespan of this object and only after a call to Start().
   void Stop();
 
+  bool is_running() const { return !!receiver_session_; }
+
   // Return a callback that may be used to request a buffer of the specified
   // type, to be returned asynchronously through the client API. May only be
   // called following a call to Start() and prior to a call to Stop().
-  base::RepeatingClosure GetAudioBufferRequester();
-  base::RepeatingClosure GetVideoBufferRequester();
+  AudioDemuxerStreamDataProvider::RequestBufferCB GetAudioBufferRequester();
+  VideoDemuxerStreamDataProvider::RequestBufferCB GetVideoBufferRequester();
 
  private:
   // Owns the Open Screen ReceiverSession. The Streaming Session is tied to the
@@ -127,8 +134,11 @@ class CastStreamingSession {
     // Requests a new buffer of the specified type, which will be provided
     // Return a callback that may be used to request a buffer of the specified
     // type, to be returned asynchronously through the |client_|.
-    base::RepeatingClosure GetAudioBufferRequester();
-    base::RepeatingClosure GetVideoBufferRequester();
+    void GetAudioBuffer(base::OnceClosure no_frames_available_cb);
+    void GetVideoBuffer(base::OnceClosure no_frames_available_cb);
+
+    // Returns a WeakPtr associated with this instance;
+    base::WeakPtr<ReceiverSessionClient> GetWeakPtr();
 
    private:
     void OnInitializationTimeout();
@@ -177,6 +187,8 @@ class CastStreamingSession {
     const raw_ptr<CastStreamingSession::Client> client_;
     std::unique_ptr<StreamConsumer> audio_consumer_;
     std::unique_ptr<StreamConsumer> video_consumer_;
+
+    base::WeakPtrFactory<ReceiverSessionClient> weak_factory_;
   };
 
   std::unique_ptr<ReceiverSessionClient> receiver_session_;

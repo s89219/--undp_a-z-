@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,17 +9,12 @@
 #include <vector>
 
 #include "ash/accessibility/ui/focus_ring_controller.h"
-#include "ash/components/audio/sounds.h"
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/settings/cros_settings_provider.h"
-#include "ash/components/settings/timezone_settings.h"
-#include "ash/components/timezone/timezone_resolver.h"
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
 #include "ash/public/cpp/locale_update_controller.h"
 #include "ash/public/cpp/login_accelerators.h"
 #include "ash/public/cpp/login_screen.h"
 #include "ash/public/cpp/login_screen_model.h"
-#include "ash/public/cpp/multi_user_window_manager.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/shell.h"
 #include "base/bind.h"
@@ -53,7 +48,6 @@
 #include "chrome/browser/ash/net/delay_network_call.h"
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/ash/policy/enrollment/enrollment_config.h"
-#include "chrome/browser/ash/policy/enrollment/enrollment_requisition_manager.h"
 #include "chrome/browser/ash/settings/cros_settings.h"
 #include "chrome/browser/ash/system/device_disabling_manager.h"
 #include "chrome/browser/ash/system/input_device_settings.h"
@@ -68,20 +62,27 @@
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/ash/system_tray_client_impl.h"
 #include "chrome/browser/ui/ash/wallpaper_controller_client_impl.h"
-#include "chrome/browser/ui/webui/chromeos/login/app_launch_splash_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/core_oobe_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/device_disabled_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/lacros_data_migration_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/browser/ui/webui/chromeos/login/user_creation_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/welcome_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/app_launch_splash_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/core_oobe_handler.h"
+#include "chrome/browser/ui/webui/ash/login/device_disabled_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/gaia_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/lacros_data_backward_migration_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/lacros_data_migration_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/oobe_ui.h"
+#include "chrome/browser/ui/webui/ash/login/os_install_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/signin_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/welcome_screen_handler.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/browser_resources.h"
-#include "chromeos/dbus/session_manager/session_manager_client.h"
-#include "chromeos/login/login_state/login_state.h"
+#include "chromeos/ash/components/audio/sounds.h"
+#include "chromeos/ash/components/dbus/session_manager/session_manager_client.h"
+#include "chromeos/ash/components/login/login_state/login_state.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/settings/cros_settings_provider.h"
+#include "chromeos/ash/components/settings/timezone_settings.h"
+#include "chromeos/ash/components/timezone/timezone_resolver.h"
 #include "components/account_id/account_id.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/language/core/common/locale_util.h"
@@ -103,7 +104,6 @@
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/display/display.h"
-#include "ui/display/manager/display_manager.h"
 #include "ui/display/screen.h"
 #include "ui/events/devices/device_data_manager.h"
 #include "ui/events/event_handler.h"
@@ -121,9 +121,6 @@ namespace {
 // Maximum delay for startup sound after 'loginPromptVisible' signal.
 const int kStartupSoundMaxDelayMs = 4000;
 
-// URL which corresponds to the login WebUI.
-const char kLoginURL[] = "chrome://oobe/login";
-
 // URL which corresponds to the OOBE WebUI.
 const char kOobeURL[] = "chrome://oobe/oobe";
 
@@ -138,14 +135,6 @@ const int kCrashCountLimit = 5;
 
 // The default fade out animation time in ms.
 const int kDefaultFadeTimeMs = 200;
-
-struct DisplayScaleFactor {
-  int longest_side;
-  float scale_factor;
-};
-
-const DisplayScaleFactor k4KDisplay = {3840, 1.5f},
-                         kMediumDisplay = {1440, 4.f / 3};
 
 // A class to observe an implicit animation and invokes the callback after the
 // animation is completed.
@@ -236,13 +225,20 @@ void ShowLoginWizardFinish(
   if (LoginDisplayHost::default_host()) {
     // Tests may have already allocated an instance for us to use.
     display_host = LoginDisplayHost::default_host();
-  } else if (ShouldShowSigninScreen(first_screen) ||
-             first_screen == LacrosDataMigrationScreenView::kScreenId) {
+  } else if (ShouldShowSigninScreen(first_screen)) {
+    display_host = new LoginDisplayHostMojo(DisplayedScreen::SIGN_IN_SCREEN);
+  } else if (first_screen == LacrosDataMigrationScreenView::kScreenId) {
     // TODO(crbug.com/1178702): Once lacros is officially released,
     // `ShowLoginWizard()` will no longer be called with lacros screen id.
     // Instead simply call `SigninUI::StartBrowserDataMigration()` as part of
     // the login flow.
     display_host = new LoginDisplayHostMojo(DisplayedScreen::SIGN_IN_SCREEN);
+    DCHECK(session_manager::SessionManager::Get());
+    session_manager::SessionManager::Get()->NotifyLoginOrLockScreenVisible();
+  } else if (first_screen == LacrosDataBackwardMigrationScreenView::kScreenId) {
+    display_host = new LoginDisplayHostMojo(DisplayedScreen::SIGN_IN_SCREEN);
+    DCHECK(session_manager::SessionManager::Get());
+    session_manager::SessionManager::Get()->NotifyLoginOrLockScreenVisible();
   } else {
     display_host = new LoginDisplayHostWebUI();
   }
@@ -334,18 +330,18 @@ void TriggerShowLoginWizardFinish(
 // if no policy-specified locale is set.
 std::string GetManagedLoginScreenLocale() {
   auto* cros_settings = CrosSettings::Get();
-  const base::ListValue* login_screen_locales = nullptr;
+  const base::Value::List* login_screen_locales = nullptr;
   if (!cros_settings->GetList(kDeviceLoginScreenLocales, &login_screen_locales))
     return std::string();
 
   // Currently, only the first element is used. The setting is a list for future
   // compatibility, if dynamically switching locales on the login screen will be
   // implemented.
-  if (login_screen_locales->GetListDeprecated().empty() ||
-      !login_screen_locales->GetListDeprecated()[0].is_string())
+  if (login_screen_locales->empty() ||
+      !login_screen_locales->front().is_string())
     return std::string();
 
-  return login_screen_locales->GetListDeprecated()[0].GetString();
+  return login_screen_locales->front().GetString();
 }
 
 // Disables virtual keyboard overscroll. Login UI will scroll user pods
@@ -383,8 +379,6 @@ PrefService* GetLocalState() {
 
 // static
 const char LoginDisplayHostWebUI::kShowLoginWebUIid[] = "ShowLoginWebUI";
-
-bool LoginDisplayHostWebUI::disable_restrictive_proxy_check_for_test_ = false;
 
 // A class to handle special menu key for keyboard driven OOBE.
 class LoginDisplayHostWebUI::KeyboardDrivenOobeKeyHandler
@@ -446,9 +440,6 @@ LoginDisplayHostWebUI::~LoginDisplayHostWebUI() {
       metrics::structured::NeutrinoDevicesLocation::
           kLoginDisplayHostWebUIDestructor);
 
-  if (GetOobeUI())
-    GetOobeUI()->signin_screen_handler()->SetDelegate(nullptr);
-
   SessionManagerClient::Get()->RemoveObserver(this);
   CrasAudioHandler::Get()->RemoveAudioObserver(this);
 
@@ -461,12 +452,6 @@ LoginDisplayHostWebUI::~LoginDisplayHostWebUI() {
 
   if (login_view_ && login_window_)
     login_window_->RemoveRemovalsObserver(this);
-
-  auto* window_manager = MultiUserWindowManagerHelper::GetWindowManager();
-  // MultiUserWindowManagerHelper instance might be null if no user is logged
-  // in - or in a unit test.
-  if (window_manager)
-    window_manager->RemoveObserver(this);
 
   ResetKeyboardOverscrollBehavior();
 
@@ -484,10 +469,8 @@ LoginDisplay* LoginDisplayHostWebUI::GetLoginDisplay() {
 }
 
 ExistingUserController* LoginDisplayHostWebUI::GetExistingUserController() {
-  if (!existing_user_controller_) {
-    LOG(WARNING) << "Triggered crbug/1307919 in WebUI host";
+  if (!existing_user_controller_)
     CreateExistingUserController();
-  }
   return existing_user_controller_.get();
 }
 
@@ -597,15 +580,6 @@ void LoginDisplayHostWebUI::OnStartSignInScreen() {
 
   VLOG(1) << "Login WebUI >> sign in";
 
-  // TODO(crbug.com/784495): Make sure this is ported to views.
-  if (!login_window_) {
-    TRACE_EVENT_NESTABLE_ASYNC_INSTANT0(
-        "ui", "StartSignInScreen",
-        TRACE_ID_WITH_SCOPE(kShowLoginWebUIid, TRACE_ID_GLOBAL(1)));
-    BootTimesRecorder::Get()->RecordCurrentStats("login-start-signin-screen");
-    LoadURL(GURL(kLoginURL));
-  }
-
   DVLOG(1) << "Starting sign in screen";
   CreateExistingUserController();
 
@@ -618,7 +592,6 @@ void LoginDisplayHostWebUI::OnStartSignInScreen() {
   CHECK(login_display_);
 
   // Legacy calls, will go away soon.
-  GetOobeUI()->signin_screen_handler()->SetDelegate(login_display_.get());
   GetOobeUI()->signin_screen_handler()->Show();
 
   ShowGaiaDialogCommon(EmptyAccountId());
@@ -686,7 +659,7 @@ void LoginDisplayHostWebUI::PrimaryMainFrameRenderProcessGone(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// LoginDisplayHostWebUI, chromeos::SessionManagerClient::Observer:
+// LoginDisplayHostWebUI, SessionManagerClient::Observer:
 
 void LoginDisplayHostWebUI::EmitLoginPromptVisibleCalled() {
   OnLoginPromptVisible();
@@ -718,34 +691,11 @@ void LoginDisplayHostWebUI::OnDisplayMetricsChanged(
     return;
   }
 
-  if (switches::ShouldScaleOobe() &&
-      policy::EnrollmentRequisitionManager::IsRemoraRequisition()) {
-    UpScaleOobe();
-  }
-
   if (GetOobeUI()) {
     GetOobeUI()->GetCoreOobeView()->UpdateClientAreaSize(
         primary_display.size());
     if (changed_metrics & DISPLAY_METRIC_PRIMARY)
       GetOobeUI()->OnDisplayConfigurationChanged();
-  }
-}
-
-void LoginDisplayHostWebUI::UpScaleOobe() {
-  const int64_t display_id =
-      display::Screen::GetScreen()->GetPrimaryDisplay().id();
-  if (primary_display_id_ == display_id) {
-    return;
-  }
-  primary_display_id_ = display_id;
-  auto* display_manager = Shell::Get()->display_manager();
-  const gfx::Size size =
-      display::Screen::GetScreen()->GetPrimaryDisplay().work_area_size();
-  const int longest_side = std::max(size.width(), size.height());
-  if (longest_side >= k4KDisplay.longest_side) {
-    display_manager->UpdateZoomFactor(display_id, k4KDisplay.scale_factor);
-  } else if (longest_side >= kMediumDisplay.longest_side) {
-    display_manager->UpdateZoomFactor(display_id, kMediumDisplay.scale_factor);
   }
 }
 
@@ -792,10 +742,7 @@ void LoginDisplayHostWebUI::OnWidgetBoundsChanged(views::Widget* widget,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// LoginDisplayHostWebUI, MultiUserWindowManagerObserver:
-void LoginDisplayHostWebUI::OnUserSwitchAnimationFinished() {
-  ShutdownDisplayHost();
-}
+// LoginDisplayHostWebUI, OobeUI::Observer
 
 void LoginDisplayHostWebUI::OnCurrentScreenChanged(OobeScreenId current_screen,
                                                    OobeScreenId new_screen) {
@@ -905,9 +852,6 @@ void LoginDisplayHostWebUI::InitLoginWindowAndView() {
   login_view_ = new WebUILoginView(WebUILoginView::WebViewSettings(),
                                    weak_factory_.GetWeakPtr());
   login_view_->Init();
-  if (disable_restrictive_proxy_check_for_test_) {
-    DisableRestrictiveProxyCheckForTest();
-  }
 
   login_window_->SetVisibilityAnimationDuration(
       base::Milliseconds(kLoginFadeoutTransitionDurationMs));
@@ -969,7 +913,6 @@ void LoginDisplayHostWebUI::ResetLoginView() {
 
   OobeUI* oobe_ui = login_view_->GetOobeUI();
   if (oobe_ui) {
-    oobe_ui->signin_screen_handler()->SetDelegate(nullptr);
     oobe_ui->RemoveObserver(this);
   }
 
@@ -988,19 +931,6 @@ void LoginDisplayHostWebUI::CreateExistingUserController() {
   login_display_->set_delegate(existing_user_controller_.get());
 }
 
-// static
-void LoginDisplayHostWebUI::DisableRestrictiveProxyCheckForTest() {
-  if (default_host() && default_host()->GetOobeUI()) {
-    default_host()
-        ->GetOobeUI()
-        ->GetView<GaiaScreenHandler>()
-        ->DisableRestrictiveProxyCheckForTest();
-    disable_restrictive_proxy_check_for_test_ = false;
-  } else {
-    disable_restrictive_proxy_check_for_test_ = true;
-  }
-}
-
 void LoginDisplayHostWebUI::ShowGaiaDialog(const AccountId& prefilled_account) {
   ShowGaiaDialogCommon(prefilled_account);
 }
@@ -1013,7 +943,7 @@ void LoginDisplayHostWebUI::ShowGuestTosScreen() {
   StartWizard(GuestTosScreenView::kScreenId);
 }
 
-void LoginDisplayHostWebUI::HideOobeDialog(bool video_timeout) {
+void LoginDisplayHostWebUI::HideOobeDialog(bool saml_page_closed) {
   NOTREACHED();
 }
 
@@ -1057,6 +987,11 @@ void LoginDisplayHostWebUI::VerifyOwnerForKiosk(base::OnceClosure) {
 void LoginDisplayHostWebUI::ShowPasswordChangedDialog(
     const AccountId& account_id,
     bool show_password_error) {
+  NOTREACHED();
+}
+
+void LoginDisplayHostWebUI::StartCryptohomeRecovery(
+    const AccountId& account_id) {
   NOTREACHED();
 }
 

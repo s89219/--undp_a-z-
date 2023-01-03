@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,11 @@
 
 #include <set>
 
+#include "base/callback_helpers.h"
 #include "base/feature_list.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
+#include "base/test/mock_callback.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -21,6 +23,8 @@
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/test/test_extension_dir.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/widget/any_widget_observer.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
@@ -78,11 +82,27 @@ class DeprecatedAppDialogWidgetObserver : public views::WidgetObserver {
   base::RunLoop run_loop_;
 };
 
+enum class HideLaunchAnywaysOption { kHide, kShow };
+
 class DeprecatedAppsDialogViewBrowserTest
-    : public extensions::ExtensionBrowserTest {
+    : public extensions::ExtensionBrowserTest,
+      public testing::WithParamInterface<HideLaunchAnywaysOption> {
  public:
   DeprecatedAppsDialogViewBrowserTest() {
-    feature_list_.InitWithFeatures({features::kChromeAppsDeprecation}, {});
+    switch (GetParam()) {
+      case HideLaunchAnywaysOption::kShow:
+        feature_list_.InitWithFeaturesAndParameters(
+            {{features::kChromeAppsDeprecation,
+              {{"HideLaunchAnyways", "false"}}}},
+            {});
+        break;
+      case HideLaunchAnywaysOption::kHide:
+        feature_list_.InitWithFeaturesAndParameters(
+            {{features::kChromeAppsDeprecation,
+              {{"HideLaunchAnyways", "true"}}}},
+            {});
+        break;
+    }
   }
 
   DeprecatedAppsDialogViewBrowserTest(
@@ -144,13 +164,14 @@ class DeprecatedAppsDialogViewBrowserTest
   base::test::ScopedFeatureList feature_list_;
 };
 
-IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
+IN_PROC_BROWSER_TEST_P(DeprecatedAppsDialogViewBrowserTest,
                        VerifyTableModelForSingleApp) {
   auto* web_contents = browser()->tab_strip_model()->GetActiveWebContents();
 
   InstallExtensionForTesting(mock_app_manifest1, mock_url1);
   test_dialog_view_ = DeprecatedAppsDialogView::CreateAndShowDialog(
-                          deprecated_app_ids_for_testing_, web_contents)
+                          std::string(), deprecated_app_ids_for_testing_,
+                          web_contents, base::DoNothing())
                           ->AsWeakPtr();
 
   EXPECT_TRUE(IsDialogShown());
@@ -158,14 +179,15 @@ IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
             GetRowCountForDialog());
 }
 
-IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
+IN_PROC_BROWSER_TEST_P(DeprecatedAppsDialogViewBrowserTest,
                        VerifyTableModelForMultipleApps) {
   auto* web_contents = browser()->tab_strip_model()->GetActiveWebContents();
 
   InstallExtensionForTesting(mock_app_manifest1, mock_url1);
   InstallExtensionForTesting(mock_app_manifest2, mock_url2);
   test_dialog_view_ = DeprecatedAppsDialogView::CreateAndShowDialog(
-                          deprecated_app_ids_for_testing_, web_contents)
+                          std::string(), deprecated_app_ids_for_testing_,
+                          web_contents, base::DoNothing())
                           ->AsWeakPtr();
 
   EXPECT_TRUE(IsDialogShown());
@@ -173,15 +195,18 @@ IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
             GetRowCountForDialog());
 }
 
-IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
+IN_PROC_BROWSER_TEST_P(DeprecatedAppsDialogViewBrowserTest,
                        AcceptDialogAndVerify) {
   auto* web_contents = browser()->tab_strip_model()->GetActiveWebContents();
 
+  base::MockCallback<base::OnceClosure> mock_callback;
   extensions::ExtensionId test_id(
       InstallExtensionForTesting(mock_app_manifest1, mock_url1));
   test_dialog_view_ = DeprecatedAppsDialogView::CreateAndShowDialog(
-                          deprecated_app_ids_for_testing_, web_contents)
+                          std::string(), deprecated_app_ids_for_testing_,
+                          web_contents, mock_callback.Get())
                           ->AsWeakPtr();
+  EXPECT_CALL(mock_callback, Run()).Times(0);
 
   // Verify dialog is shown.
   ASSERT_TRUE(IsDialogShown());
@@ -199,13 +224,15 @@ IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
           ->GetInstalledExtension(test_id) == nullptr);
 }
 
-IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
+IN_PROC_BROWSER_TEST_P(DeprecatedAppsDialogViewBrowserTest,
                        CloseDialogAndVerify) {
   auto* web_contents = browser()->tab_strip_model()->GetActiveWebContents();
 
+  base::MockCallback<base::OnceClosure> mock_callback;
   InstallExtensionForTesting(mock_app_manifest1, mock_url1);
   test_dialog_view_ = DeprecatedAppsDialogView::CreateAndShowDialog(
-                          deprecated_app_ids_for_testing_, web_contents)
+                          std::string(), deprecated_app_ids_for_testing_,
+                          web_contents, mock_callback.Get())
                           ->AsWeakPtr();
 
   // Verify dialog is shown.
@@ -213,20 +240,26 @@ IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
   EXPECT_EQ(static_cast<int>(deprecated_app_ids_for_testing_.size()),
             GetRowCountForDialog());
 
+  if (GetParam() == HideLaunchAnywaysOption::kShow) {
+    EXPECT_CALL(mock_callback, Run()).Times(1);
+  } else {
+    EXPECT_CALL(mock_callback, Run()).Times(0);
+  }
+
   // Verify dialog is closed on cancellation
   ASSERT_TRUE(test_dialog_view_->Cancel());
   WaitForDialogToBeDestroyed();
   ASSERT_FALSE(IsDialogShown());
 }
 
-IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
+IN_PROC_BROWSER_TEST_P(DeprecatedAppsDialogViewBrowserTest,
                        DialogDoesNotLoadOnNavigationToChromeApps) {
   ASSERT_TRUE(
       ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAppsURL)));
   ASSERT_FALSE(IsDialogShown());
 }
 
-IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
+IN_PROC_BROWSER_TEST_P(DeprecatedAppsDialogViewBrowserTest,
                        DeprecatedAppsDialogShownFromLinkClick) {
   auto* web_contents = browser()->tab_strip_model()->GetActiveWebContents();
   InstallExtensionForTesting(mock_app_manifest1, mock_url1);
@@ -234,8 +267,22 @@ IN_PROC_BROWSER_TEST_F(DeprecatedAppsDialogViewBrowserTest,
       ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIAppsURL)));
   auto waiter = views::NamedWidgetShownWaiter(
       views::test::AnyWidgetTestPasskey{}, "DeprecatedAppsDialogView");
-  web_contents->GetMainFrame()->ExecuteJavaScriptForTests(
+  web_contents->GetPrimaryMainFrame()->ExecuteJavaScriptForTests(
       u"document.getElementById('deprecated-apps-link').click()",
       base::NullCallback());
   EXPECT_NE(waiter.WaitIfNeededAndGet(), nullptr);
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    DeprecatedAppsDialogViewBrowserTest,
+    ::testing::Values(HideLaunchAnywaysOption::kShow,
+                      HideLaunchAnywaysOption::kHide),
+    [](const ::testing::TestParamInfo<HideLaunchAnywaysOption> info) {
+      switch (info.param) {
+        case HideLaunchAnywaysOption::kShow:
+          return "ShowLaunchAnyways";
+        case HideLaunchAnywaysOption::kHide:
+          return "HideLaunchAnyways";
+      }
+    });

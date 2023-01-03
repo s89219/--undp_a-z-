@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,14 @@ using OnMetricsReportingCallbackType = base::OnceCallback<void(bool)>;
 enum class ChangeMetricsReportingStateCalledFrom {
   kUnknown,
   kUiSettings,
+
+  // Called from Chrome OS settings change. Chrome OS manages settings
+  // externally and metrics service listens for changes.
+  kCrosMetricsSettingsChange,
+
+  // Called from Chrome OS on settings creation/initialization. This happens
+  // once on each log in.
+  kCrosMetricsSettingsCreated,
 };
 
 // Changes metrics reporting state without caring about the success of the

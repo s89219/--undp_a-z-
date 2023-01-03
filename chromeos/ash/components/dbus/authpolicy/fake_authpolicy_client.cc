@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,17 +7,17 @@
 #include <memory>
 #include <vector>
 
-#include "ash/components/tpm/install_attributes.h"
 #include "base/bind.h"
 #include "base/files/file_util.h"
 #include "base/hash/md5.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
-#include "base/threading/thread_task_runner_handle.h"
-#include "chromeos/dbus/cryptohome/rpc.pb.h"
-#include "chromeos/dbus/session_manager/session_manager_client.h"
+#include "chromeos/ash/components/dbus/cryptohome/rpc.pb.h"
+#include "chromeos/ash/components/dbus/session_manager/session_manager_client.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/proto/cloud_policy.pb.h"
 #include "dbus/message.h"
@@ -46,7 +46,7 @@ void OnStorePolicy(AuthPolicyClient::RefreshPolicyCallback callback,
 // Posts |closure| on the ThreadTaskRunner with |delay|.
 void PostDelayedClosure(base::OnceClosure closure,
                         const base::TimeDelta& delay) {
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, std::move(closure), delay);
 }
 
@@ -225,7 +225,7 @@ void FakeAuthPolicyClient::RefreshDevicePolicy(RefreshPolicyCallback callback) {
 void FakeAuthPolicyClient::RefreshUserPolicy(const AccountId& account_id,
                                              RefreshPolicyCallback callback) {
   if (refresh_user_policy_error_.has_value()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback),
                                   refresh_user_policy_error_.value()));
     refresh_user_policy_error_.reset();
@@ -302,7 +302,7 @@ void FakeAuthPolicyClient::SetUserKerberosFiles(const std::string& creds,
 void FakeAuthPolicyClient::SetStarted(bool started) {
   started_ = started;
   if (started_) {
-    std::vector<WaitForServiceToBeAvailableCallback> callbacks;
+    std::vector<chromeos::WaitForServiceToBeAvailableCallback> callbacks;
     callbacks.swap(wait_for_service_to_be_available_callbacks_);
     for (size_t i = 0; i < callbacks.size(); ++i)
       std::move(callbacks[i]).Run(true /* service_is_available*/);

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,16 +10,17 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "cert_db_initializer_io_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chromeos/crosapi/cpp/crosapi_constants.h"
 #include "chromeos/crosapi/mojom/cert_database.mojom.h"
 #include "chromeos/crosapi/mojom/crosapi.mojom.h"
 #include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "crypto/scoped_nss_types.h"
@@ -66,12 +67,6 @@ void CertDbInitializerImpl::Start() {
     return InitializeReadOnlyCertDb();
   }
 
-  // TODO(b/200784079): This is backwards compatibility code. It can be
-  // removed in ChromeOS-M100.
-  if (lacros_service->GetInterfaceVersion(CrosapiCertDb::Uuid_) == 0) {
-    return LegacyInitializeForMainProfile();
-  }
-
   if (lacros_service->GetInterfaceVersion(CrosapiCertDb::Uuid_) >=
       kAddAshCertDatabaseObserverMinVersion) {
     lacros_service->GetRemote<CrosapiCertDb>()->AddAshCertDatabaseObserver(
@@ -90,7 +85,7 @@ base::CallbackListSubscription CertDbInitializerImpl::WaitUntilReady(
     // We still want to support returning a CallbackListSubscription, so this
     // code goes through callbacks_ in that case too, which will be notified in
     // OnCertDbInitializationFinished.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&CertDbInitializerImpl::OnCertDbInitializationFinished,
                        weak_factory_.GetWeakPtr()));
@@ -103,7 +98,7 @@ void CertDbInitializerImpl::InitializeReadOnlyCertDb() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   auto init_database_callback = base::BindPostTask(
-      base::SequencedTaskRunnerHandle::Get(),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindOnce(&CertDbInitializerImpl::OnCertDbInitializationFinished,
                      weak_factory_.GetWeakPtr()));
 
@@ -117,15 +112,15 @@ void CertDbInitializerImpl::InitializeReadOnlyCertDb() {
 
 void CertDbInitializerImpl::InitializeForMainProfile() {
   auto software_db_loaded_callback = base::BindPostTask(
-      base::SequencedTaskRunnerHandle::Get(),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindOnce(&CertDbInitializerImpl::DidLoadSoftwareNssDb,
                      weak_factory_.GetWeakPtr()));
 
-  const crosapi::mojom::BrowserInitParams* init_params =
-      chromeos::LacrosService::Get()->init_params();
+  const chromeos::BrowserParamsProxy* init_params =
+      chromeos::BrowserParamsProxy::Get();
   base::FilePath nss_db_path;
-  if (init_params->default_paths->user_nss_database) {
-    nss_db_path = init_params->default_paths->user_nss_database.value();
+  if (init_params->DefaultPaths()->user_nss_database) {
+    nss_db_path = init_params->DefaultPaths()->user_nss_database.value();
   }
 
   content::GetIOThreadTaskRunner({})->PostTask(
@@ -148,7 +143,7 @@ void CertDbInitializerImpl::OnCertDbInfoReceived(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   auto init_database_callback = base::BindPostTask(
-      base::SequencedTaskRunnerHandle::Get(),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindOnce(&CertDbInitializerImpl::OnCertDbInitializationFinished,
                      weak_factory_.GetWeakPtr()));
 
@@ -176,37 +171,4 @@ CertDbInitializerImpl::CreateNssCertDatabaseGetterForIOThread() {
 void CertDbInitializerImpl::OnCertsChangedInAsh() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   net::CertDatabase::GetInstance()->NotifyObserversCertDBChanged();
-}
-
-// ======================= Backwards compatibility code ========================
-
-// TODO(b/200784079): This is backwards compatibility code. It can be
-// removed in ChromeOS-M100.
-void CertDbInitializerImpl::LegacyInitializeForMainProfile() {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-  chromeos::LacrosService::Get()
-      ->GetRemote<crosapi::mojom::CertDatabase>()
-      ->GetCertDatabaseInfo(
-          base::BindOnce(&CertDbInitializerImpl::OnLegacyCertDbInfoReceived,
-                         weak_factory_.GetWeakPtr()));
-}
-
-// TODO(b/200784079): This is backwards compatibility code. It can be
-// removed in ChromeOS-M100.
-void CertDbInitializerImpl::OnLegacyCertDbInfoReceived(
-    crosapi::mojom::GetCertDatabaseInfoResultPtr cert_db_info) {
-  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-
-  auto init_database_callback = base::BindPostTask(
-      base::SequencedTaskRunnerHandle::Get(),
-      base::BindOnce(&CertDbInitializerImpl::OnCertDbInitializationFinished,
-                     weak_factory_.GetWeakPtr()));
-
-  content::GetIOThreadTaskRunner({})->PostTask(
-      FROM_HERE,
-      base::BindOnce(&CertDbInitializerIOImpl::InitializeLegacyNssCertDatabase,
-                     base::Unretained(cert_db_initializer_io_.get()),
-                     std::move(cert_db_info),
-                     std::move(init_database_callback)));
 }

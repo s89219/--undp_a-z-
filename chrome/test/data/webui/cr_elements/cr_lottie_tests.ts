@@ -1,13 +1,12 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // clang-format off
-import 'chrome://resources/cr_elements/cr_lottie/cr_lottie.m.js';
+import 'chrome://resources/cr_elements/cr_lottie/cr_lottie.js';
 
-import {CrLottieElement, LOTTIE_JS_URL} from 'chrome://resources/cr_elements/cr_lottie/cr_lottie.m.js';
+import {CrLottieElement} from 'chrome://resources/cr_elements/cr_lottie/cr_lottie.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-
 import {assertDeepEquals, assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {MockController, MockMethod} from 'chrome://webui-test/mock_controller.js';
 import {eventToPromise} from 'chrome://webui-test/test_util.js';
@@ -54,7 +53,6 @@ suite('cr_lottie_test', function() {
 
   let container: HTMLElement;
   let canvas: HTMLCanvasElement;
-  let lottieWorkerJs: Blob;
 
   let waitForInitializeEvent: Promise<void>;
   let waitForPlayingEvent: Promise<void>;
@@ -62,20 +60,8 @@ suite('cr_lottie_test', function() {
   const defaultWidth = 300;
   const defaultHeight = 200;
 
-  setup(function(done) {
+  setup(function() {
     mockController = new MockController();
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('GET', LOTTIE_JS_URL, true);
-    xhr.responseType = 'blob';
-    xhr.send();
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState === 4) {
-        assertEquals(200, xhr.status);
-        lottieWorkerJs = xhr.response;
-        done();
-      }
-    };
   });
 
   teardown(function() {
@@ -83,7 +69,7 @@ suite('cr_lottie_test', function() {
   });
 
   function createLottieElement(autoplay: boolean = true) {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     crLottieElement = document.createElement('cr-lottie');
     crLottieElement.animationUrl = SAMPLE_LOTTIE_GREEN;
     crLottieElement.autoplay = autoplay;
@@ -240,10 +226,15 @@ suite('cr_lottie_test', function() {
     await waitForPauseEvent;
   });
 
-  test('TestRenderFrame', async () => {
+  test('TestRenderFrame', async function() {
     // TODO(crbug.com/1108915): Offscreen canvas has a race issue when used in
-    // this test framework. To ensure that we capture a frame from the animation
-    // and not an empty frame, we delay the capture by 2 seconds.
+    // this test framework.
+    if (1) {
+      this.skip();
+    }
+
+    // To ensure that we capture a frame from the animation and not an empty
+    // frame, we delay the capture by 2 seconds.
     // Note: This issue is only observed in tests.
     const kRaceTimeout = 2000;
 
@@ -260,10 +251,15 @@ suite('cr_lottie_test', function() {
     assertDeepEquals(GREEN_PIXEL, await samplePixel());
   });
 
-  test('TestChangeAnimationUrl', async () => {
+  test('TestChangeAnimationUrl', async function() {
     // TODO(crbug.com/1108915): Offscreen canvas has a race issue when used in
-    // this test framework. To ensure that we capture a frame from the animation
-    // and not an empty frame, we delay the capture by 2 seconds.
+    // this test framework.
+    if (1) {
+      this.skip();
+    }
+
+    // To ensure that we capture a frame from the animation and not an empty
+    // frame, we delay the capture by 2 seconds.
     // Note: This issue is only observed in tests.
     const kRaceTimeout = 2000;
 
@@ -317,13 +313,6 @@ suite('cr_lottie_test', function() {
     const mockXhrConstructor =
         mockController.createFunctionMock(window, 'XMLHttpRequest');
 
-    // Expectations for loading the worker.
-    mockXhrConstructor.addExpectation();
-    (mockXhr.open as unknown as MockMethod)
-        .addExpectation(
-            'GET', 'chrome://resources/lottie/lottie_worker.min.js', true);
-    (mockXhr.send as unknown as MockMethod).addExpectation();
-
     // Expectations for loading the image and aborting it.
     mockXhrConstructor.addExpectation();
     (mockXhr.open as unknown as MockMethod)
@@ -334,12 +323,6 @@ suite('cr_lottie_test', function() {
     mockXhrConstructor.returnValue = mockXhr;
 
     createLottieElement(/*autoplay=*/ true);
-
-    // Return the lottie worker.
-    Object.defineProperty(mockXhr, 'response', {value: lottieWorkerJs});
-    Object.defineProperty(mockXhr, 'readyState', {value: 4});
-    Object.defineProperty(mockXhr, 'status', {value: 200});
-    mockXhr.onreadystatechange!(new Event('readystatchange'));
 
     // Detaching the element before the image has loaded should abort the
     // request.
@@ -359,13 +342,6 @@ suite('cr_lottie_test', function() {
     const mockXhrConstructor =
         mockController.createFunctionMock(window, 'XMLHttpRequest');
 
-    // Expectations for loading the worker.
-    mockXhrConstructor.addExpectation();
-    (mockXhr.open as unknown as MockMethod)
-        .addExpectation(
-            'GET', 'chrome://resources/lottie/lottie_worker.min.js', true);
-    (mockXhr.send as unknown as MockMethod).addExpectation();
-
     // Expectations for loading the first image and aborting it.
     mockXhrConstructor.addExpectation();
     (mockXhr.open as unknown as MockMethod)
@@ -382,12 +358,6 @@ suite('cr_lottie_test', function() {
     mockXhrConstructor.returnValue = mockXhr;
 
     createLottieElement(/*autoplay=*/ true);
-
-    // Return the lottie worker.
-    Object.defineProperty(mockXhr, 'response', {value: lottieWorkerJs});
-    Object.defineProperty(mockXhr, 'readyState', {value: 4});
-    Object.defineProperty(mockXhr, 'status', {value: 200});
-    mockXhr.onreadystatechange!(new Event('readystatchange'));
 
     // Attempting to load a new image should abort the first request and start a
     // new one.

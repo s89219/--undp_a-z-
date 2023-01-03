@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,9 +30,11 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "components/services/storage/public/mojom/indexed_db_control.mojom.h"
+#include "components/download/public/common/in_progress_download_manager.h"
+#include "components/services/storage/privileged/mojom/indexed_db_control.mojom.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_context_impl.h"
+#include "content/browser/browsing_data/browsing_data_remover_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/media/browser_feature_provider.h"
 #include "content/browser/push_messaging/push_messaging_router.h"
@@ -54,6 +56,7 @@
 #include "media/capabilities/in_memory_video_decode_stats_db_impl.h"
 #include "media/capabilities/video_decode_stats_db_impl.h"
 #include "media/mojo/services/video_decode_perf_history.h"
+#include "media/mojo/services/webrtc_video_perf_history.h"
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/file_system/external_mount_points.h"
@@ -154,6 +157,15 @@ void BrowserContext::ForEachStoragePartition(
     return;
 
   partition_map->ForEach(std::move(callback));
+}
+
+void BrowserContext::DisposeStoragePartition(
+    StoragePartition* storage_partition) {
+  StoragePartitionImplMap* partition_map = impl()->storage_partition_map();
+  if (!partition_map)
+    return;
+
+  partition_map->DisposeInMemory(storage_partition);
 }
 
 size_t BrowserContext::GetStoragePartitionCount() {
@@ -303,12 +315,16 @@ media::VideoDecodePerfHistory* BrowserContext::GetVideoDecodePerfHistory() {
   return impl()->GetVideoDecodePerfHistory();
 }
 
+media::WebrtcVideoPerfHistory* BrowserContext::GetWebrtcVideoPerfHistory() {
+  return impl()->GetWebrtcVideoPerfHistory();
+}
+
 media::learning::LearningSession* BrowserContext::GetLearningSession() {
   return impl()->GetLearningSession();
 }
 
-download::InProgressDownloadManager*
-BrowserContext::RetriveInProgressDownloadManager() {
+std::unique_ptr<download::InProgressDownloadManager>
+BrowserContext::RetrieveInProgressDownloadManager() {
   return nullptr;
 }
 
@@ -382,13 +398,17 @@ BrowserContext::GetFederatedIdentityApiPermissionContext() {
   return nullptr;
 }
 
-FederatedIdentityActiveSessionPermissionContextDelegate*
-BrowserContext::GetFederatedIdentityActiveSessionPermissionContext() {
+FederatedIdentityPermissionContextDelegate*
+BrowserContext::GetFederatedIdentityPermissionContext() {
   return nullptr;
 }
 
-FederatedIdentitySharingPermissionContextDelegate*
-BrowserContext::GetFederatedIdentitySharingPermissionContext() {
+KAnonymityServiceDelegate* BrowserContext::GetKAnonymityServiceDelegate() {
+  return nullptr;
+}
+
+OriginTrialsControllerDelegate*
+BrowserContext::GetOriginTrialsControllerDelegate() {
   return nullptr;
 }
 

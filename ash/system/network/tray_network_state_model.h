@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/timer/timer.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom-forward.h"
 #include "chromeos/services/network_config/public/mojom/network_types.mojom-forward.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/struct_ptr.h"
 
 namespace ash {
@@ -56,6 +57,10 @@ class ASH_EXPORT TrayNetworkStateModel {
   // This used to be inlined but now requires details from the Impl class.
   chromeos::network_config::mojom::CrosNetworkConfig* cros_network_config();
 
+  void ConfigureRemoteForTesting(
+      mojo::PendingRemote<chromeos::network_config::mojom::CrosNetworkConfig>
+          cros_network_config);
+
   const chromeos::network_config::mojom::NetworkStateProperties*
   default_network() const {
     return default_network_.get();
@@ -79,6 +84,8 @@ class ASH_EXPORT TrayNetworkStateModel {
   }
 
  private:
+  friend class VPNFeaturePodControllerTest;
+
   void OnGetDeviceStateList(
       std::vector<chromeos::network_config::mojom::DeviceStatePropertiesPtr>
           devices);

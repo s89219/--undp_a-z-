@@ -1,12 +1,18 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview Handles page loading sounds based on automation events.
  */
-import {BaseAutomationHandler} from '/chromevox/background/base_automation_handler.js';
-import {ChromeVoxEvent} from '/chromevox/common/custom_automation_event.js';
+import {AutomationUtil} from '../../common/automation_util.js';
+import {constants} from '../../common/constants.js';
+import {ChromeVoxEvent} from '../common/custom_automation_event.js';
+import {EarconId} from '../common/earcon_id.js';
+
+import {BaseAutomationHandler} from './base_automation_handler.js';
+import {ChromeVox} from './chromevox.js';
+import {ChromeVoxState, ChromeVoxStateObserver} from './chromevox_state.js';
 
 const ActionType = chrome.automation.ActionType;
 const AutomationNode = chrome.automation.AutomationNode;
@@ -17,8 +23,9 @@ const StateType = chrome.automation.StateType;
 
 /** @implements {ChromeVoxStateObserver} */
 export class PageLoadSoundHandler extends BaseAutomationHandler {
+  /** @private */
   constructor() {
-    super(undefined);
+    super(null);
 
     /** @private {boolean} */
     this.didRequestLoadSound_ = false;
@@ -33,6 +40,13 @@ export class PageLoadSoundHandler extends BaseAutomationHandler {
     });
   }
 
+  static init() {
+    if (PageLoadSoundHandler.instance) {
+      throw 'Error: Trying to create two instances of singleton PageLoadSoundHandler';
+    }
+    PageLoadSoundHandler.instance = new PageLoadSoundHandler();
+  }
+
   /**
    * Stops page load sound on load complete.
    * @param {!ChromeVoxEvent} evt
@@ -45,7 +59,7 @@ export class PageLoadSoundHandler extends BaseAutomationHandler {
     }
 
     if (this.didRequestLoadSound_ && top.parent && top.parent.state.focused) {
-      ChromeVox.earcons.playEarcon(Earcon.PAGE_FINISH_LOADING);
+      ChromeVox.earcons.playEarcon(EarconId.PAGE_FINISH_LOADING);
       this.didRequestLoadSound_ = false;
     }
   }
@@ -59,7 +73,7 @@ export class PageLoadSoundHandler extends BaseAutomationHandler {
     const top = AutomationUtil.getTopLevelRoot(evt.target);
     if (top && top === evt.target.root && top.docUrl && top.parent &&
         top.parent.state.focused) {
-      ChromeVox.earcons.playEarcon(Earcon.PAGE_START_LOADING);
+      ChromeVox.earcons.playEarcon(EarconId.PAGE_START_LOADING);
       this.didRequestLoadSound_ = true;
     }
   }
@@ -73,7 +87,7 @@ export class PageLoadSoundHandler extends BaseAutomationHandler {
     const top = AutomationUtil.getTopLevelRoot(range.start.node);
     // |top| might be undefined e.g. if range is not in a root web area.
     if (this.didRequestLoadSound_ && (!top || top.docLoadingProgress === 1)) {
-      ChromeVox.earcons.playEarcon(Earcon.PAGE_FINISH_LOADING);
+      ChromeVox.earcons.playEarcon(EarconId.PAGE_FINISH_LOADING);
       this.didRequestLoadSound_ = false;
     }
 
@@ -81,3 +95,6 @@ export class PageLoadSoundHandler extends BaseAutomationHandler {
     // the docLoadingProgress < 1.
   }
 }
+
+/** @type {PageLoadSoundHandler} */
+PageLoadSoundHandler.instance;

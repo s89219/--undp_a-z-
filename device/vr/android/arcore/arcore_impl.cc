@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -309,7 +309,8 @@ constexpr float kDefaultFloorHeightEstimation = 1.2;
 namespace device {
 
 ArCoreImpl::ArCoreImpl()
-    : gl_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()) {}
+    : gl_thread_task_runner_(
+          base::SingleThreadTaskRunner::GetCurrentDefault()) {}
 
 ArCoreImpl::~ArCoreImpl() {
   for (auto& create_anchor : create_anchor_requests_) {
@@ -1152,9 +1153,7 @@ gfx::Transform ArCoreImpl::GetProjectionMatrix(float near, float far) {
   float matrix_4x4[16];
   ArCamera_getProjectionMatrix(arcore_session_.get(), arcore_camera.get(), near,
                                far, matrix_4x4);
-  gfx::Transform result;
-  result.matrix().setColMajor(matrix_4x4);
-  return result;
+  return gfx::Transform::ColMajorF(matrix_4x4);
 }
 
 float ArCoreImpl::GetEstimatedFloorHeight() {
@@ -1288,11 +1287,11 @@ ArCoreImpl::GetHitTestSubscriptionResult(
   // Transform the ray according to the latest transform based on the XRSpace
   // used in hit test subscription.
 
-  gfx::Point3F origin = native_origin_ray.origin;
-  mojo_from_native_origin.TransformPoint(&origin);
+  gfx::Point3F origin =
+      mojo_from_native_origin.MapPoint(native_origin_ray.origin);
 
-  gfx::Vector3dF direction = native_origin_ray.direction;
-  mojo_from_native_origin.TransformVector(&direction);
+  gfx::Vector3dF direction =
+      mojo_from_native_origin.MapVector(native_origin_ray.direction);
 
   std::vector<mojom::XRHitResultPtr> hit_results;
   if (!RequestHitTest(origin, direction, entity_types, &hit_results)) {
@@ -1317,12 +1316,13 @@ ArCoreImpl::GetTransientHitTestSubscriptionResult(
 
   for (const auto& input_source_id_and_mojo_from_input_source :
        input_source_ids_and_mojo_from_input_sources) {
-    gfx::Point3F origin = input_source_ray.origin;
-    input_source_id_and_mojo_from_input_source.second.TransformPoint(&origin);
+    gfx::Point3F origin =
+        input_source_id_and_mojo_from_input_source.second.MapPoint(
+            input_source_ray.origin);
 
-    gfx::Vector3dF direction = input_source_ray.direction;
-    input_source_id_and_mojo_from_input_source.second.TransformVector(
-        &direction);
+    gfx::Vector3dF direction =
+        input_source_id_and_mojo_from_input_source.second.MapVector(
+            input_source_ray.direction);
 
     std::vector<mojom::XRHitResultPtr> hit_results;
     if (!RequestHitTest(origin, direction, entity_types, &hit_results)) {
@@ -1842,10 +1842,14 @@ void ArCoreImpl::DetachAnchor(uint64_t anchor_id) {
 mojom::XRDepthDataPtr ArCoreImpl::GetDepthData() {
   DVLOG(3) << __func__;
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  // TODO(https://crbug.com/1394735): Switch to ArFrame_acquireDepthImage16Bits.
   internal::ScopedArCoreObject<ArImage*> ar_image;
   ArStatus status = ArFrame_acquireDepthImage(
       arcore_session_.get(), arcore_frame_.get(),
       internal::ScopedArCoreObject<ArImage*>::Receiver(ar_image).get());
+#pragma GCC diagnostic pop
 
   if (status != AR_SUCCESS) {
     DVLOG(2) << __func__

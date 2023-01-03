@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,16 +10,17 @@
 import 'chrome://support-tool/support_tool.js';
 import 'chrome://support-tool/url_generator.js';
 
-import {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.m.js';
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {BrowserProxy, BrowserProxyImpl, DataCollectorItem, IssueDetails, PIIDataItem, UrlGenerationResult} from 'chrome://support-tool/browser_proxy.js';
+import {BrowserProxy, BrowserProxyImpl, DataCollectorItem, IssueDetails, PiiDataItem, UrlGenerationResult} from 'chrome://support-tool/browser_proxy.js';
 import {DataExportResult, SupportToolElement, SupportToolPageIndex} from 'chrome://support-tool/support_tool.js';
 import {UrlGeneratorElement} from 'chrome://support-tool/url_generator.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {waitAfterNextRender} from 'chrome://webui-test/test_util.js';
 
 const EMAIL_ADDRESSES: string[] =
     ['testemail1@test.com', 'testemail2@test.com'];
@@ -38,14 +39,14 @@ const ALL_DATA_COLLECTORS: DataCollectorItem[] = [
   {name: 'data collector 5', isIncluded: false, protoEnum: 5},
 ];
 
-const PII_ITEMS: PIIDataItem[] = [
+const PII_ITEMS: PiiDataItem[] = [
   {
     piiTypeDescription: 'IP Address',
     piiType: 0,
     detectedData: '255.255.155.2, 255.255.155.255, 172.11.5.5',
     count: 3,
     keep: false,
-    expandDetails: true
+    expandDetails: true,
   },
   {
     piiTypeDescription: 'Hash',
@@ -53,7 +54,7 @@ const PII_ITEMS: PIIDataItem[] = [
     detectedData: '27540283740a0897ab7c8de0f809add2bacde78f',
     count: 1,
     keep: false,
-    expandDetails: true
+    expandDetails: true,
   },
   {
     piiTypeDescription: 'URL',
@@ -62,8 +63,8 @@ const PII_ITEMS: PIIDataItem[] = [
         'chrome://resources/f?user=bar, chrome-extension://nkoccljplnhpfnfiajclkommnmllphnl/foobar.js?bar=x, http://tets.com',
     count: 3,
     keep: false,
-    expandDetails: true
-  }
+    expandDetails: true,
+  },
 ];
 
 /**
@@ -85,13 +86,16 @@ class TestSupportToolBrowserProxy extends TestBrowserProxy implements
       'startDataExport',
       'showExportedDataInFolder',
       'getAllDataCollectors',
-      'generateCustomizedURL',
+      'generateCustomizedUrl',
     ]);
   }
 
   getEmailAddresses() {
     this.methodCalled('getEmailAddresses');
-    return Promise.resolve(EMAIL_ADDRESSES);
+    // We don't return EMAIL_ADDRESSES directly since we don't want the caller
+    // to be able to modify the const array as it's possible in Typescript to
+    // change the values of the contents of const arrays.
+    return Promise.resolve(Array.from(EMAIL_ADDRESSES));
   }
 
   getDataCollectors() {
@@ -117,7 +121,7 @@ class TestSupportToolBrowserProxy extends TestBrowserProxy implements
     this.methodCalled('cancelDataCollection');
   }
 
-  startDataExport(piiDataItems: PIIDataItem[]) {
+  startDataExport(piiDataItems: PiiDataItem[]) {
     this.methodCalled('startDataExport', [piiDataItems]);
   }
 
@@ -131,8 +135,8 @@ class TestSupportToolBrowserProxy extends TestBrowserProxy implements
 
   // Returns this.urlGenerationResult as response. Please call
   // this.setUrlGenerationResult() before using this function in tests.
-  generateCustomizedURL(caseId: string, dataCollectors: DataCollectorItem[]) {
-    this.methodCalled('generateCustomizedURL', caseId, dataCollectors);
+  generateCustomizedUrl(caseId: string, dataCollectors: DataCollectorItem[]) {
+    this.methodCalled('generateCustomizedUrl', caseId, dataCollectors);
     return Promise.resolve(this.urlGenerationResult_);
   }
 }
@@ -148,7 +152,7 @@ suite('SupportToolTest', function() {
 
   setup(async function() {
     loadTimeData.overrideValues(strings);
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     browserProxy = new TestSupportToolBrowserProxy();
     BrowserProxyImpl.setInstance(browserProxy);
     supportTool = document.createElement('support-tool');
@@ -172,7 +176,8 @@ suite('SupportToolTest', function() {
     // Click on continue button to start data collection.
     supportTool.shadowRoot!.getElementById('continueButton')!.click();
     browserProxy.whenCalled('startDataCollection').then(function([
-      issueDetails, selectedDataCollectors
+      issueDetails,
+      selectedDataCollectors,
     ]) {
       assertEquals(issueDetails.caseId, 'testcaseid');
       assertEquals(selectedDataCollectors, DATA_COLLECTORS);
@@ -186,8 +191,8 @@ suite('SupportToolTest', function() {
         issueDetails.shadowRoot!.querySelector('cr-input')!.value,
         'testcaseid');
     const emailOptions = issueDetails.shadowRoot!.querySelectorAll('option')!;
-    // IssueDetailsElement adds empty string to the email addresses options as a
-    // default value.
+    // IssueDetailsElement adds DONT_INCLUDE_EMAIL string to the email addresses
+    // options as for use to give the option to not include email address.
     assertEquals(EMAIL_ADDRESSES.length + 1, emailOptions.length);
   });
 
@@ -250,7 +255,7 @@ suite('SupportToolTest', function() {
     const exportResult: DataExportResult = {
       success: true,
       path: '/usr/testuser/downloads/fake_support_packet_path.zip',
-      error: ''
+      error: '',
     };
     webUIListenerCallback('data-export-completed', exportResult);
     flush();
@@ -265,7 +270,7 @@ suite('UrlGeneratorTest', function() {
   let browserProxy: TestSupportToolBrowserProxy;
 
   setup(async function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     browserProxy = new TestSupportToolBrowserProxy();
     BrowserProxyImpl.setInstance(browserProxy);
     urlGenerator = document.createElement('url-generator');
@@ -274,36 +279,33 @@ suite('UrlGeneratorTest', function() {
   });
 
   test('url generation success', async () => {
+    // Ensure the button is disabled when we open the page.
+    const copyLinkButton = urlGenerator.shadowRoot!.getElementById(
+                               'copyURLButton')! as CrButtonElement;
+    assertTrue(copyLinkButton.disabled);
     const caseIdInput = urlGenerator.shadowRoot!.getElementById(
                             'caseIdInput')! as CrInputElement;
     caseIdInput.value = 'test123';
     const dataCollectors =
-        urlGenerator.shadowRoot!.querySelector('iron-list')!.items!;
+        urlGenerator.shadowRoot!.querySelectorAll('cr-checkbox');
     // Select the first one of data collectors.
-    dataCollectors[0]!.selected = true;
+    dataCollectors[0]!.click();
+    // Ensure the button is enabled after we select at least one data collector.
+    assertFalse(copyLinkButton.disabled);
+    const expectedLink = 'chrome://support-tool/?case_id=test123&module=jekhh';
     // Set the expected result of URL generation to successful.
     const expectedResult: UrlGenerationResult = {
       success: true,
-      url: 'chrome://support-tool/?case_id=test123&module=jekhh',
-      errorMessage: ''
+      url: expectedLink,
+      errorMessage: '',
     };
     browserProxy.setUrlGenerationResult(expectedResult);
-    // Click the button to generate URL.
-    urlGenerator.shadowRoot!.getElementById('generateButton')!.click();
-    await browserProxy.whenCalled('generateCustomizedURL');
-    // Check the URL value shown to user if it's as expected.
-    const generatedURL = urlGenerator.shadowRoot!.getElementById(
-                             'generatedURL')! as CrInputElement;
-    assertEquals(generatedURL.value, expectedResult.url);
-    // The input fields should be disabled when there's a generated URL shown to
-    // user.
-    assertTrue(caseIdInput.disabled);
-    // Click the button to go back to URL generation.
-    urlGenerator.shadowRoot!.getElementById('backButton')!.click();
-    // The input fields should be enabled again when user clicked back button.
-    assertFalse(caseIdInput.disabled);
-    // Check the URL value shown to user is empty after going back.
-    assertEquals(generatedURL.value, '');
+    // Click the button to generate URL and copy to clipboard.
+    copyLinkButton.click();
+    await browserProxy.whenCalled('generateCustomizedUrl');
+    // Check the URL value copied to clipboard if it's as expected.
+    const copiedLink = await navigator.clipboard.readText();
+    assertEquals(copiedLink, expectedLink);
   });
 
   test('url generation fail', async () => {
@@ -311,12 +313,17 @@ suite('UrlGeneratorTest', function() {
     const expectedResult: UrlGenerationResult = {
       success: false,
       url: '',
-      errorMessage: 'Test error message'
+      errorMessage: 'Test error message',
     };
     browserProxy.setUrlGenerationResult(expectedResult);
+    const copyLinkButton = urlGenerator.shadowRoot!.getElementById(
+                               'copyURLButton')! as CrButtonElement;
+    // Enable the button for testing. The input fields are not important as
+    // we're testing for the error message.
+    copyLinkButton.disabled = false;
     // Click the button to generate URL.
-    urlGenerator.shadowRoot!.getElementById('generateButton')!.click();
-    await browserProxy.whenCalled('generateCustomizedURL');
+    copyLinkButton!.click();
+    await browserProxy.whenCalled('generateCustomizedUrl');
     // Check that there's an error message shown to user.
     assertTrue(urlGenerator.$.errorMessageToast.open);
   });

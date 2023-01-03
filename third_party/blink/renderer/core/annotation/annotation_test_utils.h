@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_ANNOTATION_ANNOTATION_TEST_UTILS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_ANNOTATION_ANNOTATION_TEST_UTILS_H_
 
+#include "base/check_op.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -95,6 +96,13 @@ class MockAnnotationAgentHost : public mojom::blink::AnnotationAgentHost {
                            WTF::Unretained(&did_disconnect_)));
 
     agent.Bind(std::move(pending_remote), agent_.BindNewPipeAndPassReceiver());
+  }
+
+  void Bind(
+      mojo::PendingReceiver<mojom::blink::AnnotationAgentHost> host_receiver,
+      mojo::PendingRemote<mojom::blink::AnnotationAgent> agent_remote) {
+    agent_.Bind(std::move(agent_remote));
+    receiver_.Bind(std::move(host_receiver));
   }
 
   using RemoteHostReceiverAgentPair =

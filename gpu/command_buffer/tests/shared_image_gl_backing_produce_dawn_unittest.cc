@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,11 +56,9 @@ class SharedImageGLBackingProduceDawnTest : public WebGPUTest {
     attributes.bind_generates_resource = false;
 
     gl_context_ = std::make_unique<GLInProcessContext>();
-    ContextResult result = gl_context_->Initialize(
-        GetGpuServiceHolder()->task_executor(), nullptr, true,
-        gpu::kNullSurfaceHandle, attributes, option.shared_memory_limits,
-        nullptr, nullptr, nullptr, nullptr,
-        base::ThreadTaskRunnerHandle::Get());
+    ContextResult result =
+        gl_context_->Initialize(GetGpuServiceHolder()->task_executor(),
+                                attributes, option.shared_memory_limits);
     ASSERT_EQ(result, ContextResult::kSuccess);
     mock_buffer_map_callback =
         std::make_unique<testing::StrictMock<MockBufferMapCallback>>();
@@ -142,10 +140,10 @@ TEST_F(SharedImageGLBackingProduceDawnTest, Basic) {
     gpu::webgpu::ReservedTexture reservation =
         webgpu()->ReserveTexture(device.Get());
 
-    webgpu()->AssociateMailbox(
-        reservation.deviceId, reservation.deviceGeneration, reservation.id,
-        reservation.generation, WGPUTextureUsage_CopySrc,
-        webgpu::WEBGPU_MAILBOX_NONE, reinterpret_cast<GLbyte*>(&gl_mailbox));
+    webgpu()->AssociateMailbox(reservation.deviceId,
+                               reservation.deviceGeneration, reservation.id,
+                               reservation.generation, WGPUTextureUsage_CopySrc,
+                               webgpu::WEBGPU_MAILBOX_NONE, gl_mailbox);
     wgpu::Texture wgpu_texture = wgpu::Texture::Acquire(reservation.texture);
 
     // Copy the texture in a mappable buffer.

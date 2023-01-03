@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,6 @@ class RgbkbdClientImpl : public RgbkbdClient {
   RgbkbdClientImpl() = default;
   RgbkbdClientImpl(const RgbkbdClientImpl&) = delete;
   RgbkbdClientImpl& operator=(const RgbkbdClientImpl&) = delete;
-  ~RgbkbdClientImpl() override = default;
 
   void GetRgbKeyboardCapabilities(
       GetRgbKeyboardCapabilitiesCallback callback) override {
@@ -48,6 +47,61 @@ class RgbkbdClientImpl : public RgbkbdClient {
                                  rgbkbd::kSetCapsLockState);
     dbus::MessageWriter writer(&method_call);
     writer.AppendBool(enabled);
+    CHECK(rgbkbd_proxy_);
+    rgbkbd_proxy_->CallMethod(&method_call,
+                              dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                              base::DoNothing());
+  }
+
+  void SetStaticBackgroundColor(uint8_t r, uint8_t g, uint8_t b) override {
+    VLOG(1) << "rgbkbd: SetStaticBackgroundColor  R: " << static_cast<int>(r)
+            << "G: " << static_cast<int>(g) << "B: " << static_cast<int>(b);
+    dbus::MethodCall method_call(rgbkbd::kRgbkbdServiceName,
+                                 rgbkbd::kSetStaticBackgroundColor);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendByte(r);
+    writer.AppendByte(g);
+    writer.AppendByte(b);
+    CHECK(rgbkbd_proxy_);
+    rgbkbd_proxy_->CallMethod(&method_call,
+                              dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                              base::DoNothing());
+  }
+
+  void SetZoneColor(int zone, uint8_t r, uint8_t g, uint8_t b) override {
+    VLOG(1) << "rgbkbd: SetZoneColor Zone: " << zone
+            << "R: " << static_cast<int>(r) << "G: " << static_cast<int>(g)
+            << "B: " << static_cast<int>(b);
+    dbus::MethodCall method_call(rgbkbd::kRgbkbdServiceName,
+                                 rgbkbd::kSetZoneColor);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendInt32(zone);
+    writer.AppendByte(r);
+    writer.AppendByte(g);
+    writer.AppendByte(b);
+    CHECK(rgbkbd_proxy_);
+    rgbkbd_proxy_->CallMethod(&method_call,
+                              dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                              base::DoNothing());
+  }
+
+  void SetRainbowMode() override {
+    VLOG(1) << "rgbkbd: SetRainbowMode";
+    dbus::MethodCall method_call(rgbkbd::kRgbkbdServiceName,
+                                 rgbkbd::kSetRainbowMode);
+    CHECK(rgbkbd_proxy_);
+    rgbkbd_proxy_->CallMethod(&method_call,
+                              dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
+                              base::DoNothing());
+  }
+
+  void SetAnimationMode(rgbkbd::RgbAnimationMode mode) override {
+    VLOG(1) << "rgbkbd: SetAnimationMode with mode: "
+            << static_cast<uint32_t>(mode);
+    dbus::MethodCall method_call(rgbkbd::kRgbkbdServiceName,
+                                 rgbkbd::kSetAnimationMode);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendUint32(static_cast<uint32_t>(mode));
     CHECK(rgbkbd_proxy_);
     rgbkbd_proxy_->CallMethod(&method_call,
                               dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
@@ -80,6 +134,28 @@ class RgbkbdClientImpl : public RgbkbdClient {
         rgbkbd::RgbKeyboardCapabilities(keyboard_capabilities));
   }
 
+  void CapabilityUpdatedForTestingReceived(dbus::Signal* signal) {
+    dbus::MessageReader reader(signal);
+    uint32_t capability;
+
+    if (!reader.PopUint32(&capability)) {
+      LOG(ERROR) << "rgbkbd: Error reading capability for testing response: "
+                 << signal->ToString();
+      return;
+    }
+    for (auto& observer : observers_) {
+      observer.OnCapabilityUpdatedForTesting(  // IN-TEST
+          rgbkbd::RgbKeyboardCapabilities(capability));
+    }
+  }
+
+  void CapabilityUpdatedForTestingConnected(const std::string& interface_name,
+                                            const std::string& signal_name,
+                                            bool success) {
+    LOG_IF(WARNING, !success)
+        << "Failed to connect to CapabilityUpdatedForTesting signal.";
+  }
+
   dbus::ObjectProxy* rgbkbd_proxy_ = nullptr;
 
   // Note: This should remain the last member so it'll be destroyed and
@@ -93,6 +169,14 @@ void RgbkbdClientImpl::Init(dbus::Bus* bus) {
   CHECK(bus);
   rgbkbd_proxy_ = bus->GetObjectProxy(
       rgbkbd::kRgbkbdServiceName, dbus::ObjectPath(rgbkbd::kRgbkbdServicePath));
+
+  rgbkbd_proxy_->ConnectToSignal(
+      rgbkbd::kRgbkbdServiceName, rgbkbd::kCapabilityUpdatedForTesting,
+      base::BindRepeating(
+          &RgbkbdClientImpl::CapabilityUpdatedForTestingReceived,
+          weak_ptr_factory_.GetWeakPtr()),
+      base::BindOnce(&RgbkbdClientImpl::CapabilityUpdatedForTestingConnected,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 RgbkbdClient::RgbkbdClient() {
@@ -125,6 +209,14 @@ void RgbkbdClient::Shutdown() {
 // static
 RgbkbdClient* RgbkbdClient::Get() {
   return g_instance;
+}
+
+void RgbkbdClient::AddObserver(RgbkbdClient::Observer* observer) {
+  observers_.AddObserver(observer);
+}
+
+void RgbkbdClient::RemoveObserver(RgbkbdClient::Observer* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 }  // namespace ash

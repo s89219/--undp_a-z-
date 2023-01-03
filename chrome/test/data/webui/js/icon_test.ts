@@ -1,10 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {isChromeOS, isLacros, isLinux, isMac, isWindows} from 'chrome://resources/js/cr.m.js';
+import {isChromeOS, isLacros, isLinux, isMac, isWindows} from 'chrome://resources/js/platform.js';
 import {getFavicon, getFaviconForPageURL, getFileIconUrl} from 'chrome://resources/js/icon.js';
-import {assertEquals} from 'chrome://webui-test/chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('IconModuleTest', function() {
   test('GetFaviconForPageURL', function() {
@@ -12,13 +12,13 @@ suite('IconModuleTest', function() {
 
     function getExpectedImageSet(size: number): string {
       const expectedDesktop = '-webkit-image-set(' +
-          `url("chrome://favicon2/?size=${size}&scale_factor=1x&page_url=` +
-          encodeURIComponent(url) + '&allow_google_server_fallback=0") 1x, ' +
-          `url("chrome://favicon2/?size=${size}&scale_factor=2x&page_url=` +
-          encodeURIComponent(url) + '&allow_google_server_fallback=0") 2x)';
+          `url("chrome://favicon2/?size=${size}&scaleFactor=1x&pageUrl=` +
+          encodeURIComponent(url) + '&allowGoogleServerFallback=0") 1x, ' +
+          `url("chrome://favicon2/?size=${size}&scaleFactor=2x&pageUrl=` +
+          encodeURIComponent(url) + '&allowGoogleServerFallback=0") 2x)';
       const expectedOther = '-webkit-image-set(' +
-          `url("chrome://favicon2/?size=${size}&scale_factor=1x&page_url=` +
-          encodeURIComponent(url) + '&allow_google_server_fallback=0") ' +
+          `url("chrome://favicon2/?size=${size}&scaleFactor=1x&pageUrl=` +
+          encodeURIComponent(url) + '&allowGoogleServerFallback=0") ' +
           window.devicePixelRatio + 'x)';
 
       const isDesktop = isMac || isChromeOS || isWindows || isLinux || isLacros;
@@ -30,15 +30,27 @@ suite('IconModuleTest', function() {
         getExpectedImageSet(24), getFaviconForPageURL(url, false, '', 24));
   });
 
+  test('GetFaviconForPageURL_ForceLightMode', () => {
+    const url = 'http://foo.com';
+    assertFalse(
+        getFaviconForPageURL(url, false, '', 16).includes('forceLightMode'));
+    assertFalse(
+        getFaviconForPageURL(url, false, '', 16, /* forceLightMode */ false)
+            .includes('forceLightMode'));
+    assertTrue(
+        getFaviconForPageURL(url, false, '', 16, /* forceLightMode */ true)
+            .includes('forceLightMode=true'));
+  });
+
   test('GetFavicon', function() {
     const url = 'http://foo.com/foo.ico';
     const expectedDesktop = '-webkit-image-set(' +
-        'url("chrome://favicon2/?size=16&scale_factor=1x&icon_url=' +
+        'url("chrome://favicon2/?size=16&scaleFactor=1x&iconUrl=' +
         encodeURIComponent('http://foo.com/foo.ico') + '") 1x, ' +
-        'url("chrome://favicon2/?size=16&scale_factor=2x&icon_url=' +
+        'url("chrome://favicon2/?size=16&scaleFactor=2x&iconUrl=' +
         encodeURIComponent('http://foo.com/foo.ico') + '") 2x)';
     const expectedOther = '-webkit-image-set(' +
-        'url("chrome://favicon2/?size=16&scale_factor=1x&icon_url=' +
+        'url("chrome://favicon2/?size=16&scaleFactor=1x&iconUrl=' +
         encodeURIComponent('http://foo.com/foo.ico') + '") ' +
         window.devicePixelRatio + 'x)';
 

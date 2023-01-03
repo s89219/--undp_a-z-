@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
     : NSObject <InfobarBadgeTabHelperDelegate>
 // Tab helper used in tests.
 @property(nonatomic) InfobarBadgeTabHelper* badgeTabHelper;
-// Returns the BadgeItem that was added to the tab helper for |type|, or nil if
+// Returns the BadgeItem that was added to the tab helper for `type`, or nil if
 // one does not exist.
 - (id<BadgeItem>)itemForInfobarType:(InfobarType)type;
 @end

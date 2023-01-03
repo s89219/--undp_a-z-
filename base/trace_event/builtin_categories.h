@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,6 +60,7 @@
   X("cast.mdns")                                                         \
   X("cast.mdns.socket")                                                  \
   X("cast.stream")                                                       \
+  X("catan_investigation")                                               \
   X("cc")                                                                \
   X("cc.debug")                                                          \
   X("cdp.perf")                                                          \
@@ -87,12 +88,15 @@
   X("explore_sites")                                                     \
   X("FileSystem")                                                        \
   X("file_system_provider")                                              \
+  X("fledge")                                                            \
   X("fonts")                                                             \
   X("GAMEPAD")                                                           \
   X("gpu")                                                               \
   X("gpu.angle")                                                         \
   X("gpu.capture")                                                       \
   X("headless")                                                          \
+  /* Traces for //components/history. */                                 \
+  X("history")                                                           \
   X("hwoverlays")                                                        \
   X("identity")                                                          \
   X("ime")                                                               \
@@ -122,6 +126,7 @@
   X("offline_pages")                                                     \
   X("omnibox")                                                           \
   X("oobe")                                                              \
+  X("openscreen")                                                        \
   X("ozone")                                                             \
   X("partition_alloc")                                                   \
   X("passwords")                                                         \
@@ -144,6 +149,7 @@
   X("SiteEngagement")                                                    \
   X("safe_browsing")                                                     \
   X("scheduler")                                                         \
+  X("scheduler.long_tasks")                                              \
   X("screenlock_monitor")                                                \
   X("segmentation_platform")                                             \
   X("sequence_manager")                                                  \
@@ -171,11 +177,14 @@
   X("views.frame")                                                       \
   X("viz")                                                               \
   X("vk")                                                                \
+  X("wakeup.flow")                                                       \
   X("wayland")                                                           \
   X("webaudio")                                                          \
+  X("webengine.fidl")                                                    \
   X("weblayer")                                                          \
   X("WebCore")                                                           \
   X("webrtc")                                                            \
+  X("webrtc_stats")                                                      \
   X("xr")                                                                \
   X(TRACE_DISABLED_BY_DEFAULT("android_view_hierarchy"))                 \
   X(TRACE_DISABLED_BY_DEFAULT("animation-worklet"))                      \
@@ -189,6 +198,8 @@
   X(TRACE_DISABLED_BY_DEFAULT("blink.feature_usage"))                    \
   X(TRACE_DISABLED_BY_DEFAULT("blink.image_decoding"))                   \
   X(TRACE_DISABLED_BY_DEFAULT("blink.invalidation"))                     \
+  X(TRACE_DISABLED_BY_DEFAULT("identifiability"))                        \
+  X(TRACE_DISABLED_BY_DEFAULT("identifiability.high_entropy_api"))       \
   X(TRACE_DISABLED_BY_DEFAULT("cc"))                                     \
   X(TRACE_DISABLED_BY_DEFAULT("cc.debug"))                               \
   X(TRACE_DISABLED_BY_DEFAULT("cc.debug.cdp-perf"))                      \
@@ -319,6 +330,8 @@
   X("inc,inc2")                                                               \
   X("input,benchmark")                                                        \
   X("input,benchmark,devtools.timeline")                                      \
+  X("input,benchmark,devtools.timeline,latencyInfo")                          \
+  X("input,benchmark,latencyInfo")                                            \
   X("input,latency")                                                          \
   X("input,rail")                                                             \
   X("input,views")                                                            \
@@ -338,8 +351,11 @@
   X("shutdown,viz")                                                           \
   X("startup,benchmark,rail")                                                 \
   X("startup,rail")                                                           \
+  X("toplevel,Java")                                                          \
+  X("toplevel,viz")                                                           \
   X("ui,input")                                                               \
   X("ui,latency")                                                             \
+  X("ui,toplevel")                                                            \
   X("v8," TRACE_DISABLED_BY_DEFAULT("v8.compile"))                            \
   X("v8,devtools.timeline")                                                   \
   X("v8,devtools.timeline," TRACE_DISABLED_BY_DEFAULT("v8.compile"))          \

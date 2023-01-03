@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,7 @@ import org.chromium.chrome.browser.tabmodel.TabModelSelectorSupplier;
 import org.chromium.components.autofill.AutofillDelegate;
 import org.chromium.components.autofill.AutofillPopup;
 import org.chromium.components.autofill.AutofillSuggestion;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsAccessibility;
 import org.chromium.ui.DropdownItem;
 import org.chromium.ui.base.WindowAndroid;
@@ -46,7 +47,13 @@ public class AutofillPopupBridge implements AutofillDelegate, DialogInterface.On
             @NonNull WindowAndroid windowAndroid) {
         mNativeAutofillPopup = nativeAutofillPopupViewAndroid;
         Activity activity = windowAndroid.getActivity().get();
-        if (activity == null || notEnoughScreenSpace(activity)) {
+        // currentTab may be null if the last tab has been closed by the time
+        // this function is called (e.g. when autofill suggestions are available,
+        // see crbug.com/1315617). Its web contents may be null for a frozen
+        // tab.
+        Tab currentTab = TabModelSelectorSupplier.getCurrentTabFrom(windowAndroid);
+        WebContents webContents = currentTab != null ? currentTab.getWebContents() : null;
+        if (activity == null || notEnoughScreenSpace(activity) || webContents == null) {
             mAutofillPopup = null;
             mContext = null;
         } else {
@@ -61,9 +68,7 @@ public class AutofillPopupBridge implements AutofillDelegate, DialogInterface.On
                 manualFillingComponentSupplier.get().notifyPopupAvailable(mAutofillPopup);
             }
 
-            Tab currentTab = TabModelSelectorSupplier.getCurrentTabFrom(windowAndroid);
-            mWebContentsAccessibility = WebContentsAccessibility.fromWebContents(
-                    currentTab == null ? null : currentTab.getWebContents());
+            mWebContentsAccessibility = WebContentsAccessibility.fromWebContents(webContents);
         }
     }
 
@@ -175,9 +180,11 @@ public class AutofillPopupBridge implements AutofillDelegate, DialogInterface.On
     /**
      * @param array AutofillSuggestion array that should get a new suggestion added.
      * @param index Index in the array where to place a new suggestion.
-     * @param label First line of the suggestion.
-     * @param sublabel Second line of the suggestion.
-     * @param itemTag The offer label of the suggestion.
+     * @param label The first part of the first line of the suggestion.
+     * @param secondaryLabel The second part of the first line of the suggestion.
+     * @param sublabel The first part of the second line of the suggestion.
+     * @param secondarySublabel The second part of the second line of the suggestion.
+     * @param itemTag The third line of the suggestion.
      * @param iconId The resource ID for the icon associated with the suggestion, or 0 for no icon.
      * @param isIconAtStart {@code true} if {@param iconId} is displayed before {@param label}.
      * @param suggestionId Identifier for the suggestion type.
@@ -189,14 +196,16 @@ public class AutofillPopupBridge implements AutofillDelegate, DialogInterface.On
      *         it'd be preferred over the iconId.
      */
     @CalledByNative
-    private static void addToAutofillSuggestionArray(AutofillSuggestion[] array, int index,
-            String label, String sublabel, String itemTag, int iconId, boolean isIconAtStart,
-            int suggestionId, boolean isDeletable, boolean isLabelMultiline, boolean isLabelBold,
-            GURL customIconUrl) {
+    private void addToAutofillSuggestionArray(AutofillSuggestion[] array, int index, String label,
+            String secondaryLabel, String sublabel, String secondarySublabel, String itemTag,
+            int iconId, boolean isIconAtStart, int suggestionId, boolean isDeletable,
+            boolean isLabelMultiline, boolean isLabelBold, GURL customIconUrl) {
         int drawableId = iconId == 0 ? DropdownItem.NO_ICON : iconId;
         AutofillSuggestion.Builder builder = new AutofillSuggestion.Builder()
                                                      .setLabel(label)
+                                                     .setSecondaryLabel(secondaryLabel)
                                                      .setSubLabel(sublabel)
+                                                     .setSecondarySubLabel(secondarySublabel)
                                                      .setItemTag(itemTag)
                                                      .setIconId(drawableId)
                                                      .setIsIconAtStart(isIconAtStart)
@@ -204,10 +213,15 @@ public class AutofillPopupBridge implements AutofillDelegate, DialogInterface.On
                                                      .setIsDeletable(isDeletable)
                                                      .setIsMultiLineLabel(isLabelMultiline)
                                                      .setIsBoldLabel(isLabelBold);
-        if (customIconUrl != null) {
+        if (customIconUrl != null && customIconUrl.isValid()) {
             builder.setCustomIcon(
                     PersonalDataManager.getInstance()
-                            .getCustomImageForAutofillSuggestionIfAvailable(customIconUrl));
+                            .getCustomImageForAutofillSuggestionIfAvailable(
+                                    AutofillUiUtils.getCCIconURLWithParams(customIconUrl,
+                                            mContext.getResources().getDimensionPixelSize(
+                                                    R.dimen.autofill_dropdown_icon_width),
+                                            mContext.getResources().getDimensionPixelSize(
+                                                    R.dimen.autofill_dropdown_icon_height))));
         }
         array[index] = builder.build();
     }

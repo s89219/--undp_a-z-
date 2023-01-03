@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,16 +52,22 @@ apps::ConditionValuePtr ParseValueToConditionValue(const base::Value& value) {
              << apps::kValueKey << "\" key with string value.";
     return nullptr;
   }
-
   auto match_type = value.FindIntKey(apps::kMatchTypeKey);
   if (!match_type.has_value()) {
     DVLOG(0) << "Fail to parse condition value. Cannot find \""
              << apps::kMatchTypeKey << "\" key with int value.";
     return nullptr;
   }
-
-  return std::make_unique<apps::ConditionValue>(
-      *value_string, static_cast<apps::PatternMatchType>(match_type.value()));
+  // We used to have a kNone=0 defined in the enum which we have merged with
+  // kLiteral. Some legacy storage may still have zero stored in seralized form
+  // as an integer which we can safely treat as kLiteral=1.
+  apps::PatternMatchType pattern_match_type = apps::PatternMatchType::kLiteral;
+  if (match_type > 0) {
+    pattern_match_type =
+        static_cast<apps::PatternMatchType>(match_type.value());
+  }
+  return std::make_unique<apps::ConditionValue>(*value_string,
+                                                pattern_match_type);
 }
 
 apps::ConditionPtr ParseValueToCondition(const base::Value& value) {
@@ -79,7 +85,7 @@ apps::ConditionPtr ParseValueToCondition(const base::Value& value) {
              << apps::kConditionValuesKey << "\" key with list value.";
     return nullptr;
   }
-  for (auto& condition_value : values->GetListDeprecated()) {
+  for (auto& condition_value : values->GetList()) {
     auto parsed_condition_value = ParseValueToConditionValue(condition_value);
     if (!parsed_condition_value) {
       DVLOG(0) << "Fail to parse condition. Cannot parse condition values";
@@ -99,7 +105,7 @@ apps::IntentFilterPtr ParseValueToIntentFilter(const base::Value* value) {
     return nullptr;
   }
   auto intent_filter = std::make_unique<apps::IntentFilter>();
-  for (auto& condition : value->GetListDeprecated()) {
+  for (auto& condition : value->GetList()) {
     auto parsed_condition = ParseValueToCondition(condition);
     if (!parsed_condition) {
       DVLOG(0) << "Fail to parse intent filter. Cannot parse conditions.";
@@ -156,7 +162,7 @@ PreferredApps ParseValueToPreferredApps(
   }
 
   PreferredApps preferred_apps;
-  for (auto& entry : preferred_apps_list->GetListDeprecated()) {
+  for (auto& entry : preferred_apps_list->GetList()) {
     auto* app_id = entry.FindStringKey(kAppIdKey);
     if (!app_id) {
       DVLOG(0) << "Fail to parse condition value. Cannot find \""

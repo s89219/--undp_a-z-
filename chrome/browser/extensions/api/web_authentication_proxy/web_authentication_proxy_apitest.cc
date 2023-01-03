@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/api/web_authentication_proxy/remote_session_state_change.h"
+#include "chrome/browser/extensions/api/web_authentication_proxy/web_authentication_proxy_service.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test.h"
@@ -56,6 +57,8 @@ class WebAuthenticationProxyApiTest : public ExtensionApiTest {
     ASSERT_TRUE(https_test_server_.Start());
   }
 
+  // Sets the test case name to execute. The test name is the name of a function
+  // in the `availableTests` array defined in the extension service worker JS.
   void SetJsTestName(const std::string& name) { SetCustomArg(name); }
 
   bool NavigateAndCallIsUVPAA() {
@@ -182,12 +185,14 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, AttachSecondExtension) {
   ResultCatcher catcher;
 
   // Load the extension and wait for it to attach.
-  ExtensionTestMessageListener attach_listener("attached", true);
+  ExtensionTestMessageListener attach_listener("attached",
+                                               ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(attach_listener.WaitUntilSatisfied());
 
   // Load a second extension and watch it fail to attach.
-  ExtensionTestMessageListener attach_fail_listener("attachFailed", true);
+  ExtensionTestMessageListener attach_fail_listener("attachFailed",
+                                                    ReplyBehavior::kWillReply);
   const Extension* second_extension = LoadExtension(
       test_data_dir_.AppendASCII("web_authentication_proxy/second"));
   ASSERT_TRUE(second_extension) << message_;
@@ -195,7 +200,8 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, AttachSecondExtension) {
 
   // Tell the first extension to detach. Then tell the second extension to
   // attach.
-  ExtensionTestMessageListener detach_listener("detached", true);
+  ExtensionTestMessageListener detach_listener("detached",
+                                               ReplyBehavior::kWillReply);
   attach_listener.Reply("");
   ASSERT_TRUE(detach_listener.WaitUntilSatisfied());
   attach_fail_listener.Reply("");
@@ -210,7 +216,7 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, AttachSecondExtension) {
 IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, IsUVPAA) {
   SetJsTestName("isUvpaa");
   // Load the extension and wait for its proxy event handler to be installed.
-  ExtensionTestMessageListener ready_listener("ready", false);
+  ExtensionTestMessageListener ready_listener("ready");
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -231,7 +237,8 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest,
   ResultCatcher result_catcher;
 
   // Load the extension and wait for it to initialize.
-  ExtensionTestMessageListener ready_listener("ready", true);
+  ExtensionTestMessageListener ready_listener("ready",
+                                              ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -247,7 +254,8 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, IsUVPAAResolvesOnDetach) {
   SetJsTestName("isUvpaaResolvesOnDetach");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", true);
+  ExtensionTestMessageListener ready_listener("ready",
+                                              ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -262,7 +270,7 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, MakeCredential) {
   SetJsTestName("makeCredential");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", false);
+  ExtensionTestMessageListener ready_listener("ready");
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -274,8 +282,9 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, MakeCredentialError) {
   SetJsTestName("makeCredentialError");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener request_listener("nextRequest", false);
-  ExtensionTestMessageListener error_listener("nextError", true);
+  ExtensionTestMessageListener request_listener("nextRequest");
+  ExtensionTestMessageListener error_listener("nextError",
+                                              ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
 
   // The JS side listens for DOMError names to pass to completeCreateRequest().
@@ -315,7 +324,8 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest,
   SetJsTestName("makeCredentialResolvesOnDetach");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", true);
+  ExtensionTestMessageListener ready_listener("ready",
+                                              ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -330,11 +340,12 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, MakeCredentialCancel) {
   SetJsTestName("makeCredentialCancel");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", false);
+  ExtensionTestMessageListener ready_listener("ready");
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
-  ExtensionTestMessageListener request_listener("request", true);
+  ExtensionTestMessageListener request_listener("request",
+                                                ReplyBehavior::kWillReply);
   EXPECT_TRUE(NavigateAndCallMakeCredentialThenCancel());
   ASSERT_TRUE(request_listener.WaitUntilSatisfied());
   request_listener.Reply("");
@@ -346,7 +357,7 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, GetAssertion) {
   SetJsTestName("getAssertion");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", false);
+  ExtensionTestMessageListener ready_listener("ready");
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -358,8 +369,9 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, GetAssertionError) {
   SetJsTestName("getAssertionError");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener request_listener("nextRequest", false);
-  ExtensionTestMessageListener error_listener("nextError", true);
+  ExtensionTestMessageListener request_listener("nextRequest");
+  ExtensionTestMessageListener error_listener("nextError",
+                                              ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
 
   // The JS side listens for DOMError names to pass to completeCreateRequest().
@@ -399,7 +411,8 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest,
   SetJsTestName("getAssertionResolvesOnDetach");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", true);
+  ExtensionTestMessageListener ready_listener("ready",
+                                              ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
@@ -414,11 +427,12 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, GetAssertionCancel) {
   SetJsTestName("getAssertionCancel");
   ResultCatcher result_catcher;
 
-  ExtensionTestMessageListener ready_listener("ready", false);
+  ExtensionTestMessageListener ready_listener("ready");
   ASSERT_TRUE(LoadExtension(extension_dir_)) << message_;
   ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
 
-  ExtensionTestMessageListener request_listener("request", true);
+  ExtensionTestMessageListener request_listener("request",
+                                                ReplyBehavior::kWillReply);
   EXPECT_TRUE(NavigateAndCallGetAssertionThenCancel());
   ASSERT_TRUE(request_listener.WaitUntilSatisfied());
   request_listener.Reply("");
@@ -448,6 +462,222 @@ IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest,
     ASSERT_EQ(base::WriteFile(dir.AppendASCII(extension->id()), nullptr, 0), 0);
   }
   EXPECT_TRUE(result_catcher.GetNextResult()) << result_catcher.message();
+}
+
+// An extension with manifest value `"incognito": "spanning"` (the default) that
+// attached in a main profile should also be attached in associated incognito
+// profiles.
+IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, IncognitoSpanning) {
+  SetJsTestName("incognitoSpanning");
+
+  // Load the extension and wait for the service worker to call `attach()`.
+  ExtensionTestMessageListener ready_listener("ready");
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("web_authentication_proxy/main"),
+      {.allow_in_incognito = true, .wait_for_registration_stored = true});
+  ASSERT_TRUE(extension) << message_;
+  ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
+
+  // The proxy should be active in the test browser profile.
+  WebAuthenticationProxyService* proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          browser()->profile());
+  ASSERT_TRUE(proxy);
+  EXPECT_TRUE(proxy->IsActive());
+  EXPECT_EQ(proxy->GetActiveRequestProxy(), extension);
+
+  // And it should also be active in an incognito profile created from the main
+  // profile.
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  WebAuthenticationProxyService* incognito_proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          incognito_browser->profile());
+  ASSERT_TRUE(incognito_proxy);
+  EXPECT_TRUE(incognito_proxy->IsActive());
+  EXPECT_EQ(incognito_proxy->GetActiveRequestProxy(), extension);
+
+  // After the extension is unloaded, it should be detached from the regular and
+  // incognito profiles.
+  UnloadExtension(extension->id());
+  EXPECT_FALSE(proxy->IsActive());
+  EXPECT_FALSE(incognito_proxy->IsActive());
+}
+
+// An extension with manifest value `"incognito": "spanning"` (the default) but
+// that isn't permitted to run in incognito should not be considered attached in
+// incognito, even though it is attached in the regular profile.
+IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, IncognitoNotAllowed) {
+  SetJsTestName("incognitoSpanning");
+
+  // Load the extension and wait for the service worker to call `attach()`.
+  ExtensionTestMessageListener ready_listener("ready");
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("web_authentication_proxy/main"),
+      {.allow_in_incognito = false, .wait_for_registration_stored = true});
+  ASSERT_TRUE(extension) << message_;
+  ASSERT_TRUE(ready_listener.WaitUntilSatisfied());
+
+  // The proxy should be active in the test browser profile.
+  WebAuthenticationProxyService* proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          browser()->profile());
+  ASSERT_TRUE(proxy);
+  EXPECT_TRUE(proxy->IsActive());
+  EXPECT_EQ(proxy->GetActiveRequestProxy(), extension);
+
+  // The proxy service in incognito is the same as in the original profile. But
+  // because the extension isn't allowed to run in incognito, it doesn't get to
+  // proxy requests.
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  WebAuthenticationProxyService* incognito_proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          incognito_browser->profile());
+  ASSERT_TRUE(incognito_proxy);
+  EXPECT_FALSE(incognito_proxy->IsActive());
+}
+
+// A split mode extension can be active in regular and incognito profiles.
+IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest,
+                       SplitIncognitoAndRegular) {
+  SetJsTestName("incognitoAndRegular");
+
+  // Load the extension and wait for the regular split service worker to call
+  // `attach()`.
+  ExtensionTestMessageListener regular_ready_listener("regular ready");
+  ExtensionTestMessageListener incognito_ready_listener("incognito ready");
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("web_authentication_proxy/incognito_split"),
+      {.allow_in_incognito = true, .wait_for_registration_stored = true});
+  ASSERT_TRUE(extension) << message_;
+  ASSERT_TRUE(regular_ready_listener.WaitUntilSatisfied());
+
+  // The proxy should be active in the "regular" profile.
+  WebAuthenticationProxyService* proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          browser()->profile());
+  ASSERT_TRUE(proxy);
+  EXPECT_TRUE(proxy->IsActive());
+  EXPECT_EQ(proxy->GetActiveRequestProxy(), extension);
+
+  // The incognito split also called attach and should therefore be active.
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  WebAuthenticationProxyService* incognito_proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          incognito_browser->profile());
+  ASSERT_TRUE(incognito_ready_listener.WaitUntilSatisfied());
+  ASSERT_TRUE(incognito_proxy);
+  EXPECT_TRUE(incognito_proxy->IsActive());
+  EXPECT_EQ(incognito_proxy->GetActiveRequestProxy(), extension);
+
+  UnloadExtension(extension->id());
+  EXPECT_FALSE(proxy->IsActive());
+  EXPECT_FALSE(incognito_proxy->IsActive());
+}
+
+// A split mode extension that is active in a regular profile is not necessarily
+// active in an associated incognito profile.
+IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, SplitRegularOnly) {
+  SetJsTestName("regularOnly");
+
+  // Load the extension and wait for the split service worker to load in regular
+  // and incognito.
+  ExtensionTestMessageListener regular_ready_listener("regular ready");
+  ExtensionTestMessageListener incognito_ready_listener("incognito ready");
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("web_authentication_proxy/incognito_split"),
+      {.allow_in_incognito = true, .wait_for_registration_stored = true});
+  ASSERT_TRUE(extension) << message_;
+  ASSERT_TRUE(regular_ready_listener.WaitUntilSatisfied());
+
+  // The proxy should be active in the "regular" profile, but not incognito.
+  WebAuthenticationProxyService* proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          browser()->profile());
+  EXPECT_TRUE(proxy->IsActive());
+  EXPECT_EQ(proxy->GetActiveRequestProxy(), extension);
+
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  ASSERT_TRUE(incognito_ready_listener.WaitUntilSatisfied());
+  WebAuthenticationProxyService* incognito_proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          incognito_browser->profile());
+  EXPECT_FALSE(incognito_proxy->IsActive());
+
+  UnloadExtension(extension->id());
+  EXPECT_FALSE(proxy->IsActive());
+  EXPECT_FALSE(incognito_proxy->IsActive());
+}
+
+// A split mode extension that is active in an incognito profile is not
+// necessarily active in the regular parent profile.
+IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, SplitIncognitoOnly) {
+  SetJsTestName("incognitoOnly");
+
+  // Load the extension and wait for the split service worker to load in regular
+  // and incognito.
+  ExtensionTestMessageListener regular_ready_listener("regular ready");
+  ExtensionTestMessageListener incognito_ready_listener("incognito ready");
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("web_authentication_proxy/incognito_split"),
+      {.allow_in_incognito = true, .wait_for_registration_stored = true});
+  ASSERT_TRUE(extension) << message_;
+  ASSERT_TRUE(regular_ready_listener.WaitUntilSatisfied());
+
+  // The proxy should not be active in the "regular" profile, but should be
+  // active in incognito.
+  WebAuthenticationProxyService* proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          browser()->profile());
+  EXPECT_FALSE(proxy->IsActive());
+
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  ASSERT_TRUE(incognito_ready_listener.WaitUntilSatisfied());
+  WebAuthenticationProxyService* incognito_proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          incognito_browser->profile());
+  EXPECT_TRUE(incognito_proxy->IsActive());
+  EXPECT_EQ(incognito_proxy->GetActiveRequestProxy(), extension);
+
+  UnloadExtension(extension->id());
+  EXPECT_FALSE(proxy->IsActive());
+  EXPECT_FALSE(incognito_proxy->IsActive());
+}
+
+// A split mode extension should reattach after the incognito window is
+// destroyed and recreated.
+IN_PROC_BROWSER_TEST_F(WebAuthenticationProxyApiTest, SplitModeDestruction) {
+  SetJsTestName("incognitoOnly");
+
+  // Load the extension and wait for the split service worker to load in regular
+  // and incognito.
+  ExtensionTestMessageListener regular_ready_listener("regular ready");
+  ExtensionTestMessageListener incognito_ready_listener("incognito ready");
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("web_authentication_proxy/incognito_split"),
+      {.allow_in_incognito = true, .wait_for_registration_stored = true});
+  ASSERT_TRUE(extension) << message_;
+  ASSERT_TRUE(regular_ready_listener.WaitUntilSatisfied());
+
+  // Open an incognito browser and wait for the extension to attach.
+  Browser* incognito_browser = CreateIncognitoBrowser();
+  ASSERT_TRUE(incognito_ready_listener.WaitUntilSatisfied());
+  WebAuthenticationProxyService* incognito_proxy =
+      WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+          incognito_browser->profile());
+  EXPECT_TRUE(incognito_proxy->IsActive());
+  EXPECT_EQ(incognito_proxy->GetActiveRequestProxy(), extension);
+
+  // Close the browser, then recreate it. The extension should re-attach
+  // automatically.
+  CloseBrowserSynchronously(incognito_browser);
+
+  incognito_ready_listener.Reset();
+  incognito_browser = CreateIncognitoBrowser();
+  ASSERT_TRUE(incognito_ready_listener.WaitUntilSatisfied());
+  incognito_proxy = WebAuthenticationProxyServiceFactory::GetForBrowserContext(
+      incognito_browser->profile());
+  EXPECT_TRUE(incognito_proxy->IsActive());
+  EXPECT_EQ(incognito_proxy->GetActiveRequestProxy(), extension);
 }
 
 }  // namespace

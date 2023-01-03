@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,7 +45,7 @@ jboolean JNI_CronetTestUtil_URLRequestContextExistsForTesting(
 }
 
 // static
-base::flat_map<net::NetworkChangeNotifier::NetworkHandle,
+base::flat_map<net::handles::NetworkHandle,
                std::unique_ptr<net::URLRequestContext>>*
 TestUtil::GetURLRequestContexts(jlong jcontext_adapter) {
   CronetContextAdapter* context_adapter =

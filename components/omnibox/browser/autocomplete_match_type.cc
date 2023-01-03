@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,6 +50,9 @@ std::string AutocompleteMatchType::ToString(AutocompleteMatchType::Type type) {
     "query-tiles",
     "navsuggest-tiles",
     "open-tab",
+    "history-cluster",
+    "null-result-message",
+    "starter-pack"
   };
   // clang-format on
   static_assert(std::size(strings) == AutocompleteMatchType::NUM_TYPES,
@@ -139,6 +142,9 @@ std::u16string GetAccessibilityBaseLabel(const AutocompleteMatch& match,
       0,                                     // TILE_SUGGESTION
       0,                                     // TILE_NAVSUGGEST
       0,                                     // OPEN_TAB
+      0,                                     // HISTORY_CLUSTER
+      0,                                     // NULL_RESULT_MESSAGE
+      0,                                     // STARTER_PACK
   };
   static_assert(std::size(message_ids) == AutocompleteMatchType::NUM_TYPES,
                 "message_ids must have NUM_TYPES elements");

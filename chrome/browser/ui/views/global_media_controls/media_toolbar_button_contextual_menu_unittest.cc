@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "chrome/test/base/menu_model_test.h"
 #include "components/media_router/browser/test/mock_media_router.h"
 #include "components/media_router/common/pref_names.h"
+#include "components/sync_preferences/testing_pref_service_syncable.h"
 
 class MediaToolbarButtonContextualMenuTest : public MenuModelTest,
                                              public BrowserWithTestWindowTest {
@@ -45,6 +46,18 @@ class MediaToolbarButtonContextualMenuTest : public MenuModelTest,
   }
 #endif
 
+  void TestOtherSessionItemIsDisabledWhenPolicyIsSet(bool policy_value) {
+    profile()->GetTestingPrefService()->SetManagedPref(
+        media_router::prefs::kMediaRouterShowCastSessionsStartedByOtherDevices,
+        std::make_unique<base::Value>(policy_value));
+
+    auto menu = MediaToolbarButtonContextualMenu::Create(browser());
+    auto model = menu->CreateMenuModel();
+    ASSERT_EQ(model->GetCommandIdAt(0),
+              IDC_MEDIA_TOOLBAR_CONTEXT_SHOW_OTHER_SESSIONS);
+    EXPECT_FALSE(model->IsEnabledAt(0));
+  }
+
  private:
   std::unique_ptr<MediaToolbarButtonContextualMenu> menu_;
   base::test::ScopedFeatureList feature_list_;
@@ -54,19 +67,21 @@ TEST_F(MediaToolbarButtonContextualMenuTest, ShowMenu) {
   auto menu = MediaToolbarButtonContextualMenu::Create(browser());
   auto model = menu->CreateMenuModel();
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  EXPECT_EQ(model->GetItemCount(), 2);
+  EXPECT_EQ(model->GetItemCount(), 2u);
   EXPECT_EQ(model->GetCommandIdAt(1),
             IDC_MEDIA_TOOLBAR_CONTEXT_REPORT_CAST_ISSUE);
+  EXPECT_TRUE(model->IsEnabledAt(1));
 #else
-  EXPECT_EQ(model->GetItemCount(), 1);
+  EXPECT_EQ(model->GetItemCount(), 1u);
 #endif
   EXPECT_EQ(model->GetCommandIdAt(0),
             IDC_MEDIA_TOOLBAR_CONTEXT_SHOW_OTHER_SESSIONS);
+  EXPECT_TRUE(model->IsEnabledAt(0));
 }
 
 // The kMediaRouterShowCastSessionsStartedByOtherDevices pref is not registered
-// on ChromeOS nor Android.
-#if !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_ANDROID)
+// Android.
+#if !BUILDFLAG(IS_ANDROID)
 TEST_F(MediaToolbarButtonContextualMenuTest, ToggleOtherSessionsItem) {
   PrefService* pref_service = browser()->profile()->GetPrefs();
   pref_service->SetBoolean(
@@ -93,3 +108,13 @@ TEST_F(MediaToolbarButtonContextualMenuTest, ExecuteReportIssueCommand) {
             GURL("chrome://cast-feedback"));
 }
 #endif
+
+TEST_F(MediaToolbarButtonContextualMenuTest,
+       DisableOtherSessionsItemWhenPolicyIsTrue) {
+  TestOtherSessionItemIsDisabledWhenPolicyIsSet(/*policy_value=*/true);
+}
+
+TEST_F(MediaToolbarButtonContextualMenuTest,
+       DisableOtherSessionsItemWhenPolicyIsFalse) {
+  TestOtherSessionItemIsDisabledWhenPolicyIsSet(/*policy_value=*/false);
+}

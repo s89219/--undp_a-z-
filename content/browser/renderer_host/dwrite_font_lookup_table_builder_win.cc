@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <dwrite.h>
 #include <dwrite_2.h>
+
 #include <set>
 #include <utility>
 
@@ -22,12 +23,13 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/trace_event/trace_event.h"
+#include "base/types/optional_util.h"
 #include "base/version.h"
 #include "base/win/registry.h"
 #include "content/browser/renderer_host/dwrite_font_file_util_win.h"
@@ -427,7 +429,7 @@ void DWriteFontLookupTableBuilder::PrepareFontUniqueNameTable(
         base::BindOnce(
             &ExtractPathAndNamesFromFamily, collection_, family_index,
             start_time_table_build_, slow_down_mode_for_testing_,
-            OptionalOrNullptr(hang_event_for_testing_), IndexingTimeout()),
+            OptionalToPtr(hang_event_for_testing_), IndexingTimeout()),
         base::BindOnce(&DWriteFontLookupTableBuilder::
                            AppendFamilyResultAndFinalizeIfNeeded,
                        base::Unretained(this)));
@@ -436,7 +438,7 @@ void DWriteFontLookupTableBuilder::PrepareFontUniqueNameTable(
   // tasks will eventually not reply.
   timeout_callback_.Reset(base::BindOnce(
       &DWriteFontLookupTableBuilder::OnTimeout, base::Unretained(this)));
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, timeout_callback_.callback(), IndexingTimeout());
 }
 

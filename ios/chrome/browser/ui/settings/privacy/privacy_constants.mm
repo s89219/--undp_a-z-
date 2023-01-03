@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,10 +17,10 @@ NSString* const kSettingsPrivacySafeBrowsingCellId =
     @"kSettingsPrivacySafeBrowsingCellId";
 
 NSString* const kSettingsSafeBrowsingEnhancedProtectionCellId =
-    @"kSettingsSafeBrowsingStandardProtectionCellId";
+    @"kSettingsSafeBrowsingEnhancedProtectionCellId";
 
 NSString* const kSettingsSafeBrowsingStandardProtectionCellId =
     @"kSettingsSafeBrowsingStandardProtectionCellId";
 
 NSString* const kSettingsSafeBrowsingNoProtectionCellId =
-    @"kSettingsSafeBrowsingStandardProtectionCellId";
+    @"kSettingsSafeBrowsingNoProtectionCellId";

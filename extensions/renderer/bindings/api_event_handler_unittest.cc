@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -910,10 +910,10 @@ TEST_F(APIEventHandlerTest, TestUnmanagedEvents) {
   v8::HandleScope handle_scope(isolate());
   v8::Local<v8::Context> context = MainContext();
 
-  auto fail_on_notified =
-      [](const std::string& event_name, binding::EventListenersChanged changed,
-         const base::DictionaryValue* filter, bool was_manual,
-         v8::Local<v8::Context> context) { ADD_FAILURE(); };
+  auto fail_on_notified = [](const std::string& event_name,
+                             binding::EventListenersChanged changed,
+                             const base::Value::Dict* filter, bool was_manual,
+                             v8::Local<v8::Context> context) { ADD_FAILURE(); };
 
   APIEventHandler handler(base::BindRepeating(fail_on_notified),
                           base::BindRepeating(&GetContextOwner), nullptr);

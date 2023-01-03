@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_navigation_handle.h"
 #include "content/public/test/navigation_simulator.h"
+#include "content/public/test/prerender_test_util.h"
 #include "content/public/test/web_contents_tester.h"
 #include "media/base/media_switches.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
@@ -1368,21 +1369,17 @@ TEST_F(MediaEngagementContentsObserverTest, PlayerStateIsCleanedUp) {
 class MediaEngagementContentsObserverPrerenderTest
     : public MediaEngagementContentsObserverTest {
  public:
-  MediaEngagementContentsObserverPrerenderTest() {
-    scoped_feature_list_.InitWithFeatures(
-        {blink::features::kPrerender2},
-        // Disable the memory requirement of Prerender2 so the test can run on
-        // any bot.
-        {blink::features::kPrerender2MemoryControls});
-  }
-  ~MediaEngagementContentsObserverPrerenderTest() override = default;
+  MediaEngagementContentsObserverPrerenderTest() = default;
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_;
+  content::test::ScopedPrerenderFeatureList prerender_feature_list_;
 };
 
 TEST_F(MediaEngagementContentsObserverPrerenderTest,
        EnsureDoNotCleanupAfterNavigation_AudioContextInPrerendering) {
+  content::test::ScopedPrerenderWebContentsDelegate web_contents_delegate(
+      *web_contents());
+
   GURL url = GURL("https://example.com");
   content::NavigationSimulator::NavigateAndCommitFromBrowser(web_contents(),
                                                              url);
@@ -1401,7 +1398,7 @@ TEST_F(MediaEngagementContentsObserverPrerenderTest,
 
   // Activate the prerendered page.
   content::NavigationSimulator::NavigateAndCommitFromDocument(
-      url, web_contents()->GetMainFrame());
+      url, web_contents()->GetPrimaryMainFrame());
   EXPECT_EQ(prerender_frame->GetLifecycleState(),
             content::RenderFrameHost::LifecycleState::kActive);
   EXPECT_EQ(0u, GetAudioContextPlayersCount());
@@ -1442,7 +1439,8 @@ TEST_F(MediaEngagementContentsObserverFencedFrameTest,
       ->InitializeRenderFrameIfNeeded();
   content::RenderFrameHost* fenced_frame_rfh = CreateFencedFrame(main_rfh());
   std::unique_ptr<content::NavigationSimulator> navigation_simulator =
-      content::NavigationSimulator::CreateForFencedFrame(url, fenced_frame_rfh);
+      content::NavigationSimulator::CreateRendererInitiated(url,
+                                                            fenced_frame_rfh);
   navigation_simulator->Commit();
   EXPECT_TRUE(fenced_frame_rfh->IsFencedFrameRoot());
   EXPECT_EQ(1u, GetAudioContextPlayersCount());

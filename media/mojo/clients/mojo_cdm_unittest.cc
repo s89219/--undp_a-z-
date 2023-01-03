@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -115,8 +115,11 @@ class MojoCdmTest : public ::testing::Test {
 
     mojo::Remote<mojom::ContentDecryptionModule> cdm_remote(
         cdm_receiver_->BindNewPipeAndPassRemote());
+
+    media::CdmConfig cdm_config = {"com.foo.bar", false, false, false};
+
     mojo_cdm_ = base::MakeRefCounted<MojoCdm>(
-        std::move(cdm_remote), std::move(cdm_context),
+        std::move(cdm_remote), std::move(cdm_context), cdm_config,
         base::BindRepeating(&MockCdmClient::OnSessionMessage,
                             base::Unretained(&cdm_client_)),
         base::BindRepeating(&MockCdmClient::OnSessionClosed,

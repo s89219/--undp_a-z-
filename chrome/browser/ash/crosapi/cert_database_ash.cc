@@ -1,18 +1,23 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/crosapi/cert_database_ash.h"
 
-#include "ash/components/tpm/tpm_token_info_getter.h"
+#include <algorithm>
+
 #include "base/bind.h"
+#include "base/ranges/algorithm.h"
 #include "base/system/sys_info.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/certificate_provider/certificate_provider_service.h"
+#include "chrome/browser/certificate_provider/certificate_provider_service_factory.h"
 #include "chrome/browser/net/nss_service.h"
 #include "chrome/browser/net/nss_service_factory.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chromeos/ash/components/login/login_state/login_state.h"
+#include "chromeos/ash/components/tpm/tpm_token_info_getter.h"
 #include "chromeos/crosapi/mojom/cert_database.mojom.h"
-#include "chromeos/login/login_state/login_state.h"
 #include "components/account_id/account_id.h"
 #include "components/user_manager/user.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -68,13 +73,13 @@ namespace crosapi {
 
 CertDatabaseAsh::CertDatabaseAsh() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  DCHECK(chromeos::LoginState::IsInitialized());
-  chromeos::LoginState::Get()->AddObserver(this);
+  DCHECK(ash::LoginState::IsInitialized());
+  ash::LoginState::Get()->AddObserver(this);
 }
 
 CertDatabaseAsh::~CertDatabaseAsh() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  chromeos::LoginState::Get()->RemoveObserver(this);
+  ash::LoginState::Get()->RemoveObserver(this);
 }
 
 void CertDatabaseAsh::BindReceiver(
@@ -90,7 +95,7 @@ void CertDatabaseAsh::GetCertDatabaseInfo(
   // TODO(crbug.com/1146430): For now Lacros-Chrome will initialize certificate
   // database only in session. Revisit later to decide what to do on the login
   // screen.
-  if (!chromeos::LoginState::Get()->IsUserLoggedIn()) {
+  if (!ash::LoginState::Get()->IsUserLoggedIn()) {
     LOG(ERROR) << "Not implemented";
     std::move(callback).Run(nullptr);
     return;
@@ -125,13 +130,6 @@ void CertDatabaseAsh::GetCertDatabaseInfo(
   result->enable_system_slot = system_slot_id_.has_value();
   result->system_slot_id =
       result->enable_system_slot ? system_slot_id_.value() : 0;
-
-  // TODO(b/200784079): This is backwards compatibility code. It can be
-  // removed in ChromeOS-M100.
-  result->DEPRECATED_software_nss_db_path =
-      crypto::GetSoftwareNSSDBPath(
-          ProfileManager::GetPrimaryUserProfile()->GetPath())
-          .value();
 
   std::move(callback).Run(std::move(result));
 }
@@ -187,6 +185,27 @@ void CertDatabaseAsh::AddAshCertDatabaseObserver(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   observers_.Add(
       mojo::Remote<mojom::AshCertDatabaseObserver>(std::move(observer)));
+}
+
+void CertDatabaseAsh::SetCertsProvidedByExtension(
+    const std::string& extension_id,
+    const chromeos::certificate_provider::CertificateInfoList&
+        certificate_infos) {
+  // Some certificates could've failed to parse, which is represented by
+  // nullptr. We ignore such certificates to avoid closing the mojo pipe.
+  chromeos::certificate_provider::CertificateInfoList
+      filtered_certificate_infos;
+  base::ranges::copy_if(certificate_infos,
+                        std::back_inserter(filtered_certificate_infos),
+                        [&](const auto& certificate_info) {
+                          return certificate_info.certificate != nullptr;
+                        });
+  Profile* profile = ProfileManager::GetPrimaryUserProfile();
+  chromeos::CertificateProviderService* certificate_provider_service =
+      chromeos::CertificateProviderServiceFactory::GetForBrowserContext(
+          profile);
+  certificate_provider_service->SetCertificatesProvidedByExtension(
+      extension_id, filtered_certificate_infos);
 }
 
 void CertDatabaseAsh::NotifyCertsChangedInAsh() {

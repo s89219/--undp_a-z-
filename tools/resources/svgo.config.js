@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,16 @@ module.exports = {
           // free to remove viewBox manually from a certain SVG if you have
           // audited all its usages.
           removeViewBox: false,
+
+          // https://github.com/svg/svgo/issues/1672
+          minifyStyles: false,
+
+          // This plugin strips 'unused' IDs, however they may be used in
+          // another file to embed an external SVG via <use>. This setting keeps
+          // all IDs that start with "EXPORT_".
+          cleanupIDs: {
+            preservePrefixes: ["EXPORT_"],
+          },
         },
       },
     },

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/task/single_thread_task_runner.h"
+#include "components/attribution_reporting/os_support.mojom-forward.h"
 #include "content/common/content_export.h"
 #include "content/public/child/child_thread.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
@@ -42,10 +43,6 @@ class MessageFilter;
 class SyncChannel;
 class SyncMessageFilter;
 }  // namespace IPC
-
-namespace v8 {
-class Extension;
-}  // namespace v8
 
 namespace content {
 class RenderThreadObserver;
@@ -81,7 +78,8 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   virtual bool GenerateFrameRoutingID(
       int32_t& routing_id,
       blink::LocalFrameToken& frame_token,
-      base::UnguessableToken& devtools_frame_token) = 0;
+      base::UnguessableToken& devtools_frame_token,
+      blink::DocumentToken& document_token) = 0;
 
   // These map to IPC::ChannelProxy methods.
   virtual void AddFilter(IPC::MessageFilter* filter) = 0;
@@ -96,9 +94,6 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   // delegate is kept alive while a request may be dispatched.
   virtual void SetResourceRequestSenderDelegate(
       blink::WebResourceRequestSenderDelegate* delegate) = 0;
-
-  // Registers the given V8 extension with WebKit.
-  virtual void RegisterExtension(std::unique_ptr<v8::Extension> extension) = 0;
 
   // Post task to all worker threads. Returns number of workers.
   virtual int PostTaskToAllWebWorkers(base::RepeatingClosure closure) = 0;
@@ -123,6 +118,12 @@ class CONTENT_EXPORT RenderThread : virtual public ChildThread {
   virtual void WriteIntoTrace(
       perfetto::TracedProto<perfetto::protos::pbzero::RenderProcessHost>
           proto) = 0;
+
+  // Returns whether OS-level support is enabled for Attribution Reporting API.
+  // See
+  // https://github.com/WICG/attribution-reporting-api/blob/main/app_to_web.md.
+  virtual attribution_reporting::mojom::OsSupport
+  GetOsSupportForAttributionReporting() = 0;
 };
 
 }  // namespace content

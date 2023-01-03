@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,10 +26,8 @@ class PersonalizationAppBrowserTest extends testing.Test {
   get featureList() {
     return {
       enabled: [
-        'ash::features::kWallpaperWebUI',
-        'ash::features::kPersonalizationHub',
         'chromeos::features::kDarkLightMode',
-      ]
+      ],
     };
   }
 
@@ -162,7 +160,7 @@ TEST_F(
       testDone();
     });
 
-class PersonalizationAppAmbientModeDisllowedBrowserTest extends
+class PersonalizationAppAmbientModeDisallowedBrowserTest extends
     PersonalizationAppBrowserTest {
   /** @override */
   get testGenPreamble() {
@@ -172,11 +170,11 @@ class PersonalizationAppAmbientModeDisllowedBrowserTest extends
   }
 }
 
-this[PersonalizationAppAmbientModeDisllowedBrowserTest.name] =
-    PersonalizationAppAmbientModeDisllowedBrowserTest;
+this[PersonalizationAppAmbientModeDisallowedBrowserTest.name] =
+    PersonalizationAppAmbientModeDisallowedBrowserTest;
 
 TEST_F(
-    'PersonalizationAppAmbientModeDisllowedBrowserTest',
+    'PersonalizationAppAmbientModeDisallowedBrowserTest',
     'NotShowAmbientPreview', () => {
       const preview = document.querySelector('personalization-router')
                           .shadowRoot.querySelector('personalization-main')
@@ -186,7 +184,7 @@ TEST_F(
     });
 
 TEST_F(
-    'PersonalizationAppAmbientModeDisllowedBrowserTest',
+    'PersonalizationAppAmbientModeDisallowedBrowserTest',
     'NotShowAmbientSubpageLink', () => {
       const ambientSubpageLink =
           document.querySelector('personalization-router')
@@ -232,18 +230,13 @@ TEST_F('WallpaperSubpageBrowserTest', 'LoadsCollectionsGrid', () => {
       !!collections,
       'wallpaper-collections should be found under wallpaper-subpage');
 
-
-  const collectionsGrid =
-      collections.shadowRoot.getElementById('collectionsGrid');
-  assertTrue(!!collectionsGrid, 'collections-grid should be visible');
-
   assertFalse(
-      collectionsGrid.parentElement.hidden, 'parent element should be visible');
+      collections.parentElement.hidden, 'parent element should be visible');
   assertGT(
-      collectionsGrid.offsetWidth, 0,
-      'collections grid should have visible width');
+      collections.offsetWidth, 0,
+      'wallpaper-collections should have visible width');
   assertGT(
-      collectionsGrid.offsetHeight, 0,
-      'collections grid should have visible height');
+      collections.offsetHeight, 0,
+      'wallpaper-collections grid should have visible height');
   testDone();
 });

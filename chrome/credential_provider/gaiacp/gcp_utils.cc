@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,9 +11,6 @@
 #include <winternl.h>
 
 #define _NTDEF_  // Prevent redefition errors, must come after <winternl.h>
-#include <atlbase.h>
-#include <atlcom.h>
-#include <atlcomcli.h>
 #include <malloc.h>
 #include <memory.h>
 #include <ntsecapi.h>  // For LsaLookupAuthenticationPackage()
@@ -40,6 +37,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/win/atl.h"
 #include "base/win/current_module.h"
 #include "base/win/embedded_i18n/language_selector.h"
 #include "base/win/win_util.h"
@@ -907,10 +905,11 @@ void DeleteStartupSentinelForVersion(const std::wstring& version) {
   }
 }
 
-std::wstring GetStringResource(int base_message_id) {
+std::wstring GetStringResource(UINT base_message_id) {
   std::wstring localized_string;
 
-  int message_id = base_message_id + GetLanguageSelector().offset();
+  UINT message_id =
+      static_cast<UINT>(base_message_id + GetLanguageSelector().offset());
   const ATLSTRINGRESOURCEIMAGE* image =
       AtlGetStringResourceImage(_AtlBaseModule.GetModuleInstance(), message_id);
   if (image) {
@@ -922,7 +921,7 @@ std::wstring GetStringResource(int base_message_id) {
   return localized_string;
 }
 
-std::wstring GetStringResource(int base_message_id,
+std::wstring GetStringResource(UINT base_message_id,
                                const std::vector<std::wstring>& subst) {
   std::wstring format_string = GetStringResource(base_message_id);
   std::wstring formatted =
@@ -1018,7 +1017,7 @@ HRESULT SearchForListInStringDictUTF8(
 
   auto* value = json_obj->FindListPath(base::JoinString(path, "."));
   if (value && value->is_list()) {
-    for (const base::Value& entry : value->GetListDeprecated()) {
+    for (const base::Value& entry : value->GetList()) {
       if (entry.FindKey(list_key) && entry.FindKey(list_key)->is_string()) {
         output->push_back(entry.FindKey(list_key)->GetString());
       } else {

@@ -1,10 +1,10 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/chrome_elf/third_party_dlls/beacon.h"
 
-#include "chrome/chrome_elf/chrome_elf_constants.h"
+#include "chrome/chrome_elf/blocklist_constants.h"
 #include "chrome/chrome_elf/nt_registry/nt_registry.h"
 #include "chrome/install_static/install_util.h"
 

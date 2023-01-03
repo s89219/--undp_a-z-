@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/ui/extensions/extension_action_test_helper.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/location_bar/permission_chip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/permissions/permission_request_manager_test_api.h"
@@ -21,6 +20,10 @@
 #include "ui/events/base_event_utils.h"
 #include "ui/views/test/button_test_api.h"
 #include "ui/views/test/widget_test.h"
+
+#if BUILDFLAG(IS_MAC)
+#include "base/mac/mac_util.h"
+#endif
 
 using ExtensionPopupInteractiveUiTest = extensions::ExtensionApiTest;
 
@@ -114,9 +117,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionPopupInteractiveUiTest,
   // The permission may be shown using a chip UI instead of a popped-up bubble.
   // If so, click on the chip to open the bubble.
   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
-  PermissionChip* chip = browser_view->toolbar()->location_bar()->chip();
-  if (chip) {
-    views::test::ButtonTestApi(chip->button())
+  LocationBarView* lbv = browser_view->toolbar()->location_bar();
+  if (lbv->chip_controller()->IsPermissionPromptChipVisible() &&
+      !lbv->chip_controller()->IsBubbleShowing()) {
+    views::test::ButtonTestApi(lbv->chip_controller()->chip())
         .NotifyClick(ui::MouseEvent(ui::ET_MOUSE_PRESSED, gfx::Point(),
                                     gfx::Point(), ui::EventTimeForNow(),
                                     ui::EF_LEFT_MOUSE_BUTTON, 0));
@@ -146,11 +150,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionPopupInteractiveUiTest,
   // bubble.
   const bool is_stacked_above = views::test::WidgetTest::IsWindowStackedAbove(
       extension_popup->GetWidget(), permissions_api.GetPromptWindow());
+
 #if BUILDFLAG(IS_MAC)
-  // This doesn't yet work on mac.
-  // TODO(https://crbug.com/1300006): Investigate and fix.
-  EXPECT_TRUE(is_stacked_above);
-#else
-  EXPECT_FALSE(is_stacked_above);
+  // Child window re-ordering is not reliable on macOS <= 10.13.
+  if (base::mac::IsAtMostOS10_13())
+    return;
 #endif
+  EXPECT_FALSE(is_stacked_above);
 }

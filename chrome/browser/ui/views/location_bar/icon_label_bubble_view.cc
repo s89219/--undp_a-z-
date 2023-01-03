@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,7 @@
 #include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/highlight_path_generator.h"
 #include "ui/views/controls/image_view.h"
+#include "ui/views/style/platform_style.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -50,6 +51,9 @@ constexpr int kIconLabelBubbleSpaceBesideSeparator = 8;
 // The length of the separator's fade animation. These values are empirical.
 constexpr int kIconLabelBubbleFadeInDurationMs = 250;
 constexpr int kIconLabelBubbleFadeOutDurationMs = 175;
+
+// The length of the label fade in and out animations.
+constexpr int kIconLabelAnimationDurationMs = 600;
 
 }  // namespace
 
@@ -118,9 +122,7 @@ void IconLabelBubbleView::SeparatorView::UpdateOpacity() {
   layer()->SetOpacity(opacity);
 }
 
-using SeparatorView = IconLabelBubbleView::SeparatorView;
-
-BEGIN_METADATA(SeparatorView, views::View)
+BEGIN_METADATA(IconLabelBubbleView, SeparatorView, views::View)
 END_METADATA
 
 class IconLabelBubbleView::HighlightPathGenerator
@@ -148,10 +150,8 @@ IconLabelBubbleView::IconLabelBubbleView(const gfx::FontList& font_list,
 
   separator_view_->SetVisible(ShouldShowSeparator());
 
-  views::InkDrop::Get(this)->SetVisibleOpacity(
-      GetOmniboxStateOpacity(OmniboxPartState::SELECTED));
-  views::InkDrop::Get(this)->SetHighlightOpacity(
-      GetOmniboxStateOpacity(OmniboxPartState::HOVERED));
+  views::InkDrop::Get(this)->SetVisibleOpacity(kOmniboxOpacitySelected);
+  views::InkDrop::Get(this)->SetHighlightOpacity(kOmniboxOpacityHovered);
 
   views::InkDrop::Get(this)->SetCreateInkDropCallback(base::BindRepeating(
       [](IconLabelBubbleView* host) {
@@ -171,7 +171,7 @@ IconLabelBubbleView::IconLabelBubbleView(const gfx::FontList& font_list,
 
   views::HighlightPathGenerator::Install(
       this, std::make_unique<HighlightPathGenerator>());
-  SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
+  SetFocusBehavior(views::PlatformStyle::kDefaultFocusBehavior);
 
   UpdateBorder();
 
@@ -263,8 +263,10 @@ int IconLabelBubbleView::GetWidthBetween(int min, int max) const {
   if (progress <= (1 - open_state_fraction_))
     return max;
 
+  // Clamp value to 1.0 to handle floating arithmetic rounding errors.
   double state = gfx::Tween::CalculateValue(
-      kTween, (progress - (1 - open_state_fraction_)) / open_state_fraction_);
+      kTween, std::min(1.0, (progress - (1 - open_state_fraction_)) /
+                                open_state_fraction_));
   // Note |min| and |max| are reversed.
   return gfx::Tween::IntValueBetween(state, max, min);
 }
@@ -476,23 +478,25 @@ int IconLabelBubbleView::GetEndPaddingWithSeparator() const {
 
 void IconLabelBubbleView::SetUpForAnimation() {
   views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
-  SetFocusBehavior(FocusBehavior::ACCESSIBLE_ONLY);
+  SetFocusBehavior(views::PlatformStyle::kDefaultFocusBehavior);
   label()->SetElideBehavior(gfx::NO_ELIDE);
   label()->SetVisible(false);
   slide_animation_.SetSlideDuration(base::Milliseconds(150));
   open_state_fraction_ = 1.0;
 }
 
-void IconLabelBubbleView::SetUpForInOutAnimation() {
+void IconLabelBubbleView::SetUpForInOutAnimation(base::TimeDelta duration) {
   SetUpForAnimation();
   // The duration of the slide includes the appearance of the label (600ms),
   // statically showing the label (1800ms), and hiding the label (600ms). The
   // proportion of time spent in each portion of the animation is controlled by
-  // kIconLabelBubbleOpenTimeFraction.
-  slide_animation_.SetSlideDuration(base::Milliseconds(3000));
+  // open_state_fraction_.
+  slide_animation_.SetSlideDuration(
+      duration + 2 * base::Milliseconds(kIconLabelAnimationDurationMs));
   // The tween is calculated in GetWidthBetween().
   slide_animation_.SetTweenType(gfx::Tween::LINEAR);
-  open_state_fraction_ = 0.2;
+  open_state_fraction_ = static_cast<float>(kIconLabelAnimationDurationMs) /
+                         duration.InMilliseconds();
 }
 
 void IconLabelBubbleView::AnimateIn(absl::optional<int> string_id) {
@@ -511,7 +515,13 @@ void IconLabelBubbleView::AnimateIn(absl::optional<int> string_id) {
       // instance anyway.
       alert_virtual_view_->GetCustomData().RemoveState(
           ax::mojom::State::kInvisible);
-      alert_virtual_view_->GetCustomData().SetName(label);
+
+      // A valid role must be set prior to setting the name.
+      // TODO(crbug.com/1361281): Consider using AnnounceText instead of a
+      // virtual view.
+      alert_virtual_view_->GetCustomData().role =
+          ax::mojom::Role::kGenericContainer;
+      alert_virtual_view_->GetCustomData().SetNameChecked(label);
       alert_virtual_view_->NotifyAccessibilityEvent(ax::mojom::Event::kAlert);
     }
     label()->SetVisible(true);

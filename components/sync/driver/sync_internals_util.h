@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,8 @@
 #include <string>
 
 #include "base/types/strong_alias.h"
+#include "base/values.h"
 #include "components/signin/public/identity_manager/account_info.h"
-
-namespace base {
-class DictionaryValue;
-}
 
 namespace syncer {
 
@@ -74,12 +71,12 @@ inline constexpr char kOnInvalidationReceived[] = "onInvalidationReceived";
 
 using IncludeSensitiveData =
     base::StrongAlias<class IncludeSensitiveDataTag, bool>;
-// This function returns a DictionaryValue which contains all the information
+// This function returns a base::Value::Dict which contains all the information
 // required to populate the 'About' tab of chrome://sync-internals.
 // Note that |service| may be null.
 // If |include_sensitive_data| is false, Personally Identifiable Information
 // won't be included in the return value.
-std::unique_ptr<base::DictionaryValue> ConstructAboutInformation(
+base::Value::Dict ConstructAboutInformation(
     IncludeSensitiveData include_sensitive_data,
     SyncService* service,
     const std::string& channel);

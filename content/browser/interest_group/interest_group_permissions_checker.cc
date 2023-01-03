@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
+#include "content/browser/interest_group/interest_group_permissions_cache.h"
 #include "content/public/browser/global_request_id.h"
 #include "net/base/network_isolation_key.h"
 #include "net/http/http_request_headers.h"
@@ -97,6 +98,17 @@ void InterestGroupPermissionsChecker::CheckPermissions(
     return;
   }
 
+  Permissions* permissions = cache_.GetPermissions(
+      frame_origin, interest_group_owner, network_isolation_key);
+  if (permissions) {
+    // If the result is cached, there shouldn't be a pending request for it.
+    DCHECK_EQ(0u, active_requests_.count({frame_origin, interest_group_owner,
+                                          network_isolation_key}));
+    std::move(permissions_check_callback)
+        .Run(AllowsOperation(*permissions, operation));
+    return;
+  }
+
   PermissionsKey key{frame_origin, interest_group_owner, network_isolation_key};
   auto active_request = active_requests_.find(key);
   if (active_request == active_requests_.end()) {
@@ -147,6 +159,10 @@ void InterestGroupPermissionsChecker::CheckPermissions(
       /*permissions_check_callback=*/std::move(permissions_check_callback)});
 }
 
+void InterestGroupPermissionsChecker::ClearCache() {
+  cache_.Clear();
+}
+
 void InterestGroupPermissionsChecker::OnRequestComplete(
     ActiveRequestMap::iterator active_request,
     std::unique_ptr<std::string> response_body) {
@@ -161,24 +177,24 @@ void InterestGroupPermissionsChecker::OnRequestComplete(
   // `simple_url_loader` is no longer needed after this point.
   active_request->second->simple_url_loader.reset();
 
-  active_request->second->data_decoder.ParseJson(
+  data_decoder::DataDecoder::ParseJsonIsolated(
       *response_body,
       base::BindOnce(&InterestGroupPermissionsChecker::OnJsonParsed,
-                     base::Unretained(this), active_request));
+                     weak_factory_.GetWeakPtr(), active_request));
 }
 
 void InterestGroupPermissionsChecker::OnJsonParsed(
     ActiveRequestMap::iterator active_request,
     data_decoder::DataDecoder::ValueOrError result) {
-  if (result.error || !result.value->is_dict()) {
+  if (!result.has_value() || !result->is_dict()) {
     OnActiveRequestComplete(active_request, Permissions());
     return;
   }
 
   absl::optional<bool> can_join =
-      result.value->GetDict().FindBool("joinAdInterestGroup");
+      result->GetDict().FindBool("joinAdInterestGroup");
   absl::optional<bool> can_leave =
-      result.value->GetDict().FindBool("leaveAdInterestGroup");
+      result->GetDict().FindBool("leaveAdInterestGroup");
   Permissions permissions{/*can_join=*/can_join.value_or(false),
                           /*can_leave=*/can_leave.value_or(false)};
   OnActiveRequestComplete(active_request, permissions);
@@ -187,6 +203,12 @@ void InterestGroupPermissionsChecker::OnJsonParsed(
 void InterestGroupPermissionsChecker::OnActiveRequestComplete(
     ActiveRequestMap::iterator active_request,
     Permissions permissions) {
+  // Add permissions to cache, regardless of where they came from (failed
+  // request, bad response, valid JSON).
+  cache_.CachePermissions(permissions, active_request->first.frame_origin,
+                          active_request->first.interest_group_owner,
+                          active_request->first.network_isolation_key);
+
   auto pending_checks = std::move(active_request->second->pending_checks);
   active_requests_.erase(active_request);
   for (auto& pending_check : pending_checks) {

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,8 +20,8 @@
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/browser/ui/startup/web_app_startup_utils.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
@@ -105,14 +105,15 @@ class FileHandlerLaunchDialogTest : public InProcessBrowserTest {
     // `test::InstallWebApp()` forces a kBrowser display mode; see
     // `WebAppInstallFinalizer::FinalizeInstall()`.
     ScopedRegistryUpdate update(
-        &WebAppProvider::GetForTest(browser()->profile())->sync_bridge());
+        &WebAppProvider::GetForTest(browser()->profile())
+             ->sync_bridge_unsafe());
     update->UpdateApp(app_id_)->SetUserDisplayMode(
-        UserDisplayMode::kStandalone);
+        mojom::UserDisplayMode::kStandalone);
   }
 
   const WebApp* GetApp() {
     return WebAppProvider::GetForTest(browser()->profile())
-        ->registrar()
+        ->registrar_unsafe()
         .GetAppById(app_id_);
   }
 

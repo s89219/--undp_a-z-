@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,7 +68,6 @@
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/color_analysis.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -137,7 +136,7 @@ class TabStyleHighlightPathGenerator : public views::HighlightPathGenerator {
   }
 
  private:
-  const raw_ptr<TabStyle> tab_style_;
+  const raw_ptr<TabStyle, DanglingUntriaged> tab_style_;
 };
 
 }  // namespace
@@ -177,9 +176,9 @@ class Tab::TabCloseButtonObserver : public views::ViewObserver {
   base::ScopedObservation<views::View, views::ViewObserver>
       tab_close_button_observation_{this};
 
-  raw_ptr<Tab> tab_;
-  raw_ptr<views::View> close_button_;
-  raw_ptr<TabSlotController> controller_;
+  raw_ptr<Tab, DanglingUntriaged> tab_;
+  raw_ptr<views::View, DanglingUntriaged> close_button_;
+  raw_ptr<TabSlotController, DanglingUntriaged> controller_;
 };
 
 // Tab -------------------------------------------------------------------------
@@ -570,7 +569,7 @@ void Tab::OnMouseMoved(const ui::MouseEvent& event) {
   // subsequently moves the mouse, we need to then hover the tab.
   //
   // Either way, this is effectively a no-op if the tab is already in a hovered
-  // state.
+  // state (crbug.com/1326272).
   MaybeUpdateHoverStatus(event);
 }
 
@@ -655,7 +654,7 @@ void Tab::GetAccessibleNodeData(ui::AXNodeData* node_data) {
 
   std::u16string name = controller_->GetAccessibleTabName(this);
   if (!name.empty()) {
-    node_data->SetName(name);
+    node_data->SetNameChecked(name);
   } else {
     // Under some conditions, |GetAccessibleTabName| returns an empty string.
     node_data->SetNameExplicitlyEmpty();
@@ -686,7 +685,13 @@ void Tab::OnPaint(gfx::Canvas* canvas) {
 }
 
 void Tab::AddedToWidget() {
-  UpdateForegroundColors();
+  paint_as_active_subscription_ =
+      GetWidget()->RegisterPaintAsActiveChangedCallback(base::BindRepeating(
+          &Tab::UpdateForegroundColors, base::Unretained(this)));
+}
+
+void Tab::RemovedFromWidget() {
+  paint_as_active_subscription_ = {};
 }
 
 void Tab::OnFocus() {
@@ -801,10 +806,6 @@ void Tab::AlertStateChanged() {
     controller_->UpdateHoverCard(
         this, TabSlotController::HoverCardUpdateType::kTabDataChanged);
   Layout();
-}
-
-void Tab::FrameColorsChanged() {
-  UpdateForegroundColors();
 }
 
 void Tab::SelectedStateChanged() {
@@ -1076,7 +1077,7 @@ void Tab::UpdateForegroundColors() {
   alert_indicator_button_->OnParentTabButtonColorChanged();
   // There may be no focus ring when the tab is closing.
   if (auto* focus_ring = views::FocusRing::Get(this); focus_ring)
-    focus_ring->SetColor(colors.focus_ring_color);
+    focus_ring->SetColorId(colors.focus_ring_color);
   SchedulePaint();
 }
 

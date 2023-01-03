@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,13 @@ package org.chromium.chrome.browser.safety_check;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -36,16 +38,23 @@ import org.robolectric.ParameterizedRobolectricTestRunner.Parameters;
 import org.robolectric.annotation.Config;
 
 import org.chromium.base.Callback;
+import org.chromium.base.CollectionUtil;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.metrics.RecordHistogram;
-import org.chromium.base.metrics.test.ShadowRecordHistogram;
+import org.chromium.base.metrics.UmaRecorderHolder;
 import org.chromium.base.test.util.JniMocker;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.password_check.PasswordCheck;
 import org.chromium.chrome.browser.password_check.PasswordCheckFactory;
 import org.chromium.chrome.browser.password_check.PasswordCheckUIStatus;
+import org.chromium.chrome.browser.password_manager.CredentialManagerLauncher.CredentialManagerError;
 import org.chromium.chrome.browser.password_manager.PasswordCheckupClientHelper;
+import org.chromium.chrome.browser.password_manager.PasswordCheckupClientHelper.PasswordCheckBackendException;
+import org.chromium.chrome.browser.password_manager.PasswordCheckupClientHelperFactory;
+import org.chromium.chrome.browser.password_manager.PasswordManagerBackendSupportHelper;
 import org.chromium.chrome.browser.password_manager.PasswordStoreBridge;
 import org.chromium.chrome.browser.preferences.ChromePreferenceKeys;
+import org.chromium.chrome.browser.preferences.Pref;
 import org.chromium.chrome.browser.preferences.SharedPreferencesManager;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.safety_check.SafetyCheckMediator.SafetyCheckInteractions;
@@ -56,6 +65,11 @@ import org.chromium.chrome.browser.sync.SyncService;
 import org.chromium.chrome.browser.ui.signin.SyncConsentActivityLauncher;
 import org.chromium.chrome.test.util.browser.Features;
 import org.chromium.components.browser_ui.settings.SettingsLauncher;
+import org.chromium.components.prefs.PrefService;
+import org.chromium.components.signin.base.CoreAccountInfo;
+import org.chromium.components.sync.UserSelectableType;
+import org.chromium.components.user_prefs.UserPrefs;
+import org.chromium.components.user_prefs.UserPrefsJni;
 import org.chromium.content_public.browser.BrowserContextHandle;
 import org.chromium.ui.modelutil.PropertyModel;
 
@@ -65,7 +79,7 @@ import java.util.Collection;
 
 /** Unit tests for {@link SafetyCheckMediator}. */
 @RunWith(ParameterizedRobolectricTestRunner.class)
-@Config(manifest = Config.NONE, shadows = {ShadowRecordHistogram.class})
+@Config(manifest = Config.NONE)
 public class SafetyCheckMediatorTest {
     private static final String SAFETY_CHECK_INTERACTIONS_HISTOGRAM =
             "Settings.SafetyCheck.Interactions";
@@ -75,6 +89,8 @@ public class SafetyCheckMediatorTest {
             "Settings.SafetyCheck.SafeBrowsingResult";
     private static final String SAFETY_CHECK_UPDATES_RESULT_HISTOGRAM =
             "Settings.SafetyCheck.UpdatesResult";
+
+    private static final String TEST_EMAIL_ADDRESS = "test@example.com";
 
     @Rule
     public TestRule mFeaturesProcessor = new Features.JUnitProcessor();
@@ -98,18 +114,30 @@ public class SafetyCheckMediatorTest {
     private Handler mHandler;
     @Mock
     private PasswordCheck mPasswordCheck;
+
+    // TODO(crbug.com/1346235): Use existing fake instead of mocking
     @Mock
     private PasswordCheckupClientHelper mPasswordCheckupHelper;
     @Mock
     private PasswordStoreBridge mPasswordStoreBridge;
+    @Mock
+    private PrefService mPrefService;
+    @Mock
+    private UserPrefs.Natives mUserPrefsJniMock;
+
+    // TODO(crbug.com/1346235): Use fake instead of mocking
+    @Mock
+    private PasswordManagerBackendSupportHelper mBackendSupportHelperMock;
 
     private SafetyCheckMediator mMediator;
 
     private Callback<Integer> mBreachPasswordsCallback;
 
+    private Callback<Exception> mBreachPasswordsFailureCallback;
+
     private Callback<Void> mRunPasswordCheckSuccessfullyCallback;
 
-    private Callback<Integer> mRunPasswordCheckFailedCallback;
+    private Callback<Exception> mRunPasswordCheckFailedCallback;
 
     private boolean mUseNewApi;
 
@@ -121,6 +149,11 @@ public class SafetyCheckMediatorTest {
     public SafetyCheckMediatorTest(boolean useNewApi) {
         mUseNewApi = useNewApi;
         ContextUtils.initApplicationContextForTests(ApplicationProvider.getApplicationContext());
+        if (useNewApi) {
+            Features.getInstance().enable(ChromeFeatureList.UNIFIED_PASSWORD_MANAGER_ANDROID);
+        } else {
+            Features.getInstance().disable(ChromeFeatureList.UNIFIED_PASSWORD_MANAGER_ANDROID);
+        }
     }
 
     private void setPasswordCheckResult(boolean hasError) {
@@ -132,7 +165,7 @@ public class SafetyCheckMediatorTest {
         }
         if (hasError) {
             assertNotNull(mRunPasswordCheckFailedCallback);
-            mRunPasswordCheckFailedCallback.onResult(null);
+            mRunPasswordCheckFailedCallback.onResult(new Exception());
         } else {
             assertNotNull(mRunPasswordCheckSuccessfullyCallback);
             mRunPasswordCheckSuccessfullyCallback.onResult(null);
@@ -162,6 +195,14 @@ public class SafetyCheckMediatorTest {
         }
     }
 
+    private void failBreachedPasswordsFetch() {
+        if (!mUseNewApi) return;
+        assertNotNull(mBreachPasswordsFailureCallback);
+        mBreachPasswordsFailureCallback.onResult(new Exception());
+        mBreachPasswordsCallback = null;
+        mBreachPasswordsFailureCallback = null;
+    }
+
     private void setInitialPasswordsCount(int passwordCount, int breachedCount) {
         if (mUseNewApi) {
             doAnswer(invocation -> {
@@ -171,7 +212,7 @@ public class SafetyCheckMediatorTest {
                 return null;
             })
                     .when(mPasswordCheckupHelper)
-                    .getNumberOfBreachedCredentials(anyInt(), any(), any(Callback.class), any());
+                    .getBreachedCredentialsCount(anyInt(), any(), any(Callback.class), any());
             when(mPasswordStoreBridge.getPasswordStoreCredentialsCount()).thenReturn(passwordCount);
         } else {
             doAnswer(invocation -> {
@@ -192,10 +233,12 @@ public class SafetyCheckMediatorTest {
         if (!mUseNewApi) return;
         doAnswer(invocation -> {
             mBreachPasswordsCallback = invocation.getArgument(2);
+            mBreachPasswordsFailureCallback = invocation.getArgument(3);
             return null;
         })
                 .when(mPasswordCheckupHelper)
-                .getNumberOfBreachedCredentials(anyInt(), any(), any(Callback.class), any());
+                .getBreachedCredentialsCount(
+                        anyInt(), any(), any(Callback.class), any(Callback.class));
     }
 
     private void captureRunPasswordCheckCallback() {
@@ -206,25 +249,52 @@ public class SafetyCheckMediatorTest {
             return null;
         })
                 .when(mPasswordCheckupHelper)
-                .runPasswordCheckup(anyInt(), any(), any(Callback.class), any(Callback.class));
+                .runPasswordCheckupInBackground(
+                        anyInt(), any(), any(Callback.class), any(Callback.class));
+    }
+
+    private void configureMockSyncService() {
+        SyncService mockSyncService = Mockito.mock(SyncService.class);
+        SyncService.overrideForTests(mockSyncService);
+        when(mockSyncService.isSyncFeatureEnabled()).thenReturn(true);
+        when(mockSyncService.isEngineInitialized()).thenReturn(true);
+        when(mockSyncService.hasSyncConsent()).thenReturn(true);
+        when(mockSyncService.getSelectedTypes())
+                .thenReturn(CollectionUtil.newHashSet(UserSelectableType.PASSWORDS));
+        when(mockSyncService.getAccountInfo())
+                .thenReturn(CoreAccountInfo.createFromEmailAndGaiaId(TEST_EMAIL_ADDRESS, "0"));
     }
 
     @Before
-    public void setUp() {
+    public void setUp() throws PasswordCheckBackendException {
         MockitoAnnotations.initMocks(this);
-        SyncService mockSyncService = Mockito.mock(SyncService.class);
-        SyncService.overrideForTests(mockSyncService);
-        Mockito.when(mockSyncService.isSyncFeatureEnabled()).thenReturn(false);
+        configureMockSyncService();
+
+        PasswordManagerBackendSupportHelper.setInstanceForTesting(mBackendSupportHelperMock);
+        when(mBackendSupportHelperMock.isBackendPresent()).thenReturn(true);
+        when(mBackendSupportHelperMock.isUpdateNeeded()).thenReturn(false);
+
         mJniMocker.mock(SafetyCheckBridgeJni.TEST_HOOKS, mSafetyCheckBridge);
         Profile.setLastUsedProfileForTesting(mProfile);
+
+        mJniMocker.mock(UserPrefsJni.TEST_HOOKS, mUserPrefsJniMock);
+        when(mUserPrefsJniMock.get(mProfile)).thenReturn(mPrefService);
+        when(mPrefService.getBoolean(Pref.UNENROLLED_FROM_GOOGLE_MOBILE_SERVICES_DUE_TO_ERRORS))
+                .thenReturn(false);
+
         mModel = SafetyCheckProperties.createSafetyCheckModel();
         if (mUseNewApi) {
+            // TODO(crbug.com/1346235): Use existing fake instead of mocking
+            PasswordCheckupClientHelperFactory mockPasswordCheckFactory =
+                    mock(PasswordCheckupClientHelperFactory.class);
+            when(mockPasswordCheckFactory.createHelper()).thenReturn(mPasswordCheckupHelper);
+            PasswordCheckupClientHelperFactory.setFactoryForTesting(mockPasswordCheckFactory);
             mMediator = new SafetyCheckMediator(mModel, mUpdatesDelegate, mSettingsLauncher,
-                    mSigninLauncher, mPasswordCheckupHelper, mPasswordStoreBridge, mHandler);
+                    mSigninLauncher, mPasswordStoreBridge, mHandler);
         } else {
             PasswordCheckFactory.setPasswordCheckForTesting(mPasswordCheck);
-            mMediator = new SafetyCheckMediator(mModel, mUpdatesDelegate, mSettingsLauncher,
-                    mSigninLauncher, null, null, mHandler);
+            mMediator = new SafetyCheckMediator(
+                    mModel, mUpdatesDelegate, mSettingsLauncher, mSigninLauncher, null, mHandler);
         }
 
         // Execute any delayed tasks immediately.
@@ -238,7 +308,7 @@ public class SafetyCheckMediatorTest {
         // User is always signed in unless the test specifies otherwise.
         doReturn(true).when(mSafetyCheckBridge).userSignedIn(any(BrowserContextHandle.class));
         // Reset the histogram count.
-        ShadowRecordHistogram.reset();
+        UmaRecorderHolder.resetForTesting();
     }
 
     @Test
@@ -318,6 +388,19 @@ public class SafetyCheckMediatorTest {
         mMediator.performSafetyCheck();
         setPasswordCheckResult(/*hasError=*/true);
         assertEquals(PasswordsState.ERROR, mModel.get(PASSWORDS_STATE));
+        assertEquals(1,
+                RecordHistogram.getHistogramValueCountForTesting(
+                        SAFETY_CHECK_PASSWORDS_RESULT_HISTOGRAM, PasswordsStatus.ERROR));
+    }
+
+    @Test
+    public void testPasswordsCheckBackendOutdated() {
+        if (!mUseNewApi) return;
+        captureRunPasswordCheckCallback();
+        mMediator.performSafetyCheck();
+        mRunPasswordCheckFailedCallback.onResult(new PasswordCheckBackendException(
+                "test", CredentialManagerError.BACKEND_VERSION_NOT_SUPPORTED));
+        assertEquals(PasswordsState.BACKEND_VERSION_NOT_SUPPORTED, mModel.get(PASSWORDS_STATE));
         assertEquals(1,
                 RecordHistogram.getHistogramValueCountForTesting(
                         SAFETY_CHECK_PASSWORDS_RESULT_HISTOGRAM, PasswordsStatus.ERROR));
@@ -620,5 +703,45 @@ public class SafetyCheckMediatorTest {
         assertEquals(1,
                 RecordHistogram.getHistogramValueCountForTesting(
                         SAFETY_CHECK_PASSWORDS_RESULT_HISTOGRAM, PasswordsStatus.SIGNED_OUT));
+    }
+
+    @Test
+    public void testPasswordCheckFinishedAfterDestroy() {
+        captureRunPasswordCheckCallback();
+        captureBreachPasswordsCallback();
+        mMediator.performSafetyCheck();
+        mMediator.destroy();
+        setPasswordCheckResult(/*hasError=*/false);
+        assertNull(mBreachPasswordsCallback);
+    }
+
+    @Test
+    public void testPasswordCheckFailedAfterDestroy() {
+        captureRunPasswordCheckCallback();
+        captureBreachPasswordsCallback();
+        mMediator.performSafetyCheck();
+        mMediator.destroy();
+        setPasswordCheckResult(/*hasError=*/true);
+        assertNull(mBreachPasswordsCallback);
+    }
+
+    @Test
+    public void testFetchBreachedCredentialsFinishedAfterDestroy() {
+        captureRunPasswordCheckCallback();
+        captureBreachPasswordsCallback();
+        mMediator.performSafetyCheck();
+        setPasswordCheckResult(/*hasError=*/false);
+        mMediator.destroy();
+        fetchBreachedPasswords(10);
+    }
+
+    @Test
+    public void testFetchBreachedCredentialsFailedAfterDestroy() {
+        captureRunPasswordCheckCallback();
+        captureBreachPasswordsCallback();
+        mMediator.performSafetyCheck();
+        setPasswordCheckResult(/*hasError=*/false);
+        mMediator.destroy();
+        failBreachedPasswordsFetch();
     }
 }

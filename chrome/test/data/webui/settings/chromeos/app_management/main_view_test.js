@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,8 @@ suite('<app-management-main-view>', function() {
   }
 
   function getAppItems() {
-    return mainView.$$('#app-list').querySelectorAll('app-management-app-item');
+    return mainView.shadowRoot.querySelector('#appList')
+        .querySelectorAll('app-management-app-item');
   }
 
   setup(function() {

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "chrome/browser/sessions/session_restore_observer.h"
 #include "components/app_restore/restore_data.h"
 #include "components/services/app_service/public/cpp/app_types.h"
-#include "components/services/app_service/public/mojom/types.mojom.h"
 
 namespace apps {
 class AppUpdate;
@@ -23,8 +22,7 @@ enum class AppTypeName;
 
 class Profile;
 
-namespace ash {
-namespace full_restore {
+namespace ash::full_restore {
 
 // This is used for logging, so do not remove or reorder existing entries.
 enum class RestoreTabResult {
@@ -150,6 +148,10 @@ class FullRestoreAppLaunchHandler : public AppLaunchHandler,
   // If the restore process finish, start the save timer.
   void MaybeStartSaveTimer();
 
+  // Returns true if the previous session is reported to have ended with a
+  // crash.
+  bool IsLastSessionExitTypeCrashed();
+
   bool should_restore_ = false;
 
   // Specifies whether it is the first time to run the full restore feature.
@@ -183,7 +185,6 @@ class ScopedLaunchBrowserForTesting {
   ~ScopedLaunchBrowserForTesting();
 };
 
-}  // namespace full_restore
-}  // namespace ash
+}  // namespace ash::full_restore
 
 #endif  // CHROME_BROWSER_ASH_APP_RESTORE_FULL_RESTORE_APP_LAUNCH_HANDLER_H_

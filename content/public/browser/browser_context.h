@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/k_anonymity_service_delegate.h"
 #include "content/public/browser/zoom_level_delegate.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -44,6 +45,7 @@ class ExternalMountPoints;
 
 namespace media {
 class VideoDecodePerfHistory;
+class WebrtcVideoPerfHistory;
 namespace learning {
 class LearningSession;
 }
@@ -82,14 +84,15 @@ class ClientHintsControllerDelegate;
 class ContentIndexProvider;
 class DownloadManager;
 class DownloadManagerDelegate;
-class FederatedIdentityActiveSessionPermissionContextDelegate;
+class FederatedIdentityPermissionContextDelegate;
 class FederatedIdentityApiPermissionContextDelegate;
-class FederatedIdentitySharingPermissionContextDelegate;
 class FileSystemAccessPermissionContext;
+class OriginTrialsControllerDelegate;
 class PermissionController;
 class PermissionControllerDelegate;
 class PlatformNotificationService;
 class PushMessagingService;
+class ReduceAcceptLanguageControllerDelegate;
 class ResourceContext;
 class SSLHostStateDelegate;
 class SharedCorsOriginAccessList;
@@ -156,6 +159,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   using StoragePartitionCallback =
       base::RepeatingCallback<void(StoragePartition*)>;
   void ForEachStoragePartition(StoragePartitionCallback callback);
+
+  // Disposes the given StoragePartition. Only in-memory storage partition
+  // disposal is supported. Caller needs to be careful that no outstanding
+  // references are left to access the disposed storage partition.
+  void DisposeStoragePartition(StoragePartition* storage_partition);
+
   // Returns the number of StoragePartitions that exist for `this`
   // BrowserContext.
   size_t GetStoragePartitionCount();
@@ -269,6 +278,12 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // directly, so privacy is not compromised.
   media::VideoDecodePerfHistory* GetVideoDecodePerfHistory();
 
+  // Gets media service for storing/retrieving WebRTC video performance stats.
+  // Exposed here rather than StoragePartition because all SiteInstances should
+  // have similar encode/decode performance and stats are not exposed to the web
+  // directly, so privacy is not compromised.
+  media::WebrtcVideoPerfHistory* GetWebrtcVideoPerfHistory();
+
   // Returns a LearningSession associated with |this|. Used as the central
   // source from which to retrieve LearningTaskControllers for media machine
   // learning.
@@ -279,8 +294,8 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
 
   // Retrieves the InProgressDownloadManager associated with this object if
   // available
-  virtual download::InProgressDownloadManager*
-  RetriveInProgressDownloadManager();
+  virtual std::unique_ptr<download::InProgressDownloadManager>
+  RetrieveInProgressDownloadManager();
 
   // Utility function useful for embedders. Only needs to be called if
   // 1) The embedder needs to use a new salt, and
@@ -361,6 +376,11 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // BrowserContext::GetPermissionController() instead.
   virtual PermissionControllerDelegate* GetPermissionControllerDelegate() = 0;
 
+  // Returns the ReduceAcceptLanguageControllerDelegate associated with that
+  // context if any, nullptr otherwise.
+  virtual ReduceAcceptLanguageControllerDelegate*
+  GetReduceAcceptLanguageControllerDelegate() = 0;
+
   // Returns the ClientHintsControllerDelegate associated with that context if
   // any, nullptr otherwise.
   virtual ClientHintsControllerDelegate* GetClientHintsControllerDelegate() = 0;
@@ -417,12 +437,16 @@ class CONTENT_EXPORT BrowserContext : public base::SupportsUserData {
   // Gets the permission context for allowing session management capabilities
   // between an identity provider and a relying party if one exists, or
   // nullptr otherwise.
-  virtual FederatedIdentityActiveSessionPermissionContextDelegate*
-  GetFederatedIdentityActiveSessionPermissionContext();
-  // Gets the permission context for WebID identity token sharing if one
-  // exists, or nullptr otherwise.
-  virtual FederatedIdentitySharingPermissionContextDelegate*
-  GetFederatedIdentitySharingPermissionContext();
+  virtual FederatedIdentityPermissionContextDelegate*
+  GetFederatedIdentityPermissionContext();
+
+  // Gets the KAnonymityServiceDelegate if supported. Returns nullptr if
+  // unavailable.
+  virtual KAnonymityServiceDelegate* GetKAnonymityServiceDelegate();
+
+  // Returns the OriginTrialsControllerDelegate associated with the context if
+  // any, nullptr otherwise.
+  virtual OriginTrialsControllerDelegate* GetOriginTrialsControllerDelegate();
 
  private:
   // Please don't add more fields to BrowserContext.

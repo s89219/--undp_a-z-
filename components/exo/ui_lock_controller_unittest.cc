@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,7 +86,7 @@ class MockPointerConstraintDelegate : public PointerConstraintDelegate {
     });
   }
 
-  ~MockPointerConstraintDelegate() {
+  ~MockPointerConstraintDelegate() override {
     // Notifying destruction here removes some boilerplate from tests.
     pointer_->OnPointerConstraintDelegateDestroying(this);
   }
@@ -138,10 +138,6 @@ class UILockControllerTest : public test::ExoTestBase {
   void SetUp() override {
     test::ExoTestBase::SetUp();
     seat_ = std::make_unique<Seat>();
-    scoped_feature_list_.InitWithFeatures(
-        {chromeos::features::kExoLockNotification,
-         chromeos::features::kExoPointerLock},
-        {});
     WMHelper::GetInstance()->RegisterAppPropertyResolver(
         std::make_unique<TestPropertyResolver>());
   }
@@ -620,6 +616,34 @@ TEST_F(UILockControllerTest, PointerLockNotificationReshownAfterSuspend) {
       power_manager::SuspendImminent_Reason_IDLE);
   task_environment()->FastForwardBy(base::Minutes(1));
   chromeos::FakePowerManagerClient::Get()->SendSuspendDone(base::Minutes(1));
+
+  // Assert: Notification shown again.
+  EXPECT_TRUE(GetPointerCaptureNotification(test_surface));
+}
+
+TEST_F(UILockControllerTest, PointerLockNotificationReshownAfterIdle) {
+  // Arrange: Set up a pointer capture notification, then let it expire.
+  std::unique_ptr<ShellSurface> test_surface = BuildSurface(1024, 768);
+  test_surface->SetApplicationId(kOverviewToExitAppId);
+  test_surface->surface_for_testing()->Commit();
+  testing::NiceMock<MockPointerDelegate> delegate;
+  Pointer pointer(&delegate, seat_.get());
+  testing::NiceMock<MockPointerConstraintDelegate> constraint(
+      &pointer, test_surface->surface_for_testing());
+  EXPECT_TRUE(pointer.ConstrainPointer(&constraint));
+  EXPECT_TRUE(GetPointerCaptureNotification(test_surface));
+  task_environment()->FastForwardBy(base::Seconds(5));
+  EXPECT_FALSE(GetPointerCaptureNotification(test_surface));
+
+  // Act: Simulate activity, then go idle.
+  seat_->GetUILockControllerForTesting()->OnUserActivity(/*event=*/nullptr);
+  task_environment()->FastForwardBy(base::Minutes(10));
+
+  // Assert: Notification not yet shown again.
+  EXPECT_FALSE(GetPointerCaptureNotification(test_surface));
+
+  // Act: Simulate activity after being idle.
+  seat_->GetUILockControllerForTesting()->OnUserActivity(/*event=*/nullptr);
 
   // Assert: Notification shown again.
   EXPECT_TRUE(GetPointerCaptureNotification(test_surface));

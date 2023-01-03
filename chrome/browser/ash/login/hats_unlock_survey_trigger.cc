@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -114,7 +114,7 @@ void HatsUnlockSurveyTrigger::ShowSurveyIfSelected(const AccountId& account_id,
           ? smartlock_service->GetLastRemoteStatusUnlockForLogging()
           : std::string();
   const bool smartlock_revamp_enabled =
-      base::FeatureList::IsEnabled(ash::features::kSmartLockUIRevamp);
+      base::FeatureList::IsEnabled(features::kSmartLockUIRevamp);
 
   base::flat_map<std::string, std::string> product_specific_data = {
       {"authMethod", AuthMethodToString(method)},

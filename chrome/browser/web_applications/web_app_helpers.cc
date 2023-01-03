@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,9 @@
 #include "chrome/browser/web_applications/isolation_prefs_utils.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "chrome/common/webui_url_constants.h"
 #include "components/crx_file/id_util.h"
+#include "components/password_manager/content/common/web_ui_constants.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/common/content_features.h"
 #include "crypto/sha2.h"
@@ -66,7 +68,8 @@ std::string GenerateAppIdUnhashed(
   if (manifest_id.has_value()) {
     GURL app_id(start_url.DeprecatedGetOriginAsURL().spec() +
                 manifest_id.value());
-    DCHECK(app_id.is_valid());
+    DCHECK(app_id.is_valid())
+        << "start_url: " << start_url << ", manifest_id = " << *manifest_id;
     return app_id.spec();
   }
   return start_url.spec();
@@ -110,18 +113,19 @@ bool IsValidWebAppUrl(const GURL& app_url) {
   if (app_url.is_empty() || app_url.inner_url())
     return false;
 
-  // TODO(crbug.com/1253234): Remove chrome-extension scheme and use
-  // SchemeIsHTTPOrHTTPS() instead of IsValidWebAppUrl();
+  // TODO(crbug.com/1253234): Remove chrome-extension scheme.
   return app_url.SchemeIs(url::kHttpScheme) ||
          app_url.SchemeIs(url::kHttpsScheme) ||
-         app_url.SchemeIs("chrome-extension");
+         app_url.SchemeIs("chrome-extension") ||
+         (app_url.SchemeIs("chrome") &&
+          (app_url.host() == password_manager::kChromeUIPasswordManagerHost));
 }
 
 absl::optional<AppId> FindInstalledAppWithUrlInScope(Profile* profile,
                                                      const GURL& url,
                                                      bool window_only) {
   auto* provider = WebAppProvider::GetForLocalAppsUnchecked(profile);
-  return provider ? provider->registrar().FindInstalledAppWithUrlInScope(
+  return provider ? provider->registrar_unsafe().FindInstalledAppWithUrlInScope(
                         url, window_only)
                   : absl::nullopt;
 }

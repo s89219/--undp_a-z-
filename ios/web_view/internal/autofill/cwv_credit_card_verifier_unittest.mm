@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -117,8 +117,6 @@ class CWVCreditCardVerifierTest : public PlatformTest {
     }
 
     pref_service_ = std::make_unique<TestingPrefServiceSimple>();
-    pref_service_->registry()->RegisterBooleanPref(
-        autofill::prefs::kAutofillWalletImportStorageCheckboxState, false);
     autofill::CreditCard credit_card = autofill::test::GetMaskedServerCard();
     credit_card_verifier_ = [[CWVCreditCardVerifier alloc]
          initWithPrefs:pref_service_.get()

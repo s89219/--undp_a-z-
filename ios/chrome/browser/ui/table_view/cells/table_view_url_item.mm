@@ -1,16 +1,15 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/table_view/cells/table_view_url_item.h"
 
-#include "base/mac/foundation_util.h"
-#include "base/strings/sys_string_conversions.h"
-#include "components/url_formatter/elide_url.h"
+#import "base/mac/foundation_util.h"
+#import "base/strings/sys_string_conversions.h"
+#import "components/url_formatter/elide_url.h"
 #import "ios/chrome/browser/net/crurl.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
-#include "ios/chrome/browser/ui/util/ui_util.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/favicon/favicon_container_view.h"
@@ -64,11 +63,6 @@ const char kDefaultSupplementalURLTextDelimiter[] = "•";
 
   if (styler.cellTitleColor)
     cell.titleLabel.textColor = styler.cellTitleColor;
-  if (styler.cellDetailColor) {
-    cell.URLLabel.textColor = styler.cellDetailColor;
-    cell.thirdRowLabel.textColor = styler.cellDetailColor;
-    cell.metadataLabel.textColor = styler.cellDetailColor;
-  }
   if (self.thirdRowTextColor)
     cell.thirdRowLabel.textColor = self.thirdRowTextColor;
 
@@ -136,8 +130,8 @@ const char kDefaultSupplementalURLTextDelimiter[] = "•";
 
 @interface TableViewURLCell ()
 // If the cell's accessibility label has not been manually set via
-// |-setAccessibilityLabel:|, this property will be YES, and
-// |-accessibilityLabel| will return a lazily created label based on the
+// `-setAccessibilityLabel:`, this property will be YES, and
+// `-accessibilityLabel` will return a lazily created label based on the
 // text values of the UILabel subviews.
 @property(nonatomic, assign) BOOL shouldGenerateAccessibilityLabel;
 // Horizontal StackView that holds url, title, and metadata labels.
@@ -358,7 +352,7 @@ const char kDefaultSupplementalURLTextDelimiter[] = "•";
         constraintEqualToAnchor:self.faviconContainerView.centerYAnchor],
   ]];
   [activityView startAnimating];
-  activityView.backgroundColor = [UIColor whiteColor];
+  activityView.backgroundColor = self.faviconContainerView.backgroundColor;
 }
 
 - (void)stopAnimatingActivityIndicator {

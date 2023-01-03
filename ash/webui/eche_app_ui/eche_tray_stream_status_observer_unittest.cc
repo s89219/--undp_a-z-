@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,12 @@
 #include "ash/system/eche/eche_tray.h"
 #include "ash/system/status_area_widget_test_helper.h"
 #include "ash/test/ash_test_base.h"
-#include "ash/test/ash_test_suite.h"
 #include "ash/test/test_ash_web_view_factory.h"
 #include "ash/webui/eche_app_ui/eche_stream_status_change_handler.h"
+#include "ash/webui/eche_app_ui/fake_feature_status_provider.h"
 #include "base/test/scoped_feature_list.h"
+#include "chromeos/ash/components/phonehub/fake_phone_hub_manager.h"
+#include "chromeos/ash/components/test/ash_test_suite.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 
@@ -19,8 +21,19 @@ namespace ash {
 namespace eche_app {
 
 namespace {
-void GracefulCloseFunction() {}
+
+bool is_web_content_unloaded_ = false;
+
+void GracefulCloseFunction() {
+  is_web_content_unloaded_ = true;
+}
+
+void ResetUnloadWebContent() {
+  is_web_content_unloaded_ = false;
+}
+
 void GracefulGoBackFunction() {}
+
 }  // namespace
 
 class EcheTrayStreamStatusObserverTest : public AshTestBase {
@@ -34,8 +47,11 @@ class EcheTrayStreamStatusObserverTest : public AshTestBase {
 
   // AshTestBase:
   void SetUp() override {
+    // fake_phone_hub_manager_.fake_feature_status_provider()->SetStatus(
+    //     phonehub::FeatureStatus::kEnabledAndConnected);
+    fake_feature_status_provider_.SetStatus(FeatureStatus::kIneligible);
     scoped_feature_list_.InitWithFeatures(
-        /*enabled_features=*/{},
+        /*enabled_features=*/{features::kEcheSWA},
         /*disabled_features=*/{});
     DCHECK(test_web_view_factory_.get());
     ui::ResourceBundle::CleanupSharedInstance();
@@ -47,7 +63,7 @@ class EcheTrayStreamStatusObserverTest : public AshTestBase {
     stream_status_change_handler_ =
         std::make_unique<EcheStreamStatusChangeHandler>();
     observer_ = std::make_unique<EcheTrayStreamStatusObserver>(
-        stream_status_change_handler_.get());
+        stream_status_change_handler_.get(), &fake_feature_status_provider_);
   }
 
   void TearDown() override {
@@ -62,6 +78,10 @@ class EcheTrayStreamStatusObserverTest : public AshTestBase {
     observer_->OnStreamStatusChanged(status);
   }
 
+  void SetStatus(FeatureStatus status) {
+    fake_feature_status_provider_.SetStatus(status);
+  }
+
   EcheTray* eche_tray() { return eche_tray_; }
 
  private:
@@ -69,13 +89,14 @@ class EcheTrayStreamStatusObserverTest : public AshTestBase {
   EcheTray* eche_tray_ = nullptr;
   std::unique_ptr<EcheStreamStatusChangeHandler> stream_status_change_handler_;
   std::unique_ptr<EcheTrayStreamStatusObserver> observer_;
+  FakeFeatureStatusProvider fake_feature_status_provider_;
   // Calling the factory constructor is enough to set it up.
   std::unique_ptr<TestAshWebViewFactory> test_web_view_factory_ =
       std::make_unique<TestAshWebViewFactory>();
 };
 
 TEST_F(EcheTrayStreamStatusObserverTest, LaunchBubble) {
-  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1",
+  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1", u"your phone",
                base::BindOnce(&GracefulCloseFunction),
                base::BindRepeating(&GracefulGoBackFunction));
 
@@ -83,15 +104,6 @@ TEST_F(EcheTrayStreamStatusObserverTest, LaunchBubble) {
   base::RunLoop().RunUntilIdle();
   // Bubble widget should be created after launch.
   EXPECT_TRUE(eche_tray()->get_bubble_wrapper_for_test());
-}
-
-TEST_F(EcheTrayStreamStatusObserverTest, CloseBubble) {
-  CloseBubble();
-
-  // Wait for Eche Web to close.
-  base::RunLoop().RunUntilIdle();
-  // Eche tray should be visible after close.
-  EXPECT_FALSE(eche_tray()->is_active());
 }
 
 TEST_F(EcheTrayStreamStatusObserverTest, OnStartStreaming) {
@@ -102,7 +114,7 @@ TEST_F(EcheTrayStreamStatusObserverTest, OnStartStreaming) {
   // The bubble should not be created if LaunchBubble be called before.
   EXPECT_FALSE(eche_tray()->get_bubble_wrapper_for_test());
 
-  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1",
+  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1", u"your phone",
                base::BindOnce(&GracefulCloseFunction),
                base::BindRepeating(&GracefulGoBackFunction));
 
@@ -122,7 +134,7 @@ TEST_F(EcheTrayStreamStatusObserverTest, OnStartStreaming) {
 }
 
 TEST_F(EcheTrayStreamStatusObserverTest, OnStreamStatusChanged) {
-  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1",
+  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1", u"your phone",
                base::BindOnce(&GracefulCloseFunction),
                base::BindRepeating(&GracefulGoBackFunction));
   OnStreamStatusChanged(mojom::StreamStatus::kStreamStatusStarted);
@@ -137,6 +149,75 @@ TEST_F(EcheTrayStreamStatusObserverTest, OnStreamStatusChanged) {
   // Wait for Eche Web to close.
   base::RunLoop().RunUntilIdle();
   // Eche tray should not be visible when streaming is finished
+  EXPECT_FALSE(eche_tray()->is_active());
+}
+
+TEST_F(EcheTrayStreamStatusObserverTest,
+       StartGracefulCloseWhenFeatureStatusToIneligible) {
+  ResetUnloadWebContent();
+  SetStatus(FeatureStatus::kConnecting);
+  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1", u"your phone",
+               base::BindOnce(&GracefulCloseFunction),
+               base::BindRepeating(&GracefulGoBackFunction));
+  OnStreamStatusChanged(mojom::StreamStatus::kStreamStatusStarted);
+
+  // Wait for Eche Tray to load Eche Web to complete.
+  base::RunLoop().RunUntilIdle();
+  // Eche tray should be visible when streaming is active
+  EXPECT_TRUE(eche_tray()->get_bubble_wrapper_for_test());
+
+  SetStatus(FeatureStatus::kIneligible);
+
+  // Wait for Eche Web Content unloaded.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(is_web_content_unloaded_);
+  // Eche tray should be visible after close.
+  EXPECT_FALSE(eche_tray()->is_active());
+}
+
+TEST_F(EcheTrayStreamStatusObserverTest,
+       StartGracefulCloseWhenFeatureDependent) {
+  ResetUnloadWebContent();
+  SetStatus(FeatureStatus::kConnecting);
+  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1", u"your phone",
+               base::BindOnce(&GracefulCloseFunction),
+               base::BindRepeating(&GracefulGoBackFunction));
+  OnStreamStatusChanged(mojom::StreamStatus::kStreamStatusStarted);
+
+  // Wait for Eche Tray to load Eche Web to complete.
+  base::RunLoop().RunUntilIdle();
+  // Eche tray should be visible when streaming is active
+  EXPECT_TRUE(eche_tray()->get_bubble_wrapper_for_test());
+
+  SetStatus(FeatureStatus::kDependentFeature);
+
+  // Wait for Eche Web Content unloaded.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(is_web_content_unloaded_);
+  // Eche tray should be visible after close.
+  EXPECT_FALSE(eche_tray()->is_active());
+}
+
+TEST_F(EcheTrayStreamStatusObserverTest,
+       StartGracefulCloseWhenFeatureDisabled) {
+  ResetUnloadWebContent();
+  SetStatus(FeatureStatus::kConnecting);
+  LaunchBubble(GURL("http://google.com"), gfx::Image(), u"app 1", u"your phone",
+               base::BindOnce(&GracefulCloseFunction),
+               base::BindRepeating(&GracefulGoBackFunction));
+  OnStreamStatusChanged(mojom::StreamStatus::kStreamStatusStarted);
+
+  // Wait for Eche Tray to load Eche Web to complete.
+  base::RunLoop().RunUntilIdle();
+  // Eche tray should be visible when streaming is active
+  EXPECT_TRUE(eche_tray()->get_bubble_wrapper_for_test());
+
+  SetStatus(FeatureStatus::kDisabled);
+
+  // Wait for Eche Web Content unloaded.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(is_web_content_unloaded_);
+  // Eche tray should be visible after close.
   EXPECT_FALSE(eche_tray()->is_active());
 }
 

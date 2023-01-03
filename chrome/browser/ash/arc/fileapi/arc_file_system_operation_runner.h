@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,9 +24,9 @@
 
 class BrowserContextKeyedServiceFactory;
 
-namespace chromeos {
+namespace ash {
 class RecentArcMediaSourceTest;
-}  // namespace chromeos
+}
 
 namespace content {
 class BrowserContext;
@@ -205,7 +205,7 @@ class ArcFileSystemOperationRunner
 
  private:
   friend class ArcFileSystemOperationRunnerTest;
-  friend class chromeos::RecentArcMediaSourceTest;
+  friend class ash::RecentArcMediaSourceTest;
 
   ArcFileSystemOperationRunner(content::BrowserContext* context,
                                ArcBridgeService* bridge_service,

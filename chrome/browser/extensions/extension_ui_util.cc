@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/image_util.h"
+#include "extensions/common/manifest_handlers/app_display_info.h"
 
 namespace extensions {
 
@@ -24,9 +25,8 @@ bool IsBlockedByPolicy(const Extension* app, content::BrowserContext* context) {
   Profile* profile = Profile::FromBrowserContext(context);
   DCHECK(profile);
 
-  return (app->id() == extensions::kWebStoreAppId ||
-      app->id() == extension_misc::kEnterpriseWebStoreAppId) &&
-      profile->GetPrefs()->GetBoolean(prefs::kHideWebStoreIcon);
+  return app->id() == extensions::kWebStoreAppId &&
+         profile->GetPrefs()->GetBoolean(prefs::kHideWebStoreIcon);
 }
 
 }  // namespace
@@ -40,14 +40,14 @@ bool ShouldDisplayInAppLauncher(const Extension* extension,
 
 bool CanDisplayInAppLauncher(const Extension* extension,
                              content::BrowserContext* context) {
-  return extension->ShouldDisplayInAppLauncher() &&
+  return AppDisplayInfo::ShouldDisplayInAppLauncher(*extension) &&
          !IsBlockedByPolicy(extension, context);
 }
 
 bool ShouldDisplayInNewTabPage(const Extension* extension,
                                content::BrowserContext* context) {
-  return extension->ShouldDisplayInNewTabPage() &&
-      !IsBlockedByPolicy(extension, context);
+  return AppDisplayInfo::ShouldDisplayInNewTabPage(*extension) &&
+         !IsBlockedByPolicy(extension, context);
 }
 
 std::u16string GetEnabledExtensionNameForUrl(const GURL& url,

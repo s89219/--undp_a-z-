@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,6 +43,8 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
       BackForwardCacheCanStoreDocumentResult&&);
   ~BackForwardCacheCanStoreDocumentResult();
 
+  bool operator==(const BackForwardCacheCanStoreDocumentResult& other) const;
+
   // Add reasons contained in the |other| to |this|.
   void AddReasonsFrom(const BackForwardCacheCanStoreDocumentResult& other);
   bool HasNotRestoredReason(
@@ -59,11 +61,14 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
   void NoDueToDisableForRenderFrameHostCalled(
       const std::set<BackForwardCache::DisabledReason>& reasons);
   void NoDueToDisallowActivation(uint64_t reason);
+  // TODO(crbug.com/1341507): Remove this function.
   void NoDueToAXEvents(const std::vector<ui::AXEvent>& events);
-  void RecordAXEvent(ax::mojom::Event event_type);
 
+  // The conditions for storing and restoring the pages are different in that
+  // pages with cache-control:no-store can enter back/forward cache depending on
+  // the experiment flag, but can never be restored.
   bool CanStore() const;
-  operator bool() const { return CanStore(); }
+  bool CanRestore() const;
 
   const NotRestoredReasons& not_restored_reasons() const {
     return not_restored_reasons_;
@@ -76,6 +81,11 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
     return disabled_reasons_;
   }
 
+  const absl::optional<ShouldSwapBrowsingInstance>
+  browsing_instance_swap_result() const {
+    return browsing_instance_swap_result_;
+  }
+
   const std::set<uint64_t>& disallow_activation_reasons() const {
     return disallow_activation_reasons_;
   }
@@ -83,6 +93,7 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
   const std::set<ax::mojom::Event>& ax_events() const { return ax_events_; }
 
   std::string ToString() const;
+  std::vector<std::string> GetStringReasons() const;
 
   void WriteIntoTrace(
       perfetto::TracedProto<
@@ -91,7 +102,11 @@ class CONTENT_EXPORT BackForwardCacheCanStoreDocumentResult {
 
  private:
   void AddNotRestoredReason(BackForwardCacheMetrics::NotRestoredReason reason);
+  // Returns a one-sentence of explanation for a NotRestoredReason.
   std::string NotRestoredReasonToString(
+      BackForwardCacheMetrics::NotRestoredReason reason) const;
+  // Returns a name in string for a NotRestoredReason.
+  std::string NotRestoredReasonToReportString(
       BackForwardCacheMetrics::NotRestoredReason reason) const;
 
   NotRestoredReasons not_restored_reasons_;

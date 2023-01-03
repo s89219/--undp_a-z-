@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "chrome/browser/task_manager/web_contents_tags.h"
@@ -25,7 +25,6 @@
 #include "chrome/browser/ui/webui/commander/commander_ui.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
-#include "content/public/browser/notification_service.h"
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/gfx/geometry/rounded_corners_f.h"
@@ -96,6 +95,11 @@ class CommanderWebView : public views::WebView {
     return event_handler_.HandleKeyboardEvent(event, owner_->GetFocusManager());
   }
 
+  bool HandleContextMenu(content::RenderFrameHost& render_frame_host,
+                         const content::ContextMenuParams& params) override {
+    return true;
+  }
+
   void AddedToWidget() override {
     views::WebView::AddedToWidget();
     holder()->SetCornerRadii(gfx::RoundedCornersF(kCornerRadius));
@@ -124,8 +128,8 @@ CommanderFrontendViews::CommanderFrontendViews(
   backend_->SetUpdateCallback(
       base::BindRepeating(&CommanderFrontendViews::OnViewModelUpdated,
                           weak_ptr_factory_.GetWeakPtr()));
-  registrar_.Add(this, chrome::NOTIFICATION_APP_TERMINATING,
-                 content::NotificationService::AllSources());
+  subscription_ = browser_shutdown::AddAppTerminatingCallback(base::BindOnce(
+      &CommanderFrontendViews::OnAppTerminating, base::Unretained(this)));
 }
 
 CommanderFrontendViews::~CommanderFrontendViews() {
@@ -135,6 +139,9 @@ CommanderFrontendViews::~CommanderFrontendViews() {
 }
 void CommanderFrontendViews::ToggleForBrowser(Browser* browser) {
   DCHECK(browser);
+  // This ensures that quick commands are only available for normal browsers.
+  if (!browser->is_type_normal())
+    return;
   bool should_show = !browser_ || browser != browser_;
   if (browser_)
     Hide();
@@ -211,11 +218,7 @@ void CommanderFrontendViews::OnBrowserClosing(Browser* browser) {
     Hide();
 }
 
-void CommanderFrontendViews::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_APP_TERMINATING, type);
+void CommanderFrontendViews::OnAppTerminating() {
   if (is_showing())
     Hide();
 }

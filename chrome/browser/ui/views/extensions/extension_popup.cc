@@ -1,12 +1,16 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 
+#include "base/bind.h"
+#include "base/feature_list.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/extension_view_host.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -19,6 +23,7 @@
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/style/platform_style.h"
+#include "ui/views/views_features.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
@@ -56,8 +61,34 @@ class ExtensionPopup::ScopedDevToolsAgentHostObservation {
   }
 
  private:
-  content::DevToolsAgentHostObserver* observer_;
+  raw_ptr<content::DevToolsAgentHostObserver> observer_;
 };
+
+#if BUILDFLAG(IS_MAC)
+// Observes the browser window and forwards OnWidgetActivationChanged()
+// to ExtensionPopup.
+class ExtensionPopup::ScopedBrowserActivationObservation
+    : public views::WidgetObserver {
+ public:
+  explicit ScopedBrowserActivationObservation(ExtensionPopup* owner)
+      : owner_(owner) {
+    BrowserView* browser_view =
+        BrowserView::GetBrowserViewForBrowser(owner->host()->browser());
+    observation_.Observe(browser_view->GetWidget());
+  }
+  ~ScopedBrowserActivationObservation() override = default;
+
+  // views::WidgetObserer:
+  void OnWidgetActivationChanged(views::Widget* widget, bool active) override {
+    owner_->OnWidgetActivationChanged(widget, active);
+  }
+
+ private:
+  ExtensionPopup* owner_;
+  base::ScopedObservation<views::Widget, views::WidgetObserver> observation_{
+      this};
+};
+#endif
 
 // static
 ExtensionPopup* ExtensionPopup::last_popup_for_testing() {
@@ -136,6 +167,16 @@ void ExtensionPopup::OnWidgetActivationChanged(views::Widget* widget,
     // https://crbug.com/941994 for more discussion.
     if (widget == anchor_widget() && active)
       CloseUnlessUnderInspection();
+#if BUILDFLAG(IS_MAC)
+    // In macOS fullscreen, the extension popup is anchored to the overlay
+    // widget that never gets activated, therefore we observe the activation of
+    // the browser window.
+    BrowserView* browser_view =
+        BrowserView::GetBrowserViewForBrowser(host_->browser());
+    if (browser_view->IsImmersiveModeEnabled() && browser_view->IsActive()) {
+      CloseUnlessUnderInspection();
+    }
+#endif
   }
 }
 
@@ -197,7 +238,6 @@ void ExtensionPopup::OnExtensionUnloaded(
     // try to access the host during Widget closure, destroy it immediately.
     RemoveChildViewT(extension_view_.get());
 
-    extension_host_observation_.Reset();
     // Note: it's important that we unregister the devtools observation *before*
     // we destroy `host_`. Otherwise, destroying `host_` can synchronously cause
     // the associated WebContents to be destroyed, which will cause devtools to
@@ -242,12 +282,6 @@ void ExtensionPopup::DevToolsAgentHostDetached(
     show_action_ = PopupShowAction::kShow;
 }
 
-void ExtensionPopup::OnExtensionHostShouldClose(
-    extensions::ExtensionHost* host) {
-  DCHECK_EQ(host, host_.get());
-  GetWidget()->Close();
-}
-
 ExtensionPopup::ExtensionPopup(
     std::unique_ptr<extensions::ExtensionViewHost> host,
     views::View* anchor_view,
@@ -283,8 +317,16 @@ ExtensionPopup::ExtensionPopup(
       std::make_unique<ScopedDevToolsAgentHostObservation>(this);
   host_->browser()->tab_strip_model()->AddObserver(this);
 
-  // Listen for the containing view calling window.close();
-  extension_host_observation_.Observe(host_.get());
+#if BUILDFLAG(IS_MAC)
+  scoped_browser_activation_obvervation_ =
+      std::make_unique<ScopedBrowserActivationObservation>(this);
+#endif
+
+  // Handle the containing view calling window.close();
+  // The base::Unretained() below is safe because this object owns `host_`, so
+  // the callback will never fire if `this` is deleted.
+  host_->SetCloseHandler(base::BindOnce(
+      &ExtensionPopup::HandleCloseExtensionHost, base::Unretained(this)));
 
   extension_registry_observation_.Observe(
       extensions::ExtensionRegistry::Get(host_->browser_context()));
@@ -301,9 +343,11 @@ ExtensionPopup::ExtensionPopup(
 
 void ExtensionPopup::ShowBubble() {
   GetWidget()->Show();
-  // StackAboveWidget() stacks this widget *directly* above the anchor view
-  // widget. This prevents it from covering other UI.
-  GetWidget()->StackAboveWidget(GetAnchorView()->GetWidget());
+  if (!base::FeatureList::IsEnabled(views::features::kWidgetLayering)) {
+    // StackAboveWidget() stacks this widget *directly* above the anchor view
+    // widget. This prevents it from covering other UI.
+    GetWidget()->StackAboveWidget(GetAnchorView()->GetWidget());
+  }
 
   // Focus on the host contents when the bubble is first shown.
   host_->host_contents()->Focus();
@@ -320,6 +364,11 @@ void ExtensionPopup::ShowBubble() {
 void ExtensionPopup::CloseUnlessUnderInspection() {
   if (show_action_ != PopupShowAction::kShowAndInspect)
     GetWidget()->CloseWithReason(views::Widget::ClosedReason::kLostFocus);
+}
+
+void ExtensionPopup::HandleCloseExtensionHost(extensions::ExtensionHost* host) {
+  DCHECK_EQ(host, host_.get());
+  GetWidget()->Close();
 }
 
 BEGIN_METADATA(ExtensionPopup, views::BubbleDialogDelegateView)

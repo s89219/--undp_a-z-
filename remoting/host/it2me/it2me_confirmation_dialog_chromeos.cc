@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #include <string>
 #include <utility>
 
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "base/bind.h"
 #include "base/callback.h"
@@ -108,13 +109,14 @@ void It2MeConfirmationDialogChromeOS::ShowConfirmationNotification(
       l10n_util::GetStringUTF16(IDS_SHARE_CONFIRM_DIALOG_CONFIRM));
 
   std::unique_ptr<message_center::Notification> notification =
-      ash::CreateSystemNotification(
+      ash::CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE, kConfirmationNotificationId,
           l10n_util::GetStringUTF16(IDS_MODE_IT2ME),
           FormatMessage(remote_user_email, style_), u"", GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kConfirmationNotifierId),
+              kConfirmationNotifierId,
+              ash::NotificationCatalogName::kIt2MeConfirmation),
           data,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating(&It2MeConfirmationDialogChromeOS::

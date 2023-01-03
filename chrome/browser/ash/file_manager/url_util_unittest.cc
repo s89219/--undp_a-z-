@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,7 @@ namespace {
 // Parse a JSON query string into a base::Value.
 base::Value ParseJsonQueryString(const std::string& query) {
   const std::string json = base::UnescapeBinaryURLComponent(query);
-  std::unique_ptr<base::Value> value = base::JSONReader::ReadDeprecated(json);
+  absl::optional<base::Value> value = base::JSONReader::Read(json);
   return value ? std::move(*value) : base::Value();
 }
 

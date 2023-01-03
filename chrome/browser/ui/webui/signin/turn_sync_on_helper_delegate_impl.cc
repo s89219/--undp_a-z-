@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "chrome/browser/new_tab_page/chrome_colors/selected_colors_info.h"
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_util.h"
@@ -193,11 +194,14 @@ void TurnSyncOnHelperDelegateImpl::OnProfileSigninRestrictionsFetched(
       g_browser_process->profile_manager()
           ->GetProfileAttributesStorage()
           .GetProfileAttributesWithPath(browser_->profile()->GetPath());
-  auto force_new_profile = signin_util::ProfileSeparationEnforcedByPolicy(
-      browser_->profile(), signin_restriction);
+  auto profile_creation_required_by_policy =
+      signin_util::ProfileSeparationEnforcedByPolicy(browser_->profile(),
+                                                     signin_restriction);
+  bool show_link_data_option = signin_util::
+      ProfileSeparationAllowsKeepingUnmanagedBrowsingDataInManagedProfile(
+          browser_->profile(), signin_restriction);
   browser_->signin_view_controller()->ShowModalEnterpriseConfirmationDialog(
-      account_info, force_new_profile,
-      /*show_link_data_option=*/!force_new_profile,
+      account_info, profile_creation_required_by_policy, show_link_data_option,
       GenerateNewProfileColor(entry).color,
       base::BindOnce(
           [](signin::SigninChoiceCallback callback, Browser* browser,
@@ -236,13 +240,20 @@ void TurnSyncOnHelperDelegateImpl::OnProfileCheckComplete(
           ->GetProfileAttributesStorage()
           .GetProfileAttributesWithPath(browser_->profile()->GetPath());
   browser_->signin_view_controller()->ShowModalEnterpriseConfirmationDialog(
-      account_info, /*force_new_profile=*/false,
-      /*show_link_data_option*/ false, GenerateNewProfileColor(entry).color,
+      account_info, /*profile_creation_required_by_policy=*/false,
+      /*show_link_data_option=*/false, GenerateNewProfileColor(entry).color,
       base::BindOnce(
           [](signin::SigninChoiceCallback callback, Browser* browser,
              signin::SigninChoice choice) {
             browser->signin_view_controller()->CloseModalSignin();
-            std::move(callback).Run(choice);
+            // When `show_link_data_option` is false,
+            // `ShowModalEnterpriseConfirmationDialog()` calls back with either
+            // `SIGNIN_CHOICE_CANCEL` or `SIGNIN_CHOICE_NEW_PROFILE`.
+            // The profile is clean here, no need to create a new one.
+            std::move(callback).Run(
+                choice == signin::SigninChoice::SIGNIN_CHOICE_CANCEL
+                    ? signin::SigninChoice::SIGNIN_CHOICE_CANCEL
+                    : signin::SigninChoice::SIGNIN_CHOICE_CONTINUE);
           },
           std::move(callback), browser_.get()));
 }

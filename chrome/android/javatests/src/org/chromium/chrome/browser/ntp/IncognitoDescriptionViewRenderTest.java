@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,9 +28,7 @@ import org.chromium.ui.test.util.NightModeTestUtils;
 import java.io.IOException;
 import java.util.List;
 
-/**
- * Render test of incognito description in the incognito ntp.
- */
+/** Render test of incognito description in the incognito ntp. */
 @RunWith(ParameterizedRunner.class)
 @UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 public class IncognitoDescriptionViewRenderTest extends BlankUiTestActivityTestCase {

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,14 +33,28 @@ struct AutofillMetadata;
 // to the requested form group type.
 class AutofillProfile : public AutofillDataModel {
  public:
+  // `RecordType` is deprecated and `SERVER_PROFILE` essentially unused.
+  // TODO(crbug.com/1177366): Remove
   enum RecordType {
     // A profile stored and editable locally.
     LOCAL_PROFILE,
     // A profile synced down from the server. These are read-only locally.
     SERVER_PROFILE,
   };
+  // Describes where the profile is stored and how it is synced.
+  enum class Source {
+    // Not synced at all or synced through the `AutofillProfileSyncBridge`. This
+    // corresponds to profiles that local to Autofill only.
+    kLocalOrSyncable = 0,
+    // Synced through the `ContactInfoSyncBridge`. This corresponds to profiles
+    // that are shared beyond Autofill across different services.
+    kAccount = 1,
+    kMaxValue = kAccount,
+  };
 
-  AutofillProfile(const std::string& guid, const std::string& origin);
+  AutofillProfile(const std::string& guid,
+                  const std::string& origin,
+                  Source source = Source::kLocalOrSyncable);
 
   // Server profile constructor. The type must be SERVER_PROFILE (this serves
   // to differentiate this constructor). |server_id| can be empty. If empty,
@@ -56,7 +70,7 @@ class AutofillProfile : public AutofillDataModel {
 
   // AutofillDataModel:
   AutofillMetadata GetMetadata() const override;
-  bool SetMetadata(const AutofillMetadata metadata) override;
+  bool SetMetadata(const AutofillMetadata& metadata) override;
   // Returns whether the profile is deletable: if it is not verified and has not
   // been used for longer than |kDisusedAddressDeletionTimeDelta|.
   bool IsDeletable() const override;
@@ -70,15 +84,14 @@ class AutofillProfile : public AutofillDataModel {
 
   int GetRawInfoAsInt(ServerFieldType type) const override;
 
-  void SetRawInfoWithVerificationStatus(
-      ServerFieldType type,
-      const std::u16string& value,
-      structured_address::VerificationStatus status) override;
+  void SetRawInfoWithVerificationStatus(ServerFieldType type,
+                                        const std::u16string& value,
+                                        VerificationStatus status) override;
 
   void SetRawInfoAsIntWithVerificationStatus(
       ServerFieldType type,
       int value,
-      structured_address::VerificationStatus status) override;
+      VerificationStatus status) override;
 
   void GetSupportedTypes(ServerFieldTypeSet* supported_types) const override;
 
@@ -250,12 +263,14 @@ class AutofillProfile : public AutofillDataModel {
     disallow_settings_visible_updates_ = disallow;
   }
 
+  Source source() const { return source_; }
+  void set_source_for_testing(AutofillProfile::Source source) {
+    source_ = source;
+  }
+
   // Checks for non-empty setting-inaccessible fields and returns all that were
   // found.
-  // TODO(crbug.com/1297032): Remove |country_code| parameter and rely on the
-  // profile's country once every profile is complemented with a country.
-  ServerFieldTypeSet FindInaccessibleProfileValues(
-      const std::string& country_code) const;
+  ServerFieldTypeSet FindInaccessibleProfileValues() const;
 
   // Clears all specified |fields| from the profile.
   void ClearFields(const ServerFieldTypeSet& fields);
@@ -265,14 +280,13 @@ class AutofillProfile : public AutofillDataModel {
   std::u16string GetInfoImpl(const AutofillType& type,
                              const std::string& app_locale) const override;
 
-  structured_address::VerificationStatus GetVerificationStatusImpl(
+  VerificationStatus GetVerificationStatusImpl(
       const ServerFieldType type) const override;
 
-  bool SetInfoWithVerificationStatusImpl(
-      const AutofillType& type,
-      const std::u16string& value,
-      const std::string& app_locale,
-      structured_address::VerificationStatus status) override;
+  bool SetInfoWithVerificationStatusImpl(const AutofillType& type,
+                                         const std::u16string& value,
+                                         const std::string& app_locale,
+                                         VerificationStatus status) override;
 
   // Creates inferred labels for |profiles| at indices corresponding to
   // |indices|, and stores the results to the corresponding elements of
@@ -335,6 +349,8 @@ class AutofillProfile : public AutofillDataModel {
   // Only useful for SERVER_PROFILEs. Whether this server profile has been
   // converted to a local profile.
   bool has_converted_;
+
+  Source source_;
 };
 
 // So we can compare AutofillProfiles with EXPECT_EQ().

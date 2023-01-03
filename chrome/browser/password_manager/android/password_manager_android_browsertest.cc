@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -66,7 +66,7 @@ class PasswordManagerAndroidBrowserTest
     PasswordsNavigationObserver observer(GetActiveWebContents());
     EXPECT_TRUE(content::NavigateToURL(GetActiveWebContents(),
                                        https_server_.GetURL(file_path)));
-    observer.Wait();
+    ASSERT_TRUE(observer.Wait());
   }
 
  private:
@@ -84,7 +84,8 @@ IN_PROC_BROWSER_TEST_P(PasswordManagerAndroidBrowserTest,
       password_manager::ContentPasswordManagerDriverFactory::FromWebContents(
           GetActiveWebContents());
   password_manager::ContentPasswordManagerDriver* driver =
-      driver_factory->GetDriverForFrame(GetActiveWebContents()->GetMainFrame());
+      driver_factory->GetDriverForFrame(
+          GetActiveWebContents()->GetPrimaryMainFrame());
 
   PasswordsNavigationObserver observer(GetActiveWebContents());
   observer.SetPathToWaitFor("/password/done.html");
@@ -95,7 +96,7 @@ IN_PROC_BROWSER_TEST_P(PasswordManagerAndroidBrowserTest,
   // To make the test closer to TouchToFill, use |FillSuggestion| to fill a
   // credential later.
   fill_data.wait_for_username = true;
-  driver->FillPasswordForm(fill_data);
+  driver->SetPasswordFillData(fill_data);
 
   // A user taps the username field.
   ASSERT_TRUE(content::ExecuteScript(
@@ -109,7 +110,7 @@ IN_PROC_BROWSER_TEST_P(PasswordManagerAndroidBrowserTest,
   driver->FillSuggestion(u"username", u"password");
   driver->TriggerFormSubmission();
 
-  observer.Wait();
+  ASSERT_TRUE(observer.Wait());
 
   uma_recorder.ExpectTotalCount(
       "PasswordManager.TouchToFill.TimeToSuccessfulLogin", 1);

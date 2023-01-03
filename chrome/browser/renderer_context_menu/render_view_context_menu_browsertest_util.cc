@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "base/location.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "content/public/test/test_utils.h"
@@ -17,7 +16,7 @@
 ContextMenuNotificationObserver::ContextMenuNotificationObserver(
     int command_to_execute,
     int event_flags,
-    base::OnceClosure callback)
+    base::OnceCallback<void(RenderViewContextMenu*)> callback)
     : command_to_execute_(command_to_execute),
       event_flags_(event_flags),
       callback_(std::move(callback)) {
@@ -30,7 +29,7 @@ ContextMenuNotificationObserver::~ContextMenuNotificationObserver() {
 
 void ContextMenuNotificationObserver::MenuShown(
     RenderViewContextMenu* context_menu) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&ContextMenuNotificationObserver::ExecuteCommand,
                      base::Unretained(this), context_menu));
@@ -41,7 +40,7 @@ void ContextMenuNotificationObserver::ExecuteCommand(
   context_menu->ExecuteCommand(command_to_execute_, event_flags_);
   context_menu->Cancel();
   if (!callback_.is_null())
-    std::move(callback_).Run();
+    std::move(callback_).Run(std::move(context_menu));
 }
 
 ContextMenuWaiter::ContextMenuWaiter() {
@@ -58,7 +57,7 @@ ContextMenuWaiter::~ContextMenuWaiter() {
 }
 
 void ContextMenuWaiter::MenuShown(RenderViewContextMenu* context_menu) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&ContextMenuWaiter::Cancel,
                                 base::Unretained(this), context_menu));
 }
@@ -80,7 +79,7 @@ void ContextMenuWaiter::Cancel(RenderViewContextMenu* context_menu) {
 
   const ui::SimpleMenuModel& menu_model = context_menu->menu_model();
   captured_command_ids_.reserve(menu_model.GetItemCount());
-  for (int i = 0; i < menu_model.GetItemCount(); ++i)
+  for (size_t i = 0; i < menu_model.GetItemCount(); ++i)
     captured_command_ids_.push_back(menu_model.GetCommandIdAt(i));
 
   if (maybe_command_to_execute_)

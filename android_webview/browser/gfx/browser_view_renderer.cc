@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -193,7 +193,7 @@ gfx::Rect BrowserViewRenderer::ComputeTileRectAndUpdateMemoryPolicy() {
       external_draw_constraints_.transform;
 
   gfx::Rect viewport_rect_for_tile_priority_in_view_space;
-  gfx::Transform screen_to_view(gfx::Transform::kSkipInitialization);
+  gfx::Transform screen_to_view;
   if (transform_for_tile_priority.GetInverse(&screen_to_view)) {
     // Convert from screen space to view space.
     viewport_rect_for_tile_priority_in_view_space =
@@ -369,6 +369,11 @@ bool BrowserViewRenderer::DoUpdateParentDrawData() {
 void BrowserViewRenderer::OnViewTreeForceDarkStateChanged(
     bool view_tree_force_dark_state) {
   client_->OnViewTreeForceDarkStateChanged(view_tree_force_dark_state);
+}
+
+void BrowserViewRenderer::ChildSurfaceWasEvicted() {
+  if (compositor_)
+    compositor_->WasEvicted();
 }
 
 void BrowserViewRenderer::RemoveCompositorFrameConsumer(
@@ -881,6 +886,17 @@ void BrowserViewRenderer::ReturnResourcesFromViz(
     std::vector<viz::ReturnedResource> resources) {
   ReturnUsedResources(std::move(resources), frame_sink_id,
                       layer_tree_frame_sink_id);
+}
+
+void BrowserViewRenderer::OnCompositorFrameTransitionDirectiveProcessed(
+    viz::FrameSinkId frame_sink_id,
+    uint32_t layer_tree_frame_sink_id,
+    uint32_t sequence_id) {
+  content::SynchronousCompositor* compositor = FindCompositor(frame_sink_id);
+  if (compositor) {
+    compositor->OnCompositorFrameTransitionDirectiveProcessed(
+        layer_tree_frame_sink_id, sequence_id);
+  }
 }
 
 void BrowserViewRenderer::OnInputEvent() {

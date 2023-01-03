@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -146,6 +146,13 @@ CreateMessageForDemuxerStreamReadUntil(
   auto* message = rpc->mutable_demuxerstream_readuntil_rpc();
   message->set_count(buffers_requested);
   message->set_callback_handle(local_handle);
+  return rpc;
+}
+
+std::unique_ptr<openscreen::cast::RpcMessage>
+CreateMessageForDemuxerStreamEnableBitstreamConverter() {
+  auto rpc = std::make_unique<openscreen::cast::RpcMessage>();
+  rpc->set_proc(openscreen::cast::RpcMessage::RPC_DS_ENABLEBITSTREAMCONVERTER);
   return rpc;
 }
 

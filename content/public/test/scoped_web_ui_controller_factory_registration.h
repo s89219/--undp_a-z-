@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,12 +39,21 @@ class ScopedWebUIControllerFactoryRegistration {
 // run in their own process.
 class ScopedWebUIConfigRegistration {
  public:
+  // Registers `webui_config` and un-registers on destruction. If there is a
+  // WebUIConfig with the same origin as `webui_config`, unregisters it. The
+  // unregistered WebUIConfig will be re-registered on destruction.
   explicit ScopedWebUIConfigRegistration(
       std::unique_ptr<WebUIConfig> webui_config);
+
+  // Removes the WebUIConfig with `webui_origin`. The removed WebUIConfig is
+  // re-registered on destruction.
+  explicit ScopedWebUIConfigRegistration(const GURL& webui_origin);
+
   ~ScopedWebUIConfigRegistration();
 
  private:
   const url::Origin webui_config_origin_;
+  std::unique_ptr<WebUIConfig> replaced_webui_config_;
 };
 
 // A class used in tests to ensure that registered WebUIControllerFactory and

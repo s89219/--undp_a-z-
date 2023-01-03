@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {assertInstanceof} from '../assert.js';
 import * as dom from '../dom.js';
 import * as nav from '../nav.js';
+import {speak} from '../spoken_msg.js';
 import * as state from '../state.js';
 import {ViewName} from '../type.js';
 import * as util from '../util.js';
@@ -48,6 +49,7 @@ export class OptionPanel extends View {
       span.setAttribute('i18n-aria', ariaLabel);
 
       const input = dom.getFrom(item, 'input', HTMLInputElement);
+      input.setAttribute('name', titleLabel);
       const stateEnabled = state.get(targetState);
       const checked = isDisableOption ? !stateEnabled : stateEnabled;
       input.checked = checked;
@@ -55,10 +57,15 @@ export class OptionPanel extends View {
         if (input.checked) {
           triggerButton.setAttribute('i18n-aria', ariaLabel);
           util.setupI18nElements(triggerButton);
+          speak(ariaLabel);
 
           onStateChanged(isDisableOption ? null : targetState);
         }
-        nav.close(ViewName.OPTION_PANEL);
+        // Don't close the panel automatically when switching options via
+        // keyboard due to UX considerations.
+        if (!state.get(state.State.KEYBOARD_NAVIGATION)) {
+          nav.close(ViewName.OPTION_PANEL);
+        }
       });
 
       function observer(val: boolean) {

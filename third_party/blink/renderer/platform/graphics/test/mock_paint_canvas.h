@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,9 +26,11 @@ class MockPaintCanvas : public cc::PaintCanvas {
   MOCK_METHOD1(setNodeId, void(int));
   MOCK_METHOD0(flush, void());
   MOCK_METHOD0(save, int());
+  MOCK_METHOD1(saveLayer, int(const cc::PaintFlags& flags));
   MOCK_METHOD2(saveLayer,
-               int(const SkRect* bounds, const cc::PaintFlags* flags));
-  MOCK_METHOD2(saveLayerAlpha, int(const SkRect* bounds, uint8_t alpha));
+               int(const SkRect& bounds, const cc::PaintFlags& flags));
+  MOCK_METHOD1(saveLayerAlpha, int(uint8_t alpha));
+  MOCK_METHOD2(saveLayerAlpha, int(const SkRect& bounds, uint8_t alpha));
   MOCK_METHOD0(restore, void());
   MOCK_CONST_METHOD0(getSaveCount, int());
   MOCK_METHOD1(restoreToCount, void(int save_count));
@@ -52,8 +54,9 @@ class MockPaintCanvas : public cc::PaintCanvas {
   MOCK_CONST_METHOD1(getLocalClipBounds, bool(SkRect* bounds));
   MOCK_CONST_METHOD0(getDeviceClipBounds, SkIRect());
   MOCK_CONST_METHOD1(getDeviceClipBounds, bool(SkIRect* bounds));
-  MOCK_METHOD2(drawColor, void(SkColor color, SkBlendMode mode));
-  MOCK_METHOD1(clear, void(SkColor color));
+  MOCK_METHOD2(drawColor, void(SkColor4f color, SkBlendMode mode));
+  MOCK_METHOD1(clearInt, void(SkColor color));
+  MOCK_METHOD1(clear, void(SkColor4f color));
   MOCK_METHOD5(drawLine,
                void(SkScalar x0,
                     SkScalar y0,
@@ -116,7 +119,7 @@ class MockPaintCanvas : public cc::PaintCanvas {
                     cc::NodeId node_id,
                     const cc::PaintFlags& flags));
 
-  MOCK_METHOD1(drawPicture, void(sk_sp<const PaintRecord> record));
+  MOCK_METHOD1(drawPicture, void(PaintRecord record));
   MOCK_CONST_METHOD0(isClipEmpty, bool());
   MOCK_CONST_METHOD0(isClipRect, bool());
   MOCK_CONST_METHOD0(getTotalMatrix, SkMatrix());

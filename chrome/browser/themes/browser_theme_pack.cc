@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <limits.h>
 #include <stddef.h>
 
-#include <algorithm>
 #include <limits>
 #include <memory>
 #include <utility>
@@ -19,12 +18,12 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
@@ -97,7 +96,7 @@ constexpr int kTallestFrameHeight = kTallestTabHeight + 19;
 // changed default theme assets, if you need themes to recreate their generated
 // images (which are cached), if you changed how missing values are
 // generated, or if you changed any constants.
-const int kThemePackVersion = 99;
+const int kThemePackVersion = 102;
 
 // IDs that are in the DataPack won't clash with the positive integer
 // uint16_t. kHeaderID should always have the maximum value because we want the
@@ -159,17 +158,15 @@ constexpr PersistingImagesTable kPersistingImages[] = {
 };
 
 BrowserThemePack::PersistentID GetPersistentIDByName(const std::string& key) {
-  auto* it = std::find_if(std::begin(kPersistingImages),
-                          std::end(kPersistingImages), [&](const auto& image) {
-                            return base::LowerCaseEqualsASCII(key, image.key);
-                          });
+  auto* it = base::ranges::find_if(kPersistingImages, [&](const auto& image) {
+    return base::EqualsCaseInsensitiveASCII(key, image.key);
+  });
   return it == std::end(kPersistingImages) ? PRS::kInvalid : it->persistent_id;
 }
 
 BrowserThemePack::PersistentID GetPersistentIDByIDR(int idr) {
-  auto* it =
-      std::find_if(std::begin(kPersistingImages), std::end(kPersistingImages),
-                   [&](const auto& image) { return image.idr_id == idr; });
+  auto* it = base::ranges::find(kPersistingImages, idr,
+                                &PersistingImagesTable::idr_id);
   return it == std::end(kPersistingImages) ? PRS::kInvalid : it->persistent_id;
 }
 
@@ -261,17 +258,18 @@ constexpr size_t kOverwritableColorTableLength =
 
 // Colors generated based on the theme, but not overwritable in the theme file.
 constexpr int kNonOverwritableColorTable[] = {
+    TP::COLOR_NTP_LOGO,
+    TP::COLOR_NTP_SECTION_BORDER,
+    TP::COLOR_NTP_SHORTCUT,
+    TP::COLOR_TAB_FOREGROUND_ACTIVE_FRAME_INACTIVE,
+    TP::COLOR_TAB_THROBBER_SPINNING,
+    TP::COLOR_TAB_THROBBER_WAITING,
+    TP::COLOR_TOOLBAR_BUTTON_ICON_HOVERED,
+    TP::COLOR_TOOLBAR_BUTTON_ICON_PRESSED,
     TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_ACTIVE,
     TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_INACTIVE,
     TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_INCOGNITO_ACTIVE,
-    TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_INCOGNITO_INACTIVE,
-    TP::COLOR_INFOBAR,
-    TP::COLOR_DOWNLOAD_SHELF,
-    TP::COLOR_TOOLBAR_BUTTON_ICON_HOVERED,
-    TP::COLOR_TOOLBAR_BUTTON_ICON_PRESSED,
-    TP::COLOR_TAB_BACKGROUND_ACTIVE_FRAME_ACTIVE,
-    TP::COLOR_TAB_BACKGROUND_ACTIVE_FRAME_INACTIVE,
-    TP::COLOR_TAB_FOREGROUND_ACTIVE_FRAME_INACTIVE
+    TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_INCOGNITO_INACTIVE
 
     // /!\ If you make any changes here, you must also increment
     // kThemePackVersion above, or else themes will display incorrectly.
@@ -299,7 +297,7 @@ int GetIntForString(const std::string& key,
                     const StringToIntTable* table,
                     size_t table_length) {
   for (size_t i = 0; i < table_length; ++i) {
-    if (base::LowerCaseEqualsASCII(key, table[i].key)) {
+    if (base::EqualsCaseInsensitiveASCII(key, table[i].key)) {
       return table[i].id;
     }
   }
@@ -607,31 +605,6 @@ ui::ColorTransform ChooseOmniboxBgBlendTarget() {
 
 }  // namespace
 
-namespace internal {  // for testing
-
-// Calculate contrasting color for given |bg_color|. Returns lighter color if
-// the color is very dark and returns darker color otherwise.
-SkColor GetContrastingColorForBackground(SkColor bg_color,
-                                         float luminosity_change) {
-  color_utils::HSL hsl;
-  SkColorToHSL(bg_color, &hsl);
-
-  // If luminosity is 0, it means |bg_color| is black. Use white for black
-  // backgrounds.
-  if (hsl.l == 0)
-    return SK_ColorWHITE;
-
-  // Decrease luminosity, unless color is already dark.
-  if (hsl.l > 0.15)
-    luminosity_change *= -1;
-
-  hsl.l *= 1 + luminosity_change;
-  if (hsl.l >= 0.0f && hsl.l <= 1.0f)
-    return HSLToSkColor(hsl, 255);
-  return bg_color;
-}
-}  // namespace internal
-
 BrowserThemePack::~BrowserThemePack() {
   DCHECK(!data_pack_ || using_data_pack_);
 
@@ -765,11 +738,11 @@ scoped_refptr<BrowserThemePack> BrowserThemePack::BuildFromDataPack(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // Allow IO on UI thread due to deep-seated theme design issues.
   // (see http://crbug.com/80206)
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlocking scoped_allow_blocking;
 
   // For now data pack can only have extension type.
   scoped_refptr<BrowserThemePack> pack(
-      new BrowserThemePack(ThemeType::EXTENSION));
+      new BrowserThemePack(ThemeType::kExtension));
   pack->set_extension_id(expected_id);
 
   // The data pack is loaded in a local variable to be released synchronously
@@ -1083,7 +1056,7 @@ void BrowserThemePack::AddColorMixers(
   ui::ColorMixer& mixer = provider->AddMixer();
 
   // TODO(http://crbug.com/878664): Enable for all cases.
-  mixer[kColorOmniboxBackground] = ui::BlendForMinContrast(
+  mixer[kColorToolbarBackgroundSubtleEmphasis] = ui::BlendForMinContrast(
       kColorToolbar, kColorToolbar, ChooseOmniboxBgBlendTarget(),
       kMinOmniboxToolbarContrast);
 
@@ -1094,10 +1067,8 @@ void BrowserThemePack::AddColorMixers(
   } kThemePropertiesMap[] = {
       {TP::COLOR_BOOKMARK_TEXT, kColorBookmarkBarForeground},
       {TP::COLOR_CONTROL_BUTTON_BACKGROUND, kColorCaptionButtonBackground},
-      {TP::COLOR_DOWNLOAD_SHELF, kColorDownloadShelfBackground},
       {TP::COLOR_FRAME_ACTIVE, ui::kColorFrameActive},
       {TP::COLOR_FRAME_INACTIVE, ui::kColorFrameInactive},
-      {TP::COLOR_INFOBAR, kColorInfoBarBackground},
       {TP::COLOR_NTP_BACKGROUND, kColorNewTabPageBackground},
       {TP::COLOR_NTP_HEADER, kColorNewTabPageHeader},
       {TP::COLOR_NTP_LINK, kColorNewTabPageLink},
@@ -1106,11 +1077,7 @@ void BrowserThemePack::AddColorMixers(
       {TP::COLOR_NTP_SHORTCUT, kColorNewTabPageMostVisitedTileBackground},
       {TP::COLOR_NTP_TEXT, kColorNewTabPageText},
       {TP::COLOR_OMNIBOX_TEXT, kColorOmniboxText},
-      {TP::COLOR_OMNIBOX_BACKGROUND, kColorOmniboxBackground},
-      {TP::COLOR_TAB_BACKGROUND_ACTIVE_FRAME_ACTIVE,
-       kColorTabBackgroundActiveFrameActive},
-      {TP::COLOR_TAB_BACKGROUND_ACTIVE_FRAME_INACTIVE,
-       kColorTabBackgroundActiveFrameInactive},
+      {TP::COLOR_OMNIBOX_BACKGROUND, kColorToolbarBackgroundSubtleEmphasis},
       {TP::COLOR_TAB_BACKGROUND_INACTIVE_FRAME_ACTIVE,
        kColorTabBackgroundInactiveFrameActive},
       {TP::COLOR_TAB_BACKGROUND_INACTIVE_FRAME_INACTIVE,
@@ -1123,27 +1090,17 @@ void BrowserThemePack::AddColorMixers(
        kColorTabForegroundInactiveFrameActive},
       {TP::COLOR_TAB_FOREGROUND_INACTIVE_FRAME_INACTIVE,
        kColorTabForegroundInactiveFrameInactive},
-      {TP::COLOR_TAB_THROBBER_SPINNING, ui::kColorThrobber},
-      {TP::COLOR_TAB_THROBBER_WAITING, ui::kColorThrobberPreconnect},
+      {TP::COLOR_TAB_THROBBER_SPINNING, kColorTabThrobber},
+      {TP::COLOR_TAB_THROBBER_WAITING, kColorTabThrobberPreconnect},
       {TP::COLOR_TOOLBAR, kColorToolbar},
       {TP::COLOR_TOOLBAR_BUTTON_ICON, kColorToolbarButtonIcon},
       {TP::COLOR_TOOLBAR_BUTTON_ICON_HOVERED, kColorToolbarButtonIconHovered},
       {TP::COLOR_TOOLBAR_BUTTON_ICON_PRESSED, kColorToolbarButtonIconPressed},
       {TP::COLOR_TOOLBAR_TEXT, kColorToolbarText},
-      /* Tab Group Colors */
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_GREY, kColorTabGroupContextMenuGrey},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_BLUE, kColorTabGroupContextMenuBlue},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_RED, kColorTabGroupContextMenuRed},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_YELLOW,
-       kColorTabGroupContextMenuYellow},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_GREEN, kColorTabGroupContextMenuGreen},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_PINK, kColorTabGroupContextMenuPink},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_PURPLE,
-       kColorTabGroupContextMenuPurple},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_CYAN, kColorTabGroupContextMenuCyan},
-      {TP::COLOR_TAB_GROUP_CONTEXT_MENU_ORANGE,
-       kColorTabGroupContextMenuOrange},
-  };
+      {TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_ACTIVE,
+       kColorWindowControlButtonBackgroundActive},
+      {TP::COLOR_WINDOW_CONTROL_BUTTON_BACKGROUND_INACTIVE,
+       kColorWindowControlButtonBackgroundInactive}};
 
   for (const auto& entry : kThemePropertiesMap) {
     SkColor color;
@@ -1282,8 +1239,7 @@ void BrowserThemePack::SetHeaderId(const Extension* extension) {
   memcpy(header_->theme_id, id.c_str(), crx_file::id_util::kIdSize);
 }
 
-void BrowserThemePack::SetTintsFromJSON(
-    const base::DictionaryValue* tints_value) {
+void BrowserThemePack::SetTintsFromJSON(const base::Value::Dict* tints_value) {
   DCHECK(tints_);
 
   if (!tints_value)
@@ -1291,12 +1247,11 @@ void BrowserThemePack::SetTintsFromJSON(
 
   // Parse the incoming data from |tints_value| into an intermediary structure.
   std::map<int, color_utils::HSL> temp_tints;
-  for (base::DictionaryValue::Iterator iter(*tints_value); !iter.IsAtEnd();
-       iter.Advance()) {
-    if (!iter.value().is_list())
+  for (const auto [key, value] : *tints_value) {
+    if (!value.is_list())
       continue;
 
-    base::Value::ConstListView tint_list = iter.value().GetListDeprecated();
+    const base::Value::List& tint_list = value.GetList();
     if (tint_list.size() != 3)
       continue;
 
@@ -1309,7 +1264,7 @@ void BrowserThemePack::SetTintsFromJSON(
     color_utils::HSL hsl = {*h, *s, *l};
     MakeHSLShiftValid(&hsl);
 
-    int id = GetIntForString(iter.key(), kTintTable, kTintTableLength);
+    int id = GetIntForString(key, kTintTable, kTintTableLength);
     if (id != -1)
       temp_tints[id] = hsl;
   }
@@ -1327,12 +1282,13 @@ void BrowserThemePack::SetTintsFromJSON(
   }
 }
 
-void BrowserThemePack::SetColorsFromJSON(const base::Value* colors_value) {
+void BrowserThemePack::SetColorsFromJSON(
+    const base::Value::Dict* colors_value) {
   DCHECK(colors_);
 
   std::map<int, SkColor> temp_colors;
   if (colors_value)
-    ReadColorsFromJSON(colors_value, &temp_colors);
+    ReadColorsFromJSON(*colors_value, &temp_colors);
 
   // Copy data from the intermediary data structure to the array.
   size_t count = 0;
@@ -1344,15 +1300,13 @@ void BrowserThemePack::SetColorsFromJSON(const base::Value* colors_value) {
   }
 }
 
-void BrowserThemePack::ReadColorsFromJSON(const base::Value* colors_value,
+void BrowserThemePack::ReadColorsFromJSON(const base::Value::Dict& colors_value,
                                           std::map<int, SkColor>* temp_colors) {
-  DCHECK(colors_value);
-  DCHECK(colors_value->is_dict());
   // Parse the incoming data from |colors_value| into an intermediary structure.
-  for (const auto iter : colors_value->DictItems()) {
-    if (!iter.second.is_list())
+  for (const auto [key, value] : colors_value) {
+    if (!value.is_list())
       continue;
-    base::Value::ConstListView color_list = iter.second.GetListDeprecated();
+    const base::Value::List& color_list = value.GetList();
     if (!(color_list.size() == 3 || color_list.size() == 4))
       continue;
 
@@ -1389,14 +1343,14 @@ void BrowserThemePack::ReadColorsFromJSON(const base::Value* colors_value,
       color = SkColorSetRGB(*r, *g, *b);
     }
 
-    if (iter.first == "ntp_section") {
+    if (key == "ntp_section") {
       // We no longer use ntp_section, but to support legacy
       // themes we still need to use it as a fallback for
       // ntp_header.
       if (!temp_colors->count(TP::COLOR_NTP_HEADER))
         (*temp_colors)[TP::COLOR_NTP_HEADER] = color;
     } else {
-      int id = GetIntForString(iter.first, kOverwritableColorTable,
+      int id = GetIntForString(key, kOverwritableColorTable,
                                kOverwritableColorTableLength);
       if (id != -1)
         (*temp_colors)[id] = color;
@@ -1405,35 +1359,34 @@ void BrowserThemePack::ReadColorsFromJSON(const base::Value* colors_value,
 }
 
 void BrowserThemePack::SetDisplayPropertiesFromJSON(
-    const base::DictionaryValue* display_properties_value) {
+    const base::Value::Dict* display_properties_value) {
   DCHECK(display_properties_);
 
   if (!display_properties_value)
     return;
 
   std::map<int, int> temp_properties;
-  for (base::DictionaryValue::Iterator iter(*display_properties_value);
-       !iter.IsAtEnd(); iter.Advance()) {
-    int property_id = GetIntForString(iter.key(), kDisplayProperties,
-                                      kDisplayPropertiesSize);
+  for (const auto [key, value] : *display_properties_value) {
+    int property_id =
+        GetIntForString(key, kDisplayProperties, kDisplayPropertiesSize);
     switch (property_id) {
       case TP::NTP_BACKGROUND_ALIGNMENT: {
-        if (iter.value().is_string()) {
+        if (value.is_string()) {
           temp_properties[TP::NTP_BACKGROUND_ALIGNMENT] =
-              TP::StringToAlignment(iter.value().GetString());
+              TP::StringToAlignment(value.GetString());
         }
         break;
       }
       case TP::NTP_BACKGROUND_TILING: {
-        if (iter.value().is_string()) {
+        if (value.is_string()) {
           temp_properties[TP::NTP_BACKGROUND_TILING] =
-              TP::StringToTiling(iter.value().GetString());
+              TP::StringToTiling(value.GetString());
         }
         break;
       }
       case TP::NTP_LOGO_ALTERNATE: {
-        if (iter.value().is_int())
-          temp_properties[TP::NTP_LOGO_ALTERNATE] = iter.value().GetInt();
+        if (value.is_int())
+          temp_properties[TP::NTP_LOGO_ALTERNATE] = value.GetInt();
         break;
       }
     }
@@ -1450,33 +1403,26 @@ void BrowserThemePack::SetDisplayPropertiesFromJSON(
 }
 
 void BrowserThemePack::ParseImageNamesFromJSON(
-    const base::DictionaryValue* images_value,
+    const base::Value::Dict* images_value,
     const base::FilePath& images_path,
     FilePathMap* file_paths) const {
   if (!images_value)
     return;
 
-  for (base::DictionaryValue::Iterator iter(*images_value); !iter.IsAtEnd();
-       iter.Advance()) {
-    if (iter.value().is_dict()) {
-      const base::DictionaryValue* inner_value = nullptr;
-      if (iter.value().GetAsDictionary(&inner_value)) {
-        for (base::DictionaryValue::Iterator inner_iter(*inner_value);
-             !inner_iter.IsAtEnd();
-             inner_iter.Advance()) {
-          ui::ResourceScaleFactor scale_factor = ui::kScaleFactorNone;
-          if (GetScaleFactorFromManifestKey(inner_iter.key(), &scale_factor) &&
-              inner_iter.value().is_string()) {
-            AddFileAtScaleToMap(
-                iter.key(), scale_factor,
-                images_path.AppendASCII(inner_iter.value().GetString()),
-                file_paths);
-          }
+  for (const auto [key, value] : *images_value) {
+    if (value.is_dict()) {
+      for (const auto [inner_key, inner_value] : value.GetDict()) {
+        ui::ResourceScaleFactor scale_factor = ui::kScaleFactorNone;
+        if (GetScaleFactorFromManifestKey(inner_key, &scale_factor) &&
+            inner_value.is_string()) {
+          AddFileAtScaleToMap(key, scale_factor,
+                              images_path.AppendASCII(inner_value.GetString()),
+                              file_paths);
         }
       }
-    } else if (iter.value().is_string()) {
-      AddFileAtScaleToMap(iter.key(), ui::k100Percent,
-                          images_path.AppendASCII(iter.value().GetString()),
+    } else if (value.is_string()) {
+      AddFileAtScaleToMap(key, ui::k100Percent,
+                          images_path.AppendASCII(value.GetString()),
                           file_paths);
     }
   }
@@ -1503,7 +1449,7 @@ bool BrowserThemePack::LoadRawBitmapsTo(
     ImageCache* image_cache) {
   // Themes should be loaded on the file thread, not the UI thread.
   // http://crbug.com/61838
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlocking scoped_allow_blocking;
 
   for (const auto& entry : file_paths) {
     PersistentID prs_id = entry.first;
@@ -1574,11 +1520,6 @@ void BrowserThemePack::SetFrameAndToolbarRelatedColors() {
   // Propagate the user-specified toolbar color to similar elements.
   SkColor toolbar_color;
   if (GetColor(TP::COLOR_TOOLBAR, &toolbar_color)) {
-    SetColor(TP::COLOR_INFOBAR, toolbar_color);
-    SetColor(TP::COLOR_DOWNLOAD_SHELF, toolbar_color);
-    SetColor(TP::COLOR_TAB_BACKGROUND_ACTIVE_FRAME_ACTIVE, toolbar_color);
-    SetColor(TP::COLOR_TAB_BACKGROUND_ACTIVE_FRAME_INACTIVE, toolbar_color);
-
     // If the toolbar color is set but the text color is not, ensure it has
     // sufficient contrast.
     SkColor toolbar_text_color =
@@ -1624,8 +1565,8 @@ void BrowserThemePack::SetFrameAndToolbarRelatedColors() {
         omnibox_background_color, toolbar_color);
     SetColor(TP::COLOR_OMNIBOX_BACKGROUND, omnibox_background_color);
   } else {
-    omnibox_background_color =
-        TP::GetDefaultColor(TP::COLOR_OMNIBOX_BACKGROUND, false);
+    // TODO(pkasting): This should be shared with the omnibox color mixer.
+    omnibox_background_color = gfx::kGoogleGrey100;
   }
   SkColor omnibox_text_color;
   if (GetColor(TP::COLOR_OMNIBOX_TEXT, &omnibox_text_color)) {
@@ -1939,9 +1880,8 @@ void BrowserThemePack::GenerateMissingNtpColors() {
   if (logo_alternate == 1 && !has_background_image && has_background_color) {
     SkColor logo_color = color_utils::IsDark(background_color)
                              ? SK_ColorWHITE
-                             : internal::GetContrastingColorForBackground(
-                                   background_color,
-                                   /*luminosity_change=*/0.3f);
+                             : GetContrastingColor(background_color,
+                                                   /*luminosity_change=*/0.3f);
     SetColor(TP::COLOR_NTP_LOGO, logo_color);
   }
 
@@ -1950,9 +1890,9 @@ void BrowserThemePack::GenerateMissingNtpColors() {
   // color.
   if (!has_background_image && has_background_color &&
       background_color != SK_ColorWHITE) {
-    SetColor(TP::COLOR_NTP_SHORTCUT, internal::GetContrastingColorForBackground(
-                                         background_color,
-                                         /*luminosity_change=*/0.2f));
+    SetColor(TP::COLOR_NTP_SHORTCUT,
+             GetContrastingColor(background_color,
+                                 /*luminosity_change=*/0.2f));
   }
 
   // Calculate NTP section border color.

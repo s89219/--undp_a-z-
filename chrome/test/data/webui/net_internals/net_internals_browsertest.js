@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,10 +59,44 @@ NetInternalsDnsViewTest.prototype = {
 
   browsePreload:
       'chrome://net-internals/index.html?module=net_internals/dns_view_test.js',
+
+  /** @param {string} testName The name of the test to run. */
+  runMochaTest: function(testName) {
+    runMochaTest(dns_view_test.suiteName, testName);
+  },
 };
 
+TEST_F(
+    'NetInternalsDnsViewTest', 'ResolveSingleHostWithoutMetadata', function() {
+      this.runMochaTest(
+          dns_view_test.TestNames.ResolveSingleHostWithoutMetadata);
+    });
+
+TEST_F(
+    'NetInternalsDnsViewTest', 'ResolveSingleHostWithHTTP2Metadata',
+    function() {
+      this.runMochaTest(dns_view_test.TestNames.ResolveSingleHostWithHTTP2Alpn);
+    });
+
+TEST_F(
+    'NetInternalsDnsViewTest', 'ResolveSingleHostWithHTTP3Metadata',
+    function() {
+      this.runMochaTest(dns_view_test.TestNames.ResolveSingleHostWithHTTP3Alpn);
+    });
+
+TEST_F(
+    'NetInternalsDnsViewTest', 'ResolveMultipleHostWithMultipleAlpns',
+    function() {
+      this.runMochaTest(
+          dns_view_test.TestNames.ResolveMultipleHostWithMultipleAlpns);
+    });
+
+TEST_F('NetInternalsDnsViewTest', 'ErrorNameNotResolved', function() {
+  this.runMochaTest(dns_view_test.TestNames.ErrorNameNotResolved);
+});
+
 TEST_F('NetInternalsDnsViewTest', 'ClearCache', function() {
-  mocha.run();
+  this.runMochaTest(dns_view_test.TestNames.ClearCache);
 });
 
 /**
@@ -136,50 +170,3 @@ TEST_F('NetInternalsDomainSecurityPolicyViewTest', 'AddOverwrite', function() {
 TEST_F('NetInternalsDomainSecurityPolicyViewTest', 'AddTwice', function() {
   this.runMochaTest(domain_security_policy_view_test.TestNames.AddTwice);
 });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTQueryNotFound',
-    function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTQueryNotFound);
-    });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTQueryError',
-    function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTQueryError);
-    });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTAddDelete',
-    function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTAddDelete);
-    });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTAddFail', function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTAddFail);
-    });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTAddOverwrite',
-    function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTAddOverwrite);
-    });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTAddTwice', function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTAddTwice);
-    });
-
-TEST_F(
-    'NetInternalsDomainSecurityPolicyViewTest', 'ExpectCTTestReport',
-    function() {
-      this.runMochaTest(
-          domain_security_policy_view_test.TestNames.ExpectCTTestReport);
-    });

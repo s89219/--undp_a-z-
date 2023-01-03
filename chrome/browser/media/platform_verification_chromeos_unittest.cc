@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,14 +33,14 @@ class PlatformVerificationChromeOSTest
 // Tests the basic success case.
 TEST_F(PlatformVerificationChromeOSTest, Success) {
   EXPECT_TRUE(platform_verification::PerformBrowserChecks(
-      web_contents()->GetMainFrame()));
+      web_contents()->GetPrimaryMainFrame()));
 }
 
 TEST_F(PlatformVerificationChromeOSTest, BadURL) {
   GURL url("badurl");
   NavigateAndCommit(url);
   EXPECT_FALSE(platform_verification::PerformBrowserChecks(
-      web_contents()->GetMainFrame()));
+      web_contents()->GetPrimaryMainFrame()));
 }
 
 TEST_F(PlatformVerificationChromeOSTest, IncognitoProfile) {
@@ -53,7 +53,7 @@ TEST_F(PlatformVerificationChromeOSTest, IncognitoProfile) {
       content::WebContentsTester::For(web_contents.get());
   tester->NavigateAndCommit(GetTestURL());
   EXPECT_FALSE(platform_verification::PerformBrowserChecks(
-      web_contents.get()->GetMainFrame()));
+      web_contents.get()->GetPrimaryMainFrame()));
 }
 
 TEST_F(PlatformVerificationChromeOSTest, ContentSettings) {
@@ -65,7 +65,7 @@ TEST_F(PlatformVerificationChromeOSTest, ContentSettings) {
       ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER, CONTENT_SETTING_BLOCK);
 
   EXPECT_FALSE(platform_verification::PerformBrowserChecks(
-      web_contents()->GetMainFrame()));
+      web_contents()->GetPrimaryMainFrame()));
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,9 @@ class PageContentAnnotationJob {
   // without return nullopt.
   size_t CountOfRemainingNonNullInputs() const;
 
-  // Posts a new result after an execution has completed.
-  void PostNewResult(const BatchAnnotationResult& result);
+  // Posts a new result after an execution has completed for the given input
+  // |index|.
+  void PostNewResult(const BatchAnnotationResult& result, size_t index);
 
   // Returns true if any element of |results_| was a successful execution. We
   // expect that if one result is successful, many more will be as well.

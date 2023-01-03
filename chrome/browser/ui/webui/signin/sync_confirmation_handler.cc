@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,6 @@
 #include "components/consent_auditor/consent_auditor.h"
 #include "components/signin/public/base/avatar_icon_util.h"
 #include "components/signin/public/base/consent_level.h"
-#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -102,9 +101,6 @@ void SyncConfirmationHandler::HandleGoToSettings(
 }
 
 void SyncConfirmationHandler::HandleUndo(const base::Value::List& args) {
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-  DCHECK(base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles));
-#endif
   did_user_explicitly_interact_ = true;
   CloseModalSigninWindow(LoginUIService::ABORT_SYNC);
 }
@@ -172,9 +168,9 @@ void SyncConfirmationHandler::SetAccountInfo(const AccountInfo& info) {
   GURL picture_gurl_with_options = signin::GetAvatarImageURLWithOptions(
       picture_gurl, kProfileImageSize, false /* no_silhouette */);
 
-  base::Value value(base::Value::Type::DICTIONARY);
-  value.SetKey("src", base::Value(picture_gurl_with_options.spec()));
-  value.SetKey("showEnterpriseBadge", base::Value(info.IsManaged()));
+  base::Value::Dict value;
+  value.Set("src", picture_gurl_with_options.spec());
+  value.Set("showEnterpriseBadge", info.IsManaged());
 
   AllowJavascript();
   FireWebUIListener("account-info-changed", value);

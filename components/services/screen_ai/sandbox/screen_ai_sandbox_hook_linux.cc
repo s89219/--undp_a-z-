@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,9 +17,9 @@ using sandbox::syscall_broker::MakeBrokerCommandSet;
 namespace screen_ai {
 
 bool ScreenAIPreSandboxHook(sandbox::policy::SandboxLinux::Options options) {
-  base::FilePath library_path = screen_ai::GetLatestLibraryFilePath();
+  base::FilePath library_path = screen_ai::GetLatestComponentBinaryPath();
   if (library_path.empty()) {
-    VLOG(1) << "Screen AI library not found.";
+    VLOG(1) << "Screen AI component binary not found.";
   } else {
     void* screen_ai_library = dlopen(library_path.value().c_str(),
                                      RTLD_LAZY | RTLD_GLOBAL | RTLD_NODELETE);
@@ -33,13 +33,19 @@ bool ScreenAIPreSandboxHook(sandbox::policy::SandboxLinux::Options options) {
       VLOG(2) << "Screen AI library loaded pre-sandboxing:" << library_path;
     }
   }
-  screen_ai::SetPreloadedLibraryFilePath(library_path);
 
   auto* instance = sandbox::policy::SandboxLinux::GetInstance();
 
   std::vector<BrokerFilePermission> permissions{
       BrokerFilePermission::ReadOnly("/dev/urandom"),
       BrokerFilePermission::ReadOnly("/proc/meminfo")};
+
+  // The models are in the same folder as the library, and the library requires
+  // read access for them.
+  if (!library_path.empty()) {
+    permissions.push_back(BrokerFilePermission::ReadOnlyRecursive(
+        library_path.DirName().MaybeAsASCII() + base::FilePath::kSeparators));
+  }
 
   instance->StartBrokerProcess(
       MakeBrokerCommandSet({sandbox::syscall_broker::COMMAND_ACCESS,

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/privacy_sandbox/privacy_sandbox_dialog.h"
+#include "chrome/browser/ui/privacy_sandbox/privacy_sandbox_prompt.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -36,15 +36,15 @@ class PrivacySandboxDialogViewBrowserTest : public DialogBrowserTest {
 
   // DialogBrowserTest:
   void ShowUi(const std::string& name) override {
-    PrivacySandboxService::DialogType dialog_type =
-        PrivacySandboxService::DialogType::kNone;
+    PrivacySandboxService::PromptType prompt_type =
+        PrivacySandboxService::PromptType::kNone;
     if (name == "Consent") {
-      dialog_type = PrivacySandboxService::DialogType::kConsent;
+      prompt_type = PrivacySandboxService::PromptType::kConsent;
     }
     if (name == "Notice") {
-      dialog_type = PrivacySandboxService::DialogType::kNotice;
+      prompt_type = PrivacySandboxService::PromptType::kNotice;
     }
-    ASSERT_NE(dialog_type, PrivacySandboxService::DialogType::kNone);
+    ASSERT_NE(prompt_type, PrivacySandboxService::PromptType::kNone);
 
     // Resize the browser window to guarantee enough space for the dialog.
     BrowserView::GetBrowserViewForBrowser(browser())->GetWidget()->SetBounds(
@@ -53,7 +53,7 @@ class PrivacySandboxDialogViewBrowserTest : public DialogBrowserTest {
     views::NamedWidgetShownWaiter waiter(
         views::test::AnyWidgetTestPasskey{},
         PrivacySandboxDialogView::kViewClassName);
-    ShowPrivacySandboxDialog(browser(), dialog_type);
+    ShowPrivacySandboxDialog(browser(), prompt_type);
     waiter.WaitIfNeededAndGet();
 
     base::RunLoop().RunUntilIdle();
@@ -62,7 +62,7 @@ class PrivacySandboxDialogViewBrowserTest : public DialogBrowserTest {
   MockPrivacySandboxService* mock_service() { return mock_service_; }
 
  private:
-  raw_ptr<MockPrivacySandboxService> mock_service_;
+  raw_ptr<MockPrivacySandboxService, DanglingUntriaged> mock_service_;
 };
 
 #if BUILDFLAG(IS_WIN)
@@ -74,21 +74,21 @@ IN_PROC_BROWSER_TEST_F(PrivacySandboxDialogViewBrowserTest,
                        MAYBE_InvokeUi_Consent) {
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(PrivacySandboxService::DialogAction::kConsentShown));
+      PromptActionOccurred(PrivacySandboxService::PromptAction::kConsentShown));
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(
-          PrivacySandboxService::DialogAction::kConsentClosedNoDecision));
+      PromptActionOccurred(
+          PrivacySandboxService::PromptAction::kConsentClosedNoDecision));
   ShowAndVerifyUi();
 }
 
 IN_PROC_BROWSER_TEST_F(PrivacySandboxDialogViewBrowserTest, InvokeUi_Notice) {
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(PrivacySandboxService::DialogAction::kNoticeShown));
+      PromptActionOccurred(PrivacySandboxService::PromptAction::kNoticeShown));
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(
-          PrivacySandboxService::DialogAction::kNoticeClosedNoInteraction));
+      PromptActionOccurred(
+          PrivacySandboxService::PromptAction::kNoticeClosedNoInteraction));
   ShowAndVerifyUi();
 }

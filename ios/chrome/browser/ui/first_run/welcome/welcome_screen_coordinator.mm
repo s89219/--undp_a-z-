@@ -1,18 +1,21 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/first_run/welcome/welcome_screen_coordinator.h"
 
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
-#include "ios/chrome/browser/main/browser.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
+#import "ios/chrome/browser/first_run/first_run_metrics.h"
+#import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
-#include "ios/chrome/browser/ui/commands/tos_commands.h"
-#include "ios/chrome/browser/ui/first_run/uma/uma_coordinator.h"
-#include "ios/chrome/browser/ui/first_run/welcome/tos_coordinator.h"
-#include "ios/chrome/browser/ui/first_run/welcome/welcome_screen_mediator.h"
-#include "ios/chrome/browser/ui/first_run/welcome/welcome_screen_view_controller.h"
+#import "ios/chrome/browser/ui/commands/tos_commands.h"
+#import "ios/chrome/browser/ui/first_run/first_run_util.h"
+#import "ios/chrome/browser/ui/first_run/fre_field_trial.h"
+#import "ios/chrome/browser/ui/first_run/uma/uma_coordinator.h"
+#import "ios/chrome/browser/ui/first_run/welcome/tos_coordinator.h"
+#import "ios/chrome/browser/ui/first_run/welcome/welcome_screen_mediator.h"
+#import "ios/chrome/browser/ui/first_run/welcome/welcome_screen_view_controller.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -72,6 +75,7 @@
       [[WelcomeScreenViewController alloc] initWithTOSHandler:TOSHandler];
   self.viewController.delegate = self;
   self.mediator = [[WelcomeScreenMediator alloc] init];
+  self.mediator.consumer = self.viewController;
 
   BOOL animated = self.baseNavigationController.topViewController != nil;
   [self.baseNavigationController setViewControllers:@[ self.viewController ]
@@ -94,8 +98,9 @@
 - (void)didTapPrimaryActionButton {
   // TODO(crbug.com/1189815): Remember that the welcome screen has been shown in
   // NSUserDefaults.
+  [self.mediator acceptToS];
   [self.mediator
-      setMetricsReportingEnabled:self.viewController.checkBoxSelected];
+      setMetricsReportingEnabled:self.mediator.UMAReportingUserChoice];
   if (self.TOSLinkWasTapped) {
     base::RecordAction(base::UserMetricsAction("MobileFreTOSLinkTapped"));
   }
@@ -103,7 +108,7 @@
     base::RecordAction(base::UserMetricsAction("MobileFreUMALinkTapped"));
   }
 
-  [self.delegate willFinishPresenting];
+  [self.delegate screenWillFinishPresenting];
 }
 
 #pragma mark - TOSCommands
@@ -116,7 +121,7 @@
   [self.TOSCoordinator start];
 }
 
-- (void)hideTOSPage {
+- (void)closeTOSPage {
   [self.TOSCoordinator stop];
   self.TOSCoordinator = nil;
 }
@@ -143,6 +148,15 @@
                UMAReportingValue:self.mediator.UMAReportingUserChoice];
   self.UMACoordinator.delegate = self;
   [self.UMACoordinator start];
+}
+
+- (void)logScrollButtonVisible:(BOOL)scrollButtonVisible
+        withUMACheckboxVisible:(BOOL)umaCheckboxVisible {
+  first_run::FirstRunScreenType screenType =
+      umaCheckboxVisible
+          ? first_run::FirstRunScreenType::kWelcomeScreenWithUMACheckbox
+          : first_run::FirstRunScreenType::kWelcomeScreenWithoutUMACheckbox;
+  RecordFirstRunScrollButtonVisibilityMetrics(screenType, scrollButtonVisible);
 }
 
 @end

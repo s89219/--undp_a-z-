@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,6 @@
 
 namespace headless {
 namespace switches {
-
-// The background color to be used if the page doesn't specify one. Provided as
-// RGBA integer value in hex, e.g. 'ff0000ff' for red or '00000000' for
-// transparent.
-const char kDefaultBackgroundColor[] = "default-background-color";
 
 // Whether cookies stored as part of user profile are encrypted.
 const char kDisableCookieEncryption[] = "disable-cookie-encryption";
@@ -38,12 +33,6 @@ const char kDeterministicMode[] = "deterministic-mode";
 // UserDatadir.
 const char kDiskCacheDir[] = "disk-cache-dir";
 
-// Instructs headless_shell to print document.body.innerHTML to stdout.
-const char kDumpDom[] = "dump-dom";
-
-// Hide scrollbars from screenshots.
-const char kHideScrollbars[] = "hide-scrollbars";
-
 // Specifies which encryption storage backend to use. Possible values are
 // kwallet, kwallet5, gnome, gnome-keyring, gnome-libsecret, basic. Any other
 // value will lead to Chrome detecting the best backend automatically.
@@ -54,11 +43,8 @@ const char kHideScrollbars[] = "hide-scrollbars";
 // or KWallets.
 const char kPasswordStore[] = "password-store";
 
-// Save a pdf file of the loaded page.
-const char kPrintToPDF[] = "print-to-pdf";
-
-// Do not display header and footer in the pdf file.
-const char kPrintToPDFNoHeader[] = "print-to-pdf-no-header";
+// Do not emit tags when printing PDFs.
+const char kDisablePDFTagging[] = "disable-pdf-tagging";
 
 // Specifies a list of hosts for whom we bypass proxy settings and use direct
 // connections. Ignored unless --proxy-server is also specified. This is a
@@ -83,19 +69,6 @@ const char kRemoteDebuggingAddress[] = "remote-debugging-address";
 // expressions.
 const char kRepl[] = "repl";
 
-// Save a screenshot of the loaded page.
-const char kScreenshot[] = "screenshot";
-
-// Causes SSL key material to be logged to the specified file for debugging
-// purposes. See
-// https://developer.mozilla.org/en-US/docs/Mozilla/Projects/NSS/Key_Log_Format
-// for the format.
-const char kSSLKeyLogFile[] = "ssl-key-log-file";
-
-// Issues a stop after the specified number of milliseconds.  This cancels all
-// navigation and causes the DOMContentLoaded event to fire.
-const char kTimeout[] = "timeout";
-
 // Sets the GL implementation to use. Use a blank string to disable GL
 // rendering.
 const char kUseGL[] = "use-gl";
@@ -108,16 +81,13 @@ const char kUseANGLE[] = "use-angle";
 const char kUserAgent[] = "user-agent";
 
 // Directory where the browser stores the user profile. Note that if this switch
-// is added, the session will no longer be Incognito.
+// is added, the session will no longer be Incognito, unless Incognito mode is
+// forced with --incognito switch.
 const char kUserDataDir[] = "user-data-dir";
 
-// If set the system waits the specified number of virtual milliseconds before
-// deeming the page to be ready.  For determinism virtual time does not advance
-// while there are pending network fetches (i.e no timers will fire). Once all
-// network fetches have completed, timers fire and if the system runs out of
-// virtual time is fastforwarded so the next timer fires immediatley, until the
-// specified virtual time budget is exhausted.
-const char kVirtualTimeBudget[] = "virtual-time-budget";
+// Forces Incognito mode even if user data directory is specified using the
+// --user-data-dir switch.
+const char kIncognito[] = "incognito";
 
 // Sets the initial window size. Provided as string in the format "800,600".
 const char kWindowSize[] = "window-size";

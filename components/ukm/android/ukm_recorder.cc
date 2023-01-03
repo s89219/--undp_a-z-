@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@ static void JNI_UkmRecorder_RecordEventWithBooleanMetric(
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(j_web_contents);
   const ukm::SourceId source_id =
-      web_contents->GetMainFrame()->GetPageUkmSourceId();
+      web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId();
   const std::string event_name(ConvertJavaStringToUTF8(env, j_event_name));
   ukm::UkmEntryBuilder builder(source_id, event_name);
   builder.SetMetric(ConvertJavaStringToUTF8(env, j_metric_name), true);
@@ -38,7 +38,7 @@ static void JNI_UkmRecorder_RecordEventWithIntegerMetric(
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(j_web_contents);
   const ukm::SourceId source_id =
-      web_contents->GetMainFrame()->GetPageUkmSourceId();
+      web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId();
   const std::string event_name(ConvertJavaStringToUTF8(env, j_event_name));
   ukm::UkmEntryBuilder builder(source_id, event_name);
   builder.SetMetric(ConvertJavaStringToUTF8(env, j_metric_name),

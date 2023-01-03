@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,6 +48,13 @@ void DlpContentManagerTestHelper::ChangeConfidentiality(
   manager_->OnConfidentialityChanged(web_contents, restrictions);
 }
 
+void DlpContentManagerTestHelper::UpdateConfidentiality(
+    content::WebContents* web_contents,
+    const DlpContentRestrictionSet& restrictions) {
+  DCHECK(manager_);
+  manager_->UpdateConfidentiality(web_contents, restrictions);
+}
+
 void DlpContentManagerTestHelper::ChangeVisibility(
     content::WebContents* web_contents) {
   DCHECK(manager_);
@@ -80,6 +87,21 @@ int DlpContentManagerTestHelper::ActiveWarningDialogsCount() const {
   DCHECK(manager_);
   return manager_->warn_notifier_->ActiveWarningDialogsCountForTesting();
 }
+
+const std::vector<std::unique_ptr<DlpContentManager::ScreenShareInfo>>&
+DlpContentManagerTestHelper::GetRunningScreenShares() const {
+  DCHECK(manager_);
+  return manager_->running_screen_shares_;
+}
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+absl::optional<DlpContentManagerAsh::VideoCaptureInfo>
+DlpContentManagerTestHelper::GetRunningVideoCaptureInfo() const {
+  DCHECK(manager_);
+  return static_cast<DlpContentManagerAsh*>(manager_)
+      ->running_video_capture_info_;
+}
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 base::TimeDelta DlpContentManagerTestHelper::GetPrivacyScreenOffDelay() const {

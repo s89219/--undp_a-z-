@@ -1,10 +1,9 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "third_party/gvr-android-keyboard/src/libraries/headers/vr/gvr/capi/include/gvr_keyboard.h"
 
-#include <android/native_window_jni.h>
 #include <dlfcn.h>
 #include <jni.h>
 #include <cmath>
@@ -12,7 +11,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/logging.h"
-#include "chrome/android/features/vr/jni_headers/GvrKeyboardLoaderClient_jni.h"
+#include "chrome/android/features/vr/split_jni_headers/GvrKeyboardLoaderClient_jni.h"
 
 namespace {
 

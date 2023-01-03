@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/containers/queue.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/run_loop.h"
@@ -21,6 +22,7 @@
 #include "media/base/media.h"
 #include "media/base/media_switches.h"
 #include "media/base/media_util.h"
+#include "media/cast/common/openscreen_conversion_helpers.h"
 #include "media/cast/common/rtp_time.h"
 #include "media/cast/common/sender_encoded_frame.h"
 #include "media/cast/common/video_frame_factory.h"
@@ -33,6 +35,8 @@
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using Dependency = openscreen::cast::EncodedFrame::Dependency;
 
 namespace {
 
@@ -94,9 +98,9 @@ class MetadataRecorder : public base::RefCountedThreadSafe<MetadataRecorder> {
     auto e = expectations_.front();
     expectations_.pop();
     if (e.expected_frame_id != e.expected_last_referenced_frame_id) {
-      EXPECT_EQ(EncodedFrame::DEPENDENT, encoded_frame->dependency);
+      EXPECT_EQ(Dependency::kDependent, encoded_frame->dependency);
     } else {
-      EXPECT_EQ(EncodedFrame::KEY, encoded_frame->dependency);
+      EXPECT_EQ(Dependency::kKeyFrame, encoded_frame->dependency);
     }
     EXPECT_EQ(e.expected_frame_id, encoded_frame->frame_id);
     EXPECT_EQ(e.expected_last_referenced_frame_id,
@@ -264,7 +268,7 @@ class H264VideoToolboxEncoderTest : public ::testing::Test {
   scoped_refptr<CastEnvironment> cast_environment_;
   std::unique_ptr<VideoEncoder> encoder_;
   OperationalStatus operational_status_;
-  TestPowerSource* power_source_;  // Owned by the power monitor.
+  raw_ptr<TestPowerSource> power_source_;  // Owned by the power monitor.
 };
 
 // static
@@ -276,8 +280,7 @@ TEST_F(H264VideoToolboxEncoderTest, DISABLED_CheckFrameMetadataSequence) {
   auto metadata_recorder = base::MakeRefCounted<MetadataRecorder>();
   metadata_recorder->PushExpectation(
       FrameId::first(), FrameId::first(),
-      RtpTimeTicks::FromTimeDelta(frame_->timestamp(), kVideoFrequency),
-      clock_.NowTicks());
+      ToRtpTimeTicks(frame_->timestamp(), kVideoFrequency), clock_.NowTicks());
   EXPECT_TRUE(encoder_->EncodeVideoFrame(
       frame_, clock_.NowTicks(),
       base::BindOnce(&MetadataRecorder::CompareFrameWithExpected,
@@ -289,7 +292,7 @@ TEST_F(H264VideoToolboxEncoderTest, DISABLED_CheckFrameMetadataSequence) {
     AdvanceClockAndVideoFrameTimestamp();
     metadata_recorder->PushExpectation(
         frame_id, frame_id - 1,
-        RtpTimeTicks::FromTimeDelta(frame_->timestamp(), kVideoFrequency),
+        ToRtpTimeTicks(frame_->timestamp(), kVideoFrequency),
         clock_.NowTicks());
     EXPECT_TRUE(encoder_->EncodeVideoFrame(
         frame_, clock_.NowTicks(),

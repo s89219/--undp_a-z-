@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,46 +34,6 @@ namespace {
 
 // Time to backoff syncing after receiving a throttled response.
 constexpr base::TimeDelta kSyncDelayAfterThrottled = base::Hours(2);
-
-void LogResponseProfilingData(const ClientToServerResponse& response) {
-  if (response.has_profiling_data()) {
-    stringstream response_trace;
-    response_trace << "Server response trace:";
-
-    if (response.profiling_data().has_user_lookup_time()) {
-      response_trace << " user lookup: "
-                     << response.profiling_data().user_lookup_time() << "ms";
-    }
-
-    if (response.profiling_data().has_meta_data_write_time()) {
-      response_trace << " meta write: "
-                     << response.profiling_data().meta_data_write_time()
-                     << "ms";
-    }
-
-    if (response.profiling_data().has_meta_data_read_time()) {
-      response_trace << " meta read: "
-                     << response.profiling_data().meta_data_read_time() << "ms";
-    }
-
-    if (response.profiling_data().has_file_data_write_time()) {
-      response_trace << " file write: "
-                     << response.profiling_data().file_data_write_time()
-                     << "ms";
-    }
-
-    if (response.profiling_data().has_file_data_read_time()) {
-      response_trace << " file read: "
-                     << response.profiling_data().file_data_read_time() << "ms";
-    }
-
-    if (response.profiling_data().has_total_request_time()) {
-      response_trace << " total time: "
-                     << response.profiling_data().total_request_time() << "ms";
-    }
-    DVLOG(1) << response_trace.str();
-  }
-}
 
 SyncerError ServerConnectionErrorAsSyncerError(
     const HttpResponse::ServerConnectionCode server_status,
@@ -224,17 +184,8 @@ void SaveBagOfChipsFromResponse(const sync_pb::ClientToServerResponse& response,
 }  // namespace
 
 ModelTypeSet GetTypesToMigrate(const ClientToServerResponse& response) {
-  ModelTypeSet to_migrate;
-  for (int i = 0; i < response.migrated_data_type_id_size(); i++) {
-    int field_number = response.migrated_data_type_id(i);
-    ModelType model_type = GetModelTypeFromSpecificsFieldNumber(field_number);
-    if (!IsRealDataType(model_type)) {
-      DLOG(WARNING) << "Unknown field number " << field_number;
-      continue;
-    }
-    to_migrate.Put(model_type);
-  }
-  return to_migrate;
+  return GetModelTypeSetFromSpecificsFieldNumberList(
+      response.migrated_data_type_id());
 }
 
 SyncProtocolError ConvertErrorPBToSyncProtocolError(
@@ -249,15 +200,9 @@ SyncProtocolError ConvertErrorPBToSyncProtocolError(
     // THROTTLED and PARTIAL_FAILURE are currently the only error codes
     // that uses |error_data_types|.
     // In both cases, |error_data_types| are throttled.
-    for (int i = 0; i < error.error_data_type_ids_size(); ++i) {
-      int field_number = error.error_data_type_ids(i);
-      ModelType model_type = GetModelTypeFromSpecificsFieldNumber(field_number);
-      if (!IsRealDataType(model_type)) {
-        DLOG(WARNING) << "Unknown field number " << field_number;
-        continue;
-      }
-      sync_protocol_error.error_data_types.Put(model_type);
-    }
+    sync_protocol_error.error_data_types =
+        GetModelTypeSetFromSpecificsFieldNumberList(
+            error.error_data_type_ids());
   }
 
   return sync_protocol_error;
@@ -280,6 +225,9 @@ SyncProtocolError SyncerProtoUtil::GetProtocolErrorFromResponse(
   if (IsSyncDisabledByAdmin(response)) {
     sync_protocol_error.error_type = DISABLED_BY_ADMIN;
     sync_protocol_error.action = STOP_SYNC_FOR_DISABLED_ACCOUNT;
+  } else if (response.has_error()) {
+    // If the server provides explicit error information, just honor it.
+    sync_protocol_error = ConvertErrorPBToSyncProtocolError(response.error());
   } else if (!ProcessResponseBirthday(response, context)) {
     // If sync isn't disabled, first check for a birthday mismatch error.
     if (response.error_code() == sync_pb::SyncEnums::CLIENT_DATA_OBSOLETE) {
@@ -290,9 +238,6 @@ SyncProtocolError SyncerProtoUtil::GetProtocolErrorFromResponse(
       sync_protocol_error.error_type = NOT_MY_BIRTHDAY;
       sync_protocol_error.action = DISABLE_SYNC_ON_CLIENT;
     }
-  } else if (response.has_error()) {
-    // This is a new server. Just get the error from the protocol.
-    sync_protocol_error = ConvertErrorPBToSyncProtocolError(response.error());
   } else {
     // Legacy server implementation. Compute the error based on |error_code|.
     sync_protocol_error = ErrorCodeToSyncProtocolError(response.error_code());
@@ -481,11 +426,6 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
       cycle->delegate()->OnReceivedCustomNudgeDelays(delay_map);
     }
 
-    if (command.has_client_invalidation_hint_buffer_size()) {
-      cycle->delegate()->OnReceivedClientInvalidationHintBufferSize(
-          command.client_invalidation_hint_buffer_size());
-    }
-
     if (command.has_gu_retry_delay_seconds()) {
       cycle->delegate()->OnReceivedGuRetryDelay(
           base::Seconds(command.gu_retry_delay_seconds()));
@@ -535,7 +475,6 @@ SyncerError SyncerProtoUtil::PostClientToServerMessage(
                    << "recent version.";
       return SyncerError(SyncerError::SERVER_RETURN_UNKNOWN_ERROR);
     case SYNC_SUCCESS:
-      LogResponseProfilingData(*response);
       return SyncerError(SyncerError::SYNCER_OK);
     case THROTTLED:
       if (sync_protocol_error.error_data_types.Empty()) {

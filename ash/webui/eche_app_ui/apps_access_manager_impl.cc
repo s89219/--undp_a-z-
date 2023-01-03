@@ -1,15 +1,16 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/webui/eche_app_ui/apps_access_manager_impl.h"
 
-#include "ash/components/multidevice/logging/logging.h"
-#include "ash/components/phonehub/multidevice_feature_access_manager.h"
 #include "ash/constants/ash_features.h"
-#include "ash/services/multidevice_setup/public/cpp/prefs.h"
 #include "ash/webui/eche_app_ui/pref_names.h"
 #include "ash/webui/eche_app_ui/proto/exo_messages.pb.h"
+#include "base/metrics/histogram_functions.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
+#include "chromeos/ash/components/phonehub/multidevice_feature_access_manager.h"
+#include "chromeos/ash/services/multidevice_setup/public/cpp/prefs.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 
@@ -96,12 +97,24 @@ void AppsAccessManagerImpl::OnSetupRequested() {
   }
 }
 
+void AppsAccessManagerImpl::NotifyAppsAccessCanceled() {
+  if (connection_manager_->GetStatus() == ConnectionStatus::kDisconnected) {
+    base::UmaHistogramEnumeration(
+        kEcheOnboardingHistogramName,
+        OnboardingUserActionMetric::kFailedConnection);
+  } else {
+    base::UmaHistogramEnumeration(
+        kEcheOnboardingHistogramName,
+        OnboardingUserActionMetric::kUserActionCanceled);
+  }
+}
+
 void AppsAccessManagerImpl::OnGetAppsAccessStateResponseReceived(
     proto::GetAppsAccessStateResponse apps_access_state_response) {
   if (apps_access_state_response.result() == proto::Result::RESULT_NO_ERROR) {
-    AccessStatus access_status =
-        ComputeAppsAccessState(apps_access_state_response.apps_access_state());
-    UpdateFeatureEnabledState(access_status);
+    current_apps_access_state_ = apps_access_state_response.apps_access_state();
+    AccessStatus access_status = ComputeAppsAccessState();
+    UpdateFeatureEnabledState(GetAccessStatus(), access_status);
     SetAccessStatusInternal(access_status);
   }
 }
@@ -109,8 +122,37 @@ void AppsAccessManagerImpl::OnGetAppsAccessStateResponseReceived(
 void AppsAccessManagerImpl::OnSendAppsSetupResponseReceived(
     proto::SendAppsSetupResponse apps_setup_response) {
   if (apps_setup_response.result() == proto::Result::RESULT_NO_ERROR) {
-    AccessStatus access_status =
-        ComputeAppsAccessState(apps_setup_response.apps_access_state());
+    current_apps_access_state_ = apps_setup_response.apps_access_state();
+
+    // Log the no error response after |current_apps_access_state_| is updated.
+    LogAppsSetupResponse(apps_setup_response.result());
+    AccessStatus access_status = ComputeAppsAccessState();
+    SetAccessStatusInternal(access_status);
+  } else if (IsSetupOperationInProgress()) {
+    // Log the error response before we change the setup operation to not in
+    // progress.
+    LogAppsSetupResponse(apps_setup_response.result());
+    if (apps_setup_response.result() != proto::Result::RESULT_ACK_BY_EXO) {
+      SetAppsSetupOperationStatus(
+          (apps_setup_response.result() ==
+           proto::Result::RESULT_ERROR_USER_REJECTED)
+              ? AppsAccessSetupOperation::Status::kCompletedUserRejected
+              : AppsAccessSetupOperation::Status::kOperationFailedOrCancelled);
+    }
+  }
+}
+
+void AppsAccessManagerImpl::OnAppPolicyStateChange(
+    proto::AppStreamingPolicy app_policy_state) {
+  if (current_app_policy_state_ == app_policy_state)
+    return;
+  current_app_policy_state_ = app_policy_state;
+
+  // We only notify policy state after we also query access status from the
+  // remote phone.
+  if (initialized_) {
+    AccessStatus access_status = ComputeAppsAccessState();
+    UpdateFeatureEnabledState(GetAccessStatus(), access_status);
     SetAccessStatusInternal(access_status);
   }
 }
@@ -132,15 +174,6 @@ void AppsAccessManagerImpl::OnConnectionStatusChanged() {
 }
 
 void AppsAccessManagerImpl::AttemptAppsAccessStateRequest() {
-  if (!base::FeatureList::IsEnabled(
-          chromeos::features::kEchePhoneHubPermissionsOnboarding)) {
-    PA_LOG(INFO) << "kEchePhoneHubPermissionsOnboarding flag is false, ignores "
-                    "to get apps access status from phone.";
-    pref_service_->SetInteger(prefs::kAppsAccessStatus,
-                              static_cast<int>(AccessStatus::kAccessGranted));
-    return;
-  }
-
   if (initialized_)
     return;
 
@@ -205,31 +238,39 @@ void AppsAccessManagerImpl::SetAccessStatusInternal(
           AppsAccessSetupOperation::Status::kCompletedSuccessfully);
       break;
     case AccessStatus::kProhibited:
+      [[fallthrough]];
     case AccessStatus::kAvailableButNotGranted:
       // Intentionally blank; the operation status should not change.
       break;
   }
 }
 
-AccessStatus AppsAccessManagerImpl::ComputeAppsAccessState(
-    proto::AppsAccessState apps_access_state) {
-  if (apps_access_state == proto::AppsAccessState::ACCESS_GRANTED) {
+AccessStatus AppsAccessManagerImpl::ComputeAppsAccessState() {
+  if (current_app_policy_state_ ==
+      proto::AppStreamingPolicy::APP_POLICY_DISABLED)
+    return AccessStatus::kProhibited;
+
+  if (current_apps_access_state_ == proto::AppsAccessState::ACCESS_GRANTED) {
     return AccessStatus::kAccessGranted;
   }
   return AccessStatus::kAvailableButNotGranted;
 }
 
 void AppsAccessManagerImpl::UpdateFeatureEnabledState(
-    AccessStatus access_status) {
-  if (!base::FeatureList::IsEnabled(
-          chromeos::features::kEchePhoneHubPermissionsOnboarding))
-    return;
-
+    AccessStatus previous_access_status,
+    AccessStatus current_access_status) {
   const FeatureState feature_state =
       multidevice_setup_client_->GetFeatureState(Feature::kEche);
-  switch (access_status) {
+  switch (current_access_status) {
     case AccessStatus::kAccessGranted:
-      if (IsWaitingForAccessToInitiallyEnableApps()) {
+      if (IsPhoneHubEnabled() &&
+          previous_access_status == AccessStatus::kAvailableButNotGranted) {
+        PA_LOG(INFO) << "Enabling Apps when the access is changed from "
+                        "kAvailableButNotGranted to kAccessGranted.";
+        multidevice_setup_client_->SetFeatureEnabledState(
+            Feature::kEche, /*enabled=*/true, /*auth_token=*/absl::nullopt,
+            base::DoNothing());
+      } else if (IsWaitingForAccessToInitiallyEnableApps()) {
         PA_LOG(INFO) << "Enabling Apps for the first time now "
                      << "that access has been granted by the phone.";
         multidevice_setup_client_->SetFeatureEnabledState(
@@ -238,6 +279,7 @@ void AppsAccessManagerImpl::UpdateFeatureEnabledState(
       }
       break;
     case AccessStatus::kProhibited:
+      [[fallthrough]];
     case AccessStatus::kAvailableButNotGranted:
       // Disable Apps if apps access has been revoked
       // by the phone.
@@ -258,10 +300,13 @@ bool AppsAccessManagerImpl::IsWaitingForAccessToInitiallyEnableApps() const {
   // 2. the phone has granted access.
   // We do *not* want to automatically enable the feature unless the opt-in flow
   // was triggered from this device
-  return multidevice_setup::IsDefaultFeatureEnabledValue(Feature::kEche,
-                                                         pref_service_) &&
-         multidevice_setup_client_->GetFeatureState(Feature::kPhoneHub) ==
-             FeatureState::kEnabledByUser;
+  return IsPhoneHubEnabled() && multidevice_setup::IsDefaultFeatureEnabledValue(
+                                    Feature::kEche, pref_service_);
+}
+
+bool AppsAccessManagerImpl::IsPhoneHubEnabled() const {
+  return multidevice_setup_client_->GetFeatureState(Feature::kPhoneHub) ==
+         FeatureState::kEnabledByUser;
 }
 
 void AppsAccessManagerImpl::UpdateSetupOperationState() {
@@ -316,5 +361,51 @@ bool AppsAccessManagerImpl::IsEligibleForOnboarding(
          feature_status == FeatureStatus::kDisconnected ||
          feature_status == FeatureStatus::kDisabled;
 }
+
+void AppsAccessManagerImpl::LogAppsSetupResponse(
+    proto::Result apps_setup_result) {
+  if (!IsSetupOperationInProgress())
+    return;
+
+  switch (apps_setup_result) {
+    case proto::Result::RESULT_NO_ERROR:
+      if (current_apps_access_state_ ==
+          proto::AppsAccessState::ACCESS_GRANTED) {
+        base::UmaHistogramEnumeration(
+            kEcheOnboardingHistogramName,
+            OnboardingUserActionMetric::kUserActionPermissionGranted);
+      }
+      break;
+    case proto::Result::RESULT_ERROR_USER_REJECTED:
+      base::UmaHistogramEnumeration(
+          kEcheOnboardingHistogramName,
+          OnboardingUserActionMetric::kUserActionPermissionRejected);
+      break;
+    case proto::Result::RESULT_ERROR_ACTION_TIMEOUT:
+      base::UmaHistogramEnumeration(
+          kEcheOnboardingHistogramName,
+          OnboardingUserActionMetric::kUserActionTimeout);
+      break;
+    case proto::Result::RESULT_ERROR_ACTION_CANCELED:
+      base::UmaHistogramEnumeration(
+          kEcheOnboardingHistogramName,
+          OnboardingUserActionMetric::kUserActionRemoteInterrupt);
+      break;
+    case proto::Result::RESULT_ERROR_SYSTEM:
+      base::UmaHistogramEnumeration(kEcheOnboardingHistogramName,
+                                    OnboardingUserActionMetric::kSystemError);
+      break;
+    case proto::Result::RESULT_ACK_BY_EXO:
+      base::UmaHistogramEnumeration(kEcheOnboardingHistogramName,
+                                    OnboardingUserActionMetric::kAckByExo);
+      break;
+    default:
+      base::UmaHistogramEnumeration(
+          kEcheOnboardingHistogramName,
+          OnboardingUserActionMetric::kUserActionUnknown);
+      break;
+  }
+}
+
 }  // namespace eche_app
 }  // namespace ash

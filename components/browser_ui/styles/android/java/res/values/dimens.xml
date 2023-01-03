@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2019 The Chromium Authors. All rights reserved.
-     Use of this source code is governed by a BSD-style license that can be
-     found in the LICENSE file. -->
+<!--
+Copyright 2019 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
 
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Standard width for overflow menu in Chrome. -->
@@ -41,4 +43,8 @@
     <dimen name="default_favicon_min_size" tools:ignore="PxUsage,UnusedResources">16px</dimen>
     <dimen name="circular_monogram_size">20dp</dimen>
     <dimen name="circular_monogram_text_size">14dp</dimen>
+
+    <!-- Section tab dimensions -->
+    <dimen name="section_tab_bg_elevation">@dimen/default_elevation_2</dimen>
+    <dimen name="section_tab_selected_bg_elevation">@dimen/default_elevation_0</dimen>
 </resources>

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -147,10 +147,6 @@ autofill::FormData GenerateWithDataAccessor(
       }
     }
 
-#if BUILDFLAG(IS_IOS)
-    result.fields[i].unique_id =
-        result.fields[i].id_attribute + u"-" + base::NumberToString16(i);
-#endif
     if (field_params[i].same_value_field &&
         first_field_with_same_value != static_cast<int>(i)) {
       result.fields[i].value = result.fields[first_field_with_same_value].value;

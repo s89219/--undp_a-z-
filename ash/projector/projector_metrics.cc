@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,12 @@ constexpr char kProjectorTranscriptsCountHistogramName[] =
 
 constexpr char kProjectorPendingScreencastBatchIOTaskDurationHistogramName[] =
     "Ash.Projector.PendingScreencastBatchIOTaskDuration";
+
+constexpr char kProjectorPendingScreencastChangeIntervalHistogramName[] =
+    "Ash.Projector.PendingScreencastChangeInterval";
+
+constexpr char kProjectorPolicyChangeHandlingErrorHistogramName[] =
+    "Ash.Projector.PolicyChangeHandlingError";
 
 // Appends the proper suffix to |prefix| based on whether the user is in tablet
 // mode or not.
@@ -72,6 +78,9 @@ void RecordCreationFlowError(int message_id) {
     case IDS_ASH_PROJECTOR_FAILURE_MESSAGE_TRANSCRIPTION:
       error = ProjectorCreationFlowError::kTranscriptionError;
       break;
+    case IDS_ASH_PROJECTOR_ABORT_BY_AUDIO_POLICY_TEXT:
+      error = ProjectorCreationFlowError::kSessionAbortedByAudioPolicyDisabled;
+      break;
     default:
       NOTREACHED();
       break;
@@ -80,12 +89,29 @@ void RecordCreationFlowError(int message_id) {
       GetHistogramName(kProjectorCreationFlowErrorHistogramName), error);
 }
 
+ASH_EXPORT void RecordPolicyChangeHandlingError(
+    ProjectorPolicyChangeHandlingError error) {
+  base::UmaHistogramEnumeration(
+      GetHistogramName(kProjectorPolicyChangeHandlingErrorHistogramName),
+      error);
+}
+
 ASH_EXPORT void RecordPendingScreencastBatchIOTaskDuration(
     const base::TimeDelta duration) {
   // We don't normally expect the duration is longer than 10s. If this limit is
   // exceeded, then the metric would fall into an overflow bucket.
   base::UmaHistogramTimes(
       kProjectorPendingScreencastBatchIOTaskDurationHistogramName, duration);
+}
+
+ASH_EXPORT void RecordPendingScreencastChangeInterval(
+    const base::TimeDelta interval) {
+  // The interval doesn't include the change between last finished uploading to
+  // new start uploading. We don't normally expect the interval is longer than
+  // 10s. If this limit is exceeded, then the metric would fall into an overflow
+  // bucket.
+  base::UmaHistogramTimes(
+      kProjectorPendingScreencastChangeIntervalHistogramName, interval);
 }
 
 }  // namespace ash

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/system/sys_info.h"
 #include "chromeos/constants/chromeos_features.h"
 #include "third_party/icu/source/common/unicode/locid.h"
+#include "ui/base/l10n/l10n_util.h"
 
 namespace {
 
@@ -21,19 +22,8 @@ const char kQuickAnswersConsentDuration[] = "QuickAnswers.V2.Consent.Duration";
 const char kQuickAnswersConsentImpression[] =
     "QuickAnswers.V2.Consent.Impression";
 
-bool IsQuickAnswersAllowedForLocale(const std::string& locale,
-                                    const std::string& runtime_locale) {
-  if (chromeos::features::IsQuickAnswersForMoreLocalesEnabled())
-    return true;
-
-  // String literals used in some cases in the array because their
-  // constant equivalents don't exist in:
-  // third_party/icu/source/common/unicode/uloc.h
-  const std::string kAllowedLocales[] = {ULOC_CANADA, ULOC_UK, ULOC_US,
-                                         "en_AU",     "en_IN", "en_NZ"};
-  return base::Contains(kAllowedLocales, locale) ||
-         base::Contains(kAllowedLocales, runtime_locale);
-}
+// Supported languages of the Quick Answers feature.
+const std::string kSupportedLanguages[] = {"en", "es", "it", "fr", "pt", "de"};
 
 std::string ConsentResultTypeToString(ConsentResultType type) {
   switch (type) {
@@ -77,11 +67,19 @@ bool QuickAnswersState::ShouldUseQuickAnswersTextAnnotator() {
          use_text_annotator_for_testing_;
 }
 
+bool QuickAnswersState::IsSupportedLanguage(const std::string& language) {
+  return base::Contains(kSupportedLanguages, language);
+}
+
 void QuickAnswersState::InitializeObserver(
     QuickAnswersStateObserver* observer) {
   if (prefs_initialized_) {
+    observer->OnPrefsInitialized();
     observer->OnSettingsEnabled(settings_enabled_);
+    observer->OnConsentStatusUpdated(consent_status_);
     observer->OnApplicationLocaleReady(resolved_application_locale_);
+    observer->OnPreferredLanguagesChanged(preferred_languages_);
+    observer->OnEligibilityChanged(is_eligible_);
   }
 }
 
@@ -89,8 +87,16 @@ void QuickAnswersState::UpdateEligibility() {
   if (resolved_application_locale_.empty())
     return;
 
-  is_eligible_ = IsQuickAnswersAllowedForLocale(
-      resolved_application_locale_, icu::Locale::getDefault().getName());
+  bool is_eligible =
+      IsSupportedLanguage(l10n_util::GetLanguage(resolved_application_locale_));
+
+  if (is_eligible_ == is_eligible)
+    return;
+  is_eligible_ = is_eligible;
+
+  for (auto& observer : observers_) {
+    observer.OnEligibilityChanged(is_eligible_);
+  }
 }
 
 void QuickAnswersState::RecordConsentResult(ConsentResultType type,

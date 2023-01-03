@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,21 +9,25 @@
 #include <utility>
 #include <vector>
 
+#include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/time/time.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/proto/web_app.pb.h"
 #include "chrome/browser/web_applications/test/fake_web_app_database_factory.h"
-#include "chrome/browser/web_applications/test/fake_web_app_registry_controller.h"
+#include "chrome/browser/web_applications/test/fake_web_app_provider.h"
 #include "chrome/browser/web_applications/test/web_app_test.h"
 #include "chrome/browser/web_applications/test/web_app_test_utils.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app.h"
+#include "chrome/browser/web_applications/web_app_command_manager.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
+#include "chrome/browser/web_applications/web_app_install_manager.h"
 #include "chrome/browser/web_applications/web_app_proto_utils.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/browser/web_applications/web_app_registry_update.h"
@@ -34,20 +38,48 @@
 #include "components/services/app_service/public/cpp/share_target.h"
 #include "components/services/app_service/public/cpp/url_handler_info.h"
 #include "components/sync/model/model_type_store.h"
+#include "components/sync/test/mock_model_type_change_processor.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
+#include "third_party/blink/public/common/permissions_policy/origin_with_possible_wildcards.h"
+#include "third_party/blink/public/common/permissions_policy/permissions_policy_declaration.h"
+#include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
 namespace web_app {
 
+using ::testing::Eq;
+using ::testing::Field;
+using ::testing::IsNull;
+using ::testing::NotNull;
+using ::testing::Property;
+using ::testing::VariantWith;
+
 class WebAppDatabaseTest : public WebAppTest {
  public:
   void SetUp() override {
     WebAppTest::SetUp();
+    provider_ = FakeWebAppProvider::Get(profile());
 
-    fake_registry_controller_ =
-        std::make_unique<FakeWebAppRegistryController>();
-    fake_registry_controller_->SetUp(profile());
+    auto sync_bridge = std::make_unique<WebAppSyncBridge>(
+        &provider_->GetRegistrarMutable(),
+        mock_processor_.CreateForwardingProcessor());
+    sync_bridge_ = sync_bridge.get();
+
+    auto database_factory = std::make_unique<FakeWebAppDatabaseFactory>();
+    database_factory_ = database_factory.get();
+
+    provider_->SetDatabaseFactory(std::move(database_factory));
+    provider_->SetSyncBridge(std::move(sync_bridge));
+
+    sync_bridge_->SetSubsystems(database_factory_,
+                                &provider_->GetCommandManager(),
+                                &provider_->scheduler());
+
+    ON_CALL(mock_processor_, IsTrackingMetadata())
+        .WillByDefault(testing::Return(true));
   }
 
   bool IsDatabaseRegistryEqualToRegistrar() {
@@ -59,7 +91,7 @@ class WebAppDatabaseTest : public WebAppTest {
       std::unique_ptr<syncer::ModelTypeStore::WriteBatch> write_batch) {
     base::RunLoop run_loop;
 
-    database_factory().store()->CommitWriteBatch(
+    database_factory().GetStore()->CommitWriteBatch(
         std::move(write_batch),
         base::BindLambdaForTesting(
             [&](const absl::optional<syncer::ModelError>& error) {
@@ -73,7 +105,7 @@ class WebAppDatabaseTest : public WebAppTest {
   Registry WriteWebApps(const GURL& base_url, int num_apps) {
     Registry registry;
 
-    auto write_batch = database_factory().store()->CreateWriteBatch();
+    auto write_batch = database_factory().GetStore()->CreateWriteBatch();
 
     for (int i = 0; i < num_apps; ++i) {
       std::unique_ptr<WebApp> app =
@@ -93,28 +125,48 @@ class WebAppDatabaseTest : public WebAppTest {
   }
 
  protected:
-  FakeWebAppRegistryController& controller() {
-    return *fake_registry_controller_;
-  }
+  FakeWebAppDatabaseFactory& database_factory() { return *database_factory_; }
 
-  FakeWebAppDatabaseFactory& database_factory() {
-    return controller().database_factory();
-  }
-
-  WebAppRegistrar& registrar() { return controller().registrar(); }
+  WebAppRegistrar& registrar() { return provider_->GetRegistrarMutable(); }
 
   WebAppRegistrarMutable& mutable_registrar() {
-    return controller().mutable_registrar();
+    return provider_->GetRegistrarMutable();
   }
 
-  WebAppSyncBridge& sync_bridge() { return controller().sync_bridge(); }
+  WebAppSyncBridge& sync_bridge() { return *sync_bridge_; }
+
+  void InitSyncBridge() {
+    base::RunLoop loop;
+    sync_bridge_->Init(loop.QuitClosure());
+    loop.Run();
+  }
+
+  void RegisterApp(std::unique_ptr<WebApp> web_app) {
+    ScopedRegistryUpdate update(&sync_bridge());
+    update->CreateApp(std::move(web_app));
+  }
+
+  void UnregisterApp(const AppId& app_id) {
+    ScopedRegistryUpdate update(&sync_bridge());
+    update->DeleteApp(app_id);
+  }
+
+  void UnregisterAll() {
+    ScopedRegistryUpdate update(&sync_bridge());
+    for (const AppId& app_id : registrar().GetAppIds())
+      update->DeleteApp(app_id);
+  }
 
  private:
-  std::unique_ptr<FakeWebAppRegistryController> fake_registry_controller_;
+  raw_ptr<WebAppSyncBridge> sync_bridge_;
+  raw_ptr<FakeWebAppDatabaseFactory> database_factory_;
+  raw_ptr<FakeWebAppProvider> provider_;
+
+  testing::NiceMock<syncer::MockModelTypeChangeProcessor> mock_processor_;
 };
 
 TEST_F(WebAppDatabaseTest, WriteAndReadRegistry) {
-  controller().Init();
+  InitSyncBridge();
   EXPECT_TRUE(registrar().is_empty());
 
   const int num_apps = 20;
@@ -122,25 +174,25 @@ TEST_F(WebAppDatabaseTest, WriteAndReadRegistry) {
 
   std::unique_ptr<WebApp> app = test::CreateRandomWebApp(base_url, /*seed=*/0);
   AppId app_id = app->app_id();
-  controller().RegisterApp(std::move(app));
+  RegisterApp(std::move(app));
   EXPECT_TRUE(IsDatabaseRegistryEqualToRegistrar());
 
   for (int i = 1; i <= num_apps; ++i) {
     std::unique_ptr<WebApp> extra_app =
         test::CreateRandomWebApp(base_url, /*seed=*/i);
-    controller().RegisterApp(std::move(extra_app));
+    RegisterApp(std::move(extra_app));
   }
   EXPECT_TRUE(IsDatabaseRegistryEqualToRegistrar());
 
-  controller().UnregisterApp(app_id);
+  UnregisterApp(app_id);
   EXPECT_TRUE(IsDatabaseRegistryEqualToRegistrar());
 
-  controller().UnregisterAll();
+  UnregisterAll();
   EXPECT_TRUE(IsDatabaseRegistryEqualToRegistrar());
 }
 
 TEST_F(WebAppDatabaseTest, WriteAndDeleteAppsWithCallbacks) {
-  controller().Init();
+  InitSyncBridge();
   EXPECT_TRUE(registrar().is_empty());
 
   const int num_apps = 10;
@@ -150,14 +202,20 @@ TEST_F(WebAppDatabaseTest, WriteAndDeleteAppsWithCallbacks) {
   std::vector<AppId> apps_to_delete;
   Registry expected_registry;
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  bool allow_system_source = true;
+#else
+  bool allow_system_source = false;
+#endif
+
   for (int i = 0; i < num_apps; ++i) {
     std::unique_ptr<WebApp> app =
-        test::CreateRandomWebApp(base_url, /*seed=*/i);
+        test::CreateRandomWebApp(base_url, /*seed=*/i, allow_system_source);
     apps_to_delete.push_back(app->app_id());
     apps_to_create.push_back(std::move(app));
 
     std::unique_ptr<WebApp> expected_app =
-        test::CreateRandomWebApp(base_url, /*seed=*/i);
+        test::CreateRandomWebApp(base_url, /*seed=*/i, allow_system_source);
     expected_registry.emplace(expected_app->app_id(), std::move(expected_app));
   }
 
@@ -203,7 +261,7 @@ TEST_F(WebAppDatabaseTest, WriteAndDeleteAppsWithCallbacks) {
 TEST_F(WebAppDatabaseTest, OpenDatabaseAndReadRegistry) {
   Registry registry = WriteWebApps(GURL("https://example.com/path"), 20);
 
-  controller().Init();
+  InitSyncBridge();
   EXPECT_TRUE(IsRegistryEqual(mutable_registrar().registry(), registry));
 }
 
@@ -247,13 +305,13 @@ TEST_F(WebAppDatabaseTest, BackwardCompatibility_WebAppWithOnlyRequiredFields) {
 
   // Read the registry: the proto parsing may fail while reading the proto
   // above.
-  controller().Init();
+  InitSyncBridge();
 
   const WebApp* app = registrar().GetAppById(app_id);
   EXPECT_EQ(app_id, app->app_id());
   EXPECT_EQ(start_url, app->start_url());
   EXPECT_EQ(name, app->untranslated_name());
-  EXPECT_EQ(UserDisplayMode::kBrowser, app->user_display_mode());
+  EXPECT_EQ(mojom::UserDisplayMode::kBrowser, app->user_display_mode());
   EXPECT_EQ(is_locally_installed, app->is_locally_installed());
   EXPECT_TRUE(app->IsSynced());
   EXPECT_FALSE(app->IsPreinstalledApp());
@@ -269,7 +327,7 @@ TEST_F(WebAppDatabaseTest, BackwardCompatibility_WebAppWithOnlyRequiredFields) {
 }
 
 TEST_F(WebAppDatabaseTest, WebAppWithoutOptionalFields) {
-  controller().Init();
+  InitSyncBridge();
 
   const auto start_url = GURL("https://example.com/");
   const AppId app_id =
@@ -281,7 +339,7 @@ TEST_F(WebAppDatabaseTest, WebAppWithoutOptionalFields) {
   // Required fields:
   app->SetStartUrl(start_url);
   app->SetName(name);
-  app->SetUserDisplayMode(UserDisplayMode::kBrowser);
+  app->SetUserDisplayMode(mojom::UserDisplayMode::kBrowser);
   app->SetIsLocallyInstalled(false);
   // chromeos_data should always be set on ChromeOS.
   if (IsChromeOsDataMandatory())
@@ -331,7 +389,8 @@ TEST_F(WebAppDatabaseTest, WebAppWithoutOptionalFields) {
   EXPECT_FALSE(app->manifest_id().has_value());
   EXPECT_FALSE(app->IsStorageIsolated());
   EXPECT_TRUE(app->permissions_policy().empty());
-  controller().RegisterApp(std::move(app));
+  EXPECT_FALSE(app->isolation_data().has_value());
+  RegisterApp(std::move(app));
 
   Registry registry = database_factory().ReadRegistry();
   EXPECT_EQ(1UL, registry.size());
@@ -342,7 +401,7 @@ TEST_F(WebAppDatabaseTest, WebAppWithoutOptionalFields) {
   EXPECT_EQ(app_id, app_copy->app_id());
   EXPECT_EQ(start_url, app_copy->start_url());
   EXPECT_EQ(name, app_copy->untranslated_name());
-  EXPECT_EQ(UserDisplayMode::kBrowser, app_copy->user_display_mode());
+  EXPECT_EQ(mojom::UserDisplayMode::kBrowser, app_copy->user_display_mode());
   EXPECT_FALSE(app_copy->is_locally_installed());
 
   auto& chromeos_data = app_copy->chromeos_data();
@@ -402,7 +461,7 @@ TEST_F(WebAppDatabaseTest, WebAppWithoutOptionalFields) {
 }
 
 TEST_F(WebAppDatabaseTest, WebAppWithManyIcons) {
-  controller().Init();
+  InitSyncBridge();
 
   const GURL base_url("https://example.com/path");
   // A number of icons of each IconPurpose.
@@ -432,7 +491,7 @@ TEST_F(WebAppDatabaseTest, WebAppWithManyIcons) {
   app->SetManifestIcons(std::move(icons));
   app->SetIsGeneratedIcon(false);
 
-  controller().RegisterApp(std::move(app));
+  RegisterApp(std::move(app));
 
   Registry registry = database_factory().ReadRegistry();
   EXPECT_EQ(1UL, registry.size());
@@ -460,25 +519,31 @@ TEST_F(WebAppDatabaseTest, MigrateOldLaunchHandlerSyntax) {
   // }
   // ->
   // "launch_handler": {
-  //   "route_to": "existing-client-navigate"
+  //   "client_mode": "navigate-existing"
   // }
   WebAppProto old_navigate_proto(*base_proto);
   old_navigate_proto.mutable_launch_handler()->set_route_to(
-      LaunchHandlerProto_RouteTo_DEPRECATED_EXISTING_CLIENT);
+      LaunchHandlerProto_DeprecatedRouteTo_EXISTING_CLIENT);
   old_navigate_proto.mutable_launch_handler()->set_navigate_existing_client(
-      LaunchHandlerProto_NavigateExistingClient_ALWAYS);
+      LaunchHandlerProto_DeprecatedNavigateExistingClient_ALWAYS);
+  old_navigate_proto.mutable_launch_handler()->set_client_mode(
+      LaunchHandlerProto_ClientMode_UNSPECIFIED_CLIENT_MODE);
 
   std::unique_ptr<WebApp> new_navigate_app =
       WebAppDatabase::CreateWebApp(old_navigate_proto);
   EXPECT_EQ(new_navigate_app->launch_handler(),
-            (LaunchHandler{LaunchHandler::RouteTo::kExistingClientNavigate}));
+            (LaunchHandler{LaunchHandler::ClientMode::kNavigateExisting}))
+      << new_navigate_app->launch_handler()->client_mode;
 
   std::unique_ptr<WebAppProto> new_navigate_proto =
       WebAppDatabase::CreateWebAppProto(*new_navigate_app);
   EXPECT_EQ(new_navigate_proto->launch_handler().route_to(),
-            LaunchHandlerProto_RouteTo_EXISTING_CLIENT_NAVIGATE);
-  EXPECT_EQ(new_navigate_proto->launch_handler().navigate_existing_client(),
-            LaunchHandlerProto_NavigateExistingClient_UNSPECIFIED_NAVIGATE);
+            LaunchHandlerProto_DeprecatedRouteTo_UNSPECIFIED_ROUTE);
+  EXPECT_EQ(
+      new_navigate_proto->launch_handler().navigate_existing_client(),
+      LaunchHandlerProto_DeprecatedNavigateExistingClient_UNSPECIFIED_NAVIGATE);
+  EXPECT_EQ(new_navigate_proto->launch_handler().client_mode(),
+            LaunchHandlerProto_ClientMode_NAVIGATE_EXISTING);
 
   // "launch_handler": {
   //   "route_to": "existing-client",
@@ -486,25 +551,225 @@ TEST_F(WebAppDatabaseTest, MigrateOldLaunchHandlerSyntax) {
   // }
   // ->
   // "launch_handler": {
-  //   "route_to": "existing-client-retain"
+  //   "client_mode": "focus-existing"
   // }
-  WebAppProto old_retain_proto(*base_proto);
-  old_retain_proto.mutable_launch_handler()->set_route_to(
-      LaunchHandlerProto_RouteTo_DEPRECATED_EXISTING_CLIENT);
-  old_retain_proto.mutable_launch_handler()->set_navigate_existing_client(
-      LaunchHandlerProto_NavigateExistingClient_NEVER);
+  WebAppProto old_focus_proto(*base_proto);
+  old_focus_proto.mutable_launch_handler()->set_route_to(
+      LaunchHandlerProto_DeprecatedRouteTo_EXISTING_CLIENT);
+  old_focus_proto.mutable_launch_handler()->set_navigate_existing_client(
+      LaunchHandlerProto_DeprecatedNavigateExistingClient_NEVER);
+  old_focus_proto.mutable_launch_handler()->set_client_mode(
+      LaunchHandlerProto_ClientMode_UNSPECIFIED_CLIENT_MODE);
 
-  std::unique_ptr<WebApp> new_retain_app =
-      WebAppDatabase::CreateWebApp(old_retain_proto);
-  EXPECT_EQ(new_retain_app->launch_handler(),
-            (LaunchHandler{LaunchHandler::RouteTo::kExistingClientRetain}));
+  std::unique_ptr<WebApp> new_focus_app =
+      WebAppDatabase::CreateWebApp(old_focus_proto);
+  EXPECT_EQ(new_focus_app->launch_handler(),
+            (LaunchHandler{LaunchHandler::ClientMode::kFocusExisting}));
 
-  std::unique_ptr<WebAppProto> new_retain_proto =
-      WebAppDatabase::CreateWebAppProto(*new_retain_app);
-  EXPECT_EQ(new_retain_proto->launch_handler().route_to(),
-            LaunchHandlerProto_RouteTo_EXISTING_CLIENT_RETAIN);
-  EXPECT_EQ(new_retain_proto->launch_handler().navigate_existing_client(),
-            LaunchHandlerProto_NavigateExistingClient_UNSPECIFIED_NAVIGATE);
+  std::unique_ptr<WebAppProto> new_focus_proto =
+      WebAppDatabase::CreateWebAppProto(*new_focus_app);
+  EXPECT_EQ(new_focus_proto->launch_handler().route_to(),
+            LaunchHandlerProto_DeprecatedRouteTo_UNSPECIFIED_ROUTE);
+  EXPECT_EQ(
+      new_focus_proto->launch_handler().navigate_existing_client(),
+      LaunchHandlerProto_DeprecatedNavigateExistingClient_UNSPECIFIED_NAVIGATE);
+  EXPECT_EQ(new_focus_proto->launch_handler().client_mode(),
+            LaunchHandlerProto_ClientMode_FOCUS_EXISTING);
 }
 
+class WebAppDatabaseProtoDataTest : public ::testing::Test {
+ public:
+  std::unique_ptr<WebApp> CreateMinimalWebApp() {
+    GURL start_url{"https://example.com/"};
+    AppId app_id = GenerateAppId(/*manifest_id=*/absl::nullopt, start_url);
+    auto web_app = std::make_unique<WebApp>(app_id);
+    web_app->SetStartUrl(start_url);
+    web_app->SetUserDisplayMode(mojom::UserDisplayMode::kBrowser);
+    web_app->AddSource(WebAppManagement::Type::kDefault);
+    return web_app;
+  }
+
+  std::unique_ptr<WebApp> CreateIsolatedWebApp(
+      const IsolationData& isolation_data) {
+    std::unique_ptr<WebApp> web_app = CreateMinimalWebApp();
+    web_app->SetIsolationData(isolation_data);
+    return web_app;
+  }
+
+  std::unique_ptr<WebApp> CreateWebAppWithPermissionsPolicy(
+      const blink::ParsedPermissionsPolicy& permissions_policy) {
+    std::unique_ptr<WebApp> web_app = CreateMinimalWebApp();
+    web_app->SetPermissionsPolicy(permissions_policy);
+    return web_app;
+  }
+
+  std::unique_ptr<WebApp> ToAndFromProto(const WebApp& web_app) {
+    return WebAppDatabase::CreateWebApp(
+        *WebAppDatabase::CreateWebAppProto(web_app));
+  }
+};
+
+TEST_F(WebAppDatabaseProtoDataTest, DoesNotSetIsolationDataIfNotIsolated) {
+  std::unique_ptr<WebApp> web_app = CreateMinimalWebApp();
+
+  std::unique_ptr<WebApp> protoed_web_app = ToAndFromProto(*web_app);
+  EXPECT_THAT(*web_app,
+              AllOf(Eq(*protoed_web_app),
+                    Property("isolation_data", &WebApp::isolation_data,
+                             absl::nullopt)));
+}
+
+TEST_F(WebAppDatabaseProtoDataTest, SavesInstalledBundleIsolationData) {
+  base::FilePath path(FILE_PATH_LITERAL("bundle_path"));
+  std::unique_ptr<WebApp> web_app = CreateIsolatedWebApp(
+      IsolationData(IsolationData::InstalledBundle{.path = path}));
+
+  std::unique_ptr<WebApp> protoed_web_app = ToAndFromProto(*web_app);
+  EXPECT_THAT(*web_app, Eq(*protoed_web_app));
+  EXPECT_THAT(web_app->isolation_data()->content,
+              VariantWith<IsolationData::InstalledBundle>(Field(
+                  "path", &IsolationData::InstalledBundle::path, Eq(path))));
+}
+
+TEST_F(WebAppDatabaseProtoDataTest,
+       HandlesCorruptedInstalledBundleIsolationData) {
+  base::FilePath path(FILE_PATH_LITERAL("bundle_path"));
+  std::unique_ptr<WebApp> web_app = CreateIsolatedWebApp(
+      IsolationData(IsolationData::InstalledBundle{.path = path}));
+
+  std::unique_ptr<WebAppProto> web_app_proto =
+      WebAppDatabase::CreateWebAppProto(*web_app);
+  ASSERT_THAT(web_app_proto, NotNull());
+
+  // The path is encoded with Pickle, thus setting some non-pickle data here
+  // should break deserialization.
+  web_app_proto->mutable_isolation_data()
+      ->mutable_installed_bundle()
+      ->mutable_path()
+      ->assign("foo");
+
+  std::unique_ptr<WebApp> protoed_web_app =
+      WebAppDatabase::CreateWebApp(*web_app_proto);
+  EXPECT_THAT(protoed_web_app, IsNull());
+}
+
+TEST_F(WebAppDatabaseProtoDataTest, SavesDevModeBundleIsolationData) {
+  base::FilePath path(FILE_PATH_LITERAL("dev_bundle_path"));
+  std::unique_ptr<WebApp> web_app = CreateIsolatedWebApp(
+      IsolationData(IsolationData::DevModeBundle{.path = path}));
+
+  std::unique_ptr<WebApp> protoed_web_app = ToAndFromProto(*web_app);
+  EXPECT_THAT(*web_app, Eq(*protoed_web_app));
+  EXPECT_THAT(web_app->isolation_data()->content,
+              VariantWith<IsolationData::DevModeBundle>(Field(
+                  "path", &IsolationData::DevModeBundle::path, Eq(path))));
+}
+
+TEST_F(WebAppDatabaseProtoDataTest,
+       HandlesCorruptedDevModeBundleIsolationData) {
+  base::FilePath path(FILE_PATH_LITERAL("bundle_path"));
+  std::unique_ptr<WebApp> web_app = CreateIsolatedWebApp(
+      IsolationData(IsolationData::DevModeBundle{.path = path}));
+
+  std::unique_ptr<WebAppProto> web_app_proto =
+      WebAppDatabase::CreateWebAppProto(*web_app);
+  ASSERT_THAT(web_app_proto, NotNull());
+
+  // The path is encoded with Pickle, thus setting some non-pickle data here
+  // should break deserialization.
+  web_app_proto->mutable_isolation_data()
+      ->mutable_dev_mode_bundle()
+      ->mutable_path()
+      ->assign("foo");
+
+  std::unique_ptr<WebApp> protoed_web_app =
+      WebAppDatabase::CreateWebApp(*web_app_proto);
+  EXPECT_THAT(protoed_web_app, IsNull());
+}
+
+TEST_F(WebAppDatabaseProtoDataTest, SavesDevModeProxyIsolationData) {
+  std::unique_ptr<WebApp> web_app = CreateIsolatedWebApp(IsolationData(
+      IsolationData::DevModeProxy{.proxy_url = url::Origin::Create(
+                                      GURL("https://proxy-example.com/"))}));
+
+  std::unique_ptr<WebApp> protoed_web_app = ToAndFromProto(*web_app);
+  EXPECT_THAT(*web_app, Eq(*protoed_web_app));
+  EXPECT_THAT(
+      web_app->isolation_data()->content,
+      VariantWith<IsolationData::DevModeProxy>(
+          Field("proxy_url", &IsolationData::DevModeProxy::proxy_url,
+                Eq(url::Origin::Create(GURL("https://proxy-example.com/"))))));
+}
+
+TEST_F(WebAppDatabaseProtoDataTest, PermissionsPolicyRoundTrip) {
+  const blink::ParsedPermissionsPolicy policy = {
+      {blink::mojom::PermissionsPolicyFeature::kGyroscope,
+       {},
+       /*matches_all_origins=*/false,
+       /*matches_opaque_src=*/true},
+      {blink::mojom::PermissionsPolicyFeature::kGeolocation,
+       {},
+       /*matches_all_origins=*/true,
+       /*matches_opaque_src=*/false},
+      {blink::mojom::PermissionsPolicyFeature::kGamepad,
+       {{url::Origin::Create(GURL("https://example.com")),
+         /*has_subdomain_wildcard=*/false},
+        {url::Origin::Create(GURL("https://example.net")),
+         /*has_subdomain_wildcard=*/true},
+        {url::Origin::Create(GURL("https://*.example.net")),
+         /*has_subdomain_wildcard=*/false}},
+       /*matches_all_origins=*/false,
+       /*matches_opaque_src=*/false},
+  };
+  std::unique_ptr<WebApp> web_app = CreateWebAppWithPermissionsPolicy(policy);
+
+  std::unique_ptr<WebApp> protoed_web_app = ToAndFromProto(*web_app);
+  EXPECT_THAT(*web_app, Eq(*protoed_web_app));
+  EXPECT_EQ(policy, protoed_web_app->permissions_policy());
+}
+
+TEST_F(WebAppDatabaseProtoDataTest, PermissionsPolicyProto) {
+  const blink::ParsedPermissionsPolicy policy = {
+      {blink::mojom::PermissionsPolicyFeature::kGyroscope,
+       {},
+       /*matches_all_origins=*/false,
+       /*matches_opaque_src=*/true},
+      {blink::mojom::PermissionsPolicyFeature::kGeolocation,
+       {},
+       /*matches_all_origins=*/true,
+       /*matches_opaque_src=*/false},
+      {blink::mojom::PermissionsPolicyFeature::kGamepad,
+       {{url::Origin::Create(GURL("https://example.com")),
+         /*has_subdomain_wildcard=*/false},
+        {url::Origin::Create(GURL("https://example.net")),
+         /*has_subdomain_wildcard=*/true},
+        {url::Origin::Create(GURL("https://*.example.net")),
+         /*has_subdomain_wildcard=*/false}},
+       /*matches_all_origins=*/false,
+       /*matches_opaque_src=*/false},
+  };
+  std::unique_ptr<WebApp> web_app = CreateWebAppWithPermissionsPolicy(policy);
+
+  std::unique_ptr<WebAppProto> proto =
+      WebAppDatabase::CreateWebAppProto(*web_app);
+  ASSERT_EQ(proto->permissions_policy().size(), 3);
+  EXPECT_EQ(proto->permissions_policy().at(0).feature(), "gyroscope");
+  EXPECT_EQ(proto->permissions_policy().at(0).allowed_origins_size(), 0);
+  EXPECT_EQ(proto->permissions_policy().at(0).matches_all_origins(), false);
+  EXPECT_EQ(proto->permissions_policy().at(0).matches_opaque_src(), true);
+  EXPECT_EQ(proto->permissions_policy().at(1).feature(), "geolocation");
+  EXPECT_EQ(proto->permissions_policy().at(1).allowed_origins_size(), 0);
+  EXPECT_EQ(proto->permissions_policy().at(1).matches_all_origins(), true);
+  EXPECT_EQ(proto->permissions_policy().at(1).matches_opaque_src(), false);
+  EXPECT_EQ(proto->permissions_policy().at(2).feature(), "gamepad");
+  ASSERT_EQ(proto->permissions_policy().at(2).allowed_origins_size(), 3);
+  EXPECT_EQ(proto->permissions_policy().at(2).allowed_origins(0),
+            "https://example.com");
+  EXPECT_EQ(proto->permissions_policy().at(2).allowed_origins(1),
+            "https://*.example.net");
+  EXPECT_EQ(proto->permissions_policy().at(2).allowed_origins(2),
+            "https://%2A.example.net");
+  EXPECT_EQ(proto->permissions_policy().at(2).matches_all_origins(), false);
+  EXPECT_EQ(proto->permissions_policy().at(2).matches_opaque_src(), false);
+}
 }  // namespace web_app

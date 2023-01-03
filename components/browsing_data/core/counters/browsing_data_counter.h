@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,7 +40,7 @@ class BrowsingDataCounter {
     virtual bool Finished() const;
 
    private:
-    raw_ptr<const BrowsingDataCounter> source_;
+    raw_ptr<const BrowsingDataCounter, DanglingUntriaged> source_;
   };
 
   // A subclass of Result returned when the computation has finished. The result

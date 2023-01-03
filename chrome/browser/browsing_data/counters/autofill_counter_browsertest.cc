@@ -1,4 +1,4 @@
-// Copyright (c) 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -116,7 +116,9 @@ class AutofillCounterTest : public InProcessBrowserTest {
   }
 
   void RemoveLastAddress() {
-    web_data_service_->RemoveAutofillProfile(address_ids_.back());
+    web_data_service_->RemoveAutofillProfile(
+        address_ids_.back(),
+        autofill::AutofillProfile::Source::kLocalOrSyncable);
     address_ids_.pop_back();
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,7 @@
 #include "third_party/webrtc/modules/desktop_capture/linux/wayland/xdg_desktop_portal_utils.h"
 #include "third_party/webrtc/modules/desktop_capture/linux/wayland/xdg_session_details.h"
 
-namespace remoting {
-namespace xdg_portal {
+namespace remoting::xdg_portal {
 
 // This class is used by the `ChromotingInputThread` to inject input into the
 // wayland remote host using XDG desktop portal APIs.
@@ -49,10 +48,6 @@ class RemoteDesktopPortalInjector {
   void InjectKeyPress(int code, bool pressed, bool is_code = true);
 
  private:
-  static void NotifyKeyboardDone(GObject* gobject,
-                                 GAsyncResult* result,
-                                 gpointer user_data);
-
   SEQUENCE_CHECKER(sequence_checker_);
   raw_ptr<GDBusConnection> connection_ GUARDED_BY_CONTEXT(sequence_checker_) =
       nullptr;
@@ -64,7 +59,6 @@ class RemoteDesktopPortalInjector {
   std::string session_handle_ GUARDED_BY_CONTEXT(sequence_checker_);
 };
 
-}  // namespace xdg_portal
-}  // namespace remoting
+}  // namespace remoting::xdg_portal
 
 #endif  // REMOTING_HOST_LINUX_REMOTE_DESKTOP_PORTAL_INJECTOR_H_

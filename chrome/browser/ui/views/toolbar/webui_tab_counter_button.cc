@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,16 +18,17 @@
 #include "chrome/browser/ui/browser_element_identifiers.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/layout_constants.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
-#include "chrome/browser/ui/views/chrome_view_class_properties.h"
 #include "chrome/browser/ui/views/flying_indicator.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_ink_drop_util.h"
 #include "chrome/grit/generated_resources.h"
+#include "components/user_education/common/user_education_class_properties.h"
 #include "components/vector_icons/vector_icons.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -525,7 +526,7 @@ void WebUITabCounterButton::UpdateColors() {
   const SkColor normal_text_color =
       color_provider->GetColor(kColorToolbarButtonIcon);
   const SkColor current_text_color =
-      GetProperty(kHasInProductHelpPromoKey)
+      GetProperty(user_education::kHasInProductHelpPromoKey)
           ? color_provider->GetColor(kColorToolbarFeaturePromoHighlight)
           : normal_text_color;
 
@@ -601,7 +602,7 @@ void WebUITabCounterButton::AddedToWidget() {
 void WebUITabCounterButton::AfterPropertyChange(const void* key,
                                                 int64_t old_value) {
   View::AfterPropertyChange(key, old_value);
-  if (key != kHasInProductHelpPromoKey)
+  if (key != user_education::kHasInProductHelpPromoKey)
     return;
   UpdateColors();
 }
@@ -680,8 +681,8 @@ void WebUITabCounterButton::ExecuteCommand(int command_id, int event_flags) {
     case WEBUI_TAB_COUNTER_CXMENU_CLOSE_TAB: {
       tab_strip_model_->CloseWebContentsAt(
           tab_strip_model_->active_index(),
-          TabStripModel::CLOSE_USER_GESTURE |
-              TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
+          TabCloseTypes::CLOSE_USER_GESTURE |
+              TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
       break;
     }
     case WEBUI_TAB_COUNTER_CXMENU_NEW_TAB:

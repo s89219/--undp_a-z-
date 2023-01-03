@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,7 +51,7 @@ class SharesheetBubbleViewBrowserTest
         ::sharesheet::SharesheetServiceFactory::GetForProfile(
             browser()->profile());
 
-    auto intent = apps_util::CreateShareIntentFromText("text", "");
+    auto intent = apps_util::MakeShareIntent("text", "");
     intent->action = apps_util::kIntentActionSend;
     sharesheet_service->ShowBubble(
         browser()->tab_strip_model()->GetActiveWebContents(), std::move(intent),

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,18 +11,23 @@
 #include "ash/capture_mode/test_capture_mode_delegate.h"
 #include "ash/public/cpp/capture_mode/capture_mode_test_api.h"
 #include "ash/public/cpp/projector/projector_controller.h"
+#include "ash/public/cpp/projector/projector_new_screencast_precondition.h"
 #include "ash/public/cpp/projector/projector_session.h"
+#include "ash/public/cpp/projector/speech_recognition_availability.h"
 #include "ash/shell.h"
+#include "ash/style/icon_button.h"
 #include "ash/wm/cursor_manager_chromeos.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller_test_api.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/display/screen.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/views/view.h"
+#include "ui/views/view_observer.h"
 
 namespace ash {
 
@@ -106,7 +111,7 @@ void SendKey(ui::KeyboardCode key_code,
 
 void WaitForSeconds(int seconds) {
   base::RunLoop loop;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, loop.QuitClosure(), base::Seconds(seconds));
   loop.Run();
 }
@@ -143,7 +148,7 @@ CaptureModeBarView* GetCaptureModeBarView() {
   return CaptureModeSessionTestApi(session).GetCaptureModeBarView();
 }
 
-CaptureModeToggleButton* GetFullscreenToggleButton() {
+IconButton* GetFullscreenToggleButton() {
   auto* controller = CaptureModeController::Get();
   DCHECK(controller->IsActive());
   return GetCaptureModeBarView()
@@ -151,10 +156,39 @@ CaptureModeToggleButton* GetFullscreenToggleButton() {
       ->fullscreen_toggle_button();
 }
 
-CaptureModeToggleButton* GetRegionToggleButton() {
+IconButton* GetRegionToggleButton() {
   auto* controller = CaptureModeController::Get();
   DCHECK(controller->IsActive());
   return GetCaptureModeBarView()->capture_source_view()->region_toggle_button();
+}
+
+UserNudgeController* GetUserNudgeController() {
+  auto* session = CaptureModeController::Get()->capture_mode_session();
+  DCHECK(session);
+  return CaptureModeSessionTestApi(session).GetUserNudgeController();
+}
+
+bool IsLayerStackedRightBelow(ui::Layer* layer, ui::Layer* sibling) {
+  DCHECK_EQ(layer->parent(), sibling->parent());
+  const auto& children = layer->parent()->children();
+  const int sibling_index =
+      base::ranges::find(children, sibling) - children.begin();
+  return sibling_index > 0 && children[sibling_index - 1] == layer;
+}
+
+void SetDeviceScaleFactor(float dsf) {
+  auto* display_manager = Shell::Get()->display_manager();
+  const auto display_id = display_manager->GetDisplayAt(0).id();
+  display_manager->UpdateZoomFactor(display_id, dsf);
+  auto* controller = CaptureModeController::Get();
+  if (controller->is_recording_in_progress()) {
+    CaptureModeTestApi().FlushRecordingServiceForTesting();
+    auto* test_delegate = static_cast<TestCaptureModeDelegate*>(
+        controller->delegate_for_testing());
+    // Consume any pending video frame from before changing the DSF prior to
+    // proceeding.
+    test_delegate->RequestAndWaitForVideoFrame();
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -175,10 +209,18 @@ void ProjectorCaptureModeIntegrationHelper::SetUp() {
           []() { ProjectorController::Get()->OnSpeechRecognitionStopped(); }));
 
   // Simulate the availability of speech recognition.
-  projector_controller->OnSpeechRecognitionAvailabilityChanged(
-      SpeechRecognitionAvailability::kAvailable);
+  SpeechRecognitionAvailability availability;
+  availability.on_device_availability =
+      OnDeviceRecognitionAvailability::kAvailable;
+  ON_CALL(projector_client_, GetSpeechRecognitionAvailability)
+      .WillByDefault(testing::Return(availability));
   EXPECT_CALL(projector_client_, IsDriveFsMounted())
       .WillRepeatedly(testing::Return(true));
+}
+
+bool ProjectorCaptureModeIntegrationHelper::CanStartProjectorSession() const {
+  return ProjectorController::Get()->GetNewScreencastPrecondition().state !=
+         NewScreencastPreconditionState::kDisabled;
 }
 
 void ProjectorCaptureModeIntegrationHelper::StartProjectorModeSession() {
@@ -190,6 +232,28 @@ void ProjectorCaptureModeIntegrationHelper::StartProjectorModeSession() {
   EXPECT_TRUE(projector_session->is_active());
   auto* controller = CaptureModeController::Get();
   EXPECT_EQ(controller->source(), CaptureModeSource::kFullscreen);
+}
+
+// -----------------------------------------------------------------------------
+// ViewVisibilityChangeWaiter:
+
+ViewVisibilityChangeWaiter ::ViewVisibilityChangeWaiter(views::View* view)
+    : view_(view) {
+  view_->AddObserver(this);
+}
+
+ViewVisibilityChangeWaiter::~ViewVisibilityChangeWaiter() {
+  view_->RemoveObserver(this);
+}
+
+void ViewVisibilityChangeWaiter::Wait() {
+  wait_loop_.Run();
+}
+
+void ViewVisibilityChangeWaiter::OnViewVisibilityChanged(
+    views::View* observed_view,
+    views::View* starting_view) {
+  wait_loop_.Quit();
 }
 
 }  // namespace ash

@@ -31,6 +31,7 @@
 
 #include <memory>
 
+#include "base/check_op.h"
 #include "third_party/blink/public/mojom/messaging/delegated_capability.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialized_script_value.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/unpacked_serialized_script_value.h"
@@ -191,6 +192,10 @@ class CORE_EXPORT MessageEvent final : public Event {
   // Returns true when |data_as_serialized_script_value_| is locked to an
   // agent cluster.
   bool IsLockedToAgentCluster() const;
+
+  // Returns true when |data_as_serialized_script_value_| is not prevented from
+  // being deserialized in the provided execution context.
+  bool CanDeserializeIn(ExecutionContext*) const;
 
   void EntangleMessagePorts(ExecutionContext*);
 

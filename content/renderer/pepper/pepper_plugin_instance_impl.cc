@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,17 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/containers/contains.h"
 #include "base/i18n/char_iterator.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_offset_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -47,7 +48,6 @@
 #include "content/renderer/pepper/url_request_info_util.h"
 #include "content/renderer/pepper/url_response_info_util.h"
 #include "content/renderer/render_frame_impl.h"
-#include "content/renderer/render_view_impl.h"
 #include "content/renderer/sad_plugin.h"
 #include "device/gamepad/public/cpp/gamepads.h"
 #include "ppapi/c/dev/ppp_text_input_dev.h"
@@ -122,7 +122,7 @@
 
 #if BUILDFLAG(ENABLE_PRINTING)
 // nogncheck because dependency on //printing is conditional upon
-// enable_basic_printing flags.
+// enable_printing flags.
 #include "printing/metafile_skia.h"          // nogncheck
 #endif
 
@@ -908,9 +908,8 @@ bool PepperPluginInstanceImpl::
   // Set the composition target.
   for (size_t i = 0; i < ime_text_spans.size(); ++i) {
     if (ime_text_spans[i].thickness == ui::ImeTextSpan::Thickness::kThick) {
-      auto it = std::find(event.composition_segment_offsets.begin(),
-                          event.composition_segment_offsets.end(),
-                          utf8_offsets[2 * i + 2]);
+      auto it = base::ranges::find(event.composition_segment_offsets,
+                                   utf8_offsets[2 * i + 2]);
       if (it != event.composition_segment_offsets.end()) {
         event.composition_target_segment =
             it - event.composition_segment_offsets.begin();
@@ -1466,7 +1465,7 @@ void PepperPluginInstanceImpl::UpdateWheelEventRequest() {
 void PepperPluginInstanceImpl::ScheduleAsyncDidChangeView() {
   if (view_change_weak_ptr_factory_.HasWeakPtrs())
     return;  // Already scheduled.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&PepperPluginInstanceImpl::SendAsyncDidChangeView,
                      view_change_weak_ptr_factory_.GetWeakPtr()));
@@ -2025,9 +2024,10 @@ PP_Var PepperPluginInstanceImpl::ExecuteScript(PP_Instance instance,
 uint32_t PepperPluginInstanceImpl::GetAudioHardwareOutputSampleRate(
     PP_Instance instance) {
   return render_frame()
-             ? blink::AudioDeviceFactory::GetOutputDeviceInfo(
-                   render_frame()->GetWebFrame()->GetLocalFrameToken(),
-                   media::AudioSinkParameters())
+             ? blink::AudioDeviceFactory::GetInstance()
+                   ->GetOutputDeviceInfo(
+                       render_frame()->GetWebFrame()->GetLocalFrameToken(),
+                       media::AudioSinkParameters())
                    .output_params()
                    .sample_rate()
              : 0;
@@ -2036,9 +2036,10 @@ uint32_t PepperPluginInstanceImpl::GetAudioHardwareOutputSampleRate(
 uint32_t PepperPluginInstanceImpl::GetAudioHardwareOutputBufferSize(
     PP_Instance instance) {
   return render_frame()
-             ? blink::AudioDeviceFactory::GetOutputDeviceInfo(
-                   render_frame()->GetWebFrame()->GetLocalFrameToken(),
-                   media::AudioSinkParameters())
+             ? blink::AudioDeviceFactory::GetInstance()
+                   ->GetOutputDeviceInfo(
+                       render_frame()->GetWebFrame()->GetLocalFrameToken(),
+                       media::AudioSinkParameters())
                    .output_params()
                    .frames_per_buffer()
              : 0;
@@ -2237,7 +2238,7 @@ void PepperPluginInstanceImpl::SelectionChanged(PP_Instance instance) {
   // uses a weak pointer rather than exploiting the fact that this class is
   // refcounted because we don't actually want this operation to affect the
   // lifetime of the instance.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&PepperPluginInstanceImpl::RequestSurroundingText,
                      weak_factory_.GetWeakPtr(),
@@ -2651,10 +2652,8 @@ void PepperPluginInstanceImpl::ConvertDIPToViewport(gfx::Rect* rect) const {
 void PepperPluginInstanceImpl::IncrementTextureReferenceCount(
     const viz::TransferableResource& resource) {
   auto it =
-      std::find_if(texture_ref_counts_.begin(), texture_ref_counts_.end(),
-                   [&resource](const MailboxRefCount& ref_count) {
-                     return ref_count.first == resource.mailbox_holder.mailbox;
-                   });
+      base::ranges::find(texture_ref_counts_, resource.mailbox_holder.mailbox,
+                         &MailboxRefCount::first);
   if (it == texture_ref_counts_.end()) {
     texture_ref_counts_.emplace_back(resource.mailbox_holder.mailbox, 1);
     return;
@@ -2666,10 +2665,8 @@ void PepperPluginInstanceImpl::IncrementTextureReferenceCount(
 bool PepperPluginInstanceImpl::DecrementTextureReferenceCount(
     const viz::TransferableResource& resource) {
   auto it =
-      std::find_if(texture_ref_counts_.begin(), texture_ref_counts_.end(),
-                   [&resource](const MailboxRefCount& ref_count) {
-                     return ref_count.first == resource.mailbox_holder.mailbox;
-                   });
+      base::ranges::find(texture_ref_counts_, resource.mailbox_holder.mailbox,
+                         &MailboxRefCount::first);
   DCHECK(it != texture_ref_counts_.end());
 
   if (it->second == 1) {
@@ -2683,12 +2680,8 @@ bool PepperPluginInstanceImpl::DecrementTextureReferenceCount(
 
 bool PepperPluginInstanceImpl::IsTextureInUse(
     const viz::TransferableResource& resource) const {
-  auto it =
-      std::find_if(texture_ref_counts_.begin(), texture_ref_counts_.end(),
-                   [&resource](const MailboxRefCount& ref_count) {
-                     return ref_count.first == resource.mailbox_holder.mailbox;
-                   });
-  return it != texture_ref_counts_.end();
+  return base::Contains(texture_ref_counts_, resource.mailbox_holder.mailbox,
+                        &MailboxRefCount::first);
 }
 
 void PepperPluginInstanceImpl::OnImeSetComposition(

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@
 #include <memory>
 #include <utility>
 
+#include "ash/components/arc/arc_features.h"
 #include "ash/components/arc/arc_util.h"
-#include "ash/components/disks/disk.h"
-#include "ash/components/disks/disk_mount_manager.h"
+#include "ash/constants/ash_switches.h"
 #include "base/barrier_closure.h"
 #include "base/base64.h"
 #include "base/bind.h"
@@ -21,7 +21,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/system/sys_info.h"
-#include "chrome/browser/ash/arc/fileapi/arc_content_file_system_url_util.h"
 #include "chrome/browser/ash/arc/fileapi/arc_documents_provider_root.h"
 #include "chrome/browser/ash/arc/fileapi/arc_documents_provider_root_map.h"
 #include "chrome/browser/ash/arc/fileapi/arc_media_view_util.h"
@@ -33,17 +32,20 @@
 #include "chrome/browser/ash/file_manager/app_id.h"
 #include "chrome/browser/ash/file_manager/fileapi_util.h"
 #include "chrome/browser/ash/file_manager/volume_manager.h"
+#include "chrome/browser/ash/fileapi/external_file_url_util.h"
+#include "chrome/browser/ash/fileapi/file_system_backend.h"
+#include "chrome/browser/ash/guest_os/guest_os_session_tracker.h"
 #include "chrome/browser/ash/guest_os/public/guest_os_mount_provider.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/ash/smb_client/smb_service.h"
 #include "chrome/browser/ash/smb_client/smb_service_factory.h"
 #include "chrome/browser/ash/smb_client/smbfs_share.h"
-#include "chrome/browser/chromeos/fileapi/external_file_url_util.h"
-#include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/download/download_dir_util.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chromeos/ash/components/disks/disk.h"
+#include "chromeos/ash/components/disks/disk_mount_manager.h"
 #include "components/drive/file_system_core_util.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
@@ -89,7 +91,7 @@ constexpr base::FilePath::CharType kArcDownloadRoot[] =
 constexpr base::FilePath::CharType kArcExternalFilesRoot[] =
     FILE_PATH_LITERAL("/external_files");
 // Sync with the volume provider in ARC++ side.
-constexpr char kArcRemovableMediaContentUrlPrefix[] =
+constexpr char kArcStorageContentUrlPrefix[] =
     "content://org.chromium.arc.volumeprovider/";
 // A predefined removable media UUID for testing. Defined in
 // ash/components/arc/volume_mounter/arc_volume_mounter_bridge.cc.
@@ -120,9 +122,17 @@ void OnAllContentUrlsResolved(
   std::move(callback).Run(*urls, *paths_to_share);
 }
 
-// On non-ChromeOS system (test+development), the primary profile uses
-// $HOME/Downloads for ease access to local files for debugging.
+// By default, in ChromeOS it uses the $profile_dir/MyFiles however,
+// for manual tests/development in linux-chromeos it uses $HOME/Downloads for
+// chrome binary and a temp dir for browser tests. The flag
+// `--use-myfiles-in-user-data-dir-for-testing` forces the ChromeOS pattern,
+// even for non-ChromeOS environments.
 bool ShouldMountPrimaryUserDownloads(Profile* profile) {
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          ash::switches::kUseMyFilesInUserDataDirForTesting)) {
+    return false;
+  }
+
   if (!base::SysInfo::IsRunningOnChromeOS() &&
       user_manager::UserManager::IsInitialized()) {
     const user_manager::User* const user =
@@ -182,8 +192,7 @@ std::string GetSourcePathForRemovableMedia(const std::string& volume_name) {
   const auto& mount_points =
       ash::disks::DiskMountManager::GetInstance()->mount_points();
   const auto found = mount_points.find(mount_path);
-  return found == mount_points.end() ? std::string()
-                                     : found->second.source_path;
+  return found == mount_points.end() ? std::string() : found->source_path;
 }
 
 // Returns the UUID of a removable device using its volume name as a key.
@@ -245,11 +254,17 @@ absl::optional<int> MyFilesFolderToMessageId(std::string folder) {
 const base::FilePath::CharType kFuseBoxMediaPath[] =
     FILE_PATH_LITERAL("/media/fuse/fusebox");
 
+const base::FilePath::CharType kFuseBoxMediaSlashPath[] =
+    FILE_PATH_LITERAL("/media/fuse/fusebox/");
+
 const base::FilePath::CharType kRemovableMediaPath[] =
     FILE_PATH_LITERAL("/media/removable");
 
 const base::FilePath::CharType kAndroidFilesPath[] =
     FILE_PATH_LITERAL("/run/arc/sdcard/write/emulated/0");
+
+const base::FilePath::CharType kGuestOsAndroidFilesPath[] =
+    FILE_PATH_LITERAL("/media/fuse/android_files");
 
 const base::FilePath::CharType kSystemFontsPath[] =
     FILE_PATH_LITERAL("/usr/share/fonts");
@@ -258,6 +273,31 @@ const base::FilePath::CharType kArchiveMountPath[] =
     FILE_PATH_LITERAL("/media/archive");
 
 const char kFuseBox[] = "fusebox";
+
+// The actual value of this string is arbitrary (other than, per the comments
+// in external_mount_points.h, mount names should not contain '/'), but this
+// nonsense-looking word (based on the first two letters of each of "fuse box
+// mount name") is unique enough so that, when seeing "fubomona" in a log
+// message (e.g. in a storage::FileSystemURL's debug string form), code-
+// searching for that string should quickly find this definition here (and the
+// kFuseBoxMountNamePrefix name that code-search can find references for).
+//
+// This is just a prefix. The complete mount name (for FuseBox mounts, not for
+// storage::ExternalMountPoints generally) looks like "fubomona:volumetype.etc"
+// where the volumetype (e.g. "adp", "fsp") acts like a namespace so that ADP's
+// "etc" format won't accidentally conflict with FSP's "etc" format.
+//
+// This means that the "volumetype.etc" string value *can* be the same as a
+// FuseBox subdir string value, as they're both prefixed with "volumetype.",
+// but they don't *have* to be. Specifically, the "etc" may contain identifiers
+// that other in-process Chromium code wants to parse but those identifiers
+// might be longer than Linux's NAME_MAX.
+const char kFuseBoxMountNamePrefix[] = "fubomona:";
+
+const char kFuseBoxSubdirPrefixADP[] = "adp.";
+const char kFuseBoxSubdirPrefixFSP[] = "fsp.";
+const char kFuseBoxSubdirPrefixMTP[] = "mtp.";
+const char kFuseBoxSubdirPrefixTMP[] = "tmp.";
 
 const char kShareCacheMountPointName[] = "ShareCache";
 
@@ -315,8 +355,12 @@ base::FilePath GetAndroidFilesPath() {
   storage::ExternalMountPoints* const mount_points =
       storage::ExternalMountPoints::GetSystemInstance();
   base::FilePath path;
-  if (mount_points->GetRegisteredPath(mount_point_name, &path))
+  if (mount_points->GetRegisteredPath(mount_point_name, &path)) {
     return path;
+  }
+  if (arc::IsArcVmEnabled()) {
+    return base::FilePath(file_manager::util::kGuestOsAndroidFilesPath);
+  }
   return base::FilePath(file_manager::util::kAndroidFilesPath);
 }
 
@@ -324,8 +368,6 @@ bool MigratePathFromOldFormat(Profile* profile,
                               const base::FilePath& old_base,
                               const base::FilePath& old_path,
                               base::FilePath* new_path) {
-  const base::FilePath new_base = GetMyFilesFolderForProfile(profile);
-
   // Special case, migrating /home/chronos/user which is set early (before a
   // profile is attached to the browser process) to default to
   // /home/chronos/u-{hash}/MyFiles/Downloads.
@@ -333,6 +375,12 @@ bool MigratePathFromOldFormat(Profile* profile,
       old_path == base::FilePath("/home/chronos/user")) {
     *new_path = GetDownloadsFolderForProfile(profile);
     return true;
+  }
+
+  // If the `new_base` is already parent of `old_path`, no need to migrate.
+  const base::FilePath new_base = GetMyFilesFolderForProfile(profile);
+  if (new_base.IsParent(old_path)) {
+    return false;
   }
 
   base::FilePath relative;
@@ -387,7 +435,10 @@ std::string GetCrostiniMountPointName(Profile* profile) {
 }
 
 std::string GetGuestOsMountPointName(Profile* profile,
-                                     crostini::ContainerId id) {
+                                     const guest_os::GuestId& id) {
+  if (id.vm_type == guest_os::VmType::ARCVM) {
+    return kAndroidFilesMountPointName;
+  }
   return base::JoinString(
       {"guestos", ash::ProfileHelper::GetUserIdHashFromProfile(profile),
        base::EscapeAllExceptUnreserved(id.vm_name),
@@ -477,21 +528,21 @@ bool ConvertFileSystemURLToPathInsideVM(
       *inside = inside->Append(kCrostiniMapShortcutsSharedWithMe);
     }
     // Computers -> Computers
-  } else if (id == chromeos::kSystemMountNameRemovable) {
+  } else if (id == ash::kSystemMountNameRemovable) {
     // Removable.
-    *inside = vm_mount.Append(chromeos::kSystemMountNameRemovable);
+    *inside = vm_mount.Append(ash::kSystemMountNameRemovable);
   } else if (id == GetAndroidFilesMountPointName()) {
     // PlayFiles.
     *inside = vm_mount.Append(kCrostiniMapPlayFiles);
-  } else if (id == chromeos::kSystemMountNameArchive) {
+  } else if (id == ash::kSystemMountNameArchive) {
     // Archive.
-    *inside = vm_mount.Append(chromeos::kSystemMountNameArchive);
+    *inside = vm_mount.Append(ash::kSystemMountNameArchive);
   } else if (id == GetCrostiniMountPointName(profile)) {
     // Crostini.
     if (map_crostini_home) {
-      absl::optional<crostini::ContainerInfo> container_info =
-          crostini::CrostiniManager::GetForProfile(profile)->GetContainerInfo(
-              crostini::ContainerId::GetDefault());
+      auto container_info =
+          guest_os::GuestOsSessionTracker::GetForProfile(profile)->GetInfo(
+              crostini::DefaultContainerId());
       if (!container_info) {
         return false;
       }
@@ -544,9 +595,9 @@ bool ConvertPathInsideVMToFileSystemURL(
   base::FilePath relative_path;
 
   if (map_crostini_home) {
-    absl::optional<crostini::ContainerInfo> container_info =
-        crostini::CrostiniManager::GetForProfile(profile)->GetContainerInfo(
-            crostini::ContainerId::GetDefault());
+    auto container_info =
+        guest_os::GuestOsSessionTracker::GetForProfile(profile)->GetInfo(
+            crostini::DefaultContainerId());
     if (container_info &&
         AppendRelativePath(container_info->homedir, inside, &relative_path)) {
       *file_system_url = mount_points->CreateExternalFileSystemURL(
@@ -596,20 +647,20 @@ bool ConvertPathInsideVMToFileSystemURL(
                  .Append(relative_path);
     }
     // Computers -> Computers
-  } else if (base::FilePath(chromeos::kSystemMountNameRemovable)
+  } else if (base::FilePath(ash::kSystemMountNameRemovable)
                  .AppendRelativePath(path, &relative_path)) {
     // Removable subdirs only.
-    mount_name = chromeos::kSystemMountNameRemovable;
+    mount_name = ash::kSystemMountNameRemovable;
     path = relative_path;
   } else if (AppendRelativePath(base::FilePath(kCrostiniMapPlayFiles), path,
                                 &relative_path)) {
     // PlayFiles.
     mount_name = GetAndroidFilesMountPointName();
     path = relative_path;
-  } else if (base::FilePath(chromeos::kSystemMountNameArchive)
+  } else if (base::FilePath(ash::kSystemMountNameArchive)
                  .AppendRelativePath(path, &relative_path)) {
     // Archive subdirs only.
-    mount_name = chromeos::kSystemMountNameArchive;
+    mount_name = ash::kSystemMountNameArchive;
     path = relative_path;
   } else if (base::FilePath(kCrostiniMapSmbFs)
                  .AppendRelativePath(path, &relative_path)) {
@@ -650,16 +701,16 @@ bool ConvertPathToArcUrl(const base::FilePath& path,
       GetDownloadsFolderForProfile(primary_profile);
   base::FilePath result_path(kArcDownloadRoot);
   if (primary_downloads.AppendRelativePath(path, &result_path)) {
-    *arc_url_out = GURL(arc::kFileSystemFileproviderUrl)
+    *arc_url_out = GURL(kArcStorageContentUrlPrefix)
                        .Resolve(base::EscapePath(result_path.AsUTF8Unsafe()));
     return true;
   }
 
-  // Convert paths under Android files root (/run/arc/sdcard/write/emulated/0).
+  // Convert paths under Android files root (e.g.,
+  // /run/arc/sdcard/write/emulated/0).
   result_path = base::FilePath(kArcExternalFilesRoot);
-  if (base::FilePath(kAndroidFilesPath)
-          .AppendRelativePath(path, &result_path)) {
-    *arc_url_out = GURL(arc::kFileSystemFileproviderUrl)
+  if (GetAndroidFilesPath().AppendRelativePath(path, &result_path)) {
+    *arc_url_out = GURL(kArcStorageContentUrlPrefix)
                        .Resolve(base::EscapePath(result_path.AsUTF8Unsafe()));
     return true;
   }
@@ -685,7 +736,7 @@ bool ConvertPathToArcUrl(const base::FilePath& path,
       return false;
     }
     *arc_url_out =
-        GURL(kArcRemovableMediaContentUrlPrefix)
+        GURL(kArcStorageContentUrlPrefix)
             .Resolve(base::EscapePath(relative_path_with_uuid.AsUTF8Unsafe()));
     return true;
   }
@@ -770,8 +821,8 @@ bool ConvertPathToArcUrl(const base::FilePath& path,
   }
 
   // Convert paths under /special or other paths forced to use external URL.
-  GURL external_file_url = chromeos::CreateExternalFileURLFromPath(
-      primary_profile, path, force_external);
+  GURL external_file_url =
+      ash::CreateExternalFileURLFromPath(primary_profile, path, force_external);
 
   if (!external_file_url.is_empty()) {
     *arc_url_out = arc::EncodeToChromeContentProviderUrl(external_file_url);
@@ -931,7 +982,7 @@ std::string GetPathDisplayTextForSettings(Profile* profile,
               .Append(l10n_util::GetStringUTF8(
                   IDS_FILE_BROWSER_DRIVE_SHARED_WITH_ME_COLLECTION_LABEL))
               .value())) {
-  } else if (ReplacePrefix(&result, kAndroidFilesPath,
+  } else if (ReplacePrefix(&result, GetAndroidFilesPath().value(),
                            l10n_util::GetStringUTF8(
                                IDS_FILE_BROWSER_ANDROID_FILES_ROOT_LABEL))) {
   } else if (ReplacePrefix(&result, GetCrostiniMountDirectory(profile).value(),
@@ -974,8 +1025,8 @@ bool ExtractMountNameFileSystemNameFullPath(const base::FilePath& absolute_path,
   size_t fs_start = 0;
   size_t slash_pos = value.find(base::FilePath::kSeparators[0]);
   *mount_name = *file_system_name = value.substr(0, slash_pos);
-  if (*mount_name == chromeos::kSystemMountNameRemovable ||
-      *mount_name == chromeos::kSystemMountNameArchive) {
+  if (*mount_name == ash::kSystemMountNameRemovable ||
+      *mount_name == ash::kSystemMountNameArchive) {
     if (slash_pos == std::string::npos) {
       return false;
     }
@@ -1077,6 +1128,7 @@ absl::optional<base::FilePath> GetDisplayablePath(Profile* profile,
       break;
     case VOLUME_TYPE_ANDROID_FILES:
     case VOLUME_TYPE_CROSTINI:
+    case VOLUME_TYPE_GUEST_OS:
       result = base::FilePath(l10n_util::GetStringUTF8(
                                   IDS_FILE_BROWSER_MY_FILES_ROOT_LABEL))
                    .Append(volume->volume_label());
@@ -1086,7 +1138,6 @@ absl::optional<base::FilePath> GetDisplayablePath(Profile* profile,
     case VOLUME_TYPE_MOUNTED_ARCHIVE_FILE:
     case VOLUME_TYPE_PROVIDED:
     case VOLUME_TYPE_DOCUMENTS_PROVIDER:
-    case VOLUME_TYPE_GUEST_OS:
     case VOLUME_TYPE_MTP:
     case VOLUME_TYPE_SMB:
       result = base::FilePath(volume->volume_label());

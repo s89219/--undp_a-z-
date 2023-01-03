@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,6 @@
 #include "content/public/browser/first_party_sets_handler.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
-#include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/shell/android/shell_descriptors.h"
@@ -56,7 +55,7 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS)
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "device/bluetooth/dbus/bluez_dbus_manager.h"
 #elif BUILDFLAG(IS_LINUX)
 #include "device/bluetooth/dbus/dbus_bluez_manager_wrapper_linux.h"
@@ -66,9 +65,9 @@
 #include "chromeos/lacros/dbus/lacros_dbus_thread_manager.h"
 #endif
 
-#if BUILDFLAG(USE_GTK)
-#include "ui/gtk/gtk_ui_factory.h"
-#include "ui/views/linux_ui/linux_ui.h"  // nogncheck
+#if BUILDFLAG(IS_LINUX)
+#include "ui/linux/linux_ui.h"          // nogncheck
+#include "ui/linux/linux_ui_factory.h"  // nogncheck
 #endif
 
 namespace content {
@@ -111,14 +110,13 @@ scoped_refptr<base::RefCountedMemory> PlatformResourceProvider(int key) {
 
 }  // namespace
 
-ShellBrowserMainParts::ShellBrowserMainParts(MainFunctionParams parameters)
-    : parameters_(std::move(parameters)) {}
+ShellBrowserMainParts::ShellBrowserMainParts() = default;
 
 ShellBrowserMainParts::~ShellBrowserMainParts() = default;
 
 void ShellBrowserMainParts::PostCreateMainMessageLoop() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  chromeos::DBusThreadManager::Initialize();
+  ash::DBusThreadManager::Initialize();
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
   chromeos::LacrosDBusThreadManager::Initialize();
 #endif
@@ -144,6 +142,11 @@ int ShellBrowserMainParts::PreEarlyInitialization() {
 void ShellBrowserMainParts::InitializeBrowserContexts() {
   set_browser_context(new ShellBrowserContext(false));
   set_off_the_record_browser_context(new ShellBrowserContext(true));
+  // Persistent Origin Trials needs to be instantiated as soon as possible
+  // during browser startup, to ensure data is available prior to the first
+  // request.
+  browser_context_->GetOriginTrialsControllerDelegate();
+  off_the_record_browser_context_->GetOriginTrialsControllerDelegate();
 }
 
 void ShellBrowserMainParts::InitializeMessageLoopContext() {
@@ -151,16 +154,12 @@ void ShellBrowserMainParts::InitializeMessageLoopContext() {
                          gfx::Size());
 }
 
-// Copied from ChromeBrowserMainExtraPartsViewsLinux::ToolkitInitialized().
-// See that function for details.
 void ShellBrowserMainParts::ToolkitInitialized() {
-#if BUILDFLAG(USE_GTK)
   if (switches::IsRunWebTestsSwitchPresent())
     return;
 
-  auto linux_ui = BuildGtkUi();
-  linux_ui->Initialize();
-  views::LinuxUI::SetInstance(std::move(linux_ui));
+#if BUILDFLAG(IS_LINUX)
+  ui::LinuxUi::SetInstance(ui::GetDefaultLinuxUi());
 #endif
 }
 
@@ -189,8 +188,6 @@ int ShellBrowserMainParts::PreMainMessageLoopRun() {
   net::NetModule::SetResourceProvider(PlatformResourceProvider);
   ShellDevToolsManagerDelegate::StartHttpHandler(browser_context_.get());
   InitializeMessageLoopContext();
-  // The First-Party Sets feature always expects to be initialized
-  FirstPartySetsHandler::GetInstance()->SetPublicFirstPartySets(base::File());
   return 0;
 }
 
@@ -204,8 +201,8 @@ void ShellBrowserMainParts::PostMainMessageLoopRun() {
   ShellDevToolsManagerDelegate::StopHttpHandler();
   browser_context_.reset();
   off_the_record_browser_context_.reset();
-#if BUILDFLAG(USE_GTK)
-  views::LinuxUI::SetInstance(nullptr);
+#if BUILDFLAG(IS_LINUX)
+  ui::LinuxUi::SetInstance(nullptr);
 #endif
   performance_manager_lifetime_.reset();
 }
@@ -220,7 +217,7 @@ void ShellBrowserMainParts::PostDestroyThreads() {
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  chromeos::DBusThreadManager::Shutdown();
+  ash::DBusThreadManager::Shutdown();
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
   chromeos::LacrosDBusThreadManager::Shutdown();
 #endif

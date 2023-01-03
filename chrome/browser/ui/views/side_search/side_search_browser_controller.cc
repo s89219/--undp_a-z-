@@ -1,10 +1,12 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/side_search/side_search_browser_controller.h"
 
 #include "base/bind.h"
+#include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/branding_buildflags.h"
 #include "chrome/app/vector_icons/vector_icons.h"
@@ -16,7 +18,6 @@
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
 #include "chrome/browser/ui/side_search/side_search_utils.h"
 #include "chrome/browser/ui/ui_features.h"
-#include "chrome/browser/ui/user_education/feature_promo_controller.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
@@ -29,6 +30,7 @@
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
 #include "components/url_formatter/elide_url.h"
+#include "components/user_education/common/feature_promo_controller.h"
 #include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/navigation_handle.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -87,14 +89,14 @@ class HeaderButton : public views::ImageButton {
                   ChromeDistanceMetric::
                       DISTANCE_SIDE_PANEL_HEADER_VECTOR_ICON_SIZE);
     SetImageModel(Button::STATE_NORMAL, ui::ImageModel::FromVectorIcon(
-                                            icon_, ui::kColorIcon, icon_size));
+                                            *icon_, ui::kColorIcon, icon_size));
     SetImageModel(Button::STATE_DISABLED,
-                  ui::ImageModel::FromVectorIcon(icon_, ui::kColorIconDisabled,
+                  ui::ImageModel::FromVectorIcon(*icon_, ui::kColorIconDisabled,
                                                  icon_size));
   }
 
  private:
-  const gfx::VectorIcon& icon_;
+  const raw_ref<const gfx::VectorIcon> icon_;
 };
 
 BEGIN_METADATA(HeaderButton, views::ImageButton)
@@ -105,10 +107,12 @@ class DseImageView : public views::ImageView {
  public:
   METADATA_HEADER(DseImageView);
   explicit DseImageView(Browser* browser)
-      : default_search_icon_source_(
-            browser,
-            base::BindRepeating(&DseImageView::UpdateIconImage,
-                                base::Unretained(this))) {
+      : browser_(browser),
+        icon_changed_subscription_(
+            DefaultSearchIconSource::GetOrCreateForBrowser(browser)
+                ->RegisterIconChangedSubscription(
+                    base::BindRepeating(&DseImageView::UpdateIconImage,
+                                        base::Unretained(this)))) {
     SetFlipCanvasOnPaintForRTLUI(false);
     SetBorder(views::CreateEmptyBorder(
         gfx::Insets::VH(0, views::LayoutProvider::Get()->GetDistanceMetric(
@@ -119,11 +123,13 @@ class DseImageView : public views::ImageView {
 
   void UpdateIconImage() {
     // Attempt to get the default search engine's favicon.
-    auto icon_image = default_search_icon_source_.GetIconImage();
+    auto* default_search_icon_source =
+        DefaultSearchIconSource::GetOrCreateForBrowser(browser_);
+    auto icon_image = default_search_icon_source->GetIconImage();
 
     // Use the DSE's icon image if available.
     if (!icon_image.IsEmpty()) {
-      SetImage(default_search_icon_source_.GetIconImage());
+      SetImage(default_search_icon_source->GetIconImage());
       return;
     }
 
@@ -141,7 +147,10 @@ class DseImageView : public views::ImageView {
   }
 
  private:
-  DefaultSearchIconSource default_search_icon_source_;
+  const raw_ptr<Browser> browser_;
+
+  // Subscription to change notifications to the default search icon source.
+  base::CallbackListSubscription icon_changed_subscription_;
 };
 
 BEGIN_METADATA(DseImageView, views::ImageView)
@@ -174,13 +183,11 @@ class HeaderView : public views::View {
         views::FlexSpecification(views::MinimumFlexSizeRule::kPreferred,
                                  views::MaximumFlexSizeRule::kPreferred));
 
-    auto* simple_site_name = AddChildView(std::make_unique<views::Label>());
-    simple_site_name->SetID(SideSearchBrowserController::SideSearchViewID::
-                                VIEW_ID_SIDE_PANEL_TITLE_LABEL);
-    simple_site_name->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    simple_site_name->SetTextContext(CONTEXT_SIDE_PANEL_TITLE);
-    simple_site_name->SetTextStyle(views::style::STYLE_PRIMARY);
-    simple_site_name->SetProperty(
+    title_label_ = AddChildView(std::make_unique<views::Label>());
+    title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+    title_label_->SetTextContext(CONTEXT_SIDE_PANEL_TITLE);
+    title_label_->SetTextStyle(views::style::STYLE_PRIMARY);
+    title_label_->SetProperty(
         views::kFlexBehaviorKey,
         views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
                                  views::MaximumFlexSizeRule::kUnbounded));
@@ -216,8 +223,8 @@ class HeaderView : public views::View {
     close_button_ = AddChildView(std::make_unique<HeaderButton>(
         vector_icons::kCloseIcon, std::move(callback)));
     views::InstallCircleHighlightPathGenerator(close_button_);
-    close_button_->SetID(SideSearchBrowserController::SideSearchViewID::
-                             VIEW_ID_SIDE_PANEL_CLOSE_BUTTON);
+    close_button_->SetProperty(views::kElementIdentifierKey,
+                               kSidePanelCloseButtonElementId);
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_SIDE_SEARCH_CLOSE_BUTTON));
     close_button_->SetTooltipText(
@@ -241,6 +248,8 @@ class HeaderView : public views::View {
   }
   ~HeaderView() override = default;
 
+  views::Label* get_title_label() { return title_label_; }
+
  private:
   // Updates the toolbar insets which may change as we enter / leave touch mode.
   // Icons are also updated to give them the opportunity to resize and adjust
@@ -253,6 +262,7 @@ class HeaderView : public views::View {
   }
 
   raw_ptr<DseImageView> dse_image_view_ = nullptr;
+  raw_ptr<views::Label> title_label_ = nullptr;
   raw_ptr<HeaderButton> feedback_button_ = nullptr;
   raw_ptr<HeaderButton> close_button_ = nullptr;
 
@@ -268,37 +278,6 @@ class HeaderView : public views::View {
 BEGIN_METADATA(HeaderView, views::View)
 END_METADATA
 
-views::WebView* ConfigureSidePanel(views::View* side_panel,
-                                   Profile* profile,
-                                   Browser* browser,
-                                   base::RepeatingClosure callback) {
-  auto container = std::make_unique<views::FlexLayoutView>();
-  container->SetOrientation(views::LayoutOrientation::kVertical);
-  container->SetCrossAxisAlignment(views::LayoutAlignment::kStretch);
-  container->AddChildView(
-      std::make_unique<HeaderView>(std::move(callback), browser));
-  container->AddChildView(std::make_unique<views::Separator>());
-
-  // The WebView will fill the remaining space after the header view has been
-  // laid out.
-  auto* web_view =
-      container->AddChildView(std::make_unique<views::WebView>(profile));
-  web_view->SetProperty(
-      views::kFlexBehaviorKey,
-      views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
-                               views::MaximumFlexSizeRule::kUnbounded));
-  web_view->SetBackground(views::CreateThemedSolidBackground(kColorToolbar));
-
-  side_panel->AddChildView(std::move(container));
-
-  // The side panel should not start visible to avoid having it participate in
-  // initial layout calculations. Its visibility state will be updated later on
-  // in UpdateSidePanel().
-  side_panel->SetVisible(false);
-
-  return web_view;
-}
-
 }  // namespace
 
 SideSearchBrowserController::SideSearchBrowserController(
@@ -306,14 +285,35 @@ SideSearchBrowserController::SideSearchBrowserController(
     BrowserView* browser_view)
     : side_panel_(side_panel),
       browser_view_(browser_view),
-      web_view_(ConfigureSidePanel(
-          side_panel,
-          browser_view_->GetProfile(),
-          browser_view_->browser(),
-          base::BindRepeating(
-              &SideSearchBrowserController::SidePanelCloseButtonPressed,
-              base::Unretained(this)))),
       focus_tracker_(side_panel_, browser_view_->GetFocusManager()) {
+  auto container = std::make_unique<views::FlexLayoutView>();
+  container->SetOrientation(views::LayoutOrientation::kVertical);
+  container->SetCrossAxisAlignment(views::LayoutAlignment::kStretch);
+  auto* header_view = container->AddChildView(std::make_unique<HeaderView>(
+      base::BindRepeating(
+          &SideSearchBrowserController::SidePanelCloseButtonPressed,
+          base::Unretained(this)),
+      browser_view_->browser()));
+  title_label_ = header_view->get_title_label();
+  container->AddChildView(std::make_unique<views::Separator>());
+
+  // The WebView will fill the remaining space after the header view has been
+  // laid out.
+  web_view_ = container->AddChildView(
+      std::make_unique<views::WebView>(browser_view_->GetProfile()));
+  web_view_->SetProperty(
+      views::kFlexBehaviorKey,
+      views::FlexSpecification(views::MinimumFlexSizeRule::kScaleToZero,
+                               views::MaximumFlexSizeRule::kUnbounded));
+  web_view_->SetBackground(views::CreateThemedSolidBackground(kColorToolbar));
+
+  side_panel_->AddChildView(std::move(container));
+
+  // The side panel should not start visible to avoid having it participate in
+  // initial layout calculations. Its visibility state will be updated later on
+  // in UpdateSidePanel().
+  side_panel_->SetVisible(false);
+
   web_view_visibility_subscription_ =
       web_view_->AddVisibleChangedCallback(base::BindRepeating(
           &SideSearchBrowserController::OnWebViewVisibilityChanged,
@@ -419,7 +419,7 @@ SideSearchBrowserController::CreateToolbarButton() {
                               kSideSearchButtonElementId);
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  toolbar_button->SetVectorIcon(kGoogleGLogoMonochromeIcon);
+  toolbar_button->SetVectorIcon(vector_icons::kGoogleGLogoMonochromeIcon);
 #else
   toolbar_button->SetVectorIcon(kWebIcon);
 #endif
@@ -458,6 +458,10 @@ void SideSearchBrowserController::SidePanelCloseButtonPressed() {
 void SideSearchBrowserController::OpenSidePanel() {
   RecordSideSearchOpenAction(
       SideSearchOpenActionType::kTapOnSideSearchToolbarButton);
+  RecordSidePanelOpenedMetrics();
+
+  shown_via_entrypoint_ = true;
+
   // Close the Side Search IPH if it is showing.
   browser_view_->CloseFeaturePromo(feature_engagement::kIPHSideSearchFeature);
   auto* tracker = feature_engagement::TrackerFactory::GetForBrowserContext(
@@ -469,7 +473,7 @@ void SideSearchBrowserController::OpenSidePanel() {
   UpdateSidePanel();
 
   // After showing the side panel if the web_view_ is visible request focus.
-  if (web_view_->GetVisible())
+  if (web_view_->GetVisible() && web_view_->web_contents())
     web_view_->web_contents()->Focus();
 }
 
@@ -483,8 +487,7 @@ void SideSearchBrowserController::CloseSidePanel(
   UpdateSidePanel();
 
   // Clear the side contents for the currently active tab.
-  if (base::FeatureList::IsEnabled(features::kSideSearchClearCacheWhenClosed))
-    ClearSideContentsCacheForActiveTab();
+  ClearSideContentsCacheForActiveTab();
 }
 
 void SideSearchBrowserController::ClobberAllInCurrentBrowser() {
@@ -552,21 +555,43 @@ void SideSearchBrowserController::UpdateSidePanel() {
   if (base::FeatureList::IsEnabled(features::kSideSearchDSESupport) &&
       !base::FeatureList::IsEnabled(features::kSidePanelImprovedClobbering) &&
       will_show_side_panel) {
-    browser_view_->CloseOpenRightAlignedSidePanel(/*exclude_lens=*/false,
-                                                  /*exclude_side_search=*/true);
+    browser_view_->CloseOpenRightAlignedSidePanel(/*exclude_side_search=*/true);
   }
 
   // The side panel contents will be created if it does not already exist.
+  const auto* previous_hosted_contents = web_view_->web_contents();
   web_view_->SetWebContents(will_show_side_panel
                                 ? tab_contents_helper->GetSidePanelContents()
                                 : nullptr);
 
+  // Log time shown metrics whenever a new contents is hosted in the side panel.
+  if (previous_hosted_contents != web_view_->web_contents()) {
+    // If we were hosting a side panel contents, log its open duration.
+    if (previous_hosted_contents) {
+      DCHECK(side_panel_shown_timer_);
+      RecordSideSearchSidePanelTimeShown(shown_via_entrypoint_,
+                                         side_panel_shown_timer_->Elapsed());
+    }
+
+    // Reset the `shown_via_entrypoint_` flag only if we were previously hosting
+    // a side panel contents. Do this to avoid prematurely resetting the flag
+    // when the side panel is first shown before the shown duration is logged.
+    if (previous_hosted_contents)
+      shown_via_entrypoint_ = false;
+
+    // If hosting a new side panel contents start a new timer. If no longer
+    // hosting a side panel contents clear the timer.
+    DCHECK_EQ(will_show_side_panel, !!web_view_->web_contents());
+    if (web_view_->web_contents()) {
+      side_panel_shown_timer_ = base::ElapsedTimer();
+    } else {
+      side_panel_shown_timer_.reset();
+    }
+  }
+
   // Update the side panel header title text if necessary
   if (auto last_search_url = tab_contents_helper->last_search_url()) {
-    views::Label* title_label =
-        static_cast<views::Label*>(side_panel_->GetViewByID(
-            static_cast<int>(VIEW_ID_SIDE_PANEL_TITLE_LABEL)));
-    title_label->SetText(
+    title_label_->SetText(
         url_formatter::FormatUrlForDisplayOmitSchemePathAndTrivialSubdomains(
             last_search_url.value()));
   }
@@ -603,9 +628,10 @@ void SideSearchBrowserController::UpdateSidePanel() {
     was_side_panel_available_for_page_ = can_show_side_panel_for_page;
   }
 
-  // Once the anchor element is visible, maybe show promo.
-  if (can_show_side_panel_for_page &&
-      tab_contents_helper->returned_to_previous_srp()) {
+  // Once the anchor element is visible, maybe show promo for the toolbar
+  // button.
+  if (toolbar_button_ && can_show_side_panel_for_page &&
+      tab_contents_helper->returned_to_previous_srp_count() > 0) {
     browser_view_->MaybeShowFeaturePromo(
         feature_engagement::kIPHSideSearchFeature);
   }
@@ -620,6 +646,16 @@ void SideSearchBrowserController::OnWebViewVisibilityChanged() {
   // layout and we should not do this until the web_view_ is visible. Layout is
   // invalidated when we call UpdateSidePanel() but is scheduled asynchronously
   // by the hosting Widget.
-  if (web_view_->GetVisible())
+  if (web_view_->GetVisible() && web_view_->web_contents())
     web_view_->web_contents()->Focus();
+}
+
+void SideSearchBrowserController::RecordSidePanelOpenedMetrics() {
+  auto* active_contents = browser_view_->GetActiveWebContents();
+  if (!active_contents)
+    return;
+
+  auto* helper = SideSearchTabContentsHelper::FromWebContents(active_contents);
+  if (helper)
+    helper->MaybeRecordDurationSidePanelAvailableToFirstOpen();
 }

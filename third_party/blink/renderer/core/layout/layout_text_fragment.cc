@@ -23,6 +23,7 @@
 #include "third_party/blink/renderer/core/layout/layout_text_fragment.h"
 
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
+#include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/first_letter_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/text.h"
@@ -60,18 +61,25 @@ LayoutTextFragment* LayoutTextFragment::Create(Node* node,
                                                  length, legacy);
 }
 
-LayoutTextFragment* LayoutTextFragment::CreateAnonymous(PseudoElement& pseudo,
+LayoutTextFragment* LayoutTextFragment::CreateAnonymous(Document& doc,
                                                         StringImpl* text,
                                                         unsigned start,
                                                         unsigned length,
                                                         LegacyLayout legacy) {
   LayoutTextFragment* fragment =
       LayoutTextFragment::Create(nullptr, text, start, length, legacy);
-  fragment->SetDocumentForAnonymous(&pseudo.GetDocument());
+  fragment->SetDocumentForAnonymous(&doc);
   if (length)
-    pseudo.GetDocument().View()->IncrementVisuallyNonEmptyCharacterCount(
-        length);
+    doc.View()->IncrementVisuallyNonEmptyCharacterCount(length);
   return fragment;
+}
+
+LayoutTextFragment* LayoutTextFragment::CreateAnonymous(PseudoElement& pseudo,
+                                                        StringImpl* text,
+                                                        unsigned start,
+                                                        unsigned length,
+                                                        LegacyLayout legacy) {
+  return CreateAnonymous(pseudo.GetDocument(), text, start, length, legacy);
 }
 
 LayoutTextFragment* LayoutTextFragment::CreateAnonymous(PseudoElement& pseudo,
@@ -228,6 +236,12 @@ void LayoutTextFragment::UpdateHitTestResult(
   if (is_remaining_text_layout_object_ || !GetFirstLetterPseudoElement())
     return;
   result.SetInnerNode(GetFirstLetterPseudoElement());
+}
+
+DOMNodeId LayoutTextFragment::OwnerNodeId() const {
+  NOT_DESTROYED();
+  Node* node = AssociatedTextNode();
+  return node ? DOMNodeIds::IdForNode(node) : kInvalidDOMNodeId;
 }
 
 Position LayoutTextFragment::PositionForCaretOffset(unsigned offset) const {

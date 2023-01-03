@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,13 @@
 #include <memory>
 
 #include "ash/app_list/app_list_controller_impl.h"
+#include "ash/app_list/app_list_view_delegate.h"
 #include "ash/bubble/bubble_utils.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
+#include "ash/style/ash_color_id.h"
 #include "ash/style/ash_color_provider.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "ash/style/icon_button.h"
 #include "ash/style/pill_button.h"
 #include "components/vector_icons/vector_icons.h"
@@ -22,11 +25,13 @@
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/highlight_border.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/view_class_properties.h"
+#include "ui/views/view_utils.h"
 
 namespace ash {
 namespace {
@@ -78,6 +83,9 @@ AppListToastView::Builder::~Builder() = default;
 std::unique_ptr<AppListToastView> AppListToastView::Builder::Build() {
   std::unique_ptr<AppListToastView> toast =
       std::make_unique<AppListToastView>(title_);
+
+  if (view_delegate_)
+    toast->SetViewDelegate(view_delegate_);
 
   if (style_for_tablet_mode_)
     toast->StyleForTabletMode();
@@ -160,10 +168,24 @@ AppListToastView::Builder& AppListToastView::Builder::SetStyleForTabletMode(
   return *this;
 }
 
+AppListToastView::Builder& AppListToastView::Builder::SetViewDelegate(
+    AppListViewDelegate* delegate) {
+  view_delegate_ = delegate;
+  return *this;
+}
+
+void AppListToastView::SetViewDelegate(AppListViewDelegate* delegate) {
+  view_delegate_ = delegate;
+}
+
 AppListToastView::Builder& AppListToastView::Builder::SetIconBackground(
     bool has_icon_background) {
   has_icon_background_ = has_icon_background;
   return *this;
+}
+
+bool AppListToastView::IsToastButton(views::View* view) {
+  return views::IsViewClass<ToastPillButton>(view);
 }
 
 AppListToastView::AppListToastView(const std::u16string title) {
@@ -179,6 +201,7 @@ AppListToastView::AppListToastView(const std::u16string title) {
 
   title_label_ =
       label_container_->AddChildView(std::make_unique<views::Label>(title));
+  bubble_utils::ApplyStyle(title_label_, bubble_utils::TypographyStyle::kBody2);
   title_label_->SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
   title_label_->SetMultiLine(true);
   // TODO(crbug/682266): This is a temporary fix for the issue where the multi
@@ -202,12 +225,6 @@ void AppListToastView::StyleForTabletMode() {
 
 void AppListToastView::OnThemeChanged() {
   views::View::OnThemeChanged();
-  if (title_label_)
-    bubble_utils::ApplyStyle(title_label_,
-                             bubble_utils::LabelStyle::kChipTitle);
-  if (subtitle_label_)
-    bubble_utils::ApplyStyle(subtitle_label_,
-                             bubble_utils::LabelStyle::kSubtitle);
 
   if (style_for_tablet_mode_) {
     SetBackground(views::CreateRoundedRectBackground(
@@ -233,9 +250,11 @@ void AppListToastView::SetButton(
     views::Button::PressedCallback button_callback) {
   DCHECK(button_callback);
 
-  toast_button_ = AddChildView(std::make_unique<PillButton>(
-      button_callback, button_text, PillButton::Type::kIconless,
-      /*icon=*/nullptr));
+  toast_button_ =
+      AddChildView(std::make_unique<AppListToastView::ToastPillButton>(
+          view_delegate_, button_callback, button_text,
+          PillButton::Type::kDefaultWithoutIcon,
+          /*icon=*/nullptr));
   toast_button_->SetBorder(views::NullBorder());
 }
 
@@ -244,7 +263,7 @@ void AppListToastView::SetCloseButton(
   DCHECK(close_button_callback);
 
   close_button_ = AddChildView(std::make_unique<IconButton>(
-      close_button_callback, IconButton::Type::kSmallFloating,
+      close_button_callback, IconButton::Type::kMediumFloating,
       &vector_icons::kCloseIcon,
       IDS_ASH_LAUNCHER_CLOSE_SORT_TOAST_BUTTON_SPOKEN_TEXT));
   close_button_->SetProperty(views::kMarginsKey, kCloseButtonMargin);
@@ -262,6 +281,9 @@ void AppListToastView::SetSubtitle(const std::u16string subtitle) {
 
   subtitle_label_ =
       label_container_->AddChildView(std::make_unique<views::Label>(subtitle));
+  bubble_utils::ApplyStyle(subtitle_label_,
+                           bubble_utils::TypographyStyle::kAnnotation1,
+                           kColorAshTextColorSecondary);
   subtitle_label_->SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
 }
 
@@ -323,6 +345,33 @@ void AppListToastView::UpdateInteriorMargins(const gfx::Insets& margin) {
   layout_manager_->set_inside_border_insets(margin);
 }
 
+AppListToastView::ToastPillButton::ToastPillButton(
+    AppListViewDelegate* view_delegate,
+    PressedCallback callback,
+    const std::u16string& text,
+    Type type,
+    const gfx::VectorIcon* icon)
+    : PillButton(callback, text, type, icon), view_delegate_(view_delegate) {
+  views::FocusRing::Get(this)->SetHasFocusPredicate([&](View* view) -> bool {
+    // With a `view_delegate_` present, focus ring should only show when
+    // button is focused and keyboard traversal is engaged.
+    if (view_delegate_ && !view_delegate_->KeyboardTraversalEngaged())
+      return false;
+
+    return view->HasFocus();
+  });
+}
+
+void AppListToastView::ToastPillButton::OnFocus() {
+  PillButton::OnFocus();
+  views::FocusRing::Get(this)->SchedulePaint();
+}
+
+void AppListToastView::ToastPillButton::OnBlur() {
+  PillButton::OnBlur();
+  views::FocusRing::Get(this)->SchedulePaint();
+}
+
 void AppListToastView::UpdateIconImage() {
   if (!icon_)
     return;
@@ -339,7 +388,7 @@ void AppListToastView::UpdateIconImage() {
   // Default to dark_icon_ if dark/light mode feature is not enabled.
   const gfx::VectorIcon* themed_icon =
       !features::IsDarkLightModeEnabled() ||
-              AshColorProvider::Get()->IsDarkModeEnabled()
+              DarkLightModeControllerImpl::Get()->IsDarkModeEnabled()
           ? dark_icon_
           : light_icon_;
   icon_->SetImage(ui::ImageModel::FromVectorIcon(

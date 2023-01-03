@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,11 +22,11 @@
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "crypto/encryptor.h"
 #include "crypto/symmetric_key.h"
@@ -65,7 +65,7 @@ class CookieCryptor : public CookieCryptoDelegate {
   bool DecryptString(const std::string& ciphertext,
                      std::string* plaintext) override;
 
-  bool should_encrypt_;
+  bool should_encrypt_ = true;
 
  private:
   std::unique_ptr<crypto::SymmetricKey> key_;
@@ -73,8 +73,7 @@ class CookieCryptor : public CookieCryptoDelegate {
 };
 
 CookieCryptor::CookieCryptor()
-    : should_encrypt_(true),
-      key_(crypto::SymmetricKey::DeriveKeyFromPasswordUsingPbkdf2(
+    : key_(crypto::SymmetricKey::DeriveKeyFromPasswordUsingPbkdf2(
           crypto::SymmetricKey::AES,
           "password",
           "saltiest",
@@ -150,9 +149,9 @@ class SQLitePersistentCookieStoreTest : public TestWithTaskEnvironment {
     if (crypt_cookies)
       cookie_crypto_delegate_ = std::make_unique<CookieCryptor>();
 
-    store_ = new SQLitePersistentCookieStore(
+    store_ = base::MakeRefCounted<SQLitePersistentCookieStore>(
         temp_dir_.GetPath().Append(kCookieFilename),
-        use_current_thread ? base::ThreadTaskRunnerHandle::Get()
+        use_current_thread ? base::SingleThreadTaskRunner::GetCurrentDefault()
                            : client_task_runner_,
         background_task_runner_, restore_old_session_cookies,
         cookie_crypto_delegate_.get());
@@ -322,7 +321,7 @@ TEST_F(SQLitePersistentCookieStoreTest, TestSessionCookiesDeletedOnStartup) {
 
   // Load the store a second time. Before the store finishes loading, add a
   // transient cookie and flush it to disk.
-  store_ = new SQLitePersistentCookieStore(
+  store_ = base::MakeRefCounted<SQLitePersistentCookieStore>(
       temp_dir_.GetPath().Append(kCookieFilename), client_task_runner_,
       background_task_runner_, false, nullptr);
 
@@ -357,7 +356,7 @@ TEST_F(SQLitePersistentCookieStoreTest, TestSessionCookiesDeletedOnStartup) {
   // Load the store a third time, this time restoring session cookies. The
   // store should contain exactly 4 cookies: the 3 persistent, and "c.com",
   // which was added during the second cookie store load.
-  store_ = new SQLitePersistentCookieStore(
+  store_ = base::MakeRefCounted<SQLitePersistentCookieStore>(
       temp_dir_.GetPath().Append(kCookieFilename), client_task_runner_,
       background_task_runner_, true, nullptr);
   store_->Load(base::BindOnce(&SQLitePersistentCookieStoreTest::OnLoaded,
@@ -386,8 +385,9 @@ TEST_F(SQLitePersistentCookieStoreTest, TestLoadCookiesForKey) {
   // |client_task_runner_| on the same thread. Therefore, when a
   // |background_task_runner_| task is blocked, |client_task_runner_| tasks
   // can't run. To allow precise control of |background_task_runner_| without
-  // preventing client tasks to run, use base::ThreadTaskRunnerHandle::Get()
-  // instead of |client_task_runner_| for this test.
+  // preventing client tasks to run, use
+  // base::SingleThreadTaskRunner::GetCurrentDefault() instead of
+  // |client_task_runner_| for this test.
   Create(false /* crypt_cookies */, false /* restore_old_session_cookies */,
          true /* use_current_thread */);
 
@@ -1178,34 +1178,33 @@ bool AddV9CookiesToDBImpl(sql::Database* db,
   if (!statement.is_valid())
     return false;
   sql::Transaction transaction(db);
-  transaction.Begin();
-  for (size_t i = 0; i < cookies.size(); ++i) {
+  if (!transaction.Begin())
+    return false;
+  for (const auto& cookie : cookies) {
     statement.Reset(true);
     statement.BindInt64(
-        0,
-        cookies[i].CreationDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
-    statement.BindString(1, cookies[i].Domain());
-    statement.BindString(2, cookies[i].Name());
-    statement.BindString(3, cookies[i].Value());
+        0, cookie.CreationDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindString(1, cookie.Domain());
+    statement.BindString(2, cookie.Name());
+    statement.BindString(3, cookie.Value());
     statement.BindBlob(4, base::span<uint8_t>());  // encrypted_value
-    statement.BindString(5, cookies[i].Path());
+    statement.BindString(5, cookie.Path());
     statement.BindInt64(
-        6, cookies[i].ExpiryDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
-    statement.BindInt(7, cookies[i].IsSecure());
-    statement.BindInt(8, cookies[i].IsHttpOnly());
+        6, cookie.ExpiryDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindInt(7, cookie.IsSecure());
+    statement.BindInt(8, cookie.IsHttpOnly());
     // Note that this and Priority() below nominally rely on the enums in
     // sqlite_persistent_cookie_store.cc having the same values as the
     // ones in ../../cookies/cookie_constants.h.  But nothing in this test
     // relies on that equivalence, so it's not worth the hassle to guarantee
     // that.
-    statement.BindInt(9, static_cast<int>(cookies[i].SameSite()));
-    statement.BindInt64(10, cookies[i]
-                                .LastAccessDate()
-                                .ToDeltaSinceWindowsEpoch()
-                                .InMicroseconds());
-    statement.BindInt(11, cookies[i].IsPersistent());
-    statement.BindInt(12, cookies[i].IsPersistent());
-    statement.BindInt(13, static_cast<int>(cookies[i].Priority()));
+    statement.BindInt(9, static_cast<int>(cookie.SameSite()));
+    statement.BindInt64(
+        10,
+        cookie.LastAccessDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindInt(11, cookie.IsPersistent());
+    statement.BindInt(12, cookie.IsPersistent());
+    statement.BindInt(13, static_cast<int>(cookie.Priority()));
     if (!statement.Run())
       return false;
   }
@@ -1391,8 +1390,7 @@ TEST_F(SQLitePersistentCookieStoreTest, KeyInconsistency) {
   // Create a cookie on a scheme that doesn't handle cookies by default,
   // and save it.
   std::unique_ptr<CookieMonster> cookie_monster =
-      std::make_unique<CookieMonster>(store_.get(), /*net_log=*/nullptr,
-                                      /*first_party_sets_enabled=*/false);
+      std::make_unique<CookieMonster>(store_.get(), /*net_log=*/nullptr);
   ResultSavingCookieCallback<bool> cookie_scheme_callback1;
   cookie_monster->SetCookieableSchemes({"ftp", "http"},
                                        cookie_scheme_callback1.MakeCallback());
@@ -1436,8 +1434,8 @@ TEST_F(SQLitePersistentCookieStoreTest, KeyInconsistency) {
   // instances, so they should complete before the new PersistentCookieStore
   // starts looking at the state on disk.
   Create(false, false, true /* want current thread to invoke cookie monster */);
-  cookie_monster = std::make_unique<CookieMonster>(
-      store_.get(), /*net_log=*/nullptr, /*first_party_sets_enabled=*/false);
+  cookie_monster =
+      std::make_unique<CookieMonster>(store_.get(), /*net_log=*/nullptr);
   ResultSavingCookieCallback<bool> cookie_scheme_callback2;
   cookie_monster->SetCookieableSchemes({"ftp", "http"},
                                        cookie_scheme_callback2.MakeCallback());
@@ -1467,8 +1465,7 @@ TEST_F(SQLitePersistentCookieStoreTest, OpsIfInitFailed) {
       base::CreateDirectory(temp_dir_.GetPath().Append(kCookieFilename)));
   Create(false, false, true /* want current thread to invoke cookie monster */);
   std::unique_ptr<CookieMonster> cookie_monster =
-      std::make_unique<CookieMonster>(store_.get(), /*net_log=*/nullptr,
-                                      /*first_party_sets_enabled=*/false);
+      std::make_unique<CookieMonster>(store_.get(), /*net_log=*/nullptr);
 
   ResultSavingCookieCallback<CookieAccessResult> set_cookie_callback;
   GURL url("http://www.example.com/");
@@ -1655,34 +1652,33 @@ bool AddV10CookiesToDBImpl(sql::Database* db,
   if (!statement.is_valid())
     return false;
   sql::Transaction transaction(db);
-  transaction.Begin();
-  for (size_t i = 0; i < cookies.size(); ++i) {
+  if (!transaction.Begin())
+    return false;
+  for (const auto& cookie : cookies) {
     statement.Reset(true);
     statement.BindInt64(
-        0,
-        cookies[i].CreationDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
-    statement.BindString(1, cookies[i].Domain());
-    statement.BindString(2, cookies[i].Name());
-    statement.BindString(3, cookies[i].Value());
+        0, cookie.CreationDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindString(1, cookie.Domain());
+    statement.BindString(2, cookie.Name());
+    statement.BindString(3, cookie.Value());
     statement.BindBlob(4, base::span<uint8_t>());  // encrypted_value
-    statement.BindString(5, cookies[i].Path());
+    statement.BindString(5, cookie.Path());
     statement.BindInt64(
-        6, cookies[i].ExpiryDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
-    statement.BindInt(7, cookies[i].IsSecure());
-    statement.BindInt(8, cookies[i].IsHttpOnly());
+        6, cookie.ExpiryDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindInt(7, cookie.IsSecure());
+    statement.BindInt(8, cookie.IsHttpOnly());
     // Note that this and Priority() below nominally rely on the enums in
     // sqlite_persistent_cookie_store.cc having the same values as the
     // ones in ../../cookies/cookie_constants.h.  But nothing in this test
     // relies on that equivalence, so it's not worth the hassle to guarantee
     // that.
-    statement.BindInt(9, static_cast<int>(cookies[i].SameSite()));
-    statement.BindInt64(10, cookies[i]
-                                .LastAccessDate()
-                                .ToDeltaSinceWindowsEpoch()
-                                .InMicroseconds());
-    statement.BindInt(11, cookies[i].IsPersistent());
-    statement.BindInt(12, cookies[i].IsPersistent());
-    statement.BindInt(13, static_cast<int>(cookies[i].Priority()));
+    statement.BindInt(9, static_cast<int>(cookie.SameSite()));
+    statement.BindInt64(
+        10,
+        cookie.LastAccessDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindInt(11, cookie.IsPersistent());
+    statement.BindInt(12, cookie.IsPersistent());
+    statement.BindInt(13, static_cast<int>(cookie.Priority()));
     if (!statement.Run())
       return false;
   }
@@ -2031,34 +2027,33 @@ bool AddV11CookiesToDB(sql::Database* db) {
   if (!statement.is_valid())
     return false;
   sql::Transaction transaction(db);
-  transaction.Begin();
-  for (size_t i = 0; i < cookies.size(); ++i) {
+  if (!transaction.Begin())
+    return false;
+  for (const auto& cookie : cookies) {
     statement.Reset(true);
     statement.BindInt64(
-        0,
-        cookies[i].CreationDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
-    statement.BindString(1, cookies[i].Domain());
-    statement.BindString(2, cookies[i].Name());
-    statement.BindString(3, cookies[i].Value());
+        0, cookie.CreationDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindString(1, cookie.Domain());
+    statement.BindString(2, cookie.Name());
+    statement.BindString(3, cookie.Value());
     statement.BindBlob(4, base::span<uint8_t>());  // encrypted_value
-    statement.BindString(5, cookies[i].Path());
+    statement.BindString(5, cookie.Path());
     statement.BindInt64(
-        6, cookies[i].ExpiryDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
-    statement.BindInt(7, cookies[i].IsSecure());
-    statement.BindInt(8, cookies[i].IsHttpOnly());
+        6, cookie.ExpiryDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindInt(7, cookie.IsSecure());
+    statement.BindInt(8, cookie.IsHttpOnly());
     // Note that this and Priority() below nominally rely on the enums in
     // sqlite_persistent_cookie_store.cc having the same values as the
     // ones in ../../cookies/cookie_constants.h.  But nothing in this test
     // relies on that equivalence, so it's not worth the hassle to guarantee
     // that.
-    statement.BindInt(9, static_cast<int>(cookies[i].SameSite()));
-    statement.BindInt64(10, cookies[i]
-                                .LastAccessDate()
-                                .ToDeltaSinceWindowsEpoch()
-                                .InMicroseconds());
-    statement.BindInt(11, cookies[i].IsPersistent());
-    statement.BindInt(12, cookies[i].IsPersistent());
-    statement.BindInt(13, static_cast<int>(cookies[i].Priority()));
+    statement.BindInt(9, static_cast<int>(cookie.SameSite()));
+    statement.BindInt64(
+        10,
+        cookie.LastAccessDate().ToDeltaSinceWindowsEpoch().InMicroseconds());
+    statement.BindInt(11, cookie.IsPersistent());
+    statement.BindInt(12, cookie.IsPersistent());
+    statement.BindInt(13, static_cast<int>(cookie.Priority()));
     if (!statement.Run())
       return false;
   }
@@ -2080,7 +2075,8 @@ bool AddV12CookiesToDB(sql::Database* db) {
   if (!statement.is_valid())
     return false;
   sql::Transaction transaction(db);
-  transaction.Begin();
+  if (!transaction.Begin())
+    return false;
   for (const CanonicalCookie& cookie : cookies) {
     statement.Reset(true);
     statement.BindInt64(
@@ -2128,7 +2124,8 @@ bool AddV13CookiesToDB(sql::Database* db) {
   if (!statement.is_valid())
     return false;
   sql::Transaction transaction(db);
-  transaction.Begin();
+  if (!transaction.Begin())
+    return false;
   for (const CanonicalCookie& cookie : cookies) {
     statement.Reset(true);
     statement.BindInt64(
@@ -2178,7 +2175,8 @@ bool AddV15CookiesToDB(sql::Database* db) {
   if (!statement.is_valid())
     return false;
   sql::Transaction transaction(db);
-  transaction.Begin();
+  if (!transaction.Begin())
+    return false;
   for (const CanonicalCookie& cookie : cookies) {
     statement.Reset(true);
     statement.BindInt64(

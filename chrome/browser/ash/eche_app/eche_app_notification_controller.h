@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,19 +10,11 @@
 #include "chrome/browser/ash/eche_app/eche_app_manager_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/message_center/public/cpp/notification.h"
-#include "ui/message_center/public/cpp/notification_delegate.h"
 
 class Profile;
 
 namespace ash {
 namespace eche_app {
-
-extern const char kEcheAppScreenLockNotifierId[];
-extern const char kEcheAppRetryConnectionNotifierId[];
-extern const char kEcheAppInactivityNotifierId[];
-extern const char kEcheAppFromWebWithoudButtonNotifierId[];
-extern const char kEcheAppLearnMoreUrl[];
-extern const char kEcheAppHelpUrl[];
 
 // Controller class to show notifications.
 class EcheAppNotificationController {
@@ -53,34 +45,12 @@ class EcheAppNotificationController {
   // Close the notifiications about coonnectiion error and launch error
   void CloseConnectionOrLaunchErrorNotifications();
 
- protected:
-  // Exposed for testing.
-  virtual void LaunchSettings();
-  virtual void LaunchLearnMore();
-  virtual void LaunchTryAgain();
-  virtual void LaunchHelp();
-
  private:
-  // NotificationDelegate implementation for handling click events.
-  class NotificationDelegate : public message_center::NotificationDelegate {
-   public:
-    NotificationDelegate(const std::string& notification_id,
-                         const base::WeakPtr<EcheAppNotificationController>&
-                             notification_controller);
+  friend class EcheAppNotificationControllerTest;
 
-    NotificationDelegate(const NotificationDelegate&) = delete;
-    NotificationDelegate& operator=(const NotificationDelegate&) = delete;
-
-    // message_center::NotificationDelegate:
-    void Click(const absl::optional<int>& button_index,
-               const absl::optional<std::u16string>& reply) override;
-
-   private:
-    ~NotificationDelegate() override;
-
-    std::string notification_id_;
-    base::WeakPtr<EcheAppNotificationController> notification_controller_;
-  };
+  virtual void LaunchSettings();
+  virtual void LaunchTryAgain();
+  virtual void LaunchNetworkSettings();
 
   // Displays the notification to the user.
   void ShowNotification(

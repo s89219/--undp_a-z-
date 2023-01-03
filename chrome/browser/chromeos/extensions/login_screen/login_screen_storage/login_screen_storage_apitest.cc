@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -79,9 +79,8 @@ class LoginScreenStorageExtensionApiTest
 
   void RunTest(const std::string& test_name) {
     catcher_ = std::make_unique<extensions::ResultCatcher>();
-    listener_ =
-        std::make_unique<ExtensionTestMessageListener>(kListenerMessage,
-                                                       /* will_reply= */ true);
+    listener_ = std::make_unique<ExtensionTestMessageListener>(
+        kListenerMessage, ReplyBehavior::kWillReply);
 
     extensions::ExtensionId extension_id;
     EXPECT_TRUE(extension_force_install_mixin_.ForceInstallFromCrx(

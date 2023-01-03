@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "ash/accessibility/ui/accessibility_focus_ring_controller_impl.h"
 #include "ash/accessibility/ui/accessibility_focus_ring_layer.h"
+#include "ash/components/arc/mojom/accessibility_helper.mojom-shared.h"
 #include "ash/components/arc/session/arc_bridge_service.h"
 #include "ash/components/arc/session/arc_service_manager.h"
 #include "ash/components/arc/test/arc_util_test_support.h"
@@ -29,7 +30,7 @@
 #include "components/exo/shell_surface.h"
 #include "components/exo/shell_surface_util.h"
 #include "components/exo/surface.h"
-#include "components/exo/test/exo_test_helper.h"
+#include "components/exo/test/shell_surface_builder.h"
 #include "components/exo/wm_helper.h"
 #include "components/exo/wm_helper_chromeos.h"
 #include "components/viz/common/features.h"
@@ -47,12 +48,6 @@ using ::ash::AccessibilityManager;
 
 namespace {
 
-struct TestWindow {
-  std::unique_ptr<exo::Buffer> buffer;
-  std::unique_ptr<exo::Surface> surface;
-  std::unique_ptr<exo::ClientControlledShellSurface> shell_surface;
-};
-
 class MockAutomationEventRouter
     : public extensions::AutomationEventRouterInterface {
  public:
@@ -68,9 +63,7 @@ class MockAutomationEventRouter
   void DispatchAccessibilityLocationChange(
       const ExtensionMsg_AccessibilityLocationChangeParams& params) override {}
 
-  void DispatchTreeDestroyedEvent(
-      ui::AXTreeID tree_id,
-      content::BrowserContext* browser_context) override {}
+  void DispatchTreeDestroyedEvent(ui::AXTreeID tree_id) override {}
 
   void DispatchActionResult(
       const ui::AXActionData& data,
@@ -129,32 +122,15 @@ class ArcAccessibilityHelperBridgeBrowserTest : public InProcessBrowserTest {
  protected:
   // Create and initialize a window for this test, i.e. an Arc++-specific
   // version of ExoTestHelper::CreateWindow.
-  TestWindow MakeTestArcWindow(std::string name) {
-    TestWindow ret = MakeNonArcTestWindow();
-
-    // Forcefully set task_id for each window.
-    ret.surface->SetApplicationId(name.c_str());
-
-    // CreateClientControlledShellSurface doesn't set AppType so do it here.
-    ret.shell_surface->GetWidget()->GetNativeWindow()->SetProperty(
-        aura::client::kAppType, static_cast<int>(ash::AppType::ARC_APP));
-
-    return ret;
+  std::unique_ptr<exo::ClientControlledShellSurface> MakeTestArcWindow(
+      std::string name) {
+    return exo::test::ShellSurfaceBuilder({640, 480})
+        .SetApplicationId(name)
+        .BuildClientControlledShellSurface();
   }
 
-  TestWindow MakeNonArcTestWindow() {
-    TestWindow ret;
-    exo::test::ExoTestHelper helper;
-
-    ret.surface = std::make_unique<exo::Surface>();
-    ret.buffer = std::make_unique<exo::Buffer>(
-        helper.CreateGpuMemoryBuffer(gfx::Size(640, 480)));
-    ret.shell_surface = helper.CreateClientControlledShellSurface(
-        ret.surface.get(), /*is_modal=*/false);
-    ret.surface->Attach(ret.buffer.get());
-    ret.surface->Commit();
-
-    return ret;
+  std::unique_ptr<exo::ShellSurface> MakeNonArcTestWindow() {
+    return exo::test::ShellSurfaceBuilder({640, 480}).BuildShellSurface();
   }
 
   std::unique_ptr<FakeAccessibilityHelperInstance>
@@ -168,21 +144,19 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
             fake_accessibility_helper_instance_->filter_type());
   EXPECT_FALSE(fake_accessibility_helper_instance_->explore_by_touch_enabled());
 
-  TestWindow test_window_1 = MakeTestArcWindow("org.chromium.arc.1");
-  TestWindow test_window_2 = MakeTestArcWindow("org.chromium.arc.2");
+  auto shell_surface1 = MakeTestArcWindow("org.chromium.arc.1");
+  auto shell_surface2 = MakeTestArcWindow("org.chromium.arc.2");
 
   wm::ActivationClient* activation_client =
       ash::Shell::Get()->activation_client();
   activation_client->ActivateWindow(
-      test_window_1.shell_surface->GetWidget()->GetNativeWindow());
-  ASSERT_EQ(test_window_1.shell_surface->GetWidget()->GetNativeWindow(),
+      shell_surface1->GetWidget()->GetNativeWindow());
+  ASSERT_EQ(shell_surface1->GetWidget()->GetNativeWindow(),
             activation_client->GetActiveWindow());
-  ASSERT_FALSE(
-      test_window_1.shell_surface->GetWidget()->GetNativeWindow()->GetProperty(
-          aura::client::kAccessibilityTouchExplorationPassThrough));
-  ASSERT_FALSE(
-      test_window_2.shell_surface->GetWidget()->GetNativeWindow()->GetProperty(
-          aura::client::kAccessibilityTouchExplorationPassThrough));
+  ASSERT_FALSE(shell_surface1->GetWidget()->GetNativeWindow()->GetProperty(
+      aura::client::kAccessibilityTouchExplorationPassThrough));
+  ASSERT_FALSE(shell_surface2->GetWidget()->GetNativeWindow()->GetProperty(
+      aura::client::kAccessibilityTouchExplorationPassThrough));
 
   AccessibilityManager::Get()->EnableSpokenFeedback(true);
 
@@ -191,14 +165,13 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
             fake_accessibility_helper_instance_->filter_type());
 
   // Use ChromeVox by default. Touch exploration pass through is still false.
-  EXPECT_FALSE(
-      test_window_1.shell_surface->GetWidget()->GetNativeWindow()->GetProperty(
-          aura::client::kAccessibilityTouchExplorationPassThrough));
+  EXPECT_FALSE(shell_surface1->GetWidget()->GetNativeWindow()->GetProperty(
+      aura::client::kAccessibilityTouchExplorationPassThrough));
 
   ArcAccessibilityHelperBridge* bridge =
       ArcAccessibilityHelperBridge::GetForBrowserContext(browser()->profile());
 
-  // Enable TalkBack. Touch exploration pass through of test_window_1
+  // Enable TalkBack. Touch exploration pass through of shell_surface1
   // (current active window) would become true.
   bridge->SetNativeChromeVoxArcSupport(
       false,
@@ -206,36 +179,34 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
           [](extensions::api::accessibility_private::SetNativeChromeVoxResponse
                  response) {}));
 
-  EXPECT_TRUE(
-      test_window_1.shell_surface->GetWidget()->GetNativeWindow()->GetProperty(
-          aura::client::kAccessibilityTouchExplorationPassThrough));
+  EXPECT_TRUE(shell_surface1->GetWidget()->GetNativeWindow()->GetProperty(
+      aura::client::kAccessibilityTouchExplorationPassThrough));
 
-  // Activate test_window_2 and confirm that it still be false.
+  // Activate shell_surface2 and confirm that it still be false.
   activation_client->ActivateWindow(
-      test_window_2.shell_surface->GetWidget()->GetNativeWindow());
-  ASSERT_EQ(test_window_2.shell_surface->GetWidget()->GetNativeWindow(),
+      shell_surface2->GetWidget()->GetNativeWindow());
+  ASSERT_EQ(shell_surface2->GetWidget()->GetNativeWindow(),
             activation_client->GetActiveWindow());
-  EXPECT_FALSE(
-      test_window_2.shell_surface->GetWidget()->GetNativeWindow()->GetProperty(
-          aura::client::kAccessibilityTouchExplorationPassThrough));
+  EXPECT_FALSE(shell_surface2->GetWidget()->GetNativeWindow()->GetProperty(
+      aura::client::kAccessibilityTouchExplorationPassThrough));
 
   EXPECT_TRUE(fake_accessibility_helper_instance_->explore_by_touch_enabled());
 }
 
 IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
                        RequestTreeSyncOnWindowIdChange) {
-  TestWindow test_window_1 = MakeTestArcWindow("org.chromium.arc.1");
-  TestWindow test_window_2 = MakeTestArcWindow("org.chromium.arc.2");
+  auto shell_surface1 = MakeTestArcWindow("org.chromium.arc.1");
+  auto shell_surface2 = MakeTestArcWindow("org.chromium.arc.2");
 
   wm::ActivationClient* activation_client =
       ash::Shell::Get()->activation_client();
   activation_client->ActivateWindow(
-      test_window_1.shell_surface->GetWidget()->GetNativeWindow());
+      shell_surface1->GetWidget()->GetNativeWindow());
 
   AccessibilityManager::Get()->EnableSpokenFeedback(true);
 
   exo::SetShellClientAccessibilityId(
-      test_window_1.shell_surface->GetWidget()->GetNativeWindow(), 10);
+      shell_surface1->GetWidget()->GetNativeWindow(), 10);
 
   EXPECT_TRUE(
       fake_accessibility_helper_instance_->last_requested_tree_window_key()
@@ -245,14 +216,14 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
                ->get_window_id());
 
   exo::SetShellClientAccessibilityId(
-      test_window_2.shell_surface->GetWidget()->GetNativeWindow(), 20);
+      shell_surface2->GetWidget()->GetNativeWindow(), 20);
 
   EXPECT_EQ(
       20U, fake_accessibility_helper_instance_->last_requested_tree_window_key()
                ->get_window_id());
 
   exo::SetShellClientAccessibilityId(
-      test_window_2.shell_surface->GetWidget()->GetNativeWindow(), 21);
+      shell_surface2->GetWidget()->GetNativeWindow(), 21);
 
   EXPECT_EQ(
       21U, fake_accessibility_helper_instance_->last_requested_tree_window_key()
@@ -280,11 +251,11 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
                        FocusHighlight) {
   AccessibilityManager::Get()->SetFocusHighlightEnabled(true);
 
-  TestWindow test_window = MakeTestArcWindow("org.chromium.arc.1");
+  auto shell_surface = MakeTestArcWindow("org.chromium.arc.1");
   wm::ActivationClient* activation_client =
       ash::Shell::Get()->activation_client();
   activation_client->ActivateWindow(
-      test_window.shell_surface->GetWidget()->GetNativeWindow());
+      shell_surface->GetWidget()->GetNativeWindow());
 
   const gfx::Rect node_rect1 = gfx::Rect(50, 50, 50, 50);
 
@@ -345,7 +316,7 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest, PerformAction) {
-  TestWindow test_window = MakeTestArcWindow("org.chromium.arc.1");
+  auto shell_surface = MakeTestArcWindow("org.chromium.arc.1");
   AccessibilityManager::Get()->EnableSpokenFeedback(true);
 
   ArcAccessibilityHelperBridge* bridge =
@@ -384,8 +355,54 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest, PerformAction) {
 }
 
 IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
+                       PerformActionWithParams) {
+  auto shell_surface = MakeTestArcWindow("org.chromium.arc.1");
+  AccessibilityManager::Get()->EnableSpokenFeedback(true);
+
+  ArcAccessibilityHelperBridge* bridge =
+      ArcAccessibilityHelperBridge::GetForBrowserContext(browser()->profile());
+  auto& tree_map = bridge->trees_for_test();
+  ASSERT_EQ(1u, tree_map.size());
+  AXTreeSourceArc* tree_source = tree_map.begin()->second.get();
+  MockAutomationEventRouter router;
+  tree_source->set_automation_event_router_for_test(&router);
+  tree_source->set_window_id_for_test(5);
+
+  ui::AXActionData action_data;
+  action_data.target_node_id = 10;
+  action_data.target_tree_id = tree_source->ax_tree_id();
+  action_data.action = ax::mojom::Action::kScrollToPositionAtRowColumn;
+  action_data.row_column = {1, 3};
+  bridge->OnAction(action_data);
+
+  mojom::AccessibilityActionData* requested_action =
+      fake_accessibility_helper_instance_->last_requested_action();
+  EXPECT_EQ(10, requested_action->node_id);
+  EXPECT_EQ(mojom::AccessibilityActionType::SCROLL_TO_POSITION,
+            requested_action->action_type);
+  EXPECT_EQ(5, requested_action->window_id);
+  EXPECT_EQ(1, requested_action->int_parameters->at(
+                   mojom::ActionIntArgumentType::ROW_INT));
+  EXPECT_EQ(3, requested_action->int_parameters->at(
+                   mojom::ActionIntArgumentType::COLUMN_INT));
+
+  ui::AXActionData dispatched_action =
+      router.last_dispatched_action_data_.value();
+  EXPECT_EQ(10, dispatched_action.target_node_id);
+  EXPECT_EQ(tree_source->ax_tree_id(), dispatched_action.target_tree_id);
+  EXPECT_EQ(ax::mojom::Action::kScrollToPositionAtRowColumn,
+            dispatched_action.action);
+
+  EXPECT_TRUE(router.last_dispatched_action_result_.has_value());
+  EXPECT_TRUE(router.last_dispatched_action_result_.value());
+
+  // Clear event router to prevent invalid access.
+  tree_source->set_automation_event_router_for_test(nullptr);
+}
+
+IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest,
                        GetTextLocation) {
-  TestWindow test_window = MakeTestArcWindow("org.chromium.arc.1");
+  auto shell_surface = MakeTestArcWindow("org.chromium.arc.1");
   AccessibilityManager::Get()->SetSelectToSpeakEnabled(true);
 
   ArcAccessibilityHelperBridge* bridge =
@@ -432,16 +449,16 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest, Histogram) {
   base::HistogramTester histogram_tester;
 
   // Prepare ARC and non-ARC windows
-  TestWindow test_window = MakeTestArcWindow("org.chromium.arc.1");
+  auto arc_shell_surface = MakeTestArcWindow("org.chromium.arc.1");
   wm::ActivationClient* activation_client =
       ash::Shell::Get()->activation_client();
 
-  TestWindow non_arc_window = MakeNonArcTestWindow();
+  auto non_arc_shell_surface = MakeNonArcTestWindow();
 
   // Turn on and off a feature while an ARC window is focused and then it will
   // be counted.
   activation_client->ActivateWindow(
-      test_window.shell_surface->GetWidget()->GetNativeWindow());
+      arc_shell_surface->GetWidget()->GetNativeWindow());
   histogram_tester.ExpectBucketCount("Arc.Accessibility.WindowCount", 1, 0);
   ash::MagnificationManager::Get()->SetMagnifierEnabled(true);
   histogram_tester.ExpectBucketCount("Arc.Accessibility.WindowCount", 1, 1);
@@ -456,23 +473,23 @@ IN_PROC_BROWSER_TEST_F(ArcAccessibilityHelperBridgeBrowserTest, Histogram) {
   // Focus on an ARC window and focus on a non-ARC window while a feature is on
   // and then it will be counted.
   activation_client->ActivateWindow(
-      non_arc_window.shell_surface->GetWidget()->GetNativeWindow());
+      non_arc_shell_surface->GetWidget()->GetNativeWindow());
   ash::MagnificationManager::Get()->SetMagnifierEnabled(true);
   histogram_tester.ExpectBucketCount("Arc.Accessibility.WindowCount", 1, 2);
   activation_client->ActivateWindow(
-      test_window.shell_surface->GetWidget()->GetNativeWindow());
+      arc_shell_surface->GetWidget()->GetNativeWindow());
   histogram_tester.ExpectTotalCount(
       "Arc.Accessibility.ActiveTime.FullscreenMagnifier", 1);
   activation_client->ActivateWindow(
-      non_arc_window.shell_surface->GetWidget()->GetNativeWindow());
+      non_arc_shell_surface->GetWidget()->GetNativeWindow());
   histogram_tester.ExpectTotalCount(
       "Arc.Accessibility.ActiveTime.FullscreenMagnifier", 2);
 
   // Close the focused ARC window while a feature is on and then it will be
   // counted.
   activation_client->ActivateWindow(
-      test_window.shell_surface->GetWidget()->GetNativeWindow());
-  test_window.surface.reset();
+      arc_shell_surface->GetWidget()->GetNativeWindow());
+  arc_shell_surface.reset();
   histogram_tester.ExpectTotalCount(
       "Arc.Accessibility.ActiveTime.FullscreenMagnifier", 3);
 

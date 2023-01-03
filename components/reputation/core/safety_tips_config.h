@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,21 +25,19 @@ void SetSafetyTipsRemoteConfigProto(std::unique_ptr<SafetyTipsConfig> proto);
 // a safety tip.
 const SafetyTipsConfig* GetSafetyTipsRemoteConfigProto();
 
-// Checks SafeBrowsing-style permutations of |url| against the component updater
-// allowlist and returns whether the URL is explicitly allowed.
+// Checks permutations of |visited_url| against the component updater allowlist
+// and returns whether the URL is explicitly allowed to spoof |canonical_url|.
+//
+// Cases when canonical_url is unknown (as in kFailedSpoofChecks) are treated as
+// if they're trying to spoof themselves, so set canonical_url = visited_url.
 bool IsUrlAllowlistedBySafetyTipsComponent(const SafetyTipsConfig* proto,
-                                           const GURL& url);
+                                           const GURL& visited_url,
+                                           const GURL& canonical_url);
 
 // Checks |hostname| against the component updater target allowlist and returns
 // whether it is explicitly allowed.
 bool IsTargetHostAllowlistedBySafetyTipsComponent(const SafetyTipsConfig* proto,
                                                   const std::string& hostname);
-
-// Checks SafeBrowsing-style permutations of |url| against the component updater
-// blocklist and returns the match type. kNone means the URL is not blocked.
-// This method assumes that the flagged pages in the safety tip config proto are
-// in sorted order.
-security_state::SafetyTipStatus GetSafetyTipUrlBlockType(const GURL& url);
 
 // Returns whether |word| is included in the component updater common word list
 bool IsCommonWordInConfigProto(const SafetyTipsConfig* proto,

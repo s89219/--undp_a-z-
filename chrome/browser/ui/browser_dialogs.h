@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,6 @@
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/web_applications/web_app_callback_app_identity.h"
 #include "chrome/browser/web_applications/web_app_id.h"
-#include "chrome/common/buildflags.h"
 #include "content/public/browser/bluetooth_delegate.h"
 #include "content/public/browser/login_delegate.h"
 #include "extensions/buildflags/buildflags.h"
@@ -26,20 +25,11 @@
 #include "ui/base/models/dialog_model.h"
 #include "ui/gfx/native_widget_types.h"
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
-    (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS_LACROS))
-#include "chrome/browser/web_applications/web_app_id.h"
-#endif
-
 class Browser;
 class GURL;
 class LoginHandler;
 class Profile;
 struct WebAppInstallInfo;
-
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-class SettingsOverriddenDialogController;
-#endif
 
 namespace base {
 class FilePath;
@@ -79,6 +69,10 @@ namespace ui {
 class WebDialogDelegate;
 struct SelectedFileInfo;
 }  // namespace ui
+
+namespace webapps {
+struct Screenshot;
+}  // namespace webapps
 
 namespace chrome {
 
@@ -136,7 +130,17 @@ void ShowCreateChromeAppShortcutsDialog(
 void ShowBluetoothDeviceCredentialsDialog(
     content::WebContents* web_contents,
     const std::u16string& device_identifier,
-    content::BluetoothDelegate::CredentialsCallback close_callback);
+    content::BluetoothDelegate::PairPromptCallback close_callback);
+
+// Show a user prompt for pairing a Bluetooth device. |device_identifier|
+// is the most appropriate string to display for device identification
+// (e.g. name, MAC address). The |pin| is displayed (if specified),
+// so the user can confirm a matching value is displayed on the device.
+void ShowBluetoothDevicePairConfirmDialog(
+    content::WebContents* web_contents,
+    const std::u16string& device_identifier,
+    const absl::optional<std::u16string>& pin,
+    content::BluetoothDelegate::PairPromptCallback close_callback);
 #endif  // PAIR_BLUETOOTH_ON_DEMAND()
 
 // Callback used to indicate whether a user has accepted the installation of a
@@ -174,10 +178,6 @@ void ShowWebAppIdentityUpdateDialog(
     content::WebContents* web_contents,
     web_app::AppIdentityDialogCallback callback);
 
-// Sets whether |ShowWebAppIdentityUpdateDialog| should accept immediately
-// without any user interaction.
-void SetAutoAcceptAppIdentityUpdateForTesting(bool auto_accept);
-
 #if !BUILDFLAG(IS_ANDROID)
 // Callback used to indicate whether a user has accepted the launch of a
 // web app. The |allowed| is true when the user allows the app to launch.
@@ -185,8 +185,9 @@ void SetAutoAcceptAppIdentityUpdateForTesting(bool auto_accept);
 using WebAppLaunchAcceptanceCallback =
     base::OnceCallback<void(bool allowed, bool remember_user_choice)>;
 
-// Shows the Web App Protocol Handler Intent Picker view.
-void ShowWebAppProtocolHandlerIntentPicker(
+// Shows the pre-launch dialog for protocol handling PWA launch. The user can
+// allow or block the launch.
+void ShowWebAppProtocolLaunchDialog(
     const GURL& url,
     Profile* profile,
     const web_app::AppId& app_id,
@@ -205,6 +206,9 @@ void ShowWebAppFileLaunchDialog(const std::vector<base::FilePath>& file_paths,
 // checkbox is checked.
 void SetAutoAcceptWebAppDialogForTesting(bool auto_accept,
                                          bool auto_open_in_window);
+
+// Sets an override title for the installation.
+void SetOverrideTitleForTesting(const char* title_to_use);
 
 // Describes the state of in-product-help being shown to the user.
 enum class PwaInProductHelpState {
@@ -227,26 +231,19 @@ void ShowPWAInstallBubble(
     AppInstallationAcceptanceCallback callback,
     PwaInProductHelpState iph_state = PwaInProductHelpState::kNotShown);
 
+// Shows the Web App detailed install dialog.
+// The dialog shows app's detailed information including screenshots. Users then
+// confirm or cancel install in this dialog.
+void ShowWebAppDetailedInstallDialog(
+    content::WebContents* web_contents,
+    std::unique_ptr<WebAppInstallInfo> web_app_info,
+    AppInstallationAcceptanceCallback callback,
+    const std::vector<webapps::Screenshot>& screenshots,
+    PwaInProductHelpState iph_state = PwaInProductHelpState::kNotShown);
+
 // Sets whether |ShowPWAInstallBubble| should accept immediately without any
 // user interaction.
 void SetAutoAcceptPWAInstallConfirmationForTesting(bool auto_accept);
-
-#if BUILDFLAG(IS_CHROMEOS)
-
-// Shows the print job confirmation dialog bubble anchored to the toolbar icon
-// for the extension.
-// If there's no toolbar icon, shows a modal dialog using
-// CreateBrowserModalDialogViews(). Note that this dialog is shown up even if we
-// have no |parent| window.
-void ShowPrintJobConfirmationDialog(gfx::NativeWindow parent,
-                                    const std::string& extension_id,
-                                    const std::u16string& extension_name,
-                                    const gfx::ImageSkia& extension_icon,
-                                    const std::u16string& print_job_title,
-                                    const std::u16string& printer_name,
-                                    base::OnceCallback<void(bool)> callback);
-
-#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_MAC)
 
@@ -290,53 +287,6 @@ void ShowChromeCleanerRebootPrompt(
     safe_browsing::ChromeCleanerRebootDialogController* dialog_controller);
 
 #endif  // BUILDFLAG(IS_WIN)
-
-// Displays a dialog to notify the user that the extension installation is
-// blocked due to policy. It also show additional information from administrator
-// if it exists.
-void ShowExtensionInstallBlockedDialog(
-    const std::string& extension_id,
-    const std::string& extension_name,
-    const std::u16string& custom_error_message,
-    const gfx::ImageSkia& icon,
-    content::WebContents* web_contents,
-    base::OnceClosure done_callback);
-
-#if BUILDFLAG(ENABLE_SUPERVISED_USERS) && BUILDFLAG(ENABLE_EXTENSIONS)
-// The type of action that the ExtensionInstalledBlockedByParentDialog
-// is being shown in reaction to.
-enum class ExtensionInstalledBlockedByParentDialogAction {
-  kAdd,     // The user attempted to add the extension.
-  kEnable,  // The user attempted to enable the extension.
-};
-
-// Displays a dialog to notify the user that the extension installation is
-// blocked by a parent
-void ShowExtensionInstallBlockedByParentDialog(
-    ExtensionInstalledBlockedByParentDialogAction action,
-    const extensions::Extension* extension,
-    content::WebContents* web_contents,
-    base::OnceClosure done_callback);
-#endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS) && BUILDFLAG(ENABLE_EXTENSIONS)
-
-// TODO(devlin): Put more extension-y bits in this block - currently they're
-// unguarded.
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-// Shows the dialog indicating that an extension has overridden a setting.
-void ShowExtensionSettingsOverriddenDialog(
-    std::unique_ptr<SettingsOverriddenDialogController> controller,
-    Browser* browser);
-
-// Modal dialog shown to Enhanced Safe Browsing users before the extension
-// install dialog if the extension is not included in the Safe Browsing CRX
-// allowlist.
-//
-// `callback` will be invoked with `true` if the user accepts or `false` if the
-// user cancels the dialog.
-void ShowExtensionInstallFrictionDialog(
-    content::WebContents* contents,
-    base::OnceCallback<void(bool)> callback);
-#endif
 
 // Returns a OnceClosure that client code can call to close the device chooser.
 // This OnceClosure references the actual dialog as a WeakPtr, so it's safe to

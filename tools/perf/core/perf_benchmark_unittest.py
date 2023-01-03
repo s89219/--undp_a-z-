@@ -1,4 +1,4 @@
-# Copyright 2018 The Chromium Authors. All rights reserved.
+# Copyright 2018 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,6 +11,7 @@ import unittest
 from telemetry.core import util
 from telemetry.internal.browser import browser_finder
 from telemetry.testing import options_for_unittests
+from telemetry import decorators
 
 from core import perf_benchmark
 
@@ -58,7 +59,8 @@ class PerfBenchmarkTest(unittest.TestCase):
     self.assertEqual(num_expected_matches, len(local_state_to_copy))
     self.assertEqual(num_expected_matches, len(ruleset_data_to_copy))
 
-
+  @decorators.Disabled('android-nougat'  # Flaky: https://crbug.com/1342706
+                       )
   def testVariationArgs(self):
     benchmark = perf_benchmark.PerfBenchmark()
     options = options_for_unittests.GetCopy()

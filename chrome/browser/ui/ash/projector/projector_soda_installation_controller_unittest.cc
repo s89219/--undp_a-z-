@@ -1,20 +1,21 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "projector_soda_installation_controller.h"
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
-#include "ash/projector/test/mock_projector_client.h"
 #include "ash/public/cpp/locale_update_controller.h"
 #include "ash/public/cpp/projector/projector_controller.h"
 #include "ash/public/cpp/projector/projector_new_screencast_precondition.h"
+#include "ash/public/cpp/test/mock_projector_client.h"
 #include "ash/webui/projector_app/test/mock_app_client.h"
 #include "base/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/speech/speech_recognition_recognizer_client_impl.h"
 #include "chrome/test/base/chrome_ash_test_base.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
@@ -62,7 +63,8 @@ class ProjectorSodaInstallationControllerTest : public ChromeAshTestBase {
             features::kOnDeviceSpeechRecognition,
             features::kProjector,
         },
-        {});
+        {features::kInternalServerSideSpeechRecognition,
+         features::kForceEnableServerSideSpeechRecognitionForDev});
   }
   ProjectorSodaInstallationControllerTest(
       const ProjectorSodaInstallationControllerTest&) = delete;
@@ -83,6 +85,18 @@ class ProjectorSodaInstallationControllerTest : public ChromeAshTestBase {
             testing::Return(std::vector<std::string>({kEnglishLocale})));
 
     mock_client_ = std::make_unique<MockProjectorClient>();
+
+    ON_CALL(*mock_client_, GetSpeechRecognitionAvailability)
+        .WillByDefault(
+            testing::Invoke([&]() -> ash::SpeechRecognitionAvailability {
+              SpeechRecognitionAvailability availability;
+              availability.on_device_availability =
+                  SpeechRecognitionRecognizerClientImpl::
+                      GetOnDeviceSpeechRecognitionAvailability(
+                          g_browser_process->GetApplicationLocale());
+              return availability;
+            }));
+
     projector_controller().SetClient(mock_client_.get());
     mock_app_client_ = std::make_unique<MockAppClient>();
 
@@ -165,26 +179,40 @@ TEST_F(ProjectorSodaInstallationControllerTest, OnSodaInstallProgress) {
   speech::SodaInstaller::GetInstance()->NotifySodaProgressForTesting(50);
 }
 
-TEST_F(ProjectorSodaInstallationControllerTest, OnSodaInstallError) {
-  NewScreencastPrecondition sodaInstallError(
+TEST_F(ProjectorSodaInstallationControllerTest, OnSodaInstallErrorUnspecified) {
+  NewScreencastPrecondition soda_install_error(
       NewScreencastPreconditionState::kDisabled,
-      {NewScreencastPreconditionReason::kSodaInstallationError});
+      {NewScreencastPreconditionReason::kSodaInstallationErrorUnspecified});
   EXPECT_CALL(app_client(), OnSodaInstallError());
   EXPECT_CALL(projector_client(),
-              OnNewScreencastPreconditionChanged(sodaInstallError));
-  speech::SodaInstaller::GetInstance()->NotifySodaErrorForTesting();
+              OnNewScreencastPreconditionChanged(soda_install_error));
+  speech::SodaInstaller::GetInstance()->NotifySodaErrorForTesting(
+      en_us(), speech::SodaInstaller::ErrorCode::kUnspecifiedError);
   EXPECT_EQ(projector_controller().GetNewScreencastPrecondition(),
-            sodaInstallError);
+            soda_install_error);
+}
+
+TEST_F(ProjectorSodaInstallationControllerTest, OnSodaInstallErrorNeedsReboot) {
+  NewScreencastPrecondition soda_install_error(
+      NewScreencastPreconditionState::kDisabled,
+      {NewScreencastPreconditionReason::kSodaInstallationErrorNeedsReboot});
+  EXPECT_CALL(app_client(), OnSodaInstallError());
+  EXPECT_CALL(projector_client(),
+              OnNewScreencastPreconditionChanged(soda_install_error));
+  speech::SodaInstaller::GetInstance()->NotifySodaErrorForTesting(
+      en_us(), speech::SodaInstaller::ErrorCode::kNeedsReboot);
+  EXPECT_EQ(projector_controller().GetNewScreencastPrecondition(),
+            soda_install_error);
 }
 
 // Prevents a regression to b/228899579.
 TEST_F(ProjectorSodaInstallationControllerTest,
        OnLocaleChangedBeforeSodaInstall) {
-  NewScreencastPrecondition localeNotSupported(
+  NewScreencastPrecondition locale_not_supported(
       NewScreencastPreconditionState::kDisabled,
       {NewScreencastPreconditionReason::kUserLocaleNotSupported});
   EXPECT_CALL(projector_client(),
-              OnNewScreencastPreconditionChanged(localeNotSupported));
+              OnNewScreencastPreconditionChanged(locale_not_supported));
 
   // The locale changes to the user's preferences after sign in but before SODA
   // finishes installing.
@@ -195,7 +223,7 @@ TEST_F(ProjectorSodaInstallationControllerTest,
   EXPECT_FALSE(soda_installation_controller()->IsSodaAvailable(fr_fr()));
 
   EXPECT_EQ(projector_controller().GetNewScreencastPrecondition(),
-            localeNotSupported);
+            locale_not_supported);
 }
 
 // Prevents a regression to b/227626179.
@@ -205,26 +233,27 @@ TEST_F(ProjectorSodaInstallationControllerTest,
       .WillByDefault(testing::Return(true));
   EXPECT_CALL(projector_client(),
               OnNewScreencastPreconditionChanged(NewScreencastPrecondition(
-                  NewScreencastPreconditionState::kEnabled, {})));
+                  NewScreencastPreconditionState::kEnabled,
+                  {NewScreencastPreconditionReason::kEnabledBySoda})));
 
   speech::SodaInstaller::GetInstance()->NotifySodaInstalledForTesting();
   speech::SodaInstaller::GetInstance()->NotifySodaInstalledForTesting(en_us());
   EXPECT_TRUE(soda_installation_controller()->IsSodaAvailable(en_us()));
   EXPECT_FALSE(soda_installation_controller()->IsSodaAvailable(fr_fr()));
 
-  NewScreencastPrecondition localeNotSupported(
+  NewScreencastPrecondition locale_not_supported(
       NewScreencastPreconditionState::kDisabled,
       {NewScreencastPreconditionReason::kUserLocaleNotSupported});
 
   EXPECT_CALL(projector_client(),
-              OnNewScreencastPreconditionChanged(localeNotSupported));
+              OnNewScreencastPreconditionChanged(locale_not_supported));
 
   // The locale changes to the user's preferences after sign in but after SODA
   // finishes installing.
   SetLocale(kNonEnglishLocale);
 
   EXPECT_EQ(projector_controller().GetNewScreencastPrecondition(),
-            localeNotSupported);
+            locale_not_supported);
 }
 
 }  // namespace ash

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 
-import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.TraceEvent;
@@ -37,6 +36,40 @@ public class EventForwarder {
     private float mCurrentTouchOffsetY;
 
     private int mLastMouseButtonState;
+
+    // Track the last tool type of touch sequence.
+    private int mLastToolType;
+
+    // Delegate to call WebContents functionality.
+    private StylusWritingDelegate mStylusWritingDelegate;
+
+    /**
+     * Interface to provide stylus writing functionality.
+     */
+    public interface StylusWritingDelegate {
+        /**
+         * Handle touch events for stylus handwriting.
+         *
+         * @param motionEvent the motion event to be handled.
+         * @return true if the event is consumed.
+         */
+        boolean handleTouchEvent(MotionEvent motionEvent);
+
+        /**
+         * Handle hover events for stylus handwriting.
+         *
+         * @param motionEvent the motion event to be handled.
+         */
+        void handleHoverEvent(MotionEvent motionEvent);
+    }
+
+    public void setStylusWritingDelegate(StylusWritingDelegate stylusWritingDelegate) {
+        mStylusWritingDelegate = stylusWritingDelegate;
+    }
+
+    public int getLastToolType() {
+        return mLastToolType;
+    }
 
     @CalledByNative
     private static EventForwarder create(long nativeEventForwarder, boolean isDragDropEnabled) {
@@ -70,6 +103,15 @@ public class EventForwarder {
      * @see View#onTouchEvent(MotionEvent)
      */
     public boolean onTouchEvent(MotionEvent event) {
+        if (event.getAction() == MotionEvent.ACTION_DOWN) {
+            mLastToolType = event.getToolType(0);
+        }
+
+        if (mStylusWritingDelegate != null && mStylusWritingDelegate.handleTouchEvent(event)) {
+            // Stylus writing system can consume the touch events once writing is started.
+            return true;
+        }
+
         // TODO(mustaq): Should we include MotionEvent.TOOL_TYPE_STYLUS here?
         // crbug.com/592082
         if (event.getToolType(0) == MotionEvent.TOOL_TYPE_MOUSE) {
@@ -77,14 +119,13 @@ public class EventForwarder {
             // - In Android L and below, where mouse button info is incomplete.
             // - A move w/o a button press, which represents a trackpad scroll. Real mouse moves w/o
             //   buttons goes to onHoverEvent.
-            final int apiVersion = Build.VERSION.SDK_INT;
             final boolean isTouchpadScroll = event.getButtonState() == 0
                     && (event.getActionMasked() == MotionEvent.ACTION_DOWN
                             || event.getActionMasked() == MotionEvent.ACTION_MOVE
                             || event.getActionMasked() == MotionEvent.ACTION_UP
                             || event.getActionMasked() == MotionEvent.ACTION_CANCEL);
 
-            if (apiVersion >= android.os.Build.VERSION_CODES.M && !isTouchpadScroll) {
+            if (!isTouchpadScroll) {
                 return onMouseEvent(event);
             }
         }
@@ -214,6 +255,11 @@ public class EventForwarder {
      */
     public boolean onHoverEvent(MotionEvent event) {
         TraceEvent.begin("onHoverEvent");
+
+        if (mStylusWritingDelegate != null) {
+            mStylusWritingDelegate.handleHoverEvent(event);
+        }
+
         boolean didOffsetEvent = false;
         try {
             if (hasTouchEventOffset()) {
@@ -307,14 +353,8 @@ public class EventForwarder {
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
     public static int getMouseEventActionButton(MotionEvent event) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            return ApiHelperForM.getActionButton(event);
-        }
-
-        // On <M, the only mice events sent are hover events, which cannot have a button.
-        return 0;
+        return ApiHelperForM.getActionButton(event);
     }
 
     /**
@@ -322,9 +362,8 @@ public class EventForwarder {
      * @param event {@link DragEvent} instance.
      * @param containerView A view on which the drag event is taking place.
      */
-    @RequiresApi(Build.VERSION_CODES.N)
     public boolean onDragEvent(DragEvent event, View containerView) {
-        if (mNativeEventForwarder == 0 || Build.VERSION.SDK_INT <= Build.VERSION_CODES.M) {
+        if (mNativeEventForwarder == 0) {
             return false;
         }
 

@@ -3,8 +3,8 @@
     :host {
       --cr-dialog-width: 320px;
       --cr-dialog-button-container-padding-horizontal: 24px;
-      --footer-height: 80px;
-      --page-left-margin: 40px;
+      --content-container-padding: 40px;
+      --margin-between-panes: 80px;
       --radio-button-top-padding: 20px;
       --title-bottom-margin: 16px;
     }
@@ -15,8 +15,8 @@
 
     .indented-description {
       color: var(--shimless-instructions-text-color);
+      margin-top: 8px;
       padding: 0; /* specify all to override */
-      padding-inline-start: 60px;
       width: 512px;
     }
 
@@ -32,7 +32,13 @@
 
     .small-icon {
       height: 20px;
+      min-width: 20px;
       padding-inline-end: 8px;
+      width: 20px;
+    }
+
+    .small-icon-base {
+      height: 20px;
       width: 20px;
     }
 
@@ -54,6 +60,8 @@
       font-weight: var(--shimless-medium-font-weight);
       line-height: var(--shimless-title-line-height);
       margin-bottom: var(--title-bottom-margin);
+      margin-top: 0;
+      outline: none;
     }
 
     .instructions {
@@ -101,7 +109,6 @@
       flex-direction: row;
       justify-content: flex-end;
       padding-bottom: 20px;
-      padding-inline-start: 0;
       padding-top: 32px;
     }
 
@@ -112,7 +119,10 @@
 
     cr-radio-button {
       --cr-radio-button-size: 20px;
-      padding-bottom: 8px;
+      align-items: start;
+      font-size: var(--shimless-instructions-font-size);
+      line-height: 20px;
+      padding-bottom: 0;
       padding-inline-start: 20px;
       padding-top: var(--radio-button-top-padding);
     }
@@ -137,10 +147,14 @@
       grid-column-gap: 16px;
       grid-row-gap: 16px;
       height: 100%;
-      overflow: auto;
       width: 100%;
     }
 
+    /**
+     * NOTE: If you change the number of columns, don't forget to update the
+     * NUM_COLUMNS constant in the keyboard navigation code. Otherwise the down
+     * and up arrows won't work as expected.
+     */
     .component-grid.repair {
       grid-template-columns: auto auto;
     }
@@ -153,8 +167,25 @@
       border-radius: 15px;
     }
 
-    cr-button .small-icon {
-      padding-inline-start: 8px;
+    .gradient {
+      background-image: linear-gradient(to bottom,
+        rgba(255,255,255,0), rgba(255,255,255,1));
+      bottom: calc(var(--header-footer-height) + var(--container-vertical-padding));
+      height: 40px;
+      pointer-events: none;
+      position: fixed;
+    }
+
+    .gradient.equal-panes {
+      width: calc(.5 * (var(--content-container-width)
+        - var(--content-container-padding) * 2
+        - var(--margin-between-panes)));
+    }
+
+    .gradient.unequal-panes {
+      width: calc(.6 * (var(--content-container-width)
+        - var(--content-container-padding) * 2
+        - var(--margin-between-panes)));
     }
 
     .illustration-wrapper {
@@ -176,11 +207,9 @@
       justify-content: center;
     }
 
-    [slot=optional-icon] {
-      height: 32px;
-      margin-bottom: 40px;
-      margin-top: 40px;
-      width: 32px;
+    .scroll-container {
+      height: var(--content-container-height);
+      overflow: auto;
     }
 
     [slot=right-pane] {

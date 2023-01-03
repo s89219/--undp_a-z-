@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "base/win/object_watcher.h"
 #include "components/policy/core/common/async_policy_loader.h"
 #include "components/policy/core/common/policy_types.h"
-#include "components/policy/core/common/registry_watcher_win.h"
 #include "components/policy/policy_export.h"
 
 namespace base {
@@ -33,8 +32,7 @@ class POLICY_EXPORT PolicyLoaderWin
  public:
   PolicyLoaderWin(scoped_refptr<base::SequencedTaskRunner> task_runner,
                   ManagementService* management_service,
-                  const std::wstring& chrome_policy_key,
-                  bool is_dev_registry_key_supported);
+                  const std::wstring& chrome_policy_key);
   PolicyLoaderWin(const PolicyLoaderWin&) = delete;
   PolicyLoaderWin& operator=(const PolicyLoaderWin&) = delete;
   ~PolicyLoaderWin() override;
@@ -43,12 +41,11 @@ class POLICY_EXPORT PolicyLoaderWin
   static std::unique_ptr<PolicyLoaderWin> Create(
       scoped_refptr<base::SequencedTaskRunner> task_runner,
       ManagementService* management_service,
-      const std::wstring& chrome_policy_key,
-      bool is_dev_registry_key_supported);
+      const std::wstring& chrome_policy_key);
 
   // AsyncPolicyLoader implementation.
   void InitOnBackgroundThread() override;
-  std::unique_ptr<PolicyBundle> Load() override;
+  PolicyBundle Load() override;
 
  private:
   // Parses Chrome policy from |gpo_dict| for the given |scope| and |level| and
@@ -78,7 +75,6 @@ class POLICY_EXPORT PolicyLoaderWin
   base::win::ObjectWatcher machine_policy_watcher_;
   bool user_policy_watcher_failed_;
   bool machine_policy_watcher_failed_;
-  absl::optional<RegistryWatcherWin> registry_watcher_;
 };
 
 }  // namespace policy

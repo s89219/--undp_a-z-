@@ -1,10 +1,12 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/first_run/signin/signin_screen_coordinator.h"
 
-#import "ios/chrome/browser/application_context.h"
+#import "base/mac/foundation_util.h"
+#import "base/strings/sys_string_conversions.h"
+#import "ios/chrome/browser/application_context/application_context.h"
 #import "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #import "ios/chrome/browser/first_run/first_run_metrics.h"
 #import "ios/chrome/browser/main/browser.h"
@@ -18,10 +20,13 @@
 #import "ios/chrome/browser/ui/authentication/signin/signin_coordinator.h"
 #import "ios/chrome/browser/ui/authentication/unified_consent/identity_chooser/identity_chooser_coordinator.h"
 #import "ios/chrome/browser/ui/authentication/unified_consent/identity_chooser/identity_chooser_coordinator_delegate.h"
+#import "ios/chrome/browser/ui/commands/browsing_data_commands.h"
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
 #import "ios/chrome/browser/ui/commands/tos_commands.h"
+#import "ios/chrome/browser/ui/first_run/first_run_constants.h"
 #import "ios/chrome/browser/ui/first_run/first_run_screen_delegate.h"
 #import "ios/chrome/browser/ui/first_run/first_run_util.h"
+#import "ios/chrome/browser/ui/first_run/signin/signin_screen_consumer.h"
 #import "ios/chrome/browser/ui/first_run/signin/signin_screen_mediator.h"
 #import "ios/chrome/browser/ui/first_run/signin/signin_screen_view_controller.h"
 #import "ios/chrome/browser/ui/first_run/uma/uma_coordinator.h"
@@ -176,13 +181,13 @@
 // Starts the sign in process.
 - (void)startSignIn {
   DCHECK(self.mediator.selectedIdentity);
-
-  DCHECK(self.mediator.selectedIdentity);
   AuthenticationFlow* authenticationFlow =
       [[AuthenticationFlow alloc] initWithBrowser:self.browser
                                          identity:self.mediator.selectedIdentity
                                  postSignInAction:POST_SIGNIN_ACTION_NONE
                          presentingViewController:self.viewController];
+  authenticationFlow.dispatcher = HandlerForProtocol(
+      self.browser->GetCommandDispatcher(), BrowsingDataCommands);
   __weak __typeof(self) weakSelf = self;
   ProceduralBlock completion = ^() {
     [weakSelf finishPresentingWithSignIn:YES];
@@ -194,7 +199,18 @@
 // Calls the mediator and the delegate when the coordinator is finished.
 - (void)finishPresentingWithSignIn:(BOOL)signIn {
   [self.mediator finishPresentingWithSignIn:signIn];
-  [self.delegate willFinishPresenting];
+  [self.delegate screenWillFinishPresenting];
+}
+
+// Shows the UMA dialog so the user can manage metric reporting.
+- (void)showUMADialog {
+  DCHECK(!self.UMACoordinator);
+  self.UMACoordinator = [[UMACoordinator alloc]
+      initWithBaseViewController:self.viewController
+                         browser:self.browser
+               UMAReportingValue:self.mediator.UMAReportingUserChoice];
+  self.UMACoordinator.delegate = self;
+  [self.UMACoordinator start];
 }
 
 #pragma mark - IdentityChooserCoordinatorDelegate
@@ -214,7 +230,7 @@
 }
 
 - (void)identityChooserCoordinator:(IdentityChooserCoordinator*)coordinator
-                 didSelectIdentity:(ChromeIdentity*)identity {
+                 didSelectIdentity:(id<SystemIdentity>)identity {
   CHECK_EQ(self.identityChooserCoordinator, coordinator);
   self.mediator.selectedIdentity = identity;
 }
@@ -246,6 +262,19 @@
   }];
 }
 
+- (void)didTapURLInDisclaimer:(NSURL*)URL {
+  if ([URL.absoluteString isEqualToString:first_run::kTermsOfServiceURL]) {
+    [self showTOSPage];
+  } else if ([URL.absoluteString
+                 isEqualToString:first_run::kMetricReportingURL]) {
+    self.mediator.UMALinkWasTapped = YES;
+    [self showUMADialog];
+  } else {
+    NOTREACHED() << std::string("Unknown URL ")
+                 << base::SysNSStringToUTF8(URL.absoluteString);
+  }
+}
+
 #pragma mark - SigninScreenViewControllerDelegate
 
 - (void)showAccountPickerFromPoint:(CGPoint)point {
@@ -259,15 +288,22 @@
       self.mediator.selectedIdentity;
 }
 
-- (void)showUMADialog {
-  DCHECK(!self.UMACoordinator);
-  self.mediator.UMALinkWasTapped = YES;
-  self.UMACoordinator = [[UMACoordinator alloc]
-      initWithBaseViewController:self.viewController
-                         browser:self.browser
-               UMAReportingValue:self.mediator.UMAReportingUserChoice];
-  self.UMACoordinator.delegate = self;
-  [self.UMACoordinator start];
+- (void)logScrollButtonVisible:(BOOL)scrollButtonVisible
+            withIdentityPicker:(BOOL)identityPickerVisible
+                     andFooter:(BOOL)footerVisible {
+  first_run::FirstRunScreenType screenType;
+  if (identityPickerVisible && footerVisible) {
+    screenType =
+        first_run::FirstRunScreenType::kSignInScreenWithFooterAndIdentityPicker;
+  } else if (identityPickerVisible) {
+    screenType = first_run::FirstRunScreenType::kSignInScreenWithIdentityPicker;
+  } else if (footerVisible) {
+    screenType = first_run::FirstRunScreenType::kSignInScreenWithFooter;
+  } else {
+    screenType = first_run::FirstRunScreenType::
+        kSignInScreenWithoutFooterOrIdentityPicker;
+  }
+  RecordFirstRunScrollButtonVisibilityMetrics(screenType, scrollButtonVisible);
 }
 
 #pragma mark - TOSCommands
@@ -281,7 +317,7 @@
   [self.TOSCoordinator start];
 }
 
-- (void)hideTOSPage {
+- (void)closeTOSPage {
   DCHECK(self.TOSCoordinator);
   [self.TOSCoordinator stop];
   self.TOSCoordinator = nil;

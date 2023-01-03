@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,15 +41,15 @@ StreamingInitializationInfo CreateMirroringInitializationInfo(
   absl::optional<StreamingInitializationInfo::AudioStreamInfo>
       audio_stream_info;
   if (receivers.audio_receiver) {
-    audio_stream_info = {ToAudioDecoderConfig(receivers.audio_config),
-                         receivers.audio_receiver};
+    audio_stream_info.emplace(ToAudioDecoderConfig(receivers.audio_config),
+                              receivers.audio_receiver);
   }
 
   absl::optional<StreamingInitializationInfo::VideoStreamInfo>
       video_stream_info;
   if (receivers.video_receiver) {
-    video_stream_info = {ToVideoDecoderConfig(receivers.video_config),
-                         receivers.video_receiver};
+    video_stream_info.emplace(ToVideoDecoderConfig(receivers.video_config),
+                              receivers.video_receiver);
   }
 
   return {session, std::move(audio_stream_info), std::move(video_stream_info)};
@@ -70,7 +70,8 @@ CastStreamingSession::ReceiverSessionClient::ReceiverSessionClient(
           base::BindOnce(
               &CastStreamingSession::ReceiverSessionClient::OnCastChannelClosed,
               base::Unretained(this))),
-      client_(client) {
+      client_(client),
+      weak_factory_(this) {
   DCHECK(task_runner);
   DCHECK(client_);
 
@@ -93,18 +94,16 @@ CastStreamingSession::ReceiverSessionClient::ReceiverSessionClient(
           base::Unretained(this)));
 }
 
-base::RepeatingClosure
-CastStreamingSession::ReceiverSessionClient::GetAudioBufferRequester() {
+void CastStreamingSession::ReceiverSessionClient::GetAudioBuffer(
+    base::OnceClosure no_frames_available_cb) {
   DCHECK(audio_consumer_);
-  return base::BindRepeating(&StreamConsumer::ReadFrame,
-                             audio_consumer_->GetWeakPtr());
+  audio_consumer_->ReadFrame(std::move(no_frames_available_cb));
 }
 
-base::RepeatingClosure
-CastStreamingSession::ReceiverSessionClient::GetVideoBufferRequester() {
+void CastStreamingSession::ReceiverSessionClient::GetVideoBuffer(
+    base::OnceClosure no_frames_available_cb) {
   DCHECK(video_consumer_);
-  return base::BindRepeating(&StreamConsumer::ReadFrame,
-                             video_consumer_->GetWeakPtr());
+  video_consumer_->ReadFrame(std::move(no_frames_available_cb));
 }
 
 CastStreamingSession::ReceiverSessionClient::~ReceiverSessionClient() = default;
@@ -119,9 +118,7 @@ void CastStreamingSession::ReceiverSessionClient::OnInitializationTimeout() {
 absl::optional<mojo::ScopedDataPipeConsumerHandle>
 CastStreamingSession::ReceiverSessionClient::InitializeAudioConsumer(
     const StreamingInitializationInfo& initialization_info) {
-  if (!initialization_info.audio_stream_info) {
-    return absl::nullopt;
-  }
+  DCHECK(initialization_info.audio_stream_info);
 
   // Create the audio data pipe.
   mojo::ScopedDataPipeProducerHandle data_pipe_producer;
@@ -149,9 +146,7 @@ CastStreamingSession::ReceiverSessionClient::InitializeAudioConsumer(
 absl::optional<mojo::ScopedDataPipeConsumerHandle>
 CastStreamingSession::ReceiverSessionClient::InitializeVideoConsumer(
     const StreamingInitializationInfo& initialization_info) {
-  if (!initialization_info.video_stream_info) {
-    return absl::nullopt;
-  }
+  DCHECK(initialization_info.video_stream_info);
 
   // Create the video data pipe.
   mojo::ScopedDataPipeProducerHandle data_pipe_producer;
@@ -200,9 +195,6 @@ void CastStreamingSession::ReceiverSessionClient::StartStreamingSession(
     // This is a second offer message, reinitialize the streams.
     const bool existing_session_has_audio = !!audio_consumer_;
     const bool existing_session_has_video = !!video_consumer_;
-    audio_consumer_.reset();
-    video_consumer_.reset();
-
     const bool new_offer_has_audio = !!initialization_info.audio_stream_info;
     const bool new_offer_has_video = !!initialization_info.video_stream_info;
 
@@ -211,6 +203,9 @@ void CastStreamingSession::ReceiverSessionClient::StartStreamingSession(
       // This call to StartStreamingSession() has support for audio and/or video
       // streaming which does not match the ones provided during a prior call to
       // this method. Return early here.
+      DLOG(ERROR) << "New streaming session has support for audio or video "
+                     "which does not match the ones provided during a prior "
+                     "streaming initialization.";
       client_->OnSessionEnded();
       return;
     }
@@ -291,11 +286,10 @@ void CastStreamingSession::ReceiverSessionClient::OnReceiversDestroying(
 
   switch (reason) {
     case ReceiversDestroyingReason::kEndOfSession:
-      audio_consumer_.reset();
-      video_consumer_.reset();
       client_->OnSessionEnded();
       break;
     case ReceiversDestroyingReason::kRenegotiated:
+      client_->OnSessionReinitializationPending();
       break;
   }
 }
@@ -314,11 +308,18 @@ void CastStreamingSession::ReceiverSessionClient::OnError(
 void CastStreamingSession::ReceiverSessionClient::OnDataTimeout() {
   DLOG(ERROR) << __func__ << ": Session ended due to timeout";
   receiver_session_.reset();
+  client_->OnSessionEnded();
 }
 
 void CastStreamingSession::ReceiverSessionClient::OnCastChannelClosed() {
   DLOG(ERROR) << __func__ << ": Session ended due to cast channel closure";
   receiver_session_.reset();
+  client_->OnSessionEnded();
+}
+
+base::WeakPtr<CastStreamingSession::ReceiverSessionClient>
+CastStreamingSession::ReceiverSessionClient::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 CastStreamingSession::Client::~Client() = default;
@@ -345,14 +346,20 @@ void CastStreamingSession::Stop() {
   receiver_session_.reset();
 }
 
-base::RepeatingClosure CastStreamingSession::GetAudioBufferRequester() {
+AudioDemuxerStreamDataProvider::RequestBufferCB
+CastStreamingSession::GetAudioBufferRequester() {
   DCHECK(receiver_session_);
-  return receiver_session_->GetAudioBufferRequester();
+  return base::BindRepeating(
+      &CastStreamingSession::ReceiverSessionClient::GetAudioBuffer,
+      receiver_session_->GetWeakPtr());
 }
 
-base::RepeatingClosure CastStreamingSession::GetVideoBufferRequester() {
+VideoDemuxerStreamDataProvider::RequestBufferCB
+CastStreamingSession::GetVideoBufferRequester() {
   DCHECK(receiver_session_);
-  return receiver_session_->GetVideoBufferRequester();
+  return base::BindRepeating(
+      &CastStreamingSession::ReceiverSessionClient::GetVideoBuffer,
+      receiver_session_->GetWeakPtr());
 }
 
 }  // namespace cast_streaming

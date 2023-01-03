@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,14 +14,20 @@
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "chrome/browser/apps/app_service/app_icon/app_icon_reader.h"
+#include "chrome/browser/apps/app_service/app_icon/app_icon_writer.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_base.h"
+#include "chrome/browser/apps/app_service/launch_result_type.h"
 #include "chrome/browser/apps/app_service/paused_apps.h"
 #include "chrome/browser/apps/app_service/publisher_host.h"
 #include "chrome/browser/apps/app_service/subscriber_crosapi.h"
 #include "chrome/browser/ash/crosapi/browser_manager.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "components/services/app_service/public/cpp/app_registry_cache.h"
+#include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/icon_types.h"
 #include "components/services/app_service/public/cpp/instance_registry.h"
+#include "components/services/app_service/public/cpp/preferred_app.h"
 #include "components/services/app_service/public/mojom/app_service.mojom.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
 #include "ui/gfx/native_widget_types.h"
@@ -80,7 +86,7 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
 
   // apps::AppServiceProxyBase overrides:
   void Uninstall(const std::string& app_id,
-                 apps::mojom::UninstallSource uninstall_source,
+                 UninstallSource uninstall_source,
                  gfx::NativeWindow parent_window) override;
   void OnApps(std::vector<AppPtr> deltas,
               AppType app_type,
@@ -101,15 +107,21 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
   void UnpauseApps(const std::set<std::string>& app_ids);
 
   // Set whether resize lock is enabled for the app identified by |app_id|.
-  void SetResizeLocked(const std::string& app_id,
-                       apps::mojom::OptionalBool locked);
+  void SetResizeLocked(const std::string& app_id, bool locked);
 
   // Sets |extension_apps_| and |web_apps_| to observe the ARC apps to set the
   // badge on the equivalent Chrome app's icon, when ARC is available.
   void SetArcIsRegistered();
 
   // apps::AppServiceProxyBase overrides:
-  void FlushMojoCallsForTesting() override;
+  void LaunchAppWithIntent(const std::string& app_id,
+                           int32_t event_flags,
+                           IntentPtr intent,
+                           LaunchSource launch_source,
+                           WindowInfoPtr window_info,
+                           LaunchCallback callback) override;
+
+  base::WeakPtr<AppServiceProxyAsh> GetWeakPtr();
 
   void ReInitializeCrostiniForTesting();
   void SetDialogCreatedCallbackForTesting(base::OnceClosure callback);
@@ -119,6 +131,13 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
   void SetAppPlatformMetricsServiceForTesting(
       std::unique_ptr<apps::AppPlatformMetricsService>
           app_platform_metrics_service);
+  void RegisterPublishersForTesting();
+  void ReadIconsForTesting(AppType app_type,
+                           const std::string& app_id,
+                           int32_t size_in_dip,
+                           const IconKey& icon_key,
+                           IconType icon_type,
+                           LoadIconCallback callback);
 
  private:
   // For access to Initialize.
@@ -128,6 +147,7 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
   using UninstallDialogs =
       base::flat_map<std::string, std::unique_ptr<apps::UninstallDialog>>;
 
+  bool IsValidProfile() override;
   void Initialize() override;
 
   // KeyedService overrides.
@@ -144,7 +164,7 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
                                 OnPauseDialogClosedCallback pause_callback);
 
   void UninstallImpl(const std::string& app_id,
-                     apps::mojom::UninstallSource uninstall_source,
+                     UninstallSource uninstall_source,
                      gfx::NativeWindow parent_window,
                      OnUninstallForTestingCallback callback);
 
@@ -157,7 +177,7 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
   // |uninstall_dialogs_|.
   void OnUninstallDialogClosed(apps::AppType app_type,
                                const std::string& app_id,
-                               apps::mojom::UninstallSource uninstall_source,
+                               UninstallSource uninstall_source,
                                bool uninstall,
                                bool clear_site_data,
                                bool report_abuse,
@@ -165,6 +185,7 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
 
   // apps::AppServiceProxyBase overrides:
   void InitializePreferredAppsForAllSubscribers() override;
+  void OnPreferredAppsChanged(PreferredAppChangesPtr changes) override;
   bool MaybeShowLaunchPreventionDialog(const apps::AppUpdate& update) override;
   void OnLaunched(LaunchCallback callback,
                   LaunchResult&& launch_result) override;
@@ -193,20 +214,18 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
   void OnAppRegistryCacheWillBeDestroyed(
       apps::AppRegistryCache* cache) override;
 
-  void PerformPostLaunchTasks(apps::mojom::LaunchSource launch_source) override;
+  void PerformPostLaunchTasks(apps::LaunchSource launch_source) override;
 
-  void RecordAppPlatformMetrics(
-      Profile* profile,
-      const apps::AppUpdate& update,
-      apps::mojom::LaunchSource launch_source,
-      apps::mojom::LaunchContainer container) override;
+  void RecordAppPlatformMetrics(Profile* profile,
+                                const apps::AppUpdate& update,
+                                apps::LaunchSource launch_source,
+                                apps::LaunchContainer container) override;
 
   void InitAppPlatformMetrics();
 
-  void PerformPostUninstallTasks(
-      apps::AppType app_type,
-      const std::string& app_id,
-      apps::mojom::UninstallSource uninstall_source) override;
+  void PerformPostUninstallTasks(apps::AppType app_type,
+                                 const std::string& app_id,
+                                 UninstallSource uninstall_source) override;
 
   // apps::InstanceRegistry::Observer overrides.
   void OnInstanceUpdate(const apps::InstanceUpdate& update) override;
@@ -217,9 +236,49 @@ class AppServiceProxyAsh : public AppServiceProxyBase,
   bool CanRunLaunchCallback(
       const std::vector<base::UnguessableToken>& instance_ids);
 
+  // Launches the app if `is_allowed` is set true.
+  void LaunchAppWithIntentIfAllowed(const std::string& app_id,
+                                    int32_t event_flags,
+                                    IntentPtr intent,
+                                    LaunchSource launch_source,
+                                    WindowInfoPtr window_info,
+                                    LaunchCallback callback,
+                                    bool is_allowed);
+
+  bool ShouldReadIcons() override;
+
+  // Reads icon image files from the local app_service icon directory on disk.
+  void ReadIcons(AppType app_type,
+                 const std::string& app_id,
+                 int32_t size_in_dip,
+                 const IconKey& icon_key,
+                 IconType icon_type,
+                 LoadIconCallback callback) override;
+
+  // Invoked after reading icon image files from the local disk. If failed
+  // reading the icon data, calls 'icon_writer' to fetch the icon data.
+  void OnIconRead(AppType app_type,
+                  const std::string& app_id,
+                  int32_t size_in_dip,
+                  IconEffects icon_effects,
+                  IconType icon_type,
+                  LoadIconCallback callback,
+                  IconValuePtr iv);
+
+  // Invoked after writing icon image files to the local disk.
+  void OnIconInstalled(const std::string& app_id,
+                       int32_t size_in_dip,
+                       IconEffects icon_effects,
+                       IconType icon_type,
+                       LoadIconCallback callback,
+                       bool install_success);
+
   SubscriberCrosapi* crosapi_subscriber_ = nullptr;
 
   std::unique_ptr<PublisherHost> publisher_host_;
+
+  AppIconReader icon_reader_;
+  AppIconWriter icon_writer_;
 
   bool arc_is_registered_ = false;
 

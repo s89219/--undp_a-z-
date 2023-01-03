@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,8 +41,8 @@ void CreateQueryOnIOThread(std::unique_ptr<printing::PrintSettings> settings,
                            PrinterQueryCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
 
-  auto query = std::make_unique<printing::PrinterQuery>(
-      content::GlobalRenderFrameHostId());
+  auto query =
+      printing::PrinterQuery::Create(content::GlobalRenderFrameHostId());
   auto* query_ptr = query.get();
   query_ptr->SetSettingsFromPOD(
       std::move(settings),

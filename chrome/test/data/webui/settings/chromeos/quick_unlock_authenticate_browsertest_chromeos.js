@@ -1,16 +1,17 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {CrSettingsPrefs, Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {LockScreenProgress} from 'chrome://resources/cr_components/chromeos/quick_unlock/lock_screen_constants.m.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {LockScreenProgress} from 'chrome://resources/ash/common/quick_unlock/lock_screen_constants.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {FakeSettingsPrivate} from 'chrome://test/settings/chromeos/fake_settings_private.js';
+import {FakeSettingsPrivate} from 'chrome://webui-test/settings/chromeos/fake_settings_private.js';
+import {waitAfterNextRender, waitBeforeNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
-import {eventToPromise, waitAfterNextRender, waitBeforeNextRender} from '../../../test_util.js';
-import {assertEquals, assertFalse, assertNotEquals, assertTrue} from '../../chai_assert.js';
+import {eventToPromise, isVisible as testUtilIsVisible} from 'chrome://webui-test/test_util.js';
+import {assertEquals, assertFalse, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 import {FakeQuickUnlockPrivate} from './fake_quick_unlock_private.js';
 import {FakeQuickUnlockUma} from './fake_quick_unlock_uma.js';
@@ -25,28 +26,8 @@ let fakeUma = null;
  * @param {!Element} element
  */
 function isVisible(element) {
-  while (element) {
-    if (element.offsetWidth <= 0 || element.offsetHeight <= 0 ||
-        element.hidden ||
-        window.getComputedStyle(element).visibility === 'hidden') {
-      return false;
-    }
-
-    element = element.parentElement;
-
-    if (element) {
-      // cr-dialog itself will always be 0x0. It's the inner native <dialog>
-      // that has actual dimensions.
-      // (The same about PIN-KEYBOARD.)
-      if (element.tagName === 'CR-DIALOG') {
-        element = element.getNative();
-      } else if (element.tagName === 'PIN-KEYBOARD') {
-        element = element.$.root;
-      }
-    }
-  }
-
-  return true;
+  return testUtilIsVisible(element) &&
+      window.getComputedStyle(element).visibility !== 'hidden';
 }
 
 /**
@@ -64,9 +45,9 @@ function assertHasClass(element, className) {
  * @return {Element}
  */
 function getFromElement(selector) {
-  let childElement = testElement.$$(selector);
+  let childElement = testElement.shadowRoot.querySelector(selector);
   if (!childElement && testElement.$.pinKeyboard) {
-    childElement = testElement.$.pinKeyboard.$$(selector);
+    childElement = testElement.$.pinKeyboard.shadowRoot.querySelector(selector);
   }
 
   assertTrue(!!childElement);
@@ -254,35 +235,37 @@ function registerLockScreenTests() {
 
     /**
      * Returns the lock screen pref value.
-     * @return {boolean}
+     * @return {!Promise<boolean>}
      */
     function getLockScreenPref() {
-      let result;
-      fakeSettings.getPref(ENABLE_LOCK_SCREEN_PREF, function(value) {
-        result = value;
+      return fakeSettings.getPref(ENABLE_LOCK_SCREEN_PREF).then((result) => {
+        assertNotEquals(undefined, result);
+        return result.value;
       });
-      assertNotEquals(undefined, result);
-      return result.value;
     }
 
     /**
      * Changes the lock screen pref value using the settings API; this is like
      * the pref got changed from an unknown source such as another tab.
      * @param {boolean} value
+     * @return {!Promise<void>}
      */
     function setLockScreenPref(value) {
-      fakeSettings.setPref(ENABLE_LOCK_SCREEN_PREF, value, '', assertTrue);
+      return fakeSettings.setPref(ENABLE_LOCK_SCREEN_PREF, value, '')
+          .then(assertTrue);
     }
 
     function isSetupPinButtonVisible() {
       flush();
-      const setupPinButton = testElement.$$('#setupPinButton');
+      const setupPinButton =
+          testElement.shadowRoot.querySelector('#setupPinButton');
       return isVisible(setupPinButton);
     }
 
     function isEnablePinAutosubmitToggleVisible() {
       flush();
-      const autosubmitToggle = testElement.$$('#enablePinAutoSubmit');
+      const autosubmitToggle =
+          testElement.shadowRoot.querySelector('#enablePinAutoSubmit');
       return autosubmitToggle && isVisible(autosubmitToggle);
     }
 
@@ -296,18 +279,18 @@ function registerLockScreenTests() {
         {
           key: ENABLE_LOCK_SCREEN_PREF,
           type: chrome.settingsPrivate.PrefType.BOOLEAN,
-          value: true
+          value: true,
         },
         {
           key: 'ash.message_center.lock_screen_mode',
           type: chrome.settingsPrivate.PrefType.STRING,
-          value: 'hide'
+          value: 'hide',
         },
         {
           key: ENABLE_PIN_AUTOSUBMIT_PREF,
           type: chrome.settingsPrivate.PrefType.BOOLEAN,
-          value: false
-        }
+          value: false,
+        },
       ];
       fakeSettings = new FakeSettingsPrivate(fakePrefs);
       fakeUma = new FakeQuickUnlockUma();
@@ -354,8 +337,8 @@ function registerLockScreenTests() {
 
     // Showing the choose method screen does not make any destructive pref or
     // quickUnlockPrivate calls.
-    test('ShowingScreenDoesNotModifyPrefs', function() {
-      assertTrue(getLockScreenPref());
+    test('ShowingScreenDoesNotModifyPrefs', async function() {
+      assertTrue(await getLockScreenPref());
       assertRadioButtonChecked(passwordRadioButton);
       assertDeepEquals([], quickUnlockPrivateApi.activeModes);
     });
@@ -392,7 +375,7 @@ function registerLockScreenTests() {
 
     // The various radio buttons update internal state and do not modify
     // prefs.
-    test('TappingButtonsChangesUnderlyingState', function() {
+    test('TappingButtonsChangesUnderlyingState', async function() {
       function togglePin() {
         assertRadioButtonChecked(passwordRadioButton);
 
@@ -414,14 +397,14 @@ function registerLockScreenTests() {
       testElement.authToken = quickUnlockPrivateApi.getFakeToken();
 
       // Verify toggling PIN on/off does not disable screen lock.
-      setLockScreenPref(true);
+      await setLockScreenPref(true);
       togglePin();
-      assertTrue(getLockScreenPref());
+      assertTrue(await getLockScreenPref());
 
       // Verify toggling PIN on/off does not enable screen lock.
-      setLockScreenPref(false);
+      await setLockScreenPref(false);
       togglePin();
-      assertFalse(getLockScreenPref());
+      assertFalse(await getLockScreenPref());
     });
 
     // If quick unlock is changed by another settings page the radio button
@@ -451,7 +434,9 @@ function registerLockScreenTests() {
       assertRadioButtonChecked(pinPasswordRadioButton);
       assertTrue(isSetupPinButtonVisible());
       flush();
-      assertEquals(testElement.$$('#setupPinButton').innerText, 'Change PIN');
+      assertEquals(
+          testElement.shadowRoot.querySelector('#setupPinButton').innerText,
+          'Change PIN');
 
       // Clicking will trigger an async call which setActiveModes([]) fakes.
       passwordRadioButton.click();
@@ -466,7 +451,9 @@ function registerLockScreenTests() {
       flush();
       assertRadioButtonChecked(pinPasswordRadioButton);
       assertTrue(isSetupPinButtonVisible());
-      assertEquals(testElement.$$('#setupPinButton').innerText, 'Set up PIN');
+      assertEquals(
+          testElement.shadowRoot.querySelector('#setupPinButton').innerText,
+          'Set up PIN');
     });
 
     // Tapping the PIN configure button opens up the setup PIN dialog, and
@@ -485,7 +472,7 @@ function registerLockScreenTests() {
       getFromElement('#setupPinButton').click();
       flush();
       const setupPinDialog = getFromElement('#setupPin');
-      assertTrue(setupPinDialog.$$('#dialog').open);
+      assertTrue(setupPinDialog.shadowRoot.querySelector('#dialog').open);
       assertEquals(
           1,
           fakeUma.getHistogramValue(LockScreenProgress.CHOOSE_PIN_OR_PASSWORD));
@@ -502,11 +489,11 @@ function registerLockScreenTests() {
       getFromElement('#enablePinAutoSubmit').click();
       flush();
       const autosubmitDialog = getFromElement('#pinAutosubmitDialog');
-      assertTrue(autosubmitDialog.$$('#dialog').open);
+      assertTrue(autosubmitDialog.shadowRoot.querySelector('#dialog').open);
 
       // Cancel button closes the dialog.
-      autosubmitDialog.$$('#cancelButton').click();
-      assertFalse(autosubmitDialog.$$('#dialog').open);
+      autosubmitDialog.shadowRoot.querySelector('#cancelButton').click();
+      assertFalse(autosubmitDialog.shadowRoot.querySelector('#dialog').open);
     });
   });
 }
@@ -766,7 +753,7 @@ function registerSetupPinDialogTests() {
     // Hitting cancel at the setup step dismisses the dialog.
     test('HittingBackButtonResetsState', function() {
       backButton.click();
-      assertFalse(testElement.$$('#dialog').open);
+      assertFalse(testElement.shadowRoot.querySelector('#dialog').open);
     });
 
     // Hitting cancel at the confirm step dismisses the dialog.
@@ -774,7 +761,7 @@ function registerSetupPinDialogTests() {
       pinKeyboard.value = '1111';
       continueButton.click();
       backButton.click();
-      assertFalse(testElement.$$('#dialog').open);
+      assertFalse(testElement.shadowRoot.querySelector('#dialog').open);
     });
 
     // User has to re-enter PIN for confirm step.
@@ -854,14 +841,15 @@ function registerSetupPinDialogTests() {
     // Verify that the backspace button is disabled when there is nothing
     // entered.
     test('BackspaceDisabledWhenNothingEntered', function() {
-      const backspaceButton = pinKeyboard.$$('#backspaceButton');
+      const backspaceButton =
+          pinKeyboard.shadowRoot.querySelector('#backspaceButton');
       assertTrue(!!backspaceButton);
       assertTrue(backspaceButton.disabled);
 
-      pinKeyboard.$$('cr-input').value = '11';
+      pinKeyboard.shadowRoot.querySelector('cr-input').value = '11';
       assertFalse(backspaceButton.disabled);
 
-      pinKeyboard.$$('cr-input').value = '';
+      pinKeyboard.shadowRoot.querySelector('cr-input').value = '';
       assertTrue(backspaceButton.disabled);
     });
   });

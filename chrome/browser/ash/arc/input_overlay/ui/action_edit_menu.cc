@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,14 +9,14 @@
 #include "ash/style/style_util.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/chromeos/styles/cros_tokens_color_mappings.h"
 #include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/background.h"
 #include "ui/views/layout/box_layout.h"
 
-namespace arc {
-namespace input_overlay {
+namespace arc::input_overlay {
 namespace {
-constexpr char kFontSytle[] = "Roboto";
+constexpr char kFontStyle[] = "Roboto";
 constexpr int kFontSize = 16;
 constexpr int kCornerRadius = 6;
 constexpr int kMenuHeight = 192;
@@ -46,7 +46,7 @@ class ActionEditMenu::BindingButton : public views::LabelButton {
         views::Button::STATE_HOVERED,
         color_provider->GetContentLayerColor(
             ash::AshColorProvider::ContentLayerType::kTextColorPrimary));
-    label()->SetFontList(gfx::FontList({kFontSytle}, gfx::Font::NORMAL,
+    label()->SetFontList(gfx::FontList({kFontStyle}, gfx::Font::NORMAL,
                                        kFontSize, gfx::Font::Weight::NORMAL));
     auto key_size = CalculatePreferredSize();
     SetMinSize(gfx::Size(key_size.width(), kButtonHeight));
@@ -98,10 +98,10 @@ std::unique_ptr<ActionEditMenu> ActionEditMenu::BuildActionEditMenu(
       std::make_unique<ActionEditMenu>(display_overlay_controller, anchor);
 
   switch (action_type) {
-    case ActionType::kTap:
+    case ActionType::TAP:
       menu->InitActionTapEditMenu();
       break;
-    case ActionType::kMove:
+    case ActionType::MOVE:
       menu->InitActionTapEditMenu();
       break;
     default:
@@ -115,12 +115,11 @@ void ActionEditMenu::InitActionTapEditMenu() {
   SetLayoutManager(std::make_unique<views::BoxLayout>(
       views::BoxLayout::Orientation::kVertical));
 
-  auto* color_provider = ash::AshColorProvider::Get();
+  auto* color_provider = GetColorProvider();
   DCHECK(color_provider);
   if (!color_provider)
     return;
-  auto bg_color = color_provider->GetBackgroundColorInMode(
-      color_provider->IsDarkModeEnabled());
+  const auto bg_color = color_provider->GetColor(cros_tokens::kBgColor);
   SetBackground(views::CreateRoundedRectBackground(bg_color, kCornerRadius));
 
   // Add each binding button.
@@ -151,16 +150,19 @@ void ActionEditMenu::InitActionTapEditMenu() {
   auto* action = anchor_view_->action();
   // It is possible that the action has no binding after customizing, such as
   // users bind the key to another action.
-  auto& binding = action->GetCurrentDisplayedBinding();
-  if (IsKeyboardBound(binding))
+  auto& input_binding = action->GetCurrentDisplayedInput();
+  if (IsKeyboardBound(input_binding))
     keyboard_key_->OnBinding();
-  if (IsMouseBound(binding)) {
-    if (binding.mouse_action() == kPrimaryClick) {
-      mouse_left_->OnBinding();
-    } else if (binding.mouse_action() == kSecondaryClick) {
-      mouse_right_->OnBinding();
-    } else {
-      NOTREACHED();
+  if (IsMouseBound(input_binding)) {
+    switch (input_binding.mouse_action()) {
+      case MouseAction::PRIMARY_CLICK:
+        mouse_left_->OnBinding();
+        break;
+      case MouseAction::SECONDARY_CLICK:
+        mouse_right_->OnBinding();
+        break;
+      default:
+        NOTREACHED();
     }
   }
 }
@@ -206,5 +208,4 @@ void ActionEditMenu::OnResetButtonPressed() {
   display_overlay_controller_->RemoveActionEditMenu();
 }
 
-}  // namespace input_overlay
-}  // namespace arc
+}  // namespace arc::input_overlay

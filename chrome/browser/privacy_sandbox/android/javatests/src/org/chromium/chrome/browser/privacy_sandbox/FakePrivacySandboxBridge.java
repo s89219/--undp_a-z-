@@ -1,11 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.privacy_sandbox;
 
+import org.chromium.base.Callback;
+
+import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -16,15 +19,12 @@ public class FakePrivacySandboxBridge implements PrivacySandboxBridge.Natives {
     private boolean mIsPrivacySandboxRestricted /* = false*/;
 
     private final HashMap<String, Topic> mTopics = new HashMap<>();
-    private final Set<Topic> mCurrentTopTopics = new HashSet<>();
-    private final Set<Topic> mBlockedTopics = new HashSet<>();
-    private @DialogType int mDialogType = DialogType.NONE;
-    private Integer mLastDialogAction;
-
-    public FakePrivacySandboxBridge() {
-        setCurrentTopTopics("Foo", "Bar");
-        setBlockedTopics("BlockedFoo", "BlockedBar");
-    }
+    private final Set<Topic> mCurrentTopTopics = new LinkedHashSet<>();
+    private final Set<Topic> mBlockedTopics = new LinkedHashSet<>();
+    private final Set<String> mCurrentFledgeSites = new LinkedHashSet<>();
+    private final Set<String> mBlockedFledgeSites = new LinkedHashSet<>();
+    private @PromptType int mPromptType = PromptType.NONE;
+    private Integer mLastPromptAction;
 
     public void setCurrentTopTopics(String... topics) {
         mCurrentTopTopics.clear();
@@ -38,6 +38,16 @@ public class FakePrivacySandboxBridge implements PrivacySandboxBridge.Natives {
         for (String name : topics) {
             mBlockedTopics.add(getOrCreateTopic(name));
         }
+    }
+
+    public void setCurrentFledgeSites(String... sites) {
+        mCurrentFledgeSites.clear();
+        mCurrentFledgeSites.addAll(Arrays.asList(sites));
+    }
+
+    public void setBlockedFledgeSites(String... sites) {
+        mBlockedFledgeSites.clear();
+        mBlockedFledgeSites.addAll(Arrays.asList(sites));
     }
 
     private Topic getOrCreateTopic(String name) {
@@ -65,57 +75,35 @@ public class FakePrivacySandboxBridge implements PrivacySandboxBridge.Natives {
     }
 
     @Override
+    public boolean isFirstPartySetsDataAccessEnabled() {
+        return false;
+    }
+
+    @Override
+    public boolean isFirstPartySetsDataAccessManaged() {
+        return false;
+    }
+
+    @Override
+    public boolean isPartOfManagedFirstPartySet(String origin) {
+        return false;
+    }
+
+    @Override
     public void setPrivacySandboxEnabled(boolean enabled) {
         mIsPrivacySandboxEnabled = enabled;
     }
 
+    @Override
+    public void setFirstPartySetsDataAccessEnabled(boolean enabled) {}
+
+    @Override
+    public String getFirstPartySetOwner(String memberOrigin) {
+        return null;
+    }
+
     public void setPrivacySandboxRestricted(boolean restricted) {
         mIsPrivacySandboxRestricted = restricted;
-    }
-
-    @Override
-    public boolean isFlocEnabled() {
-        return true;
-    }
-
-    @Override
-    public void setFlocEnabled(boolean enabled) {
-        assert false;
-    }
-
-    @Override
-    public boolean isFlocIdResettable() {
-        return true;
-    }
-
-    @Override
-    public void resetFlocId() {
-        assert false;
-    }
-
-    @Override
-    public String getFlocStatusString() {
-        return null;
-    }
-
-    @Override
-    public String getFlocGroupString() {
-        return null;
-    }
-
-    @Override
-    public String getFlocUpdateString() {
-        return null;
-    }
-
-    @Override
-    public String getFlocDescriptionString() {
-        return null;
-    }
-
-    @Override
-    public String getFlocResetExplanationString() {
-        return null;
     }
 
     @Override
@@ -145,25 +133,46 @@ public class FakePrivacySandboxBridge implements PrivacySandboxBridge.Natives {
         }
     }
 
-    public void setRequiredDialogType(@DialogType int type) {
-        mDialogType = type;
+    @Override
+    public void getFledgeJoiningEtldPlusOneForDisplay(Callback<String[]> callback) {
+        callback.onResult(mCurrentFledgeSites.toArray(new String[0]));
     }
 
     @Override
-    public int getRequiredDialogType() {
-        return mDialogType;
+    public String[] getBlockedFledgeJoiningTopFramesForDisplay() {
+        return mBlockedFledgeSites.toArray(new String[0]);
     }
 
     @Override
-    public void dialogActionOccurred(@DialogAction int action) {
-        mLastDialogAction = action;
+    public void setFledgeJoiningAllowed(String topFrameEtldPlus1, boolean allowed) {
+        if (allowed) {
+            mCurrentFledgeSites.add(topFrameEtldPlus1);
+            mBlockedFledgeSites.remove(topFrameEtldPlus1);
+        } else {
+            mCurrentFledgeSites.remove(topFrameEtldPlus1);
+            mBlockedFledgeSites.add(topFrameEtldPlus1);
+        }
     }
 
-    public Integer getLastDialogAction() {
-        return mLastDialogAction;
+    public void setRequiredPromptType(@PromptType int type) {
+        mPromptType = type;
     }
 
-    public void resetLastDialogAction() {
-        mLastDialogAction = null;
+    @Override
+    public int getRequiredPromptType() {
+        return mPromptType;
+    }
+
+    @Override
+    public void promptActionOccurred(@PromptAction int action) {
+        mLastPromptAction = action;
+    }
+
+    public Integer getLastPromptAction() {
+        return mLastPromptAction;
+    }
+
+    public void resetLastPromptAction() {
+        mLastPromptAction = null;
     }
 }

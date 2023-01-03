@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@ namespace views {
 class View;
 }  // namespace views
 
+class Browser;
 class Profile;
 
 // Helper class for logic to show / delay showing the profile customization
@@ -52,7 +53,7 @@ class ProfileCustomizationBubbleSyncController : public ProfileObserver,
   // includes the case when sync can start but is blocked on the user to enter
   // the custom passphrase.
   static void ApplyColorAndShowBubbleWhenNoValueSynced(
-      Profile* profile,
+      Browser* browser,
       views::View* anchor_view,
       SkColor suggested_profile_color);
 

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,23 +6,21 @@
  * @fileoverview Store ChromeVox log.
  */
 
-goog.provide('LogStore');
+import {BridgeConstants} from '../../common/bridge_constants.js';
+import {BridgeHelper} from '../../common/bridge_helper.js';
+import {BaseLog, LogType, TextLog, TreeLog} from '../../common/log_types.js';
+import {TreeDumper} from '../../common/tree_dumper.js';
 
-goog.require('TreeDumper');
-goog.require('BaseLog');
-goog.require('EventLog');
-goog.require('LogType');
-goog.require('SpeechLog');
-goog.require('TextLog');
-goog.require('TreeLog');
-
-LogStore = class {
+export class LogStore {
   constructor() {
     /**
      * Ring buffer of size this.LOG_LIMIT
      * @private {!Array<BaseLog>}
      */
     this.logs_ = Array(LogStore.LOG_LIMIT);
+
+    /** @private {boolean} */
+    this.shouldSkipOutput_ = false;
 
     /*
      * this.logs_ is implemented as a ring buffer which starts
@@ -80,7 +78,7 @@ LogStore = class {
    * @param {!LogType} logType
    */
   writeTextLog(logContent, logType) {
-    if (this.shouldSkipOutput_()) {
+    if (this.shouldSkipOutput_) {
       return;
     }
 
@@ -93,7 +91,7 @@ LogStore = class {
    * @param {!TreeDumper} logContent
    */
   writeTreeLog(logContent) {
-    if (this.shouldSkipOutput_()) {
+    if (this.shouldSkipOutput_) {
       return;
     }
 
@@ -106,7 +104,7 @@ LogStore = class {
    * @param {!BaseLog} log
    */
   writeLog(log) {
-    if (this.shouldSkipOutput_()) {
+    if (this.shouldSkipOutput_) {
       return;
     }
 
@@ -126,29 +124,24 @@ LogStore = class {
     this.startIndex_ = 0;
   }
 
-  /** @private @return {boolean} */
-  shouldSkipOutput_() {
-    if (ChromeVoxState.instance && ChromeVoxState.instance.currentRange &&
-        ChromeVoxState.instance.currentRange.start &&
-        ChromeVoxState.instance.currentRange.start.node &&
-        ChromeVoxState.instance.currentRange.start.node.root) {
-      return ChromeVoxState.instance.currentRange.start.node.root.docUrl
-                 .indexOf(chrome.extension.getURL(
-                     'chromevox/log_page/log.html')) === 0;
-    }
-    return false;
+  /** @param {boolean} newValue */
+  set shouldSkipOutput(newValue) {
+    this.shouldSkipOutput_ = newValue;
   }
 
-  /**
-   * @return {LogStore}
-   */
-  static getInstance() {
-    if (!LogStore.instance) {
-      LogStore.instance = new LogStore();
-    }
-    return LogStore.instance;
+  static init() {
+    LogStore.instance = new LogStore();
+
+    BridgeHelper.registerHandler(
+        BridgeConstants.LogStore.TARGET,
+        BridgeConstants.LogStore.Action.CLEAR_LOG,
+        () => LogStore.instance.clearLog());
+    BridgeHelper.registerHandler(
+        BridgeConstants.LogStore.TARGET,
+        BridgeConstants.LogStore.Action.GET_LOGS,
+        () => LogStore.instance.getLogs().map(log => log.serialize()));
   }
-};
+}
 
 /**
  * @const
@@ -156,15 +149,5 @@ LogStore = class {
  */
 LogStore.LOG_LIMIT = 3000;
 
-/**
- * Global instance.
- * @type {LogStore}
- */
+/** @type {LogStore} */
 LogStore.instance;
-
-BridgeHelper.registerHandler(
-    BridgeTarget.LOG_STORE, BridgeAction.CLEAR_LOG,
-    () => LogStore.instance.clearLog());
-BridgeHelper.registerHandler(
-    BridgeTarget.LOG_STORE, BridgeAction.GET_LOGS,
-    () => LogStore.instance.getLogs());

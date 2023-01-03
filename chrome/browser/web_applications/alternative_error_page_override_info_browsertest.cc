@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/url_formatter/url_formatter.h"
+#include "content/public/common/alternative_error_page_override_info.mojom.h"
 #include "content/public/common/content_client.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_utils.h"
@@ -22,20 +23,12 @@
 #include "ui/native_theme/native_theme.h"
 #include "url/gurl.h"
 
-namespace {
-const std::string kYellow = skia::SkColorToHexString(SK_ColorYELLOW);
-const std::string kGreen = skia::SkColorToHexString(SK_ColorGREEN);
-const std::string kRed = skia::SkColorToHexString(SK_ColorRED);
-const std::string kBlue = skia::SkColorToHexString(SK_ColorBLUE);
-const std::string kBlack = skia::SkColorToHexString(SK_ColorBLACK);
-const std::string kWhite = skia::SkColorToHexString(SK_ColorWHITE);
-}  // namespace
 // Class to test browser error page display info.
 class AlternativeErrorPageOverrideInfoBrowserTest
     : public InProcessBrowserTest {
  public:
   AlternativeErrorPageOverrideInfoBrowserTest() {
-    feature_list_.InitWithFeatures({features::kDesktopPWAsDefaultOfflinePage,
+    feature_list_.InitWithFeatures({features::kPWAsDefaultOfflinePage,
                                     blink::features::kWebAppEnableDarkMode},
                                    {});
   }
@@ -53,8 +46,17 @@ class AlternativeErrorPageOverrideInfoBrowserTest
     content::BrowserContext* context = browser()->profile();
 
     return browser_client.GetAlternativeErrorPageOverrideInfo(
-        app_url, context, net::ERR_INTERNET_DISCONNECTED);
+        app_url, /*render_frame_host=*/nullptr, context,
+        net::ERR_INTERNET_DISCONNECTED);
   }
+
+ protected:
+  const std::string yellow_ = skia::SkColorToHexString(SK_ColorYELLOW);
+  const std::string green_ = skia::SkColorToHexString(SK_ColorGREEN);
+  const std::string red_ = skia::SkColorToHexString(SK_ColorRED);
+  const std::string blue_ = skia::SkColorToHexString(SK_ColorBLUE);
+  const std::string black_ = skia::SkColorToHexString(SK_ColorBLACK);
+  const std::string white_ = skia::SkColorToHexString(SK_ColorWHITE);
 
  private:
   void SetUpOnMainThread() override {
@@ -64,58 +66,9 @@ class AlternativeErrorPageOverrideInfoBrowserTest
   void TearDownOnMainThread() override {
     InProcessBrowserTest::TearDownOnMainThread();
   }
+
   base::test::ScopedFeatureList feature_list_;
 };
-
-// Testing app manifest with no theme or background color.
-IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest, Manifest) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  content::mojom::AlternativeErrorPageOverrideInfoPtr info =
-      GetErrorPageInfo("/banners/manifest_no_service_worker.html");
-
-  // Expect mojom struct with default background and theme colors.
-  EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey(
-                "customized_background_color"),
-            base::Value(kWhite));
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("theme_color"),
-            base::Value(kBlack));
-}
-
-// Testing app manifest with theme color.
-IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
-                       ManifestWithThemeColor) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  content::mojom::AlternativeErrorPageOverrideInfoPtr info =
-      GetErrorPageInfo("/banners/theme-color.html");
-
-  // Expect mojom struct with customized theme color and default background
-  // color.
-  EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey(
-                "customized_background_color"),
-            base::Value(kWhite));
-  EXPECT_EQ(
-      *info->alternative_error_page_params.FindKey("theme_color"),
-      base::Value(skia::SkColorToHexString(SkColorSetRGB(0xAA, 0xCC, 0xEE))));
-}
-
-// Testing app manifest with background color.
-IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
-                       ManifestWithBackgroundColor) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  content::mojom::AlternativeErrorPageOverrideInfoPtr info =
-      GetErrorPageInfo("/banners/background-color.html");
-
-  // Expect mojom struct with default theme color and customized background
-  // color.
-  EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey(
-                "customized_background_color"),
-            base::Value(kBlue));
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("theme_color"),
-            base::Value(kBlack));
-}
 
 // Testing url outside the scope of an installed app.
 IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
@@ -129,7 +82,8 @@ IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
 
   content::mojom::AlternativeErrorPageOverrideInfoPtr info =
       browser_client.GetAlternativeErrorPageOverrideInfo(
-          app_url, context, net::ERR_INTERNET_DISCONNECTED);
+          app_url, /*render_frame_host=*/nullptr, context,
+          net::ERR_INTERNET_DISCONNECTED);
 
   // Expect mojom struct to be null.
   EXPECT_FALSE(info);
@@ -145,8 +99,8 @@ IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
 
   // Expect mojom struct with custom app short name.
   EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("app_short_name"),
-            base::Value("Manifest"));
+  EXPECT_EQ(*info->alternative_error_page_params.Find("app_short_name"),
+            "Manifest");
 }
 
 // Testing app manifest with no app short name.
@@ -159,8 +113,8 @@ IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
 
   // Expect mojom struct with customized with app name.
   EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("app_short_name"),
-            base::Value("Manifest test app"));
+  EXPECT_EQ(*info->alternative_error_page_params.Find("app_short_name"),
+            "Manifest test app");
 }
 
 // Testing app manifest with no app short name or app name.
@@ -173,8 +127,8 @@ IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
 
   // Expect mojom struct customized with HTML page title.
   EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("app_short_name"),
-            base::Value("Web app banner test page"));
+  EXPECT_EQ(*info->alternative_error_page_params.Find("app_short_name"),
+            "Web app banner test page");
 }
 
 // Testing app manifest with no app short name or app name, and HTML page
@@ -192,65 +146,13 @@ IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
 
   content::mojom::AlternativeErrorPageOverrideInfoPtr info =
       browser_client.GetAlternativeErrorPageOverrideInfo(
-          app_url, context, net::ERR_INTERNET_DISCONNECTED);
+          app_url, /*render_frame_host=*/nullptr, context,
+          net::ERR_INTERNET_DISCONNECTED);
 
   // Expect mojom struct customized with HTML page title.
   EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("app_short_name"),
-            base::Value(url_formatter::FormatUrl(app_url)));
-}
-
-// Testing app with manifest and no service worker.
-IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
-                       ManifestAndNoServiceWorker) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  content::mojom::AlternativeErrorPageOverrideInfoPtr info =
-      GetErrorPageInfo("/banners/no-sw-with-colors.html");
-
-  // Expect mojom struct with custom theme and background color.
-  EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey(
-                "customized_background_color"),
-            base::Value(kYellow));
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey("theme_color"),
-            base::Value(kGreen));
-}
-
-// Testing app manifest with dark mode theme and background colors.
-IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
-                       ManifestWithDarkModeThemeAndBackgroundColor) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  ui::NativeTheme::GetInstanceForNativeUi()->set_use_dark_colors(true);
-  content::mojom::AlternativeErrorPageOverrideInfoPtr info =
-      GetErrorPageInfo("/web_apps/get_manifest.html?color_scheme_dark.json");
-
-  // Expect mojom struct with dark mode theme color and dark mode background
-  // color.
-  EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey(
-                "dark_mode_background_color"),
-            base::Value(kRed));
-  EXPECT_EQ(
-      *info->alternative_error_page_params.FindKey("dark_mode_theme_color"),
-      base::Value(kRed));
-}
-
-// Testing app manifest with no dark mode theme or background color.
-IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
-                       ManifestWithNoDarkModeThemeAndBackgroundColor) {
-  ASSERT_TRUE(embedded_test_server()->Start());
-  ui::NativeTheme::GetInstanceForNativeUi()->set_use_dark_colors(true);
-  content::mojom::AlternativeErrorPageOverrideInfoPtr info =
-      GetErrorPageInfo("/banners/no-sw-with-colors.html");
-
-  // Expect mojom struct light mode background and theme color stored.
-  EXPECT_TRUE(info);
-  EXPECT_EQ(*info->alternative_error_page_params.FindKey(
-                "dark_mode_background_color"),
-            base::Value(kYellow));
-  EXPECT_EQ(
-      *info->alternative_error_page_params.FindKey("dark_mode_theme_color"),
-      base::Value(kGreen));
+  EXPECT_EQ(*info->alternative_error_page_params.Find("app_short_name"),
+            base::UTF16ToUTF8(url_formatter::FormatUrl(app_url)));
 }
 
 // Testing manifest with icon.
@@ -268,24 +170,24 @@ IN_PROC_BROWSER_TEST_F(AlternativeErrorPageOverrideInfoBrowserTest,
   web_app::WebAppProvider* web_app_provider =
       web_app::WebAppProvider::GetForTest(profile);
   const absl::optional<web_app::AppId> app_id =
-      web_app_provider->registrar().FindAppWithUrlInScope(app_url);
+      web_app_provider->registrar_unsafe().FindAppWithUrlInScope(app_url);
   WebAppIconWaiter(profile, app_id.value()).Wait();
   content::mojom::AlternativeErrorPageOverrideInfoPtr info =
       browser_client.GetAlternativeErrorPageOverrideInfo(
-          app_url, profile, net::ERR_INTERNET_DISCONNECTED);
+          app_url, /*render_frame_host=*/nullptr, profile,
+          net::ERR_INTERNET_DISCONNECTED);
 
-  // Expect mojom struct with icon url.
+  // Expect mojom struct with everything (except the icon) filled out.
   EXPECT_TRUE(info);
-  EXPECT_EQ(
-      *info->alternative_error_page_params.FindKey("icon_url"),
-      base::Value(
-          "data:image/"
-          "png;base64,"
-          "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAA4UlEQVQ4jZVSuwqFMAw1"
-          "8baI2M3FyUXXfoGT3+FvC/"
-          "6A4iQKUrFDcweht7fWwUwhOSc5eUDXddEbw1foKIo+"
-          "1iOiIAIAiAgAfIINubh7KtABALTWxhjOuYVax58BAM7zLIqirmtEvMS4an8EIkJEpZSU"
-          "smkaIYQQwhjjSUK3tmVmWaaUWtc1jmNvGbGU0m3COZ/neRiGtm3zPO/"
-          "7Pk3T8JYuSVrrsiyrqjqOY5omzrkx5nGtRMQYG8dx33et9bZtSZK46D+"
-          "Cy1yWBREvtJcNH44xdg8GZrh3u5d7fI0ne/2tX8uNb4qnIrpWAAAAAElFTkSuQmCC"));
+  EXPECT_EQ(*info->alternative_error_page_params.Find("app_short_name"),
+            "Manifest test app");
+  // This test may at first glance seem like an end-to-end test of the default
+  // offline experience, but should be considered more of a unit test for just
+  // the initial values provided to the default offline page. For a proper
+  // end-to-end test, see WebAppOfflinePageIconShowing in the
+  // WebAppOfflinePageTest suite.
+  EXPECT_EQ(*info->alternative_error_page_params.Find("icon_url"), "''");
+  EXPECT_EQ(*info->alternative_error_page_params.Find(
+                "web_app_default_offline_message"),
+            "You're offline");
 }

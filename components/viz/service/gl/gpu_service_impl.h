@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,7 @@
 #include "gpu/command_buffer/service/sequence_id.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_preferences.h"
+#include "gpu/ipc/common/gpu_disk_cache_type.h"
 #include "gpu/ipc/common/surface_handle.h"
 #include "gpu/ipc/service/gpu_channel.h"
 #include "gpu/ipc/service/gpu_channel_manager.h"
@@ -47,6 +48,10 @@
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/gfx/gpu_extra_info.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "ui/gl/direct_composition_support.h"
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 namespace arc {
@@ -85,8 +90,12 @@ enum class ExitCode {
 // This runs in the GPU process, and communicates with the gpu host (which is
 // the window server) over the mojom APIs. This is responsible for setting up
 // the connection to clients, allocating/free'ing gpu memory etc.
-class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
-                                          public mojom::GpuService {
+class VIZ_SERVICE_EXPORT GpuServiceImpl
+    : public gpu::GpuChannelManagerDelegate,
+#if BUILDFLAG(IS_WIN)
+      public gl::DirectCompositionOverlayCapsObserver,
+#endif
+      public mojom::GpuService {
  public:
   GpuServiceImpl(const gpu::GPUInfo& gpu_info,
                  std::unique_ptr<gpu::GpuWatchdogThread> watchdog,
@@ -114,6 +123,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
       scoped_refptr<gl::GLSurface> default_offscreen_surface,
       gpu::SyncPointManager* sync_point_manager = nullptr,
       gpu::SharedImageManager* shared_image_manager = nullptr,
+      gpu::Scheduler* scheduler = nullptr,
       base::WaitableEvent* shutdown_event = nullptr);
   void Bind(mojo::PendingReceiver<mojom::GpuService> pending_receiver);
 
@@ -132,10 +142,14 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void EstablishGpuChannel(int32_t client_id,
                            uint64_t client_tracing_id,
                            bool is_gpu_host,
-                           bool cache_shaders_on_disk,
                            EstablishGpuChannelCallback callback) override;
   void SetChannelClientPid(int32_t client_id,
                            base::ProcessId client_pid) override;
+  void SetChannelDiskCacheHandle(
+      int32_t client_id,
+      const gpu::GpuDiskCacheHandle& handle) override;
+  void OnDiskCacheHandleDestoyed(
+      const gpu::GpuDiskCacheHandle& handle) override;
   void CloseChannel(int32_t client_id) override;
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #if BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
@@ -191,11 +205,12 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void StartPeakMemoryMonitor(uint32_t sequence_num) override;
   void GetPeakMemoryUsage(uint32_t sequence_num,
                           GetPeakMemoryUsageCallback callback) override;
-
-  void RequestHDRStatus(RequestHDRStatusCallback callback) override;
-  void LoadedShader(int32_t client_id,
-                    const std::string& key,
-                    const std::string& data) override;
+#if BUILDFLAG(IS_WIN)
+  void RequestDXGIInfo(RequestDXGIInfoCallback callback) override;
+#endif
+  void LoadedBlob(const gpu::GpuDiskCacheHandle& handle,
+                  const std::string& key,
+                  const std::string& data) override;
   void WakeUpGpu() override;
   void GpuSwitched(gl::GpuPreference active_gpu_heuristic) override;
   void DisplayAdded() override;
@@ -222,8 +237,6 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void ThrowJavaException() override;
 
   // gpu::GpuChannelManagerDelegate:
-  void RegisterDisplayContext(gpu::DisplayContext* display_context) override;
-  void UnregisterDisplayContext(gpu::DisplayContext* display_context) override;
   void LoseAllContexts() override;
   void DidCreateContextSuccessfully() override;
   void DidCreateOffscreenContext(const GURL& active_url) override;
@@ -233,15 +246,15 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   void DidLoseContext(bool offscreen,
                       gpu::error::ContextLostReason reason,
                       const GURL& active_url) override;
-#if BUILDFLAG(IS_WIN)
-  void DidUpdateOverlayInfo(const gpu::OverlayInfo& overlay_info) override;
-  void DidUpdateHDRStatus(bool hdr_enabled) override;
-#endif
   void GetDawnInfo(GetDawnInfoCallback callback) override;
 
-  void StoreShaderToDisk(int client_id,
-                         const std::string& key,
-                         const std::string& shader) override;
+  void GetIsolationKey(int client_id,
+                       const blink::WebGPUExecutionContextToken& token,
+                       GetIsolationKeyCallback cb) override;
+  void StoreBlobToDisk(const gpu::GpuDiskCacheHandle& handle,
+                       const std::string& key,
+                       const std::string& shader) override;
+
   // Attempts to atomically shut down the process but only if not running in
   // host process. An error message will be logged.
   void MaybeExitOnContextLost() override;
@@ -249,8 +262,10 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   gpu::Scheduler* GetGpuScheduler() override;
 
 #if BUILDFLAG(IS_WIN)
-  void SendCreatedChildWindow(gpu::SurfaceHandle parent_window,
-                              gpu::SurfaceHandle child_window) override;
+  // DirectCompositionOverlayCapsObserver implementation.
+  // Update overlay info and HDR status on the GPU process and send the updated
+  // info back to the browser process if there is a change.
+  void OnOverlayCapsChanged() override;
 #endif
 
   // Installs a base::LogMessageHandlerFunction which ensures messages are sent
@@ -277,7 +292,6 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
     return compositor_gpu_thread_.get();
   }
 
-  gpu::ImageFactory* gpu_image_factory();
   gpu::GpuMemoryBufferFactory* gpu_memory_buffer_factory() {
     return gpu_memory_buffer_factory_.get();
   }
@@ -306,7 +320,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
     return main_runner_;
   }
 
-  scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner() {
+  scoped_refptr<base::SingleThreadTaskRunner> compositor_gpu_task_runner() {
     return compositor_gpu_thread() ? compositor_gpu_thread()->task_runner()
                                    : main_runner_;
   }
@@ -323,7 +337,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
 
   bool in_host_process() const { return gpu_info_.in_process_gpu; }
 
-  void set_start_time(base::Time start_time) { start_time_ = start_time; }
+  void set_start_time(base::TimeTicks start_time) { start_time_ = start_time; }
 
   const gpu::GPUInfo& gpu_info() const { return gpu_info_; }
   const gpu::GpuPreferences& gpu_preferences() const {
@@ -383,10 +397,15 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH) &&
         // BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
 
-  void RequestHDRStatusOnMainThread(RequestHDRStatusCallback callback);
+#if BUILDFLAG(IS_WIN)
+  void RequestDXGIInfoOnMainThread(RequestDXGIInfoCallback callback);
+#endif
 
   void OnBackgroundedOnMainThread();
   void OnForegroundedOnMainThread();
+
+  void OnBackgroundCleanupGpuMainThread();
+  void OnBackgroundCleanupCompositorGpuThread();
 
   // Ensure that all peak memory tracking occurs on the main thread as all
   // MemoryTracker are created on that thread. All requests made before
@@ -400,13 +419,19 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   // Update overlay info and HDR status on the GPU process and send the updated
   // info back to the browser process if there is a change.
 #if BUILDFLAG(IS_WIN)
-  void UpdateOverlayAndHDRInfo();
+  void UpdateOverlayAndDXGIInfo();
 #endif
 
   void GetDawnInfoOnMain(GetDawnInfoCallback callback);
 
   scoped_refptr<base::SingleThreadTaskRunner> main_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> io_runner_;
+
+#if BUILDFLAG(IS_FUCHSIA)
+  // TODO(crbug.com/1340041): Fuchsia does not support FIDL communication from
+  // ThreadPool's worker threads.
+  std::unique_ptr<base::Thread> vea_thread_;
+#endif
 
   // Do not change the class member order here. watchdog_thread_ should be the
   // last one to be destroyed before main_runner_ and io_runner_.
@@ -422,7 +447,9 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
 
   const gpu::GpuDriverBugWorkarounds gpu_driver_bug_workarounds_;
 
-  bool hdr_enabled_ = false;
+#if BUILDFLAG(IS_WIN)
+  gfx::mojom::DXGIInfoPtr dxgi_info_;
+#endif
 
   // What we would have gotten if we haven't fallen back to SwiftShader or
   // pure software (in the viz case).
@@ -439,13 +466,14 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   // Display compositor gpu thread.
   std::unique_ptr<CompositorGpuThread> compositor_gpu_thread_;
 
-  // On some platforms (e.g. android webview), the SyncPointManager and
-  // SharedImageManager comes from external sources.
+  // On some platforms (e.g. android webview), SyncPointManager,
+  // SharedImageManager and Scheduler come from external sources.
   std::unique_ptr<gpu::SyncPointManager> owned_sync_point_manager_;
 
   std::unique_ptr<gpu::SharedImageManager> owned_shared_image_manager_;
 
-  std::unique_ptr<gpu::Scheduler> scheduler_;
+  std::unique_ptr<gpu::Scheduler> owned_scheduler_;
+  raw_ptr<gpu::Scheduler, DanglingUntriaged> scheduler_;
 
 #if BUILDFLAG(ENABLE_VULKAN)
   raw_ptr<gpu::VulkanImplementation> vulkan_implementation_;
@@ -472,7 +500,7 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   std::unique_ptr<gpu::ImageDecodeAcceleratorWorker>
       image_decode_accelerator_worker_;
 
-  base::Time start_time_;
+  base::TimeTicks start_time_;
 
   // Used to track the task to bind |receiver_| on the IO thread.
   base::CancelableTaskTracker bind_task_tracker_;
@@ -483,9 +511,6 @@ class VIZ_SERVICE_EXPORT GpuServiceImpl : public gpu::GpuChannelManagerDelegate,
   scoped_refptr<arc::ProtectedBufferManager> protected_buffer_manager_;
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH) &&
         // BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
-
-  // Display compositor contexts that don't have a corresponding GPU channel.
-  base::ObserverList<gpu::DisplayContext>::Unchecked display_contexts_;
 
   VisibilityChangedCallback visibility_changed_callback_;
 

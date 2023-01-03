@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -201,11 +201,6 @@ class ContentSettingBubbleModel {
   // Called by the view code when the bubble is closed.
   virtual void CommitChanges() {}
 
-  // Called when the bubble is explicitly dismissed by the user via [Esc] key or
-  // (x) button. This is not called on accept, cancel, loss of focus, web
-  // contents destruction, etc.
-  virtual void OnBubbleDismissedByUser() {}
-
   // TODO(msramek): The casting methods below are only necessary because
   // ContentSettingBubbleController in the Cocoa UI needs to know the type of
   // the bubble it wraps. Find a solution that does not require reflection nor
@@ -288,8 +283,8 @@ class ContentSettingBubbleModel {
   }
 
  private:
-  raw_ptr<content::WebContents> web_contents_;
-  raw_ptr<Owner> owner_;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_;
+  raw_ptr<Owner, DanglingUntriaged> owner_;
   raw_ptr<Delegate> delegate_;
   BubbleContent bubble_content_;
 };
@@ -441,10 +436,6 @@ class ContentSettingQuietRequestBubbleModel : public ContentSettingBubbleModel {
 
   ~ContentSettingQuietRequestBubbleModel() override;
 
-  void SetOnBubbleDismissedByUserCallback(base::OnceClosure callback) {
-    on_bubble_dismissed_by_user_callback_ = std::move(callback);
-  }
-
  private:
   void SetManageText();
 
@@ -453,10 +444,7 @@ class ContentSettingQuietRequestBubbleModel : public ContentSettingBubbleModel {
   void OnLearnMoreClicked() override;
   void OnDoneButtonClicked() override;
   void OnCancelButtonClicked() override;
-  void OnBubbleDismissedByUser() override;
   ContentSettingQuietRequestBubbleModel* AsQuietRequestBubbleModel() override;
-
-  base::OnceClosure on_bubble_dismissed_by_user_callback_;
 };
 
 // The model for the deceptive content bubble.

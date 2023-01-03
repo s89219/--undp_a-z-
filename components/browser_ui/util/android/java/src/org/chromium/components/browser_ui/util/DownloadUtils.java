@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -84,16 +84,11 @@ public class DownloadUtils {
         NotificationManagerCompat notificationManager = NotificationManagerCompat.from(context);
         boolean useSystemNotification = !notificationManager.areNotificationsEnabled();
         try {
-            if (Build.VERSION.SDK_INT > Build.VERSION_CODES.M) {
-                // OriginalUri has to be null or non-empty http(s) scheme.
-                Uri originalUri = parseOriginalUrl(originalUrl);
-                Uri refererUri = TextUtils.isEmpty(referer) ? null : Uri.parse(referer);
-                return manager.addCompletedDownload(fileName, description, true, mimeType, filePath,
-                        fileSizeBytes, useSystemNotification, originalUri, refererUri);
-            }
-
+            // OriginalUri has to be null or non-empty http(s) scheme.
+            Uri originalUri = parseOriginalUrl(originalUrl);
+            Uri refererUri = TextUtils.isEmpty(referer) ? null : Uri.parse(referer);
             return manager.addCompletedDownload(fileName, description, true, mimeType, filePath,
-                    fileSizeBytes, useSystemNotification);
+                    fileSizeBytes, useSystemNotification, originalUri, refererUri);
         } catch (Exception e) {
             return INVALID_SYSTEM_DOWNLOAD_ID;
         }

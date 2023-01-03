@@ -1,8 +1,13 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/browsing_topics/browsing_topics_service_factory.h"
+#include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/optimization_guide/browser_test_util.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
+#include "chrome/browser/optimization_guide/page_content_annotations_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/in_process_browser_test.h"
@@ -11,6 +16,11 @@
 #include "components/browsing_topics/epoch_topics.h"
 #include "components/browsing_topics/test_util.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/optimization_guide/content/browser/page_content_annotations_service.h"
+#include "components/optimization_guide/content/browser/test_page_content_annotator.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
+#include "components/optimization_guide/core/test_model_info_builder.h"
+#include "components/optimization_guide/core/test_optimization_guide_model_provider.h"
 #include "components/privacy_sandbox/privacy_sandbox_features.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
@@ -26,27 +36,40 @@ namespace {
 
 const char kBrowsingTopicsInternalsUrl[] = "chrome://topics-internals/";
 
+std::vector<optimization_guide::WeightedIdentifier> TopicsWithUniformWeight(
+    const std::vector<int32_t>& topics,
+    double weight) {
+  std::vector<optimization_guide::WeightedIdentifier> result;
+  for (int32_t topic : topics) {
+    result.emplace_back(topic, weight);
+  }
+
+  return result;
+}
+
 class FixedBrowsingTopicsService
     : public browsing_topics::BrowsingTopicsService {
  public:
   FixedBrowsingTopicsService() = default;
   ~FixedBrowsingTopicsService() override = default;
 
-  std::vector<blink::mojom::EpochTopicPtr> GetBrowsingTopicsForJsApi(
+  bool HandleTopicsWebApi(
       const url::Origin& context_origin,
-      content::RenderFrameHost* main_frame) override {
-    return {};
+      content::RenderFrameHost* main_frame,
+      ApiCallerSource caller_source,
+      bool get_topics,
+      bool observe,
+      std::vector<blink::mojom::EpochTopicPtr>& topics) override {
+    return false;
   }
 
-  mojom::WebUIGetBrowsingTopicsStateResultPtr GetBrowsingTopicsStateForWebUi()
-      const override {
+  void GetBrowsingTopicsStateForWebUi(
+      bool calculate_now,
+      browsing_topics::mojom::PageHandler::GetBrowsingTopicsStateCallback
+          callback) override {
     DCHECK(result_override_);
-    return result_override_->Clone();
-  }
 
-  std::vector<privacy_sandbox::CanonicalTopic> GetTopicsForSiteForDisplay(
-      const url::Origin& top_origin) const override {
-    return {};
+    std::move(callback).Run(result_override_->Clone());
   }
 
   std::vector<privacy_sandbox::CanonicalTopic> GetTopTopicsForDisplay()
@@ -82,10 +105,87 @@ class BrowsingTopicsInternalsBrowserTestBase : public InProcessBrowserTest {
   // to execute the script because WebUI has a default CSP policy denying
   // "eval()", which is what EvalJs uses under the hood.
   std::string EvalJsInWebUI(const std::string& script) {
-    return content::EvalJs(web_contents()->GetMainFrame(), script,
+    return content::EvalJs(web_contents()->GetPrimaryMainFrame(), script,
                            content::EXECUTE_SCRIPT_DEFAULT_OPTIONS,
                            /*world_id=*/1)
         .ExtractString();
+  }
+
+  std::string GetModelInfoContent() {
+    std::string html_content = EvalJsInWebUI(R"(
+let result = '';
+
+if (document.querySelector('#model-info-override-status-message-div').style.display !== 'none') {
+  result += document.querySelector('#model-info-override-status-message-div').textContent + '\n';
+}
+
+if (document.querySelector('#model-info-div').style.display !== 'none') {
+  result += document.querySelector('#model-version-div').textContent + '\n';
+  result += document.querySelector('#model-file-path-div').textContent + '\n';
+}
+
+result
+      )");
+
+    return html_content;
+  }
+
+  std::string GetHostsClassificationInputValidationError() {
+    std::string html_content = EvalJsInWebUI(R"(
+let result = '';
+
+let errorsDiv = document.querySelector('#hosts-classification-input-validation-error');
+
+if (errorsDiv.style.display !== 'none') {
+  Array.from(errorsDiv.children).forEach((errorDiv) => {
+    result += errorDiv.textContent + '\n';
+  });
+}
+
+result
+      )");
+    return html_content;
+  }
+
+  std::string GetHostsClassificationResultTableContent() {
+    std::string html_content = EvalJsInWebUI(R"(
+let result = '';
+
+let tableWrapperDiv = document.querySelector('#hosts-classification-result-table-wrapper');
+
+if (tableWrapperDiv.style.display === 'none') {
+  result
+} else {
+  let rows = tableWrapperDiv.querySelectorAll('tr');
+
+  rows.forEach(row => {
+    let formattedRow = '';
+
+    let cells = row.querySelectorAll('td');
+    cells.forEach(cell => {
+      let maybeSpans = cell.querySelectorAll('span');
+      if (maybeSpans.length > 0) {
+        let formattedCell = '';
+        maybeSpans.forEach(span => {
+          formattedCell += span.textContent + ';';
+        });
+        formattedRow += formattedCell + '|';
+        return;
+      }
+
+      formattedRow += cell.textContent + '|';
+    });
+
+    if (formattedRow !== '') {
+      result += formattedRow + '\n';
+    }
+  });
+}
+
+result
+      )");
+
+    return html_content;
   }
 
   std::string GetTopicsStateTabContent() {
@@ -173,9 +273,14 @@ class BrowsingTopicsDisabledInternalsBrowserTest
   BrowsingTopicsDisabledInternalsBrowserTest() {
     scoped_feature_list_.InitWithFeatures(
         /*enabled_features=*/{},
-        /*disabled_features=*/{blink::features::kBrowsingTopics,
-                               features::kPrivacySandboxAdsAPIsOverride,
-                               privacy_sandbox::kPrivacySandboxSettings3});
+        /*disabled_features=*/{
+            blink::features::kBrowsingTopics,
+            features::kPrivacySandboxAdsAPIsOverride,
+            privacy_sandbox::kPrivacySandboxSettings3,
+            optimization_guide::features::kPageContentAnnotations,
+            optimization_guide::features::kPageContentAnnotationsValidation,
+            optimization_guide::features::kRemotePageMetadata,
+        });
   }
 
  protected:
@@ -215,6 +320,17 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsDisabledInternalsBrowserTest,
 )");
 }
 
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsDisabledInternalsBrowserTest,
+                       ClassifierTab_OverrideStatusMessage) {
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(),
+                                           GURL(kBrowsingTopicsInternalsUrl)));
+
+  EXPECT_EQ(
+      GetModelInfoContent(),
+      R"(No PageContentAnnotationsService: the "BrowsingTopics" feature is disabled.
+)");
+}
+
 class BrowsingTopicsInternalsBrowserTest
     : public BrowsingTopicsInternalsBrowserTestBase {
  public:
@@ -244,8 +360,13 @@ class BrowsingTopicsInternalsBrowserTest
             browser()->profile()));
   }
 
- private:
+ protected:
   void OnWillCreateBrowserContextServices(content::BrowserContext* context) {
+    PageContentAnnotationsServiceFactory::GetInstance()->SetTestingFactory(
+        context, base::BindRepeating(&BrowsingTopicsInternalsBrowserTest::
+                                         CreatePageContentAnnotationsService,
+                                     base::Unretained(this)));
+
     browsing_topics::BrowsingTopicsServiceFactory::GetInstance()
         ->SetTestingFactory(
             context, base::BindRepeating(&BrowsingTopicsInternalsBrowserTest::
@@ -257,6 +378,39 @@ class BrowsingTopicsInternalsBrowserTest
       content::BrowserContext* context) {
     return std::make_unique<FixedBrowsingTopicsService>();
   }
+
+  std::unique_ptr<KeyedService> CreatePageContentAnnotationsService(
+      content::BrowserContext* context) {
+    Profile* profile = Profile::FromBrowserContext(context);
+
+    history::HistoryService* history_service =
+        HistoryServiceFactory::GetForProfile(
+            profile, ServiceAccessType::IMPLICIT_ACCESS);
+
+    DCHECK(!base::Contains(optimization_guide_model_providers_, profile));
+    optimization_guide_model_providers_.emplace(
+        profile, std::make_unique<
+                     optimization_guide::TestOptimizationGuideModelProvider>());
+
+    auto page_content_annotations_service =
+        std::make_unique<optimization_guide::PageContentAnnotationsService>(
+            nullptr, "en-US",
+            optimization_guide_model_providers_.at(profile).get(),
+            history_service, nullptr, nullptr, nullptr, base::FilePath(),
+            nullptr, nullptr);
+
+    page_content_annotations_service->OverridePageContentAnnotatorForTesting(
+        &test_page_content_annotator_);
+
+    return page_content_annotations_service;
+  }
+
+  std::map<
+      Profile*,
+      std::unique_ptr<optimization_guide::TestOptimizationGuideModelProvider>>
+      optimization_guide_model_providers_;
+
+  optimization_guide::TestPageContentAnnotator test_page_content_annotator_;
 
   base::CallbackListSubscription subscription_;
 
@@ -382,6 +536,189 @@ Model version: 2204011803
 Taxonomy version: 123
 4|Concerts & Music Festivals|Real||
 5|Concerts & Music Festivals|Random|555;|
+)");
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsInternalsBrowserTest,
+                       TopicsState_CalculateNow) {
+  auto state = browsing_topics::mojom::WebUIBrowsingTopicsState::New();
+
+  state->next_scheduled_calculation_time = base::Time::Now();
+
+  {
+    auto webui_epoch = mojom::WebUIEpoch::New();
+    webui_epoch->calculation_time = base::Time::Now() - base::Days(7);
+    webui_epoch->model_version = "2204011803";
+    webui_epoch->taxonomy_version = "123";
+    {
+      auto webui_topic = mojom::WebUITopic::New();
+      webui_topic->topic_id = 2;
+      webui_topic->topic_name = u"Acting & Theater";
+      webui_topic->is_real_topic = true;
+      webui_topic->observed_by_domains = {"111", "222", "333"};
+      webui_epoch->topics.push_back(std::move(webui_topic));
+    }
+    state->epochs.push_back(std::move(webui_epoch));
+  }
+
+  fixed_browsing_topics_service()->SetWebUIGetBrowsingTopicsStateResultOverride(
+      browsing_topics::mojom::WebUIGetBrowsingTopicsStateResult::
+          NewBrowsingTopicsState(std::move(state)));
+
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(),
+                                           GURL(kBrowsingTopicsInternalsUrl)));
+
+  EXPECT_EQ(GetTopicsStateTabContent(),
+            R"(Next scheduled calculation time: {{TIMESTAMP_TO_IGNORE}}
+===== epoch =====
+Calculation time: {{TIMESTAMP_TO_IGNORE}}
+Model version: 2204011803
+Taxonomy version: 123
+2|Acting & Theater|Real|111;222;333;|
+)");
+
+  auto new_state = browsing_topics::mojom::WebUIBrowsingTopicsState::New();
+
+  new_state->next_scheduled_calculation_time = base::Time::Now();
+
+  {
+    auto webui_epoch = mojom::WebUIEpoch::New();
+    webui_epoch->calculation_time = base::Time::Now() - base::Days(7);
+    webui_epoch->model_version = "2204011803";
+    webui_epoch->taxonomy_version = "123";
+    {
+      auto webui_topic = mojom::WebUITopic::New();
+      webui_topic->topic_id = 4;
+      webui_topic->topic_name = u"Concerts & Music Festivals";
+      webui_topic->is_real_topic = true;
+      webui_topic->observed_by_domains = {};
+      webui_epoch->topics.push_back(std::move(webui_topic));
+    }
+
+    new_state->epochs.push_back(std::move(webui_epoch));
+  }
+
+  fixed_browsing_topics_service()->SetWebUIGetBrowsingTopicsStateResultOverride(
+      browsing_topics::mojom::WebUIGetBrowsingTopicsStateResult::
+          NewBrowsingTopicsState(std::move(new_state)));
+
+  constexpr char calculate_now_script[] = R"(
+    document.querySelector('#calculate-now-button').click();
+
+    // Assert that buttons are disabled during a Calculate Now request.
+    if (!document.querySelector('#refresh-topics-state-button').disabled ||
+        !document.querySelector('#calculate-now-button').disabled) {
+      throw "Buttons should be disabled";
+    }
+  )";
+
+  EXPECT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                     calculate_now_script,
+                     content::EXECUTE_SCRIPT_DEFAULT_OPTIONS,
+                     /*world_id=*/1));
+
+  EXPECT_EQ(GetTopicsStateTabContent(),
+            R"(Next scheduled calculation time: {{TIMESTAMP_TO_IGNORE}}
+===== epoch =====
+Calculation time: {{TIMESTAMP_TO_IGNORE}}
+Model version: 2204011803
+Taxonomy version: 123
+4|Concerts & Music Festivals|Real||
+)");
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsInternalsBrowserTest,
+                       ClassifierTab_ModelUnavailable) {
+  fixed_browsing_topics_service()->SetWebUIGetBrowsingTopicsStateResultOverride(
+      browsing_topics::mojom::WebUIGetBrowsingTopicsStateResult::
+          NewOverrideStatusMessage("Failed to get the topics state."));
+
+  // Configure the (mock) model.
+  test_page_content_annotator_.UsePageTopics(absl::nullopt, {});
+
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(),
+                                           GURL(kBrowsingTopicsInternalsUrl)));
+
+  EXPECT_EQ(GetModelInfoContent(),
+            R"(Model unavailable.
+)");
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsInternalsBrowserTest, ClassifierTab) {
+  fixed_browsing_topics_service()->SetWebUIGetBrowsingTopicsStateResultOverride(
+      browsing_topics::mojom::WebUIGetBrowsingTopicsStateResult::
+          NewOverrideStatusMessage("Failed to get the topics state."));
+
+  // Configure the (mock) model.
+  test_page_content_annotator_.UsePageTopics(
+      *optimization_guide::TestModelInfoBuilder()
+           .SetVersion(1)
+           .SetModelFilePath(
+               base::FilePath::FromASCII("/test_path/test_model.tflite"))
+           .Build(),
+      {{"foo2.com", TopicsWithUniformWeight({3, 4, 5}, 0.1)},
+       {"foo1.com", TopicsWithUniformWeight({1, 2}, 0.1)}});
+
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(),
+                                           GURL(kBrowsingTopicsInternalsUrl)));
+
+  EXPECT_EQ(GetModelInfoContent(),
+            R"(Model version: 1
+Model file path: /test_path/test_model.tflite
+)");
+
+  constexpr char classify_hosts_script[] = R"(
+    document.querySelector('#input-hosts-textarea').value = 'foo1.com\nfoo2.com\n';
+    document.querySelector('#hosts-classification-button').click();
+  )";
+
+  EXPECT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                     classify_hosts_script,
+                     content::EXECUTE_SCRIPT_DEFAULT_OPTIONS,
+                     /*world_id=*/1));
+
+  EXPECT_EQ(GetHostsClassificationResultTableContent(),
+            R"(foo1.com|1. Arts & entertainment;2. Acting & theater;|
+foo2.com|3. Comics;4. Concerts & music festivals;5. Dance;|
+)");
+
+  EXPECT_TRUE(GetHostsClassificationInputValidationError().empty());
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsInternalsBrowserTest,
+                       ClassifierTab_InvalidInput) {
+  fixed_browsing_topics_service()->SetWebUIGetBrowsingTopicsStateResultOverride(
+      browsing_topics::mojom::WebUIGetBrowsingTopicsStateResult::
+          NewOverrideStatusMessage("Failed to get the topics state."));
+
+  // Configure the (mock) model.
+  test_page_content_annotator_.UsePageTopics(
+      *optimization_guide::TestModelInfoBuilder()
+           .SetVersion(1)
+           .SetModelFilePath(
+               base::FilePath::FromASCII("/test_path/test_model.tflite"))
+           .Build(),
+      {{"foo2.com", TopicsWithUniformWeight({3, 4, 5}, 0.1)},
+       {"foo1.com", TopicsWithUniformWeight({1, 2}, 0.1)}});
+
+  EXPECT_TRUE(ui_test_utils::NavigateToURL(browser(),
+                                           GURL(kBrowsingTopicsInternalsUrl)));
+
+  constexpr char classify_hosts_script[] = R"(
+    document.querySelector('#input-hosts-textarea').value = 'foo1.com\nhttps://foo1.com\nfoo1.com/path';
+    document.querySelector('#hosts-classification-button').click();
+  )";
+
+  EXPECT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                     classify_hosts_script,
+                     content::EXECUTE_SCRIPT_DEFAULT_OPTIONS,
+                     /*world_id=*/1));
+
+  EXPECT_TRUE(GetHostsClassificationResultTableContent().empty());
+
+  EXPECT_EQ(GetHostsClassificationInputValidationError(),
+            R"(Host "https://foo1.com" contains invalid character: "/"
+Host "foo1.com/path" contains invalid character: "/"
 )");
 }
 

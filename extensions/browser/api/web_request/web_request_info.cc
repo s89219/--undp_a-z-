@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,7 @@
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "services/network/url_loader.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace keys = extension_web_request_api_constants;
 
@@ -111,14 +112,14 @@ bool CreateUploadDataSourcesFromResourceRequest(
   return true;
 }
 
-std::unique_ptr<base::DictionaryValue> CreateRequestBodyData(
+absl::optional<base::Value::Dict> CreateRequestBodyData(
     const std::string& method,
     const net::HttpRequestHeaders& request_headers,
     const std::vector<std::unique_ptr<UploadDataSource>>& data_sources) {
   if (method != "POST" && method != "PUT")
-    return nullptr;
+    return absl::nullopt;
 
-  auto request_body_data = std::make_unique<base::DictionaryValue>();
+  base::Value::Dict request_body_data;
 
   // Get the data presenters, ordered by how specific they are.
   ParsedDataPresenter parsed_data_presenter(request_headers);
@@ -136,7 +137,7 @@ std::unique_ptr<base::DictionaryValue> CreateRequestBodyData(
       for (auto& source : data_sources)
         source->FeedToPresenter(presenters[i]);
       if (presenters[i]->Succeeded()) {
-        request_body_data->Set(kKeys[i], presenters[i]->Result());
+        request_body_data.Set(kKeys[i], presenters[i]->TakeResult().value());
         some_succeeded = true;
         break;
       }
@@ -144,8 +145,7 @@ std::unique_ptr<base::DictionaryValue> CreateRequestBodyData(
   }
 
   if (!some_succeeded) {
-    request_body_data->SetStringKey(keys::kRequestBodyErrorKey,
-                                    "Unknown error.");
+    request_body_data.Set(keys::kRequestBodyErrorKey, "Unknown error.");
   }
 
   return request_body_data;

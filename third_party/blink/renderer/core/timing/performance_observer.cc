@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -61,6 +61,10 @@ Vector<AtomicString> PerformanceObserver::supportedEntryTypes(
   Vector<AtomicString> supportedEntryTypes;
   auto* execution_context = ExecutionContext::From(script_state);
   if (execution_context->IsWindow()) {
+    if (RuntimeEnabledFeatures::NavigationIdEnabled(execution_context)) {
+      supportedEntryTypes.push_back(
+          performance_entry_names::kBackForwardCacheRestoration);
+    }
     supportedEntryTypes.push_back(performance_entry_names::kElement);
     supportedEntryTypes.push_back(performance_entry_names::kEvent);
     supportedEntryTypes.push_back(performance_entry_names::kFirstInput);
@@ -76,6 +80,11 @@ Vector<AtomicString> PerformanceObserver::supportedEntryTypes(
     supportedEntryTypes.push_back(performance_entry_names::kPaint);
   }
   supportedEntryTypes.push_back(performance_entry_names::kResource);
+  if (RuntimeEnabledFeatures::SoftNavigationHeuristicsEnabled(
+          execution_context) &&
+      execution_context->IsWindow()) {
+    supportedEntryTypes.push_back(performance_entry_names::kSoftNavigation);
+  }
   if (RuntimeEnabledFeatures::VisibilityStateEntryEnabled() &&
       execution_context->IsWindow()) {
     supportedEntryTypes.push_back(performance_entry_names::kVisibilityState);
@@ -132,10 +141,12 @@ void PerformanceObserver::observe(const PerformanceObserverInit* observer_init,
       if (entry_type == PerformanceEntry::kInvalid) {
         String message = "The entry type '" + entry_type_string +
                          "' does not exist or isn't supported.";
-        GetExecutionContext()->AddConsoleMessage(
-            MakeGarbageCollected<ConsoleMessage>(
-                mojom::ConsoleMessageSource::kJavaScript,
-                mojom::ConsoleMessageLevel::kWarning, message));
+        if (GetExecutionContext()) {
+          GetExecutionContext()->AddConsoleMessage(
+              MakeGarbageCollected<ConsoleMessage>(
+                  mojom::ConsoleMessageSource::kJavaScript,
+                  mojom::ConsoleMessageLevel::kWarning, message));
+        }
       }
       entry_types |= entry_type;
     }
@@ -148,10 +159,12 @@ void PerformanceObserver::observe(const PerformanceObserverInit* observer_init,
       String message =
           "The PerformanceObserver does not support buffered flag with "
           "the entryTypes argument.";
-      GetExecutionContext()->AddConsoleMessage(
-          MakeGarbageCollected<ConsoleMessage>(
-              mojom::ConsoleMessageSource::kJavaScript,
-              mojom::ConsoleMessageLevel::kWarning, message));
+      if (GetExecutionContext()) {
+        GetExecutionContext()->AddConsoleMessage(
+            MakeGarbageCollected<ConsoleMessage>(
+                mojom::ConsoleMessageSource::kJavaScript,
+                mojom::ConsoleMessageLevel::kWarning, message));
+      }
     }
     filter_options_ = entry_types;
   } else {
@@ -176,10 +189,12 @@ void PerformanceObserver::observe(const PerformanceObserverInit* observer_init,
     if (entry_type == PerformanceEntry::kInvalid) {
       String message = "The entry type '" + observer_init->type() +
                        "' does not exist or isn't supported.";
-      GetExecutionContext()->AddConsoleMessage(
-          MakeGarbageCollected<ConsoleMessage>(
-              mojom::ConsoleMessageSource::kJavaScript,
-              mojom::ConsoleMessageLevel::kWarning, message));
+      if (GetExecutionContext()) {
+        GetExecutionContext()->AddConsoleMessage(
+            MakeGarbageCollected<ConsoleMessage>(
+                mojom::ConsoleMessageSource::kJavaScript,
+                mojom::ConsoleMessageLevel::kWarning, message));
+      }
       return;
     }
     if (observer_init->buffered()) {
@@ -264,7 +279,7 @@ void PerformanceObserver::Deliver(absl::optional<int> dropped_entries_count) {
     return;
   DCHECK(!GetExecutionContext()->IsContextPaused());
 
-  if (performance_entries_.IsEmpty())
+  if (performance_entries_.empty())
     return;
 
   PerformanceEntryVector performance_entries;

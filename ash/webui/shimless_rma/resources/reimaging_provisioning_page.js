@@ -1,35 +1,33 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/icons.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
+import 'chrome://resources/cr_elements/icons.html.js';
 import 'chrome://resources/polymer/v3_0/iron-icon/iron-icon.js';
 import './shimless_rma_shared_css.js';
 import './base_page.js';
 import './icons.js';
 
-import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/js/i18n_behavior.m.js';
+import {I18nBehavior, I18nBehaviorInterface} from 'chrome://resources/ash/common/i18n_behavior.js';
 import {html, mixinBehaviors, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getShimlessRmaService} from './mojo_interface_provider.js';
-import {ProvisioningObserverInterface, ProvisioningObserverReceiver, ProvisioningStatus, ShimlessRmaServiceInterface, StateResult} from './shimless_rma_types.js';
-import {disableNextButton, enableNextButton, executeThenTransitionState} from './shimless_rma_util.js';
-
-/** @type {!Object<!ProvisioningStatus, string>} */
-const provisioningStatusTextKeys = {
-  [ProvisioningStatus.kInProgress]: 'provisioningPageInProgressText',
-  [ProvisioningStatus.kComplete]: 'provisioningPageCompleteText',
-  [ProvisioningStatus.kFailedBlocking]: 'provisioningPageFailedBlockingText',
-  [ProvisioningStatus.kFailedNonBlocking]:
-      'provisioningPageFailedNonBlockingText',
-};
+import {ProvisioningError, ProvisioningObserverInterface, ProvisioningObserverReceiver, ProvisioningStatus, RmadErrorCode, ShimlessRmaServiceInterface, StateResult} from './shimless_rma_types.js';
+import {disableNextButton, enableNextButton, executeThenTransitionState, focusPageTitle} from './shimless_rma_util.js';
 
 /**
  * @fileoverview
  * 'reimaging-provisioning-page' provisions the device then auto-transitions to
  * the next page once complete.
  */
+
+/**
+ * The prefix for a `ProvisioningError` displayed on the Hardware Error page.
+ * @type {number}
+ */
+export const PROVISIONING_ERROR_CODE_PREFIX = 1000;
 
 /**
  * @constructor
@@ -62,22 +60,10 @@ export class ReimagingProvisioningPage extends ReimagingProvisioningPageBase {
         type: Object,
       },
 
-      /** @protected */
-      statusString_: {
-        type: String,
-        computed: 'getStatusString_(status_)',
-      },
-
       /** @protected {boolean} */
       shouldShowSpinner_: {
         type: Boolean,
-        value: false,
-      },
-
-      /** @protected {boolean} */
-      shouldShowRetryButton_: {
-        type: Boolean,
-        value: false,
+        value: true,
       },
     };
   }
@@ -97,26 +83,36 @@ export class ReimagingProvisioningPage extends ReimagingProvisioningPageBase {
         this.provisioningObserverReceiver_.$.bindNewPipeAndPassRemote());
   }
 
-  /**
-   * @return {string}
-   * @protected
-   */
-  getStatusString_() {
-    if (!this.status_) {
-      return '';
-    }
+  /** @override */
+  ready() {
+    super.ready();
 
-    return this.i18n(provisioningStatusTextKeys[this.status_]);
+    focusPageTitle(this);
   }
 
   /**
    * Implements ProvisioningObserver.onProvisioningUpdated()
-   * TODO(joonbug): Add error handling and display failure using cr-dialog.
    * @param {!ProvisioningStatus} status
    * @param {number} progress
+   * @param {!ProvisioningError} error
    * @protected
    */
-  onProvisioningUpdated(status, progress) {
+  onProvisioningUpdated(status, progress, error) {
+    const isErrorStatus = status === ProvisioningStatus.kFailedBlocking ||
+        status === ProvisioningStatus.kFailedNonBlocking;
+    const isWpError = isErrorStatus && error === ProvisioningError.kWpEnabled;
+
+    if (isErrorStatus && !isWpError) {
+      this.dispatchEvent(new CustomEvent('fatal-hardware-error', {
+        bubbles: true,
+        composed: true,
+        detail: {
+          rmadErrorCode: RmadErrorCode.kProvisioningFailed,
+          fatalErrorCode: (PROVISIONING_ERROR_CODE_PREFIX + error),
+        },
+      }));
+    }
+
     this.status_ = status;
 
     // Transition to next state when provisioning is complete.
@@ -127,19 +123,21 @@ export class ReimagingProvisioningPage extends ReimagingProvisioningPageBase {
       return;
     }
 
-    this.shouldShowSpinner_ = this.status_ === ProvisioningStatus.kInProgress;
-    this.shouldShowRetryButton_ =
-        this.status_ === ProvisioningStatus.kFailedBlocking ||
-        this.status_ === ProvisioningStatus.kFailedNonBlocking;
+    this.shouldShowSpinner_ =
+        isWpError || this.status_ === ProvisioningStatus.kInProgress;
+
+    if (isWpError) {
+      const dialog = /** @type {!CrDialogElement} */ (
+          this.shadowRoot.querySelector('#wpEnabledDialog'));
+      dialog.showModal();
+    }
   }
 
-  /** @private */
-  onRetryProvsioningButtonClicked_() {
-    if (this.status_ !== ProvisioningStatus.kFailedBlocking &&
-        this.status_ !== ProvisioningStatus.kFailedNonBlocking) {
-      console.error('Provisioning has not failed.');
-      return;
-    }
+  /** @protected */
+  onTryAgainButtonClick_() {
+    const dialog = /** @type {!CrDialogElement} */ (
+        this.shadowRoot.querySelector('#wpEnabledDialog'));
+    dialog.close();
 
     executeThenTransitionState(
         this, () => this.shimlessRmaService_.retryProvisioning());

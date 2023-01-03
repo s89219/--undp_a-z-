@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,32 +10,30 @@
 #include "ash/public/cpp/projector/projector_annotator_controller.h"
 #include "ash/public/cpp/projector/projector_client.h"
 #include "ash/public/cpp/projector/projector_controller.h"
-#include "ash/webui/projector_app/annotator_message_handler.h"
+#include "ash/public/cpp/projector/speech_recognition_availability.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
 #include "chrome/browser/speech/speech_recognizer_delegate.h"
+#include "chrome/browser/ui/ash/projector/projector_drivefs_provider.h"
+#include "chrome/browser/ui/ash/projector/projector_soda_installation_controller.h"
+#include "components/prefs/pref_change_registrar.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/session_manager/core/session_manager_observer.h"
-#include "components/soda/constants.h"
-#include "components/soda/soda_installer.h"
-#include "components/user_manager/user_manager.h"
 
 namespace views {
 class WebView;
 }  // namespace views
 
-class OnDeviceSpeechRecognizer;
+class SpeechRecognitionRecognizerClientImpl;
 
 // The client implementation for the ProjectorController in ash/. This client is
 // responsible for handling requests that have browser dependencies.
-class ProjectorClientImpl
-    : public ash::ProjectorClient,
-      public SpeechRecognizerDelegate,
-      public ash::ProjectorAnnotatorController,
-      public drive::DriveIntegrationServiceObserver,
-      public session_manager::SessionManagerObserver,
-      public user_manager::UserManager::UserSessionStateObserver {
+class ProjectorClientImpl : public ash::ProjectorClient,
+                            public SpeechRecognizerDelegate,
+                            public ash::ProjectorAnnotatorController,
+                            public drive::DriveIntegrationServiceObserver,
+                            public session_manager::SessionManagerObserver {
  public:
   // RecordingOverlayViewImpl calls this function to initialize the annotator
   // tool.
@@ -49,17 +47,21 @@ class ProjectorClientImpl
   ~ProjectorClientImpl() override;
 
   // ash::ProjectorClient:
+  ash::SpeechRecognitionAvailability GetSpeechRecognitionAvailability()
+      const override;
   void StartSpeechRecognition() override;
   void StopSpeechRecognition() override;
-  bool GetDriveFsMountPointPath(base::FilePath* result) const override;
+  bool GetBaseStoragePath(base::FilePath* result) const override;
   bool IsDriveFsMounted() const override;
   bool IsDriveFsMountFailed() const override;
   void OpenProjectorApp() const override;
   void MinimizeProjectorApp() const override;
+  void CloseProjectorApp() const override;
   void OnNewScreencastPreconditionChanged(
       const ash::NewScreencastPrecondition& precondition) const override;
-  void SetAnnotatorMessageHandler(
-      ash::AnnotatorMessageHandler* handler) override;
+  void ToggleFileSyncingNotificationForPaths(
+      const std::vector<base::FilePath>& screencast_paths,
+      bool suppress) override;
 
   // SpeechRecognizerDelegate:
   void OnSpeechResult(
@@ -84,38 +86,39 @@ class ProjectorClientImpl
   void OnFileSystemMountFailed() override;
 
   // session_manager::SessionManagerObserver:
-  void OnUserProfileLoaded(const AccountId& account_id) override;
+  void OnUserSessionStarted(bool is_primary_user) override;
 
-  // user_manager::UserManager::UserSessionStateObserver:
-  void ActiveUserChanged(user_manager::User* active_user) override;
-
- private:
   // Maybe reset |drive_observation_| and observe the Drive integration service
   // of active profile when ActiveUserChanged and OnUserProfileLoaded.
   void MaybeSwitchDriveIntegrationServiceObservation();
 
+ private:
+  // Called when any of the policies change that control whether the Projector
+  // app is enabled.
+  void OnEnablementPolicyChanged();
+
+  // Called when app registry becomes ready.
+  void SetAppIsDisabled(bool disabled);
+
   ash::ProjectorController* const controller_;
-  ash::AnnotatorMessageHandler* message_handler_;
   SpeechRecognizerStatus recognizer_status_ =
       SpeechRecognizerStatus::SPEECH_RECOGNIZER_OFF;
-  std::unique_ptr<OnDeviceSpeechRecognizer> speech_recognizer_;
+  std::unique_ptr<SpeechRecognitionRecognizerClientImpl> speech_recognizer_;
 
-  // TODO(b/221492092): Clean this duplicate code with PendingScreencastManager.
-  // Create a new class to handle Drive related service.
   base::ScopedObservation<session_manager::SessionManager,
                           session_manager::SessionManagerObserver>
       session_observation_{this};
+
+  PrefChangeRegistrar pref_change_registrar_;
 
   base::ScopedObservation<drive::DriveIntegrationService,
                           drive::DriveIntegrationServiceObserver>
       drive_observation_{this};
 
-  base::ScopedObservation<
-      user_manager::UserManager,
-      user_manager::UserManager::UserSessionStateObserver,
-      &user_manager::UserManager::AddSessionStateObserver,
-      &user_manager::UserManager::RemoveSessionStateObserver>
-      session_state_observation_{this};
+  ProjectorDriveFsProvider drive_helper_;
+
+  std::unique_ptr<ProjectorSodaInstallationController>
+      soda_installation_controller_;
 
   base::WeakPtrFactory<ProjectorClientImpl> weak_ptr_factory_{this};
 };

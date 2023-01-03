@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,6 +56,8 @@ constexpr char kRecordingCameraSizeOnStart[] =
     "Ash.CaptureModeController.RecordingCameraSizeOnStart";
 constexpr char kRecordingCameraPositionOnStart[] =
     "Ash.CaptureModeController.RecordingCameraPositionOnStart";
+constexpr char kNumberOfConnectedCameras[] =
+    "Ash.CaptureModeController.NumberOfConnectedCameras";
 
 }  // namespace
 
@@ -182,6 +184,10 @@ void RecordCameraDisconnectionsDuringRecordings(int num_camera_disconnections) {
   base::UmaHistogramCounts100(
       GetCaptureModeHistogramName(kCameraDisconnectionsDuringRecordings),
       num_camera_disconnections);
+}
+
+void RecordNumberOfConnectedCameras(int num_camera_connected) {
+  base::UmaHistogramCounts100(kNumberOfConnectedCameras, num_camera_connected);
 }
 
 void RecordCameraReconnectDuration(int length_in_seconds,

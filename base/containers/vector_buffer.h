@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "base/check.h"
 #include "base/check_op.h"
 #include "base/containers/util.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "base/numerics/checked_math.h"
 
 namespace base {
@@ -182,7 +183,7 @@ class VectorBuffer {
 
   // `buffer_` is not a raw_ptr<...> for performance reasons (based on analysis
   // of sampling profiler data and tab_search:top100:2020).
-  T* buffer_ = nullptr;
+  RAW_PTR_EXCLUSION T* buffer_ = nullptr;
   size_t capacity_ = 0;
 };
 

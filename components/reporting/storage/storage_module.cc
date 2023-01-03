@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,24 +31,21 @@ StorageModule::~StorageModule() = default;
 
 void StorageModule::AddRecord(Priority priority,
                               Record record,
-                              base::OnceCallback<void(Status)> callback) {
+                              EnqueueCallback callback) {
   storage_->Write(priority, std::move(record), std::move(callback));
+}
+
+void StorageModule::Flush(Priority priority, FlushCallback callback) {
+  storage_->Flush(priority, std::move(callback));
 }
 
 void StorageModule::ReportSuccess(SequenceInformation sequence_information,
                                   bool force) {
-  storage_->Confirm(
-      sequence_information.priority(), sequence_information.sequencing_id(),
-      force, base::BindOnce([](Status status) {
-        if (!status.ok()) {
-          LOG(ERROR) << "Unable to confirm record deletion: " << status;
-        }
-      }));
-}
-
-void StorageModule::Flush(Priority priority,
-                          base::OnceCallback<void(Status)> callback) {
-  std::move(callback).Run(storage_->Flush(priority));
+  storage_->Confirm(std::move(sequence_information), force,
+                    base::BindOnce([](Status status) {
+                      LOG_IF(ERROR, !status.ok())
+                          << "Unable to confirm record deletion: " << status;
+                    }));
 }
 
 void StorageModule::UpdateEncryptionKey(
@@ -62,8 +59,7 @@ void StorageModule::Create(
     UploaderInterface::AsyncStartUploaderCb async_start_upload_cb,
     scoped_refptr<EncryptionModuleInterface> encryption_module,
     scoped_refptr<CompressionModule> compression_module,
-    base::OnceCallback<void(StatusOr<scoped_refptr<StorageModuleInterface>>)>
-        callback) {
+    base::OnceCallback<void(StatusOr<scoped_refptr<StorageModule>>)> callback) {
   scoped_refptr<StorageModule> instance =
       // Cannot base::MakeRefCounted, since constructor is protected.
       base::WrapRefCounted(new StorageModule());
@@ -71,8 +67,8 @@ void StorageModule::Create(
       options, async_start_upload_cb, encryption_module, compression_module,
       base::BindOnce(
           [](scoped_refptr<StorageModule> instance,
-             base::OnceCallback<void(
-                 StatusOr<scoped_refptr<StorageModuleInterface>>)> callback,
+             base::OnceCallback<void(StatusOr<scoped_refptr<StorageModule>>)>
+                 callback,
              StatusOr<scoped_refptr<Storage>> storage) {
             if (!storage.ok()) {
               std::move(callback).Run(storage.status());

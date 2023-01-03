@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -154,6 +154,14 @@ void FakeUsbDeviceManager::RemoveAllDevices() {
   for (const auto& device : device_list) {
     RemoveDevice(device);
   }
+}
+
+const device::mojom::UsbDeviceInfo* FakeUsbDeviceManager::GetDeviceInfo(
+    const std::string& guid) {
+  if (!base::Contains(devices_, guid))
+    return nullptr;
+
+  return &devices_[guid]->GetDeviceInfo();
 }
 
 bool FakeUsbDeviceManager::SetMockForDevice(const std::string& guid,

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,8 +78,6 @@ class ContentAutofillDriverFactory : public content::WebContentsObserver,
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
   void OnVisibilityChanged(content::Visibility visibility) override;
-  void ReadyToCommitNavigation(
-      content::NavigationHandle* navigation_handle) override;
 
   AutofillClient* client() { return client_; }
 
@@ -93,7 +91,7 @@ class ContentAutofillDriverFactory : public content::WebContentsObserver,
   std::unique_ptr<ContentAutofillDriver> CreateDriver(
       content::RenderFrameHost* rfh);
 
-  const raw_ptr<AutofillClient> client_;
+  const raw_ptr<AutofillClient, DanglingUntriaged> client_;
   DriverInitCallback driver_init_hook_;
 
   // Routes events between different drivers.

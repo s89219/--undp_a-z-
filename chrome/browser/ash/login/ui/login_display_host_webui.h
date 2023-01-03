@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,6 @@
 #include <memory>
 #include <vector>
 
-#include "ash/components/audio/cras_audio_handler.h"
-#include "ash/public/cpp/multi_user_window_manager_observer.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
@@ -23,9 +21,9 @@
 #include "chrome/browser/ash/login/ui/login_display.h"
 #include "chrome/browser/ash/login/ui/login_display_host_common.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
-#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_helper.h"
-#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chromeos/dbus/session_manager/session_manager_client.h"
+#include "chrome/browser/ui/webui/ash/login/oobe_ui.h"
+#include "chromeos/ash/components/audio/cras_audio_handler.h"
+#include "chromeos/ash/components/dbus/session_manager/session_manager_client.h"
 #include "components/session_manager/core/session_manager.h"
 #include "components/session_manager/core/session_manager_observer.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -51,14 +49,13 @@ class WebUILoginView;
 class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
                               public session_manager::SessionManagerObserver,
                               public content::WebContentsObserver,
-                              public chromeos::SessionManagerClient::Observer,
+                              public SessionManagerClient::Observer,
                               public CrasAudioHandler::AudioObserver,
-                              public chromeos::OobeConfiguration::Observer,
+                              public OobeConfiguration::Observer,
                               public display::DisplayObserver,
                               public ui::InputDeviceEventObserver,
                               public views::WidgetRemovalsObserver,
                               public views::WidgetObserver,
-                              public MultiUserWindowManagerObserver,
                               public OobeUI::Observer {
  public:
   LoginDisplayHostWebUI();
@@ -88,7 +85,7 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   void ShowGaiaDialog(const AccountId& prefilled_account) override;
   void ShowOsInstallScreen() override;
   void ShowGuestTosScreen() override;
-  void HideOobeDialog(bool saml_video_timeout = false) override;
+  void HideOobeDialog(bool saml_page_closed = false) override;
   void SetShelfButtonsEnabled(bool enabled) override;
   void UpdateOobeDialogState(OobeDialogState state) override;
   void HandleDisplayCaptivePortal() override;
@@ -100,6 +97,7 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   void VerifyOwnerForKiosk(base::OnceClosure) override;
   void ShowPasswordChangedDialog(const AccountId& account_id,
                                  bool show_password_error) override;
+  void StartCryptohomeRecovery(const AccountId& account_id) override;
   void StartBrowserDataMigration() override;
   void AddObserver(LoginDisplayHost::Observer* observer) override;
   void RemoveObserver(LoginDisplayHost::Observer* observer) override;
@@ -119,9 +117,6 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
 
   views::Widget* login_window_for_test() { return login_window_; }
 
-  // Disable GaiaScreenHandler restrictive proxy check.
-  static void DisableRestrictiveProxyCheckForTest();
-
  protected:
   class KeyboardDrivenOobeKeyHandler;
 
@@ -129,10 +124,10 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   void PrimaryMainFrameRenderProcessGone(
       base::TerminationStatus status) override;
 
-  // chromeos::SessionManagerClient::Observer:
+  // SessionManagerClient::Observer:
   void EmitLoginPromptVisibleCalled() override;
 
-  // chromeos::OobeConfiguration::Observer:
+  // OobeConfiguration::Observer:
   void OnOobeConfigurationChanged() override;
 
   // CrasAudioHandler::AudioObserver:
@@ -153,11 +148,6 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   void OnWidgetDestroying(views::Widget* widget) override;
   void OnWidgetBoundsChanged(views::Widget* widget,
                              const gfx::Rect& new_bounds) override;
-
-  // TODO (crbug.com/1168114): remove whole observer hierarchy, it is not needed
-  // anymore.
-  // MultiUserWindowManagerObserver:
-  void OnUserSwitchAnimationFinished() override;
 
   // OobeUI::Observer:
   void OnCurrentScreenChanged(OobeScreenId current_screen,
@@ -221,9 +211,6 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   // Resets login view and unbinds login display from the signin screen handler.
   void ResetLoginView();
 
-  // Updates default scaling for CfM devices.
-  void UpScaleOobe();
-
   // Show OOBE WebUI if signal from javascript side never came.
   void OnShowWebUITimeout();
 
@@ -253,8 +240,6 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
   // and we're waiting for OOBE configuration check to finish.
   bool waiting_for_configuration_ = false;
 
-  static bool disable_restrictive_proxy_check_for_test_;
-
   // How many times renderer has crashed.
   int crash_count_ = 0;
 
@@ -273,9 +258,6 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
       keyboard_driven_oobe_key_handler_;
 
   FinalizeAnimationType finalize_animation_type_ = ANIMATION_WORKSPACE;
-
-  // Id of display that was already scaled for CfM devices.
-  int64_t primary_display_id_ = -1;
 
   // Time when login prompt visible signal is received. Used for
   // calculations of delay before startup sound.
@@ -306,11 +288,5 @@ class LoginDisplayHostWebUI : public LoginDisplayHostCommon,
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source code migration is finished.
-namespace chromeos {
-using ::ash::LoginDisplayHostWebUI;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_UI_LOGIN_DISPLAY_HOST_WEBUI_H_

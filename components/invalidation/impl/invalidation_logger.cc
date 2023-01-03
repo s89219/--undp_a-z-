@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,7 +76,7 @@ void InvalidationLogger::EmitUpdatedTopics() {
   }
 }
 
-void InvalidationLogger::OnDebugMessage(const base::DictionaryValue& details) {
+void InvalidationLogger::OnDebugMessage(const base::Value::Dict& details) {
   for (auto& observer : observer_list_)
     observer.OnDebugMessage(details);
 }

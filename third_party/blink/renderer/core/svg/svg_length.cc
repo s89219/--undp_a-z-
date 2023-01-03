@@ -106,7 +106,7 @@ bool SVGLength::operator==(const SVGLength& other) const {
 }
 
 float SVGLength::Value(const SVGLengthContext& context) const {
-  if (IsCalculated())
+  if (IsCalculated() || HasContainerRelativeUnits())
     return context.ResolveValue(AsCSSPrimitiveValue(), UnitMode());
 
   return context.ConvertValueToUserUnits(value_->GetFloatValue(), UnitMode(),
@@ -120,7 +120,7 @@ void SVGLength::SetValueAsNumber(float value) {
 
 void SVGLength::SetValue(float value, const SVGLengthContext& context) {
   // |value| is in user units.
-  if (IsCalculated()) {
+  if (IsCalculated() || HasContainerRelativeUnits()) {
     value_ = CSSNumericLiteralValue::Create(
         value, CSSPrimitiveValue::UnitType::kUserUnits);
     return;
@@ -167,17 +167,6 @@ static bool IsSupportedCalculationCategory(CalculationCategory category) {
 void SVGLength::SetUnitType(CSSPrimitiveValue::UnitType type) {
   DCHECK(IsSupportedCSSUnitType(type));
   value_ = CSSNumericLiteralValue::Create(value_->GetFloatValue(), type);
-}
-
-float SVGLength::ValueAsPercentage() const {
-  // LengthTypePercentage is represented with 100% = 100.0. Good for accuracy
-  // but could eventually be changed.
-  if (value_->IsPercentage()) {
-    // Note: This division is a source of floating point inaccuracy.
-    return value_->GetFloatValue() / 100;
-  }
-
-  return value_->GetFloatValue();
 }
 
 float SVGLength::ScaleByPercentage(float input) const {
@@ -258,7 +247,7 @@ SVGLengthMode SVGLength::LengthModeForAnimatedLengthAttribute(
   typedef HashMap<QualifiedName, SVGLengthMode> LengthModeForLengthAttributeMap;
   DEFINE_STATIC_LOCAL(LengthModeForLengthAttributeMap, length_mode_map, ());
 
-  if (length_mode_map.IsEmpty()) {
+  if (length_mode_map.empty()) {
     length_mode_map.Set(svg_names::kXAttr, SVGLengthMode::kWidth);
     length_mode_map.Set(svg_names::kYAttr, SVGLengthMode::kHeight);
     length_mode_map.Set(svg_names::kCxAttr, SVGLengthMode::kWidth);
@@ -332,17 +321,13 @@ void SVGLength::CalculateAnimatedValue(
 
   // TODO(shanmuga.m): Construct a calc() expression if the units fall in
   // different categories.
+  const SVGLength* unit_determining_length =
+      (percentage < 0.5) ? from_length : to_length;
   CSSPrimitiveValue::UnitType result_unit =
-      CSSPrimitiveValue::UnitType::kUserUnits;
-  if (percentage < 0.5) {
-    if (!from_length->IsCalculated()) {
-      result_unit = from_length->NumericLiteralType();
-    }
-  } else {
-    if (!to_length->IsCalculated()) {
-      result_unit = to_length->NumericLiteralType();
-    }
-  }
+      (!unit_determining_length->IsCalculated() &&
+       !unit_determining_length->HasContainerRelativeUnits())
+          ? unit_determining_length->NumericLiteralType()
+          : CSSPrimitiveValue::UnitType::kUserUnits;
 
   if (parameters.is_additive)
     result += Value(length_context);

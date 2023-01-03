@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@ namespace {
 
 // TODO(crbug.com/1305213): The data type toggles shouldn't be individually
 // listed here.
-static_assert(38 == syncer::GetNumModelTypes(),
+static_assert(45 == syncer::GetNumModelTypes(),
               "If the new type has a corresponding pref, add it here");
 const char* backed_up_preferences_[] = {
     autofill::prefs::kAutofillWalletImportEnabled,
@@ -34,6 +34,7 @@ const char* backed_up_preferences_[] = {
     syncer::prefs::kSyncRequested,
     syncer::prefs::kSyncTabs,
     syncer::prefs::kSyncTypedUrls,
+    syncer::prefs::kSyncSavedTabGroups,
 };
 
 }  // namespace

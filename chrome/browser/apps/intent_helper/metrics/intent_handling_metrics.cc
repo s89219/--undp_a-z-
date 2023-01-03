@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,11 +17,11 @@
 
 namespace {
 
-const char kLinkCapturingHistogram[] = "ChromeOS.Intents.LinkCapturingEvent";
+const char kLinkCapturingHistogram[] = "ChromeOS.Intents.LinkCapturingEvent2";
 const char kLinkCapturingHistogramWeb[] =
-    "ChromeOS.Intents.LinkCapturingEvent.WebApp";
+    "ChromeOS.Intents.LinkCapturingEvent2.WebApp";
 const char kLinkCapturingHistogramArc[] =
-    "ChromeOS.Intents.LinkCapturingEvent.ArcApp";
+    "ChromeOS.Intents.LinkCapturingEvent2.ArcApp";
 
 using PickerAction = apps::IntentHandlingMetrics::PickerAction;
 using IntentPickerAction = apps::IntentHandlingMetrics::IntentPickerAction;
@@ -195,7 +195,9 @@ void IntentHandlingMetrics::RecordLinkCapturingEvent(PickerEntryType app_type,
     case PickerEntryType::kUnknown:
     case PickerEntryType::kDevice:
     case PickerEntryType::kMacOs:
-      break;
+      // These cases do not represent entering an app and should not record
+      // any histograms.
+      return;
   }
   base::UmaHistogramEnumeration(kLinkCapturingHistogram, event);
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -151,6 +151,8 @@ TEST_F(DragDropCaptureDelegateTest, CanTakeCaptureAndConvertToOriginalWindow2) {
 
   EXPECT_EQ(source_window_delegate.motion_event.GetAction(),
             ui::MotionEvent::Action::CANCEL);
+
+  drag_drop_controller->DragCancel();
 }
 
 }  // namespace ash

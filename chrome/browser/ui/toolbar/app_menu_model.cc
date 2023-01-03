@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/web_applications/web_app_launch_utils.h"
 #include "chrome/browser/upgrade_detector/upgrade_detector.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_paths.h"
@@ -61,7 +61,8 @@
 #include "components/dom_distiller/content/browser/uma_helper.h"
 #include "components/dom_distiller/core/dom_distiller_features.h"
 #include "components/dom_distiller/core/url_utils.h"
-#include "components/media_router/browser/media_router_metrics.h"
+#include "components/feature_engagement/public/event_constants.h"
+#include "components/performance_manager/public/features.h"
 #include "components/prefs/pref_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/signin/public/base/signin_metrics.h"
@@ -108,8 +109,11 @@
 using base::UserMetricsAction;
 using content::WebContents;
 
-DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(AppMenuModel, kHistoryMenuItem);
 DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(AppMenuModel, kDownloadsMenuItem);
+DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(AppMenuModel, kHistoryMenuItem);
+DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(AppMenuModel, kMoreToolsMenuItem);
+DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(AppMenuModel, kIncognitoMenuItem);
+DEFINE_CLASS_ELEMENT_IDENTIFIER_VALUE(ToolsMenuModel, kPerformanceMenuItem);
 
 namespace {
 
@@ -194,30 +198,22 @@ class HelpMenuModel : public ui::SimpleMenuModel {
 #else
     int help_string_id = IDS_HELP_PAGE;
 #endif
-#if BUILDFLAG(IS_CHROMEOS_ASH)
     AddItem(IDC_ABOUT, l10n_util::GetStringUTF16(IDS_ABOUT));
-#else
-    AddItem(IDC_ABOUT, l10n_util::GetStringUTF16(IDS_ABOUT));
-#endif
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
     if (base::FeatureList::IsEnabled(features::kChromeTipsInMainMenu)) {
       AddItem(IDC_CHROME_TIPS, l10n_util::GetStringUTF16(IDS_CHROME_TIPS));
       if (base::FeatureList::IsEnabled(features::kChromeTipsInMainMenuNewBadge))
-        SetIsNewFeatureAt(GetIndexOfCommandId(IDC_CHROME_TIPS), true);
+        SetIsNewFeatureAt(GetIndexOfCommandId(IDC_CHROME_TIPS).value(), true);
     }
     if (base::FeatureList::IsEnabled(features::kChromeWhatsNewUI)) {
       AddItem(IDC_CHROME_WHATS_NEW,
               l10n_util::GetStringUTF16(IDS_CHROME_WHATS_NEW));
-      if (base::FeatureList::IsEnabled(
-              features::kChromeWhatsNewInMainMenuNewBadge)) {
-        SetIsNewFeatureAt(GetIndexOfCommandId(IDC_CHROME_WHATS_NEW), true);
-      }
     }
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
     AddItemWithStringId(IDC_HELP_PAGE_VIA_MENU, help_string_id);
     if (browser_defaults::kShowHelpMenuItemIcon) {
       ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-      SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE_VIA_MENU),
+      SetIcon(GetIndexOfCommandId(IDC_HELP_PAGE_VIA_MENU).value(),
               ui::ImageModel::FromImage(rb.GetNativeImageNamed(IDR_HELP_MENU)));
     }
     if (browser->profile()->GetPrefs()->GetBoolean(prefs::kUserFeedbackAllowed))
@@ -252,6 +248,14 @@ void ToolsMenuModel::Build(Browser* browser) {
   AddSeparator(ui::NORMAL_SEPARATOR);
   AddItemWithStringId(IDC_CLEAR_BROWSING_DATA, IDS_CLEAR_BROWSING_DATA);
   AddItemWithStringId(IDC_MANAGE_EXTENSIONS, IDS_SHOW_EXTENSIONS);
+  if (base::FeatureList::IsEnabled(
+          performance_manager::features::kHighEfficiencyModeAvailable) ||
+      base::FeatureList::IsEnabled(
+          performance_manager::features::kBatterySaverModeAvailable)) {
+    AddItemWithStringId(IDC_PERFORMANCE, IDS_SHOW_PERFORMANCE);
+    SetElementIdentifierAt(GetIndexOfCommandId(IDC_PERFORMANCE).value(),
+                           kPerformanceMenuItem);
+  }
   if (chrome::CanOpenTaskManager())
     AddItemWithStringId(IDC_TASK_MANAGER, IDS_TASK_MANAGER);
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -275,12 +279,14 @@ const int AppMenuModel::kNumUnboundedMenuTypes;
 
 AppMenuModel::AppMenuModel(ui::AcceleratorProvider* provider,
                            Browser* browser,
-                           AppMenuIconController* app_menu_icon_controller)
+                           AppMenuIconController* app_menu_icon_controller,
+                           AlertMenuItem alert_item)
     : ui::SimpleMenuModel(this),
       uma_action_recorded_(false),
       provider_(provider),
       browser_(browser),
-      app_menu_icon_controller_(app_menu_icon_controller) {
+      app_menu_icon_controller_(app_menu_icon_controller),
+      alert_item_(alert_item) {
   DCHECK(browser_);
 }
 
@@ -389,6 +395,11 @@ void AppMenuModel::ExecuteCommand(int command_id, int event_flags) {
   if (error) {
     error->ExecuteMenuItem(browser_);
     return;
+  }
+
+  if (command_id == IDC_PERFORMANCE) {
+    browser()->window()->NotifyFeatureEngagementEvent(
+        feature_engagement::events::kPerformanceMenuItemActivated);
   }
 
   LogMenuMetrics(command_id);
@@ -514,10 +525,6 @@ void AppMenuModel::LogMenuMetrics(int command_id) {
       if (!uma_action_recorded_)
         UMA_HISTOGRAM_MEDIUM_TIMES("WrenchMenu.TimeToAction.Cast", delta);
       LogMenuAction(MENU_ACTION_CAST);
-      // TODO(takumif): Look into moving this metrics logging to a single
-      // location, like MediaRouterDialogController::ShowMediaRouterDialog().
-      media_router::MediaRouterMetrics::RecordMediaRouterDialogOrigin(
-          media_router::MediaRouterDialogOpenOrigin::APP_MENU);
       break;
 
     // Edit menu.
@@ -788,6 +795,19 @@ bool AppMenuModel::IsCommandIdVisible(int command_id) const {
   }
 }
 
+bool AppMenuModel::IsCommandIdAlerted(int command_id) const {
+  if ((command_id == IDC_RECENT_TABS_MENU) ||
+      (command_id == AppMenuModel::kMinRecentTabsCommandId)) {
+    return alert_item_ == AlertMenuItem::kReopenTabs;
+  }
+
+  if (command_id == IDC_PERFORMANCE) {
+    return alert_item_ == AlertMenuItem::kPerformance;
+  }
+
+  return false;
+}
+
 bool AppMenuModel::GetAcceleratorForCommandId(
     int command_id,
     ui::Accelerator* accelerator) const {
@@ -829,7 +849,7 @@ void AppMenuModel::LogMenuAction(AppMenuAction action_id) {
 // - Browser relaunch, quit.
 void AppMenuModel::Build() {
   // Build (and, by extension, Init) should only be called once.
-  DCHECK_EQ(0, GetItemCount());
+  DCHECK_EQ(0u, GetItemCount());
 
   bool need_separator = false;
   if (IsCommandIdVisible(IDC_UPGRADE_DIALOG)) {
@@ -851,7 +871,14 @@ void AppMenuModel::Build() {
                                        : IDS_NEW_TAB);
   AddItemWithStringId(IDC_NEW_WINDOW, IDS_NEW_WINDOW);
 
-  AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
+  // This menu item is not visible in Guest Mode. If incognito mode is not
+  // available, it will be shown in disabled state. (crbug.com/1100791)
+  if (!browser_->profile()->IsGuestSession()) {
+    AddItemWithStringId(IDC_NEW_INCOGNITO_WINDOW, IDS_NEW_INCOGNITO_WINDOW);
+    SetElementIdentifierAt(
+        GetIndexOfCommandId(IDC_NEW_INCOGNITO_WINDOW).value(),
+        kIncognitoMenuItem);
+  }
 
   AddSeparator(ui::NORMAL_SEPARATOR);
 
@@ -860,11 +887,11 @@ void AppMenuModel::Build() {
         std::make_unique<RecentTabsSubMenuModel>(provider_, browser_));
     AddSubMenuWithStringId(IDC_RECENT_TABS_MENU, IDS_HISTORY_MENU,
                            sub_menus_.back().get());
-    SetElementIdentifierAt(GetIndexOfCommandId(IDC_RECENT_TABS_MENU),
+    SetElementIdentifierAt(GetIndexOfCommandId(IDC_RECENT_TABS_MENU).value(),
                            kHistoryMenuItem);
   }
   AddItemWithStringId(IDC_SHOW_DOWNLOADS, IDS_SHOW_DOWNLOADS);
-  SetElementIdentifierAt(GetIndexOfCommandId(IDC_SHOW_DOWNLOADS),
+  SetElementIdentifierAt(GetIndexOfCommandId(IDC_SHOW_DOWNLOADS).value(),
                          kDownloadsMenuItem);
   if (!browser_->profile()->IsGuestSession()) {
     bookmark_sub_menu_model_ =
@@ -892,10 +919,10 @@ void AppMenuModel::Build() {
     auto* provider =
         web_app::WebAppProvider::GetForLocalAppsUnchecked(browser_->profile());
     // Only applies to apps that open in an app window.
-    if (provider->registrar().GetAppUserDisplayMode(*app_id) !=
-        web_app::UserDisplayMode::kBrowser) {
-      const std::u16string short_name =
-          base::UTF8ToUTF16(provider->registrar().GetAppShortName(*app_id));
+    if (provider->registrar_unsafe().GetAppUserDisplayMode(*app_id) !=
+        web_app::mojom::UserDisplayMode::kBrowser) {
+      const std::u16string short_name = base::UTF8ToUTF16(
+          provider->registrar_unsafe().GetAppShortName(*app_id));
       const std::u16string truncated_name = gfx::TruncateString(
           short_name, kMaxAppNameLength, gfx::CHARACTER_BREAK);
       AddItem(
@@ -937,6 +964,8 @@ void AppMenuModel::Build() {
   sub_menus_.push_back(std::make_unique<ToolsMenuModel>(this, browser_));
   AddSubMenuWithStringId(IDC_MORE_TOOLS_MENU, IDS_MORE_TOOLS_MENU,
                          sub_menus_.back().get());
+  SetElementIdentifierAt(GetIndexOfCommandId(IDC_MORE_TOOLS_MENU).value(),
+                         kMoreToolsMenuItem);
   AddSeparator(ui::LOWER_SEPARATOR);
   CreateCutCopyPasteMenu();
   AddSeparator(ui::UPPER_SEPARATOR);
@@ -1023,13 +1052,9 @@ bool AppMenuModel::AddGlobalErrorMenuItems() {
     DCHECK(error);
     if (error->HasMenuItem()) {
       AddItem(error->MenuItemCommandID(), error->MenuItemLabel());
-      SetIcon(GetIndexOfCommandId(error->MenuItemCommandID()),
+      SetIcon(GetIndexOfCommandId(error->MenuItemCommandID()).value(),
               error->MenuItemIcon());
       menu_items_added = true;
-      if (IDC_SHOW_SIGNIN_ERROR == error->MenuItemCommandID()) {
-        signin_metrics::RecordSigninImpressionUserActionForAccessPoint(
-            signin_metrics::AccessPoint::ACCESS_POINT_MENU);
-      }
     }
   }
   return menu_items_added;
@@ -1047,23 +1072,23 @@ void AppMenuModel::UpdateSettingsItemState() {
           policy::SystemFeature::kBrowserSettings,
           g_browser_process->local_state());
 
-  int index = GetIndexOfCommandId(IDC_OPTIONS);
-  if (index != -1)
-    SetEnabledAt(index, !is_disabled);
+  absl::optional<size_t> index = GetIndexOfCommandId(IDC_OPTIONS);
+  if (index.has_value())
+    SetEnabledAt(index.value(), !is_disabled);
 
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   index = GetIndexOfCommandId(IDC_HELP_MENU);
-  if (index != -1) {
+  if (index.has_value()) {
     ui::SimpleMenuModel* help_menu =
-        static_cast<ui::SimpleMenuModel*>(GetSubmenuModelAt(index));
+        static_cast<ui::SimpleMenuModel*>(GetSubmenuModelAt(index.value()));
     index = help_menu->GetIndexOfCommandId(IDC_ABOUT);
-    if (index != -1)
-      help_menu->SetEnabledAt(index, !is_disabled);
+    if (index.has_value())
+      help_menu->SetEnabledAt(index.value(), !is_disabled);
   }
 #else   // BUILDFLAG(GOOGLE_CHROME_BRANDING)
   index = GetIndexOfCommandId(IDC_ABOUT);
-  if (index != -1)
-    SetEnabledAt(index, !is_disabled);
+  if (index.has_value())
+    SetEnabledAt(index.value(), !is_disabled);
 #endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
 }
 #endif  // BUILDFLAG(IS_CHROMEOS)

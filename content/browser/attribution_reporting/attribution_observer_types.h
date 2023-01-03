@@ -1,9 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CONTENT_BROWSER_ATTRIBUTION_REPORTING_ATTRIBUTION_OBSERVER_TYPES_H_
 #define CONTENT_BROWSER_ATTRIBUTION_REPORTING_ATTRIBUTION_OBSERVER_TYPES_H_
+
+#include <stdint.h>
 
 #include "base/time/time.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
@@ -14,26 +16,29 @@
 
 namespace content {
 
-struct CONTENT_EXPORT DeactivatedSource {
-  enum class Reason {
-    kReplacedByNewerSource,
-  };
-
-  DeactivatedSource(StoredSource source, Reason reason);
-  ~DeactivatedSource();
-
-  DeactivatedSource(const DeactivatedSource&);
-  DeactivatedSource(DeactivatedSource&&);
-
-  DeactivatedSource& operator=(const DeactivatedSource&);
-  DeactivatedSource& operator=(DeactivatedSource&&);
-
-  StoredSource source;
-  Reason reason;
-};
-
 class CONTENT_EXPORT CreateReportResult {
  public:
+  struct Limits {
+    // `absl::nullopt` unless `event_level_status_` or `aggregatable_status_` is
+    // `kExcessiveAttributions`.
+    absl::optional<int64_t> rate_limits_max_attributions;
+
+    // `absl::nullopt` unless `aggregatable_status_` is `kInsufficientBudget`.
+    absl::optional<int64_t> aggregatable_budget_per_source;
+
+    // `absl::nullopt` unless `event_level_status_` or `aggregatable_status_` is
+    // `kExcessiveReportingOrigins`.
+    absl::optional<int64_t> rate_limits_max_attribution_reporting_origins;
+
+    // `absl::nullopt` unless `event_level_status_` is
+    // `kNoCapacityForConversionDestination`.
+    absl::optional<int> max_event_level_reports_per_destination;
+
+    // `absl::nullopt` unless `aggregatable_status_` is
+    // `kNoCapacityForConversionDestination`.
+    absl::optional<int> max_aggregatable_reports_per_destination;
+  };
+
   CreateReportResult(
       base::Time trigger_time,
       AttributionTrigger::EventLevelResult event_level_status,
@@ -41,7 +46,10 @@ class CONTENT_EXPORT CreateReportResult {
       absl::optional<AttributionReport> replaced_event_level_report =
           absl::nullopt,
       absl::optional<AttributionReport> new_event_level_report = absl::nullopt,
-      absl::optional<AttributionReport> new_aggregatable_report =
+      absl::optional<AttributionReport> new_aggregatable_report = absl::nullopt,
+      absl::optional<StoredSource> source = absl::nullopt,
+      Limits limits = Limits(),
+      absl::optional<AttributionReport> dropped_event_level_report =
           absl::nullopt);
   ~CreateReportResult();
 
@@ -81,6 +89,14 @@ class CONTENT_EXPORT CreateReportResult {
     return new_aggregatable_report_;
   }
 
+  const absl::optional<StoredSource>& source() const { return source_; }
+
+  const Limits& limits() const { return limits_; }
+
+  const absl::optional<AttributionReport>& dropped_event_level_report() const {
+    return dropped_event_level_report_;
+  }
+
  private:
   base::Time trigger_time_;
 
@@ -98,6 +114,15 @@ class CONTENT_EXPORT CreateReportResult {
 
   // `absl::nullopt` unless `aggregatable_status_` is `kSuccess`.
   absl::optional<AttributionReport> new_aggregatable_report_;
+
+  // `absl::nullopt` if there's no matching source.
+  absl::optional<StoredSource> source_;
+
+  Limits limits_;
+
+  // `absl::nullopt` unless `event_level_status_` is `kPriorityTooLow` or
+  // `kExcessiveReports`.
+  absl::optional<AttributionReport> dropped_event_level_report_;
 };
 
 }  // namespace content

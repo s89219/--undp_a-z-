@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,28 +26,31 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/synchronization/waitable_event_watcher.h"
 #include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/test/bind.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/default_clock.h"
-#include "components/services/storage/indexed_db/locks/disjoint_range_lock_manager.h"
+#include "components/services/storage/indexed_db/locks/partitioned_lock_manager.h"
 #include "components/services/storage/indexed_db/scopes/varint_coding.h"
 #include "components/services/storage/indexed_db/transactional_leveldb/leveldb_write_batch.h"
 #include "components/services/storage/indexed_db/transactional_leveldb/transactional_leveldb_database.h"
+#include "components/services/storage/privileged/mojom/indexed_db_control.mojom-test-utils.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
-#include "components/services/storage/public/mojom/indexed_db_control.mojom-test-utils.h"
 #include "content/browser/indexed_db/indexed_db_bucket_state.h"
 #include "content/browser/indexed_db/indexed_db_class_factory.h"
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
-#include "content/browser/indexed_db/indexed_db_factory_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_operations.h"
 #include "content/browser/indexed_db/indexed_db_metadata_coding.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "net/base/features.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "storage/browser/test/fake_blob.h"
+#include "storage/browser/test/mock_quota_manager.h"
 #include "storage/browser/test/mock_quota_manager_proxy.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -120,15 +123,15 @@ class TestableIndexedDBBackingStore : public IndexedDBBackingStore {
 
 // Factory subclass to allow the test to use the
 // TestableIndexedDBBackingStore subclass.
-class TestIDBFactory : public IndexedDBFactoryImpl {
+class TestIDBFactory : public IndexedDBFactory {
  public:
   explicit TestIDBFactory(
       IndexedDBContextImpl* idb_context,
       storage::mojom::BlobStorageContext* blob_storage_context,
       storage::mojom::FileSystemAccessContext* file_system_access_context)
-      : IndexedDBFactoryImpl(idb_context,
-                             IndexedDBClassFactory::Get(),
-                             base::DefaultClock::GetInstance()),
+      : IndexedDBFactory(idb_context,
+                         IndexedDBClassFactory::Get(),
+                         base::DefaultClock::GetInstance()),
         blob_storage_context_(blob_storage_context),
         file_system_access_context_(file_system_access_context) {}
 
@@ -213,7 +216,7 @@ class MockBlobStorageContext : public ::storage::mojom::BlobStorageContext {
       filesystem_proxy->WriteFileAtomically(path, "fake contents");
     }
 
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback),
                        storage::mojom::WriteBlobToFileResult::kSuccess));
@@ -262,7 +265,7 @@ class MockFileSystemAccessContext
           pending_token,
       SerializeHandleCallback callback) override {
     writes_.emplace_back(std::move(pending_token));
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(
             std::move(callback),
@@ -291,12 +294,7 @@ class MockFileSystemAccessContext
 
 class IndexedDBBackingStoreTest : public testing::Test {
  public:
-  IndexedDBBackingStoreTest()
-      : quota_manager_proxy_(
-            base::MakeRefCounted<storage::MockQuotaManagerProxy>(
-                nullptr,
-                base::ThreadTaskRunnerHandle::Get())) {}
-
+  IndexedDBBackingStoreTest() = default;
   IndexedDBBackingStoreTest(const IndexedDBBackingStoreTest&) = delete;
   IndexedDBBackingStoreTest& operator=(const IndexedDBBackingStoreTest&) =
       delete;
@@ -308,13 +306,20 @@ class IndexedDBBackingStoreTest : public testing::Test {
     file_system_access_context_ =
         std::make_unique<MockFileSystemAccessContext>();
 
+    quota_manager_ = base::MakeRefCounted<storage::MockQuotaManager>(
+        /*is_incognito=*/false, temp_dir_.GetPath(),
+        base::SingleThreadTaskRunner::GetCurrentDefault(), nullptr);
+    quota_manager_proxy_ = base::MakeRefCounted<storage::MockQuotaManagerProxy>(
+        quota_manager_.get(),
+        base::SingleThreadTaskRunner::GetCurrentDefault());
+
     idb_context_ = base::MakeRefCounted<IndexedDBContextImpl>(
         temp_dir_.GetPath(), quota_manager_proxy_,
         base::DefaultClock::GetInstance(),
         /*blob_storage_context=*/mojo::NullRemote(),
         /*file_system_access_context=*/mojo::NullRemote(),
-        base::SequencedTaskRunnerHandle::Get(),
-        base::SequencedTaskRunnerHandle::Get());
+        base::SequencedTaskRunner::GetCurrentDefault(),
+        base::SequencedTaskRunner::GetCurrentDefault());
 
     // Needed to get the QuotaClient bound.
     {
@@ -339,6 +344,7 @@ class IndexedDBBackingStoreTest : public testing::Test {
         blink::StorageKey::CreateFromStringForTesting("http://localhost:81");
     auto bucket_locator = storage::BucketLocator();
     bucket_locator.storage_key = storage_key;
+    bucket_locator.is_default = true;
     idb_factory_ = std::make_unique<TestIDBFactory>(
         idb_context_.get(), blob_context_.get(),
         file_system_access_context_.get());
@@ -346,9 +352,9 @@ class IndexedDBBackingStoreTest : public testing::Test {
     leveldb::Status s;
     std::tie(bucket_state_handle_, s, std::ignore, data_loss_info_,
              std::ignore) =
-        idb_factory_->GetOrOpenBucketFactory(bucket_locator,
-                                             idb_context_->data_path(),
-                                             /*create_if_missing=*/true);
+        idb_factory_->GetOrOpenBucketFactory(
+            bucket_locator, idb_context_->GetDataPath(bucket_locator),
+            /*create_if_missing=*/true);
     if (!bucket_state_handle_.IsHeld()) {
       backing_store_ = nullptr;
       return;
@@ -358,16 +364,14 @@ class IndexedDBBackingStoreTest : public testing::Test {
     lock_manager_ = bucket_state_handle_.bucket_state()->lock_manager();
   }
 
-  std::vector<LeveledLock> CreateDummyLock() {
+  std::vector<PartitionedLock> CreateDummyLock() {
     base::RunLoop loop;
-    LeveledLockHolder locks_receiver;
-    bool success = lock_manager_->AcquireLocks(
-        {{0, {"01", "11"}, LeveledLockManager::LockType::kShared}},
+    PartitionedLockHolder locks_receiver;
+    lock_manager_->AcquireLocks(
+        {{{0, "01"}, PartitionedLockManager::LockType::kShared}},
         locks_receiver.AsWeakPtr(),
         base::BindLambdaForTesting([&loop]() { loop.Quit(); }));
-    EXPECT_TRUE(success);
-    if (success)
-      loop.Run();
+    loop.Run();
     return std::move(locks_receiver.locks);
   }
 
@@ -380,17 +384,16 @@ class IndexedDBBackingStoreTest : public testing::Test {
   void TearDown() override {
     DestroyFactoryAndBackingStore();
     if (idb_context_ && !idb_context_->IsInMemoryContext()) {
-      IndexedDBFactoryImpl* factory = idb_context_->GetIDBFactory();
+      IndexedDBFactory* factory = idb_context_->GetIDBFactory();
 
       // Loop through all open buckets, and force close them, and request the
       // deletion of the leveldb state. Once the states are no longer around,
       // delete all of the databases on disk.
-      auto open_factory_buckets = factory->GetOpenBuckets();
 
-      for (const auto& bucket_locator : open_factory_buckets) {
+      for (const auto& bucket_id : factory->GetOpenBuckets()) {
         base::RunLoop loop;
         IndexedDBBucketState* per_bucket_factory =
-            factory->GetBucketFactory(bucket_locator);
+            factory->GetBucketFactory(bucket_id);
 
         auto* leveldb_state =
             per_bucket_factory->backing_store()->db()->leveldb_state();
@@ -402,11 +405,12 @@ class IndexedDBBackingStoreTest : public testing::Test {
             &leveldb_close_event,
             base::BindLambdaForTesting(
                 [&](base::WaitableEvent*) { loop.Quit(); }),
-            base::SequencedTaskRunnerHandle::Get());
+            base::SequencedTaskRunner::GetCurrentDefault());
 
-        idb_context_->ForceCloseSync(
-            bucket_locator.storage_key,
-            storage::mojom::ForceCloseReason::FORCE_CLOSE_DELETE_ORIGIN);
+        idb_context_->ForceClose(
+            bucket_id,
+            storage::mojom::ForceCloseReason::FORCE_CLOSE_DELETE_ORIGIN,
+            base::DoNothing());
         loop.Run();
         // There is a possible race in `leveldb_close_event` where the signaling
         // thread is still in the WaitableEvent::Signal() method. To ensure that
@@ -416,10 +420,10 @@ class IndexedDBBackingStoreTest : public testing::Test {
         EXPECT_TRUE(leveldb_close_event.IsSignaled());
       }
       // All leveldb databases are closed, and they can be deleted.
-      for (auto bucket : idb_context_->GetAllBuckets()) {
+      for (auto bucket_locator : idb_context_->GetAllBuckets()) {
         bool success = false;
         storage::mojom::IndexedDBControlAsyncWaiter waiter(idb_context_.get());
-        waiter.DeleteForBucket(bucket, &success);
+        waiter.DeleteForStorageKey(bucket_locator.storage_key, &success);
         EXPECT_TRUE(success);
       }
     }
@@ -456,10 +460,11 @@ class IndexedDBBackingStoreTest : public testing::Test {
   base::ScopedTempDir temp_dir_;
   std::unique_ptr<MockBlobStorageContext> blob_context_;
   std::unique_ptr<MockFileSystemAccessContext> file_system_access_context_;
+  scoped_refptr<storage::MockQuotaManager> quota_manager_;
   scoped_refptr<storage::MockQuotaManagerProxy> quota_manager_proxy_;
   scoped_refptr<IndexedDBContextImpl> idb_context_;
   std::unique_ptr<TestIDBFactory> idb_factory_;
-  raw_ptr<DisjointRangeLockManager> lock_manager_;
+  raw_ptr<PartitionedLockManager> lock_manager_;
 
   IndexedDBBucketStateHandle bucket_state_handle_;
   raw_ptr<TestableIndexedDBBackingStore> backing_store_ = nullptr;
@@ -471,6 +476,27 @@ class IndexedDBBackingStoreTest : public testing::Test {
   IndexedDBValue value1_;
   IndexedDBValue value2_;
 };
+
+class IndexedDBBackingStoreTestForThirdPartyStoragePartitioning
+    : public testing::WithParamInterface<bool>,
+      public IndexedDBBackingStoreTest {
+ public:
+  IndexedDBBackingStoreTestForThirdPartyStoragePartitioning() {
+    scoped_feature_list_.InitWithFeatureState(
+        net::features::kThirdPartyStoragePartitioning,
+        IsThirdPartyStoragePartitioningEnabled());
+  }
+
+  bool IsThirdPartyStoragePartitioningEnabled() { return GetParam(); }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+INSTANTIATE_TEST_SUITE_P(
+    /* no prefix */,
+    IndexedDBBackingStoreTestForThirdPartyStoragePartitioning,
+    testing::Bool());
 
 enum class ExternalObjectTestType {
   kOnlyBlobs,
@@ -1321,16 +1347,16 @@ TEST_P(IndexedDBBackingStoreTestWithExternalObjects, ActiveBlobJournal) {
   if (TestType() != ExternalObjectTestType::kOnlyFileSystemAccessHandles) {
     EXPECT_TRUE(backing_store()->IsBlobCleanupPending());
 #if DCHECK_IS_ON()
-  EXPECT_EQ(3,
-            backing_store()->NumAggregatedJournalCleaningRequestsForTesting());
+    EXPECT_EQ(
+        3, backing_store()->NumAggregatedJournalCleaningRequestsForTesting());
 #endif
-  for (int i = 3; i < IndexedDBBackingStore::kMaxJournalCleanRequests; ++i) {
-    backing_store()->StartJournalCleaningTimer();
-  }
-  EXPECT_NE(0U, backing_store()->removals().size());
-  EXPECT_TRUE(CheckBlobRemovals());
+    for (int i = 3; i < IndexedDBBackingStore::kMaxJournalCleanRequests; ++i) {
+      backing_store()->StartJournalCleaningTimer();
+    }
+    EXPECT_NE(0U, backing_store()->removals().size());
+    EXPECT_TRUE(CheckBlobRemovals());
 #if DCHECK_IS_ON()
-  EXPECT_EQ(3, backing_store()->NumBlobFilesDeletedForTesting());
+    EXPECT_EQ(3, backing_store()->NumBlobFilesDeletedForTesting());
 #endif
   }
 
@@ -1630,25 +1656,35 @@ TEST_F(IndexedDBBackingStoreTest, GetDatabaseNames) {
   EXPECT_EQ(db1_name, names[0]);
 }
 
-TEST_F(IndexedDBBackingStoreTest, ReadCorruptionInfo) {
+TEST_P(IndexedDBBackingStoreTestForThirdPartyStoragePartitioning,
+       ReadCorruptionInfoForOpaqueStorageKey) {
   auto filesystem_proxy = std::make_unique<storage::FilesystemProxy>(
       storage::FilesystemProxy::UNRESTRICTED, base::FilePath());
+  storage::BucketLocator bucket_locator;
+  bucket_locator.storage_key = blink::StorageKey(url::Origin());
+  bucket_locator.is_default = true;
 
   // No `path_base`.
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(),
-                                             base::FilePath(),
-                                             StorageKey(Origin()))
+                                             base::FilePath(), bucket_locator)
                   .empty());
+}
 
+TEST_P(IndexedDBBackingStoreTestForThirdPartyStoragePartitioning,
+       ReadCorruptionInfoForFirstPartyStorageKey) {
+  auto filesystem_proxy = std::make_unique<storage::FilesystemProxy>(
+      storage::FilesystemProxy::UNRESTRICTED, base::FilePath());
+  storage::BucketLocator bucket_locator;
   const base::FilePath path_base = temp_dir_.GetPath();
-  const StorageKey storage_key =
-      StorageKey::CreateFromStringForTesting("http://www.google.com/");
+  bucket_locator.storage_key =
+      blink::StorageKey::CreateFromStringForTesting("http://www.google.com/");
+  bucket_locator.id = storage::BucketId::FromUnsafeValue(1);
+  bucket_locator.is_default = true;
   ASSERT_FALSE(path_base.empty());
-  ASSERT_TRUE(PathIsWritable(path_base));
 
   // File not found.
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
 
   const base::FilePath info_path =
@@ -1660,7 +1696,7 @@ TEST_F(IndexedDBBackingStoreTest, ReadCorruptionInfo) {
   std::string dummy_data;
   ASSERT_TRUE(base::WriteFile(info_path, dummy_data));
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
   EXPECT_FALSE(PathExists(info_path));
 
@@ -1668,42 +1704,42 @@ TEST_F(IndexedDBBackingStoreTest, ReadCorruptionInfo) {
   dummy_data.resize(5000, 'c');
   ASSERT_TRUE(base::WriteFile(info_path, dummy_data));
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
   EXPECT_FALSE(PathExists(info_path));
 
   // Random string.
   ASSERT_TRUE(base::WriteFile(info_path, "foo bar"));
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
   EXPECT_FALSE(PathExists(info_path));
 
   // Not a dictionary.
   ASSERT_TRUE(base::WriteFile(info_path, "[]"));
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
   EXPECT_FALSE(PathExists(info_path));
 
   // Empty dictionary.
   ASSERT_TRUE(base::WriteFile(info_path, "{}"));
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
   EXPECT_FALSE(PathExists(info_path));
 
   // Dictionary, no message key.
   ASSERT_TRUE(base::WriteFile(info_path, "{\"foo\":\"bar\"}"));
   EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                             storage_key)
+                                             bucket_locator)
                   .empty());
   EXPECT_FALSE(PathExists(info_path));
 
   // Dictionary, message key.
   ASSERT_TRUE(base::WriteFile(info_path, "{\"message\":\"bar\"}"));
-  std::string message = indexed_db::ReadCorruptionInfo(filesystem_proxy.get(),
-                                                       path_base, storage_key);
+  std::string message = indexed_db::ReadCorruptionInfo(
+      filesystem_proxy.get(), path_base, bucket_locator);
   EXPECT_FALSE(message.empty());
   EXPECT_FALSE(PathExists(info_path));
   EXPECT_EQ("bar", message);
@@ -1711,7 +1747,95 @@ TEST_F(IndexedDBBackingStoreTest, ReadCorruptionInfo) {
   // Dictionary, message key and more.
   ASSERT_TRUE(base::WriteFile(info_path, "{\"message\":\"foo\",\"bar\":5}"));
   message = indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
-                                           storage_key);
+                                           bucket_locator);
+  EXPECT_FALSE(message.empty());
+  EXPECT_FALSE(PathExists(info_path));
+  EXPECT_EQ("foo", message);
+}
+
+TEST_P(IndexedDBBackingStoreTestForThirdPartyStoragePartitioning,
+       ReadCorruptionInfoForThirdPartyStorageKey) {
+  auto filesystem_proxy = std::make_unique<storage::FilesystemProxy>(
+      storage::FilesystemProxy::UNRESTRICTED, base::FilePath());
+  storage::BucketLocator bucket_locator;
+  bucket_locator.storage_key = blink::StorageKey::CreateForTesting(
+      url::Origin::Create(GURL("http://www.google.com/")),
+      url::Origin::Create(GURL("http://www.youtube.com/")));
+  bucket_locator.id = storage::BucketId::FromUnsafeValue(1);
+  bucket_locator.is_default = true;
+  const base::FilePath path_base = idb_context_->GetDataPath(bucket_locator);
+  ASSERT_FALSE(path_base.empty());
+
+  // File not found.
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+
+  base::FilePath info_path =
+      path_base.AppendASCII("http_www.google.com_0.indexeddb.leveldb")
+          .AppendASCII("corruption_info.json");
+  if (IsThirdPartyStoragePartitioningEnabled()) {
+    info_path = path_base.AppendASCII("indexeddb.leveldb")
+                    .AppendASCII("corruption_info.json");
+  }
+  ASSERT_TRUE(CreateDirectory(info_path.DirName()));
+
+  // Empty file.
+  std::string dummy_data;
+  ASSERT_TRUE(base::WriteFile(info_path, dummy_data));
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+  EXPECT_FALSE(PathExists(info_path));
+
+  // File size > 4 KB.
+  dummy_data.resize(5000, 'c');
+  ASSERT_TRUE(base::WriteFile(info_path, dummy_data));
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+  EXPECT_FALSE(PathExists(info_path));
+
+  // Random string.
+  ASSERT_TRUE(base::WriteFile(info_path, "foo bar"));
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+  EXPECT_FALSE(PathExists(info_path));
+
+  // Not a dictionary.
+  ASSERT_TRUE(base::WriteFile(info_path, "[]"));
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+  EXPECT_FALSE(PathExists(info_path));
+
+  // Empty dictionary.
+  ASSERT_TRUE(base::WriteFile(info_path, "{}"));
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+  EXPECT_FALSE(PathExists(info_path));
+
+  // Dictionary, no message key.
+  ASSERT_TRUE(base::WriteFile(info_path, "{\"foo\":\"bar\"}"));
+  EXPECT_TRUE(indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                             bucket_locator)
+                  .empty());
+  EXPECT_FALSE(PathExists(info_path));
+
+  // Dictionary, message key.
+  ASSERT_TRUE(base::WriteFile(info_path, "{\"message\":\"bar\"}"));
+  std::string message = indexed_db::ReadCorruptionInfo(
+      filesystem_proxy.get(), path_base, bucket_locator);
+  EXPECT_FALSE(message.empty());
+  EXPECT_FALSE(PathExists(info_path));
+  EXPECT_EQ("bar", message);
+
+  // Dictionary, message key and more.
+  ASSERT_TRUE(base::WriteFile(info_path, "{\"message\":\"foo\",\"bar\":5}"));
+  message = indexed_db::ReadCorruptionInfo(filesystem_proxy.get(), path_base,
+                                           bucket_locator);
   EXPECT_FALSE(message.empty());
   EXPECT_FALSE(PathExists(info_path));
   EXPECT_EQ("foo", message);

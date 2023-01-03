@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "components/omnibox/browser/actions/omnibox_action.h"
 #include "components/omnibox/browser/autocomplete_provider_client.h"
+#include "components/omnibox/browser/omnibox.mojom-shared.h"
 #include "components/omnibox/browser/omnibox_navigation_observer.h"
 #include "components/omnibox/common/omnibox_focus_state.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -76,6 +77,15 @@ class OmniboxClient {
   // Returns the session ID of the current page.
   virtual const SessionID& GetSessionID() const = 0;
 
+  // Called when the user changes the selected |index| in the result list via
+  // mouse down or arrow key down. |match| is the suggestion corresponding to
+  // that index. |navigation_predictor| represents the event indicated
+  // navigation was likely.
+  virtual void OnNavigationLikely(
+      size_t index,
+      const AutocompleteMatch& match,
+      omnibox::mojom::NavigationPredictor navigation_predictor) {}
+
   virtual bookmarks::BookmarkModel* GetBookmarkModel();
   virtual OmniboxControllerEmitter* GetOmniboxControllerEmitter();
   virtual TemplateURLService* GetTemplateURLService();
@@ -89,6 +99,11 @@ class OmniboxClient {
   // TODO(crbug.com/1168371): Remove when URLLoaderInterceptor can simulate
   // redirects.
   virtual int GetHttpsPortForTesting() const = 0;
+
+  // If true, indicates that the tests are using a faux-HTTPS server which is
+  // actually an HTTP server that pretends to serve HTTPS responses. Should only
+  // be true on iOS.
+  virtual bool IsUsingFakeHttpsForHttpsUpgradeTesting() const = 0;
 
   // Returns the icon corresponding to |match| if match is an extension match
   // and an empty icon otherwise.

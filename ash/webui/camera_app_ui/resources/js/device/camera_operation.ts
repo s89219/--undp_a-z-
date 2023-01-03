@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@ import {
   assertString,
 } from '../assert.js';
 import * as error from '../error.js';
+import * as expert from '../expert.js';
 import {DeviceOperator} from '../mojo/device_operator.js';
 import * as state from '../state.js';
 import {
@@ -26,7 +27,6 @@ import {
   FakeCameraCaptureCandidate,
 } from './capture_candidate.js';
 import {CaptureCandidatePreferrer} from './capture_candidate_preferrer.js';
-import {DeviceInfoUpdater} from './device_info_updater.js';
 import {Modes, Video} from './mode/index.js';
 import {Preview} from './preview.js';
 import {StreamConstraints} from './stream_constraints.js';
@@ -135,7 +135,8 @@ class Reconfigurer {
   private async *
       getConfigurationCandidates(cameraInfo: CameraInfo):
           AsyncIterable<ConfigureCandidate> {
-    const deviceOperator = await DeviceOperator.getInstance();
+    const deviceOperator = DeviceOperator.getInstance();
+    const hasAudio = await this.isAudioInputAvailable();
 
     for (const deviceId of this.getDeviceIdCandidates(cameraInfo)) {
       for (const mode of await this.getModeCandidates(deviceId)) {
@@ -143,12 +144,12 @@ class Reconfigurer {
         let photoResolutions;
         if (deviceOperator !== null) {
           assert(cameraInfo.camera3DevicesInfo !== null);
-          candidates = this.capturePreferrer.getSortedCandidates(
-              cameraInfo.camera3DevicesInfo, deviceId, mode);
+          candidates = await this.capturePreferrer.getSortedCandidates(
+              cameraInfo.camera3DevicesInfo, deviceId, mode, hasAudio);
           photoResolutions = await deviceOperator.getPhotoResolutions(deviceId);
         } else {
-          candidates =
-              [new FakeCameraCaptureCandidate(deviceId, mode === Mode.VIDEO)];
+          candidates = [new FakeCameraCaptureCandidate(
+              deviceId, mode === Mode.VIDEO, hasAudio)];
           photoResolutions = candidates.map((c) => c.resolution);
         }
         const maxResolution = photoResolutions.reduce(
@@ -156,7 +157,8 @@ class Reconfigurer {
                 r !== null && (maxR === null || r.area > maxR.area) ? r : maxR);
         for (const c of candidates) {
           const videoSnapshotResolution =
-              state.get(state.State.ENABLE_FULL_SIZED_VIDEO_SNAPSHOT) ?
+              expert.isEnabled(
+                  expert.ExpertOption.ENABLE_FULL_SIZED_VIDEO_SNAPSHOT) ?
               maxResolution :
               c.resolution;
           for (const constraints of c.getStreamConstraintsCandidates()) {
@@ -171,6 +173,11 @@ class Reconfigurer {
         }
       }
     }
+  }
+
+  private async isAudioInputAvailable(): Promise<boolean> {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.some((device) => device.kind === 'audioinput');
   }
 
   /**
@@ -210,7 +217,7 @@ class Reconfigurer {
       return false;
     }
 
-    const deviceOperator = await DeviceOperator.getInstance();
+    const deviceOperator = DeviceOperator.getInstance();
     state.set(state.State.USE_FAKE_CAMERA, deviceOperator === null);
 
     for await (const c of this.getConfigurationCandidates(cameraInfo)) {
@@ -218,11 +225,12 @@ class Reconfigurer {
         return false;
       }
 
+      let facing = c.deviceId !== null ?
+          cameraInfo.getCamera3DeviceInfo(c.deviceId)?.facing ?? null :
+          null;
       this.listener.onTryingNewConfig({
         deviceId: c.deviceId,
-        facing: c.deviceId !== null ?
-            cameraInfo.getCamera3DeviceInfo(c.deviceId)?.facing ?? null :
-            null,
+        facing,
         mode: c.mode,
         captureCandidate: c.captureCandidate,
       });
@@ -235,7 +243,7 @@ class Reconfigurer {
         await this.preview.open(c.constraints);
         // For non-ChromeOS VCD, the facing and device id can only be known
         // after preview is actually opened.
-        const facing = this.preview.getFacing();
+        facing = this.preview.getFacing();
         const deviceId = assertString(this.preview.getDeviceId());
 
         await this.checkEnablePTZ(c);
@@ -263,6 +271,13 @@ class Reconfigurer {
         let errorToReport: Error;
         // Since OverconstrainedError is not an Error instance.
         if (e instanceof OverconstrainedError) {
+          if (facing === Facing.EXTERNAL && e.constraint === 'deviceId') {
+            // External camera configuration failed with OverconstrainedError
+            // of deviceId means that the device is no longer available and is
+            // likely caused by external camera disconnected. Ignore this
+            // error.
+            continue;
+          }
           errorToReport =
               new Error(`${e.message} (constraint = ${e.constraint})`);
           errorToReport.name = 'OverconstrainedError';
@@ -349,7 +364,6 @@ export class OperationScheduler {
   private pendingReconfigureWaiters: Array<CancelableEvent<boolean>> = [];
 
   constructor(
-      private readonly infoUpdater: DeviceInfoUpdater,
       private readonly listener: EventListener,
       preview: Preview,
       defaultFacing: Facing|null,
@@ -363,8 +377,8 @@ export class OperationScheduler {
         defaultFacing,
     );
     this.capturer = new Capturer(this.modes);
-    this.infoUpdater.addDeviceChangeListener(async (updater) => {
-      const info = new CameraInfo(updater);
+    StreamManager.getInstance().addRealDeviceChangeListener((devices) => {
+      const info = new CameraInfo(devices);
       if (this.ongoingOperationType !== null) {
         this.pendingUpdateInfo = info;
         return;

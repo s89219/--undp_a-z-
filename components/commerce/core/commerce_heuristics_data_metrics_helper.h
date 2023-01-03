@@ -1,15 +1,15 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef COMPONENTS_COMMERCE_CORE_COMMERCE_HEURISTICS_DATA_METRICS_HELPER_H_
 #define COMPONENTS_COMMERCE_CORE_COMMERCE_HEURISTICS_DATA_METRICS_HELPER_H_
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
 class CommerceHeuristicsDataMetricsHelper {
  public:
-  // Represent the source of commerce heuristics.
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused. Represent the source of commerce
+  // heuristics.
   enum class HeuristicsSource {
     // Heuristics are from component updater.
     FROM_COMPONENT = 0,
@@ -33,6 +33,19 @@ class CommerceHeuristicsDataMetricsHelper {
   // Gets called when we try to get the cart extraction script to record the
   // source of this script data.
   static void RecordCartExtractionScriptSource(HeuristicsSource source);
+
+  // Gets called when we try to get the pattern to decide which merchant is a
+  // partner merchant. Record the source of the pattern data.
+  static void RecordPartnerMerchantPatternSource(HeuristicsSource source);
+
+  // Gets called when we try to get the pattern to decide whether we should
+  // skip a product from the extraction results. Record the source of the
+  // pattern data.
+  static void RecordSkipProductPatternSource(HeuristicsSource source);
+
+  // Gets called when we try to get the product ID extraction pattern. Record
+  // the source of the pattern data.
+  static void RecordProductIDExtractionPatternSource(HeuristicsSource source);
 };
 
 #endif  // COMPONENTS_COMMERCE_CORE_COMMERCE_HEURISTICS_DATA_METRICS_HELPER_H_

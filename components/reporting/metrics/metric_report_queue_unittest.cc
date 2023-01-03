@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "components/reporting/client/mock_report_queue.h"
-#include "components/reporting/metrics/fake_reporting_settings.h"
+#include "components/reporting/metrics/fakes/fake_reporting_settings.h"
 #include "components/reporting/proto/synced/metric_data.pb.h"
 #include "components/reporting/proto/synced/record_constants.pb.h"
 #include "components/reporting/util/status.h"
@@ -48,7 +48,7 @@ class MetricReportQueueTest : public ::testing::Test {
 
 TEST_F(MetricReportQueueTest, ManualUpload) {
   auto mock_queue = std::unique_ptr<MockReportQueue, base::OnTaskRunnerDeleter>(
-      new testing::StrictMock<MockReportQueue>(),
+      new MockReportQueue(),
       base::OnTaskRunnerDeleter(
           base::ThreadPool::CreateSequencedTaskRunner({})));
   auto* mock_queue_ptr = mock_queue.get();
@@ -56,7 +56,6 @@ TEST_F(MetricReportQueueTest, ManualUpload) {
   record.set_timestamp_ms(123456);
 
   MetricReportQueue metric_report_queue(std::move(mock_queue), priority_);
-
   EXPECT_CALL(*mock_queue_ptr, AddRecord(_, _, _))
       .WillOnce([&record, this](base::StringPiece record_string,
                                 Priority actual_priority,
@@ -84,7 +83,7 @@ TEST_F(MetricReportQueueTest, ManualUploadWithTimer) {
 
   int upload_count = 0;
   auto mock_queue = std::unique_ptr<MockReportQueue, base::OnTaskRunnerDeleter>(
-      new testing::NiceMock<MockReportQueue>(),
+      new MockReportQueue(),
       base::OnTaskRunnerDeleter(
           base::ThreadPool::CreateSequencedTaskRunner({})));
   auto* mock_queue_ptr = mock_queue.get();
@@ -96,7 +95,7 @@ TEST_F(MetricReportQueueTest, ManualUploadWithTimer) {
                                         kDefaultRate);
 
   EXPECT_CALL(*mock_queue_ptr, AddRecord(_, _, _))
-      .WillOnce([&record, this](base::StringPiece record_string,
+      .WillOnce([&record, this](std::string record_string,
                                 Priority actual_priority,
                                 ReportQueue::EnqueueCallback cb) {
         std::move(cb).Run(Status());
@@ -133,7 +132,7 @@ TEST_F(MetricReportQueueTest, ManualUploadWithTimer) {
 TEST_F(MetricReportQueueTest, RateControlledFlush_TimeNotElapsed) {
   settings_->SetInteger(kRateSettingPath, kRateMs);
   auto mock_queue = std::unique_ptr<MockReportQueue, base::OnTaskRunnerDeleter>(
-      new testing::StrictMock<MockReportQueue>(),
+      new MockReportQueue(),
       base::OnTaskRunnerDeleter(
           base::ThreadPool::CreateSequencedTaskRunner({})));
   auto* mock_queue_ptr = mock_queue.get();
@@ -145,7 +144,7 @@ TEST_F(MetricReportQueueTest, RateControlledFlush_TimeNotElapsed) {
                                         kDefaultRate);
 
   EXPECT_CALL(*mock_queue_ptr, AddRecord(_, _, _))
-      .WillOnce([&record, this](base::StringPiece record_string,
+      .WillOnce([&record, this](std::string record_string,
                                 Priority actual_priority,
                                 ReportQueue::EnqueueCallback cb) {
         std::move(cb).Run(Status());
@@ -169,7 +168,7 @@ TEST_F(MetricReportQueueTest, RateControlledFlush_TimeNotElapsed) {
 TEST_F(MetricReportQueueTest, RateControlledFlush_TimeElapsed) {
   settings_->SetInteger(kRateSettingPath, kRateMs);
   auto mock_queue = std::unique_ptr<MockReportQueue, base::OnTaskRunnerDeleter>(
-      new testing::StrictMock<MockReportQueue>(),
+      new MockReportQueue(),
       base::OnTaskRunnerDeleter(
           base::ThreadPool::CreateSequencedTaskRunner({})));
   auto* mock_queue_ptr = mock_queue.get();
@@ -181,7 +180,7 @@ TEST_F(MetricReportQueueTest, RateControlledFlush_TimeElapsed) {
                                         kDefaultRate);
 
   EXPECT_CALL(*mock_queue_ptr, AddRecord(_, _, _))
-      .WillOnce([&record, this](base::StringPiece record_string,
+      .WillOnce([&record, this](std::string record_string,
                                 Priority actual_priority,
                                 ReportQueue::EnqueueCallback cb) {
         std::move(cb).Run(Status());

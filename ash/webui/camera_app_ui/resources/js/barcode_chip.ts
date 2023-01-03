@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,7 +57,7 @@ function activate(container: HTMLElement) {
   currentChip = container;
 
   currentTimer = new OneShotTimer(deactivate, CHIP_DURATION);
-  if (state.get(state.State.TAB_NAVIGATION)) {
+  if (state.get(state.State.KEYBOARD_NAVIGATION)) {
     // Do not auto dismiss the chip when using keyboard for a11y. Screen reader
     // might need long time to read the detected content.
     currentTimer.stop();

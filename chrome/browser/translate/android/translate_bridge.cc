@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -140,7 +140,8 @@ static jboolean JNI_TranslateBridge_ShouldShowManualTranslateIPH(
 static void JNI_TranslateBridge_SetPredefinedTargetLanguage(
     JNIEnv* env,
     const base::android::JavaParamRef<jobject>& j_web_contents,
-    const base::android::JavaParamRef<jstring>& j_translate_language) {
+    const base::android::JavaParamRef<jstring>& j_translate_language,
+    jboolean j_should_auto_translate) {
   content::WebContents* web_contents =
       content::WebContents::FromJavaWebContents(j_web_contents);
   const std::string translate_language(
@@ -149,7 +150,8 @@ static void JNI_TranslateBridge_SetPredefinedTargetLanguage(
   ChromeTranslateClient* client =
       ChromeTranslateClient::FromWebContents(web_contents);
   DCHECK(client);
-  client->SetPredefinedTargetLanguage(translate_language);
+  client->SetPredefinedTargetLanguage(translate_language,
+                                      j_should_auto_translate);
 }
 
 static base::android::ScopedJavaLocalRef<jstring>
@@ -222,25 +224,6 @@ static jboolean JNI_TranslateBridge_IsBlockedLanguage(
       ChromeTranslateClient::CreateTranslatePrefs(GetPrefService());
   DCHECK(translate_prefs);
   return translate_prefs->IsBlockedLanguage(language_code);
-}
-
-// Gets all the model languages and calls back to the Java
-// TranslateBridge#addModelLanguageToSet once for each language.
-static ScopedJavaLocalRef<jobjectArray> JNI_TranslateBridge_GetModelLanguages(
-    JNIEnv* env) {
-  Profile* profile = ProfileManager::GetActiveUserProfile();
-  language::LanguageModel* language_model =
-      LanguageModelManagerFactory::GetForBrowserContext(profile)
-          ->GetPrimaryModel();
-  DCHECK(language_model);
-  std::vector<language::LanguageModel::LanguageDetails> languageDetails =
-      language_model->GetLanguages();
-  DCHECK(!languageDetails.empty());
-  std::vector<std::string> model_languages;
-  for (const auto& details : languageDetails) {
-    model_languages.push_back(details.lang_code);
-  }
-  return ToJavaArrayOfStrings(env, model_languages);
 }
 
 // Gets all languages that should always be translated as a Java List.

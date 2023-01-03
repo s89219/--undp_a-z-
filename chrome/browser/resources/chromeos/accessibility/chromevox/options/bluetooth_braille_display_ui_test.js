@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,8 @@ ChromeVoxBluetoothBrailleDisplayUITest = class extends ChromeVoxNextE2ETest {
   /** @override */
   async setUpDeferred() {
     await super.setUpDeferred();
+
+    // Alphabetical based on file path.
     await importModule(
         'BluetoothBrailleDisplayUI',
         '/chromevox/options/bluetooth_braille_display_ui.js');
@@ -39,11 +41,7 @@ ChromeVoxBluetoothBrailleDisplayUITest = class extends ChromeVoxNextE2ETest {
   }
 };
 
-/** @override */
-ChromeVoxBluetoothBrailleDisplayUITest.prototype.closureModuleDeps =
-    ['BluetoothBrailleDisplayManager'];
-
-SYNC_TEST_F('ChromeVoxBluetoothBrailleDisplayUITest', 'NoDisplays', function() {
+AX_TEST_F('ChromeVoxBluetoothBrailleDisplayUITest', 'NoDisplays', function() {
   const ui = new BluetoothBrailleDisplayUI();
   ui.attach(document.body);
   assertEqualsDOM(
@@ -54,7 +52,7 @@ SYNC_TEST_F('ChromeVoxBluetoothBrailleDisplayUITest', 'NoDisplays', function() {
       document.body.children[0]);
 });
 
-SYNC_TEST_F(
+AX_TEST_F(
     'ChromeVoxBluetoothBrailleDisplayUITest',
     'ControlStateUpdatesNotConnectedOrPaired', function() {
       const ui = new BluetoothBrailleDisplayUI();
@@ -65,7 +63,7 @@ SYNC_TEST_F(
       // Fake out getDevice using |display| as the backing source which changes
       // below.
       chrome.bluetooth.getDevice = (address, callback) => {
-        const display = displays.find((display) => display.address === address);
+        const display = displays.find(display => display.address === address);
         assertNotNullNorUndefined(display);
         callback(display);
       };
@@ -85,7 +83,7 @@ SYNC_TEST_F(
       ui.detach();
     });
 
-SYNC_TEST_F(
+AX_TEST_F(
     'ChromeVoxBluetoothBrailleDisplayUITest',
     'ControlStateUpdatesPairedNotConnected', function() {
       const ui = new BluetoothBrailleDisplayUI();
@@ -96,7 +94,7 @@ SYNC_TEST_F(
       // Fake out getDevice using |display| as the backing source which changes
       // below.
       chrome.bluetooth.getDevice = (address, callback) => {
-        const display = displays.find((display) => display.address === address);
+        const display = displays.find(display => display.address === address);
         assertNotNullNorUndefined(display);
         callback(display);
       };
@@ -116,7 +114,7 @@ SYNC_TEST_F(
       // Added one display; not paired, not connected.
       displays = [
         {name: 'Focus 40 BT', address: 'abcd1234', paired: true},
-        {name: 'Focus 40 BT rev 2', address: '4321dcba'}
+        {name: 'Focus 40 BT rev 2', address: '4321dcba'},
       ];
       ui.onDisplayListChanged(displays);
       assertEqualsDOM(
@@ -175,7 +173,7 @@ SYNC_TEST_F(
           document.body.children[0]);
     });
 
-SYNC_TEST_F(
+AX_TEST_F(
     'ChromeVoxBluetoothBrailleDisplayUITest', 'PincodeRequest', function() {
       const ui = new BluetoothBrailleDisplayUI();
       ui.attach(document.body);
@@ -210,7 +208,7 @@ TEST_F('ChromeVoxBluetoothBrailleDisplayUITest', 'ClickControls', function() {
   // Fake out getDevice using |display| as the backing source which changes
   // below.
   chrome.bluetooth.getDevice = (address, callback) => {
-    const display = displays.find((display) => display.address === address);
+    const display = displays.find(display => display.address === address);
     assertNotNullNorUndefined(display);
     callback(display);
   };

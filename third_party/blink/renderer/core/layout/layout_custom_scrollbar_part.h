@@ -38,10 +38,12 @@ class ScrollableArea;
 
 class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
  public:
-  static LayoutCustomScrollbarPart* CreateAnonymous(Document*,
-                                                    ScrollableArea*,
-                                                    CustomScrollbar* = nullptr,
-                                                    ScrollbarPart = kNoPart);
+  static LayoutCustomScrollbarPart* CreateAnonymous(
+      Document*,
+      ScrollableArea*,
+      CustomScrollbar* = nullptr,
+      ScrollbarPart = kNoPart,
+      bool suppress_use_counters = false);
 
   void Trace(Visitor*) const override;
 
@@ -68,6 +70,13 @@ class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
   // available.
   int ComputeLength() const;
 
+  // Update the overridden location and size.
+  void SetOverriddenFrameRect(const LayoutRect& rect);
+  // Rerturn the overridden location set by SetOverriddenFrameRect();
+  LayoutPoint Location() const override;
+  // Rerturn the overridden size set by SetOverriddenFrameRect();
+  LayoutSize Size() const override;
+
   LayoutUnit MarginTop() const override;
   LayoutUnit MarginBottom() const override;
   LayoutUnit MarginLeft() const override;
@@ -83,7 +92,10 @@ class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
     return scrollable_area_;
   }
 
-  LayoutCustomScrollbarPart(ScrollableArea*, CustomScrollbar*, ScrollbarPart);
+  LayoutCustomScrollbarPart(ScrollableArea*,
+                            CustomScrollbar*,
+                            ScrollbarPart,
+                            bool suppress_use_counters);
 
  private:
   void UpdateFromStyle() override;
@@ -140,8 +152,9 @@ class CORE_EXPORT LayoutCustomScrollbarPart final : public LayoutReplaced {
 
   Member<ScrollableArea> scrollable_area_;
   Member<CustomScrollbar> scrollbar_;
-
+  LayoutRect overridden_rect_;
   ScrollbarPart part_;
+  bool suppress_use_counters_ = false;
 };
 
 template <>

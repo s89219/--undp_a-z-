@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,10 @@
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
+#include "components/autofill/core/browser/test_autofill_manager_waiter.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "components/autofill/core/common/autofill_tick_clock.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -54,6 +56,11 @@ class MockAutofillManager : public AutofillManager {
                         client,
                         client->GetChannel(),
                         EnableDownloadManager(false)) {}
+
+  base::WeakPtr<AutofillManager> GetWeakPtr() override {
+    return weak_ptr_factory_.GetWeakPtr();
+  }
+
   MOCK_METHOD(bool, ShouldClearPreviewedForm, (), (override));
   MOCK_METHOD(AutofillOfferManager*, GetOfferManager, (), (override));
   MOCK_METHOD(CreditCardAccessManager*,
@@ -61,38 +68,42 @@ class MockAutofillManager : public AutofillManager {
               (),
               (override));
   MOCK_METHOD(void,
-              FillCreditCardForm,
-              (int query_id,
-               const FormData& form,
+              FillCreditCardFormImpl,
+              (const FormData& form,
                const FormFieldData& field,
                const CreditCard& credit_card,
                const std::u16string& cvc),
               (override));
   MOCK_METHOD(void,
-              FillProfileForm,
-              (const autofill::AutofillProfile& profile,
-               const FormData& form,
-               const FormFieldData& field),
+              FillProfileFormImpl,
+              (const FormData& form,
+               const FormFieldData& field,
+               const AutofillProfile& profile),
               (override));
   MOCK_METHOD(void,
-              OnFocusNoLongerOnForm,
+              OnFocusNoLongerOnFormImpl,
               (bool had_interacted_form),
               (override));
   MOCK_METHOD(void,
-              OnDidFillAutofillFormData,
+              OnDidFillAutofillFormDataImpl,
               (const FormData& form, const base::TimeTicks timestamp),
               (override));
-  MOCK_METHOD(void, OnDidPreviewAutofillFormData, (), (override));
-  MOCK_METHOD(void, OnDidEndTextFieldEditing, (), (override));
-  MOCK_METHOD(void, OnHidePopup, (), (override));
+  MOCK_METHOD(void, OnDidPreviewAutofillFormDataImpl, (), (override));
+  MOCK_METHOD(void, OnDidEndTextFieldEditingImpl, (), (override));
+  MOCK_METHOD(void, OnHidePopupImpl, (), (override));
   MOCK_METHOD(void,
-              SelectFieldOptionsDidChange,
+              OnSelectFieldOptionsDidChangeImpl,
               (const FormData& form),
               (override));
   MOCK_METHOD(void,
+              OnJavaScriptChangedAutofilledValueImpl,
+              (const FormData& form,
+               const FormFieldData& field,
+               const std::u16string& old_value),
+              (override));
+  MOCK_METHOD(void,
               PropagateAutofillPredictions,
-              (content::RenderFrameHost * rfh,
-               const std::vector<FormStructure*>& forms),
+              (const std::vector<FormStructure*>& forms),
               (override));
   MOCK_METHOD(void,
               OnFormSubmittedImpl,
@@ -115,11 +126,11 @@ class MockAutofillManager : public AutofillManager {
               (override));
   MOCK_METHOD(void,
               OnAskForValuesToFillImpl,
-              (int query_id,
-               const FormData& form,
+              (const FormData& form,
                const FormFieldData& field,
                const gfx::RectF& bounding_box,
-               bool autoselect_first_suggestion),
+               AutoselectFirstSuggestion autoselect_first_suggestion,
+               FormElementWasClicked form_element_was_clicked),
               (override));
   MOCK_METHOD(void,
               OnFocusOnFormFieldImpl,
@@ -140,7 +151,7 @@ class MockAutofillManager : public AutofillManager {
   MOCK_METHOD(void, OnBeforeProcessParsedForms, (), (override));
   MOCK_METHOD(void,
               OnFormProcessed,
-              (const FormData& form, const FormStructure& form_structure),
+              (const FormData& form_data, const FormStructure& form_structure),
               (override));
   MOCK_METHOD(void,
               OnAfterProcessParsedForms,
@@ -150,6 +161,32 @@ class MockAutofillManager : public AutofillManager {
               ReportAutofillWebOTPMetrics,
               (bool used_web_otp),
               (override));
+  MOCK_METHOD(void,
+              OnContextMenuShownInField,
+              (const FormGlobalId& form_global_id,
+               const FieldGlobalId& field_global_id),
+              (override));
+
+ private:
+  base::WeakPtrFactory<MockAutofillManager> weak_ptr_factory_{this};
+};
+
+class MockAutofillObserver : public AutofillManager::Observer {
+ public:
+  MockAutofillObserver() = default;
+  MockAutofillObserver(const MockAutofillObserver&) = delete;
+  MockAutofillObserver& operator=(const MockAutofillObserver&) = delete;
+  ~MockAutofillObserver() override = default;
+
+  MOCK_METHOD(void, OnFormParsed, (), (override));
+
+  MOCK_METHOD(void, OnTextFieldDidChange, (), (override));
+
+  MOCK_METHOD(void, OnTextFieldDidScroll, (), (override));
+
+  MOCK_METHOD(void, OnSelectControlDidChange, (), (override));
+
+  MOCK_METHOD(void, OnFormSubmitted, (), (override));
 };
 
 // Creates a vector of test forms which differ in their FormGlobalIds
@@ -200,7 +237,10 @@ void OnFormsSeenWithExpectations(MockAutofillManager& manager,
   EXPECT_CALL(manager, OnBeforeProcessParsedForms()).Times(num > 0);
   EXPECT_CALL(manager, OnFormProcessed(_, _)).Times(num);
   EXPECT_CALL(manager, OnAfterProcessParsedForms(_)).Times(num > 0);
+  TestAutofillManagerWaiter waiter(
+      manager, {&AutofillManager::Observer::OnAfterFormsSeen});
   manager.OnFormsSeen(updated_forms, removed_forms);
+  ASSERT_TRUE(waiter.Wait());
   EXPECT_THAT(manager.form_structures(), HaveSameFormIdsAs(expectation));
 }
 
@@ -208,7 +248,10 @@ void OnFormsSeenWithExpectations(MockAutofillManager& manager,
 
 class AutofillManagerTest : public testing::Test {
  public:
-  AutofillManagerTest() = default;
+  AutofillManagerTest() {
+    scoped_feature_list_async_parse_form_.InitWithFeatureState(
+        features::kAutofillParseAsync, true);
+  }
 
   void SetUp() override {
     client_.SetPrefs(test::PrefServiceForTesting());
@@ -222,8 +265,9 @@ class AutofillManagerTest : public testing::Test {
   }
 
  protected:
-  base::test::ScopedFeatureList scoped_feature_list_;
+  base::test::ScopedFeatureList scoped_feature_list_async_parse_form_;
   base::test::TaskEnvironment task_environment_;
+  test::AutofillEnvironment autofill_environment_;
   NiceMock<MockAutofillClient> client_;
   std::unique_ptr<MockAutofillDriver> driver_;
   std::unique_ptr<MockAutofillManager> manager_;
@@ -279,6 +323,40 @@ TEST_F(AutofillManagerTest, UpdateAndRemoveSameForms) {
   std::vector<FormData> forms = CreateTestForms(9);
   OnFormsSeenWithExpectations(*manager_, forms, GetFormIds(forms), forms);
   OnFormsSeenWithExpectations(*manager_, forms, GetFormIds(forms), forms);
+}
+
+TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
+  FormData form = CreateTestForms(1).front();
+  FormFieldData field = form.fields.front();
+  gfx::RectF bounds;
+  base::TimeTicks time = AutofillTickClock::NowTicks();
+
+  MockAutofillObserver observer;
+  manager_->AddObserver(&observer);
+  // Reset the manager, the observers should stick around.
+  manager_->Reset();
+
+  EXPECT_CALL(observer, OnTextFieldDidChange()).Times(1);
+  manager_->OnTextFieldDidChange(form, field, bounds, time);
+  EXPECT_CALL(observer, OnTextFieldDidChange()).Times(0);
+
+  EXPECT_CALL(observer, OnTextFieldDidScroll()).Times(1);
+  manager_->OnTextFieldDidScroll(form, field, bounds);
+  EXPECT_CALL(observer, OnTextFieldDidScroll()).Times(0);
+
+  EXPECT_CALL(observer, OnSelectControlDidChange()).Times(1);
+  manager_->OnSelectControlDidChange(form, field, bounds);
+  EXPECT_CALL(observer, OnSelectControlDidChange()).Times(0);
+
+  EXPECT_CALL(observer, OnFormSubmitted()).Times(1);
+  manager_->OnFormSubmitted(form, true,
+                            mojom::SubmissionSource::FORM_SUBMISSION);
+  EXPECT_CALL(observer, OnFormSubmitted()).Times(0);
+
+  // Remove observer from manager, the observer should no longer receive pings.
+  manager_->RemoveObserver(&observer);
+  EXPECT_CALL(observer, OnTextFieldDidChange()).Times(0);
+  manager_->OnTextFieldDidChange(form, field, bounds, time);
 }
 
 }  // namespace autofill

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,11 @@
 import 'chrome://print/pdf/elements/viewer-page-indicator.js';
 import 'chrome://print/pdf/pdf_viewer_wrapper.js';
 
-import {PDFCreateOutOfProcessPlugin} from 'chrome://print/pdf/pdf_scripting_api.js';
-import {PDFViewerPPElement} from 'chrome://print/pdf/pdf_viewer_pp.js';
+import {pdfCreateOutOfProcessPlugin} from 'chrome://print/pdf/pdf_scripting_api.js';
+import {PdfViewerPpElement} from 'chrome://print/pdf/pdf_viewer_pp.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {eventToPromise, waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
 const pdf_viewer_test = {
   suiteName: 'PdfViewerTest',
@@ -25,18 +26,18 @@ Object.assign(window, {pdf_viewer_test});
 
 suite(pdf_viewer_test.suiteName, function() {
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
   });
 
   test(pdf_viewer_test.TestNames.Basic, async () => {
-    const plugin = PDFCreateOutOfProcessPlugin(
+    const plugin = pdfCreateOutOfProcessPlugin(
         'chrome-untrusted://print/test.pdf', 'chrome://print/pdf');
 
     const loaded = eventToPromise('load', plugin);
     document.body.appendChild(plugin);
     await loaded;
     assertTrue(!!plugin.contentDocument);
-    const viewer: PDFViewerPPElement|null =
+    const viewer: PdfViewerPpElement|null =
         plugin.contentDocument.querySelector('pdf-viewer-pp');
     assertTrue(!!viewer);
     assertTrue(plugin.contentDocument.documentElement.hasAttribute(

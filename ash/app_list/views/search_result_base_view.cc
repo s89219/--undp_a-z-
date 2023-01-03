@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -72,7 +72,6 @@ views::View* SearchResultBaseView::GetSelectedView() {
 }
 
 void SearchResultBaseView::SetResult(SearchResult* result) {
-  OnResultChanging(result);
   ClearResult();
   result_ = result;
   if (result_)
@@ -81,9 +80,7 @@ void SearchResultBaseView::SetResult(SearchResult* result) {
 }
 
 void SearchResultBaseView::OnResultDestroying() {
-  // Uses |SetResult| to ensure that the |OnResultChanging()| and
-  // |OnResultChanged()| logic gets run.
-  SetResult(nullptr);
+  ClearResult();
 }
 
 std::u16string SearchResultBaseView::ComputeAccessibleName() const {

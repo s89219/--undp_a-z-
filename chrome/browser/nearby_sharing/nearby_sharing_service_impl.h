@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,6 @@
 #include <vector>
 
 #include "ash/public/cpp/session/session_observer.h"
-#include "ash/services/nearby/public/cpp/nearby_process_manager.h"
-#include "ash/services/nearby/public/mojom/nearby_decoder_types.mojom.h"
 #include "base/callback_helpers.h"
 #include "base/cancelable_callback.h"
 #include "base/containers/flat_map.h"
@@ -32,7 +30,6 @@
 #include "chrome/browser/nearby_sharing/incoming_frames_reader.h"
 #include "chrome/browser/nearby_sharing/incoming_share_target_info.h"
 #include "chrome/browser/nearby_sharing/local_device_data/nearby_share_local_device_data_manager.h"
-#include "chrome/browser/nearby_sharing/nearby_connections_manager.h"
 #include "chrome/browser/nearby_sharing/nearby_file_handler.h"
 #include "chrome/browser/nearby_sharing/nearby_notification_manager.h"
 #include "chrome/browser/nearby_sharing/nearby_share_feature_usage_metrics.h"
@@ -41,11 +38,14 @@
 #include "chrome/browser/nearby_sharing/nearby_sharing_service.h"
 #include "chrome/browser/nearby_sharing/outgoing_share_target_info.h"
 #include "chrome/browser/nearby_sharing/power_client.h"
+#include "chrome/browser/nearby_sharing/public/cpp/nearby_connections_manager.h"
 #include "chrome/browser/nearby_sharing/share_target.h"
 #include "chrome/browser/nearby_sharing/transfer_metadata.h"
 #include "chrome/browser/nearby_sharing/wifi_network_configuration/wifi_network_configuration_handler.h"
 #include "chrome/browser/ui/webui/nearby_share/public/mojom/nearby_share_settings.mojom.h"
 #include "chrome/services/sharing/public/proto/wire_format.pb.h"
+#include "chromeos/ash/services/nearby/public/cpp/nearby_process_manager.h"
+#include "chromeos/ash/services/nearby/public/mojom/nearby_decoder_types.mojom.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "net/base/network_change_notifier.h"
@@ -151,6 +151,10 @@ class NearbySharingServiceImpl
   void FlushMojoForTesting();
   void set_free_disk_space_for_testing(int64_t free_disk_space) {
     free_disk_space_for_testing_ = free_disk_space;
+  }
+  void set_visibility_reminder_timer_delay_for_testing(base::TimeDelta delay) {
+    visibility_reminder_timer_delay_ = delay;
+    UpdateVisibilityReminderTimer(true);
   }
 
  private:
@@ -560,6 +564,10 @@ class NearbySharingServiceImpl
   // Used to prevent the "Device nearby is sharing" notification from appearing
   // immediately after a completed share.
   base::OneShotTimer fast_initiation_scanner_cooldown_timer_;
+
+  // The duration of reminder timer. In production, this is 180 days.
+  // Can be shorten for testing efficiency purpose.
+  base::TimeDelta visibility_reminder_timer_delay_;
 
   // Used to control when to show visibility reminder notification to users.
   base::OneShotTimer visibility_reminder_timer_;

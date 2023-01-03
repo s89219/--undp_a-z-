@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,20 @@
 #include <string>
 
 #include "ash/public/cpp/login_accelerators.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/ash/app_mode/kiosk_app_types.h"
 #include "chrome/browser/ash/login/ui/login_display_host.h"
-// TODO(https://crbug.com/1164001): move to forward declaration
 #include "chrome/browser/ash/login/ui/webui_login_view.h"
-#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/signin_screen_handler.h"
 #include "components/user_manager/user_type.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace ash {
+
+namespace quick_start {
+class TargetDeviceBootstrapController;
+}
 
 class MockLoginDisplayHost : public LoginDisplayHost {
  public:
@@ -26,7 +30,7 @@ class MockLoginDisplayHost : public LoginDisplayHost {
   MockLoginDisplayHost(const MockLoginDisplayHost&) = delete;
   MockLoginDisplayHost& operator=(const MockLoginDisplayHost&) = delete;
 
-  virtual ~MockLoginDisplayHost();
+  ~MockLoginDisplayHost() override;
 
   MOCK_METHOD(LoginDisplay*, GetLoginDisplay, (), (override));
   MOCK_METHOD(ExistingUserController*,
@@ -55,7 +59,7 @@ class MockLoginDisplayHost : public LoginDisplayHost {
 
   // Workaround for move-only args in GMock.
   MOCK_METHOD(void, MockStartUserAdding, (base::OnceClosure*));
-  void StartUserAdding(base::OnceClosure completion_callback) {
+  void StartUserAdding(base::OnceClosure completion_callback) override {
     MockStartUserAdding(&completion_callback);
   }
 
@@ -111,14 +115,12 @@ class MockLoginDisplayHost : public LoginDisplayHost {
   MOCK_METHOD(WizardContext*, GetWizardContextForTesting, (), (final));
   MOCK_METHOD(WizardContext*, GetWizardContext, (), (override));
   MOCK_METHOD(bool, IsWebUIStarted, (), (const final));
+  MOCK_METHOD(base::WeakPtr<quick_start::TargetDeviceBootstrapController>,
+              GetQuickStartBootstrapController,
+              (),
+              (final));
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::MockLoginDisplayHost;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_UI_MOCK_LOGIN_DISPLAY_HOST_H_

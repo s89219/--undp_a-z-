@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{Пред 1 ден}one{Пред # ден}other{Пред # дена}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{Пред 1 минута}one{Пред # минута}other{Пред # минути}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 м.}one{# м.}other{# м.}}</translation>
+<translation id="1181037720776840403">Отстрани</translation>
 <translation id="1243314992276662751">Постави</translation>
 <translation id="1266864766717917324">Не може да се сподели <ph name="CONTENT_TYPE" /></translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Користи висока густина</translation>
 <translation id="2482878487686419369">Известувања</translation>
 <translation id="2497284189126895209">Сите датотеки</translation>
-<translation id="2498950423397131220">Лебдечко копче</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Калибрацијата е завршена</translation>
 <translation id="252373100621549798">Непознат екран</translation>

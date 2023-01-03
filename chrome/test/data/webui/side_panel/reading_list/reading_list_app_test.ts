@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@ import {ReadingListApiProxyImpl} from 'chrome://read-later.top-chrome/reading_li
 import {ReadingListItemElement} from 'chrome://read-later.top-chrome/reading_list/reading_list_item.js';
 import {keyDownOn} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks} from 'chrome://webui-test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestReadingListApiProxy} from './test_reading_list_api_proxy.js';
 
@@ -72,7 +72,7 @@ suite('ReadingListAppTest', () => {
           read: true,
           displayTimeSinceUpdate: '7 minutes ago',
         },
-      ]
+      ],
     };
 
     return entries;
@@ -82,7 +82,7 @@ suite('ReadingListAppTest', () => {
     testProxy = new TestReadingListApiProxy();
     ReadingListApiProxyImpl.setInstance(testProxy);
     testProxy.setEntries(getSampleData());
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     readingListApp = document.createElement('reading-list-app');
     document.body.appendChild(readingListApp);
@@ -91,8 +91,10 @@ suite('ReadingListAppTest', () => {
 
   test('return all entries', async () => {
     const urls = [
-      'https://www.google.com', 'https://www.apple.com', 'https://www.bing.com',
-      'https://www.yahoo.com'
+      'https://www.google.com',
+      'https://www.apple.com',
+      'https://www.bing.com',
+      'https://www.yahoo.com',
     ];
     assertEntryURLs(queryItems(), urls);
   });
@@ -100,7 +102,7 @@ suite('ReadingListAppTest', () => {
   test('click on item passes correct url', async () => {
     const expectedUrl = 'https://www.apple.com';
     clickItem(expectedUrl);
-    const [url, updateReadStatus] = await testProxy.whenCalled('openURL');
+    const [url, updateReadStatus] = await testProxy.whenCalled('openUrl');
     assertEquals(url.url, expectedUrl);
     assertTrue(updateReadStatus);
   });
@@ -109,20 +111,20 @@ suite('ReadingListAppTest', () => {
     const item = readingListApp.shadowRoot!.querySelector(
         `[data-url="https://www.apple.com"]`)!;
     item.dispatchEvent(new MouseEvent('click'));
-    const [, , click] = await testProxy.whenCalled('openURL');
+    const [, , click] = await testProxy.whenCalled('openUrl');
     assertFalse(
         click.middleButton || click.altKey || click.ctrlKey || click.metaKey ||
         click.shiftKey);
-    testProxy.resetResolver('openURL');
+    testProxy.resetResolver('openUrl');
 
     // Middle mouse button click.
     item.dispatchEvent(new MouseEvent('auxclick', {button: 1}));
-    const [, , auxClick] = await testProxy.whenCalled('openURL');
+    const [, , auxClick] = await testProxy.whenCalled('openUrl');
     assertTrue(auxClick.middleButton);
     assertFalse(
         auxClick.altKey || auxClick.ctrlKey || auxClick.metaKey ||
         auxClick.shiftKey);
-    testProxy.resetResolver('openURL');
+    testProxy.resetResolver('openUrl');
 
     // Modifier keys.
     item.dispatchEvent(new MouseEvent('click', {
@@ -131,7 +133,7 @@ suite('ReadingListAppTest', () => {
       metaKey: true,
       shiftKey: true,
     }));
-    const [, , modifiedClick] = await testProxy.whenCalled('openURL');
+    const [, , modifiedClick] = await testProxy.whenCalled('openUrl');
     assertFalse(modifiedClick.middleButton);
     assertTrue(
         modifiedClick.altKey && modifiedClick.ctrlKey &&
@@ -185,7 +187,7 @@ suite('ReadingListAppTest', () => {
             `[data-url="${expectedUrl}"]`)!;
 
     keyDownOn(readingListItem, 0, [], 'Enter');
-    const [url, updateReadStatus] = await testProxy.whenCalled('openURL');
+    const [url, updateReadStatus] = await testProxy.whenCalled('openUrl');
     assertEquals(url.url, expectedUrl);
     assertTrue(updateReadStatus);
   });
@@ -197,15 +199,17 @@ suite('ReadingListAppTest', () => {
             `[data-url="${expectedUrl}"]`)!;
 
     keyDownOn(readingListItem, 0, [], ' ');
-    const [url, updateReadStatus] = await testProxy.whenCalled('openURL');
+    const [url, updateReadStatus] = await testProxy.whenCalled('openUrl');
     assertEquals(url.url, expectedUrl);
     assertTrue(updateReadStatus);
   });
 
   test('Keyboard navigation abides by item list range boundaries', async () => {
     const urls = [
-      'https://www.google.com', 'https://www.apple.com', 'https://www.bing.com',
-      'https://www.yahoo.com'
+      'https://www.google.com',
+      'https://www.apple.com',
+      'https://www.bing.com',
+      'https://www.yahoo.com',
     ];
     const selector = readingListApp.shadowRoot!.querySelector('iron-selector')!;
 

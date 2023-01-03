@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package org.chromium.chrome.browser.contextualsearch;
 
 import static org.chromium.base.test.util.Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE;
 
-import android.os.Build;
 import android.text.TextUtils;
 import android.view.ViewConfiguration;
 
@@ -22,13 +21,15 @@ import org.chromium.base.test.params.ParameterAnnotations;
 import org.chromium.base.test.params.ParameterizedRunner;
 import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CommandLineFlags;
-import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.Restriction;
 import org.chromium.chrome.browser.compositor.bottombar.OverlayPanel;
+import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.test.ChromeJUnit4RunnerDelegate;
+import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.content_public.browser.SelectionClient;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.ui.test.util.UiRestriction;
@@ -39,8 +40,8 @@ import org.chromium.ui.test.util.UiRestriction;
 @RunWith(ParameterizedRunner.class)
 @ParameterAnnotations.UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 // NOTE: Disable online detection so we we'll default to online on test bots with no network.
-@CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE,
-        ContextualSearchFieldTrial.ONLINE_DETECTION_DISABLED})
+@CommandLineFlags.Add({ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE})
+@EnableFeatures({ChromeFeatureList.CONTEXTUAL_SEARCH_DISABLE_ONLINE_DETECTION})
 @Restriction(RESTRICTION_TYPE_NON_LOW_END_DEVICE)
 @Batch(Batch.PER_CLASS)
 public class ContextualSearchTriggerTest extends ContextualSearchInstrumentationBase {
@@ -111,9 +112,8 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(ContextualSearchManagerTest.FeatureParamProvider.class)
+    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
     public void testNonResolveTrigger(@EnabledFeature int enabledFeature) throws Exception {
-        if (isConfigurationForResolvingGesturesOnly()) return;
         triggerNonResolve("states");
 
         Assert.assertNull(mFakeServer.getSearchTermRequested());
@@ -146,8 +146,7 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
      * Tests that a Tap gesture followed by scrolling clears the selection.
      */
     @Test
-    @DisableIf.
-    Build(sdk_is_greater_than = Build.VERSION_CODES.LOLLIPOP, message = "crbug.com/841017")
+    @DisabledTest(message = "crbug.com/841017")
     @SmallTest
     @Feature({"ContextualSearch"})
     public void testTapGestureFollowedByScrollClearsSelection() throws Exception {
@@ -180,13 +179,10 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
         Assert.assertNull(mSelectionController.getSelectedText());
     }
 
-    /**
-     * Tests that a Tap gesture followed by tapping a non-text character doesn't select.
-     * @SmallTest
-     * @Feature({"ContextualSearch"})
-     * crbug.com/665633
-     */
+    /** Tests that a Tap gesture followed by tapping a non-text element doesn't select. */
     @Test
+    @SmallTest
+    @Feature({"ContextualSearch"})
     @DisabledTest(message = "crbug.com/662104")
     public void testTapGestureFollowedByNonTextTap() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
@@ -223,14 +219,13 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @DisabledTest(message = "https://crbug.com/1075895")
+    // Previously disabled at https://crbug.com/1075895
     public void testTapGesturesNearbyKeepSelecting() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
         clickWordNode("states");
         Assert.assertEquals("States", getSelectedText());
         waitForPanelToPeek();
-        assertLoggedAllExpectedFeaturesToRanker();
         // Avoid issues with double-tap detection by ensuring sequential taps
         // aren't treated as such. Double-tapping can also select words much as
         // longpress, in turn showing the pins and preventing contextual tap
@@ -242,12 +237,9 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
         // for the selection to change.
         clickNode("states-near");
         waitForSelectionToBe("StatesNear");
-        assertLoggedAllExpectedOutcomesToRanker();
-        assertLoggedAllExpectedFeaturesToRanker();
         Thread.sleep(ViewConfiguration.getDoubleTapTimeout());
         clickNode("states");
         waitForSelectionToBe("States");
-        assertLoggedAllExpectedOutcomesToRanker();
     }
 
     //============================================================================================
@@ -260,8 +252,8 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(ContextualSearchManagerTest.FeatureParamProvider.class)
-    @DisableIf.Build(sdk_is_greater_than = Build.VERSION_CODES.O, message = "crbug.com/1071080")
+    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
+    @DisabledTest(message = "crbug.com/1071080, crbug.com/1362185")
     public void testLongPressGestureFollowedByScrollMaintainsSelection(
             @EnabledFeature int enabledFeature) throws Exception {
         longPressNode("intelligence");
@@ -272,9 +264,7 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
         assertLoadedNoUrl();
     }
 
-    /**
-     * Tests that a long-press gesture followed by a tap does not select.
-     */
+    /** Tests that a long-press gesture followed by a tap does not select. */
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
@@ -290,6 +280,35 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
         assertLoadedNoUrl();
     }
 
+    /** Tests suppression of any triggering on small view heights. */
+    @Test
+    @SmallTest
+    @Feature({"ContextualSearch"})
+    @Restriction(Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE)
+    @Features.EnableFeatures(ChromeFeatureList.CONTEXTUAL_SEARCH_SUPPRESS_SHORT_VIEW)
+    public void testIsSuppressedOnViewHeight_ridiculouslyShort() {
+        FeatureList.TestValues testValues = new FeatureList.TestValues();
+        testValues.addFieldTrialParamOverride(
+                ChromeFeatureList.CONTEXTUAL_SEARCH_SUPPRESS_SHORT_VIEW,
+                ContextualSearchFieldTrial.CONTEXTUAL_SEARCH_MINIMUM_PAGE_HEIGHT_NAME, "100");
+        FeatureList.setTestValues(testValues);
+        Assert.assertFalse(mContextualSearchManager.isSuppressed());
+    }
+
+    @Test
+    @SmallTest
+    @Feature({"ContextualSearch"})
+    @Restriction(Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE)
+    @Features.EnableFeatures(ChromeFeatureList.CONTEXTUAL_SEARCH_SUPPRESS_SHORT_VIEW)
+    public void testIsSuppressedOnViewHeight_ridiculouslyTall() {
+        FeatureList.TestValues testValues = new FeatureList.TestValues();
+        testValues.addFieldTrialParamOverride(
+                ChromeFeatureList.CONTEXTUAL_SEARCH_SUPPRESS_SHORT_VIEW,
+                ContextualSearchFieldTrial.CONTEXTUAL_SEARCH_MINIMUM_PAGE_HEIGHT_NAME, "500000");
+        FeatureList.setTestValues(testValues);
+        Assert.assertTrue(mContextualSearchManager.isSuppressed());
+    }
+
     //============================================================================================
     // Tap-non-triggering when ARIA annotated as interactive.
     //============================================================================================
@@ -300,7 +319,6 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @DisabledTest(message = "http://crbug.com/1296677")
     public void testTapOnRoleIgnored() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
@@ -317,8 +335,6 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    // Previously flaky and disabled 4/2021.  https://crbug.com/1192285
-    @DisabledTest(message = "https://crbug.com/1291558")
     public void testTapOnARIAIgnored() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
@@ -354,7 +370,7 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(ContextualSearchManagerTest.FeatureParamProvider.class)
+    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
     public void testExpandBeforeSearchTermResolution(@EnabledFeature int enabledFeature)
             throws Exception {
         simulateSlowResolveSearch("states");
@@ -380,12 +396,11 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    // Previously flaky, disabled 4/2021.  https://crbug.com/1192285
-    @DisabledTest(message = "https://crbug.com/1291558")
+    // Previously flaky, disabled 4/2021.  https://crbug.com/1192285, https://crbug.com/1291558
     public void testPreventHandlingCurrentSelectionModification() throws Exception {
         FeatureList.setTestFeatures(ENABLE_NONE);
 
-        simulateNonResolveSearch("search");
+        longPressNode("search");
 
         // Dismiss the Contextual Search panel.
         closePanel();
@@ -404,14 +419,14 @@ public class ContextualSearchTriggerTest extends ContextualSearchInstrumentation
         assertPanelClosedOrUndefined();
 
         // Select a different word and assert that the panel has appeared.
-        simulateNonResolveSearch("resolution");
+        longPressNode("resolution");
         // The simulateNonResolveSearch call will verify that the panel peeks.
     }
 
     @Test
     @SmallTest
     @Feature({"ContextualSearch"})
-    @ParameterAnnotations.UseMethodParameter(ContextualSearchManagerTest.FeatureParamProvider.class)
+    @ParameterAnnotations.UseMethodParameter(FeatureParamProvider.class)
     // Previously flaky and disabled 4/2021.  https://crbug.com/1180304
     public void testSelectionExpansionOnSearchTermResolution(@EnabledFeature int enabledFeature)
             throws Exception {

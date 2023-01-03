@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "base/system/sys_info.h"
 #include "base/values.h"
 #include "components/sync/base/model_type.h"
+#include "components/sync/base/storage_type.h"
 #include "components/sync/model/blocking_model_type_store_impl.h"
 #include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
@@ -626,13 +627,14 @@ leveldb::Status GetExtensionKeys(leveldb::DB* db,
   return it->status();
 }
 
-// Given a key in Sync Data's leveldb, return true if (based on its prefix) its
-// data type is to be migrated to Lacros, false otherwise.
-bool IsLacrosSyncDataType(base::StringPiece key) {
-  for (auto type : kLacrosSyncDataTypes) {
-    if ((base::StartsWith(key, FormatDataPrefix(type)) ||
-         base::StartsWith(key, FormatMetaPrefix(type)) ||
-         key == FormatGlobalMetadataKey(type))) {
+bool IsAshOnlySyncDataType(base::StringPiece key) {
+  for (auto type : kAshOnlySyncDataTypes) {
+    if ((base::StartsWith(
+             key, FormatDataPrefix(type, syncer::StorageType::kUnspecified)) ||
+         base::StartsWith(
+             key, FormatMetaPrefix(type, syncer::StorageType::kUnspecified)) ||
+         key == FormatGlobalMetadataKey(type,
+                                        syncer::StorageType::kUnspecified))) {
       return true;
     }
   }
@@ -724,9 +726,9 @@ bool MigrateLevelDB(const base::FilePath& original_path,
   return true;
 }
 
-bool MigrateSyncData(const base::FilePath& original_path,
-                     const base::FilePath& ash_target_path,
-                     const base::FilePath& lacros_target_path) {
+bool MigrateSyncDataLevelDB(const base::FilePath& original_path,
+                            const base::FilePath& ash_target_path,
+                            const base::FilePath& lacros_target_path) {
   // Open the original LevelDB database.
   std::unique_ptr<leveldb::DB> original_db;
   leveldb_env::Options options;
@@ -775,12 +777,10 @@ bool MigrateSyncData(const base::FilePath& original_path,
       return false;
     }
 
-    // TODO(andreaorru): decide whether copy is better in some cases (e.g. user
-    // consents).
-    if (IsLacrosSyncDataType(key))
-      lacros_write_batch.Put(key, value);
-    else
+    if (IsAshOnlySyncDataType(key))
       ash_write_batch.Put(key, value);
+    else
+      lacros_write_batch.Put(key, value);
   }
 
   // Write everything in bulk.

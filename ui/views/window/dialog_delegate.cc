@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -275,12 +275,8 @@ const DialogClientView* DialogDelegate::GetDialogClientView() const {
 }
 
 DialogClientView* DialogDelegate::GetDialogClientView() {
-  if (!GetWidget())
-    return nullptr;
-  views::View* client_view = GetWidget()->client_view();
-  return client_view->GetClassName() == DialogClientView::kViewClassName
-             ? static_cast<DialogClientView*>(client_view)
-             : nullptr;
+  return const_cast<DialogClientView*>(
+      const_cast<const DialogDelegate*>(this)->GetDialogClientView());
 }
 
 BubbleFrameView* DialogDelegate::GetBubbleFrameView() const {
@@ -336,6 +332,10 @@ void DialogDelegate::RemoveObserver(DialogObserver* observer) {
 void DialogDelegate::DialogModelChanged() {
   for (DialogObserver& observer : observer_list_)
     observer.OnDialogChanged();
+}
+
+void DialogDelegate::TriggerInputProtection() {
+  GetDialogClientView()->TriggerInputProtection();
 }
 
 void DialogDelegate::SetDefaultButton(int button) {

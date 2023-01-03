@@ -1,17 +1,18 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller_test.h"
 
-#include "base/check.h"
+#import "base/check.h"
 #import "base/mac/foundation_util.h"
+#import "ios/chrome/browser/ui/table_view/cells/table_view_info_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_button_item.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_text_item.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_controller.h"
 
-#include "testing/gtest_mac.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "testing/gtest_mac.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -187,7 +188,7 @@ void ChromeTableViewControllerTest::CheckSwitchCellStateAndText(
   id switch_item = GetTableViewItem(section, item);
   EXPECT_TRUE([switch_item respondsToSelector:@selector(text)]);
   EXPECT_NSEQ(expected_title, [switch_item text]);
-  EXPECT_TRUE([switch_item respondsToSelector:@selector(isOn)]);
+  ASSERT_TRUE([switch_item respondsToSelector:@selector(isOn)]);
   EXPECT_EQ(expected_state, [switch_item isOn]);
 }
 
@@ -198,6 +199,29 @@ void ChromeTableViewControllerTest::CheckSwitchCellStateAndTextWithId(
     int item) {
   CheckSwitchCellStateAndText(
       expected_state, l10n_util::GetNSString(expected_title_id), section, item);
+}
+
+void ChromeTableViewControllerTest::CheckInfoButtonCellStatusAndText(
+    NSString* expected_status_text,
+    NSString* expected_title,
+    int section,
+    int item) {
+  id info_button_item = base::mac::ObjCCastStrict<TableViewInfoButtonItem>(
+      GetTableViewItem(section, item));
+  EXPECT_TRUE([info_button_item respondsToSelector:@selector(text)]);
+  EXPECT_NSEQ(expected_title, [info_button_item text]);
+  EXPECT_TRUE([info_button_item respondsToSelector:@selector(statusText)]);
+  EXPECT_NSEQ(expected_status_text, [info_button_item statusText]);
+}
+
+void ChromeTableViewControllerTest::
+    CheckInfoButtonCellStatusWithIdAndTextWithId(int expected_status_text_id,
+                                                 int expected_title_id,
+                                                 int section,
+                                                 int item) {
+  CheckInfoButtonCellStatusAndText(
+      l10n_util::GetNSString(expected_status_text_id),
+      l10n_util::GetNSString(expected_title_id), section, item);
 }
 
 void ChromeTableViewControllerTest::CheckAccessoryType(

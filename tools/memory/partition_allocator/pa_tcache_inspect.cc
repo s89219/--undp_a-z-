@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "base/allocator/partition_allocator/partition_root.h"
+#include "base/allocator/partition_allocator/partition_stats.h"
 #include "base/allocator/partition_allocator/thread_cache.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
@@ -35,6 +36,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/thread_annotations.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -43,6 +45,7 @@
 
 namespace partition_alloc::tools {
 
+using ::base::PlatformThreadId;
 using partition_alloc::internal::BucketIndexLookup;
 using partition_alloc::internal::PartitionBucket;
 using partition_alloc::internal::SlotSpanMetadata;
@@ -363,9 +366,9 @@ void DisplayPerThreadData(
   std::cout << "Per thread:\n"
             << "Thread Name         Size\tPurge\n"
             << std::string(80, '-') << "\n";
-  base::ThreadCacheStats all_threads_stats = {0};
+  ThreadCacheStats all_threads_stats = {0};
   for (const auto& tcache : inspector.thread_caches()) {
-    base::ThreadCacheStats stats = {0};
+    ThreadCacheStats stats = {0};
     // No alloc stats, they reach into tcache->root_, which is not valid.
     tcache.get()->AccumulateStats(&stats);
     tcache.get()->AccumulateStats(&all_threads_stats);

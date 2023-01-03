@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,9 +55,10 @@ class WebAppUiManagerImpl : public BrowserListObserver, public WebAppUiManager {
   bool IsAppInQuickLaunchBar(const AppId& app_id) const override;
   bool IsInAppWindow(content::WebContents* web_contents,
                      const AppId* app_id) const override;
-  void NotifyOnAssociatedAppChanged(content::WebContents* web_contents,
-                                    const AppId& previous_app_id,
-                                    const AppId& new_app_id) const override;
+  void NotifyOnAssociatedAppChanged(
+      content::WebContents* web_contents,
+      const absl::optional<AppId>& previous_app_id,
+      const absl::optional<AppId>& new_app_id) const override;
   bool CanReparentAppTabToWindow(const AppId& app_id,
                                  bool shortcut_created) const override;
   void ReparentAppTabToWindow(content::WebContents* contents,
@@ -73,6 +74,12 @@ class WebAppUiManagerImpl : public BrowserListObserver, public WebAppUiManager {
       const SkBitmap& new_icon,
       content::WebContents* web_contents,
       web_app::AppIdentityDialogCallback callback) override;
+
+  base::Value LaunchWebApp(apps::AppLaunchParams params,
+                           LaunchWebAppWindowSetting launch_setting,
+                           Profile& profile,
+                           LaunchWebAppCallback callback,
+                           AppLock& lock) override;
 
   // BrowserListObserver:
   void OnBrowserAdded(Browser* browser) override;
@@ -110,7 +117,8 @@ class WebAppUiManagerImpl : public BrowserListObserver, public WebAppUiManager {
   const raw_ptr<Profile> profile_;
 
   raw_ptr<WebAppSyncBridge> sync_bridge_ = nullptr;
-  raw_ptr<OsIntegrationManager> os_integration_manager_ = nullptr;
+  raw_ptr<OsIntegrationManager, DanglingUntriaged> os_integration_manager_ =
+      nullptr;
 
   std::map<AppId, std::vector<base::OnceClosure>> windows_closed_requests_map_;
   std::map<AppId, size_t> num_windows_for_apps_map_;

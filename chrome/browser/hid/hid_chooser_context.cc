@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,13 @@
 
 #include <utility>
 
-#include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/observer_list.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -24,8 +24,6 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/device_service.h"
 #include "extensions/buildflags/buildflags.h"
-#include "services/device/public/cpp/hid/hid_blocklist.h"
-#include "services/device/public/cpp/hid/hid_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -50,27 +48,6 @@ constexpr char kHidSerialNumberKey[] = "serial-number";
 bool IsPolicyGrantedObject(const base::Value& object) {
   return object.is_dict() && object.DictSize() == 1 &&
          object.FindStringKey(kHidDeviceNameKey);
-}
-
-base::Value DeviceInfoToValue(const device::mojom::HidDeviceInfo& device) {
-  base::Value value(base::Value::Type::DICTIONARY);
-  value.SetStringKey(
-      kHidDeviceNameKey,
-      base::UTF16ToUTF8(HidChooserContext::DisplayNameFromDeviceInfo(device)));
-  value.SetIntKey(kHidVendorIdKey, device.vendor_id);
-  value.SetIntKey(kHidProductIdKey, device.product_id);
-  if (HidChooserContext::CanStorePersistentEntry(device)) {
-    // Use the USB serial number as a persistent identifier. If it is
-    // unavailable, only ephemeral permissions may be granted.
-    value.SetStringKey(kHidSerialNumberKey, device.serial_number);
-  } else {
-    // The GUID is a temporary ID created on connection that remains valid until
-    // the device is disconnected. Ephemeral permissions are keyed by this ID
-    // and must be granted again each time the device is connected.
-    value.SetStringKey(kHidGuidKey, device.guid);
-  }
-  DCHECK(!IsPolicyGrantedObject(value));
-  return value;
 }
 
 base::Value VendorAndProductIdsToValue(uint16_t vendor_id,
@@ -150,6 +127,29 @@ HidChooserContext::~HidChooserContext() {
     DCHECK(!device_observer_list_.HasObserver(&observer));
   }
   DCHECK(permission_observer_list_.empty());
+}
+
+// static
+base::Value HidChooserContext::DeviceInfoToValue(
+    const device::mojom::HidDeviceInfo& device) {
+  base::Value value(base::Value::Type::DICTIONARY);
+  value.SetStringKey(
+      kHidDeviceNameKey,
+      base::UTF16ToUTF8(HidChooserContext::DisplayNameFromDeviceInfo(device)));
+  value.SetIntKey(kHidVendorIdKey, device.vendor_id);
+  value.SetIntKey(kHidProductIdKey, device.product_id);
+  if (HidChooserContext::CanStorePersistentEntry(device)) {
+    // Use the USB serial number as a persistent identifier. If it is
+    // unavailable, only ephemeral permissions may be granted.
+    value.SetStringKey(kHidSerialNumberKey, device.serial_number);
+  } else {
+    // The GUID is a temporary ID created on connection that remains valid until
+    // the device is disconnected. Ephemeral permissions are keyed by this ID
+    // and must be granted again each time the device is connected.
+    value.SetStringKey(kHidGuidKey, device.guid);
+  }
+  DCHECK(!IsPolicyGrantedObject(value));
+  return value;
 }
 
 // static
@@ -391,7 +391,6 @@ void HidChooserContext::RevokeObjectPermission(const url::Origin& origin,
 void HidChooserContext::GrantDevicePermission(
     const url::Origin& origin,
     const device::mojom::HidDeviceInfo& device) {
-  DCHECK(base::Contains(devices_, device.guid));
   if (CanStorePersistentEntry(device)) {
     GrantObjectPermission(origin, DeviceInfoToValue(device));
   } else {
@@ -403,7 +402,6 @@ void HidChooserContext::GrantDevicePermission(
 void HidChooserContext::RevokeDevicePermission(
     const url::Origin& origin,
     const device::mojom::HidDeviceInfo& device) {
-  DCHECK(base::Contains(devices_, device.guid));
   if (CanStorePersistentEntry(device)) {
     RevokePersistentDevicePermission(origin, device);
   } else {
@@ -435,9 +433,11 @@ void HidChooserContext::RevokeEphemeralDevicePermission(
   if (it != ephemeral_devices_.end()) {
     std::set<std::string>& devices = it->second;
     for (auto guid = devices.begin(); guid != devices.end();) {
-      DCHECK(base::Contains(devices_, *guid));
-
-      if (devices_[*guid]->physical_device_id != device.physical_device_id) {
+      auto device_it = devices_.find(*guid);
+      if (device_it == devices_.end()) {
+        continue;
+      }
+      if (device_it->second->physical_device_id != device.physical_device_id) {
         ++guid;
         continue;
       }
@@ -453,18 +453,12 @@ void HidChooserContext::RevokeEphemeralDevicePermission(
 bool HidChooserContext::HasDevicePermission(
     const url::Origin& origin,
     const device::mojom::HidDeviceInfo& device) {
-  const bool has_fido_collection =
-      base::Contains(device.collections, device::mojom::kPageFido,
-                     [](const auto& c) { return c->usage->usage_page; });
-  if (has_fido_collection) {
-    if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kDisableHidBlocklist) &&
-        !IsFidoAllowedForOrigin(origin)) {
-      // Exclude `device` if it is FIDO and FIDO is not allowed for `origin`.
+  if (device.is_excluded_by_blocklist) {
+    const bool has_fido_collection =
+        base::Contains(device.collections, device::mojom::kPageFido,
+                       [](const auto& c) { return c->usage->usage_page; });
+    if (!has_fido_collection || !IsFidoAllowedForOrigin(origin))
       return false;
-    }
-  } else if (device::HidBlocklist::IsDeviceExcluded(device)) {
-    return false;
   }
 
   if (CanApplyPolicy() &&
@@ -539,7 +533,7 @@ void HidChooserContext::GetDevices(
   device_list.reserve(devices_.size());
   for (const auto& pair : devices_)
     device_list.push_back(pair.second->Clone());
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(device_list)));
 }
 
@@ -706,7 +700,7 @@ void HidChooserContext::OnHidManagerConnectionError() {
 
 bool HidChooserContext::CanApplyPolicy() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  auto* profile_helper = chromeos::ProfileHelper::Get();
+  auto* profile_helper = ash::ProfileHelper::Get();
   DCHECK(profile_helper);
   user_manager::User* user = profile_helper->GetUserByProfile(profile_);
   DCHECK(user);

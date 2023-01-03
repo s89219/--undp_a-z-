@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@ ChromeVoxSettingsPagesTest = class extends ChromeVoxNextE2ETest {
   testGenCppIncludes() {
     super.testGenCppIncludes();
     GEN(`
-      #include "chrome/browser/web_applications/system_web_apps/system_web_app_manager.h"
+      #include "chrome/browser/ash/system_web_apps/system_web_app_manager.h"
       #include "chrome/browser/web_applications/web_app_provider.h"
     `);
   }
@@ -23,9 +23,8 @@ ChromeVoxSettingsPagesTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   testGenPreamble() {
     GEN(`
-    web_app::WebAppProvider::GetForTest(browser()->profile())
-        ->system_web_app_manager()
-        .InstallSystemAppsForTesting();
+    ash::SystemWebAppManager::GetForTest(browser()->profile())
+        ->InstallSystemAppsForTesting();
   `);
     super.testGenPreamble();
   }
@@ -33,20 +32,22 @@ ChromeVoxSettingsPagesTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   async setUpDeferred() {
     await super.setUpDeferred();
-    await importModule('AbstractTts', '/chromevox/common/abstract_tts.js');
+
+    // Alphabetical based on file path.
+    await importModule('TtsSettings', '/chromevox/common/tts_types.js');
   }
 };
 
-TEST_F(
+AX_TEST_F(
     'ChromeVoxSettingsPagesTest', 'TtsRateCommandOnSettingsPage',
     async function() {
       const realTts = ChromeVox.tts;
       const mockFeedback = this.createMockFeedback();
       await this.runWithLoadedTree(`unused`);
       const increaseRate = realTts.increaseOrDecreaseProperty.bind(
-          realTts, AbstractTts.RATE, true);
+          realTts, TtsSettings.RATE, true);
       const decreaseRate = realTts.increaseOrDecreaseProperty.bind(
-          realTts, AbstractTts.RATE, false);
+          realTts, TtsSettings.RATE, false);
 
       mockFeedback.call(doCmd('showTtsSettings'))
           .expectSpeech(
@@ -87,7 +88,7 @@ TEST_F(
           .call(increaseRate)
           .expectSpeech('Rate 2 percent')
           .call(increaseRate)
-          .expectSpeech('Rate 4 percent')
+          .expectSpeech('Rate 4 percent');
 
-          .replay();
+      await mockFeedback.replay();
     });

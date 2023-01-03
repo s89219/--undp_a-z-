@@ -1,4 +1,4 @@
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -95,6 +95,8 @@ def defaults(extends = None, **vars):
             if ignore_default:
                 return listify(value)
             return listify(default, value)
+
+        fail("unknown merge value: {}".format(merge))
 
     def get_value_from_kwargs(name, kwargs, merge = None):
         return get_value(name, kwargs.get(name, DEFAULT), merge = merge)

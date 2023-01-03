@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -30,7 +30,7 @@
 #include "base/win/registry.h"
 #include "base/win/shortcut.h"
 #include "build/branding_buildflags.h"
-#include "chrome/chrome_elf/chrome_elf_constants.h"
+#include "chrome/chrome_elf/blocklist_constants.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
@@ -569,6 +569,16 @@ DeleteResult DeleteChromeDirectoriesIfEmpty(
   return result;
 }
 
+void DeleteWerRegistryKey(const installer::InstallerState& installer_state,
+                          const base::Version& version) {
+  // Delete WER runtime exception helper module dll registry entry.
+  std::wstring wer_helper_reg_path = GetWerHelperRegistryPath();
+  base::FilePath wer_path =
+      GetWerHelperPath(installer_state.target_path(), version);
+  DeleteRegistryValue(installer_state.root_key(), wer_helper_reg_path,
+                      WorkItem::kWow64Default, wer_path.value());
+}
+
 bool DeleteChromeRegistrationKeys(const InstallerState& installer_state,
                                   HKEY root,
                                   const std::wstring& browser_entry_suffix,
@@ -601,7 +611,6 @@ bool DeleteChromeRegistrationKeys(const InstallerState& installer_state,
     LOG(DFATAL) << "Cannot retrieve the toast activator registry path";
   }
 
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   if (installer_state.system_install()) {
     if (!InstallServiceWorkItem::DeleteService(
             install_static::GetElevationServiceName(),
@@ -612,7 +621,6 @@ bool DeleteChromeRegistrationKeys(const InstallerState& installer_state,
                    << install_static::GetElevationServiceName();
     }
   }
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING
 
   // Delete all Start Menu Internet registrations that refer to this Chrome.
   {
@@ -768,9 +776,9 @@ InstallStatus UninstallProduct(const ModifyParams& modify_params,
                                bool remove_all,
                                bool force_uninstall,
                                const base::CommandLine& cmd_line) {
-  const InstallationState& original_state = modify_params.installation_state;
-  const InstallerState& installer_state = modify_params.installer_state;
-  const base::FilePath& setup_exe = modify_params.setup_path;
+  const InstallationState& original_state = *modify_params.installation_state;
+  const InstallerState& installer_state = *modify_params.installer_state;
+  const base::FilePath& setup_exe = *modify_params.setup_path;
 
   const ProductState* const product_state =
       original_state.GetProductState(installer_state.system_install());
@@ -944,6 +952,8 @@ InstallStatus UninstallProduct(const ModifyParams& modify_params,
     DeleteChromeRegistrationKeys(installer_state, HKEY_LOCAL_MACHINE, suffix,
                                  &ret);
   }
+
+  DeleteWerRegistryKey(installer_state, product_state->version());
 
   ProcessChromeWorkItems(installer_state);
 

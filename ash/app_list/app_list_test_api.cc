@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "ash/app_list/app_list_controller_impl.h"
 #include "ash/app_list/app_list_model_provider.h"
 #include "ash/app_list/app_list_presenter_impl.h"
+#include "ash/app_list/app_list_public_test_util.h"
 #include "ash/app_list/model/app_list_folder_item.h"
 #include "ash/app_list/model/app_list_item.h"
 #include "ash/app_list/model/app_list_model.h"
@@ -22,6 +23,7 @@
 #include "ash/app_list/views/app_list_main_view.h"
 #include "ash/app_list/views/app_list_menu_model_adapter.h"
 #include "ash/app_list/views/app_list_toast_container_view.h"
+#include "ash/app_list/views/app_list_toast_view.h"
 #include "ash/app_list/views/app_list_view.h"
 #include "ash/app_list/views/apps_container_view.h"
 #include "ash/app_list/views/apps_grid_context_menu.h"
@@ -29,22 +31,25 @@
 #include "ash/app_list/views/apps_grid_view_test_api.h"
 #include "ash/app_list/views/contents_view.h"
 #include "ash/app_list/views/paged_apps_grid_view.h"
+#include "ash/app_list/views/recent_apps_view.h"
 #include "ash/app_list/views/scrollable_apps_grid_view.h"
+#include "ash/app_list/views/search_box_view.h"
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/accelerators.h"
 #include "ash/shell.h"
-#include "ash/test/layer_animation_stopped_waiter.h"
 #include "base/callback.h"
 #include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/window_observer.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/test/layer_animation_stopped_waiter.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/controls/scroll_view.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/view_model.h"
 
 namespace ash {
@@ -55,33 +60,6 @@ namespace {
 // disabler exists at a time.
 class ScopedItemMoveAnimationDisabler;
 ScopedItemMoveAnimationDisabler* g_disabler_ptr = nullptr;
-
-AppListView* GetAppListView() {
-  return Shell::Get()->app_list_controller()->fullscreen_presenter()->GetView();
-}
-
-// An app list should be either a bubble app list or a fullscreen app list.
-// Returns true if a bubble app list should be used under the current mode.
-bool ShouldUseBubbleAppList() {
-  // A bubble app list should be used only when:
-  // (1) It is in clamshell mode; and
-  // (2) The productivity launcher flag is enabled.
-  return !Shell::Get()->IsInTabletMode() &&
-         features::IsProductivityLauncherEnabled();
-}
-
-// Creates a RunLoop that waits until the context menu of app list item is
-// shown.
-void WaitUntilItemMenuShown(ash::AppListItemView* item_view) {
-  base::RunLoop run_loop;
-
-  // Set the callback that will quit the RunLoop when context menu is shown.
-  item_view->SetContextMenuShownCallbackForTest(run_loop.QuitClosure());
-  run_loop.Run();
-
-  // Reset the callback.
-  item_view->SetContextMenuShownCallbackForTest(base::RepeatingClosure());
-}
 
 // Returns the menu item indicated by `order` from a non-folder item menu.
 views::MenuItemView* GetReorderOptionForNonFolderItemMenu(
@@ -96,7 +74,7 @@ views::MenuItemView* GetReorderOptionForNonFolderItemMenu(
 
 ash::AppListItemView* FindFolderItemView(ash::AppsGridView* apps_grid_view) {
   auto* model = apps_grid_view->view_model();
-  for (int index = 0; index < model->view_size(); ++index) {
+  for (size_t index = 0; index < model->view_size(); ++index) {
     ash::AppListItemView* current_view = model->view_at(index);
     if (current_view->is_folder())
       return current_view;
@@ -107,7 +85,7 @@ ash::AppListItemView* FindFolderItemView(ash::AppsGridView* apps_grid_view) {
 
 ash::AppListItemView* FindNonFolderItemView(ash::AppsGridView* apps_grid_view) {
   auto* model = apps_grid_view->view_model();
-  for (int index = 0; index < model->view_size(); ++index) {
+  for (size_t index = 0; index < model->view_size(); ++index) {
     ash::AppListItemView* current_view = model->view_at(index);
     if (!current_view->is_folder())
       return current_view;
@@ -125,6 +103,7 @@ size_t GetMenuIndexOfSortingOrder(ash::AppListSortOrder order) {
       return 1;
     case ash::AppListSortOrder::kNameReverseAlphabetical:
     case ash::AppListSortOrder::kCustom:
+    case ash::AppListSortOrder::kAlphabeticalEphemeralAppFirst:
       NOTREACHED();
       return 0;
   }
@@ -145,6 +124,7 @@ views::MenuItemView* GetReorderOptionForAppListOrFolderItemMenu(
       break;
     case ash::AppListSortOrder::kNameReverseAlphabetical:
     case ash::AppListSortOrder::kCustom:
+    case ash::AppListSortOrder::kAlphabeticalEphemeralAppFirst:
       NOTREACHED();
       return nullptr;
   }
@@ -157,7 +137,7 @@ views::MenuItemView* ShowRootMenuAndReturn(
     ui::test::EventGenerator* event_generator) {
   views::MenuItemView* root_menu = nullptr;
 
-  EXPECT_GT(apps_grid_view->view_model()->view_size(), 0);
+  EXPECT_GT(apps_grid_view->view_model()->view_size(), 0u);
 
   switch (menu_type) {
     case AppListTestApi::MenuType::kAppListPageMenu:
@@ -182,7 +162,6 @@ views::MenuItemView* ShowRootMenuAndReturn(
       if (is_folder_item) {
         root_menu = item_view->context_menu_for_folder()->root_menu_item_view();
       } else {
-        WaitUntilItemMenuShown(item_view);
         ash::AppListMenuModelAdapter* menu_model_adapter =
             item_view->item_menu_model_adapter();
         root_menu = menu_model_adapter->root_for_testing();
@@ -198,17 +177,6 @@ PagedAppsGridView* GetPagedAppsGridView() {
   // This view only exists for tablet launcher and legacy peeking launcher.
   DCHECK(!ShouldUseBubbleAppList());
   return AppListView::TestApi(GetAppListView()).GetRootAppsGridView();
-}
-
-AppListBubbleView* GetAppListBubbleView() {
-  AppListBubbleView* bubble_view = Shell::Get()
-                                       ->app_list_controller()
-                                       ->bubble_presenter_for_test()
-                                       ->bubble_view_for_test();
-  DCHECK(bubble_view) << "Bubble launcher view not yet created. Tests must "
-                         "show the launcher and may need to call "
-                         "WaitForBubbleWindow() if animations are enabled.";
-  return bubble_view;
 }
 
 AppsContainerView* GetAppsContainerView() {
@@ -235,14 +203,14 @@ AppListToastContainerView* GetToastContainerViewFromBubble() {
 
 AppListToastContainerView* GetToastContainerViewFromFullscreenAppList() {
   DCHECK(features::IsLauncherAppSortEnabled());
-  return GetAppsContainerView()->toast_container_for_test();
+  return GetAppsContainerView()->toast_container();
 }
 
 RecentAppsView* GetRecentAppsView() {
   if (ShouldUseBubbleAppList())
     return GetAppListBubbleView()->apps_page_for_test()->recent_apps_for_test();
 
-  return GetAppsContainerView()->GetRecentApps();
+  return GetAppsContainerView()->GetRecentAppsView();
 }
 
 // AppListVisibilityChangedWaiter ----------------------------------------------
@@ -338,13 +306,12 @@ AppListModel* AppListTestApi::GetAppListModel() {
 
 void AppListTestApi::ShowBubbleAppListAndWait() {
   ash::AcceleratorController::Get()->PerformActionIfEnabled(
-      ash::TOGGLE_APP_LIST_FULLSCREEN, {});
+      ash::TOGGLE_APP_LIST, {});
   WaitForBubbleWindow(
       /*wait_for_opening_animation=*/true);
 }
 
 void AppListTestApi::WaitForBubbleWindow(bool wait_for_opening_animation) {
-  DCHECK(features::IsProductivityLauncherEnabled());
   DCHECK(!Shell::Get()->IsInTabletMode());
 
   // Wait for the window only when the app list window does not exist.
@@ -379,12 +346,11 @@ void AppListTestApi::WaitForAppListShowAnimation(bool is_bubble_window) {
   // Wait for the app list window animation.
   aura::Window* app_list_window = controller->GetWindow();
   DCHECK(app_list_window);
-  LayerAnimationStoppedWaiter().Wait(app_list_window->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(app_list_window->layer());
 
   if (!is_bubble_window)
     return;
 
-  DCHECK(features::IsProductivityLauncherEnabled());
   DCHECK(!Shell::Get()->IsInTabletMode());
 
   ScrollableAppsGridView* scrollable_apps_grid_view =
@@ -393,17 +359,17 @@ void AppListTestApi::WaitForAppListShowAnimation(bool is_bubble_window) {
     return;
 
   // Wait for the animation to show the bubble view.
-  LayerAnimationStoppedWaiter().Wait(GetAppListBubbleView()->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(GetAppListBubbleView()->layer());
 
   // Wait for the animation to show the apps page.
-  LayerAnimationStoppedWaiter().Wait(GetAppListBubbleView()
-                                         ->apps_page_for_test()
-                                         ->scroll_view()
-                                         ->contents()
-                                         ->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(GetAppListBubbleView()
+                                             ->apps_page_for_test()
+                                             ->scroll_view()
+                                             ->contents()
+                                             ->layer());
 
   // Wait for the apps grid slide animation.
-  LayerAnimationStoppedWaiter().Wait(scrollable_apps_grid_view->layer());
+  ui::LayerAnimationStoppedWaiter().Wait(scrollable_apps_grid_view->layer());
 }
 
 bool AppListTestApi::HasApp(const std::string& app_id) {
@@ -412,20 +378,30 @@ bool AppListTestApi::HasApp(const std::string& app_id) {
 
 std::u16string AppListTestApi::GetAppListItemViewName(
     const std::string& item_id) {
+  AppListItemView* item_view = GetTopLevelItemViewFromId(item_id);
+  if (!item_view)
+    return u"";
+
+  return item_view->title()->GetText();
+}
+
+AppListItemView* AppListTestApi::GetTopLevelItemViewFromId(
+    const std::string& item_id) {
   views::ViewModelT<AppListItemView>* view_model =
       GetTopLevelAppsGridView()->view_model();
-  for (int i = 0; i < view_model->view_size(); ++i) {
+  for (size_t i = 0; i < view_model->view_size(); ++i) {
     AppListItemView* app_list_item_view = view_model->view_at(i);
     if (app_list_item_view->item()->id() == item_id)
-      return app_list_item_view->title()->GetText();
+      return app_list_item_view;
   }
-  return u"";
+
+  return nullptr;
 }
 
 std::vector<std::string> AppListTestApi::GetTopLevelViewIdList() {
   std::vector<std::string> id_list;
   auto* view_model = GetTopLevelAppsGridView()->view_model();
-  for (int i = 0; i < view_model->view_size(); ++i) {
+  for (size_t i = 0; i < view_model->view_size(); ++i) {
     AppListItem* app_list_item = view_model->view_at(i)->item();
     if (app_list_item) {
       id_list.push_back(app_list_item->id());
@@ -439,6 +415,9 @@ std::string AppListTestApi::CreateFolderWithApps(
   // Only create a folder if there are two or more apps.
   DCHECK_GE(apps.size(), 2u);
 
+  // Skip all item move animations during folder creation.
+  ScopedItemMoveAnimationDisabler disabler(GetTopLevelAppsGridView());
+
   AppListModel* model = GetAppListModel();
   // Create a folder using the first two apps, and add the others to the
   // folder iteratively.
@@ -446,9 +425,6 @@ std::string AppListTestApi::CreateFolderWithApps(
   // Return early if MergeItems failed.
   if (folder_id.empty())
     return "";
-
-  // Skip item move animations.
-  ScopedItemMoveAnimationDisabler disabler(GetTopLevelAppsGridView());
 
   for (size_t i = 2; i < apps.size(); ++i)
     model->MergeItems(folder_id, apps[i]);
@@ -491,11 +467,6 @@ void AppListTestApi::MoveItemToPosition(const std::string& item_id,
   item_list->MoveItem(from_index, to_index);
 }
 
-void AppListTestApi::AddPageBreakItemAfterId(const std::string& item_id) {
-  auto* model = GetAppListModel();
-  model->AddPageBreakItemAfter(model->FindItem(item_id));
-}
-
 int AppListTestApi::GetTopListItemCount() {
   return GetAppListModel()->top_level_item_list()->item_count();
 }
@@ -507,10 +478,6 @@ views::View* AppListTestApi::GetLastItemInAppsGridView() {
 
 PaginationModel* AppListTestApi::GetPaginationModel() {
   return GetPagedAppsGridView()->pagination_model();
-}
-
-void AppListTestApi::UpdatePagedViewStructure() {
-  GetPagedAppsGridView()->UpdatePagedViewStructure();
 }
 
 AppsGridView* AppListTestApi::GetTopLevelAppsGridView() {
@@ -632,7 +599,8 @@ ash::AppListItemView* AppListTestApi::FindTopLevelFolderItemView() {
 void AppListTestApi::VerifyTopLevelItemVisibility() {
   auto* view_model = GetTopLevelAppsGridView()->view_model();
   std::vector<std::string> invisible_item_names;
-  for (int view_index = 0; view_index < view_model->view_size(); ++view_index) {
+  for (size_t view_index = 0; view_index < view_model->view_size();
+       ++view_index) {
     auto* item_view = view_model->view_at(view_index);
     if (!item_view->GetVisible())
       invisible_item_names.push_back(item_view->item()->name());
@@ -644,6 +612,23 @@ void AppListTestApi::VerifyTopLevelItemVisibility() {
 
 views::View* AppListTestApi::GetRecentAppAt(int index) {
   return GetRecentAppsView()->GetItemViewAt(index);
+}
+
+std::vector<std::string> AppListTestApi::GetRecentAppIds() {
+  std::vector<std::string> ids;
+  RecentAppsView* recent_apps = GetRecentAppsView();
+  for (int i = 0; i < recent_apps->GetItemViewCount(); ++i) {
+    ids.push_back(recent_apps->GetItemViewAt(i)->item()->id());
+  }
+  return ids;
+}
+
+void AppListTestApi::SimulateSearch(const std::u16string& query) {
+  views::Textfield* textfield = GetSearchBoxView()->search_box();
+  textfield->SetText(u"");
+  textfield->InsertText(
+      query,
+      ui::TextInputClient::InsertTextCursorBehavior::kMoveCursorAfterText);
 }
 
 void AppListTestApi::ReorderByMouseClickAtContextMenuInAppsGrid(
@@ -743,35 +728,52 @@ void AppListTestApi::ClickOnRedoButtonAndWaitForAnimation(
   EXPECT_EQ(ReorderAnimationEndState::kCompleted, actual_state);
 }
 
-void AppListTestApi::RegisterReorderAnimationDoneCallback(
-    ReorderAnimationEndState* actual_state) {
-  AddReorderAnimationCallback(
-      base::BindRepeating(&AppListTestApi::OnReorderAnimationDone,
-                          weak_factory_.GetWeakPtr(), actual_state));
+void AppListTestApi::ClickOnCloseButtonAndWaitForToastAnimation(
+    ui::test::EventGenerator* event_generator) {
+  AppListToastContainerView* toast_container =
+      ShouldUseBubbleAppList() ? GetToastContainerViewFromBubble()
+                               : GetToastContainerViewFromFullscreenAppList();
+  views::View* close_button = toast_container->GetCloseButton();
+  event_generator->MoveMouseTo(close_button->GetBoundsInScreen().CenterPoint());
+  event_generator->ClickLeftButton();
+
+  // Wait until the toast fade out animation ends.
+  ui::LayerAnimationStoppedWaiter animation_waiter;
+  animation_waiter.Wait(toast_container->toast_view()->layer());
 }
 
-void AppListTestApi::OnReorderAnimationDone(
-    ReorderAnimationEndState* result,
-    bool abort,
-    ash::AppListReorderAnimationStatus status) {
-  DCHECK(status == ash::AppListReorderAnimationStatus::kFadeOutAnimation ||
-         status == ash::AppListReorderAnimationStatus::kFadeInAnimation);
+ui::Layer* AppListTestApi::GetAppListViewLayer() {
+  return GetAppListView()->GetWidget()->GetNativeView()->layer();
+}
+
+void AppListTestApi::RegisterReorderAnimationDoneCallback(
+    ReorderAnimationEndState* actual_state) {
+  AddReorderAnimationCallback(base::BindRepeating(
+      &AppListTestApi::OnReorderAnimationDone, weak_factory_.GetWeakPtr(),
+      !ash::Shell::Get()->IsInTabletMode(), actual_state));
+}
+
+void AppListTestApi::OnReorderAnimationDone(bool for_bubble_app_list,
+                                            ReorderAnimationEndState* result,
+                                            bool abort,
+                                            AppListGridAnimationStatus status) {
+  DCHECK(status == AppListGridAnimationStatus::kReorderFadeOut ||
+         status == AppListGridAnimationStatus::kReorderFadeIn);
 
   // Record the animation running result.
   if (abort) {
-    if (status == ash::AppListReorderAnimationStatus::kFadeOutAnimation)
+    if (status == AppListGridAnimationStatus::kReorderFadeOut)
       *result = ReorderAnimationEndState::kFadeOutAborted;
     else
       *result = ReorderAnimationEndState::kFadeInAborted;
   } else {
-    EXPECT_EQ(ash::AppListReorderAnimationStatus::kFadeInAnimation, status);
+    EXPECT_EQ(AppListGridAnimationStatus::kReorderFadeIn, status);
     *result = ReorderAnimationEndState::kCompleted;
 
     // Verify that the toast container under the clamshell mode does not have
     // a layer after reorder animation completes.
-    views::View* toast_container = GetToastContainerView();
-    if (toast_container && !ash::Shell::Get()->IsInTabletMode())
-      EXPECT_FALSE(toast_container->layer());
+    if (for_bubble_app_list)
+      EXPECT_FALSE(GetToastContainerView()->layer());
   }
 
   // Callback can be registered without a running loop.
@@ -789,8 +791,8 @@ void AppListTestApi::WaitForReorderAnimationAndVerifyItemVisibility() {
 void AppListTestApi::WaitForFadeOutAnimation() {
   ash::AppsGridView* apps_grid_view = GetTopLevelAppsGridView();
 
-  if (apps_grid_view->reorder_animation_status_for_test() !=
-      ash::AppListReorderAnimationStatus::kFadeOutAnimation) {
+  if (apps_grid_view->grid_animation_status_for_test() !=
+      AppListGridAnimationStatus::kReorderFadeOut) {
     // The apps grid is not under fade out animation so no op.
     return;
   }

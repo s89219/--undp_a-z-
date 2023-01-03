@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -178,6 +178,9 @@ class Navigation {
   // for reloads, 1 for forward navigations). This may not cover all corner
   // cases, and can be incorrect in cases like main frame client redirects.
   virtual int GetNavigationEntryOffset() = 0;
+
+  // Returns true if the navigation response was fetched from the cache.
+  virtual bool WasFetchedFromCache() = 0;
 };
 
 }  // namespace weblayer

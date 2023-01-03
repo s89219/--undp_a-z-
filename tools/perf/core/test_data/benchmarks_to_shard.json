@@ -340,16 +340,6 @@
   {
     "repeat": 1,
     "stories": [
-      "http://dromaeo.com?dom-attr",
-      "http://dromaeo.com?dom-modify",
-      "http://dromaeo.com?dom-query",
-      "http://dromaeo.com?dom-traverse"
-    ],
-    "name": "dromaeo"
-  },
-  {
-    "repeat": 1,
-    "stories": [
       "dummy_page.html"
     ],
     "name": "dummy_benchmark.histogram_benchmark_1"
@@ -1220,8 +1210,8 @@
       "gmail_desktop_gpu_raster_2018",
       "google_calendar_2018",
       "google_calendar_desktop_gpu_raster_2018",
-      "google_docs_2018",
       "google_docs_desktop_gpu_raster_2018",
+      "google_docs_mobile_2022",
       "google_image_search_2018",
       "google_image_search_desktop_gpu_raster_2018",
       "google_image_search_mobile_2018",

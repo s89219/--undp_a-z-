@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,7 @@ export class TestSyncBrowserProxy extends TestBrowserProxy implements
   private syncStatus_: SyncStatus|null = {
     signedIn: true,
     signedInUsername: 'fakeUsername',
-    statusAction: StatusAction.NO_ACTION
+    statusAction: StatusAction.NO_ACTION,
   };
 
   // Settable fake data.

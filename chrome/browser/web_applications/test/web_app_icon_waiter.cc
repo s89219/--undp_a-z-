@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ void WebAppIconWaiter::Wait() {
   run_loop_.Run();
 }
 void WebAppIconWaiter::OnFaviconRead(const web_app::AppId& app_id) {
-  if (app_id == app_id_) {
+  if (app_id == *app_id_) {
     run_loop_.Quit();
   }
 }

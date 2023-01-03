@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -93,7 +93,18 @@
                           frameID:(NSString*)frameID
                             value:(NSString*)value
                     userInitiated:(BOOL)userInitiated {
-  // Not implemented.
+  // TODO(crbug.com/1323932): Fetching suggestions has an important side effect
+  // of calling PasswordFormManager::UpdateStateOnUserInput. This will ensure
+  // that the typed information can be remembered during the save dialogue.
+  // Make this method a no-op once the bug is fixed.
+  id completionHandler = ^(NSArray<CWVAutofillSuggestion*>* suggestions) {
+    NSLog(@"%@ suggestions: %@", NSStringFromSelector(_cmd), suggestions);
+  };
+  [autofillController fetchSuggestionsForFormWithName:formName
+                                      fieldIdentifier:fieldIdentifier
+                                            fieldType:fieldType
+                                              frameID:frameID
+                                    completionHandler:completionHandler];
 }
 
 - (void)autofillController:(CWVAutofillController*)autofillController
@@ -376,16 +387,12 @@
 #pragma mark - Private
 
 - (UIWindow*)anyKeyWindow {
-#if !defined(__IPHONE_13_0) || __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_13_0
-  return [UIApplication sharedApplication].keyWindow;
-#else
   NSArray<UIWindow*>* windows = [UIApplication sharedApplication].windows;
   for (UIWindow* window in windows) {
     if (window.isKeyWindow)
       return window;
   }
   return nil;
-#endif
 }
 
 @end

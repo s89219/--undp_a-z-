@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -111,7 +111,8 @@ bool UtilityProcessHost::Start() {
   return StartProcess();
 }
 
-#if BUILDFLAG(IS_CHROMECAST)
+// TODO(crbug.com/1328879): Remove this method when fixing the bug.
+#if BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID)
 void UtilityProcessHost::RunServiceDeprecated(
     const std::string& service_name,
     mojo::ScopedMessagePipeHandle service_pipe,
@@ -298,6 +299,9 @@ bool UtilityProcessHost::StartProcess() {
 #if BUILDFLAG(IS_CHROMEOS)
       switches::kSchedulerBoostUrgent,
 #endif
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+      switches::kEnableResourcesFileSharing,
+#endif
     };
     cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
                                std::size(kSwitchNames));
@@ -318,19 +322,26 @@ bool UtilityProcessHost::StartProcess() {
 #if BUILDFLAG(IS_WIN)
     if (media::IsMediaFoundationD3D11VideoCaptureEnabled()) {
       // MediaFoundationD3D11VideoCapture requires Gpu memory buffers,
-      // which are unavailable if the GPU process isn't running.
-      if (!GpuDataManagerImpl::GetInstance()->IsGpuCompositingDisabled()) {
+      // which are unavailable if the GPU process isn't running or if
+      // D3D shared images are not supported.
+      if (!GpuDataManagerImpl::GetInstance()->IsGpuCompositingDisabled() &&
+          GpuDataManagerImpl::GetInstance()->GetGPUInfo().shared_image_d3d) {
         cmd_line->AppendSwitch(switches::kVideoCaptureUseGpuMemoryBuffer);
       }
     }
 #endif
 
+    auto file_data = std::make_unique<ChildProcessLauncherFileData>();
+#if BUILDFLAG(IS_POSIX)
+    file_data->files_to_preload = GetV8SnapshotFilesToPreload();
+#endif  // BUILDFLAG(IS_POSIX)
+
     std::unique_ptr<UtilitySandboxedProcessLauncherDelegate> delegate =
         std::make_unique<UtilitySandboxedProcessLauncherDelegate>(
             sandbox_type_, env_, *cmd_line);
 
-    process_->LaunchWithPreloadedFiles(std::move(delegate), std::move(cmd_line),
-                                       GetV8SnapshotFilesToPreload(), true);
+    process_->LaunchWithFileData(std::move(delegate), std::move(cmd_line),
+                                 std::move(file_data), true);
   }
 
   return true;
@@ -338,7 +349,8 @@ bool UtilityProcessHost::StartProcess() {
 
 void UtilityProcessHost::OnProcessLaunched() {
   launch_state_ = LaunchState::kLaunchComplete;
-#if BUILDFLAG(IS_CHROMECAST)
+// TODO(crbug.com/1328879): Remove this when fixing the bug.
+#if BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID)
   for (auto& callback : pending_run_service_callbacks_)
     std::move(callback).Run(process_->GetProcess().Pid());
   pending_run_service_callbacks_.clear();
@@ -349,7 +361,8 @@ void UtilityProcessHost::OnProcessLaunched() {
 
 void UtilityProcessHost::OnProcessLaunchFailed(int error_code) {
   launch_state_ = LaunchState::kLaunchFailed;
-#if BUILDFLAG(IS_CHROMECAST)
+// TODO(crbug.com/1328879): Remove this when fixing the bug.
+#if BUILDFLAG(IS_CASTOS) || BUILDFLAG(IS_CAST_ANDROID)
   for (auto& callback : pending_run_service_callbacks_)
     std::move(callback).Run(absl::nullopt);
   pending_run_service_callbacks_.clear();

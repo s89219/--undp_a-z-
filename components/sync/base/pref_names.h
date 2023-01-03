@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,12 @@ inline constexpr char kSyncOsApps[] = "sync.os_apps";
 inline constexpr char kSyncOsPreferences[] = "sync.os_preferences";
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+// On Lacros, apps sync for primary profile is controlled by the OS. This
+// preference caches the last known value.
+inline constexpr char kSyncAppsEnabledByOs[] = "sync.apps_enabled_by_os";
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
 // Booleans specifying whether the user has selected to sync the following
 // user selectable types.
 inline constexpr char kSyncApps[] = "sync.apps";
@@ -48,6 +54,7 @@ inline constexpr char kSyncTabs[] = "sync.tabs";
 inline constexpr char kSyncThemes[] = "sync.themes";
 inline constexpr char kSyncTypedUrls[] = "sync.typed_urls";
 inline constexpr char kSyncWifiConfigurations[] = "sync.wifi_configurations";
+inline constexpr char kSyncSavedTabGroups[] = "sync.saved_tab_groups";
 
 // Boolean used by enterprise configuration management in order to lock down
 // sync.

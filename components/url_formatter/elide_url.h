@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -133,6 +133,14 @@ std::u16string
 FormatUrlForDisplayOmitSchemePathTrivialSubdomainsAndMobilePrefix(
     const GURL& url);
 #endif
+
+// Splits the hostname in the `url` into sub-strings for the full hostname,
+// the domain (TLD+1), and the subdomain (everything leading the domain).
+// The `url_subdomain` may be nullptr if it isn't needed by the caller.
+void SplitHost(const GURL& url,
+               std::u16string* url_host,
+               std::u16string* url_domain,
+               std::u16string* url_subdomain);
 
 }  // namespace url_formatter
 

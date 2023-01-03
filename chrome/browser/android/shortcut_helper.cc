@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -102,7 +102,8 @@ void RecordAddToHomeScreenUKM(
   if (!web_contents)
     return;
 
-  ukm::SourceId source_id = web_contents->GetMainFrame()->GetPageUkmSourceId();
+  ukm::SourceId source_id =
+      web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId();
   ukm::builders::Webapp_AddToHomeScreen(source_id)
       .SetDisplayMode(static_cast<int>(info.display))
       .SetShortcutReason(static_cast<int>(installable_status))

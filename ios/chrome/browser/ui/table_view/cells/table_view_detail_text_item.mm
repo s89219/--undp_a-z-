@@ -1,9 +1,10 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/table_view/cells/table_view_detail_text_item.h"
 
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
@@ -45,6 +46,11 @@
     }
   }
 
+  cell.allowMultilineDetailText = self.allowMultilineDetailText;
+  if (self.allowMultilineDetailText) {
+    cell.detailTextLabel.numberOfLines = 0;
+  }
+
   // Styling.
   if (self.textColor) {
     cell.textLabel.textColor = self.textColor;
@@ -67,11 +73,13 @@
   switch (self.accessorySymbol) {
     case TableViewDetailTextCellAccessorySymbolChevron:
       cell.accessoryView = [[UIImageView alloc]
-          initWithImage:[UIImage systemImageNamed:@"chevron.forward"]];
+          initWithImage:DefaultSymbolTemplateWithPointSize(
+                            kChevronForwardSymbol, kSymbolAccessoryPointSize)];
       break;
     case TableViewDetailTextCellAccessorySymbolExternalLink:
       cell.accessoryView = [[UIImageView alloc]
-          initWithImage:[UIImage systemImageNamed:@"arrow.up.forward.square"]];
+          initWithImage:DefaultSymbolTemplateWithPointSize(
+                            kExternalLinkSymbol, kSymbolAccessoryPointSize)];
       break;
     case TableViewDetailTextCellAccessorySymbolNone:
       cell.accessoryView = nil;
@@ -149,7 +157,7 @@
           constraintLessThanOrEqualToAnchor:containerView.bottomAnchor],
     ]];
 
-    // Make sure there are top and bottom margins of at least |margin|.
+    // Make sure there are top and bottom margins of at least `margin`.
     AddOptionalVerticalPadding(self.contentView, containerView,
                                kTableViewTwoLabelsCellVerticalSpacing);
   }
@@ -181,6 +189,9 @@
     } else {
       self.textLabel.numberOfLines = 1;
       self.detailTextLabel.numberOfLines = 1;
+    }
+    if (self.allowMultilineDetailText) {
+      self.detailTextLabel.numberOfLines = 0;
     }
   }
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@ public interface ContextualSearchPanelInterface {
 
     /** {@link ContextualSearchPanel} methods */
     boolean didTouchContent();
-    void setIsPromoActive(boolean show, boolean isMandatory);
+    void setIsPromoActive(boolean show);
     boolean wasPromoInteractive();
     void destroyContent();
     void setSearchTerm(String searchTerm);
@@ -38,20 +38,16 @@ public interface ContextualSearchPanelInterface {
     @VisibleForTesting
     void onSearchTermResolved(String searchTerm, String thumbnailUrl, String quickActionUri,
             int quickActionCategory, @CardTag int cardTagEnum,
-            @Nullable List<String> inBarRelatedSearches, boolean showDefaultSearchInBar,
-            @Nullable List<String> inContentRelatedSearches, boolean showDefaultSearchInContent);
+            @Nullable List<String> inBarRelatedSearches, boolean showDefaultSearchInBar);
     void onSearchTermResolved(String searchTerm, @Nullable String pronunciation,
             String thumbnailUrl, String quickActionUri, int quickActionCategory,
             @CardTag int cardTagEnum, @Nullable List<String> inBarRelatedSearches,
-            boolean showDefaultSearchInBar, @Px int defaultQueryInBarTextMaxWidthPx,
-            @Nullable List<String> inContentRelatedSearches, boolean showDefaultSearchInContent,
-            @Px int defaultQueryInContentTextMaxWidthPx);
+            boolean showDefaultSearchInBar, @Px int defaultQueryInBarTextMaxWidthPx);
     void setCaption(String caption);
     void ensureCaption();
     void hideCaption();
     void onContextualSearchPrefChanged(boolean isEnabled);
     void setManagementDelegate(ContextualSearchManagementDelegate delegate);
-    void onPanelNavigatedToPrefetchedSearch(boolean didResolve);
     void setWasSearchContentViewSeen();
     void maximizePanelThenPromoteToTab(@StateChangeReason int reason);
     void updateBasePageSelectionYPx(float y);
@@ -74,6 +70,7 @@ public interface ContextualSearchPanelInterface {
     boolean isPeeking();
     WebContents getWebContents();
     ViewGroup getContainerView();
+    void setCanHideAndroidBrowserControls(boolean canHideAndroidBrowserControls);
 
     /** {@link OverlayPanelBase} methods */
     boolean isPanelOpened();
@@ -85,4 +82,6 @@ public interface ContextualSearchPanelInterface {
     void showPanel(@StateChangeReason int reason);
     @PanelState
     int getPanelState();
+    @VisibleForTesting
+    boolean getCanHideAndroidBrowserControls();
 }

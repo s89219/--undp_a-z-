@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -79,17 +79,16 @@ class TabGroupHighlightPathGenerator : public views::HighlightPathGenerator {
   }
 
  private:
-  const raw_ptr<const views::View> chip_;
-  const raw_ptr<const views::View> title_;
+  const raw_ptr<const views::View, DanglingUntriaged> chip_;
+  const raw_ptr<const views::View, DanglingUntriaged> title_;
 };
 
 }  // namespace
 
-TabGroupHeader::TabGroupHeader(TabSlotController* tab_slot_controller,
+TabGroupHeader::TabGroupHeader(TabSlotController& tab_slot_controller,
                                const tab_groups::TabGroupId& group)
-    : tab_slot_controller_(tab_slot_controller) {
-  DCHECK(tab_slot_controller);
-
+    : tab_slot_controller_(tab_slot_controller),
+      editor_bubble_tracker_(tab_slot_controller) {
   set_group(group);
   set_context_menu_controller(this);
 
@@ -123,28 +122,21 @@ TabGroupHeader::TabGroupHeader(TabSlotController* tab_slot_controller,
   SetEventTargeter(std::make_unique<views::ViewTargeter>(this));
 
   is_collapsed_ = tab_slot_controller_->IsGroupCollapsed(group);
-
-  last_modified_expansion_ = base::TimeTicks::Now();
 }
 
-TabGroupHeader::~TabGroupHeader() {
-  LogCollapseTime();
-}
+TabGroupHeader::~TabGroupHeader() = default;
 
 bool TabGroupHeader::OnKeyPressed(const ui::KeyEvent& event) {
   if ((event.key_code() == ui::VKEY_SPACE ||
        event.key_code() == ui::VKEY_RETURN) &&
       !editor_bubble_tracker_.is_open()) {
-    bool successful_toggle = tab_slot_controller_->ToggleTabGroupCollapsedState(
+    tab_slot_controller_->ToggleTabGroupCollapsedState(
         group().value(), ToggleTabGroupCollapsedStateOrigin::kKeyboard);
-    if (successful_toggle) {
 #if BUILDFLAG(IS_WIN)
-      NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
+    NotifyAccessibilityEvent(ax::mojom::Event::kSelection, true);
 #else
-        NotifyAccessibilityEvent(ax::mojom::Event::kAlert, true);
+    NotifyAccessibilityEvent(ax::mojom::Event::kAlert, true);
 #endif
-        LogCollapseTime();
-    }
     return true;
   }
 
@@ -200,11 +192,8 @@ bool TabGroupHeader::OnMouseDragged(const ui::MouseEvent& event) {
 void TabGroupHeader::OnMouseReleased(const ui::MouseEvent& event) {
   if (!dragging()) {
     if (event.IsLeftMouseButton()) {
-      bool successful_toggle =
-          tab_slot_controller_->ToggleTabGroupCollapsedState(
-              group().value(), ToggleTabGroupCollapsedStateOrigin::kMouse);
-      if (successful_toggle)
-        LogCollapseTime();
+      tab_slot_controller_->ToggleTabGroupCollapsedState(
+          group().value(), ToggleTabGroupCollapsedStateOrigin::kMouse);
     } else if (event.IsRightMouseButton() &&
                !editor_bubble_tracker_.is_open()) {
       editor_bubble_tracker_.Opened(TabGroupEditorBubbleView::Show(
@@ -231,15 +220,10 @@ void TabGroupHeader::OnGestureEvent(ui::GestureEvent* event) {
   tab_slot_controller_->UpdateHoverCard(
       nullptr, TabSlotController::HoverCardUpdateType::kEvent);
   switch (event->type()) {
-    case ui::ET_GESTURE_TAP: {
-      bool successful_toggle =
-          tab_slot_controller_->ToggleTabGroupCollapsedState(
-              group().value(), ToggleTabGroupCollapsedStateOrigin::kGesture);
-      if (successful_toggle)
-        LogCollapseTime();
+    case ui::ET_GESTURE_TAP:
+      tab_slot_controller_->ToggleTabGroupCollapsedState(
+          group().value(), ToggleTabGroupCollapsedStateOrigin::kGesture);
       break;
-    }
-
     case ui::ET_GESTURE_LONG_TAP: {
       editor_bubble_tracker_.Opened(TabGroupEditorBubbleView::Show(
           tab_slot_controller_->GetBrowser(), group().value(), this));
@@ -250,7 +234,6 @@ void TabGroupHeader::OnGestureEvent(ui::GestureEvent* event) {
           this, *event, tab_slot_controller_->GetSelectionModel());
       break;
     }
-
     default:
       break;
   }
@@ -291,10 +274,10 @@ void TabGroupHeader::GetAccessibleNodeData(ui::AXNodeData* node_data) {
                    : l10n_util::GetStringUTF16(IDS_GROUP_AX_LABEL_EXPANDED);
 #endif
   if (title.empty()) {
-    node_data->SetName(l10n_util::GetStringFUTF16(
+    node_data->SetNameChecked(l10n_util::GetStringFUTF16(
         IDS_GROUP_AX_LABEL_UNNAMED_GROUP_FORMAT, contents, collapsed_state));
   } else {
-    node_data->SetName(
+    node_data->SetNameChecked(
         l10n_util::GetStringFUTF16(IDS_GROUP_AX_LABEL_NAMED_GROUP_FORMAT, title,
                                    contents, collapsed_state));
   }
@@ -414,24 +397,6 @@ int TabGroupHeader::GetDesiredWidth() const {
   return overlap_margin + title_chip_->width() + right_adjust;
 }
 
-void TabGroupHeader::LogCollapseTime() {
-  base::TimeTicks current_time = base::TimeTicks::Now();
-  const int kMinSample = 1;
-  const int kMaxSample = 86400;
-  const int kBucketCount = 50;
-  base::TimeDelta time_delta = current_time - last_modified_expansion_;
-  if (tab_slot_controller_->IsGroupCollapsed(group().value())) {
-    base::UmaHistogramCustomCounts("TabGroups.TimeSpentExpanded2",
-                                   time_delta.InSeconds(), kMinSample,
-                                   kMaxSample, kBucketCount);
-  } else {
-    base::UmaHistogramCustomCounts("TabGroups.TimeSpentCollapsed2",
-                                   time_delta.InSeconds(), kMinSample,
-                                   kMaxSample, kBucketCount);
-  }
-  last_modified_expansion_ = current_time;
-}
-
 void TabGroupHeader::VisualsChanged() {
   const std::u16string title =
       tab_slot_controller_->GetGroupTitle(group().value());
@@ -509,14 +474,19 @@ void TabGroupHeader::RemoveObserverFromWidget(views::Widget* widget) {
   widget->RemoveObserver(&editor_bubble_tracker_);
 }
 
-BEGIN_METADATA(TabGroupHeader, views::View)
+BEGIN_METADATA(TabGroupHeader, TabSlotView)
 ADD_READONLY_PROPERTY_METADATA(int, DesiredWidth)
 END_METADATA
+
+TabGroupHeader::EditorBubbleTracker::EditorBubbleTracker(
+    TabSlotController& tab_slot_controller)
+    : tab_slot_controller_(tab_slot_controller) {}
 
 TabGroupHeader::EditorBubbleTracker::~EditorBubbleTracker() {
   if (is_open_) {
     widget_->RemoveObserver(this);
     widget_->CloseWithReason(views::Widget::ClosedReason::kUnspecified);
+    OnWidgetDestroyed(widget_);
   }
   CHECK(!IsInObserverList());
 }
@@ -527,9 +497,11 @@ void TabGroupHeader::EditorBubbleTracker::Opened(views::Widget* bubble_widget) {
   widget_ = bubble_widget;
   is_open_ = true;
   bubble_widget->AddObserver(this);
+  tab_slot_controller_->NotifyTabGroupEditorBubbleOpened();
 }
 
 void TabGroupHeader::EditorBubbleTracker::OnWidgetDestroyed(
     views::Widget* widget) {
   is_open_ = false;
+  tab_slot_controller_->NotifyTabGroupEditorBubbleClosed();
 }

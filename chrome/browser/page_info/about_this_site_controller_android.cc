@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <jni.h>
 #include "base/android/jni_array.h"
-#include "base/android/jni_string.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/page_info/about_this_site_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -37,7 +36,7 @@ JNI_PageInfoAboutThisSiteController_GetSiteInfo(
     return nullptr;
   auto url = url::GURLAndroid::ToNativeGURL(env, j_url);
   auto source_id = content::WebContents::FromJavaWebContents(j_webContents)
-                       ->GetMainFrame()
+                       ->GetPrimaryMainFrame()
                        ->GetPageUkmSourceId();
   auto info = service->GetAboutThisSiteInfo(*url, source_id);
   if (!info)
@@ -50,4 +49,10 @@ JNI_PageInfoAboutThisSiteController_GetSiteInfo(
   std::vector<uint8_t> data(size);
   info->SerializeToArray(data.data(), size);
   return base::android::ToJavaByteArray(env, data.data(), size);
+}
+
+static void JNI_PageInfoAboutThisSiteController_OnAboutThisSiteRowClicked(
+    JNIEnv* env,
+    jboolean j_withDescription) {
+  page_info::AboutThisSiteService::OnAboutThisSiteRowClicked(j_withDescription);
 }

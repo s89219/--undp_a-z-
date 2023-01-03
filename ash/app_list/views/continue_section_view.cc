@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,9 +19,6 @@
 #include "ash/app_list/views/app_list_toast_view.h"
 #include "ash/app_list/views/app_list_view_util.h"
 #include "ash/app_list/views/continue_task_view.h"
-#include "ash/app_list/views/search_result_page_dialog_controller.h"
-#include "ash/bubble/bubble_utils.h"
-#include "ash/public/cpp/app_list/app_list_config.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
@@ -33,20 +30,13 @@
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/compositor/layer.h"
 #include "ui/views/animation/animation_builder.h"
-#include "ui/views/border.h"
-#include "ui/views/controls/label.h"
-#include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/flex_layout.h"
-#include "ui/views/layout/grid_layout.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
 namespace {
 // Whether the files section has been shown.
 bool g_continue_section_files_shown = false;
-
-// Header paddings in dips.
-constexpr auto kHeaderPadding = gfx::Insets::TLBR(0, 12, 4, 12);
 
 // Suggested tasks layout constants.
 constexpr size_t kMinFilesForContinueSectionClamshellMode = 3;
@@ -73,26 +63,16 @@ constexpr base::TimeDelta kShowSuggestionsAnimationDuration =
 // AppListBubbleAppsPage.
 constexpr int kVerticalPaddingFromParent = 16;
 
-std::unique_ptr<views::Label> CreateContinueLabel(const std::u16string& text) {
-  auto label = std::make_unique<views::Label>(text);
-  bubble_utils::ApplyStyle(label.get(), bubble_utils::LabelStyle::kSubtitle);
-  return label;
-}
-
 void CleanupLayer(views::View* view) {
   view->DestroyLayer();
 }
 
 }  // namespace
 
-ContinueSectionView::ContinueSectionView(
-    AppListViewDelegate* view_delegate,
-    SearchResultPageDialogController* dialog_controller,
-    int columns,
-    bool tablet_mode)
-    : view_delegate_(view_delegate),
-      dialog_controller_(dialog_controller),
-      tablet_mode_(tablet_mode) {
+ContinueSectionView::ContinueSectionView(AppListViewDelegate* view_delegate,
+                                         int columns,
+                                         bool tablet_mode)
+    : view_delegate_(view_delegate), tablet_mode_(tablet_mode) {
   DCHECK(view_delegate_);
 
   AppListModelProvider::Get()->AddObserver(this);
@@ -109,20 +89,13 @@ ContinueSectionView::ContinueSectionView(
                       views::MinimumFlexSizeRule::kScaleToMinimumSnapToZero,
                       views::MaximumFlexSizeRule::kUnbounded));
 
-  if (!tablet_mode) {
-    continue_label_ = AddChildView(CreateContinueLabel(
-        l10n_util::GetStringUTF16(IDS_ASH_LAUNCHER_CONTINUE_SECTION_LABEL)));
-    continue_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    continue_label_->SetBorder(views::CreateEmptyBorder(kHeaderPadding));
-  }
-
   suggestions_container_ =
       AddChildView(std::make_unique<ContinueTaskContainerView>(
           view_delegate, columns,
           base::BindRepeating(
               &ContinueSectionView::OnSearchResultContainerResultsChanged,
               base::Unretained(this)),
-          dialog_controller_, tablet_mode));
+          tablet_mode));
   suggestions_container_->SetVisible(false);
 }
 
@@ -137,6 +110,9 @@ size_t ContinueSectionView::GetTasksSuggestionsCount() const {
 }
 
 void ContinueSectionView::DisableFocusForShowingActiveFolder(bool disabled) {
+  if (privacy_toast_)
+    privacy_toast_->toast_button()->SetEnabled(!disabled);
+
   suggestions_container_->DisableFocusForShowingActiveFolder(disabled);
 
   // Prevent items from being accessed by ChromeVox.
@@ -234,11 +210,19 @@ void ContinueSectionView::OnPrivacyToastAcknowledged() {
 }
 
 void ContinueSectionView::AnimateDismissToast(base::RepeatingClosure callback) {
+  // Prevents setting up new animation if the toast is already hiding.
+  // https://crbug.com/1326237.
+  DCHECK(privacy_toast_);
+  if (privacy_toast_->layer() &&
+      privacy_toast_->layer()->GetTargetOpacity() == 0.f) {
+    return;
+  }
+
   PrepareForLayerAnimation(privacy_toast_);
 
   views::AnimationBuilder animation_builder;
-  animation_builder.OnEnded(std::move(callback));
-  animation_builder.OnAborted(std::move(callback));
+  animation_builder.OnEnded(callback);
+  animation_builder.OnAborted(callback);
 
   animation_builder
       .SetPreemptionStrategy(
@@ -274,14 +258,6 @@ void ContinueSectionView::AnimateShowContinueSection() {
   gfx::Transform initial_transform;
   initial_transform.Translate(0, -kVerticalPaddingFromParent);
 
-  if (continue_label_) {
-    height_difference -= continue_label_->GetPreferredSize().height();
-    PrepareForLayerAnimation(continue_label_);
-    continue_label_->SetVisible(true);
-    continue_label_->layer()->SetOpacity(0);
-    continue_label_->layer()->SetTransform(initial_transform);
-  }
-
   PrepareForLayerAnimation(suggestions_container_);
   suggestions_container_->layer()->SetTransform(initial_transform);
 
@@ -294,29 +270,12 @@ void ContinueSectionView::AnimateShowContinueSection() {
 
   AnimateSlideLauncherContent(height_difference);
 
-  auto cleanup = continue_label_
-                     ? base::BindRepeating(&CleanupLayer, continue_label_)
-                     : base::DoNothing();
-
-  views::AnimationBuilder animation_builder;
-  animation_builder.OnEnded(cleanup);
-  animation_builder.OnAborted(cleanup);
-  animation_builder.SetPreemptionStrategy(
-      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  animation_builder.Once();
-
-  animation_builder.GetCurrentSequence().SetTransform(
-      suggestions_container_, gfx::Transform(), animation_tween);
-
-  if (continue_label_) {
-    animation_builder.GetCurrentSequence().SetOpacity(continue_label_, 1.0,
-                                                      animation_tween);
-    animation_builder.GetCurrentSequence().SetTransform(
-        continue_label_, gfx::Transform(), animation_tween);
-  }
-
-  animation_builder.GetCurrentSequence().SetDuration(
-      kShowSuggestionsAnimationDuration);
+  views::AnimationBuilder()
+      .SetPreemptionStrategy(
+          ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET)
+      .Once()
+      .SetTransform(suggestions_container_, gfx::Transform(), animation_tween)
+      .SetDuration(kShowSuggestionsAnimationDuration);
 }
 
 void ContinueSectionView::RemovePrivacyNotice() {
@@ -431,8 +390,6 @@ void ContinueSectionView::UpdateElementsVisibility() {
   const bool suggestions_visibility_changed =
       show_files_section != suggestions_container_->GetVisible();
   suggestions_container_->SetVisible(show_files_section);
-  if (continue_label_)
-    continue_label_->SetVisible(show_files_section);
 
   if (suggestions_visibility_changed)
     PreferredSizeChanged();
@@ -457,14 +414,16 @@ void ContinueSectionView::OnDidChangeFocus(views::View* focused_before,
   // If a child of the privacy toast gained focus (e.g. the OK button) then
   // ensure the whole toast is visible.
   if (privacy_toast_ && privacy_toast_->Contains(focused_now)) {
-    privacy_toast_->ScrollViewToVisible();
+    // The parent view owns the continue label, which provides more context
+    // for the privacy notice. Ensure the label is visible.
+    parent()->ScrollViewToVisible();
     return;
   }
   // If a suggested task gained focus then ensure the continue label is visible
   // so the user knows what this section is.
   if (suggestions_container_->Contains(focused_now)) {
-    DCHECK(continue_label_);
-    continue_label_->ScrollViewToVisible();
+    // The parent view owns the continue label, so ensure label visibility.
+    parent()->ScrollViewToVisible();
   }
 }
 
@@ -477,8 +436,16 @@ void ContinueSectionView::OnActiveAppListModelsChanged(
 void ContinueSectionView::OnAppListVisibilityChanged(bool shown,
                                                      int64_t display_id) {
   if (!shown && privacy_toast_) {
-    RemoveChildViewT(privacy_toast_);
-    privacy_toast_ = nullptr;
+    // Abort any in-progress privacy toast animation. This may delete the toast
+    // view. Explicitly aborting the animation avoids a double-delete in
+    // RemoveChildViewT() below. https://crbug.com/1357434
+    if (privacy_toast_->layer())
+      privacy_toast_->layer()->GetAnimator()->AbortAllAnimations();
+
+    if (privacy_toast_) {
+      RemoveChildViewT(privacy_toast_);
+      privacy_toast_ = nullptr;
+    }
   }
 
   // Update the nudge type in nudge controller if the privacy notice is

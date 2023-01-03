@@ -1,14 +1,14 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
 #include <map>
 #include <memory>
 #include <utility>
 
 #include "base/auto_reset.h"
 #include "base/bind.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -66,12 +66,9 @@ blink::Manifest::ImageResource CreateIcon(const std::string& src,
 
 bool ContainsHeader(const base::flat_map<std::string, std::string>& headers,
                     const std::string& target) {
-  return headers.cend() !=
-         std::find_if(headers.cbegin(), headers.cend(),
-                      [target](const auto& pair) -> bool {
-                        return base::EqualsCaseInsensitiveASCII(pair.first,
-                                                                target);
-                      });
+  return base::ranges::any_of(headers, [target](const auto& pair) {
+    return base::EqualsCaseInsensitiveASCII(pair.first, target);
+  });
 }
 
 std::vector<blink::mojom::FetchAPIRequestPtr> CloneRequestVector(
@@ -103,13 +100,14 @@ class BackgroundFetchServiceTest
    public:
     ScopedCustomBackgroundFetchService(BackgroundFetchServiceTest* test,
                                        const blink::StorageKey& storage_key)
-        : scoped_service_(&test->service_,
-                          std::make_unique<BackgroundFetchServiceImpl>(
-                              test->context_,
-                              storage_key,
-                              net::IsolationInfo(),
-                              test->web_contents_->GetMainFrame()->GetProcess(),
-                              /*rfhi=*/nullptr)) {}
+        : scoped_service_(
+              &test->service_,
+              std::make_unique<BackgroundFetchServiceImpl>(
+                  test->context_,
+                  storage_key,
+                  net::IsolationInfo(),
+                  test->web_contents_->GetPrimaryMainFrame()->GetProcess(),
+                  /*rfhi=*/nullptr)) {}
 
     ScopedCustomBackgroundFetchService(
         const ScopedCustomBackgroundFetchService&) = delete;
@@ -315,10 +313,10 @@ class BackgroundFetchServiceTest
 
     context_->Initialize();
     RenderFrameHostImpl* rfhi =
-        static_cast<RenderFrameHostImpl*>(web_contents_->GetMainFrame());
+        static_cast<RenderFrameHostImpl*>(web_contents_->GetPrimaryMainFrame());
     service_ = std::make_unique<BackgroundFetchServiceImpl>(
         context_, storage_key(), net::IsolationInfo(),
-        web_contents_->GetMainFrame()->GetProcess(), rfhi);
+        web_contents_->GetPrimaryMainFrame()->GetProcess(), rfhi);
     rfhi->SetLastCommittedOriginForTesting(storage_key().origin());
   }
 

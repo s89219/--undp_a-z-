@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -141,6 +141,7 @@ class HttpExchange {
   // If the field exists and is a string its value is stored in `value`.
   // Sets the error message and returns false when one of the following occurs:
   // * the field is missing and `required` == true
+  // * the field contains an empty string and `required` == true
   // * the field is not a string.
   bool ParamStringGet(const std::string& name,
                       bool required,
@@ -185,7 +186,7 @@ class HttpExchange {
   std::unique_ptr<network::SimpleURLLoader> url_loader_;
 
   // Stores parameters for a request or parameters parsed from a response.
-  base::Value content_;
+  base::Value::Dict content_;
 
   // Error message.
   std::string error_msg_;

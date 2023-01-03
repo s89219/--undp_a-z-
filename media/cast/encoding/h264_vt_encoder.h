@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -87,6 +87,10 @@ class H264VideoToolboxEncoder final : public VideoEncoder,
   // This is needed to recover from backgrounding and other events that can
   // invalidate compression sessions.
   const FrameSenderConfig video_config_;
+
+  // The VideoToolbox does not support bitrate configuration, so we use a
+  // constant bitrate determined on construction.
+  const int average_bitrate_;
 
   // Frame size of the current compression session. Can be changed by submitting
   // a frame of a different size, which will cause a compression session reset.

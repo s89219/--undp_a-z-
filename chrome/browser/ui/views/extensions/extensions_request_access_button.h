@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,10 @@
 #define CHROME_BROWSER_UI_VIEWS_EXTENSIONS_EXTENSIONS_REQUEST_ACCESS_BUTTON_H_
 
 #include "chrome/browser/ui/views/toolbar/toolbar_button.h"
+
+namespace content {
+class WebContents;
+}  // namespace content
 
 class ToolbarActionViewController;
 class Browser;
@@ -25,14 +29,22 @@ class ExtensionsRequestAccessButton : public ToolbarButton {
   void UpdateExtensionsRequestingAccess(
       std::vector<ToolbarActionViewController*> extensions_requesting_access);
 
-  // TODO(crbug.com/1239772): This should be called when the button is hovered.
-  void ShowHoverCard();
+  void MaybeShowHoverCard();
+
+  std::vector<std::string> GetExtensionsNamesForTesting();
+
+  // views::View:
+  void OnMouseMoved(const ui::MouseEvent& event) override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
 
   // ToolbarButton:
   std::u16string GetTooltipText(const gfx::Point& p) const override;
 
  private:
   void OnButtonPressed();
+
+  content::WebContents* GetActiveWebContents();
 
   raw_ptr<Browser> browser_;
 

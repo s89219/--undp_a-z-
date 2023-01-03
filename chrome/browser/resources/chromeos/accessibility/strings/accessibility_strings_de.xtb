@@ -1,7 +1,7 @@
 <?xml version="1.0" ?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="de">
-<translation id="1009046985747440431">Pfeiltasten oben oder unten drücken, um Elemente auszuwählen, und die Auswahl mit der Eingabetaste bestätigen</translation>
+<translation id="1009046985747440431">Aufwärts- oder Abwärtspfeil drücken, um Elemente auszuwählen, und die Auswahl mit der Eingabetaste bestätigen</translation>
 <translation id="1011903154582639569">Um auf die gewählte Taste zu tippen, hebe den Finger an</translation>
 <translation id="1012173283529841972">Listenelement</translation>
 <translation id="1013742170491673792">srched</translation>
@@ -25,6 +25,7 @@
 <translation id="1156488781945104845">Aktuelle Uhrzeit</translation>
 <translation id="1161762950103988776">Sprung</translation>
 <translation id="1164857107703583584">Mit Sprungbefehlen kannst du effizient zwischen den Elementen einer Webseite wechseln.</translation>
+<translation id="116896278675803795">Sprache automatisch an ausgewählte Inhalte anpassen</translation>
 <translation id="1175914831232945926">Ziffern</translation>
 <translation id="1188858454923323853">ergänzend</translation>
 <translation id="1189258430971676908">Übungsbereich: Drop-down-Listen</translation>
@@ -32,6 +33,7 @@
 <translation id="1197088940767939838">Orange</translation>
 <translation id="1198865190323699001">Touch-Gesten</translation>
 <translation id="1201402288615127009">Weiter</translation>
+<translation id="1202112913213080585">abbrechen</translation>
 <translation id="1206619573307042055">marquee</translation>
 <translation id="1207086294218137981">Keine nächste Überschrift der Ebene 4</translation>
 <translation id="1212770441379271564">Bei den nächsten Tastaturbefehlen handelt es sich zwar nicht um ChromeVox-Befehle, aber sie sind für die optimale Bedienung von Chrome dennoch sehr hilfreich.
@@ -43,6 +45,7 @@
     Um das Chrome-Browsermenü zu öffnen, drücke Alt + F.</translation>
 <translation id="1213216066620407844">ChromeVox – eine Stimme für Chrome</translation>
 <translation id="1225969361094801578">Dunkles Schiefergrau</translation>
+<translation id="122928249241119550">zum vorherigen Satz wechseln</translation>
 <translation id="1230503547248836149">Beginn der Auswahl</translation>
 <translation id="1236794971743289975">Endnote</translation>
 <translation id="1237797094773582699">Du kannst auch mit vier Fingern von rechts nach links wischen, um zum vorherigen Abschnitt zu gelangen. Probiere es aus.</translation>
@@ -136,9 +139,9 @@
 <translation id="1812527064848182527">Querformat</translation>
 <translation id="1829244130665387512">Auf Seite suchen</translation>
 <translation id="1834891354138622109">Spalte</translation>
-<translation id="1845944666972354496">Zum Aktivieren doppeltippen</translation>
 <translation id="1846771122725914429">Bluetooth-Braillezeile</translation>
 <translation id="1852018405765032699">Du kannst ChromeVox-Menüs öffnen und schließen, indem du mit vier Fingern auf den Bildschirm tippst. Die Menüs enthalten hilfreiche Informationen zu Befehlen und Tastenkombinationen. Sobald die Menüs geöffnet sind, kannst du mit einem Finger wischen, um Elemente auszuwählen, und sie anschließend durch Doppeltippen aktivieren. Tippe mit vier Fingern auf den Bildschirm, um fortzufahren.</translation>
+<translation id="1864430479908918647">Suchtaste + Leertaste drücken</translation>
 <translation id="1865601187525349519">Ende des Texts</translation>
 <translation id="1876229593313240038">doc</translation>
 <translation id="1902396333223336119">Zelle</translation>
@@ -213,6 +216,7 @@
 <translation id="2435422727584637732">Dodger-Blau</translation>
 <translation id="2438712309510062123">Vorschlagen</translation>
 <translation id="2450814015951372393">Kästchen</translation>
+<translation id="2450992626945324272">zum nächsten Satz wechseln</translation>
 <translation id="2461822463642141190">Aktuell</translation>
 <translation id="2462626033734746142">Optionsfeldgruppe</translation>
 <translation id="2467741090055146971">diese Auswahl aufheben</translation>
@@ -235,6 +239,7 @@
 <translation id="2619344480613750862">Außerdem kannst du zwischen den Bildschirmbereichen wechseln. So kannst du beispielsweise zwischen dem Launcher, der Ablage und deinen Chrome-Tabs wechseln. Wische mit vier Fingern von links nach rechts, um zum nächsten Abschnitt zu gelangen. Verwende diese Touch-Geste, um mit dem nächsten Schritt fortzufahren.</translation>
 <translation id="2624431853467395961">Lernmodus öffnen</translation>
 <translation id="2626530649491650971">anklickbar</translation>
+<translation id="263637551280112393">Gleichzeitig Suchtaste + Umschalttaste + Leertaste drücken</translation>
 <translation id="2637227747952042642">Mathematik</translation>
 <translation id="2638785836053527382">Download von "<ph name="FILE_NAME" />" wird fortgesetzt</translation>
 <translation id="2639750663247012216">ChromeVox-Modifikator</translation>
@@ -376,6 +381,7 @@
 <translation id="3389259863310851658">Vorheriges Formularfeld</translation>
 <translation id="3393605254399152980">Ziehe einen Finger, um zu hören, was du berührst</translation>
 <translation id="3406283310380167331">Formularliste anzeigen</translation>
+<translation id="3407726812456125464">Ausgewählten Text vorlesen lassen</translation>
 <translation id="3414400929511680526">Eisblau</translation>
 <translation id="3418936350470374046">Keine Zelle unterhalb</translation>
 <translation id="3419269701801640163">Einfügen</translation>
@@ -489,6 +495,7 @@
 <translation id="42164919740161077">Graublau</translation>
 <translation id="4217571870635786043">Spracheingabe</translation>
 <translation id="4218529045364428769">{COUNT,plural, =1{Gedankenstrich}other{# Gedankenstriche}}</translation>
+<translation id="4220024144662591089">zwischen <ph name="START_PHRASE" /> und <ph name="END_PHRASE" /> wählen</translation>
 <translation id="4221012616705981690">Keine vorherige Liste</translation>
 <translation id="4225355998815256469">Formularsteuerelemente</translation>
 <translation id="4230834257931120629">Helles Schiefergrau</translation>
@@ -507,6 +514,7 @@
 <translation id="4300318234632215983">URL hinter einem Link ansagen</translation>
 <translation id="4322625298640984693">Ocker</translation>
 <translation id="4342180618051828363">{COUNT,plural, =1{Punkt}=3{Auslassungspunkte}other{# Punkte}}</translation>
+<translation id="4352022650330571548">„<ph name="PHRASE" />“ eingeben</translation>
 <translation id="4372435075475052704">Mind.: <ph name="X" /></translation>
 <translation id="4372705107434148843">Sprachausgabe anhalten</translation>
 <translation id="4376316291247992553">Grafik als Braille anzeigen</translation>
@@ -524,6 +532,7 @@
 <translation id="4479068155583208887">Backstein</translation>
 <translation id="4482330759234983253">Vorherige Tabelle</translation>
 <translation id="4491109536499578614">Bild</translation>
+<translation id="4507332368061453500">Langer Klick auf aktuelles Element</translation>
 <translation id="4511186779140817916">Mandelweiß</translation>
 <translation id="451510441928265982">Keine vorherige Überschrift der Ebene 2</translation>
 <translation id="4515799157838123044">Inhalte im Hintergrund abdunkeln</translation>
@@ -536,6 +545,7 @@
 <translation id="4601367666219428522">Tab. <ph name="TABLENAME" /> <ph name="TABLEROWS" />x<ph name="TABLECOLS" /></translation>
 <translation id="4615592953348396470">Nächster Tastenanschlag wird ignoriert.</translation>
 <translation id="4623097797855662355">Kolophon</translation>
+<translation id="4624970070706497034">TalkBack bietet keine Anpassung mehr für Chromebooks an. Du kannst die Funktion weiterhin nutzen, verwende dazu aber die standardmäßigen TalkBack-Tastenkombinationen. Drücke Suchtaste + A und dann K, um verfügbare Tastenkombinationen aufzurufen. Wenn du TalkBack weiter verwenden möchtest, drücke noch einmal die Befehlstaste.</translation>
 <translation id="463135993322337640">Wenn du mehr über die neuen Funktionen von ChromeVox erfahren möchtest, drücke ChromeVox „O“ und „N“</translation>
 <translation id="4649220074413114917">Du kannst mit zwei Fingern auf den Bildschirm tippen, um die aktuelle Sprachausgabe anzuhalten. Das ist hilfreich, wenn du nicht möchtest, dass ChromeVox etwas vorliest. Tippe mit zwei Fingern auf den Bildschirm, um fortzufahren.</translation>
 <translation id="4660783501463101648">Classic wurde entfernt. Die Tastaturschaltfläche für den Wechsel zu ChromeVox Classic wurde entfernt.</translation>
@@ -591,7 +601,6 @@
 <translation id="4993152509206108683">Geschwindigkeit: <ph name="PERCENT" /> %</translation>
 <translation id="4994420463726586413">Aktuellen Akkustatus ansagen</translation>
 <translation id="4997282455736854877">Optionsfeld "<ph name="NAME" />" ist ausgewählt.</translation>
-<translation id="5011664330025416377">Zum Aktivieren Suchtaste + Leertaste drücken</translation>
 <translation id="5012724933919010465"><ph name="NAME" />, Optionsfeld für Menüpunkt, ausgewählt</translation>
 <translation id="5020651427400641814">Sprachprotokollierung aktivieren</translation>
 <translation id="5041394372352067729">Braillezeile an den Seitenanfang verschieben</translation>
@@ -644,6 +653,7 @@
 <translation id="5355014376930441909">Kein weiterer Abschnitt</translation>
 <translation id="5368000168321181111">Earcons sind deaktiviert.</translation>
 <translation id="5368505757342402527">Download von "<ph name="FILE_NAME" />" zu <ph name="PROGRESS" /> % abgeschlossen. Es verbleiben ca. <ph name="TIME" /> <ph name="UNITS" />.</translation>
+<translation id="5381388086899614489">Langer Klick</translation>
 <translation id="5400836586163650660">Grau</translation>
 <translation id="5402367795255837559">Braille</translation>
 <translation id="5402791055281059602">Eine modale Benachrichtigung</translation>
@@ -756,8 +766,10 @@
 <translation id="6100239002225743044">Eine Zeile nach oben</translation>
 <translation id="6118126368611144850">Android-Apps für Chrome. Wenn du den Play Store auf deinem Gerät installiert hast, kannst du vorab einen Blick auf ChromeVox mit Android-Apps werfen. Um die experimentelle Unterstützung auszuprobieren, lade Google Chrome Canary aus dem Play Store herunter.</translation>
 <translation id="611827076493383239">vtd</translation>
+<translation id="6119846243427417423">aktivieren</translation>
 <translation id="6122013438240733403">btn</translation>
 <translation id="6132506484792346370">Ein Listen- oder Kombinationsfeld</translation>
+<translation id="613344593214611552">vorherigen Satz löschen</translation>
 <translation id="6142308968191113180">Überschrift 4</translation>
 <translation id="6150023170003443621">Gelbgrün</translation>
 <translation id="6158882249329863701">Zeile <ph name="TABLECELLROWINDEX" />, Spalte <ph name="TABLECELLCOLUMNINDEX" /></translation>
@@ -767,9 +779,11 @@
 <translation id="6186305613600865047">Zum Seitenende</translation>
 <translation id="6187190722927752226">Aquamarinblau</translation>
 <translation id="6197361807490522975">Dunkelblau</translation>
+<translation id="6218813441317556731"><ph name="DELETE_PHRASE" /> durch <ph name="INSERT_PHRASE" /> ersetzen</translation>
 <translation id="6236061028292614533">Nächste Überschrift</translation>
 <translation id="6254901459154107917">Nächster bearbeitbarer Textbereich</translation>
 <translation id="6259464875943891919"><ph name="TYPE" /> beendet</translation>
+<translation id="6280088282605782512">Doppeltippen</translation>
 <translation id="6282062888058716985">nav</translation>
 <translation id="6295699829709583154">Wichtige Tasten: Suchtaste</translation>
 <translation id="6305702903308659374">Mit normaler Lautstärke wiedergeben, auch wenn eine Sprachausgabe durch ChromeVox stattfindet</translation>
@@ -795,7 +809,6 @@
 <translation id="641759969622533235">{COUNT,plural, =1{Doppelpunkt}other{# Doppelpunkte}}</translation>
 <translation id="6444046323172968959">Benachrichtigungsdialogfeld</translation>
 <translation id="6452403590345320472">Inhaltsverzeichnis</translation>
-<translation id="6457542714329819968">eingeben</translation>
 <translation id="6468049171101508116">Nächste Schaltfläche</translation>
 <translation id="646954774886932461">Index</translation>
 <translation id="6475604559827479857">Farbe zum Hervorheben von Wörtern:</translation>
@@ -941,6 +954,7 @@
 <translation id="7533226154149229506">Helles Goldrutengelb</translation>
 <translation id="7543255924852002459">Label "Verwerfen"</translation>
 <translation id="7552432549459840808">Nützliche Tastenkombinationen in Chrome</translation>
+<translation id="7553679324939294712"><ph name="INSERT_PHRASE" /> vor <ph name="BEFORE_PHRASE" /> einfügen</translation>
 <translation id="7569983096843329377">Schwarz</translation>
 <translation id="7579911500627256166">Punkt <ph name="DOT" /></translation>
 <translation id="7592060599656252486">Einige</translation>
@@ -964,6 +978,7 @@
 <translation id="7684431668231950609">Text bearbeiten, URL-Eintrag</translation>
 <translation id="7685589220304187312">tlbar</translation>
 <translation id="7693840228159394336">Vorheriges Optionsfeld</translation>
+<translation id="7696631298608145306">zum nächsten Wort wechseln</translation>
 <translation id="7701040980221191251">Keine</translation>
 <translation id="7701196182766842984">autolst</translation>
 <translation id="7713139339518499741">Natürliche Stimme</translation>
@@ -972,6 +987,7 @@
 <translation id="7731785449856576010">Kein weiteres Medien-Widget</translation>
 <translation id="7735498529470878067">Mit „Tippen &amp; Entdecken“ kannst du dir schnell einen Überblick über den Bildschirminhalt verschaffen.</translation>
 <translation id="773906353055481349">Drücke die Suchtaste + Strg + Alt und Pfeiltasten, um zwischen Zellen zu wechseln</translation>
+<translation id="7746976083433980639"><ph name="ACTION" /> für folgende Aktion: <ph name="LABEL" /></translation>
 <translation id="7763537600611320912">Download von <ph name="FILE_NAME" /> gestartet</translation>
 <translation id="7768784765476638775">Vorlesen</translation>
 <translation id="7776293189010177726">ChromeVox-Menüs öffnen</translation>
@@ -1071,6 +1087,7 @@
 <translation id="8455868257606149352">Max.: <ph name="X" /></translation>
 <translation id="84575901236241018">verfügt über den Zugriffsschlüssel <ph name="KEY" />.</translation>
 <translation id="8463645336674919227">Grammatikfehler wird verlassen</translation>
+<translation id="8465573210279050749">vorheriges Wort löschen</translation>
 <translation id="847040613207937740">Kein nächstes Kästchen</translation>
 <translation id="8473540203671727883">Text unter dem Mauszeiger vorlesen</translation>
 <translation id="8476408756881832830">Wiedergabe pausieren, wenn eine Sprachausgabe durch ChromeVox stattfindet</translation>
@@ -1107,6 +1124,7 @@
 <translation id="8697111817566059991">{COUNT,plural, =1{senkrechter Strich}other{# senkrechte Striche}}</translation>
 <translation id="8741370088760768424">Hinweis: Wenn du das aktuelle Element aktivieren möchtest, drücke „Suchtaste + Leertaste“.</translation>
 <translation id="8743786158317878347">Strukturierte Inhalte wie z. B. Tabellen eingeben</translation>
+<translation id="8746846427395705317">zum vorherigen Wort wechseln</translation>
 <translation id="8747966237988593539">Geordnete Liste</translation>
 <translation id="8749988712346667988">Silber</translation>
 <translation id="875769700429317857">Download von <ph name="FILE_NAME" /> abgeschlossen</translation>
@@ -1134,6 +1152,7 @@
 <translation id="8970172509886453271">Kein vorheriger Abschnitt</translation>
 <translation id="89720367119469899">Esc-Taste</translation>
 <translation id="8978496506222343566">tltip</translation>
+<translation id="898089897833732740"><ph name="PHRASE" /> löschen</translation>
 <translation id="8986362086234534611">Entfernen</translation>
 <translation id="8989104346085848538">Wenn du die ChromeVox-Sprachausgabe anhalten möchtest, drücke die Steuerung-Taste.</translation>
 <translation id="8993737615451556423">Steuerelemente, damit die Vorlesestimme schneller oder langsamer liest oder pausiert</translation>

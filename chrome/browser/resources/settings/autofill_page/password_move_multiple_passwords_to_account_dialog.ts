@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,14 +10,14 @@
 
 import './avatar_icon.js';
 import './password_list_item.js';
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/cr_checkbox/cr_checkbox.m.js';
-import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_checkbox/cr_checkbox.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
+import './passwords_shared.css.js';
 
-import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
+import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {MultiStorePasswordUiEntry} from './multi_store_password_ui_entry.js';
 import {PasswordManagerImpl} from './password_manager_proxy.js';
 import {getTemplate} from './password_move_multiple_passwords_to_account_dialog.html.js';
 import {MoveToAccountStoreTrigger} from './password_move_to_account_dialog.js';
@@ -51,7 +51,7 @@ export class PasswordMoveMultiplePasswordsToAccountDialogElement extends
     };
   }
 
-  passwordsToMove: Array<MultiStorePasswordUiEntry>;
+  passwordsToMove: chrome.passwordsPrivate.PasswordUiEntry[];
   accountEmail: string;
 
   /** @return Whether the user confirmed the dialog. */
@@ -71,16 +71,13 @@ export class PasswordMoveMultiplePasswordsToAccountDialogElement extends
 
   private onMoveButtonClick_() {
     const checkboxes = this.$.dialog.querySelectorAll('cr-checkbox');
-    const selectedPasswords: Array<number> = [];
+    const selectedPasswords: number[] = [];
     checkboxes.forEach((checkbox) => {
       if (checkbox.checked) {
         selectedPasswords.push(Number(checkbox.dataset['id']));
       }
     });
     PasswordManagerImpl.getInstance().movePasswordsToAccount(selectedPasswords);
-    chrome.metricsPrivate.recordSmallCount(
-        'PasswordManager.AccountStorage.MoveToAccountStorePasswordsCount',
-        selectedPasswords.length);
     this.$.dialog.close();
   }
 

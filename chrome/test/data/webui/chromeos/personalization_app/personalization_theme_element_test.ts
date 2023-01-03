@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@
 import 'chrome://personalization/strings.m.js';
 import 'chrome://webui-test/mojo_webui_test_support.js';
 
-import {emptyState, PersonalizationThemeElement, SetDarkModeEnabledAction, ThemeActionName, ThemeObserver} from 'chrome://personalization/trusted/personalization_app.js';
+import {emptyState, PersonalizationThemeElement, SetDarkModeEnabledAction, ThemeActionName, ThemeObserver} from 'chrome://personalization/js/personalization_app.js';
 import {assertDeepEquals, assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {baseSetup, initElement} from './personalization_app_test_utils.js';
 import {TestPersonalizationStore} from './test_personalization_store.js';
@@ -44,7 +44,7 @@ suite('PersonalizationThemeTest', function() {
 
     assertEquals(
         personalizationThemeElement.i18n('themeLabel'),
-        personalizationThemeElement.shadowRoot!.querySelector('p')!.innerText);
+        personalizationThemeElement.shadowRoot!.querySelector('h2')!.innerText);
   });
 
   test('sets color mode in store on first load', async () => {
@@ -125,6 +125,10 @@ suite('PersonalizationThemeTest', function() {
         SetDarkModeEnabledAction;
     assertTrue(action.enabled);
     assertTrue(personalizationStore.data.theme.colorModeAutoScheduleEnabled);
+    assertEquals(radioButton.getAttribute('aria-pressed'), 'true');
+
+    // reclicking the button does not disable auto mode.
+    radioButton.click();
     assertEquals(radioButton.getAttribute('aria-pressed'), 'true');
   });
 });

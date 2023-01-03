@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -70,7 +70,9 @@ class ProfileMetrics {
     kAbortedBeforeSignIn = 10,
     kAbortedAfterSignIn = 11,
     kAbortedOnEnterpriseWelcome = 12,
-    kMaxValue = kAbortedOnEnterpriseWelcome,
+    kSkippedAlreadySyncing = 13,
+    kSkippedByPolicies = 14,
+    kMaxValue = kSkippedByPolicies,
   };
 
   // These values are persisted to logs. Entries should not be renumbered and
@@ -194,6 +196,10 @@ class ProfileMetrics {
   // into g_browser_process through a helper function.
   static void LogProfileLaunch(Profile* profile);
   static void LogProfileUpdate(const base::FilePath& profile_path);
+
+  // Records the count of KeyedService active for the System Profile histogram.
+  // Expects only System Profiles.
+  static void LogSystemProfileKeyedServicesCount(Profile* profile);
 };
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_METRICS_H_

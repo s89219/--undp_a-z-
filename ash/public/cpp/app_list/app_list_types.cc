@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@ bool IsAppListSearchResultAnApp(AppListSearchResultType result_type) {
     case AppListSearchResultType::kArcAppShortcut:
     case AppListSearchResultType::kInstantApp:
     case AppListSearchResultType::kGames:
+    case AppListSearchResultType::kZeroStateApp:
       return true;
     case AppListSearchResultType::kUnknown:
     case AppListSearchResultType::kOmnibox:
@@ -30,9 +31,6 @@ bool IsAppListSearchResultAnApp(AppListSearchResultType result_type) {
     case AppListSearchResultType::kAnswerCard:
     case AppListSearchResultType::kZeroStateFile:
     case AppListSearchResultType::kZeroStateDrive:
-    case AppListSearchResultType::kFileChip:
-    case AppListSearchResultType::kDriveChip:
-    case AppListSearchResultType::kAssistantChip:
     case AppListSearchResultType::kOsSettings:
     case AppListSearchResultType::kInternalPrivacyInfo:
     case AppListSearchResultType::kAssistantText:
@@ -43,6 +41,39 @@ bool IsAppListSearchResultAnApp(AppListSearchResultType result_type) {
     case AppListSearchResultType::kKeyboardShortcut:
     case AppListSearchResultType::kOpenTab:
     case AppListSearchResultType::kPersonalization:
+    case AppListSearchResultType::kImageSearch:
+      return false;
+  }
+}
+
+bool IsZeroStateResultType(AppListSearchResultType result_type) {
+  switch (result_type) {
+    case AppListSearchResultType::kZeroStateFile:
+    case AppListSearchResultType::kZeroStateDrive:
+    case AppListSearchResultType::kZeroStateHelpApp:
+    case AppListSearchResultType::kZeroStateApp:
+      return true;
+    case AppListSearchResultType::kUnknown:
+    case AppListSearchResultType::kInstalledApp:
+    case AppListSearchResultType::kPlayStoreApp:
+    case AppListSearchResultType::kInstantApp:
+    case AppListSearchResultType::kInternalApp:
+    case AppListSearchResultType::kOmnibox:
+    case AppListSearchResultType::kLauncher:
+    case AppListSearchResultType::kAnswerCard:
+    case AppListSearchResultType::kPlayStoreReinstallApp:
+    case AppListSearchResultType::kArcAppShortcut:
+    case AppListSearchResultType::kOsSettings:
+    case AppListSearchResultType::kInternalPrivacyInfo:
+    case AppListSearchResultType::kAssistantText:
+    case AppListSearchResultType::kHelpApp:
+    case AppListSearchResultType::kFileSearch:
+    case AppListSearchResultType::kDriveSearch:
+    case AppListSearchResultType::kKeyboardShortcut:
+    case AppListSearchResultType::kOpenTab:
+    case AppListSearchResultType::kGames:
+    case AppListSearchResultType::kPersonalization:
+    case AppListSearchResultType::kImageSearch:
       return false;
   }
 }
@@ -158,10 +189,6 @@ std::ostream& operator<<(std::ostream& os, AppListViewState state) {
   switch (state) {
     case AppListViewState::kClosed:
       return os << "Closed";
-    case AppListViewState::kPeeking:
-      return os << "Peeking";
-    case AppListViewState::kHalf:
-      return os << "Half";
     case AppListViewState::kFullscreenAllApps:
       return os << "FullscreenAllApps";
     case AppListViewState::kFullscreenSearch:
@@ -201,13 +228,8 @@ SearchResultTag::SearchResultTag(int styles, uint32_t start, uint32_t end)
 SearchResultAction::SearchResultAction() = default;
 
 SearchResultAction::SearchResultAction(SearchResultActionType type,
-                                       const gfx::ImageSkia& image,
-                                       const std::u16string& tooltip_text,
-                                       bool visible_on_hover)
-    : type(type),
-      image(image),
-      tooltip_text(tooltip_text),
-      visible_on_hover(visible_on_hover) {}
+                                       const std::u16string& tooltip_text)
+    : type(type), tooltip_text(tooltip_text) {}
 
 SearchResultAction::SearchResultAction(const SearchResultAction& other) =
     default;
@@ -218,7 +240,7 @@ SearchResultAction::~SearchResultAction() = default;
 // SearchResultTextItem:
 
 SearchResultTextItem::SearchResultTextItem(SearchResultTextItemType type) {
-  item_type = type;
+  item_type_ = type;
 }
 
 SearchResultTextItem::SearchResultTextItem(const SearchResultTextItem& other) =
@@ -230,45 +252,45 @@ SearchResultTextItem& SearchResultTextItem::operator=(
 SearchResultTextItem::~SearchResultTextItem() = default;
 
 SearchResultTextItemType SearchResultTextItem::GetType() const {
-  return item_type;
+  return item_type_;
 }
 
 const std::u16string& SearchResultTextItem::GetText() const {
-  DCHECK(item_type == SearchResultTextItemType::kString ||
-         item_type == SearchResultTextItemType::kIconifiedText);
-  return raw_text.value();
+  DCHECK(item_type_ == SearchResultTextItemType::kString ||
+         item_type_ == SearchResultTextItemType::kIconifiedText);
+  return raw_text_.value();
 }
 
 SearchResultTextItem& SearchResultTextItem::SetText(std::u16string text) {
-  DCHECK(item_type == SearchResultTextItemType::kString ||
-         item_type == SearchResultTextItemType::kIconifiedText);
-  raw_text = text;
+  DCHECK(item_type_ == SearchResultTextItemType::kString ||
+         item_type_ == SearchResultTextItemType::kIconifiedText);
+  raw_text_ = text;
   return *this;
 }
 
 const SearchResultTags& SearchResultTextItem::GetTextTags() const {
-  DCHECK(item_type == SearchResultTextItemType::kString ||
-         item_type == SearchResultTextItemType::kIconifiedText);
-  return text_tags.value();
+  DCHECK(item_type_ == SearchResultTextItemType::kString ||
+         item_type_ == SearchResultTextItemType::kIconifiedText);
+  return text_tags_.value();
 }
 
 SearchResultTags& SearchResultTextItem::GetTextTags() {
-  DCHECK(item_type == SearchResultTextItemType::kString ||
-         item_type == SearchResultTextItemType::kIconifiedText);
-  return text_tags.value();
+  DCHECK(item_type_ == SearchResultTextItemType::kString ||
+         item_type_ == SearchResultTextItemType::kIconifiedText);
+  return text_tags_.value();
 }
 
 SearchResultTextItem& SearchResultTextItem::SetTextTags(SearchResultTags tags) {
-  DCHECK(item_type == SearchResultTextItemType::kString ||
-         item_type == SearchResultTextItemType::kIconifiedText);
-  text_tags = tags;
+  DCHECK(item_type_ == SearchResultTextItemType::kString ||
+         item_type_ == SearchResultTextItemType::kIconifiedText);
+  text_tags_ = tags;
   return *this;
 }
 
 const gfx::VectorIcon* SearchResultTextItem::GetIconFromCode() const {
-  DCHECK_EQ(item_type, SearchResultTextItemType::kIconCode);
-  DCHECK(icon_code.has_value());
-  switch (icon_code.value()) {
+  DCHECK_EQ(item_type_, SearchResultTextItemType::kIconCode);
+  DCHECK(icon_code_.has_value());
+  switch (icon_code_.value()) {
     case kKeyboardShortcutBrowserBack:
       return &kKsvBrowserBackIcon;
     case kKeyboardShortcutBrowserForward:
@@ -307,32 +329,32 @@ const gfx::VectorIcon* SearchResultTextItem::GetIconFromCode() const {
 }
 
 SearchResultTextItem& SearchResultTextItem::SetIconCode(IconCode code) {
-  DCHECK_EQ(item_type, SearchResultTextItemType::kIconCode);
-  icon_code = code;
+  DCHECK_EQ(item_type_, SearchResultTextItemType::kIconCode);
+  icon_code_ = code;
   return *this;
 }
 
 gfx::ImageSkia SearchResultTextItem::GetImage() const {
-  DCHECK_EQ(item_type, SearchResultTextItemType::kCustomImage);
-  return raw_image.value();
+  DCHECK_EQ(item_type_, SearchResultTextItemType::kCustomImage);
+  return raw_image_.value();
 }
 
 SearchResultTextItem& SearchResultTextItem::SetImage(gfx::ImageSkia icon) {
-  DCHECK_EQ(item_type, SearchResultTextItemType::kCustomImage);
-  raw_image = icon;
+  DCHECK_EQ(item_type_, SearchResultTextItemType::kCustomImage);
+  raw_image_ = icon;
   return *this;
 }
 
 SearchResultTextItem::OverflowBehavior
 SearchResultTextItem::GetOverflowBehavior() const {
-  DCHECK_EQ(item_type, SearchResultTextItemType::kString);
-  return overflow_behavior;
+  DCHECK_EQ(item_type_, SearchResultTextItemType::kString);
+  return overflow_behavior_;
 }
 
 SearchResultTextItem& SearchResultTextItem::SetOverflowBehavior(
     SearchResultTextItem::OverflowBehavior overflow_behavior) {
-  DCHECK_EQ(item_type, SearchResultTextItemType::kString);
-  this->overflow_behavior = overflow_behavior;
+  DCHECK_EQ(item_type_, SearchResultTextItemType::kString);
+  overflow_behavior_ = overflow_behavior;
   return *this;
 }
 

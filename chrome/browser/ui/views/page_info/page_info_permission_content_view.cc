@@ -1,16 +1,17 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/page_info/page_info_permission_content_view.h"
 
+#include "base/ranges/algorithm.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/ui/page_info/chrome_page_info_ui_delegate.h"
 #include "chrome/browser/ui/views/accessibility/non_accessible_image_view.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
-#include "chrome/browser/ui/views/page_info/page_info_hover_button.h"
+#include "chrome/browser/ui/views/controls/rich_hover_button.h"
 #include "chrome/browser/ui/views/page_info/page_info_view_factory.h"
 #include "components/permissions/permission_util.h"
 #include "components/strings/grit/components_strings.h"
@@ -87,6 +88,9 @@ PageInfoPermissionContentView::PageInfoPermissionContentView(
       std::make_unique<views::ToggleButton>(base::BindRepeating(
           &PageInfoPermissionContentView::OnToggleButtonPressed,
           base::Unretained(this))));
+  toggle_button_->SetAccessibleName(
+      l10n_util::GetStringFUTF16(IDS_PAGE_INFO_SELECTOR_TOOLTIP,
+                                 PageInfoUI::PermissionTypeToUIString(type)));
   toggle_button_->SetPreferredSize(
       gfx::Size(toggle_button_->GetPreferredSize().width(), title_height));
 
@@ -99,14 +103,16 @@ PageInfoPermissionContentView::PageInfoPermissionContentView(
 
   AddChildView(PageInfoViewFactory::CreateSeparator());
   // TODO(crbug.com/1225563): Consider to use permission specific text.
-  AddChildView(std::make_unique<PageInfoHoverButton>(
+  AddChildView(std::make_unique<RichHoverButton>(
       base::BindRepeating(
           [](PageInfoPermissionContentView* view) {
             view->presenter_->OpenContentSettingsExceptions(view->type_);
           },
           this),
       PageInfoViewFactory::GetSiteSettingsIcon(),
-      IDS_PAGE_INFO_PERMISSIONS_SUBPAGE_MANAGE_BUTTON, std::u16string(), 0,
+      l10n_util::GetStringUTF16(
+          IDS_PAGE_INFO_PERMISSIONS_SUBPAGE_MANAGE_BUTTON),
+      std::u16string(),
       l10n_util::GetStringUTF16(
           IDS_PAGE_INFO_PERMISSIONS_SUBPAGE_MANAGE_BUTTON_TOOLTIP),
       std::u16string(), PageInfoViewFactory::GetLaunchIcon()));
@@ -119,11 +125,8 @@ PageInfoPermissionContentView::~PageInfoPermissionContentView() = default;
 void PageInfoPermissionContentView::SetPermissionInfo(
     const PermissionInfoList& permission_info_list,
     ChosenObjectInfoList chosen_object_info_list) {
-  auto permission_it =
-      std::find_if(permission_info_list.begin(), permission_info_list.end(),
-                   [=](PageInfo::PermissionInfo permission_info) {
-                     return permission_info.type == type_;
-                   });
+  auto permission_it = base::ranges::find(permission_info_list, type_,
+                                          &PageInfo::PermissionInfo::type);
 
   CHECK(permission_it != permission_info_list.end());
 

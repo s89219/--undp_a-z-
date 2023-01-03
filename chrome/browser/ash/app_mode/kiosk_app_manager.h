@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,18 +10,22 @@
 #include <string>
 #include <vector>
 
-#include "ash/components/tpm/install_attributes.h"
 #include "base/callback_forward.h"
 #include "base/no_destructor.h"
 #include "base/time/time.h"
 #include "chrome/browser/ash/app_mode/kiosk_app_manager_base.h"
+#include "chrome/browser/ash/extensions/external_cache.h"
+#include "chrome/browser/ash/extensions/external_cache_delegate.h"
 #include "chrome/browser/ash/settings/cros_settings.h"
 #include "chrome/browser/chromeos/app_mode/chrome_kiosk_app_installer.h"
 #include "chrome/browser/chromeos/app_mode/chrome_kiosk_external_loader_broker.h"
-#include "chrome/browser/chromeos/extensions/external_cache.h"
-#include "chrome/browser/chromeos/extensions/external_cache_delegate.h"
+#include "chromeos/ash/components/install_attributes/install_attributes.h"
+#include "chromeos/crosapi/mojom/chrome_app_kiosk_service.mojom.h"
 #include "components/account_id/account_id.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "extensions/browser/updater/extension_downloader_delegate.h"
 #include "extensions/common/extension_id.h"
+#include "net/base/backoff_entry.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 class GURL;
@@ -42,6 +46,10 @@ class KioskAppData;
 class KioskExternalUpdater;
 class OwnerSettingsServiceAsh;
 
+extern const char kKioskPrimaryAppInstallErrorHistogram[];
+extern const char kKioskPrimaryAppUpdateResultHistogram[];
+extern const char kKioskExternalUpdateSuccessHistogram[];
+
 // KioskAppManager manages cached app data.
 class KioskAppManager : public KioskAppManagerBase,
                         public chromeos::ExternalCacheDelegate {
@@ -54,6 +62,30 @@ class KioskAppManager : public KioskAppManagerBase,
     // Consumer kiosk mode auto-launch feature is disabled and cannot any longer
     // be enabled on this machine.
     kDisabled,
+  };
+
+  // Result of downloading primary app from ExternalCache. Should be in sync
+  // with extensions::ExtensionDownloaderDelegate::Error. Used in UMA metrics.
+  enum class PrimaryAppDownloadResult {
+    // Successful update.
+    kSuccess,
+    // Background networking is disabled.
+    kDisabled,
+    // Failed to fetch the manifest for this extension.
+    kManifestFetchFailed,
+    // The manifest couldn't be parsed.
+    kManifestInvalid,
+    // The manifest was fetched and parsed, and there are no updates for
+    // this extension.
+    kNoUpdateAvailable,
+    // The update entry for the extension contained no fetch URL.
+    kCrxFetchUrlEmpty,
+    // The update entry for the extension contained invalid fetch URL.
+    kCrxFetchUrlInvalid,
+    // There was an update for this extension but the download of the crx
+    // failed.
+    kCrxFetchFailed,
+    kMaxValue = kCrxFetchFailed,
   };
 
   using EnableKioskAutoLaunchCallback = base::OnceCallback<void(bool success)>;
@@ -90,8 +122,10 @@ class KioskAppManager : public KioskAppManagerBase,
   static const char kKioskDictionaryName[];
   static const char kKeyAutoLoginState[];
 
-  // Gets the KioskAppManager instance, which is created on first call.
+  // Returns the manager instance. Crashes if it is not yet initialized.
   static KioskAppManager* Get();
+
+  static bool IsInitialized();
 
   // Initializes KioskAppManager for testing, injecting the provided overrides.
   // |overrides| can be null, in which case KioskAppManager will use default
@@ -99,16 +133,19 @@ class KioskAppManager : public KioskAppManagerBase,
   // Must be called before Get().
   static void InitializeForTesting(Overrides* overrides);
 
-  // Prepares for shutdown and calls CleanUp() if needed.
-  static void Shutdown();
-
-  // Clears the global KioskAppManager.
-  static void ResetForTesting();
-
   // Registers kiosk app entries in local state.
-  static void RegisterPrefs(PrefRegistrySimple* registry);
+  static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
+
+  // Registers kiosk app prefs that will be attached to a user profile. It would
+  // be applied to Kiosk, because a Kiosk session has a special user profile.
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   static bool IsConsumerKioskEnabled();
+
+  KioskAppManager();
+  KioskAppManager(const KioskAppManager&) = delete;
+  KioskAppManager& operator=(const KioskAppManager&) = delete;
+  ~KioskAppManager() override;
 
   // Initiates reading of consumer kiosk mode auto-launch status.
   void GetConsumerKioskAutoLaunchStatus(
@@ -177,7 +214,7 @@ class KioskAppManager : public KioskAppManagerBase,
                     base::FilePath* file_path,
                     std::string* version) const;
 
-  ChromeKioskAppInstaller::AppInstallData CreatePrimaryAppInstallData(
+  crosapi::mojom::AppInstallParams CreatePrimaryAppInstallData(
       const std::string& id) const;
 
   void UpdateExternalCache();
@@ -212,6 +249,11 @@ class KioskAppManager : public KioskAppManagerBase,
   // kiosk apps that are immediately auto-launched on startup.
   void SetAppWasAutoLaunchedWithZeroDelay(const std::string& app_id);
 
+  // Sets retry backoff policy of extension downloader. Set `absl::nullopt` to
+  // restore to the default. Used to reduce backoff while Kiosk is launching.
+  void SetExtensionDownloaderBackoffPolicy(
+      absl::optional<net::BackoffEntry::Policy> backoff_policy);
+
   // Initialize |app_session_|.
   void InitSession(Profile* profile, const std::string& app_id);
 
@@ -235,14 +277,6 @@ class KioskAppManager : public KioskAppManagerBase,
     kRejected = 3,
   };
 
-  KioskAppManager();
-  KioskAppManager(const KioskAppManager&) = delete;
-  KioskAppManager& operator=(const KioskAppManager&) = delete;
-  ~KioskAppManager() override;
-
-  // Stop all data loading and remove its dependency on CrosSettings.
-  void CleanUp();
-
   // Gets KioskAppData for the given app id.
   const KioskAppData* GetAppData(const std::string& app_id) const;
   KioskAppData* GetAppDataMutable(const std::string& app_id);
@@ -255,8 +289,11 @@ class KioskAppManager : public KioskAppManagerBase,
   void UpdateExternalCachePrefs();
 
   // chromeos::ExternalCacheDelegate:
-  void OnExtensionLoadedInCache(const extensions::ExtensionId& id) override;
-  void OnExtensionDownloadFailed(const extensions::ExtensionId& id) override;
+  void OnExtensionLoadedInCache(const extensions::ExtensionId& id,
+                                bool is_updated) override;
+  void OnExtensionDownloadFailed(
+      const extensions::ExtensionId& id,
+      extensions::ExtensionDownloaderDelegate::Error error) override;
 
   // Callback for `InstallAttributes::LockDevice()` during
   // EnableConsumerModeKiosk() call.
@@ -307,11 +344,5 @@ class KioskAppManager : public KioskAppManagerBase,
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove when the //chrome/browser/chromeos
-// source code migration is finished.
-namespace chromeos {
-using ::ash::KioskAppManager;
-}
 
 #endif  // CHROME_BROWSER_ASH_APP_MODE_KIOSK_APP_MANAGER_H_

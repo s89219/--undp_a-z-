@@ -1,0 +1,127 @@
+<style include="cr-shared-style">
+  #currentSitesSection {
+    align-items: center;
+    display: flex;
+    padding: 0 var(--cr-section-padding);
+  }
+
+  #currentSitesSectionWrapper {
+    width: 100%;
+  }
+
+  #currentSitesHeading {
+    color: var(--cr-secondary-text-color);
+    font-size: 100%;
+    font-weight: 500;
+    margin: 0;
+    padding-block-start: var(--cr-section-vertical-padding);
+  }
+
+  #currentSitesDescription {
+    padding-block-end: var(--cr-section-vertical-padding);
+  }
+
+  #learnMoreLink {
+    background: none;
+    border: none;
+    color: var(--cr-link-color);
+    cursor: pointer;
+    margin: 0;
+    padding: 0;
+    text-decoration: underline;
+  }
+
+  .no-sites {
+    padding-block-end: 32px;
+    padding-block-start: 16px;
+    padding-inline-start: 40px;
+  }
+
+  #blockedSitesDescription {
+    min-height: auto;
+    padding-block-end: 16px;
+    padding-block-start: 16px;
+  }
+
+  #footer {
+    padding-block-end: 16px;
+    padding-block-start: 16px;
+  }
+
+  #dialog p {
+    margin: 0;
+    padding-block-end: 16px;
+    padding-block-start: 4px;
+  }
+</style>
+
+<settings-toggle-button
+    id="fledgeToggle"
+    pref="{{prefs.privacy_sandbox.m1.fledge_enabled}}"
+    label="$i18n{fledgePageToggleLabel}"
+    sub-label="$i18n{fledgePageToggleSubLabel}">
+</settings-toggle-button>
+<div id="currentSitesSection">
+  <div id="currentSitesSectionWrapper" class="hr">
+    <h2 id="currentSitesHeading">
+      $i18n{fledgePageCurrentSitesHeading}
+    </h2>
+    <template is="dom-if" if="[[isFledgeEnabledAndLoaded_(
+        prefs.privacy_sandbox.m1.fledge_enabled.value, isSitesListLoaded_)]]"
+        restamp>
+      <div id="currentSitesDescription" class="cr-secondary-text"
+          hidden="[[isSitesListEmpty_(sitesList_.length)]]">
+        $i18n{fledgePageCurrentSitesDescription}
+        <!-- TODO(b/264024469): Add "Learn more" into current sites description
+             string. -->
+        <!-- TODO(b/254412043): Add aria-label or aria-describedby. -->
+        <button id="learnMoreLink" on-click="onLearnMoreClick_">
+          $i18n{fledgePageCurrentSitesDescriptionLearnMore}
+        </button>
+      </div>
+      <!-- TODO(b/254411463): Add sites list. -->
+      <div id="currentSitesDescriptionEmpty"
+          class="no-sites cr-secondary-text"
+          hidden="[[!isSitesListEmpty_(sitesList_.length)]]">
+        $i18n{fledgePageCurrentSitesDescriptionEmpty}
+      </div>
+    </template>
+    <div id="currentSitesDescriptionDisabled"
+        class="no-sites cr-secondary-text"
+        hidden="[[prefs.privacy_sandbox.m1.fledge_enabled.value]]">
+      $i18n{fledgePageCurrentSitesDescriptionDisabled}
+    </div>
+  </div>
+</div>
+<cr-expand-button id="blockedSitesRow" class="cr-row"
+    expanded="{{blockedSitesExpanded_}}">
+  $i18n{fledgePageBlockedSitesHeading}
+</cr-expand-button>
+<iron-collapse opened="[[blockedSitesExpanded_]]">
+  <div id="blockedSitesDescription"
+      class="cr-row continuation cr-secondary-text">
+    [[computeBlockedSitesDescription_(blockedSitesList_.length)]]
+  </div>
+  <!-- TODO(b/254411463): Add blocked sites list. -->
+</iron-collapse>
+<!-- TODO(b/254412043): Add links to footer. -->
+<div id="footer" class="cr-row cr-secondary-text">
+  $i18n{fledgePageFooter}
+</div>
+
+<template is="dom-if" if="[[isLearnMoreDialogOpen_]]" restamp>
+  <cr-dialog id="dialog" on-close="onCloseDialog_" show-on-attach>
+    <div slot="title">$i18n{fledgePageLearnMoreHeading}</div>
+    <div slot="body">
+      <p>$i18n{fledgePageLearnMoreBullet1}</p>
+      <p>$i18n{fledgePageLearnMoreBullet2}</p>
+      <p>$i18n{fledgePageLearnMoreBullet3}</p>
+    </div>
+    <div slot="button-container">
+      <cr-button id="closeButton" class="cancel-button" autofocus
+          on-click="onCloseDialog_">
+        $i18n{close}
+      </cr-button>
+    </div>
+  </cr-dialog>
+</template>

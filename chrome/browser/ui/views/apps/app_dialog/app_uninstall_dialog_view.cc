@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/feature_list.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/chromeos_buildflags.h"
@@ -33,22 +34,89 @@
 #include "extensions/common/manifest_url_handlers.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/styled_label.h"
-#include "ui/views/layout/box_layout_view.h"
+#include "ui/views/layout/table_layout.h"
 #include "ui/views/view_class_properties.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ash/app_list/arc/arc_app_list_prefs.h"
 #include "chrome/browser/ash/borealis/borealis_util.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
 #endif
 
 namespace {
 
 AppUninstallDialogView* g_app_uninstall_dialog_view = nullptr;
+
+class UninstallCheckboxView : public views::View,
+                              public views::ViewTargeterDelegate {
+ public:
+  METADATA_HEADER(UninstallCheckboxView);
+
+  class CheckboxTargeter : public views::ViewTargeterDelegate {
+   public:
+    CheckboxTargeter() = default;
+    ~CheckboxTargeter() override = default;
+
+    // views::ViewTargeterDelegate:
+    bool DoesIntersectRect(const views::View* target,
+                           const gfx::Rect& rect) const override {
+      return true;
+    }
+  };
+
+  explicit UninstallCheckboxView(std::unique_ptr<views::StyledLabel> label) {
+    SetEventTargeter(std::make_unique<views::ViewTargeter>(this));
+
+    views::TableLayout* layout =
+        SetLayoutManager(std::make_unique<views::TableLayout>());
+    layout
+        ->AddColumn(views::LayoutAlignment::kStretch,
+                    views::LayoutAlignment::kStretch,
+                    views::TableLayout::kFixedSize,
+                    views::TableLayout::ColumnSize::kUsePreferred, 0, 0)
+        .AddPaddingColumn(views::TableLayout::kFixedSize,
+                          ChromeLayoutProvider::Get()->GetDistanceMetric(
+                              views::DISTANCE_RELATED_LABEL_HORIZONTAL))
+        .AddColumn(views::LayoutAlignment::kStretch,
+                   views::LayoutAlignment::kStretch, 1.0f,
+                   views::TableLayout::ColumnSize::kFixed, 0, 0)
+        .AddRows(1, views::TableLayout::kFixedSize);
+
+    auto checkbox = std::make_unique<views::Checkbox>();
+    checkbox->SetAssociatedLabel(label.get());
+    checkbox_targeter_ = std::make_unique<CheckboxTargeter>();
+    checkbox->SetEventTargeter(
+        std::make_unique<views::ViewTargeter>(checkbox_targeter_.get()));
+    checkbox_ = AddChildView(std::move(checkbox));
+    AddChildView(std::move(label));
+  }
+  ~UninstallCheckboxView() override = default;
+
+  // views::ViewTargeterDelegate:
+  View* TargetForRect(View* root, const gfx::Rect& rect) override {
+    views::View* target =
+        views::ViewTargeterDelegate::TargetForRect(root, rect);
+
+    if (target->parent() != this)
+      return target;
+
+    return checkbox_;
+  }
+
+  views::Checkbox* checkbox() { return checkbox_; }
+
+ private:
+  raw_ptr<views::Checkbox> checkbox_;
+  std::unique_ptr<CheckboxTargeter> checkbox_targeter_;
+};
+
+BEGIN_METADATA(UninstallCheckboxView, views::View)
+END_METADATA
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 bool IsArcShortcutApp(Profile* profile, const std::string& app_id) {
@@ -195,6 +263,13 @@ void AppUninstallDialogView::InitializeView(Profile* profile,
       NOTREACHED();
 #endif
       break;
+    case apps::AppType::kBruschetta:
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+      // TODO(b/247636749): Implement Bruschetta uninstall.
+#else
+      NOTREACHED();
+#endif
+      break;
 
     case apps::AppType::kWeb:
     case apps::AppType::kSystemWeb:
@@ -211,8 +286,9 @@ void AppUninstallDialogView::InitializeCheckbox(const GURL& app_start_url) {
   replacements.push_back(url_formatter::FormatUrlForSecurityDisplay(
       app_start_url, url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC));
 
-  const bool is_google = google_util::IsGoogleHostname(
-      app_start_url.host_piece(), google_util::ALLOW_SUBDOMAIN);
+  const bool is_google = google_util::IsGoogleDomainUrl(
+      app_start_url, google_util::ALLOW_SUBDOMAIN,
+      google_util::ALLOW_NON_STANDARD_PORTS);
   if (!is_google) {
     auto domain = net::registry_controlled_domains::GetDomainAndRegistry(
         app_start_url,
@@ -256,19 +332,10 @@ void AppUninstallDialogView::InitializeCheckbox(const GURL& app_start_url) {
   checkbox_label->SetBorder(
       views::CreateEmptyBorder(gfx::Insets::TLBR(3, 0, 0, 0)));
 
-  auto clear_site_data_checkbox =
-      std::make_unique<views::Checkbox>(std::u16string());
-  clear_site_data_checkbox->SetAssociatedLabel(checkbox_label.get());
-
   // Create a view to hold the checkbox and the text.
-  auto checkbox_view = std::make_unique<views::BoxLayoutView>();
-  checkbox_view->SetBetweenChildSpacing(
-      ChromeLayoutProvider::Get()->GetDistanceMetric(
-          views::DISTANCE_RELATED_LABEL_HORIZONTAL));
-  clear_site_data_checkbox_ =
-      checkbox_view->AddChildView(std::move(clear_site_data_checkbox));
-  auto* label = checkbox_view->AddChildView(std::move(checkbox_label));
-  checkbox_view->SetFlexForView(label, 1);
+  auto checkbox_view =
+      std::make_unique<UninstallCheckboxView>(std::move(checkbox_label));
+  clear_site_data_checkbox_ = checkbox_view->checkbox();
   AddChildView(std::move(checkbox_view));
 }
 

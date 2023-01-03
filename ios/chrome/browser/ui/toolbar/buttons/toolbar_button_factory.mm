@@ -1,11 +1,11 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button_factory.h"
 
-#include "components/strings/grit/components_strings.h"
-#import "ios/chrome/browser/ui/icons/chrome_symbol.h"
+#import "components/strings/grit/components_strings.h"
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button_actions_handler.h"
 #import "ios/chrome/browser/ui/toolbar/buttons/toolbar_button_visibility_configuration.h"
@@ -18,9 +18,9 @@
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ios/chrome/grit/ios_theme_resources.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ios/chrome/grit/ios_theme_resources.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -29,7 +29,7 @@
 namespace {
 
 // The size of the symbol image.
-NSInteger kSymbolImagePointSize = 24;
+const CGFloat kSymbolToolbarPointSize = 24;
 
 }  // namespace
 
@@ -48,8 +48,8 @@ NSInteger kSymbolImagePointSize = 24;
 
 - (ToolbarButton*)backButton {
   UIImage* backImage;
-  backImage = UseSymbols() ? DefaultSymbolWithPointSize(@"arrow.backward",
-                                                        kSymbolImagePointSize)
+  backImage = UseSymbols() ? DefaultSymbolWithPointSize(kBackSymbol,
+                                                        kSymbolToolbarPointSize)
                            : [UIImage imageNamed:@"toolbar_back"];
   ToolbarButton* backButton = [ToolbarButton
       toolbarButtonWithImage:[backImage
@@ -67,7 +67,7 @@ NSInteger kSymbolImagePointSize = 24;
 - (ToolbarButton*)forwardButton {
   UIImage* forwardImage =
       UseSymbols()
-          ? DefaultSymbolWithPointSize(@"arrow.forward", kSymbolImagePointSize)
+          ? DefaultSymbolWithPointSize(kForwardSymbol, kSymbolToolbarPointSize)
           : [UIImage imageNamed:@"toolbar_forward"];
   ToolbarButton* forwardButton = [ToolbarButton
       toolbarButtonWithImage:[forwardImage
@@ -86,7 +86,7 @@ NSInteger kSymbolImagePointSize = 24;
 - (ToolbarTabGridButton*)tabGridButton {
   UIImage* tabGridImage =
       UseSymbols() ? CustomSymbolWithPointSize(kSquareNumberSymbol,
-                                               kSymbolImagePointSize)
+                                               kSymbolToolbarPointSize)
                    : tabGridImage = [UIImage imageNamed:@"toolbar_switcher"];
   ToolbarTabGridButton* tabGridButton =
       [ToolbarTabGridButton toolbarButtonWithImage:tabGridImage];
@@ -104,9 +104,15 @@ NSInteger kSymbolImagePointSize = 24;
   return tabGridButton;
 }
 
-- (ToolbarToolsMenuButton*)toolsMenuButton {
-  ToolbarToolsMenuButton* toolsMenuButton =
-      [[ToolbarToolsMenuButton alloc] initWithFrame:CGRectZero];
+- (ToolbarButton*)toolsMenuButton {
+  ToolbarButton* toolsMenuButton;
+  if (UseSymbols()) {
+    toolsMenuButton = [ToolbarButton
+        toolbarButtonWithImage:DefaultSymbolWithPointSize(
+                                   kMenuSymbol, kSymbolToolbarPointSize)];
+  } else {
+    toolsMenuButton = [[ToolbarToolsMenuButton alloc] initWithFrame:CGRectZero];
+  }
 
   SetA11yLabelAndUiAutomationName(toolsMenuButton, IDS_IOS_TOOLBAR_SETTINGS,
                                   kToolbarToolsMenuButtonIdentifier);
@@ -123,10 +129,10 @@ NSInteger kSymbolImagePointSize = 24;
 }
 
 - (ToolbarButton*)shareButton {
-  UIImage* shareImage = UseSymbols()
-                            ? DefaultSymbolWithPointSize(@"square.and.arrow.up",
-                                                         kSymbolImagePointSize)
-                            : [UIImage imageNamed:@"toolbar_share"];
+  UIImage* shareImage =
+      UseSymbols()
+          ? DefaultSymbolWithPointSize(kShareSymbol, kSymbolToolbarPointSize)
+          : [UIImage imageNamed:@"toolbar_share"];
   ToolbarButton* shareButton =
       [ToolbarButton toolbarButtonWithImage:shareImage];
   [self configureButton:shareButton width:kAdaptiveToolbarButtonWidth];
@@ -142,10 +148,10 @@ NSInteger kSymbolImagePointSize = 24;
 }
 
 - (ToolbarButton*)reloadButton {
-  UIImage* reloadImage = UseSymbols()
-                             ? CustomSymbolWithPointSize(kArrowClockWiseSymbol,
-                                                         kSymbolImagePointSize)
-                             : [UIImage imageNamed:@"toolbar_reload"];
+  UIImage* reloadImage =
+      UseSymbols() ? CustomSymbolWithPointSize(kArrowClockWiseSymbol,
+                                               kSymbolToolbarPointSize)
+                   : [UIImage imageNamed:@"toolbar_reload"];
   ToolbarButton* reloadButton = [ToolbarButton
       toolbarButtonWithImage:[reloadImage
                                  imageFlippedForRightToLeftLayoutDirection]];
@@ -161,9 +167,9 @@ NSInteger kSymbolImagePointSize = 24;
 }
 
 - (ToolbarButton*)stopButton {
-  UIImage* stopImage =
-      UseSymbols() ? DefaultSymbolWithPointSize(@"xmark", kSymbolImagePointSize)
-                   : [UIImage imageNamed:@"toolbar_stop"];
+  UIImage* stopImage = UseSymbols() ? DefaultSymbolWithPointSize(
+                                          kXMarkSymbol, kSymbolToolbarPointSize)
+                                    : [UIImage imageNamed:@"toolbar_stop"];
   ToolbarButton* stopButton = [ToolbarButton toolbarButtonWithImage:stopImage];
   [self configureButton:stopButton width:kAdaptiveToolbarButtonWidth];
   stopButton.accessibilityLabel = l10n_util::GetNSString(IDS_IOS_ACCNAME_STOP);
@@ -175,14 +181,29 @@ NSInteger kSymbolImagePointSize = 24;
 }
 
 - (ToolbarButton*)openNewTabButton {
-  UIImage* newTabImage =
-      UseSymbols() ? DefaultSymbolWithPointSize(@"plus", kSymbolImagePointSize)
-                   : [UIImage imageNamed:@"toolbar_new_tab_page"];
-  ToolbarNewTabButton* newTabButton =
-      [ToolbarNewTabButton toolbarButtonWithImage:newTabImage];
+  ToolbarButton* newTabButton;
+  if (UseSymbols()) {
+    if (@available(iOS 15, *)) {
+      UIImage* image = SymbolWithPalette(
+          CustomSymbolWithPointSize(kNewTabSymbol, kSymbolToolbarPointSize), @[
+            [UIColor colorNamed:kGrey600Color],
+            [self.toolbarConfiguration
+                locationBarBackgroundColorWithVisibility:1]
+          ]);
+      newTabButton = [ToolbarButton toolbarButtonWithImage:image];
+    } else {
+      newTabButton = [ToolbarButton
+          toolbarButtonWithImage:
+              [[UIImage imageNamed:@"plus_circle_fill_ios14"]
+                  imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal]];
+    }
+  } else {
+    newTabButton = [ToolbarNewTabButton
+        toolbarButtonWithImage:[UIImage imageNamed:@"toolbar_new_tab_page"]];
+  }
 
   [newTabButton addTarget:self.actionHandler
-                   action:@selector(searchAction:)
+                   action:@selector(newTabAction:)
          forControlEvents:UIControlEventTouchUpInside];
   BOOL isIncognito = self.style == INCOGNITO;
 
@@ -195,7 +216,7 @@ NSInteger kSymbolImagePointSize = 24;
   newTabButton.accessibilityIdentifier = kToolbarNewTabButtonIdentifier;
 
   newTabButton.visibilityMask =
-      self.visibilityConfiguration.searchButtonVisibility;
+      self.visibilityConfiguration.newTabButtonVisibility;
   return newTabButton;
 }
 
@@ -223,8 +244,8 @@ NSInteger kSymbolImagePointSize = 24;
 
 #pragma mark - Helpers
 
-// Sets the |button| width to |width| with a priority of
-// UILayoutPriorityRequired - 1. If the priority is |UILayoutPriorityRequired|,
+// Sets the `button` width to `width` with a priority of
+// UILayoutPriorityRequired - 1. If the priority is `UILayoutPriorityRequired`,
 // there is a conflict when the buttons are hidden as the stack view is setting
 // their width to 0. Setting the priority to UILayoutPriorityDefaultHigh doesn't
 // work as they would have a lower priority than other elements.
@@ -237,11 +258,11 @@ NSInteger kSymbolImagePointSize = 24;
   button.exclusiveTouch = YES;
   button.pointerInteractionEnabled = YES;
   button.pointerStyleProvider =
-      ^UIPointerStyle*(UIButton* button, UIPointerEffect* proposedEffect,
+      ^UIPointerStyle*(UIButton* uiButton, UIPointerEffect* proposedEffect,
                        UIPointerShape* proposedShape) {
     // This gets rid of a thin border on a spotlighted bookmarks button.
     // This is applied to all toolbar buttons for consistency.
-    CGRect rect = CGRectInset(button.frame, 1, 1);
+    CGRect rect = CGRectInset(uiButton.frame, 1, 1);
     UIPointerShape* shape = [UIPointerShape shapeWithRoundedRect:rect];
     return [UIPointerStyle styleWithEffect:proposedEffect shape:shape];
   };

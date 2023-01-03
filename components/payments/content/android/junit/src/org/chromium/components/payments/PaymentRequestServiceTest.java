@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,6 +32,7 @@ import org.chromium.payments.mojom.PaymentMethodData;
 import org.chromium.payments.mojom.PaymentOptions;
 import org.chromium.payments.mojom.PaymentRequestClient;
 import org.chromium.payments.mojom.PaymentResponse;
+import org.chromium.url.mojom.Url;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -195,6 +196,12 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
     }
 
     @Override
+    public void allowConnectToSource(Url url, Url urlBeforeRedirects, boolean didFollowRedirect,
+            AllowConnectToSource_Response callback) {
+        callback.call(/*allow=*/true);
+    }
+
+    @Override
     public void close() {
         mIsClientClosed = true;
     }
@@ -235,7 +242,7 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
 
     private PaymentApp createDefaultPaymentApp() {
         PaymentApp app = Mockito.mock(PaymentApp.class);
-        Mockito.doReturn(true).when(app).canMakePayment();
+        Mockito.doReturn(true).when(app).hasEnrolledInstrument();
         return app;
     }
 
@@ -252,11 +259,6 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
     private void verifyShowAppSelector(int times) {
         Mockito.verify(mBrowserPaymentRequest, Mockito.times(times))
                 .showOrSkipAppSelector(Mockito.anyBoolean(), Mockito.any(), Mockito.anyBoolean());
-    }
-
-    private void verifyJourneyLoggerRecordedTransactionAmount() {
-        Mockito.verify(mJourneyLogger, Mockito.times(1))
-                .recordTransactionAmount(Mockito.eq("CNY"), Mockito.eq("123"), Mockito.eq(false));
     }
 
     private void verifyContinuedShowWithUpdatedDetails(int times) {
@@ -623,8 +625,6 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
         queryPaymentApps();
         Mockito.verify(mBrowserPaymentRequest, Mockito.times(1))
                 .onShowCalledAndAppsQueriedAndDetailsFinalized();
-
-        verifyJourneyLoggerRecordedTransactionAmount();
     }
 
     @Test
@@ -640,8 +640,6 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
         updateWith(service);
         Mockito.verify(mBrowserPaymentRequest, Mockito.times(1))
                 .onShowCalledAndAppsQueriedAndDetailsFinalized();
-
-        verifyJourneyLoggerRecordedTransactionAmount();
     }
 
     @Test
@@ -657,8 +655,6 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
         queryPaymentApps();
         Mockito.verify(mBrowserPaymentRequest, Mockito.times(1))
                 .onShowCalledAndAppsQueriedAndDetailsFinalized();
-
-        verifyJourneyLoggerRecordedTransactionAmount();
     }
 
     @Test
@@ -708,10 +704,11 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
 
     @Test
     @Feature({"Payments"})
-    public void testSpcCanOnlyBeRequestedAlone_failedForNullPayeeUrl() {
+    public void testSpcCanOnlyBeRequestedAlone_failedForNullPayeeNameAndOrigin() {
         ShadowPaymentFeatureList.setFeatureEnabled(
                 PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION, true);
         Assert.assertNull(defaultBuilder()
+                                  .setPayeeName(null)
                                   .setPayeeOrigin(null)
                                   .setOnlySpcMethodWithoutPaymentOptions()
                                   .build());
@@ -721,13 +718,37 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
 
     @Test
     @Feature({"Payments"})
-    public void testSpcCanOnlyBeRequestedAlone_failedForHttpPayeeUrl() {
+    public void testSpcCanOnlyBeRequestedAlone_allowsNullPayeeOrigin() {
+        ShadowPaymentFeatureList.setFeatureEnabled(
+                PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION, true);
+        // If a valid payeeName is passed, then payeeOrigin is not needed.
+        Assert.assertNotNull(defaultBuilder()
+                                     .setOnlySpcMethodWithoutPaymentOptions()
+                                     .setPayeeName("Merchant Shop")
+                                     .setPayeeOrigin(null)
+                                     .build());
+    }
+
+    @Test
+    @Feature({"Payments"})
+    public void testSpcCanOnlyBeRequestedAlone_failedForEmptyPayeeName() {
+        ShadowPaymentFeatureList.setFeatureEnabled(
+                PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION, true);
+        Assert.assertNull(
+                defaultBuilder().setPayeeName("").setOnlySpcMethodWithoutPaymentOptions().build());
+        assertErrorAndReason(ErrorStrings.INVALID_PAYMENT_METHODS_OR_DATA,
+                PaymentErrorReason.INVALID_DATA_FROM_RENDERER);
+    }
+
+    @Test
+    @Feature({"Payments"})
+    public void testSpcCanOnlyBeRequestedAlone_failedForHttpPayeeOrigin() {
         ShadowPaymentFeatureList.setFeatureEnabled(
                 PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION, true);
         org.chromium.url.internal.mojom.Origin payeeOrigin =
                 new org.chromium.url.internal.mojom.Origin();
         payeeOrigin.scheme = "http";
-        payeeOrigin.host = "www.example.com";
+        payeeOrigin.host = "www.example.test";
         payeeOrigin.port = 443;
         Assert.assertNull(defaultBuilder()
                                   .setPayeeOrigin(payeeOrigin)

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -527,7 +527,7 @@ public class TabGroupUiMediatorUnitTest {
         initAndAssertProperties(mTab2);
 
         // Mock closing tab 2, and tab 3 then gets selected. They are in the same group.
-        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab2, true);
+        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab2, true, true);
         mTabModelObserverArgumentCaptor.getValue().didSelectTab(
                 mTab3, TabSelectionType.FROM_CLOSE, TAB2_ID);
 
@@ -541,12 +541,12 @@ public class TabGroupUiMediatorUnitTest {
         initAndAssertProperties(mTab1);
 
         // Mock closing tab 1, and tab 2 then gets selected. They are in different group.
-        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab1, true);
+        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab1, true, true);
         mTabModelObserverArgumentCaptor.getValue().didSelectTab(
                 mTab2, TabSelectionType.FROM_CLOSE, TAB1_ID);
 
-        // Strip should never be reset since currently tab group UI is invisible.
-        verifyNeverReset();
+        // Strip should be reset since we are switching to a different group.
+        verifyResetStrip(true, mTabGroup2);
     }
 
     // TODO(988199): Ignore this test until we have a conclusion from the attached bug.
@@ -557,11 +557,11 @@ public class TabGroupUiMediatorUnitTest {
 
         // Mock closing tab 2 and tab, then tab 1 gets selected. They are in different group. Right
         // now tab group UI is visible.
-        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab2, true);
+        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab2, true, true);
         mTabModelObserverArgumentCaptor.getValue().didSelectTab(
                 mTab3, TabSelectionType.FROM_CLOSE, TAB2_ID);
         doReturn(new ArrayList<>()).when(mTabGroupModelFilter).getRelatedTabList(TAB3_ID);
-        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab3, true);
+        mTabModelObserverArgumentCaptor.getValue().willCloseTab(mTab3, true, true);
         mTabModelObserverArgumentCaptor.getValue().didSelectTab(
                 mTab1, TabSelectionType.FROM_CLOSE, TAB3_ID);
 
@@ -743,7 +743,34 @@ public class TabGroupUiMediatorUnitTest {
 
     @Test
     @Features.EnableFeatures(ChromeFeatureList.TAB_GROUPS_ANDROID)
-    public void tabClosureUndone_UiNotVisible_NotShowingOverviewMode() {
+    public void tabClosureUndone_UiNotVisible_NotShowingOverviewMode_TabNotInGroup() {
+        // Assume mTab1 is selected. Since mTab1 is now a single tab, the strip is invisible.
+        initAndAssertProperties(mTab1);
+        // OverviewMode is hiding by default.
+        assertThat(mTabGroupUiMediator.getIsShowingOverViewModeForTesting(), equalTo(false));
+
+        // Simulate mTab2 and mTab3 being undone from closure with mTab1 still selected.
+        doReturn(new ArrayList<>(Arrays.asList(mTab2, mTab3)))
+                .when(mTabGroupModelFilter)
+                .getRelatedTabList(TAB2_ID);
+        doReturn(new ArrayList<>(Arrays.asList(mTab2, mTab3)))
+                .when(mTabGroupModelFilter)
+                .getRelatedTabList(TAB3_ID);
+        doReturn(new ArrayList<>(Arrays.asList(mTab1)))
+                .when(mTabGroupModelFilter)
+                .getRelatedTabList(TAB1_ID);
+        doReturn(mTab1).when(mTabModelSelector).getCurrentTab();
+
+        mTabModelObserverArgumentCaptor.getValue().tabClosureUndone(mTab2);
+        mTabModelObserverArgumentCaptor.getValue().tabClosureUndone(mTab3);
+
+        // Strip should remain invisible.
+        assertThat(mTabGroupUiMediator.getIsShowingOverViewModeForTesting(), equalTo(false));
+    }
+
+    @Test
+    @Features.EnableFeatures(ChromeFeatureList.TAB_GROUPS_ANDROID)
+    public void tabClosureUndone_UiNotVisible_NotShowingOverviewMode_TabInGroup() {
         // Assume mTab1 is selected. Since mTab1 is now a single tab, the strip is invisible.
         initAndAssertProperties(mTab1);
         // OverviewMode is hiding by default.
@@ -754,7 +781,11 @@ public class TabGroupUiMediatorUnitTest {
         TabImpl newTab = prepareTab(TAB4_ID, TAB4_ID);
         doReturn(new ArrayList<>(Arrays.asList(mTab1, newTab)))
                 .when(mTabGroupModelFilter)
+                .getRelatedTabList(TAB1_ID);
+        doReturn(new ArrayList<>(Arrays.asList(mTab1, newTab)))
+                .when(mTabGroupModelFilter)
                 .getRelatedTabList(TAB4_ID);
+        doReturn(mTab1).when(mTabModelSelector).getCurrentTab();
 
         mTabModelObserverArgumentCaptor.getValue().tabClosureUndone(newTab);
 

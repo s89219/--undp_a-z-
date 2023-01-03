@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,7 +44,7 @@ public class SyncPromoView extends LinearLayout implements SyncService.SyncState
     public static SyncPromoView create(ViewGroup parent, @AccessPoint int accessPoint) {
         // TODO(injae): crbug.com/829548
         SyncPromoView result = (SyncPromoView) LayoutInflater.from(parent.getContext())
-                                       .inflate(R.layout.sync_promo_view, parent, false);
+                                       .inflate(R.layout.legacy_sync_promo_view, parent, false);
         result.init(accessPoint);
         return result;
     }
@@ -60,6 +60,7 @@ public class SyncPromoView extends LinearLayout implements SyncService.SyncState
     }
 
     @Override
+    @SuppressWarnings("WrongViewCast") // False positive.
     protected void onFinishInflate() {
         super.onFinishInflate();
 
@@ -92,7 +93,8 @@ public class SyncPromoView extends LinearLayout implements SyncService.SyncState
 
     private void update() {
         ViewState viewState;
-        if (!SyncService.get().isSyncRequested()) {
+        if (!SyncService.get().isSyncRequested()
+                || SyncService.get().getSelectedTypes().isEmpty()) {
             viewState = getStateForEnableChromeSync();
         } else {
             viewState = getStateForStartUsing();

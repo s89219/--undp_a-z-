@@ -1,17 +1,20 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {EventGenerator} from '/common/event_generator.js';
-import {AutoScanManager} from '/switch_access/auto_scan_manager.js';
-import {Navigator} from '/switch_access/navigator.js';
-import {BackButtonNode} from '/switch_access/nodes/back_button_node.js';
-import {BasicNode, BasicRootNode} from '/switch_access/nodes/basic_node.js';
-import {GroupNode} from '/switch_access/nodes/group_node.js';
-import {SAChildNode, SARootNode} from '/switch_access/nodes/switch_access_node.js';
-import {SwitchAccess} from '/switch_access/switch_access.js';
-import {SAConstants, SwitchAccessMenuAction} from '/switch_access/switch_access_constants.js';
-import {SwitchAccessPredicate} from '/switch_access/switch_access_predicate.js';
+import {EventGenerator} from '../../common/event_generator.js';
+import {EventHandler} from '../../common/event_handler.js';
+import {RectUtil} from '../../common/rect_util.js';
+import {AutoScanManager} from '../auto_scan_manager.js';
+import {Navigator} from '../navigator.js';
+import {SwitchAccess} from '../switch_access.js';
+import {SAConstants, SwitchAccessMenuAction} from '../switch_access_constants.js';
+import {SwitchAccessPredicate} from '../switch_access_predicate.js';
+
+import {BackButtonNode} from './back_button_node.js';
+import {BasicNode, BasicRootNode} from './basic_node.js';
+import {GroupNode} from './group_node.js';
+import {SAChildNode, SARootNode} from './switch_access_node.js';
 
 const AutomationNode = chrome.automation.AutomationNode;
 
@@ -57,8 +60,8 @@ export class KeyboardNode extends BasicNode {
       // TODO(crbug/1130773): move this code to another location, if possible
       KeyboardNode.resetting = true;
       KeyboardRootNode.ignoreNextExit_ = true;
-      Navigator.byItem.exitKeyboard();
-      Navigator.byItem.enterKeyboard();
+      Navigator.byItem.exitKeyboard().then(
+          () => Navigator.byItem.enterKeyboard());
     }
 
     return false;
@@ -185,9 +188,9 @@ export class KeyboardRootNode extends BasicRootNode {
    */
   static isKeyboardVisible_() {
     const keyboardObject = KeyboardRootNode.getKeyboardObject();
-    return !!keyboardObject &&
-        SwitchAccessPredicate.isVisible(keyboardObject) &&
-        !!keyboardObject.find({role: chrome.automation.RoleType.ROOT_WEB_AREA});
+    return Boolean(
+        keyboardObject && SwitchAccessPredicate.isVisible(keyboardObject) &&
+        keyboardObject.find({role: chrome.automation.RoleType.ROOT_WEB_AREA}));
   }
 
   /**
@@ -223,7 +226,7 @@ export class KeyboardRootNode extends BasicRootNode {
    * @private
    */
   static findAndSetChildren_(root) {
-    const childConstructor = (node) => new KeyboardNode(node, root);
+    const childConstructor = node => new KeyboardNode(node, root);
     const interestingChildren =
         root.automationNode.findAll({role: chrome.automation.RoleType.BUTTON});
     /** @type {!Array<!SAChildNode>} */
@@ -261,5 +264,5 @@ export class KeyboardRootNode extends BasicRootNode {
 
 BasicRootNode.builders.push({
   predicate: rootNode => rootNode.role === chrome.automation.RoleType.KEYBOARD,
-  builder: KeyboardRootNode.buildTree
+  builder: KeyboardRootNode.buildTree,
 });

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,7 +64,7 @@ class DeviceIdMapTest : public AshTestBase {
     device_ = base::MakeRefCounted<Device>(kTestModelId, kTestBLEAddress,
                                            Protocol::kFastPairInitial);
     device_->set_classic_address(kTestClassicAddress);
-    device_id_map_ = std::make_unique<DeviceIdMap>();
+    device_id_map_ = std::make_unique<DeviceIdMap>(adapter_);
   }
 
  protected:
@@ -141,15 +141,14 @@ TEST_F(DeviceIdMapTest, PersistRecordsForDeviceValid) {
 
   // Validate that the ID records are persisted to prefs.
   PrefService* local_state = Shell::Get()->local_state();
-  const base::Value* device_id_map_dict =
-      local_state->GetDictionary(DeviceIdMap::kDeviceIdMapPref);
-  EXPECT_TRUE(device_id_map_dict);
+  const base::Value::Dict& device_id_map_dict =
+      local_state->GetDict(DeviceIdMap::kDeviceIdMapPref);
   const std::string* ble_model_id =
-      device_id_map_dict->FindStringKey(kTestBLEDeviceId);
+      device_id_map_dict.FindString(kTestBLEDeviceId);
   EXPECT_TRUE(ble_model_id);
   EXPECT_EQ(*ble_model_id, kTestModelId);
   const std::string* classic_model_id =
-      device_id_map_dict->FindStringKey(kTestClassicDeviceId);
+      device_id_map_dict.FindString(kTestClassicDeviceId);
   EXPECT_TRUE(classic_model_id);
   EXPECT_EQ(*classic_model_id, kTestModelId);
 }
@@ -203,11 +202,9 @@ TEST_F(DeviceIdMapTest, EvictDeviceIdRecordValid) {
 
   // Validate that the ID records are evicted from prefs.
   PrefService* local_state = Shell::Get()->local_state();
-  const base::Value* device_id_map_dict =
-      local_state->GetDictionary(DeviceIdMap::kDeviceIdMapPref);
-  EXPECT_TRUE(device_id_map_dict);
-  const std::string* model_id =
-      device_id_map_dict->FindStringKey(kTestBLEDeviceId);
+  const base::Value::Dict& device_id_map_dict =
+      local_state->GetDict(DeviceIdMap::kDeviceIdMapPref);
+  const std::string* model_id = device_id_map_dict.FindString(kTestBLEDeviceId);
   EXPECT_FALSE(model_id);
 }
 
@@ -289,7 +286,7 @@ TEST_F(DeviceIdMapTest, LoadPersistedIdRecordFromPrefs) {
 
   // A new/restarted DeviceIdMap instance should load persisted ID records
   // from prefs.
-  DeviceIdMap new_device_id_map;
+  DeviceIdMap new_device_id_map(adapter_);
   absl::optional<const std::string> model_id =
       new_device_id_map.GetModelIdForDeviceId(kTestBLEDeviceId);
   EXPECT_TRUE(model_id);

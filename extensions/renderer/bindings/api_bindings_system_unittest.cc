@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/strings/stringprintf.h"
-#include "base/values.h"
 #include "extensions/common/mojom/event_dispatcher.mojom.h"
 #include "extensions/renderer/bindings/api_binding.h"
 #include "extensions/renderer/bindings/api_binding_hooks.h"
@@ -68,7 +67,12 @@ const char kAlphaAPISpec[] = R"(
         "parameters": [{"name": "e", "$ref": "alpha.enumRef"}]
       }],
       "events": [{
-        "name": "alphaEvent"
+        "name": "alphaEvent",
+        "parameters": [{
+          "name": "eventArg",
+          "type": "object",
+          "properties": { "key": {"type": "integer"} }
+        }]
       }, {
         "name": "alphaOtherEvent"
       }]
@@ -130,9 +134,7 @@ void APIBindingsSystemTest::SetUp() {
 
   // Create the fake API schemas.
   for (const auto& api : GetAPIs()) {
-    std::unique_ptr<base::DictionaryValue> api_schema =
-        DeprecatedDictionaryValueFromString(api.spec);
-    ASSERT_TRUE(api_schema);
+    base::Value::Dict api_schema = DictValueFromString(api.spec);
     api_schemas_[api.name] = std::move(api_schema);
   }
 
@@ -189,10 +191,10 @@ void APIBindingsSystemTest::AddConsoleError(v8::Local<v8::Context> context,
   console_errors_.push_back(error);
 }
 
-const base::DictionaryValue& APIBindingsSystemTest::GetAPISchema(
+const base::Value::Dict& APIBindingsSystemTest::GetAPISchema(
     const std::string& api_name) {
   EXPECT_TRUE(base::Contains(api_schemas_, api_name));
-  return *api_schemas_[api_name];
+  return api_schemas_[api_name];
 }
 
 void APIBindingsSystemTest::OnAPIRequest(
@@ -205,7 +207,7 @@ void APIBindingsSystemTest::OnAPIRequest(
 void APIBindingsSystemTest::OnEventListenersChanged(
     const std::string& event_name,
     binding::EventListenersChanged changed,
-    const base::DictionaryValue* filter,
+    const base::Value::Dict* filter,
     bool was_manual,
     v8::Local<v8::Context> context) {}
 
@@ -213,12 +215,9 @@ void APIBindingsSystemTest::ValidateLastRequest(
     const std::string& expected_name,
     const std::string& expected_arguments) {
   ASSERT_TRUE(last_request());
-  // Note that even if no arguments are provided by the API call, we should
-  // have an empty list.
-  ASSERT_TRUE(last_request()->arguments_list);
   EXPECT_EQ(expected_name, last_request()->method_name);
   EXPECT_EQ(ReplaceSingleQuotes(expected_arguments),
-            ValueToString(*last_request()->arguments_list));
+            ValueToString(last_request()->arguments_list));
 }
 
 v8::Local<v8::Value> APIBindingsSystemTest::CallFunctionOnObject(
@@ -320,7 +319,7 @@ TEST_F(APIBindingsSystemTest, TestInitializationAndCallbacks) {
         });)";
     CallFunctionOnObject(context, alpha_api, kTestCall);
 
-    const char kResponseArgsJson[] = R"(["response",1,{"key":42}])";
+    const char kResponseArgsJson[] = R"([{"key":42}])";
     base::Value::List expected_args = ListValueFromString(kResponseArgsJson);
     bindings_system()->FireEventInContext("alpha.alphaEvent", context,
                                           expected_args, nullptr);

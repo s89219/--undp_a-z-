@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -115,7 +115,7 @@ public class TracingNotificationManager {
                         .setContentTitle(title)
                         .setContentText(message)
                         .setOngoing(true)
-                        .addAction(R.drawable.ic_stop_white_36dp, MSG_STOP,
+                        .addAction(R.drawable.ic_stop_white_24dp, MSG_STOP,
                                 TracingNotificationServiceImpl.getStopRecordingIntent(context));
         showNotification(sTracingActiveNotificationBuilder.build());
     }

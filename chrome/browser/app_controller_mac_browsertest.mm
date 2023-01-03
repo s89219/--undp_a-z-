@@ -1,12 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#import <Carbon/Carbon.h>
+#include "base/memory/raw_ptr.h"
+
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
-#import <Foundation/NSAppleEventDescriptor.h>
-#import <objc/message.h>
 #import <objc/runtime.h>
 #include <stddef.h>
 
@@ -35,13 +34,17 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
+#include "chrome/browser/profiles/delete_profile_helper.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_init_params.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_observer.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/signin/signin_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -54,6 +57,7 @@
 #include "chrome/browser/ui/cocoa/test/run_loop_testing.h"
 #include "chrome/browser/ui/profile_picker.h"
 #include "chrome/browser/ui/search/ntp_test_utils.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/welcome/helpers.h"
@@ -79,6 +83,7 @@
 #include "extensions/browser/extension_dialog_auto_confirm.h"
 #include "extensions/common/extension.h"
 #include "extensions/test/extension_test_message_listener.h"
+#include "net/base/mac/url_conversions.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "third_party/blink/public/common/features.h"
@@ -87,76 +92,48 @@
 #include "ui/views/widget/any_widget_observer.h"
 #include "ui/views/widget/widget.h"
 
-using base::SysUTF16ToNSString;
-
-@interface AppController (ForTesting)
-- (void)getUrl:(NSAppleEventDescriptor*)event
-     withReply:(NSAppleEventDescriptor*)reply;
-@end
-
 namespace {
 
 GURL g_open_shortcut_url = GURL::EmptyGURL();
 
-// Returns an Apple Event that instructs the application to open |url|.
-NSAppleEventDescriptor* AppleEventToOpenUrl(const GURL& url) {
-  NSAppleEventDescriptor* shortcut_event = [[[NSAppleEventDescriptor alloc]
-      initWithEventClass:kASAppleScriptSuite
-                 eventID:kASSubroutineEvent
-        targetDescriptor:nil
-                returnID:kAutoGenerateReturnID
-           transactionID:kAnyTransactionID] autorelease];
-  NSString* url_string = base::SysUTF8ToNSString(url.spec());
-  [shortcut_event setParamDescriptor:[NSAppleEventDescriptor
-                                         descriptorWithString:url_string]
-                          forKeyword:keyDirectObject];
-  return shortcut_event;
-}
-
 // Instructs the NSApp's delegate to open |url|.
-void SendAppleEventToOpenUrlToAppController(const GURL& url) {
-  AppController* controller =
-      base::mac::ObjCCast<AppController>([NSApp delegate]);
-  [controller getUrl:AppleEventToOpenUrl(url) withReply:nullptr];
-}
-
-void RunClosureWhenProfileInitialized(const base::RepeatingClosure& closure,
-                                      Profile* profile,
-                                      Profile::CreateStatus status) {
-  // This will be called multiple times. Wait until the profile is initialized
-  // fully to quit the loop.
-  if (status == Profile::CREATE_STATUS_INITIALIZED)
-    closure.Run();
-}
-
-// Called when the ProfileManager has created a profile.
-void CreateProfileCallback(const base::RepeatingClosure& quit_closure,
-                           Profile** out_profile,
-                           Profile* profile,
-                           Profile::CreateStatus status) {
-  EXPECT_TRUE(profile);
-  ASSERT_TRUE(out_profile);
-  *out_profile = profile;
-  EXPECT_NE(Profile::CREATE_STATUS_LOCAL_FAIL, status);
-  // This will be called multiple times. Wait until the profile is initialized
-  // fully to quit the loop.
-  if (status == Profile::CREATE_STATUS_INITIALIZED)
-    quit_closure.Run();
+void SendOpenUrlToAppController(const GURL& url) {
+  [NSApp.delegate application:NSApp openURLs:@[ net::NSURLWithGURL(url) ]];
 }
 
 Profile* CreateAndWaitForProfile(const base::FilePath& profile_dir) {
-  Profile* profile;
-  ProfileManager::CreateCallback create_callback = base::BindRepeating(
-      &CreateProfileCallback,
-      base::RunLoop::QuitCurrentWhenIdleClosureDeprecated(), &profile);
-  g_browser_process->profile_manager()->CreateProfileAsync(profile_dir,
-                                                           create_callback);
-  base::RunLoop().Run();
+  Profile* profile = profiles::testing::CreateProfileSync(
+      g_browser_process->profile_manager(), profile_dir);
+  EXPECT_TRUE(profile);
   return profile;
 }
 
 Profile* CreateAndWaitForSystemProfile() {
   return CreateAndWaitForProfile(ProfileManager::GetSystemProfilePath());
+}
+
+Profile* CreateAndWaitForGuestProfile() {
+  return CreateAndWaitForProfile(ProfileManager::GetGuestProfilePath());
+}
+
+void SetGuestProfileAsLastProfile() {
+  AppController* ac = base::mac::ObjCCast<AppController>(
+      [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
+
+  // Create the guest profile, and set it as the last used profile.
+  Profile* guest_profile = CreateAndWaitForGuestProfile();
+  [ac setLastProfile:guest_profile];
+
+  Profile* profile = [ac lastProfileIfLoaded];
+  ASSERT_TRUE(profile);
+  EXPECT_EQ(guest_profile->GetPath(), profile->GetPath());
+  EXPECT_TRUE(profile->IsGuestSession());
+
+  // Also set the last used profile path preference. If the profile does need to
+  // be read from disk for some reason this acts as a backstop.
+  g_browser_process->local_state()->SetString(
+      prefs::kProfileLastUsed, guest_profile->GetPath().BaseName().value());
 }
 
 // Key for ProfileDestroyedData user data.
@@ -199,7 +176,7 @@ class ProfileDestructionWaiter {
   if (!g_open_shortcut_url.is_valid())
     return;
 
-  SendAppleEventToOpenUrlToAppController(g_open_shortcut_url);
+  SendOpenUrlToAppController(g_open_shortcut_url);
 }
 
 @end
@@ -254,7 +231,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, CommandDuringShutdown) {
   EXPECT_EQ(ExpectedWindowCountForBrowserCount(0), CountVisibleWindows());
 
   NSEvent* cmd_n = cocoa_test_event_utils::KeyEventWithKeyCode(
-      'n', 'n', NSKeyDown, NSCommandKeyMask);
+      'n', 'n', NSEventTypeKeyDown, NSEventModifierFlagCommand);
   [[NSApp mainMenu] performSelector:@selector(performKeyEquivalent:)
                          withObject:cmd_n
                          afterDelay:0];
@@ -262,7 +239,9 @@ IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, CommandDuringShutdown) {
 }
 
 // Regression test for https://crbug.com/1236073
-IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, DeleteEphemeralProfile) {
+// TODO(crbug.com/1373692): Extremely flaky on the mac12-arm64-rel bot.
+IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest,
+                       DISABLED_DeleteEphemeralProfile) {
   EXPECT_EQ(1u, chrome::GetTotalBrowserCount());
   Profile* profile = browser()->profile();
   // Activate the first profile.
@@ -275,7 +254,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, DeleteEphemeralProfile) {
   AppController* ac = base::mac::ObjCCast<AppController>(
       [[NSApplication sharedApplication] delegate]);
   ASSERT_TRUE(ac);
-  ASSERT_EQ(profile, [ac lastProfile]);
+  ASSERT_EQ(profile, [ac lastProfileIfLoaded]);
 
   // Mark the profile as ephemeral.
   profile->GetPrefs()->SetBoolean(prefs::kForceEphemeralProfiles, true);
@@ -305,7 +284,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, DeleteEphemeralProfile) {
                     object:browser2->window()
                                ->GetNativeWindow()
                                .GetNativeNSWindow()];
-  ASSERT_EQ(profile2, [ac lastProfile]);
+  ASSERT_EQ(profile2, [ac lastProfileIfLoaded]);
 }
 
 class AppControllerKeepAliveBrowserTest : public InProcessBrowserTest {
@@ -329,7 +308,7 @@ class AppControllerPlatformAppBrowserTest
                                     "1234");
   }
 
-  const BrowserList* active_browser_list_;
+  raw_ptr<const BrowserList> active_browser_list_;
 };
 
 // Test that if only a platform app window is open and no browser windows are
@@ -357,7 +336,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerPlatformAppBrowserTest,
       [[NSApplication sharedApplication] delegate]);
   ASSERT_TRUE(app_controller);
 
-  ExtensionTestMessageListener listener("Launched", false);
+  ExtensionTestMessageListener listener("Launched");
   const extensions::Extension* app =
       InstallAndLaunchPlatformApp("minimal");
   ASSERT_TRUE(listener.WaitUntilSatisfied());
@@ -393,7 +372,7 @@ class AppControllerWebAppBrowserTest : public InProcessBrowserTest {
     return "http://example.com/";
   }
 
-  const BrowserList* active_browser_list_;
+  raw_ptr<const BrowserList> active_browser_list_;
 };
 
 // Test that in web app mode a reopen event opens the app URL.
@@ -435,7 +414,7 @@ class AppControllerProfilePickerBrowserTest : public InProcessBrowserTest {
   }
 
  private:
-  const BrowserList* active_browser_list_;
+  raw_ptr<const BrowserList> active_browser_list_;
 };
 
 // Test that for a guest last profile, commandDispatch should open UserManager
@@ -444,22 +423,13 @@ class AppControllerProfilePickerBrowserTest : public InProcessBrowserTest {
 // as the tests below if that happened.
 IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
                        OpenGuestProfileOnlyIfGuestModeIsEnabled) {
-  CreateAndWaitForSystemProfile();
-  base::FilePath guest_profile_path = ProfileManager::GetGuestProfilePath();
-  PrefService* local_state = g_browser_process->local_state();
-  local_state->SetString(prefs::kProfileLastUsed,
-                         guest_profile_path.BaseName().value());
-  local_state->SetBoolean(prefs::kBrowserGuestModeEnabled, false);
+  SetGuestProfileAsLastProfile();
 
+  PrefService* local_state = g_browser_process->local_state();
+  local_state->SetBoolean(prefs::kBrowserGuestModeEnabled, false);
   AppController* ac = base::mac::ObjCCast<AppController>(
       [[NSApplication sharedApplication] delegate]);
   ASSERT_TRUE(ac);
-
-  Profile* profile = [ac lastProfile];
-  ASSERT_TRUE(profile);
-  EXPECT_EQ(guest_profile_path, profile->GetPath());
-  EXPECT_TRUE(profile->IsGuestSession());
-
   NSMenu* menu = [ac applicationDockMenu:NSApp];
   ASSERT_TRUE(menu);
   NSMenuItem* item = [menu itemWithTag:IDC_NEW_WINDOW];
@@ -483,27 +453,19 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
 
 IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
                        AboutChromeGuestDisallowed) {
-  AppController* ac = base::mac::ObjCCast<AppController>(
-      [[NSApplication sharedApplication] delegate]);
-  ASSERT_TRUE(ac);
-  // Create the guest profile, and set it as the last used profile so the
-  // app controller can use it on init.
-  CreateAndWaitForSystemProfile();
-  base::FilePath guest_profile_path = ProfileManager::GetGuestProfilePath();
+  SetGuestProfileAsLastProfile();
+
+  // Disallow guest by policy and make sure "About Chrome" is not available
+  // in the menu.
   PrefService* local_state = g_browser_process->local_state();
-  local_state->SetString(prefs::kProfileLastUsed,
-                         guest_profile_path.BaseName().value());
-  // Disallow guest by policy.
   local_state->SetBoolean(prefs::kBrowserGuestModeEnabled, false);
-  Profile* profile = [ac lastProfile];
-  ASSERT_TRUE(profile);
-  EXPECT_EQ(guest_profile_path, profile->GetPath());
-  EXPECT_TRUE(profile->IsGuestSession());
-  // "About Chrome" is not available in the menu.
   base::scoped_nsobject<NSMenuItem> about_menu_item(
       [[[[NSApp mainMenu] itemWithTag:IDC_CHROME_MENU] submenu]
           itemWithTag:IDC_ABOUT],
       base::scoped_policy::RETAIN);
+  AppController* ac = base::mac::ObjCCastStrict<AppController>(
+      [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
   EXPECT_FALSE([ac validateUserInterfaceItem:about_menu_item]);
 }
 
@@ -512,6 +474,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
                        RegularProfileReopenWithNoWindows) {
   AppController* ac = base::mac::ObjCCastStrict<AppController>(
       [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
 
   EXPECT_EQ(1u, active_browser_list()->size());
   BOOL result = [ac applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
@@ -531,9 +494,10 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
   CreateAndWaitForSystemProfile();
   AppController* ac = base::mac::ObjCCastStrict<AppController>(
       [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
 
   // Lock the active profile.
-  Profile* profile = [ac lastProfile];
+  Profile* profile = [ac lastProfileIfLoaded];
   ProfileAttributesEntry* entry =
       g_browser_process->profile_manager()
           ->GetProfileAttributesStorage()
@@ -563,8 +527,9 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
   CreateAndWaitForSystemProfile();
   AppController* ac = base::mac::ObjCCastStrict<AppController>(
       [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
   // Lock the active profile.
-  Profile* profile = [ac lastProfile];
+  Profile* profile = [ac lastProfileIfLoaded];
   ProfileAttributesEntry* entry =
       g_browser_process->profile_manager()
           ->GetProfileAttributesStorage()
@@ -589,22 +554,12 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
 // Test that for a guest last profile, a reopen event opens the ProfilePicker.
 IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
                        GuestProfileReopenWithNoWindows) {
-  // Create the system profile. Set the guest as the last used profile so the
-  // app controller can use it on init.
-  CreateAndWaitForSystemProfile();
-  base::FilePath guest_profile_path = ProfileManager::GetGuestProfilePath();
-  g_browser_process->local_state()->SetString(
-      prefs::kProfileLastUsed, guest_profile_path.BaseName().value());
-
-  AppController* ac = base::mac::ObjCCastStrict<AppController>(
-      [[NSApplication sharedApplication] delegate]);
-
-  Profile* profile = [ac lastProfile];
-  ASSERT_TRUE(profile);
-  EXPECT_EQ(guest_profile_path, profile->GetPath());
-  EXPECT_TRUE(profile->IsGuestSession());
+  SetGuestProfileAsLastProfile();
 
   EXPECT_EQ(1u, active_browser_list()->size());
+  AppController* ac = base::mac::ObjCCastStrict<AppController>(
+      [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
   BOOL result = [ac applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
   EXPECT_FALSE(result);
 
@@ -621,6 +576,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest,
   CreateAndWaitForSystemProfile();
   AppController* ac = base::mac::ObjCCastStrict<AppController>(
       [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
 
   // Add a profile in the cache (simulate another profile on disk).
   ProfileManager* profile_manager = g_browser_process->profile_manager();
@@ -651,6 +607,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerProfilePickerBrowserTest, MenuCommands) {
 
   AppController* ac = base::mac::ObjCCastStrict<AppController>(
       [[NSApplication sharedApplication] delegate]);
+  ASSERT_TRUE(ac);
 
   // Unhandled menu items are disabled.
   base::scoped_nsobject<NSMenu> file_submenu(
@@ -705,8 +662,8 @@ class AppControllerOpenShortcutBrowserTest : public InProcessBrowserTest {
     Method destination = class_getInstanceMethod(openShortcutClass,
         targetMethod);
 
-    ASSERT_TRUE(original != NULL);
-    ASSERT_TRUE(destination != NULL);
+    ASSERT_TRUE(original);
+    ASSERT_TRUE(destination);
 
     method_exchangeImplementations(original, destination);
 
@@ -735,7 +692,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerOpenShortcutBrowserTest,
 
 class AppControllerReplaceNTPBrowserTest : public InProcessBrowserTest {
  protected:
-  AppControllerReplaceNTPBrowserTest() {}
+  AppControllerReplaceNTPBrowserTest() = default;
 
   void SetUpInProcessBrowserTestFixture() override {
     ASSERT_TRUE(embedded_test_server()->Start());
@@ -777,7 +734,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerReplaceNTPBrowserTest,
                 ->GetLastCommittedURL());
 
   GURL simple(embedded_test_server()->GetURL("/simple.html"));
-  SendAppleEventToOpenUrlToAppController(simple);
+  SendOpenUrlToAppController(simple);
 
   EXPECT_EQ(1, browser()->tab_strip_model()->count());
   content::TestNavigationObserver event_navigation_observer(
@@ -792,7 +749,8 @@ IN_PROC_BROWSER_TEST_F(AppControllerReplaceNTPBrowserTest,
 }
 
 // Tests that when a GURL is opened, it is not opened in incognito mode.
-IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, OpenInRegularBrowser) {
+IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest,
+                       DISABLED_OpenInRegularBrowser) {
   ASSERT_TRUE(embedded_test_server()->Start());
   // Create an incognito browser.
   Browser* incognito_browser = CreateIncognitoBrowser(browser()->profile());
@@ -801,7 +759,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, OpenInRegularBrowser) {
   EXPECT_EQ(1, incognito_browser->tab_strip_model()->count());
   // Open a url.
   GURL simple(embedded_test_server()->GetURL("/simple.html"));
-  SendAppleEventToOpenUrlToAppController(simple);
+  SendOpenUrlToAppController(simple);
   // It should be opened in the regular browser.
   content::TestNavigationObserver event_navigation_observer(
       browser()->tab_strip_model()->GetActiveWebContents());
@@ -816,8 +774,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerBrowserTest, OpenInRegularBrowser) {
 
 class AppControllerMainMenuBrowserTest : public InProcessBrowserTest {
  protected:
-  AppControllerMainMenuBrowserTest() {
-  }
+  AppControllerMainMenuBrowserTest() = default;
 };
 
 IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
@@ -825,6 +782,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   AppController* ac =
       base::mac::ObjCCastStrict<AppController>([NSApp delegate]);
+  ASSERT_TRUE(ac);
 
   // Use the existing profile as profile 1.
   Profile* profile1 = browser()->profile();
@@ -832,12 +790,8 @@ IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
   // Create profile 2.
   base::FilePath profile2_path =
       profile_manager->GenerateNextProfileDirectoryPath();
-  base::RunLoop run_loop;
-  profile_manager->CreateProfileAsync(
-      profile2_path, base::BindRepeating(&RunClosureWhenProfileInitialized,
-                                         run_loop.QuitClosure()));
-  run_loop.Run();
-  Profile* profile2 = profile_manager->GetProfileByPath(profile2_path);
+  Profile* profile2 =
+      profiles::testing::CreateProfileSync(profile_manager, profile2_path);
   ASSERT_TRUE(profile2);
 
   // Load profile1's History Service backend so it will be assigned to the
@@ -877,8 +831,9 @@ IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
                                            ServiceAccessType::EXPLICIT_ACCESS));
 
   // Delete profile2.
-  profile_manager->ScheduleProfileForDeletion(profile2->GetPath(),
-                                              base::DoNothing());
+  profile_manager->GetDeleteProfileHelper().MaybeScheduleProfileForDeletion(
+      profile2->GetPath(), base::DoNothing(),
+      ProfileMetrics::DELETE_PROFILE_USER_MANAGER);
   content::RunAllTasksUntilIdle();
 
   // Verify the controller's history is back to profile1.
@@ -887,45 +842,13 @@ IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
                                            ServiceAccessType::EXPLICIT_ACCESS));
 }
 
-IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
-                       HistoryAndBookmarksMenusResetAfterAllProfilesDestroyed) {
-  AppController* ac =
-      base::mac::ObjCCastStrict<AppController>([NSApp delegate]);
-
-  Profile* profile = browser()->profile();
-
-  // Load profile's History Service backend so it will be assigned to the
-  // HistoryMenuBridge when setLastProfile is called, or else this test will
-  // fail flaky.
-  ui_test_utils::WaitForHistoryToLoad(HistoryServiceFactory::GetForProfile(
-      profile, ServiceAccessType::EXPLICIT_ACCESS));
-  // Ditto for the Bookmark Model.
-  bookmarks::test::WaitForBookmarkModelToLoad(
-      BookmarkModelFactory::GetForBrowserContext(profile));
-  // Switch the controller to |profile|.
-  [ac setLastProfile:profile];
-  base::RunLoop().RunUntilIdle();
-
-  // Verify there are History and Bookmarks menus controllers.
-  EXPECT_NE(nullptr, [ac historyMenuBridge]);
-  EXPECT_NE(nullptr, [ac bookmarkMenuBridge]);
-
-  // Trigger Profile* destruction. Note that this event (destruction from
-  // memory) is a separate event from profile deletion (from disk).
-  chrome::CloseAllBrowsers();
-  ProfileDestructionWaiter(profile).Wait();
-
-  // Verify the History and Bookmarks menus' controllers have been reset.
-  EXPECT_EQ(nullptr, [ac historyMenuBridge]);
-  EXPECT_EQ(nullptr, [ac bookmarkMenuBridge]);
-}
-
 // Disabled because of flakiness. See crbug.com/1278031.
 IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
                        DISABLED_ReloadingDestroyedProfileDoesNotCrash) {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   AppController* ac =
       base::mac::ObjCCastStrict<AppController>([NSApp delegate]);
+  ASSERT_TRUE(ac);
 
   Profile* profile = browser()->profile();
   base::FilePath profile_path = profile->GetPath();
@@ -979,7 +902,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
   base::ScopedAllowBlockingForTesting allow_blocking;
   base::FilePath path2 = profile_manager->GenerateNextProfileDirectoryPath();
   std::unique_ptr<Profile> profile2 =
-      Profile::CreateProfile(path2, NULL, Profile::CREATE_MODE_SYNCHRONOUS);
+      Profile::CreateProfile(path2, nullptr, Profile::CREATE_MODE_SYNCHRONOUS);
   Profile* profile2_ptr = profile2.get();
   profile_manager->RegisterTestingProfile(std::move(profile2), false);
   bookmarks::test::WaitForBookmarkModelToLoad(
@@ -1003,19 +926,19 @@ IN_PROC_BROWSER_TEST_F(AppControllerMainMenuBrowserTest,
   EXPECT_NE(profile1_submenu, profile2_submenu);
 
   // Test that only bookmark 2 is shown.
-  EXPECT_FALSE([[ac bookmarkMenuBridge]->BookmarkMenu() itemWithTitle:
-      SysUTF16ToNSString(title1)]);
-  EXPECT_TRUE([[ac bookmarkMenuBridge]->BookmarkMenu() itemWithTitle:
-      SysUTF16ToNSString(title2)]);
+  EXPECT_FALSE([[ac bookmarkMenuBridge]->BookmarkMenu()
+      itemWithTitle:base::SysUTF16ToNSString(title1)]);
+  EXPECT_TRUE([[ac bookmarkMenuBridge]->BookmarkMenu()
+      itemWithTitle:base::SysUTF16ToNSString(title2)]);
 
   // Switch *back* to profile 1 and *don't* force the menu to build.
   [ac setLastProfile:profile1];
 
   // Test that only bookmark 1 is shown in the restored menu.
-  EXPECT_TRUE([[ac bookmarkMenuBridge]->BookmarkMenu() itemWithTitle:
-      SysUTF16ToNSString(title1)]);
-  EXPECT_FALSE([[ac bookmarkMenuBridge]->BookmarkMenu() itemWithTitle:
-      SysUTF16ToNSString(title2)]);
+  EXPECT_TRUE([[ac bookmarkMenuBridge]->BookmarkMenu()
+      itemWithTitle:base::SysUTF16ToNSString(title1)]);
+  EXPECT_FALSE([[ac bookmarkMenuBridge]->BookmarkMenu()
+      itemWithTitle:base::SysUTF16ToNSString(title2)]);
 
   // Ensure a cached menu was used.
   EXPECT_EQ(profile1_submenu, [ac bookmarkMenuBridge]->BookmarkMenu());
@@ -1070,6 +993,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerIncognitoSwitchTest,
   EXPECT_EQ(BrowserList::GetInstance()->size(), 1u);
   AppController* ac =
       base::mac::ObjCCastStrict<AppController>([NSApp delegate]);
+  ASSERT_TRUE(ac);
   [[NSNotificationCenter defaultCenter]
       postNotificationName:NSWindowDidBecomeMainNotification
                     object:browser()
@@ -1125,7 +1049,7 @@ class AppControllerHandoffBrowserTest : public InProcessBrowserTest {
     content::WebContentsDestroyedWatcher destroyed_watcher(
         browser->tab_strip_model()->GetWebContentsAt(index));
     browser->tab_strip_model()->CloseWebContentsAt(
-        index, TabStripModel::CLOSE_CREATE_HISTORICAL_TAB);
+        index, TabCloseTypes::CLOSE_CREATE_HISTORICAL_TAB);
     destroyed_watcher.Wait();
   }
 
@@ -1156,7 +1080,8 @@ IN_PROC_BROWSER_TEST_F(AppControllerHandoffBrowserTest, TestHandoffURLs) {
 
   // Test that switching tabs updates the handoff URL.
   browser()->tab_strip_model()->ActivateTabAt(
-      0, {TabStripModel::GestureType::kOther});
+      0, TabStripUserGestureDetails(
+             TabStripUserGestureDetails::GestureType::kOther));
   EXPECT_EQ(g_handoff_url, test_url1);
   EXPECT_TRUE(base::EndsWith(g_handoff_title, u"title1.html"));
 
@@ -1261,7 +1186,7 @@ IN_PROC_BROWSER_TEST_F(AppControllerHandoffPrerenderBrowserTest,
   content::TestActivationManager navigation_manager(GetActiveWebContents(),
                                                     prerender_url);
   ASSERT_TRUE(
-      content::ExecJs(GetActiveWebContents()->GetMainFrame(),
+      content::ExecJs(GetActiveWebContents()->GetPrimaryMainFrame(),
                       content::JsReplace("location = $1", prerender_url)));
   navigation_manager.WaitForNavigationFinished();
   EXPECT_TRUE(navigation_manager.was_activated());

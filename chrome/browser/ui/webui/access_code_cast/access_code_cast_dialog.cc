@@ -1,34 +1,105 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/webui/access_code_cast/access_code_cast_dialog.h"
 
 #include "base/json/json_writer.h"
+#include "base/memory/weak_ptr.h"
+#include "base/values.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/views/chrome_constrained_window_views_client.h"
 #include "chrome/browser/ui/views/chrome_web_dialog_view.h"
 #include "chrome/browser/ui/webui/access_code_cast/access_code_cast_ui.h"
 #include "chrome/common/webui_url_constants.h"
-#include "components/constrained_window/constrained_window_views.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/web_contents.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
+#include "ui/views/layout/layout_provider.h"
 #include "url/gurl.h"
 
-// TODO(b/223434114): Add tests for AccessCodeCastDialog
+using web_modal::ModalDialogHost;
 
 namespace media_router {
 
 namespace {
 
-void SetCurrentDialog(std::unique_ptr<AccessCodeCastDialog> dialog) {
-  static base::NoDestructor<std::unique_ptr<AccessCodeCastDialog>> instance;
-  DCHECK(!dialog || !*instance)
-      << "Can't show AccessCodeCastDialog when it is alreasdy being shown!";
-  *instance = std::move(dialog);
+void SetCurrentDialog(base::WeakPtr<AccessCodeCastDialog> dialog) {
+  // Keeps track of the dialog that is currently being displayed.
+  static base::NoDestructor<base::WeakPtr<AccessCodeCastDialog>>
+      current_instance;
+  if (*current_instance)
+    // Closing the dialog will cause the dialog to delete itself.
+    (*current_instance)->CloseDialogWidget();
+  if (dialog)
+    *current_instance = std::move(dialog);
+}
+
+void UpdateDialogPosition(views::Widget* widget,
+                          content::WebContents* web_contents) {
+  auto* dialog_host =
+      CreateChromeConstrainedWindowViewsClient()->GetModalDialogHost(
+          web_contents->GetTopLevelNativeWindow());
+  views::Widget* host_widget =
+      views::Widget::GetWidgetForNativeView(dialog_host->GetHostView());
+
+  // If the host view is not backed by a Views::Widget, just update the widget
+  // size.
+  auto size = widget->GetRootView()->GetPreferredSize();
+  if (!host_widget) {
+    widget->SetSize(size);
+    return;
+  }
+
+  // Get the outer browser window for the web_contents.
+  auto* browser_window =
+      BrowserWindow::FindBrowserWindowWithWebContents(web_contents);
+  auto window_bounds = browser_window->GetBounds();
+
+  gfx::Point position = dialog_host->GetDialogPosition(size);
+  // Align the first row of pixels inside the border. This is the apparent top
+  // of the dialog.
+  position.set_y(position.y() -
+                 widget->non_client_view()->frame_view()->GetInsets().top());
+
+  if (widget->is_top_level()) {
+    position += host_widget->GetClientAreaBoundsInScreen().OffsetFromOrigin();
+    // Move the dialog to the center of the browser window.
+    auto new_x = window_bounds.x() + (window_bounds.width() - size.width()) / 2;
+    position.set_x(new_x);
+    // If the dialog extends partially off any display, clamp its position to
+    // be fully visible within that display. If the dialog doesn't intersect
+    // with any display clamp its position to be fully on the nearest display.
+    gfx::Rect display_rect = gfx::Rect(position, size);
+    const display::Display display =
+        display::Screen::GetScreen()->GetDisplayNearestView(
+            dialog_host->GetHostView());
+    const gfx::Rect work_area = display.work_area();
+
+    if (!work_area.Contains(display_rect))
+      display_rect.AdjustToFit(work_area);
+    position = display_rect.origin();
+  }
+
+  widget->SetBounds(gfx::Rect(position, size));
 }
 
 }  // namespace
+
+// The corner radius for system dialogs.
+constexpr int kSystemDialogCornerRadiusDp = 12;
+
+// The default width, height without footnote, height with footnote for the
+// dialog container.
+const int kDialogWidthDefault = 448;
+const int kDialogHeightDefault = 295;
+const int kDialogHeightFootnote = 330;
+
+// static
+bool AccessCodeCastDialog::block_widget_activation_changed_for_test_ = false;
 
 AccessCodeCastDialog::AccessCodeCastDialog(
     const CastModeSet& cast_mode_set,
@@ -51,7 +122,7 @@ AccessCodeCastDialog::~AccessCodeCastDialog() {
     dialog_widget_->RemoveObserver(this);
 }
 
-void AccessCodeCastDialog::ShowWebDialog() {
+void AccessCodeCastDialog::ShowWebDialog(AccessCodeCastDialogMode dialog_mode) {
   // After a dialog is shown, |media_route_starter_| is transferred to the
   // associated |AccessCodeCastUI| - see |OnDialogShown| below. Since the c'tor
   // ensures that a |MediaRouteStarter| is passed in, if |media_route_starter_|
@@ -60,8 +131,9 @@ void AccessCodeCastDialog::ShowWebDialog() {
   if (!media_route_starter_)
     return;
 
-  auto extra_params = CreateParams();
+  auto extra_params = CreateParams(dialog_mode);
 
+  dialog_creation_timestamp_ = base::Time::Now();
   gfx::NativeWindow dialog_window = chrome::ShowWebDialogWithParams(
       GetParentView(), context_, this,
       absl::make_optional<views::Widget::InitParams>(std::move(extra_params)));
@@ -69,11 +141,9 @@ void AccessCodeCastDialog::ShowWebDialog() {
   auto* dialog_widget = views::Widget::GetWidgetForNativeWindow(dialog_window);
   ObserveWidget(dialog_widget);
 
-  if (web_contents_) {
-    constrained_window::UpdateWidgetModalDialogPosition(
-        dialog_widget,
-        CreateChromeConstrainedWindowViewsClient()->GetModalDialogHost(
-            web_contents_->GetTopLevelNativeWindow()));
+  if (dialog_mode == AccessCodeCastDialogMode::kBrowserStandard &&
+      web_contents_) {
+    UpdateDialogPosition(dialog_widget, web_contents_);
   }
 }
 
@@ -81,13 +151,19 @@ void AccessCodeCastDialog::ShowWebDialog() {
 void AccessCodeCastDialog::Show(
     const media_router::CastModeSet& cast_mode_set,
     std::unique_ptr<media_router::MediaRouteStarter> media_route_starter,
-    AccessCodeCastDialogOpenLocation open_location) {
+    AccessCodeCastDialogOpenLocation open_location,
+    AccessCodeCastDialogMode dialog_mode) {
   std::unique_ptr<AccessCodeCastDialog> dialog =
       std::make_unique<AccessCodeCastDialog>(cast_mode_set,
                                              std::move(media_route_starter));
-  dialog->ShowWebDialog();
+  dialog->ShowWebDialog(dialog_mode);
+  // Release the pointer from the unique_ptr after ShowWebDialog() since now the
+  // lifetime of the dialog is being managed by the WebDialog Delegate. The
+  // dialog will delete itself when OnDialogClosed() is called.
+  base::WeakPtr<AccessCodeCastDialog> new_dialog =
+      dialog.release()->GetWeakPtr();
   AccessCodeCastMetrics::RecordDialogOpenLocation(open_location);
-  SetCurrentDialog(std::move(dialog));
+  SetCurrentDialog(std::move(new_dialog));
 }
 
 // static
@@ -95,14 +171,22 @@ void AccessCodeCastDialog::ShowForDesktopMirroring(
     AccessCodeCastDialogOpenLocation open_location) {
   CastModeSet desktop_mode = {MediaCastMode::DESKTOP_MIRROR};
   std::unique_ptr<MediaRouteStarter> starter =
-      std::make_unique<MediaRouteStarter>(desktop_mode, nullptr, nullptr);
-  Show(desktop_mode, std::move(starter), open_location);
+      std::make_unique<MediaRouteStarter>(
+          MediaRouterUIParameters(desktop_mode, nullptr));
+  Show(desktop_mode, std::move(starter), open_location,
+       AccessCodeCastDialogMode::kSystem);
 }
 
-views::Widget::InitParams AccessCodeCastDialog::CreateParams() {
+views::Widget::InitParams AccessCodeCastDialog::CreateParams(
+    AccessCodeCastDialogMode dialog_mode) {
   views::Widget::InitParams params;
   params.remove_standard_frame = true;
-  params.corner_radius = 12;
+  // Use the corner radius which matches style based on the appropriate mode.
+  params.corner_radius =
+      (dialog_mode == AccessCodeCastDialogMode::kBrowserStandard)
+          ? views::LayoutProvider::Get()->GetCornerRadiusMetric(
+                views::Emphasis::kMedium)
+          : kSystemDialogCornerRadiusDp;
   params.type = views::Widget::InitParams::Type::TYPE_BUBBLE;
   // Make sure the dialog border is rendered correctly
   params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
@@ -110,20 +194,34 @@ views::Widget::InitParams AccessCodeCastDialog::CreateParams() {
   return params;
 }
 
+void AccessCodeCastDialog::CloseDialogWidget() {
+  dialog_widget_->Close();
+}
+
+base::WeakPtr<AccessCodeCastDialog> AccessCodeCastDialog::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}
+
 // views::WidgetObserver:
 void AccessCodeCastDialog::OnWidgetActivationChanged(views::Widget* widget,
                                                      bool active) {
+  if (block_widget_activation_changed_for_test_)
+    return;
   DCHECK(dialog_widget_)
       << "dialog_widget_ must be set exactly once during dialog setup";
-  if (dialog_widget_ && !active) {
+  // Close the dialog only if it is no longer active and it isn't already
+  // closing.
+  if (dialog_widget_ && !active && !closing_dialog_) {
+    AccessCodeCastMetrics::RecordDialogCloseReason(
+        AccessCodeCastDialogCloseReason::kFocus);
     dialog_widget_->Close();
   }
 }
 
 ui::ModalType AccessCodeCastDialog::GetDialogModalType() const {
-  // If there are no web_contents_, that means that the dialog was launched
-  // from the system tray, so therefore it shuold be a system dialog.
-  return web_contents_ ? ui::MODAL_TYPE_NONE : ui::MODAL_TYPE_SYSTEM;
+  // Make our dialog have no modality, so it will always close if another
+  // window is focused.
+  return ui::MODAL_TYPE_NONE;
 }
 
 std::u16string AccessCodeCastDialog::GetDialogTitle() const {
@@ -138,15 +236,15 @@ void AccessCodeCastDialog::GetWebUIMessageHandlers(
     std::vector<content::WebUIMessageHandler*>* handlers) const {}
 
 void AccessCodeCastDialog::GetDialogSize(gfx::Size* size) const {
-  const int kDefaultWidth = 448;
-  const int kDefaultHeight = 271;
-  size->SetSize(kDefaultWidth, kDefaultHeight);
+  base::TimeDelta duration_pref = GetAccessCodeDeviceDurationPref(context_);
+  bool rememberDevices = duration_pref != base::Seconds(0);
+  size->SetSize(kDialogWidthDefault,
+                rememberDevices ? kDialogHeightFootnote : kDialogHeightDefault);
 }
 
 std::string AccessCodeCastDialog::GetDialogArgs() const {
-  base::DictionaryValue args;
   std::string json;
-  base::JSONWriter::Write(args, &json);
+  base::JSONWriter::Write(base::Value::Dict(), &json);
   return json;
 }
 
@@ -155,18 +253,18 @@ void AccessCodeCastDialog::OnDialogShown(content::WebUI* webui) {
   AccessCodeCastUI* controller =
       webui_->GetController()->GetAs<AccessCodeCastUI>();
   controller->SetCastModeSet(cast_mode_set_);
+  controller->SetDialogCreationTimestamp(dialog_creation_timestamp_);
   controller->SetMediaRouteStarter(std::move(media_route_starter_));
 }
 
 void AccessCodeCastDialog::OnDialogClosed(const std::string& json_retval) {
-  // Setting the global ptr to null will cause the existing dialog (this) to be
-  // destructed.
-  SetCurrentDialog(nullptr);
+  delete this;
 }
 
 void AccessCodeCastDialog::OnCloseContents(content::WebContents* source,
                                            bool* out_close_dialog) {
   *out_close_dialog = true;
+  closing_dialog_ = true;
 }
 
 bool AccessCodeCastDialog::ShouldShowDialogTitle() const {

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,9 +20,6 @@ int main(int argc, char** argv) {
   v8::V8::InitializeExternalStartupData(argv[0]);
   auto platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(platform.get());
-#ifdef V8_SANDBOX
-  v8::V8::InitializeSandbox();
-#endif
   v8::V8::Initialize();
 
   return base::LaunchUnitTests(

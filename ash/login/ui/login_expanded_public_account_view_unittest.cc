@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,11 +14,14 @@
 #include "ash/strings/grit/ash_strings.h"
 #include "base/callback_helpers.h"
 #include "base/ranges/algorithm.h"
+#include "base/time/time.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/event.h"
 #include "ui/events/test/event_generator.h"
-#include "ui/views/controls/link.h"
+#include "ui/events/types/event_type.h"
+#include "ui/views/controls/link_fragment.h"
 #include "ui/views/layout/box_layout_view.h"
 #include "ui/views/test/combobox_test_api.h"
 #include "ui/views/widget/widget.h"
@@ -173,6 +176,10 @@ TEST_P(LoginExpandedPublicAccountViewTest, ToggleAdvancedView) {
 
   // Advanced view is shown and the overall size does not change.
   EXPECT_TRUE(test_api.advanced_view()->GetVisible());
+  ui::MouseEvent fake_event(ui::EventType::ET_MOUSE_MOVED, gfx::Point(),
+                            gfx::Point(), base::TimeTicks(), 0, 0);
+  EXPECT_EQ(test_api.advanced_view_button()->GetCursor(fake_event),
+            ui::mojom::CursorType::kHand);
   EXPECT_EQ(public_account_->width(), initial_width);
   EXPECT_EQ(public_account_->height(), initial_height);
 
@@ -192,8 +199,9 @@ TEST_P(LoginExpandedPublicAccountViewTest, ShowLearnMoreDialog) {
 
   // Tap on the learn more link.
   const auto& children = test_api.learn_more_label()->children();
-  const auto it = base::ranges::find(children, views::Link::kViewClassName,
-                                     &views::View::GetClassName);
+  const auto it =
+      base::ranges::find(children, views::LinkFragment::kViewClassName,
+                         &views::View::GetClassName);
   DCHECK(it != children.cend());
   TapOnView(*it);
   ASSERT_NE(test_api.learn_more_dialog(), nullptr);
@@ -266,8 +274,8 @@ TEST_P(LoginExpandedPublicAccountViewTest, ShowLanguageAndKeyboardMenu) {
 
   // First language item is selected.
   EXPECT_EQ(test_api.selected_language_item_value(), kEnglishLanguageCode);
-  ASSERT_EQ(2, language_menu_view->GetRowCount());
-  EXPECT_EQ(0, language_menu_view->GetSelectedRow());
+  ASSERT_EQ(2u, language_menu_view->GetRowCount());
+  EXPECT_EQ(0u, language_menu_view->GetSelectedRow());
 
   // Once the menu is open, the focus is set on the entire view.
   // The first key press will set the focus on the language item, the second
@@ -284,8 +292,8 @@ TEST_P(LoginExpandedPublicAccountViewTest, ShowLanguageAndKeyboardMenu) {
 
   // Second keyboard item is selected.
   EXPECT_EQ(test_api.selected_keyboard_item_value(), kKeyboardIdForItem2);
-  ASSERT_EQ(2, keyboard_menu_view->GetRowCount());
-  EXPECT_EQ(1, keyboard_menu_view->GetSelectedRow());
+  ASSERT_EQ(2u, keyboard_menu_view->GetRowCount());
+  EXPECT_EQ(1u, keyboard_menu_view->GetSelectedRow());
 
   // Once the menu is open, the focus is set on the entire view.
   // The first key press will set the focus on the keyboard item, the second

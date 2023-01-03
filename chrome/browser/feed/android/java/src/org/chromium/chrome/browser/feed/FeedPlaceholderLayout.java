@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,6 @@ import org.chromium.base.CommandLine;
 import org.chromium.base.FeatureList;
 import org.chromium.base.Log;
 import org.chromium.chrome.browser.flags.BooleanCachedFieldTrialParameter;
-import org.chromium.chrome.browser.flags.CachedFeatureFlags;
 import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.components.browser_ui.styles.ChromeColors;
 import org.chromium.components.browser_ui.widget.displaystyle.UiConfig;
@@ -369,7 +368,7 @@ public class FeedPlaceholderLayout extends LinearLayout {
     private static boolean isFeatureEnabled() {
         // If the feature flag is disabled, use the old behavior: Instant Start shows the static
         // placeholder, and the feed shouldn't show this placeholder view at all.
-        return CachedFeatureFlags.isEnabled(ChromeFeatureList.FEED_LOADING_PLACEHOLDER);
+        return ChromeFeatureList.sFeedLoadingPlaceholder.isEnabled();
     }
 
     private static boolean isInstantStartAnimationEnabled() {

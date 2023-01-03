@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -244,11 +244,13 @@ class TestWebURLLoaderClient : public WebURLLoaderClient {
     NOTREACHED();
   }
 
-  void DidFinishLoading(base::TimeTicks finishTime,
-                        int64_t totalEncodedDataLength,
-                        int64_t totalEncodedBodyLength,
-                        int64_t totalDecodedBodyLength,
-                        bool should_report_corb_blocking) override {
+  void DidFinishLoading(
+      base::TimeTicks finishTime,
+      int64_t totalEncodedDataLength,
+      int64_t totalEncodedBodyLength,
+      int64_t totalDecodedBodyLength,
+      bool should_report_corb_blocking,
+      absl::optional<bool> pervasive_payload_requested) override {
     EXPECT_TRUE(loader_);
     EXPECT_TRUE(did_receive_response_);
     EXPECT_FALSE(did_finish_);
@@ -500,8 +502,7 @@ TEST_F(WebURLLoaderTest, ResponseIPEndpoint) {
     network::mojom::URLResponseHead head;
     head.remote_endpoint = net::IPEndPoint(address, test.port);
 
-    WebURLResponse response;
-    WebURLLoader::PopulateURLResponse(url, head, &response, true, -1);
+    WebURLResponse response = WebURLResponse::Create(url, head, true, -1);
     EXPECT_EQ(head.remote_endpoint, response.RemoteIPEndpoint());
   };
 }
@@ -512,8 +513,7 @@ TEST_F(WebURLLoaderTest, ResponseAddressSpace) {
   network::mojom::URLResponseHead head;
   head.response_address_space = network::mojom::IPAddressSpace::kPrivate;
 
-  WebURLResponse response;
-  WebURLLoader::PopulateURLResponse(url, head, &response, true, -1);
+  WebURLResponse response = WebURLResponse::Create(url, head, true, -1);
 
   EXPECT_EQ(network::mojom::IPAddressSpace::kPrivate, response.AddressSpace());
 }
@@ -524,8 +524,7 @@ TEST_F(WebURLLoaderTest, ClientAddressSpace) {
   network::mojom::URLResponseHead head;
   head.client_address_space = network::mojom::IPAddressSpace::kPublic;
 
-  WebURLResponse response;
-  WebURLLoader::PopulateURLResponse(url, head, &response, true, -1);
+  WebURLResponse response = WebURLResponse::Create(url, head, true, -1);
 
   EXPECT_EQ(network::mojom::IPAddressSpace::kPublic,
             response.ClientAddressSpace());
@@ -552,8 +551,7 @@ TEST_F(WebURLLoaderTest, SSLInfo) {
 
   network::mojom::URLResponseHead head;
   head.ssl_info = ssl_info;
-  WebURLResponse web_url_response;
-  WebURLLoader::PopulateURLResponse(url, head, &web_url_response, true, -1);
+  WebURLResponse web_url_response = WebURLResponse::Create(url, head, true, -1);
 
   const absl::optional<net::SSLInfo>& got_ssl_info =
       web_url_response.ToResourceResponse().GetSSLInfo();
@@ -571,14 +569,14 @@ TEST_F(WebURLLoaderTest, SyncLengths) {
   const KURL url(kTestURL);
 
   auto request = std::make_unique<network::ResourceRequest>();
-  request->url = url;
+  request->url = GURL(url);
   request->destination = network::mojom::RequestDestination::kEmpty;
   request->priority = net::HIGHEST;
 
   // Prepare a mock response
   SyncLoadResponse sync_load_response;
   sync_load_response.error_code = net::OK;
-  sync_load_response.url = url;
+  sync_load_response.url = GURL(url);
   sync_load_response.data.Assign(WebData(kBodyData));
   ASSERT_EQ(17u, sync_load_response.data.size());
   sync_load_response.head->encoded_body_length = kEncodedBodyLength;
@@ -605,7 +603,8 @@ TEST_F(WebURLLoaderTest, SyncLengths) {
   EXPECT_TRUE(downloaded_blob.Uuid().IsNull());
 }
 
-// Verifies that PopulateURLResponse() copies AuthChallengeInfo to the response.
+// Verifies that WebURLResponse::Create() copies AuthChallengeInfo to the
+// response.
 TEST_F(WebURLLoaderTest, AuthChallengeInfo) {
   network::mojom::URLResponseHead head;
   net::AuthChallengeInfo auth_challenge_info;
@@ -613,8 +612,8 @@ TEST_F(WebURLLoaderTest, AuthChallengeInfo) {
   auth_challenge_info.challenge = "foobar";
   head.auth_challenge_info = auth_challenge_info;
 
-  blink::WebURLResponse response;
-  WebURLLoader::PopulateURLResponse(KURL(), head, &response, true, -1);
+  blink::WebURLResponse response =
+      WebURLResponse::Create(KURL(), head, true, -1);
   ASSERT_TRUE(response.AuthChallengeInfo().has_value());
   EXPECT_TRUE(response.AuthChallengeInfo()->is_proxy);
   EXPECT_EQ("foobar", response.AuthChallengeInfo()->challenge);

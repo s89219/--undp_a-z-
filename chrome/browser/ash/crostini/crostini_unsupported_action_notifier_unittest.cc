@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,7 @@ class MockDelegate : public CrostiniUnsupportedActionNotifier::Delegate {
   MOCK_METHOD(bool, IsInTabletMode, (), (override));
   MOCK_METHOD(bool, IsFocusedWindowCrostini, (), (override));
   MOCK_METHOD(bool, IsVirtualKeyboardVisible, (), (override));
-  MOCK_METHOD(void, ShowToast, (const ash::ToastData& toast_data), (override));
+  MOCK_METHOD(void, ShowToast, (ash::ToastData toast_data), (override));
   MOCK_METHOD(std::string,
               GetLocalizedDisplayName,
               (const InputMethodDescriptor& descriptor),
@@ -83,7 +83,7 @@ class CrostiniUnsupportedActionNotifierTest
  public:
   CrostiniUnsupportedActionNotifierTest()
       : notifier(std::make_unique<NiceMock<MockDelegate>>()) {}
-  virtual ~CrostiniUnsupportedActionNotifierTest() = default;
+  ~CrostiniUnsupportedActionNotifierTest() override = default;
 
   MockDelegate& get_delegate() {
     auto* ptr = notifier.get_delegate_for_testing();

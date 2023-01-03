@@ -1,12 +1,12 @@
-# Copyright 2021 The Chromium Authors. All rights reserved.
+# Copyright 2021 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import re
 
 _NON_SEMANTIC_CSS_COLOR_PATTERNS = [
-  "--google-",
-  "--paper-",
+  "var(--google-",
+  "var(--paper-",
   ": #",
   "rgb",
   "hsl",

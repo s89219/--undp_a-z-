@@ -1,13 +1,13 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 import 'chrome://personalization/strings.m.js';
 import 'chrome://webui-test/mojo_webui_test_support.js';
 
-import {Paths, PersonalizationMain, PersonalizationRouter} from 'chrome://personalization/trusted/personalization_app.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {Paths, PersonalizationMain, PersonalizationRouter} from 'chrome://personalization/js/personalization_app.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {assertDeepEquals, assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {baseSetup, initElement, teardownElement} from './personalization_app_test_utils.js';
 
@@ -23,28 +23,6 @@ suite('PersonalizationMainTest', function() {
     personalizationMainElement = null;
   });
 
-  test('links to user subpage', async () => {
-    personalizationMainElement = initElement(PersonalizationMain);
-    const original = PersonalizationRouter.instance;
-    const goToRoutePromise = new Promise<[Paths, Object]>(resolve => {
-      PersonalizationRouter.instance = () => {
-        return {
-          goToRoute(path: Paths, queryParams: Object = {}) {
-            resolve([path, queryParams]);
-            PersonalizationRouter.instance = original;
-          }
-        } as PersonalizationRouter;
-      };
-    });
-    const userSubpageLink =
-        personalizationMainElement!.shadowRoot!.getElementById(
-            'userSubpageLink')!;
-    userSubpageLink.click();
-    const [path, queryParams] = await goToRoutePromise;
-    assertEquals(Paths.User, path);
-    assertDeepEquals({}, queryParams);
-  });
-
   test('links to ambient subpage', async () => {
     loadTimeData.overrideValues({'isAmbientModeAllowed': true});
     personalizationMainElement = initElement(PersonalizationMain);
@@ -55,7 +33,7 @@ suite('PersonalizationMainTest', function() {
           goToRoute(path: Paths, queryParams: Object = {}) {
             resolve([path, queryParams]);
             PersonalizationRouter.instance = original;
-          }
+          },
         } as PersonalizationRouter;
       };
     });
@@ -64,7 +42,7 @@ suite('PersonalizationMainTest', function() {
             'ambientSubpageLink')!;
     ambientSubpageLink.click();
     const [path, queryParams] = await goToRoutePromise;
-    assertEquals(Paths.Ambient, path);
+    assertEquals(Paths.AMBIENT, path);
     assertDeepEquals({}, queryParams);
   });
 

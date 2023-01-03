@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -237,7 +237,6 @@ class BrowserPolicyConnectorAsh : public ChromeBrowserPolicyConnector,
 
   // DeviceCloudPolicyManagerAsh::Observer:
   void OnDeviceCloudPolicyManagerConnected() override;
-  void OnDeviceCloudPolicyManagerDisconnected() override;
   void OnDeviceCloudPolicyManagerGotRegistry() override;
 
   // TODO(crbug.com/1187628): Combine the following two functions into one to

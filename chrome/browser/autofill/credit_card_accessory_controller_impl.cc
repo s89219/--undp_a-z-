@@ -1,10 +1,9 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/autofill/credit_card_accessory_controller_impl.h"
 
-#include <algorithm>
 #include <iterator>
 #include <utility>
 #include <vector>
@@ -13,7 +12,9 @@
 #include "base/containers/cxx20_erase_vector.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/memory/ptr_util.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "chrome/browser/android/preferences/autofill/autofill_profile_bridge.h"
 #include "chrome/browser/autofill/manual_filling_controller.h"
 #include "chrome/browser/autofill/manual_filling_utils.h"
@@ -109,9 +110,7 @@ UserInfo TranslateCachedCard(const CachedServerCardInfo* data, bool enabled) {
 }
 
 bool ShouldCreateVirtualCard(const CreditCard* card) {
-  return base::FeatureList::IsEnabled(
-             features::kAutofillEnableMerchantBoundVirtualCards) &&
-         card->virtual_card_enrollment_state() == CreditCard::ENROLLED;
+  return card->virtual_card_enrollment_state() == CreditCard::ENROLLED;
 }
 
 const CreditCard* UnwrapCardOrVirtualCard(
@@ -126,9 +125,9 @@ PromoCodeInfo TranslateOffer(const AutofillOfferData* data) {
   DCHECK(data);
   DCHECK(data->IsPromoCodeOffer());
 
-  std::u16string promo_code = base::ASCIIToUTF16(data->promo_code);
+  std::u16string promo_code = base::ASCIIToUTF16(data->GetPromoCode());
   std::u16string details_text =
-      base::ASCIIToUTF16(data->display_strings.value_prop_text);
+      base::ASCIIToUTF16(data->GetDisplayStrings().value_prop_text);
   PromoCodeInfo promo_code_info(promo_code, details_text);
 
   return promo_code_info;
@@ -231,8 +230,8 @@ void CreditCardAccessoryControllerImpl::OnFillingTriggered(
   }
 
   std::vector<CardOrVirtualCard> cards = GetAllCreditCards();
-  auto card_iter = std::find_if(
-      cards.begin(), cards.end(), [&selection](const auto& card_or_virtual) {
+  auto card_iter =
+      base::ranges::find_if(cards, [&selection](const auto& card_or_virtual) {
         const CreditCard* card = UnwrapCardOrVirtualCard(card_or_virtual);
         return card && card->guid() == selection.id();
       });
@@ -324,12 +323,16 @@ CreditCardAccessoryController* CreditCardAccessoryController::GetIfExisting(
 }
 
 void CreditCardAccessoryControllerImpl::RefreshSuggestions() {
-  absl::optional<AccessorySheetData> data = GetSheetData();
+  TRACE_EVENT0("passwords",
+               "CreditCardAccessoryControllerImpl::RefreshSuggestions");
   if (source_observer_) {
-    source_observer_.Run(this, IsFillingSourceAvailable(data.has_value()));
+    source_observer_.Run(
+        this, IsFillingSourceAvailable(!GetAllCreditCards().empty() ||
+                                       !GetPromoCodeOffers().empty()));
   } else {
     // TODO(crbug.com/1169167): Remove once filling controller pulls this
     // information instead of waiting to get it pushed.
+    absl::optional<AccessorySheetData> data = GetSheetData();
     DCHECK(data.has_value());
     GetManualFillingController()->RefreshSuggestions(std::move(data.value()));
   }
@@ -447,14 +450,14 @@ CreditCardAccessoryControllerImpl::GetUnmaskedCreditCards() const {
 
 std::vector<const AutofillOfferData*>
 CreditCardAccessoryControllerImpl::GetPromoCodeOffers() const {
-  AutofillManager* autofill_manager = GetManager();
-  if (!GetWebContents().GetFocusedFrame() || !personal_data_manager_ ||
-      !autofill_manager)
+  AutofillManager* autofill_manager =
+      GetWebContents().GetFocusedFrame() ? GetManager() : nullptr;
+  if (!personal_data_manager_ || !autofill_manager)
     return std::vector<const AutofillOfferData*>();
 
   return personal_data_manager_->GetActiveAutofillPromoCodeOffersForOrigin(
       autofill_manager->client()
-          ->GetLastCommittedURL()
+          ->GetLastCommittedPrimaryMainFrameURL()
           .DeprecatedGetOriginAsURL());
 }
 
@@ -479,9 +482,7 @@ AutofillManager* CreditCardAccessoryControllerImpl::GetManager() const {
     return af_manager_for_testing_;
   ContentAutofillDriver* driver = ContentAutofillDriver::GetForRenderFrameHost(
       GetWebContents().GetFocusedFrame());
-  return driver
-             ? static_cast<BrowserAutofillManager*>(driver->autofill_manager())
-             : nullptr;
+  return driver ? driver->autofill_manager() : nullptr;
 }
 
 content::WebContents& CreditCardAccessoryControllerImpl::GetWebContents()

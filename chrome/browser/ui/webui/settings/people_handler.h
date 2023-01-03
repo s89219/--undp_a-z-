@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,6 +67,7 @@ class PeopleHandler : public SettingsPageUIHandler,
 
  private:
   friend class PeopleHandlerTest;
+  friend class PeopleHandlerSignoutTest;
   FRIEND_TEST_ALL_PREFIXES(PeopleHandlerTest,
                            DisplayConfigureWithEngineDisabledAndCancel);
   FRIEND_TEST_ALL_PREFIXES(
@@ -125,6 +126,14 @@ class PeopleHandler : public SettingsPageUIHandler,
   FRIEND_TEST_ALL_PREFIXES(PeopleHandlerMainProfile, GetStoredAccountsList);
   FRIEND_TEST_ALL_PREFIXES(PeopleHandlerSecondaryProfile,
                            GetStoredAccountsList);
+#if DCHECK_IS_ON()
+  FRIEND_TEST_ALL_PREFIXES(PeopleHandlerMainProfile, DeleteProfileCrashes);
+  FRIEND_TEST_ALL_PREFIXES(PeopleHandlerSignoutTest, RevokeSyncNotAllowed);
+  FRIEND_TEST_ALL_PREFIXES(PeopleHandlerSignoutTest, SignoutNotAllowedSyncOff);
+#endif
+  FRIEND_TEST_ALL_PREFIXES(PeopleHandlerSignoutTest, SignoutNotAllowedSyncOn);
+  FRIEND_TEST_ALL_PREFIXES(PeopleHandlerSignoutTest, SignoutWithSyncOff);
+  FRIEND_TEST_ALL_PREFIXES(PeopleHandlerSignoutTest, SignoutWithSyncOn);
 
   // SettingsPageUIHandler implementation.
   void RegisterMessages() override;
@@ -148,7 +157,7 @@ class PeopleHandler : public SettingsPageUIHandler,
 
   // Returns a newly created dictionary with a number of properties that
   // correspond to the status of sync.
-  base::Value GetSyncStatusDictionary() const;
+  base::Value::Dict GetSyncStatusDictionary() const;
 
   // Helper routine that gets the SyncService associated with the parent
   // profile.
@@ -195,7 +204,7 @@ class PeopleHandler : public SettingsPageUIHandler,
 
   void HandleGetStoredAccounts(const base::Value::List& args);
   void HandleStartSyncingWithEmail(const base::Value::List& args);
-  base::Value GetStoredAccountsList();
+  base::Value::List GetStoredAccountsList();
 
   // Pushes the updated sync prefs to JavaScript.
   void PushSyncPrefs();

@@ -1,28 +1,21 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview The driver for the UI for incremental search.
  */
-import {ISearchHandler} from '/chromevox/background/panel/i_search_handler.js';
-import {PanelBackground} from '/chromevox/background/panel/panel_background.js';
-import {PanelInterface} from '/chromevox/panel/panel_interface.js';
+import {constants} from '../../common/constants.js';
+import {BackgroundBridge} from '../common/background_bridge.js';
+
+import {PanelInterface} from './panel_interface.js';
 
 const AutomationNode = chrome.automation.AutomationNode;
 const Dir = constants.Dir;
 
-/** @implements {ISearchHandler} */
 export class ISearchUI {
-  /** @param {Element} input */
+  /** @param {!Element} input */
   constructor(input) {
-    /** @private {ChromeVoxState} */
-    this.background_ =
-        chrome.extension.getBackgroundPage()['ChromeVoxState']['instance'];
-    const panelBackground =
-        chrome.extension.getBackgroundPage().panelBackground;
-    panelBackground.createNewISearch();
-    panelBackground.setISearchHandler(this);
     this.input_ = input;
     this.dir_ = Dir.FORWARD;
 
@@ -34,18 +27,15 @@ export class ISearchUI {
   }
 
   /**
-   * @param {Element} input
-   * @return {ISearchUI}
+   * @param {!Element} input
+   * @return {!Promise<ISearchUI>}
    */
-  static init(input) {
+  static async init(input) {
     if (ISearchUI.instance_) {
       ISearchUI.instance_.destroy();
     }
 
-    if (!input) {
-      throw 'Expected search input';
-    }
-
+    await BackgroundBridge.PanelBackground.createNewISearch();
     ISearchUI.instance_ = new ISearchUI(input);
     input.focus();
     input.select();
@@ -70,14 +60,14 @@ export class ISearchUI {
         return false;
       case 'Enter':
         PanelInterface.instance.setPendingCallback(
-            () => chrome.extension.getBackgroundPage()
-                      .panelBackground.setRangeToISearchNode());
+            async () =>
+                await BackgroundBridge.PanelBackground.setRangeToISearchNode());
         PanelInterface.instance.closeMenusAndRestoreFocus();
         return false;
       default:
         return false;
     }
-    chrome.extension.getBackgroundPage().panelBackground.incrementalSearch(
+    BackgroundBridge.PanelBackground.incrementalSearch(
         this.input_.value, this.dir_, true);
     evt.preventDefault();
     evt.stopPropagation();
@@ -91,50 +81,13 @@ export class ISearchUI {
    */
   onTextInput(evt) {
     const searchStr = evt.target.value + evt.data;
-    chrome.extension.getBackgroundPage().panelBackground.incrementalSearch(
-        searchStr, this.dir_);
+    BackgroundBridge.PanelBackground.incrementalSearch(searchStr, this.dir_);
     return true;
-  }
-
-  /** @override */
-  onSearchReachedBoundary(boundaryNode) {
-    this.output_(boundaryNode);
-    ChromeVox.earcons.playEarcon(Earcon.WRAP);
-  }
-
-  /** @override */
-  onSearchResultChanged(node, start, end) {
-    this.output_(node, start, end);
-  }
-
-  /**
-   * @param {!AutomationNode} node
-   * @param {number=} opt_start
-   * @param {number=} opt_end
-   * @private
-   */
-  output_(node, opt_start, opt_end) {
-    Output.forceModeForNextSpeechUtterance(QueueMode.FLUSH);
-    const o = new Output();
-    if (opt_start && opt_end) {
-      o.withString([
-        node.name.substr(0, opt_start),
-        node.name.substr(opt_start, opt_end - opt_start),
-        node.name.substr(opt_end)
-      ].join(', '));
-      o.format('$role', node);
-    } else {
-      o.withRichSpeechAndBraille(
-          cursors.Range.fromNode(node), null, OutputEventType.NAVIGATE);
-    }
-    o.go();
-
-    this.background_.setCurrentRange(cursors.Range.fromNode(node));
   }
 
   /** Unregisters event handlers. */
   destroy() {
-    chrome.extension.getBackgroundPage().panelBackground.destroyISearch();
+    BackgroundBridge.PanelBackground.destroyISearch();
     const input = this.input_;
     this.input_ = null;
     input.removeEventListener('keydown', this.onKeyDown, true);

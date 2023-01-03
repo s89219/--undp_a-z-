@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@
 // Tells the delegate that the user tapped on search in web item.
 - (void)didSelectSearchWebInSuggestedActionsViewController:
     (SuggestedActionsViewController*)viewController;
-// Asks the delegate to fetch the history results count and execute |completion|
+// Asks the delegate to fetch the history results count and execute `completion`
 // with it.
 - (void)suggestedActionsViewController:
             (SuggestedActionsViewController*)viewController

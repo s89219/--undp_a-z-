@@ -1,21 +1,54 @@
-[RuntimeEnabled = PendingBeaconAPI] enum BeaconState { "pending", "sending", "sent", "failed", "deactivated" };
+// Copyright 2022 The Chromium Authors
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
+// https://github.com/WICG/pending-beacon/blob/main/README.md
 
 [RuntimeEnabled = PendingBeaconAPI] enum BeaconMethod { "POST", "GET" };
 
-[RuntimeEnabled = PendingBeaconAPI] dictionary BeaconOptions {
-  BeaconMethod method = "POST";
-  long pageHideTimeout;
+[RuntimeEnabled = PendingBeaconAPI] dictionary PendingBeaconOptions {
+  long backgroundTimeout = -1;
+  long timeout = -1;
 };
 
 // Interface for the PendingBeacon API.
-// https://github.com/darrenw/docs/blob/main/explainers/beacon_api.md
-[RuntimeEnabled = PendingBeaconAPI, Exposed = Window] interface PendingBeacon {
-  [CallWith = ExecutionContext] constructor(
-      USVString url, optional BeaconOptions options);
-  attribute USVString url;
-  attribute BeaconMethod method;
-  attribute long pageHideTimeout;
-  readonly attribute BeaconState state;
-  void deactivate();
-  void setData((ReadableStream or XMLHttpRequestBodyInit) data);
+[
+  RuntimeEnabled = PendingBeaconAPI,
+  Exposed = Window,
+  SecureContext,
+  ImmutablePrototype
+] interface PendingBeacon {
+  [Measure] readonly attribute USVString url;
+  [Measure] readonly attribute BeaconMethod method;
+  [Measure] attribute long backgroundTimeout;
+  [Measure] attribute long timeout;
+  [Measure] readonly attribute boolean pending;
+
+  [Measure] void deactivate();
+  [Measure] void sendNow();
+};
+
+// Interface for the PendingGetBeacon API.
+[
+  RuntimeEnabled = PendingBeaconAPI,
+  Exposed = Window,
+  SecureContext
+] interface PendingGetBeacon : PendingBeacon {
+  [Measure, RaisesException, CallWith = ExecutionContext] constructor(
+      USVString? url, optional PendingBeaconOptions options);
+
+  [Measure, RaisesException] void setURL(USVString? url);
+};
+
+// Interface for the PendingPostBeacon API.
+[
+  RuntimeEnabled = PendingBeaconAPI,
+  Exposed = Window,
+  SecureContext
+] interface PendingPostBeacon : PendingBeacon {
+  [Measure, RaisesException, CallWith = ExecutionContext] constructor(
+      USVString? url, optional PendingBeaconOptions options);
+
+  [Measure, RaisesException] void setData(
+      (ReadableStream or XMLHttpRequestBodyInit) data);
 };

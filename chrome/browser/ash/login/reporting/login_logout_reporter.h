@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,14 +7,13 @@
 
 #include <memory>
 
-#include "ash/components/login/auth/auth_status_consumer.h"
-#include "base/feature_list.h"
 #include "base/scoped_observation.h"
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
 #include "chrome/browser/ash/policy/status_collector/managed_session_service.h"
 #include "chrome/browser/policy/messaging_layer/proto/synced/login_logout_event.pb.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chromeos/ash/components/login/auth/auth_status_consumer.h"
 
 class PrefRegistrySimple;
 
@@ -25,6 +24,9 @@ class UserEventReporterHelper;
 }  // namespace reporting
 
 namespace ash {
+
+class AuthFailure;
+
 namespace reporting {
 
 class LoginLogoutReporter : public policy::ManagedSessionService::Observer {
@@ -71,8 +73,6 @@ class LoginLogoutReporter : public policy::ManagedSessionService::Observer {
   void OnKioskLoginFailure() override;
 
  private:
-  static const base::Feature kEnableKioskAndGuestLoginLogoutReporting;
-
   LoginLogoutReporter(
       std::unique_ptr<::reporting::UserEventReporterHelper> reporter_helper,
       std::unique_ptr<Delegate> delegate,

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,6 +36,7 @@
 #include "third_party/blink/renderer/platform/graphics/video_frame_image_util.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
+#include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/worker_pool.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
@@ -611,7 +612,8 @@ ImageBitmap::ImageBitmap(OffscreenCanvas* offscreen_canvas,
 }
 
 ImageBitmap::ImageBitmap(const SkPixmap& pixmap,
-                         bool is_image_bitmap_origin_clean) {
+                         bool is_image_bitmap_origin_clean,
+                         ImageOrientationEnum image_orientation) {
   sk_sp<SkImage> raster_copy = SkImage::MakeRasterCopy(pixmap);
   if (!raster_copy)
     return;
@@ -619,6 +621,7 @@ ImageBitmap::ImageBitmap(const SkPixmap& pixmap,
   if (!image_)
     return;
   image_->SetOriginClean(is_image_bitmap_origin_clean);
+  image_->SetOrientation(image_orientation);
   UpdateImageBitmapMemoryUsage();
 }
 
@@ -860,7 +863,7 @@ void ImageBitmap::ResolvePromiseOnOriginalThread(
 }
 
 void ImageBitmap::RasterizeImageOnBackgroundThread(
-    sk_sp<PaintRecord> paint_record,
+    PaintRecord paint_record,
     const gfx::Rect& dst_rect,
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     WTF::CrossThreadOnceFunction<void(sk_sp<SkImage>,
@@ -872,7 +875,7 @@ void ImageBitmap::RasterizeImageOnBackgroundThread(
   sk_sp<SkSurface> surface = SkSurface::MakeRaster(info, &props);
   sk_sp<SkImage> skia_image;
   if (surface) {
-    paint_record->Playback(surface->getCanvas());
+    paint_record.Playback(surface->getCanvas());
     skia_image = surface->makeImageSnapshot();
   }
   PostCrossThreadTask(
@@ -885,6 +888,7 @@ ScriptPromise ImageBitmap::CreateAsync(
     ImageElementBase* image,
     absl::optional<gfx::Rect> crop_rect,
     ScriptState* script_state,
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
     mojom::blink::PreferredColorScheme preferred_color_scheme,
     ExceptionState& exception_state,
     const ImageBitmapOptions* options) {
@@ -924,8 +928,7 @@ ScriptPromise ImageBitmap::CreateAsync(
   gfx::Rect draw_dst_rect(0, 0, parsed_options.resize_width,
                           parsed_options.resize_height);
   PaintRecorder recorder;
-  cc::PaintCanvas* canvas =
-      recorder.beginRecording(gfx::RectToSkRect(draw_src_rect));
+  cc::PaintCanvas* canvas = recorder.beginRecording();
   if (parsed_options.flip_y) {
     canvas->translate(0, draw_dst_rect.height());
     canvas->scale(1, -1);
@@ -935,7 +938,7 @@ ScriptPromise ImageBitmap::CreateAsync(
                                preferred_color_scheme)
       ->Draw(canvas, cc::PaintFlags(), gfx::RectF(draw_dst_rect),
              gfx::RectF(draw_src_rect), ImageDrawOptions());
-  sk_sp<PaintRecord> paint_record = recorder.finishRecordingAsPicture();
+  PaintRecord paint_record = recorder.finishRecordingAsPicture();
 
   std::unique_ptr<ParsedOptions> passed_parsed_options =
       std::make_unique<ParsedOptions>(parsed_options);
@@ -945,7 +948,7 @@ ScriptPromise ImageBitmap::CreateAsync(
   worker_pool::PostTask(
       FROM_HERE, CrossThreadBindOnce(
                      &RasterizeImageOnBackgroundThread, std::move(paint_record),
-                     draw_dst_rect, Thread::MainThread()->GetTaskRunner(),
+                     draw_dst_rect, std::move(task_runner),
                      CrossThreadBindOnce(&ResolvePromiseOnOriginalThread,
                                          WrapCrossThreadPersistent(resolver),
                                          !image->WouldTaintOrigin(),

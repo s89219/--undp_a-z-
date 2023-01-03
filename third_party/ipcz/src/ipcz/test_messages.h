@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 
 #include "ipcz/driver_object.h"
 #include "ipcz/driver_transport.h"
-#include "ipcz/message_internal.h"
+#include "ipcz/message.h"
 
 namespace ipcz::test::msg {
 
@@ -22,6 +22,10 @@ namespace ipcz::test::msg {
 #include "ipcz/message_macros/undef_message_macros.h"
 
 #include "ipcz/message_macros/message_declaration_macros.h"
+#include "ipcz/test_messages_generator.h"
+#include "ipcz/message_macros/undef_message_macros.h"
+
+#include "ipcz/message_macros/message_listener_declaration_macros.h"
 #include "ipcz/test_messages_generator.h"
 #include "ipcz/message_macros/undef_message_macros.h"
 // clang-format on

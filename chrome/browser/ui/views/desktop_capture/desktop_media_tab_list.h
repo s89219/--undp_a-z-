@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,6 +48,7 @@ class DesktopMediaTabList : public DesktopMediaListController::ListView {
   absl::optional<content::DesktopMediaID> GetSelection() override;
   DesktopMediaListController::SourceListListener* GetSourceListListener()
       override;
+  void ClearSelection() override;
 
   // Called to indicate the preview image of the source indicated by index has
   // been updated.
@@ -62,7 +63,7 @@ class DesktopMediaTabList : public DesktopMediaListController::ListView {
   friend class DesktopMediaPickerViewsTestApi;
   friend class DesktopMediaTabListTest;
 
-  raw_ptr<DesktopMediaListController> controller_;
+  raw_ptr<DesktopMediaListController, DanglingUntriaged> controller_;
   std::unique_ptr<TabListModel> model_;
   std::unique_ptr<TabListViewObserver> view_observer_;
 

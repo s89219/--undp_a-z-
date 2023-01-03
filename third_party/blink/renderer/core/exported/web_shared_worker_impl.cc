@@ -83,9 +83,7 @@ WebSharedWorkerImpl::WebSharedWorkerImpl(
     const blink::SharedWorkerToken& token,
     CrossVariantMojoRemote<mojom::SharedWorkerHostInterfaceBase> host,
     WebSharedWorkerClient* client)
-    : reporting_proxy_(MakeGarbageCollected<SharedWorkerReportingProxy>(
-          this,
-          ParentExecutionContextTaskRunners::Create())),
+    : reporting_proxy_(MakeGarbageCollected<SharedWorkerReportingProxy>(this)),
       worker_thread_(
           std::make_unique<SharedWorkerThread>(*reporting_proxy_, token)),
       host_(std::move(host)),
@@ -212,6 +210,7 @@ void WebSharedWorkerImpl::StartWorkerContext(
     bool pause_worker_context_on_start,
     std::unique_ptr<WorkerMainScriptLoadParameters>
         worker_main_script_load_params,
+    std::unique_ptr<blink::WebPolicyContainer> policy_container,
     scoped_refptr<WebWorkerFetchContext> web_worker_fetch_context,
     ukm::SourceId ukm_source_id) {
   DCHECK(IsMainThread());
@@ -284,8 +283,9 @@ void WebSharedWorkerImpl::StartWorkerContext(
       nullptr /* worklet_module_response_map */,
       std::move(browser_interface_broker),
       mojo::NullRemote() /* code_cache_host_interface */,
-      BeginFrameProviderParams(), nullptr /* parent_permissions_policy */,
-      base::UnguessableToken(), ukm_source_id);
+      mojo::NullRemote() /* blob_url_store */, BeginFrameProviderParams(),
+      nullptr /* parent_permissions_policy */, base::UnguessableToken(),
+      ukm_source_id);
 
   auto thread_startup_data = WorkerBackingThreadStartupData::CreateDefault();
   thread_startup_data.atomics_wait_mode =
@@ -319,14 +319,14 @@ void WebSharedWorkerImpl::StartWorkerContext(
     case mojom::blink::ScriptType::kClassic:
       GetWorkerThread()->FetchAndRunClassicScript(
           script_request_url, std::move(worker_main_script_load_params),
-          outside_settings_object->CopyData(),
+          std::move(policy_container), outside_settings_object->CopyData(),
           nullptr /* outside_resource_timing_notifier */,
           v8_inspector::V8StackTraceId());
       break;
     case mojom::blink::ScriptType::kModule:
       GetWorkerThread()->FetchAndRunModuleScript(
           script_request_url, std::move(worker_main_script_load_params),
-          outside_settings_object->CopyData(),
+          std::move(policy_container), outside_settings_object->CopyData(),
           nullptr /* outside_resource_timing_notifier */, credentials_mode);
       break;
   }
@@ -363,6 +363,7 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
     bool pause_worker_context_on_start,
     std::unique_ptr<WorkerMainScriptLoadParameters>
         worker_main_script_load_params,
+    std::unique_ptr<blink::WebPolicyContainer> policy_container,
     scoped_refptr<WebWorkerFetchContext> web_worker_fetch_context,
     CrossVariantMojoRemote<mojom::SharedWorkerHostInterfaceBase> host,
     WebSharedWorkerClient* client,
@@ -376,7 +377,7 @@ std::unique_ptr<WebSharedWorker> WebSharedWorker::CreateAndStart(
       content_security_policies, outside_fetch_client_settings_object,
       devtools_worker_token, std::move(content_settings),
       std::move(browser_interface_broker), pause_worker_context_on_start,
-      std::move(worker_main_script_load_params),
+      std::move(worker_main_script_load_params), std::move(policy_container),
       std::move(web_worker_fetch_context), ukm_source_id);
   return worker;
 }

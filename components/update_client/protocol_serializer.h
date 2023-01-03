@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/containers/flat_map.h"
-#include "base/memory/ref_counted.h"
 #include "components/update_client/protocol_definition.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -52,6 +51,7 @@ protocol_request::App MakeProtocolApp(
     const std::string& ap,
     const std::string& brand_code,
     const std::string& lang,
+    int install_date,
     const std::string& install_source,
     const std::string& install_location,
     const std::string& fingerprint,

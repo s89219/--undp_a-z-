@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,9 +17,9 @@
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chrome/browser/ash/arc/print_spooler/arc_print_spooler_util.h"
 #include "chrome/browser/printing/print_view_manager_common.h"
@@ -38,6 +38,10 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/geometry/size.h"
+
+// Enable VLOG level 1.
+#undef ENABLED_VLOG_LEVEL
+#define ENABLED_VLOG_LEVEL 1
 
 namespace arc {
 
@@ -185,20 +189,20 @@ bool IsPdfPluginLoaded(content::WebContents* web_contents) {
     return false;
   }
 
-  content::WebContents* contents_to_use =
-      printing::GetWebContentsToUse(web_contents);
-  if (contents_to_use == web_contents) {
-    VLOG(1) << "No plugin WebContents found yet.";
+  content::RenderFrameHost* plugin_frame =
+      printing::GetFullPagePlugin(web_contents);
+  if (!plugin_frame) {
+    VLOG(1) << "No plugin frame found yet.";
     return false;
   }
 
-  GURL url = contents_to_use->GetMainFrame()->GetLastCommittedURL();
+  GURL url = plugin_frame->GetLastCommittedURL();
   if (!url.SchemeIs("chrome-extension")) {
     VLOG(1) << "Plugin frame URL not loaded yet.";
     return false;
   }
 
-  if (!contents_to_use->IsDocumentOnLoadCompletedInPrimaryMainFrame()) {
+  if (!plugin_frame->IsDocumentOnLoadCompletedInMainFrame()) {
     VLOG(1) << "Plugin frame still loading.";
     return false;
   }
@@ -269,16 +273,16 @@ void PrintSessionImpl::OnWindowDestroying(aura::Window* window) {
 }
 
 void PrintSessionImpl::CreatePreviewDocument(
-    base::Value job_settings,
+    base::Value::Dict job_settings,
     CreatePreviewDocumentCallback callback) {
   mojom::PrintDocumentRequestPtr request =
-      PrintDocumentRequestFromJobSettings(job_settings.GetDict());
+      PrintDocumentRequestFromJobSettings(job_settings);
   if (!request || !request->attributes) {
     std::move(callback).Run(base::ReadOnlySharedMemoryRegion());
     return;
   }
 
-  int request_id = job_settings.FindIntKey(printing::kPreviewRequestID).value();
+  int request_id = job_settings.FindInt(printing::kPreviewRequestID).value();
   instance_->CreatePreviewDocument(
       std::move(request),
       base::BindOnce(&PrintSessionImpl::OnPreviewDocumentCreated,
@@ -362,7 +366,7 @@ void PrintSessionImpl::StartPrintAfterPluginIsLoaded() {
   // have a way to notify the browser when it's ready (crbug.com/636642), so we
   // need to poll for the PDF frame to "look ready" before we start printing.
   if (!IsPdfPluginLoaded(web_contents_.get())) {
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&PrintSessionImpl::StartPrintAfterPluginIsLoaded,
                        weak_ptr_factory_.GetWeakPtr()),
@@ -374,7 +378,7 @@ void PrintSessionImpl::StartPrintAfterPluginIsLoaded() {
   // The inner doc has been marked done, but the PDF plugin might not be quite
   // done updating the DOM yet.  We don't have a way to check that, so launch
   // printing after one final delay to give that time to finish.
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PrintSessionImpl::StartPrintNow,
                      weak_ptr_factory_.GetWeakPtr()),

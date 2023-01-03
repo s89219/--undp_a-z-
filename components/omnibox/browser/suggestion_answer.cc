@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,7 @@ static constexpr char kAnswerJsonImageLine[] = "il";
 static constexpr char kAnswerJsonText[] = "t";
 static constexpr char kAnswerJsonAdditionalText[] = "at";
 static constexpr char kAnswerJsonStatusText[] = "st";
+static constexpr char kAnswerJsonAccessibilityLabel[] = "al";
 static constexpr char kAnswerJsonTextType[] = "tt";
 static constexpr char kAnswerJsonNumLines[] = "ln";
 static constexpr char kAnswerJsonImage[] = "i";
@@ -99,8 +100,7 @@ size_t SuggestionAnswer::TextField::EstimateMemoryUsage() const {
 
 // SuggestionAnswer::ImageLine -------------------------------------------------
 
-SuggestionAnswer::ImageLine::ImageLine()
-    : num_text_lines_(1) {}
+SuggestionAnswer::ImageLine::ImageLine() : num_text_lines_(1) {}
 SuggestionAnswer::ImageLine::ImageLine(const ImageLine& line) = default;
 SuggestionAnswer::ImageLine::ImageLine(ImageLine&&) noexcept = default;
 
@@ -109,7 +109,7 @@ SuggestionAnswer::ImageLine& SuggestionAnswer::ImageLine::operator=(
 SuggestionAnswer::ImageLine& SuggestionAnswer::ImageLine::operator=(
     ImageLine&&) noexcept = default;
 
-SuggestionAnswer::ImageLine::~ImageLine() {}
+SuggestionAnswer::ImageLine::~ImageLine() = default;
 
 // static
 bool SuggestionAnswer::ImageLine::ParseImageLine(
@@ -161,6 +161,12 @@ bool SuggestionAnswer::ImageLine::ParseImageLine(
     }
   }
 
+  const std::string* accessibility_label =
+      inner_json->FindString(kAnswerJsonAccessibilityLabel);
+  if (accessibility_label) {
+    image_line->accessibility_label_ = base::UTF8ToUTF16(*accessibility_label);
+  }
+
   const base::Value::Dict* image_json = inner_json->FindDict(kAnswerJsonImage);
   if (image_json) {
     const std::string* url_string =
@@ -171,8 +177,8 @@ bool SuggestionAnswer::ImageLine::ParseImageLine(
     // If necessary, concatenate scheme and host/path using only ':' as
     // separator. This is due to the results delivering strings of the form
     // "//host/path", which is web-speak for "use the enclosing page's scheme",
-    // but not a valid path of an URL.  The GWS frontend commonly (always?)
-    // redirects to HTTPS so we just default to that here.
+    // but not a valid path of a URL. The GWS frontend commonly (always?)
+    // redirects to HTTPS, so we just default to that here.
     image_line->image_url_ =
         GURL(base::StartsWith(*url_string, "//", base::CompareCase::SENSITIVE)
                  ? (std::string(url::kHttpsScheme) + ":" + *url_string)
@@ -218,6 +224,10 @@ bool SuggestionAnswer::ImageLine::Equals(const ImageLine& line) const {
     }
   }
 
+  if (accessibility_label_ != line.accessibility_label_) {
+    return false;
+  }
+
   return image_url_ == line.image_url_;
 }
 
@@ -248,6 +258,11 @@ size_t SuggestionAnswer::ImageLine::EstimateMemoryUsage() const {
     res += base::trace_event::EstimateMemoryUsage(status_text_.value());
   } else {
     res += sizeof(TextField);
+  }
+  if (accessibility_label_) {
+    res += base::trace_event::EstimateMemoryUsage(accessibility_label_.value());
+  } else {
+    res += sizeof(std::u16string);
   }
   res += base::trace_event::EstimateMemoryUsage(image_url_);
 

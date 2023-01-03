@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@ using testing::StrictMock;
 namespace cast_streaming::remoting {
 namespace {
 
-ACTION_P(CheckInitializeDemuxerStream, remote_handle, local_handle_ptr) {
+ACTION_P(CheckInitializeDemuxerStream, remote_handle, local_handle) {
   const openscreen::cast::RpcMessenger::Handle handle = arg0;
   const std::unique_ptr<openscreen::cast::RpcMessage>& rpc = arg1;
 
@@ -37,8 +37,7 @@ ACTION_P(CheckInitializeDemuxerStream, remote_handle, local_handle_ptr) {
   EXPECT_EQ(rpc->proc(), openscreen::cast::RpcMessage::RPC_DS_INITIALIZE);
   EXPECT_EQ(handle, remote_handle);
   ASSERT_TRUE(rpc->has_integer_value());
-  *local_handle_ptr = rpc->integer_value();
-  EXPECT_NE(*local_handle_ptr, openscreen::cast::RpcMessenger::kInvalidHandle);
+  EXPECT_EQ(local_handle, rpc->integer_value());
 }
 
 ACTION_P(CheckReadUntilCall, remote_handle, local_handle, last_total) {
@@ -63,6 +62,16 @@ ACTION_P(CheckOnErrorCall, remote_handle) {
   EXPECT_EQ(handle, remote_handle);
 }
 
+ACTION_P(CheckEnableBistreamConverterCall, remote_handle) {
+  const openscreen::cast::RpcMessenger::Handle handle = arg0;
+  const std::unique_ptr<openscreen::cast::RpcMessage>& rpc = arg1;
+
+  ASSERT_TRUE(rpc);
+  EXPECT_EQ(rpc->proc(),
+            openscreen::cast::RpcMessage::RPC_DS_ENABLEBITSTREAMCONVERTER);
+  EXPECT_EQ(handle, remote_handle);
+}
+
 }  // namespace
 
 class RpcDemuxerStreamHandlerTest : public testing::Test {
@@ -84,19 +93,21 @@ class RpcDemuxerStreamHandlerTest : public testing::Test {
                            {1920, 1080},
                            media::EmptyExtraData(),
                            media::EncryptionScheme::kUnencrypted),
-        rpc_messenger_(
-            [](auto data) { FAIL() << "Messages should not be sent here"; }),
         stream_handler_(
             &client_,
-            &rpc_messenger_,
+            base::BindRepeating(&RpcDemuxerStreamHandlerTest::GetHandle,
+                                base::Unretained(this)),
             base::BindRepeating(&RpcDemuxerStreamHandlerTest::SendMessage,
                                 base::Unretained(this))) {
+    EXPECT_CALL(*this, GetHandle())
+        .WillOnce(Return(audio_local_handle_))
+        .WillOnce(Return(video_local_handle_));
     EXPECT_CALL(*this, SendMessage(audio_remote_handle_, _))
         .WillOnce(CheckInitializeDemuxerStream(audio_remote_handle_,
-                                               &audio_local_handle_));
+                                               audio_local_handle_));
     EXPECT_CALL(*this, SendMessage(video_remote_handle_, _))
         .WillOnce(CheckInitializeDemuxerStream(video_remote_handle_,
-                                               &video_local_handle_));
+                                               video_local_handle_));
     stream_handler_.OnRpcAcquireDemuxer(audio_remote_handle_,
                                         video_remote_handle_);
   }
@@ -115,6 +126,17 @@ class RpcDemuxerStreamHandlerTest : public testing::Test {
   MOCK_METHOD2(SendMessage,
                void(openscreen::cast::RpcMessenger::Handle,
                     std::unique_ptr<openscreen::cast::RpcMessage>));
+
+  MOCK_METHOD0(GetHandle, openscreen::cast::RpcMessenger::Handle());
+
+  MOCK_METHOD1(OnBitstreamConverterEnabled, void(bool));
+
+  void OnRpcBitstreamConverterEnabled(
+      openscreen::cast::RpcMessenger::Handle handle,
+      bool success) {
+    static_cast<RpcDemuxerStreamCBMessageHandler*>(&stream_handler_)
+        ->OnRpcEnableBitstreamConverterCallback(handle, success);
+  }
 
   void OnRpcInitializeCallback(
       openscreen::cast::RpcMessenger::Handle handle,
@@ -136,16 +158,55 @@ class RpcDemuxerStreamHandlerTest : public testing::Test {
                                  total_frames_received);
   }
 
+  void RequestMoreAudioBuffers() {
+    auto client = stream_handler_.GetAudioClient();
+    ASSERT_TRUE(!!client);
+    client->OnNoBuffersAvailable();
+  }
+
+  void RequestMoreVideoBuffers() {
+    auto client = stream_handler_.GetVideoClient();
+    ASSERT_TRUE(!!client);
+    client->OnNoBuffersAvailable();
+  }
+
+  void OnAudioError() {
+    auto client = stream_handler_.GetAudioClient();
+    ASSERT_TRUE(!!client);
+    client->OnError();
+  }
+
+  void OnVideoError() {
+    auto client = stream_handler_.GetVideoClient();
+    ASSERT_TRUE(!!client);
+    client->OnError();
+  }
+
+  void EnableAudioBitstreamConverter() {
+    auto client = stream_handler_.GetAudioClient();
+    ASSERT_TRUE(!!client);
+    client->EnableBitstreamConverter(base::BindOnce(
+        &RpcDemuxerStreamHandlerTest::OnBitstreamConverterEnabled,
+        base::Unretained(this)));
+  }
+
+  void EnableVideoBitstreamConverter() {
+    auto client = stream_handler_.GetVideoClient();
+    ASSERT_TRUE(!!client);
+    client->EnableBitstreamConverter(base::BindOnce(
+        &RpcDemuxerStreamHandlerTest::OnBitstreamConverterEnabled,
+        base::Unretained(this)));
+  }
+
   openscreen::cast::RpcMessenger::Handle audio_remote_handle_ = 123;
   openscreen::cast::RpcMessenger::Handle video_remote_handle_ = 456;
 
-  openscreen::cast::RpcMessenger::Handle audio_local_handle_;
-  openscreen::cast::RpcMessenger::Handle video_local_handle_;
+  openscreen::cast::RpcMessenger::Handle audio_local_handle_ = 135;
+  openscreen::cast::RpcMessenger::Handle video_local_handle_ = 246;
 
   media::AudioDecoderConfig test_audio_config_;
   media::VideoDecoderConfig test_video_config_;
 
-  openscreen::cast::RpcMessenger rpc_messenger_;
   StrictMock<MockClient> client_;
 
   RpcDemuxerStreamHandler stream_handler_;
@@ -207,6 +268,18 @@ TEST_F(RpcDemuxerStreamHandlerTest, ReadKnownVideoHandleWithVideoConfig) {
                          uint32_t{1});
 }
 
+TEST_F(RpcDemuxerStreamHandlerTest, EnableBitstreamConverterKnownHandle) {
+  EXPECT_CALL(*this, SendMessage(_, _))
+      .WillOnce(CheckEnableBistreamConverterCall(video_remote_handle_));
+  EXPECT_CALL(*this, OnBitstreamConverterEnabled(true));
+  EnableVideoBitstreamConverter();
+  OnRpcBitstreamConverterEnabled(video_local_handle_, true);
+}
+
+TEST_F(RpcDemuxerStreamHandlerTest, EnableBitstreamConverterUnknownHandle) {
+  OnRpcBitstreamConverterEnabled(42, true);
+}
+
 TEST_F(RpcDemuxerStreamHandlerTest, RequestMoreAudioBuffers) {
   EXPECT_CALL(client_, OnNewAudioConfig(_))
       .WillOnce([this](media::AudioDecoderConfig config) {
@@ -217,7 +290,7 @@ TEST_F(RpcDemuxerStreamHandlerTest, RequestMoreAudioBuffers) {
   EXPECT_CALL(*this, SendMessage(_, _))
       .WillOnce(
           CheckReadUntilCall(audio_remote_handle_, audio_local_handle_, 1));
-  stream_handler_.RequestMoreAudioBuffers();
+  RequestMoreAudioBuffers();
 
   EXPECT_CALL(client_, OnNewAudioConfig(_))
       .WillOnce([this](media::AudioDecoderConfig config) {
@@ -228,7 +301,7 @@ TEST_F(RpcDemuxerStreamHandlerTest, RequestMoreAudioBuffers) {
   EXPECT_CALL(*this, SendMessage(_, _))
       .WillOnce(
           CheckReadUntilCall(audio_remote_handle_, audio_local_handle_, 17));
-  stream_handler_.RequestMoreAudioBuffers();
+  RequestMoreAudioBuffers();
 }
 
 TEST_F(RpcDemuxerStreamHandlerTest, RequestMoreVideoBuffers) {
@@ -241,7 +314,7 @@ TEST_F(RpcDemuxerStreamHandlerTest, RequestMoreVideoBuffers) {
   EXPECT_CALL(*this, SendMessage(_, _))
       .WillOnce(
           CheckReadUntilCall(video_remote_handle_, video_local_handle_, 12));
-  stream_handler_.RequestMoreVideoBuffers();
+  RequestMoreVideoBuffers();
 
   EXPECT_CALL(client_, OnNewVideoConfig(_))
       .WillOnce([this](media::VideoDecoderConfig config) {
@@ -252,19 +325,37 @@ TEST_F(RpcDemuxerStreamHandlerTest, RequestMoreVideoBuffers) {
   EXPECT_CALL(*this, SendMessage(_, _))
       .WillOnce(
           CheckReadUntilCall(video_remote_handle_, video_local_handle_, 42));
-  stream_handler_.RequestMoreVideoBuffers();
+  RequestMoreVideoBuffers();
 }
 
 TEST_F(RpcDemuxerStreamHandlerTest, OnAudioError) {
   EXPECT_CALL(*this, SendMessage(_, _))
       .WillOnce(CheckOnErrorCall(audio_remote_handle_));
-  stream_handler_.OnAudioError();
+  OnAudioError();
 }
 
 TEST_F(RpcDemuxerStreamHandlerTest, OnVideoError) {
   EXPECT_CALL(*this, SendMessage(_, _))
       .WillOnce(CheckOnErrorCall(video_remote_handle_));
-  stream_handler_.OnVideoError();
+  OnVideoError();
+}
+
+TEST_F(RpcDemuxerStreamHandlerTest, OnEnableAudioBitstreamConverter) {
+  EXPECT_CALL(*this, SendMessage(_, _))
+      .WillOnce(CheckEnableBistreamConverterCall(audio_remote_handle_));
+  EnableAudioBitstreamConverter();
+
+  EXPECT_CALL(*this, OnBitstreamConverterEnabled(true));
+  stream_handler_.OnRpcBitstreamConverterEnabled(audio_local_handle_, true);
+}
+
+TEST_F(RpcDemuxerStreamHandlerTest, OnEnableVideoBitstreamConverter) {
+  EXPECT_CALL(*this, SendMessage(_, _))
+      .WillOnce(CheckEnableBistreamConverterCall(video_remote_handle_));
+  EnableVideoBitstreamConverter();
+
+  EXPECT_CALL(*this, OnBitstreamConverterEnabled(false));
+  stream_handler_.OnRpcBitstreamConverterEnabled(video_local_handle_, false);
 }
 
 }  // namespace cast_streaming::remoting

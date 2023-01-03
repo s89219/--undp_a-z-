@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "net/cert/trial_comparison_cert_verifier.h"
 #include "net/der/encode_values.h"
 #include "net/der/parse_values.h"
+#include "net/net_buildflags.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "net/cert/cert_verify_proc_mac.h"
@@ -31,15 +32,15 @@ TrustImplTypeToMojom(net::TrustStoreMac::TrustImplType input) {
     case net::TrustStoreMac::TrustImplType::kUnknown:
       return cert_verifier::mojom::CertVerifierDebugInfo::MacTrustImplType::
           kUnknown;
-    case net::TrustStoreMac::TrustImplType::kDomainCache:
-      return cert_verifier::mojom::CertVerifierDebugInfo::MacTrustImplType::
-          kDomainCache;
     case net::TrustStoreMac::TrustImplType::kSimple:
       return cert_verifier::mojom::CertVerifierDebugInfo::MacTrustImplType::
           kSimple;
-    case net::TrustStoreMac::TrustImplType::kLruCache:
+    case net::TrustStoreMac::TrustImplType::kDomainCacheFullCerts:
       return cert_verifier::mojom::CertVerifierDebugInfo::MacTrustImplType::
-          kLruCache;
+          kDomainCacheFullCerts;
+    case net::TrustStoreMac::TrustImplType::kKeychainCacheFullCerts:
+      return cert_verifier::mojom::CertVerifierDebugInfo::MacTrustImplType::
+          kKeychainCacheFullCerts;
   }
 }
 #endif
@@ -168,6 +169,15 @@ void TrialComparisonCertVerifierMojo::OnSendTrialReport(
           encoded_generalized_time,
           encoded_generalized_time + net::der::kGeneralizedTimeLength);
     }
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+    if (cert_verify_proc_builtin_debug_data->chrome_root_store_version()) {
+      debug_info->chrome_root_store_debug_info =
+          mojom::ChromeRootStoreDebugInfo::New();
+      debug_info->chrome_root_store_debug_info->chrome_root_store_version =
+          cert_verify_proc_builtin_debug_data->chrome_root_store_version()
+              .value();
+    }
+#endif
   }
 
   report_client_->SendTrialReport(

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/check.h"
 #include "base/strings/escape.h"
 #include "base/strings/string_util.h"
+#include "storage/browser/file_system/file_system_util.h"
 #include "storage/common/file_system/file_system_types.h"
 #include "storage/common/file_system/file_system_util.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -162,8 +163,20 @@ std::string FileSystemURL::DebugString() const {
     ss << path_.value();
   }
   ss << ", storage key: " << storage_key_.GetDebugString();
+  if (bucket_.has_value()) {
+    ss << ", bucket id: " << bucket_->id;
+  }
   ss << " }";
   return ss.str();
+}
+
+BucketLocator FileSystemURL::GetBucket() const {
+  if (bucket())
+    return *bucket_;
+
+  auto bucket = storage::BucketLocator::ForDefaultBucket(storage_key());
+  bucket.type = storage::FileSystemTypeToQuotaStorageType(type());
+  return bucket;
 }
 
 bool FileSystemURL::IsParent(const FileSystemURL& child) const {
@@ -172,7 +185,7 @@ bool FileSystemURL::IsParent(const FileSystemURL& child) const {
 
 bool FileSystemURL::IsInSameFileSystem(const FileSystemURL& other) const {
   return origin() == other.origin() && type() == other.type() &&
-         filesystem_id() == other.filesystem_id();
+         filesystem_id() == other.filesystem_id() && bucket() == other.bucket();
 }
 
 bool FileSystemURL::operator==(const FileSystemURL& that) const {
@@ -181,7 +194,7 @@ bool FileSystemURL::operator==(const FileSystemURL& that) const {
   } else {
     return storage_key() == that.storage_key() && type_ == that.type_ &&
            path_ == that.path_ && filesystem_id_ == that.filesystem_id_ &&
-           is_valid_ == that.is_valid_;
+           is_valid_ == that.is_valid_ && bucket_ == that.bucket_;
   }
 }
 
@@ -194,6 +207,8 @@ bool FileSystemURL::Comparator::operator()(const FileSystemURL& lhs,
     return lhs.type_ < rhs.type_;
   if (lhs.filesystem_id_ != rhs.filesystem_id_)
     return lhs.filesystem_id_ < rhs.filesystem_id_;
+  if (lhs.bucket_ != rhs.bucket_)
+    return lhs.bucket_ < rhs.bucket_;
   return lhs.path_ < rhs.path_;
 }
 

@@ -1,17 +1,19 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {setESimManagerRemoteForTesting} from 'chrome://resources/cr_components/chromeos/cellular_setup/mojo_interface_provider.m.js';
-import {MojoInterfaceProviderImpl} from 'chrome://resources/cr_components/chromeos/network/mojo_interface_provider.m.js';
-import {OncMojo} from 'chrome://resources/cr_components/chromeos/network/onc_mojo.m.js';
+import {setESimManagerRemoteForTesting} from 'chrome://resources/ash/common/cellular_setup/mojo_interface_provider.js';
+import {MojoInterfaceProviderImpl} from 'chrome://resources/ash/common/network/mojo_interface_provider.js';
+import {OncMojo} from 'chrome://resources/ash/common/network/onc_mojo.js';
+import {ESimOperationResult} from 'chrome://resources/mojo/chromeos/ash/services/cellular_setup/public/mojom/esim_manager.mojom-webui.js';
+import {NetworkType} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/network_types.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {FakeNetworkConfig} from 'chrome://test/chromeos/fake_network_config_mojom.js';
-import {FakeESimManagerRemote} from 'chrome://test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.m.js';
-import {eventToPromise} from 'chrome://test/test_util.js';
+import {FakeNetworkConfig} from 'chrome://webui-test/chromeos/fake_network_config_mojom.js';
+import {FakeESimManagerRemote} from 'chrome://webui-test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-import {assertEquals, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('EsimRemoveProfileDialog', function() {
   const TEST_CELLULAR_GUID = 'cellular_guid';
@@ -59,8 +61,7 @@ suite('EsimRemoveProfileDialog', function() {
 
   function addEsimCellularNetwork(guid, iccid) {
     const cellular = OncMojo.getDefaultManagedProperties(
-        chromeos.networkConfig.mojom.NetworkType.kCellular, guid,
-        'profile' + iccid);
+        NetworkType.kCellular, guid, 'profile' + iccid);
     cellular.typeProperties.cellular.iccid = iccid;
     cellular.typeProperties.cellular.eid = iccid + 'eid';
     mojoApi_.setManagedPropertiesForTest(cellular);
@@ -79,7 +80,8 @@ suite('EsimRemoveProfileDialog', function() {
     let foundProfile = await getProfileForIccid(profiles, '1');
     assertTrue(!!foundProfile);
 
-    const removeBtn = esimRemoveProfileDialog.$$('#remove');
+    const removeBtn =
+        esimRemoveProfileDialog.shadowRoot.querySelector('#remove');
     assertTrue(!!removeBtn);
     removeBtn.click();
     await flushAsync();
@@ -108,13 +110,13 @@ suite('EsimRemoveProfileDialog', function() {
 
     let foundProfile = await getProfileForIccid(profiles, '1');
     assertTrue(!!foundProfile);
-    foundProfile.setEsimOperationResultForTest(
-        ash.cellularSetup.mojom.ESimOperationResult.kFailure);
+    foundProfile.setEsimOperationResultForTest(ESimOperationResult.kFailure);
 
     const showErrorToastPromise =
         eventToPromise('show-error-toast', esimRemoveProfileDialog);
 
-    const removeBtn = esimRemoveProfileDialog.$$('#remove');
+    const removeBtn =
+        esimRemoveProfileDialog.shadowRoot.querySelector('#remove');
     assertTrue(!!removeBtn);
 
     removeBtn.click();
@@ -178,7 +180,8 @@ suite('EsimRemoveProfileDialog', function() {
   });
 
   test('Warning message visibility', function() {
-    const warningMessage = esimRemoveProfileDialog.$$('#warningMessage');
+    const warningMessage =
+        esimRemoveProfileDialog.shadowRoot.querySelector('#warningMessage');
     assertTrue(!!warningMessage);
 
     esimRemoveProfileDialog.showCellularDisconnectWarning = false;

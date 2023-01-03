@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,18 @@
 #include "ios/web/download/download_task_impl.h"
 
 namespace web {
+namespace download {
 namespace internal {
 struct ParseDataUrlResult;
 }  // namespace internal
+}  // namespace download
 
 // Implementation of DownloadTaskImpl that uses NSURLRequest to perform the
 // download.
 class DataUrlDownloadTask final : public DownloadTaskImpl {
  public:
-  // Constructs a new DataUrlDownloadTask objects. |web_state|, |identifier|
-  // and |delegate| must be valid.
+  // Constructs a new DataUrlDownloadTask objects. `web_state` and `identifier`
+  // must be valid.
   DataUrlDownloadTask(
       WebState* web_state,
       const GURL& original_url,
@@ -33,19 +35,13 @@ class DataUrlDownloadTask final : public DownloadTaskImpl {
 
   ~DataUrlDownloadTask() final;
 
-  // DownloadTask overrides:
-  NSData* GetResponseData() const final;
-  const base::FilePath& GetResponsePath() const final;
-
   // DownloadTaskImpl overrides:
-  void Start(const base::FilePath& path, Destination destination_hint) final;
+  void StartInternal(const base::FilePath& path) final;
+  void CancelInternal() final;
 
  private:
   // Called when the data: url has been parsed and optionally written to disk.
-  void OnDataUrlParsed(internal::ParseDataUrlResult result);
-
-  __strong NSData* data_ = nil;
-  base::FilePath path_;
+  void OnDataUrlParsed(download::internal::ParseDataUrlResult result);
 
   base::WeakPtrFactory<DataUrlDownloadTask> weak_factory_{this};
 };

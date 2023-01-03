@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,14 @@
 
 // Feature flag to enable omnibox suggestions scrolling on iPad. This will also
 // disable suggestions hiding on keyboard dismissal.
-extern const base::Feature kEnableSuggestionsScrollingOnIPad;
+BASE_DECLARE_FEATURE(kEnableSuggestionsScrollingOnIPad);
 
+// Feature flag to make omnibox popup a floating rounded rect.
+BASE_DECLARE_FEATURE(kEnablePopoutOmniboxIpad);
+
+// Feature flag to enable paste button on the omnibox keyboard accessories.
+BASE_DECLARE_FEATURE(kOmniboxKeyboardPasteButton);
+
+// Returns if kEnablePopoutOmniboxIpad feature is enabled.
+bool IsIpadPopoutOmniboxEnabled();
 #endif  // IOS_CHROME_BROWSER_UI_OMNIBOX_OMNIBOX_UI_FEATURES_H_

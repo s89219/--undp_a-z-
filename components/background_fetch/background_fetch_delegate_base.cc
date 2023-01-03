@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,9 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/check_op.h"
+#include "base/containers/contains.h"
 #include "base/notreached.h"
+#include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "components/background_fetch/job_details.h"
 #include "components/content_settings/core/common/content_settings_types.h"
@@ -101,6 +103,7 @@ void BackgroundFetchDelegateBase::DownloadUrl(
                           weak_ptr_factory_.GetWeakPtr());
   params.traffic_annotation =
       net::MutableNetworkTrafficAnnotationTag(traffic_annotation);
+  params.request_params.update_first_party_url_on_redirect = false;
 
   JobDetails* job_details = GetJobDetails(job_id);
   if (job_details->job_state == JobDetails::State::kPendingWillStartPaused ||
@@ -178,16 +181,17 @@ void BackgroundFetchDelegateBase::CancelDownload(std::string job_id) {
   }
 }
 
-void BackgroundFetchDelegateBase::OnUiFinished(const std::string& job_id,
-                                               bool activated) {
+void BackgroundFetchDelegateBase::OnUiFinished(const std::string& job_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-  if (activated) {
-    if (auto client = GetClient(job_id))
-      client->OnUIActivated(job_id);
-  }
 
   job_details_map_.erase(job_id);
   DoCleanUpUi(job_id);
+}
+
+void BackgroundFetchDelegateBase::OnUiActivated(const std::string& job_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (auto client = GetClient(job_id))
+    client->OnUIActivated(job_id);
 }
 
 JobDetails* BackgroundFetchDelegateBase::GetJobDetails(
@@ -234,7 +238,7 @@ void BackgroundFetchDelegateBase::MarkJobComplete(const std::string& job_id) {
   JobDetails* job_details = GetJobDetails(job_id);
 
   if (job_details->job_state == JobDetails::State::kCancelled) {
-    OnUiFinished(job_id, /*activated=*/false);
+    OnUiFinished(job_id);
     return;
   }
 
@@ -421,10 +425,8 @@ bool BackgroundFetchDelegateBase::IsGuidOutstanding(
   if (job_details_iter == job_details_map_.end())
     return false;
 
-  const std::vector<std::string>& outstanding_guids =
-      job_details_iter->second.fetch_description->outstanding_guids;
-  return std::find(outstanding_guids.begin(), outstanding_guids.end(), guid) !=
-         outstanding_guids.end();
+  return base::Contains(
+      job_details_iter->second.fetch_description->outstanding_guids, guid);
 }
 
 void BackgroundFetchDelegateBase::RestartPausedDownload(
@@ -466,7 +468,7 @@ void BackgroundFetchDelegateBase::GetUploadData(
   // TODO(crbug.com/779012): When DownloadService fixes cancelled jobs calling
   // client methods, then this can be a DCHECK.
   if (job_it == download_job_id_map_.end()) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), /* request_body= */ nullptr));
     return;
@@ -476,7 +478,7 @@ void BackgroundFetchDelegateBase::GetUploadData(
   JobDetails* job_details = GetJobDetails(job_id);
   if (job_details->current_fetch_guids.at(download_guid).status ==
       JobDetails::RequestData::Status::kAbsent) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), /* request_body= */ nullptr));
     return;

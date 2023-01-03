@@ -1,12 +1,14 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/tab_sharing/tab_capture_contents_border_helper.h"
 
 #include "base/containers/contains.h"
+#include "base/feature_list.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "chrome/browser/browser_features.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
@@ -22,8 +24,6 @@ namespace {
 constexpr int kMinContentsBorderWidth = 20;
 constexpr int kMinContentsBorderHeight = 20;
 
-// TODO(https://crbug.com/1030925): Fix contents border on ChromeOS.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
 class BorderView : public views::View {
  public:
   BorderView() = default;
@@ -55,7 +55,6 @@ void InitContentsBorderWidget(content::WebContents* web_contents) {
 
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.opacity = views::Widget::InitParams::WindowOpacity::kTranslucent;
   views::Widget* frame = browser_view->contents_web_view()->GetWidget();
   params.parent = frame->GetNativeView();
@@ -84,7 +83,6 @@ void InitContentsBorderWidget(content::WebContents* web_contents) {
   // After this fix, capturing a given tab X twice will still yield one widget.
   browser_view->set_contents_border_widget(widget);
 }
-#endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 
 }  // namespace
 
@@ -111,8 +109,7 @@ void TabCaptureContentsBorderHelper::OnCapturerRemoved(
 
   // TODO(crbug.com/1294187): Destroy widget when the size of
   // `session_to_bounds_` hits 0. Same for `this`.
-  const size_t erased_count = session_to_bounds_.erase(capture_session_id);
-  DCHECK_EQ(erased_count, 1u);
+  session_to_bounds_.erase(capture_session_id);
 
   Update();
 }
@@ -141,9 +138,16 @@ void TabCaptureContentsBorderHelper::OnRegionCaptureRectChanged(
 }
 
 void TabCaptureContentsBorderHelper::Update() {
-// TODO(https://crbug.com/1030925): Fix contents border on ChromeOS.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+#if BUILDFLAG(IS_CHROMEOS)
+  // The blue border behavior used to be problematic on ChromeOS - see
+  // crbug.com/1320262 and crbug.com/1030925. This check serves as a means of
+  // flag-disabling this feature in case of possible future regressions.
+  if (!base::FeatureList::IsEnabled(features::kTabCaptureBlueBorderCrOS)) {
+    return;
+  }
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
   content::WebContents* const web_contents = &GetWebContents();
 
@@ -179,7 +183,6 @@ void TabCaptureContentsBorderHelper::Update() {
   } else {
     contents_border_widget->Hide();
   }
-#endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
 void TabCaptureContentsBorderHelper::UpdateBlueBorderLocation() {

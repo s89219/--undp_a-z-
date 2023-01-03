@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,9 @@
 #define CHROME_BROWSER_ENTERPRISE_CONNECTORS_DEVICE_TRUST_ATTESTATION_COMMON_ATTESTATION_UTILS_H_
 
 #include <string>
+
+#include "base/values.h"
+#include "chrome/browser/enterprise/connectors/device_trust/attestation/common/signals_type.h"
 
 namespace enterprise_connectors {
 
@@ -16,6 +19,11 @@ namespace enterprise_connectors {
 // }
 std::string ProtobufChallengeToJsonChallenge(
     const std::string& challenge_response);
+
+// Takes the dictionary of signals `signals_dict` and converts it to a
+// signals proto.
+std::unique_ptr<SignalsType> DictionarySignalsToProtobufSignals(
+    const base::Value::Dict& signals_dict);
 
 }  // namespace enterprise_connectors
 

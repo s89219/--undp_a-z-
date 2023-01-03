@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -116,7 +116,6 @@ public class NotificationSuspender {
         NotificationSuspenderJni.get().reDisplayNotifications(mProfile, origins);
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
     private List<NotificationWrapper> getActiveNotificationsForFqdns(List<String> fqdns) {
         List<NotificationWrapper> notifications = new ArrayList<>();
 
@@ -141,12 +140,10 @@ public class NotificationSuspender {
         return ((BitmapDrawable) icon.loadDrawable(mContext)).getBitmap();
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
     private Bitmap getNotificationIcon(Notification notification) {
         return getBitmapFromIcon(notification.getLargeIcon());
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
     private Bitmap getNotificationBadge(Notification notification) {
         return getBitmapFromIcon(notification.getSmallIcon());
     }

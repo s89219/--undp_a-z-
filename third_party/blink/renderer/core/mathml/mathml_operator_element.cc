@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -137,7 +137,7 @@ void MathMLOperatorElement::ComputeDictionaryCategory() {
   if (properties_.dictionary_category !=
       MathMLOperatorDictionaryCategory::kUndefined)
     return;
-  if (GetTokenContent().characters.IsEmpty()) {
+  if (GetTokenContent().characters.empty()) {
     properties_.dictionary_category = MathMLOperatorDictionaryCategory::kNone;
     return;
   }
@@ -179,9 +179,10 @@ void MathMLOperatorElement::ComputeDictionaryCategory() {
   } else {
     if (!explicit_form) {
       // Step 3.
-      for (uint8_t fallback_form = MathMLOperatorDictionaryForm::kInfix;
-           fallback_form <= MathMLOperatorDictionaryForm::kPostfix;
-           fallback_form++) {
+      for (const auto& fallback_form :
+           {MathMLOperatorDictionaryForm::kInfix,
+            MathMLOperatorDictionaryForm::kPostfix,
+            MathMLOperatorDictionaryForm::kPrefix}) {
         if (fallback_form == form)
           continue;
         category = FindCategory(
@@ -255,38 +256,38 @@ void MathMLOperatorElement::SetOperatorFormDirty() {
 }
 
 void MathMLOperatorElement::AddMathLSpaceIfNeeded(
-    ComputedStyle& style,
+    ComputedStyleBuilder& builder,
     const CSSToLengthConversionData& conversion_data) {
   if (auto length_or_percentage_value = AddMathLengthToComputedStyle(
           conversion_data, mathml_names::kLspaceAttr)) {
-    style.SetMathLSpace(std::move(*length_or_percentage_value));
+    builder.SetMathLSpace(std::move(*length_or_percentage_value));
   }
 }
 
 void MathMLOperatorElement::AddMathRSpaceIfNeeded(
-    ComputedStyle& style,
+    ComputedStyleBuilder& builder,
     const CSSToLengthConversionData& conversion_data) {
   if (auto length_or_percentage_value = AddMathLengthToComputedStyle(
           conversion_data, mathml_names::kRspaceAttr)) {
-    style.SetMathRSpace(std::move(*length_or_percentage_value));
+    builder.SetMathRSpace(std::move(*length_or_percentage_value));
   }
 }
 
 void MathMLOperatorElement::AddMathMinSizeIfNeeded(
-    ComputedStyle& style,
+    ComputedStyleBuilder& builder,
     const CSSToLengthConversionData& conversion_data) {
   if (auto length_or_percentage_value = AddMathLengthToComputedStyle(
           conversion_data, mathml_names::kMinsizeAttr)) {
-    style.SetMathMinSize(std::move(*length_or_percentage_value));
+    builder.SetMathMinSize(std::move(*length_or_percentage_value));
   }
 }
 
 void MathMLOperatorElement::AddMathMaxSizeIfNeeded(
-    ComputedStyle& style,
+    ComputedStyleBuilder& builder,
     const CSSToLengthConversionData& conversion_data) {
   if (auto length_or_percentage_value = AddMathLengthToComputedStyle(
           conversion_data, mathml_names::kMaxsizeAttr)) {
-    style.SetMathMaxSize(std::move(*length_or_percentage_value));
+    builder.SetMathMaxSize(std::move(*length_or_percentage_value));
   }
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,17 +22,22 @@ namespace {
 // this array may either refer to features defined in the header of this file or
 // in other locations in the code base (e.g. content_features.h).
 const base::Feature* const kFeaturesExposedToJava[] = {
-    &blink::features::kPrefetchAndroidFonts,
-    &features::kAutoDisableAccessibility,
     &features::kAccessibilityPageZoom,
+    &features::kAutoDisableAccessibility,
+    &features::kAutoDisableAccessibilityV2,
     &features::kBackgroundMediaRendererHasModerateBinding,
+    &features::kBindingManagerConnectionLimit,
+    &features::kBindingManagerUseNotPerceptibleBinding,
     &features::kComputeAXMode,
     &features::kFedCm,
     &features::kOnDemandAccessibilityEvents,
     &features::kProcessSharingWithStrictSiteInstances,
+    &features::kReduceGpuPriorityOnBackground,
+    &features::kRequestDesktopSiteAdditions,
     &features::kRequestDesktopSiteExceptions,
-    &features::kRequestDesktopSiteGlobal,
     &features::kTouchDragAndContextMenu,
+    &features::kWebAuthConditionalUI,
+    &features::kWebAuthnTouchToFillCredentialSelection,
     &features::kWebBluetoothNewPermissionsBackend,
     &features::kWebNfc,
 };
@@ -67,6 +72,18 @@ static jint JNI_ContentFeatureListImpl_GetFieldTrialParamByFeatureAsInt(
   const std::string& param_name = ConvertJavaStringToUTF8(env, jparam_name);
   return base::GetFieldTrialParamByFeatureAsInt(*feature, param_name,
                                                 jdefault_value);
+}
+
+static jboolean JNI_ContentFeatureListImpl_GetFieldTrialParamByFeatureAsBoolean(
+    JNIEnv* env,
+    const JavaParamRef<jstring>& jfeature_name,
+    const JavaParamRef<jstring>& jparam_name,
+    const jboolean jdefault_value) {
+  const base::Feature* feature =
+      FindFeatureExposedToJava(ConvertJavaStringToUTF8(env, jfeature_name));
+  const std::string& param_name = ConvertJavaStringToUTF8(env, jparam_name);
+  return base::GetFieldTrialParamByFeatureAsBool(*feature, param_name,
+                                                 jdefault_value);
 }
 
 }  // namespace android

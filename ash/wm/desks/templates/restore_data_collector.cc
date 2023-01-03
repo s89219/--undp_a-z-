@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,8 @@
 
 #include "ash/public/cpp/desks_templates_delegate.h"
 #include "ash/shell.h"
-#include "ash/wm/desks/templates/desks_templates_dialog_controller.h"
+#include "ash/wm/desks/templates/saved_desk_dialog_controller.h"
+#include "ash/wm/desks/templates/saved_desk_util.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/overview/overview_controller.h"
 #include "ash/wm/window_restore/window_restore_util.h"
@@ -30,7 +31,7 @@ RestoreDataCollector::Call::~Call() = default;
 RestoreDataCollector::RestoreDataCollector() = default;
 RestoreDataCollector::~RestoreDataCollector() = default;
 
-void RestoreDataCollector::CaptureActiveDeskAsTemplate(
+void RestoreDataCollector::CaptureActiveDeskAsSavedDesk(
     GetDeskTemplateCallback callback,
     DeskTemplateType template_type,
     const std::string& template_name,
@@ -42,8 +43,6 @@ void RestoreDataCollector::CaptureActiveDeskAsTemplate(
   DCHECK(emplace_result.second);
   Call& call = emplace_result.first->second;
 
-  if (root_window_to_show)
-    window_tracker_.Add(root_window_to_show);
   call.root_window_to_show = root_window_to_show;
   call.template_type = template_type;
   call.template_name = template_name;
@@ -52,10 +51,16 @@ void RestoreDataCollector::CaptureActiveDeskAsTemplate(
   auto mru_windows =
       shell->mru_window_tracker()->BuildMruWindowList(kActiveDesk);
   auto* delegate = shell->desks_templates_delegate();
+  bool has_supported_apps = false;
   for (auto* window : mru_windows) {
-    if (!delegate->IsWindowSupportedForDeskTemplate(window) &&
-        !wm::GetTransientParent(window)) {
+    // Skip transient windows without reporting.
+    if (wm::GetTransientParent(window))
+      continue;
+
+    if (!delegate->IsWindowSupportedForDeskTemplate(window)) {
       call.unsupported_apps.push_back(window);
+      if (delegate->IsIncognitoWindow(window))
+        call.incognito_window_count++;
       continue;
     }
 
@@ -68,11 +73,12 @@ void RestoreDataCollector::CaptureActiveDeskAsTemplate(
       call.unsupported_apps.push_back(window);
       continue;
     }
+    has_supported_apps = true;
 
-    const int32_t window_id = window->GetProperty(app_restore::kWindowIdKey);
     std::unique_ptr<app_restore::WindowInfo> window_info =
         BuildWindowInfo(window, /*activation_index=*/absl::nullopt,
                         /*for_saved_desks=*/true, mru_windows);
+
     // Clear the desk ID in the WindowInfo that is to be stored in the template.
     // It will be set to the ID of a newly created desk when launching.
     window_info->desk_id.reset();
@@ -81,9 +87,19 @@ void RestoreDataCollector::CaptureActiveDeskAsTemplate(
     delegate->GetAppLaunchDataForDeskTemplate(
         window, base::BindOnce(&RestoreDataCollector::OnAppLaunchDataReceived,
                                base::Unretained(this), current_serial, app_id,
-                               window_id, std::move(window_info)));
+                               std::move(window_info)));
   }
 
+  // Do not create a saved desk if the desk is empty or only contains
+  // unsupported apps.
+  if (!has_supported_apps) {
+    calls_.erase(current_serial);
+    std::move(callback).Run(nullptr);
+    return;
+  }
+
+  if (root_window_to_show)
+    window_tracker_.Add(root_window_to_show);
   call.callback = std::move(callback);
 
   // If all requests in the loop above returned data synchronously, then we have
@@ -95,8 +111,7 @@ void RestoreDataCollector::CaptureActiveDeskAsTemplate(
 
 void RestoreDataCollector::OnAppLaunchDataReceived(
     uint32_t serial,
-    const std::string app_id,
-    const int32_t window_id,
+    const std::string& app_id,
     std::unique_ptr<app_restore::WindowInfo> window_info,
     std::unique_ptr<app_restore::AppLaunchInfo> app_launch_info) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -112,11 +127,12 @@ void RestoreDataCollector::OnAppLaunchDataReceived(
 
   // nullptr means that this app does not have any data to save.
   if (app_launch_info) {
+    const int32_t window_id = *app_launch_info->window_id;
     call.data->AddAppLaunchInfo(std::move(app_launch_info));
     call.data->ModifyWindowInfo(app_id, window_id, *window_info);
   }
 
-  // Null callback here means that the loop in `CaptureActiveDeskAsTemplate()`
+  // Null callback here means that the loop in `CaptureActiveDeskAsSavedDesk()`
   // has not yet finished polling the windows.  Non-zero pending request count
   // means that some of preceding requests were asynchronous.
   if (call.pending_request_count == 0 && !call.callback.is_null())
@@ -130,10 +146,14 @@ void RestoreDataCollector::SendDeskTemplate(uint32_t serial) {
   DCHECK(call_it != calls_.end());
   Call& call = call_it->second;
 
+  base::GUID desk_template_guid =
+      call.template_type == DeskTemplateType::kFloatingWorkspace
+          ? base::GUID::ParseLowercase(kFloatingWorkspaceTemplateUuid)
+          : base::GUID::GenerateRandomV4();
+
   auto desk_template = std::make_unique<DeskTemplate>(
-      base::GUID::GenerateRandomV4().AsLowercaseString(),
-      DeskTemplateSource::kUser, call.template_name, base::Time::Now(),
-      call.template_type);
+      std::move(desk_template_guid), DeskTemplateSource::kUser,
+      call.template_name, base::Time::Now(), call.template_type);
   desk_template->set_desk_restore_data(std::move(call.data));
 
   if (!call.unsupported_apps.empty() &&
@@ -147,9 +167,12 @@ void RestoreDataCollector::SendDeskTemplate(uint32_t serial) {
       root_window_to_show = Shell::Get()->GetPrimaryRootWindow();
 
     // There were some unsupported apps in the active desk so open up a dialog
-    // to let the user know.
-    DesksTemplatesDialogController::Get()->ShowUnsupportedAppsDialog(
-        root_window_to_show, std::move(call.unsupported_apps),
+    // to let the user know. The dialog controller should always be available
+    // here since we have already determined that we are in overview mode.
+    auto* dialog_controller = saved_desk_util::GetSavedDeskDialogController();
+    DCHECK(dialog_controller);
+    dialog_controller->ShowUnsupportedAppsDialog(
+        root_window_to_show, call.unsupported_apps, call.incognito_window_count,
         std::move(call.callback), std::move(desk_template));
   } else {
     std::move(call.callback).Run(std::move(desk_template));

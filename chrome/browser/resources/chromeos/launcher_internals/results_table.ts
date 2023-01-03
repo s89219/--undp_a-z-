@@ -1,10 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {html, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {Result} from './launcher_internals.mojom-webui.js';
+import {getTemplate} from './results_table.html.js';
 
 export interface LauncherResultsTableElement {
   $: {
@@ -20,7 +21,7 @@ export class LauncherResultsTableElement extends PolymerElement {
   }
 
   static get template() {
-    return html`{__html_template__}`;
+    return getTemplate();
   }
 
   // Current results keyed by result id.
@@ -55,7 +56,7 @@ export class LauncherResultsTableElement extends PolymerElement {
     this.headerCells.clear();
   }
 
-  addResults(newResults: Array<Result>) {
+  addResults(newResults: Result[]) {
     for (const result of newResults) {
       this.results.set(result.id, result);
       this.addHeaders(Object.keys(result.rankerScores));
@@ -65,7 +66,7 @@ export class LauncherResultsTableElement extends PolymerElement {
 
   // Appends any new headers to the end of the header row. All new headers
   // should support sort-on-click.
-  private addHeaders(newHeaders: Array<string>) {
+  private addHeaders(newHeaders: string[]) {
     for (const header of newHeaders) {
       if (this.headerCells.has(header)) {
         continue;
@@ -123,7 +124,7 @@ export class LauncherResultsTableElement extends PolymerElement {
 
   // Converts ranker scores into an array of scores in string form and ordered
   // according to the current headers.
-  private flattenScores(inputScores: {[key: string]: number}): Array<string> {
+  private flattenScores(inputScores: {[key: string]: number}): string[] {
     const outputScores = [];
     for (const header of this.headerCells.keys()) {
       const score = inputScores[header];

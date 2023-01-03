@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -173,7 +173,7 @@ class SpellcheckService : public KeyedService,
 
   // The returned pointer can be null if the current platform doesn't need a
   // per-profile, platform-specific spell check object. Currently, only Windows
-  // requires one, and only on certain versions.
+  // requires one.
   PlatformSpellChecker* platform_spell_checker() {
     return platform_spell_checker_.get();
   }

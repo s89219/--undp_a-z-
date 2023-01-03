@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,20 +22,38 @@ class StubSpeculationHost : public mojom::blink::SpeculationHost {
     done_closure_ = std::move(done);
   }
 
+  // It's usually easier to use `SetDoneClosure` and then check `candidates`,
+  // but this is available in case you want to inspect the exact calls that are
+  // made. For example, this might matter if multiple calls to this are made,
+  // and one might race with the run loop exit.
+  void SetCandidatesUpdatedCallback(
+      base::RepeatingCallback<void(const Candidates&)> callback) {
+    candidates_updated_callback_ = callback;
+  }
+
   void BindUnsafe(mojo::ScopedMessagePipeHandle handle);
   void Bind(mojo::PendingReceiver<SpeculationHost> receiver);
 
   // mojom::blink::SpeculationHost.
   void UpdateSpeculationCandidates(Candidates candidates) override;
 
+  // mojom::blink::SpeculationHost.
+  void EnableNoVarySearchSupport() override;
+
   void OnConnectionLost();
 
   bool is_bound() const { return receiver_.is_bound(); }
 
+  bool sent_no_vary_search_support_to_browser() const {
+    return sent_no_vary_search_support_to_browser_;
+  }
+
  private:
   mojo::Receiver<SpeculationHost> receiver_{this};
   Vector<mojom::blink::SpeculationCandidatePtr> candidates_;
+  bool sent_no_vary_search_support_to_browser_ = false;
   base::OnceClosure done_closure_;
+  base::RepeatingCallback<void(const Candidates&)> candidates_updated_callback_;
 };
 
 }  // namespace blink

@@ -1,15 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/phonehub/phone_hub_notification_controller.h"
 
-#include "ash/components/multidevice/logging/logging.h"
-#include "ash/components/phonehub/notification.h"
-#include "ash/components/phonehub/notification_interaction_handler.h"
-#include "ash/components/phonehub/phone_hub_manager.h"
-#include "ash/components/phonehub/phone_model.h"
 #include "ash/constants/ash_features.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "ash/public/cpp/system_tray_client.h"
 #include "ash/resources/vector_icons/vector_icons.h"
@@ -28,6 +24,11 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
+#include "chromeos/ash/components/phonehub/notification.h"
+#include "chromeos/ash/components/phonehub/notification_interaction_handler.h"
+#include "chromeos/ash/components/phonehub/phone_hub_manager.h"
+#include "chromeos/ash/components/phonehub/phone_model.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/display/types/display_constants.h"
@@ -223,6 +224,8 @@ class PhoneHubAshNotificationView : public AshNotificationView {
   // message_center::NotificationView:
   void OnNotificationInputSubmit(size_t index,
                                  const std::u16string& text) override {
+    if (text.empty())
+      return;
     AshNotificationView::OnNotificationInputSubmit(index, text);
 
     DCHECK(reply_button_);
@@ -503,7 +506,7 @@ void PhoneHubNotificationController::OnAttemptConnectionScanFailed() {
             }
           }));
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           kPhoneHubInstantTetherNotificationId,
           l10n_util::GetStringUTF16(
@@ -513,7 +516,8 @@ void PhoneHubNotificationController::OnAttemptConnectionScanFailed() {
           std::u16string() /*display_source */, GURL() /* origin_url */,
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kPhoneHubInstantTetherNotificationId),
+              kPhoneHubInstantTetherNotificationId,
+              NotificationCatalogName::kPhoneHubTetherFailed),
           message_center::RichNotificationData(), std::move(delegate),
           kPhoneHubEnableHotspotIcon,
           message_center::SystemNotificationWarningLevel::NORMAL);
@@ -566,7 +570,7 @@ PhoneHubNotificationController::CreateCameraRollGenericNotification(
   button.title = l10n_util::GetStringUTF16(
       IDS_ASH_PHONE_HUB_CAMERA_ROLL_ERROR_GENERIC_ACTION);
   optional_fields.buttons.push_back(button);
-  return CreateSystemNotification(
+  return CreateSystemNotificationPtr(
       message_center::NOTIFICATION_TYPE_SIMPLE,
       kPhoneHubCameraRollNotificationId,
       l10n_util::GetStringUTF16(IDS_ASH_PHONE_HUB_CAMERA_ROLL_ERROR_TITLE),
@@ -610,7 +614,7 @@ PhoneHubNotificationController::CreateCameraRollStorageNotification(
   button.title = l10n_util::GetStringUTF16(
       IDS_ASH_PHONE_HUB_CAMERA_ROLL_ERROR_STORAGE_ACTION);
   optional_fields.buttons.push_back(button);
-  return CreateSystemNotification(
+  return CreateSystemNotificationPtr(
       message_center::NOTIFICATION_TYPE_SIMPLE,
       kPhoneHubCameraRollNotificationId,
       l10n_util::GetStringUTF16(IDS_ASH_PHONE_HUB_CAMERA_ROLL_ERROR_TITLE),
@@ -652,7 +656,7 @@ PhoneHubNotificationController::CreateCameraRollNetworkNotification(
   button.title = l10n_util::GetStringUTF16(
       IDS_ASH_PHONE_HUB_CAMERA_ROLL_ERROR_NETWORK_ACTION);
   optional_fields.buttons.push_back(button);
-  return CreateSystemNotification(
+  return CreateSystemNotificationPtr(
       message_center::NOTIFICATION_TYPE_SIMPLE,
       kPhoneHubCameraRollNotificationId,
       l10n_util::GetStringUTF16(IDS_ASH_PHONE_HUB_CAMERA_ROLL_ERROR_TITLE),

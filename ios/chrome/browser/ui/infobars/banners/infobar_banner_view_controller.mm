@@ -1,22 +1,22 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/infobars/banners/infobar_banner_view_controller.h"
 
 #import "base/ios/block_types.h"
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
-#include "ios/chrome/browser/infobars/infobar_metrics_recorder.h"
-#import "ios/chrome/browser/ui/icons/chrome_symbol.h"
-#import "ios/chrome/browser/ui/icons/infobar_icon.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
+#import "base/time/time.h"
+#import "ios/chrome/browser/infobars/infobar_metrics_recorder.h"
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/infobars/banners/infobar_banner_constants.h"
 #import "ios/chrome/browser/ui/infobars/banners/infobar_banner_delegate.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/util/pointer_interaction_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -32,8 +32,10 @@ const CGFloat kBannerViewShadowOpacity = 0.23;
 // Banner View selected constants.
 const CGFloat kTappedBannerViewScale = 0.98;
 const CGFloat kSelectedBannerViewScale = 1.02;
-const CGFloat kSelectBannerAnimationDurationInSeconds = 0.2;
-const CGFloat kTappedBannerAnimationDurationInSeconds = 0.05;
+constexpr base::TimeDelta kSelectBannerAnimationDuration =
+    base::Milliseconds(200);
+constexpr base::TimeDelta kTappedBannerAnimationDuration =
+    base::Milliseconds(50);
 const CGFloat kSelectedBannerViewYShadowOffset = 8.0;
 
 // Button constants.
@@ -53,8 +55,23 @@ const CGFloat kIconCornerRadius = 5.0;
 
 // Gesture constants.
 const CGFloat kChangeInPositionForDismissal = -15.0;
-const CGFloat kLongPressTimeDurationInSeconds = 0.4;
+constexpr base::TimeDelta kLongPressTimeDuration = base::Milliseconds(400);
 }  // namespace
+
+#pragma mark - StyledRange
+
+// Used to track ranges of a string that should receive custom styling.
+@interface StyledRange : NSObject
+
+@property(nonatomic) UIFontDescriptorSymbolicTraits symbolicTraits;
+@property(nonatomic) NSRange range;
+
+@end
+
+@implementation StyledRange
+@end
+
+#pragma mark - InfobarBannerViewController
 
 @interface InfobarBannerViewController ()
 
@@ -65,7 +82,10 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 @property(nonatomic, assign) BOOL presentsModal;
 @property(nonatomic, copy) NSString* titleText;
 @property(nonatomic, copy) NSString* subtitleText;
+@property(nonatomic, copy) NSMutableArray<StyledRange*>* subtitleStyledRanges;
 @property(nonatomic, assign) BOOL useIconBackgroundTint;
+@property(nonatomic, strong) UIColor* iconImageTintColor;
+@property(nonatomic, strong) UIColor* iconBackgroundColor;
 @property(nonatomic, assign) BOOL restrictSubtitleTextToSingleLine;
 
 // The original position of this InfobarVC view in the parent's view coordinate
@@ -82,16 +102,16 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 @property(nonatomic, assign) BOOL shouldDismissAfterTouchesEnded;
 // UIButton which opens the modal.
 @property(nonatomic, strong) UIButton* openModalButton;
-// UIButton with title |self.buttonText|, which triggers the Infobar action.
+// UIButton with title `self.buttonText`, which triggers the Infobar action.
 @property(nonatomic, strong) UIButton* infobarButton;
-// UILabel displaying |self.titleText|.
+// UILabel displaying `self.titleText`.
 @property(nonatomic, strong) UILabel* titleLabel;
-// UILabel displaying |self.subTitleText|.
+// UILabel displaying `self.subTitleText`.
 @property(nonatomic, strong) UILabel* subTitleLabel;
 // Used to build and record metrics.
 @property(nonatomic, strong) InfobarMetricsRecorder* metricsRecorder;
-// The NSTimeInterval in which the Banner appeared on screen.
-@property(nonatomic, assign) NSTimeInterval bannerAppearedTime;
+// The time in which the Banner appeared on screen.
+@property(nonatomic, assign) base::TimeTicks bannerAppearedTime;
 // YES if the banner on screen time metric has already been recorded for this
 // banner.
 @property(nonatomic, assign) BOOL bannerOnScreenTimeWasRecorded;
@@ -113,6 +133,7 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
     _presentsModal = presentsModal;
     _useIconBackgroundTint = YES;
     _restrictSubtitleTextToSingleLine = NO;
+    _subtitleStyledRanges = [[NSMutableArray alloc] init];
   }
   return self;
 }
@@ -152,12 +173,15 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
         [[UIImageView alloc] initWithImage:self.iconImage];
     iconImageView.contentMode = UIViewContentModeScaleAspectFit;
     iconImageView.translatesAutoresizingMaskIntoConstraints = NO;
+    iconImageView.tintColor = self.iconImageTintColor;
 
     UIView* backgroundIconView =
         [[UIView alloc] initWithFrame:iconImageView.frame];
     backgroundIconView.layer.cornerRadius = kIconCornerRadius;
     if (self.useIconBackgroundTint) {
-      backgroundIconView.backgroundColor = [UIColor colorNamed:kBlueHaloColor];
+      backgroundIconView.backgroundColor =
+          self.iconBackgroundColor ? self.iconBackgroundColor
+                                   : [UIColor colorNamed:kBlueHaloColor];
     }
     backgroundIconView.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -196,17 +220,14 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
                                       forAxis:UILayoutConstraintAxisVertical];
 
   self.subTitleLabel = [[UILabel alloc] init];
-  self.subTitleLabel.text = self.subtitleText;
-  self.subTitleLabel.font =
-      [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+  self.subTitleLabel.attributedText = [self subtitleAttributedText];
   self.subTitleLabel.adjustsFontForContentSizeCategory = YES;
-  self.subTitleLabel.textColor = [UIColor colorNamed:kTextSecondaryColor];
   if (_restrictSubtitleTextToSingleLine) {
     self.subTitleLabel.numberOfLines = 1;
   } else {
     self.subTitleLabel.numberOfLines = 0;
   }
-  // If |self.subTitleText| hasn't been set or is empty, hide the label to keep
+  // If `self.subTitleText` hasn't been set or is empty, hide the label to keep
   // the title label centered in the Y axis.
   self.subTitleLabel.hidden = !self.subtitleText.length;
 
@@ -256,10 +277,10 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
   [containerStack addArrangedSubview:labelsStackView];
     // Open Modal Button setup.
   self.openModalButton = [UIButton buttonWithType:UIButtonTypeSystem];
-  UIImage* gearImage =
-      UseSymbols()
-          ? DefaultSymbolWithPointSize(kGearShapeSymbol, kSymbolImagePointSize)
-          : [UIImage imageNamed:@"infobar_settings_icon"];
+  UIImage* gearImage = UseSymbols()
+                           ? DefaultSymbolWithPointSize(kSettingsFilledSymbol,
+                                                        kInfobarSymbolPointSize)
+                           : [UIImage imageNamed:@"infobar_settings_icon"];
   gearImage =
       [gearImage imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
 
@@ -338,14 +359,14 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
       [[UILongPressGestureRecognizer alloc] init];
   [longPressGestureRecognizer addTarget:self action:@selector(handleGestures:)];
   longPressGestureRecognizer.minimumPressDuration =
-      kLongPressTimeDurationInSeconds;
+      kLongPressTimeDuration.InSecondsF();
   [self.view addGestureRecognizer:longPressGestureRecognizer];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
   [super viewDidAppear:animated];
   [self.metricsRecorder recordBannerEvent:MobileMessagesBannerEvent::Presented];
-  self.bannerAppearedTime = [NSDate timeIntervalSinceReferenceDate];
+  self.bannerAppearedTime = base::TimeTicks::Now();
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
@@ -398,7 +419,8 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 
 - (void)setSubtitleText:(NSString*)subtitleText {
   _subtitleText = subtitleText;
-  self.subTitleLabel.text = _subtitleText;
+  self.subTitleLabel.attributedText = [self subtitleAttributedText];
+  self.subTitleLabel.hidden = !self.subtitleText.length;
 }
 
 - (void)setButtonText:(NSString*)buttonText {
@@ -415,8 +437,24 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
   self.view.accessibilityCustomActions = [self accessibilityActions];
 }
 
+- (void)setIconImageTintColor:(UIColor*)iconImageTintColor {
+  _iconImageTintColor = iconImageTintColor;
+}
+
 - (void)setUseIconBackgroundTint:(BOOL)useIconBackgroundTint {
   _useIconBackgroundTint = useIconBackgroundTint;
+}
+
+- (void)setIconBackgroundColor:(UIColor*)iconBackgroundColor {
+  _iconBackgroundColor = iconBackgroundColor;
+}
+
+- (void)addCustomStyle:(UIFontDescriptorSymbolicTraits)symbolicTraits
+       toSubtitleRange:(NSRange)range {
+  StyledRange* styledRange = [[StyledRange alloc] init];
+  styledRange.symbolicTraits = symbolicTraits;
+  styledRange.range = range;
+  [_subtitleStyledRanges addObject:styledRange];
 }
 
 - (void)setRestrictSubtitleTextToSingleLine:
@@ -452,11 +490,11 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
   }
 
   if (gesture.state == UIGestureRecognizerStateEnded) {
-    [self animateBannerToOriginalStateWithDuration:
-              kSelectBannerAnimationDurationInSeconds
-                                        completion:nil];
+    [self
+        animateBannerToOriginalStateWithDuration:kSelectBannerAnimationDuration
+                                      completion:nil];
     // If dragged up by more than kChangeInPositionForDismissal at the time
-    // the gesture ended, OR |self.shouldDismissAfterTouchesEnded| is YES.
+    // the gesture ended, OR `self.shouldDismissAfterTouchesEnded` is YES.
     // Dismiss the banner.
     BOOL dragUpExceededThreshold = (self.view.center.y - self.originalCenter.y -
                                         kChangeInPositionForDismissal <
@@ -486,7 +524,7 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 
 // Animate the Banner being selected by scaling it up.
 - (void)animateBannerToScaleUpState {
-  [UIView animateWithDuration:kSelectBannerAnimationDurationInSeconds
+  [UIView animateWithDuration:kSelectBannerAnimationDuration.InSecondsF()
                    animations:^{
                      self.view.superview.transform = CGAffineTransformMakeScale(
                          kSelectedBannerViewScale, kSelectedBannerViewScale);
@@ -499,9 +537,9 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 }
 
 // Animate the Banner back to its original size and styling.
-- (void)animateBannerToOriginalStateWithDuration:(NSTimeInterval)duration
+- (void)animateBannerToOriginalStateWithDuration:(base::TimeDelta)duration
                                       completion:(ProceduralBlock)completion {
-  [UIView animateWithDuration:duration
+  [UIView animateWithDuration:duration.InSecondsF()
       animations:^{
         self.view.superview.transform = CGAffineTransformIdentity;
         [self.view.layer
@@ -515,7 +553,7 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 
 // Animate the banner back to its original position.
 - (void)animateBannerToOriginalPosition {
-  [UIView animateWithDuration:kSelectBannerAnimationDurationInSeconds
+  [UIView animateWithDuration:kSelectBannerAnimationDuration.InSecondsF()
                    animations:^{
                      self.view.center = self.originalCenter;
                    }
@@ -530,7 +568,7 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
   // TODO(crbug.com/961343): Interrupt this animation in case the Banner needs
   // to be dismissed mid tap (Currently it will be dismmissed after the
   // animation).
-  [UIView animateWithDuration:kTappedBannerAnimationDurationInSeconds
+  [UIView animateWithDuration:kTappedBannerAnimationDuration.InSecondsF()
       animations:^{
         self.view.superview.transform = CGAffineTransformMakeScale(
             kTappedBannerViewScale, kTappedBannerViewScale);
@@ -540,7 +578,7 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
       completion:^(BOOL finished) {
         [self
             animateBannerToOriginalStateWithDuration:
-                kTappedBannerAnimationDurationInSeconds
+                kTappedBannerAnimationDuration
                                           completion:^{
                                             [self presentInfobarModalAfterTap];
                                           }];
@@ -562,8 +600,8 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
 // doesn't call viewWillDissapear.
 - (void)recordBannerOnScreenTime {
   if (!self.bannerOnScreenTimeWasRecorded) {
-    double duration =
-        [NSDate timeIntervalSinceReferenceDate] - self.bannerAppearedTime;
+    const base::TimeDelta duration =
+        base::TimeTicks::Now() - self.bannerAppearedTime;
     [self.metricsRecorder recordBannerOnScreenDuration:duration];
     self.bannerOnScreenTimeWasRecorded = YES;
   }
@@ -625,6 +663,35 @@ const CGFloat kLongPressTimeDurationInSeconds = 0.4;
         [NSString stringWithFormat:@"%@,%@", self.titleText, self.subtitleText];
   }
   return self.titleText;
+}
+
+- (NSMutableAttributedString*)subtitleAttributedText {
+  if (!self.self.subtitleText) {
+    return nil;
+  }
+
+  UIFontDescriptor* defaultDescriptor = [UIFontDescriptor
+      preferredFontDescriptorWithTextStyle:UIFontTextStyleFootnote];
+  // Passing 0 defers the size responsibility to the descriptor.
+  UIFont* defaultFont = [UIFont fontWithDescriptor:defaultDescriptor size:0.0];
+  NSMutableAttributedString* attributedText = [[NSMutableAttributedString alloc]
+      initWithString:self.subtitleText
+          attributes:@{
+            NSFontAttributeName : defaultFont,
+            NSForegroundColorAttributeName :
+                [UIColor colorNamed:kTextSecondaryColor]
+          }];
+
+  for (StyledRange* styledRange in self.subtitleStyledRanges) {
+    UIFontDescriptor* customDescriptor = [defaultDescriptor
+        fontDescriptorWithSymbolicTraits:styledRange.symbolicTraits];
+    // Passing 0 defers the size responsibility to the descriptor.
+    UIFont* customFont = [UIFont fontWithDescriptor:customDescriptor size:0.0];
+    [attributedText addAttribute:NSFontAttributeName
+                           value:customFont
+                           range:styledRange.range];
+  }
+  return attributedText;
 }
 
 @end

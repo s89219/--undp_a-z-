@@ -1,22 +1,30 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/arc/input_overlay/ui/action_view.h"
 
+#include "ash/app_list/app_list_util.h"
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
+#include "base/strings/string_piece.h"
+#include "chrome/app/vector_icons/vector_icons.h"
+#include "chrome/browser/ash/arc/input_overlay/arc_input_overlay_uma.h"
+#include "chrome/browser/ash/arc/input_overlay/util.h"
+#include "chrome/grit/generated_resources.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/l10n/l10n_util.h"
+#include "ui/views/accessibility/view_accessibility.h"
+#include "ui/views/background.h"
+#include "ui/views/controls/button/image_button_factory.h"
 
-namespace arc {
-namespace input_overlay {
+namespace arc::input_overlay {
 namespace {
 constexpr int kMenuEntryOffset = 4;
 
-// UI strings.
-// TODO(cuicuiruan): move the strings to chrome/app/generated_resources.grd
-// after UX/UI strings are confirmed.
-constexpr base::StringPiece kEditErrorUnsupportedKey("Unsupported key");
-constexpr base::StringPiece kEditErrorDuplicatedKey(
-    "Duplicated key in the same action");
+// TODO(b/250900717): Update according to UX/UI spec.
+constexpr int kTrashButtonSize = 20;
+constexpr SkColor kTrashIconColor = SK_ColorRED;
 
 // For the keys that are caught by display overlay, check if they are reserved
 // for special use.
@@ -24,8 +32,14 @@ bool IsReservedDomCode(ui::DomCode code) {
   switch (code) {
     // Audio, brightness key events won't be caught by display overlay so no
     // need to add them.
-    case ui::DomCode::ESCAPE:  // Used for mouse lock.
-      // TODO(cuicuiruan): Add more reserved keys as needed.
+    // Used for mouse lock.
+    case ui::DomCode::ESCAPE:
+    // Used for traversing the views, which is also required by Accessibility.
+    case ui::DomCode::TAB:
+    // Don't support according to UX requirement.
+    case ui::DomCode::BROWSER_BACK:
+    case ui::DomCode::BROWSER_FORWARD:
+    case ui::DomCode::BROWSER_REFRESH:
       return true;
     default:
       return false;
@@ -38,30 +52,51 @@ ActionView::ActionView(Action* action,
                        DisplayOverlayController* display_overlay_controller)
     : views::View(),
       action_(action),
-      display_overlay_controller_(display_overlay_controller) {}
+      display_overlay_controller_(display_overlay_controller),
+      allow_reposition_(
+          display_overlay_controller->touch_injector()->allow_reposition()),
+      beta_(display_overlay_controller->touch_injector()->beta()) {}
 ActionView::~ActionView() = default;
 
-void ActionView::SetDisplayMode(DisplayMode mode) {
-  if ((!editable_ && mode == DisplayMode::kEdit) || mode == DisplayMode::kMenu)
+void ActionView::SetDisplayMode(DisplayMode mode, ActionLabel* editing_label) {
+  DCHECK(mode != DisplayMode::kEducation && mode != DisplayMode::kMenu &&
+         mode != DisplayMode::kPreMenu);
+  if (mode == DisplayMode::kEducation || mode == DisplayMode::kMenu ||
+      mode == DisplayMode::kPreMenu) {
+    return;
+  }
+
+  if (!editable_ && mode == DisplayMode::kEdit)
     return;
   if (mode == DisplayMode::kView) {
     RemoveEditButton();
-    if (!IsBound(*action_->current_binding()))
+    RemoveTrashButton();
+    if (!IsInputBound(action_->GetCurrentDisplayedInput()))
       SetVisible(false);
+    if (allow_reposition_)
+      SetFocusBehavior(FocusBehavior::NEVER);
   }
   if (mode == DisplayMode::kEdit) {
     AddEditButton();
-    if (!IsBound(*action_->current_binding()))
+    AddTrashButton();
+    if (!IsInputBound(*action_->current_input()))
       SetVisible(true);
+    if (allow_reposition_)
+      SetFocusBehavior(FocusBehavior::ALWAYS);
   }
 
-  if (circle_)
+  if (show_circle() && circle_)
     circle_->SetDisplayMode(mode);
-  for (auto* tag : tags_)
-    tag->SetDisplayMode(mode);
+  if (!editing_label) {
+    for (auto* label : labels_)
+      label->SetDisplayMode(mode);
+  } else {
+    editing_label->SetDisplayMode(mode);
+  }
 }
 
-void ActionView::SetPositionFromCenterPosition(gfx::PointF& center_position) {
+void ActionView::SetPositionFromCenterPosition(
+    const gfx::PointF& center_position) {
   int left = std::max(0, (int)(center_position.x() - center_.x()));
   int top = std::max(0, (int)(center_position.y() - center_.y()));
   // SetPosition function needs the top-left position.
@@ -85,20 +120,149 @@ void ActionView::RemoveEditMenu() {
   display_overlay_controller_->RemoveActionEditMenu();
 }
 
-void ActionView::ShowErrorMsg(base::StringPiece error_msg) {
-  display_overlay_controller_->AddEditErrorMsg(this, error_msg);
-  SetDisplayMode(DisplayMode::kEdited);
+void ActionView::ShowErrorMsg(const base::StringPiece& message,
+                              ActionLabel* editing_label,
+                              bool ax_annouce) {
+  display_overlay_controller_->AddEditMessage(message, MessageType::kError);
+  SetDisplayMode(DisplayMode::kEditedError, editing_label);
+  if (ax_annouce) {
+    GetViewAccessibility().AnnounceText(base::UTF8ToUTF16(message));
+  } else {
+    editing_label->GetViewAccessibility().OverrideDescription(
+        base::UTF8ToUTF16(message));
+  }
+}
+
+void ActionView::ShowInfoMsg(const base::StringPiece& message,
+                             ActionLabel* editing_label) {
+  display_overlay_controller_->AddEditMessage(message, MessageType::kInfo);
+}
+
+void ActionView::ShowLabelFocusInfoMsg(const base::StringPiece& message,
+                                       ActionLabel* editing_label) {
+  display_overlay_controller_->AddEditMessage(message,
+                                              MessageType::kInfoLabelFocus);
+  editing_label->GetViewAccessibility().OverrideDescription(
+      base::UTF8ToUTF16(message));
+}
+
+void ActionView::RemoveMessage() {
+  display_overlay_controller_->RemoveEditMessage();
+}
+
+void ActionView::ChangeInputBinding(
+    Action* action,
+    ActionLabel* action_label,
+    std::unique_ptr<InputElement> input_element) {
+  display_overlay_controller_->OnInputBindingChange(action,
+                                                    std::move(input_element));
+  SetDisplayMode(DisplayMode::kEditedSuccess, action_label);
 }
 
 void ActionView::OnResetBinding() {
-  const auto& binding = action_->GetCurrentDisplayedBinding();
-  if (!IsBound(binding) || binding == *action_->current_binding())
+  const auto& input_binding = action_->GetCurrentDisplayedInput();
+  if (!IsInputBound(input_binding) ||
+      input_binding == *action_->current_input()) {
     return;
+  }
 
   auto input_element =
-      std::make_unique<InputElement>(*(action_->current_binding()));
-  display_overlay_controller_->OnBindingChange(action_,
-                                               std::move(input_element));
+      std::make_unique<InputElement>(*(action_->current_input()));
+  display_overlay_controller_->OnInputBindingChange(action_,
+                                                    std::move(input_element));
+}
+
+bool ActionView::ShouldShowErrorMsg(ui::DomCode code,
+                                    ActionLabel* editing_label) {
+  if ((!action_->support_modifier_key() &&
+       ModifierDomCodeToEventFlag(code) != ui::EF_NONE) ||
+      IsReservedDomCode(code)) {
+    ShowErrorMsg(l10n_util::GetStringUTF8(IDS_INPUT_OVERLAY_EDIT_RESERVED_KEYS),
+                 editing_label, /*ax_annouce=*/true);
+    return true;
+  }
+
+  return false;
+}
+
+bool ActionView::OnMousePressed(const ui::MouseEvent& event) {
+  if (!allow_reposition_)
+    return false;
+  OnDragStart(event);
+  return true;
+}
+
+bool ActionView::OnMouseDragged(const ui::MouseEvent& event) {
+  return allow_reposition_ ? OnDragUpdate(event) : false;
+}
+
+void ActionView::OnMouseReleased(const ui::MouseEvent& event) {
+  if (!allow_reposition_)
+    return;
+  OnDragEnd();
+  RecordInputOverlayActionReposition(RepositionType::kMouseDragRepostion);
+}
+
+void ActionView::OnGestureEvent(ui::GestureEvent* event) {
+  if (!allow_reposition_)
+    return;
+  switch (event->type()) {
+    case ui::ET_GESTURE_SCROLL_BEGIN:
+      OnDragStart(*event);
+      event->SetHandled();
+      break;
+    case ui::ET_GESTURE_SCROLL_UPDATE:
+      if (OnDragUpdate(*event))
+        event->SetHandled();
+      break;
+    case ui::ET_GESTURE_SCROLL_END:
+    case ui::ET_SCROLL_FLING_START:
+      OnDragEnd();
+      event->SetHandled();
+      RecordInputOverlayActionReposition(
+          RepositionType::kTouchscreenDragRepostion);
+      break;
+    default:
+      break;
+  }
+}
+
+bool ActionView::OnKeyPressed(const ui::KeyEvent& event) {
+  auto current_pos = origin();
+  if (!allow_reposition_ ||
+      !UpdatePositionByArrowKey(event.key_code(), current_pos)) {
+    return View::OnKeyPressed(event);
+  }
+
+  SetPosition(current_pos);
+  return true;
+}
+
+bool ActionView::OnKeyReleased(const ui::KeyEvent& event) {
+  if (!allow_reposition_ || !ash::IsArrowKeyEvent(event))
+    return View::OnKeyReleased(event);
+
+  ChangePositionBinding(
+      gfx::Point(origin().x() + center_.x(), origin().y() + center_.y()));
+  RecordInputOverlayActionReposition(
+      RepositionType::kKeyboardArrowKeyReposition);
+  return true;
+}
+
+void ActionView::OnFocus() {
+  if (!IsFocusable()) {
+    auto* focus_manager = GetFocusManager();
+    if (focus_manager)
+      focus_manager->ClearFocus();
+    return;
+  }
+
+  // TODO(b/260868602): Update the color according to the design spec.
+  SetBackground(views::CreateSolidBackground(gfx::kGoogleBlue300));
+}
+
+void ActionView::OnBlur() {
+  SetBackground(nullptr);
 }
 
 void ActionView::AddEditButton() {
@@ -123,30 +287,75 @@ void ActionView::RemoveEditButton() {
   menu_entry_ = nullptr;
 }
 
-bool ActionView::ShouldShowErrorMsg(ui::DomCode code) {
-  // Check if |code| is duplicated with the keys in its action. For example,
-  // there are four keys involved in the key-bound |ActionMove|.
-  auto& binding = action_->GetCurrentDisplayedBinding();
-  if (IsKeyboardBound(binding)) {
-    for (const auto& key : binding.keys()) {
-      if (key != code)
-        continue;
-      display_overlay_controller_->AddEditErrorMsg(this,
-                                                   kEditErrorDuplicatedKey);
-      return true;
-    }
-  }
+void ActionView::AddTrashButton() {
+  if (!beta_ || !editable_)
+    return;
 
-  if ((!action_->support_modifier_key() &&
-       ModifierDomCodeToEventFlag(code) != ui::EF_NONE) ||
-      IsReservedDomCode(code)) {
-    display_overlay_controller_->AddEditErrorMsg(this,
-                                                 kEditErrorUnsupportedKey);
-    return true;
-  }
-
-  return false;
+  auto trash_icon = ui::ImageModel::FromVectorIcon(
+      kTrashCanIcon, kTrashIconColor, kTrashButtonSize);
+  trash_button_ =
+      AddChildView(std::make_unique<views::ImageButton>(base::BindRepeating(
+          &ActionView::OnTrashButtonPressed, base::Unretained(this))));
+  trash_button_->SetImageModel(views::Button::STATE_NORMAL, trash_icon);
+  trash_button_->SetImageHorizontalAlignment(views::ImageButton::ALIGN_CENTER);
+  trash_button_->SetImageVerticalAlignment(views::ImageButton::ALIGN_MIDDLE);
+  // TODO(b/253337606): Update the tooltip text.
+  trash_button_->SetTooltipText(u"Delete Action");
+  trash_button_->SetSize(gfx::Size(kTrashButtonSize, kTrashButtonSize));
+  UpdateTrashButtonPosition();
 }
 
-}  // namespace input_overlay
-}  // namespace arc
+void ActionView::RemoveTrashButton() {
+  if (!editable_ || !trash_button_)
+    return;
+
+  RemoveChildViewT(trash_button_);
+  trash_button_ = nullptr;
+}
+
+void ActionView::OnTrashButtonPressed() {
+  if (!display_overlay_controller_)
+    return;
+
+  display_overlay_controller_->OnActionTrashButtonPressed(action_);
+}
+
+void ActionView::UpdateTrashButtonPosition() {
+  if (!trash_button_)
+    return;
+
+  trash_button_->SetPosition(
+      gfx::Point(std::max(0, center_.x() - kTrashButtonSize / 2),
+                 std::max(0, center_.y() - kTrashButtonSize / 2)));
+}
+
+void ActionView::OnDragStart(const ui::LocatedEvent& event) {
+  start_drag_event_pos_ = event.location();
+}
+
+bool ActionView::OnDragUpdate(const ui::LocatedEvent& event) {
+  auto new_location = event.location();
+  auto target_location = origin() + (new_location - start_drag_event_pos_);
+  target_location.set_x(base::clamp(target_location.x(), /*lo=*/0,
+                                    /*hi=*/parent()->width() - width()));
+  target_location.set_y(base::clamp(target_location.y(), /*lo=*/0,
+                                    /*hi=*/parent()->height() - height()));
+  SetPosition(target_location);
+  return true;
+}
+
+void ActionView::OnDragEnd() {
+  auto new_touch_center =
+      gfx::Point(origin().x() + center_.x(), origin().y() + center_.y());
+  ChangePositionBinding(new_touch_center);
+}
+
+void ActionView::ChangePositionBinding(const gfx::Point& new_touch_center) {
+  DCHECK(allow_reposition_);
+  if (!allow_reposition_)
+    return;
+
+  action_->PrepareToBindPosition(new_touch_center);
+}
+
+}  // namespace arc::input_overlay

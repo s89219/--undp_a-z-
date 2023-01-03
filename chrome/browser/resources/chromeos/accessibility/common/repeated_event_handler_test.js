@@ -1,18 +1,25 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Include test fixture.
-GEN_INCLUDE([
-  '../select_to_speak/select_to_speak_e2e_test_base.js',
-  'repeated_event_handler.js'
-]);
+GEN_INCLUDE(['testing/common_e2e_test_base.js']);
 
 /** Test fixture for array_util.js. */
-RepeatedEventHandlerTest = class extends SelectToSpeakE2ETest {};
+AccessibilityExtensionRepeatedEventHandlerTest =
+    class extends CommonE2ETestBase {
+  /** @override */
+  async setUpDeferred() {
+    await importModule('EventGenerator', '/common/event_generator.js');
+    await importModule('KeyCode', '/common/key_code.js');
+    await importModule(
+        'RepeatedEventHandler', '/common/repeated_event_handler.js');
+  }
+};
 
-TEST_F(
-    'RepeatedEventHandlerTest', 'RepeatedEventHandledOnce', async function() {
+AX_TEST_F(
+    'AccessibilityExtensionRepeatedEventHandlerTest',
+    'RepeatedEventHandledOnce', async function() {
       const root = await this.runWithLoadedTree('');
       this.handlerCallCount = 0;
       const handler = () => this.handlerCallCount++;
@@ -31,9 +38,9 @@ TEST_F(
           this.newCallback(() => assertEquals(this.handlerCallCount, 1)), 0);
     });
 
-TEST_F(
-    'RepeatedEventHandlerTest', 'NoEventsHandledAfterStopListening',
-    async function() {
+AX_TEST_F(
+    'AccessibilityExtensionRepeatedEventHandlerTest',
+    'NoEventsHandledAfterStopListening', async function() {
       const root = await this.runWithLoadedTree('');
       this.handlerCallCount = 0;
       const handler = () => this.handlerCallCount++;

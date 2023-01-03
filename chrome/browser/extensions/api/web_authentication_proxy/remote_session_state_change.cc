@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/task/bind_post_task.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/extensions/api/web_authentication_proxy.h"
 
@@ -80,7 +81,7 @@ WebAuthenticationProxyRemoteSessionStateChangeNotifier::
     : event_router_(event_router), extension_id_(std::move(extension_id)) {
   DCHECK(event_router_);
   auto broadcast_event_on_change = base::BindPostTask(
-      base::SequencedTaskRunnerHandle::Get(),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       base::BindRepeating(
           &WebAuthenticationProxyRemoteSessionStateChangeNotifier::
               BroadcastRemoteSessionStateChangeEvent,

@@ -1,54 +1,38 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 
-#include <tuple>
+#import <tuple>
 
-#include "base/base_paths.h"
-#include "base/bind.h"
-#include "base/callback_helpers.h"
-#include "base/files/file_util.h"
-#include "base/location.h"
-#include "base/logging.h"
-#include "base/memory/ptr_util.h"
-#include "base/path_service.h"
-#include "base/run_loop.h"
-#include "base/task/thread_pool.h"
-#include "base/test/test_file_util.h"
-#include "base/threading/thread_task_runner_handle.h"
-#include "components/keyed_service/core/service_access_type.h"
-#include "components/keyed_service/ios/browser_state_dependency_manager.h"
-#include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
-#include "components/profile_metrics/browser_profile_type.h"
-#include "components/sync_preferences/pref_service_syncable.h"
-#include "components/sync_preferences/testing_pref_service_syncable.h"
-#include "components/user_prefs/user_prefs.h"
-#include "components/webdata_services/web_data_service_wrapper.h"
-#include "ios/chrome/browser/application_context.h"
-#include "ios/chrome/browser/browser_state/browser_state_keyed_service_factories.h"
-#include "ios/chrome/browser/prefs/browser_prefs.h"
-#include "ios/chrome/browser/prefs/ios_chrome_pref_service_factory.h"
-#include "ios/chrome/browser/webdata_services/web_data_service_factory.h"
-#include "ios/web/public/thread/web_task_traits.h"
-#include "ios/web/public/thread/web_thread.h"
-#include "net/url_request/url_request_test_util.h"
+#import "base/base_paths.h"
+#import "base/callback_helpers.h"
+#import "base/files/file_util.h"
+#import "base/location.h"
+#import "base/logging.h"
+#import "base/memory/ptr_util.h"
+#import "base/path_service.h"
+#import "base/task/single_thread_task_runner.h"
+#import "base/task/thread_pool.h"
+#import "base/test/test_file_util.h"
+#import "components/keyed_service/core/service_access_type.h"
+#import "components/keyed_service/ios/browser_state_dependency_manager.h"
+#import "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#import "components/profile_metrics/browser_profile_type.h"
+#import "components/sync_preferences/pref_service_syncable.h"
+#import "components/sync_preferences/testing_pref_service_syncable.h"
+#import "components/user_prefs/user_prefs.h"
+#import "ios/chrome/browser/browser_state/browser_state_keyed_service_factories.h"
+#import "ios/chrome/browser/prefs/browser_prefs.h"
+#import "ios/chrome/browser/prefs/ios_chrome_pref_service_factory.h"
+#import "ios/web/public/thread/web_task_traits.h"
+#import "ios/web/public/thread/web_thread.h"
+#import "net/url_request/url_request_test_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
-
-namespace {
-
-std::unique_ptr<KeyedService> BuildWebDataService(web::BrowserState* context) {
-  const base::FilePath& browser_state_path = context->GetStatePath();
-  return std::make_unique<WebDataServiceWrapper>(
-      browser_state_path, GetApplicationContext()->GetApplicationLocale(),
-      web::GetUIThreadTaskRunner({}), base::DoNothing());
-}
-
-}  // namespace
 
 TestChromeBrowserState::TestChromeBrowserState(
     TestChromeBrowserState* original_browser_state,
@@ -143,10 +127,10 @@ void TestChromeBrowserState::Init() {
   EnsureBrowserStateKeyedServiceFactoriesBuilt();
 
   if (prefs_) {
-    // If user passed a custom PrefServiceSyncable, then leave |testing_prefs_|
+    // If user passed a custom PrefServiceSyncable, then leave `testing_prefs_`
     // unset as it is not possible to determine its type.
   } else if (IsOffTheRecord()) {
-    // This leaves |testing_prefs_| unset as CreateIncognitoBrowserStatePrefs()
+    // This leaves `testing_prefs_` unset as CreateIncognitoBrowserStatePrefs()
     // does not return a TestingPrefServiceSyncable.
     DCHECK(original_browser_state_);
     prefs_ =
@@ -189,7 +173,7 @@ base::FilePath TestChromeBrowserState::GetStatePath() const {
 
 scoped_refptr<base::SequencedTaskRunner>
 TestChromeBrowserState::GetIOTaskRunner() {
-  return base::ThreadTaskRunnerHandle::Get();
+  return base::SingleThreadTaskRunner::GetCurrentDefault();
 }
 
 ChromeBrowserState* TestChromeBrowserState::GetOriginalChromeBrowserState() {
@@ -231,7 +215,8 @@ BrowserStatePolicyConnector* TestChromeBrowserState::GetPolicyConnector() {
   return policy_connector_.get();
 }
 
-PrefService* TestChromeBrowserState::GetPrefs() {
+sync_preferences::PrefServiceSyncable*
+TestChromeBrowserState::GetSyncablePrefs() {
   return prefs_.get();
 }
 
@@ -251,16 +236,8 @@ net::URLRequestContextGetter* TestChromeBrowserState::CreateRequestContext(
   return new net::TestURLRequestContextGetter(web::GetIOThreadTaskRunner({}));
 }
 
-void TestChromeBrowserState::CreateWebDataService() {
-  std::ignore =
-      ios::WebDataServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-          this, base::BindRepeating(&BuildWebDataService));
-
-  // Wait a bit after creating the WebDataService to allow the initialisation
-  // to complete (otherwise the TestChromeBrowserState may be destroyed before
-  // initialisation of the database is complete which leads to SQL init errors).
-  base::RunLoop run_loop;
-  run_loop.RunUntilIdle();
+base::WeakPtr<ChromeBrowserState> TestChromeBrowserState::AsWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
 
 sync_preferences::TestingPrefServiceSyncable*

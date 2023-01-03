@@ -1,9 +1,8 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/policy/messaging_layer/upload/upload_client.h"
-#include "chrome/browser/policy/messaging_layer/util/test_request_payload.h"
 
 #include <tuple>
 
@@ -17,17 +16,23 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/policy/messaging_layer/upload/record_handler_impl.h"
+#include "chrome/browser/policy/messaging_layer/util/reporting_server_connector.h"
+#include "chrome/browser/policy/messaging_layer/util/reporting_server_connector_test_util.h"
+#include "chrome/browser/policy/messaging_layer/util/test_request_payload.h"
 #include "chrome/browser/policy/messaging_layer/util/test_response_payload.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/core/common/cloud/dm_token.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
 #include "components/reporting/proto/synced/record.pb.h"
 #include "components/reporting/proto/synced/record_constants.pb.h"
+#include "components/reporting/resources/resource_manager.h"
 #include "components/reporting/util/test_support_callbacks.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/browser_task_environment.h"
 #include "services/network/test/test_network_connection_tracker.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
@@ -69,6 +74,9 @@ class UploadClientTest : public ::testing::TestWithParam<
 
  protected:
   void SetUp() override {
+    memory_resource_ =
+        base::MakeRefCounted<ResourceManager>(4u * 1024LLu * 1024LLu);  // 4 MiB
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     // Set up fake primary profile.
     auto mock_user_manager =
@@ -92,6 +100,7 @@ class UploadClientTest : public ::testing::TestWithParam<
     user_manager_.reset();
     profile_.reset();
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+    EXPECT_THAT(memory_resource_->GetUsed(), Eq(0uL));
   }
 
   bool need_encryption_key() const { return std::get<0>(GetParam()); }
@@ -103,6 +112,7 @@ class UploadClientTest : public ::testing::TestWithParam<
   std::unique_ptr<TestingProfile> profile_;
   std::unique_ptr<user_manager::ScopedUserManager> user_manager_;
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+  scoped_refptr<ResourceManager> memory_resource_;
 };
 
 using TestEncryptionKeyAttached = MockFunction<void(SignedEncryptionInfo)>;
@@ -122,20 +132,23 @@ TEST_P(UploadClientTest, CreateUploadClientAndUploadRecords) {
   record->set_data(json_data);
   record->set_destination(Destination::UPLOAD_EVENTS);
 
+  ScopedReservation total_reservation(0uL, memory_resource_);
   std::string serialized_record;
   wrapped_record.SerializeToString(&serialized_record);
-  std::unique_ptr<std::vector<EncryptedRecord>> records =
-      std::make_unique<std::vector<EncryptedRecord>>();
+  std::vector<EncryptedRecord> records;
   for (int64_t i = 0; i < kExpectedCallTimes; i++) {
     EncryptedRecord encrypted_record;
     encrypted_record.set_encrypted_wrapped_record(serialized_record);
-
     SequenceInformation* sequence_information =
         encrypted_record.mutable_sequence_information();
     sequence_information->set_sequencing_id(static_cast<int64_t>(i));
     sequence_information->set_generation_id(kGenerationId);
     sequence_information->set_priority(Priority::IMMEDIATE);
-    records->push_back(encrypted_record);
+    ScopedReservation record_reservation(encrypted_record.ByteSizeLong(),
+                                         memory_resource_);
+    EXPECT_TRUE(record_reservation.reserved());
+    total_reservation.HandOver(record_reservation);
+    records.push_back(encrypted_record);
   }
 
   StrictMock<TestEncryptionKeyAttached> encryption_key_attached;
@@ -190,26 +203,25 @@ TEST_P(UploadClientTest, CreateUploadClientAndUploadRecords) {
       .WillOnce(MakeUploadEncryptedReportAction(
           std::move(ResponseBuilder().SetForceConfirm(force_confirm()))));
 
-  test::TestMultiEvent<SequenceInformation, bool> upload_success;
-  UploadClient::ReportSuccessfulUploadCallback upload_success_cb =
-      upload_success.cb();
+  test::TestMultiEvent<SequenceInformation, bool> upload_success_event;
 
   // Save last record seq info for verification.
   const SequenceInformation last_record_seq_info =
-      records->back().sequence_information();
+      records.back().sequence_information();
 
+  ReportingServerConnector::TestEnvironment test_env(client.get());
   test::TestEvent<StatusOr<std::unique_ptr<UploadClient>>> e;
-  UploadClient::Create(client.get(), e.cb());
+  UploadClient::Create(e.cb());
   StatusOr<std::unique_ptr<UploadClient>> upload_client_result = e.result();
   ASSERT_OK(upload_client_result) << upload_client_result.status();
 
   auto upload_client = std::move(upload_client_result.ValueOrDie());
   auto enqueue_result = upload_client->EnqueueUpload(
-      need_encryption_key(), std::move(records), std::move(upload_success_cb),
-      encryption_key_attached_cb);
+      need_encryption_key(), std::move(records), std::move(total_reservation),
+      upload_success_event.repeating_cb(), encryption_key_attached_cb);
   EXPECT_TRUE(enqueue_result.ok());
 
-  auto upload_success_result = upload_success.result();
+  auto upload_success_result = upload_success_event.result();
   EXPECT_THAT(std::get<0>(upload_success_result),
               EqualsProto(last_record_seq_info));
   EXPECT_THAT(std::get<1>(upload_success_result), Eq(force_confirm()));

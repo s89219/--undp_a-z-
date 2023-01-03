@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,13 +8,15 @@
 #include <string>
 
 #include "chromeos/crosapi/mojom/app_service_types.mojom.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "components/services/app_service/public/cpp/app_types.h"
+#include "components/services/app_service/public/cpp/capability_access.h"
 #include "components/services/app_service/public/cpp/icon_types.h"
 #include "components/services/app_service/public/cpp/intent_filter.h"
 #include "components/services/app_service/public/cpp/permission.h"
 #include "components/services/app_service/public/cpp/preferred_app.h"
-#include "components/services/app_service/public/mojom/types.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace mojo {
 
@@ -69,8 +71,12 @@ struct StructTraits<crosapi::mojom::AppDataView, apps::AppPtr> {
     return r->install_reason;
   }
 
-  static const absl::optional<std::string>& policy_id(const apps::AppPtr& r) {
-    return r->policy_id;
+  // This method is required for Ash-Lacros backwards compatibility.
+  static absl::optional<std::string> deprecated_policy_id(
+      const apps::AppPtr& r);
+
+  static const std::vector<std::string>& policy_ids(const apps::AppPtr& r) {
+    return r->policy_ids;
   }
 
   static crosapi::mojom::OptionalBool recommendable(const apps::AppPtr& r);
@@ -224,33 +230,27 @@ struct EnumTraits<crosapi::mojom::PatternMatchType, apps::PatternMatchType> {
 };
 
 template <>
-struct EnumTraits<crosapi::mojom::UninstallSource,
-                  apps::mojom::UninstallSource> {
-  static crosapi::mojom::UninstallSource ToMojom(
-      apps::mojom::UninstallSource input);
+struct EnumTraits<crosapi::mojom::UninstallSource, apps::UninstallSource> {
+  static crosapi::mojom::UninstallSource ToMojom(apps::UninstallSource input);
   static bool FromMojom(crosapi::mojom::UninstallSource input,
-                        apps::mojom::UninstallSource* output);
+                        apps::UninstallSource* output);
 };
 
 template <>
 struct StructTraits<crosapi::mojom::CapabilityAccessDataView,
-                    apps::mojom::CapabilityAccessPtr> {
-  static const std::string& app_id(const apps::mojom::CapabilityAccessPtr& r) {
+                    apps::CapabilityAccessPtr> {
+  static const std::string& app_id(const apps::CapabilityAccessPtr& r) {
     return r->app_id;
   }
 
-  static const apps::mojom::OptionalBool& camera(
-      const apps::mojom::CapabilityAccessPtr& r) {
-    return r->camera;
-  }
+  static crosapi::mojom::OptionalBool camera(
+      const apps::CapabilityAccessPtr& r);
 
-  static const apps::mojom::OptionalBool& microphone(
-      const apps::mojom::CapabilityAccessPtr& r) {
-    return r->microphone;
-  }
+  static crosapi::mojom::OptionalBool microphone(
+      const apps::CapabilityAccessPtr& r);
 
   static bool Read(crosapi::mojom::CapabilityAccessDataView,
-                   apps::mojom::CapabilityAccessPtr* out);
+                   apps::CapabilityAccessPtr* out);
 };
 
 template <>
@@ -277,6 +277,10 @@ struct StructTraits<crosapi::mojom::IconValueDataView, apps::IconValuePtr> {
     return r->is_placeholder_icon;
   }
 
+  static bool is_maskable_icon(const apps::IconValuePtr& r) {
+    return r->is_maskable_icon;
+  }
+
   static bool Read(crosapi::mojom::IconValueDataView, apps::IconValuePtr* out);
 };
 
@@ -288,10 +292,10 @@ struct EnumTraits<crosapi::mojom::WindowMode, apps::WindowMode> {
 };
 
 template <>
-struct EnumTraits<crosapi::mojom::LaunchSource, apps::mojom::LaunchSource> {
-  static crosapi::mojom::LaunchSource ToMojom(apps::mojom::LaunchSource input);
+struct EnumTraits<crosapi::mojom::LaunchSource, apps::LaunchSource> {
+  static crosapi::mojom::LaunchSource ToMojom(apps::LaunchSource input);
   static bool FromMojom(crosapi::mojom::LaunchSource input,
-                        apps::mojom::LaunchSource* output);
+                        apps::LaunchSource* output);
 };
 
 template <>
@@ -330,17 +334,24 @@ struct UnionTraits<crosapi::mojom::PermissionValueDataView,
       const apps::PermissionValuePtr& r);
 
   static bool IsNull(const apps::PermissionValuePtr& r) {
-    return !r->bool_value.has_value() && !r->tristate_value.has_value();
+    return !absl::holds_alternative<bool>(r->value) &&
+           !absl::holds_alternative<apps::TriState>(r->value);
   }
 
   static void SetToNull(apps::PermissionValuePtr* out) {}
 
   static bool bool_value(const apps::PermissionValuePtr& r) {
-    return r->bool_value.value();
+    if (absl::holds_alternative<bool>(r->value)) {
+      return absl::get<bool>(r->value);
+    }
+    return false;
   }
 
   static apps::TriState tristate_value(const apps::PermissionValuePtr& r) {
-    return r->tristate_value.value();
+    if (absl::holds_alternative<apps::TriState>(r->value)) {
+      return absl::get<apps::TriState>(r->value);
+    }
+    return apps::TriState::kBlock;
   }
 
   static bool Read(crosapi::mojom::PermissionValueDataView data,

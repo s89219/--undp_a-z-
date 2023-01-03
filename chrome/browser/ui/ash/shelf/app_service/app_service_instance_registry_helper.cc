@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "base/time/time.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
-#include "chrome/browser/ash/crostini/crostini_util.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -272,8 +271,8 @@ void AppServiceInstanceRegistryHelper::OnWindowVisibilityChanged(
     return;
   }
 
-  apps::InstanceState state = CalculateVisibilityState(window, visible);
-  OnInstances(app_constants::kChromeAppId, window, std::string(), state);
+  OnInstances(app_constants::kChromeAppId, window, std::string(),
+              CalculateVisibilityState(window, visible));
 
   if (!base::Contains(browser_window_to_tab_windows_, window))
     return;
@@ -284,8 +283,8 @@ void AppServiceInstanceRegistryHelper::OnWindowVisibilityChanged(
     const std::string app_id = GetAppId(it);
     if (app_id.empty())
       continue;
-    apps::InstanceState state = CalculateVisibilityState(it, visible);
-    OnInstances(app_id, it, std::string(), state);
+    OnInstances(app_id, it, std::string(),
+                CalculateVisibilityState(it, visible));
   }
 }
 
@@ -318,8 +317,8 @@ void AppServiceInstanceRegistryHelper::SetWindowActivated(
     return;
   }
 
-  apps::InstanceState state = CalculateActivatedState(window, active);
-  OnInstances(app_constants::kChromeAppId, window, std::string(), state);
+  OnInstances(app_constants::kChromeAppId, window, std::string(),
+              CalculateActivatedState(window, active));
 
   if (!base::Contains(browser_window_to_tab_windows_, window))
     return;
@@ -336,7 +335,7 @@ void AppServiceInstanceRegistryHelper::SetWindowActivated(
     if (!contents)
       return;
 
-    apps::InstanceState state = static_cast<apps::InstanceState>(
+    constexpr auto kState = static_cast<apps::InstanceState>(
         apps::InstanceState::kStarted | apps::InstanceState::kRunning |
         apps::InstanceState::kActive | apps::InstanceState::kVisible);
     auto* contents_window = GetWindow(contents);
@@ -352,7 +351,7 @@ void AppServiceInstanceRegistryHelper::SetWindowActivated(
     // browser window.
     UpdateTabWindow(app_id, contents_window);
 
-    OnInstances(app_id, contents_window, std::string(), state);
+    OnInstances(app_id, contents_window, std::string(), kState);
     return;
   }
 
@@ -362,8 +361,7 @@ void AppServiceInstanceRegistryHelper::SetWindowActivated(
     const std::string app_id = GetAppId(it);
     if (app_id.empty())
       continue;
-    apps::InstanceState state = CalculateActivatedState(it, active);
-    OnInstances(app_id, it, std::string(), state);
+    OnInstances(app_id, it, std::string(), CalculateActivatedState(it, active));
   }
 }
 
@@ -401,11 +399,6 @@ apps::InstanceState AppServiceInstanceRegistryHelper::CalculateActivatedState(
 bool AppServiceInstanceRegistryHelper::IsOpenedInBrowser(
     const std::string& app_id,
     aura::Window* window) const {
-  // Crostini Terminal App with the app_id kCrostiniTerminalSystemAppId is a
-  // System Web App.
-  if (app_id == crostini::kCrostiniTerminalSystemAppId)
-    return true;
-
   // Windows created by exo with app/startup ids are not browser windows.
   if (exo::GetShellApplicationId(window) || exo::GetShellStartupId(window))
     return false;

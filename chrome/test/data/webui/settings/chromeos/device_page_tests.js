@@ -1,241 +1,49 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
 
-import {DevicePageBrowserProxyImpl, IdleBehavior, LidClosedBehavior, NoteAppLockScreenSupport, Router, routes, setDisplayApiForTesting, StorageSpaceState} from 'chrome://os-settings/chromeos/os_settings.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {crosAudioConfigMojomWebui, DevicePageBrowserProxyImpl, fakeCrosAudioConfig, IdleBehavior, LidClosedBehavior, NoteAppLockScreenSupport, Router, routes, setCrosAudioConfigForTesting, setDisplayApiForTesting, StorageSpaceState} from 'chrome://os-settings/chromeos/os_settings.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
+import {webUIListenerCallback} from 'chrome://resources/ash/common/cr.m.js';
+import {loadTimeData} from 'chrome://resources/ash/common/load_time_data.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {flushTasks, waitAfterNextRender} from 'chrome://test/test_util.js';
-
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
+import {isVisible} from 'chrome://webui-test/test_util.js';
 
 import {FakeSystemDisplay} from './fake_system_display.js';
+import {TestDevicePageBrowserProxy} from './test_device_page_browser_proxy.js';
 
 /** @enum {string} */
 const TestNames = {
   DevicePage: 'device page',
+  Audio: 'audio',
   Display: 'display',
   Keyboard: 'keyboard',
+  PerDeviceMouse: 'per-device mouse',
+  PerDeviceTouchpad: 'per-device touchpad',
   NightLight: 'night light',
+  PerDeviceKeyboard: 'per-device keyboard',
   Pointers: 'pointers',
-  PointingStick: 'pointing stick',
+  PerDevicePointingStick: 'per-device pointing stick',
   Power: 'power',
   Storage: 'storage',
   Stylus: 'stylus',
   KeyboardArrangementDisabled: 'arrow_key_arrangement_disabled',
 };
 
-/**
- * @constructor
- * @implements {DevicePageBrowserProxy}
- */
-function TestDevicePageBrowserProxy() {
-  this.keyboardShortcutViewerShown_ = 0;
-  this.updatePowerStatusCalled_ = 0;
-  this.requestPowerManagementSettingsCalled_ = 0;
-  this.requestNoteTakingApps_ = 0;
-  this.onNoteTakingAppsUpdated_ = null;
-
-  this.androidAppsReceived_ = false;
-  this.noteTakingApps_ = [];
-  this.setPreferredAppCount_ = 0;
-  this.setAppOnLockScreenCount_ = 0;
-
-  this.lastHighlightedDisplayId_ = '-1';
-}
-
-TestDevicePageBrowserProxy.prototype = {
-  /** override */
-  initializePointers: function() {
-    // Enable mouse and touchpad.
-    webUIListenerCallback('has-mouse-changed', true);
-    webUIListenerCallback('has-pointing-stick-changed', true);
-    webUIListenerCallback('has-touchpad-changed', true);
-    webUIListenerCallback('has-haptic-touchpad-changed', true);
-  },
-
-  /** override */
-  initializeStylus: function() {
-    // Enable stylus.
-    webUIListenerCallback('has-stylus-changed', true);
-  },
-
-  /** override */
-  initializeKeyboard: function() {},
-
-  /** override */
-  showKeyboardShortcutViewer: function() {
-    this.keyboardShortcutViewerShown_++;
-  },
-
-  /** override */
-  updateAndroidEnabled: function() {},
-
-  /** @override */
-  updatePowerStatus: function() {
-    this.updatePowerStatusCalled_++;
-  },
-
-  /** @override */
-  setPowerSource: function(powerSourceId) {
-    this.powerSourceId_ = powerSourceId;
-  },
-
-  /** @override */
-  requestPowerManagementSettings: function() {
-    this.requestPowerManagementSettingsCalled_++;
-  },
-
-  /** @override */
-  setIdleBehavior: function(behavior, whenOnAc) {
-    if (whenOnAc) {
-      this.acIdleBehavior_ = behavior;
-    } else {
-      this.batteryIdleBehavior_ = behavior;
-    }
-  },
-
-  /** @override */
-  setLidClosedBehavior: function(behavior) {
-    this.lidClosedBehavior_ = behavior;
-  },
-
-  /** @override */
-  setNoteTakingAppsUpdatedCallback: function(callback) {
-    this.onNoteTakingAppsUpdated_ = callback;
-  },
-
-  /** @override */
-  requestNoteTakingApps: function() {
-    this.requestNoteTakingApps_++;
-  },
-
-  /** @override */
-  setPreferredNoteTakingApp: function(appId) {
-    ++this.setPreferredAppCount_;
-
-    let changed = false;
-    this.noteTakingApps_.forEach(function(app) {
-      changed = changed || app.preferred !== (app.value === appId);
-      app.preferred = app.value === appId;
-    });
-
-    if (changed) {
-      this.scheduleLockScreenAppsUpdated_();
-    }
-  },
-
-  /** @override */
-  setPreferredNoteTakingAppEnabledOnLockScreen: function(enabled) {
-    ++this.setAppOnLockScreenCount_;
-
-    this.noteTakingApps_.forEach(function(app) {
-      if (enabled) {
-        if (app.preferred) {
-          assertEquals(
-              NoteAppLockScreenSupport.SUPPORTED, app.lockScreenSupport);
-        }
-        if (app.lockScreenSupport === NoteAppLockScreenSupport.SUPPORTED) {
-          app.lockScreenSupport = NoteAppLockScreenSupport.ENABLED;
-        }
-      } else {
-        if (app.preferred) {
-          assertEquals(NoteAppLockScreenSupport.ENABLED, app.lockScreenSupport);
-        }
-        if (app.lockScreenSupport === NoteAppLockScreenSupport.ENABLED) {
-          app.lockScreenSupport = NoteAppLockScreenSupport.SUPPORTED;
-        }
-      }
-    });
-
-    this.scheduleLockScreenAppsUpdated_();
-  },
-
-  /** @override */
-  highlightDisplay: function(id) {
-    this.lastHighlightedDisplayId_ = id;
-  },
-
-  /** @override */
-  updateStorageInfo: function() {},
-
-  // Test interface:
-  /**
-   * Sets whether the app list contains Android apps.
-   * @param {boolean} Whether the list of Android note-taking apps was
-   *     received.
-   */
-  setAndroidAppsReceived: function(received) {
-    this.androidAppsReceived_ = received;
-
-    this.scheduleLockScreenAppsUpdated_();
-  },
-
-  /**
-   * @return {string} App id of the app currently selected as preferred.
-   */
-  getPreferredNoteTakingAppId: function() {
-    const app = this.noteTakingApps_.find(function(existing) {
-      return existing.preferred;
-    });
-
-    return app ? app.value : '';
-  },
-
-  /**
-   * @return {NoteAppLockScreenSupport | undefined} The lock screen
-   *     support state of the app currently selected as preferred.
-   */
-  getPreferredAppLockScreenState: function() {
-    const app = this.noteTakingApps_.find(function(existing) {
-      return existing.preferred;
-    });
-
-    return app ? app.lockScreenSupport : undefined;
-  },
-
-  /**
-   * Sets the current list of known note taking apps.
-   * @param {Array<!NoteAppInfo>} The list of apps to set.
-   */
-  setNoteTakingApps: function(apps) {
-    this.noteTakingApps_ = apps;
-    this.scheduleLockScreenAppsUpdated_();
-  },
-
-  /**
-   * Adds an app to the list of known note-taking apps.
-   * @param {!NoteAppInfo}
-   */
-  addNoteTakingApp: function(app) {
-    assert(!this.noteTakingApps_.find(function(existing) {
-      return existing.value === app.value;
-    }));
-
-    this.noteTakingApps_.push(app);
-    this.scheduleLockScreenAppsUpdated_();
-  },
-
-  /**
-   * Invokes the registered note taking apps update callback.
-   * @private
-   */
-  scheduleLockScreenAppsUpdated_: function() {
-    this.onNoteTakingAppsUpdated_(
-        this.noteTakingApps_.map(function(app) {
-          return Object.assign({}, app);
-        }),
-        !this.androidAppsReceived_);
-  }
-};
-
 function getFakePrefs() {
   return {
+    arc: {
+      enabled: {
+        key: 'arc.enabled',
+        type: chrome.settingsPrivate.PrefType.BOOLEAN,
+        value: true,
+      },
+    },
     ash: {
       ambient_color: {
         enabled: {
@@ -444,8 +252,8 @@ function getFakePrefs() {
           type: chrome.settingsPrivate.PrefType.NUMBER,
           value: 500,
         },
-      }
-    }
+      },
+    },
   };
 }
 
@@ -468,26 +276,33 @@ suite('SettingsDevicePage', function() {
     PolymerTest.clearBody();
     Router.getInstance().navigateTo(routes.BASIC);
 
+    DevicePageBrowserProxyImpl.setInstanceForTesting(
+        new TestDevicePageBrowserProxy());
+    setDeviceSplitEnabled(true);
+    // Allow the light DOM to be distributed to os-settings-animated-pages.
+    setTimeout(done);
+  });
+
+  async function init() {
+    // await is necessary in order for setup() to complete.
+    await flushTasks();
     devicePage = document.createElement('settings-device-page');
     devicePage.prefs = getFakePrefs();
-    DevicePageBrowserProxyImpl.instance_ = new TestDevicePageBrowserProxy();
 
-    // settings-animated-pages expects a parent with data-page set.
+    // os-settings-animated-pages expects a parent with data-page set.
     const basicPage = document.createElement('div');
     basicPage.dataset.page = 'basic';
     basicPage.appendChild(devicePage);
     document.body.appendChild(basicPage);
-
-    // Allow the light DOM to be distributed to settings-animated-pages.
-    setTimeout(done);
-  });
+  }
 
   /** @return {!Promise<!HTMLElement>} */
   function showAndGetDeviceSubpage(subpage, expectedRoute) {
-    const row = assert(devicePage.$$(`#main #${subpage}Row`));
+    const row =
+        assert(devicePage.shadowRoot.querySelector(`#main #${subpage}Row`));
     row.click();
     assertEquals(expectedRoute, Router.getInstance().getCurrentRoute());
-    const page = devicePage.$$('settings-' + subpage);
+    const page = devicePage.shadowRoot.querySelector('settings-' + subpage);
     assert(page);
     return Promise.resolve(page);
   }
@@ -560,7 +375,7 @@ suite('SettingsDevicePage', function() {
           width: 3000,
           height: 2000,
           refreshRate: 100,
-        }
+        },
       ],
       bounds: {
         left: 0,
@@ -584,11 +399,13 @@ suite('SettingsDevicePage', function() {
    * @param {boolean} lidClosedControlled
    * @param {boolean} hasLid
    * @param {boolean} adaptiveCharging
+   * @param {boolean} adaptiveChargingManaged
    */
   function sendPowerManagementSettings(
       possibleAcIdleBehaviors, possibleBatteryIdleBehaviors, currAcIdleBehavior,
       currBatteryIdleBehavior, acIdleManaged, batteryIdleManaged,
-      lidClosedBehavior, lidClosedControlled, hasLid, adaptiveCharging) {
+      lidClosedBehavior, lidClosedControlled, hasLid, adaptiveCharging,
+      adaptiveChargingManaged) {
     webUIListenerCallback('power-management-settings-changed', {
       possibleAcIdleBehaviors: possibleAcIdleBehaviors,
       possibleBatteryIdleBehaviors: possibleBatteryIdleBehaviors,
@@ -600,6 +417,7 @@ suite('SettingsDevicePage', function() {
       lidClosedControlled: lidClosedControlled,
       hasLid: hasLid,
       adaptiveCharging: adaptiveCharging,
+      adaptiveChargingManaged: adaptiveChargingManaged,
     });
     flush();
   }
@@ -620,21 +438,10 @@ suite('SettingsDevicePage', function() {
    */
   function expectReverseScrollValue(pointersPage, expected) {
     const reverseScrollToggle =
-        pointersPage.$$('#enableReverseScrollingToggle');
+        pointersPage.shadowRoot.querySelector('#enableReverseScrollingToggle');
     assertEquals(expected, reverseScrollToggle.checked);
     assertEquals(
         expected, devicePage.prefs.settings.touchpad.natural_scroll.value);
-  }
-
-  /**
-   * Returns whether the element both exists and is visible.
-   * @param {?Element} element
-   * @return {boolean}
-   */
-  function isVisible(element) {
-    // offsetWidth and offsetHeight reflect more ways that an element could be
-    // hidden, compared to checking the hidden attribute directly.
-    return !!element && element.offsetWidth > 0 && element.offsetHeight > 0;
   }
 
   /**
@@ -657,25 +464,682 @@ suite('SettingsDevicePage', function() {
         `${elementDesc} should be focused for settingId=${settingId}.`);
   }
 
-  test(assert(TestNames.DevicePage), function() {
-    assertTrue(isVisible(devicePage.$$('#pointersRow')));
-    assertTrue(isVisible(devicePage.$$('#keyboardRow')));
-    assertTrue(isVisible(devicePage.$$('#displayRow')));
+  /**
+   * Set enableInputDeviceSettingsSplit feature flag to true for split tests.
+   * @param {!boolean} isEnabled
+   */
+  function setDeviceSplitEnabled(isEnabled) {
+    loadTimeData.overrideValues({
+      enableInputDeviceSettingsSplit: isEnabled,
+    });
+  }
+
+  test(assert(TestNames.DevicePage), async function() {
+    await init();
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#pointersRow')));
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#keyboardRow')));
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#displayRow')));
+
+    // enableAudioSettingsPage feature flag by default is turned on in tests.
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#audioRow')));
+
+    // enableInputDeviceSettingsSplit feature flag by default is turned on.
+    assertTrue(
+        isVisible(devicePage.shadowRoot.querySelector('#perDeviceMouseRow')));
+    assertTrue(isVisible(
+        devicePage.shadowRoot.querySelector('#perDeviceTouchpadRow')));
+    assertTrue(isVisible(
+        devicePage.shadowRoot.querySelector('#perDevicePointingStickRow')));
+    assertTrue(isVisible(
+        devicePage.shadowRoot.querySelector('#perDeviceKeyboardRow')));
 
     webUIListenerCallback('has-mouse-changed', false);
-    assertTrue(isVisible(devicePage.$$('#pointersRow')));
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#pointersRow')));
+
     webUIListenerCallback('has-pointing-stick-changed', false);
-    assertTrue(isVisible(devicePage.$$('#pointersRow')));
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#pointersRow')));
+
     webUIListenerCallback('has-touchpad-changed', false);
-    assertFalse(isVisible(devicePage.$$('#pointersRow')));
+    assertFalse(isVisible(devicePage.shadowRoot.querySelector('#pointersRow')));
+
     webUIListenerCallback('has-mouse-changed', true);
-    assertTrue(isVisible(devicePage.$$('#pointersRow')));
+    assertTrue(isVisible(devicePage.shadowRoot.querySelector('#pointersRow')));
+  });
+
+  test('audio row visibility', async function() {
+    loadTimeData.overrideValues({
+      enableAudioSettingsPage: false,
+    });
+    await init();
+    assertFalse(isVisible(devicePage.shadowRoot.querySelector('#audioRow')));
+  });
+
+  test('per-device-mouse row visibility', async function() {
+    setDeviceSplitEnabled(false);
+    await init();
+    assertFalse(
+        isVisible(devicePage.shadowRoot.querySelector('#perDeviceMouseRow')));
+  });
+
+  test('per-device-touchpad row visibility', async function() {
+    setDeviceSplitEnabled(false);
+    await init();
+    assertFalse(isVisible(
+        devicePage.shadowRoot.querySelector('#perDeviceTouchpadRow')));
+  });
+
+  test('per-device-pointing-stick row visibility', async function() {
+    setDeviceSplitEnabled(false);
+    await init();
+    assertFalse(isVisible(
+        devicePage.shadowRoot.querySelector('#perDevicePointingStickRow')));
+  });
+
+  test('per-device-keyboard row visibility', async function() {
+    setDeviceSplitEnabled(false);
+    await init();
+    assertFalse(isVisible(
+        devicePage.shadowRoot.querySelector('#perDeviceKeyboardRow')));
+  });
+
+  suite(assert(TestNames.PerDeviceKeyboard), function() {
+    let perDeviceKeyboardPage;
+    setup(async function() {
+      await init();
+      const row = assert(
+          devicePage.shadowRoot.querySelector(`#main #perDeviceKeyboardRow`));
+      row.click();
+      assertEquals(
+          routes.PER_DEVICE_KEYBOARD, Router.getInstance().getCurrentRoute());
+      const page =
+          devicePage.shadowRoot.querySelector('settings-per-device-keyboard');
+      assert(page);
+      return Promise.resolve(page).then(function(page) {
+        perDeviceKeyboardPage = page;
+      });
+    });
+
+    test('per-device keyboard subpage visibility', function() {
+      assertEquals(
+          routes.PER_DEVICE_KEYBOARD, Router.getInstance().getCurrentRoute());
+      assertTrue(isVisible(perDeviceKeyboardPage.shadowRoot.querySelector(
+          '#perDeviceKeyboardSubpageTitle')));
+    });
+  });
+
+  suite(assert(TestNames.Audio), function() {
+    let audioPage;
+
+    setup(async function() {
+      loadTimeData.overrideValues({
+        enableAudioSettingsPage: true,
+      });
+      await init();
+      return showAndGetDeviceSubpage('audio', routes.AUDIO)
+          .then(function(page) {
+            audioPage = page;
+          });
+    });
+
+    test('subpage visibility', function() {
+      assertEquals(routes.AUDIO, Router.getInstance().getCurrentRoute());
+      assertTrue(
+          isVisible(audioPage.shadowRoot.querySelector('#audioOutputTitle')));
+      assertTrue(isVisible(
+          audioPage.shadowRoot.querySelector('#audioOutputSubsection')));
+      assertTrue(
+          isVisible(audioPage.shadowRoot.querySelector('#audioInputSection')));
+      const sectionHeader =
+          audioPage.shadowRoot.querySelector('#audioInputTitle');
+      assertTrue(isVisible(sectionHeader));
+      assertEquals('Input', sectionHeader.textContent);
+      const deviceSubsectionHeader =
+          audioPage.shadowRoot.querySelector('#audioInputDeviceLabel');
+      assertTrue(isVisible(deviceSubsectionHeader));
+      assertEquals('Device', deviceSubsectionHeader.textContent);
+      const deviceSubsectionDropdown =
+          audioPage.shadowRoot.querySelector('#audioInputDeviceDropdown');
+      assertTrue(isVisible(deviceSubsectionDropdown));
+      const inputGainSubsectionHeader =
+          audioPage.shadowRoot.querySelector('#audioInputGainLabel');
+      assertTrue(isVisible(inputGainSubsectionHeader), 'audioInputGainLabel');
+      assertEquals('Volume', inputGainSubsectionHeader.textContent);
+      const inputVolumeButton =
+          audioPage.shadowRoot.querySelector('#audioInputGainMuteButton');
+      assertTrue(isVisible(inputVolumeButton), 'audioInputGainMuteButton');
+      const inputVolumeSlider =
+          audioPage.shadowRoot.querySelector('#audioInputGainVolumeSlider');
+      assertTrue(isVisible(inputVolumeSlider), 'audioInputGainVolumeSlider');
+      const noiseCancellationSubsectionHeader =
+          audioPage.shadowRoot.querySelector(
+              '#audioInputNoiseCancellationLabel');
+      assertTrue(isVisible(noiseCancellationSubsectionHeader));
+      assertEquals(
+          'Noise Cancellation', noiseCancellationSubsectionHeader.textContent);
+      const noiseCancellationToggle = audioPage.shadowRoot.querySelector(
+          '#audioInputNoiseCancellationToggle');
+      assertTrue(isVisible(noiseCancellationToggle));
+    });
+  });
+
+  suite(assert(TestNames.PerDeviceMouse), function() {
+    let perDeviceMousePage;
+
+    setup(async function() {
+      await init();
+      const row = assert(
+          devicePage.shadowRoot.querySelector(`#main #perDeviceMouseRow`));
+      row.click();
+      assertEquals(
+          routes.PER_DEVICE_MOUSE, Router.getInstance().getCurrentRoute());
+      const page =
+          devicePage.shadowRoot.querySelector('settings-per-device-mouse');
+      assert(page);
+      return Promise.resolve(page).then(function(page) {
+        perDeviceMousePage = page;
+      });
+    });
+
+    test('per-device mouse subpage visibility', function() {
+      assertEquals(
+          routes.PER_DEVICE_MOUSE, Router.getInstance().getCurrentRoute());
+      assertTrue(isVisible(perDeviceMousePage.shadowRoot.querySelector(
+          '#perDeviceMouseSubpageTitle')));
+    });
+  });
+
+  suite(assert(TestNames.PerDeviceTouchpad), function() {
+    let perDeviceTouchpadPage;
+
+    setup(async function() {
+      await init();
+      const row = assert(
+          devicePage.shadowRoot.querySelector(`#main #perDeviceTouchpadRow`));
+      row.click();
+      assertEquals(
+          routes.PER_DEVICE_TOUCHPAD, Router.getInstance().getCurrentRoute());
+      const page =
+          devicePage.shadowRoot.querySelector('settings-per-device-touchpad');
+      assert(page);
+      return Promise.resolve(page).then(function(page) {
+        perDeviceTouchpadPage = page;
+      });
+    });
+
+    test('per-device touchpad subpage visibility', function() {
+      assertEquals(
+          routes.PER_DEVICE_TOUCHPAD, Router.getInstance().getCurrentRoute());
+      assertTrue(isVisible(perDeviceTouchpadPage.shadowRoot.querySelector(
+          '#perDeviceTouchpadSubpageTitle')));
+    });
+  });
+
+  suite(assert(TestNames.PerDevicePointingStick), function() {
+    let perDevicePointingStickPage;
+
+    setup(async function() {
+      await init();
+      const row = assert(devicePage.shadowRoot.querySelector(
+          `#main #perDevicePointingStickRow`));
+      row.click();
+      assertEquals(
+          routes.PER_DEVICE_POINTING_STICK,
+          Router.getInstance().getCurrentRoute());
+      const page = devicePage.shadowRoot.querySelector(
+          'settings-per-device-pointing-stick');
+      assert(page);
+      return Promise.resolve(page).then(function(page) {
+        perDevicePointingStickPage = page;
+      });
+    });
+
+    test('per-device pointing stick subpage visibility', function() {
+      assertEquals(
+          routes.PER_DEVICE_POINTING_STICK,
+          Router.getInstance().getCurrentRoute());
+      assertTrue(isVisible(perDevicePointingStickPage.shadowRoot.querySelector(
+          '#perDevicePointingStickSubpageTitle')));
+    });
+  });
+
+  suite(assert(TestNames.Audio), function() {
+    let audioPage;
+
+    /** @type {?FakeCrosAudioConfig} */
+    let crosAudioConfig;
+
+    // Static test audio system properties.
+    /** @type {!AudioSystemProperties} */
+    const maxVolumePercentFakeAudioSystemProperties = {
+      outputVolumePercent: 100,
+
+      /** @type {!MuteState} */
+      outputMuteState: crosAudioConfigMojomWebui.MuteState.kNotMuted,
+
+      /** @type {!Array<!AudioDevice>} */
+      outputDevices: [
+        fakeCrosAudioConfig.defaultFakeSpeaker,
+        fakeCrosAudioConfig.defaultFakeMicJack,
+      ],
+
+      /** @type {!Array<!AudioDevice>} */
+      inputDevices: [],
+    };
+
+    /** @type {!AudioSystemProperties} */
+    const minVolumePercentFakeAudioSystemProperties = {
+      outputVolumePercent: 0,
+
+      /** @type {!MuteState} */
+      outputMuteState: crosAudioConfigMojomWebui.MuteState.kNotMuted,
+
+      /** @type {!Array<!AudioDevice>} */
+      outputDevices: [
+        fakeCrosAudioConfig.defaultFakeSpeaker,
+        fakeCrosAudioConfig.defaultFakeMicJack,
+      ],
+
+      /** @type {!Array<!AudioDevice>} */
+      inputDevices: [],
+    };
+
+    /** @type {!AudioSystemProperties} */
+    const mutedByUserFakeAudioSystemProperties = {
+      outputVolumePercent: 75,
+
+      /** @type {!MuteState} */
+      outputMuteState: crosAudioConfigMojomWebui.MuteState.kMutedByUser,
+
+      /** @type {!Array<!AudioDevice>} */
+      outputDevices: [
+        fakeCrosAudioConfig.defaultFakeSpeaker,
+        fakeCrosAudioConfig.defaultFakeMicJack,
+      ],
+
+      /** @type {!Array<!AudioDevice>} */
+      inputDevices: [],
+    };
+
+    /** @type {!AudioSystemProperties} */
+    const mutedByPolicyFakeAudioSystemProperties = {
+      outputVolumePercent: 75,
+
+      /** @type {!MuteState} */
+      outputMuteState: crosAudioConfigMojomWebui.MuteState.kMutedByPolicy,
+
+      /** @type {!Array<!AudioDevice>} */
+      outputDevices: [
+        fakeCrosAudioConfig.defaultFakeSpeaker,
+        fakeCrosAudioConfig.defaultFakeMicJack,
+      ],
+
+      /** @type {!Array<!AudioDevice>} */
+      inputDevices: [],
+    };
+
+    /** @type {!AudioSystemProperties} */
+    const emptyOutputDevicesFakeAudioSystemProperties = {
+      outputVolumePercent: 75,
+
+      /** @type {!MuteState} */
+      outputMuteState: crosAudioConfigMojomWebui.MuteState.kNotMuted,
+
+      /** @type {!Array<!AudioDevice>} */
+      outputDevices: [],
+
+      /** @type {!Array<!AudioDevice>} */
+      inputDevices: [],
+    };
+
+    /** @type {!AudioSystemProperties} */
+    const activeSpeakerFakeAudioSystemProperties = {
+      outputVolumePercent: 75,
+
+      /** @type {!MuteState} */
+      outputMuteState: crosAudioConfigMojomWebui.MuteState.kNotMuted,
+
+      /** @type {!Array<!AudioDevice>} */
+      outputDevices: [
+        fakeCrosAudioConfig.fakeSpeakerActive,
+        fakeCrosAudioConfig.fakeMicJackInactive,
+      ],
+
+      /** @type {!Array<!AudioDevice>} */
+      inputDevices: [],
+    };
+
+    /**
+     * Simuates clicking at a given point on cr-slider element.
+     * @param {string} crSliderSelector
+     * @param {number} percent
+     * @return {Promise}
+     */
+    async function simulateSliderClicked(crSliderSelector, percent) {
+      /** @type {!CrSliderElement} */
+      const crSlider = audioPage.shadowRoot.querySelector(crSliderSelector);
+      assertTrue(isVisible(crSlider));
+      const rect = crSlider.$.container.getBoundingClientRect();
+      crSlider.dispatchEvent(new PointerEvent('pointerdown', {
+        buttons: 1,
+        pointerId: 1,
+        clientX: rect.left + ((percent / 100) * rect.width),
+      }));
+      return await flushTasks();
+    }
+
+
+    setup(async function() {
+      loadTimeData.overrideValues({
+        enableAudioSettingsPage: true,
+      });
+      await init();
+
+      // FakeAudioConfig must be set before audio subpage is loaded.
+      crosAudioConfig = new fakeCrosAudioConfig.FakeCrosAudioConfig();
+      setCrosAudioConfigForTesting(crosAudioConfig);
+      // Ensure data reset to fresh state.
+      crosAudioConfig.setAudioSystemProperties(
+          {...fakeCrosAudioConfig.defaultFakeAudioSystemProperties});
+      return showAndGetDeviceSubpage('audio', routes.AUDIO)
+          .then(function(page) {
+            audioPage = page;
+            return flushTasks();
+          });
+    });
+
+    test('output volume mojo test', async function() {
+      const outputVolumeSlider =
+          audioPage.shadowRoot.querySelector('#outputVolumeSlider');
+
+      // Test default properties.
+      assertEquals(
+          fakeCrosAudioConfig.defaultFakeAudioSystemProperties
+              .outputVolumePercent,
+          outputVolumeSlider.value);
+
+      // Test min volume case.
+      crosAudioConfig.setAudioSystemProperties(
+          minVolumePercentFakeAudioSystemProperties);
+      await flushTasks();
+      assertEquals(
+          minVolumePercentFakeAudioSystemProperties.outputVolumePercent,
+          outputVolumeSlider.value);
+
+      // Test max volume case.
+      crosAudioConfig.setAudioSystemProperties(
+          maxVolumePercentFakeAudioSystemProperties);
+      await flushTasks();
+      assertEquals(
+          maxVolumePercentFakeAudioSystemProperties.outputVolumePercent,
+          outputVolumeSlider.value);
+    });
+
+    test('simulate setting output volume slider mojo test', async function() {
+      const sliderSelector = '#outputVolumeSlider';
+      const outputSlider = audioPage.shadowRoot.querySelector(sliderSelector);
+
+      // Test clicking to min volume case.
+      const minOutputVolumePercent = 0;
+      await simulateSliderClicked(sliderSelector, minOutputVolumePercent);
+      assertEquals(
+          minOutputVolumePercent,
+          audioPage.audioSystemProperties_.outputVolumePercent,
+      );
+
+      // Test clicking to max volume case.
+      const maxOutputVolumePercent = 100;
+      await simulateSliderClicked(sliderSelector, maxOutputVolumePercent);
+      assertEquals(
+          maxOutputVolumePercent,
+          audioPage.audioSystemProperties_.outputVolumePercent,
+      );
+
+      // Test clicking to non-boundary volume case.
+      const nonBoundaryOutputVolumePercent = 50;
+      await simulateSliderClicked(sliderSelector, 50);
+      assertEquals(
+          nonBoundaryOutputVolumePercent,
+          audioPage.audioSystemProperties_.outputVolumePercent,
+      );
+
+      // Ensure value clamps to min.
+      outputSlider.value = -1;
+      outputSlider.dispatchEvent(new CustomEvent('cr-slider-value-changed'));
+      await flushTasks();
+
+      assertEquals(
+          minOutputVolumePercent,
+          audioPage.audioSystemProperties_.outputVolumePercent);
+
+      // Ensure value clamps to min.
+      outputSlider.value = 101;
+      outputSlider.dispatchEvent(new CustomEvent('cr-slider-value-changed'));
+      await flushTasks();
+
+      assertEquals(
+          maxOutputVolumePercent,
+          audioPage.audioSystemProperties_.outputVolumePercent);
+    });
+
+    test('output mute state changes slider disabled state', async function() {
+      const outputVolumeSlider =
+          audioPage.shadowRoot.querySelector('#outputVolumeSlider');
+
+      // Test default properties.
+      assertFalse(audioPage.getIsOutputMutedForTest());
+      assertFalse(outputVolumeSlider.disabled);
+
+      // Test muted by user case.
+      crosAudioConfig.setAudioSystemProperties(
+          mutedByUserFakeAudioSystemProperties);
+      await flushTasks();
+      assertTrue(audioPage.getIsOutputMutedForTest());
+      assertFalse(outputVolumeSlider.disabled);
+
+      // Test muted by policy case.
+      crosAudioConfig.setAudioSystemProperties(
+          mutedByPolicyFakeAudioSystemProperties);
+      await flushTasks();
+      assertTrue(audioPage.getIsOutputMutedForTest());
+      assertTrue(outputVolumeSlider.disabled);
+    });
+
+    test('output device mojo test', async function() {
+      const outputDeviceDropdown =
+          audioPage.shadowRoot.querySelector('#audioOutputDeviceDropdown');
+
+      // Test default properties.
+      assertEquals(
+          fakeCrosAudioConfig.defaultFakeMicJack.id,
+          BigInt(outputDeviceDropdown.value));
+      assertEquals(
+          fakeCrosAudioConfig.defaultFakeAudioSystemProperties.outputDevices
+              .length,
+          outputDeviceDropdown.length);
+
+      // Test empty output devices case.
+      crosAudioConfig.setAudioSystemProperties(
+          emptyOutputDevicesFakeAudioSystemProperties);
+      await flushTasks();
+      assertTrue(!outputDeviceDropdown.value);
+      assertEquals(
+          emptyOutputDevicesFakeAudioSystemProperties.outputDevices.length,
+          outputDeviceDropdown.length);
+
+      // Test active speaker case.
+      crosAudioConfig.setAudioSystemProperties(
+          activeSpeakerFakeAudioSystemProperties);
+      await flushTasks();
+
+      assertEquals(
+          fakeCrosAudioConfig.fakeSpeakerActive.id,
+          BigInt(outputDeviceDropdown.value));
+      assertEquals(
+          activeSpeakerFakeAudioSystemProperties.outputDevices.length,
+          outputDeviceDropdown.length);
+    });
+
+    test('simulate setting active output device', async function() {
+      // Get dropdown.
+      /** @type {!HTMLSelectElement}*/
+      const outputDeviceDropdown =
+          audioPage.shadowRoot.querySelector('#audioOutputDeviceDropdown');
+
+      // Verify selected is active device.
+      const expectedInitialSelectionId =
+          `${fakeCrosAudioConfig.defaultFakeMicJack.id}`;
+      assertEquals(expectedInitialSelectionId, outputDeviceDropdown.value);
+
+      // change active device.
+      outputDeviceDropdown.selectedIndex = 0;
+      outputDeviceDropdown.dispatchEvent(
+          new CustomEvent('change', {bubbles: true}));
+      await flushTasks();
+
+      // Verify selected updated to latest active device.
+      const expectedUpdatedSelectionId =
+          `${fakeCrosAudioConfig.defaultFakeSpeaker.id}`;
+      assertEquals(expectedUpdatedSelectionId, outputDeviceDropdown.value);
+      const nextActiveDevice =
+          audioPage.audioSystemProperties_.outputDevices.find(
+              device =>
+                  device.id === fakeCrosAudioConfig.defaultFakeSpeaker.id);
+      assertTrue(nextActiveDevice.isActive);
+    });
+
+    test('input device mojo test', async function() {
+      const inputDeviceDropdown =
+          audioPage.shadowRoot.querySelector('#audioInputDeviceDropdown');
+      assertTrue(!!inputDeviceDropdown);
+
+      // Test default properties.
+      assertEquals(
+          `${fakeCrosAudioConfig.fakeInternalFrontMic.id}`,
+          inputDeviceDropdown.value);
+      assertEquals(
+          fakeCrosAudioConfig.defaultFakeAudioSystemProperties.inputDevices
+              .length,
+          inputDeviceDropdown.length);
+    });
+
+    test('simulate setting active input device', async function() {
+      // Get dropdown.
+      /** @type {!HTMLSelectElement}*/
+      const inputDeviceDropdown =
+          audioPage.shadowRoot.querySelector('#audioInputDeviceDropdown');
+
+      // Verify selected is active device.
+      const expectedInitialSelectionId =
+          `${fakeCrosAudioConfig.fakeInternalFrontMic.id}`;
+      assertEquals(expectedInitialSelectionId, inputDeviceDropdown.value);
+
+      // change active device.
+      inputDeviceDropdown.selectedIndex = 1;
+      inputDeviceDropdown.dispatchEvent(
+          new CustomEvent('change', {bubbles: true}));
+      await flushTasks();
+
+      // Verify selected updated to latest active device.
+      const expectedUpdatedSelectionId =
+          `${fakeCrosAudioConfig.fakeBluetoothMic.id}`;
+      assertEquals(expectedUpdatedSelectionId, inputDeviceDropdown.value);
+      const nextActiveDevice =
+          audioPage.audioSystemProperties_.inputDevices.find(
+              device => device.id === fakeCrosAudioConfig.fakeBluetoothMic.id);
+      assertTrue(nextActiveDevice.isActive);
+    });
+
+    test('simulate mute output', async function() {
+      assertEquals(
+          crosAudioConfigMojomWebui.MuteState.kNotMuted,
+          audioPage.audioSystemProperties_.outputMuteState);
+      assertFalse(audioPage.isOutputMuted_);
+
+      const outputMuteButton =
+          audioPage.shadowRoot.querySelector('#audioOutputMuteButton');
+      assertTrue(isVisible(outputMuteButton));
+      outputMuteButton.click();
+      await flushTasks();
+
+      assertEquals(
+          crosAudioConfigMojomWebui.MuteState.kMutedByUser,
+          audioPage.audioSystemProperties_.outputMuteState);
+      assertTrue(audioPage.isOutputMuted_);
+
+      outputMuteButton.click();
+      await flushTasks();
+
+      assertEquals(
+          crosAudioConfigMojomWebui.MuteState.kNotMuted,
+          audioPage.audioSystemProperties_.outputMuteState);
+      assertFalse(audioPage.isOutputMuted_);
+    });
+
+    test('simulate input mute button press test', async function() {
+      const inputMuteButton =
+          audioPage.shadowRoot.querySelector('#audioInputGainMuteButton');
+
+      assertFalse(audioPage.getIsInputMutedForTest());
+
+      inputMuteButton.click();
+      await flushTasks();
+
+      assertTrue(audioPage.getIsInputMutedForTest());
+    });
+
+    test('simulate setting input gain slider', async function() {
+      const sliderSelector = '#audioInputGainVolumeSlider';
+      const inputSlider = audioPage.shadowRoot.querySelector(sliderSelector);
+      assertTrue(isVisible(inputSlider));
+      assertEquals(
+          audioPage.audioSystemProperties_.inputVolumePercent,
+          inputSlider.value);
+
+      const minimumValue = 0;
+      await simulateSliderClicked(sliderSelector, minimumValue);
+
+      assertEquals(minimumValue, inputSlider.value);
+      assertEquals(
+          audioPage.audioSystemProperties_.inputVolumePercent,
+          inputSlider.value);
+      const maximumValue = 100;
+      await simulateSliderClicked(sliderSelector, maximumValue);
+
+      assertEquals(maximumValue, inputSlider.value);
+      assertEquals(
+          audioPage.audioSystemProperties_.inputVolumePercent,
+          inputSlider.value);
+      const middleValue = 50;
+      await simulateSliderClicked(sliderSelector, middleValue);
+
+      assertEquals(middleValue, inputSlider.value);
+      assertEquals(
+          audioPage.audioSystemProperties_.inputVolumePercent,
+          inputSlider.value);
+
+      // Ensure value clamps to min.
+      inputSlider.value = -1;
+      inputSlider.dispatchEvent(new CustomEvent('cr-slider-value-changed'));
+      await flushTasks();
+
+      assertEquals(
+          audioPage.audioSystemProperties_.inputVolumePercent, minimumValue);
+
+      // Ensure value clamps to min.
+      inputSlider.value = 101;
+      inputSlider.dispatchEvent(new CustomEvent('cr-slider-value-changed'));
+      await flushTasks();
+
+      assertEquals(
+          audioPage.audioSystemProperties_.inputVolumePercent, maximumValue);
+    });
   });
 
   suite(assert(TestNames.Pointers), function() {
     let pointersPage;
 
-    setup(function() {
+    setup(async function() {
+      await init();
       return showAndGetDeviceSubpage('pointers', routes.POINTERS)
           .then(function(page) {
             pointersPage = page;
@@ -684,63 +1148,90 @@ suite('SettingsDevicePage', function() {
 
     test('subpage responds to pointer attach/detach', function() {
       assertEquals(routes.POINTERS, Router.getInstance().getCurrentRoute());
-      assertTrue(isVisible(pointersPage.$$('#mouse')));
-      assertTrue(isVisible(pointersPage.$$('#mouse h2')));
-      assertTrue(isVisible(pointersPage.$$('#pointingStick')));
-      assertTrue(isVisible(pointersPage.$$('#pointingStick h2')));
-      assertTrue(isVisible(pointersPage.$$('#touchpad')));
-      assertTrue(isVisible(pointersPage.$$('#touchpad h2')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#mouse')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#mouse h2')));
+      assertTrue(
+          isVisible(pointersPage.shadowRoot.querySelector('#pointingStick')));
+      assertTrue(isVisible(
+          pointersPage.shadowRoot.querySelector('#pointingStick h2')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#touchpad')));
+      assertTrue(
+          isVisible(pointersPage.shadowRoot.querySelector('#touchpad h2')));
 
       webUIListenerCallback('has-touchpad-changed', false);
       assertEquals(routes.POINTERS, Router.getInstance().getCurrentRoute());
-      assertTrue(isVisible(pointersPage.$$('#mouse')));
-      assertTrue(isVisible(pointersPage.$$('#mouse h2')));
-      assertTrue(isVisible(pointersPage.$$('#pointingStick')));
-      assertTrue(isVisible(pointersPage.$$('#pointingStick h2')));
-      assertFalse(isVisible(pointersPage.$$('#touchpad')));
-      assertFalse(isVisible(pointersPage.$$('#touchpad h2')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#mouse')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#mouse h2')));
+      assertTrue(
+          isVisible(pointersPage.shadowRoot.querySelector('#pointingStick')));
+      assertTrue(isVisible(
+          pointersPage.shadowRoot.querySelector('#pointingStick h2')));
+      assertFalse(
+          isVisible(pointersPage.shadowRoot.querySelector('#touchpad')));
+      assertFalse(
+          isVisible(pointersPage.shadowRoot.querySelector('#touchpad h2')));
 
       webUIListenerCallback('has-pointing-stick-changed', false);
       assertEquals(routes.POINTERS, Router.getInstance().getCurrentRoute());
-      assertTrue(isVisible(pointersPage.$$('#mouse')));
-      assertFalse(isVisible(pointersPage.$$('#mouse h2')));
-      assertFalse(isVisible(pointersPage.$$('#pointingStick')));
-      assertFalse(isVisible(pointersPage.$$('#pointingStick h2')));
-      assertFalse(isVisible(pointersPage.$$('#touchpad')));
-      assertFalse(isVisible(pointersPage.$$('#touchpad h2')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#mouse')));
+      assertFalse(
+          isVisible(pointersPage.shadowRoot.querySelector('#mouse h2')));
+      assertFalse(
+          isVisible(pointersPage.shadowRoot.querySelector('#pointingStick')));
+      assertFalse(isVisible(
+          pointersPage.shadowRoot.querySelector('#pointingStick h2')));
+      assertFalse(
+          isVisible(pointersPage.shadowRoot.querySelector('#touchpad')));
+      assertFalse(
+          isVisible(pointersPage.shadowRoot.querySelector('#touchpad h2')));
 
       webUIListenerCallback('has-mouse-changed', false);
       assertEquals(routes.DEVICE, Router.getInstance().getCurrentRoute());
-      assertFalse(isVisible(devicePage.$$('#main #pointersRow')));
+      assertFalse(
+          isVisible(devicePage.shadowRoot.querySelector('#main #pointersRow')));
 
       webUIListenerCallback('has-touchpad-changed', true);
-      assertTrue(isVisible(devicePage.$$('#main #pointersRow')));
+      assertTrue(
+          isVisible(devicePage.shadowRoot.querySelector('#main #pointersRow')));
 
       return showAndGetDeviceSubpage('pointers', routes.POINTERS)
           .then(function(page) {
-            assertFalse(isVisible(pointersPage.$$('#mouse')));
-            assertFalse(isVisible(pointersPage.$$('#mouse h2')));
-            assertFalse(isVisible(pointersPage.$$('#pointingStick')));
-            assertFalse(isVisible(pointersPage.$$('#pointingStick h2')));
-            assertTrue(isVisible(pointersPage.$$('#touchpad')));
-            assertFalse(isVisible(pointersPage.$$('#touchpad h2')));
+            assertFalse(
+                isVisible(pointersPage.shadowRoot.querySelector('#mouse')));
+            assertFalse(
+                isVisible(pointersPage.shadowRoot.querySelector('#mouse h2')));
+            assertFalse(isVisible(
+                pointersPage.shadowRoot.querySelector('#pointingStick')));
+            assertFalse(isVisible(
+                pointersPage.shadowRoot.querySelector('#pointingStick h2')));
+            assertTrue(
+                isVisible(pointersPage.shadowRoot.querySelector('#touchpad')));
+            assertFalse(isVisible(
+                pointersPage.shadowRoot.querySelector('#touchpad h2')));
 
             webUIListenerCallback('has-mouse-changed', true);
             assertEquals(
                 routes.POINTERS, Router.getInstance().getCurrentRoute());
-            assertTrue(isVisible(pointersPage.$$('#mouse')));
-            assertTrue(isVisible(pointersPage.$$('#mouse h2')));
-            assertFalse(isVisible(pointersPage.$$('#pointingStick')));
-            assertFalse(isVisible(pointersPage.$$('#pointingStick h2')));
-            assertTrue(isVisible(pointersPage.$$('#touchpad')));
-            assertTrue(isVisible(pointersPage.$$('#touchpad h2')));
+            assertTrue(
+                isVisible(pointersPage.shadowRoot.querySelector('#mouse')));
+            assertTrue(
+                isVisible(pointersPage.shadowRoot.querySelector('#mouse h2')));
+            assertFalse(isVisible(
+                pointersPage.shadowRoot.querySelector('#pointingStick')));
+            assertFalse(isVisible(
+                pointersPage.shadowRoot.querySelector('#pointingStick h2')));
+            assertTrue(
+                isVisible(pointersPage.shadowRoot.querySelector('#touchpad')));
+            assertTrue(isVisible(
+                pointersPage.shadowRoot.querySelector('#touchpad h2')));
           });
     });
 
     test('mouse', function() {
-      assertTrue(isVisible(pointersPage.$$('#mouse')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#mouse')));
 
-      const slider = assert(pointersPage.$$('#mouse settings-slider'));
+      const slider = assert(
+          pointersPage.shadowRoot.querySelector('#mouse settings-slider'));
       assertEquals(4, slider.pref.value);
       MockInteractions.pressAndReleaseKeyOn(
           slider.shadowRoot.querySelector('cr-slider'), 37, [], 'ArrowLeft');
@@ -751,12 +1242,17 @@ suite('SettingsDevicePage', function() {
     });
 
     test('touchpad', function() {
-      assertTrue(isVisible(pointersPage.$$('#touchpad')));
+      assertTrue(isVisible(pointersPage.shadowRoot.querySelector('#touchpad')));
 
-      assertTrue(pointersPage.$$('#touchpad #enableTapToClick').checked);
-      assertFalse(pointersPage.$$('#touchpad #enableTapDragging').checked);
+      assertTrue(
+          pointersPage.shadowRoot.querySelector('#touchpad #enableTapToClick')
+              .checked);
+      assertFalse(
+          pointersPage.shadowRoot.querySelector('#touchpad #enableTapDragging')
+              .checked);
 
-      const slider = assert(pointersPage.$$('#touchpad settings-slider'));
+      const slider = assert(
+          pointersPage.shadowRoot.querySelector('#touchpad settings-slider'));
       assertEquals(3, slider.pref.value);
       MockInteractions.pressAndReleaseKeyOn(
           slider.shadowRoot.querySelector('cr-slider'), 39 /* right */, [],
@@ -768,9 +1264,12 @@ suite('SettingsDevicePage', function() {
     });
 
     test('haptic touchpad', function() {
-      assertTrue(pointersPage.$$('#touchpadHapticFeedbackToggle').checked);
+      assertTrue(
+          pointersPage.shadowRoot.querySelector('#touchpadHapticFeedbackToggle')
+              .checked);
 
-      const slider = assert(pointersPage.$$('#touchpadHapticClickSensitivity'));
+      const slider = assert(pointersPage.shadowRoot.querySelector(
+          '#touchpadHapticClickSensitivity'));
       assertEquals(3, slider.pref.value);
       MockInteractions.pressAndReleaseKeyOn(
           slider.shadowRoot.querySelector('cr-slider'), 39 /* right */, [],
@@ -788,7 +1287,7 @@ suite('SettingsDevicePage', function() {
 
       // Tapping the link shouldn't enable the radio button.
       const reverseScrollLabel =
-          pointersPage.$$('#enableReverseScrollingLabel');
+          pointersPage.shadowRoot.querySelector('#enableReverseScrollingLabel');
       const a = reverseScrollLabel.$.container.querySelector('a');
       assertTrue(!!a);
       // Prevent actually opening a link, which would block test.
@@ -797,15 +1296,16 @@ suite('SettingsDevicePage', function() {
       expectReverseScrollValue(pointersPage, false);
 
       // Check specifically clicking toggle changes pref.
-      const reverseScrollToggle =
-          pointersPage.$$('#enableReverseScrollingToggle');
+      const reverseScrollToggle = pointersPage.shadowRoot.querySelector(
+          '#enableReverseScrollingToggle');
       reverseScrollToggle.click();
       expectReverseScrollValue(pointersPage, true);
       devicePage.set('prefs.settings.touchpad.natural_scroll.value', false);
       expectReverseScrollValue(pointersPage, false);
 
       // Check specifically clicking the row changes pref.
-      const reverseScrollSettings = pointersPage.$$('#reverseScrollRow');
+      const reverseScrollSettings =
+          pointersPage.shadowRoot.querySelector('#reverseScrollRow');
       reverseScrollSettings.click();
       expectReverseScrollValue(pointersPage, true);
       devicePage.set('prefs.settings.touchpad.natural_scroll.value', false);
@@ -813,7 +1313,8 @@ suite('SettingsDevicePage', function() {
     });
 
     test('pointing stick acceleration toggle', function() {
-      const toggle = assert(pointersPage.$$('#pointingStickAcceleration'));
+      const toggle = assert(
+          pointersPage.shadowRoot.querySelector('#pointingStickAcceleration'));
       assertEquals(true, toggle.pref.value);
       toggle.click();
       assertEquals(
@@ -825,7 +1326,8 @@ suite('SettingsDevicePage', function() {
     });
 
     test('pointing stick speed slider', function() {
-      const slider = assert(pointersPage.$$('#pointingStick settings-slider'));
+      const slider = assert(pointersPage.shadowRoot.querySelector(
+          '#pointingStick settings-slider'));
       assertEquals(4, slider.pref.value);
       MockInteractions.pressAndReleaseKeyOn(
           slider.shadowRoot.querySelector('cr-slider'), 37, [], 'ArrowLeft');
@@ -839,7 +1341,8 @@ suite('SettingsDevicePage', function() {
     test('Deep link to pointing stick primary button setting', async () => {
       return checkDeepLink(
           routes.POINTERS, '437',
-          pointersPage.$$('#pointingStickSwapButtonDropdown')
+          pointersPage.shadowRoot
+              .querySelector('#pointingStickSwapButtonDropdown')
               .shadowRoot.querySelector('select'),
           'Pointing stick primary button dropdown');
     });
@@ -847,7 +1350,7 @@ suite('SettingsDevicePage', function() {
     test('Deep link to pointing stick acceleration setting', async () => {
       return checkDeepLink(
           routes.POINTERS, '436',
-          pointersPage.$$('#pointingStickAcceleration')
+          pointersPage.shadowRoot.querySelector('#pointingStickAcceleration')
               .shadowRoot.querySelector('cr-toggle'),
           'Pointing stick acceleration slider');
     });
@@ -855,7 +1358,7 @@ suite('SettingsDevicePage', function() {
     test('Deep link to pointing stick speed setting', async () => {
       return checkDeepLink(
           routes.POINTERS, '435',
-          pointersPage.$$('#pointingStickSpeedSlider')
+          pointersPage.shadowRoot.querySelector('#pointingStickSpeedSlider')
               .shadowRoot.querySelector('cr-slider'),
           'Pointing stick speed slider');
     });
@@ -863,7 +1366,7 @@ suite('SettingsDevicePage', function() {
     test('Deep link to touchpad speed', async () => {
       return checkDeepLink(
           routes.POINTERS, '405',
-          pointersPage.$$('#touchpadSensitivity')
+          pointersPage.shadowRoot.querySelector('#touchpadSensitivity')
               .shadowRoot.querySelector('cr-slider'),
           'Touchpad speed slider');
     });
@@ -876,12 +1379,13 @@ suite('SettingsDevicePage', function() {
     let keyboardPage;
 
     setup(async () => {
+      await init();
       keyboardPage = await showAndGetDeviceSubpage('keyboard', routes.KEYBOARD);
     });
 
     test('keyboard', async () => {
       // Initially, the optional keys are hidden.
-      assertFalse(!!keyboardPage.$$('#capsLockKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
 
       // Pretend no internal keyboard is available.
       const keyboardParams = {
@@ -893,75 +1397,87 @@ suite('SettingsDevicePage', function() {
       };
       webUIListenerCallback('show-keys-changed', keyboardParams);
       flush();
-      assertFalse(!!keyboardPage.$$('#launcherKey'));
-      assertFalse(!!keyboardPage.$$('#capsLockKey'));
-      assertFalse(!!keyboardPage.$$('#externalMetaKey'));
-      assertFalse(!!keyboardPage.$$('#externalCommandKey'));
-      assertFalse(!!keyboardPage.$$('#assistantKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#launcherKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#externalMetaKey'));
+      assertFalse(
+          !!keyboardPage.shadowRoot.querySelector('#externalCommandKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#assistantKey'));
 
       // Pretend a Caps Lock key is now available.
       keyboardParams['showCapsLock'] = true;
       webUIListenerCallback('show-keys-changed', keyboardParams);
       flush();
-      assertFalse(!!keyboardPage.$$('#launcherKey'));
-      assertTrue(!!keyboardPage.$$('#capsLockKey'));
-      assertFalse(!!keyboardPage.$$('#externalMetaKey'));
-      assertFalse(!!keyboardPage.$$('#externalCommandKey'));
-      assertFalse(!!keyboardPage.$$('#assistantKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#launcherKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#externalMetaKey'));
+      assertFalse(
+          !!keyboardPage.shadowRoot.querySelector('#externalCommandKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#assistantKey'));
 
       // Add a non-Apple external keyboard.
       keyboardParams['showExternalMetaKey'] = true;
       webUIListenerCallback('show-keys-changed', keyboardParams);
       flush();
-      assertFalse(!!keyboardPage.$$('#launcherKey'));
-      assertTrue(!!keyboardPage.$$('#capsLockKey'));
-      assertTrue(!!keyboardPage.$$('#externalMetaKey'));
-      assertFalse(!!keyboardPage.$$('#externalCommandKey'));
-      assertFalse(!!keyboardPage.$$('#assistantKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#launcherKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#externalMetaKey'));
+      assertFalse(
+          !!keyboardPage.shadowRoot.querySelector('#externalCommandKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#assistantKey'));
 
       // Add an Apple keyboard.
       keyboardParams['showAppleCommandKey'] = true;
       webUIListenerCallback('show-keys-changed', keyboardParams);
       flush();
-      assertFalse(!!keyboardPage.$$('#launcherKey'));
-      assertTrue(!!keyboardPage.$$('#capsLockKey'));
-      assertTrue(!!keyboardPage.$$('#externalMetaKey'));
-      assertTrue(!!keyboardPage.$$('#externalCommandKey'));
-      assertFalse(!!keyboardPage.$$('#assistantKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#launcherKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#externalMetaKey'));
+      assertTrue(
+          !!keyboardPage.shadowRoot.querySelector('#externalCommandKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#assistantKey'));
 
       // Add an internal keyboard.
       keyboardParams['hasLauncherKey'] = true;
       webUIListenerCallback('show-keys-changed', keyboardParams);
       flush();
-      assertTrue(!!keyboardPage.$$('#launcherKey'));
-      assertTrue(!!keyboardPage.$$('#capsLockKey'));
-      assertTrue(!!keyboardPage.$$('#externalMetaKey'));
-      assertTrue(!!keyboardPage.$$('#externalCommandKey'));
-      assertFalse(!!keyboardPage.$$('#assistantKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#launcherKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#externalMetaKey'));
+      assertTrue(
+          !!keyboardPage.shadowRoot.querySelector('#externalCommandKey'));
+      assertFalse(!!keyboardPage.shadowRoot.querySelector('#assistantKey'));
 
       // Pretend an Assistant key is now available.
       keyboardParams['hasAssistantKey'] = true;
       webUIListenerCallback('show-keys-changed', keyboardParams);
       flush();
-      assertTrue(!!keyboardPage.$$('#launcherKey'));
-      assertTrue(!!keyboardPage.$$('#capsLockKey'));
-      assertTrue(!!keyboardPage.$$('#externalMetaKey'));
-      assertTrue(!!keyboardPage.$$('#externalCommandKey'));
-      assertTrue(!!keyboardPage.$$('#assistantKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#launcherKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#capsLockKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#externalMetaKey'));
+      assertTrue(
+          !!keyboardPage.shadowRoot.querySelector('#externalCommandKey'));
+      assertTrue(!!keyboardPage.shadowRoot.querySelector('#assistantKey'));
 
-      const collapse = keyboardPage.$$('iron-collapse');
+      const collapse = keyboardPage.shadowRoot.querySelector('iron-collapse');
       assertTrue(!!collapse);
       assertTrue(collapse.opened);
 
-      assertEquals(500, keyboardPage.$$('#delaySlider').pref.value);
-      assertEquals(500, keyboardPage.$$('#repeatRateSlider').pref.value);
+      assertEquals(
+          500,
+          keyboardPage.shadowRoot.querySelector('#delaySlider').pref.value);
+      assertEquals(
+          500,
+          keyboardPage.shadowRoot.querySelector('#repeatRateSlider')
+              .pref.value);
 
       // Test interaction with the settings-slider's underlying cr-slider.
       MockInteractions.pressAndReleaseKeyOn(
-          keyboardPage.$$('#delaySlider').shadowRoot.querySelector('cr-slider'),
+          keyboardPage.shadowRoot.querySelector('#delaySlider')
+              .shadowRoot.querySelector('cr-slider'),
           37 /* left */, [], 'ArrowLeft');
       MockInteractions.pressAndReleaseKeyOn(
-          keyboardPage.$$('#repeatRateSlider')
+          keyboardPage.shadowRoot.querySelector('#repeatRateSlider')
               .shadowRoot.querySelector('cr-slider'),
           39, [], 'ArrowRight');
       await flushTasks();
@@ -971,24 +1487,34 @@ suite('SettingsDevicePage', function() {
       // Test sliders change when prefs change.
       set('xkb_auto_repeat_delay_r2', 1500);
       await flushTasks();
-      assertEquals(1500, keyboardPage.$$('#delaySlider').pref.value);
+      assertEquals(
+          1500,
+          keyboardPage.shadowRoot.querySelector('#delaySlider').pref.value);
       set('xkb_auto_repeat_interval_r2', 2000);
       await flushTasks();
-      assertEquals(2000, keyboardPage.$$('#repeatRateSlider').pref.value);
+      assertEquals(
+          2000,
+          keyboardPage.shadowRoot.querySelector('#repeatRateSlider')
+              .pref.value);
 
       // Test sliders round to nearest value when prefs change.
       set('xkb_auto_repeat_delay_r2', 600);
       await flushTasks();
-      assertEquals(500, keyboardPage.$$('#delaySlider').pref.value);
+      assertEquals(
+          500,
+          keyboardPage.shadowRoot.querySelector('#delaySlider').pref.value);
       set('xkb_auto_repeat_interval_r2', 45);
       await flushTasks();
-      assertEquals(50, keyboardPage.$$('#repeatRateSlider').pref.value);
+      assertEquals(
+          50,
+          keyboardPage.shadowRoot.querySelector('#repeatRateSlider')
+              .pref.value);
 
       set('xkb_auto_repeat_enabled_r2', false);
       assertFalse(collapse.opened);
 
       // Test keyboard shortcut viewer button.
-      keyboardPage.$$('#keyboardShortcutViewer').click();
+      keyboardPage.shadowRoot.querySelector('#keyboardShortcutViewer').click();
       assertEquals(
           1,
           DevicePageBrowserProxyImpl.getInstance()
@@ -998,7 +1524,7 @@ suite('SettingsDevicePage', function() {
     test('Deep link to keyboard shortcuts', async () => {
       return checkDeepLink(
           routes.KEYBOARD, '413',
-          keyboardPage.$$('#keyboardShortcutViewer')
+          keyboardPage.shadowRoot.querySelector('#keyboardShortcutViewer')
               .shadowRoot.querySelector('cr-icon-button'),
           'Keyboard shortcuts button');
     });
@@ -1009,6 +1535,7 @@ suite('SettingsDevicePage', function() {
     let browserProxy;
 
     setup(async () => {
+      await init();
       displayPage = await showAndGetDeviceSubpage('display', routes.DISPLAY);
       browserProxy = DevicePageBrowserProxyImpl.getInstance();
       await fakeSystemDisplay.getInfoCalled.promise;
@@ -1065,7 +1592,9 @@ suite('SettingsDevicePage', function() {
                 false, displayPage.displays[0]));
 
             // Verify that the arrangement section is not shown.
-            assertEquals(null, displayPage.$$('#arrangement-section'));
+            assertEquals(
+                null,
+                displayPage.shadowRoot.querySelector('#arrangement-section'));
 
             // Add a second display.
             addDisplay(2);
@@ -1076,7 +1605,7 @@ suite('SettingsDevicePage', function() {
               fakeSystemDisplay.getLayoutCalled.promise,
               new Promise(function(resolve, reject) {
                 setTimeout(resolve);
-              })
+              }),
             ]);
           })
           .then(function() {
@@ -1130,20 +1659,36 @@ suite('SettingsDevicePage', function() {
                 false, displayPage.displays[1]));
 
             // Verify that the arrangement section is shown.
-            assertTrue(!!displayPage.$$('#arrangement-section'));
+            assertTrue(
+                !!displayPage.shadowRoot.querySelector('#arrangement-section'));
 
             // Select the second display and make it primary. Also change the
             // orientation of the second display.
-            const displayLayout = displayPage.$$('#displayLayout');
+            const displayLayout =
+                displayPage.shadowRoot.querySelector('#displayLayout');
             assertTrue(!!displayLayout);
-            const displayDiv = displayLayout.$$('#_fakeDisplayId2');
+            const displayDiv =
+                displayLayout.shadowRoot.querySelector('#_fakeDisplayId2');
             assertTrue(!!displayDiv);
             displayDiv.click();
             assertEquals(
                 displayPage.displays[1].id, displayPage.selectedDisplay.id);
+            flush();
 
-            displayPage.updatePrimaryDisplay_({target: {value: '0'}});
-            displayPage.onOrientationChange_({target: {value: '90'}});
+            const primaryDisplaySelect =
+                displayPage.shadowRoot.getElementById('primaryDisplaySelect');
+            assertTrue(!!primaryDisplaySelect);
+            primaryDisplaySelect.value = '0';
+            primaryDisplaySelect.dispatchEvent(new CustomEvent('change'));
+            flush();
+
+            const orientationSelect =
+                displayPage.shadowRoot.getElementById('orientationSelect');
+            assertTrue(!!orientationSelect);
+            orientationSelect.value = '90';
+            orientationSelect.dispatchEvent(new CustomEvent('change'));
+            flush();
+
             fakeSystemDisplay.onDisplayChanged.callListeners();
 
             return Promise.all([
@@ -1151,7 +1696,7 @@ suite('SettingsDevicePage', function() {
               fakeSystemDisplay.getLayoutCalled.promise,
               new Promise(function(resolve, reject) {
                 setTimeout(resolve);
-              })
+              }),
             ]);
           })
           .then(function() {
@@ -1166,7 +1711,12 @@ suite('SettingsDevicePage', function() {
             assertEquals(90, displayPage.displays[1].rotation);
 
             // Mirror the displays.
-            displayPage.onMirroredTap_({target: {blur: function() {}}});
+            const displayMirrorCheckbox =
+                displayPage.shadowRoot.getElementById('displayMirrorCheckbox');
+            assertTrue(!!displayMirrorCheckbox);
+            displayMirrorCheckbox.click();
+            flush();
+
             fakeSystemDisplay.onDisplayChanged.callListeners();
 
             return Promise.all([
@@ -1174,7 +1724,7 @@ suite('SettingsDevicePage', function() {
               fakeSystemDisplay.getLayoutCalled.promise,
               new Promise(function(resolve, reject) {
                 setTimeout(resolve);
-              })
+              }),
             ]);
           })
           .then(function() {
@@ -1188,7 +1738,8 @@ suite('SettingsDevicePage', function() {
             assertTrue(displayPage.isMirrored_(displayPage.displays));
 
             // Verify that the arrangement section is shown while mirroring.
-            assertTrue(!!displayPage.$$('#arrangement-section'));
+            assertTrue(
+                !!displayPage.shadowRoot.querySelector('#arrangement-section'));
 
             // Ensure that the zoom value remains unchanged while draggging.
             function pointerEvent(eventType, ratio) {
@@ -1244,7 +1795,8 @@ suite('SettingsDevicePage', function() {
       assertTrue(displayPage.shouldShowArrangementSection_());
 
       const deepLinkElement =
-          displayPage.$$('#displayMirrorCheckbox').$$('#checkbox');
+          displayPage.shadowRoot.querySelector('#displayMirrorCheckbox')
+              .shadowRoot.querySelector('#checkbox');
       await waitAfterNextRender(deepLinkElement);
       assertEquals(
           deepLinkElement, getDeepActiveElement(),
@@ -1269,7 +1821,8 @@ suite('SettingsDevicePage', function() {
               assertEquals(2, displayPage.displays.length);
               assertTrue(displayPage.shouldShowArrangementSection_());
 
-              assertTrue(!!displayPage.$$('#arrangement-section'));
+              assertTrue(!!displayPage.shadowRoot.querySelector(
+                  '#arrangement-section'));
 
               assertTrue(displayPage.showMirror_(false, displayPage.displays));
               assertFalse(displayPage.isMirrored_(displayPage.displays));
@@ -1280,8 +1833,10 @@ suite('SettingsDevicePage', function() {
             });
           })
           .then(() => {
-            const displayLayout = displayPage.$$('#displayLayout');
-            const display = displayLayout.$$('#_fakeDisplayId2');
+            const displayLayout =
+                displayPage.shadowRoot.querySelector('#displayLayout');
+            const display =
+                displayLayout.shadowRoot.querySelector('#_fakeDisplayId2');
             const layout =
                 displayLayout.displayLayoutMap_.get('fakeDisplayId2');
 
@@ -1316,6 +1871,7 @@ suite('SettingsDevicePage', function() {
 
   test(assert(TestNames.NightLight), async function() {
     // Set up a single display.
+    await init();
     const displayPage =
         await showAndGetDeviceSubpage('display', routes.DISPLAY);
     await fakeSystemDisplay.getInfoCalled.promise;
@@ -1325,8 +1881,10 @@ suite('SettingsDevicePage', function() {
     await fakeSystemDisplay.getLayoutCalled.promise;
     assertEquals(1, displayPage.displays.length);
 
-    const temperature = displayPage.$$('#nightLightTemperatureDiv');
-    const schedule = displayPage.$$('#nightLightScheduleTypeDropDown');
+    const temperature =
+        displayPage.shadowRoot.querySelector('#nightLightTemperatureDiv');
+    const schedule =
+        displayPage.shadowRoot.querySelector('#nightLightScheduleTypeDropDown');
 
     // Night Light is off, so temperature is hidden. Schedule is always shown.
     assertTrue(temperature.hidden);
@@ -1375,20 +1933,25 @@ suite('SettingsDevicePage', function() {
         });
       });
 
-      setup(function() {
+      setup(async function() {
+        await init();
         return showAndGetDeviceSubpage('power', routes.POWER)
             .then(function(page) {
               powerPage = page;
-              powerSourceRow = assert(powerPage.$$('#powerSourceRow'));
-              powerSourceSelect = assert(powerPage.$$('#powerSource'));
+              powerSourceRow =
+                  assert(powerPage.shadowRoot.querySelector('#powerSourceRow'));
+              powerSourceSelect =
+                  assert(powerPage.shadowRoot.querySelector('#powerSource'));
               assertEquals(
                   1,
                   DevicePageBrowserProxyImpl.getInstance()
                       .updatePowerStatusCalled_);
 
-              lidClosedToggle = assert(powerPage.$$('#lidClosedToggle'));
+              lidClosedToggle = assert(
+                  powerPage.shadowRoot.querySelector('#lidClosedToggle'));
               adaptiveChargingToggle =
-                  assert(powerPage.$$('#adaptiveChargingToggle'));
+                  assert(powerPage.shadowRoot.querySelector(
+                      '#adaptiveChargingToggle'));
 
               assertEquals(
                   1,
@@ -1396,22 +1959,26 @@ suite('SettingsDevicePage', function() {
                       .requestPowerManagementSettingsCalled_);
               sendPowerManagementSettings(
                   [
-                    IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                    IdleBehavior.DISPLAY_ON
+                    IdleBehavior.DISPLAY_OFF_SLEEP,
+                    IdleBehavior.DISPLAY_OFF,
+                    IdleBehavior.DISPLAY_ON,
                   ],
                   [
-                    IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                    IdleBehavior.DISPLAY_ON
+                    IdleBehavior.DISPLAY_OFF_SLEEP,
+                    IdleBehavior.DISPLAY_OFF,
+                    IdleBehavior.DISPLAY_ON,
                   ],
                   IdleBehavior.DISPLAY_OFF_SLEEP,
                   IdleBehavior.DISPLAY_OFF_SLEEP, false /* acIdleManaged */,
                   false /* batteryIdleManaged */, LidClosedBehavior.SUSPEND,
                   false /* lidClosedControlled */, true /* hasLid */,
-                  false /* adaptiveCharging */);
+                  false /* adaptiveCharging */,
+                  false /* adaptiveChargingManaged */);
             });
       });
 
-      test('no battery', function() {
+      test('no battery', async function() {
+        await init();
         const batteryStatus = {
           present: false,
           charging: false,
@@ -1427,10 +1994,13 @@ suite('SettingsDevicePage', function() {
         assertTrue(powerSourceRow.hidden);
         // Idle settings while on battery and while charging should not be
         // visible if the battery is not present.
-        assertEquals(null, powerPage.$$('#batteryIdleSettingBox'));
-        assertEquals(null, powerPage.$$('#acIdleSettingBox'));
+        assertEquals(
+            null, powerPage.shadowRoot.querySelector('#batteryIdleSettingBox'));
+        assertEquals(
+            null, powerPage.shadowRoot.querySelector('#acIdleSettingBox'));
 
-        const acIdleSelect = assert(powerPage.$$('#noBatteryAcIdleSelect'));
+        const acIdleSelect = assert(
+            powerPage.shadowRoot.querySelector('#noBatteryAcIdleSelect'));
         // Expect the "When idle" dropdown options to appear instead.
         assert(acIdleSelect);
 
@@ -1526,7 +2096,8 @@ suite('SettingsDevicePage', function() {
         setPowerSources([], '', false);
         flush();
 
-        acIdleSelect = assert(powerPage.$$('#acIdleSelect'));
+        acIdleSelect =
+            assert(powerPage.shadowRoot.querySelector('#acIdleSelect'));
         selectValue(acIdleSelect, IdleBehavior.DISPLAY_ON);
         assertEquals(
             IdleBehavior.DISPLAY_ON,
@@ -1550,8 +2121,8 @@ suite('SettingsDevicePage', function() {
                  powerPage.async(resolve);
                })
             .then(function() {
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               selectValue(batteryIdleSelect, IdleBehavior.DISPLAY_ON);
               assertEquals(
                   IdleBehavior.DISPLAY_ON,
@@ -1564,17 +2135,20 @@ suite('SettingsDevicePage', function() {
         const sendLid = function(lidBehavior) {
           sendPowerManagementSettings(
               [
-                IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                IdleBehavior.DISPLAY_ON
+                IdleBehavior.DISPLAY_OFF_SLEEP,
+                IdleBehavior.DISPLAY_OFF,
+                IdleBehavior.DISPLAY_ON,
               ],
               [
-                IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                IdleBehavior.DISPLAY_ON
+                IdleBehavior.DISPLAY_OFF_SLEEP,
+                IdleBehavior.DISPLAY_OFF,
+                IdleBehavior.DISPLAY_ON,
               ],
               IdleBehavior.DISPLAY_OFF, IdleBehavior.DISPLAY_OFF,
               false /* acIdleManaged */, false /* batteryIdleManaged */,
               lidBehavior, false /* lidClosedControlled */, true /* hasLid */,
-              false /* adaptiveCharging */);
+              false /* adaptiveCharging */,
+              false /* adaptiveChargingManaged */);
         };
 
         sendLid(LidClosedBehavior.SUSPEND);
@@ -1616,7 +2190,8 @@ suite('SettingsDevicePage', function() {
                      true /* acIdleManaged */, true /* batteryIdleManaged */,
                      LidClosedBehavior.DO_NOTHING,
                      false /* lidClosedControlled */, true /* hasLid */,
-                     false /* adaptiveCharging */);
+                     false /* adaptiveCharging */,
+                     false /* adaptiveChargingManaged */);
                  powerPage.async(resolve);
                })
             .then(function() {
@@ -1638,12 +2213,13 @@ suite('SettingsDevicePage', function() {
               });
             })
             .then(function() {
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               assertEquals(
                   IdleBehavior.SHUT_DOWN.toString(), batteryIdleSelect.value);
               assertFalse(batteryIdleSelect.disabled);
-              const acIdleSelect = assert(powerPage.$$('#acIdleSelect'));
+              const acIdleSelect =
+                  assert(powerPage.shadowRoot.querySelector('#acIdleSelect'));
               assertEquals(
                   IdleBehavior.SHUT_DOWN.toString(), acIdleSelect.value);
               assertFalse(acIdleSelect.disabled);
@@ -1672,18 +2248,20 @@ suite('SettingsDevicePage', function() {
                   IdleBehavior.SHUT_DOWN, IdleBehavior.SHUT_DOWN,
                   true /* acIdleManaged */, true /* batteryIdleManaged */,
                   LidClosedBehavior.DO_NOTHING, false /* lidClosedControlled */,
-                  true /* hasLid */, false /* adaptiveCharging */);
+                  true /* hasLid */, false /* adaptiveCharging */,
+                  false /* adaptiveChargingManaged */);
               return new Promise(function(resolve) {
                 powerPage.async(resolve);
               });
             })
             .then(function() {
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               assertEquals(
                   IdleBehavior.SHUT_DOWN.toString(), batteryIdleSelect.value);
               assertFalse(batteryIdleSelect.disabled);
-              const acIdleSelect = assert(powerPage.$$('#acIdleSelect'));
+              const acIdleSelect =
+                  assert(powerPage.shadowRoot.querySelector('#acIdleSelect'));
               assertEquals(
                   IdleBehavior.SHUT_DOWN.toString(), acIdleSelect.value);
               assertFalse(acIdleSelect.disabled);
@@ -1699,18 +2277,21 @@ suite('SettingsDevicePage', function() {
                  // Send power management settings first.
                  sendPowerManagementSettings(
                      [
-                       IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                       IdleBehavior.DISPLAY_ON
+                       IdleBehavior.DISPLAY_OFF_SLEEP,
+                       IdleBehavior.DISPLAY_OFF,
+                       IdleBehavior.DISPLAY_ON,
                      ],
                      [
-                       IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                       IdleBehavior.DISPLAY_ON
+                       IdleBehavior.DISPLAY_OFF_SLEEP,
+                       IdleBehavior.DISPLAY_OFF,
+                       IdleBehavior.DISPLAY_ON,
                      ],
                      IdleBehavior.DISPLAY_ON, IdleBehavior.DISPLAY_OFF,
                      false /* acIdleManaged */, false /* batteryIdleManaged */,
                      LidClosedBehavior.DO_NOTHING,
                      false /* lidClosedControlled */, true /* hasLid */,
-                     false /* adaptiveCharging */);
+                     false /* adaptiveCharging */,
+                     false /* adaptiveChargingManaged */);
                  powerPage.async(resolve);
                })
             .then(function() {
@@ -1732,15 +2313,19 @@ suite('SettingsDevicePage', function() {
               });
             })
             .then(function() {
-              acIdleSelect = assert(powerPage.$$('#acIdleSelect'));
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              acIdleSelect =
+                  assert(powerPage.shadowRoot.querySelector('#acIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               assertEquals(
                   IdleBehavior.DISPLAY_ON.toString(), acIdleSelect.value);
               assertEquals(
                   IdleBehavior.DISPLAY_OFF.toString(), batteryIdleSelect.value);
               assertFalse(acIdleSelect.disabled);
-              assertEquals(null, powerPage.$$('#acIdleManagedIndicator'));
+              assertEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#acIdleManagedIndicator'));
               assertEquals(
                   loadTimeData.getString('powerLidSleepLabel'),
                   lidClosedToggle.label);
@@ -1750,32 +2335,41 @@ suite('SettingsDevicePage', function() {
             .then(function() {
               sendPowerManagementSettings(
                   [
-                    IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                    IdleBehavior.DISPLAY_ON
+                    IdleBehavior.DISPLAY_OFF_SLEEP,
+                    IdleBehavior.DISPLAY_OFF,
+                    IdleBehavior.DISPLAY_ON,
                   ],
                   [
-                    IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                    IdleBehavior.DISPLAY_ON
+                    IdleBehavior.DISPLAY_OFF_SLEEP,
+                    IdleBehavior.DISPLAY_OFF,
+                    IdleBehavior.DISPLAY_ON,
                   ],
                   IdleBehavior.DISPLAY_OFF, IdleBehavior.DISPLAY_ON,
                   false /* acIdleManaged */, false /* batteryIdleManaged */,
                   LidClosedBehavior.SUSPEND, false /* lidClosedControlled */,
-                  true /* hasLid */, false /* adaptiveCharging */);
+                  true /* hasLid */, false /* adaptiveCharging */,
+                  false /* adaptiveChargingManaged */);
               return new Promise(function(resolve) {
                 powerPage.async(resolve);
               });
             })
             .then(function() {
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               assertEquals(
                   IdleBehavior.DISPLAY_OFF.toString(), acIdleSelect.value);
               assertEquals(
                   IdleBehavior.DISPLAY_ON.toString(), batteryIdleSelect.value);
               assertFalse(acIdleSelect.disabled);
               assertFalse(batteryIdleSelect.disabled);
-              assertEquals(null, powerPage.$$('#acIdleManagedIndicator'));
-              assertEquals(null, powerPage.$$('#batteryIdleManagedIndicator'));
+              assertEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#acIdleManagedIndicator'));
+              assertEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#batteryIdleManagedIndicator'));
               assertEquals(
                   loadTimeData.getString('powerLidSleepLabel'),
                   lidClosedToggle.label);
@@ -1806,22 +2400,29 @@ suite('SettingsDevicePage', function() {
                      true /* acIdleManaged */, true /* batteryIdleManaged */,
                      LidClosedBehavior.SHUT_DOWN,
                      true /* lidClosedControlled */, true /* hasLid */,
-                     false /* adaptiveCharging */);
+                     false /* adaptiveCharging */,
+                     false /* adaptiveChargingManaged */);
                  powerPage.async(resolve);
                })
             .then(function() {
-              acIdleSelect = assert(powerPage.$$('#acIdleSelect'));
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              acIdleSelect =
+                  assert(powerPage.shadowRoot.querySelector('#acIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               assertEquals(
                   IdleBehavior.SHUT_DOWN.toString(), acIdleSelect.value);
               assertEquals(
                   IdleBehavior.SHUT_DOWN.toString(), batteryIdleSelect.value);
               assertTrue(acIdleSelect.disabled);
               assertTrue(batteryIdleSelect.disabled);
-              expectNotEquals(null, powerPage.$$('#acIdleManagedIndicator'));
-              expectNotEquals(
-                  null, powerPage.$$('#batteryIdleManagedIndicator'));
+              assertNotEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#acIdleManagedIndicator'));
+              assertNotEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#batteryIdleManagedIndicator'));
               assertEquals(
                   loadTimeData.getString('powerLidShutDownLabel'),
                   lidClosedToggle.label);
@@ -1835,22 +2436,29 @@ suite('SettingsDevicePage', function() {
                   false /* acIdleManaged */, false /* batteryIdleManaged */,
                   LidClosedBehavior.STOP_SESSION,
                   true /* lidClosedControlled */, true /* hasLid */,
-                  false /* adaptiveCharging */);
+                  false /* adaptiveCharging */,
+                  false /* adaptiveChargingManaged */);
               return new Promise(function(resolve) {
                 powerPage.async(resolve);
               });
             })
             .then(function() {
-              const batteryIdleSelect =
-                  assert(powerPage.$$('#batteryIdleSelect'));
+              const batteryIdleSelect = assert(
+                  powerPage.shadowRoot.querySelector('#batteryIdleSelect'));
               assertEquals(
                   IdleBehavior.DISPLAY_OFF.toString(), acIdleSelect.value);
               assertEquals(
                   IdleBehavior.DISPLAY_OFF.toString(), batteryIdleSelect.value);
               assertTrue(acIdleSelect.disabled);
               assertTrue(batteryIdleSelect.disabled);
-              assertEquals(null, powerPage.$$('#acIdleManagedIndicator'));
-              assertEquals(null, powerPage.$$('#batteryIdleManagedIndicator'));
+              assertEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#acIdleManagedIndicator'));
+              assertEquals(
+                  null,
+                  powerPage.shadowRoot.querySelector(
+                      '#batteryIdleManagedIndicator'));
               assertEquals(
                   loadTimeData.getString('powerLidSignOutLabel'),
                   lidClosedToggle.label);
@@ -1861,25 +2469,31 @@ suite('SettingsDevicePage', function() {
 
       test('hide lid behavior when lid not present', function() {
         return new Promise(function(resolve) {
-                 assertFalse(powerPage.$$('#lidClosedToggle').hidden);
+                 assertFalse(
+                     powerPage.shadowRoot.querySelector('#lidClosedToggle')
+                         .hidden);
                  sendPowerManagementSettings(
                      [
-                       IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                       IdleBehavior.DISPLAY_ON
+                       IdleBehavior.DISPLAY_OFF_SLEEP,
+                       IdleBehavior.DISPLAY_OFF,
+                       IdleBehavior.DISPLAY_ON,
                      ],
                      [
-                       IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF,
-                       IdleBehavior.DISPLAY_ON
+                       IdleBehavior.DISPLAY_OFF_SLEEP,
+                       IdleBehavior.DISPLAY_OFF,
+                       IdleBehavior.DISPLAY_ON,
                      ],
                      IdleBehavior.DISPLAY_OFF_SLEEP,
                      IdleBehavior.DISPLAY_OFF_SLEEP, false /* acIdleManaged */,
                      false /* batteryIdleManaged */, LidClosedBehavior.SUSPEND,
                      false /* lidClosedControlled */, false /* hasLid */,
-                     false /* adaptiveCharging */);
+                     false /* adaptiveCharging */,
+                     false /* adaptiveChargingManaged */);
                  powerPage.async(resolve);
                })
             .then(function() {
-              assertTrue(powerPage.$$('#lidClosedToggle').hidden);
+              assertTrue(powerPage.shadowRoot.querySelector('#lidClosedToggle')
+                             .hidden);
             });
       });
 
@@ -1901,7 +2515,10 @@ suite('SettingsDevicePage', function() {
                      powerPage.async(resolve);
                    })
                 .then(function() {
-                  assertEquals(null, powerPage.$$('#batteryIdleSettingBox'));
+                  assertEquals(
+                      null,
+                      powerPage.shadowRoot.querySelector(
+                          '#batteryIdleSettingBox'));
                 });
           });
 
@@ -1910,6 +2527,36 @@ suite('SettingsDevicePage', function() {
             routes.POWER, '424',
             lidClosedToggle.shadowRoot.querySelector('cr-toggle'),
             'Sleep when closed toggle');
+      });
+
+      test('Adaptive charging controlled by policy', async () => {
+        sendPowerManagementSettings(
+            [
+              IdleBehavior.DISPLAY_OFF_SLEEP,
+              IdleBehavior.DISPLAY_OFF,
+              IdleBehavior.DISPLAY_ON,
+            ],
+            [
+              IdleBehavior.DISPLAY_OFF_SLEEP,
+              IdleBehavior.DISPLAY_OFF,
+              IdleBehavior.DISPLAY_ON,
+            ],
+            IdleBehavior.DISPLAY_OFF_SLEEP, IdleBehavior.DISPLAY_OFF_SLEEP,
+            false /* acIdleManaged */, false /* batteryIdleManaged */,
+            LidClosedBehavior.SUSPEND, false /* lidClosedControlled */,
+            true /* hasLid */, true /* adaptiveCharging */,
+            true /* adaptiveCharingManaged */);
+
+        assertTrue(adaptiveChargingToggle.shadowRoot.querySelector('cr-toggle')
+                       .checked);
+
+        // Must have policy icon.
+        assertTrue(isVisible(adaptiveChargingToggle.shadowRoot.querySelector(
+            'cr-policy-pref-indicator')));
+
+        // Must have toggle locked.
+        assertTrue(adaptiveChargingToggle.shadowRoot.querySelector('cr-toggle')
+                       .disabled);
       });
 
       test('Deep link to adaptive charging', async () => {
@@ -1938,14 +2585,15 @@ suite('SettingsDevicePage', function() {
       });
     });
 
-    setup(function() {
+    setup(async function() {
+      await init();
       return showAndGetDeviceSubpage('stylus', routes.STYLUS)
           .then(function(page) {
             stylusPage = page;
             browserProxy = DevicePageBrowserProxyImpl.getInstance();
-            appSelector = assert(page.$$('#selectApp'));
-            noAppsDiv = assert(page.$$('#no-apps'));
-            waitingDiv = assert(page.$$('#waiting'));
+            appSelector = assert(page.shadowRoot.querySelector('#selectApp'));
+            noAppsDiv = assert(page.shadowRoot.querySelector('#no-apps'));
+            waitingDiv = assert(page.shadowRoot.querySelector('#waiting'));
             LockScreenSupport = NoteAppLockScreenSupport;
 
             assertEquals(1, browserProxy.requestNoteTakingApps_);
@@ -1959,33 +2607,37 @@ suite('SettingsDevicePage', function() {
         name: name,
         value: value,
         preferred: preferred,
-        lockScreenSupport: lockScreenSupport
+        lockScreenSupport: lockScreenSupport,
       };
     }
 
     /**  @return {?Element} */
     function noteTakingAppLockScreenSettings() {
-      return stylusPage.$$('#note-taking-app-lock-screen-settings');
+      return stylusPage.shadowRoot.querySelector(
+          '#note-taking-app-lock-screen-settings');
     }
 
     /** @return {?Element} */
     function enableAppOnLockScreenToggle() {
-      return stylusPage.$$('#enable-app-on-lock-screen-toggle');
+      return stylusPage.shadowRoot.querySelector(
+          '#enable-app-on-lock-screen-toggle');
     }
 
     /** @return {?Element} */
     function enableAppOnLockScreenPolicyIndicator() {
-      return stylusPage.$$('#enable-app-on-lock-screen-policy-indicator');
+      return stylusPage.shadowRoot.querySelector(
+          '#enable-app-on-lock-screen-policy-indicator');
     }
 
     /** @return {?Element} */
     function enableAppOnLockScreenToggleLabel() {
-      return stylusPage.$$('#lock-screen-toggle-label');
+      return stylusPage.shadowRoot.querySelector('#lock-screen-toggle-label');
     }
 
     /** @return {?Element} */
     function keepLastNoteOnLockScreenToggle() {
-      return stylusPage.$$('#keep-last-note-on-lock-screen-toggle');
+      return stylusPage.shadowRoot.querySelector(
+          '#keep-last-note-on-lock-screen-toggle');
     }
 
     test('stylus tools prefs', function() {
@@ -1996,19 +2648,26 @@ suite('SettingsDevicePage', function() {
 
       // Since both prefs are initially false, the launch palette on eject pref
       // toggle is disabled.
-      assertTrue(isVisible(stylusPage.$$('#enableStylusToolsToggle')));
-      assertTrue(isVisible(stylusPage.$$('#launchPaletteOnEjectEventToggle')));
-      assertTrue(stylusPage.$$('#launchPaletteOnEjectEventToggle').disabled);
+      assertTrue(isVisible(
+          stylusPage.shadowRoot.querySelector('#enableStylusToolsToggle')));
+      assertTrue(isVisible(stylusPage.shadowRoot.querySelector(
+          '#launchPaletteOnEjectEventToggle')));
+      assertTrue(stylusPage.shadowRoot
+                     .querySelector('#launchPaletteOnEjectEventToggle')
+                     .disabled);
       assertFalse(devicePage.prefs.settings.enable_stylus_tools.value);
       assertFalse(
           devicePage.prefs.settings.launch_palette_on_eject_event.value);
 
       // Tapping the enable stylus tools pref causes the launch palette on
       // eject pref toggle to not be disabled anymore.
-      stylusPage.$$('#enableStylusToolsToggle').click();
+      stylusPage.shadowRoot.querySelector('#enableStylusToolsToggle').click();
       assertTrue(devicePage.prefs.settings.enable_stylus_tools.value);
-      assertFalse(stylusPage.$$('#launchPaletteOnEjectEventToggle').disabled);
-      stylusPage.$$('#launchPaletteOnEjectEventToggle').click();
+      assertFalse(stylusPage.shadowRoot
+                      .querySelector('#launchPaletteOnEjectEventToggle')
+                      .disabled);
+      stylusPage.shadowRoot.querySelector('#launchPaletteOnEjectEventToggle')
+          .click();
       assertTrue(devicePage.prefs.settings.launch_palette_on_eject_event.value);
     });
 
@@ -2017,7 +2676,7 @@ suite('SettingsDevicePage', function() {
       // value set.
       browserProxy.setNoteTakingApps([
         entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-        entry('n2', 'v2', false, LockScreenSupport.NOT_SUPPORTED)
+        entry('n2', 'v2', false, LockScreenSupport.NOT_SUPPORTED),
       ]);
       flush();
       assertEquals('v1', appSelector.value);
@@ -2027,7 +2686,7 @@ suite('SettingsDevicePage', function() {
       // Selector chooses the preferred value if set.
       browserProxy.setNoteTakingApps([
         entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-        entry('n2', 'v2', true, LockScreenSupport.NOT_SUPPORTED)
+        entry('n2', 'v2', true, LockScreenSupport.NOT_SUPPORTED),
       ]);
       flush();
       assertEquals('v2', appSelector.value);
@@ -2037,7 +2696,7 @@ suite('SettingsDevicePage', function() {
       // Load app list.
       browserProxy.setNoteTakingApps([
         entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-        entry('n2', 'v2', true, LockScreenSupport.NOT_SUPPORTED)
+        entry('n2', 'v2', true, LockScreenSupport.NOT_SUPPORTED),
       ]);
       flush();
       assertEquals(0, browserProxy.setPreferredAppCount_);
@@ -2068,7 +2727,7 @@ suite('SettingsDevicePage', function() {
 
       browserProxy.setNoteTakingApps([
         entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-        entry('n2', 'v2', true, LockScreenSupport.NOT_SUPPORTED)
+        entry('n2', 'v2', true, LockScreenSupport.NOT_SUPPORTED),
       ]);
       flush();
       assertEquals(0, browserProxy.setPreferredAppCount_);
@@ -2078,12 +2737,13 @@ suite('SettingsDevicePage', function() {
     test('Deep link to preferred app', async () => {
       browserProxy.setNoteTakingApps([
         entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-        entry('n2', 'v2', false, LockScreenSupport.NOT_SUPPORTED)
+        entry('n2', 'v2', false, LockScreenSupport.NOT_SUPPORTED),
       ]);
       browserProxy.setAndroidAppsReceived(true);
 
       return checkDeepLink(
-          routes.STYLUS, '417', stylusPage.$$('#selectApp'),
+          routes.STYLUS, '417',
+          stylusPage.shadowRoot.querySelector('#selectApp'),
           'Note-taking apps dropdown');
     });
 
@@ -2181,7 +2841,7 @@ suite('SettingsDevicePage', function() {
             // Preferred app updated to be enabled on lock screen.
             browserProxy.setNoteTakingApps([
               entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-              entry('n2', 'v2', true, LockScreenSupport.ENABLED)
+              entry('n2', 'v2', true, LockScreenSupport.ENABLED),
             ]);
             return new Promise(function(resolve) {
               stylusPage.async(resolve);
@@ -2409,7 +3069,7 @@ suite('SettingsDevicePage', function() {
       return new Promise(function(resolve) {
                browserProxy.setNoteTakingApps([
                  entry('n1', 'v1', true, LockScreenSupport.NOT_SUPPORTED),
-                 entry('n2', 'v2', false, LockScreenSupport.SUPPORTED)
+                 entry('n2', 'v2', false, LockScreenSupport.SUPPORTED),
                ]);
                stylusPage.async(resolve);
              })
@@ -2420,7 +3080,7 @@ suite('SettingsDevicePage', function() {
 
             browserProxy.setNoteTakingApps([
               entry('n1', 'v1', false, LockScreenSupport.NOT_SUPPORTED),
-              entry('n2', 'v2', true, LockScreenSupport.SUPPORTED)
+              entry('n2', 'v2', true, LockScreenSupport.SUPPORTED),
             ]);
             return new Promise(function(resolve) {
               stylusPage.async(resolve);
@@ -2459,6 +3119,22 @@ suite('SettingsDevicePage', function() {
             assertTrue(keepLastNoteOnLockScreenToggle().checked);
           });
     });
+
+    test(
+        'Clicking "Find more stylus apps" button should open Google Play',
+        async () => {
+          const findMoreAppsLink =
+              stylusPage.shadowRoot.querySelector('#findMoreAppsLink');
+          assertTrue(
+              !!findMoreAppsLink, 'Find more apps link element does not exist');
+          assertFalse(findMoreAppsLink.hidden, 'Find more apps link is hidden');
+
+          findMoreAppsLink.click();
+          const url = await browserProxy.whenCalled('showPlayStore');
+          const expectedUrl =
+              'https://play.google.com/store/apps/collection/promotion_30023cb_stylus_apps';
+          assertEquals(expectedUrl, url);
+        });
   });
 
   suite(assert(TestNames.Storage), function() {
@@ -2488,7 +3164,7 @@ suite('SettingsDevicePage', function() {
      * @return {string}
      */
     function getStorageItemLabelFromId(id) {
-      const rowItem = storagePage.$$('#' + id).shadowRoot;
+      const rowItem = storagePage.shadowRoot.querySelector('#' + id).shadowRoot;
       return rowItem.querySelector('#label').innerText;
     }
 
@@ -2497,7 +3173,7 @@ suite('SettingsDevicePage', function() {
      * @return {string}
      */
     function getStorageItemSubLabelFromId(id) {
-      const rowItem = storagePage.$$('#' + id).shadowRoot;
+      const rowItem = storagePage.shadowRoot.querySelector('#' + id).shadowRoot;
       return rowItem.querySelector('#subLabel').innerText;
     }
 
@@ -2506,7 +3182,8 @@ suite('SettingsDevicePage', function() {
       testing.Test.disableAnimationsAndTransitions();
     });
 
-    setup(function() {
+    setup(async function() {
+      await init();
       return showAndGetDeviceSubpage('storage', routes.STORAGE)
           .then(function(page) {
             storagePage = page;
@@ -2519,10 +3196,13 @@ suite('SettingsDevicePage', function() {
       sendStorageSizeStat('9.1 GB', '0.9 GB', 0.91, StorageSpaceState.LOW);
       assertEquals('91%', storagePage.$.inUseLabelArea.style.width);
       assertEquals('9%', storagePage.$.availableLabelArea.style.width);
-      assertTrue(isVisible(storagePage.$$('#lowMessage')));
-      assertFalse(isVisible(storagePage.$$('#criticallyLowMessage')));
-      assertTrue(!!storagePage.$$('#bar.space-low'));
-      assertFalse(!!storagePage.$$('#bar.space-critically-low'));
+      assertTrue(
+          isVisible(storagePage.shadowRoot.querySelector('#lowMessage')));
+      assertFalse(isVisible(
+          storagePage.shadowRoot.querySelector('#criticallyLowMessage')));
+      assertTrue(!!storagePage.shadowRoot.querySelector('#bar.space-low'));
+      assertFalse(
+          !!storagePage.shadowRoot.querySelector('#bar.space-critically-low'));
       assertEquals(
           '9.1 GB',
           storagePage.$.inUseLabelArea.querySelector('.storage-size')
@@ -2537,10 +3217,13 @@ suite('SettingsDevicePage', function() {
           '9.7 GB', '0.3 GB', 0.97, StorageSpaceState.CRITICALLY_LOW);
       assertEquals('97%', storagePage.$.inUseLabelArea.style.width);
       assertEquals('3%', storagePage.$.availableLabelArea.style.width);
-      assertFalse(isVisible(storagePage.$$('#lowMessage')));
-      assertTrue(isVisible(storagePage.$$('#criticallyLowMessage')));
-      assertFalse(!!storagePage.$$('#bar.space-low'));
-      assertTrue(!!storagePage.$$('#bar.space-critically-low'));
+      assertFalse(
+          isVisible(storagePage.shadowRoot.querySelector('#lowMessage')));
+      assertTrue(isVisible(
+          storagePage.shadowRoot.querySelector('#criticallyLowMessage')));
+      assertFalse(!!storagePage.shadowRoot.querySelector('#bar.space-low'));
+      assertTrue(
+          !!storagePage.shadowRoot.querySelector('#bar.space-critically-low'));
       assertEquals(
           '9.7 GB',
           storagePage.$.inUseLabelArea.querySelector('.storage-size')
@@ -2554,10 +3237,13 @@ suite('SettingsDevicePage', function() {
       sendStorageSizeStat('2.5 GB', '7.5 GB', 0.25, StorageSpaceState.NORMAL);
       assertEquals('25%', storagePage.$.inUseLabelArea.style.width);
       assertEquals('75%', storagePage.$.availableLabelArea.style.width);
-      assertFalse(isVisible(storagePage.$$('#lowMessage')));
-      assertFalse(isVisible(storagePage.$$('#criticallyLowMessage')));
-      assertFalse(!!storagePage.$$('#bar.space-low'));
-      assertFalse(!!storagePage.$$('#bar.space-critically-low'));
+      assertFalse(
+          isVisible(storagePage.shadowRoot.querySelector('#lowMessage')));
+      assertFalse(isVisible(
+          storagePage.shadowRoot.querySelector('#criticallyLowMessage')));
+      assertFalse(!!storagePage.shadowRoot.querySelector('#bar.space-low'));
+      assertFalse(
+          !!storagePage.shadowRoot.querySelector('#bar.space-critically-low'));
       assertEquals(
           '2.5 GB',
           storagePage.$.inUseLabelArea.querySelector('.storage-size')
@@ -2569,19 +3255,27 @@ suite('SettingsDevicePage', function() {
     });
 
     test('system size', async function() {
-      assertEquals('System', storagePage.$$('#systemSizeLabel').innerText);
       assertEquals(
-          'Calculating…', storagePage.$$('#systemSizeSubLabel').innerText);
+          'System',
+          storagePage.shadowRoot.querySelector('#systemSizeLabel').innerText);
+      assertEquals(
+          'Calculating…',
+          storagePage.shadowRoot.querySelector('#systemSizeSubLabel')
+              .innerText);
 
       // Send system size callback.
       webUIListenerCallback('storage-system-size-changed', '8.4 GB');
       flush();
-      assertEquals('8.4 GB', storagePage.$$('#systemSizeSubLabel').innerText);
+      assertEquals(
+          '8.4 GB',
+          storagePage.shadowRoot.querySelector('#systemSizeSubLabel')
+              .innerText);
 
       // In guest mode, the system row should be hidden.
       storagePage.isGuest_ = true;
       flush();
-      assertFalse(isVisible(storagePage.$$('#systemSize')));
+      assertFalse(
+          isVisible(storagePage.shadowRoot.querySelector('#systemSize')));
     });
 
     test('apps extensions size', async function() {
@@ -2598,7 +3292,8 @@ suite('SettingsDevicePage', function() {
     test('other users size', async function() {
       // The other users row is visible by default, displaying
       // "calculating...".
-      assertTrue(isVisible(storagePage.$$('#otherUsersSize')));
+      assertTrue(
+          isVisible(storagePage.shadowRoot.querySelector('#otherUsersSize')));
       assertEquals('Other users', getStorageItemLabelFromId('otherUsersSize'));
       assertEquals(
           'Calculating…', getStorageItemSubLabelFromId('otherUsersSize'));
@@ -2606,13 +3301,15 @@ suite('SettingsDevicePage', function() {
       // Simulate absence of other users.
       webUIListenerCallback('storage-other-users-size-changed', '0 B', true);
       flush();
-      assertFalse(isVisible(storagePage.$$('#otherUsersSize')));
+      assertFalse(
+          isVisible(storagePage.shadowRoot.querySelector('#otherUsersSize')));
 
       // Send other users callback with a size that is not null.
       webUIListenerCallback(
           'storage-other-users-size-changed', '322 MB', false);
       flush();
-      assertTrue(isVisible(storagePage.$$('#otherUsersSize')));
+      assertTrue(
+          isVisible(storagePage.shadowRoot.querySelector('#otherUsersSize')));
       assertEquals('322 MB', getStorageItemSubLabelFromId('otherUsersSize'));
 
       // If the user is in Guest mode, the row is not visible.
@@ -2620,7 +3317,8 @@ suite('SettingsDevicePage', function() {
       webUIListenerCallback(
           'storage-other-users-size-changed', '322 MB', false);
       flush();
-      assertFalse(isVisible(storagePage.$$('#otherUsersSize')));
+      assertFalse(
+          isVisible(storagePage.shadowRoot.querySelector('#otherUsersSize')));
     });
   });
 });

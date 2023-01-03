@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/containers/contains.h"
+#include "base/memory/raw_ptr.h"
 #include "base/process/process.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/chromeos_buildflags.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_tab_helper.h"
@@ -34,11 +36,28 @@
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/lacros/lacros_extensions_util.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_lacros.h"
 #endif
 
 namespace apps {
 
 namespace {
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+bool HaveSameWindowTreeHostLacros(aura::Window* window1,
+                                  aura::Window* window2) {
+  if (window1 == nullptr || window2 == nullptr) {
+    return false;
+  }
+  auto* host1 = views::DesktopWindowTreeHostLacros::From(window1->GetHost());
+  auto* host2 = views::DesktopWindowTreeHostLacros::From(window2->GetHost());
+  if (host1 == nullptr || host2 == nullptr) {
+    return false;
+  } else {
+    return host1 == host2;
+  }
+}
+#endif
 
 Browser* GetBrowserWithTabStripModel(TabStripModel* tab_strip_model) {
   for (auto* browser : *BrowserList::GetInstance()) {
@@ -54,6 +73,11 @@ Browser* GetBrowserWithAuraWindow(aura::Window* aura_window) {
     if (window && window->GetNativeWindow() == aura_window) {
       return browser;
     }
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+    if (HaveSameWindowTreeHostLacros(window->GetNativeWindow(), aura_window)) {
+      return browser;
+    }
+#endif
   }
   return nullptr;
 }
@@ -76,7 +100,12 @@ wm::ActivationClient* ActivationClientForBrowser(Browser* browser) {
 bool IsBrowserActive(Browser* browser) {
   auto* aura_window = AuraWindowForBrowser(browser);
   auto* activation_client = ActivationClientForBrowser(browser);
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  return HaveSameWindowTreeHostLacros(aura_window,
+                                      activation_client->GetActiveWindow());
+#else
   return activation_client->GetActiveWindow() == aura_window;
+#endif
 }
 
 bool IsWebContentsActive(Browser* browser, content::WebContents* contents) {
@@ -172,7 +201,7 @@ class BrowserAppInstanceTracker::WebContentsObserver
   }
 
  private:
-  BrowserAppInstanceTracker* const owner_;
+  const raw_ptr<BrowserAppInstanceTracker> owner_;
 };
 
 BrowserAppInstanceTracker::BrowserAppInstanceTracker(
@@ -250,7 +279,7 @@ void BrowserAppInstanceTracker::StopInstancesOfApp(const std::string& app_id) {
     int index = browser->tab_strip_model()->GetIndexOfWebContents(web_contents);
     DCHECK(index != TabStripModel::kNoTab);
     browser->tab_strip_model()->CloseWebContentsAt(index,
-                                                   TabStripModel::CLOSE_NONE);
+                                                   TabCloseTypes::CLOSE_NONE);
   }
 
   // Handle app windows.

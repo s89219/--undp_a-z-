@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -351,7 +351,7 @@ MediaAppUIBrowserTest.ReLaunchableAfterFastLoad = async () => {
 MediaAppUIBrowserTest.MultipleFilesHaveTokens = async () => {
   const directory = await launchWithFiles([
     await createTestImageFile(1, 1, 'file1.png'),
-    await createTestImageFile(1, 1, 'file2.png')
+    await createTestImageFile(1, 1, 'file2.png'),
   ]);
 
   assertEquals(currentFiles.length, 2);
@@ -386,7 +386,8 @@ MediaAppUIBrowserTest.MultipleSelectionLaunch = async () => {
   assertFilenamesToBe('1.png,3.png');
 };
 
-MediaAppUIBrowserTest.NotifyCurrentFile = async () => {
+// Test that each file type has an icon in light mode.
+MediaAppUIBrowserTest.NotifyCurrentFileLight = async () => {
   const imageFile = new File([], 'image.png', {type: 'image/png'});
   const audioFile = new File([], 'audio.wav', {type: 'audio/wav'});
   const videoFile = new File([], 'video.mp4', {type: 'video/mp4'});
@@ -409,7 +410,45 @@ MediaAppUIBrowserTest.NotifyCurrentFile = async () => {
 
     assertEquals(getTitle().innerText, expectedTitle);
     assertEquals(getIcon().href.includes(expectedIconType), true);
+    assertEquals(getIcon().href.includes('dark'), false);
   }
+};
+
+// Test that each file type has a corresponding dark icon.
+MediaAppUIBrowserTest.NotifyCurrentFileDark = async () => {
+  const imageFile = new File([], 'image.png', {type: 'image/png'});
+  const audioFile = new File([], 'audio.wav', {type: 'audio/wav'});
+  const videoFile = new File([], 'video.mp4', {type: 'video/mp4'});
+  const pdfFile = new File([], 'form.pdf', {type: 'application/pdf'});
+  const unknownFile = new File([], 'foo.xyz', {type: 'unknown/unknown'});
+
+  const TEST_CASES = [
+    {file: imageFile, expectedIconType: 'image'},
+    {file: audioFile, expectedIconType: 'audio'},
+    {file: videoFile, expectedIconType: 'video'},
+    {file: unknownFile, expectedIconType: 'file'},
+    {file: pdfFile, expectedIconType: 'pdf'},
+  ];
+  for (const {file, expectedIconType} of TEST_CASES) {
+    const name = file ? file.name : undefined;
+    const type = file ? file.type : undefined;
+    await sendTestMessage(
+        {simple: 'notifyCurrentFile', simpleArgs: {name, type}});
+
+    assertEquals(getIcon().href.includes(expectedIconType), true);
+    assertEquals(getIcon().href.includes('dark'), true);
+  }
+};
+
+// Test that the Gallery app icon does not have a dark variant.
+MediaAppUIBrowserTest.NotifyCurrentFileAppIconDark = async () => {
+  await sendTestMessage({
+    simple: 'notifyCurrentFile',
+    simpleArgs: {name: undefined, type: undefined},
+  });
+
+  assertEquals(getIcon().href.includes('app'), true);
+  assertEquals(getIcon().href.includes('dark'), false);
 };
 
 // Tests that we show error UX when trying to launch an unopenable file.
@@ -985,7 +1024,7 @@ MediaAppUIBrowserTest.NavigateOutOfSync = async () => {
 MediaAppUIBrowserTest.RenameOriginalIPC = async () => {
   const directory = await launchWithFiles([
     await createTestImageFile(1, 1, 'file1.png'),
-    await createTestImageFile(1, 1, 'file2.png')
+    await createTestImageFile(1, 1, 'file2.png'),
   ]);
 
   // Nothing should be deleted initially.

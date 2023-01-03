@@ -1,13 +1,13 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // clang-format off
 import 'chrome://settings/settings.js';
 
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import { FontsBrowserProxy, FontsBrowserProxyImpl, FontsData,SettingsAppearanceFontsPageElement} from 'chrome://settings/lazy_load.js';
+import {FontsBrowserProxy, FontsBrowserProxyImpl, FontsData,SettingsAppearanceFontsPageElement} from 'chrome://settings/lazy_load.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
@@ -39,7 +39,7 @@ let fontsBrowserProxy: TestFontsBrowserProxy;
 suite('AppearanceFontHandler', function() {
   suiteSetup(function() {
     loadTimeData.overrideValues({
-      enableExperimentalWebPlatformFeatures: true,
+      enableMathMLCore: true,
     });
   });
 
@@ -47,7 +47,7 @@ suite('AppearanceFontHandler', function() {
     fontsBrowserProxy = new TestFontsBrowserProxy();
     FontsBrowserProxyImpl.setInstance(fontsBrowserProxy);
 
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     fontsPage = document.createElement('settings-appearance-fonts-page');
     document.body.appendChild(fontsPage);
@@ -67,9 +67,9 @@ suite('AppearanceFontHandler', function() {
       webkit: {
         webprefs: {
           minimum_font_size:
-              {value: 0, type: chrome.settingsPrivate.PrefType.NUMBER}
-        }
-      }
+              {value: 0, type: chrome.settingsPrivate.PrefType.NUMBER},
+        },
+      },
     };
     assertTrue(fontsPage.$.minimumSizeFontPreview.hidden);
     fontsPage.set('prefs.webkit.webprefs.minimum_font_size.value', 6);
@@ -97,8 +97,8 @@ suite('AppearanceFontHandler', function() {
               {value: 20, type: chrome.settingsPrivate.PrefType.NUMBER},
           default_fixed_font_size:
               {value: 10, type: chrome.settingsPrivate.PrefType.NUMBER},
-        }
-      }
+        },
+      },
     };
 
     assertFontSize(fontsPage.$.standardFontPreview, 20);
@@ -127,36 +127,36 @@ suite('AppearanceFontHandler', function() {
             standard: {
               Zyyy: {
                 value: 'custom_standard',
-                type: chrome.settingsPrivate.PrefType.STRING
-              }
+                type: chrome.settingsPrivate.PrefType.STRING,
+              },
             },
             serif: {
               Zyyy: {
                 value: 'custom_serif',
-                type: chrome.settingsPrivate.PrefType.STRING
-              }
+                type: chrome.settingsPrivate.PrefType.STRING,
+              },
             },
             sansserif: {
               Zyyy: {
                 value: 'custom_sansserif',
-                type: chrome.settingsPrivate.PrefType.STRING
-              }
+                type: chrome.settingsPrivate.PrefType.STRING,
+              },
             },
             fixed: {
               Zyyy: {
                 value: 'custom_fixed',
-                type: chrome.settingsPrivate.PrefType.STRING
-              }
+                type: chrome.settingsPrivate.PrefType.STRING,
+              },
             },
             math: {
               Zyyy: {
                 value: 'custom_math',
-                type: chrome.settingsPrivate.PrefType.STRING
-              }
+                type: chrome.settingsPrivate.PrefType.STRING,
+              },
             },
-          }
-        }
-      }
+          },
+        },
+      },
     };
 
     assertFontFamily(fontsPage.$.standardFontPreview, 'standard');
@@ -190,16 +190,16 @@ suite('AppearanceFontHandler', function() {
             math: {
               Zyyy: {
                 value: EXPECTED_FONT_FAMILY,
-                type: chrome.settingsPrivate.PrefType.STRING
-              }
+                type: chrome.settingsPrivate.PrefType.STRING,
+              },
             },
           },
           default_font_size: {
             value: EXPECTED_FONT_SIZE,
-            type: chrome.settingsPrivate.PrefType.NUMBER
+            type: chrome.settingsPrivate.PrefType.NUMBER,
           },
-        }
-      }
+        },
+      },
     };
     const family = math.computedStyleMap().get('font-family') as CSSStyleValue;
     assertEquals(EXPECTED_FONT_FAMILY, family.toString());

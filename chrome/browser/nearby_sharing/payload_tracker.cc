@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "chrome/browser/nearby_sharing/constants.h"
 #include "chrome/browser/nearby_sharing/logging/logging.h"
 #include "chrome/browser/nearby_sharing/nearby_share_metrics_logger.h"
+#include "chrome/browser/nearby_sharing/transfer_metadata.h"
 #include "chrome/browser/nearby_sharing/transfer_metadata_builder.h"
 #include "chromeos/constants/chromeos_features.h"
 
@@ -53,8 +54,6 @@ PayloadTracker::PayloadTracker(
 
   for (const auto& wifi_credentials :
        share_target.wifi_credentials_attachments) {
-    DCHECK(base::FeatureList::IsEnabled(
-        features::kNearbySharingReceiveWifiCredentials));
     auto it = attachment_info_map.find(wifi_credentials.id());
     if (it == attachment_info_map.end() || !it->second.payload_id) {
       NS_LOG(WARNING) << __func__
@@ -104,15 +103,32 @@ void PayloadTracker::OnStatusUpdate(PayloadTransferUpdatePtr update,
 }
 
 void PayloadTracker::OnTransferUpdate() {
+  const double percent = CalculateProgressPercent();
   if (IsComplete()) {
-    NS_LOG(VERBOSE) << __func__ << ": All payloads are complete.";
+    const bool is_transfer_complete =
+        (GetTotalTransferred() >= total_transfer_size_) ? true : false;
+    if (is_transfer_complete) {
+      NS_LOG(VERBOSE) << __func__ << ": All payloads are complete.";
+      EmitFinalMetrics(
+          location::nearby::connections::mojom::PayloadStatus::kSuccess);
+      update_callback_.Run(share_target_,
+                           TransferMetadataBuilder()
+                               .set_status(TransferMetadata::Status::kComplete)
+                               .set_progress(100)
+                               .build());
+      return;
+    }
+
+    NS_LOG(VERBOSE) << __func__ << ": Payloads incomplete.";
     EmitFinalMetrics(
-        location::nearby::connections::mojom::PayloadStatus::kSuccess);
-    update_callback_.Run(share_target_,
-                         TransferMetadataBuilder()
-                             .set_status(TransferMetadata::Status::kComplete)
-                             .set_progress(100)
-                             .build());
+        location::nearby::connections::mojom::PayloadStatus::kFailure);
+    update_callback_.Run(
+        share_target_,
+        TransferMetadataBuilder()
+            .set_status(TransferMetadata::Status::kIncompletePayloads)
+            .set_progress(percent)
+            .build());
+
     return;
   }
 
@@ -138,8 +154,7 @@ void PayloadTracker::OnTransferUpdate() {
     return;
   }
 
-  double percent = CalculateProgressPercent();
-  int current_progress = static_cast<int>(percent * 100);
+  const int current_progress = static_cast<int>(percent * 100);
   base::Time current_time = base::Time::Now();
 
   if (current_progress == last_update_progress_ ||
@@ -239,7 +254,8 @@ void PayloadTracker::EmitFinalMetrics(
         text_attachment.type(), share_target_.is_incoming, status);
   }
 
-  for (int i = 0; i < share_target_.wifi_credentials_attachments.size(); ++i) {
+  for (size_t i = 0; i < share_target_.wifi_credentials_attachments.size();
+       ++i) {
     RecordNearbySharePayloadWifiCredentialsAttachmentTypeMetric(
         share_target_.is_incoming, status);
   }

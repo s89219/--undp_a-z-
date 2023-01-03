@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/test/bind.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_management.h"
@@ -401,7 +402,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, MAYBE_AutoUpdate) {
       temp_dir.GetPath(), "v2.crx", "manifest_v2.xml.template"));
 
   // Install version 1 of the extension.
-  ExtensionTestMessageListener listener1("v1 installed", false);
+  ExtensionTestMessageListener listener1("v1 installed");
   ExtensionService* service = extension_service();
   ExtensionRegistry* registry = extension_registry();
   const size_t size_before = registry->enabled_extensions().size();
@@ -414,7 +415,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, MAYBE_AutoUpdate) {
   ASSERT_EQ("1.0", extension->VersionString());
 
   // Run autoupdate and make sure version 2 of the extension was installed.
-  ExtensionTestMessageListener listener2("v2 installed", false);
+  ExtensionTestMessageListener listener2("v2 installed");
 
   extensions::TestExtensionRegistryObserver install_observer(registry);
   NotificationListener notification_listener;
@@ -444,15 +445,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, MAYBE_AutoUpdate) {
       temp_dir.GetPath(), "v3.crx", "manifest_v3.xml.template"));
 
   extensions::ExtensionUpdater::CheckParams params2;
-  params2.callback = base::BindOnce(&NotificationListener::OnFinished,
-                                    base::Unretained(&notification_listener));
-
   {
-    content::WindowedNotificationObserver install_error_observer(
-        extensions::NOTIFICATION_EXTENSION_INSTALL_ERROR,
-        content::NotificationService::AllSources());
+    base::RunLoop run_loop;
+    params2.callback = base::BindLambdaForTesting([&]() {
+      notification_listener.OnFinished();
+      run_loop.Quit();
+    });
     service->updater()->CheckNow(std::move(params2));
-    install_error_observer.Wait();
+    run_loop.Run();
   }
   ASSERT_TRUE(notification_listener.finished());
   ASSERT_TRUE(base::Contains(notification_listener.updates(),
@@ -497,7 +497,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest,
       temp_dir.GetPath(), "v2.crx", "manifest_v2.xml.template"));
 
   // Install version 1 of the extension.
-  ExtensionTestMessageListener listener1("v1 installed", false);
+  ExtensionTestMessageListener listener1("v1 installed");
   ExtensionService* service = extension_service();
   ExtensionRegistry* registry = extension_registry();
   const size_t enabled_size_before = registry->enabled_extensions().size();
@@ -511,7 +511,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest,
   ASSERT_EQ("ogjcoiohnmldgjemafoockdghcjciccf", extension->id());
   ASSERT_EQ("1.0", extension->VersionString());
 
-  ExtensionTestMessageListener listener2("v2 installed", false);
+  ExtensionTestMessageListener listener2("v2 installed");
   extensions::TestExtensionRegistryObserver install_observer(registry);
   // Run autoupdate and make sure version 2 of the extension was installed but
   // is still disabled.
@@ -652,7 +652,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, ExternalPolicyRefresh) {
   ASSERT_TRUE(extensions::ExtensionManagementFactory::GetForBrowserContext(
                   browser()->profile())
                   ->GetForceInstallList()
-                  ->DictEmpty())
+                  .empty())
       << kForceInstallNotEmptyHelp;
 
   base::Value forcelist(base::Value::Type::LIST);
@@ -683,7 +683,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, ExternalPolicyRefresh) {
   EXPECT_EQ(0u, registry->disabled_extensions().size());
 
   // Now try to disable it through the management api, again failing.
-  ExtensionTestMessageListener listener1("ready", false);
+  ExtensionTestMessageListener listener1("ready");
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("management/uninstall_extension")));
   ASSERT_TRUE(listener1.WaitUntilSatisfied());
@@ -734,7 +734,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest,
   ASSERT_TRUE(extensions::ExtensionManagementFactory::GetForBrowserContext(
                   browser()->profile())
                   ->GetForceInstallList()
-                  ->DictEmpty())
+                  .empty())
       << kForceInstallNotEmptyHelp;
 
   // User install of the extension.

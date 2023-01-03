@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/no_destructor.h"
-#include "base/stl_util.h"
+#include "base/types/optional_util.h"
 #include "content/public/browser/global_request_id.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/navigation_handle.h"
@@ -43,35 +43,43 @@ class MockNavigationHandle : public NavigationHandle {
                                   ukm::SourceIdObj::Type::NAVIGATION_ID);
   }
   const GURL& GetURL() override { return url_; }
-  const GURL& GetPreviousMainFrameURL() override {
-    return previous_main_frame_url_;
+  const GURL& GetPreviousPrimaryMainFrameURL() override {
+    return previous_primary_main_frame_url_;
   }
   SiteInstance* GetStartingSiteInstance() override {
     return starting_site_instance_;
   }
   SiteInstance* GetSourceSiteInstance() override {
-    return nullptr;  // Good enough for unit tests...
+    return source_site_instance_;
   }
   bool IsInMainFrame() const override {
     return render_frame_host_ ? !render_frame_host_->GetParent() : true;
   }
   MOCK_METHOD0(IsInPrerenderedMainFrame, bool());
-  bool IsPrerenderedPageActivation() override {
+  bool IsPrerenderedPageActivation() const override {
     return is_prerendered_page_activation_;
   }
-  bool IsInFencedFrameTree() override { return is_in_fenced_frame_tree_; }
+  bool IsInFencedFrameTree() const override { return is_in_fenced_frame_tree_; }
   FrameType GetNavigatingFrameType() const override {
     NOTIMPLEMENTED();
     return FrameType::kPrimaryMainFrame;
   }
   // By default, MockNavigationHandles are renderer-initiated navigations.
   bool IsRendererInitiated() override { return is_renderer_initiated_; }
+  blink::mojom::NavigationInitiatorActivationAndAdStatus
+  GetNavigationInitiatorActivationAndAdStatus() override {
+    return blink::mojom::NavigationInitiatorActivationAndAdStatus::
+        kDidNotStartWithTransientActivation;
+  }
   bool IsSameOrigin() override {
     NOTIMPLEMENTED();
     return false;
   }
   bool IsInPrimaryMainFrame() const override {
     return is_in_primary_main_frame_;
+  }
+  bool IsInOutermostMainFrame() override {
+    return !GetParentFrameOrOuterDocument();
   }
   MOCK_METHOD0(GetFrameTreeNodeId, int());
   MOCK_METHOD0(GetPreviousRenderFrameHostId, GlobalRenderFrameHostId());
@@ -116,7 +124,7 @@ class MockNavigationHandle : public NavigationHandle {
   RenderFrameHost* GetRenderFrameHost() const override {
     return render_frame_host_;
   }
-  bool IsSameDocument() override { return is_same_document_; }
+  bool IsSameDocument() const override { return is_same_document_; }
   MOCK_METHOD0(WasServerRedirect, bool());
   const std::vector<GURL>& GetRedirectChain() override {
     return redirect_chain_;
@@ -172,6 +180,9 @@ class MockNavigationHandle : public NavigationHandle {
   const absl::optional<url::Origin>& GetInitiatorOrigin() override {
     return initiator_origin_;
   }
+  const absl::optional<GURL>& GetInitiatorBaseUrl() override {
+    return initiator_base_url_;
+  }
   const std::vector<std::string>& GetDnsAliases() override {
     static const base::NoDestructor<std::vector<std::string>>
         emptyvector_result;
@@ -201,6 +212,7 @@ class MockNavigationHandle : public NavigationHandle {
   MOCK_METHOD(bool, SetNavigationTimeout, (base::TimeDelta));
   MOCK_METHOD(PrerenderTriggerType, GetPrerenderTriggerType, ());
   MOCK_METHOD(std::string, GetPrerenderEmbedderHistogramSuffix, ());
+  MOCK_METHOD(void, SetAllowCookiesFromBrowser, (bool));
 
 #if BUILDFLAG(IS_ANDROID)
   MOCK_METHOD(const base::android::JavaRef<jobject>&,
@@ -211,16 +223,21 @@ class MockNavigationHandle : public NavigationHandle {
   base::SafeRef<NavigationHandle> GetSafeRef() override {
     return weak_factory_.GetSafeRef();
   }
+  MOCK_METHOD(bool, ExistingDocumentWasDiscarded, (), (const));
 
   CommitDeferringCondition* GetCommitDeferringConditionForTesting() override {
     return nullptr;
   }
   void set_url(const GURL& url) { url_ = url; }
-  void set_previous_main_frame_url(const GURL& previous_main_frame_url) {
-    previous_main_frame_url_ = previous_main_frame_url;
+  void set_previous_primary_main_frame_url(
+      const GURL& previous_primary_main_frame_url) {
+    previous_primary_main_frame_url_ = previous_primary_main_frame_url;
   }
   void set_starting_site_instance(SiteInstance* site_instance) {
     starting_site_instance_ = site_instance;
+  }
+  void set_source_site_instance(SiteInstance* site_instance) {
+    source_site_instance_ = site_instance;
   }
   void set_page_transition(ui::PageTransition page_transition) {
     page_transition_ = page_transition;
@@ -295,8 +312,9 @@ class MockNavigationHandle : public NavigationHandle {
  private:
   int64_t navigation_id_;
   GURL url_;
-  GURL previous_main_frame_url_;
+  GURL previous_primary_main_frame_url_;
   raw_ptr<SiteInstance> starting_site_instance_ = nullptr;
+  raw_ptr<SiteInstance> source_site_instance_ = nullptr;
   raw_ptr<WebContents> web_contents_ = nullptr;
   GURL base_url_for_data_url_;
   blink::mojom::Referrer referrer_;
@@ -322,6 +340,7 @@ class MockNavigationHandle : public NavigationHandle {
   bool was_response_cached_ = false;
   net::ProxyServer proxy_server_;
   absl::optional<url::Origin> initiator_origin_;
+  absl::optional<GURL> initiator_base_url_;
   ReloadType reload_type_ = content::ReloadType::NONE;
   std::string href_translate_;
   absl::optional<blink::Impression> impression_;

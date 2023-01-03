@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/icon_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
@@ -61,16 +62,16 @@ IN_PROC_BROWSER_TEST_F(LacrosExtensionAppsControllerTest, Uninstall) {
 
   // Check that the app is installed.
   {
-    const extensions::Extension* extension =
+    const extensions::Extension* installed_extension =
         lacros_extensions_util::MaybeGetExtension(profile(), extension_id);
-    EXPECT_TRUE(extension && extension->is_platform_app());
+    EXPECT_TRUE(installed_extension && installed_extension->is_platform_app());
   }
 
   // Uninstall the extension.
   std::unique_ptr<LacrosExtensionAppsController> controller =
       LacrosExtensionAppsController::MakeForChromeApps();
   controller->Uninstall(lacros_extensions_util::MuxId(profile(), extension),
-                        apps::mojom::UninstallSource::kAppList,
+                        apps::UninstallSource::kAppList,
                         /*clear_site_data=*/true,
                         /*report_abuse=*/true);
 

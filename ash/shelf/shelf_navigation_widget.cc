@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -154,7 +154,7 @@ class BackgroundLayerDelegate : public ui::LayerDelegate {
 
   void SetBackgroundColor(SkColor color) {
     background_color_ = color;
-    layer_->SchedulePaint(layer_->bounds());
+    layer_->SchedulePaint(layer_->PaintableRegion());
   }
 
  private:
@@ -314,13 +314,18 @@ class ShelfNavigationWidget::Delegate : public views::AccessiblePaneView,
   // Initializes the view.
   void Init(ui::Layer* parent_layer);
 
+  // Updates the layout and visibility of `opaque_background_`.
   void UpdateOpaqueBackground();
+
+  // Updates the color of `opaque_background_`.
+  void UpdateBackgroundColor();
 
   // views::View:
   FocusTraversable* GetPaneFocusTraversable() override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
   void ReorderChildLayers(ui::Layer* parent_layer) override;
   void OnBoundsChanged(const gfx::Rect& old_bounds) override;
+  void OnThemeChanged() override;
 
   // views::AccessiblePaneView:
   View* GetDefaultFocusableChild() override;
@@ -405,15 +410,10 @@ ShelfNavigationWidget::Delegate::~Delegate() = default;
 
 void ShelfNavigationWidget::Delegate::Init(ui::Layer* parent_layer) {
   SetParentLayer(parent_layer);
-  UpdateOpaqueBackground();
 }
 
 void ShelfNavigationWidget::Delegate::UpdateOpaqueBackground() {
-  SkColor background_color = ShelfConfig::Get()->GetShelfControlButtonColor();
-  if (background_delegate_)
-    background_delegate_->SetBackgroundColor(background_color);
-  else
-    opaque_background_.SetColor(background_color);
+  UpdateBackgroundColor();
 
   // Hide background if no buttons should be shown.
   if (!IsHomeButtonShown() &&
@@ -440,6 +440,15 @@ void ShelfNavigationWidget::Delegate::UpdateOpaqueBackground() {
   opaque_background_.SetBounds(opaque_background_bounds);
   opaque_background_.SetBackgroundBlur(
       ShelfConfig::Get()->GetShelfControlButtonBlurRadius());
+}
+
+void ShelfNavigationWidget::Delegate::UpdateBackgroundColor() {
+  SkColor background_color =
+      ShelfConfig::Get()->GetShelfControlButtonColor(GetWidget());
+  if (background_delegate_)
+    background_delegate_->SetBackgroundColor(background_color);
+  else
+    opaque_background_.SetColor(background_color);
 }
 
 bool ShelfNavigationWidget::Delegate::CanActivate() const {
@@ -471,6 +480,11 @@ void ShelfNavigationWidget::Delegate::ReorderChildLayers(
 void ShelfNavigationWidget::Delegate::OnBoundsChanged(
     const gfx::Rect& old_bounds) {
   UpdateOpaqueBackground();
+}
+
+void ShelfNavigationWidget::Delegate::OnThemeChanged() {
+  views::AccessiblePaneView::OnThemeChanged();
+  UpdateBackgroundColor();
 }
 
 views::View* ShelfNavigationWidget::Delegate::GetDefaultFocusableChild() {
@@ -809,34 +823,47 @@ void ShelfNavigationWidget::UpdateButtonVisibility(
 }
 
 gfx::Rect ShelfNavigationWidget::CalculateClipRectAfterRTL() const {
-  gfx::Rect bounds_before_rtl;
+  gfx::Rect clip_bounds;
   if (Shell::Get()->IsInTabletMode()) {
-    bounds_before_rtl =
-        gfx::Rect(CalculateIdealSize(/*only_visible_area=*/true));
+    clip_bounds = gfx::Rect(CalculateIdealSize(/*only_visible_area=*/true));
   } else {
-    bounds_before_rtl = gfx::Rect(target_bounds_.size());
+    clip_bounds = gfx::Rect(target_bounds_.size());
   }
 
-  return GetRootView()->GetMirroredRect(bounds_before_rtl);
+  // Bounds will be used to set a layer clip rect, and thus need to be modified
+  // for RTL - avoid using `GetMirroredRect()` method, as it would use the
+  // current widget/root view bounds instead of target bounds.
+  if (base::i18n::IsRTL()) {
+    clip_bounds.set_x(target_bounds_.width() - clip_bounds.right());
+  }
+  return clip_bounds;
 }
 
 gfx::Size ShelfNavigationWidget::CalculateIdealSize(
     bool only_visible_area) const {
-  if (!ShelfConfig::Get()->shelf_controls_shown())
+  const bool home_button_shown = IsHomeButtonShown();
+  const bool back_button_shown =
+      IsBackButtonShown(shelf_->IsHorizontalAlignment());
+  if (!home_button_shown && !back_button_shown)
     return gfx::Size();
 
-  int control_button_number;
+  int controls_space = 0;
+  const int control_size = ShelfConfig::Get()->control_size();
+
   if (Shell::Get()->IsInTabletMode() && !only_visible_area) {
     // There are home button and back button. So the maximum is 2.
-    control_button_number = 2;
+    controls_space = control_size * 2 + ShelfConfig::Get()->button_spacing();
   } else {
-    control_button_number = CalculateButtonCount();
+    // Use CalculatePreferredSize here to take the launcher nudge label into
+    // consider.
+    controls_space += home_button_shown
+                          ? GetHomeButton()->CalculatePreferredSize().width()
+                          : 0;
+    controls_space += back_button_shown ? control_size : 0;
+    controls_space +=
+        (CalculateButtonCount() - 1) * ShelfConfig::Get()->button_spacing();
   }
 
-  const int control_size = ShelfConfig::Get()->control_size();
-  int controls_space =
-      control_button_number * control_size +
-      (control_button_number - 1) * ShelfConfig::Get()->button_spacing();
   const int major_axis_spacing =
       2 * ShelfConfig::Get()->control_button_edge_spacing(
               shelf_->IsHorizontalAlignment());

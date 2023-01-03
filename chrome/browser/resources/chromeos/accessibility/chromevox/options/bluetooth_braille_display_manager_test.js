@@ -1,28 +1,10 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Include test fixture.
-GEN_INCLUDE(['../testing/chromevox_webui_test_base.js']);
+GEN_INCLUDE(['../testing/chromevox_next_e2e_test_base.js']);
 GEN_INCLUDE(['../testing/fake_objects.js']);
-
-GEN('#include "content/public/test/browser_test.h"');
-
-// Fake out the Chrome API namespace we depend on.
-var chrome = {};
-/** Fake chrome.brailleDisplayPrivate object. */
-chrome.brailleDisplayPrivate = {};
-/** Fake chrome.bluetooth object. */
-chrome.bluetooth = {};
-chrome.bluetooth.getDevices = (devices) => {};
-chrome.bluetooth.onDeviceAdded = new FakeChromeEvent();
-chrome.bluetooth.onDeviceChanged = new FakeChromeEvent();
-chrome.bluetooth.onDeviceRemoved = new FakeChromeEvent();
-/** Fake chrome.bluetoothPrivate object. */
-chrome.bluetoothPrivate = {};
-chrome.bluetoothPrivate.onPairing = new FakeChromeEvent();
-/** Fake chrome.accessibilityPrivate object. */
-chrome.accessibilityPrivate = {};
 
 /**
  * A fake BluetoothBraileDisplayManagerListener.
@@ -47,12 +29,18 @@ class FakeBluetoothBrailleDisplayManagerListener {
  * Test fixture.
  */
 ChromeVoxBluetoothBrailleDisplayManagerWebUITest =
-    class extends ChromeVoxWebUITestBase {};
+    class extends ChromeVoxNextE2ETest {
+  /** @override */
+  async setUpDeferred() {
+    await super.setUpDeferred();
 
-/** @override */
-ChromeVoxBluetoothBrailleDisplayManagerWebUITest.prototype.closureModuleDeps = [
-  'BluetoothBrailleDisplayManager',
-];
+    // Alphabetical based on file path.
+    await importModule(
+        'BluetoothBrailleDisplayManager',
+        '/chromevox/options/bluetooth_braille_display_manager.js');
+    await importModule('LocalStorage', '/common/local_storage.js');
+  }
+};
 
 ChromeVoxBluetoothBrailleDisplayManagerWebUITest.prototype.isAsync = true;
 TEST_F(
@@ -92,7 +80,7 @@ TEST_F(
 TEST_F(
     'ChromeVoxBluetoothBrailleDisplayManagerWebUITest',
     'DisconnectPreviousPreferredOnConnectNewPreferred', function() {
-      chrome.bluetoothPrivate.connect = this.newCallback((address) => {
+      chrome.bluetoothPrivate.connect = this.newCallback(address => {
         assertEquals('abcd', address);
       });
       chrome.bluetoothPrivate.disconnectAll =
@@ -100,7 +88,7 @@ TEST_F(
             assertEquals('1234', address);
             callback();
           });
-      localStorage['preferredBrailleDisplayAddress'] = '1234';
+      LocalStorage.set('preferredBrailleDisplayAddress', '1234');
       const manager = new BluetoothBrailleDisplayManager();
       manager.connect({address: 'abcd', connected: false, paired: false});
     });
@@ -110,18 +98,18 @@ TEST_F(
     function() {
       chrome.bluetoothPrivate.connect = this.newCallback();
       chrome.bluetoothPrivate.disconnectAll = assertNotReached;
-      localStorage['preferredBrailleDisplayAddress'] = 'abcd';
+      LocalStorage.set('preferredBrailleDisplayAddress', 'abcd');
       const manager = new BluetoothBrailleDisplayManager();
       manager.connect({address: 'abcd', connected: false, paired: false});
     });
 
-SYNC_TEST_F(
+AX_TEST_F(
     'ChromeVoxBluetoothBrailleDisplayManagerWebUITest', 'Listener', function() {
       const manager = new BluetoothBrailleDisplayManager();
       const listener = new FakeBluetoothBrailleDisplayManagerListener();
       manager.addListener(listener);
       let devices = [];
-      chrome.bluetooth.getDevices = (callback) => callback(devices);
+      chrome.bluetooth.getDevices = callback => callback(devices);
 
       // No devices have been added, removed, or changed.
       manager.handleDevicesChanged();
@@ -136,7 +124,7 @@ SYNC_TEST_F(
       // An unrecognized device was added.
       devices = [
         {name: 'Focus 40 BT', address: '1234'},
-        {name: 'headphones', address: '4321'}
+        {name: 'headphones', address: '4321'},
       ];
       manager.handleDevicesChanged();
       assertEquals(1, listener.displays.length);
@@ -145,7 +133,7 @@ SYNC_TEST_F(
       // A named variant of Focus 40 BT was added.
       devices = [
         {name: 'Focus 40 BT', address: '1234'},
-        {name: 'Focus 40 BT rev 123', address: '4321'}
+        {name: 'Focus 40 BT rev 123', address: '4321'},
       ];
       manager.handleDevicesChanged();
       assertEquals(2, listener.displays.length);
@@ -157,14 +145,14 @@ TEST_F(
     'ChromeVoxBluetoothBrailleDisplayManagerWebUITest',
     'ConnectPreferredTriggersBrlttyUpdate', function() {
       chrome.brailleDisplayPrivate.updateBluetoothBrailleDisplayAddress =
-          this.newCallback((address) => {
+          this.newCallback(address => {
             assertEquals('abcd', address);
           });
 
-      localStorage['preferredBrailleDisplayAddress'] = 'abcd';
+      LocalStorage.set('preferredBrailleDisplayAddress', 'abcd');
       const manager = new BluetoothBrailleDisplayManager();
       let devices = [];
-      chrome.bluetooth.getDevices = (callback) => callback(devices);
+      chrome.bluetooth.getDevices = callback => callback(devices);
 
       // No devices.
       manager.handleDevicesChanged();
@@ -187,7 +175,7 @@ TEST_F(
     'ForgetPreferredTriggersBrlttyUpdate', function() {
       chrome.bluetoothPrivate.forgetDevice = this.newCallback();
       chrome.brailleDisplayPrivate.updateBluetoothBrailleDisplayAddress =
-          this.newCallback((address) => {
+          this.newCallback(address => {
             assertEquals('', address);
           });
 
@@ -203,7 +191,7 @@ TEST_F(
     'DisconnectPreferredTriggersBrlttyUpdate', function() {
       chrome.bluetoothPrivate.disconnectAll = this.newCallback();
       chrome.brailleDisplayPrivate.updateBluetoothBrailleDisplayAddress =
-          this.newCallback((address) => {
+          this.newCallback(address => {
             assertEquals('', address);
           });
 

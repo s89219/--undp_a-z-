@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -342,8 +342,10 @@ TEST_F(BackGestureEventHandlerTest, DragFromSplitViewDivider) {
 
   auto* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(window1.get(), SplitViewController::LEFT);
-  split_view_controller->SnapWindow(window2.get(), SplitViewController::RIGHT);
+  split_view_controller->SnapWindow(
+      window1.get(), SplitViewController::SnapPosition::kPrimary);
+  split_view_controller->SnapWindow(
+      window2.get(), SplitViewController::SnapPosition::kSecondary);
   ASSERT_TRUE(split_view_controller->InSplitViewMode());
   ASSERT_EQ(SplitViewController::State::kBothSnapped,
             split_view_controller->state());
@@ -408,10 +410,10 @@ TEST_F(BackGestureEventHandlerTest, BackInSplitViewMode) {
   EnterOverview();
   auto* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(left_window.get(),
-                                    SplitViewController::LEFT);
-  split_view_controller->SnapWindow(right_window.get(),
-                                    SplitViewController::RIGHT);
+  split_view_controller->SnapWindow(
+      left_window.get(), SplitViewController::SnapPosition::kPrimary);
+  split_view_controller->SnapWindow(
+      right_window.get(), SplitViewController::SnapPosition::kSecondary);
 
   // Set the screen orientation to LANDSCAPE_PRIMARY.
   test_api.SetDisplayRotation(display::Display::ROTATE_0,
@@ -672,10 +674,10 @@ TEST_F(BackGestureEventHandlerTest,
   std::unique_ptr<aura::Window> right_window = CreateTestWindow();
   auto* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(left_window.get(),
-                                    SplitViewController::LEFT);
-  split_view_controller->SnapWindow(right_window.get(),
-                                    SplitViewController::RIGHT);
+  split_view_controller->SnapWindow(
+      left_window.get(), SplitViewController::SnapPosition::kPrimary);
+  split_view_controller->SnapWindow(
+      right_window.get(), SplitViewController::SnapPosition::kSecondary);
   EXPECT_EQ(SplitViewController::State::kBothSnapped,
             split_view_controller->state());
 
@@ -740,7 +742,7 @@ TEST_F(BackGestureEventHandlerTest, BackGestureWithAndroidKeyboardTest) {
   ASSERT_TRUE(keyboard);
   // Fakes showing the keyboard.
   keyboard->OnArcInputMethodBoundsChanged(gfx::Rect(400, 400));
-  EXPECT_TRUE(keyboard->visible());
+  EXPECT_TRUE(keyboard->arc_keyboard_visible());
 
   // Unfortunately we cannot hook this all the wall up to see if the Android IME
   // is hidden, but we can check that back key events are generated and the top
@@ -763,10 +765,10 @@ TEST_F(BackGestureEventHandlerTest,
   std::unique_ptr<aura::Window> right_window = CreateTestWindow();
   auto* split_view_controller =
       SplitViewController::Get(Shell::GetPrimaryRootWindow());
-  split_view_controller->SnapWindow(left_window.get(),
-                                    SplitViewController::LEFT);
-  split_view_controller->SnapWindow(right_window.get(),
-                                    SplitViewController::RIGHT);
+  split_view_controller->SnapWindow(
+      left_window.get(), SplitViewController::SnapPosition::kPrimary);
+  split_view_controller->SnapWindow(
+      right_window.get(), SplitViewController::SnapPosition::kSecondary);
   EXPECT_EQ(SplitViewController::State::kBothSnapped,
             split_view_controller->state());
 
@@ -780,7 +782,7 @@ TEST_F(BackGestureEventHandlerTest,
   keyboard_bounds.set_y(keyboard_bounds.bottom() - 200);
   keyboard_bounds.set_height(200);
   keyboard->OnArcInputMethodBoundsChanged(keyboard_bounds);
-  EXPECT_TRUE(keyboard->visible());
+  EXPECT_TRUE(keyboard->arc_keyboard_visible());
 
   // Start drag from splitview divider bar position outside VK bounds.
   gfx::Rect divider_bounds =
@@ -804,7 +806,7 @@ TEST_F(BackGestureEventHandlerTest,
   target_back_press.ResetCounts();
   target_back_release.ResetCounts();
   keyboard->OnArcInputMethodBoundsChanged(keyboard_bounds);
-  EXPECT_TRUE(keyboard->visible());
+  EXPECT_TRUE(keyboard->arc_keyboard_visible());
   start = gfx::Point(divider_bounds.CenterPoint().x(),
                      keyboard_bounds.CenterPoint().y());
   end = gfx::Point(start.x() + kSwipingDistanceForGoingBack + 10, start.y());

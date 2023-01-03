@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -125,6 +125,8 @@ class TabModel {
     // User-originated switch to existing tab from Omnibox tab switch
     // suggestions.
     FROM_OMNIBOX,
+    // Selection of a previously closed tab when closure is undone.
+    FROM_UNDO,
     // Must be last.
     SIZE
   };
@@ -203,7 +205,7 @@ class TabModel {
   LocationBarModel* GetLocationBarModel();
 
  private:
-  raw_ptr<Profile> profile_;
+  raw_ptr<Profile, DanglingUntriaged> profile_;
 
   chrome::android::ActivityType activity_type_;
 

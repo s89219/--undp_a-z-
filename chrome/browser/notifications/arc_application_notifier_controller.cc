@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,11 +13,11 @@
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/notifications/notifier_dataset.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_features.h"
 #include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/app_update.h"
 #include "components/services/app_service/public/cpp/permission.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/public/cpp/notifier_id.h"
 
@@ -55,7 +55,7 @@ ArcApplicationNotifierController::GetNotifierList(Profile* profile) {
       if (permission->permission_type != apps::PermissionType::kNotifications) {
         continue;
       }
-      DCHECK(permission->value->bool_value.has_value());
+      DCHECK(absl::holds_alternative<bool>(permission->value->value));
       // Do not include notifier metadata for system apps.
       if (update.InstallReason() == apps::InstallReason::kSystem) {
         return;
@@ -63,7 +63,7 @@ ArcApplicationNotifierController::GetNotifierList(Profile* profile) {
       notifier_dataset.push_back(NotifierDataset{
           update.AppId() /*app_id*/, update.ShortName() /*app_name*/,
           update.PublisherId() /*publisher_id*/,
-          permission->value->bool_value.value() /*enabled*/});
+          absl::get<bool>(permission->value->value) /*enabled*/});
     }
   });
 
@@ -82,7 +82,7 @@ ArcApplicationNotifierController::GetNotifierList(Profile* profile) {
         std::make_pair(app_data.publisher_id, app_data.app_id));
   }
   if (!package_to_app_ids_.empty()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&ArcApplicationNotifierController::CallLoadIcons,
                        weak_ptr_factory_.GetWeakPtr()));
@@ -98,10 +98,10 @@ void ArcApplicationNotifierController::SetNotifierEnabled(
       apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(profile));
 
   last_used_profile_ = profile;
-  auto permission = apps::mojom::Permission::New();
-  permission->permission_type = apps::mojom::PermissionType::kNotifications;
-  permission->value = apps::mojom::PermissionValue::NewBoolValue(enabled);
-  permission->is_managed = false;
+  auto permission = std::make_unique<apps::Permission>(
+      apps::PermissionType::kNotifications,
+      std::make_unique<apps::PermissionValue>(enabled),
+      /*is_managed=*/false);
   apps::AppServiceProxy* service =
       apps::AppServiceProxyFactory::GetForProfile(profile);
   service->SetPermission(notifier_id.id, std::move(permission));
@@ -119,23 +119,12 @@ void ArcApplicationNotifierController::CallLoadIcon(
   DCHECK(apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
       last_used_profile_));
 
-  if (base::FeatureList::IsEnabled(features::kAppServiceLoadIconWithoutMojom)) {
-    apps::AppServiceProxyFactory::GetForProfile(last_used_profile_)
-        ->LoadIcon(apps::AppType::kArc, app_id, apps::IconType::kStandard,
-                   message_center::kQuickSettingIconSizeInDp,
-                   allow_placeholder_icon,
-                   base::BindOnce(&ArcApplicationNotifierController::OnLoadIcon,
-                                  weak_ptr_factory_.GetWeakPtr(), app_id));
-  } else {
-    apps::AppServiceProxyFactory::GetForProfile(last_used_profile_)
-        ->LoadIcon(apps::mojom::AppType::kArc, app_id,
-                   apps::mojom::IconType::kStandard,
-                   message_center::kQuickSettingIconSizeInDp,
-                   allow_placeholder_icon,
-                   apps::MojomIconValueToIconValueCallback(base::BindOnce(
-                       &ArcApplicationNotifierController::OnLoadIcon,
-                       weak_ptr_factory_.GetWeakPtr(), app_id)));
-  }
+  apps::AppServiceProxyFactory::GetForProfile(last_used_profile_)
+      ->LoadIcon(apps::AppType::kArc, app_id, apps::IconType::kStandard,
+                 message_center::kQuickSettingIconSizeInDp,
+                 allow_placeholder_icon,
+                 base::BindOnce(&ArcApplicationNotifierController::OnLoadIcon,
+                                weak_ptr_factory_.GetWeakPtr(), app_id));
 }
 
 void ArcApplicationNotifierController::OnLoadIcon(

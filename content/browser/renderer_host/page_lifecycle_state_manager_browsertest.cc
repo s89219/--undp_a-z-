@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,7 +81,7 @@ class PageLifecycleStateManagerBrowserTest : public ContentBrowserTest {
   }
 
   void MatchEventList(RenderFrameHostImpl* rfh,
-                      base::ListValue list,
+                      base::Value list,
                       base::Location location = base::Location::Current()) {
     EXPECT_EQ(list, EvalJs(rfh, "window.testObservedEvents"))
         << location.ToString();
@@ -89,7 +89,7 @@ class PageLifecycleStateManagerBrowserTest : public ContentBrowserTest {
 
   RenderViewHostImpl* render_view_host() {
     return static_cast<RenderViewHostImpl*>(
-        shell()->web_contents()->GetMainFrame()->GetRenderViewHost());
+        shell()->web_contents()->GetPrimaryMainFrame()->GetRenderViewHost());
   }
 
   RenderFrameHostImpl* current_frame_host() {
@@ -225,8 +225,8 @@ IN_PROC_BROWSER_TEST_F(PageLifecycleStateManagerBrowserTest,
   Shell* popup = OpenPopup(rfh_a, url_a, "");
   EXPECT_EQ(2u, rfh_a->GetSiteInstance()->GetRelatedActiveContentsCount());
 
-  RenderFrameHostImpl* popup_frame =
-      static_cast<RenderFrameHostImpl*>(popup->web_contents()->GetMainFrame());
+  RenderFrameHostImpl* popup_frame = static_cast<RenderFrameHostImpl*>(
+      popup->web_contents()->GetPrimaryMainFrame());
   StartRecordingEvents(popup_frame);
 
   popup->web_contents()->WasHidden();

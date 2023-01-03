@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,15 @@
 
 #include <memory>
 
-#include "ash/constants/ash_features.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/webui/firmware_update_ui/url_constants.h"
 #include "ash/webui/grit/ash_firmware_update_app_resources.h"
+#include "chrome/browser/ash/system_web_apps/types/system_web_app_type.h"
 #include "chrome/browser/ash/web_applications/system_web_app_install_utils.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_types.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/ui_base_features.h"
 #include "ui/chromeos/styles/cros_styles.h"
 #include "ui/display/screen.h"
 
@@ -29,10 +27,8 @@ constexpr int kFirmwareUpdateAppDefaultHeight = 640;
 // FirmwareUpdateApp's title bar and background needs to be bg-elevation-2 for
 // dark mode instead of the default dark mode background color.
 SkColor GetDarkModeBackgroundColor() {
-  return cros_styles::ResolveColor(
-      cros_styles::ColorName::kBgColorElevation2, /*use_dark_mode=*/true,
-      base::FeatureList::IsEnabled(
-          ash::features::kSemanticColorsDebugOverride));
+  return cros_styles::ResolveColor(cros_styles::ColorName::kBgColorElevation2,
+                                   /*is_dark_mode=*/true);
 }
 }  // namespace
 
@@ -48,7 +44,7 @@ CreateWebAppInfoForFirmwareUpdateSystemWebApp() {
       {{"app_icon_192.png", 192, IDR_ASH_FIRMWARE_UPDATE_APP_APP_ICON_192_PNG}},
       *info);
   info->display_mode = blink::mojom::DisplayMode::kStandalone;
-  info->user_display_mode = web_app::UserDisplayMode::kStandalone;
+  info->user_display_mode = web_app::mojom::UserDisplayMode::kStandalone;
   info->theme_color =
       web_app::GetDefaultBackgroundColor(/*use_dark_mode=*/false);
   info->dark_mode_theme_color = GetDarkModeBackgroundColor();
@@ -68,18 +64,14 @@ gfx::Rect GetDefaultBoundsForFirmwareUpdateApp(Browser*) {
 
 FirmwareUpdateSystemAppDelegate::FirmwareUpdateSystemAppDelegate(
     Profile* profile)
-    : web_app::SystemWebAppDelegate(web_app::SystemAppType::FIRMWARE_UPDATE,
-                                    "FirmwareUpdate",
-                                    GURL(ash::kChromeUIFirmwareUpdateAppURL),
-                                    profile) {}
+    : ash::SystemWebAppDelegate(ash::SystemWebAppType::FIRMWARE_UPDATE,
+                                "FirmwareUpdate",
+                                GURL(ash::kChromeUIFirmwareUpdateAppURL),
+                                profile) {}
 
 std::unique_ptr<WebAppInstallInfo>
 FirmwareUpdateSystemAppDelegate::GetWebAppInfo() const {
   return CreateWebAppInfoForFirmwareUpdateSystemWebApp();
-}
-
-bool FirmwareUpdateSystemAppDelegate::IsAppEnabled() const {
-  return ash::features::IsFirmwareUpdaterAppEnabled();
 }
 
 bool FirmwareUpdateSystemAppDelegate::ShouldAllowMaximize() const {

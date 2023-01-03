@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,6 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
-class DictionaryValue;
 class Value;
 }  // namespace base
 
@@ -28,7 +27,7 @@ class AccessCodeConfig {
   // Returns AccessCodeConfig created from a |dictionary|, if the |dictionary|
   // contains valid config data.
   static absl::optional<AccessCodeConfig> FromDictionary(
-      const base::DictionaryValue& value);
+      const base::Value& value);
 
   // TODO(agawronska): Make constructor private.
   // To create valid AccessCodeConfig:

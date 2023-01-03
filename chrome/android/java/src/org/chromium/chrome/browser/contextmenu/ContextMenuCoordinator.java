@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,8 +22,6 @@ import androidx.appcompat.app.AlertDialog;
 
 import org.chromium.base.Callback;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.performance_hints.PerformanceHintsObserver;
-import org.chromium.chrome.browser.performance_hints.PerformanceHintsObserver.PerformanceClass;
 import org.chromium.chrome.browser.profiles.Profile;
 import org.chromium.chrome.browser.util.ChromeAccessibilityUtil;
 import org.chromium.components.browser_ui.widget.ContextMenuDialog;
@@ -108,12 +106,13 @@ public class ContextMenuCoordinator implements ContextMenuUi {
             Callback<Integer> onItemClicked, final Runnable onMenuShown,
             final Runnable onMenuClosed, @Nullable ChipDelegate chipDelegate) {
         mOnMenuClosed = onMenuClosed;
+        Activity activity = window.getActivity().get();
         final boolean isDragDropEnabled =
-                ContentFeatureList.isEnabled(ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU);
-        final boolean isPopup = ContextMenuUtils.forcePopupStyleEnabled()
+                ContentFeatureList.isEnabled(ContentFeatures.TOUCH_DRAG_AND_CONTEXT_MENU)
+                && ContextMenuUtils.usePopupContextMenuForContext(activity);
+        final boolean isPopup = isDragDropEnabled
                 || params.getSourceType() == MenuSourceType.MENU_SOURCE_MOUSE
                 || params.getOpenedFromHighlight();
-        Activity activity = window.getActivity().get();
         final float density = activity.getResources().getDisplayMetrics().density;
         final float touchPointXPx = params.getTriggeringTouchXDp() * density;
         final float touchPointYPx = params.getTriggeringTouchYDp() * density;
@@ -187,12 +186,8 @@ public class ContextMenuCoordinator implements ContextMenuUi {
         mDialog.setOnDismissListener(dialogInterface -> mOnMenuClosed.run());
 
         mWebContents = webContents;
-        int performanceClass = params.isAnchor()
-                ? PerformanceHintsObserver.getPerformanceClassForURL(
-                        webContents, params.getLinkUrl())
-                : PerformanceClass.PERFORMANCE_UNKNOWN;
-        mHeaderCoordinator = new ContextMenuHeaderCoordinator(activity, performanceClass, params,
-                Profile.fromWebContents(mWebContents), mNativeDelegate);
+        mHeaderCoordinator = new ContextMenuHeaderCoordinator(
+                activity, params, Profile.fromWebContents(mWebContents), mNativeDelegate);
 
         // The Integer here specifies the {@link ListItemType}.
         ModelList listItems = getItemList(
@@ -307,7 +302,7 @@ public class ContextMenuCoordinator implements ContextMenuUi {
             boolean isPopup, int topMarginPx, int bottomMarginPx, @Nullable Integer popupMargin,
             @Nullable Integer desiredPopupContentWidth, @Nullable View webContentView, Rect rect) {
         // TODO(sinansahin): Refactor ContextMenuDialog as well.
-        boolean shouldRemoveScrim = isPopup && ContextMenuUtils.forcePopupStyleEnabled();
+        boolean shouldRemoveScrim = ContextMenuUtils.usePopupContextMenuForContext(activity);
         final ContextMenuDialog dialog = new ContextMenuDialog(activity,
                 R.style.ThemeOverlay_BrowserUI_AlertDialog, topMarginPx, bottomMarginPx, layout,
                 view, isPopup, shouldRemoveScrim, popupMargin, desiredPopupContentWidth,
@@ -389,8 +384,8 @@ public class ContextMenuCoordinator implements ContextMenuUi {
     @VisibleForTesting
     void initializeHeaderCoordinatorForTesting(Activity activity, ContextMenuParams params,
             Profile profile, ContextMenuNativeDelegate nativeDelegate) {
-        mHeaderCoordinator = new ContextMenuHeaderCoordinator(
-                activity, PerformanceClass.PERFORMANCE_UNKNOWN, params, profile, nativeDelegate);
+        mHeaderCoordinator =
+                new ContextMenuHeaderCoordinator(activity, params, profile, nativeDelegate);
     }
 
     @VisibleForTesting

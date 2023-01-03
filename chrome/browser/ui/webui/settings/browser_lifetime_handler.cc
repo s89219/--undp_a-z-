@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/policy/management_utils.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/tpm_firmware_update.h"
@@ -120,7 +121,7 @@ void BrowserLifetimeHandler::HandleFactoryReset(const base::Value::List& args) {
 
   // TODO(crbug.com/891905): Centralize powerwash restriction checks.
   bool allow_powerwash =
-      !webui::IsEnterpriseManaged() &&
+      !policy::IsDeviceEnterpriseManaged() &&
       !user_manager::UserManager::Get()->IsLoggedInAsGuest() &&
       !user_manager::UserManager::Get()->IsLoggedInAsChildUser();
 

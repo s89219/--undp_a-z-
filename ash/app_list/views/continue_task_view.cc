@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,11 +12,8 @@
 #include "ash/app_list/app_list_util.h"
 #include "ash/app_list/app_list_view_delegate.h"
 #include "ash/app_list/model/search/search_result.h"
-#include "ash/app_list/views/remove_task_feedback_dialog.h"
-#include "ash/app_list/views/search_result_page_dialog_controller.h"
 #include "ash/bubble/bubble_utils.h"
 #include "ash/constants/ash_features.h"
-#include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/style/color_provider.h"
 #include "ash/resources/vector_icons/vector_icons.h"
@@ -26,13 +23,12 @@
 #include "ash/style/style_util.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
-#include "components/prefs/pref_registry_simple.h"
-#include "components/prefs/pref_service.h"
 #include "extensions/common/constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/models/menu_separator_types.h"
 #include "ui/base/models/simple_menu_model.h"
+#include "ui/color/color_id.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/accessibility/view_accessibility.h"
@@ -75,24 +71,11 @@ int GetCornerRadius(bool tablet_mode) {
   return tablet_mode ? kViewCornerRadiusTablet : kViewCornerRadiusClamshell;
 }
 
-PrefService* GetActiveUserPrefService() {
-  DCHECK(Shell::Get()->session_controller()->IsActiveUserSessionStarted());
-
-  auto* pref_service =
-      Shell::Get()->session_controller()->GetActivePrefService();
-  DCHECK(pref_service);
-  return pref_service;
-}
-
 }  // namespace
 
-ContinueTaskView::ContinueTaskView(
-    AppListViewDelegate* view_delegate,
-    SearchResultPageDialogController* dialog_controller,
-    bool tablet_mode)
-    : view_delegate_(view_delegate),
-      dialog_controller_(dialog_controller),
-      is_tablet_mode_(tablet_mode) {
+ContinueTaskView::ContinueTaskView(AppListViewDelegate* view_delegate,
+                                   bool tablet_mode)
+    : view_delegate_(view_delegate), is_tablet_mode_(tablet_mode) {
   SetPaintToLayer();
   layer()->SetFillsBoundsOpaquely(false);
 
@@ -107,9 +90,7 @@ ContinueTaskView::ContinueTaskView(
   views::HighlightPathGenerator::Install(this,
                                          std::move(ink_drop_highlight_path));
   SetInstallFocusRingOnFocus(true);
-  views::FocusRing::Get(this)->SetColor(
-      ColorProvider::Get()->GetControlsLayerColor(
-          ColorProvider::ControlsLayerType::kFocusRingColor));
+  views::FocusRing::Get(this)->SetColorId(ui::kColorAshFocusRing);
   SetFocusPainter(nullptr);
 
   views::InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
@@ -141,11 +122,16 @@ ContinueTaskView::ContinueTaskView(
 
   title_ = label_container->AddChildView(
       std::make_unique<views::Label>(std::u16string()));
+  bubble_utils::ApplyStyle(title_, bubble_utils::TypographyStyle::kBody1);
   title_->SetAccessibleName(std::u16string());
   title_->SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
-  title_->SetElideBehavior(gfx::ElideBehavior::ELIDE_MIDDLE);
+  title_->SetElideBehavior(gfx::ElideBehavior::ELIDE_TAIL);
+
   subtitle_ = label_container->AddChildView(
       std::make_unique<views::Label>(std::u16string()));
+  bubble_utils::ApplyStyle(subtitle_,
+                           bubble_utils::TypographyStyle::kAnnotation1,
+                           kColorAshTextColorSecondary);
   subtitle_->SetHorizontalAlignment(gfx::HorizontalAlignment::ALIGN_LEFT);
   subtitle_->SetElideBehavior(gfx::ElideBehavior::ELIDE_MIDDLE);
 
@@ -158,8 +144,6 @@ ContinueTaskView::~ContinueTaskView() {}
 
 void ContinueTaskView::OnThemeChanged() {
   views::View::OnThemeChanged();
-  bubble_utils::ApplyStyle(title_, bubble_utils::LabelStyle::kBody);
-  bubble_utils::ApplyStyle(subtitle_, bubble_utils::LabelStyle::kSubtitle);
   UpdateIcon();
   UpdateStyleForTabletMode();
 }
@@ -219,7 +203,8 @@ void ContinueTaskView::UpdateResult() {
   if (!result()) {
     title_->SetText(std::u16string());
     subtitle_->SetText(std::u16string());
-    GetViewAccessibility().OverrideName(std::u16string());
+    GetViewAccessibility().OverrideName(
+        std::u16string(), ax::mojom::NameFrom::kAttributeExplicitlyEmpty);
     return;
   }
 
@@ -266,26 +251,17 @@ void ContinueTaskView::ShowContextMenuForViewImpl(
       source->GetWidget(), nullptr /*button_controller*/,
       source->GetBoundsInScreen(), views::MenuAnchorPosition::kBubbleTopRight,
       source_type);
-  views::InkDrop::Get(this)->GetInkDrop()->AnimateToState(
-      views::InkDropState::ACTIVATED);
-}
-
-bool ContinueTaskView::ShouldShowFeedbackDialog() {
-  return app_list_features::IsFeedbackOnContinueSectionRemoveEnabled() &&
-         !GetActiveUserPrefService()->GetBoolean(
-             prefs::kLauncherFeedbackOnContinueSectionSent);
+  views::InkDrop::Get(this)->GetInkDrop()->SnapToActivated();
 }
 
 void ContinueTaskView::ExecuteCommand(int command_id, int event_flags) {
+  CloseContextMenu();
   switch (command_id) {
     case ContinueTaskCommandId::kOpenResult:
       OpenResult(event_flags);
       break;
     case ContinueTaskCommandId::kRemoveResult:
-      if (ShouldShowFeedbackDialog())
-        ShowFeedbackDialog();
-      else
-        RemoveResult();
+      RemoveResult();
       break;
     case ContinueTaskCommandId::kHideContinueSection:
       view_delegate_->SetHideContinueSection(true);
@@ -310,13 +286,14 @@ ui::SimpleMenuModel* ContinueTaskView::BuildMenuModel() {
           IDS_ASH_LAUNCHER_CONTINUE_SECTION_CONTEXT_MENU_REMOVE),
       ui::ImageModel::FromVectorIcon(kRemoveOutlineIcon,
                                      ui::kColorAshSystemUIMenuIcon));
-  context_menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
-  // TODO(crbug.com/1317428): Custom icon.
-  context_menu_model_->AddItemWithIcon(
-      ContinueTaskCommandId::kHideContinueSection,
-      l10n_util::GetStringUTF16(IDS_ASH_LAUNCHER_HIDE_CONTINUE_SECTION),
-      ui::ImageModel::FromVectorIcon(kLockScreenPasswordInvisibleIcon,
-                                     ui::kColorAshSystemUIMenuIcon));
+  if (Shell::Get()->IsInTabletMode()) {
+    context_menu_model_->AddSeparator(ui::NORMAL_SEPARATOR);
+    context_menu_model_->AddItemWithIcon(
+        ContinueTaskCommandId::kHideContinueSection,
+        l10n_util::GetStringUTF16(IDS_ASH_LAUNCHER_HIDE_CONTINUE_SECTION),
+        ui::ImageModel::FromVectorIcon(kLauncherHideContinueSectionIcon,
+                                       ui::kColorAshSystemUIMenuIcon));
+  }
   return context_menu_model_.get();
 }
 
@@ -339,32 +316,14 @@ void ContinueTaskView::OpenResult(int event_flags) {
 
 ContinueTaskView::TaskResultType ContinueTaskView::GetTaskResultType() {
   switch (result()->result_type()) {
-    case AppListSearchResultType::kFileChip:
     case AppListSearchResultType::kZeroStateFile:
       return TaskResultType::kLocalFile;
-    case AppListSearchResultType::kDriveChip:
     case AppListSearchResultType::kZeroStateDrive:
       return TaskResultType::kDriveFile;
     default:
       NOTREACHED();
   }
   return TaskResultType::kUnknown;
-}
-
-void ContinueTaskView::ShowFeedbackDialog() {
-  dialog_controller_->Show(std::make_unique<RemoveTaskFeedbackDialog>(
-      base::BindOnce(&ContinueTaskView::RemoveResultAndMaybeUpdateFeedbackPref,
-                     weak_ptr_factory_.GetWeakPtr()),
-      GetTaskResultType()));
-}
-
-void ContinueTaskView::RemoveResultAndMaybeUpdateFeedbackPref(
-    bool has_feedback) {
-  if (has_feedback) {
-    GetActiveUserPrefService()->SetBoolean(
-        prefs::kLauncherFeedbackOnContinueSectionSent, true);
-  }
-  RemoveResult();
 }
 
 void ContinueTaskView::RemoveResult() {

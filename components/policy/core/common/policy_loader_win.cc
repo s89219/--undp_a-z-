@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "base/check.h"
 #include "base/cxx17_backports.h"
 #include "base/enterprise_util.h"
 #include "base/files/file_util.h"
@@ -50,6 +51,7 @@
 #include "components/policy/core/common/registry_dict.h"
 #include "components/policy/core/common/schema.h"
 #include "components/policy/policy_constants.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace policy {
 
@@ -82,14 +84,15 @@ void ParsePolicy(const RegistryDict* gpo_dict,
   if (!gpo_dict)
     return;
 
-  std::unique_ptr<base::Value> policy_value(gpo_dict->ConvertToJSON(schema));
-  const base::DictionaryValue* policy_dict = nullptr;
-  if (!policy_value->GetAsDictionary(&policy_dict) || !policy_dict) {
+  absl::optional<base::Value> policy_value(gpo_dict->ConvertToJSON(schema));
+  DCHECK(policy_value);
+  const base::Value::Dict* policy_dict = policy_value->GetIfDict();
+  if (!policy_dict) {
     SYSLOG(WARNING) << "Root policy object is not a dictionary!";
     return;
   }
 
-  policy->LoadFrom(policy_dict, level, scope, POLICY_SOURCE_PLATFORM);
+  policy->LoadFrom(*policy_dict, level, scope, POLICY_SOURCE_PLATFORM);
 }
 
 // Returns a name, using the |get_name| callback, which may refuse the call if
@@ -170,18 +173,15 @@ bool IsDomainJoined() {
 // Collects stats about the enterprise environment that can be used to decide
 // how to parse the existing policy information.
 void CollectEnterpriseUMAs() {
-  // Collect statistics about the windows suite.
-  UMA_HISTOGRAM_ENUMERATION("EnterpriseCheck.OSType",
-                            base::win::OSInfo::GetInstance()->version_type(),
-                            base::win::SUITE_LAST);
-
+  base::UmaHistogramBoolean("EnterpriseCheck.IsManagedOrEnterpriseDevice",
+                            base::IsManagedOrEnterpriseDevice());
   base::UmaHistogramBoolean("EnterpriseCheck.IsDomainJoined", IsDomainJoined());
   base::UmaHistogramBoolean("EnterpriseCheck.InDomain",
                             base::win::IsEnrolledToDomain());
   base::UmaHistogramBoolean("EnterpriseCheck.IsManaged2",
                             base::win::IsDeviceRegisteredWithManagement());
   base::UmaHistogramBoolean("EnterpriseCheck.IsEnterpriseUser",
-                            base::IsMachineExternallyManaged());
+                            base::IsEnterpriseDevice());
   base::UmaHistogramBoolean("EnterpriseCheck.IsJoinedToAzureAD",
                             base::win::IsJoinedToAzureAD());
 
@@ -221,8 +221,7 @@ void CollectEnterpriseUMAs() {
 PolicyLoaderWin::PolicyLoaderWin(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     ManagementService* management_service,
-    const std::wstring& chrome_policy_key,
-    bool is_dev_registry_key_supported)
+    const std::wstring& chrome_policy_key)
     : AsyncPolicyLoader(task_runner,
                         management_service,
                         /*periodic_updates=*/true),
@@ -235,10 +234,7 @@ PolicyLoaderWin::PolicyLoaderWin(
           base::WaitableEvent::ResetPolicy::AUTOMATIC,
           base::WaitableEvent::InitialState::NOT_SIGNALED),
       user_policy_watcher_failed_(false),
-      machine_policy_watcher_failed_(false),
-      registry_watcher_(
-          RegistryWatcherWin::MaybeCreate(chrome_policy_key,
-                                          is_dev_registry_key_supported)) {
+      machine_policy_watcher_failed_(false) {
   if (!::RegisterGPNotification(user_policy_changed_event_.handle(), false)) {
     DPLOG(WARNING) << "Failed to register user group policy notification";
     user_policy_watcher_failed_ = true;
@@ -271,11 +267,9 @@ PolicyLoaderWin::~PolicyLoaderWin() {
 std::unique_ptr<PolicyLoaderWin> PolicyLoaderWin::Create(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
     ManagementService* management_service,
-    const std::wstring& chrome_policy_key,
-    bool is_dev_registry_key_supported) {
+    const std::wstring& chrome_policy_key) {
   return std::make_unique<PolicyLoaderWin>(task_runner, management_service,
-                                           chrome_policy_key,
-                                           is_dev_registry_key_supported);
+                                           chrome_policy_key);
 }
 
 void PolicyLoaderWin::InitOnBackgroundThread() {
@@ -284,7 +278,7 @@ void PolicyLoaderWin::InitOnBackgroundThread() {
   CollectEnterpriseUMAs();
 }
 
-std::unique_ptr<PolicyBundle> PolicyLoaderWin::Load() {
+PolicyBundle PolicyLoaderWin::Load() {
   // Reset the watches BEFORE reading the individual policies to avoid
   // missing a change notification.
   if (is_initialized_)
@@ -300,9 +294,9 @@ std::unique_ptr<PolicyBundle> PolicyLoaderWin::Load() {
   };
 
   // Load policy data for the different scopes/levels and merge them.
-  std::unique_ptr<PolicyBundle> bundle(new PolicyBundle());
+  PolicyBundle bundle;
   PolicyMap* chrome_policy =
-      &bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
+      &bundle.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
   for (size_t i = 0; i < std::size(kScopes); ++i) {
     PolicyScope scope = kScopes[i].scope;
     PolicyLoadStatusUmaReporter status;
@@ -323,7 +317,7 @@ std::unique_ptr<PolicyBundle> PolicyLoaderWin::Load() {
 
     // Load 3rd-party policy.
     if (third_party_dict)
-      Load3rdPartyPolicy(third_party_dict.get(), scope, bundle.get());
+      Load3rdPartyPolicy(third_party_dict.get(), scope, &bundle);
   }
 
   return bundle;
@@ -411,11 +405,6 @@ void PolicyLoaderWin::SetupWatches() {
           machine_policy_changed_event_.handle(), this)) {
     DLOG(WARNING) << "Failed to start watch for machine policy change event";
     machine_policy_watcher_failed_ = true;
-  }
-
-  if (registry_watcher_) {
-    registry_watcher_->StartWatching(base::BindRepeating(
-        &PolicyLoaderWin::Reload, base::Unretained(this), false /* force */));
   }
 }
 

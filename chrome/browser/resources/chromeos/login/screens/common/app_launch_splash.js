@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,15 +6,25 @@
  * @fileoverview App install/launch splash screen implementation.
  */
 
-/* #js_imports_placeholder */
+import '//resources/js/action_link.js';
+import '../../components/throbber_notice.js';
+
+import {announceAccessibleMessage, ensureTransitionEndEvent} from '//resources/ash/common/util.js';
+import {html, mixinBehaviors, Polymer, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {LoginScreenBehavior, LoginScreenBehaviorInterface} from '../../components/behaviors/login_screen_behavior.js';
+import {OobeI18nBehavior, OobeI18nBehaviorInterface} from '../../components/behaviors/oobe_i18n_behavior.js';
+import {OOBE_UI_STATE} from '../../components/display_manager_types.js';
+
+
 
 /**
  * @constructor
  * @extends {PolymerElement}
  * @implements {LoginScreenBehaviorInterface}
  */
-const AppLaunchSplashBase = Polymer.mixinBehaviors(
-  [OobeI18nBehavior, LoginScreenBehavior], Polymer.Element);
+const AppLaunchSplashBase =
+    mixinBehaviors([OobeI18nBehavior, LoginScreenBehavior], PolymerElement);
 
 /**
  * @typedef {{
@@ -35,7 +45,9 @@ class AppLaunchSplash extends AppLaunchSplashBase {
     return 'app-launch-splash-element';
   }
 
-  /* #html_template_placeholder */
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
   static get properties() {
     return {
@@ -45,9 +57,6 @@ class AppLaunchSplash extends AppLaunchSplashBase {
     };
   }
 
-  constructor() {
-    super();
-  }
 
   get EXTERNAL_API() {
     return ['toggleNetworkConfig',
@@ -57,9 +66,7 @@ class AppLaunchSplash extends AppLaunchSplashBase {
 
   ready() {
     super.ready();
-    this.initializeLoginScreen('AppLaunchSplashScreen', {
-      resetAllowed: false,
-    });
+    this.initializeLoginScreen('AppLaunchSplashScreen');
 
     const networkContainer = this.$.configNetworkContainer;
     networkContainer.addEventListener(

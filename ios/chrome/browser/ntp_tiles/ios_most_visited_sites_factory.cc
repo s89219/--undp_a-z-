@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "ios/chrome/browser/favicon/ios_chrome_large_icon_service_factory.h"
 #include "ios/chrome/browser/history/top_sites_factory.h"
 #include "ios/chrome/browser/ntp_tiles/ios_popular_sites_factory.h"
+#include "services/data_decoder/public/cpp/data_decoder.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
 std::unique_ptr<ntp_tiles::MostVisitedSites>
@@ -31,6 +32,7 @@ IOSMostVisitedSitesFactory::NewForBrowserState(
           IOSChromeLargeIconServiceFactory::GetForBrowserState(browser_state),
           std::make_unique<image_fetcher::ImageFetcherImpl>(
               image_fetcher::CreateIOSImageDecoder(),
-              browser_state->GetSharedURLLoaderFactory())),
+              browser_state->GetSharedURLLoaderFactory()),
+          /*data_decoder=*/nullptr),
       nil, false);
 }

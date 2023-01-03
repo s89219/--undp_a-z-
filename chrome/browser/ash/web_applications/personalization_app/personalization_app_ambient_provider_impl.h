@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,12 @@
 #define CHROME_BROWSER_ASH_WEB_APPLICATIONS_PERSONALIZATION_APP_PERSONALIZATION_APP_AMBIENT_PROVIDER_IMPL_H_
 
 #include "ash/constants/ambient_animation_theme.h"
-#include "ash/public/cpp/ambient/ambient_backend_controller.h"
+#include "ash/public/cpp/ambient/ambient_ui_model.h"
 #include "ash/public/cpp/ambient/common/ambient_settings.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom.h"
 #include "ash/webui/personalization_app/personalization_app_ambient_provider.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "content/public/browser/web_ui.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -23,11 +24,11 @@
 
 class Profile;
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 class PersonalizationAppAmbientProviderImpl
-    : public PersonalizationAppAmbientProvider {
+    : public PersonalizationAppAmbientProvider,
+      public AmbientUiModelObserver {
  public:
   explicit PersonalizationAppAmbientProviderImpl(content::WebUI* web_ui);
 
@@ -41,6 +42,9 @@ class PersonalizationAppAmbientProviderImpl
   void BindInterface(
       mojo::PendingReceiver<ash::personalization_app::mojom::AmbientProvider>
           receiver) override;
+
+  // AmbientUiModelObserver:
+  void OnAmbientUiVisibilityChanged(AmbientUiVisibility visibility) override;
 
   // ash::personalization_app::mojom:AmbientProvider:
   void IsAmbientModeEnabled(IsAmbientModeEnabledCallback callback) override;
@@ -56,6 +60,8 @@ class PersonalizationAppAmbientProviderImpl
                         ash::AmbientModeTopicSource topic_source,
                         bool selected) override;
   void SetPageViewed() override;
+  void FetchSettingsAndAlbums() override;
+  void StartScreenSaverPreview() override;
 
   // Notify WebUI the latest values.
   void OnAmbientModeEnabledChanged();
@@ -86,8 +92,6 @@ class PersonalizationAppAmbientProviderImpl
   // `success` is true when update successfully.
   void UpdateUIWithCachedSettings(bool success);
 
-  // Fetch settings and albums from Backdrop server.
-  void FetchSettingsAndAlbums();
   void OnSettingsAndAlbumsFetched(
       const absl::optional<ash::AmbientSettings>& settings,
       ash::PersonalAlbums personal_albums);
@@ -102,7 +106,8 @@ class PersonalizationAppAmbientProviderImpl
 
   void FetchGooglePhotosAlbumsPreviews(
       const std::vector<std::string>& album_ids);
-  void OnGooglePhotosAlbumsPreviewsFetched(const std::vector<GURL>& preview_urls);
+  void OnGooglePhotosAlbumsPreviewsFetched(
+      const std::vector<GURL>& preview_urls);
 
   ash::PersonalAlbum* FindPersonalAlbumById(const std::string& album_id);
 
@@ -128,7 +133,7 @@ class PersonalizationAppAmbientProviderImpl
   net::BackoffEntry update_settings_retry_backoff_;
 
   // Local settings which may contain changes from WebUI but have not sent to
-  // server. Only one `UpdateSettgings()` at a time.
+  // server. Only one `UpdateSettings()` at a time.
   absl::optional<ash::AmbientSettings> settings_;
 
   // The cached settings from the server. Should be the same as the server side.
@@ -154,6 +159,9 @@ class PersonalizationAppAmbientProviderImpl
   // A flag to record if the user has seen the ambient mode page.
   bool page_viewed_ = false;
 
+  base::ScopedObservation<AmbientUiModel, AmbientUiModelObserver>
+      ambient_ui_model_observer_{this};
+
   base::WeakPtrFactory<PersonalizationAppAmbientProviderImpl>
       write_weak_factory_{this};
   base::WeakPtrFactory<PersonalizationAppAmbientProviderImpl>
@@ -162,7 +170,6 @@ class PersonalizationAppAmbientProviderImpl
       google_photos_albums_previews_weak_factory_{this};
 };
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app
 
 #endif  // CHROME_BROWSER_ASH_WEB_APPLICATIONS_PERSONALIZATION_APP_PERSONALIZATION_APP_AMBIENT_PROVIDER_IMPL_H_

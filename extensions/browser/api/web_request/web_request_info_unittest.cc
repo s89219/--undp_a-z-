@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,7 +35,7 @@ TEST(WebRequestInfoTest, CreateRequestBodyDataFromFile) {
                                                false, false, absl::nullopt,
                                                ukm::kInvalidSourceIdObj));
   ASSERT_TRUE(info.request_body_data);
-  base::Value* value = info.request_body_data->FindKey(
+  base::Value* value = info.request_body_data->Find(
       extension_web_request_api_constants::kRequestBodyRawKey);
   ASSERT_TRUE(value);
 

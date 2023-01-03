@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "base/allocator/buildflags.h"
+#include "base/allocator/partition_allocator/partition_alloc_buildflags.h"
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/containers/flat_map.h"
@@ -17,7 +18,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/process/process_metrics.h"
 #include "base/strings/stringprintf.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/memory_dump_request_args.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -42,6 +43,10 @@
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/browser_metrics.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/memory_instrumentation.h"
 #include "url/gurl.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/child_process_binding_types.h"
+#endif
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/browser/extension_registry.h"
@@ -178,6 +183,8 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
     {"canvas/ResourceProvider/SkSurface", "CanvasResourceProvider.SkSurface",
      MetricSize::kSmall, kSize, EmitTo::kCountsInUkmOnly,
      &Memory_Experimental::SetCanvasResourceProvider_SkSurface},
+    {"cc/tile_memory", "TileMemory", MetricSize::kSmall, kSize,
+     EmitTo::kSizeInUmaOnly, nullptr},
     {"components/download", "DownloadService", MetricSize::kSmall,
      kEffectiveSize, EmitTo::kSizeInUkmAndUma,
      &Memory_Experimental::SetDownloadService},
@@ -207,8 +214,10 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      EmitTo::kSizeInUkmAndUma, &Memory_Experimental::SetCommandBuffer},
     {"gpu/gr_shader_cache", "Gpu.GrShaderCache", MetricSize::kSmall,
      kEffectiveSize, EmitTo::kSizeInUmaOnly, nullptr},
-    {"gpu/shared_images", "gpu::SharedImageStub", MetricSize::kSmall,
-     kEffectiveSize, EmitTo::kIgnored, nullptr},
+    // Not effective size, to account for the total footprint, a large fraction
+    // of it being claimed by renderers.
+    {"gpu/shared_images", "SharedImages", MetricSize::kLarge, kSize,
+     EmitTo::kSizeInUmaOnly, nullptr},
     {"gpu/transfer_cache", "ServiceTransferCache", MetricSize::kCustom, kSize,
      EmitTo::kSizeInUmaOnly, nullptr, ImageSizeMetricRange},
     {"gpu/transfer_cache", "ServiceTransferCache.AvgImageSize",
@@ -216,6 +225,12 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      ImageSizeMetricRange},
     {"history", "History", MetricSize::kSmall, kEffectiveSize,
      EmitTo::kSizeInUkmAndUma, &Memory_Experimental::SetHistory},
+#if BUILDFLAG(IS_MAC)
+    {"iosurface", "IOSurface", MetricSize::kLarge, kSize,
+     EmitTo::kSizeInUmaOnly, nullptr},
+    {"iosurface", "IOSurface.DirtyMemory", MetricSize::kLarge,
+     "resident_swapped", EmitTo::kSizeInUmaOnly, nullptr},
+#endif
     {"java_heap", "JavaHeap", MetricSize::kLarge, kEffectiveSize,
      EmitTo::kSizeInUkmAndUma, &Memory_Experimental::SetJavaHeap},
     {"leveldatabase", "LevelDatabase", MetricSize::kSmall, kEffectiveSize,
@@ -237,14 +252,20 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
     {"malloc/partitions/allocator", "Malloc.Allocator.ObjectCount",
      MetricSize::kTiny, MemoryAllocatorDump::kNameObjectCount,
      EmitTo::kSizeInUmaOnly, nullptr},
-#if BUILDFLAG(USE_BACKUP_REF_PTR)
+#if BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
     // TODO(keishi): Add brp_quarantined metrics for the Blink partitions.
     {"malloc/partitions/allocator", "Malloc.BRPQuarantined", MetricSize::kSmall,
      "brp_quarantined_size", EmitTo::kSizeInUmaOnly, nullptr},
     {"malloc/partitions/allocator", "Malloc.BRPQuarantinedCount",
      MetricSize::kTiny, "brp_quarantined_count", EmitTo::kSizeInUmaOnly,
      nullptr},
-#endif
+#endif  // BUILDFLAG(ENABLE_BACKUP_REF_PTR_SUPPORT)
+    {"malloc/partitions", "Malloc.BRPQuarantinedBytesPerMinute",
+     MetricSize::kSmall, "brp_quarantined_bytes_per_minute",
+     EmitTo::kSizeInUmaOnly, nullptr},
+    {"malloc/partitions", "Malloc.BRPQuarantinedCountPerMinute",
+     MetricSize::kTiny, "brp_quarantined_count_per_minute",
+     EmitTo::kSizeInUmaOnly, nullptr},
 #if BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
     {"malloc/partitions/allocator/thread_cache", "Malloc.ThreadCache",
      MetricSize::kSmall, kSize, EmitTo::kSizeInUmaOnly, nullptr},
@@ -252,6 +273,8 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      MetricSize::kLarge, "max_allocated_size", EmitTo::kSizeInUmaOnly, nullptr},
     {"malloc/partitions/allocator", "Malloc.MaxCommittedSize",
      MetricSize::kLarge, "max_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
+    {"malloc/partitions/allocator", "Malloc.CommittedSize", MetricSize::kLarge,
+     "virtual_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
     {"malloc/partitions/allocator", "Malloc.Wasted", MetricSize::kLarge,
      "wasted", EmitTo::kSizeInUmaOnly, nullptr},
     {"malloc/partitions/allocator", "Malloc.Fragmentation",
@@ -299,7 +322,10 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      "fragmentation", EmitTo::kSizeInUmaOnly, nullptr},
     {"partition_alloc/partitions/array_buffer",
      "PartitionAlloc.MaxCommittedSize.ArrayBuffer", MetricSize::kLarge,
-     "max_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
+     "max_committed", EmitTo::kSizeInUmaOnly, nullptr},
+    {"partition_alloc/partitions/array_buffer",
+     "PartitionAlloc.CommittedSize.ArrayBuffer", MetricSize::kLarge,
+     "virtual_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
     {"partition_alloc/partitions/array_buffer",
      "PartitionAlloc.MaxAllocatedSize.ArrayBuffer", MetricSize::kLarge,
      "max_allocated_size", EmitTo::kSizeInUmaOnly, nullptr},
@@ -313,7 +339,10 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      MetricSize::kPercentage, "fragmentation", EmitTo::kSizeInUmaOnly, nullptr},
     {"partition_alloc/partitions/buffer",
      "PartitionAlloc.MaxCommittedSize.Buffer", MetricSize::kLarge,
-     "max_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
+     "max_committed", EmitTo::kSizeInUmaOnly, nullptr},
+    {"partition_alloc/partitions/buffer", "PartitionAlloc.CommittedSize.Buffer",
+     MetricSize::kLarge, "virtual_committed_size", EmitTo::kSizeInUmaOnly,
+     nullptr},
     {"partition_alloc/partitions/buffer",
      "PartitionAlloc.MaxAllocatedSize.Buffer", MetricSize::kLarge,
      "max_allocated_size", EmitTo::kSizeInUmaOnly, nullptr},
@@ -328,7 +357,10 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      "fragmentation", EmitTo::kSizeInUmaOnly, nullptr},
     {"partition_alloc/partitions/fast_malloc",
      "PartitionAlloc.MaxCommittedSize.FastMalloc", MetricSize::kLarge,
-     "max_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
+     "max_committed", EmitTo::kSizeInUmaOnly, nullptr},
+    {"partition_alloc/partitions/fast_malloc",
+     "PartitionAlloc.CommittedSize.FastMalloc", MetricSize::kLarge,
+     "virtual_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
     {"partition_alloc/partitions/fast_malloc",
      "PartitionAlloc.MaxAllocatedSize.FastMalloc", MetricSize::kLarge,
      "max_allocated_size", EmitTo::kSizeInUmaOnly, nullptr},
@@ -347,7 +379,10 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
      MetricSize::kPercentage, "fragmentation", EmitTo::kSizeInUmaOnly, nullptr},
     {"partition_alloc/partitions/layout",
      "PartitionAlloc.MaxCommittedSize.Layout", MetricSize::kLarge,
-     "max_committed_size", EmitTo::kSizeInUmaOnly, nullptr},
+     "max_committed", EmitTo::kSizeInUmaOnly, nullptr},
+    {"partition_alloc/partitions/layout", "PartitionAlloc.CommittedSize.Layout",
+     MetricSize::kLarge, "virtual_committed_size", EmitTo::kSizeInUmaOnly,
+     nullptr},
     {"partition_alloc/partitions/layout",
      "PartitionAlloc.MaxAllocatedSize.Layout", MetricSize::kLarge,
      "max_allocated_size", EmitTo::kSizeInUmaOnly, nullptr},
@@ -372,8 +407,6 @@ const Metric kAllocatorDumpNamesForMetrics[] = {
     {"skia", "Skia", MetricSize::kLarge, kEffectiveSize,
      EmitTo::kSizeInUkmAndUma, &Memory_Experimental::SetSkia},
     {"skia/gpu_resources", "SharedContextState", MetricSize::kLarge,
-     kEffectiveSize, EmitTo::kIgnored, nullptr},
-    {"skia/gpu_resources", "VizProcessContextProvider", MetricSize::kLarge,
      kEffectiveSize, EmitTo::kIgnored, nullptr},
     {"skia/sk_glyph_cache", "Skia.SkGlyphCache", MetricSize::kLarge,
      kEffectiveSize, EmitTo::kSizeInUkmAndUma,
@@ -548,6 +581,17 @@ const Metric kPartitionAllocAddressSpaceMetrics[] = {
         .uma_name = "PartitionAlloc.AddressSpace.ConfigurablePoolUsage",
         .metric_size = MetricSize::kLarge,
         .metric = "configurable_pool_usage",
+    },
+    Metric{
+        .uma_name = "PartitionAlloc.AddressSpace."
+                    "PkeyPoolLargestAvailableReservation",
+        .metric_size = MetricSize::kLarge,
+        .metric = "pkey_pool_largest_reservation",
+    },
+    Metric{
+        .uma_name = "PartitionAlloc.AddressSpace.PkeyPoolUsage",
+        .metric_size = MetricSize::kLarge,
+        .metric = "pkey_pool_usage",
     },
 };
 #endif  // BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
@@ -780,10 +824,8 @@ void EmitProcessUmaAndUkm(const GlobalMemoryDump::ProcessDump& pmd,
     }
   }
 
-#if !BUILDFLAG(IS_MAC)
   // Resident set is not populated on Mac.
   builder->SetResident(pmd.os_dump().resident_set_kb / kKiB);
-#endif
 
   builder->SetPrivateMemoryFootprint(pmd.os_dump().private_footprint_kb / kKiB);
   builder->SetSharedMemoryFootprint(pmd.os_dump().shared_footprint_kb / kKiB);
@@ -797,14 +839,10 @@ void EmitProcessUmaAndUkm(const GlobalMemoryDump::ProcessDump& pmd,
     return;
 
   const char* process_name = HistogramProcessTypeToString(process_type);
-#if BUILDFLAG(IS_MAC)
-  // Resident set is not populated on Mac.
-  DCHECK_EQ(pmd.os_dump().resident_set_kb, 0U);
-#else
+
   MEMORY_METRICS_HISTOGRAM_MB(
       std::string(kMemoryHistogramPrefix) + process_name + ".ResidentSet",
       pmd.os_dump().resident_set_kb / kKiB);
-#endif
   MEMORY_METRICS_HISTOGRAM_MB(GetPrivateFootprintHistogramName(process_type),
                               pmd.os_dump().private_footprint_kb / kKiB);
   MEMORY_METRICS_HISTOGRAM_MB(std::string(kMemoryHistogramPrefix) +
@@ -932,6 +970,33 @@ void EmitUtilityMemoryMetrics(HistogramProcessType ptype,
   builder.Record(ukm_recorder);
 }
 
+#if BUILDFLAG(IS_ANDROID)
+// Return the base::android::ChildBindingState if the process with `pid` is a
+// renderer. If the `pid` is not in the list of live renderers it is assumed to
+// be unbound. If the `process_type` is not for a renderer return nullopt.
+absl::optional<base::android::ChildBindingState>
+GetAndroidRendererProcessBindingState(
+    memory_instrumentation::mojom::ProcessType process_type,
+    base::ProcessId pid) {
+  if (process_type != memory_instrumentation::mojom::ProcessType::RENDERER) {
+    return absl::nullopt;
+  }
+  for (auto iter = content::RenderProcessHost::AllHostsIterator();
+       !iter.IsAtEnd(); iter.Advance()) {
+    if (!iter.GetCurrentValue()->GetProcess().IsValid())
+      continue;
+
+    if (iter.GetCurrentValue()->GetProcess().Pid() == pid) {
+      return iter.GetCurrentValue()->GetEffectiveChildBindingState();
+    }
+  }
+  // This can occur if the process no longer exists. Specifically, it is
+  // possible a memory dump was requested, but the process was killed before
+  // reaching this point so we cannot check its status. Treat as UNBOUND.
+  return base::android::ChildBindingState::UNBOUND;
+}
+#endif  // BUILDFLAG(IS_ANDROID)
+
 }  // namespace
 
 ProcessMemoryMetricsEmitter::ProcessMemoryMetricsEmitter()
@@ -978,7 +1043,7 @@ void ProcessMemoryMetricsEmitter::FetchAndEmitProcessMemoryMetrics() {
             base::BindOnce(&ProcessMemoryMetricsEmitter::ReceivedProcessInfos,
                            pmme, std::move(process_infos)));
       },
-      base::SequencedTaskRunnerHandle::Get(),
+      base::SequencedTaskRunner::GetCurrentDefault(),
       scoped_refptr<ProcessMemoryMetricsEmitter>(this));
 
   performance_manager::PerformanceManager::CallOnGraph(
@@ -1059,6 +1124,9 @@ int ProcessMemoryMetricsEmitter::GetNumberOfExtensions(base::ProcessId pid) {
     extensions::ProcessMap* process_map = extensions::ProcessMap::Get(profile);
     extensions::ExtensionRegistry* registry =
         extensions::ExtensionRegistry::Get(profile);
+    if (!process_map || !registry)
+      continue;
+
     std::set<std::string> extension_ids =
         process_map->GetExtensionsInProcess(rph_id);
     for (const std::string& extension_id : extension_ids) {
@@ -1074,7 +1142,7 @@ int ProcessMemoryMetricsEmitter::GetNumberOfExtensions(base::ProcessId pid) {
 }
 
 absl::optional<base::TimeDelta> ProcessMemoryMetricsEmitter::GetProcessUptime(
-    const base::Time& now,
+    base::TimeTicks now,
     base::ProcessId pid) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -1098,18 +1166,43 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
     return;
 
   uint32_t private_footprint_total_kb = 0;
+#if BUILDFLAG(IS_ANDROID)
+  uint32_t private_footprint_excluding_waived_total_kb = 0;
+  uint32_t renderer_private_footprint_excluding_waived_total_kb = 0;
+  uint32_t private_footprint_visible_or_higher_total_kb = 0;
+  uint32_t renderer_private_footprint_visible_or_higher_total_kb = 0;
+#endif  // BUILDFLAG(IS_ANDROID)
   uint32_t renderer_private_footprint_total_kb = 0;
   uint32_t renderer_malloc_total_kb = 0;
   uint32_t shared_footprint_total_kb = 0;
   uint32_t resident_set_total_kb = 0;
+  uint64_t tiles_total_memory = 0;
   bool emit_metrics_for_all_processes = pid_scope_ == base::kNullProcessId;
 
   TabFootprintAggregator per_tab_metrics;
 
-  base::Time now = base::Time::Now();
+  base::TimeTicks now = base::TimeTicks::Now();
   for (const auto& pmd : global_dump_->process_dumps()) {
     uint32_t process_pmf_kb = pmd.os_dump().private_footprint_kb;
     private_footprint_total_kb += process_pmf_kb;
+#if BUILDFLAG(IS_ANDROID)
+    bool is_waived_renderer = false;
+    bool is_less_than_visible_renderer = false;
+    auto renderer_binding_state_android =
+        GetAndroidRendererProcessBindingState(pmd.process_type(), pmd.pid());
+    if (renderer_binding_state_android) {
+      // Also exclude base::android::ChildBindingState::UNBOUND which can occur
+      // as the state change can be racy.
+      is_waived_renderer = *renderer_binding_state_android <=
+                           base::android::ChildBindingState::WAIVED;
+      is_less_than_visible_renderer = *renderer_binding_state_android <
+                                      base::android::ChildBindingState::VISIBLE;
+    }
+    private_footprint_excluding_waived_total_kb +=
+        is_waived_renderer ? 0 : process_pmf_kb;
+    private_footprint_visible_or_higher_total_kb +=
+        is_less_than_visible_renderer ? 0 : process_pmf_kb;
+#endif  // BUILDFLAG(IS_ANDROID)
     shared_footprint_total_kb += pmd.os_dump().shared_footprint_kb;
     resident_set_total_kb += pmd.os_dump().resident_set_kb;
 
@@ -1125,6 +1218,12 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
       }
       case memory_instrumentation::mojom::ProcessType::RENDERER: {
         renderer_private_footprint_total_kb += process_pmf_kb;
+#if BUILDFLAG(IS_ANDROID)
+        renderer_private_footprint_excluding_waived_total_kb +=
+            is_waived_renderer ? 0 : process_pmf_kb;
+        renderer_private_footprint_visible_or_higher_total_kb +=
+            is_less_than_visible_renderer ? 0 : process_pmf_kb;
+#endif  // BUILDFLAG(IS_ANDROID)
         const PageInfo* single_page_info = nullptr;
         auto iter = process_infos_.find(pmd.pid());
         if (iter != process_infos_.end()) {
@@ -1194,6 +1293,18 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
       case memory_instrumentation::mojom::ProcessType::OTHER:
         break;
     }
+
+    if (emit_metrics_for_all_processes) {
+      // cc/ has clients in all process types. Careful though about
+      // double-counting: in the GPU process a lot of the memory is allocated on
+      // behalf of other process types, so the size vs effective_size
+      // distinction matters there.
+      //
+      // Not using effective size as tiles are not shared across processes, but
+      // they are shared with the GPU process (under a different name), and we
+      // don't want to count these partially if priority is not set right.
+      tiles_total_memory += pmd.GetMetric("cc/tile_memory", kSize).value_or(0);
+    }
   }
 
   if (emit_metrics_for_all_processes) {
@@ -1224,17 +1335,9 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
       }
     }
 
-    UMA_HISTOGRAM_MEMORY_LARGE_MB(
-        "Memory.Experimental.Total2.PrivateMemoryFootprint",
-        private_footprint_total_kb / kKiB);
-#if BUILDFLAG(IS_MAC)
-    // Resident set is not populated on Mac.
-    DCHECK_EQ(resident_set_total_kb, 0U);
-#else
     UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Total.ResidentSet",
                                   resident_set_total_kb / kKiB);
 
-#endif
     UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Total.PrivateMemoryFootprint",
                                   private_footprint_total_kb / kKiB);
     // The pseudo metric of Memory.Total.PrivateMemoryFootprint. Only used to
@@ -1249,6 +1352,22 @@ void ProcessMemoryMetricsEmitter::CollateResults() {
                                   renderer_malloc_total_kb / kKiB);
     UMA_HISTOGRAM_MEMORY_LARGE_MB("Memory.Total.SharedMemoryFootprint",
                                   shared_footprint_total_kb / kKiB);
+    UMA_HISTOGRAM_MEMORY_MEDIUM_MB("Memory.Total.TileMemory",
+                                   tiles_total_memory / kMiB);
+#if BUILDFLAG(IS_ANDROID)
+    UMA_HISTOGRAM_MEMORY_LARGE_MB(
+        "Memory.Total.PrivateMemoryFootprintExcludingWaivedRenderers",
+        private_footprint_excluding_waived_total_kb / kKiB);
+    UMA_HISTOGRAM_MEMORY_LARGE_MB(
+        "Memory.Total.RendererPrivateMemoryFootprintExcludingWaived",
+        renderer_private_footprint_excluding_waived_total_kb / kKiB);
+    UMA_HISTOGRAM_MEMORY_LARGE_MB(
+        "Memory.Total.PrivateMemoryFootprintVisibleOrHigherPriorityRenderers",
+        private_footprint_visible_or_higher_total_kb / kKiB);
+    UMA_HISTOGRAM_MEMORY_LARGE_MB(
+        "Memory.Total.RendererPrivateMemoryFootprintVisibleOrHigherPriority",
+        renderer_private_footprint_visible_or_higher_total_kb / kKiB);
+#endif
 
     Memory_Experimental(ukm::UkmRecorder::GetNewSourceID())
         .SetTotal2_PrivateMemoryFootprint(private_footprint_total_kb / kKiB)

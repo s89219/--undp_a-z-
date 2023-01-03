@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,7 @@
 #include "components/history_clusters/core/config.h"
 #include "components/history_clusters/core/history_clusters_types.h"
 
-namespace history_clusters {
+namespace {
 
 // Is the transition user-visible.
 bool IsTransitionUserVisible(int32_t transition) {
@@ -28,30 +28,42 @@ bool IsTransitionUserVisible(int32_t transition) {
                                        ui::PAGE_TRANSITION_KEYWORD_GENERATED);
 }
 
+}  // namespace
+
+namespace history_clusters {
+
 // static
 base::Time GetAnnotatedVisitsToCluster::GetBeginTimeOnDayBoundary(
-    base::Time end_time) {
-  // Conventionally, `end_time` being null means to fetch History starting from
-  // right now, so we explicitly convert that to `Now()` here.
-  base::Time begin_time = end_time.is_null() ? base::Time::Now() : end_time;
-  begin_time -= base::Hours(12);
-  begin_time = begin_time.LocalMidnight();
-  begin_time += base::Hours(4);
-  return begin_time;
+    base::Time time) {
+  DCHECK(!time.is_null());
+  // Subtract 16 hrs. Chosen to be halfway between boundaries; i.e. 4pm is 12
+  // hrs from 4am. This guarantees fetching at least 12 hrs of visits regardless
+  // of whether iterating recent or oldest visits first.
+  time -= base::Hours(16);
+  time = time.LocalMidnight();
+  time += base::Hours(4);
+  return time;
 }
 
 GetAnnotatedVisitsToCluster::GetAnnotatedVisitsToCluster(
     IncompleteVisitMap incomplete_visit_map,
-    base::Time begin_time,
+    base::Time begin_time_limit,
     QueryClustersContinuationParams continuation_params,
+    bool recent_first,
+    int days_of_clustered_visits,
+    bool recluster,
     Callback callback)
     : incomplete_visit_map_(incomplete_visit_map),
       begin_time_limit_(
-          std::max(begin_time, base::Time::Now() - base::Days(90))),
+          std::max(begin_time_limit, base::Time::Now() - base::Days(90))),
       continuation_params_(continuation_params),
+      recent_first_(recent_first),
+      days_of_clustered_visits_(days_of_clustered_visits),
+      recluster_(recluster),
       callback_(std::move(callback)) {
   // Callers shouldn't ask for more visits if they've been exhausted.
-  DCHECK(!continuation_params.exhausted_history);
+  DCHECK(!continuation_params.exhausted_unclustered_visits);
+  DCHECK_GE(days_of_clustered_visits_, 0);
 }
 
 GetAnnotatedVisitsToCluster::~GetAnnotatedVisitsToCluster() = default;
@@ -61,29 +73,33 @@ bool GetAnnotatedVisitsToCluster::RunOnDBThread(
     history::HistoryDatabase* db) {
   base::ElapsedThreadTimer query_visits_timer;
 
-  // The end time used in the initial history request for completed visits.
-  // This is the upper bound time of all the visits fetched. Used later to add
-  // incomplete visits from the same time range we scanned for completed visits.
-  // Cached here as `continuation_params` will be updated after each history
-  // request.
-  base::Time original_end_time = continuation_params_.continuation_time;
+  // Because `base::Time::Now()` may change during the async history request,
+  // and because determining whether history was exhausted depends on whether
+  // the query reached `Now()`, `now` tracks `Now()` at the time the query
+  // options were created.
+  const auto now = base::Time::Now();
+
+  // It's very unlikely for `now == begin_time_limit_`, but it's theoretically
+  // possible if e.g. the keyword cooldown is set to 0ms, and it took 0ms from
+  // initiating the `GetAnnotatedVisitsToCluster()` to reach here.
+  if (now == begin_time_limit_) {
+    continuation_params_.exhausted_unclustered_visits = true;
+    continuation_params_.exhausted_all_visits = true;
+  }
 
   history::QueryOptions options;
   // Accumulate 1 day at a time of visits to avoid breaking up clusters.
-
-  while (annotated_visits_.empty() && !continuation_params_.is_done) {
-    options = GetHistoryQueryOptions();
-
-    // Tack on all the newly fetched visits onto our accumulator vector.
-    bool limited_by_max_count = AddUnclusteredVisits(backend, options);
-
-    IncrementContinuationParams(options, limited_by_max_count);
+  while (annotated_visits_.empty() &&
+         !continuation_params_.exhausted_unclustered_visits) {
+    options = GetHistoryQueryOptions(backend, now);
+    DCHECK(!options.begin_time.is_null());
+    DCHECK(!options.end_time.is_null());
+    DCHECK(options.begin_time != options.end_time);
+    bool limited_by_max_count = AddUnclusteredVisits(backend, db, options);
+    AddIncompleteVisits(backend, options.begin_time, options.end_time);
+    IncrementContinuationParams(options, limited_by_max_count, now);
   }
-
-  AddIncompleteVisits(backend, continuation_params_.continuation_time,
-                      original_end_time);
-
-  RemoveVisitsFromSync();
+  AddClusteredVisits(backend, db, options.begin_time);
 
   base::UmaHistogramTimes(
       "History.Clusters.Backend.QueryAnnotatedVisits.ThreadTime",
@@ -92,7 +108,9 @@ bool GetAnnotatedVisitsToCluster::RunOnDBThread(
   return true;
 }
 
-history::QueryOptions GetAnnotatedVisitsToCluster::GetHistoryQueryOptions() {
+history::QueryOptions GetAnnotatedVisitsToCluster::GetHistoryQueryOptions(
+    history::HistoryBackend* backend,
+    base::Time now) {
   history::QueryOptions options;
 
   // History Clusters wants a complete navigation graph and internally handles
@@ -105,22 +123,67 @@ history::QueryOptions GetAnnotatedVisitsToCluster::GetHistoryQueryOptions() {
   options.max_count =
       GetConfig().max_visits_to_cluster - annotated_visits_.size();
 
-  // Bound visits by `continuation_end_time_` and `begin_time_limit_`,
-  // fetching the more recent visits 1st.
-  options.end_time = continuation_params_.continuation_time;
-  options.begin_time =
-      std::max(GetBeginTimeOnDayBoundary(options.end_time), begin_time_limit_);
+  // Determine the begin & end times.
+  // 1st, set `continuation_time`, either from `continuation_params_`for
+  // continuation requests or computed for initial requests.
+  base::Time continuation_time;
+  if (continuation_params_.is_continuation) {
+    continuation_time = continuation_params_.continuation_time;
+  } else if (recent_first_) {
+    continuation_time = now;
+  } else {
+    continuation_time =
+        std::max(backend->FindMostRecentClusteredTime(), begin_time_limit_);
+  }
+
+  // 2nd, derive the other boundary, approximately 1 day before or after
+  // `continuation_time`, depending on `recent_first`, and rounded to a day
+  // boundary.
+  if (recent_first_) {
+    options.begin_time = GetBeginTimeOnDayBoundary(continuation_time);
+    options.end_time = continuation_time;
+  } else {
+    options.begin_time = continuation_time;
+    options.end_time =
+        GetBeginTimeOnDayBoundary(continuation_time) + base::Days(2);
+  }
+
+  // 3rd, lastly, make sure the times don't surpass `begin_time_limit_` or
+  // `now`.
+  options.begin_time = std::clamp(options.begin_time, begin_time_limit_, now);
+  options.end_time = std::clamp(options.end_time, begin_time_limit_, now);
+  options.visit_order = recent_first_
+                            ? history::QueryOptions::VisitOrder::RECENT_FIRST
+                            : history::QueryOptions::VisitOrder::OLDEST_FIRST;
 
   return options;
 }
 
 bool GetAnnotatedVisitsToCluster::AddUnclusteredVisits(
     history::HistoryBackend* backend,
+    history::HistoryDatabase* db,
     history::QueryOptions options) {
   bool limited_by_max_count = false;
-  base::ranges::move(
-      backend->GetAnnotatedVisits(options, &limited_by_max_count),
-      std::back_inserter(annotated_visits_));
+
+  for (const auto& visit :
+       backend->GetAnnotatedVisits(options, &limited_by_max_count)) {
+    const bool is_clustered =
+        GetConfig().persist_clusters_in_history_db && !recluster_
+            ? db->GetClusterIdContainingVisit(visit.visit_row.visit_id) > 0
+            : false;
+    if (is_clustered && recent_first_)
+      continuation_params_.exhausted_unclustered_visits = true;
+
+    if (is_clustered) {
+      continue;
+    }
+
+    if ((visit.source != history::SOURCE_SYNCED) ||
+        GetConfig().include_synced_visits) {
+      annotated_visits_.push_back(std::move(visit));
+    }
+  }
+
   return limited_by_max_count;
 }
 
@@ -153,10 +216,8 @@ void GetAnnotatedVisitsToCluster::AddIncompleteVisits(
     // `options.max_count`.
     const auto& visit_time =
         incomplete_visit_context_annotations.visit_row.visit_time;
-    if ((!begin_time.is_null() && visit_time < begin_time) ||
-        (!end_time.is_null() && visit_time >= end_time)) {
+    if (visit_time < begin_time || visit_time >= end_time)
       continue;
-    }
 
     // Discard any incomplete visits that were already fetched from History.
     // This can happen when History finishes writing the rows after we snapshot
@@ -198,22 +259,10 @@ void GetAnnotatedVisitsToCluster::AddIncompleteVisits(
   }
 }
 
-void GetAnnotatedVisitsToCluster::RemoveVisitsFromSync() {
-  // Filter out visits from sync.
-  // TODO(manukh): Consider allowing the clustering backend to handle sync
-  //  visits.
-  annotated_visits_.erase(
-      base::ranges::remove_if(annotated_visits_,
-                              [](const auto& annotated_visit) {
-                                return annotated_visit.source ==
-                                       history::SOURCE_SYNCED;
-                              }),
-      annotated_visits_.end());
-}
-
 void GetAnnotatedVisitsToCluster::IncrementContinuationParams(
     history::QueryOptions options,
-    bool limited_by_max_count) {
+    bool limited_by_max_count,
+    base::Time now) {
   continuation_params_.is_continuation = true;
 
   // If `limited_by_max_count` is true, `annotated_visits_` "shouldn't" be
@@ -227,22 +276,71 @@ void GetAnnotatedVisitsToCluster::IncrementContinuationParams(
         annotated_visits_.back().visit_row.visit_time;
     continuation_params_.is_partial_day = true;
   } else {
-    continuation_params_.continuation_time = options.begin_time;
+    DCHECK(!continuation_params_.exhausted_unclustered_visits || recent_first_);
+    // Prepare `continuation_time` for the next day of visits. It will include
+    // all unclustered visits iterated. Except, if `exhausted_unclustered_visits
+    // is true, which is only possible if `recent_first_` is true and it just
+    // reached the clustering boundary, then prepare `continuation_time` to
+    // re-iterate the last iterated day, as the to include the clustered visits
+    // of that day.
+    continuation_params_.continuation_time =
+        (recent_first_ && !continuation_params_.exhausted_unclustered_visits)
+            ? options.begin_time
+            : options.end_time;
     continuation_params_.is_partial_day = false;
 
     // We've exhausted history if we've reached `begin_time_limit_` (bound to be
-    // at most 90 days old). This does not necessarily mean we've added all
-    // visits; e.g. `begin_time_limit_` can be more recent than 90 days ago or
-    // the initial `continuation_end_time_` could have been older than now.
-    if (continuation_params_.continuation_time <= begin_time_limit_) {
-      continuation_params_.exhausted_history = true;
-      continuation_params_.is_done = true;
+    // at most 90 days old) or `Now()`. This does not necessarily mean we've
+    // added all visits; e.g. `begin_time_limit_` can be more recent than 90
+    // days ago or the initial `continuation_end_time_` could have been older
+    // than now.
+    if ((continuation_params_.continuation_time <= begin_time_limit_ &&
+         recent_first_) ||
+        (continuation_params_.continuation_time >= now && !recent_first_)) {
+      continuation_params_.exhausted_unclustered_visits = true;
+      continuation_params_.exhausted_all_visits = true;
     }
   }
 }
 
+void GetAnnotatedVisitsToCluster::AddClusteredVisits(
+    history::HistoryBackend* backend,
+    history::HistoryDatabase* db,
+    base::Time unclustered_begin_time) {
+  if (annotated_visits_.empty() ||
+      annotated_visits_.size() >=
+          static_cast<size_t>(GetConfig().max_visits_to_cluster) ||
+      days_of_clustered_visits_ == 0) {
+    return;
+  }
+
+  // Get the clusters within `days_of_clustered_visits_` days older than the
+  // unclustered visits.
+  const auto cluster_ids = db->GetMostRecentClusterIds(
+      unclustered_begin_time - base::Days(days_of_clustered_visits_),
+      unclustered_begin_time, 1000);
+
+  // If we found a cluster and are iterating recent_first_, then we've reached
+  // the cluster threshold and have no more unclustered visits remaining.
+  if (!cluster_ids.empty() && recent_first_)
+    continuation_params_.exhausted_unclustered_visits = true;
+
+  // Add the clustered visits, adding 1 cluster at a time so that partial
+  // clusters aren't added.
+  for (const auto cluster_id : cluster_ids) {
+    const auto visit_ids_of_cluster = db->GetVisitIdsInCluster(cluster_id);
+    if (annotated_visits_.size() + visit_ids_of_cluster.size() >
+        static_cast<size_t>(GetConfig().max_visits_to_cluster))
+      break;
+    cluster_ids_.push_back(cluster_id);
+    base::ranges::move(backend->ToAnnotatedVisits(visit_ids_of_cluster),
+                       std::back_inserter(annotated_visits_));
+  }
+}
+
 void GetAnnotatedVisitsToCluster::DoneRunOnMainThread() {
-  std::move(callback_).Run(annotated_visits_, continuation_params_);
+  std::move(callback_).Run(cluster_ids_, annotated_visits_,
+                           continuation_params_);
 }
 
 }  // namespace history_clusters

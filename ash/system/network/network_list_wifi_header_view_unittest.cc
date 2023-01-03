@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,10 +58,11 @@ class NetworkListWifiHeaderViewTest : public AshTestBase {
   }
 
   void SetToggleState(bool enabled, bool is_on) {
-    network_list_wifi_header_view()->SetToggleState(enabled, is_on);
+    network_list_wifi_header_view()->SetToggleState(enabled, is_on,
+                                                    /*animate_toggle=*/true);
   }
 
-  chromeos::NetworkStateTestHelper* network_state_helper() {
+  NetworkStateTestHelper* network_state_helper() {
     return &network_config_helper_.network_state_helper();
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,13 +12,15 @@
 #include "ash/capture_mode/capture_mode_controller.h"
 #include "ash/capture_mode/capture_mode_metrics.h"
 #include "ash/capture_mode/capture_mode_session.h"
-#include "ash/capture_mode/capture_mode_toggle_button.h"
 #include "ash/constants/ash_features.h"
+#include "ash/public/cpp/style/color_provider.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/strings/grit/ash_strings.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/ash_color_id.h"
+#include "ash/style/icon_button.h"
 #include "base/bind.h"
 #include "base/files/file_path.h"
+#include "capture_mode_menu_toggle_button.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/compositor/layer.h"
@@ -62,32 +64,38 @@ CaptureModeSettingsView::CaptureModeSettingsView(CaptureModeSession* session,
     : capture_mode_session_(session) {
   auto* controller = CaptureModeController::Get();
   if (!controller->is_recording_in_progress()) {
+    const bool audio_capture_managed_by_policy =
+        controller->IsAudioCaptureDisabledByPolicy();
+
+    DCHECK(!audio_capture_managed_by_policy || !is_in_projector_mode)
+        << "A projector session should not be allowed to begin if audio "
+           "recording is diabled by policy.";
+
     audio_input_menu_group_ =
         AddChildView(std::make_unique<CaptureModeMenuGroup>(
             this, kCaptureModeMicIcon,
-            l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_AUDIO_INPUT)));
+            l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_AUDIO_INPUT),
+            audio_capture_managed_by_policy));
 
     if (!is_in_projector_mode) {
       audio_input_menu_group_->AddOption(
+          /*option_icon=*/nullptr,
           l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_AUDIO_INPUT_OFF),
           kAudioOff);
     }
-    audio_input_menu_group_->AddOption(
-        l10n_util::GetStringUTF16(
-            IDS_ASH_SCREEN_CAPTURE_AUDIO_INPUT_MICROPHONE),
-        kAudioMicrophone);
-  }
 
-  auto* color_provider = AshColorProvider::Get();
-  const SkColor separator_color = color_provider->GetContentLayerColor(
-      AshColorProvider::ContentLayerType::kSeparatorColor);
+    if (!audio_capture_managed_by_policy) {
+      audio_input_menu_group_->AddOption(
+          /*option_icon=*/nullptr,
+          l10n_util::GetStringUTF16(
+              IDS_ASH_SCREEN_CAPTURE_AUDIO_INPUT_MICROPHONE),
+          kAudioMicrophone);
+    }
 
-  if (features::IsCaptureModeSelfieCameraEnabled() &&
-      !controller->is_recording_in_progress()) {
     separator_1_ = AddChildView(std::make_unique<views::Separator>());
-    separator_1_->SetColor(separator_color);
+    separator_1_->SetColorId(ui::kColorAshSystemUIMenuSeparator);
     auto* camera_controller = controller->camera_controller();
-    const bool managed_by_policy =
+    const bool camera_managed_by_policy =
         camera_controller->IsCameraDisabledByPolicy();
     // Even if the camera feature is managed by policy, we still want to observe
     // the camera controller, since we need to be notified with camera additions
@@ -96,19 +104,35 @@ CaptureModeSettingsView::CaptureModeSettingsView(CaptureModeSession* session,
     camera_menu_group_ = AddChildView(std::make_unique<CaptureModeMenuGroup>(
         this, kCaptureModeCameraIcon,
         l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_CAMERA),
-        managed_by_policy));
+        camera_managed_by_policy));
 
-    AddCameraOptions(camera_controller->available_cameras(), managed_by_policy);
+    AddCameraOptions(camera_controller->available_cameras(),
+                     camera_managed_by_policy);
+  }
+
+  if (features::AreCaptureModeDemoToolsEnabled()) {
+    separator_2_ = AddChildView(std::make_unique<views::Separator>());
+    separator_2_->SetColorId(ui::kColorAshSystemUIMenuSeparator);
+    demo_tools_menu_toggle_button_ =
+        AddChildView(std::make_unique<CaptureModeMenuToggleButton>(
+            kCaptureModeDemoToolsSettingsMenuEntryPointIcon,
+            l10n_util::GetStringUTF16(
+                IDS_ASH_SCREEN_CAPTURE_DEMO_TOOLS_SHOW_KEYS_AND_CLICKS),
+            CaptureModeController::Get()->enable_demo_tools(),
+            base::BindRepeating(
+                &CaptureModeSettingsView::OnDemoToolsButtonToggled,
+                base::Unretained(this))));
   }
 
   if (!is_in_projector_mode) {
-    separator_2_ = AddChildView(std::make_unique<views::Separator>());
-    separator_2_->SetColor(separator_color);
+    separator_3_ = AddChildView(std::make_unique<views::Separator>());
+    separator_3_->SetColorId(ui::kColorAshSystemUIMenuSeparator);
 
     save_to_menu_group_ = AddChildView(std::make_unique<CaptureModeMenuGroup>(
         this, kCaptureModeFolderIcon,
         l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_SAVE_TO)));
     save_to_menu_group_->AddOption(
+        /*option_icon=*/nullptr,
         l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_SAVE_TO_DOWNLOADS),
         kDownloadsFolder);
     save_to_menu_group_->AddMenuItem(
@@ -120,8 +144,7 @@ CaptureModeSettingsView::CaptureModeSettingsView(CaptureModeSession* session,
   }
 
   SetPaintToLayer();
-  SetBackground(views::CreateSolidBackground(color_provider->GetBaseLayerColor(
-      AshColorProvider::BaseLayerType::kTransparent80)));
+  SetBackground(views::CreateThemedSolidBackground(kColorAshShieldAndBase80));
   layer()->SetFillsBoundsOpaquely(false);
   layer()->SetRoundedCornerRadius(kBorderRadius);
   layer()->SetBackgroundBlur(ColorProvider::kBackgroundBlurSigma);
@@ -132,8 +155,7 @@ CaptureModeSettingsView::CaptureModeSettingsView(CaptureModeSession* session,
 }
 
 CaptureModeSettingsView::~CaptureModeSettingsView() {
-  if (features::IsCaptureModeSelfieCameraEnabled())
-    CaptureModeController::Get()->camera_controller()->RemoveObserver(this);
+  CaptureModeController::Get()->camera_controller()->RemoveObserver(this);
 }
 
 gfx::Rect CaptureModeSettingsView::GetBounds(
@@ -172,7 +194,8 @@ void CaptureModeSettingsView::OnCaptureFolderMayHaveChanged() {
         l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_SAVE_TO_LINUX_FILES);
   }
 
-  save_to_menu_group_->AddOrUpdateExistingOption(folder_name, kCustomFolder);
+  save_to_menu_group_->AddOrUpdateExistingOption(
+      /*option_icon=*/nullptr, folder_name, kCustomFolder);
 
   controller->CheckFolderAvailability(
       custom_path,
@@ -192,10 +215,8 @@ CaptureModeSettingsView::GetHighlightableItems() {
       highlightable_items;
   DCHECK(audio_input_menu_group_);
   audio_input_menu_group_->AppendHighlightableItems(highlightable_items);
-  if (features::IsCaptureModeSelfieCameraEnabled()) {
-    DCHECK(camera_menu_group_);
-    camera_menu_group_->AppendHighlightableItems(highlightable_items);
-  }
+  DCHECK(camera_menu_group_);
+  camera_menu_group_->AppendHighlightableItems(highlightable_items);
   if (save_to_menu_group_)
     save_to_menu_group_->AppendHighlightableItems(highlightable_items);
   return highlightable_items;
@@ -237,9 +258,9 @@ bool CaptureModeSettingsView::IsOptionChecked(int option_id) const {
   auto* camera_controller = controller->camera_controller();
   switch (option_id) {
     case kAudioOff:
-      return !CaptureModeController::Get()->enable_audio_recording();
+      return !CaptureModeController::Get()->GetAudioRecordingEnabled();
     case kAudioMicrophone:
-      return CaptureModeController::Get()->enable_audio_recording();
+      return CaptureModeController::Get()->GetAudioRecordingEnabled();
     case kDownloadsFolder:
       return GetCurrentCaptureFolder().is_default_downloads_folder ||
              !is_custom_folder_available_.value_or(false);
@@ -258,9 +279,14 @@ bool CaptureModeSettingsView::IsOptionChecked(int option_id) const {
 }
 
 bool CaptureModeSettingsView::IsOptionEnabled(int option_id) const {
+  const bool audio_capture_managed_by_policy =
+      CaptureModeController::Get()->IsAudioCaptureDisabledByPolicy();
   switch (option_id) {
     case kAudioOff:
-      return !capture_mode_session_->is_in_projector_mode();
+      return !audio_capture_managed_by_policy &&
+             !capture_mode_session_->is_in_projector_mode();
+    case kAudioMicrophone:
+      return !audio_capture_managed_by_policy;
     case kCustomFolder:
       return is_custom_folder_available_.value_or(false);
     case kCameraOff: {
@@ -269,7 +295,6 @@ bool CaptureModeSettingsView::IsOptionEnabled(int option_id) const {
       DCHECK(camera_controller);
       return !camera_controller->IsCameraDisabledByPolicy();
     }
-    case kAudioMicrophone:
     case kDownloadsFolder:
     default:
       return true;
@@ -298,15 +323,6 @@ void CaptureModeSettingsView::OnAvailableCamerasChanged(
 void CaptureModeSettingsView::OnSelectedCameraChanged(
     const CameraId& camera_id) {
   // TODO(conniekxu): Implement this function.
-}
-
-views::View* CaptureModeSettingsView::GetMicrophoneOptionForTesting() {
-  return audio_input_menu_group_->GetOptionForTesting(  // IN-TEST
-      kAudioMicrophone);                                // IN-TEST
-}
-
-views::View* CaptureModeSettingsView::GetOffOptionForTesting() {
-  return audio_input_menu_group_->GetOptionForTesting(kAudioOff);  // IN-TEST
 }
 
 void CaptureModeSettingsView::OnSelectFolderMenuItemPressed() {
@@ -342,6 +358,7 @@ void CaptureModeSettingsView::AddCameraOptions(const CameraInfoList& cameras,
   const bool has_cameras = !cameras.empty();
   if (has_cameras) {
     camera_menu_group_->AddOption(
+        /*option_icon=*/nullptr,
         l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_CAMERA_OFF),
         kCameraOff);
     if (!managed_by_policy) {
@@ -349,6 +366,7 @@ void CaptureModeSettingsView::AddCameraOptions(const CameraInfoList& cameras,
       for (const CameraInfo& camera_info : cameras) {
         option_camera_id_map_[camera_option_id_begin] = camera_info.camera_id;
         camera_menu_group_->AddOption(
+            /*option_icon=*/nullptr,
             base::UTF8ToUTF16(camera_info.display_name),
             camera_option_id_begin++);
       }
@@ -360,6 +378,11 @@ void CaptureModeSettingsView::AddCameraOptions(const CameraInfoList& cameras,
 void CaptureModeSettingsView::UpdateCameraMenuGroupVisibility(bool visible) {
   separator_1_->SetVisible(visible);
   camera_menu_group_->SetVisible(visible);
+}
+
+void CaptureModeSettingsView::OnDemoToolsButtonToggled() {
+  const bool was_on = CaptureModeController::Get()->enable_demo_tools();
+  CaptureModeController::Get()->EnableDemoTools(!was_on);
 }
 
 BEGIN_METADATA(CaptureModeSettingsView, views::View)

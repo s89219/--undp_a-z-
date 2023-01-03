@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,8 @@
 
 #include <string>
 
-#include "chrome/browser/ui/webui/chromeos/crostini_upgrader/crostini_upgrader.mojom.h"
+#include "base/memory/weak_ptr.h"
+#include "chrome/browser/ui/webui/ash/crostini_upgrader/crostini_upgrader.mojom-forward.h"
 
 namespace base {
 class FilePath;
@@ -17,9 +18,11 @@ namespace content {
 class WebContents;
 }  // namespace content
 
-namespace crostini {
+namespace guest_os {
+struct GuestId;
+}
 
-struct ContainerId;
+namespace crostini {
 
 class CrostiniUpgraderUIObserver {
  public:
@@ -28,7 +31,7 @@ class CrostiniUpgraderUIObserver {
   virtual void OnBackupSucceeded(bool was_cancelled) = 0;
   virtual void OnBackupFailed() = 0;
   virtual void PrecheckStatus(
-      chromeos::crostini_upgrader::mojom::UpgradePrecheckStatus status) = 0;
+      ash::crostini_upgrader::mojom::UpgradePrecheckStatus status) = 0;
   virtual void OnUpgradeProgress(const std::vector<std::string>& messages) = 0;
   virtual void OnUpgradeSucceeded() = 0;
   virtual void OnUpgradeFailed() = 0;
@@ -55,17 +58,17 @@ class CrostiniUpgraderUIDelegate {
   // Back up the current container before upgrading. If |show_file_chooser|
   // is true, the user will be able to select the backup location via a file
   // chooser.
-  virtual void Backup(const ContainerId& container_id,
+  virtual void Backup(const guest_os::GuestId& container_id,
                       bool show_file_chooser,
                       base::WeakPtr<content::WebContents> web_contents) = 0;
 
   virtual void StartPrechecks() = 0;
 
   // Start the upgrade.
-  virtual void Upgrade(const ContainerId& container_id) = 0;
+  virtual void Upgrade(const guest_os::GuestId& container_id) = 0;
 
   // Restore the container to the backed up state if an upgrade has failed.
-  virtual void Restore(const ContainerId& container_id,
+  virtual void Restore(const guest_os::GuestId& container_id,
                        base::WeakPtr<content::WebContents> web_contents) = 0;
 
   // Cancel the ongoing upgrade.

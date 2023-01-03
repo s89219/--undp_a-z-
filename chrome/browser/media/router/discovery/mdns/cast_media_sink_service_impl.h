@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,9 +17,9 @@
 #include "chrome/browser/media/router/discovery/dial/dial_media_sink_service_impl.h"
 #include "chrome/browser/media/router/discovery/discovery_network_monitor.h"
 #include "chrome/browser/media/router/discovery/media_sink_discovery_metrics.h"
-#include "components/cast_channel/cast_channel_enum.h"
-#include "components/cast_channel/cast_socket.h"
 #include "components/media_router/common/discovery/media_sink_service_base.h"
+#include "components/media_router/common/providers/cast/channel/cast_channel_enum.h"
+#include "components/media_router/common/providers/cast/channel/cast_socket.h"
 #include "net/base/backoff_entry.h"
 #include "third_party/openscreen/src/cast/common/channel/proto/cast_channel.pb.h"
 
@@ -99,8 +99,6 @@ class CastMediaSinkServiceImpl : public MediaSinkServiceBase,
   // Called by CastMediaSinkService to set |allow_all_ips_|.
   void SetCastAllowAllIPs(bool allow_all_ips);
 
-  void BindLogger(mojo::PendingRemote<mojom::Logger> pending_remote);
-
   // Opens cast channel. This method will not open a channel if there is already
   // a pending request for |ip_endpoint|, or if a channel for |ip_endpoint|
   // already exists.
@@ -121,6 +119,13 @@ class CastMediaSinkServiceImpl : public MediaSinkServiceBase,
   // Closes the Cast Channel to the sink, and removes the sink from the sink
   // service.
   virtual void DisconnectAndRemoveSink(const MediaSinkInternal& sink);
+
+  // Returns cast socket open parameters.
+  // Connect / liveness timeout value are dynamically calculated
+  // based on results of previous connection attempts.
+  // |sink|: Sink to open cast channel to.
+  cast_channel::CastSocketOpenParams CreateCastSocketOpenParams(
+      const MediaSinkInternal& sink);
 
  private:
   friend class CastMediaSinkServiceImplTest;
@@ -175,6 +180,10 @@ class CastMediaSinkServiceImpl : public MediaSinkServiceBase,
                            TestInitRetryParametersWithDefaultValue);
   FRIEND_TEST_ALL_PREFIXES(CastMediaSinkServiceImplTest,
                            TestOnSinkAddedOrUpdatedSkipsIfNonCastDevice);
+  FRIEND_TEST_ALL_PREFIXES(CastMediaSinkServiceImplTest,
+                           IgnoreDialSinkIfSameIdAsCast);
+  FRIEND_TEST_ALL_PREFIXES(CastMediaSinkServiceImplTest,
+                           IgnoreDialSinkIfSameIpAddressAsCast);
   FRIEND_TEST_ALL_PREFIXES(CastMediaSinkServiceImplTest,
                            TestSuccessOnChannelErrorRetry);
   FRIEND_TEST_ALL_PREFIXES(CastMediaSinkServiceImplTest,
@@ -242,13 +251,6 @@ class CastMediaSinkServiceImpl : public MediaSinkServiceBase,
 
   // DiscoveryNetworkMonitor::Observer implementation
   void OnNetworksChanged(const std::string& network_id) override;
-
-  // Returns cast socket open parameters. Parameters are read from Finch.
-  // Connect / liveness timeout value are dynamically calculated
-  // based on results of previous connection attempts.
-  // |sink|: Sink to open cast channel to.
-  cast_channel::CastSocketOpenParams CreateCastSocketOpenParams(
-      const MediaSinkInternal& sink);
 
   // Invoked when opening cast channel on IO thread completes.
   // |cast_sink|: Cast sink created from mDNS service description, DIAL sink, or
@@ -322,6 +324,8 @@ class CastMediaSinkServiceImpl : public MediaSinkServiceBase,
   // long term solution for restricting dual discovery.
   bool IsProbablyNonCastDevice(const MediaSinkInternal& sink) const;
 
+  bool HasSinkWithIPAddress(const net::IPAddress& ip_address) const;
+
   base::WeakPtr<CastMediaSinkServiceImpl> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
   }
@@ -372,11 +376,6 @@ class CastMediaSinkServiceImpl : public MediaSinkServiceBase,
   // Non-owned pointer to DIAL MediaSinkService. Observed by |this| for dual
   // discovery.  May be nullptr if the DIAL Media Route Provider is disabled.
   const raw_ptr<MediaSinkServiceBase> dial_media_sink_service_;
-
-  // Mojo Remote to the logger owned by the Media Router. The Remote is not
-  // bound until |BindLogger()| is called. Always check if |logger_.is_bound()|
-  // is true before using.
-  mojo::Remote<mojom::Logger> logger_;
 
   // The SequencedTaskRunner on which methods are run. This shares the
   // same SequencedTaskRunner as the one used by |cast_socket_service_|.

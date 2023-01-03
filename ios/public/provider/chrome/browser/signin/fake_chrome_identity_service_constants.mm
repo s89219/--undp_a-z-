@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,14 @@ namespace ios {
 
 NSString* const kManagedIdentityEmailSuffix = @"@google.com";
 
+NSString* const kManagedExampleIdentityEmailSuffix = @"@example.com";
+
+// This constant is duplicated in ios/chrome/test/earl_grey/test_switches.mm.
+// Keep them in sync when modifying it here.
 const char* const kAddFakeIdentitiesArg = "add_fake_identities";
+
+NSArray<NSString*>* GetManagedEmailSuffixes() {
+  return @[ kManagedIdentityEmailSuffix, kManagedExampleIdentityEmailSuffix ];
+}
 
 }  // namespace ios

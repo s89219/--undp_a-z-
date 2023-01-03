@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/token.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
@@ -84,7 +85,7 @@ class FakeDeviceLauncher final : public content::VideoCaptureDeviceLauncher {
               kVideoCaptureControllerInvalidOrUnsupportedVideoCaptureParametersRequested);
       return;
     }
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&FakeDeviceLauncher::OnDeviceLaunched,
                                   weak_factory_.GetWeakPtr(), receiver,
                                   callbacks, std::move(done_cb)));
@@ -156,6 +157,8 @@ class MockVideoCaptureObserver final
     buffers_.erase(iter);
     OnBufferDestroyedCall(buffer_id);
   }
+
+  MOCK_METHOD1(OnNewCropVersion, void(uint32_t crop_version));
 
   MOCK_METHOD1(OnStateChangedCall, void(media::mojom::VideoCaptureState state));
   MOCK_METHOD1(OnVideoCaptureErrorCall, void(media::VideoCaptureError error));

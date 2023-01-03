@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/power_monitor_test.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_group.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -81,7 +82,7 @@ class TestTabStatsTracker : public TabStatsTracker {
       std::unique_ptr<content::WebContents> tab =
           test_harness->CreateTestWebContents();
       tab_strip_model->InsertWebContentsAt(
-          tab_strip_model->count(), std::move(tab), TabStripModel::ADD_ACTIVE);
+          tab_strip_model->count(), std::move(tab), AddTabTypes::ADD_ACTIVE);
     }
     EXPECT_EQ(tab_stats_data_store()->tab_stats().total_tab_count,
               static_cast<size_t>(tab_strip_model->count()));
@@ -93,7 +94,7 @@ class TestTabStatsTracker : public TabStatsTracker {
     EXPECT_LE(tab_count, static_cast<size_t>(tab_strip_model->count()));
     for (size_t i = 0; i < tab_count; ++i) {
       tab_strip_model->CloseWebContentsAt(tab_strip_model->count() - 1,
-                                          TabStripModel::CLOSE_USER_GESTURE);
+                                          TabCloseTypes::CLOSE_USER_GESTURE);
     }
     return tab_stats_data_store()->tab_stats().total_tab_count;
   }
@@ -625,13 +626,9 @@ TEST_F(TabStatsTrackerTest, HeartbeatMetrics) {
   size_t expected_tab_count =
       tab_stats_tracker_->AddTabs(12, this, tab_strip_model_);
   size_t expected_window_count = tab_stats_tracker_->AddWindows(5);
-  int collapsed_tab_count = 0;
 
   tab_stats_tracker_->OnHeartbeatEvent();
 
-  histogram_tester_.ExpectBucketCount(
-      UmaStatsReportingDelegate::kCollapsedTabHistogramName,
-      collapsed_tab_count, 1);
   histogram_tester_.ExpectBucketCount(
       UmaStatsReportingDelegate::kTabCountHistogramName, expected_tab_count, 1);
   histogram_tester_.ExpectBucketCount(
@@ -652,14 +649,9 @@ TEST_F(TabStatsTrackerTest, HeartbeatMetrics) {
   group2->SetVisualData(visual_data);
   ASSERT_TRUE(tab_strip_model_->IsGroupCollapsed(group_id1));
   ASSERT_TRUE(tab_strip_model_->IsGroupCollapsed(group_id2));
-  collapsed_tab_count += group1->ListTabs().length();
-  collapsed_tab_count += group2->ListTabs().length();
 
   tab_stats_tracker_->OnHeartbeatEvent();
 
-  histogram_tester_.ExpectBucketCount(
-      UmaStatsReportingDelegate::kCollapsedTabHistogramName,
-      collapsed_tab_count, 1);
   histogram_tester_.ExpectBucketCount(
       UmaStatsReportingDelegate::kWindowCountHistogramName,
       expected_window_count, 1);

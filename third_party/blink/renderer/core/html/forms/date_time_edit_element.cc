@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/html/forms/date_time_edit_element.h"
 
+#include "base/ranges/algorithm.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/text.h"
@@ -581,7 +582,7 @@ scoped_refptr<ComputedStyle> DateTimeEditElement::CustomStyleForLayoutObject(
     const StyleRecalcContext& style_recalc_context) {
   // TODO(crbug.com/1181868): This is a kind of layout. We might want to
   // introduce new LayoutObject.
-  scoped_refptr<ComputedStyle> style =
+  scoped_refptr<const ComputedStyle> original_style =
       OriginalStyleForLayoutObject(style_recalc_context);
   float width = 0;
   for (Node* child = FieldsWrapperElement()->firstChild(); child;
@@ -593,17 +594,18 @@ scoped_refptr<ComputedStyle> DateTimeEditElement::CustomStyleForLayoutObject(
       // We need to pass the ComputedStyle of this element because child
       // elements can't resolve inherited style at this timing.
       width += static_cast<DateTimeFieldElement*>(child_element)
-                   ->MaximumWidth(*style);
+                   ->MaximumWidth(*original_style);
     } else {
       // ::-webkit-datetime-edit-text case. It has no
       // border/padding/margin in html.css.
       width += DateTimeFieldElement::ComputeTextWidth(
-          *style, child_element->textContent());
+          *original_style, child_element->textContent());
     }
   }
-  style->SetWidth(Length::Fixed(ceilf(width)));
-  style->SetCustomStyleCallbackDependsOnFont();
-  return style;
+  ComputedStyleBuilder builder(*original_style);
+  builder.SetWidth(Length::Fixed(ceilf(width)));
+  builder.SetCustomStyleCallbackDependsOnFont();
+  return builder.TakeStyle();
 }
 
 void DateTimeEditElement::DidBlurFromField(mojom::blink::FocusType focus_type) {
@@ -771,7 +773,7 @@ void DateTimeEditElement::GetLayout(const LayoutParameters& layout_parameters,
 
   DateTimeEditBuilder builder(*this, layout_parameters, date_value);
   Node* last_child_to_be_removed = fields_wrapper->lastChild();
-  if (!builder.Build(layout_parameters.date_time_format) || fields_.IsEmpty()) {
+  if (!builder.Build(layout_parameters.date_time_format) || fields_.empty()) {
     last_child_to_be_removed = fields_wrapper->lastChild();
     builder.Build(layout_parameters.fallback_date_time_format);
   }
@@ -857,9 +859,7 @@ void DateTimeEditElement::SetEmptyValue(
 }
 
 DateTimeFieldElement* DateTimeEditElement::GetField(DateTimeField type) const {
-  auto* it = std::find_if(
-      fields_.begin(), fields_.end(),
-      [&type](const auto& field) { return field->Type() == type; });
+  auto* it = base::ranges::find(fields_, type, &DateTimeFieldElement::Type);
   if (it == fields_.end())
     return nullptr;
   return *it;

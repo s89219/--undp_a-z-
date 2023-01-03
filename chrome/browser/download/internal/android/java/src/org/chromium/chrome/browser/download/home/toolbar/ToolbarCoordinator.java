@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -181,7 +181,7 @@ public class ToolbarCoordinator implements SelectionObserver<ListItem> {
             UmaUtils.recordTopMenuShareCount(itemsShared);
             return true;
         } else if (item.getItemId() == R.id.search_menu_id) {
-            mToolbar.showSearchView();
+            mToolbar.showSearchView(true);
             updateShadowVisibility();
             return true;
         } else if (item.getItemId() == R.id.settings_menu_id) {

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,14 +28,16 @@
 #include "chrome/browser/extensions/api/omnibox/omnibox_api.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_factory.h"
 #include "chrome/browser/predictors/loading_predictor.h"
 #include "chrome/browser/predictors/loading_predictor_factory.h"
-#include "chrome/browser/prefetch/search_prefetch/search_prefetch_service.h"
-#include "chrome/browser/prefetch/search_prefetch/search_prefetch_service_factory.h"
-#include "chrome/browser/prerender/prerender_manager.h"
-#include "chrome/browser/prerender/prerender_utils.h"
+#include "chrome/browser/preloading/prefetch/search_prefetch/search_prefetch_service.h"
+#include "chrome/browser/preloading/prefetch/search_prefetch/search_prefetch_service_factory.h"
+#include "chrome/browser/preloading/prerender/prerender_manager.h"
+#include "chrome/browser/preloading/prerender/prerender_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ssl/typed_navigation_upgrade_throttle.h"
@@ -59,6 +61,7 @@
 #include "components/omnibox/browser/search_provider.h"
 #include "components/omnibox/browser/shortcuts_backend.h"
 #include "components/omnibox/common/omnibox_features.h"
+#include "components/optimization_guide/core/optimization_target_model_observer.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/sessions/content/session_tab_helper.h"
@@ -85,7 +88,16 @@ ChromeOmniboxClient::ChromeOmniboxClient(OmniboxEditController* controller,
                          ServiceAccessType::EXPLICIT_ACCESS),
                      HistoryServiceFactory::GetForProfile(
                          profile,
-                         ServiceAccessType::EXPLICIT_ACCESS)) {}
+                         ServiceAccessType::EXPLICIT_ACCESS)) {
+  if (OmniboxFieldTrial::IsOnDeviceTailSuggestEnabled()) {
+    optimization_guide::OptimizationGuideModelProvider* opt_guide =
+        OptimizationGuideKeyedServiceFactory::GetForProfile(profile);
+    if (opt_guide) {
+      tail_model_observer_ =
+          std::make_unique<OnDeviceTailModelObserver>(opt_guide);
+    }
+  }
+}
 
 ChromeOmniboxClient::~ChromeOmniboxClient() {
   BitmapFetcherService* bitmap_fetcher_service =
@@ -129,9 +141,9 @@ bool ChromeOmniboxClient::IsPasteAndGoEnabled() const {
 }
 
 bool ChromeOmniboxClient::IsDefaultSearchProviderEnabled() const {
-  const base::Value* url_dict = profile_->GetPrefs()->GetDictionary(
+  const base::Value::Dict& url_dict = profile_->GetPrefs()->GetDict(
       DefaultSearchManager::kDefaultSearchProviderDataPrefName);
-  return !url_dict->FindBoolPath(DefaultSearchManager::kDisabledByPolicy)
+  return !url_dict.FindBool(DefaultSearchManager::kDisabledByPolicy)
               .value_or(false);
 }
 
@@ -168,6 +180,11 @@ bool ChromeOmniboxClient::ShouldDefaultTypedNavigationsToHttps() const {
 
 int ChromeOmniboxClient::GetHttpsPortForTesting() const {
   return TypedNavigationUpgradeThrottle::GetHttpsPortForTesting();
+}
+
+bool ChromeOmniboxClient::IsUsingFakeHttpsForHttpsUpgradeTesting() const {
+  // Tests on desktop/Android always use a real HTTPS server.
+  return false;
 }
 
 gfx::Image ChromeOmniboxClient::GetIconIfExtensionMatch(
@@ -260,7 +277,8 @@ void ChromeOmniboxClient::OnResultChanged(
   if (should_preload) {
     if (SearchPrefetchService* search_prefetch_service =
             SearchPrefetchServiceFactory::GetForProfile(profile_)) {
-      search_prefetch_service->OnResultChanged(result);
+      search_prefetch_service->OnResultChanged(controller_->GetWebContents(),
+                                               result);
     }
   }
 
@@ -276,19 +294,6 @@ void ChromeOmniboxClient::OnResultChanged(
   int result_index = -1;
   for (const AutocompleteMatch& match : result) {
     ++result_index;
-
-    // Trigger prerendering only if `should_preload` is set to true. Caller
-    // uses this parameter to explicitly allow embedders to preload (currently,
-    // prefetch or prerender). A typical scenario is that the caller will only
-    // set it to true if the results will not change, to ensure that the
-    // preload operation is not triggered for the same input repeatedly.
-    // TODO(https://crbug.com/1295170): Migrate this part to
-    // SearchPrefetchService, to unify pre* operations.
-    if (prerender_utils::IsSearchSuggestionPrerenderEnabled() &&
-        should_preload && BaseSearchProvider::ShouldPrerender(match)) {
-      DoPrerender(match);
-    }
-
     if (match.ImageUrl().is_empty()) {
       continue;
     }
@@ -336,6 +341,7 @@ void ChromeOmniboxClient::OnTextChanged(const AutocompleteMatch& current_match,
   AutocompleteActionPredictor::Action recommended_action =
       AutocompleteActionPredictor::ACTION_NONE;
   if (user_input_in_progress) {
+    content::WebContents* web_contents = controller_->GetWebContents();
     AutocompleteActionPredictor* action_predictor =
         predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_);
     action_predictor->RegisterTransitionalMatches(user_text, result);
@@ -345,13 +351,9 @@ void ChromeOmniboxClient::OnTextChanged(const AutocompleteMatch& current_match,
     // but only get it if the user has actually typed something to avoid
     // constructing it before it's needed. Note: This event is triggered as
     // part of startup when the initial tab transitions to the start page.
-    recommended_action =
-        action_predictor->RecommendAction(user_text, current_match);
+    recommended_action = action_predictor->RecommendAction(
+        user_text, current_match, web_contents);
   }
-
-  UMA_HISTOGRAM_ENUMERATION("AutocompleteActionPredictor.Action",
-                            recommended_action,
-                            AutocompleteActionPredictor::LAST_PREDICT_ACTION);
 
   switch (recommended_action) {
     case AutocompleteActionPredictor::ACTION_PRERENDER:
@@ -385,12 +387,19 @@ void ChromeOmniboxClient::OnURLOpenedFromOmnibox(OmniboxLog* log) {
   // values (kHitFinished, kUnused, kCancelled) are recorded in
   // PrerenderManager.
   content::WebContents* web_contents = controller_->GetWebContents();
-  auto* prerender_manager = PrerenderManager::FromWebContents(web_contents);
-  if (!prerender_manager ||
-      !prerender_manager->HasSearchResultPagePrerendered()) {
-    base::UmaHistogramEnumeration(
-        internal::kHistogramPrerenderPredictionStatusDefaultSearchEngine,
-        PrerenderPredictionStatus::kNotStarted);
+  if (web_contents) {
+    if (SearchPrefetchService* search_prefetch_service =
+            SearchPrefetchServiceFactory::GetForProfile(profile_)) {
+      search_prefetch_service->OnURLOpenedFromOmnibox(log, web_contents);
+    }
+
+    auto* prerender_manager = PrerenderManager::FromWebContents(web_contents);
+    if (!prerender_manager ||
+        !prerender_manager->HasSearchResultPagePrerendered()) {
+      base::UmaHistogramEnumeration(
+          internal::kHistogramPrerenderPredictionStatusDefaultSearchEngine,
+          PrerenderPredictionStatus::kNotStarted);
+    }
   }
 
   predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_)
@@ -398,7 +407,7 @@ void ChromeOmniboxClient::OnURLOpenedFromOmnibox(OmniboxLog* log) {
 }
 
 void ChromeOmniboxClient::OnBookmarkLaunched() {
-  RecordBookmarkLaunch(BOOKMARK_LAUNCH_LOCATION_OMNIBOX,
+  RecordBookmarkLaunch(BookmarkLaunchLocation::kOmnibox,
                        profile_metrics::GetBrowserProfileType(profile_));
 }
 
@@ -429,6 +438,17 @@ void ChromeOmniboxClient::FocusWebContents() {
     controller_->GetWebContents()->Focus();
 }
 
+void ChromeOmniboxClient::OnNavigationLikely(
+    size_t index,
+    const AutocompleteMatch& match,
+    omnibox::mojom::NavigationPredictor navigation_predictor) {
+  if (SearchPrefetchService* search_prefetch_service =
+          SearchPrefetchServiceFactory::GetForProfile(profile_)) {
+    search_prefetch_service->OnNavigationLikely(
+        index, match, navigation_predictor, controller_->GetWebContents());
+  }
+}
+
 void ChromeOmniboxClient::DoPrerender(const AutocompleteMatch& match) {
   content::WebContents* web_contents = controller_->GetWebContents();
 
@@ -436,31 +456,19 @@ void ChromeOmniboxClient::DoPrerender(const AutocompleteMatch& match) {
   if (content::DevToolsAgentHost::IsDebuggerAttached(web_contents))
     return;
 
-  // Treat search hint differently, since AutocompleteActionPredictor does not
-  // prerender search results.
   // TODO(https://crbug.com/1278634): Refactor relevant code to reuse common
   // code, and ensure metrics are correctly recorded.
-  if (AutocompleteMatch::IsSearchType(match.type)) {
-    DCHECK(prerender_utils::IsSearchSuggestionPrerenderEnabled());
-    DCHECK(BaseSearchProvider::ShouldPrerender(match));
-    PrerenderManager::CreateForWebContents(web_contents);
-    auto* prerender_manager = PrerenderManager::FromWebContents(web_contents);
-    prerender_manager->StartPrerenderSearchSuggestion(match);
-  } else {
-    gfx::Rect container_bounds = web_contents->GetContainerBounds();
-    predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_)
-        ->StartPrerendering(match.destination_url, *web_contents,
-                            container_bounds.size());
-  }
+  DCHECK(!AutocompleteMatch::IsSearchType(match.type));
+  gfx::Rect container_bounds = web_contents->GetContainerBounds();
+  predictors::AutocompleteActionPredictorFactory::GetForProfile(profile_)
+      ->StartPrerendering(match.destination_url, *web_contents,
+                          container_bounds.size());
 }
 
 void ChromeOmniboxClient::DoPreconnect(const AutocompleteMatch& match) {
   if (match.destination_url.SchemeIs(extensions::kExtensionScheme))
     return;
 
-  // Warm up DNS Prefetch cache, or preconnect to a search service.
-  UMA_HISTOGRAM_ENUMERATION("Autocomplete.MatchType", match.type,
-                            AutocompleteMatchType::NUM_TYPES);
   auto* loading_predictor =
       predictors::LoadingPredictorFactory::GetForProfile(profile_);
   if (loading_predictor) {

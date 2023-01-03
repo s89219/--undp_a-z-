@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,12 @@
 #include "ash/capture_mode/capture_mode_camera_controller.h"
 #include "ash/capture_mode/capture_mode_controller.h"
 #include "ash/capture_mode/capture_mode_session.h"
+#include "ash/color_enhancement/color_enhancement_controller.h"
 #include "ash/constants/ash_constants.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/constants/ash_switches.h"
+#include "ash/curtain/security_curtain_controller.h"
 #include "ash/display/display_color_manager.h"
-#include "ash/display/mirror_window_controller.h"
-#include "ash/display/window_tree_host_manager.h"
 #include "ash/fast_ink/cursor/cursor_view.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/root_window_controller.h"
@@ -22,11 +22,9 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram_macros.h"
 #include "components/prefs/pref_service.h"
-#include "ui/aura/cursor/cursors_aura.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -40,6 +38,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/cursors_aura.h"
 
 namespace ash {
 namespace {
@@ -149,6 +148,11 @@ bool CursorWindowController::ShouldEnableCursorCompositing() {
   if (is_cursor_motion_blur_enabled_)
     return true;
 
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kForceShowCursor)) {
+    return false;
+  }
+
   auto* controller = CaptureModeController::Get();
   auto* session = controller->capture_mode_session();
   if (session && session->is_drag_in_progress()) {
@@ -156,16 +160,19 @@ bool CursorWindowController::ShouldEnableCursorCompositing() {
     return true;
   }
 
-  auto* camera_controller = controller->camera_controller();
-  if (camera_controller && camera_controller->is_drag_in_progress()) {
+  if (controller->camera_controller()->is_drag_in_progress()) {
     // To ensure the cursor is aligned with the dragged camera preview.
+    return true;
+  }
+
+  Shell* shell = Shell::Get();
+  if (shell->security_curtain_controller().IsEnabled()) {
     return true;
   }
 
   // During startup, we may not have a preference service yet. We need to check
   // display manager state first so that we don't accidentally ignore it while
   // early outing when there isn't a PrefService yet.
-  Shell* shell = Shell::Get();
   display::DisplayManager* display_manager = shell->display_manager();
   if ((display_manager->IsInSoftwareMirrorMode()) ||
       display_manager->IsInUnifiedMode() ||
@@ -199,6 +206,11 @@ bool CursorWindowController::ShouldEnableCursorCompositing() {
                               displays_ctm_support);
     if (displays_ctm_support != DisplayColorManager::DisplayCtmSupport::kAll)
       return true;
+  }
+
+  if (shell->color_enhancement_controller()
+          ->ShouldEnableCursorCompositingForSepia()) {
+    return true;
   }
 
   return prefs->GetBoolean(prefs::kAccessibilityLargeCursorEnabled) ||
@@ -297,6 +309,14 @@ const aura::Window* CursorWindowController::GetContainerForTest() const {
   return container_;
 }
 
+SkColor CursorWindowController::GetCursorColorForTest() const {
+  return cursor_color_;
+}
+
+gfx::Rect CursorWindowController::GetBoundsForTest() const {
+  return cursor_window_->GetBoundsInScreen();
+}
+
 void CursorWindowController::SetContainer(aura::Window* container) {
   if (container_ == container)
     return;
@@ -364,8 +384,8 @@ void CursorWindowController::UpdateCursorImage() {
     hot_point_in_physical_pixels = cursor_.custom_hotspot();
   } else {
     int resource_id;
-    if (!aura::GetCursorDataFor(cursor_size_, cursor_.type(), cursor_scale,
-                                &resource_id, &hot_point_in_physical_pixels)) {
+    if (!wm::GetCursorDataFor(cursor_size_, cursor_.type(), cursor_scale,
+                              &resource_id, &hot_point_in_physical_pixels)) {
       return;
     }
     image =

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 package org.chromium.chrome.browser.base;
@@ -19,7 +19,6 @@ import org.chromium.base.BuildInfo;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.compat.ApiHelperForM;
-import org.chromium.base.compat.ApiHelperForO;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
 import org.chromium.build.BuildConfig;
@@ -152,7 +151,7 @@ public class DexFixer {
             }
 
             // Check for corrupt dex.
-            String[] splitNames = ApiHelperForO.getSplitNames(appInfo);
+            String[] splitNames = appInfo.splitNames;
             if (splitNames != null) {
                 for (int i = 0; i < splitNames.length; i++) {
                     // Ignore config splits like "config.en".

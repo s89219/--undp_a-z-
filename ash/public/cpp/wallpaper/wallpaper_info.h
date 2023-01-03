@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,8 @@ struct ASH_PUBLIC_EXPORT WallpaperInfo {
   WallpaperInfo(const std::string& in_location,
                 WallpaperLayout in_layout,
                 WallpaperType in_type,
-                const base::Time& in_date);
+                const base::Time& in_date,
+                const std::string& in_user_file_path = "");
 
   WallpaperInfo(const WallpaperInfo& other);
   WallpaperInfo& operator=(const WallpaperInfo& other);
@@ -36,9 +37,15 @@ struct ASH_PUBLIC_EXPORT WallpaperInfo {
   WallpaperInfo(WallpaperInfo&& other);
   WallpaperInfo& operator=(WallpaperInfo&& other);
 
-  bool operator==(const WallpaperInfo& other) const;
-
-  bool operator!=(const WallpaperInfo& other) const;
+  // MatchesAsset() takes the current wallpaper variant into account, whereas
+  // MatchesSelection() doesn't. For example if WallpaperInfo A has theme X with
+  // variant 1, and WallpaperInfo B has theme X with variant 2,
+  // MatchesSelection() will be true and MatchesAsset() will be false. Put
+  // differently, MatchesSelection() tells whether the same wallpaper has been
+  // selected, whereas MatchesAsset() tells whether the exact same wallpaper
+  // image is active.
+  bool MatchesSelection(const WallpaperInfo& other) const;
+  bool MatchesAsset(const WallpaperInfo& other) const;
 
   ~WallpaperInfo();
 
@@ -46,9 +53,18 @@ struct ASH_PUBLIC_EXPORT WallpaperInfo {
   // (corresponding to user wallpaper_files_id), online wallpaper URL, or
   // Google Photos id.
   std::string location;
+  // user_file_path is the full path of the wallpaper file and is used as
+  // the new CurrentWallpaper key. This field is required as the old key which
+  // was set to the filename part made the UI mistakenly highlight multiple
+  // files with the same name as the currently set wallpaper (b/229420564).
+  std::string user_file_path;
   WallpaperLayout layout;
   WallpaperType type;
   base::Time date;
+
+  // These fields are applicable if |type| == WallpaperType::kOnceGooglePhotos
+  // or WallpaperType::kDailyGooglePhotos.
+  absl::optional<std::string> dedup_key;
 
   // These fields are applicable if |type| == WallpaperType::kOnline or
   // WallpaperType::kDaily.

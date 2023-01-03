@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -456,14 +456,14 @@ TEST_F(StrikeDatabaseIntegratorTestStrikeDatabaseTest,
   EXPECT_TRUE(strike_database_->ShouldBlockFeature("fake key", &reason));
   EXPECT_EQ(
       reason,
-      StrikeDatabaseIntegratorBase::BlockedReason::kRequiredLatencyNotPassed);
+      StrikeDatabaseIntegratorBase::BlockedReason::kRequiredDelayNotPassed);
 
   test_clock.Advance(base::Days(1));
   reason = StrikeDatabaseIntegratorBase::kUnknown;
   EXPECT_TRUE(strike_database_->ShouldBlockFeature("fake key", &reason));
   EXPECT_EQ(
       reason,
-      StrikeDatabaseIntegratorBase::BlockedReason::kRequiredLatencyNotPassed);
+      StrikeDatabaseIntegratorBase::BlockedReason::kRequiredDelayNotPassed);
 
   reason = StrikeDatabaseIntegratorBase::kUnknown;
   test_clock.Advance(base::Days(7));
@@ -475,7 +475,7 @@ TEST_F(StrikeDatabaseIntegratorTestStrikeDatabaseTest,
   EXPECT_TRUE(strike_database_->ShouldBlockFeature("fake key", &reason));
   EXPECT_EQ(
       reason,
-      StrikeDatabaseIntegratorBase::BlockedReason::kRequiredLatencyNotPassed);
+      StrikeDatabaseIntegratorBase::BlockedReason::kRequiredDelayNotPassed);
 }
 
 }  // namespace autofill

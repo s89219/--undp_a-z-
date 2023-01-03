@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_split.h"
 #include "base/timer/timer.h"
@@ -36,6 +37,12 @@ void RecordGetHashResult(safe_browsing::V4OperationResult result) {
   UMA_HISTOGRAM_ENUMERATION(
       "SafeBrowsing.V4GetHash.Result", result,
       safe_browsing::V4OperationResult::OPERATION_RESULT_MAX);
+}
+
+// Record a backoff error count
+void RecordBackoffErrorCountResult(size_t count) {
+  base::UmaHistogramCounts100("SafeBrowsing.V4GetHash.Result.BackoffErrorCount",
+                              count);
 }
 
 // Enumerate parsing failures for histogramming purposes.  DO NOT CHANGE
@@ -124,6 +131,28 @@ void RecordV4GetHashCheckResult(V4GetHashCheckResultType result_type) {
                             GET_HASH_CHECK_RESULT_MAX);
 }
 
+// Enumerate SePatternType for histogramming purposes. DO NOT CHANGE THE
+// ORDERING OF THESE VALUES.
+enum SocialEngineeringPatternType {
+  SOCIAL_ENGINEERING_PATTERN_ADS = 0,
+
+  SOCIAL_ENGINEERING_PATTERN_LANDING = 1,
+
+  SOCIAL_ENGINEERING_PATTERN_PHISHING = 2,
+
+  SOCIAL_ENGINEERING_PATTERN_UNKNOWN = 3,
+
+  // Memory space for histograms is determined by the max. ALWAYS
+  // ADD NEW VALUES BEFORE THIS ONE.
+  SOCIAL_ENGINEERING_PATTERN_MAX
+};
+
+// Record a social engineering pattern type.
+void RecordSocialEngineeringPattern(SocialEngineeringPatternType pattern_type) {
+  UMA_HISTOGRAM_ENUMERATION("SafeBrowsing.V4GetHash.SocialEngineeringPattern",
+                            pattern_type, SOCIAL_ENGINEERING_PATTERN_MAX);
+}
+
 bool ErrorIsRetriable(int net_error, int http_error) {
   return (net_error == net::ERR_INTERNET_DISCONNECTED ||
           net_error == net::ERR_NETWORK_CHANGED) &&
@@ -180,7 +209,7 @@ FullHashCallbackInfo::FullHashCallbackInfo() {}
 
 FullHashCallbackInfo::FullHashCallbackInfo(
     const std::vector<FullHashInfo>& cached_full_hash_infos,
-    const std::vector<HashPrefix>& prefixes_requested,
+    const std::vector<HashPrefixStr>& prefixes_requested,
     std::unique_ptr<network::SimpleURLLoader> loader,
     const FullHashToStoreAndHashPrefixesMap&
         full_hash_to_store_and_hash_prefixes,
@@ -198,7 +227,7 @@ FullHashCallbackInfo::~FullHashCallbackInfo() {}
 
 // ----------------------------------------------------------------
 
-FullHashInfo::FullHashInfo(const FullHash& full_hash,
+FullHashInfo::FullHashInfo(const FullHashStr& full_hash,
                            const ListIdentifier& list_id,
                            const base::Time& positive_expiry)
     : full_hash(full_hash),
@@ -270,11 +299,6 @@ V4GetHashProtocolManager::~V4GetHashProtocolManager() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 }
 
-void V4GetHashProtocolManager::ClearCache() {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  full_hash_cache_.clear();
-}
-
 void V4GetHashProtocolManager::GetFullHashes(
     const FullHashToStoreAndHashPrefixesMap
         full_hash_to_store_and_hash_prefixes,
@@ -283,7 +307,7 @@ void V4GetHashProtocolManager::GetFullHashes(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!full_hash_to_store_and_hash_prefixes.empty());
 
-  std::vector<HashPrefix> prefixes_to_request;
+  std::vector<HashPrefixStr> prefixes_to_request;
   std::vector<FullHashInfo> cached_full_hash_infos;
   GetFullHashCachedResults(full_hash_to_store_and_hash_prefixes, Time::Now(),
                            &prefixes_to_request, &cached_full_hash_infos);
@@ -303,6 +327,7 @@ void V4GetHashProtocolManager::GetFullHashes(
   if (clock_->Now() <= next_gethash_time_) {
     if (gethash_error_count_) {
       RecordGetHashResult(V4OperationResult::BACKOFF_ERROR);
+      backoff_error_count_++;
     } else {
       RecordGetHashResult(V4OperationResult::MIN_WAIT_DURATION_ERROR);
     }
@@ -373,13 +398,13 @@ void V4GetHashProtocolManager::GetFullHashesWithApis(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme));
 
-  std::vector<FullHash> full_hashes;
+  std::vector<FullHashStr> full_hashes;
   V4ProtocolManagerUtil::UrlToFullHashes(url.DeprecatedGetOriginAsURL(),
                                          &full_hashes);
 
   FullHashToStoreAndHashPrefixesMap full_hash_to_store_and_hash_prefixes;
-  for (const FullHash& full_hash : full_hashes) {
-    HashPrefix prefix;
+  for (const FullHashStr& full_hash : full_hashes) {
+    HashPrefixStr prefix;
     bool result =
         V4ProtocolManagerUtil::FullHashToSmallestHashPrefix(full_hash, &prefix);
     DCHECK(result);
@@ -397,7 +422,7 @@ void V4GetHashProtocolManager::GetFullHashCachedResults(
     const FullHashToStoreAndHashPrefixesMap&
         full_hash_to_store_and_hash_prefixes,
     const Time& now,
-    std::vector<HashPrefix>* prefixes_to_request,
+    std::vector<HashPrefixStr>* prefixes_to_request,
     std::vector<FullHashInfo>* cached_full_hash_infos) {
   DCHECK(!full_hash_to_store_and_hash_prefixes.empty());
   DCHECK(prefixes_to_request->empty());
@@ -432,13 +457,13 @@ void V4GetHashProtocolManager::GetFullHashCachedResults(
   //   cache entry if they expire AND their expire time is after the negative
   //   cache expire time.
 
-  std::unordered_set<HashPrefix> unique_prefixes_to_request;
+  std::unordered_set<HashPrefixStr> unique_prefixes_to_request;
   for (const auto& it : full_hash_to_store_and_hash_prefixes) {
-    const FullHash& full_hash = it.first;
+    const FullHashStr& full_hash = it.first;
     const StoreAndHashPrefixes& matched = it.second;
     for (const StoreAndHashPrefix& matched_it : matched) {
       const ListIdentifier& list_id = matched_it.list_id;
-      const HashPrefix& prefix = matched_it.hash_prefix;
+      const HashPrefixStr& prefix = matched_it.hash_prefix;
       auto prefix_entry = full_hash_cache_.find(prefix);
       if (prefix_entry != full_hash_cache_.end()) {
         // Case 1.
@@ -489,7 +514,7 @@ void V4GetHashProtocolManager::GetFullHashCachedResults(
 }
 
 std::string V4GetHashProtocolManager::GetHashRequest(
-    const std::vector<HashPrefix>& prefixes_to_request,
+    const std::vector<HashPrefixStr>& prefixes_to_request,
     const std::vector<std::string>& list_client_states) {
   DCHECK(!prefixes_to_request.empty());
 
@@ -511,7 +536,7 @@ std::string V4GetHashProtocolManager::GetHashRequest(
   for (const ThreatType tt : threat_types_) {
     info->add_threat_types(tt);
   }
-  for (const HashPrefix& prefix : prefixes_to_request) {
+  for (const HashPrefixStr& prefix : prefixes_to_request) {
     info->add_threat_entries()->set_hash(prefix);
   }
 
@@ -540,7 +565,7 @@ void V4GetHashProtocolManager::HandleGetHashError(const Time& now) {
 
 void V4GetHashProtocolManager::OnFullHashForApi(
     ThreatMetadataForApiCallback api_callback,
-    const std::vector<FullHash>& full_hashes,
+    const std::vector<FullHashStr>& full_hashes,
     const std::vector<FullHashInfo>& full_hash_infos) {
   ThreatMetadata md;
   for (const FullHashInfo& full_hash_info : full_hash_infos) {
@@ -672,17 +697,21 @@ void V4GetHashProtocolManager::ParseMetadata(const ThreatMatch& match,
          match.threat_entry_metadata().entries()) {
       if (m.key() == kSePatternType) {
         if (m.value() == kSocialEngineeringAds) {
+          RecordSocialEngineeringPattern(SOCIAL_ENGINEERING_PATTERN_ADS);
           metadata->threat_pattern_type =
               ThreatPatternType::SOCIAL_ENGINEERING_ADS;
           break;
         } else if (m.value() == kSocialEngineeringLanding) {
+          RecordSocialEngineeringPattern(SOCIAL_ENGINEERING_PATTERN_LANDING);
           metadata->threat_pattern_type =
               ThreatPatternType::SOCIAL_ENGINEERING_LANDING;
           break;
         } else if (m.value() == kPhishing) {
+          RecordSocialEngineeringPattern(SOCIAL_ENGINEERING_PATTERN_PHISHING);
           metadata->threat_pattern_type = ThreatPatternType::PHISHING;
           break;
         } else {
+          RecordSocialEngineeringPattern(SOCIAL_ENGINEERING_PATTERN_UNKNOWN);
           RecordParseGetHashResult(UNEXPECTED_METADATA_VALUE_ERROR);
           return;
         }
@@ -714,6 +743,7 @@ void V4GetHashProtocolManager::ParseMetadata(const ThreatMatch& match,
 void V4GetHashProtocolManager::ResetGetHashErrors() {
   gethash_error_count_ = 0;
   gethash_back_off_mult_ = 1;
+  backoff_error_count_ = 0;
   next_gethash_time_ = base::Time();
 }
 
@@ -722,7 +752,7 @@ void V4GetHashProtocolManager::SetClockForTests(base::Clock* clock) {
 }
 
 void V4GetHashProtocolManager::UpdateCache(
-    const std::vector<HashPrefix>& prefixes_requested,
+    const std::vector<HashPrefixStr>& prefixes_requested,
     const std::vector<FullHashInfo>& full_hash_infos,
     const Time& negative_cache_expire) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -733,7 +763,7 @@ void V4GetHashProtocolManager::UpdateCache(
     return;
   }
 
-  for (const HashPrefix& prefix : prefixes_requested) {
+  for (const HashPrefixStr& prefix : prefixes_requested) {
     // Create or reset the cached result for this prefix.
     CachedHashPrefixInfo& chpi = full_hash_cache_[prefix];
     chpi.full_hash_infos.clear();
@@ -808,6 +838,8 @@ void V4GetHashProtocolManager::OnURLLoaderCompleteInternal(
   Time negative_cache_expire;
   if (net_error == net::OK && response_code == net::HTTP_OK) {
     RecordGetHashResult(V4OperationResult::STATUS_200);
+    if (gethash_error_count_)
+      RecordBackoffErrorCountResult(backoff_error_count_);
     ResetGetHashErrors();
     if (!ParseHashResponse(data, &full_hash_infos, &negative_cache_expire)) {
       full_hash_infos.clear();

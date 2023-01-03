@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -212,8 +212,8 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // The location for drag maximize in screen.
   absl::optional<gfx::PointF> dwell_location_in_screen_;
 
-  // The mouse location passed to Drag().
-  gfx::PointF last_mouse_location_;
+  // The location in parent passed to `Drag()`.
+  gfx::PointF last_location_in_parent_;
 
   // Window the drag has magnetically attached to.
   aura::Window* magnetism_window_ = nullptr;

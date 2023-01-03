@@ -1,9 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/login/saml/password_sync_token_verifier.h"
 
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/ash/login/login_pref_names.h"
 #include "chrome/browser/ash/login/saml/in_session_password_sync_manager.h"
 #include "chrome/browser/ash/login/saml/in_session_password_sync_manager_factory.h"
@@ -43,7 +44,7 @@ PasswordSyncTokenVerifier::~PasswordSyncTokenVerifier() = default;
 
 void PasswordSyncTokenVerifier::RecheckAfter(base::TimeDelta delay) {
   CancelPendingChecks();
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PasswordSyncTokenVerifier::CheckForPasswordNotInSync,
                      weak_ptr_factory_.GetWeakPtr()),

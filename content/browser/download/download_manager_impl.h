@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -136,8 +136,8 @@ class CONTENT_EXPORT DownloadManagerImpl
       bool opened,
       base::Time last_access_time,
       bool transient,
-      const std::vector<download::DownloadItem::ReceivedSlice>& received_slices,
-      const download::DownloadItemRerouteInfo& reroute_info) override;
+      const std::vector<download::DownloadItem::ReceivedSlice>& received_slices)
+      override;
   void PostInitialization(DownloadInitializationDependency dependency) override;
   bool IsManagerInitialized() override;
   int InProgressCount() override;
@@ -238,7 +238,7 @@ class CONTENT_EXPORT DownloadManagerImpl
 
   // Called with the result of CheckForFileExistence. Updates the state of the
   // file and then notifies this update to the file's observer.
-  void OnFileExistenceChecked(uint32_t download_id, bool result);
+  void OnFileExistenceChecked(const std::string& guid, bool result);
 
   // Overridden from DownloadItemImplDelegate
   void DetermineDownloadTarget(download::DownloadItemImpl* item,
@@ -392,7 +392,7 @@ class CONTENT_EXPORT DownloadManagerImpl
   const scoped_refptr<base::SequencedTaskRunner> disk_access_task_runner_;
 
   // DownloadItem for which a query is queued in the |disk_access_task_runner_|.
-  std::set<uint32_t> pending_disk_access_query_;
+  std::set<std::string> pending_disk_access_query_;
 
   base::WeakPtrFactory<DownloadManagerImpl> weak_factory_{this};
 };

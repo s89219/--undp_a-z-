@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,11 @@
 #include "ios/components/security_interstitials/ios_security_interstitial_page.h"
 
 class GURL;
+class HttpsUpgradeService;
+
+namespace web {
+class WebState;
+}
 
 // This class is responsible for showing/hiding the interstitial page that is
 // shown on an HTTP URL in HTTPS-Only mode.
@@ -25,12 +30,14 @@ class HttpsOnlyModeBlockingPage
   HttpsOnlyModeBlockingPage(
       web::WebState* web_state,
       const GURL& request_url,
+      HttpsUpgradeService* service,
       std::unique_ptr<HttpsOnlyModeControllerClient> client);
 
  protected:
   // SecurityInterstitialPage implementation:
   bool ShouldCreateNewNavigation() const override;
-  void PopulateInterstitialStrings(base::Value* load_time_data) const override;
+  void PopulateInterstitialStrings(
+      base::Value::Dict& load_time_data) const override;
   bool ShouldDisplayURL() const override;
 
  private:
@@ -41,6 +48,7 @@ class HttpsOnlyModeBlockingPage
       web::WebFrame* sender_frame) override;
 
   web::WebState* web_state_ = nullptr;
+  HttpsUpgradeService* service_ = nullptr;
   std::unique_ptr<HttpsOnlyModeControllerClient> controller_;
 };
 

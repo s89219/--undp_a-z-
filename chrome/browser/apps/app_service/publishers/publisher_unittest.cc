@@ -1,12 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <utility>
 #include <vector>
 
+#include "base/auto_reset.h"
 #include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -18,10 +20,10 @@
 #include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/externally_managed_app_manager_impl.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/test/fake_web_app_provider.h"
 #include "chrome/browser/web_applications/test/test_web_app_url_loader.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/account_id/account_id.h"
 #include "components/app_constants/constants.h"
@@ -31,7 +33,6 @@
 #include "components/services/app_service/public/cpp/intent_util.h"
 #include "components/services/app_service/public/cpp/permission.h"
 #include "components/services/app_service/public/cpp/publisher_base.h"
-#include "components/services/app_service/public/mojom/types.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
@@ -45,14 +46,14 @@
 #include "chrome/browser/apps/app_service/publishers/standalone_browser_extension_apps_factory.h"
 #include "chrome/browser/apps/app_service/publishers/web_apps_crosapi.h"
 #include "chrome/browser/apps/app_service/publishers/web_apps_crosapi_factory.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_test.h"
+#include "chrome/browser/ash/app_list/internal_app/internal_app_metadata.h"
 #include "chrome/browser/ash/borealis/borealis_util.h"
 #include "chrome/browser/ash/crosapi/browser_util.h"
 #include "chrome/browser/ash/crosapi/fake_browser_manager.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_test.h"
-#include "chrome/browser/ui/app_list/internal_app/internal_app_metadata.h"
 #include "chrome/common/chrome_features.h"
-#include "chromeos/login/login_state/login_state.h"
+#include "chromeos/ash/components/login/login_state/login_state.h"
 #include "components/services/app_service/public/cpp/app_capability_access_cache.h"
 #include "components/services/app_service/public/cpp/capability_access_update.h"
 #include "components/user_manager/scoped_user_manager.h"
@@ -71,12 +72,12 @@ scoped_refptr<extensions::Extension> MakeExtensionApp(
     const std::string& url,
     const std::string& id) {
   std::string err;
-  base::DictionaryValue value;
-  value.SetStringKey("name", name);
-  value.SetStringKey("version", version);
+  base::Value::Dict value;
+  value.Set("name", name);
+  value.Set("version", version);
   base::ListValue scripts;
   scripts.Append("script.js");
-  value.SetPath("app.background.scripts", std::move(scripts));
+  value.SetByDottedPath("app.background.scripts", std::move(scripts));
   scoped_refptr<extensions::Extension> app = extensions::Extension::Create(
       base::FilePath(), extensions::mojom::ManifestLocation::kInternal, value,
       extensions::Extension::WAS_INSTALLED_BY_DEFAULT, id, &err);
@@ -86,6 +87,25 @@ scoped_refptr<extensions::Extension> MakeExtensionApp(
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+const char kLegacyPackagedAppId[] = "mblemkccghnfkjignlmgngmopopifacf";
+
+scoped_refptr<extensions::Extension> MakeLegacyPackagedApp(
+    const std::string& name,
+    const std::string& version,
+    const std::string& url,
+    const std::string& id) {
+  std::string err;
+  base::Value::Dict value;
+  value.Set("name", name);
+  value.Set("version", version);
+  value.SetByDottedPath("app.launch.local_path", "index.html");
+  scoped_refptr<extensions::Extension> app = extensions::Extension::Create(
+      base::FilePath(), extensions::mojom::ManifestLocation::kInternal, value,
+      extensions::Extension::WAS_INSTALLED_BY_DEFAULT, id, &err);
+  EXPECT_EQ(err, "");
+  return app;
+}
+
 void AddArcPackage(ArcAppTest& arc_test,
                    const std::vector<arc::mojom::AppInfoPtr>& fake_apps) {
   for (const auto& fake_app : fake_apps) {
@@ -136,6 +156,18 @@ apps::Permissions MakeFakePermissions() {
       /*is_managed*/ false));
   return permissions;
 }
+
+apps::CapabilityAccessPtr MakeCapabilityAccess(
+    const std::string& app_id,
+    absl::optional<bool> camera,
+    absl::optional<bool> microphone) {
+  apps::CapabilityAccessPtr access =
+      std::make_unique<apps::CapabilityAccess>(app_id);
+  access->camera = std::move(camera);
+  access->microphone = std::move(microphone);
+  return access;
+}
+
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 apps::IntentFilters CreateIntentFilters() {
@@ -145,19 +177,19 @@ apps::IntentFilters CreateIntentFilters() {
 
   apps::ConditionValues values1;
   values1.push_back(std::make_unique<apps::ConditionValue>(
-      apps_util::kIntentActionView, apps::PatternMatchType::kNone));
+      apps_util::kIntentActionView, apps::PatternMatchType::kLiteral));
   filter->conditions.push_back(std::make_unique<apps::Condition>(
       apps::ConditionType::kAction, std::move(values1)));
 
   apps::ConditionValues values2;
   values2.push_back(std::make_unique<apps::ConditionValue>(
-      url.scheme(), apps::PatternMatchType::kNone));
+      url.scheme(), apps::PatternMatchType::kLiteral));
   filter->conditions.push_back(std::make_unique<apps::Condition>(
       apps::ConditionType::kScheme, std::move(values2)));
 
   apps::ConditionValues values3;
   values3.push_back(std::make_unique<apps::ConditionValue>(
-      url.host(), apps::PatternMatchType::kNone));
+      url.host(), apps::PatternMatchType::kLiteral));
   filter->conditions.push_back(std::make_unique<apps::Condition>(
       apps::ConditionType::kHost, std::move(values3)));
 
@@ -165,7 +197,7 @@ apps::IntentFilters CreateIntentFilters() {
   values4.push_back(std::make_unique<apps::ConditionValue>(
       url.path(), apps::PatternMatchType::kPrefix));
   filter->conditions.push_back(std::make_unique<apps::Condition>(
-      apps::ConditionType::kPattern, std::move(values4)));
+      apps::ConditionType::kPath, std::move(values4)));
 
   filters.push_back(std::move(filter));
 
@@ -227,7 +259,7 @@ class AppRegistryCacheObserver : public apps::AppRegistryCache::Observer {
  private:
   std::vector<std::string> updated_ids_;
   std::vector<apps::AppType> app_types_;
-  apps::AppRegistryCache* cache_ = nullptr;
+  raw_ptr<apps::AppRegistryCache> cache_ = nullptr;
 };
 
 }  // namespace
@@ -236,11 +268,7 @@ namespace apps {
 
 class PublisherTest : public extensions::ExtensionServiceTestBase {
  public:
-  PublisherTest() {
-    scoped_feature_list_.InitAndEnableFeature(
-        kAppServiceOnAppTypeInitializedWithoutMojom);
-  }
-
+  PublisherTest() = default;
   PublisherTest(const PublisherTest&) = delete;
   PublisherTest& operator=(const PublisherTest&) = delete;
 
@@ -290,7 +318,8 @@ class PublisherTest : public extensions::ExtensionServiceTestBase {
     web_app_info->title = base::UTF8ToUTF16(app_name);
     web_app_info->start_url = kAppUrl;
     web_app_info->scope = kAppUrl;
-    web_app_info->user_display_mode = web_app::UserDisplayMode::kStandalone;
+    web_app_info->user_display_mode =
+        web_app::mojom::UserDisplayMode::kStandalone;
 
     return web_app::test::InstallWebApp(profile(), std::move(web_app_info));
   }
@@ -314,6 +343,13 @@ class PublisherTest : public extensions::ExtensionServiceTestBase {
     AppRegistryCache& cache =
         AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
     return cache.states_[app_id];
+  }
+
+  void VerifyNoApp(const std::string& app_id) {
+    AppRegistryCache& cache =
+        AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
+
+    ASSERT_EQ(cache.states_.end(), cache.states_.find(app_id));
   }
 
   void VerifyApp(AppType app_type,
@@ -392,7 +428,7 @@ class PublisherTest : public extensions::ExtensionServiceTestBase {
     apps::IntentFilters target;
     apps::AppServiceProxyFactory::GetForProfile(profile())
         ->AppRegistryCache()
-        .ForApp(app_id, [&target](const apps::AppUpdate& update) {
+        .ForOneApp(app_id, [&target](const apps::AppUpdate& update) {
           target = update.IntentFilters();
         });
 
@@ -403,10 +439,6 @@ class PublisherTest : public extensions::ExtensionServiceTestBase {
   }
 
   void VerifyAppTypeIsInitialized(AppType app_type) {
-    // TODO(crbug.com/1253250): Remove FlushMojoCallsForTesting when
-    // OnAppTypeInitialized doesn't check the mojom App struct.
-    AppServiceProxyFactory::GetForProfile(profile())
-        ->FlushMojoCallsForTesting();
     AppRegistryCache& cache =
         AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
     ASSERT_TRUE(cache.IsAppTypeInitialized(app_type));
@@ -414,10 +446,10 @@ class PublisherTest : public extensions::ExtensionServiceTestBase {
   }
 
   void VerifyCapabilityAccess(const std::string& app_id,
-                              apps::mojom::OptionalBool accessing_camera,
-                              apps::mojom::OptionalBool accessing_microphone) {
-    apps::mojom::OptionalBool camera = apps::mojom::OptionalBool::kUnknown;
-    apps::mojom::OptionalBool microphone = apps::mojom::OptionalBool::kUnknown;
+                              absl::optional<bool> accessing_camera,
+                              absl::optional<bool> accessing_microphone) {
+    absl::optional<bool> camera;
+    absl::optional<bool> microphone;
     apps::AppServiceProxyFactory::GetForProfile(profile())
         ->AppCapabilityAccessCache()
         .ForOneApp(app_id, [&camera, &microphone](
@@ -427,6 +459,15 @@ class PublisherTest : public extensions::ExtensionServiceTestBase {
         });
     EXPECT_EQ(camera, accessing_camera);
     EXPECT_EQ(microphone, accessing_microphone);
+  }
+
+  void VerifyNoCapabilityAccess(const std::string& app_id) {
+    ASSERT_FALSE(
+        apps::AppServiceProxyFactory::GetForProfile(profile())
+            ->AppCapabilityAccessCache()
+            .ForOneApp(app_id, [](const apps::CapabilityAccessUpdate& update) {
+              NOTREACHED();
+            }));
   }
 
  protected:
@@ -515,7 +556,6 @@ TEST_F(PublisherTest, ArcAppsOnApps) {
 TEST_F(PublisherTest, ArcApps_CapabilityAccess) {
   ArcAppTest arc_test;
   arc_test.SetUp(profile());
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
   ArcApps* arc_apps = apps::ArcAppsFactory::GetForProfile(profile());
   ASSERT_TRUE(arc_apps);
 
@@ -532,24 +572,18 @@ TEST_F(PublisherTest, ArcApps_CapabilityAccess) {
     privacy_items.push_back(CreateArcPrivacyItem(
         arc::mojom::AppPermissionGroup::CAMERA, package_name1));
     arc_apps->OnPrivacyItemsChanged(std::move(privacy_items));
-    AppServiceProxyFactory::GetForProfile(profile())
-        ->FlushMojoCallsForTesting();
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[0]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kTrue,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kUnknown);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[0]),
+                           /*accessing_camera=*/true,
+                           /*accessing_microphone=*/absl::nullopt);
   }
 
   // Cancel accessing Camera for `package_name1`.
   {
     std::vector<arc::mojom::PrivacyItemPtr> privacy_items;
     arc_apps->OnPrivacyItemsChanged(std::move(privacy_items));
-    AppServiceProxyFactory::GetForProfile(profile())
-        ->FlushMojoCallsForTesting();
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[0]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kFalse,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kFalse);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[0]),
+                           /*accessing_camera=*/false,
+                           /*accessing_microphone=*/false);
   }
 
   // Set accessing Camera and Microphone for `package_name1`, and accessing
@@ -563,16 +597,12 @@ TEST_F(PublisherTest, ArcApps_CapabilityAccess) {
     privacy_items.push_back(CreateArcPrivacyItem(
         arc::mojom::AppPermissionGroup::CAMERA, package_name2));
     arc_apps->OnPrivacyItemsChanged(std::move(privacy_items));
-    AppServiceProxyFactory::GetForProfile(profile())
-        ->FlushMojoCallsForTesting();
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[0]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kTrue,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kTrue);
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[1]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kTrue,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kUnknown);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[0]),
+                           /*accessing_camera=*/true,
+                           /*accessing_microphone=*/true);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[1]),
+                           /*accessing_camera=*/true,
+                           /*accessing_microphone=*/absl::nullopt);
   }
 
   // Cancel accessing Microphone for `package_name1`.
@@ -583,32 +613,24 @@ TEST_F(PublisherTest, ArcApps_CapabilityAccess) {
     privacy_items.push_back(CreateArcPrivacyItem(
         arc::mojom::AppPermissionGroup::CAMERA, package_name2));
     arc_apps->OnPrivacyItemsChanged(std::move(privacy_items));
-    AppServiceProxyFactory::GetForProfile(profile())
-        ->FlushMojoCallsForTesting();
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[0]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kTrue,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kFalse);
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[1]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kTrue,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kFalse);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[0]),
+                           /*accessing_camera=*/true,
+                           /*accessing_microphone=*/false);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[1]),
+                           /*accessing_camera=*/true,
+                           /*accessing_microphone=*/false);
   }
 
   // Cancel accessing CAMERA for `package_name1` and `package_name2`.
   {
     std::vector<arc::mojom::PrivacyItemPtr> privacy_items;
     arc_apps->OnPrivacyItemsChanged(std::move(privacy_items));
-    AppServiceProxyFactory::GetForProfile(profile())
-        ->FlushMojoCallsForTesting();
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[0]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kFalse,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kFalse);
-    VerifyCapabilityAccess(
-        ArcAppTest::GetAppId(*fake_apps[1]),
-        /*accessing_camera=*/apps::mojom::OptionalBool::kFalse,
-        /*accessing_microphone=*/apps::mojom::OptionalBool::kFalse);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[0]),
+                           /*accessing_camera=*/false,
+                           /*accessing_microphone=*/false);
+    VerifyCapabilityAccess(ArcAppTest::GetAppId(*fake_apps[1]),
+                           /*accessing_camera=*/false,
+                           /*accessing_microphone=*/false);
   }
 
   arc_apps->Shutdown();
@@ -640,15 +662,94 @@ TEST_F(PublisherTest, BuiltinAppsOnApps) {
   VerifyAppTypeIsInitialized(AppType::kBuiltIn);
 }
 
-class StandaloneBrowserPublisherTest : public PublisherTest {
+class LegacyPackagedAppLacorsNotPrimaryPublisherTest : public PublisherTest {
  public:
-  StandaloneBrowserPublisherTest() : PublisherTest() {
+  LegacyPackagedAppLacorsNotPrimaryPublisherTest() {
     crosapi::browser_util::SetLacrosEnabledForTest(true);
     scoped_feature_list_.Reset();
+    scoped_feature_list_.InitAndDisableFeature(ash::features::kLacrosPrimary);
+  }
+
+  LegacyPackagedAppLacorsNotPrimaryPublisherTest(
+      const LegacyPackagedAppLacorsNotPrimaryPublisherTest&) = delete;
+  LegacyPackagedAppLacorsNotPrimaryPublisherTest& operator=(
+      const LegacyPackagedAppLacorsNotPrimaryPublisherTest&) = delete;
+  ~LegacyPackagedAppLacorsNotPrimaryPublisherTest() override = default;
+};
+
+TEST_F(LegacyPackagedAppLacorsNotPrimaryPublisherTest,
+       LegacyPackagedAppsOnApps) {
+  ASSERT_FALSE(crosapi::browser_util::IsLacrosPrimaryBrowser());
+
+  // Re-init AppService to verify the init process.
+  AppServiceTest app_service_test;
+  app_service_test.SetUp(profile());
+
+  // Install a legacy packaged app.
+  scoped_refptr<extensions::Extension> legacy_app =
+      MakeLegacyPackagedApp("legacy_app", "0.0", "http://google.com",
+                            std::string(kLegacyPackagedAppId));
+  ASSERT_TRUE(legacy_app->is_legacy_packaged_app());
+
+  service_->AddExtension(legacy_app.get());
+
+  // Verify the legacy packaged app is published.
+  VerifyApp(AppType::kChromeApp, legacy_app->id(), legacy_app->name(),
+            Readiness::kReady, InstallReason::kDefault,
+            InstallSource::kChromeWebStore, {}, base::Time(), base::Time(),
+            apps::Permissions(),
+            /*is_platform_app=*/false, /*recommendable=*/true,
+            /*searchable=*/true,
+            /*show_in_launcher=*/true, /*show_in_shelf=*/true,
+            /*show_in_search=*/true, /*show_in_management=*/true,
+            /*handles_intents=*/true, /*allow_uninstall=*/true,
+            /*has_badge=*/false, /*paused=*/false);
+  VerifyAppTypeIsInitialized(AppType::kChromeApp);
+}
+
+class LegacyPackagedAppLacorsPrimaryPublisherTest : public PublisherTest {
+ public:
+  LegacyPackagedAppLacorsPrimaryPublisherTest() {
+    scoped_feature_list_.Reset();
+    scoped_feature_list_.InitAndEnableFeature(ash::features::kLacrosPrimary);
+  }
+
+  LegacyPackagedAppLacorsPrimaryPublisherTest(
+      const LegacyPackagedAppLacorsNotPrimaryPublisherTest&) = delete;
+  LegacyPackagedAppLacorsPrimaryPublisherTest& operator=(
+      const LegacyPackagedAppLacorsNotPrimaryPublisherTest&) = delete;
+  ~LegacyPackagedAppLacorsPrimaryPublisherTest() override = default;
+
+ private:
+  base::AutoReset<bool> set_lacros_enabled_ =
+      crosapi::browser_util::SetLacrosEnabledForTest(true);
+};
+
+TEST_F(LegacyPackagedAppLacorsPrimaryPublisherTest, LegacyPackagedAppsOnApps) {
+  ASSERT_TRUE(crosapi::browser_util::IsLacrosPrimaryBrowser());
+
+  // Re-init AppService to verify the init process.
+  AppServiceTest app_service_test;
+  app_service_test.SetUp(profile());
+
+  // Install a legacy packaged app.
+  scoped_refptr<extensions::Extension> legacy_app =
+      MakeLegacyPackagedApp("legacy_app", "0.0", "http://google.com",
+                            std::string(kLegacyPackagedAppId));
+  ASSERT_TRUE(legacy_app->is_legacy_packaged_app());
+
+  service_->AddExtension(legacy_app.get());
+
+  // Verify the legacy packaged app is not published.
+  VerifyNoApp(legacy_app->id());
+}
+
+class StandaloneBrowserPublisherTest : public PublisherTest {
+ public:
+  StandaloneBrowserPublisherTest() {
+    scoped_feature_list_.Reset();
     scoped_feature_list_.InitWithFeatures(
-        {features::kWebAppsCrosapi, chromeos::features::kLacrosPrimary,
-         kAppServiceOnAppTypeInitializedWithoutMojom},
-        {});
+        {features::kWebAppsCrosapi, ash::features::kLacrosPrimary}, {});
   }
 
   StandaloneBrowserPublisherTest(const StandaloneBrowserPublisherTest&) =
@@ -730,6 +831,8 @@ class StandaloneBrowserPublisherTest : public PublisherTest {
   }
 
  private:
+  base::AutoReset<bool> set_lacros_enabled_ =
+      crosapi::browser_util::SetLacrosEnabledForTest(true);
   std::unique_ptr<user_manager::ScopedUserManager> scoped_user_manager_;
 };
 
@@ -774,8 +877,6 @@ TEST_F(StandaloneBrowserPublisherTest,
                          /*name=*/"TestApp", Readiness::kReady));
   chrome_apps->OnApps(std::move(apps));
 
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
   // Verify no app updated.
   EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id));
   EXPECT_TRUE(observer.app_types().empty());
@@ -806,8 +907,6 @@ TEST_F(StandaloneBrowserPublisherTest, StandaloneBrowserExtensionAppsUpdated) {
                           /*name=*/"TestApp", Readiness::kReady));
   chrome_apps->OnApps(std::move(apps2));
 
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
   // Verify no app updated, since Crosapi is not ready yet.
   EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id1));
   EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id2));
@@ -820,8 +919,6 @@ TEST_F(StandaloneBrowserPublisherTest, StandaloneBrowserExtensionAppsUpdated) {
   mojo::PendingRemote<crosapi::mojom::AppController> pending_remote1 =
       pending_receiver1.InitWithNewPipeAndPassRemote();
   chrome_apps->RegisterAppController(std::move(pending_remote1));
-
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
 
   EXPECT_EQ(AppType::kStandaloneBrowserChromeApp, cache.GetAppType(app_id1));
   EXPECT_EQ(AppType::kStandaloneBrowserChromeApp, cache.GetAppType(app_id2));
@@ -863,8 +960,6 @@ TEST_F(StandaloneBrowserPublisherTest, StandaloneBrowserExtensionAppsUpdated) {
       pending_receiver2.InitWithNewPipeAndPassRemote();
   chrome_apps->RegisterAppController(std::move(pending_remote2));
 
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
   EXPECT_EQ(AppType::kStandaloneBrowserChromeApp, cache.GetAppType(app_id5));
   EXPECT_EQ(AppType::kStandaloneBrowserChromeApp, cache.GetAppType(app_id6));
   ASSERT_EQ(1u, observer.app_types().size());
@@ -901,8 +996,6 @@ TEST_F(StandaloneBrowserPublisherTest, WebAppsCrosapiNotUpdated) {
                          /*name=*/"TestApp", Readiness::kReady));
   web_apps_crosapi->OnApps(std::move(apps));
 
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
   // Verify no app updated.
   EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id));
   EXPECT_TRUE(observer.app_types().empty());
@@ -917,6 +1010,208 @@ TEST_F(StandaloneBrowserPublisherTest, WebAppsCrosapiUpdated) {
   AppRegistryCache& cache =
       AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
   AppRegistryCacheObserver observer(&cache);
+
+  std::string app_id1 = "a";
+  std::string app_id2 = "b";
+  {
+    std::vector<AppPtr> apps1;
+    apps1.push_back(MakeApp(AppType::kWeb, app_id1,
+                            /*name=*/"TestApp", Readiness::kReady));
+    apps1.push_back(MakeApp(AppType::kWeb, app_id2,
+                            /*name=*/"TestApp", Readiness::kReady));
+    web_apps_crosapi->OnApps(std::move(apps1));
+
+    std::vector<CapabilityAccessPtr> capability_access1;
+    capability_access1.push_back(MakeCapabilityAccess(app_id1,
+                                                      /*camera=*/absl::nullopt,
+                                                      /*microphone=*/true));
+    capability_access1.push_back(
+        MakeCapabilityAccess(app_id2,
+                             /*camera=*/true,
+                             /*microphone=*/absl::nullopt));
+    web_apps_crosapi->OnCapabilityAccesses(std::move(capability_access1));
+  }
+
+  std::string app_id3 = "c";
+  {
+    std::vector<AppPtr> apps2;
+    apps2.push_back(MakeApp(AppType::kWeb, app_id3,
+                            /*name=*/"TestApp", Readiness::kReady));
+    web_apps_crosapi->OnApps(std::move(apps2));
+
+    std::vector<CapabilityAccessPtr> capability_access2;
+    capability_access2.push_back(MakeCapabilityAccess(app_id3,
+                                                      /*camera=*/true,
+                                                      /*microphone=*/true));
+    web_apps_crosapi->OnCapabilityAccesses(std::move(capability_access2));
+  }
+
+  // Verify no app updated, since Crosapi is not ready yet.
+  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id1));
+  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id2));
+  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id3));
+  EXPECT_TRUE(observer.app_types().empty());
+  EXPECT_TRUE(observer.updated_ids().empty());
+  VerifyNoCapabilityAccess(app_id1);
+  VerifyNoCapabilityAccess(app_id2);
+  VerifyNoCapabilityAccess(app_id3);
+
+  // Register Crosapi, which should publish apps.
+  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver1;
+  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote1 =
+      pending_receiver1.InitWithNewPipeAndPassRemote();
+  web_apps_crosapi->RegisterAppController(std::move(pending_remote1));
+
+  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id1));
+  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id2));
+  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id3));
+  ASSERT_EQ(1u, observer.app_types().size());
+  EXPECT_EQ(AppType::kWeb, observer.app_types()[0]);
+  ASSERT_EQ(3u, observer.updated_ids().size());
+  EXPECT_EQ(app_id1, observer.updated_ids()[0]);
+  EXPECT_EQ(app_id2, observer.updated_ids()[1]);
+  EXPECT_EQ(app_id3, observer.updated_ids()[2]);
+  VerifyCapabilityAccess(app_id1,
+                         /*accessing_camera=*/absl::nullopt,
+                         /*accessing_microphone=*/true);
+  VerifyCapabilityAccess(app_id2,
+                         /*accessing_camera=*/true,
+                         /*accessing_microphone=*/absl::nullopt);
+  VerifyCapabilityAccess(app_id3,
+                         /*accessing_camera=*/true,
+                         /*accessing_microphone=*/true);
+
+  // Add more apps after register Crosapi.
+  std::string app_id4 = "d";
+  {
+    std::vector<AppPtr> apps3;
+    apps3.push_back(MakeApp(AppType::kWeb, app_id4,
+                            /*name=*/"TestApp", Readiness::kReady));
+    web_apps_crosapi->OnApps(std::move(apps3));
+
+    std::vector<CapabilityAccessPtr> capability_access3;
+    capability_access3.push_back(
+        MakeCapabilityAccess(app_id4,
+                             /*camera=*/true,
+                             /*microphone=*/absl::nullopt));
+    web_apps_crosapi->OnCapabilityAccesses(std::move(capability_access3));
+  }
+
+  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id4));
+  ASSERT_EQ(4u, observer.updated_ids().size());
+  EXPECT_EQ(app_id4, observer.updated_ids()[3]);
+  VerifyCapabilityAccess(app_id4,
+                         /*accessing_camera=*/true,
+                         /*accessing_microphone=*/absl::nullopt);
+
+  // Disconnect crosapi.
+  web_apps_crosapi->OnControllerDisconnected();
+
+  // Add more apps after Crosapi disconnect.
+  std::string app_id5 = "e";
+  std::string app_id6 = "f";
+  {
+    std::vector<AppPtr> apps4;
+    apps4.push_back(MakeApp(AppType::kWeb, app_id5,
+                            /*name=*/"TestApp", Readiness::kReady));
+    apps4.push_back(MakeApp(AppType::kWeb, app_id6,
+                            /*name=*/"TestApp", Readiness::kReady));
+    web_apps_crosapi->OnApps(std::move(apps4));
+  }
+
+  // Simulate Crosapi reconnect, which should publish apps.
+  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver2;
+  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote2 =
+      pending_receiver2.InitWithNewPipeAndPassRemote();
+  web_apps_crosapi->RegisterAppController(std::move(pending_remote2));
+
+  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id5));
+  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id6));
+  ASSERT_EQ(1u, observer.app_types().size());
+  ASSERT_EQ(6u, observer.updated_ids().size());
+  EXPECT_EQ(app_id5, observer.updated_ids()[4]);
+  EXPECT_EQ(app_id6, observer.updated_ids()[5]);
+  VerifyNoCapabilityAccess(app_id5);
+  VerifyNoCapabilityAccess(app_id6);
+}
+
+// Verify capability access may arrive without app.
+TEST_F(StandaloneBrowserPublisherTest, WebAppsCrosapiUpdatedCapability) {
+  WebAppsCrosapi* web_apps_crosapi =
+      WebAppsCrosapiFactory::GetForProfile(profile());
+
+  std::string app_id1 = "a";
+  std::string app_id2 = "b";
+  {
+    std::vector<CapabilityAccessPtr> capability_access1;
+    capability_access1.push_back(MakeCapabilityAccess(app_id1,
+                                                      /*camera=*/absl::nullopt,
+                                                      /*microphone=*/true));
+    capability_access1.push_back(
+        MakeCapabilityAccess(app_id2,
+                             /*camera=*/true,
+                             /*microphone=*/absl::nullopt));
+    web_apps_crosapi->OnCapabilityAccesses(std::move(capability_access1));
+  }
+
+  // Verify no capability access occurred, since Crosapi is not ready yet.
+  VerifyNoCapabilityAccess(app_id1);
+  VerifyNoCapabilityAccess(app_id2);
+
+  // Register Crosapi, which should publish capability access.
+  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver1;
+  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote1 =
+      pending_receiver1.InitWithNewPipeAndPassRemote();
+  web_apps_crosapi->RegisterAppController(std::move(pending_remote1));
+
+  VerifyCapabilityAccess(app_id1,
+                         /*accessing_camera=*/absl::nullopt,
+                         /*accessing_microphone=*/true);
+  VerifyCapabilityAccess(app_id2,
+                         /*accessing_camera=*/true,
+                         /*accessing_microphone=*/absl::nullopt);
+
+  // Add more capability access after register Crosapi.
+  std::string app_id3 = "c";
+  {
+    std::vector<CapabilityAccessPtr> capability_access2;
+    capability_access2.push_back(MakeCapabilityAccess(app_id3,
+                                                      /*camera=*/true,
+                                                      /*microphone=*/true));
+    web_apps_crosapi->OnCapabilityAccesses(std::move(capability_access2));
+  }
+
+  VerifyCapabilityAccess(app_id3,
+                         /*accessing_camera=*/true,
+                         /*accessing_microphone=*/true);
+
+  // Disconnect crosapi.
+  web_apps_crosapi->OnControllerDisconnected();
+}
+
+// Verify if OnApps was never called, the registration of AppController will not
+// initialize the web app type.
+TEST_F(StandaloneBrowserPublisherTest, WebAppsNotInitializedIfRegisterFirst) {
+  WebAppsCrosapi* web_apps_crosapi =
+      WebAppsCrosapiFactory::GetForProfile(profile());
+
+  AppRegistryCache& cache =
+      AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
+  AppRegistryCacheObserver observer(&cache);
+
+  // Verify no app updated, since Crosapi is not ready yet.
+  EXPECT_TRUE(observer.app_types().empty());
+  EXPECT_TRUE(observer.updated_ids().empty());
+
+  // Register Crosapi first, there should be no app updates because OnApps
+  // was never called.
+  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver1;
+  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote1 =
+      pending_receiver1.InitWithNewPipeAndPassRemote();
+  web_apps_crosapi->RegisterAppController(std::move(pending_remote1));
+
+  EXPECT_TRUE(observer.app_types().empty());
+  EXPECT_TRUE(observer.updated_ids().empty());
 
   std::vector<AppPtr> apps1;
   std::string app_id1 = "a";
@@ -933,23 +1228,6 @@ TEST_F(StandaloneBrowserPublisherTest, WebAppsCrosapiUpdated) {
                           /*name=*/"TestApp", Readiness::kReady));
   web_apps_crosapi->OnApps(std::move(apps2));
 
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
-  // Verify no app updated, since Crosapi is not ready yet.
-  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id1));
-  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id2));
-  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(app_id3));
-  EXPECT_TRUE(observer.app_types().empty());
-  EXPECT_TRUE(observer.updated_ids().empty());
-
-  // Register Crosapi, which should publish apps.
-  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver1;
-  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote1 =
-      pending_receiver1.InitWithNewPipeAndPassRemote();
-  web_apps_crosapi->RegisterAppController(std::move(pending_remote1));
-
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
   EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id1));
   EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id2));
   EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id3));
@@ -959,68 +1237,42 @@ TEST_F(StandaloneBrowserPublisherTest, WebAppsCrosapiUpdated) {
   EXPECT_EQ(app_id1, observer.updated_ids()[0]);
   EXPECT_EQ(app_id2, observer.updated_ids()[1]);
   EXPECT_EQ(app_id3, observer.updated_ids()[2]);
-
-  // Add more apps after register Crosapi.
-  std::vector<AppPtr> apps3;
-  std::string app_id4 = "d";
-  apps3.push_back(MakeApp(AppType::kWeb, app_id4,
-                          /*name=*/"TestApp", Readiness::kReady));
-  web_apps_crosapi->OnApps(std::move(apps3));
-
-  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id4));
-  ASSERT_EQ(4u, observer.updated_ids().size());
-  EXPECT_EQ(app_id4, observer.updated_ids()[3]);
-
-  // Disconnect crosapi.
-  web_apps_crosapi->OnControllerDisconnected();
-
-  // Add more apps after Crosapi disconnect.
-  std::vector<AppPtr> apps4;
-  std::string app_id5 = "e";
-  apps4.push_back(MakeApp(AppType::kWeb, app_id5,
-                          /*name=*/"TestApp", Readiness::kReady));
-  std::string app_id6 = "f";
-  apps4.push_back(MakeApp(AppType::kWeb, app_id6,
-                          /*name=*/"TestApp", Readiness::kReady));
-  web_apps_crosapi->OnApps(std::move(apps4));
-
-  // Simulate Crosapi reconnect, which should publish apps.
-  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver2;
-  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote2 =
-      pending_receiver2.InitWithNewPipeAndPassRemote();
-  web_apps_crosapi->RegisterAppController(std::move(pending_remote2));
-
-  AppServiceProxyFactory::GetForProfile(profile())->FlushMojoCallsForTesting();
-
-  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id5));
-  EXPECT_EQ(AppType::kWeb, cache.GetAppType(app_id6));
-  ASSERT_EQ(1u, observer.app_types().size());
-  ASSERT_EQ(6u, observer.updated_ids().size());
-  EXPECT_EQ(app_id5, observer.updated_ids()[4]);
-  EXPECT_EQ(app_id6, observer.updated_ids()[5]);
 }
 
-// Check that when Lacros is primary, the app is disabled by policy and does
-// not handle intents.
-TEST_F(StandaloneBrowserPublisherTest, ExtensionAppsDisabledByPolicy) {
+TEST_F(StandaloneBrowserPublisherTest, WebAppsInitializedForEmptyList) {
+  WebAppsCrosapi* web_apps_crosapi =
+      WebAppsCrosapiFactory::GetForProfile(profile());
+
+  AppRegistryCache& cache =
+      AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
+  AppRegistryCacheObserver observer(&cache);
+
+  web_apps_crosapi->OnApps(std::vector<AppPtr>{});
+  // Verify no app updated, since Crosapi is not ready yet.
+  EXPECT_TRUE(observer.app_types().empty());
+  EXPECT_TRUE(observer.updated_ids().empty());
+
+  mojo::PendingReceiver<crosapi::mojom::AppController> pending_receiver1;
+  mojo::PendingRemote<crosapi::mojom::AppController> pending_remote1 =
+      pending_receiver1.InitWithNewPipeAndPassRemote();
+  web_apps_crosapi->RegisterAppController(std::move(pending_remote1));
+  ASSERT_EQ(1u, observer.app_types().size());
+  EXPECT_EQ(AppType::kWeb, observer.app_types()[0]);
+  EXPECT_TRUE(observer.updated_ids().empty());
+}
+
+// Check that when Lacros is primary, extension apps are not published to the
+// app service.
+TEST_F(StandaloneBrowserPublisherTest, ExtensionAppsNotPublished) {
   // Install a "web store" app.
   scoped_refptr<extensions::Extension> store =
       MakeExtensionApp("webstore", "0.0", "http://google.com",
                        std::string(extensions::kWebStoreAppId));
   service_->AddExtension(store.get());
 
-  AppServiceTest app_service_test;
-  app_service_test.SetUp(profile());
-  VerifyApp(AppType::kChromeApp, store->id(), store->name(),
-            Readiness::kDisabledByPolicy, InstallReason::kDefault,
-            InstallSource::kChromeWebStore, {}, base::Time(), base::Time(),
-            apps::Permissions(),
-            /*is_platform_app=*/true, /*recommendable=*/true,
-            /*searchable=*/true,
-            /*show_in_launcher=*/false, /*show_in_shelf=*/false,
-            /*show_in_search=*/false, /*show_in_management=*/false,
-            /*handles_intents=*/false, /*allow_uninstall=*/true,
-            /*has_badge=*/false, /*paused=*/false);
+  AppRegistryCache& cache =
+      AppServiceProxyFactory::GetForProfile(profile())->AppRegistryCache();
+  EXPECT_EQ(AppType::kUnknown, cache.GetAppType(store->id()));
 }
 
 // This framework conveniently sets up everything but borealis.
@@ -1035,9 +1287,7 @@ class BorealisPublisherTest : public StandaloneBrowserPublisherTest {
   BorealisPublisherTest() {
     scoped_feature_list_.Reset();
     scoped_feature_list_.InitWithFeatures(
-        {features::kBorealis, chromeos::features::kBorealisPermitted,
-         kAppServiceOnAppTypeInitializedWithoutMojom},
-        {});
+        {features::kBorealis, ash::features::kBorealisPermitted}, {});
   }
 };
 
@@ -1050,15 +1300,16 @@ TEST_F(BorealisPublisherTest, BorealisAppsAllowed) {
 
 #if !BUILDFLAG(IS_CHROMEOS_LACROS)
 TEST_F(PublisherTest, ExtensionAppsOnApps) {
+  // Re-init AppService to verify the init process.
+  AppServiceTest app_service_test;
+  app_service_test.SetUp(profile());
+
   // Install a "web store" app.
   scoped_refptr<extensions::Extension> store =
       MakeExtensionApp("webstore", "0.0", "http://google.com",
                        std::string(extensions::kWebStoreAppId));
   service_->AddExtension(store.get());
 
-  // Re-init AppService to verify the init process.
-  AppServiceTest app_service_test;
-  app_service_test.SetUp(profile());
   VerifyApp(AppType::kChromeApp, store->id(), store->name(), Readiness::kReady,
             InstallReason::kDefault, InstallSource::kChromeWebStore, {},
             base::Time(), base::Time(), apps::Permissions(),
@@ -1107,9 +1358,9 @@ TEST_F(PublisherTest, ExtensionAppsOnApps) {
 
 TEST_F(PublisherTest, WebAppsOnApps) {
   const std::string kAppName = "Web App";
-  auto app_id = CreateWebApp(kAppName);
   AppServiceTest app_service_test_;
   app_service_test_.SetUp(profile());
+  auto app_id = CreateWebApp(kAppName);
 
   VerifyApp(AppType::kWeb, app_id, kAppName, Readiness::kReady,
             InstallReason::kSync, InstallSource::kBrowser, {}, base::Time(),

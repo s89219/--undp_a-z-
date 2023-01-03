@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ class ASH_EXPORT FakeNetworkListMobileHeaderView
 
   bool is_toggle_enabled() { return is_toggle_enabled_; }
 
-  bool is_toggle_visible() { return is_toggle_visible_; }
+  bool is_toggle_on() { return is_toggle_on_; }
 
   size_t set_toggle_state_count() { return set_toggle_state_count_; }
 
@@ -41,13 +41,13 @@ class ASH_EXPORT FakeNetworkListMobileHeaderView
 
  private:
   // NetworkListNetworkHeaderView:
-  void SetToggleState(bool enabled, bool visible) override;
+  void SetToggleState(bool enabled, bool is_on, bool animate_toggle) override;
 
   // NetworkListMobileHeaderView:
   void SetAddESimButtonState(bool enabled, bool visible) override;
 
   bool is_toggle_enabled_;
-  bool is_toggle_visible_;
+  bool is_toggle_on_;
   size_t set_toggle_state_count_;
 
   bool is_add_esim_enabled_;

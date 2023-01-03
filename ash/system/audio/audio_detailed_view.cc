@@ -1,17 +1,16 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/audio/audio_detailed_view.h"
 
 #include "ash/accessibility/accessibility_controller_impl.h"
-#include "ash/components/audio/cras_audio_handler.h"
 #include "ash/constants/ash_features.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/ash_color_id.h"
 #include "ash/system/audio/mic_gain_slider_controller.h"
 #include "ash/system/audio/mic_gain_slider_view.h"
 #include "ash/system/tray/hover_highlight_view.h"
@@ -20,11 +19,13 @@
 #include "ash/system/tray/tri_view.h"
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chromeos/ash/components/audio/cras_audio_handler.h"
 #include "components/live_caption/caption_util.h"
 #include "components/live_caption/pref_names.h"
 #include "components/vector_icons/vector_icons.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/gfx/paint_vector_icon.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/toggle_button.h"
 #include "ui/views/controls/image_view.h"
@@ -126,7 +127,7 @@ const char* AudioDetailedView::GetClassName() const {
 
 void AudioDetailedView::AddAudioSubHeader(const gfx::VectorIcon& icon,
                                           int text_id) {
-  TriView* header = AddScrollListSubHeader(icon, text_id);
+  TriView* header = AddScrollListSubHeader(scroll_content(), icon, text_id);
   header->SetContainerVisible(TriView::Container::END, false);
 }
 
@@ -185,7 +186,7 @@ void AudioDetailedView::UpdateScrollableList() {
       Shell::Get()->accessibility_controller();
   if (controller->IsLiveCaptionSettingVisibleInTray()) {
     live_caption_view_ = AddScrollListCheckableItem(
-        vector_icons::kLiveCaptionOnIcon,
+        scroll_content(), vector_icons::kLiveCaptionOnIcon,
         l10n_util::GetStringUTF16(IDS_ASH_STATUS_TRAY_LIVE_CAPTION),
         controller->live_caption().enabled(),
         controller->IsEnterpriseIconVisibleForLiveCaption());
@@ -202,7 +203,8 @@ void AudioDetailedView::UpdateScrollableList() {
 
   for (const auto& device : output_devices_) {
     HoverHighlightView* container =
-        AddScrollListCheckableItem(GetAudioDeviceName(device), device.active);
+        AddScrollListCheckableItem(scroll_content(), gfx::kNoneIcon,
+                                   GetAudioDeviceName(device), device.active);
     device_map_[container] = device;
   }
 
@@ -234,19 +236,20 @@ void AudioDetailedView::UpdateScrollableList() {
 
   for (const auto& device : input_devices_) {
     HoverHighlightView* container =
-        AddScrollListCheckableItem(GetAudioDeviceName(device), device.active);
+        AddScrollListCheckableItem(scroll_content(), gfx::kNoneIcon,
+                                   GetAudioDeviceName(device), device.active);
     device_map_[container] = device;
 
     // Add the input noise cancellation toggle.
     if (audio_handler->GetPrimaryActiveInputNode() == device.id &&
         audio_handler->noise_cancellation_supported()) {
       if (device.audio_effect & cras::EFFECT_TYPE_NOISE_CANCELLATION) {
-        AddScrollListChild(
+        scroll_content()->AddChildView(
             AudioDetailedView::CreateNoiseCancellationToggleRow(device));
       }
     }
 
-    AddScrollListChild(mic_gain_controller_->CreateMicGainSlider(
+    scroll_content()->AddChildView(mic_gain_controller_->CreateMicGainSlider(
         device.id, device.IsInternalMic()));
   }
 
@@ -279,9 +282,7 @@ AudioDetailedView::CreateNoiseCancellationToggleRow(const AudioDevice& device) {
       std::make_unique<views::Label>(l10n_util::GetStringUTF16(
           IDS_ASH_STATUS_TRAY_AUDIO_INPUT_NOISE_CANCELLATION));
 
-  const SkColor text_color = AshColorProvider::Get()->GetContentLayerColor(
-      AshColorProvider::ContentLayerType::kTextColorPrimary);
-  noise_cancellation_label->SetEnabledColor(text_color);
+  noise_cancellation_label->SetEnabledColorId(kColorAshTextColorPrimary);
   noise_cancellation_label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   noise_cancellation_label->SetFontList(
       gfx::FontList().DeriveWithSizeDelta(kLabelFontSizeDelta));
@@ -358,10 +359,24 @@ void AudioDetailedView::OnSodaInstalled(speech::LanguageCode language_code) {
   MaybeShowSodaMessage(language_code, message);
 }
 
-void AudioDetailedView::OnSodaError(speech::LanguageCode language_code) {
-  std::u16string message = l10n_util::GetStringUTF16(
-      IDS_ASH_ACCESSIBILITY_SETTING_SUBTITLE_SODA_DOWNLOAD_ERROR);
-  MaybeShowSodaMessage(language_code, message);
+void AudioDetailedView::OnSodaInstallError(
+    speech::LanguageCode language_code,
+    speech::SodaInstaller::ErrorCode error_code) {
+  std::u16string error_message;
+  switch (error_code) {
+    case speech::SodaInstaller::ErrorCode::kUnspecifiedError: {
+      error_message = l10n_util::GetStringUTF16(
+          IDS_ASH_ACCESSIBILITY_SETTING_SUBTITLE_SODA_DOWNLOAD_ERROR);
+      break;
+    }
+    case speech::SodaInstaller::ErrorCode::kNeedsReboot: {
+      error_message = l10n_util::GetStringUTF16(
+          IDS_ASH_ACCESSIBILITY_SETTING_SUBTITLE_SODA_DOWNLOAD_ERROR_REBOOT_REQUIRED);
+      break;
+    }
+  }
+
+  MaybeShowSodaMessage(language_code, error_message);
 }
 
 void AudioDetailedView::OnSodaProgress(speech::LanguageCode language_code,

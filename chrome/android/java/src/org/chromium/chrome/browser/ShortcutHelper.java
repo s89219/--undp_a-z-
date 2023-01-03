@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -257,8 +257,7 @@ public class ShortcutHelper {
     @CalledByNative
     @VisibleForTesting
     public static boolean doesOriginContainAnyInstalledTwa(String origin) {
-        return WebappRegistry.getInstance().getTrustedWebActivityPermissionStore().isTwaInstalled(
-                origin.toLowerCase(Locale.getDefault()));
+        return WebappRegistry.getInstance().isTwaInstalled(origin.toLowerCase(Locale.getDefault()));
     }
 
     @CalledByNative

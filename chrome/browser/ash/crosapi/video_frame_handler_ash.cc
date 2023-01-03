@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -183,6 +183,10 @@ void VideoFrameHandlerAsh::OnError(media::VideoCaptureError error) {
 void VideoFrameHandlerAsh::OnFrameDropped(
     media::VideoCaptureFrameDropReason reason) {
   proxy_->OnFrameDropped(reason);
+}
+
+void VideoFrameHandlerAsh::OnNewCropVersion(uint32_t crop_version) {
+  proxy_->OnNewCropVersion(crop_version);
 }
 
 void VideoFrameHandlerAsh::OnFrameWithEmptyRegionCapture() {

@@ -1,10 +1,9 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/arc/input_method_manager/arc_input_method_manager_service.h"
 
-#include <algorithm>
 #include <utility>
 
 #include "ash/components/arc/arc_browser_context_keyed_service_factory_base.h"
@@ -21,11 +20,13 @@
 #include "base/containers/cxx20_erase.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_piece.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/ash/arc/input_method_manager/arc_input_method_manager_bridge_impl.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
+#include "chromeos/ash/services/ime/public/cpp/assistive_suggestions.h"
 #include "components/crx_file/id_util.h"
 #include "components/prefs/pref_service.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -36,6 +37,10 @@
 #include "ui/base/ime/ash/ime_bridge.h"
 #include "ui/base/ime/ash/input_method_util.h"
 #include "ui/base/ime/input_method_observer.h"
+
+// Enable VLOG level 1.
+#undef ENABLED_VLOG_LEVEL
+#define ENABLED_VLOG_LEVEL 1
 
 namespace arc {
 
@@ -222,10 +227,9 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
     // TODO(yhanada): Remove this line after we migrate to SPM completely.
     owner_->OnInputContextHandlerChanged();
   }
-  void OnFocus(
-      const std::string& engine_id,
-      int context_id,
-      const ui::IMEEngineHandlerInterface::InputContext& context) override {
+  void OnFocus(const std::string& engine_id,
+               int context_id,
+               const ash::TextInputMethod::InputContext& context) override {
     owner_->Focus(context_id);
   }
   void OnTouch(ui::EventPointerType pointerType) override {}
@@ -235,7 +239,7 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
   void OnKeyEvent(
       const std::string& engine_id,
       const ui::KeyEvent& event,
-      ui::IMEEngineHandlerInterface::KeyEventDoneCallback key_data) override {
+      ash::TextInputMethod::KeyEventDoneCallback key_data) override {
     if (event.key_code() == ui::VKEY_BROWSER_BACK &&
         event.type() == ui::ET_KEY_PRESSED &&
         owner_->IsVirtualKeyboardShown()) {
@@ -243,10 +247,10 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
       // events here to make sure that Android side receives "keyup" events
       // always to prevent never-ending key repeat from happening.
       owner_->SendHideVirtualKeyboard();
-      std::move(key_data).Run(true);
+      std::move(key_data).Run(ui::ime::KeyEventHandledState::kHandledByIME);
       return;
     }
-    std::move(key_data).Run(false);
+    std::move(key_data).Run(ui::ime::KeyEventHandledState::kNotHandled);
   }
   void OnReset(const std::string& engine_id) override {}
   void OnDeactivated(const std::string& engine_id) override {
@@ -256,6 +260,7 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
   }
   void OnCompositionBoundsChanged(
       const std::vector<gfx::Rect>& bounds) override {}
+  void OnCaretBoundsChanged(const gfx::Rect& caret_bounds) override {}
   void OnSurroundingTextChanged(const std::string& engine_id,
                                 const std::u16string& text,
                                 int cursor_pos,
@@ -267,6 +272,8 @@ class ArcInputMethodManagerService::InputMethodEngineObserver
                           int candidate_id,
                           ash::input_method::MouseButtonEvent button) override {
   }
+  void OnAssistiveWindowChanged(
+      const ash::ime::AssistiveWindow& window) override {}
   void OnMenuItemActivated(const std::string& component_id,
                            const std::string& menu_id) override {}
   void OnScreenProjectionChanged(bool is_projected) override {}
@@ -395,8 +402,8 @@ ArcInputMethodManagerService::ArcInputMethodManagerService(
             base::Unretained(this)));
   }
 
-  DCHECK(ui::IMEBridge::Get());
-  ui::IMEBridge::Get()->AddObserver(this);
+  DCHECK(ash::IMEBridge::Get());
+  ash::IMEBridge::Get()->AddObserver(this);
 }
 
 ArcInputMethodManagerService::~ArcInputMethodManagerService() = default;
@@ -431,8 +438,9 @@ void ArcInputMethodManagerService::Shutdown() {
     input_method_ = nullptr;
   }
 
-  if (ui::IMEBridge::Get())
-    ui::IMEBridge::Get()->RemoveObserver(this);
+  if (ash::IMEBridge::Get()) {
+    ash::IMEBridge::Get()->RemoveObserver(this);
+  }
 
   if (ash::TabletMode::Get())
     ash::TabletMode::Get()->RemoveObserver(tablet_mode_observer_.get());
@@ -558,7 +566,7 @@ void ArcInputMethodManagerService::InputMethodChanged(
 }
 
 void ArcInputMethodManagerService::OnInputContextHandlerChanged() {
-  if (ui::IMEBridge::Get()->GetInputContextHandler() == nullptr) {
+  if (ash::IMEBridge::Get()->GetInputContextHandler() == nullptr) {
     if (input_method_)
       input_method_->RemoveObserver(input_method_observer_.get());
     input_method_ = nullptr;
@@ -568,7 +576,7 @@ void ArcInputMethodManagerService::OnInputContextHandlerChanged() {
   if (input_method_)
     input_method_->RemoveObserver(input_method_observer_.get());
   input_method_ =
-      ui::IMEBridge::Get()->GetInputContextHandler()->GetInputMethod();
+      ash::IMEBridge::Get()->GetInputContextHandler()->GetInputMethod();
   if (input_method_)
     input_method_->AddObserver(input_method_observer_.get());
 }
@@ -617,7 +625,7 @@ void ArcInputMethodManagerService::EnableIme(const std::string& ime_id,
 }
 
 void ArcInputMethodManagerService::SyncEnabledImesInArc() {
-  auto* manager = chromeos::input_method::InputMethodManager::Get();
+  auto* manager = ash::input_method::InputMethodManager::Get();
   if (!manager || !manager->GetActiveIMEState()) {
     LOG(WARNING) << "InputMethodManager is not ready yet.";
     return;
@@ -628,12 +636,12 @@ void ArcInputMethodManagerService::SyncEnabledImesInArc() {
 
   // Filter out non ARC IME ids.
   std::set<std::string> new_arc_enabled_ime_ids;
-  std::copy_if(
-      new_enabled_ime_ids.begin(), new_enabled_ime_ids.end(),
+  base::ranges::copy_if(
+      new_enabled_ime_ids,
       std::inserter(new_arc_enabled_ime_ids, new_arc_enabled_ime_ids.end()),
-      [](const auto& id) { return ash::extension_ime_util::IsArcIME(id); });
+      &ash::extension_ime_util::IsArcIME);
 
-  // TODO(yhanada|yusukes): Instead of observing ImeMenuListChanged(), it's
+  // TODO(yhanada): Instead of observing ImeMenuListChanged(), it's
   // probably better to just observe the pref (and not disabling ones still
   // in the prefs.) See also the comment below in the second for-loop.
   const std::set<std::string> enabled_ime_ids_on_prefs =
@@ -659,7 +667,7 @@ void ArcInputMethodManagerService::SyncEnabledImesInArc() {
       // IME on laptop mode wouldn't be propagated to the container. Otherwise,
       // the IME confirmation dialog will be shown again next time when you
       // use the IME in tablet mode.
-      // TODO(yhanada|yusukes): Only observe the prefs and remove the hack.
+      // TODO(yhanada): Only observe the prefs and remove the hack.
       EnableIme(id, false /* enable */);
     }
   }
@@ -669,7 +677,7 @@ void ArcInputMethodManagerService::SyncEnabledImesInArc() {
 void ArcInputMethodManagerService::SyncCurrentImeInArc() {
   namespace aeiu = ash::extension_ime_util;
 
-  auto* manager = chromeos::input_method::InputMethodManager::Get();
+  auto* manager = ash::input_method::InputMethodManager::Get();
   if (!manager || !manager->GetActiveIMEState()) {
     LOG(WARNING) << "InputMethodManager is not ready yet.";
     return;
@@ -731,7 +739,7 @@ void ArcInputMethodManagerService::NotifyInputMethodManagerObservers(
   // Togging the mode may enable or disable all the ARC IMEs. To dynamically
   // reflect the potential state changes to chrome://settings, notify the
   // manager's observers here.
-  // TODO(yusukes): This is a temporary workaround for supporting ARC IMEs
+  // TODO(yhanada): This is a temporary workaround for supporting ARC IMEs
   // and supports neither Chrome OS extensions nor state changes enforced by
   // the policy. The better way to do this is to add a dedicated event to
   // language_settings_private.idl and send the new event to the JS side

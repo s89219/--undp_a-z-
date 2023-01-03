@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -171,7 +171,7 @@ void StrikeDatabase::GetProtoStrikes(const std::string& key,
   GetProtoStrikeData(
       key,
       base::BindRepeating(&StrikeDatabase::OnGetProtoStrikes,
-                          base::Unretained(this), std::move(outer_callback)));
+                          std::move(outer_callback)));
 }
 
 void StrikeDatabase::ClearAllProtoStrikes(
@@ -235,6 +235,7 @@ void StrikeDatabase::SetProtoStrikeData(const std::string& key,
       callback);
 }
 
+// static
 void StrikeDatabase::OnGetProtoStrikes(
     StrikesCallback callback,
     bool success,

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
-#include "components/cast_channel/cast_socket.h"
 #include "components/media_router/common/discovery/media_sink_internal.h"
 #include "components/media_router/common/mojom/media_router.mojom.h"
+#include "components/media_router/common/providers/cast/channel/cast_socket.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/ip_address.h"
 #include "net/base/port_util.h"
@@ -31,6 +31,8 @@ constexpr char kExtraDataDictKey[] = "extra_data";
 constexpr char kCapabilitiesKey[] = "capabilities";
 constexpr char kPortKey[] = "port";
 constexpr char kIpAddressKey[] = "ip_address";
+constexpr char kModelName[] = "model_name";
+constexpr char kDefaultAccessCodeModelName[] = "Chromecast Cast Moderator";
 
 uint8_t ConvertDeviceCapabilitiesToInt(
     chrome_browser_media::proto::DeviceCapabilities proto) {
@@ -116,6 +118,10 @@ CreateAccessCodeMediaSink(const DiscoveryDevice& discovery_device) {
   extra_data.capabilities =
       ConvertDeviceCapabilitiesToInt(discovery_device.device_capabilities());
   extra_data.discovery_type = CastDiscoveryType::kAccessCodeManualEntry;
+  // Various pieces of Chrome make decisions about how to support casting based
+  // on the device's model name, generally speaking treating anything that
+  // starts with "Chromecast" as a first party casting device.
+  extra_data.model_name = kDefaultAccessCodeModelName;
 
   const std::string& processed_uuid =
       MediaSinkInternal::ProcessDeviceUUID(unique_id);
@@ -141,6 +147,7 @@ base::Value CreateValueDictFromMediaSinkInternal(
   extra_data_dict.Set(kPortKey, extra_data.ip_endpoint.port());
   extra_data_dict.Set(kIpAddressKey,
                       extra_data.ip_endpoint.address().ToString());
+  extra_data_dict.Set(kModelName, extra_data.model_name);
 
   base::Value::Dict sink_dict;
   sink_dict.Set(kSinkIdKey, sink.id());
@@ -191,6 +198,9 @@ absl::optional<MediaSinkInternal> ParseValueDictIntoMediaSinkInternal(
   extra_data.ip_endpoint = net::IPEndPoint(ip_address, port.value());
   extra_data.capabilities = capabilities.value();
   extra_data.discovery_type = CastDiscoveryType::kAccessCodeRememberedDevice;
+  const std::string* model_name = extra_data_dict->FindString(kModelName);
+  extra_data.model_name =
+      model_name ? *model_name : kDefaultAccessCodeModelName;
 
   const auto* sink_dict = value_dict.FindDict(kSinkDictKey);
   if (!sink_dict)
@@ -211,6 +221,45 @@ absl::optional<MediaSinkInternal> ParseValueDictIntoMediaSinkInternal(
   cast_sink.set_cast_data(extra_data);
 
   return cast_sink;
+}
+
+AccessCodeCastAddSinkResult AddSinkResultMetricsHelper(
+    AddSinkResultCode value) {
+  switch (value) {
+    case AddSinkResultCode::UNKNOWN_ERROR:
+      return AccessCodeCastAddSinkResult::kUnknownError;
+    case AddSinkResultCode::OK:
+      return AccessCodeCastAddSinkResult::kOk;
+    case AddSinkResultCode::AUTH_ERROR:
+      return AccessCodeCastAddSinkResult::kAuthError;
+    case AddSinkResultCode::HTTP_RESPONSE_CODE_ERROR:
+      return AccessCodeCastAddSinkResult::kHttpResponseCodeError;
+    case AddSinkResultCode::RESPONSE_MALFORMED:
+      return AccessCodeCastAddSinkResult::kResponseMalformed;
+    case AddSinkResultCode::EMPTY_RESPONSE:
+      return AccessCodeCastAddSinkResult::kEmptyResponse;
+    case AddSinkResultCode::INVALID_ACCESS_CODE:
+      return AccessCodeCastAddSinkResult::kInvalidAccessCode;
+    case AddSinkResultCode::ACCESS_CODE_NOT_FOUND:
+      return AccessCodeCastAddSinkResult::kAccessCodeNotFound;
+    case AddSinkResultCode::TOO_MANY_REQUESTS:
+      return AccessCodeCastAddSinkResult::kTooManyRequests;
+    case AddSinkResultCode::SERVICE_NOT_PRESENT:
+      return AccessCodeCastAddSinkResult::kServiceNotPresent;
+    case AddSinkResultCode::SERVER_ERROR:
+      return AccessCodeCastAddSinkResult::kServerError;
+    case AddSinkResultCode::SINK_CREATION_ERROR:
+      return AccessCodeCastAddSinkResult::kSinkCreationError;
+    case AddSinkResultCode::CHANNEL_OPEN_ERROR:
+      return AccessCodeCastAddSinkResult::kChannelOpenError;
+    case AddSinkResultCode::PROFILE_SYNC_ERROR:
+      return AccessCodeCastAddSinkResult::kProfileSyncError;
+    case AddSinkResultCode::INTERNAL_MEDIA_ROUTER_ERROR:
+      return AccessCodeCastAddSinkResult::kInternalMediaRouterError;
+    default:
+      NOTREACHED();
+      return AccessCodeCastAddSinkResult::kUnknownError;
+  }
 }
 
 }  // namespace media_router

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@ extern const char kMetricsIsNewClientID[];
 extern const char kOptInStats[];
 extern const char kStabilityKernelCrashCount[];
 extern const char kStabilityOtherUserCrashCount[];
-extern const char kStabilityRendererCrashCount[];
 extern const char kStabilitySystemUncleanShutdownCount[];
 extern const char kWebColorScheme[];
 

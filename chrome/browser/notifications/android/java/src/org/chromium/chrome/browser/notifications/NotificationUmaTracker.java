@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,7 +64,8 @@ public class NotificationUmaTracker {
             SystemNotificationType.WEBAPK_INSTALL_COMPLETE,
             SystemNotificationType.PRICE_DROP_ALERTS_CHROME_MANAGED,
             SystemNotificationType.PRICE_DROP_ALERTS_USER_MANAGED,
-            SystemNotificationType.CHROME_TIPS, SystemNotificationType.BLUETOOTH})
+            SystemNotificationType.CHROME_TIPS, SystemNotificationType.BLUETOOTH,
+            SystemNotificationType.USB, SystemNotificationType.UPM_ERROR})
     @Retention(RetentionPolicy.SOURCE)
     public @interface SystemNotificationType {
         int UNKNOWN = -1;
@@ -104,8 +105,10 @@ public class NotificationUmaTracker {
         int PRICE_DROP_ALERTS_USER_MANAGED = 33;
         int CHROME_TIPS = 34;
         int BLUETOOTH = 35;
+        int USB = 36;
+        int UPM_ERROR = 37;
 
-        int NUM_ENTRIES = 36;
+        int NUM_ENTRIES = 38;
     }
 
     /*

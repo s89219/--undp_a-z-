@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 // <if expr="not chromeos_ash">
 import {CrActionMenuElement} from 'chrome://settings/settings.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 // </if>
 
 import {MAX_SIGNIN_PROMO_IMPRESSION, Router, SettingsSyncAccountControlElement, StatusAction, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
@@ -28,28 +28,25 @@ suite('SyncAccountControl', function() {
     // Flipping syncStatus.signedIn will force promo state to be reset.
     testElement.syncStatus = {
       signedIn: !signedIn,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     testElement.syncStatus = {
       signedIn: signedIn,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
   }
 
   setup(async function() {
-    // <if expr="chromeos_lacros">
-    loadTimeData.overrideValues({nonSyncingProfilesEnabled: true});
-    // </if>
     setupRouterWithSyncRoutes();
     browserProxy = new TestSyncBrowserProxy();
     SyncBrowserProxyImpl.setInstance(browserProxy);
 
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     testElement = document.createElement('settings-sync-account-control');
     testElement.syncStatus = {
       signedIn: true,
       signedInUsername: 'foo@foo.com',
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     testElement.prefs = {
       signin: {
@@ -110,7 +107,7 @@ suite('SyncAccountControl', function() {
     testElement.syncStatus = {
       signedIn: false,
       signedInUsername: '',
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     testElement.promoLabelWithNoAccount = testElement.promoLabelWithAccount =
         'title';
@@ -122,7 +119,7 @@ suite('SyncAccountControl', function() {
     testElement.syncStatus = {
       signedIn: false,
       signedInUsername: '',
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     simulateStoredAccounts([]);
 

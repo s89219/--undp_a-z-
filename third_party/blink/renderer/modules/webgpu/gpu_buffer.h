@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,8 @@ class GPUBuffer : public DawnObject<WGPUBuffer> {
 
  public:
   static GPUBuffer* Create(GPUDevice* device,
-                           const GPUBufferDescriptor* webgpu_desc);
+                           const GPUBufferDescriptor* webgpu_desc,
+                           ExceptionState& exception_state);
   GPUBuffer(GPUDevice* device, uint64_t size, WGPUBuffer buffer);
   ~GPUBuffer() override;
 
@@ -54,6 +55,8 @@ class GPUBuffer : public DawnObject<WGPUBuffer> {
                                  ExceptionState& exception_state);
   void unmap(ScriptState* script_state);
   void destroy(ScriptState* script_state);
+  uint64_t size() const;
+  uint32_t usage() const;
 
   void DetachMappedArrayBuffers(v8::Isolate* isolate);
 

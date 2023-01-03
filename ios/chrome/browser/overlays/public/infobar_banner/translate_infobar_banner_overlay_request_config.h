@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,8 +32,6 @@ class TranslateBannerRequestConfig
   const std::u16string& target_language() const { return target_language_; }
   // The current TranslateStep Translate is in.
   translate::TranslateStep translate_step() const { return translate_step_; }
-  // The name of the banner's icon image.
-  NSString* icon_image_name() const { return icon_image_name_; }
 
  private:
   OVERLAY_USER_DATA_SETUP(TranslateBannerRequestConfig);
@@ -44,10 +42,9 @@ class TranslateBannerRequestConfig
 
   // The InfoBar causing this banner.
   infobars::InfoBar* const infobar_;
-  // Configuration data extracted from |infobar_|'s translate delegate.
+  // Configuration data extracted from `infobar_`'s translate delegate.
   std::u16string source_language_;
   std::u16string target_language_;
-  NSString* const icon_image_name_;
   translate::TranslateStep translate_step_;
 };
 

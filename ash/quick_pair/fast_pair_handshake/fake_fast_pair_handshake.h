@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,10 @@ class FakeFastPairHandshake : public FastPairHandshake {
   ~FakeFastPairHandshake() override;
 
   void InvokeCallback(absl::optional<PairFailure> failure = absl::nullopt);
+
+  void set_completed_successfully(bool completed_successfully) {
+    completed_successfully_ = completed_successfully;
+  }
 };
 
 }  // namespace quick_pair

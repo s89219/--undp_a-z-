@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,10 +16,8 @@ CSSScopeRule::CSSScopeRule(StyleRuleScope* scope_rule, CSSStyleSheet* parent)
 
 CSSScopeRule::~CSSScopeRule() = default;
 
-String CSSScopeRule::cssText() const {
+String CSSScopeRule::PreludeText() const {
   StringBuilder result;
-  result.Append("@scope ");
-
   const StyleScope& scope =
       To<StyleRuleScope>(*group_rule_.Get()).GetStyleScope();
 
@@ -33,12 +31,22 @@ String CSSScopeRule::cssText() const {
     result.Append(')');
   }
 
-  result.Append(' ');
-  result.Append("{\n");
-  AppendCSSTextForItems(result);
-  result.Append('}');
-
   return result.ReleaseString();
+}
+
+String CSSScopeRule::cssText() const {
+  StringBuilder result;
+  result.Append("@scope ");
+  result.Append(PreludeText());
+  AppendCSSTextForItems(result);
+  return result.ReleaseString();
+}
+
+void CSSScopeRule::SetPreludeText(const ExecutionContext* execution_context,
+                                  String value) {
+  CSSStyleSheet::RuleMutationScope mutation_scope(this);
+  To<StyleRuleScope>(group_rule_.Get())
+      ->SetPreludeText(execution_context, value);
 }
 
 }  // namespace blink

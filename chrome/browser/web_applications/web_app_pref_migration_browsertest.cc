@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,7 @@ class WebAppPrefMigrationBrowserTest : public InProcessBrowserTest {
   ~WebAppPrefMigrationBrowserTest() override = default;
 
   WebAppRegistrar& registrar() {
-    return WebAppProvider::GetForTest(browser()->profile())->registrar();
+    return WebAppProvider::GetForTest(browser()->profile())->registrar_unsafe();
   }
 
   PrefService* prefs() { return browser()->profile()->GetPrefs(); }
@@ -44,7 +44,8 @@ class WebAppPrefMigrationBrowserTest : public InProcessBrowserTest {
 
 IN_PROC_BROWSER_TEST_F(WebAppPrefMigrationBrowserTest, PRE_Migration) {
   AppId app_id = test::InstallDummyWebApp(browser()->profile(), "Test app 1",
-                                          GURL("https://example.com/app_1"));
+                                          GURL("https://example.com/app_1"),
+                                          webapps::WebappInstallSource::ARC);
   // New installs should no longer write into prefs.
   EXPECT_FALSE(GetWebAppInstallSourceDeprecated(
       browser()->profile()->GetPrefs(), app_id));
@@ -55,7 +56,8 @@ IN_PROC_BROWSER_TEST_F(WebAppPrefMigrationBrowserTest, PRE_Migration) {
     UpdateIntWebAppPref(prefs(), app_id, "latest_web_app_install_source",
                         static_cast<int>(kExpectedInstallSource));
     ScopedRegistryUpdate update(
-        &WebAppProvider::GetForTest(browser()->profile())->sync_bridge());
+        &WebAppProvider::GetForTest(browser()->profile())
+             ->sync_bridge_unsafe());
     WebApp* web_app = update->UpdateApp(app_id);
     web_app->SetInstallSourceForMetrics(absl::nullopt);
   }

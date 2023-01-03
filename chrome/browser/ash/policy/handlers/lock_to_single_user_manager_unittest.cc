@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,22 +12,24 @@
 #include "ash/components/arc/session/arc_service_manager.h"
 #include "ash/components/arc/test/arc_util_test_support.h"
 #include "ash/components/arc/test/fake_arc_session.h"
-#include "ash/components/login/session/session_termination_manager.h"
-#include "ash/components/settings/cros_settings_names.h"
 #include "base/command_line.h"
 #include "base/memory/ptr_util.h"
 #include "build/build_config.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_test.h"
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/ash/arc/test/test_arc_session_manager.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_test.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "chromeos/ash/components/dbus/anomaly_detector/anomaly_detector_client.h"
+#include "chromeos/ash/components/dbus/chunneld/chunneld_client.h"
+#include "chromeos/ash/components/dbus/cicerone/cicerone_client.h"
+#include "chromeos/ash/components/dbus/concierge/concierge_client.h"
+#include "chromeos/ash/components/dbus/concierge/fake_concierge_client.h"
 #include "chromeos/ash/components/dbus/seneschal/seneschal_client.h"
-#include "chromeos/dbus/cicerone/cicerone_client.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
-#include "chromeos/dbus/concierge/fake_concierge_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/userdataauth/fake_cryptohome_misc_client.h"
+#include "chromeos/ash/components/dbus/userdataauth/fake_cryptohome_misc_client.h"
+#include "chromeos/ash/components/dbus/vm_plugin_dispatcher/vm_plugin_dispatcher_client.h"
+#include "chromeos/ash/components/login/session/session_termination_manager.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
 #include "components/prefs/testing_pref_service.h"
@@ -46,17 +48,17 @@ class LockToSingleUserManagerTest : public BrowserWithTestWindowTest {
   ~LockToSingleUserManagerTest() override = default;
 
   void SetUp() override {
-    // This is required before Concierge tests start calling
-    // DBusThreadManager::Get() for GetAnomalyDetectorClient.
-    chromeos::DBusThreadManager::Initialize();
-
-    chromeos::CiceroneClient::InitializeFake();
-    chromeos::ConciergeClient::InitializeFake();
+    // This is required for GuestOsStabilityMonitor.
+    ash::ChunneldClient::InitializeFake();
+    ash::CiceroneClient::InitializeFake();
+    ash::ConciergeClient::InitializeFake();
     ash::SeneschalClient::InitializeFake();
 
     arc::SetArcAvailableCommandLineForTesting(
         base::CommandLine::ForCurrentProcess());
-    chromeos::CryptohomeMiscClient::InitializeFake();
+    ash::AnomalyDetectorClient::InitializeFake();
+    ash::CryptohomeMiscClient::InitializeFake();
+    ash::VmPluginDispatcherClient::InitializeFake();
     lock_to_single_user_manager_ = std::make_unique<LockToSingleUserManager>();
 
     BrowserWithTestWindowTest::SetUp();
@@ -74,9 +76,9 @@ class LockToSingleUserManagerTest : public BrowserWithTestWindowTest {
     arc::ArcMetricsService::GetForBrowserContextForTesting(profile());
 
     // TODO(yusukes): Stop re-creating the client here.
-    chromeos::ConciergeClient::Shutdown();
-    chromeos::ConciergeClient::InitializeFake(/*fake_cicerone_client=*/nullptr);
-    fake_concierge_client_ = chromeos::FakeConciergeClient::Get();
+    ash::ConciergeClient::Shutdown();
+    ash::ConciergeClient::InitializeFake(/*fake_cicerone_client=*/nullptr);
+    fake_concierge_client_ = ash::FakeConciergeClient::Get();
   }
 
   void TearDown() override {
@@ -99,11 +101,13 @@ class LockToSingleUserManagerTest : public BrowserWithTestWindowTest {
 
     arc_service_manager_->set_browser_context(nullptr);
     arc_service_manager_.reset();
-    chromeos::CryptohomeMiscClient::Shutdown();
+    ash::VmPluginDispatcherClient::Shutdown();
+    ash::CryptohomeMiscClient::Shutdown();
+    ash::AnomalyDetectorClient::Shutdown();
     ash::SeneschalClient::Shutdown();
-    chromeos::ConciergeClient::Shutdown();
-    chromeos::CiceroneClient::Shutdown();
-    chromeos::DBusThreadManager::Shutdown();
+    ash::ConciergeClient::Shutdown();
+    ash::CiceroneClient::Shutdown();
+    ash::ChunneldClient::Shutdown();
   }
 
   void LogInUser(bool is_affiliated) {
@@ -115,9 +119,9 @@ class LockToSingleUserManagerTest : public BrowserWithTestWindowTest {
     // but it breaks many tests.
     fake_user_manager_->SwitchActiveUser(account_id);
 
-    chromeos::LoginState::Get()->SetLoggedInState(
-        chromeos::LoginState::LOGGED_IN_ACTIVE,
-        chromeos::LoginState::LOGGED_IN_USER_REGULAR);
+    ash::LoginState::Get()->SetLoggedInState(
+        ash::LoginState::LOGGED_IN_ACTIVE,
+        ash::LoginState::LOGGED_IN_USER_REGULAR);
 
     arc_session_manager_->SetProfile(profile());
     arc_session_manager_->Initialize();
@@ -157,7 +161,7 @@ class LockToSingleUserManagerTest : public BrowserWithTestWindowTest {
   }
 
   bool is_device_locked() const {
-    return chromeos::FakeCryptohomeMiscClient::Get()
+    return ash::FakeCryptohomeMiscClient::Get()
         ->is_device_locked_to_single_user();
   }
 
@@ -173,7 +177,7 @@ class LockToSingleUserManagerTest : public BrowserWithTestWindowTest {
   // Required for initialization.
   ash::SessionTerminationManager termination_manager_;
   std::unique_ptr<LockToSingleUserManager> lock_to_single_user_manager_;
-  chromeos::FakeConciergeClient* fake_concierge_client_;
+  ash::FakeConciergeClient* fake_concierge_client_;
   TestingPrefServiceSimple local_state_;
 };
 
@@ -264,7 +268,7 @@ TEST_F(LockToSingleUserManagerTest, NeverLockTest) {
 }
 
 TEST_F(LockToSingleUserManagerTest, DbusCallErrorTest) {
-  chromeos::FakeCryptohomeMiscClient::Get()->set_cryptohome_error(
+  ash::FakeCryptohomeMiscClient::Get()->set_cryptohome_error(
       ::user_data_auth::CryptohomeErrorCode::CRYPTOHOME_ERROR_KEY_NOT_FOUND);
   SetPolicyValue(enterprise_management::DeviceRebootOnUserSignoutProto::ALWAYS);
   LogInUser(false /* is_affiliated */);

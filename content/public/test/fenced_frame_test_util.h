@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/test/scoped_feature_list.h"
 #include "net/base/net_errors.h"
+#include "third_party/blink/public/mojom/fenced_frame/fenced_frame.mojom.h"
 
 class GURL;
 
@@ -18,24 +19,27 @@ class RenderFrameHost;
 namespace test {
 
 // Browser tests can use this class to more conveniently leverage fenced frames.
-// Note that this only applies to the MPArch version of fenced frames, and not
-// fenced frames based on the ShadowDOM architecture.
+// Note that this applies to both the MPArch and ShadowDOM version of fenced
+// frames.
 class FencedFrameTestHelper {
  public:
-  FencedFrameTestHelper();
+  explicit FencedFrameTestHelper();
   ~FencedFrameTestHelper();
   FencedFrameTestHelper(const FencedFrameTestHelper&) = delete;
   FencedFrameTestHelper& operator=(const FencedFrameTestHelper&) = delete;
 
-  // This method creates a new fenced frame rooted at `fenced_frame_parent` that
-  // is navigated to `url`. This method waits for the navigation to `url` to
-  // commit, and returns the `RenderFrameHost` that committed the navigation if
-  // it succeeded. Otherwise, it returns `nullptr`. See
-  // `NavigationFrameInFencedFrameTree()` documentation for the
+  // This method creates a new fenced frame in `mode` rooted at
+  // `fenced_frame_parent` that is navigated to `url`. This method waits for the
+  // navigation to `url` to commit, and returns the `RenderFrameHost` that
+  // committed the navigation if it succeeded. Otherwise, it returns `nullptr`.
+  // See `NavigationFrameInFencedFrameTree()` documentation for the
   // `expected_error_code` parameter.
-  RenderFrameHost* CreateFencedFrame(RenderFrameHost* fenced_frame_parent,
-                                     const GURL& url,
-                                     net::Error expected_error_code = net::OK);
+  RenderFrameHost* CreateFencedFrame(
+      RenderFrameHost* fenced_frame_parent,
+      const GURL& url,
+      net::Error expected_error_code = net::OK,
+      blink::mojom::FencedFrameMode mode =
+          blink::mojom::FencedFrameMode::kDefault);
 
   // This method is similar to `FencedFrameTestHelper::CreateFencedFrame` but
   // doesn't wait until the fenced frame completes loading.
@@ -58,6 +62,7 @@ class FencedFrameTestHelper {
   // Returns the last created fenced frame. This can be used by embedders who
   // must create fenced frames from script but need to get the fence frame's
   // inner root RenderFrameHost.
+  // This method will return nullptr if no fenced frames were created.
   static RenderFrameHost* GetMostRecentlyAddedFencedFrame(RenderFrameHost* rfh);
 
  private:

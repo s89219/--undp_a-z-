@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -158,68 +158,64 @@ bool StructTraits<media::stable::mojom::ColorSpaceDataView, gfx::ColorSpace>::
 }
 
 // static
-const gfx::PointF& StructTraits<
-    media::stable::mojom::ColorVolumeMetadataDataView,
-    gfx::ColorVolumeMetadata>::primary_r(const gfx::ColorVolumeMetadata&
-                                             input) {
+gfx::PointF StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
+                         gfx::ColorVolumeMetadata>::
+    primary_r(const gfx::ColorVolumeMetadata& input) {
+  gfx::PointF primary_r(input.primaries.fRX, input.primaries.fRY);
   static_assert(
-      std::is_same<
-          decltype(::gfx::ColorVolumeMetadata::primary_r),
-          decltype(
-              media::stable::mojom::ColorVolumeMetadata::primary_r)>::value,
+      std::is_same<decltype(primary_r),
+                   decltype(media::stable::mojom::ColorVolumeMetadata::
+                                primary_r)>::value,
       "Unexpected type for gfx::ColorVolumeMetadata::primary_r. If you need to "
       "change this assertion, please contact chromeos-gfx-video@google.com.");
 
-  return input.primary_r;
+  return primary_r;
 }
 
 // static
-const gfx::PointF& StructTraits<
-    media::stable::mojom::ColorVolumeMetadataDataView,
-    gfx::ColorVolumeMetadata>::primary_g(const gfx::ColorVolumeMetadata&
-                                             input) {
+gfx::PointF StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
+                         gfx::ColorVolumeMetadata>::
+    primary_g(const gfx::ColorVolumeMetadata& input) {
+  gfx::PointF primary_g(input.primaries.fGX, input.primaries.fGY);
   static_assert(
-      std::is_same<
-          decltype(::gfx::ColorVolumeMetadata::primary_g),
-          decltype(
-              media::stable::mojom::ColorVolumeMetadata::primary_g)>::value,
+      std::is_same<decltype(primary_g),
+                   decltype(media::stable::mojom::ColorVolumeMetadata::
+                                primary_g)>::value,
       "Unexpected type for gfx::ColorVolumeMetadata::primary_g. If you need to "
       "change this assertion, please contact chromeos-gfx-video@google.com.");
 
-  return input.primary_g;
+  return primary_g;
 }
 
 // static
-const gfx::PointF& StructTraits<
-    media::stable::mojom::ColorVolumeMetadataDataView,
-    gfx::ColorVolumeMetadata>::primary_b(const gfx::ColorVolumeMetadata&
-                                             input) {
+gfx::PointF StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
+                         gfx::ColorVolumeMetadata>::
+    primary_b(const gfx::ColorVolumeMetadata& input) {
+  gfx::PointF primary_b(input.primaries.fBX, input.primaries.fBY);
   static_assert(
-      std::is_same<
-          decltype(::gfx::ColorVolumeMetadata::primary_b),
-          decltype(
-              media::stable::mojom::ColorVolumeMetadata::primary_b)>::value,
+      std::is_same<decltype(primary_b),
+                   decltype(media::stable::mojom::ColorVolumeMetadata::
+                                primary_b)>::value,
       "Unexpected type for gfx::ColorVolumeMetadata::primary_b. If you need to "
       "change this assertion, please contact chromeos-gfx-video@google.com.");
 
-  return input.primary_b;
+  return primary_b;
 }
 
 // static
-const gfx::PointF& StructTraits<
-    media::stable::mojom::ColorVolumeMetadataDataView,
-    gfx::ColorVolumeMetadata>::white_point(const gfx::ColorVolumeMetadata&
-                                               input) {
+gfx::PointF StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
+                         gfx::ColorVolumeMetadata>::
+    white_point(const gfx::ColorVolumeMetadata& input) {
+  gfx::PointF white_point(input.primaries.fWX, input.primaries.fWY);
   static_assert(
-      std::is_same<
-          decltype(::gfx::ColorVolumeMetadata::white_point),
-          decltype(
-              media::stable::mojom::ColorVolumeMetadata::white_point)>::value,
+      std::is_same<decltype(white_point),
+                   decltype(media::stable::mojom::ColorVolumeMetadata::
+                                white_point)>::value,
       "Unexpected type for gfx::ColorVolumeMetadata::white_point. If you need "
       "to change this assertion, please contact "
       "chromeos-gfx-video@google.com.");
 
-  return input.white_point;
+  return white_point;
 }
 
 // static
@@ -261,14 +257,22 @@ bool StructTraits<media::stable::mojom::ColorVolumeMetadataDataView,
          gfx::ColorVolumeMetadata* output) {
   output->luminance_max = data.luminance_max();
   output->luminance_min = data.luminance_min();
-  if (!data.ReadPrimaryR(&output->primary_r))
+  gfx::PointF primary_r;
+  if (!data.ReadPrimaryR(&primary_r))
     return false;
-  if (!data.ReadPrimaryG(&output->primary_g))
+  gfx::PointF primary_g;
+  if (!data.ReadPrimaryG(&primary_g))
     return false;
-  if (!data.ReadPrimaryB(&output->primary_b))
+  gfx::PointF primary_b;
+  if (!data.ReadPrimaryB(&primary_b))
     return false;
-  if (!data.ReadWhitePoint(&output->white_point))
+  gfx::PointF white_point;
+  if (!data.ReadWhitePoint(&white_point))
     return false;
+  output->primaries = {
+      primary_r.x(), primary_r.y(), primary_g.x(),   primary_g.y(),
+      primary_b.x(), primary_b.y(), white_point.x(), white_point.y(),
+  };
   return true;
 }
 
@@ -686,11 +690,11 @@ StructTraits<media::stable::mojom::MediaLogRecordDataView,
 }
 
 // static
-const base::Value& StructTraits<
+const base::Value::Dict& StructTraits<
     media::stable::mojom::MediaLogRecordDataView,
     media::MediaLogRecord>::params(const media::MediaLogRecord& input) {
   static_assert(std::is_same<decltype(::media::MediaLogRecord::params),
-                             base::DictionaryValue>::value,
+                             base::Value::Dict>::value,
                 "Unexpected type for media::MediaLogRecord::params. If you "
                 "need to change this assertion, please contact "
                 "chromeos-gfx-video@google.com.");
@@ -722,9 +726,7 @@ bool StructTraits<media::stable::mojom::MediaLogRecordDataView,
   if (!data.ReadType(&output->type))
     return false;
 
-  if (!data.ReadParams(static_cast<base::Value*>(&output->params)))
-    return false;
-  if (!output->params.is_dict())
+  if (!data.ReadParams(&output->params))
     return false;
 
   if (!data.ReadTime(&output->time))

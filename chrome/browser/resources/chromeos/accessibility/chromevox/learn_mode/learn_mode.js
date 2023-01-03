@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,19 @@
  * @fileoverview Script for ChromeOS keyboard explorer.
  *
  */
-import {BrailleCommandData} from '/chromevox/common/braille/braille_command_data.js';
-import {CommandStore} from '/chromevox/common/command_store.js';
-import {GestureCommandData} from '/chromevox/common/gesture_command_data.js';
-import {KeyMap} from '/chromevox/common/key_map.js';
-import {KeyUtil} from '/chromevox/common/key_util.js';
-import {ChromeVoxKbHandler} from '/chromevox/common/keyboard_handler.js';
+
+import {BackgroundBridge} from '../common/background_bridge.js';
+import {BrailleCommandData} from '../common/braille/braille_command_data.js';
+import {BrailleKeyCommand, BrailleKeyEvent} from '../common/braille/braille_key_types.js';
+import {NavBraille} from '../common/braille/nav_braille.js';
+import {Command, CommandStore} from '../common/command_store.js';
+import {GestureCommandData} from '../common/gesture_command_data.js';
+import {KeyMap} from '../common/key_map.js';
+import {KeyUtil} from '../common/key_util.js';
+import {ChromeVoxKbHandler} from '../common/keyboard_handler.js';
+import {Msgs} from '../common/msgs.js';
+import {Spannable} from '../common/spannable.js';
+import {QueueMode, TtsSpeechProperties} from '../common/tts_types.js';
 
 /**
  * Class to manage the keyboard explorer.
@@ -35,12 +42,8 @@ export class LearnMode {
     chrome.accessibilityPrivate.onAccessibilityGesture.addListener(
         LearnMode.onAccessibilityGesture);
     chrome.accessibilityPrivate.setKeyboardListener(true, true);
-    chrome.runtime.sendMessage(
-        {target: 'BrailleCommandHandler', action: 'setEnabled', value: false});
-    chrome.runtime.sendMessage(
-        {target: 'GestureCommandHandler', action: 'setEnabled', value: false});
-
-    ChromeVoxKbHandler.handlerKeyMap = KeyMap.get();
+    BackgroundBridge.BrailleCommandHandler.setEnabled(false);
+    BackgroundBridge.GestureCommandHandler.setEnabled(false);
 
     ChromeVoxKbHandler.commandHandler = LearnMode.onCommand;
 
@@ -83,8 +86,13 @@ export class LearnMode {
         return true;
       }
 
-      ChromeVoxKbHandler.basicKeyDownActionsListener(evt);
-      LearnMode.clearRange();
+      BackgroundBridge.UserActionMonitor.onKeyDown(evt).then(
+          (shouldPropagate) => {
+            if (shouldPropagate) {
+              ChromeVoxKbHandler.basicKeyDownActionsListener(evt);
+            }
+            LearnMode.clearRange();
+          });
     }
 
     evt.preventDefault();
@@ -197,7 +205,7 @@ export class LearnMode {
         const cells = new ArrayBuffer(1);
         const view = new Uint8Array(cells);
         view[0] = dots;
-        BackgroundBridge.BrailleBackground.backTranslate(cells).then((res) => {
+        BackgroundBridge.BrailleBackground.backTranslate(cells).then(res => {
           if (res !== null) {
             LearnMode.output(res);
           }
@@ -252,7 +260,7 @@ export class LearnMode {
 
   /**
    * Queues up command description.
-   * @param {string} command
+   * @param {!Command} command
    * @return {boolean|undefined} True if command existed and was handled.
    */
   static onCommand(command) {
@@ -271,21 +279,19 @@ export class LearnMode {
    *     finishes.
    */
   static output(text, opt_speakCallback) {
+    const ChromeVox = window.ChromeVox;
     ChromeVox.tts.speak(
         text,
-        LearnMode.shouldFlushSpeech_ ?
-            window.backgroundWindow.QueueMode.CATEGORY_FLUSH :
-            window.backgroundWindow.QueueMode.QUEUE,
-        {endCallback: opt_speakCallback});
+        LearnMode.shouldFlushSpeech_ ? QueueMode.CATEGORY_FLUSH :
+                                       QueueMode.QUEUE,
+        new TtsSpeechProperties({endCallback: opt_speakCallback}));
     ChromeVox.braille.write(new NavBraille({text: new Spannable(text)}));
     LearnMode.shouldFlushSpeech_ = false;
   }
 
   /** Clears ChromeVox range. */
-  static clearRange() {
-    chrome.extension
-        .getBackgroundPage()['ChromeVoxState']['instance']['setCurrentRange'](
-            null);
+  static async clearRange() {
+    await BackgroundBridge.ChromeVoxState.clearCurrentRange();
   }
 
   /** @private */
@@ -301,8 +307,7 @@ export class LearnMode {
     chrome.accessibilityPrivate.onAccessibilityGesture.removeListener(
         LearnMode.onAccessibilityGesture);
     chrome.accessibilityPrivate.setKeyboardListener(true, false);
-    chrome.runtime.sendMessage(
-        {target: 'BrailleCommandHandler', action: 'setEnabled', value: true});
+    BackgroundBridge.BrailleCommandHandler.setEnabled(true);
     chrome.runtime.sendMessage(
         {target: 'GestureCommandHandler', action: 'setEnabled', value: true});
   }
@@ -311,9 +316,9 @@ export class LearnMode {
   static maybeClose_() {
     // Reset listeners and close this page if we somehow move outside of the
     // explorer window.
-    chrome.windows.getLastFocused({populate: true}, (focusedWindow) => {
+    chrome.windows.getLastFocused({populate: true}, focusedWindow => {
       if (focusedWindow && focusedWindow.focused &&
-          focusedWindow.tabs.find((tab) => {
+          focusedWindow.tabs.find(tab => {
             return tab.url === location.href;
           })) {
         return;

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,13 +73,13 @@ public class AutocompleteController {
     }
 
     /** @param listener The listener to be notified when new suggestions are available. */
-    @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     public void addOnSuggestionsReceivedListener(@NonNull OnSuggestionsReceivedListener listener) {
         mListeners.add(listener);
     }
 
     /** @param listener A previously registered new suggestions listener to be removed. */
-    void removeOnSuggestionsReceivedListener(@NonNull OnSuggestionsReceivedListener listener) {
+    public void removeOnSuggestionsReceivedListener(
+            @NonNull OnSuggestionsReceivedListener listener) {
         mListeners.remove(listener);
     }
 
@@ -105,12 +105,14 @@ public class AutocompleteController {
 
     /**
      * Issue a prefetch request for zero prefix suggestions.
-     *
      * Prefetch is a fire-and-forget operation that yields no results.
+     *
+     * @param url The URL of the current tab, used to suggest query refinements.
+     * @param pageClassification The page classification of the current tab.
      */
-    void startPrefetch() {
+    void startPrefetch(@NonNull String url, int pageClassification) {
         if (mNativeController == 0) return;
-        AutocompleteControllerJni.get().startPrefetch(mNativeController);
+        AutocompleteControllerJni.get().startPrefetch(mNativeController, url, pageClassification);
     }
 
     /**
@@ -143,7 +145,6 @@ public class AutocompleteController {
      * @param pageClassification The page classification of the current tab.
      * @param title The title of the currently loaded web page.
      */
-    @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     public void startZeroSuggest(@NonNull String omniboxText, @NonNull String url,
             int pageClassification, @NonNull String title) {
         if (mNativeController == 0) return;
@@ -341,7 +342,7 @@ public class AutocompleteController {
      * @return An existing (if one is available) or new (otherwise) instance of the
      *         AutocompleteController associated with the supplied profile.
      */
-    static AutocompleteController getForProfile(Profile profile) {
+    public static AutocompleteController getForProfile(Profile profile) {
         assert profile != null : "AutocompleteController cannot be created for null profile";
         if (profile == null) return null;
         return AutocompleteControllerJni.get().getForProfile(profile);
@@ -376,7 +377,8 @@ public class AutocompleteController {
         /**
          * Sends a zero suggest request to the server in order to pre-populate the result cache.
          */
-        void startPrefetch(long nativeAutocompleteControllerAndroid);
+        void startPrefetch(long nativeAutocompleteControllerAndroid, String currentUrl,
+                int pageClassification);
 
         /**
          * Acquire an instance of AutocompleteController associated with the supplied profile.

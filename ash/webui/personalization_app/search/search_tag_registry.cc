@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,26 +12,36 @@
 #include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/ambient/ambient_client.h"
 #include "ash/public/cpp/ambient/ambient_prefs.h"
+#include "ash/public/cpp/personalization_app/enterprise_policy_delegate.h"
+#include "ash/rgb_keyboard/rgb_keyboard_manager.h"
+#include "ash/shell.h"
 #include "ash/webui/personalization_app/personalization_app_url_constants.h"
+#include "ash/webui/personalization_app/search/search.mojom-shared.h"
 #include "ash/webui/personalization_app/search/search.mojom.h"
 #include "ash/webui/personalization_app/search/search_concept.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/no_destructor.h"
 #include "base/strings/string_number_conversions.h"
-#include "chromeos/components/local_search_service/public/cpp/local_search_service_proxy.h"
-#include "chromeos/components/local_search_service/shared_structs.h"
+#include "chromeos/ash/components/local_search_service/public/cpp/local_search_service_proxy.h"
+#include "chromeos/ash/components/local_search_service/shared_structs.h"
 #include "chromeos/strings/grit/chromeos_strings.h"
 #include "components/prefs/pref_service.h"
 #include "ui/base/l10n/l10n_util.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 
+bool IsAmbientModeAllowed() {
+  return features::IsAmbientModeEnabled() && ash::AmbientClient::Get() &&
+         ash::AmbientClient::Get()->IsAmbientModeAllowed();
+}
+
 std::string SearchConceptToId(const SearchConcept& search_concept) {
-  return base::NumberToString(search_concept.message_id);
+  return base::NumberToString(
+      static_cast<std::underlying_type_t<mojom::SearchConceptId>>(
+          search_concept.id));
 }
 
 std::vector<int> GetMessageIds(const SearchConcept& search_concept) {
@@ -47,9 +57,9 @@ std::vector<int> GetMessageIds(const SearchConcept& search_concept) {
   return message_ids;
 }
 
-std::vector<::chromeos::local_search_service::Content>
-SearchConceptToContentVector(const SearchConcept& search_concept) {
-  std::vector<::chromeos::local_search_service::Content> content_vector;
+std::vector<local_search_service::Content> SearchConceptToContentVector(
+    const SearchConcept& search_concept) {
+  std::vector<local_search_service::Content> content_vector;
 
   for (auto message_id : GetMessageIds(search_concept)) {
     content_vector.emplace_back(base::NumberToString(message_id),
@@ -59,62 +69,83 @@ SearchConceptToContentVector(const SearchConcept& search_concept) {
   return content_vector;
 }
 
-const std::vector<const SearchConcept>& GetPersonalizationSearchConcepts() {
-  static const base::NoDestructor<std::vector<const SearchConcept>> search_concepts({
-      {
-          .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_TITLE,
-          .alternate_message_ids =
-              {
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_TITLE_ALT1,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_TITLE_ALT2,
-              },
-          .relative_url = "",
-      },
-      {
-          .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_WALLPAPER,
-          .alternate_message_ids =
-              {
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_WALLPAPER_ALT1,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_WALLPAPER_ALT2,
-              },
-          .relative_url = kWallpaperSubpageRelativeUrl,
-      },
-      {
-          .message_id =
-              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE,
-          .alternate_message_ids =
-              {
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT1,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT2,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT3,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT4,
-              },
-          .relative_url = kUserSubpageRelativeUrl,
-      },
+const SearchConcept& GetPersonalizationSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kPersonalization,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_TITLE,
+      .alternate_message_ids =
+          {
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_TITLE_ALT1,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_TITLE_ALT2,
+          },
+      .relative_url = "",
   });
-  return *search_concepts;
+  return *search_concept;
 }
 
-const std::vector<const SearchConcept>& GetAmbientSearchConcepts() {
-  static const base::NoDestructor<std::vector<const SearchConcept>> tags({
-      {
-          .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE,
-          .alternate_message_ids = {},
-          .relative_url = kAmbientSubpageRelativeUrl,
-      },
+const SearchConcept& GetWallpaperSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kChangeWallpaper,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_WALLPAPER,
+      .alternate_message_ids =
+          {
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_WALLPAPER_ALT1,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_WALLPAPER_ALT2,
+          },
+      .relative_url = kWallpaperSubpageRelativeUrl,
   });
-  return *tags;
+  return *search_concept;
+}
+
+SearchTagRegistry::SearchConceptUpdates GetWallpaperEnterpriseUpdates(
+    bool is_enterprise_managed) {
+  return {{&GetWallpaperSearchConcept(), !is_enterprise_managed}};
+}
+
+const SearchConcept& GetUserImageSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kChangeDeviceAccountImage,
+      .message_id =
+          IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE,
+      .alternate_message_ids =
+          {
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT1,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT2,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT3,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT4,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_CHANGE_DEVICE_ACCOUNT_IMAGE_ALT5,
+          },
+      .relative_url = kUserSubpageRelativeUrl,
+  });
+  return *search_concept;
+}
+
+SearchTagRegistry::SearchConceptUpdates GetUserImageEnterpriseUpdates(
+    bool is_enterprise_managed) {
+  return {{&GetUserImageSearchConcept(), !is_enterprise_managed}};
+}
+
+const SearchConcept& GetAmbientSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kAmbientMode,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE,
+      .alternate_message_ids = {},
+      .relative_url = kAmbientSubpageRelativeUrl,
+  });
+  return *search_concept;
 }
 
 const std::vector<const SearchConcept>& GetAmbientOnSearchConcepts() {
   static const base::NoDestructor<std::vector<const SearchConcept>> tags({
       {
+          .id = mojom::SearchConceptId::kAmbientModeChooseSource,
           .message_id =
               IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_CHOOSE_SOURCE,
           .alternate_message_ids = {},
           .relative_url = kAmbientSubpageRelativeUrl,
       },
       {
+          .id = mojom::SearchConceptId::kAmbientModeTurnOff,
           .message_id =
               IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_TURN_OFF,
           .alternate_message_ids =
@@ -122,12 +153,14 @@ const std::vector<const SearchConcept>& GetAmbientOnSearchConcepts() {
           .relative_url = kAmbientSubpageRelativeUrl,
       },
       {
+          .id = mojom::SearchConceptId::kAmbientModeGooglePhotos,
           .message_id =
               IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_GOOGLE_PHOTOS_ALBUM,
           .alternate_message_ids = {},
           .relative_url = kAmbientSubpageRelativeUrl,
       },
       {
+          .id = mojom::SearchConceptId::kAmbientModeArtGallery,
           .message_id =
               IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_ART_GALLERY_ALBUM,
           .alternate_message_ids = {},
@@ -137,22 +170,32 @@ const std::vector<const SearchConcept>& GetAmbientOnSearchConcepts() {
   return *tags;
 }
 
-const std::vector<const SearchConcept>& GetAmbientOffSearchConcepts() {
-  static const base::NoDestructor<std::vector<const SearchConcept>> tags({
-      {
-          .message_id =
-              IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_TURN_ON,
-          .alternate_message_ids =
-              {IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_TURN_ON_ALT1},
-          .relative_url = kAmbientSubpageRelativeUrl,
-      },
+const SearchConcept& GetAmbientOffSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kAmbientModeTurnOn,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_TURN_ON,
+      .alternate_message_ids =
+          {IDS_PERSONALIZATION_APP_SEARCH_RESULT_AMBIENT_MODE_TURN_ON_ALT1},
+      .relative_url = kAmbientSubpageRelativeUrl,
   });
-  return *tags;
+  return *search_concept;
+}
+
+SearchTagRegistry::SearchConceptUpdates GetAmbientPrefChangedUpdates(
+    bool ambient_on) {
+  DCHECK(IsAmbientModeAllowed());
+  SearchTagRegistry::SearchConceptUpdates updates;
+  for (const auto& search_concept : GetAmbientOnSearchConcepts()) {
+    updates[&search_concept] = ambient_on;
+  }
+  updates[&GetAmbientOffSearchConcept()] = !ambient_on;
+  return updates;
 }
 
 const std::vector<const SearchConcept>& GetDarkModeSearchConcepts() {
   static const base::NoDestructor<std::vector<const SearchConcept>> tags({
       {
+          .id = mojom::SearchConceptId::kDarkMode,
           .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE,
           .alternate_message_ids =
               {
@@ -163,6 +206,7 @@ const std::vector<const SearchConcept>& GetDarkModeSearchConcepts() {
           .relative_url = "",
       },
       {
+          .id = mojom::SearchConceptId::kDarkModeSchedule,
           .message_id =
               IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_SCHEDULE,
           .alternate_message_ids =
@@ -178,122 +222,134 @@ const std::vector<const SearchConcept>& GetDarkModeSearchConcepts() {
   return *tags;
 }
 
-const std::vector<const SearchConcept>& GetDarkModeOnSearchConcepts() {
-  static const base::NoDestructor<std::vector<const SearchConcept>> tags({
-      {
-          .message_id =
-              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF,
-          .alternate_message_ids =
-              {
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT1,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT2,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT3,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT4,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT5,
-              },
-          .relative_url = "",
-      },
+const SearchConcept& GetDarkModeOnSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kDarkModeTurnOff,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF,
+      .alternate_message_ids =
+          {
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT1,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT2,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT3,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT4,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_OFF_ALT5,
+          },
+      .relative_url = "",
   });
-  return *tags;
+  return *search_concept;
 }
 
-const std::vector<const SearchConcept>& GetDarkModeOffSearchConcepts() {
-  static const base::NoDestructor<std::vector<const SearchConcept>> tags({
-      {
-          .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON,
-          .alternate_message_ids =
-              {
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT1,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT2,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT3,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT4,
-                  IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT5,
-              },
-          .relative_url = "",
-      },
+const SearchConcept& GetDarkModeOffSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kDarkModeTurnOn,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON,
+      .alternate_message_ids =
+          {
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT1,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT2,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT3,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT4,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_DARK_MODE_TURN_ON_ALT5,
+          },
+      .relative_url = "",
   });
-  return *tags;
+  return *search_concept;
 }
 
-bool IsAmbientModeAllowed() {
-  // TODO(b/172029925): Set up to test this code.
-  return chromeos::features::IsAmbientModeEnabled() &&
-         ash::AmbientClient::Get() &&
-         ash::AmbientClient::Get()->IsAmbientModeAllowed();
+SearchTagRegistry::SearchConceptUpdates GetDarkModePrefChangedUpdates(
+    bool dark_mode_on) {
+  DCHECK(ash::features::IsDarkLightModeEnabled());
+  return {{&GetDarkModeOnSearchConcept(), dark_mode_on},
+          {&GetDarkModeOffSearchConcept(), !dark_mode_on}};
+}
+
+const SearchConcept& GetKeyboardBacklightSearchConcept() {
+  static const base::NoDestructor<const SearchConcept> search_concept({
+      .id = mojom::SearchConceptId::kKeyboardBacklight,
+      .message_id = IDS_PERSONALIZATION_APP_SEARCH_RESULT_KEYBOARD_BACKLIGHT,
+      .alternate_message_ids =
+          {
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_KEYBOARD_BACKLIGHT_ALT1,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_KEYBOARD_BACKLIGHT_ALT2,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_KEYBOARD_BACKLIGHT_ALT3,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_KEYBOARD_BACKLIGHT_ALT4,
+              IDS_PERSONALIZATION_APP_SEARCH_RESULT_KEYBOARD_BACKLIGHT_ALT5,
+          },
+      .relative_url = "",
+  });
+  return *search_concept;
 }
 
 }  // namespace
 
 SearchTagRegistry::SearchTagRegistry(
-    ::chromeos::local_search_service::LocalSearchServiceProxy&
-        local_search_service_proxy,
-    PrefService* pref_service)
-    : pref_service_(pref_service) {
+    local_search_service::LocalSearchServiceProxy& local_search_service_proxy,
+    PrefService* pref_service,
+    std::unique_ptr<EnterprisePolicyDelegate> enterprise_policy_delegate)
+    : pref_service_(pref_service),
+      enterprise_policy_delegate_(std::move(enterprise_policy_delegate)) {
   DCHECK(pref_service_);
+  DCHECK(enterprise_policy_delegate_);
 
   local_search_service_proxy.GetIndex(
-      ::chromeos::local_search_service::IndexId::kPersonalization,
-      ::chromeos::local_search_service::Backend::kLinearMap,
+      local_search_service::IndexId::kPersonalization,
+      local_search_service::Backend::kLinearMap,
       index_remote_.BindNewPipeAndPassReceiver());
   DCHECK(index_remote_.is_bound());
 
   SearchConceptUpdates updates;
-  for (const auto& concept : GetPersonalizationSearchConcepts()) {
-    updates[&concept] = true;
-  }
+  updates[&GetPersonalizationSearchConcept()] = true;
 
-  if (IsAmbientModeAllowed() || ::ash::features::IsDarkLightModeEnabled()) {
-    pref_change_registrar_.Init(pref_service_);
-  }
+  updates.merge(GetUserImageEnterpriseUpdates(
+      enterprise_policy_delegate_->IsUserImageEnterpriseManaged()));
+  updates.merge(GetWallpaperEnterpriseUpdates(
+      enterprise_policy_delegate_->IsWallpaperEnterpriseManaged()));
 
   if (::ash::features::IsDarkLightModeEnabled()) {
-    for (const auto& concept : GetDarkModeSearchConcepts()) {
-      updates[&concept] = true;
+    for (const auto& search_concept : GetDarkModeSearchConcepts()) {
+      updates[&search_concept] = true;
     }
-    // base::Unretained is safe because |this| owns |pref_change_registrar_|.
-    pref_change_registrar_.Add(
-        ash::prefs::kDarkModeEnabled,
-        base::BindRepeating(&SearchTagRegistry::OnDarkModePrefChanged,
-                            base::Unretained(this)));
-    OnDarkModePrefChanged();
+    updates.merge(GetDarkModePrefChangedUpdates(
+        pref_service_->GetBoolean(ash::prefs::kDarkModeEnabled)));
+  }
+
+  if (::ash::features::IsRgbKeyboardEnabled() &&
+      Shell::Get()->rgb_keyboard_manager()->IsRgbKeyboardSupported()) {
+    updates[&GetKeyboardBacklightSearchConcept()] = true;
   }
 
   if (IsAmbientModeAllowed()) {
-    for (const auto& concept : GetAmbientSearchConcepts()) {
-      updates[&concept] = true;
-    }
-    // base::Unretained is safe because |this| owns |pref_change_registrar_|.
-    pref_change_registrar_.Add(
-        ::ash::ambient::prefs::kAmbientModeEnabled,
-        base::BindRepeating(&SearchTagRegistry::OnAmbientPrefChanged,
-                            base::Unretained(this)));
-    OnAmbientPrefChanged();
+    updates[&GetAmbientSearchConcept()] = true;
+    updates.merge(GetAmbientPrefChangedUpdates(
+        pref_service_->GetBoolean(::ash::ambient::prefs::kAmbientModeEnabled)));
   }
 
   UpdateSearchConcepts(updates);
+  BindObservers();
 }
 
 SearchTagRegistry::~SearchTagRegistry() = default;
 
 void SearchTagRegistry::UpdateSearchConcepts(
     const SearchConceptUpdates& search_concept_updates) {
-  std::vector<::chromeos::local_search_service::Data> data_vec;
+  std::vector<local_search_service::Data> data_vec;
 
-  for (auto& [concept, add] : search_concept_updates) {
-    std::string concept_id = SearchConceptToId(*concept);
+  for (auto& [search_concept, add] : search_concept_updates) {
+    std::string concept_id = SearchConceptToId(*search_concept);
     const auto it = result_id_to_search_concept_.find(concept_id);
     bool found = it != result_id_to_search_concept_.end();
 
     if (!found && add) {
       // Adding a search concept that was missing.
-      data_vec.emplace_back(concept_id, SearchConceptToContentVector(*concept));
-      result_id_to_search_concept_[std::move(concept_id)] = concept;
+      data_vec.emplace_back(concept_id,
+                            SearchConceptToContentVector(*search_concept));
+      result_id_to_search_concept_[std::move(concept_id)] = search_concept;
     }
 
     if (found && !add) {
       // Removing a search concept that was present.
-      data_vec.emplace_back(
-          concept_id, std::vector<::ash::local_search_service::Content>());
+      data_vec.emplace_back(concept_id,
+                            std::vector<local_search_service::Content>());
       result_id_to_search_concept_.erase(it);
     }
   }
@@ -324,6 +380,29 @@ void SearchTagRegistry::RemoveObserver(Observer* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
+void SearchTagRegistry::BindObservers() {
+  if (IsAmbientModeAllowed() || ::ash::features::IsDarkLightModeEnabled()) {
+    pref_change_registrar_.Init(pref_service_);
+  }
+  if (::ash::features::IsDarkLightModeEnabled()) {
+    // base::Unretained is safe because |this| owns |pref_change_registrar_|.
+    pref_change_registrar_.Add(
+        ash::prefs::kDarkModeEnabled,
+        base::BindRepeating(&SearchTagRegistry::OnDarkModePrefChanged,
+                            base::Unretained(this)));
+  }
+  if (IsAmbientModeAllowed()) {
+    // base::Unretained is safe because |this| owns |pref_change_registrar_|.
+    pref_change_registrar_.Add(
+        ::ash::ambient::prefs::kAmbientModeEnabled,
+        base::BindRepeating(&SearchTagRegistry::OnAmbientPrefChanged,
+                            base::Unretained(this)));
+  }
+
+  enterprise_policy_delegate_observation_.Observe(
+      enterprise_policy_delegate_.get());
+}
+
 void SearchTagRegistry::OnIndexUpdateComplete(uint32_t num_deleted) {
   DVLOG(3) << "Deleted " << num_deleted << " search concepts";
   for (auto& observer : observer_list_) {
@@ -332,31 +411,24 @@ void SearchTagRegistry::OnIndexUpdateComplete(uint32_t num_deleted) {
 }
 
 void SearchTagRegistry::OnAmbientPrefChanged() {
-  DCHECK(IsAmbientModeAllowed());
   bool ambient_on =
       pref_service_->GetBoolean(::ash::ambient::prefs::kAmbientModeEnabled);
-  SearchConceptUpdates updates;
-  for (const auto& search_concept : GetAmbientOnSearchConcepts()) {
-    updates[&search_concept] = ambient_on;
-  }
-  for (const auto& search_concept : GetAmbientOffSearchConcepts()) {
-    updates[&search_concept] = !ambient_on;
-  }
-  UpdateSearchConcepts(updates);
+  UpdateSearchConcepts(GetAmbientPrefChangedUpdates(ambient_on));
 }
 
 void SearchTagRegistry::OnDarkModePrefChanged() {
-  DCHECK(::ash::features::IsDarkLightModeEnabled());
   bool dark_mode_on = pref_service_->GetBoolean(::ash::prefs::kDarkModeEnabled);
-  SearchConceptUpdates updates;
-  for (const auto& search_concept : GetDarkModeOnSearchConcepts()) {
-    updates[&search_concept] = dark_mode_on;
-  }
-  for (const auto& search_concept : GetDarkModeOffSearchConcepts()) {
-    updates[&search_concept] = !dark_mode_on;
-  }
-  UpdateSearchConcepts(updates);
+  UpdateSearchConcepts(GetDarkModePrefChangedUpdates(dark_mode_on));
 }
 
-}  // namespace personalization_app
-}  // namespace ash
+void SearchTagRegistry::OnUserImageIsEnterpriseManagedChanged(
+    bool is_enterprise_managed) {
+  UpdateSearchConcepts(GetUserImageEnterpriseUpdates(is_enterprise_managed));
+}
+
+void SearchTagRegistry::OnWallpaperIsEnterpriseManagedChanged(
+    bool is_enterprise_managed) {
+  UpdateSearchConcepts(GetWallpaperEnterpriseUpdates(is_enterprise_managed));
+}
+
+}  // namespace ash::personalization_app

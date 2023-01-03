@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,9 @@
 #include <memory>
 #include <string>
 
-#include "ash/webui/telemetry_extension_ui/mojom/probe_service.mojom.h"
-#include "ash/webui/telemetry_extension_ui/services/probe_service.h"
 #include "base/callback.h"
+#include "chrome/browser/chromeos/extensions/telemetry/api/remote_probe_service_strategy.h"
+#include "chromeos/crosapi/mojom/probe_service.mojom.h"
 
 namespace chromeos {
 
@@ -48,8 +48,7 @@ class HardwareInfoDelegate {
   void FallbackHandler(ManufacturerCallback done_cb,
                        std::string probe_service_result);
 
-  mojo::Remote<ash::health::mojom::ProbeService> remote_probe_service_;
-  ash::ProbeService probe_service_;
+  std::unique_ptr<RemoteProbeServiceStrategy> remote_probe_service_strategy_;
 };
 
 }  // namespace chromeos

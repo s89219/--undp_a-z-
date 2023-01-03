@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #import <Foundation/Foundation.h>
 
+#include "ios/web/public/navigation/https_upgrade_type.h"
 #include "ui/base/page_transition_types.h"
 
 class GURL;
@@ -72,8 +73,8 @@ class NavigationContext {
   // redirect).
   //
   // Note: page and frame navigations can only be done using POST or GET
-  // methods Therefore API exposes only |bool IsPost()| as opposed to
-  // |const std::string& GetMethod()| method.
+  // methods Therefore API exposes only `bool IsPost()` as opposed to
+  // `const std::string& GetMethod()` method.
   virtual bool IsPost() const = 0;
 
   // Returns error if the navigation has failed.
@@ -92,10 +93,12 @@ class NavigationContext {
   //  * using window.history.pushState
   virtual bool IsRendererInitiated() const = 0;
 
-  // Returns true if the current navigation is a failed HTTPS upgrade. This
-  // can happen when an HTTP navigation is upgraded to an HTTPS navigation
-  // by the HTTPS-Only mode feature and the HTTPS URL returns an SSL error.
-  virtual bool IsFailedHTTPSUpgrade() const = 0;
+  // Gets the type of the HTTPS upgrade if the current navigation was upgraded
+  // to HTTPS and failed to load. Otherwise, returns kNone. For example, if
+  // the navigation was upgraded to HTTPS by HTTPS-Ony Mode and failed with an
+  // SSL error, this will return kHttpsOnlyMode. If the HTTPS upgrade succeeded,
+  // will return kNone.
+  virtual HttpsUpgradeType GetFailedHttpsUpgradeType() const = 0;
 
   virtual ~NavigationContext() {}
 };

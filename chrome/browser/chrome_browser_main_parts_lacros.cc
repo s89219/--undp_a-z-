@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,15 +12,15 @@
 #include "chrome/browser/metrics/metrics_reporting_state.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/lacros/dbus/lacros_dbus_helper.h"
-#include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #include "content/public/browser/tts_platform.h"
 #include "content/public/common/result_codes.h"
 #include "ui/wm/core/wm_core_switches.h"
 
 ChromeBrowserMainPartsLacros::ChromeBrowserMainPartsLacros(
-    content::MainFunctionParams parameters,
+    bool is_integration_test,
     StartupData* startup_data)
-    : ChromeBrowserMainPartsLinux(std::move(parameters), startup_data) {}
+    : ChromeBrowserMainPartsLinux(is_integration_test, startup_data) {}
 
 ChromeBrowserMainPartsLacros::~ChromeBrowserMainPartsLacros() = default;
 
@@ -42,9 +42,9 @@ int ChromeBrowserMainPartsLacros::PreEarlyInitialization() {
 }
 
 int ChromeBrowserMainPartsLacros::PreCreateThreads() {
-  const crosapi::mojom::BrowserInitParams* init_params =
-      chromeos::LacrosService::Get()->init_params();
-  if (init_params->initial_browser_action ==
+  const chromeos::BrowserParamsProxy* init_params =
+      chromeos::BrowserParamsProxy::Get();
+  if (init_params->InitialBrowserAction() ==
       crosapi::mojom::InitialBrowserAction::kDoNotOpenWindow) {
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kNoStartupWindow);
@@ -66,9 +66,11 @@ void ChromeBrowserMainPartsLacros::PostCreateThreads() {
 void ChromeBrowserMainPartsLacros::PreProfileInit() {
   ChromeBrowserMainPartsLinux::PreProfileInit();
 
-  // Apply specific flags if this is a Web Kiosk session.
-  if (chromeos::LacrosService::Get()->init_params()->session_type ==
-      crosapi::mojom::SessionType::kWebKioskSession) {
+  // Apply specific flags if this is a Kiosk session.
+  if (chromeos::BrowserParamsProxy::Get()->SessionType() ==
+          crosapi::mojom::SessionType::kWebKioskSession ||
+      chromeos::BrowserParamsProxy::Get()->SessionType() ==
+          crosapi::mojom::SessionType::kAppKioskSession) {
     // Hide certain system UI elements.
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kForceAppMode);

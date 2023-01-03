@@ -1,11 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/projector/projector_controller_impl.h"
 
+#include <vector>
+
 #include "ash/capture_mode/capture_mode_controller.h"
 #include "ash/capture_mode/capture_mode_metrics.h"
+#include "ash/constants/ash_pref_names.h"
 #include "ash/projector/projector_metadata_controller.h"
 #include "ash/projector/projector_metrics.h"
 #include "ash/projector/projector_ui_controller.h"
@@ -13,29 +16,27 @@
 #include "ash/public/cpp/projector/projector_client.h"
 #include "ash/public/cpp/projector/projector_new_screencast_precondition.h"
 #include "ash/public/cpp/projector/projector_session.h"
+#include "ash/public/cpp/projector/speech_recognition_availability.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
+#include "ash/webui/projector_app/public/cpp/projector_app_constants.h"
 #include "base/bind.h"
+#include "base/check.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/prefs/pref_registry_simple.h"
 #include "media/mojo/mojom/speech_recognition_service.mojom.h"
 #include "ui/gfx/image/image.h"
 
 namespace ash {
 
 namespace {
-
-// String format of the screencast name.
-constexpr char kScreencastPathFmtStr[] =
-    "Recording %d-%02d-%02d %02d.%02d.%02d";
-
-constexpr char kScreencastDefaultThumbnailFileName[] = "thumbnail.png";
 
 // Create directory. Returns true if saving succeeded, or false otherwise.
 bool CreateDirectory(const base::FilePath& path) {
@@ -82,13 +83,67 @@ scoped_refptr<base::RefCountedMemory> EncodeImage(
   return gfx::Image(image_skia).As1xPNGBytes();
 }
 
-std::string GetScreencastName() {
-  base::Time::Exploded exploded_time;
-  base::Time::Now().LocalExplode(&exploded_time);
-  return base::StringPrintf(kScreencastPathFmtStr, exploded_time.year,
-                            exploded_time.month, exploded_time.day_of_month,
-                            exploded_time.hour, exploded_time.minute,
-                            exploded_time.second);
+NewScreencastPrecondition OnDeviceRecognitionAvailabilityToPrecondition(
+    OnDeviceRecognitionAvailability availability) {
+  NewScreencastPrecondition result;
+  switch (availability) {
+    case OnDeviceRecognitionAvailability::kAvailable:
+      result.state = NewScreencastPreconditionState::kEnabled;
+      result.reasons = {NewScreencastPreconditionReason::kEnabledBySoda};
+      return result;
+    case OnDeviceRecognitionAvailability::kSodaNotAvailable:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      result.reasons = {NewScreencastPreconditionReason::
+                            kOnDeviceSpeechRecognitionNotSupported};
+      return result;
+    case OnDeviceRecognitionAvailability::kUserLanguageNotAvailable:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      result.reasons = {
+          NewScreencastPreconditionReason::kUserLocaleNotSupported};
+      return result;
+
+    // We will attempt to install SODA.
+    case OnDeviceRecognitionAvailability::kSodaNotInstalled:
+    case OnDeviceRecognitionAvailability::kSodaInstalling:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      result.reasons = {
+          NewScreencastPreconditionReason::kSodaDownloadInProgress};
+      return result;
+    case OnDeviceRecognitionAvailability::kSodaInstallationErrorUnspecified:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      result.reasons = {
+          NewScreencastPreconditionReason::kSodaInstallationErrorUnspecified};
+      return result;
+    case OnDeviceRecognitionAvailability::kSodaInstallationErrorNeedsReboot:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      result.reasons = {
+          NewScreencastPreconditionReason::kSodaInstallationErrorNeedsReboot};
+      return result;
+  }
+}
+
+NewScreencastPrecondition ServerBasedRecognitionAvailabilityToPrecondition(
+    ServerBasedRecognitionAvailability availability) {
+  NewScreencastPrecondition result;
+  switch (availability) {
+    case ServerBasedRecognitionAvailability::kAvailable:
+      result.state = NewScreencastPreconditionState::kEnabled;
+      result.reasons = {NewScreencastPreconditionReason::
+                            kEnabledByServerSideSpeechRecognition};
+      return result;
+    case ServerBasedRecognitionAvailability::kUserLanguageNotAvailable:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      result.reasons = {
+          NewScreencastPreconditionReason::kUserLocaleNotSupported};
+      return result;
+    case ServerBasedRecognitionAvailability::
+        kServerBasedRecognitionNotAvailable:
+      result.state = NewScreencastPreconditionState::kDisabled;
+      // TODO(b:245613717): Add a precondition reason for server based not
+      // available.
+      result.reasons = {NewScreencastPreconditionReason::kOthers};
+      return result;
+  }
 }
 
 }  // namespace
@@ -114,6 +169,14 @@ ProjectorControllerImpl* ProjectorControllerImpl::Get() {
   return static_cast<ProjectorControllerImpl*>(ProjectorController::Get());
 }
 
+// static
+void ProjectorControllerImpl::RegisterProfilePrefs(
+    PrefRegistrySimple* registry) {
+  registry->RegisterUint64Pref(
+      prefs::kProjectorAnnotatorLastUsedMarkerColor, 0u,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_OS_PREF);
+}
+
 void ProjectorControllerImpl::StartProjectorSession(
     const std::string& storage_dir) {
   DCHECK_EQ(GetNewScreencastPrecondition().state,
@@ -121,7 +184,6 @@ void ProjectorControllerImpl::StartProjectorSession(
 
   auto* controller = CaptureModeController::Get();
   if (!controller->is_recording_in_progress()) {
-    controller->SetSource(CaptureModeSource::kFullscreen);
     // A capture mode session can be blocked by many factors, such as policy,
     // DLP, ... etc. We don't start a Projector session until we're sure a
     // capture session started.
@@ -137,7 +199,7 @@ void ProjectorControllerImpl::StartProjectorSession(
 void ProjectorControllerImpl::CreateScreencastContainerFolder(
     CreateScreencastContainerFolderCallback callback) {
   base::FilePath mounted_path;
-  if (!client_->GetDriveFsMountPointPath(&mounted_path)) {
+  if (!client_->GetBaseStoragePath(&mounted_path)) {
     LOG(ERROR) << "Failed to get DriveFs mounted point path.";
     ProjectorUiController::ShowSaveFailureNotification();
     std::move(callback).Run(base::FilePath());
@@ -146,8 +208,7 @@ void ProjectorControllerImpl::CreateScreencastContainerFolder(
 
   auto path = mounted_path.Append("root")
                   .Append(projector_session_->storage_dir())
-                  .Append(GetScreencastName());
-
+                  .Append(projector_session_->screencast_name());
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock()}, base::BindOnce(&CreateDirectory, path),
       base::BindOnce(&ProjectorControllerImpl::OnContainerFolderCreated,
@@ -158,15 +219,9 @@ void ProjectorControllerImpl::SetClient(ProjectorClient* client) {
   client_ = client;
 }
 
-void ProjectorControllerImpl::OnSpeechRecognitionAvailabilityChanged(
-    SpeechRecognitionAvailability availability) {
+void ProjectorControllerImpl::OnSpeechRecognitionAvailabilityChanged() {
   if (ProjectorController::AreExtendedProjectorFeaturesDisabled())
     return;
-
-  if (availability == speech_recognition_availability_)
-    return;
-
-  speech_recognition_availability_ = availability;
 
   OnNewScreencastPreconditionChanged();
 }
@@ -182,61 +237,52 @@ void ProjectorControllerImpl::OnTranscription(
 void ProjectorControllerImpl::OnTranscriptionError() {
   is_speech_recognition_on_ = false;
 
-  ProjectorUiController::ShowFailureNotification(
-      IDS_ASH_PROJECTOR_FAILURE_MESSAGE_TRANSCRIPTION);
+  // TODO(b/261093550) Investigate the real reason why
+  // we get a speech recognition error after we notify it to
+  // stop.
+  if (!pending_speech_recognition_stop_) {
+    ProjectorUiController::ShowFailureNotification(
+        IDS_ASH_PROJECTOR_FAILURE_MESSAGE_TRANSCRIPTION);
+  }
 
-  CaptureModeController::Get()->EndVideoRecording(
-      EndRecordingReason::kProjectorTranscriptionError);
+  auto* capture_mode_controller = CaptureModeController::Get();
+  if (capture_mode_controller->is_recording_in_progress()) {
+    capture_mode_controller->EndVideoRecording(
+        EndRecordingReason::kProjectorTranscriptionError);
+  } else {
+    MaybeWrapUpRecording();
+  }
+
+  pending_speech_recognition_stop_ = false;
 }
 
 void ProjectorControllerImpl::OnSpeechRecognitionStopped() {
   is_speech_recognition_on_ = false;
-
+  pending_speech_recognition_stop_ = false;
   // Try to wrap up recording. This can be no-op if DLP check is not completed.
   MaybeWrapUpRecording();
-}
-
-bool ProjectorControllerImpl::IsEligible() const {
-  return speech_recognition_availability_ ==
-             SpeechRecognitionAvailability::kAvailable ||
-         ProjectorController::AreExtendedProjectorFeaturesDisabled();
 }
 
 NewScreencastPrecondition
 ProjectorControllerImpl::GetNewScreencastPrecondition() const {
   NewScreencastPrecondition result;
+  // Make the default reason to be `kEnabledBySoda`.
+  result.reasons = {NewScreencastPreconditionReason::kEnabledBySoda};
 
   // For development purposes on the x11 simulator, on-device speech recognition
   // and DriveFS are not supported.
   if (!ProjectorController::AreExtendedProjectorFeaturesDisabled()) {
-    switch (speech_recognition_availability_) {
-      case SpeechRecognitionAvailability::
-          kOnDeviceSpeechRecognitionNotSupported:
-        result.state = NewScreencastPreconditionState::kDisabled;
-        result.reasons = {NewScreencastPreconditionReason::
-                              kOnDeviceSpeechRecognitionNotSupported};
-        return result;
-      case SpeechRecognitionAvailability::kUserLanguageNotSupported:
-        result.state = NewScreencastPreconditionState::kDisabled;
-        result.reasons = {
-            NewScreencastPreconditionReason::kUserLocaleNotSupported};
-        return result;
-
-      // We will attempt to install SODA.
-      case SpeechRecognitionAvailability::kSodaNotInstalled:
-      case SpeechRecognitionAvailability::kSodaInstalling:
-        result.state = NewScreencastPreconditionState::kDisabled;
-        result.reasons = {
-            NewScreencastPreconditionReason::kSodaDownloadInProgress};
-        return result;
-      case SpeechRecognitionAvailability::kSodaInstallationError:
-        result.state = NewScreencastPreconditionState::kDisabled;
-        result.reasons = {
-            NewScreencastPreconditionReason::kSodaInstallationError};
-        return result;
-      case SpeechRecognitionAvailability::kAvailable:
-        break;
+    const auto availability = client_->GetSpeechRecognitionAvailability();
+    if (availability.use_on_device) {
+      result = OnDeviceRecognitionAvailabilityToPrecondition(
+          availability.on_device_availability);
+    } else {
+      result = ServerBasedRecognitionAvailabilityToPrecondition(
+          availability.server_based_availability);
     }
+
+    if (result.state != NewScreencastPreconditionState::kEnabled)
+      return result;
 
     if (!client_->IsDriveFsMounted()) {
       result.state = NewScreencastPreconditionState::kDisabled;
@@ -254,10 +300,18 @@ ProjectorControllerImpl::GetNewScreencastPrecondition() const {
     return result;
   }
 
-  if (CaptureModeController::Get()->is_recording_in_progress()) {
+  auto* capture_mode_controller = CaptureModeController::Get();
+  if (capture_mode_controller->is_recording_in_progress()) {
     result.state = NewScreencastPreconditionState::kDisabled;
     result.reasons = {
         NewScreencastPreconditionReason::kScreenRecordingInProgress};
+    return result;
+  }
+
+  if (capture_mode_controller->IsAudioCaptureDisabledByPolicy()) {
+    result.state = NewScreencastPreconditionState::kDisabled;
+    result.reasons = {
+        NewScreencastPreconditionReason::kAudioCaptureDisabledByPolicy};
     return result;
   }
 
@@ -271,11 +325,6 @@ ProjectorControllerImpl::GetNewScreencastPrecondition() const {
   return result;
 }
 
-void ProjectorControllerImpl::OnToolSet(const AnnotatorTool& tool) {
-  // TODO(b/198184362): Reflect the annotator tool changes on the Projector
-  // toolbar.
-}
-
 void ProjectorControllerImpl::OnUndoRedoAvailabilityChanged(
     bool undo_available,
     bool redo_available) {
@@ -285,15 +334,26 @@ void ProjectorControllerImpl::OnUndoRedoAvailabilityChanged(
 
 void ProjectorControllerImpl::OnCanvasInitialized(bool success) {
   ui_controller_->OnCanvasInitialized(success);
+  if (on_canvas_initialized_callback_for_test_)
+    std::move(on_canvas_initialized_callback_for_test_).Run();
 }
 
-void ProjectorControllerImpl::OnRecordingStarted(bool is_in_projector_mode) {
+bool ProjectorControllerImpl::GetAnnotatorAvailability() {
+  return ui_controller_->GetAnnotatorAvailability();
+}
+
+void ProjectorControllerImpl::ToggleAnnotationTray() {
+  return ui_controller_->ToggleAnnotationTray();
+}
+
+void ProjectorControllerImpl::OnRecordingStarted(aura::Window* current_root,
+                                                 bool is_in_projector_mode) {
   if (!is_in_projector_mode) {
     OnNewScreencastPreconditionChanged();
     return;
   }
   if (ui_controller_)
-    ui_controller_->ShowToolbar();
+    ui_controller_->ShowAnnotationTray(current_root);
 
   StartSpeechRecognition();
   metadata_controller_->OnRecordingStarted();
@@ -307,13 +367,19 @@ void ProjectorControllerImpl::OnRecordingEnded(bool is_in_projector_mode) {
 
   DCHECK(projector_session_->is_active());
 
-  // Close Projector toolbar if ui controller is present.
   if (ui_controller_)
-    ui_controller_->CloseToolbar();
+    ui_controller_->HideAnnotationTray();
 
   MaybeStopSpeechRecognition();
 
   RecordCreationFlowMetrics(ProjectorCreationFlow::kRecordingEnded);
+}
+
+void ProjectorControllerImpl::OnRecordedWindowChangingRoot(
+    aura::Window* new_root) {
+  DCHECK(projector_session_->is_active());
+
+  ui_controller_->OnRecordedWindowChangingRoot(new_root);
 }
 
 void ProjectorControllerImpl::OnDlpRestrictionCheckedAtVideoEnd(
@@ -353,15 +419,22 @@ void ProjectorControllerImpl::OnRecordingStartAborted() {
 
   projector_session_->Stop();
 
+  auto* capture_mode_controller = CaptureModeController::Get();
+  if (capture_mode_controller->IsAudioCaptureDisabledByPolicy()) {
+    ui_controller_->ShowFailureNotification(
+        IDS_ASH_PROJECTOR_ABORT_BY_AUDIO_POLICY_TEXT,
+        IDS_ASH_PROJECTOR_ABORT_BY_AUDIO_POLICY_TITLE);
+  }
+
   if (client_)
     client_->OpenProjectorApp();
 
   RecordCreationFlowMetrics(ProjectorCreationFlow::kRecordingAborted);
 }
 
-void ProjectorControllerImpl::OnMarkerPressed() {
+void ProjectorControllerImpl::EnableAnnotatorTool() {
   DCHECK(ui_controller_);
-  ui_controller_->OnMarkerPressed();
+  ui_controller_->EnableAnnotatorTool();
 }
 
 void ProjectorControllerImpl::SetAnnotatorTool(const AnnotatorTool& tool) {
@@ -424,11 +497,12 @@ void ProjectorControllerImpl::StartSpeechRecognition() {
   if (ProjectorController::AreExtendedProjectorFeaturesDisabled() || !client_)
     return;
 
-  DCHECK(speech_recognition_availability_ ==
-         SpeechRecognitionAvailability::kAvailable);
+  DCHECK(client_->GetSpeechRecognitionAvailability().IsAvailable());
+
   DCHECK(!is_speech_recognition_on_);
   client_->StartSpeechRecognition();
   is_speech_recognition_on_ = true;
+  pending_speech_recognition_stop_ = false;
 }
 
 void ProjectorControllerImpl::MaybeStopSpeechRecognition() {
@@ -438,10 +512,10 @@ void ProjectorControllerImpl::MaybeStopSpeechRecognition() {
     return;
   }
 
-  DCHECK(speech_recognition_availability_ ==
-         SpeechRecognitionAvailability::kAvailable);
+  DCHECK(client_->GetSpeechRecognitionAvailability().IsAvailable());
+
   client_->StopSpeechRecognition();
-  is_speech_recognition_on_ = false;
+  pending_speech_recognition_stop_ = true;
 }
 
 void ProjectorControllerImpl::OnContainerFolderCreated(
@@ -457,11 +531,19 @@ void ProjectorControllerImpl::OnContainerFolderCreated(
   }
 
   projector_session_->set_screencast_container_path(path);
-  std::move(callback).Run(GetScreencastFilePathNoExtension());
+  // Suppresses system notification for media file, metadata file and thumbnail
+  // even they haven't been saved yet. Once any file gets saved, syncing will
+  // start immediately, we want to make sure the notifications are suppressed
+  // before the sync.
+  client_->ToggleFileSyncingNotificationForPaths(GetScreencastFilePaths(),
+                                                 /*suppress=*/true);
+  std::move(callback).Run(
+      projector_session_->GetScreencastFilePathNoExtension());
 }
 
 void ProjectorControllerImpl::SaveScreencast() {
-  metadata_controller_->SaveMetadata(GetScreencastFilePathNoExtension());
+  metadata_controller_->SaveMetadata(
+      projector_session_->GetScreencastFilePathNoExtension());
 }
 
 void ProjectorControllerImpl::MaybeWrapUpRecording() {
@@ -509,7 +591,8 @@ void ProjectorControllerImpl::CleanupContainerFolder() {
 
   if (!screencast_container_path.has_value())
     return;
-
+  client_->ToggleFileSyncingNotificationForPaths(GetScreencastFilePaths(),
+                                                 /*suppress=*/false);
   base::ThreadPool::PostTaskAndReplyWithResult(
       FROM_HERE, {base::MayBlock()},
       base::BindOnce(&base::DeletePathRecursively, *screencast_container_path),
@@ -524,13 +607,16 @@ void ProjectorControllerImpl::CleanupContainerFolder() {
                 *screencast_container_path));
 }
 
-base::FilePath ProjectorControllerImpl::GetScreencastFilePathNoExtension()
+std::vector<base::FilePath> ProjectorControllerImpl::GetScreencastFilePaths()
     const {
-  auto screencast_container_path =
+  const auto& container_folder =
       projector_session_->screencast_container_path();
-
-  DCHECK(screencast_container_path.has_value());
-  return screencast_container_path->Append(GetScreencastName());
+  DCHECK(container_folder);
+  const base::FilePath path_with_no_extension =
+      projector_session_->GetScreencastFilePathNoExtension();
+  return {path_with_no_extension.AddExtension(kProjectorMetadataFileExtension),
+          path_with_no_extension.AddExtension(kProjectorMediaFileExtension),
+          container_folder->Append(kScreencastDefaultThumbnailFileName)};
 }
 
 }  // namespace ash

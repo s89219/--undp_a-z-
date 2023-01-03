@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,10 @@
 // Consumer protocol for Safe Browsing Standard Protection view.
 @protocol SafeBrowsingStandardProtectionConsumer
 
-// Initializes item array for |safeBrowsingStandardProtectionItems|.
+// Reload cells for items. Does nothing if the model is not loaded yet.
+- (void)reloadCellsForItems;
+
+// Initializes item array for `safeBrowsingStandardProtectionItems`.
 - (void)setSafeBrowsingStandardProtectionItems:
     (NSArray<TableViewItem*>*)safeBrowsingStandardProtectionItems;
 

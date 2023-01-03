@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,10 +19,10 @@
 #include "extensions/common/mojom/event_router.mojom.h"
 #include "extensions/common/mojom/frame.mojom.h"
 #include "extensions/common/trace_util.h"
+#include "extensions/renderer/api/messaging/message_target.h"
 #include "extensions/renderer/dispatcher.h"
 #include "extensions/renderer/extension_frame_helper.h"
 #include "extensions/renderer/extensions_renderer_client.h"
-#include "extensions/renderer/message_target.h"
 #include "extensions/renderer/native_extension_bindings_system.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/trace_util.h"
@@ -110,7 +110,7 @@ class MainThreadIPCMessageSender : public IPCMessageSender {
 
   void SendAddFilteredEventListenerIPC(ScriptContext* context,
                                        const std::string& event_name,
-                                       const base::DictionaryValue& filter,
+                                       const base::Value::Dict& filter,
                                        bool is_lazy) override {
     DCHECK(!context->IsForServiceWorker());
     DCHECK_EQ(kMainThreadId, content::WorkerThread::GetCurrentId());
@@ -121,7 +121,7 @@ class MainThreadIPCMessageSender : public IPCMessageSender {
 
   void SendRemoveFilteredEventListenerIPC(ScriptContext* context,
                                           const std::string& event_name,
-                                          const base::DictionaryValue& filter,
+                                          const base::Value::Dict& filter,
                                           bool remove_lazy_listener) override {
     DCHECK(!context->IsForServiceWorker());
     DCHECK_EQ(kMainThreadId, content::WorkerThread::GetCurrentId());
@@ -172,7 +172,7 @@ class MainThreadIPCMessageSender : public IPCMessageSender {
         if (target.document_id)
           info.document_id = *target.document_id;
         render_frame->Send(new ExtensionHostMsg_OpenChannelToTab(
-            frame_context, info, extension->id(), channel_name, port_id));
+            frame_context, info, channel_name, port_id));
         break;
       }
       case MessageTarget::NATIVE_APP:
@@ -225,11 +225,13 @@ class MainThreadIPCMessageSender : public IPCMessageSender {
   void OnResponse(int request_id,
                   bool success,
                   base::Value::List response,
-                  const std::string& error) {
+                  const std::string& error,
+                  mojom::ExtraResponseDataPtr response_data) {
     ExtensionsRendererClient::Get()
         ->GetDispatcher()
         ->bindings_system()
-        ->HandleResponse(request_id, success, std::move(response), error);
+        ->HandleResponse(request_id, success, std::move(response), error,
+                         std::move(response_data));
   }
 
   mojom::EventRouter* GetEventRouter() {
@@ -337,7 +339,7 @@ class WorkerThreadIPCMessageSender : public IPCMessageSender {
 
   void SendAddFilteredEventListenerIPC(ScriptContext* context,
                                        const std::string& event_name,
-                                       const base::DictionaryValue& filter,
+                                       const base::Value::Dict& filter,
                                        bool is_lazy) override {
     DCHECK(context->IsForServiceWorker());
     DCHECK_NE(kMainThreadId, content::WorkerThread::GetCurrentId());
@@ -352,7 +354,7 @@ class WorkerThreadIPCMessageSender : public IPCMessageSender {
 
   void SendRemoveFilteredEventListenerIPC(ScriptContext* context,
                                           const std::string& event_name,
-                                          const base::DictionaryValue& filter,
+                                          const base::Value::Dict& filter,
                                           bool remove_lazy_listener) override {
     DCHECK(context->IsForServiceWorker());
     DCHECK_NE(kMainThreadId, content::WorkerThread::GetCurrentId());
@@ -396,8 +398,7 @@ class WorkerThreadIPCMessageSender : public IPCMessageSender {
         info.tab_id = *target.tab_id;
         info.frame_id = *target.frame_id;
         dispatcher_->Send(new ExtensionHostMsg_OpenChannelToTab(
-            PortContextForCurrentWorker(), info, extension->id(), channel_name,
-            port_id));
+            PortContextForCurrentWorker(), info, channel_name, port_id));
         break;
       }
       case MessageTarget::NATIVE_APP:

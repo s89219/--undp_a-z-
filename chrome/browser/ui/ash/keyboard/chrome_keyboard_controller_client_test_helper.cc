@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,7 +75,7 @@ class ChromeKeyboardControllerClientTestHelper::FakeKeyboardController
   void RemoveObserver(ash::KeyboardControllerObserver* observer) override {
     observers_.RemoveObserver(observer);
   }
-  ash::KeyRepeatSettings GetKeyRepeatSettings() override {
+  absl::optional<ash::KeyRepeatSettings> GetKeyRepeatSettings() override {
     return ash::KeyRepeatSettings{true, base::Milliseconds(1000),
                                   base::Milliseconds(1000)};
   }

@@ -1,8 +1,7 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/gl/direct_composition_surface_win.h"
 #include "ui/gl/init/gl_initializer.h"
 
 #include <dwmapi.h>
@@ -17,10 +16,12 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/trace_event/trace_event.h"
 #include "base/win/windows_version.h"
+#include "ui/gl/direct_composition_support.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_display.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
-#include "ui/gl/gl_surface_egl.h"
+#include "ui/gl/gl_utils.h"
 #include "ui/gl/vsync_provider_win.h"
 
 namespace gl {
@@ -122,17 +123,17 @@ bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
 
 }  // namespace
 
-bool InitializeGLOneOffPlatform(uint64_t system_device_id) {
+GLDisplay* InitializeGLOneOffPlatform(uint64_t system_device_id) {
   VSyncProviderWin::InitializeOneOff();
 
+  GLDisplayEGL* display = GetDisplayEGL(system_device_id);
   switch (GetGLImplementation()) {
     case kGLImplementationEGLANGLE:
-      if (!GLSurfaceEGL::InitializeOneOff(EGLDisplayPlatform(GetDC(nullptr)),
-                                          system_device_id)) {
-        LOG(ERROR) << "GLSurfaceEGL::InitializeOneOff failed.";
-        return false;
+      if (!display->Initialize(EGLDisplayPlatform(GetDC(nullptr)))) {
+        LOG(ERROR) << "GLDisplayEGL::Initialize failed.";
+        return nullptr;
       }
-      DirectCompositionSurfaceWin::InitializeOneOff();
+      InitializeDirectComposition(display);
       break;
     case kGLImplementationMockGL:
     case kGLImplementationStubGL:
@@ -140,7 +141,7 @@ bool InitializeGLOneOffPlatform(uint64_t system_device_id) {
     default:
       NOTREACHED();
   }
-  return true;
+  return display;
 }
 
 bool InitializeStaticGLBindings(GLImplementationParts implementation) {
@@ -153,7 +154,7 @@ bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   // after instituting restrictions on I/O. Going forward they will
   // likely be used in the browser process on most platforms. The
   // one-time initialization cost is small, between 2 and 5 ms.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ScopedAllowBlocking allow_blocking;
 
   switch (implementation.gl) {
     case kGLImplementationEGLANGLE:
@@ -170,9 +171,10 @@ bool InitializeStaticGLBindings(GLImplementationParts implementation) {
   return false;
 }
 
-void ShutdownGLPlatform() {
-  DirectCompositionSurfaceWin::ShutdownOneOff();
-  GLSurfaceEGL::ShutdownOneOff();
+void ShutdownGLPlatform(GLDisplay* display) {
+  ShutdownDirectComposition();
+  if (display)
+    display->Shutdown();
   ClearBindingsEGL();
   ClearBindingsGL();
 }

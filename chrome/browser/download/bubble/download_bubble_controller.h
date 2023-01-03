@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,10 +52,11 @@ class DownloadBubbleUIController
   // offline items.
   std::vector<DownloadUIModelPtr> GetAllItemsToDisplay();
 
-  // The list is needed by DownloadDisplayController to check a few things,
-  // for example in progress download count, last completed time, and getting
-  // progress for animation.
+  // The list is needed to populate GetAllItemsToDisplay.
   virtual const OfflineItemList& GetOfflineItems();
+
+  // The list is needed to populate GetAllItemsToDisplay.
+  virtual const std::vector<download::DownloadItem*> GetDownloadItems();
 
   // This function makes sure that the offline items field is
   // populated, and then calls the given callback. After this, GetOfflineItems
@@ -63,25 +64,44 @@ class DownloadBubbleUIController
   virtual void InitOfflineItems(DownloadDisplayController* display_controller,
                                 base::OnceCallback<void()> callback);
 
-  // Remove the entry from Partial view candidates.
-  void RemoveContentIdFromPartialView(const ContentId& id);
-
-  // Submits download to download feedback service if the user has approved and
-  // the download is suitable for submission, then applies |command|.
-  // If user hasn't seen SBER opt-in text before, show SBER opt-in dialog first.
-  void MaybeSubmitDownloadToFeedbackService(DownloadUIModel* model,
-                                            DownloadCommands::Command command);
-
   // Process button press on the bubble.
   void ProcessDownloadButtonPress(DownloadUIModel* model,
-                                  DownloadCommands::Command command);
+                                  DownloadCommands::Command command,
+                                  bool is_main_view);
 
   // Notify when a new download is ready to be shown on UI, and if the window
   // this controller belongs to should show the partial view.
   void OnNewItem(download::DownloadItem* item, bool show_details);
 
+  // Notify when a download toolbar button (in any window) is pressed.
+  void HandleButtonPressed();
+
+  // Returns whether the incognito icon should be shown for the download.
+  bool ShouldShowIncognitoIcon(const DownloadUIModel* model) const;
+
+  // Schedules the ephemeral warning download to be canceled. It will only be
+  // canceled if it continues to be an ephemeral warning that hasn't been acted
+  // on when the scheduled time arrives.
+  void ScheduleCancelForEphemeralWarning(const std::string& guid);
+
+  // Force the controller to hide the download UI entirely, including the bubble
+  // and the toolbar icon. This function should only be called if the event is
+  // triggered outside of normal download events that are not listened by
+  // observers.
+  void HideDownloadUi();
+
+  // Returns the DownloadDisplayController. Should always return a valid
+  // controller.
+  DownloadDisplayController* GetDownloadDisplayController() {
+    return display_controller_;
+  }
+
   download::AllDownloadItemNotifier& get_download_notifier_for_testing() {
     return download_notifier_;
+  }
+
+  download::AllDownloadItemNotifier* get_original_notifier_for_testing() {
+    return original_notifier_.get();
   }
 
   void set_manager_for_testing(content::DownloadManager* manager) {
@@ -90,6 +110,7 @@ class DownloadBubbleUIController
 
  private:
   friend class DownloadBubbleUIControllerTest;
+  friend class DownloadBubbleUIControllerIncognitoTest;
   // AllDownloadItemNotifier::Observer
   void OnDownloadUpdated(content::DownloadManager* manager,
                          download::DownloadItem* item) override;
@@ -120,36 +141,27 @@ class DownloadBubbleUIController
   // Common method for getting main and partial views.
   std::vector<DownloadUIModelPtr> GetDownloadUIModels(bool is_main_view);
 
-  // Submits the downloaded file to the safebrowsing download feedback service.
-  // Applies |command| if submission succeeds. Returns whether submission was
-  // successful.
-  bool SubmitDownloadToFeedbackService(DownloadUIModel* model,
-                                       DownloadCommands::Command command) const;
+  // Kick off retrying an eligible interrupted download.
+  void RetryDownload(DownloadUIModel* model, DownloadCommands::Command command);
 
-  // Process Warning keep or discard button press on the bubble. Submit
-  // download to feedback service for non-mixed content downloads.
-  void ProcessDownloadWarningButtonPress(DownloadUIModel* model,
-                                         DownloadCommands::Command command);
-
-  raw_ptr<Browser> browser_;
-  raw_ptr<Profile> profile_;
-  raw_ptr<content::DownloadManager> download_manager_;
+  raw_ptr<Browser, DanglingUntriaged> browser_;
+  raw_ptr<Profile, DanglingUntriaged> profile_;
+  raw_ptr<content::DownloadManager, DanglingUntriaged> download_manager_;
   download::AllDownloadItemNotifier download_notifier_;
-  raw_ptr<OfflineContentAggregator> aggregator_;
-  raw_ptr<OfflineItemModelManager> offline_manager_;
+  // Null if the profile is not off the record.
+  std::unique_ptr<download::AllDownloadItemNotifier> original_notifier_;
+  raw_ptr<OfflineContentAggregator, DanglingUntriaged> aggregator_;
+  raw_ptr<OfflineItemModelManager, DanglingUntriaged> offline_manager_;
   base::ScopedObservation<OfflineContentProvider,
                           OfflineContentProvider::Observer>
       observation_{this};
   // DownloadDisplayController and DownloadBubbleUIController have the same
   // lifetime. Both are owned, constructed together, and destructed together by
   // DownloadToolbarButtonView. If one is valid, so is the other.
-  raw_ptr<DownloadDisplayController> display_controller_;
+  raw_ptr<DownloadDisplayController, DanglingUntriaged> display_controller_;
 
   // Pruned list of offline items.
   OfflineItemList offline_items_;
-
-  // set of ids to be shown in partial_view.
-  std::set<ContentId> partial_view_ids_;
 
   absl::optional<base::Time> last_partial_view_shown_time_ = absl::nullopt;
 

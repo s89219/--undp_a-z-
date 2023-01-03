@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/base_export.h"
 #include "base/check.h"
 #include "base/containers/span.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/shared_memory_mapper.h"
 #include "base/unguessable_token.h"
 
@@ -85,7 +86,7 @@ class BASE_EXPORT SharedMemoryMapping {
   span<uint8_t> mapped_span_;
   size_t size_ = 0;
   UnguessableToken guid_;
-  SharedMemoryMapper* mapper_ = nullptr;
+  raw_ptr<SharedMemoryMapper> mapper_ = nullptr;
 };
 
 // Class modeling a read-only mapping of a shared memory region into the
@@ -105,8 +106,8 @@ class BASE_EXPORT ReadOnlySharedMemoryMapping : public SharedMemoryMapping {
   ReadOnlySharedMemoryMapping& operator=(
       ReadOnlySharedMemoryMapping&&) noexcept;
 
-  // Returns the base address of the mapping. This is read-only memory. This is
-  // page-aligned. This is nullptr for invalid instances.
+  // Returns the base address of the read-only mapping. Returns nullptr for
+  // invalid instances.
   const void* memory() const { return raw_memory_ptr(); }
 
   // Returns a pointer to a page-aligned const T if the mapping is valid and
@@ -180,8 +181,8 @@ class BASE_EXPORT WritableSharedMemoryMapping : public SharedMemoryMapping {
   WritableSharedMemoryMapping& operator=(
       WritableSharedMemoryMapping&&) noexcept;
 
-  // Returns the base address of the mapping. This is writable memory. This is
-  // page-aligned. This is nullptr for invalid instances.
+  // Returns the base address of the writable mapping. Returns nullptr for
+  // invalid instances.
   void* memory() const { return raw_memory_ptr(); }
 
   // Returns a pointer to a page-aligned T if the mapping is valid and large

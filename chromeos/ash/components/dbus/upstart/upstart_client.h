@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "base/component_export.h"
 #include "chromeos/dbus/common/dbus_method_call_status.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace dbus {
 class Bus;
@@ -23,6 +24,10 @@ namespace ash {
 // initializes the DBusThreadManager instance.
 class COMPONENT_EXPORT(UPSTART_CLIENT) UpstartClient {
  public:
+  // Error name returned by Upstart when it fails to start a job because it's
+  // already started.
+  static const char kAlreadyStartedError[];
+
   UpstartClient(const UpstartClient&) = delete;
   UpstartClient& operator=(const UpstartClient&) = delete;
 
@@ -47,7 +52,24 @@ class COMPONENT_EXPORT(UPSTART_CLIENT) UpstartClient {
   // |callback|: Called with a response.
   virtual void StartJob(const std::string& job,
                         const std::vector<std::string>& upstart_env,
-                        VoidDBusMethodCallback callback) = 0;
+                        chromeos::VoidDBusMethodCallback callback) = 0;
+
+  // Does the same thing as StartJob(), but the callback is run with error
+  // details on failures.
+  // See https://dbus.freedesktop.org/doc/dbus-specification.html to see what
+  // error name and error message are.
+  //
+  // NOTE: Any of error_name and error_message can be null even if success ==
+  // false. D-Bus method calls can fail without returning an error response
+  // (e.g. when the D-Bus connection itself is disconnected).
+  using StartJobWithErrorDetailsCallback =
+      base::OnceCallback<void(bool success,
+                              absl::optional<std::string> error_name,
+                              absl::optional<std::string> error_message)>;
+  virtual void StartJobWithErrorDetails(
+      const std::string& job,
+      const std::vector<std::string>& upstart_env,
+      StartJobWithErrorDetailsCallback callback) = 0;
 
   // Stops an Upstart job.
   // |job|: Name of Upstart job.
@@ -56,7 +78,7 @@ class COMPONENT_EXPORT(UPSTART_CLIENT) UpstartClient {
   // |callback|: Called with a response.
   virtual void StopJob(const std::string& job,
                        const std::vector<std::string>& upstart_env,
-                       VoidDBusMethodCallback callback) = 0;
+                       chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Starts authpolicyd.
   virtual void StartAuthPolicyService() = 0;
@@ -73,31 +95,37 @@ class COMPONENT_EXPORT(UPSTART_CLIENT) UpstartClient {
   // Starts the media analytics process.
   // |upstart_env|: List of upstart environment variables to be passed to the
   // upstart service.
-  virtual void StartMediaAnalytics(const std::vector<std::string>& upstart_env,
-                                   VoidDBusMethodCallback callback) = 0;
+  virtual void StartMediaAnalytics(
+      const std::vector<std::string>& upstart_env,
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Restarts the media analytics process.
-  virtual void RestartMediaAnalytics(VoidDBusMethodCallback callback) = 0;
+  virtual void RestartMediaAnalytics(
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Stops the media analytics process.
   virtual void StopMediaAnalytics() = 0;
 
   // Provides an interface for stopping the media analytics process.
-  virtual void StopMediaAnalytics(VoidDBusMethodCallback callback) = 0;
+  virtual void StopMediaAnalytics(
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Start wilco DTC services.
-  virtual void StartWilcoDtcService(VoidDBusMethodCallback callback) = 0;
+  virtual void StartWilcoDtcService(
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Stops wilco DTC services.
-  virtual void StopWilcoDtcService(VoidDBusMethodCallback callback) = 0;
+  virtual void StopWilcoDtcService(
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Starts arc-data-snapshotd daemon.
   virtual void StartArcDataSnapshotd(
       const std::vector<std::string>& upstart_env,
-      VoidDBusMethodCallback callback) = 0;
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
   // Stops arc-data-snapshotd daemon.
-  virtual void StopArcDataSnapshotd(VoidDBusMethodCallback callback) = 0;
+  virtual void StopArcDataSnapshotd(
+      chromeos::VoidDBusMethodCallback callback) = 0;
 
  protected:
   // Initialize() should be used instead.

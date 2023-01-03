@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,23 +8,23 @@
 #import <StoreKit/StoreKit.h>
 #import <UIKit/UIKit.h>
 
-#include "base/files/file_util.h"
-#include "base/mac/foundation_util.h"
-#include "base/run_loop.h"
-#include "base/strings/sys_string_conversions.h"
-#include "base/strings/utf_string_conversions.h"
+#import "base/files/file_util.h"
+#import "base/mac/foundation_util.h"
+#import "base/run_loop.h"
+#import "base/strings/sys_string_conversions.h"
+#import "base/strings/utf_string_conversions.h"
 #import "base/test/ios/wait_util.h"
-#include "base/test/metrics/histogram_tester.h"
-#include "base/test/metrics/user_action_tester.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "base/test/metrics/histogram_tester.h"
+#import "base/test/metrics/user_action_tester.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #import "ios/chrome/browser/download/confirm_download_closing_overlay.h"
 #import "ios/chrome/browser/download/confirm_download_replacing_overlay.h"
-#include "ios/chrome/browser/download/download_directory_util.h"
-#include "ios/chrome/browser/download/download_manager_metric_names.h"
+#import "ios/chrome/browser/download/download_directory_util.h"
+#import "ios/chrome/browser/download/download_manager_metric_names.h"
 #import "ios/chrome/browser/download/download_manager_tab_helper.h"
 #import "ios/chrome/browser/download/external_app_util.h"
-#import "ios/chrome/browser/installation_notifier.h"
-#include "ios/chrome/browser/main/test_browser.h"
+#import "ios/chrome/browser/download/installation_notifier.h"
+#import "ios/chrome/browser/main/test_browser.h"
 #import "ios/chrome/browser/overlays/public/overlay_request_queue.h"
 #import "ios/chrome/browser/overlays/public/web_content_area/alert_overlay.h"
 #import "ios/chrome/browser/ui/commands/browser_coordinator_commands.h"
@@ -37,11 +37,10 @@
 #import "ios/chrome/test/scoped_key_window.h"
 #import "ios/web/public/test/fakes/fake_download_task.h"
 #import "ios/web/public/test/fakes/fake_web_state.h"
-#include "ios/web/public/test/web_task_environment.h"
-#include "net/base/net_errors.h"
-#include "net/url_request/url_fetcher_response_writer.h"
-#include "testing/gtest_mac.h"
-#include "testing/platform_test.h"
+#import "ios/web/public/test/web_task_environment.h"
+#import "net/base/net_errors.h"
+#import "testing/gtest_mac.h"
+#import "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -185,8 +184,7 @@ TEST_F(DownloadManagerCoordinatorTest, DestructionDuringDownload) {
   // Start the download.
   base::FilePath path;
   ASSERT_TRUE(base::GetTempDir(&path));
-  task->Start(path.Append(task->GenerateFileName()),
-              web::DownloadTask::Destination::kToDisk);
+  task->Start(path.Append(task->GenerateFileName()));
 
   @autoreleasepool {
     // Calling -downloadManagerViewControllerDidStartDownload will retain and
@@ -249,7 +247,7 @@ TEST_F(DownloadManagerCoordinatorTest, DelegateCreatedDownload) {
 // one.
 TEST_F(DownloadManagerCoordinatorTest, DelegateReplacedDownload) {
   auto task = CreateTestTask();
-  task->Start(base::FilePath(), web::DownloadTask::Destination::kToMemory);
+  task->Start(base::FilePath());
   task->SetDone(true);
 
   [coordinator_ downloadManagerTabHelper:tab_helper()
@@ -450,8 +448,7 @@ TEST_F(DownloadManagerCoordinatorTest, OpenIn) {
   // Start the download.
   base::FilePath path;
   ASSERT_TRUE(base::GetTempDir(&path));
-  task->Start(path.Append(task->GenerateFileName()),
-              web::DownloadTask::Destination::kToDisk);
+  task->Start(path.Append(task->GenerateFileName()));
 
   // Stub UIActivityViewController.
   OCMStub([download_view_controller_mock presentViewController:[OCMArg any]
@@ -603,7 +600,7 @@ TEST_F(DownloadManagerCoordinatorTest, QuitDuringInProgressDownload) {
 // should present the confirmation dialog.
 TEST_F(DownloadManagerCoordinatorTest, CloseInProgressDownload) {
   auto task = CreateTestTask();
-  task->Start(base::FilePath(), web::DownloadTask::Destination::kToMemory);
+  task->Start(base::FilePath());
   coordinator_.downloadTask = task.get();
   [coordinator_ start];
 
@@ -885,8 +882,7 @@ TEST_F(DownloadManagerCoordinatorTest, SucceedingInBackground) {
   // Start the download.
   base::FilePath path;
   ASSERT_TRUE(base::GetTempDir(&path));
-  task->Start(path.Append(task->GenerateFileName()),
-              web::DownloadTask::Destination::kToDisk);
+  task->Start(path.Append(task->GenerateFileName()));
 
   // Start the download.
   @autoreleasepool {

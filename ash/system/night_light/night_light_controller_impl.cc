@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/display/display_color_manager.h"
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/notification_utils.h"
@@ -823,13 +824,14 @@ void NightLightControllerImpl::ShowAutoNightLightNotification() {
   DCHECK_EQ(ScheduleType::kSunsetToSunrise, GetScheduleType());
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE, kNotificationId,
           l10n_util::GetStringUTF16(IDS_ASH_AUTO_NIGHT_LIGHT_NOTIFY_TITLE),
           l10n_util::GetStringUTF16(IDS_ASH_AUTO_NIGHT_LIGHT_NOTIFY_BODY),
           std::u16string(), GURL(),
           message_center::NotifierId(
-              message_center::NotifierType::SYSTEM_COMPONENT, kNotifierId),
+              message_center::NotifierType::SYSTEM_COMPONENT, kNotifierId,
+              NotificationCatalogName::kNightLight),
           message_center::RichNotificationData{},
           base::MakeRefCounted<message_center::ThunkNotificationDelegate>(
               weak_ptr_factory_.GetWeakPtr()),
@@ -1002,7 +1004,7 @@ void NightLightControllerImpl::OnEnabledPrefChanged() {
                                                            /*by_user=*/false);
 
   if (enabled && features::IsAutoNightLightEnabled() &&
-      GetScheduleType() == kSunsetToSunrise &&
+      GetScheduleType() == ScheduleType::kSunsetToSunrise &&
       (is_first_user_init_ ||
        animation_duration_ == AnimationDuration::kLong) &&
       !UserHasEverChangedSchedule() &&
@@ -1035,7 +1037,8 @@ void NightLightControllerImpl::OnColorTemperaturePrefChanged() {
 }
 
 void NightLightControllerImpl::OnScheduleTypePrefChanged() {
-  VLOG(1) << "Schedule type changed. New type: " << GetScheduleType() << ".";
+  VLOG(1) << "Schedule type changed. New type: "
+          << static_cast<int>(GetScheduleType()) << ".";
   DCHECK(active_user_pref_service_);
   NotifyClientWithScheduleChange();
   Refresh(/*did_schedule_change=*/true,

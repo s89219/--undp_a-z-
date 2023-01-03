@@ -1,99 +1,40 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.incognito.reauth;
 
-import static org.chromium.chrome.browser.incognito.reauth.IncognitoReauthProperties.createPropertyModel;
-
-import android.content.Context;
-import android.view.LayoutInflater;
-import android.view.View;
-
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-
-import org.chromium.chrome.browser.incognito.R;
-import org.chromium.chrome.browser.tabmodel.TabModelSelector;
-import org.chromium.components.browser_ui.settings.SettingsLauncher;
-import org.chromium.components.browser_ui.widget.listmenu.ListMenuButtonDelegate;
 import org.chromium.ui.modaldialog.DialogDismissalCause;
-import org.chromium.ui.modaldialog.ModalDialogManager;
-import org.chromium.ui.modelutil.PropertyModel;
-import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
 /**
- * The coordinator which is responsible for showing the Incognito re-authentication page.
+ * An interface that provides the fundamental internal API for incognito re-authentication.
  *
- * TODO(crbug.com/1227656): Add support to disable/enable certain UI elements in the Toolbar when
- * the re-auth dialog is shown/hidden in the Incognito tab switcher.
+ * The derived classes must ensure that they are created and destroyed, each time
+ * the incognito re-auth screen is shown/hidden respectively. This allows to release any un-used
+ * resource when the re-auth is not shown.
+ *
+ * TODO(crbug.com/1227656): This and any other internal re-auth related files should be put
+ * in an internal folder. Ideally only the controller would be potentially exposed.
  */
-class IncognitoReauthCoordinator {
-    private final @NonNull Context mContext;
-    private final @NonNull ModalDialogManager mModalDialogManager;
-    private final boolean mShowFullScreen;
-    private final @Nullable IncognitoReauthMenuDelegate mIncognitoReauthMenuDelegate;
-
-    private final IncognitoReauthMediator mIncognitoReauthMediator;
-
-    private View mIncognitoReauthView;
-    private IncognitoReauthDialog mIncognitoReauthDialog;
-    private PropertyModel mPropertyModel;
-    private PropertyModelChangeProcessor mModelChangeProcessor;
+interface IncognitoReauthCoordinator {
+    /**
+     * A method responsible to fire the re-auth screen.
+     */
+    void show();
 
     /**
-     * @param context The {@link Context} to use for inflating the Incognito re-auth view.
-     * @param tabModelSelector The {@link TabModelSelector} which will be passed to the mediator in
-     *         order to switch {@link TabModel} when the user clicks on "See other tabs" button.
-     * @param modalDialogManager The {@link ModalDialogManager} which is used to fire the dialog
-     *         containing the Incognito re-auth view.
-     * @param incognitoReauthCallback The {@link IncognitoReauthCallback} which would be executed
-     *         after an authentication attempt.
-     * @param incognitoReauthManager The {@link IncognitoReauthManager} instance which would be used
-     *         to initiate re-authentication.
-     * @param settingsLauncher A {@link SettingsLauncher} that allows to fire {@link
-     *         SettingsActivity}.
-     * @param showFullScreen Whether to show a fullscreen / tab based re-auth dialog.
+     * A method responsible to hide the re-auth screen.
+     *
+     * TODO(crbug.com/1227656): Refactor this since not all the clients who implement this
+     * interface are dialog based.
+     *
+     * @param dismissalCause The {@link DialogDismissalCause} for the dismissal of the re-auth
+     *                       screen.
      */
-    public IncognitoReauthCoordinator(@NonNull Context context,
-            @NonNull TabModelSelector tabModelSelector,
-            @NonNull ModalDialogManager modalDialogManager,
-            @NonNull IncognitoReauthManager.IncognitoReauthCallback incognitoReauthCallback,
-            @NonNull IncognitoReauthManager incognitoReauthManager,
-            @NonNull SettingsLauncher settingsLauncher, boolean showFullScreen) {
-        mContext = context;
-        mModalDialogManager = modalDialogManager;
-        mShowFullScreen = showFullScreen;
-        mIncognitoReauthMediator = new IncognitoReauthMediator(
-                tabModelSelector, incognitoReauthCallback, incognitoReauthManager);
-        mIncognitoReauthMenuDelegate = (mShowFullScreen)
-                ? new IncognitoReauthMenuDelegate(mContext, tabModelSelector, settingsLauncher)
-                : null;
-    }
+    void hide(@DialogDismissalCause int dismissalCause);
 
-    private void destroy() {
-        mModelChangeProcessor.destroy();
-    }
-
-    void showDialog() {
-        mIncognitoReauthView =
-                LayoutInflater.from(mContext).inflate(R.layout.incognito_reauth_view, null);
-        ListMenuButtonDelegate delegate = (mShowFullScreen) ? ()
-                -> mIncognitoReauthMenuDelegate.getBasicListMenu()
-                : null;
-        mPropertyModel = createPropertyModel(
-                mIncognitoReauthMediator::onUnlockIncognitoButtonClicked,
-                mIncognitoReauthMediator::onSeeOtherTabsButtonClicked, mShowFullScreen, delegate);
-        mModelChangeProcessor = PropertyModelChangeProcessor.create(
-                mPropertyModel, mIncognitoReauthView, IncognitoReauthViewBinder::bind);
-        mIncognitoReauthDialog =
-                new IncognitoReauthDialog(mModalDialogManager, mIncognitoReauthView);
-        mIncognitoReauthDialog.showIncognitoReauthDialog(mShowFullScreen);
-    }
-
-    void hideDialogAndDestroy(@DialogDismissalCause int dismissalCause) {
-        assert mIncognitoReauthDialog != null : "Incognito re-auth dialog doesn't exists.";
-        mIncognitoReauthDialog.dismissIncognitoReauthDialog(dismissalCause);
-        destroy();
-    }
+    /**
+     * A method responsible to do any clean-up when the coordinator is being destroyed.
+     */
+    void destroy();
 }

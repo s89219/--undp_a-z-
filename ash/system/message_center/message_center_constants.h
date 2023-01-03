@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,8 @@ constexpr int kGroupedCollapsedSummaryTitleLength = 150;
 constexpr int kGroupedCollapsedSummaryMessageLength = 250;
 constexpr auto kGroupedCollapsedSummaryInsets = gfx::Insets::TLBR(0, 50, 0, 16);
 
-constexpr int kGroupedNotificationsExpandedSpacing = 16;
-constexpr int kGroupedNotificationsCollapsedSpacing = 12;
+constexpr int kGroupedNotificationsExpandedSpacing = 0;
+constexpr int kGroupedNotificationsCollapsedSpacing = 4;
 constexpr auto kGroupedNotificationContainerCollapsedInsets =
     gfx::Insets::TLBR(0, 0, 20, 0);
 constexpr auto kGroupedNotificationContainerExpandedInsets =
@@ -24,13 +24,15 @@ constexpr auto kGroupedNotificationContainerExpandedInsets =
 
 constexpr int kMessagePopupCornerRadius = 16;
 
-constexpr int kMessageCenterNotificationCornerRadius = 2;
+constexpr int kMessageCenterNotificationInnerCornerRadius = 2;
 constexpr int kMessageCenterScrollViewCornerRadius = 12;
+constexpr int kMessageCenterNotificationTopBottomCornerRadius =
+    kMessageCenterScrollViewCornerRadius;
 constexpr int kMessageCenterPadding = 8;
 constexpr int kMessageCenterBottomPadding = 8;
 constexpr int kMessageListNotificationSpacing = 2;
 
-constexpr auto kNotificationBarPadding = gfx::Insets::TLBR(0, 0, 8, 4);
+constexpr auto kNotificationBarPadding = gfx::Insets::TLBR(8, 0, 0, 4);
 
 // Horizontal spacing of the pill buttons inside notification.
 constexpr int kNotificationPillButtonHorizontalSpacing = 12;
@@ -53,8 +55,8 @@ constexpr int kNotificationExpandButtonLabelFontSize = 12;
 constexpr auto kAppIconCollapsedPadding = gfx::Insets::TLBR(24, 12, 24, 0);
 constexpr auto kAppIconExpandedPadding = gfx::Insets::TLBR(20, 12, 0, 0);
 
-constexpr auto kExpandButtonCollapsedPadding = gfx::Insets::TLBR(4, 16, 0, 12);
-constexpr auto kExpandButtonExpandedPadding = gfx::Insets::TLBR(0, 16, 0, 12);
+constexpr auto kExpandButtonCollapsedPadding = gfx::Insets::TLBR(4, 0, 0, 12);
+constexpr auto kExpandButtonExpandedPadding = gfx::Insets::TLBR(0, 0, 0, 12);
 
 constexpr auto kMessageLabelInExpandedStatePadding =
     gfx::Insets::TLBR(0, 0, 4, 12);
@@ -106,6 +108,11 @@ constexpr int kToggleInlineSettingsFadeInDelayMs = 50;
 constexpr int kToggleInlineSettingsFadeInDurationMs = 100;
 constexpr int kToggleInlineSettingsFadeOutDurationMs = 50;
 
+// Animation durations for converting from single to group notification.
+constexpr int kConvertFromSingleToGroupFadeOutDurationMs = 66;
+constexpr int kConvertFromSingleToGroupFadeInDurationMs = 100;
+constexpr int kConvertFromSingleToGroupBoundsChangeDurationMs = 250;
+
 // Animation durations for swiping notification to reveal controls.
 constexpr int kNotificationSwipeControlFadeInDurationMs = 50;
 
@@ -116,6 +123,9 @@ constexpr int kInlineReplyAndGroupedParentCollapseAnimationDuration = 200;
 constexpr int kInlineSettingsExpandAndCollapseAnimationDuration = 200;
 constexpr int kGeneralExpandAnimationDuration = 300;
 constexpr int kGeneralCollapseAnimationDuration = 200;
+
+// Animation durations for adding / removing grouped child views
+constexpr int kSlideOutGroupedNotificationAnimationDurationMs = 200;
 
 }  // namespace ash
 

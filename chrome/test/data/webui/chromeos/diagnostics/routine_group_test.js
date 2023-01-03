@@ -1,20 +1,22 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {RoutineResult, RoutineType, StandardRoutineResult} from 'chrome://diagnostics/diagnostics_types.js';
+import 'chrome://resources/mojo/mojo/public/js/mojo_bindings_lite.js';
+
 import {createRoutine} from 'chrome://diagnostics/diagnostics_utils.js';
 import {RoutineGroup} from 'chrome://diagnostics/routine_group.js';
 import {ExecutionProgress, ResultStatusItem} from 'chrome://diagnostics/routine_list_executor.js';
+import {RoutineResult, RoutineType, StandardRoutineResult} from 'chrome://diagnostics/system_routine_controller.mojom-webui.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
 
 /**
  * @param {!RoutineType} routineType
  * @return {!ResultStatusItem}
  */
 function getRoutineRunningStatusItem(routineType) {
-  return new ResultStatusItem(routineType, ExecutionProgress.kRunning);
+  return new ResultStatusItem(routineType, ExecutionProgress.RUNNING);
 }
 
 /**
@@ -22,7 +24,7 @@ function getRoutineRunningStatusItem(routineType) {
  * @return {!ResultStatusItem}
  */
 function getRoutinedPassedStatusItem(routineType) {
-  const item = new ResultStatusItem(routineType, ExecutionProgress.kCompleted);
+  const item = new ResultStatusItem(routineType, ExecutionProgress.COMPLETED);
   item.result = /** @type {!RoutineResult} */ (
       {simpleResult: StandardRoutineResult.kTestPassed});
   return item;
@@ -33,7 +35,7 @@ function getRoutinedPassedStatusItem(routineType) {
  * @return {!ResultStatusItem}
  */
 function getRoutinedFailedStatusItem(routineType) {
-  const item = new ResultStatusItem(routineType, ExecutionProgress.kCompleted);
+  const item = new ResultStatusItem(routineType, ExecutionProgress.COMPLETED);
   item.result = /** @type {!RoutineResult} */ (
       {simpleResult: StandardRoutineResult.kTestFailed});
   return item;
@@ -49,7 +51,7 @@ function getNonBlockingRoutines(routineGroup) {
   return routineGroup.nonBlockingRoutines_;
 }
 
-export function routineGroupTestSuite() {
+suite('routineGroupTestSuite', function() {
   const {kSignalStrength, kHasSecureWiFiConnection, kCaptivePortal} =
       RoutineType;
   test('GroupStatusSetCorrectly', () => {
@@ -65,17 +67,17 @@ export function routineGroupTestSuite() {
         getRoutinedPassedStatusItem(kSignalStrength);
 
     // Progress is initially "Not started".
-    assertEquals(routineGroup.progress, ExecutionProgress.kNotStarted);
+    assertEquals(routineGroup.progress, ExecutionProgress.NOT_STARTED);
 
     // Progress should now be running since the signal strength test is in
     // progress.
     routineGroup.setStatus(signalStrengthRunning);
-    assertEquals(routineGroup.progress, ExecutionProgress.kRunning);
+    assertEquals(routineGroup.progress, ExecutionProgress.RUNNING);
 
     // Progress should still be running despite the signal strength test
     // finishing since their are still unfinished routines in this group.
     routineGroup.setStatus(signalStrengthCompleted);
-    assertEquals(routineGroup.progress, ExecutionProgress.kRunning);
+    assertEquals(routineGroup.progress, ExecutionProgress.RUNNING);
 
     const hasSecureWiFiConnectionRunning =
         getRoutineRunningStatusItem(kHasSecureWiFiConnection);
@@ -84,12 +86,12 @@ export function routineGroupTestSuite() {
 
     // Progress should still be running.
     routineGroup.setStatus(hasSecureWiFiConnectionRunning);
-    assertEquals(routineGroup.progress, ExecutionProgress.kRunning);
+    assertEquals(routineGroup.progress, ExecutionProgress.RUNNING);
 
     // Status should be completed now that all routines in this group
     // have finished running.
     routineGroup.setStatus(hasSecureWiFiConnectionCompleted);
-    assertEquals(routineGroup.progress, ExecutionProgress.kCompleted);
+    assertEquals(routineGroup.progress, ExecutionProgress.COMPLETED);
   });
 
   test('TestFailureHandledCorrectly', () => {
@@ -128,4 +130,4 @@ export function routineGroupTestSuite() {
     assertTrue(nonBlockingRoutines.has(kHasSecureWiFiConnection));
     assertFalse(nonBlockingRoutines.has(kCaptivePortal));
   });
-}
+});

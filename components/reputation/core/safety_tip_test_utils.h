@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,18 +12,13 @@
 
 namespace reputation {
 
+// Retrieve any existing Safety Tips config proto if set, or create a new one
+// otherwise.
+std::unique_ptr<SafetyTipsConfig> GetOrCreateSafetyTipsConfig();
+
 // Initialize component configuration. Necessary to enable Safety Tips for
 // testing, as no heuristics trigger if the allowlist is inaccessible.
 void InitializeSafetyTipConfig();
-
-// Sets the patterns included in component with the given flag type for tests.
-// This will replace any flag patterns currently in the proto.
-void SetSafetyTipPatternsWithFlagType(std::vector<std::string> pattern,
-                                      FlaggedPage::FlagType type);
-
-// Sets the patterns to trigger a bad-reputation Safety Tip for tests. This just
-// calls SetSafetyTipPatternsWithFlagType with BAD_REPUTATION as the type.
-void SetSafetyTipBadRepPatterns(std::vector<std::string> pattern);
 
 // Sets allowlist patterns in the given proto for testing. This will replace any
 // allowlist patterns currently in the proto.

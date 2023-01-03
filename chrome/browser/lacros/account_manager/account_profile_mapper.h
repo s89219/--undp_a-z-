@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
@@ -18,6 +19,7 @@
 #include "chrome/browser/lacros/account_manager/account_cache.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "components/account_manager_core/account_manager_facade.h"
+#include "google_apis/gaia/google_service_auth_error.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
@@ -75,10 +77,17 @@ class AccountProfileMapper
   class Observer : public base::CheckedObserver {
    public:
     // `profile_path` is empty if the account is not assigned to a profile.
+    // Note: to avoid sending too many notifications, the notification with an
+    // empty path may not always be sent. For example if an account is added to
+    // the facade and to a profile at the same time, only the notification with
+    // a non-empty path is sent.
     virtual void OnAccountUpserted(const base::FilePath& profile_path,
                                    const account_manager::Account& account) {}
     virtual void OnAccountRemoved(const base::FilePath& profile_path,
                                   const account_manager::Account& account) {}
+    virtual void OnAuthErrorChanged(const base::FilePath& profile_path,
+                                    const account_manager::AccountKey& account,
+                                    const GoogleServiceAuthError& error) {}
   };
 
   AccountProfileMapper(account_manager::AccountManagerFacade* facade,
@@ -104,8 +113,10 @@ class AccountProfileMapper
   std::unique_ptr<OAuth2AccessTokenFetcher> CreateAccessTokenFetcher(
       const base::FilePath& profile_path,
       const account_manager::AccountKey& account,
-      const std::string& oauth_consumer_name,
       OAuth2AccessTokenConsumer* consumer);
+  void ReportAuthError(const base::FilePath& profile_path,
+                       const account_manager::AccountKey& account,
+                       const GoogleServiceAuthError& error);
 
   // Returns the whole map of accounts per profile. An empty path is used as the
   // key for unassigned accounts (this key is not set if there are no unassigned
@@ -148,6 +159,8 @@ class AccountProfileMapper
   // account_manager::AccountManagerFacade::Observer:
   void OnAccountUpserted(const account_manager::Account& account) override;
   void OnAccountRemoved(const account_manager::Account& account) override;
+  void OnAuthErrorChanged(const account_manager::AccountKey& account,
+                          const GoogleServiceAuthError& error) override;
 
   // ProfileAttributesStorage::Observer:
   void OnProfileWillBeRemoved(const base::FilePath& profile_path) override;
@@ -233,8 +246,8 @@ class AccountProfileMapper
 
   std::vector<std::unique_ptr<AddAccountHelper>> add_account_helpers_;
 
-  account_manager::AccountManagerFacade* const account_manager_facade_;
-  ProfileAttributesStorage* const profile_attributes_storage_;
+  const raw_ptr<account_manager::AccountManagerFacade> account_manager_facade_;
+  const raw_ptr<ProfileAttributesStorage> profile_attributes_storage_;
   base::ObserverList<Observer> observers_;
   base::ScopedObservation<account_manager::AccountManagerFacade,
                           account_manager::AccountManagerFacade::Observer>

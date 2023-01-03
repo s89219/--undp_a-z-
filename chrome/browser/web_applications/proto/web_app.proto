@@ -1,13 +1,15 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 syntax = "proto2";
 
 import "components/sync/protocol/web_app_specifics.proto";
+import "chrome/browser/ash/system_web_apps/types/system_web_app_data.proto";
 import "chrome/browser/web_applications/proto/web_app_launch_handler.proto";
+import "chrome/browser/web_applications/proto/web_app_os_integration_state.proto";
 import "chrome/browser/web_applications/proto/web_app_share_target.proto";
-import "chrome/browser/web_applications/system_web_apps/system_web_app_data.proto";
+import "chrome/browser/web_applications/proto/web_app_tab_strip.proto";
 
 option optimize_for = LITE_RUNTIME;
 
@@ -60,6 +62,10 @@ message SourcesProto {
   required bool sync = 4;
   required bool default = 5;
   optional bool sub_app = 6;
+  optional bool kiosk = 7;
+  optional bool command_line = 8;
+  optional bool oem = 9;
+  optional bool one_drive_integration = 10;
 }
 
 // Properties for integrating with Chrome OS UI surfaces.
@@ -73,7 +79,7 @@ message ChromeOSDataProto {
 }
 
 message ClientDataProto {
-  optional SystemWebAppDataProto system_web_app_data = 1;
+  optional ash.SystemWebAppDataProto system_web_app_data = 1;
 }
 
 // Properties for a WebApp's shortcuts menu item.
@@ -110,6 +116,10 @@ enum WebAppManagementProto {
   WEBAPPSTORE = 4;
   SYNC = 5;
   DEFAULT = 6;
+  KIOSK = 7;
+  COMMAND_LINE = 8;
+  OEM = 9;
+  ONEDRIVEINTEGRATION = 10;
 }
 
 message ManagementToExternalConfigInfo {
@@ -120,14 +130,44 @@ message ManagementToExternalConfigInfo {
   optional bool is_placeholder = 3;
 }
 
+// Contains information specific to Isolated Web Apps.
+//
+// File paths are (de)serialized using Pickle to and from `base::FilePath` via
+// its (de)serialization methods `base::FilePath::WriteToPickle` and
+// `base::FilePath::ReadFromPickle`. Depending on the OS, file paths may either
+// use `std::string` or `std::wstring` internally. The Pickle format includes a
+// header representing the original data type of the file path, which means that
+// it is impossible to ever accidentally deserialize a `std::wstring` into a
+// `std::string` and vice versa. The (de)serialization code is also easier to
+// read than manually written code that converts bytes to and from
+// `std::wstring` / `std::string`.
+message IsolationDataProto {
+  // Information needed to load data from an installed web bundle.
+  message InstalledBundle {
+    optional bytes path = 1;
+  }
+  // Information needed to load data from an installed dev mode web bundle.
+  message DevModeBundle {
+    optional bytes path = 1;
+  }
+  // Information needed to load data for an app using a dev mode proxy.
+  message DevModeProxy {
+    optional string proxy_url = 1;
+  }
+
+  oneof content {
+    InstalledBundle installed_bundle = 1;
+    DevModeBundle dev_mode_bundle = 2;
+    DevModeProxy dev_mode_proxy = 3;
+  }
+}
+
 // Full WebApp object data. See detailed comments in
 // chrome/browser/web_applications/web_app.h. Note on database identities:
 // app_id is a hash of launch_url. app_id is the client tag for sync system.
 // app_id is the storage key in ModelTypeStore.
 message WebAppProto {
-  reserved "is_in_sync_install";
-  reserved 53;
-
+  reserved "handle_links", "is_in_sync_install", "is_placeholder";
   // Synced data. It is replicated across all devices with WEB_APPS.
   //
   // |sync_data.name| and |sync_data.theme_color| are read by a device to
@@ -145,6 +185,7 @@ message WebAppProto {
     FULLSCREEN = 4;
     WINDOW_CONTROLS_OVERLAY = 5;
     TABBED = 6;
+    BORDERLESS = 7;
   }
 
   // Local data. May vary across devices. Not to be synced.
@@ -317,16 +358,7 @@ message WebAppProto {
   // Whether the app should show up in file-open intent and picking surfaces.
   optional bool handles_file_open_intents = 47;
 
-  // This enum should be synced with |HandleLinks| in
-  // third_party/blink/public/mojom/manifest/handle_links.mojom
-  enum HandleLinks {
-    // UNDEFINED if optional |handle_links| is absent.
-    AUTO = 1;
-    PREFERRED = 2;
-    NOT_PREFERRED = 3;
-  }
-
-  optional HandleLinks handle_links = 48;
+  reserved 48;
 
   // Contains the permissions policy that should be applied to the web app.
   repeated WebAppPermissionsPolicy permissions_policy = 49;
@@ -343,7 +375,29 @@ message WebAppProto {
   repeated ManagementToExternalConfigInfo management_to_external_config_info =
       52;
 
+  reserved 53;
+
   // The amount of storage (in bytes) used by the app and its related data.
   optional uint64 app_size_in_bytes = 54;
   optional uint64 data_size_in_bytes = 55;
+
+  // If present, the URL to use to launch the app on the lock screen.
+  optional string lock_screen_start_url = 56;
+
+  // Contains customisations to the web app tab strip. Only present when the
+  // display_mode is tabbed.
+  optional proto.TabStrip tab_strip = 57;
+
+  // Only used on Mac OS, stores whether the app should always show the
+  // toolbar when in fullscreen mode.
+  optional bool always_show_toolbar_in_fullscreen = 58;
+
+  // Contains the os_integration_state currently deployed for a web_app.
+  // This will be populated from the fields in this proto when ran for the first
+  // time after OS hooks have been registered.
+  optional proto.WebAppOsIntegrationState current_os_integration_states = 59;
+
+  // If present, signals that this app is an Isolated Web App, and contains
+  // IWA-specific information like bundle location.
+  optional IsolationDataProto isolation_data = 60;
 }

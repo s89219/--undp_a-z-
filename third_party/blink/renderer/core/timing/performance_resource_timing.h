@@ -36,7 +36,6 @@
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/mojom/timing/performance_mark_or_measure.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/timing/resource_timing.mojom-blink.h"
-#include "third_party/blink/public/mojom/timing/worker_timing_container.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/dom_high_res_time_stamp.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
@@ -48,11 +47,11 @@
 
 namespace blink {
 
+enum RenderBlockingStatusType { kBlocking, kNonBlocking };
+
 class ResourceLoadTiming;
 
-class CORE_EXPORT PerformanceResourceTiming
-    : public PerformanceEntry,
-      public mojom::blink::WorkerTimingContainer {
+class CORE_EXPORT PerformanceResourceTiming : public PerformanceEntry {
   DEFINE_WRAPPERTYPEINFO();
   friend class PerformanceResourceTimingTest;
 
@@ -63,25 +62,29 @@ class CORE_EXPORT PerformanceResourceTiming
       const AtomicString& name,
       base::TimeTicks time_origin,
       bool cross_origin_isolated_capability,
+      mojom::blink::CacheState cache_state,
       bool is_secure_transport,
       HeapVector<Member<PerformanceServerTiming>> server_timing,
-      ExecutionContext* context);
-  PerformanceResourceTiming(
-      const mojom::blink::ResourceTimingInfo&,
-      base::TimeTicks time_origin,
-      bool cross_origin_isolated_capability,
-      const AtomicString& initiator_type,
-      mojo::PendingReceiver<mojom::blink::WorkerTimingContainer>
-          worker_timing_receiver,
-      ExecutionContext* context);
+      ExecutionContext* context,
+      network::mojom::NavigationDeliveryType delivery_type,
+      DOMWindow* source);
+  PerformanceResourceTiming(const mojom::blink::ResourceTimingInfo&,
+                            base::TimeTicks time_origin,
+                            bool cross_origin_isolated_capability,
+                            const AtomicString& initiator_type,
+                            ExecutionContext* context,
+                            DOMWindow* source);
   ~PerformanceResourceTiming() override;
 
-  AtomicString entryType() const override;
+  const AtomicString& entryType() const override;
   PerformanceEntryType EntryTypeEnum() const override;
 
   // Related doc: https://goo.gl/uNecAj.
   virtual AtomicString initiatorType() const;
+  AtomicString deliveryType() const;
   AtomicString nextHopProtocol() const;
+  virtual AtomicString renderBlockingStatus() const;
+  virtual AtomicString contentType() const;
   DOMHighResTimeStamp workerStart() const;
   virtual DOMHighResTimeStamp redirectStart() const;
   virtual DOMHighResTimeStamp redirectEnd() const;
@@ -97,12 +100,9 @@ class CORE_EXPORT PerformanceResourceTiming
   uint64_t transferSize() const;
   uint64_t encodedBodySize() const;
   uint64_t decodedBodySize() const;
+  uint16_t responseStatus() const;
   const HeapVector<Member<PerformanceServerTiming>>& serverTiming() const;
-  const HeapVector<Member<PerformanceEntry>>& workerTiming() const;
 
-  // Implements blink::mojom::blink::WorkerTimingContainer
-  void AddPerformanceEntry(
-      mojom::blink::PerformanceMarkOrMeasurePtr entry) override;
   void Trace(Visitor*) const override;
 
  protected:
@@ -144,8 +144,11 @@ class CORE_EXPORT PerformanceResourceTiming
 
   // Do not access private fields directly. Use getter methods.
   AtomicString initiator_type_;
+  AtomicString delivery_type_;
   AtomicString alpn_negotiated_protocol_;
   AtomicString connection_info_;
+  AtomicString content_type_;
+  RenderBlockingStatusType render_blocking_status_;
   base::TimeTicks time_origin_;
   bool cross_origin_isolated_capability_;
   scoped_refptr<ResourceLoadTiming> timing_;
@@ -158,20 +161,13 @@ class CORE_EXPORT PerformanceResourceTiming
   mojom::blink::CacheState cache_state_ = mojom::blink::CacheState::kNone;
   const uint64_t encoded_body_size_ = 0;
   const uint64_t decoded_body_size_ = 0;
+  const uint16_t response_status_ = 0;
   const bool did_reuse_connection_ = false;
   const bool allow_timing_details_ = false;
   const bool allow_redirect_details_ = false;
   const bool allow_negative_value_ = false;
   const bool is_secure_transport_ = false;
   HeapVector<Member<PerformanceServerTiming>> server_timing_;
-  HeapVector<Member<PerformanceEntry>> worker_timing_;
-
-  // Used for getting entries from a service worker to add to
-  // PerformanceResourceTiming#workerTiming. Null when no service worker handles
-  // a request for the resource.
-  HeapMojoReceiver<mojom::blink::WorkerTimingContainer,
-                   PerformanceResourceTiming>
-      worker_timing_receiver_;
 };
 
 }  // namespace blink

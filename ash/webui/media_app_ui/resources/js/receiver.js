@@ -1,11 +1,11 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import './sandboxed_load_time_data.js';
 
 import {assertCast, MessagePipe} from './message_pipe.m.js';
-import {FileContext, LoadFilesMessage, Message, OpenAllowedFileMessage, OpenAllowedFileResponse, OpenFilesWithPickerMessage, OverwriteFileMessage, OverwriteViaFilePickerResponse, RenameFileResponse, RenameResult, RequestSaveFileMessage, RequestSaveFileResponse, SaveAsMessage, SaveAsResponse} from './message_types.js';
+import {EditInPhotosMessage, FileContext, IsFileArcWritableMessage, IsFileArcWritableResponse, IsFileBrowserWritableMessage, IsFileBrowserWritableResponse, LoadFilesMessage, Message, OpenAllowedFileMessage, OpenAllowedFileResponse, OpenFilesWithPickerMessage, OverwriteFileMessage, OverwriteViaFilePickerResponse, RenameFileResponse, RenameResult, RequestSaveFileMessage, RequestSaveFileResponse, SaveAsMessage, SaveAsResponse} from './message_types.js';
 import {loadPiex} from './piex_module_loader.js';
 
 /** A pipe through which we can send messages to the parent frame. */
@@ -39,6 +39,44 @@ class ReceivedFile {
       this.renameOriginalFile = (/** string */ newName) =>
           this.renameOriginalFileImpl(newName);
     }
+  }
+
+  /**
+   * @override
+   * @return {!Promise<boolean>}
+   */
+  async isArcWritable() {
+    /** @type {!IsFileArcWritableMessage} */
+    const message = {token: this.token};
+
+    const {writable} = /** @type {!IsFileArcWritableResponse} */ (
+        await parentMessagePipe.sendMessage(
+            Message.IS_FILE_ARC_WRITABLE, message));
+    return writable;
+  }
+
+  /**
+   * @override
+   * @return {!Promise<boolean>}
+   */
+  async isBrowserWritable() {
+    /** @type {!IsFileBrowserWritableMessage} */
+    const message = {token: this.token};
+
+    const {writable} = /** @type {!IsFileBrowserWritableResponse} */ (
+        await parentMessagePipe.sendMessage(
+            Message.IS_FILE_BROWSER_WRITABLE, message));
+    return writable;
+  }
+
+  /**
+   * @override
+   */
+  async editInPhotos() {
+    /** @type {!EditInPhotosMessage} */
+    const message = {token: this.token, mimeType: this.mimeType};
+
+    await parentMessagePipe.sendMessage(Message.EDIT_IN_PHOTOS, message);
   }
 
   /**
@@ -340,6 +378,12 @@ const DELEGATE = {
     parentMessagePipe.sendMessage(
         Message.OPEN_IN_SANDBOXED_VIEWER, {title, blobUuid});
   },
+  reloadMainFrame() {
+    parentMessagePipe.sendMessage(Message.RELOAD_MAIN_FRAME);
+  },
+  maybeTriggerPdfHats() {
+    parentMessagePipe.sendMessage(Message.MAYBE_TRIGGER_PDF_HATS);
+  },
   // TODO(b/219631600): Implement openUrlInBrowserTab() for LacrOS if needed.
 };
 
@@ -407,7 +451,7 @@ window.addEventListener('DOMContentLoaded', () => {
 // empty file list available.
 window.customLaunchData = {
   delegate: DELEGATE,
-  files: new ReceivedFileList({files: [], currentFileIndex: -1})
+  files: new ReceivedFileList({files: [], currentFileIndex: -1}),
 };
 
 // Attempting to show file pickers in the sandboxed <iframe> is guaranteed to

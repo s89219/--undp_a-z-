@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/no_destructor.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/media/webrtc/media_authorization_wrapper_mac.h"
 #include "chrome/browser/media/webrtc/system_media_capture_permissions_stats_mac.h"
 #include "chrome/common/chrome_features.h"
@@ -58,7 +58,7 @@ class MediaAuthorizationWrapperImpl final : public MediaAuthorizationWrapper {
     if (@available(macOS 10.14, *)) {
       __block base::OnceClosure block_callback = std::move(callback);
       __block scoped_refptr<base::SequencedTaskRunner> requesting_thread =
-          base::SequencedTaskRunnerHandle::Get();
+          base::SequencedTaskRunner::GetCurrentDefault();
       [AVCaptureDevice requestAccessForMediaType:media_type
                                completionHandler:^(BOOL granted) {
                                  requesting_thread->PostTask(
@@ -117,8 +117,8 @@ SystemPermission CheckSystemMediaCapturePermission(AVMediaType media_type) {
 void RequestSystemMediaCapturePermission(AVMediaType media_type,
                                          base::OnceClosure callback) {
   if (UsingFakeMediaDevices()) {
-    base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                     std::move(callback));
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(callback));
     return;
   }
 
@@ -138,7 +138,9 @@ bool IsScreenCaptureAllowed() {
     }
   }
 
-  return ui::IsScreenCaptureAllowed();
+  bool allowed = ui::IsScreenCaptureAllowed();
+  LogSystemScreenCapturePermission(allowed);
+  return allowed;
 }
 
 }  // namespace
@@ -152,11 +154,8 @@ SystemPermission CheckSystemVideoCapturePermission() {
 }
 
 SystemPermission CheckSystemScreenCapturePermission() {
-  SystemPermission permission = IsScreenCaptureAllowed()
-                                    ? SystemPermission::kAllowed
-                                    : SystemPermission::kDenied;
-  LogSystemScreenCapturePermission(permission);
-  return permission;
+  return IsScreenCaptureAllowed() ? SystemPermission::kAllowed
+                                  : SystemPermission::kDenied;
 }
 
 void RequestSystemAudioCapturePermisson(base::OnceClosure callback) {

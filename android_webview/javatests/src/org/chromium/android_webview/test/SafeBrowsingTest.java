@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -197,7 +197,7 @@ public class SafeBrowsingTest {
     private static class MockAwBrowserContext extends AwBrowserContext {
         public MockAwBrowserContext(SharedPreferences sharedPreferences) {
             super(sharedPreferences, 0, true);
-            SafeBrowsingApiBridge.setSafeBrowsingHandlerType(MockSafeBrowsingApiHandler.class);
+            SafeBrowsingApiBridge.setHandler(new MockSafeBrowsingApiHandler());
         }
     }
 
@@ -926,7 +926,7 @@ public class SafeBrowsingTest {
         mActivityTestRule.pollUiThread(() -> aboutBlank.equals(mAwContents.getUrl()));
 
         // Check onSafeBrowsingHit arguments
-        Assert.assertFalse(mContentsClient.getLastRequest().isMainFrame);
+        Assert.assertFalse(mContentsClient.getLastRequest().isOutermostMainFrame);
         Assert.assertEquals(subresourceUrl, mContentsClient.getLastRequest().url);
         Assert.assertEquals(AwSafeBrowsingConversionHelper.SAFE_BROWSING_THREAT_MALWARE,
                 mContentsClient.getLastThreatType());
@@ -954,7 +954,7 @@ public class SafeBrowsingTest {
         // clang-format on
 
         // Check onSafeBrowsingHit arguments
-        Assert.assertFalse(mContentsClient.getLastRequest().isMainFrame);
+        Assert.assertFalse(mContentsClient.getLastRequest().isOutermostMainFrame);
         Assert.assertEquals(subresourceUrl, mContentsClient.getLastRequest().url);
         Assert.assertEquals(AwSafeBrowsingConversionHelper.SAFE_BROWSING_THREAT_MALWARE,
                 mContentsClient.getLastThreatType());
@@ -966,7 +966,7 @@ public class SafeBrowsingTest {
         mActivityTestRule.waitForVisualStateCallback(mAwContents);
         assertTargetPageHasLoaded(IFRAME_EMBEDDER_BACKGROUND_COLOR);
 
-        Assert.assertFalse(mContentsClient.getLastRequest().isMainFrame);
+        Assert.assertFalse(mContentsClient.getLastRequest().isOutermostMainFrame);
         Assert.assertEquals(subresourceUrl, mContentsClient.getLastRequest().url);
         Assert.assertEquals(AwSafeBrowsingConversionHelper.SAFE_BROWSING_THREAT_MALWARE,
                 mContentsClient.getLastThreatType());
@@ -1176,7 +1176,7 @@ public class SafeBrowsingTest {
         AwContentsClient.AwWebResourceRequest requestsForUrl =
                 mContentsClient.getShouldInterceptRequestHelper().getRequestsForUrl(linkUrl);
         // Make sure the URL was seen for a main frame navigation.
-        Assert.assertTrue(requestsForUrl.isMainFrame);
+        Assert.assertTrue(requestsForUrl.isOutermostMainFrame);
     }
 
     @Test

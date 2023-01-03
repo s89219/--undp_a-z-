@@ -1,4 +1,4 @@
-# Copyright 2021 The Chromium Authors. All rights reserved.
+# Copyright 2021 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -24,22 +24,6 @@ rust_unit_tests_group("mojo_rust_tests") {
   }
 }
 
-source_set("c_support_header") {
-  sources = [ "support.h" ]
-  deps = [ "//mojo/public/c/system:headers" ]
-  visibility = [ ":*" ]
-}
-
-static_library("c_support") {
-  sources = [ "support.cc" ]
-  deps = [
-    ":c_support_header",
-    "//mojo/public/c/system",
-    "//mojo/public/cpp/system",
-  ]
-  visibility = [ ":*" ]
-}
-
 static_library("c_test_support") {
   testonly = true
   sources = [ "test_support.cc" ]
@@ -53,17 +37,13 @@ static_library("c_test_support") {
 
 source_set("mojo_c_system_wrapper") {
   sources = [ "system/wrapper.h" ]
-  deps = [
-    ":c_support_header",
-    "//mojo/public/c/system:headers",
-  ]
+  deps = [ "//mojo/public/c/system:headers" ]
   visibility = [ ":*" ]
 }
 
 rust_bindgen("mojo_c_system_binding") {
   header = "system/wrapper.h"
   deps = [ ":mojo_c_system_wrapper" ]
-
   visibility = [ ":*" ]
 }
 
@@ -94,13 +74,15 @@ rust_static_library("mojo_rust") {
     "system/mod.rs",
     "system/mojo_types.rs",
     "system/shared_buffer.rs",
+    "system/trap.rs",
+    "system/wait.rs",
     "system/wait_set.rs",
   ]
 
   deps = [
-    ":c_support",
     ":mojo_c_system_binding",
     ":mojo_c_system_wrapper",
+    "//third_party/rust/bitflags/v1:lib",
   ]
 
   bindgen_output = get_target_outputs(":mojo_c_system_binding")
@@ -121,6 +103,7 @@ if (rustc_can_link) {
       ":c_test_support",
       ":mojo_rust",
       "//mojo/public/c/system",
+      "//third_party/rust/lazy_static/v1:test_support",
     ]
   }
 }

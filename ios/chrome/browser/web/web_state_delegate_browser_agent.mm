@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,19 +47,6 @@ void OnHTTPAuthOverlayFinished(web::WebStateDelegate::AuthCallback callback,
   std::move(callback).Run(nil, nil);
 }
 }  // namespace
-
-// static
-void WebStateDelegateBrowserAgent::CreateForBrowser(
-    Browser* browser,
-    TabInsertionBrowserAgent* tab_insertion_agent) {
-  DCHECK(browser);
-
-  if (!FromBrowser(browser)) {
-    browser->SetUserData(UserDataKey(),
-                         base::WrapUnique(new WebStateDelegateBrowserAgent(
-                             browser, tab_insertion_agent)));
-  }
-}
 
 WebStateDelegateBrowserAgent::WebStateDelegateBrowserAgent(
     Browser* browser,
@@ -205,7 +192,8 @@ web::WebState* WebStateDelegateBrowserAgent::OpenURLFromWebState(
       return tab_insertion_agent_->InsertWebState(
           load_params, source, false, TabInsertion::kPositionAutomatically,
           (params.disposition == WindowOpenDisposition::NEW_BACKGROUND_TAB),
-          /*inherit_opener=*/false, /*should_show_start_surface=*/false);
+          /*inherit_opener=*/false, /*should_show_start_surface=*/false,
+          /*should_skip_new_tab_animation=*/false);
     }
     case WindowOpenDisposition::CURRENT_TAB: {
       source->GetNavigationManager()->LoadURLWithParams(load_params);
@@ -215,7 +203,8 @@ web::WebState* WebStateDelegateBrowserAgent::OpenURLFromWebState(
       return tab_insertion_agent_->InsertWebState(
           load_params, source, true, TabInsertion::kPositionAutomatically,
           /*in_background=*/false, /*inherit_opener=*/false,
-          /*should_show_start_surface=*/false);
+          /*should_show_start_surface=*/false,
+          /*should_skip_new_tab_animation=*/false);
     }
     default:
       NOTIMPLEMENTED();
@@ -240,6 +229,15 @@ web::JavaScriptDialogPresenter*
 WebStateDelegateBrowserAgent::GetJavaScriptDialogPresenter(
     web::WebState* source) {
   return &java_script_dialog_presenter_;
+}
+
+bool WebStateDelegateBrowserAgent::HandlePermissionsDecisionRequest(
+    web::WebState* source,
+    NSArray<NSNumber*>* permissions,
+    WebStatePermissionDecisionHandler handler) {
+  // TODO(crbug.com/1356768): Show a custom prompt and invoke decision handler
+  // based on user input, and return true.
+  return false;
 }
 
 void WebStateDelegateBrowserAgent::OnAuthRequired(

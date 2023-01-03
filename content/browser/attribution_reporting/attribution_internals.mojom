@@ -1,17 +1,13 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 module attribution_internals.mojom;
 
+import "components/attribution_reporting/source_registration_error.mojom";
+import "content/browser/attribution_reporting/attribution_reporting.mojom";
 import "url/mojom/origin.mojom";
 import "url/mojom/url.mojom";
-
-// Represents AttributionSourceType.
-enum SourceType {
-  kNavigation,
-  kEvent,
-};
 
 // Represents `AttributionReport::EventLevelData::Id`.
 // Will be used to issue commands for individual reports.
@@ -81,34 +77,56 @@ struct WebUIReport {
   WebUIReportData data;
 };
 
-struct DebugKey {
-  uint64 value;
+union DebugReportStatus {
+  int32 http_response_code;
+  string network_error;
+};
+
+struct WebUIDebugReport {
+  url.mojom.Url url;
+  double time;
+  string body;
+  DebugReportStatus status;
+};
+
+union SourceDebugKey {
+  uint64 debug_key;
+  uint64 cleared_debug_key;
 };
 
 // Struct representing a stored attribution source that will be displayed by WebUI.
 struct WebUISource {
   uint64 source_event_id;
-  url.mojom.Origin impression_origin;
+  url.mojom.Origin source_origin;
   // Replace SchemefulSite with string if this struct is ever reused elsewhere.
   string attribution_destination;
   url.mojom.Origin reporting_origin;
-  double impression_time;
+  double source_time;
   double expiry_time;
-  SourceType source_type;
+  double event_report_window_time;
+  double aggregatable_report_window_time;
+  attribution_reporting.mojom.SourceType source_type;
   int64 priority;
-  DebugKey? debug_key;
+  SourceDebugKey? debug_key;
   array<uint64> dedup_keys;
   map<string, array<string>> filter_data;
   // The value is a hex-encoded unsigned 128-bit integer.
-  map<string, string> aggregatable_source;
+  map<string, string> aggregation_keys;
+  uint64 aggregatable_budget_consumed;
+  array<uint64> aggregatable_dedup_keys;
 
-  // Union of `StorableSource::Result` and `StoredSource::AttributionLogic`,
-  // and `AttributionStorage::DeactivatedSource::Reason`.
+  enum DebugReporting {
+    kDisabled,
+    kEnabled,
+    kNotApplicable,
+  };
+  DebugReporting debug_reporting_enabled;
+
+  // Union of `StorableSource::Result` and `StoredSource::AttributionLogic`.
   enum Attributability {
     kAttributable,
     // The source was dropped due to `CommonSourceInfo::AttributionLogic::kNever`.
     kNoised,
-    kReplacedByNewerSource,
     kReachedEventLevelAttributionLimit,
     kInternalError,
     kInsufficientSourceCapacity,
@@ -119,27 +137,18 @@ struct WebUISource {
   Attributability attributability;
 };
 
-struct DedupKey {
+struct TriggerDebugKey {
   uint64 value;
-};
-
-struct WebUIEventTriggerData {
-  uint64 data;
-  int64 priority;
-  DedupKey? dedup_key;
-  map<string, array<string>> filters;
-  map<string, array<string>> not_filters;
 };
 
 struct WebUITrigger {
   double trigger_time;
   url.mojom.Origin destination_origin;
   url.mojom.Origin reporting_origin;
-  map<string, array<string>> filters;
-  DebugKey? debug_key;
-  array<WebUIEventTriggerData> event_triggers;
-
-  // TODO(linnan): Add aggregatable trigger fields.
+  // String instead of mojo_base.mojom.DictionaryValue because the value is
+  // simply displayed in the UI, never inspected.
+  string registration_json;
+  TriggerDebugKey? cleared_debug_key;
 
   enum Status {
     // Shared statuses:
@@ -151,11 +160,14 @@ struct WebUITrigger {
     kExcessiveAttributions,
     kExcessiveReportingOrigins,
     kProhibitedByBrowserPolicy,
+    kDeduplicated,
+    kReportWindowPassed,
 
     // Event-level statuses:
-    kDeduplicated,
     kLowPriority,
     kNoised,
+    kNoMatchingConfigurations,
+    kExcessiveEventLevelReports,
 
     // Aggregatable statuses:
     kNoHistograms,
@@ -167,10 +179,14 @@ struct WebUITrigger {
   Status aggregatable_status;
 };
 
-// Represents `AttributionReport::ReportType`.
-enum ReportType {
-  kEventLevel,
-  kAggregatableAttribution,
+// Struct containing reason for a source registration failure to be displayed
+// as a log by WebUI
+struct FailedSourceRegistration {
+  double time;
+  string header_value;
+  url.mojom.Origin source_origin;
+  url.mojom.Origin reporting_origin;
+  attribution_reporting.mojom.SourceRegistrationError error;
 };
 
 // Observer for events relevant to the attribution internals WebUI.
@@ -181,14 +197,16 @@ interface Observer {
 
   // Called when the reports in storage changed, indicating that the observer
   // should call `Handler::GetReports()`.
-  OnReportsChanged(ReportType report_type);
+  OnReportsChanged(attribution_reporting.mojom.ReportType report_type);
 
-  // Called when a source-registration attempt fails or a stored source is
-  // deactivated.
-  OnSourceRejectedOrDeactivated(WebUISource source);
+  // Called when a source-registration attempt fails.
+  OnSourceRejected(WebUISource source);
 
   // Called when a report is sent, regardless of success.
   OnReportSent(WebUIReport report);
+
+  // Called when a verbose debug report is sent, regardless of success.
+  OnDebugReportSent(WebUIDebugReport report);
 
   // Called when a report is dropped from storage or prevented from being
   // created in the first place.
@@ -196,6 +214,9 @@ interface Observer {
 
   // Called when a trigger is registered, regardless of success or failure.
   OnTriggerHandled(WebUITrigger trigger);
+
+  // Called when the source header registration JSON parser fails.
+  OnFailedSourceRegistration(FailedSourceRegistration failure);
 };
 
 // Mojo interface for the attribution internals WebUI to communicate with the
@@ -212,7 +233,7 @@ interface Handler {
 
   // Returns all reports of the specified type contained in storage, including
   // those that are actively being sent.
-  GetReports(ReportType report_type) => (array<WebUIReport> reports);
+  GetReports(attribution_reporting.mojom.ReportType report_type) => (array<WebUIReport> reports);
 
   // Sends the given reports, ignoring delay, returning when the operation has
   // been completed and the reports have been cleared from storage.

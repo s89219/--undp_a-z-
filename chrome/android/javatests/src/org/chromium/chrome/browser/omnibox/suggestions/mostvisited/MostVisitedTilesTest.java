@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,8 @@ import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+
+import static org.chromium.components.omnibox.GroupConfigTestSupport.SECTION_2_EXPANDED_WITH_HEADER;
 
 import android.view.KeyEvent;
 import android.view.View;
@@ -54,9 +56,10 @@ import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.OmniboxTestUtils;
 import org.chromium.chrome.test.util.OmniboxTestUtils.SuggestionInfo;
-import org.chromium.components.omnibox.AutocompleteMatch.NavsuggestTile;
+import org.chromium.components.omnibox.AutocompleteMatch.SuggestTile;
 import org.chromium.components.omnibox.AutocompleteMatchBuilder;
 import org.chromium.components.omnibox.AutocompleteResult;
+import org.chromium.components.omnibox.GroupsProto.GroupsInfo;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.net.test.EmbeddedTestServer;
 import org.chromium.ui.modaldialog.ModalDialogManager;
@@ -112,9 +115,9 @@ public class MostVisitedTilesTest {
     private String mStartUrl;
     private OmniboxTestUtils mOmnibox;
 
-    private NavsuggestTile mTile1;
-    private NavsuggestTile mTile2;
-    private NavsuggestTile mTile3;
+    private SuggestTile mTile1;
+    private SuggestTile mTile2;
+    private SuggestTile mTile3;
 
     @BeforeClass
     public static void setUpClass() throws Exception {
@@ -159,13 +162,14 @@ public class MostVisitedTilesTest {
     private void setUpSuggestionsToShow() {
         // Set up basic AutocompleteResult hosting a MostVisitedTiles suggestion.
         mTestServer = sActivityTestRule.getTestServer();
-        mTile1 = new NavsuggestTile("About", new GURL(mTestServer.getURL("/echo/tile1.html")));
-        mTile2 = new NavsuggestTile(
-                "Happy Server", new GURL(mTestServer.getURL("/echo/tile2.html")));
-        mTile3 =
-                new NavsuggestTile("Test Server", new GURL(mTestServer.getURL("/echo/tile3.html")));
+        mTile1 = new SuggestTile("About", new GURL(mTestServer.getURL("/echo/tile1.html")), false);
+        mTile2 = new SuggestTile(
+                "Happy Server", new GURL(mTestServer.getURL("/echo/tile2.html")), false);
+        mTile3 = new SuggestTile(
+                "Test Server", new GURL(mTestServer.getURL("/echo/tile3.html")), false);
 
-        AutocompleteResult autocompleteResult = AutocompleteResult.fromCache(null, null);
+        AutocompleteResult autocompleteResult = AutocompleteResult.fromCache(null,
+                GroupsInfo.newBuilder().putGroupConfigs(1, SECTION_2_EXPANDED_WITH_HEADER).build());
         AutocompleteMatchBuilder builder = new AutocompleteMatchBuilder();
 
         // First suggestion is the current content of the Omnibox.
@@ -177,7 +181,7 @@ public class MostVisitedTilesTest {
 
         // Second suggestion is the MV Tiles.
         builder.setType(OmniboxSuggestionType.TILE_NAVSUGGEST);
-        builder.setNavsuggestTiles(Arrays.asList(new NavsuggestTile[] {mTile1, mTile2, mTile3}));
+        builder.setSuggestTiles(Arrays.asList(new SuggestTile[] {mTile1, mTile2, mTile3}));
         builder.setDeletable(true);
         autocompleteResult.getSuggestionsList().add(builder.build());
         builder.reset();
@@ -189,9 +193,6 @@ public class MostVisitedTilesTest {
         builder.setGroupId(1);
         autocompleteResult.getSuggestionsList().add(builder.build());
         builder.reset();
-
-        autocompleteResult.getGroupsDetails().put(
-                1, new AutocompleteResult.GroupDetails("See also", false));
 
         doAnswer(invocation -> {
             mListener.getValue().onSuggestionsReceived(autocompleteResult, mStartUrl, true);

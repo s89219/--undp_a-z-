@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,12 @@
 #include "ui/display/display_observer.h"
 
 class ChromeBrowserMainParts;
+
+#if !BUILDFLAG(IS_ANDROID)
+class BatteryDischargeReporter;
 class PowerMetricsReporter;
+class ProcessMonitor;
+#endif
 
 namespace chrome {
 void AddMetricsExtraParts(ChromeBrowserMainParts* main_parts);
@@ -38,6 +43,7 @@ class ChromeBrowserMainExtraPartsMetrics : public ChromeBrowserMainExtraParts,
   ~ChromeBrowserMainExtraPartsMetrics() override;
 
   // Overridden from ChromeBrowserMainExtraParts:
+  void PostCreateMainMessageLoop() override;
   void PreProfileInit() override;
   void PreBrowserStart() override;
   void PostBrowserStart() override;
@@ -63,14 +69,20 @@ class ChromeBrowserMainExtraPartsMetrics : public ChromeBrowserMainExtraParts,
 
   absl::optional<display::ScopedDisplayObserver> display_observer_;
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
   std::unique_ptr<ui::InputDeviceEventObserver> input_device_event_observer_;
-#endif  // defined(USE_OZONE)
+#endif  // BUILDFLAG(IS_OZONE)
 
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+#if !BUILDFLAG(IS_ANDROID)
+  // The process monitor instance. Allows collecting metrics about every child
+  // process.
+  std::unique_ptr<ProcessMonitor> process_monitor_;
+
   // Reports power metrics.
   std::unique_ptr<PowerMetricsReporter> power_metrics_reporter_;
-#endif  // BUILDFLAG(IS_MAC) || defined (OS_WIN)
+
+  std::unique_ptr<BatteryDischargeReporter> battery_discharge_reporter_;
+#endif  // !BUILDFLAG(IS_ANDROID)
 };
 
 #endif  // CHROME_BROWSER_METRICS_CHROME_BROWSER_MAIN_EXTRA_PARTS_METRICS_H_

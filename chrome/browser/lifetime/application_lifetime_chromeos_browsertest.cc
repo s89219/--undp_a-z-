@@ -1,8 +1,9 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_chromeos.h"
 
 #include "base/run_loop.h"
 #include "chrome/browser/browser_process.h"
@@ -10,10 +11,10 @@
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/ash/components/dbus/update_engine/fake_update_engine_client.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine_client.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
-#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
-#include "chromeos/dbus/update_engine/fake_update_engine_client.h"
 #include "components/keep_alive_registry/keep_alive_registry.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/test/browser_test.h"
@@ -26,11 +27,14 @@ namespace chrome {
 class ApplicationLifetimeTest : public InProcessBrowserTest,
                                 public BrowserListObserver {
  public:
+  void SetUpInProcessBrowserTestFixture() override {
+    InProcessBrowserTest::SetUpInProcessBrowserTestFixture();
+    fake_update_engine_client_ =
+        ash::UpdateEngineClient::InitializeFakeForTest();
+  }
+
   void SetUpOnMainThread() override {
     InProcessBrowserTest::SetUpOnMainThread();
-    fake_update_engine_client_ = new chromeos::FakeUpdateEngineClient;
-    chromeos::DBusThreadManager::GetSetterForTesting()->SetUpdateEngineClient(
-        std::unique_ptr<ash::UpdateEngineClient>(fake_update_engine_client_));
     BrowserList::AddObserver(this);
   }
 
@@ -70,7 +74,7 @@ class ApplicationLifetimeTest : public InProcessBrowserTest,
   }
 
   absl::optional<base::RunLoop> quits_on_browser_closing_;
-  chromeos::FakeUpdateEngineClient* fake_update_engine_client_ = nullptr;
+  ash::FakeUpdateEngineClient* fake_update_engine_client_ = nullptr;
 };
 
 IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest,
@@ -78,8 +82,8 @@ IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest,
   AttemptRestart();
 
   // Session Manager is not going to stop session.
-  EXPECT_FALSE(IsAttemptingShutdown());
-  auto* fake_session_manager_client = chromeos::FakeSessionManagerClient::Get();
+  EXPECT_FALSE(IsSendingStopRequestToSessionManager());
+  auto* fake_session_manager_client = ash::FakeSessionManagerClient::Get();
   EXPECT_FALSE(fake_session_manager_client->session_stopped());
 
   // No reboot requested.
@@ -101,8 +105,8 @@ IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest,
   AttemptRestart();
 
   // Session Manager is not going to stop session.
-  EXPECT_FALSE(IsAttemptingShutdown());
-  auto* fake_session_manager_client = chromeos::FakeSessionManagerClient::Get();
+  EXPECT_FALSE(IsSendingStopRequestToSessionManager());
+  auto* fake_session_manager_client = ash::FakeSessionManagerClient::Get();
   EXPECT_FALSE(fake_session_manager_client->session_stopped());
 
   // No reboot requested via power manager.
@@ -124,18 +128,18 @@ IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest, AttemptRelaunchRelaunchesOs) {
   AttemptRelaunch();
 
   // Session Manager is not going to stop session.
-  EXPECT_FALSE(IsAttemptingShutdown());
-  auto* fake_session_manager_client = chromeos::FakeSessionManagerClient::Get();
+  EXPECT_FALSE(IsSendingStopRequestToSessionManager());
+  auto* fake_session_manager_client = ash::FakeSessionManagerClient::Get();
   EXPECT_FALSE(fake_session_manager_client->session_stopped());
 
   // Reboot has been requested.
   auto* fake_power_manager_client = chromeos::FakePowerManagerClient::Get();
   EXPECT_GE(fake_power_manager_client->num_request_restart_calls(), 1);
 
-  // Restart flags are set.
+  // No restart flags set.
   PrefService* pref_service = g_browser_process->local_state();
-  EXPECT_TRUE(pref_service->GetBoolean(prefs::kWasRestarted));
-  EXPECT_TRUE(KeepAliveRegistry::GetInstance()->IsRestarting());
+  EXPECT_FALSE(pref_service->GetBoolean(prefs::kWasRestarted));
+  EXPECT_FALSE(KeepAliveRegistry::GetInstance()->IsRestarting());
 
   WaitForBrowserToClose();
 }
@@ -145,8 +149,8 @@ IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest,
   AttemptExit();
 
   // Session Manager has received stop session request.
-  EXPECT_TRUE(IsAttemptingShutdown());
-  auto* fake_session_manager_client = chromeos::FakeSessionManagerClient::Get();
+  EXPECT_TRUE(IsSendingStopRequestToSessionManager());
+  auto* fake_session_manager_client = ash::FakeSessionManagerClient::Get();
   EXPECT_TRUE(fake_session_manager_client->session_stopped());
 
   // No reboot requested.
@@ -157,6 +161,16 @@ IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest,
   PrefService* pref_service = g_browser_process->local_state();
   EXPECT_FALSE(pref_service->GetBoolean(prefs::kWasRestarted));
   EXPECT_FALSE(KeepAliveRegistry::GetInstance()->IsRestarting());
+
+  WaitForBrowserToClose();
+}
+
+IN_PROC_BROWSER_TEST_F(ApplicationLifetimeTest, RelaunchForUpdate) {
+  FakePendingUpdate();
+  RelaunchForUpdate();
+
+  // Reboot requested via update engine client.
+  EXPECT_TRUE(RequestedRebootAfterUpdate());
 
   WaitForBrowserToClose();
 }

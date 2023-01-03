@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,7 +40,10 @@ void BackgroundThumbnailVideoCapturer::Start(
     return;
 
   content::RenderWidgetHostView* const source_view =
-      contents_->GetMainFrame()->GetRenderViewHost()->GetWidget()->GetView();
+      contents_->GetPrimaryMainFrame()
+          ->GetRenderViewHost()
+          ->GetWidget()
+          ->GetView();
   if (!source_view)
     return;
 
@@ -81,8 +84,6 @@ void BackgroundThumbnailVideoCapturer::Stop() {
 
   TRACE_EVENT_NESTABLE_ASYNC_END0("ui", "Tab.Preview.VideoCapture",
                                   TRACE_ID_LOCAL(cur_capture_num_));
-  UMA_HISTOGRAM_MEDIUM_TIMES("Tab.Preview.VideoCaptureDuration",
-                             base::TimeTicks::Now() - start_time_);
   start_time_ = base::TimeTicks();
   cur_capture_num_ = 0;
 }
@@ -189,12 +190,10 @@ void BackgroundThumbnailVideoCapturer::OnFrameCaptured(
     return;
   }
 
-  UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
-      "Tab.Preview.TimeToStoreAfterFrameReceived",
-      base::TimeTicks::Now() - time_of_call, base::Microseconds(10),
-      base::Milliseconds(10), 50);
-
   got_frame_callback_.Run(cropped_frame, frame_id);
+}
+
+void BackgroundThumbnailVideoCapturer::OnNewCropVersion(uint32_t crop_version) {
 }
 
 void BackgroundThumbnailVideoCapturer::OnFrameWithEmptyRegionCapture() {}

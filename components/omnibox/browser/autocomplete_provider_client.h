@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@ class OmniboxTriggeredFeatureService;
 class PrefService;
 class ShortcutsBackend;
 class TabMatcher;
+class ZeroSuggestCacheService;
 
 namespace bookmarks {
 class BookmarkModel;
@@ -60,10 +61,6 @@ namespace query_tiles {
 class TileService;
 }
 
-namespace ntp_tiles {
-class MostVisitedSites;
-}
-
 class TemplateURLService;
 
 class AutocompleteProviderClient : public OmniboxAction::Client {
@@ -74,12 +71,12 @@ class AutocompleteProviderClient : public OmniboxAction::Client {
   GetURLLoaderFactory() = 0;
   virtual PrefService* GetPrefs() const = 0;
   virtual PrefService* GetLocalState() = 0;
+  virtual std::string GetApplicationLocale() const = 0;
   virtual const AutocompleteSchemeClassifier& GetSchemeClassifier() const = 0;
   virtual AutocompleteClassifier* GetAutocompleteClassifier() = 0;
   virtual history::HistoryService* GetHistoryService() = 0;
   virtual history_clusters::HistoryClustersService* GetHistoryClustersService();
   virtual scoped_refptr<history::TopSites> GetTopSites() = 0;
-  virtual ntp_tiles::MostVisitedSites* GetNtpMostVisitedSites();
   virtual bookmarks::BookmarkModel* GetBookmarkModel() = 0;
   virtual history::URLDatabase* GetInMemoryDatabase() = 0;
   virtual InMemoryURLIndex* GetInMemoryURLIndex() = 0;
@@ -89,6 +86,8 @@ class AutocompleteProviderClient : public OmniboxAction::Client {
       bool create_if_necessary) const = 0;
   virtual DocumentSuggestionsService* GetDocumentSuggestionsService(
       bool create_if_necessary) const = 0;
+  virtual ZeroSuggestCacheService* GetZeroSuggestCacheService() = 0;
+  virtual const ZeroSuggestCacheService* GetZeroSuggestCacheService() const = 0;
   virtual OmniboxPedalProvider* GetPedalProvider() const = 0;
   virtual scoped_refptr<ShortcutsBackend> GetShortcutsBackend() = 0;
   virtual scoped_refptr<ShortcutsBackend> GetShortcutsBackendIfExists() = 0;
@@ -168,7 +167,7 @@ class AutocompleteProviderClient : public OmniboxAction::Client {
   virtual void PrefetchImage(const GURL& url) = 0;
 
   // Sends a hint to the service worker context that navigation to
-  // |desination_url| is likely, unless the current profile is in incognito
+  // |destination_url| is likely, unless the current profile is in incognito
   // mode. On platforms where this is supported, the service worker lookup can
   // be expensive so this method should only be called once per input session.
   virtual void StartServiceWorker(const GURL& destination_url) {}

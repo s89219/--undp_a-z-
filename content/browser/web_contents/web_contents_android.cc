@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -291,7 +291,7 @@ void WebContentsAndroid::SetViewAndroidDelegate(
 
 ScopedJavaLocalRef<jobject> WebContentsAndroid::GetMainFrame(
     JNIEnv* env) const {
-  return web_contents_->GetMainFrame()->GetJavaRenderFrameHost();
+  return web_contents_->GetPrimaryMainFrame()->GetJavaRenderFrameHost();
 }
 
 ScopedJavaLocalRef<jobject> WebContentsAndroid::GetFocusedFrame(
@@ -316,11 +316,8 @@ ScopedJavaLocalRef<jobject> WebContentsAndroid::GetRenderFrameHostFromId(
 ScopedJavaLocalRef<jobjectArray> WebContentsAndroid::GetAllRenderFrameHosts(
     JNIEnv* env) const {
   std::vector<RenderFrameHost*> frames;
-  web_contents_->ForEachRenderFrameHost(base::BindRepeating(
-      [](std::vector<RenderFrameHost*>* frames, RenderFrameHostImpl* rfh) {
-        frames->push_back(rfh);
-      },
-      &frames));
+  web_contents_->ForEachRenderFrameHost(
+      [&frames](RenderFrameHostImpl* rfh) { frames.push_back(rfh); });
   ScopedJavaLocalRef<jobjectArray> jframes =
       Java_WebContentsImpl_createRenderFrameHostArray(env, frames.size());
   for (size_t i = 0; i < frames.size(); i++) {
@@ -338,6 +335,10 @@ ScopedJavaLocalRef<jstring> WebContentsAndroid::GetTitle(JNIEnv* env) const {
 ScopedJavaLocalRef<jobject> WebContentsAndroid::GetVisibleURL(
     JNIEnv* env) const {
   return url::GURLAndroid::FromNativeGURL(env, web_contents_->GetVisibleURL());
+}
+
+jint WebContentsAndroid::GetVirtualKeyboardMode(JNIEnv* env) const {
+  return static_cast<jint>(web_contents_->GetVirtualKeyboardMode());
 }
 
 bool WebContentsAndroid::IsLoading(JNIEnv* env) const {
@@ -486,9 +487,15 @@ void WebContentsAndroid::ScrollFocusedEditableNodeIntoView(JNIEnv* env) {
   if (!input_handler)
     return;
   bool should_overlay_content =
-      web_contents_->GetPrimaryPage().virtual_keyboard_overlays_content();
+      web_contents_->GetPrimaryPage().virtual_keyboard_mode() ==
+      ui::mojom::VirtualKeyboardMode::kOverlaysContent;
+  // TODO(bokan): Autofill is notified of focus changes at the end of the
+  // scrollIntoView call using DidCompleteFocusChangeInFrame, see
+  // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/web_local_frame_impl.cc;l=3047;drc=aeadb03c8553c39e88d5d11d10f706d42f06a1d7.
+  // By avoiding this call in should_overlay_content, we never notify autofill
+  // of changed focus so we don't e.g. show the keyboard accessory.
   if (!should_overlay_content)
-    input_handler->ScrollFocusedEditableNodeIntoRect(gfx::Rect());
+    input_handler->ScrollFocusedEditableNodeIntoView();
 }
 
 void WebContentsAndroid::SelectAroundCaretAck(
@@ -545,7 +552,7 @@ void WebContentsAndroid::EvaluateJavaScript(
 
   if (!callback) {
     // No callback requested.
-    web_contents_->GetMainFrame()->ExecuteJavaScript(
+    web_contents_->GetPrimaryMainFrame()->ExecuteJavaScript(
         ConvertJavaStringToUTF16(env, script), base::NullCallback());
     return;
   }
@@ -555,7 +562,7 @@ void WebContentsAndroid::EvaluateJavaScript(
   ScopedJavaGlobalRef<jobject> j_callback;
   j_callback.Reset(env, callback);
 
-  web_contents_->GetMainFrame()->ExecuteJavaScript(
+  web_contents_->GetPrimaryMainFrame()->ExecuteJavaScript(
       ConvertJavaStringToUTF16(env, script),
       base::BindOnce(&JavaScriptResultCallback, j_callback));
 }
@@ -572,7 +579,7 @@ void WebContentsAndroid::EvaluateJavaScriptForTests(
 
   if (!callback) {
     // No callback requested.
-    web_contents_->GetMainFrame()->ExecuteJavaScriptForTests(
+    web_contents_->GetPrimaryMainFrame()->ExecuteJavaScriptForTests(
         ConvertJavaStringToUTF16(env, script), base::NullCallback());
     return;
   }
@@ -582,7 +589,7 @@ void WebContentsAndroid::EvaluateJavaScriptForTests(
   ScopedJavaGlobalRef<jobject> j_callback;
   j_callback.Reset(env, callback);
 
-  web_contents_->GetMainFrame()->ExecuteJavaScriptForTests(
+  web_contents_->GetPrimaryMainFrame()->ExecuteJavaScriptForTests(
       ConvertJavaStringToUTF16(env, script),
       base::BindOnce(&JavaScriptResultCallback, j_callback));
 }
@@ -594,14 +601,14 @@ void WebContentsAndroid::AddMessageToDevToolsConsole(
   DCHECK_GE(level, 0);
   DCHECK_LE(level, static_cast<int>(blink::mojom::ConsoleMessageLevel::kError));
 
-  web_contents_->GetMainFrame()->AddMessageToConsole(
+  web_contents_->GetPrimaryMainFrame()->AddMessageToConsole(
       static_cast<blink::mojom::ConsoleMessageLevel>(level),
       ConvertJavaStringToUTF8(env, message));
 }
 
 void WebContentsAndroid::PostMessageToMainFrame(
     JNIEnv* env,
-    const JavaParamRef<jstring>& jmessage,
+    const JavaParamRef<jobject>& jmessage,
     const JavaParamRef<jstring>& jsource_origin,
     const JavaParamRef<jstring>& jtarget_origin,
     const JavaParamRef<jobjectArray>& jports) {
@@ -635,7 +642,7 @@ void WebContentsAndroid::RequestSmartClipExtract(
   ScopedJavaGlobalRef<jobject> j_callback;
   j_callback.Reset(env, callback);
 
-  web_contents_->GetMainFrame()->RequestSmartClipExtract(
+  web_contents_->GetPrimaryMainFrame()->RequestSmartClipExtract(
       base::BindOnce(&SmartClipCallback, j_callback),
       gfx::Rect(x, y, width, height));
 }
@@ -683,7 +690,7 @@ void WebContentsAndroid::RequestAccessibilitySnapshot(
               &WebContentsAndroid::AXTreeSnapshotCallback,
               weak_factory_.GetWeakPtr(), std::move(j_view_structure_root),
               std::move(j_view_structure_builder), std::move(j_callback)),
-          ui::AXMode(ui::kAXModeComplete.mode() | ui::AXMode::kHTMLMetadata),
+          ui::AXMode(ui::kAXModeComplete.flags() | ui::AXMode::kHTMLMetadata),
           /* exclude_offscreen= */ false,
           /* max_nodes= */ 5000,
           /* timeout= */ base::Seconds(2));
@@ -707,6 +714,11 @@ void WebContentsAndroid::SetOverscrollRefreshHandler(
 void WebContentsAndroid::SetSpatialNavigationDisabled(JNIEnv* env,
                                                       bool disabled) {
   web_contents_->SetSpatialNavigationDisabled(disabled);
+}
+
+void WebContentsAndroid::SetStylusHandwritingEnabled(JNIEnv* env,
+                                                     bool enabled) {
+  web_contents_->SetStylusHandwritingEnabled(enabled);
 }
 
 int WebContentsAndroid::DownloadImage(

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,9 @@
 #include "components/shared_highlighting/core/common/shared_highlighting_data_driven_test_results.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
+#include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
+#include "third_party/blink/renderer/core/annotation/annotation_agent_container_impl.h"
+#include "third_party/blink/renderer/core/annotation/annotation_agent_impl.h"
 #include "third_party/blink/renderer/core/editing/iterators/text_iterator.h"
 #include "third_party/blink/renderer/core/editing/markers/document_marker_controller.h"
 #include "third_party/blink/renderer/core/fragment_directive/text_directive.h"
@@ -61,6 +64,8 @@ class TextFragmentGenerationNavigationTest
 
   String GenerateSelector(const RangeInFlatTree& selection_range);
 
+  // Returns the string that's highlighted. Supports only single highlight in a
+  // page.
   String GetHighlightedText();
 };
 
@@ -136,7 +141,7 @@ String TextFragmentGenerationNavigationTest::GenerateSelector(
                    shared_highlighting::LinkGenerationError error) {
     selector = generated_selector.ToString();
   };
-  auto callback = WTF::Bind(lambda, std::ref(selector));
+  auto callback = WTF::BindOnce(lambda, std::ref(selector));
 
   MakeGarbageCollected<TextFragmentSelectorGenerator>(GetDocument().GetFrame())
       ->Generate(selection_range, std::move(callback));
@@ -145,15 +150,19 @@ String TextFragmentGenerationNavigationTest::GenerateSelector(
 }
 
 String TextFragmentGenerationNavigationTest::GetHighlightedText() {
-  TextFragmentAnchor* anchor = GetTextFragmentAnchor();
-  if (!anchor || anchor->DirectiveFinderPairs().size() != 1) {
-    // Returns a null string, distinguishable from an empty string.
+  auto* container = AnnotationAgentContainerImpl::From(GetDocument());
+  // Returns a null string, distinguishable from an empty string.
+  if (!container)
     return String();
-  }
 
-  auto directive_finder_pairs = anchor->DirectiveFinderPairs();
-  return PlainText(
-      directive_finder_pairs[0].second.Get()->FirstMatch()->ToEphemeralRange());
+  HeapHashSet<Member<AnnotationAgentImpl>> shared_highlight_agents =
+      container->GetAgentsOfType(
+          mojom::blink::AnnotationType::kSharedHighlight);
+  if (shared_highlight_agents.size() != 1)
+    return String();
+
+  AnnotationAgentImpl* agent = *shared_highlight_agents.begin();
+  return PlainText(agent->GetAttachedRange().ToEphemeralRange());
 }
 
 shared_highlighting::SharedHighlightingDataDrivenTestResults
@@ -178,7 +187,7 @@ TextFragmentGenerationNavigationTest::GenerateAndNavigate(
   // Generate text fragment selector.
   String selector = GenerateSelector(*selection_range);
 
-  if (selector.IsEmpty()) {
+  if (selector.empty()) {
     return shared_highlighting::SharedHighlightingDataDrivenTestResults();
   }
 

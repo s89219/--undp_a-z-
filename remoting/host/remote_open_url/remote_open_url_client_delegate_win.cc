@@ -1,12 +1,10 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "remoting/host/remote_open_url/remote_open_url_client_delegate_win.h"
 
 #include <windows.h>
-
-#include <shlwapi.h>
 
 #include <ios>
 #include <string>
@@ -17,6 +15,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/current_module.h"
 #include "base/win/default_apps_util.h"
+#include "base/win/shlwapi.h"
 #include "remoting/base/logging.h"
 #include "remoting/base/user_settings.h"
 #include "remoting/host/remote_open_url/remote_open_url_constants.h"

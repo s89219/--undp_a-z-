@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,11 +17,12 @@ namespace printing {
 
 using ClientsSet = PrintBackendServiceManager::ClientsSet;
 using PrintClientsMap = PrintBackendServiceManager::PrintClientsMap;
+using RemoteId = PrintBackendServiceManager::RemoteId;
 
 namespace {
 
-constexpr char kRemoteIdEmpty[] = "";
-constexpr char kRemoteIdTestPrinter[] = "test-printer";
+const RemoteId kRemoteIdEmpty{1};
+const RemoteId kRemoteIdTestPrinter{2};
 
 const ClientsSet kTestQueryNoClients;
 const ClientsSet kTestQueryWithOneClient{1};

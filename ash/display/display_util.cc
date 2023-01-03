@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <memory>
 #include <utility>
 
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/display/display_configuration_controller.h"
 #include "ash/display/extended_mouse_warp_controller.h"
 #include "ash/display/null_mouse_warp_controller.h"
@@ -159,7 +160,7 @@ void ShowDisplayErrorNotification(const std::u16string& message,
   }
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE, kDisplayErrorNotificationId,
           std::u16string(),  // title
           message,
@@ -167,7 +168,7 @@ void ShowDisplayErrorNotification(const std::u16string& message,
           GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kNotifierDisplayError),
+              kNotifierDisplayError, NotificationCatalogName::kDisplayError),
           data,
           base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
               base::BindRepeating([](absl::optional<int> button_index) {

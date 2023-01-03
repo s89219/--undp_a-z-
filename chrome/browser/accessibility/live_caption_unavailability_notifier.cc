@@ -1,19 +1,18 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/accessibility/live_caption_unavailability_notifier.h"
 
-#include <algorithm>
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/accessibility/caption_bubble_context_browser.h"
 #include "chrome/browser/accessibility/live_caption_controller_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/browser/ui/browser_navigator_params.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "components/live_caption/live_caption_controller.h"
 #include "components/live_caption/pref_names.h"
 #include "components/live_caption/views/caption_bubble.h"
@@ -35,13 +34,14 @@ void LiveCaptionUnavailabilityNotifier::Create(
     content::RenderFrameHost* frame_host,
     mojo::PendingReceiver<media::mojom::MediaFoundationRendererNotifier>
         receiver) {
+  CHECK(frame_host);
   // The object is bound to the lifetime of |frame_host| and the mojo
   // connection. See DocumentService for details.
-  new LiveCaptionUnavailabilityNotifier(frame_host, std::move(receiver));
+  new LiveCaptionUnavailabilityNotifier(*frame_host, std::move(receiver));
 }
 
 LiveCaptionUnavailabilityNotifier::LiveCaptionUnavailabilityNotifier(
-    content::RenderFrameHost* frame_host,
+    content::RenderFrameHost& frame_host,
     mojo::PendingReceiver<media::mojom::MediaFoundationRendererNotifier>
         receiver)
     : DocumentService<media::mojom::MediaFoundationRendererNotifier>(
@@ -53,7 +53,7 @@ LiveCaptionUnavailabilityNotifier::LiveCaptionUnavailabilityNotifier(
   context_ = CaptionBubbleContextBrowser::Create(web_contents);
 
   Profile* profile =
-      Profile::FromBrowserContext(render_frame_host()->GetBrowserContext());
+      Profile::FromBrowserContext(render_frame_host().GetBrowserContext());
   profile_prefs_ = profile->GetPrefs();
 
   pref_change_registrar_ = std::make_unique<PrefChangeRegistrar>();
@@ -67,8 +67,11 @@ LiveCaptionUnavailabilityNotifier::LiveCaptionUnavailabilityNotifier(
                           base::Unretained(this)));
 }
 
-LiveCaptionUnavailabilityNotifier::~LiveCaptionUnavailabilityNotifier() =
-    default;
+LiveCaptionUnavailabilityNotifier::~LiveCaptionUnavailabilityNotifier() {
+  LiveCaptionController* live_caption_controller = GetLiveCaptionController();
+  if (live_caption_controller)
+    live_caption_controller->OnAudioStreamEnd(context_.get());
+}
 
 void LiveCaptionUnavailabilityNotifier::MediaFoundationRendererCreated(
     mojo::PendingReceiver<media::mojom::MediaFoundationRendererObserver>
@@ -80,13 +83,13 @@ void LiveCaptionUnavailabilityNotifier::MediaFoundationRendererCreated(
 }
 
 content::WebContents* LiveCaptionUnavailabilityNotifier::GetWebContents() {
-  return content::WebContents::FromRenderFrameHost(render_frame_host());
+  return content::WebContents::FromRenderFrameHost(&render_frame_host());
 }
 
 LiveCaptionController*
 LiveCaptionUnavailabilityNotifier::GetLiveCaptionController() {
   Profile* profile =
-      Profile::FromBrowserContext(render_frame_host()->GetBrowserContext());
+      Profile::FromBrowserContext(render_frame_host().GetBrowserContext());
   if (!profile)
     return nullptr;
 
@@ -105,21 +108,12 @@ bool LiveCaptionUnavailabilityNotifier::
 }
 
 bool LiveCaptionUnavailabilityNotifier::ErrorSilencedForOrigin() {
-  const base::Value* silenced_sites_pref = profile_prefs_->GetList(
-      prefs::kLiveCaptionMediaFoundationRendererErrorSilenced);
-
-  if (!silenced_sites_pref)
-    return false;
-
-  const auto& silenced_sites_list = silenced_sites_pref->GetList();
-  const auto it = std::find_if(
-      silenced_sites_list.begin(), silenced_sites_list.end(),
-      [&](const base::Value& value) {
-        return value.GetString() ==
-               render_frame_host()->GetLastCommittedOrigin().Serialize();
-      });
-
-  return it != silenced_sites_list.end();
+  using SelectConstVersion = const std::string& (base::Value::*)() const;
+  return base::Contains(
+      profile_prefs_->GetList(
+          prefs::kLiveCaptionMediaFoundationRendererErrorSilenced),
+      render_frame_host().GetLastCommittedOrigin().Serialize(),
+      static_cast<SelectConstVersion>(&base::Value::GetString));
 }
 
 void LiveCaptionUnavailabilityNotifier::DisplayMediaFoundationRendererError() {
@@ -134,7 +128,7 @@ void LiveCaptionUnavailabilityNotifier::DisplayMediaFoundationRendererError() {
   // received from another audio stream.
   live_caption_controller->OnError(
       context_.get(),
-      CaptionBubbleErrorType::MEDIA_FOUNDATION_RENDERER_UNSUPPORTED,
+      CaptionBubbleErrorType::kMediaFoundationRendererUnsupported,
       base::BindRepeating(&LiveCaptionUnavailabilityNotifier::
                               OnMediaFoundationRendererErrorClicked,
                           weak_factory_.GetWeakPtr()),
@@ -149,28 +143,26 @@ void LiveCaptionUnavailabilityNotifier::
         CaptionBubbleErrorType error_type,
         bool checked) {
   PrefService* prefs =
-      Profile::FromBrowserContext(render_frame_host()->GetBrowserContext())
+      Profile::FromBrowserContext(render_frame_host().GetBrowserContext())
           ->GetPrefs();
-  ListPrefUpdate update(
+  ScopedListPrefUpdate update(
       prefs, prefs::kLiveCaptionMediaFoundationRendererErrorSilenced);
   if (checked) {
-    update->Append(render_frame_host()->GetLastCommittedOrigin().Serialize());
+    update->Append(render_frame_host().GetLastCommittedOrigin().Serialize());
   } else {
-    update->EraseListValueIf([&](const base::Value& value) {
+    update->EraseIf([&](const base::Value& value) {
       return value.GetString() ==
-             render_frame_host()->GetLastCommittedOrigin().Serialize();
+             render_frame_host().GetLastCommittedOrigin().Serialize();
     });
   }
 }
 
 void LiveCaptionUnavailabilityNotifier::
     OnMediaFoundationRendererErrorClicked() {
-  NavigateParams params(
-      Profile::FromBrowserContext(render_frame_host()->GetBrowserContext()),
-      GURL("chrome://settings/content/protectedContent"),
-      ui::PAGE_TRANSITION_LINK);
-  params.disposition = WindowOpenDisposition::NEW_FOREGROUND_TAB;
-  Navigate(&params);
+  Profile* profile =
+      Profile::FromBrowserContext(render_frame_host().GetBrowserContext());
+  chrome::ShowSiteSettings(
+      profile, render_frame_host().GetLastCommittedOrigin().GetURL());
 }
 
 void LiveCaptionUnavailabilityNotifier::

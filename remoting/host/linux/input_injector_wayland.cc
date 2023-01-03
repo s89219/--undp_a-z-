@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,8 +26,10 @@
 #include "remoting/host/clipboard.h"
 #include "remoting/host/input_injector_constants_linux.h"
 #include "remoting/host/input_injector_metadata.h"
+#include "remoting/host/linux/clipboard_wayland.h"
 #include "remoting/host/linux/remote_desktop_portal_injector.h"
 #include "remoting/host/linux/unicode_to_keysym.h"
+#include "remoting/host/linux/wayland_manager.h"
 #include "remoting/proto/internal.pb.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
@@ -122,7 +124,7 @@ class InputInjectorWayland : public InputInjector {
   void InjectMouseEvent(const protocol::MouseEvent& event) override;
   void InjectTouchEvent(const protocol::TouchEvent& event) override;
 
-  void SetMetadata(InputInjectorMetadata metadata);
+  void SetMetadata(InputInjectorMetadata metadata) override;
 
   // InputInjector interface.
   void Start(
@@ -145,8 +147,9 @@ class InputInjectorWayland : public InputInjector {
     void InjectTextEvent(const protocol::TextEvent& event);
     void InjectMouseEvent(const protocol::MouseEvent& event);
 
-    void SetSessionDetails(
-        const webrtc::xdg_portal::SessionDetails& session_details);
+    void SetRemoteDesktopSessionDetails(const SessionDetails& session_details);
+
+    void SetClipboardSessionDetails(const SessionDetails& session_details);
 
     // Mirrors the InputInjector interface.
     void Start(std::unique_ptr<protocol::ClipboardStub> client_clipboard);
@@ -178,15 +181,21 @@ class InputInjectorWayland : public InputInjector {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     PointTransformer point_transformer_;
 #endif
-
+    ClipboardWayland clipboard_;
     xdg_portal::RemoteDesktopPortalInjector remotedesktop_portal_;
 
     // If input is injected before complete initialization then some portal
     // APIs can crash. This flag is marked to track initialization,
     // and all inputs before the initialization is complete are added to
     // |pending_tasks| queue and injected upon initialization.
-    bool initialized_ = false;
-    base::queue<base::OnceClosure> pending_tasks_;
+    bool remote_desktop_initialized_ = false;
+    base::queue<base::OnceClosure> pending_remote_desktop_tasks_;
+
+    // Similar to remote_desktop_initialized_, we keep the last clipboard event
+    // but separated so that the remote desktop isn't blocked waiting for the
+    // clipboard.
+    bool clipboard_initialized_ = false;
+    absl::optional<ClipboardEvent> pending_clipboard_event_;
   };
 
   scoped_refptr<Core> core_;
@@ -195,6 +204,18 @@ class InputInjectorWayland : public InputInjector {
 InputInjectorWayland::InputInjectorWayland(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner) {
   core_ = new Core(task_runner);
+
+  // Register callback with the wayland manager so that it can get details
+  // about the desktop capture metadata (which include session details of the
+  // portal).
+  auto converting_cb =
+      base::BindRepeating([](const webrtc::DesktopCaptureMetadata metadata) {
+        return metadata.session_details;
+      });
+  WaylandManager::Get()->AddCapturerMetadataCallback(converting_cb.Then(
+      base::BindRepeating(&Core::SetRemoteDesktopSessionDetails, core_)));
+  WaylandManager::Get()->AddClipboardMetadataCallback(converting_cb.Then(
+      base::BindRepeating(&Core::SetClipboardSessionDetails, core_)));
 }
 
 InputInjectorWayland::~InputInjectorWayland() {}
@@ -226,7 +247,7 @@ void InputInjectorWayland::Start(
 }
 
 void InputInjectorWayland::SetMetadata(InputInjectorMetadata metadata) {
-  core_->SetSessionDetails(std::move(metadata.session_details));
+  core_->SetRemoteDesktopSessionDetails(std::move(metadata.session_details));
 }
 
 InputInjectorWayland::Core::Core(
@@ -235,7 +256,18 @@ InputInjectorWayland::Core::Core(
 
 void InputInjectorWayland::Core::InjectClipboardEvent(
     const ClipboardEvent& event) {
-  NOTIMPLEMENTED() << "Clipboard injection is not implemented for wayland.";
+  if (!input_task_runner_->BelongsToCurrentThread()) {
+    input_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&Core::InjectClipboardEvent, this, event));
+    return;
+  }
+  DCHECK(input_task_runner_->BelongsToCurrentThread());
+  if (!clipboard_initialized_) {
+    pending_clipboard_event_ = absl::make_optional(event);
+    return;
+  }
+
+  clipboard_.InjectClipboardEvent(event);
 }
 
 void InputInjectorWayland::Core::InjectKeyEvent(const KeyEvent& event) {
@@ -245,8 +277,9 @@ void InputInjectorWayland::Core::InjectKeyEvent(const KeyEvent& event) {
     return;
   }
   DCHECK(input_task_runner_->BelongsToCurrentThread());
-  if (!initialized_) {
-    pending_tasks_.push(base::BindOnce(&Core::InjectKeyEvent, this, event));
+  if (!remote_desktop_initialized_) {
+    pending_remote_desktop_tasks_.push(
+        base::BindOnce(&Core::InjectKeyEvent, this, event));
     return;
   }
   // HostEventDispatcher should filter events missing the pressed field.
@@ -311,8 +344,9 @@ void InputInjectorWayland::Core::InjectMouseEvent(const MouseEvent& event) {
     return;
   }
   DCHECK(input_task_runner_->BelongsToCurrentThread());
-  if (!initialized_) {
-    pending_tasks_.push(base::BindOnce(&Core::InjectMouseEvent, this, event));
+  if (!remote_desktop_initialized_) {
+    pending_remote_desktop_tasks_.push(
+        base::BindOnce(&Core::InjectMouseEvent, this, event));
     return;
   }
 
@@ -414,7 +448,7 @@ void InputInjectorWayland::Core::InjectMouseEvent(const MouseEvent& event) {
     latest_tick_y_direction_ = WheelDeltaToScrollDirection(ticks_y);
     latest_tick_y_event_ = now;
     InjectMouseScroll(RemoteDesktopPortalInjector::ScrollType::VERTICAL_SCROLL,
-                      ticks_y);
+                      -ticks_y);
   }
 
   int ticks_x = 0;
@@ -427,25 +461,45 @@ void InputInjectorWayland::Core::InjectMouseEvent(const MouseEvent& event) {
   }
   if (ticks_x != 0) {
     InjectMouseScroll(
-        RemoteDesktopPortalInjector::ScrollType::HORIZONTAL_SCROLL, ticks_x);
+        RemoteDesktopPortalInjector::ScrollType::HORIZONTAL_SCROLL, -ticks_x);
   }
 }
 
-void InputInjectorWayland::Core::SetSessionDetails(
+void InputInjectorWayland::Core::SetRemoteDesktopSessionDetails(
     const SessionDetails& session_details) {
   if (!input_task_runner_->BelongsToCurrentThread()) {
     input_task_runner_->PostTask(
-        FROM_HERE,
-        base::BindOnce(&Core::SetSessionDetails, this, session_details));
+        FROM_HERE, base::BindOnce(&Core::SetRemoteDesktopSessionDetails, this,
+                                  session_details));
     return;
   }
   DCHECK(input_task_runner_->BelongsToCurrentThread());
   remotedesktop_portal_.SetSessionDetails(session_details);
-  initialized_ = true;
-  while (!pending_tasks_.empty()) {
-    base::OnceClosure task = std::move(pending_tasks_.front());
-    pending_tasks_.pop();
+  remote_desktop_initialized_ = true;
+
+  while (!pending_remote_desktop_tasks_.empty()) {
+    base::OnceClosure task = std::move(pending_remote_desktop_tasks_.front());
+    pending_remote_desktop_tasks_.pop();
     std::move(task).Run();
+  }
+}
+
+void InputInjectorWayland::Core::SetClipboardSessionDetails(
+    const SessionDetails& session_details) {
+  if (!input_task_runner_->BelongsToCurrentThread()) {
+    input_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&Core::SetClipboardSessionDetails, this,
+                                  session_details));
+    return;
+  }
+
+  DCHECK(input_task_runner_->BelongsToCurrentThread());
+  clipboard_.SetSessionDetails(session_details);
+  clipboard_initialized_ = true;
+
+  // rerun the last pending clipboard task
+  if (pending_clipboard_event_.has_value()) {
+    clipboard_.InjectClipboardEvent(pending_clipboard_event_.value());
   }
 }
 
@@ -487,6 +541,7 @@ void InputInjectorWayland::Core::Start(
     return;
   }
   DCHECK(input_task_runner_->BelongsToCurrentThread());
+  clipboard_.Start(std::move(client_clipboard));
 }
 
 }  // namespace

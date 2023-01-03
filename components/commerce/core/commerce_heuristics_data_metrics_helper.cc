@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,4 +22,22 @@ void CommerceHeuristicsDataMetricsHelper::RecordCartExtractionScriptSource(
     HeuristicsSource source) {
   base::UmaHistogramEnumeration(
       "Commerce.Heuristics.CartExtractionScriptSource", source);
+}
+
+void CommerceHeuristicsDataMetricsHelper::RecordPartnerMerchantPatternSource(
+    HeuristicsSource source) {
+  base::UmaHistogramEnumeration(
+      "Commerce.Heuristics.PartnerMerchantPatternSource", source);
+}
+
+void CommerceHeuristicsDataMetricsHelper::RecordSkipProductPatternSource(
+    HeuristicsSource source) {
+  base::UmaHistogramEnumeration("Commerce.Heuristics.SkipProductPatternSource",
+                                source);
+}
+
+void CommerceHeuristicsDataMetricsHelper::
+    RecordProductIDExtractionPatternSource(HeuristicsSource source) {
+  base::UmaHistogramEnumeration(
+      "Commerce.Heuristics.ProductIDExtractionPatternSource", source);
 }

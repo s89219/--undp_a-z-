@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,12 +37,13 @@ class OffTheRecordChromeBrowserStateImpl final : public ChromeBrowserState {
   PrefProxyConfigTracker* GetProxyConfigTracker() override;
   BrowserStatePolicyConnector* GetPolicyConnector() override;
   policy::UserCloudPolicyManager* GetUserCloudPolicyManager() override;
-  PrefService* GetPrefs() override;
+  sync_preferences::PrefServiceSyncable* GetSyncablePrefs() override;
   ChromeBrowserStateIOData* GetIOData() override;
   void ClearNetworkingHistorySince(base::Time time,
                                    base::OnceClosure completion) override;
   net::URLRequestContextGetter* CreateRequestContext(
       ProtocolHandlerMap* protocol_handlers) override;
+  base::WeakPtr<ChromeBrowserState> AsWeakPtr() override;
 
   // BrowserState:
   bool IsOffTheRecord() const override;
@@ -51,7 +52,7 @@ class OffTheRecordChromeBrowserStateImpl final : public ChromeBrowserState {
  private:
   friend class ChromeBrowserStateImpl;
 
-  // |original_chrome_browser_state_| is the non-incognito
+  // `original_chrome_browser_state_` is the non-incognito
   // ChromeBrowserState instance that owns this instance.
   OffTheRecordChromeBrowserStateImpl(
       scoped_refptr<base::SequencedTaskRunner> io_task_runner,
@@ -68,6 +69,9 @@ class OffTheRecordChromeBrowserStateImpl final : public ChromeBrowserState {
 
   std::unique_ptr<OffTheRecordChromeBrowserStateIOData::Handle> io_data_;
   std::unique_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
+
+  base::WeakPtrFactory<OffTheRecordChromeBrowserStateImpl> weak_ptr_factory_{
+      this};
 };
 
 #endif  // IOS_CHROME_BROWSER_BROWSER_STATE_OFF_THE_RECORD_CHROME_BROWSER_STATE_IMPL_H_

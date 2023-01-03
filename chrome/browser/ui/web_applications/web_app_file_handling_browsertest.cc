@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
@@ -48,6 +47,7 @@
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/policy_constants.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_launcher.h"
@@ -72,7 +72,7 @@ class WebAppFileHandlingTestBase : public WebAppControllerBrowserTest {
     return provider()->os_integration_manager().file_handler_manager();
   }
 
-  WebAppRegistrar& registrar() { return provider()->registrar(); }
+  WebAppRegistrar& registrar() { return provider()->registrar_unsafe(); }
 
   GURL GetSecureAppURL() {
     return https_server()->GetURL("app.com", "/ssl/google.html");
@@ -154,19 +154,6 @@ class WebAppFileHandlingTestBase : public WebAppControllerBrowserTest {
 
 namespace {
 
-base::FilePath NewTestFilePath(const base::StringPiece extension) {
-  // CreateTemporaryFile blocks, temporarily allow blocking.
-  base::ScopedAllowBlockingForTesting allow_blocking;
-
-  // In order to test file handling, we need to be able to supply a file
-  // extension for the temp file.
-  base::FilePath test_file_path;
-  base::CreateTemporaryFile(&test_file_path);
-  base::FilePath new_file_path = test_file_path.AddExtensionASCII(extension);
-  EXPECT_TRUE(base::ReplaceFile(test_file_path, new_file_path, nullptr));
-  return new_file_path;
-}
-
 // Attach the launchParams to the window so we can inspect them easily.
 void AttachTestConsumer(content::WebContents* web_contents) {
   auto result = content::EvalJs(web_contents,
@@ -181,15 +168,14 @@ class WebAppFileHandlingBrowserTest : public WebAppFileHandlingTestBase {
  public:
   WebAppFileHandlingBrowserTest() : redirect_handle_(*https_server()) {}
 
-  void LaunchWithFiles(
-      const std::string& app_id,
-      const GURL& expected_launch_url,
-      const std::vector<base::FilePath>& files,
-      const apps::mojom::LaunchContainer launch_container =
-          apps::mojom::LaunchContainer::kLaunchContainerWindow) {
+  void LaunchWithFiles(const std::string& app_id,
+                       const GURL& expected_launch_url,
+                       const std::vector<base::FilePath>& files,
+                       const apps::LaunchContainer launch_container =
+                           apps::LaunchContainer::kLaunchContainerWindow) {
     web_contents_ = LaunchApplication(
         profile(), app_id, expected_launch_url, launch_container,
-        apps::mojom::LaunchSource::kFromFileManager, files);
+        apps::LaunchSource::kFromFileManager, files);
     destroyed_watcher_ =
         std::make_unique<content::WebContentsDestroyedWatcher>(web_contents_);
   }
@@ -219,16 +205,6 @@ class WebAppFileHandlingBrowserTest : public WebAppFileHandlingTestBase {
     }
   }
 
-  void UninstallWebApp(const AppId& app_id) {
-    base::RunLoop run_loop;
-    UninstallWebAppWithCallback(
-        profile(), app_id, base::BindLambdaForTesting([&](bool uninstalled) {
-          EXPECT_TRUE(uninstalled);
-          run_loop.Quit();
-        }));
-    run_loop.Run();
-  }
-
   AppId InstallFileHandlingWebApp(const std::u16string& title,
                                   const GURL& handler_url) {
     auto web_app_info = std::make_unique<WebAppInstallInfo>();
@@ -253,10 +229,9 @@ class WebAppFileHandlingBrowserTest : public WebAppFileHandlingTestBase {
       Profile* profile,
       const std::string& app_id,
       const GURL& expected_launch_url,
-      const apps::mojom::LaunchContainer launch_container =
-          apps::mojom::LaunchContainer::kLaunchContainerWindow,
-      const apps::mojom::LaunchSource launch_source =
-          apps::mojom::LaunchSource::kFromTest,
+      const apps::LaunchContainer launch_container =
+          apps::LaunchContainer::kLaunchContainerWindow,
+      const apps::LaunchSource launch_source = apps::LaunchSource::kFromTest,
       const std::vector<base::FilePath>& files =
           std::vector<base::FilePath>()) {
     apps::AppLaunchParams params(app_id, launch_container,
@@ -268,8 +243,8 @@ class WebAppFileHandlingBrowserTest : public WebAppFileHandlingTestBase {
           file_handler_manager().GetMatchingFileHandlerUrls(app_id, files);
       EXPECT_EQ(1u, launch_infos.size());
 
-      const auto& [url, files] = launch_infos[0];
-      params.launch_files = files;
+      const auto& [url, launch_files] = launch_infos[0];
+      params.launch_files = launch_files;
       params.override_url = url;
     }
 
@@ -288,22 +263,14 @@ class WebAppFileHandlingBrowserTest : public WebAppFileHandlingTestBase {
   TestServerRedirectHandle redirect_handle_;
   base::test::ScopedFeatureList feature_list_{
       blink::features::kFileHandlingAPI};
-  raw_ptr<content::WebContents> web_contents_;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_;
   std::unique_ptr<content::WebContentsDestroyedWatcher> destroyed_watcher_;
 };
 
 IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
-                       LaunchConsumerIsNotTriggeredWithNoFiles) {
-  InstallFileHandlingPWA();
-  // The URL used is the normal start URL.
-  LaunchWithFiles(app_id(), GetSecureAppURL(), {});
-  VerifyPwaDidReceiveFileLaunchParams(false);
-}
-
-IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
                        PWAsCanReceiveFileLaunchParams) {
   InstallFileHandlingPWA();
-  base::FilePath test_file_path = NewTestFilePath("txt");
+  base::FilePath test_file_path = CreateTestFileWithExtension("txt");
   LaunchWithFiles(app_id(), GetTextFileHandlerActionURL(), {test_file_path});
 
   VerifyPwaDidReceiveFileLaunchParams(true, test_file_path);
@@ -312,9 +279,9 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
 IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
                        PWAsCanReceiveFileLaunchParamsInTab) {
   InstallFileHandlingPWA();
-  base::FilePath test_file_path = NewTestFilePath("txt");
+  base::FilePath test_file_path = CreateTestFileWithExtension("txt");
   LaunchWithFiles(app_id(), GetTextFileHandlerActionURL(), {test_file_path},
-                  apps::mojom::LaunchContainer::kLaunchContainerTab);
+                  apps::LaunchContainer::kLaunchContainerTab);
 
   VerifyPwaDidReceiveFileLaunchParams(true, test_file_path);
 }
@@ -326,24 +293,24 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
   // Test that file handler dispatches correct URL based on file extension.
   LaunchWithFiles(app_id(), GetSecureAppURL(), {});
   LaunchWithFiles(app_id(), GetTextFileHandlerActionURL(),
-                  {NewTestFilePath("txt")});
+                  {CreateTestFileWithExtension("txt")});
   LaunchWithFiles(app_id(), GetHTMLFileHandlerActionURL(),
-                  {NewTestFilePath("html")});
+                  {CreateTestFileWithExtension("html")});
   LaunchWithFiles(app_id(), GetCSVFileHandlerActionURL(),
-                  {NewTestFilePath("csv")});
+                  {CreateTestFileWithExtension("csv")});
 
   // Test as above in a tab.
   LaunchWithFiles(app_id(), GetSecureAppURL(), {},
-                  apps::mojom::LaunchContainer::kLaunchContainerTab);
+                  apps::LaunchContainer::kLaunchContainerTab);
   LaunchWithFiles(app_id(), GetTextFileHandlerActionURL(),
-                  {NewTestFilePath("txt")},
-                  apps::mojom::LaunchContainer::kLaunchContainerTab);
+                  {CreateTestFileWithExtension("txt")},
+                  apps::LaunchContainer::kLaunchContainerTab);
   LaunchWithFiles(app_id(), GetHTMLFileHandlerActionURL(),
-                  {NewTestFilePath("html")},
-                  apps::mojom::LaunchContainer::kLaunchContainerTab);
+                  {CreateTestFileWithExtension("html")},
+                  apps::LaunchContainer::kLaunchContainerTab);
   LaunchWithFiles(app_id(), GetCSVFileHandlerActionURL(),
-                  {NewTestFilePath("csv")},
-                  apps::mojom::LaunchContainer::kLaunchContainerTab);
+                  {CreateTestFileWithExtension("csv")},
+                  apps::LaunchContainer::kLaunchContainerTab);
 }
 
 // Regression test for crbug.com/1126091
@@ -354,7 +321,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
   AppId app_id =
       InstallFileHandlingWebApp(u"An app that will be reloaded", handler_url);
 
-  base::FilePath file = NewTestFilePath("txt");
+  base::FilePath file = CreateTestFileWithExtension("txt");
 
   {
     auto redirect_scope = redirect_handle_.Redirect({
@@ -377,7 +344,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest, LaunchQueueSetOnReload) {
   AppId app_id =
       InstallFileHandlingWebApp(u"An app that will be reloaded", handler_url);
 
-  base::FilePath file = NewTestFilePath("txt");
+  base::FilePath file = CreateTestFileWithExtension("txt");
   LaunchWithFiles(app_id, handler_url, {file});
   VerifyPwaDidReceiveFileLaunchParams(true, file);
 
@@ -399,7 +366,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
   AppId app_id =
       InstallFileHandlingWebApp(u"An app that will be reloaded", handler_url);
 
-  base::FilePath file = NewTestFilePath("txt");
+  base::FilePath file = CreateTestFileWithExtension("txt");
   LaunchWithFiles(app_id, handler_url, {file});
   VerifyPwaDidReceiveFileLaunchParams(true, file);
 
@@ -433,7 +400,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
       "/web_app_file_handling/handle_files_with_redirect_to_other_origin.html");
   AppId app_id =
       InstallFileHandlingWebApp(u"An app that will be reloaded", handler_url);
-  base::FilePath file = NewTestFilePath("txt");
+  base::FilePath file = CreateTestFileWithExtension("txt");
 
   {
     auto redirect_scope = redirect_handle_.Redirect({
@@ -459,7 +426,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
   AppId app_id =
       InstallFileHandlingWebApp(u"An app that will be navigated", handler_url);
 
-  base::FilePath file = NewTestFilePath("txt");
+  base::FilePath file = CreateTestFileWithExtension("txt");
   LaunchWithFiles(app_id, handler_url, {file});
   VerifyPwaDidReceiveFileLaunchParams(true, file);
 
@@ -483,7 +450,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
 
   EXPECT_EQ(ApiApprovalState::kRequiresPrompt,
             registrar().GetAppFileHandlerApprovalState(app_id()));
-  provider()->sync_bridge().SetAppFileHandlerApprovalState(
+  provider()->sync_bridge_unsafe().SetAppFileHandlerApprovalState(
       app_id(), ApiApprovalState::kAllowed);
 
   auto [file_associations, association_count] =
@@ -503,7 +470,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest,
 IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest, IsFileHandlerOnChromeOS) {
   InstallFileHandlingPWA();
 
-  base::FilePath test_file_path = NewTestFilePath("txt");
+  base::FilePath test_file_path = CreateTestFileWithExtension("txt");
   std::vector<file_manager::file_tasks::FullTaskDescriptor> tasks =
       file_manager::test::GetTasksForFile(profile(), test_file_path);
   // Note that there are normally multiple tasks due to default-installed
@@ -551,7 +518,7 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingDisabledTest,
                        NoFileHandlerOnChromeOS) {
   InstallFileHandlingPWA();
 
-  base::FilePath test_file_path = NewTestFilePath("txt");
+  base::FilePath test_file_path = CreateTestFileWithExtension("txt");
   std::vector<file_manager::file_tasks::FullTaskDescriptor> tasks =
       file_manager::test::GetTasksForFile(profile(), test_file_path);
   EXPECT_EQ(0u, tasks.size());
@@ -580,7 +547,7 @@ IN_PROC_BROWSER_TEST_P(WebAppFileHandlingIconBrowserTest, Basic) {
       embedded_test_server()->GetURL("/web_app_file_handling/icons_app.html"));
   const AppId app_id = InstallWebAppFromManifest(browser(), app_url);
   auto* provider = WebAppProvider::GetForTest(browser()->profile());
-  const WebApp* web_app = provider->registrar().GetAppById(app_id);
+  const WebApp* web_app = provider->registrar_unsafe().GetAppById(app_id);
   ASSERT_TRUE(web_app);
 
   ASSERT_EQ(1U, web_app->file_handlers().size());
@@ -625,7 +592,13 @@ class WebAppFileHandlingBrowserTest_FeatureSwitchesState
     // `InstallFileHandlingPWA()` doesn't perform OS integration, so explicitly
     // call it here to simulate a user install. Note: does nothing if the
     // feature is disabled.
-    file_handler_manager().EnableAndRegisterOsFileHandlers(app_id());
+    base::RunLoop run_loop;
+    file_handler_manager().EnableAndRegisterOsFileHandlers(
+        app_id(), base::BindLambdaForTesting([&](Result result) {
+          EXPECT_EQ(result, Result::kOk);
+          run_loop.Quit();
+        }));
+    run_loop.Run();
   }
 
   void IntegrationWasSet(bool enabled) {
@@ -677,7 +650,8 @@ IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest_FeatureSwitchesOn,
 }
 
 IN_PROC_BROWSER_TEST_F(WebAppFileHandlingBrowserTest_FeatureSwitchesOn,
-                       OsIntegrationIsAdded) {
+                       // TODO(crbug.com/1403367): Re-enable this test
+                       DISABLED_OsIntegrationIsAdded) {
   ASSERT_EQ(1u, registrar().GetAppIds().size());
   AppId app_id = registrar().GetAppIds()[0];
   EXPECT_TRUE(file_handler_manager().IsFileHandlingAPIAvailable(app_id));

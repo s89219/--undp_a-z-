@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package org.chromium.android_webview.test;
 
 import android.graphics.Rect;
 import android.net.Uri;
-import android.os.Build.VERSION_CODES;
 import android.support.test.InstrumentationRegistry;
 import android.webkit.JavascriptInterface;
 
@@ -23,17 +22,17 @@ import org.junit.runner.RunWith;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.JsReplyProxy;
 import org.chromium.android_webview.WebMessageListener;
-import org.chromium.android_webview.common.AwFeatures;
 import org.chromium.android_webview.test.AwActivityTestRule.PopupInfo;
 import org.chromium.android_webview.test.TestAwContentsClient.ShouldInterceptRequestHelper;
 import org.chromium.android_webview.test.util.CommonResources;
+import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.ThreadUtils;
-import org.chromium.base.test.util.CommandLineFlags;
+import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.CriteriaNotSatisfiedException;
-import org.chromium.base.test.util.DisableIf;
 import org.chromium.base.test.util.Feature;
+import org.chromium.content_public.browser.MessagePayload;
 import org.chromium.content_public.browser.MessagePort;
 import org.chromium.content_public.browser.SelectionPopupController;
 import org.chromium.content_public.browser.test.util.DOMUtils;
@@ -50,6 +49,7 @@ import java.util.concurrent.TimeUnit;
  * Tests for pop up window flow.
  */
 @RunWith(AwJUnit4ClassRunner.class)
+@Batch(Batch.PER_CLASS)
 public class PopupWindowTest {
     @Rule
     public AwActivityTestRule mActivityTestRule = new AwActivityTestRule();
@@ -222,72 +222,8 @@ public class PopupWindowTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add("disable-features="
-            + AwFeatures.WEBVIEW_SYNTHESIZE_PAGE_LOAD_ONLY_ON_INITIAL_MAIN_DOCUMENT_ACCESS)
-    public void
-    testSynthesizedOnPageFinishedCalledMultipleTimesAfterDomModificationDuringNavigation()
+    public void testSynthesizedOnPageFinishedCalledOnceAfterDomModificationDuringNavigation()
             throws Throwable {
-        final String popupPath = "/popup.html";
-        final String parentPageHtml = CommonResources.makeHtmlPageFrom("",
-                "<script>"
-                        + "function tryOpenWindow() {"
-                        + "  window.popupWindow = window.open('" + popupPath + "');"
-                        + "}"
-                        + "function modifyDomOfPopup() {"
-                        + "  window.popupWindow.document.body.innerHTML = 'Hello from the parent!';"
-                        + "}</script>");
-
-        mActivityTestRule.triggerPopup(mParentContents, mParentContentsClient, mWebServer,
-                parentPageHtml, "<html></html>", popupPath, "tryOpenWindow()");
-        PopupInfo popupInfo = mActivityTestRule.createPopupContents(mParentContents);
-        TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
-                popupInfo.popupContentsClient.getOnPageFinishedHelper();
-        ShouldInterceptRequestHelper shouldInterceptRequestHelper =
-                popupInfo.popupContentsClient.getShouldInterceptRequestHelper();
-        int onPageFinishedCount = onPageFinishedHelper.getCallCount();
-        int shouldInterceptRequestCount = shouldInterceptRequestHelper.getCallCount();
-        // Modify DOM before navigation gets committed. Once it gets committed, then
-        // DidAccessInitialDocument does not get triggered.
-        popupInfo.popupContentsClient.getShouldInterceptRequestHelper().runDuringFirstTimeCallback(
-                () -> {
-                    ThreadUtils.assertOnBackgroundThread();
-                    try {
-                        // Ensures that we modify DOM before navigation gets committed.
-                        mActivityTestRule.executeJavaScriptAndWaitForResult(
-                                mParentContents, mParentContentsClient, "modifyDomOfPopup()");
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-        mActivityTestRule.loadPopupContents(mParentContents, popupInfo, null);
-        shouldInterceptRequestHelper.waitForCallback(shouldInterceptRequestCount);
-        // Modifying DOM in the middle while loading a popup window - this causes navigation state
-        // change through AwWebContentsDelegateAdapter#navigationStateChanged(), resulting in an
-        // additional onPageFinished() callback. Also, the navigation eventually will commit and
-        // trigger an onPageFinished() call, and 2 NavigationStateChanged calls that would
-        // also trigger synthesized onPageFinished() calls, totaling to 4 onPageFinished calls.
-        // See also https://crbug.com/458569 and b/19325392 for context.
-        onPageFinishedHelper.waitForCallback(onPageFinishedCount, 4);
-        List<String> urlList = onPageFinishedHelper.getUrlList();
-
-        // This is the URL that gets shown to the user (instead of the pending navigation's URL)
-        // because the parent changed DOM of the popup window.
-        Assert.assertEquals("about:blank", urlList.get(onPageFinishedCount));
-        // Note that in this test we do not stop the navigation and we still navigate to the page
-        // that we wanted. The loaded page does not have the changed DOM. This is slightly different
-        // from the original workflow in b/19325392 as there is no good hook to stop navigation and
-        // trigger DidAccessInitialDocument at the same time.
-        Assert.assertTrue(urlList.get(onPageFinishedCount + 2).endsWith(popupPath));
-        Assert.assertTrue(urlList.get(onPageFinishedCount + 3).endsWith(popupPath));
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"AndroidWebView"})
-    @CommandLineFlags.Add("enable-features="
-            + AwFeatures.WEBVIEW_SYNTHESIZE_PAGE_LOAD_ONLY_ON_INITIAL_MAIN_DOCUMENT_ACCESS)
-    public void
-    testSynthesizedOnPageFinishedCalledOnceAfterDomModificationDuringNavigation() throws Throwable {
         final String popupPath = "/popup.html";
         final String parentPageHtml = CommonResources.makeHtmlPageFrom("",
                 "<script>"
@@ -387,7 +323,6 @@ public class PopupWindowTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @DisableIf.Build(sdk_is_greater_than = VERSION_CODES.Q, message = "https://crbug.com/1251900")
     public void testPopupWindowHasUserGestureForUserInitiated() throws Throwable {
         runPopupUserGestureTest(true);
     }
@@ -395,7 +330,6 @@ public class PopupWindowTest {
     @Test
     @SmallTest
     @Feature({"AndroidWebView"})
-    @DisableIf.Build(sdk_is_greater_than = VERSION_CODES.Q, message = "https://crbug.com/1251900")
     public void testPopupWindowHasUserGestureForUserInitiatedNoOpener() throws Throwable {
         runPopupUserGestureTest(false);
     }
@@ -424,7 +358,7 @@ public class PopupWindowTest {
         TestAwContentsClient.OnCreateWindowHelper onCreateWindowHelper =
                 mParentContentsClient.getOnCreateWindowHelper();
         int currentCallCount = onCreateWindowHelper.getCallCount();
-        DOMUtils.clickNode(mParentContents.getWebContents(), "link");
+        JSUtils.clickNodeWithUserGesture(mParentContents.getWebContents(), "link");
         onCreateWindowHelper.waitForCallback(
                 currentCallCount, 1, AwActivityTestRule.WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 
@@ -580,6 +514,13 @@ public class PopupWindowTest {
         Assert.assertNotNull("mainFrameReplyProxy should not be null.", mainFrameReplyProxy);
         Assert.assertNotNull("iframeReplyProxy should not be null.", iframeReplyProxy);
 
+        // Wait for the page to finish rendering entirely before
+        // attempting to click the iframe_link
+        // We need this because we're using the DOMUtils
+        // Long term we plan to switch to JSUtils to avoid this
+        // https://crbug.com/1334843
+        mParentContentsClient.getOnPageCommitVisibleHelper().waitForFirst();
+
         // Step 4. Click iframe_link to give user gesture.
         DOMUtils.clickRect(mParentContents.getWebContents(), rect);
 
@@ -588,13 +529,13 @@ public class PopupWindowTest {
         Assert.assertEquals("clicked", clicked.mMessage);
 
         // Step 6. Send an arbitrary message to call window.open on javascript: URI.
-        iframeReplyProxy.postMessage("hello");
+        iframeReplyProxy.postMessage(new MessagePayload("hello"));
         TestWebMessageListener.Data data = webMessageListener.waitForOnPostMessage();
         Assert.assertEquals("done", data.mMessage);
 
         // Step 7. Send an arbitrary message to trigger the check. Main frame will check if there is
         // an injected element by running |windowOpenJavaScript|.
-        mainFrameReplyProxy.postMessage("hello");
+        mainFrameReplyProxy.postMessage(new MessagePayload("hello"));
 
         // If |succeed| received, then there was no injection.
         TestWebMessageListener.Data data2 = webMessageListener.waitForOnPostMessage();

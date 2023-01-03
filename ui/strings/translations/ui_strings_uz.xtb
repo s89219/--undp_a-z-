@@ -6,6 +6,7 @@
 <translation id="1127811143501539442">{DAYS,plural, =1{1 kun oldin}other{# kun oldin}}</translation>
 <translation id="1156623771253174079">{SECONDS,plural, =1{1 daqiqa oldin}other{# daqiqa oldin}}</translation>
 <translation id="1169783199079129864">{MINUTES,plural, =1{1 daqiqa}other{# daqiqa}}</translation>
+<translation id="1181037720776840403">Olib tashlash</translation>
 <translation id="1243314992276662751">Yuklash</translation>
 <translation id="1266864766717917324"><ph name="CONTENT_TYPE" /> yuborilmadi</translation>
 <translation id="1269641567813814718">Win</translation>
@@ -52,7 +53,6 @@
 <translation id="2445449901874883781">Koʻproq oynalar</translation>
 <translation id="2482878487686419369">Bildirishnomalar</translation>
 <translation id="2497284189126895209">Barcha fayllar</translation>
-<translation id="2498950423397131220">Erkin</translation>
 <translation id="2515586267016047495">Alt</translation>
 <translation id="2522350507219695259">Kalibrlash yakunlandi</translation>
 <translation id="252373100621549798">Noma’lum displey</translation>

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,11 @@ using ::chromeos::FrameHeader;
 // positive x will make the window larger.
 bool IsRightEdge(int window_component) {
   return window_component == HTTOPRIGHT || window_component == HTRIGHT ||
+         window_component == HTBOTTOMRIGHT || window_component == HTGROWBOX;
+}
+
+bool IsBottomEdge(int window_component) {
+  return window_component == HTBOTTOMLEFT || window_component == HTBOTTOM ||
          window_component == HTBOTTOMRIGHT || window_component == HTGROWBOX;
 }
 
@@ -252,12 +257,6 @@ gfx::Rect WindowResizer::CalculateBoundsForDrag(
   return new_bounds;
 }
 
-// static
-bool WindowResizer::IsBottomEdge(int window_component) {
-  return window_component == HTBOTTOMLEFT || window_component == HTBOTTOM ||
-         window_component == HTBOTTOMRIGHT || window_component == HTGROWBOX;
-}
-
 void WindowResizer::SetBoundsDuringResize(const gfx::Rect& bounds) {
   aura::Window* window = GetTarget();
   DCHECK(window);
@@ -330,12 +329,14 @@ gfx::Point WindowResizer::GetOriginForDrag(int delta_x,
   if (pos_change_direction & kBoundsChangeDirection_Vertical)
     origin.Offset(0, delta_y);
 
-  // If the window gets respoitioned and changes to it's restored bounds,
+  // If the window gets repositioned and changes to it's restored bounds,
   // modify the origin so that the cursor remains within the dragged window.
   // The ratio of the new origin to the new location should match the ratio
-  // from the initial origin to the initial location.
+  // from the initial origin to the initial location. Floated windows do not
+  // change to their restore bounds while dragging, so we treat them as if they
+  // had no restore bounds.
   const gfx::Rect restore_bounds = details().restore_bounds_in_parent;
-  if (restore_bounds.IsEmpty())
+  if (restore_bounds.IsEmpty() || window_state_->IsFloated())
     return origin;
 
   // The ratios that should match is the (drag location x - bounds origin x) /
@@ -400,7 +401,10 @@ gfx::Size WindowResizer::GetSizeForDrag(int* delta_x, int* delta_y) {
                              : gfx::Size();
     size.SetSize(GetWidthForDrag(min_size.width(), delta_x),
                  GetHeightForDrag(min_size.height(), delta_y));
-  } else if (!details().restore_bounds_in_parent.IsEmpty()) {
+  } else if (!details().restore_bounds_in_parent.IsEmpty() &&
+             !window_state_->IsFloated()) {
+    // Floated windows remain the same size while dragging regardless of
+    // restored bounds.
     size = details().restore_bounds_in_parent.size();
   }
   return size;

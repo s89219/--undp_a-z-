@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,6 +48,8 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   static scoped_refptr<SiteInstanceImpl> CreateForGuest(
       BrowserContext* browser_context,
       const StoragePartitionConfig& partition_config);
+  static scoped_refptr<SiteInstanceImpl> CreateForFencedFrame(
+      SiteInstanceImpl* embedder_site_instance);
 
   // Similar to above, but creates an appropriate SiteInstance in a new
   // BrowsingInstance for a particular `url_info`. This is a more generic
@@ -57,11 +59,14 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   // newly SiteInstance and BrowsingInstance is for a <webview> guest. This is
   // used in site-isolated guests to support cross-BrowsingInstance navigations
   // within a guest; when true, the guest's StoragePartition information must
-  // also be provided in `url_info`.
+  // also be provided in `url_info`. `is_fenced` specifies if the
+  // BrowsingInstance is for a fenced frame, and is used to isolate them from
+  // non-fenced BrowsingInstances.
   static scoped_refptr<SiteInstanceImpl> CreateForUrlInfo(
       BrowserContext* browser_context,
       const UrlInfo& url_info,
-      bool is_guest);
+      bool is_guest,
+      bool is_fenced);
 
   // Creates a SiteInstance that will be use for a service worker.
   // `url_info` - The UrlInfo for the service worker. It contains the URL and
@@ -79,11 +84,14 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   //                       same process as the renderer for `url_info`.
   // `is_guest` - Set to true if the new SiteInstance is for a <webview>
   // guest.
+  // `is_fenced` - Set to true if the new SiteInstance is for a service worker
+  // initialized by a fenced frame.
   static scoped_refptr<SiteInstanceImpl> CreateForServiceWorker(
       BrowserContext* browser_context,
       const UrlInfo& url_info,
       bool can_reuse_process = false,
-      bool is_guest = false);
+      bool is_guest = false,
+      bool is_fenced = false);
 
   // Creates a SiteInstance for |url| like CreateForUrlInfo() would except the
   // instance that is returned has its process_reuse_policy set to
@@ -118,6 +126,11 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   // Returns an AgentSchedulingGroupHost, or creates one if
   // `site_instance_group_` doesn't have one.
   AgentSchedulingGroupHost& GetOrCreateAgentSchedulingGroup();
+
+  // Resets the `site_instance_group_` refptr, and must be called when its
+  // RenderProcessHost goes away. `site_instance_group_` can be reassigned later
+  // as needed.
+  void ResetSiteInstanceGroup();
 
   // SiteInstance implementation.
   SiteInstanceId GetId() override;
@@ -303,6 +316,12 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   void ConvertToDefaultOrSetSite(const UrlInfo& url_info);
 
   // Returns whether SetSite() has been called.
+  //
+  // In some cases, the "site" is not set at SiteInstance creation time, and
+  // instead it's set lazily when a navigation response is received and
+  // SiteInstance selection is finalized. This is to support better process
+  // sharing in case the site redirects to some other site: we want to use the
+  // destination site in the SiteInstance.
   bool HasSite() const;
 
   // Returns whether there is currently a related SiteInstance (registered with
@@ -350,6 +369,11 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   // RenderFrameHostManager.
   static GURL GetEffectiveURL(BrowserContext* browser_context, const GURL& url);
 
+  // True if |url| resolves to an effective URL that is different from |url|.
+  // See GetEffectiveURL().  This will be true for hosted apps as well as NTP
+  // URLs.
+  static bool HasEffectiveURL(BrowserContext* browser_context, const GURL& url);
+
   // Return an ID of the next BrowsingInstance to be created.  This ID is
   // guaranteed to be higher than any ID of an existing BrowsingInstance.
   // This is useful when process model decisions need to be scoped only to
@@ -380,10 +404,10 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   // instance (i.e. GetSiteInfo()). Otherwise returns false.
   bool DoesSiteInfoForURLMatch(const UrlInfo& url_info);
 
-  // Adds |origin| as a non-isolated origin within this BrowsingInstance due to
-  // an existing instance at the time of opt-in, so that future instances of it
-  // here won't be origin isolated.
-  void PreventOptInOriginIsolation(
+  // Adds |origin| as having the default isolation state within this
+  // BrowsingInstance due to an existing instance at the time of opt-in, so that
+  // future instances of it here won't be origin isolated.
+  void RegisterAsDefaultOriginIsolation(
       const url::Origin& previously_visited_origin);
 
   // Returns the web-exposed isolation status of the BrowsingInstance this
@@ -395,11 +419,19 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   bool IsCrossOriginIsolated() const;
 
   // Finds an existing SiteInstance in this SiteInstance's BrowsingInstance that
-  // matches this SiteInstance's SiteInfo but with the `is_sandboxed_` flag
-  // true. If an existing SiteInstance isn't found, a new one is created in the
-  // same BrowsingInstance. Note that this SiteInstance must have had its
-  // SiteInfo already assigned via SetSite() before calling this function.
-  scoped_refptr<SiteInstanceImpl> GetCompatibleSandboxedSiteInstance();
+  // matches this `url_info` but with the `is_sandboxed_` flag true. It's
+  // assumed that `url_info.url` is 'about:srcdoc' here, so the new SiteInstance
+  // will use `parent_origin`. If an existing SiteInstance isn't found, a new
+  // one is created in the same BrowsingInstance. Note that this SiteInstance
+  // must have had its SiteInfo already assigned via SetSite() before calling
+  // this function.
+  scoped_refptr<SiteInstanceImpl> GetCompatibleSandboxedSiteInstance(
+      const UrlInfo& url_info,
+      const url::Origin& parent_origin);
+
+  // Returns the process used by non-isolated sites in this SiteInstance's
+  // BrowsingInstance.
+  RenderProcessHost* GetDefaultProcessForBrowsingInstance();
 
  private:
   friend class BrowsingInstance;
@@ -413,6 +445,9 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   explicit SiteInstanceImpl(BrowsingInstance* browsing_instance);
 
   ~SiteInstanceImpl() override;
+
+  // Returns true when |this| has a SiteInstanceGroup.
+  bool has_group() { return group() != nullptr; }
 
   // Used to restrict a process' origin access rights. This method gets called
   // when a process gets assigned to this SiteInstance and when the
@@ -476,11 +511,6 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
                          const UrlInfo& dest_url_info,
                          bool should_compare_effective_urls);
 
-  // True if |url| resolves to an effective URL that is different from |url|.
-  // See GetEffectiveURL().  This will be true for hosted apps as well as NTP
-  // URLs.
-  static bool HasEffectiveURL(BrowserContext* browser_context, const GURL& url);
-
   // Returns true if |url| and its |site_url| can be placed inside a default
   // SiteInstance.
   //
@@ -502,6 +532,8 @@ class CONTENT_EXPORT SiteInstanceImpl final : public SiteInstance {
   // `site_instance_group_` is set when a RenderProcessHost is set for this
   // SiteInstance, and will be how `this` gets its RenderProcessHost and
   // AgentSchedulingGroup.
+  // If the RenderProcessHost goes away, `site_instance_group_` will get reset.
+  // It can be set to another group later on as needed.
   // See the class-level comment of SiteInstanceGroup for more details.
   scoped_refptr<SiteInstanceGroup> site_instance_group_;
 

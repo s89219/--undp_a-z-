@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,6 +38,7 @@ import org.chromium.components.feature_engagement.FeatureConstants;
 import org.chromium.components.feature_engagement.Tracker;
 import org.chromium.components.prefs.PrefService;
 import org.chromium.components.user_prefs.UserPrefs;
+import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.UiThreadTaskTraits;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.widget.LoadingView;
@@ -82,6 +83,8 @@ public class WebFeedFollowIntroController {
             "intro-appearance-threshold-minutes";
     // Time between appearances for the same WebFeedId.
     private static final long WEB_FEED_ID_APPEARANCE_THRESHOLD_MILLIS = TimeUnit.DAYS.toMillis(1);
+    // Maximum number of times a WebFeedId is promoted.
+    private static final long WEB_FEED_ID_MAX_APPEARANCES = 3;
 
     /** Clock to use so we can mock time in tests. */
     public interface Clock {
@@ -99,6 +102,8 @@ public class WebFeedFollowIntroController {
     private final WebFeedSnackbarController mWebFeedSnackbarController;
     private final WebFeedFollowIntroView mWebFeedFollowIntroView;
     private final ObservableSupplier<Tab> mTabSupplier;
+    private final WebFeedRecommendationFollowAcceleratorController
+            mRecommendationFollowAcceleratorController;
     private final RecommendationInfoFetcher mRecommendationFetcher =
             new RecommendationInfoFetcher(mPrefService);
 
@@ -127,6 +132,11 @@ public class WebFeedFollowIntroController {
             ObservableSupplier<Tab> tabSupplier, View menuButtonAnchorView,
             FeedLauncher feedLauncher, ModalDialogManager dialogManager,
             SnackbarManager snackbarManager) {
+        mRecommendationFollowAcceleratorController =
+                new WebFeedRecommendationFollowAcceleratorController(activity, appMenuHandler,
+                        tabSupplier, menuButtonAnchorView, feedLauncher, dialogManager,
+                        snackbarManager);
+
         mActivity = activity;
         mTabSupplier = tabSupplier;
         mFeatureEngagementTracker =
@@ -144,7 +154,15 @@ public class WebFeedFollowIntroController {
             @Override
             public void onPageLoadStarted(Tab tab, GURL url) {
                 mRecommendationFetcher.abort();
+                mRecommendationFollowAcceleratorController.dismissBubble();
                 mWebFeedFollowIntroView.dismissBubble();
+            }
+
+            @Override
+            public void onDidFinishNavigationInPrimaryMainFrame(
+                    Tab tab, NavigationHandle navigationHandle) {
+                mRecommendationFollowAcceleratorController.onDidFinishNavigation(
+                        tab, navigationHandle);
             }
 
             @Override
@@ -163,6 +181,12 @@ public class WebFeedFollowIntroController {
                                     + url.getValidSpecOrEmpty());
                     return;
                 }
+
+                if (mRecommendationFollowAcceleratorController.showIfPageIsFromRecommendation(
+                            tab)) {
+                    return;
+                }
+
                 mRecommendationFetcher.beginFetch(tab, url, result -> {
                     if (result != null) {
                         maybeShowFollowIntro(result);
@@ -182,6 +206,10 @@ public class WebFeedFollowIntroController {
             mSharedPreferencesManager.writeLong(
                     getWebFeedIntroWebFeedIdShownTimeMsKey(recommendedInfo.webFeedId),
                     currentTimeMillis);
+
+            String showCountKey = getWebFeedIntroWebFeedIdShownCountKey(recommendedInfo.webFeedId);
+            long readCountBefore = mSharedPreferencesManager.readLong(showCountKey);
+            mSharedPreferencesManager.writeLong(showCountKey, readCountBefore + 1);
         }
         Log.i(TAG, "Allowed intro: all requirements met");
     }
@@ -267,6 +295,7 @@ public class WebFeedFollowIntroController {
                 StreamKind.UNKNOWN, FeedUserActionType.TAPPED_FOLLOW_ON_FOLLOW_ACCELERATOR);
         GURL url = currentTab.getUrl();
         WebFeedBridge.followFromUrl(currentTab, url,
+                WebFeedBridge.CHANGE_REASON_WEB_PAGE_ACCELERATOR,
                 results -> mWebFeedFollowIntroView.hideLoadingUI(new LoadingView.Observer() {
                     @Override
                     public void onShowLoadingUIComplete() {}
@@ -278,8 +307,9 @@ public class WebFeedFollowIntroController {
                             mWebFeedFollowIntroView.showFollowingBubble();
                         }
                         byte[] followId = results.metadata != null ? results.metadata.id : null;
-                        mWebFeedSnackbarController.showPostFollowHelp(
-                                currentTab, results, followId, url, recommendedInfo.title);
+                        mWebFeedSnackbarController.showPostFollowHelp(currentTab, results, followId,
+                                url, recommendedInfo.title,
+                                WebFeedBridge.CHANGE_REASON_WEB_PAGE_ACCELERATOR);
                     }
                 }));
     }
@@ -305,13 +335,18 @@ public class WebFeedFollowIntroController {
         long timeSinceLastShownForWebFeed = currentTimeMillis
                 - mSharedPreferencesManager.readLong(
                         getWebFeedIntroWebFeedIdShownTimeMsKey(recommendedInfo.webFeedId));
-        if ((timeSinceLastShown < mAppearanceThresholdMillis)
-                || (timeSinceLastShownForWebFeed < WEB_FEED_ID_APPEARANCE_THRESHOLD_MILLIS)) {
+        long previousShowCount = mSharedPreferencesManager.readLong(
+                getWebFeedIntroWebFeedIdShownCountKey(recommendedInfo.webFeedId));
+        if (timeSinceLastShown < mAppearanceThresholdMillis
+                || timeSinceLastShownForWebFeed < WEB_FEED_ID_APPEARANCE_THRESHOLD_MILLIS
+                || previousShowCount >= WEB_FEED_ID_MAX_APPEARANCES) {
             Log.i(TAG,
                     "No intro: enoughTimeSinceLastShown=%s, "
-                            + "enoughTimeSinceLastShownForWebFeed=%s",
+                            + "enoughTimeSinceLastShownForWebFeed=%s"
+                            + "tooManyShows=%s",
                     timeSinceLastShown > mAppearanceThresholdMillis,
-                    timeSinceLastShownForWebFeed > WEB_FEED_ID_APPEARANCE_THRESHOLD_MILLIS);
+                    timeSinceLastShownForWebFeed > WEB_FEED_ID_APPEARANCE_THRESHOLD_MILLIS,
+                    previousShowCount >= WEB_FEED_ID_MAX_APPEARANCES);
             return false;
         }
 
@@ -323,9 +358,18 @@ public class WebFeedFollowIntroController {
                 Base64.encodeToString(webFeedId, Base64.DEFAULT));
     }
 
+    private static String getWebFeedIntroWebFeedIdShownCountKey(byte[] webFeedId) {
+        return ChromePreferenceKeys.WEB_FEED_INTRO_WEB_FEED_ID_SHOWN_COUNT_PREFIX.createKey(
+                Base64.encodeToString(webFeedId, Base64.DEFAULT));
+    }
+
     @VisibleForTesting
     boolean getIntroShownForTesting() {
         return mIntroShownForTesting;
+    }
+    @VisibleForTesting
+    void clearIntroShownForTesting() {
+        mIntroShownForTesting = false;
     }
 
     @VisibleForTesting
@@ -336,6 +380,12 @@ public class WebFeedFollowIntroController {
     @VisibleForTesting
     void setClockForTesting(Clock clock) {
         mClock = clock;
+    }
+
+    @VisibleForTesting
+    WebFeedRecommendationFollowAcceleratorController
+    getRecommendationFollowAcceleratorController() {
+        return mRecommendationFollowAcceleratorController;
     }
 
     private static class RecommendationInfoFetcher {

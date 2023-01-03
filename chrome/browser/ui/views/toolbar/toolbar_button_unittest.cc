@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,7 +67,7 @@ class CheckActiveWebContentsMenuModel : public ui::SimpleMenuModel {
   ~CheckActiveWebContentsMenuModel() override = default;
 
   // ui::SimpleMenuModel:
-  int GetItemCount() const override {
+  size_t GetItemCount() const override {
     EXPECT_TRUE(tab_strip_model_->GetActiveWebContents());
     return 0;
   }

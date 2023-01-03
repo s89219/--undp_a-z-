@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/completion_repeating_callback.h"
 #include "net/base/host_port_pair.h"
@@ -44,7 +44,7 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocket : public ProxyClientSocket {
                         const std::string& user_agent,
                         const HostPortPair& endpoint,
                         const ProxyServer& proxy_server,
-                        HttpAuthController* http_auth_controller,
+                        scoped_refptr<HttpAuthController> http_auth_controller,
                         ProxyDelegate* proxy_delegate,
                         const NetworkTrafficAnnotationTag& traffic_annotation);
 
@@ -128,7 +128,7 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocket : public ProxyClientSocket {
   bool CheckDone();
 
   CompletionRepeatingCallback io_callback_;
-  State next_state_;
+  State next_state_ = STATE_NONE;
 
   // Stores the callback provided by the caller of async operations.
   CompletionOnceCallback user_callback_;
@@ -144,7 +144,7 @@ class NET_EXPORT_PRIVATE HttpProxyClientSocket : public ProxyClientSocket {
 
   // Whether or not |socket_| has been previously used. Once auth credentials
   // are sent, set to true.
-  bool is_reused_;
+  bool is_reused_ = false;
 
   // The hostname and port of the endpoint.  This is not necessarily the one
   // specified by the URL, due to Alternate-Protocol or fixed testing ports.

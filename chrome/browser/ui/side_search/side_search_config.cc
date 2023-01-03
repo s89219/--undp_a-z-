@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,9 @@ void ApplyDSEConfiguration(Profile* profile, SideSearchConfig& config) {
       [](Profile* profile, const GURL& url) {
         const auto* template_url_service =
             TemplateURLServiceFactory::GetForProfile(profile);
-        return template_url_service
+
+        return template_url_service &&
+               template_url_service
                    ->IsSideSearchSupportedForDefaultSearchProvider() &&
                template_url_service
                    ->IsSearchResultsPageFromDefaultSearchProvider(url);
@@ -49,7 +51,8 @@ void ApplyDSEConfiguration(Profile* profile, SideSearchConfig& config) {
       [](Profile* profile, const GURL& url) {
         const auto* template_url_service =
             TemplateURLServiceFactory::GetForProfile(profile);
-        return template_url_service
+        return template_url_service &&
+               template_url_service
                    ->IsSideSearchSupportedForDefaultSearchProvider() &&
                !template_url_service
                     ->IsSearchResultsPageFromDefaultSearchProvider(url) &&
@@ -136,6 +139,9 @@ SideSearchConfig* SideSearchConfig::Get(content::BrowserContext* context) {
 }
 
 void SideSearchConfig::OnTemplateURLServiceChanged() {
+  if (skip_on_template_url_changed_)
+    return;
+
   const auto* default_template_url =
       TemplateURLServiceFactory::GetForProfile(profile_)
           ->GetDefaultSearchProvider();
@@ -201,7 +207,6 @@ void SideSearchConfig::RemoveObserver(Observer* observer) {
 void SideSearchConfig::ResetStateAndNotifyConfigChanged() {
   // Reset the availabiliy bit before propagating notifications.
   is_side_panel_srp_available_ = false;
-  should_show_page_action_label_ = true;
 
   for (auto& observer : observers_)
     observer.OnSideSearchConfigChanged();

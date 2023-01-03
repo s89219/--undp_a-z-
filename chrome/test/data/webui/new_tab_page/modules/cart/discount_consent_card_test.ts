@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,11 @@ import 'chrome://new-tab-page/lazy_load.js';
 import 'chrome://webui-test/mojo_webui_test_support.js';
 
 import {DiscountConsentCard} from 'chrome://new-tab-page/lazy_load.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks} from 'chrome://webui-test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
-import {fakeMetricsPrivate} from '../../metrics_test_support.js';
+import {fakeMetricsPrivate} from '../../../metrics_test_support.js';
 import {assertStyle} from '../../test_support.js';
 
 suite('NewTabPageDiscountConsentCartTest', () => {
@@ -28,7 +28,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
 
   let discountConsentCard: DiscountConsentCard;
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     discountConsentCard = document.createElement('discount-consent-card');
     document.body.appendChild(discountConsentCard);
 
@@ -40,16 +40,17 @@ suite('NewTabPageDiscountConsentCartTest', () => {
       merchant: 'Amazon',
       cartUrl: {url: 'https://amazon.com'},
       productImageUrls: [
-        {url: 'https://image1.com'}, {url: 'https://image2.com'},
-        {url: 'https://image3.com'}
+        {url: 'https://image1.com'},
+        {url: 'https://image2.com'},
+        {url: 'https://image3.com'},
       ],
-      discountText: ''
+      discountText: '',
     }];
 
     discountConsentCard.merchants = cart;
     await flushTasks();
 
-    var contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
+    const contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
         '#contentSteps .step-container');
     assertEquals(contentSteps.length, 2);
     assertEquals(
@@ -67,7 +68,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
   });
 
   test('Verify clicking continue button shows step 2 inline', () => {
-    var contentSelectedPage = discountConsentCard.shadowRoot!.querySelectorAll(
+    let contentSelectedPage = discountConsentCard.shadowRoot!.querySelectorAll(
         '#contentSteps .iron-selected');
     assertEquals(contentSelectedPage.length, 1);
     assertEquals(
@@ -101,7 +102,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
 
   test(
       'Verify "Continue" button emits discount-consent-continued event', () => {
-        var capturedEvent = false;
+        let capturedEvent = false;
         discountConsentCard.addEventListener(
             'discount-consent-continued', () => capturedEvent = true);
 
@@ -119,7 +120,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
       () => {
         discountConsentCard.currentStep = 1;
 
-        var capturedEvent = false;
+        let capturedEvent = false;
         discountConsentCard.addEventListener(
             'discount-consent-accepted', () => capturedEvent = true);
 
@@ -143,7 +144,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
         discountConsentCard.currentStep = 1;
         await flushTasks();
 
-        var capturedEvent = false;
+        let capturedEvent = false;
         discountConsentCard.addEventListener(
             'discount-consent-rejected', () => capturedEvent = true);
 
@@ -162,8 +163,8 @@ suite('NewTabPageDiscountConsentCartTest', () => {
       });
 
   function buildFaviconUrl(merchantUrl: string): string {
-    return 'chrome://favicon2/?size=20&scale_factor=1x&show_fallback_monogram=&page_url=' +
-        encodeURIComponent(merchantUrl);
+    const query = '?size=20&scaleFactor=1x&showFallbackMonogram=&pageUrl=';
+    return `chrome://favicon2/${query}${encodeURIComponent(merchantUrl)}`;
   }
 
   test('Verify favicon is loaded', async () => {
@@ -172,24 +173,25 @@ suite('NewTabPageDiscountConsentCartTest', () => {
         merchant: 'Amazon',
         cartUrl: {url: 'https://amazon.com'},
         productImageUrls: [
-          {url: 'https://image1.com'}, {url: 'https://image2.com'},
-          {url: 'https://image3.com'}
+          {url: 'https://image1.com'},
+          {url: 'https://image2.com'},
+          {url: 'https://image3.com'},
         ],
-        discountText: ''
+        discountText: '',
       },
       {
         merchant: 'eBay',
         cartUrl: {url: 'https://ebay.com'},
         productImageUrls:
             [{url: 'https://image4.com'}, {url: 'https://image5.com'}],
-        discountText: ''
+        discountText: '',
       },
       {
         merchant: 'BestBuy',
         cartUrl: {url: 'https://bestbuy.com'},
         productImageUrls: [],
-        discountText: ''
-      }
+        discountText: '',
+      },
     ];
 
     discountConsentCard.merchants = carts;
@@ -264,7 +266,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
           discountConsentCard.currentStep = 0;
           await flushTasks();
 
-          var capturedEvent = false;
+          let capturedEvent = false;
           discountConsentCard.addEventListener(
               'discount-consent-dismissed', () => capturedEvent = true);
 
@@ -281,7 +283,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
           discountConsentCard.currentStep = 1;
           await flushTasks();
 
-          var capturedEvent = false;
+          let capturedEvent = false;
           discountConsentCard.addEventListener(
               'discount-consent-rejected', () => capturedEvent = true);
 
@@ -296,7 +298,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
     suiteSetup(() => {
       loadTimeData.overrideValues({
         modulesCartConsentStepTwoDifferentColor: true,
-        modulesCartDiscountInlineCardShowCloseButton: false
+        modulesCartDiscountInlineCardShowCloseButton: false,
       });
     });
 
@@ -318,7 +320,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
         modulesCartConsentStepOneTwoMerchantsContent:
             'Two merchants: $1 and $2',
         modulesCartConsentStepOneThreeMerchantsContent:
-            'Three merchants: $1, $2, and more'
+            'Three merchants: $1, $2, and more',
       });
     });
 
@@ -327,16 +329,17 @@ suite('NewTabPageDiscountConsentCartTest', () => {
         merchant: 'Amazon',
         cartUrl: {url: 'https://amazon.com'},
         productImageUrls: [
-          {url: 'https://image1.com'}, {url: 'https://image2.com'},
-          {url: 'https://image3.com'}
+          {url: 'https://image1.com'},
+          {url: 'https://image2.com'},
+          {url: 'https://image3.com'},
         ],
-        discountText: ''
+        discountText: '',
       }];
 
       discountConsentCard.merchants = cart;
       await flushTasks();
 
-      var contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
+      const contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
           '#contentSteps .step-container');
 
       assertEquals(
@@ -353,24 +356,25 @@ suite('NewTabPageDiscountConsentCartTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
-          discountText: ''
+          discountText: '',
         },
         {
           merchant: 'eBay',
           cartUrl: {url: 'https://ebay.com'},
           productImageUrls:
               [{url: 'https://image4.com'}, {url: 'https://image5.com'}],
-          discountText: ''
-        }
+          discountText: '',
+        },
       ];
 
       discountConsentCard.merchants = carts;
       await flushTasks();
 
-      var contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
+      const contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
           '#contentSteps .step-container');
 
       assertEquals(
@@ -389,30 +393,31 @@ suite('NewTabPageDiscountConsentCartTest', () => {
               merchant: 'Amazon',
               cartUrl: {url: 'https://amazon.com'},
               productImageUrls: [
-                {url: 'https://image1.com'}, {url: 'https://image2.com'},
-                {url: 'https://image3.com'}
+                {url: 'https://image1.com'},
+                {url: 'https://image2.com'},
+                {url: 'https://image3.com'},
               ],
-              discountText: ''
+              discountText: '',
             },
             {
               merchant: 'eBay',
               cartUrl: {url: 'https://ebay.com'},
               productImageUrls:
                   [{url: 'https://image4.com'}, {url: 'https://image5.com'}],
-              discountText: ''
+              discountText: '',
             },
             {
               merchant: 'BestBuy',
               cartUrl: {url: 'https://bestbuy.com'},
               productImageUrls: [],
-              discountText: ''
-            }
+              discountText: '',
+            },
           ];
 
           discountConsentCard.merchants = carts;
           await flushTasks();
 
-          var contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
+          const contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
               '#contentSteps .step-container');
 
           assertEquals(
@@ -426,20 +431,21 @@ suite('NewTabPageDiscountConsentCartTest', () => {
     test(
         'Verify step one content updated when merchant cart changed',
         async () => {
-          var carts = [{
+          const carts = [{
             merchant: 'Amazon',
             cartUrl: {url: 'https://amazon.com'},
             productImageUrls: [
-              {url: 'https://image1.com'}, {url: 'https://image2.com'},
-              {url: 'https://image3.com'}
+              {url: 'https://image1.com'},
+              {url: 'https://image2.com'},
+              {url: 'https://image3.com'},
             ],
-            discountText: ''
+            discountText: '',
           }];
 
           discountConsentCard.merchants = carts;
           await flushTasks();
 
-          var contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
+          let contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
               '#contentSteps .step-container');
 
           assertEquals(
@@ -454,18 +460,19 @@ suite('NewTabPageDiscountConsentCartTest', () => {
               merchant: 'Amazon',
               cartUrl: {url: 'https://amazon.com'},
               productImageUrls: [
-                {url: 'https://image1.com'}, {url: 'https://image2.com'},
-                {url: 'https://image3.com'}
+                {url: 'https://image1.com'},
+                {url: 'https://image2.com'},
+                {url: 'https://image3.com'},
               ],
-              discountText: ''
+              discountText: '',
             },
             {
               merchant: 'eBay',
               cartUrl: {url: 'https://ebay.com'},
               productImageUrls:
                   [{url: 'https://image4.com'}, {url: 'https://image5.com'}],
-              discountText: ''
-            }
+              discountText: '',
+            },
           ];
 
           await flushTasks();
@@ -486,7 +493,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
     suiteSetup(() => {
       loadTimeData.overrideValues({
         modulesCartDiscountConsentVariation: 3,
-        modulesCartSentence: 'Dialog title'
+        modulesCartSentence: 'Dialog title',
       });
     });
 
@@ -495,16 +502,17 @@ suite('NewTabPageDiscountConsentCartTest', () => {
         merchant: 'Amazon',
         cartUrl: {url: 'https://amazon.com'},
         productImageUrls: [
-          {url: 'https://image1.com'}, {url: 'https://image2.com'},
-          {url: 'https://image3.com'}
+          {url: 'https://image1.com'},
+          {url: 'https://image2.com'},
+          {url: 'https://image3.com'},
         ],
-        discountText: ''
+        discountText: '',
       }];
 
       discountConsentCard.merchants = cart;
       await flushTasks();
 
-      var contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
+      const contentSteps = discountConsentCard.shadowRoot!.querySelectorAll(
           '#contentSteps .step-container');
       assertEquals(contentSteps.length, 1);
 
@@ -522,7 +530,7 @@ suite('NewTabPageDiscountConsentCartTest', () => {
                   .querySelectorAll('#discountConsentDialog')
                   .length);
 
-          var contentSelectedPage =
+          const contentSelectedPage =
               discountConsentCard.shadowRoot!.querySelectorAll(
                   '#contentSteps .iron-selected');
           assertEquals(contentSelectedPage.length, 1);

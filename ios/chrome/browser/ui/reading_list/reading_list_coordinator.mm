@@ -1,28 +1,27 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/reading_list/reading_list_coordinator.h"
 
 #import "base/ios/ios_util.h"
-#include "base/metrics/histogram_macros.h"
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
-#include "base/strings/sys_string_conversions.h"
-#include "components/feature_engagement/public/event_constants.h"
-#include "components/feature_engagement/public/tracker.h"
-#include "components/reading_list/core/reading_list_entry.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
-#include "ios/chrome/browser/favicon/ios_chrome_favicon_loader_factory.h"
-#include "ios/chrome/browser/favicon/ios_chrome_large_icon_service_factory.h"
-#include "ios/chrome/browser/feature_engagement/tracker_factory.h"
-#include "ios/chrome/browser/main/browser.h"
+#import "base/metrics/histogram_macros.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
+#import "base/strings/sys_string_conversions.h"
+#import "components/feature_engagement/public/event_constants.h"
+#import "components/feature_engagement/public/tracker.h"
+#import "components/reading_list/core/reading_list_entry.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/favicon/ios_chrome_favicon_loader_factory.h"
+#import "ios/chrome/browser/favicon/ios_chrome_large_icon_service_factory.h"
+#import "ios/chrome/browser/feature_engagement/tracker_factory.h"
+#import "ios/chrome/browser/main/browser.h"
 #import "ios/chrome/browser/metrics/new_tab_page_uma.h"
 #import "ios/chrome/browser/policy/policy_util.h"
 #import "ios/chrome/browser/reading_list/offline_page_tab_helper.h"
-#include "ios/chrome/browser/reading_list/offline_url_utils.h"
-#include "ios/chrome/browser/reading_list/reading_list_model_factory.h"
+#import "ios/chrome/browser/reading_list/offline_url_utils.h"
+#import "ios/chrome/browser/reading_list/reading_list_model_factory.h"
 #import "ios/chrome/browser/ui/activity_services/activity_params.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/command_dispatcher.h"
@@ -43,18 +42,19 @@
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller.h"
 #import "ios/chrome/browser/ui/table_view/table_view_navigation_controller_constants.h"
 #import "ios/chrome/browser/ui/table_view/table_view_presentation_controller.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/pasteboard_util.h"
+#import "ios/chrome/browser/url/chrome_url_constants.h"
 #import "ios/chrome/browser/url_loading/url_loading_browser_agent.h"
 #import "ios/chrome/browser/url_loading/url_loading_params.h"
-#include "ios/chrome/browser/web_state_list/web_state_list.h"
+#import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/chrome/browser/window_activities/window_activity_helpers.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ios/web/common/features.h"
-#include "ios/web/public/navigation/referrer.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/strings/grit/ui_strings.h"
-#include "url/gurl.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ios/web/common/features.h"
+#import "ios/web/public/navigation/referrer.h"
+#import "ui/base/l10n/l10n_util.h"
+#import "ui/strings/grit/ui_strings.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -116,7 +116,7 @@
 
   itemFactory.accessibilityDelegate = self.tableViewController;
 
-  // Add the "Done" button and hook it up to |stop|.
+  // Add the "Done" button and hook it up to `stop`.
   UIBarButtonItem* dismissButton = [[UIBarButtonItem alloc]
       initWithBarButtonSystemItem:UIBarButtonSystemItemDone
                            target:self
@@ -129,7 +129,7 @@
   self.navigationController = [[TableViewNavigationController alloc]
       initWithTable:self.tableViewController];
 
-  // The initial call to |readingListHasItems:| may have been received before
+  // The initial call to `readingListHasItems:` may have been received before
   // all UI elements were initialized. Call the callback directly to set up
   // everything correctly.
   [self readingListHasItems:self.mediator.hasElements];
@@ -277,13 +277,13 @@ animationControllerForDismissedController:(UIViewController*)dismissed {
 
 #pragma mark - URL Loading Helpers
 
-// Loads reading list URLs. If |offlineURL| is valid and |loadOfflineVersion| is
-// true, the item will be loaded offline; otherwise |entryURL| is loaded.
-// |newTab| and |incognito| can be used to optionally open the URL in a new tab
+// Loads reading list URLs. If `offlineURL` is valid and `loadOfflineVersion` is
+// true, the item will be loaded offline; otherwise `entryURL` is loaded.
+// `newTab` and `incognito` can be used to optionally open the URL in a new tab
 // or in incognito.  The coordinator is also stopped after the load is
 // requested.
-// NOTE: |loadOfflineVersion| may not be used with |inNewTab|.
-// TODO(crbug.com/1313458):  Remove |inNewTab| and |withOfflineURL| when
+// NOTE: `loadOfflineVersion` may not be used with `inNewTab`.
+// TODO(crbug.com/1313458):  Remove `inNewTab` and `withOfflineURL` when
 // migration is complete.
 - (void)loadEntryURL:(const GURL&)entryURL
         withOfflineURL:(const GURL&)offlineURL
@@ -341,8 +341,6 @@ animationControllerForDismissedController:(UIViewController*)dismissed {
 
   if (loadOfflineVersion) {
     DCHECK(!newTab);
-    web::WebState* activeWebState =
-        self.browser->GetWebStateList()->GetActiveWebState();
     OfflinePageTabHelper* offlinePageTabHelper =
         OfflinePageTabHelper::FromWebState(activeWebState);
     if (offlinePageTabHelper &&
@@ -377,8 +375,7 @@ animationControllerForDismissedController:(UIViewController*)dismissed {
 
   if (entry->DistilledState() == ReadingListEntry::PROCESSED) {
     const GURL entryURL = entry->URL();
-    GURL offlineURL = reading_list::OfflineURLForPath(
-        entry->DistilledPath(), entryURL, entry->DistilledURL());
+    GURL offlineURL = reading_list::OfflineURLForURL(entryURL);
 
     if (web::features::IsLoadSimulatedRequestAPIEnabled()) {
       [self loadEntryURL:entryURL
@@ -415,11 +412,11 @@ animationControllerForDismissedController:(UIViewController*)dismissed {
         ReadingListCoordinator* strongSelf = weakSelf;
 
         // Record that this context menu was shown to the user.
-        RecordMenuShown(MenuScenario::kReadingListEntry);
+        RecordMenuShown(MenuScenarioHistogram::kReadingListEntry);
 
         BrowserActionFactory* actionFactory = [[BrowserActionFactory alloc]
             initWithBrowser:strongSelf.browser
-                   scenario:MenuScenario::kReadingListEntry];
+                   scenario:MenuScenarioHistogram::kReadingListEntry];
 
         NSMutableArray<UIMenuElement*>* menuElements =
             [[NSMutableArray alloc] init];
@@ -456,7 +453,7 @@ animationControllerForDismissedController:(UIViewController*)dismissed {
         [menuElements addObject:openInNewIncognitoTab];
 
         const ReadingListEntry* entry = [self.mediator entryFromItem:item];
-        if (entry->DistilledState() == ReadingListEntry::PROCESSED) {
+        if (entry && entry->DistilledState() == ReadingListEntry::PROCESSED) {
           [menuElements
               addObject:[actionFactory
                             actionToOpenOfflineVersionInNewTabWithBlock:^{
@@ -507,8 +504,8 @@ animationControllerForDismissedController:(UIViewController*)dismissed {
 
 #pragma mark - Private
 
-// Triggers the URL sharing flow for the given |URL| and |title|, with the
-// origin |view| representing the UI component for that URL.
+// Triggers the URL sharing flow for the given `URL` and `title`, with the
+// origin `view` representing the UI component for that URL.
 - (void)shareURL:(const GURL&)URL
            title:(NSString*)title
         fromView:(UIView*)view {

@@ -1,4 +1,4 @@
-# Copyright 2019 The Chromium Authors. All rights reserved.
+# Copyright 2019 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,13 +7,14 @@ import("//tools/polymer/html_to_js.gni")
 import("../os_settings.gni")
 
 js_type_check("closure_compile_module") {
-  closure_flags = os_settings_closure_flags
+  closure_flags = os_settings_closure_flags + mojom_js_args
   is_polymer3 = true
   deps = [
     ":account_manager",
     ":account_manager_browser_proxy",
     ":fingerprint_browser_proxy",
     ":fingerprint_list",
+    ":local_data_recovery_dialog",
     ":lock_screen",
     ":lock_screen_password_prompt_dialog",
     ":lock_state_behavior",
@@ -29,22 +30,22 @@ js_type_check("closure_compile_module") {
 }
 
 js_library("account_manager_browser_proxy") {
-  deps = [ "//ui/webui/resources/js:cr.m" ]
+  deps = [ "//ash/webui/common/resources:cr.m" ]
 }
 
 js_library("account_manager") {
   deps = [
     ":account_manager_browser_proxy",
     "..:deep_linking_behavior",
+    "..:icon",
     "..:metrics_recorder",
     "..:os_route",
     "..:route_observer_behavior",
-    "../..:router",
+    "..:router",
+    "//ash/webui/common/resources:cr.m",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/js:cr.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
-    "//ui/webui/resources/js:icon",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
   ]
 
   externs_list = [
@@ -54,8 +55,8 @@ js_library("account_manager") {
 
 js_library("fingerprint_browser_proxy") {
   deps = [
+    "//ash/webui/common/resources:cr.m",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/js:cr.m",
   ]
 }
 
@@ -66,15 +67,22 @@ js_library("fingerprint_list") {
     "..:metrics_recorder",
     "..:os_route",
     "..:route_observer_behavior",
-    "../..:router",
+    "..:router",
+    "//ash/webui/common/resources:assert",
+    "//ash/webui/common/resources:cr.m",
+    "//ash/webui/common/resources:focus_without_ink_js",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
     "//third_party/polymer/v3_0/components-chromium/iron-resizable-behavior:iron-resizable-behavior",
     "//third_party/polymer/v3_0/components-chromium/paper-ripple:paper-ripple",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/js:assert.m",
-    "//ui/webui/resources/js:cr.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
-    "//ui/webui/resources/js/cr/ui:focus_without_ink.m",
+  ]
+}
+
+js_library("local_data_recovery_dialog") {
+  deps = [
+    "//ash/webui/common/resources:i18n_behavior",
+    "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
   ]
 }
 
@@ -86,16 +94,16 @@ js_library("lock_screen") {
     "..:deep_linking_behavior",
     "..:os_route",
     "..:route_observer_behavior",
-    "../..:router",
+    "..:router",
     "../multidevice_page:multidevice_smartlock_item",
+    "//ash/webui/common/resources:assert",
+    "//ash/webui/common/resources:focus_without_ink_js",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources:load_time_data.m",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
+    "//ash/webui/common/resources/quick_unlock:lock_screen_constants",
+    "//chromeos/ash/services/auth_factor_config/public/mojom:mojom_webui_js",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_components/chromeos/quick_unlock:lock_screen_constants.m",
-    "//ui/webui/resources/js:assert.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
-    "//ui/webui/resources/js:load_time_data.m",
-    "//ui/webui/resources/js:plural_string_proxy",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
-    "//ui/webui/resources/js/cr/ui:focus_without_ink.m",
   ]
   externs_list = [ "../settings_controls_types.js" ]
 }
@@ -103,18 +111,19 @@ js_library("lock_screen") {
 js_library("lock_screen_password_prompt_dialog") {
   deps = [
     ":lock_state_behavior",
+    "//ash/webui/common/resources/quick_unlock:lock_screen_constants",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_components/chromeos/quick_unlock:lock_screen_constants.m",
   ]
 }
 
 js_library("lock_state_behavior") {
   deps = [
-    "../..:router",
+    "..:router",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources:load_time_data.m",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
+    "//chromeos/ash/services/auth_factor_config/public/mojom:mojom_webui_js",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/js:i18n_behavior.m",
-    "//ui/webui/resources/js:load_time_data.m",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
   ]
   externs_list = [ "$externs_path/quick_unlock_private.js" ]
   extra_sources = [ "$interfaces_path/quick_unlock_private_interface.js" ]
@@ -127,20 +136,19 @@ js_library("os_people_page") {
     ":lock_state_behavior",
     ":os_sync_controls",
     "..:deep_linking_behavior",
+    "..:icon",
     "..:os_page_visibility",
     "..:os_route",
     "..:route_observer_behavior",
-    "../..:router",
-    "../parental_controls_page:parental_controls_page",
+    "..:router",
+    "//ash/webui/common/resources:assert",
+    "//ash/webui/common/resources:focus_without_ink_js",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources:load_time_data.m",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
+    "//ash/webui/common/resources/cr_picture:png",
+    "//ash/webui/common/resources/quick_unlock:lock_screen_constants",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_components/chromeos/quick_unlock:lock_screen_constants.m",
-    "//ui/webui/resources/cr_elements/chromeos/cr_picture:png",
-    "//ui/webui/resources/js:assert.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
-    "//ui/webui/resources/js:icon",
-    "//ui/webui/resources/js:load_time_data.m",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
-    "//ui/webui/resources/js/cr/ui:focus_without_ink.m",
   ]
   externs_list =
       chrome_extension_public_externs + [ "../settings_controls_types.js" ]
@@ -148,9 +156,9 @@ js_library("os_people_page") {
 
 js_library("os_sync_browser_proxy") {
   deps = [
+    "//ash/webui/common/resources:cr.m",
+    "//ash/webui/common/resources:load_time_data.m",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/js:cr.m",
-    "//ui/webui/resources/js:load_time_data.m",
   ]
 }
 
@@ -160,34 +168,37 @@ js_library("os_sync_controls") {
     "..:deep_linking_behavior",
     "..:metrics_recorder",
     "..:os_route",
-    "../../:router",
+    "..:router",
+    "//ash/webui/common/resources:assert",
+    "//ash/webui/common/resources:load_time_data.m",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_elements/cr_toggle:cr_toggle.m",
-    "//ui/webui/resources/js:assert.m",
-    "//ui/webui/resources/js:load_time_data.m",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
   ]
+  externs_list =
+      [ "//ui/webui/resources/cr_elements/cr_toggle/cr_toggle_externs.js" ]
 }
 
 js_library("setup_fingerprint_dialog") {
   deps = [
     ":fingerprint_browser_proxy",
     "..:metrics_recorder",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources:web_ui_listener_behavior",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_elements/cr_fingerprint:cr_fingerprint_progress_arc.m",
-    "//ui/webui/resources/cr_elements/cr_lottie:cr_lottie.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
-    "//ui/webui/resources/js:web_ui_listener_behavior.m",
+  ]
+  externs_list = [
+    "//ui/webui/resources/cr_elements/cr_fingerprint/cr_fingerprint_progress_arc_externs.js",
+    "//ui/webui/resources/cr_elements/cr_lottie/cr_lottie_externs.js",
   ]
 }
 
 js_library("setup_pin_dialog") {
   deps = [
     ":lock_screen_password_prompt_dialog",
-    "../..:router",
+    "..:router",
+    "//ash/webui/common/resources:i18n_behavior",
+    "//ash/webui/common/resources/quick_unlock:setup_pin_keyboard",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_components/chromeos/quick_unlock:setup_pin_keyboard.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
   ]
 }
 
@@ -195,25 +206,29 @@ js_library("user_list") {
   deps = [
     "..:os_route",
     "..:route_observer_behavior",
-    "../..:router",
+    "..:router",
+    "//ash/webui/common/resources:cr_scrollable_behavior",
+    "//ash/webui/common/resources:i18n_behavior",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_elements:cr_scrollable_behavior.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
   ]
   externs_list = [
     "$externs_path/settings_private.js",
     "$externs_path/users_private.js",
+    "//ui/webui/resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer_externs.js",
   ]
 }
 
 js_library("users_add_user_dialog") {
   deps = [
+    "//ash/webui/common/resources:assert",
+    "//ash/webui/common/resources:i18n_behavior",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/cr_elements/cr_dialog:cr_dialog.m",
-    "//ui/webui/resources/js:assert.m",
-    "//ui/webui/resources/js:i18n_behavior.m",
   ]
-  externs_list = [ "$externs_path/users_private.js" ]
+  externs_list = [
+    "$externs_path/users_private.js",
+    "//ui/webui/resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer_externs.js",
+    "//ui/webui/resources/cr_elements/cr_dialog/cr_dialog_externs.js",
+  ]
 }
 
 js_library("users_page") {
@@ -223,26 +238,9 @@ js_library("users_page") {
     "..:deep_linking_behavior",
     "..:os_route",
     "..:route_observer_behavior",
-    "../..:router",
+    "..:router",
+    "//ash/webui/common/resources:assert",
+    "//ash/webui/common/resources:focus_without_ink_js",
     "//third_party/polymer/v3_0/components-chromium/polymer:polymer_bundled",
-    "//ui/webui/resources/js:assert.m",
-    "//ui/webui/resources/js/cr/ui:focus_without_ink.m",
-  ]
-}
-
-html_to_js("web_components") {
-  js_files = [
-    "account_manager.js",
-    "fingerprint_list.js",
-    "lock_screen.js",
-    "lock_screen_password_prompt_dialog.js",
-    "os_people_page.js",
-    "os_sync_controls.js",
-    "setup_fingerprint_dialog.js",
-    "pin_autosubmit_dialog.js",
-    "setup_pin_dialog.js",
-    "user_list.js",
-    "users_add_user_dialog.js",
-    "users_page.js",
   ]
 }

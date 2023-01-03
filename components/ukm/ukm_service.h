@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,11 +28,12 @@ class PrefService;
 FORWARD_DECLARE_TEST(ChromeMetricsServiceClientTest, TestRegisterUKMProviders);
 FORWARD_DECLARE_TEST(IOSChromeMetricsServiceClientTest,
                      TestRegisterUkmProvidersWhenUKMFeatureEnabled);
+class ChromeMetricsServiceClientTestIgnoredForAppMetrics;
 
 namespace metrics {
 class MetricsServiceClient;
 class UkmBrowserTestBase;
-}
+}  // namespace metrics
 
 namespace ukm {
 class Report;
@@ -50,6 +51,11 @@ enum class ResetReason {
   kClonedInstall = 2,
   kMaxValue = kClonedInstall,
 };
+
+// Enables adding the synced user's noised birth year and gender to the UKM
+// report. For more details, see doc of metrics::DemographicMetricsProvider in
+// components/metrics/demographics/demographic_metrics_provider.h.
+BASE_DECLARE_FEATURE(kReportUserNoisedUserBirthYearAndGender);
 
 // The URL-Keyed Metrics (UKM) service is responsible for gathering and
 // uploading reports that contain fine grained performance metrics including
@@ -98,6 +104,9 @@ class UkmService : public UkmRecorderImpl {
   // Deletes all unsent local data related to Apps.
   void PurgeAppsData();
 
+  // Deletes all unsent local data related to MSBB.
+  void PurgeMsbbData();
+
   // Resets the client prefs (client_id/session_id). |reason| should be passed
   // to provide the reason of the reset - this is only used for UMA logging.
   void ResetClientState(ResetReason reason);
@@ -119,10 +128,9 @@ class UkmService : public UkmRecorderImpl {
 
   uint64_t client_id() const { return client_id_; }
 
-  // Enables adding the synced user's noised birth year and gender to the UKM
-  // report. For more details, see doc of metrics::DemographicMetricsProvider in
-  // components/metrics/demographics/demographic_metrics_provider.h.
-  static const base::Feature kReportUserNoisedUserBirthYearAndGender;
+  ukm::UkmReportingService& reporting_service_for_testing() {
+    return reporting_service_;
+  }
 
   // Makes sure that the serialized UKM report can be parsed.
   static bool LogCanBeParsed(const std::string& serialized_data);
@@ -135,13 +143,16 @@ class UkmService : public UkmRecorderImpl {
   friend ::ukm::UkmTestHelper;
   friend ::ukm::debug::UkmDebugDataExtractor;
   friend ::ukm::UkmUtilsForTest;
+
   FRIEND_TEST_ALL_PREFIXES(::ChromeMetricsServiceClientTest,
                            TestRegisterUKMProviders);
+  friend ::ChromeMetricsServiceClientTestIgnoredForAppMetrics;
   FRIEND_TEST_ALL_PREFIXES(::IOSChromeMetricsServiceClientTest,
                            TestRegisterUkmProvidersWhenUKMFeatureEnabled);
   FRIEND_TEST_ALL_PREFIXES(UkmServiceTest,
                            PurgeExtensionDataFromUnsentLogStore);
   FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, PurgeAppDataFromUnsentLogStore);
+  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, PurgeMsbbDataFromUnsentLogStore);
 
   // Starts metrics client initialization.
   void StartInitTask();

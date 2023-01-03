@@ -1,16 +1,18 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef ANDROID_WEBVIEW_BROWSER_AW_PERMISSION_MANAGER_H_
 #define ANDROID_WEBVIEW_BROWSER_AW_PERMISSION_MANAGER_H_
 
+#include <map>
 #include <memory>
 
 #include "base/callback_forward.h"
 #include "base/containers/id_map.h"
 #include "base/memory/weak_ptr.h"
 #include "content/public/browser/permission_controller_delegate.h"
+#include "content/public/browser/permission_result.h"
 
 namespace blink {
 enum class PermissionType;
@@ -49,14 +51,20 @@ class AwPermissionManager : public content::PermissionControllerDelegate {
   void ResetPermission(blink::PermissionType permission,
                        const GURL& requesting_origin,
                        const GURL& embedding_origin) override;
+  void RequestPermissionsFromCurrentDocument(
+      const std::vector<blink::PermissionType>& permissions,
+      content::RenderFrameHost* render_frame_host,
+      bool user_gesture,
+      base::OnceCallback<
+          void(const std::vector<blink::mojom::PermissionStatus>&)> callback)
+      override;
   blink::mojom::PermissionStatus GetPermissionStatus(
       blink::PermissionType permission,
       const GURL& requesting_origin,
       const GURL& embedding_origin) override;
-  blink::mojom::PermissionStatus GetPermissionStatusForFrame(
+  content::PermissionResult GetPermissionResultForOriginWithoutContext(
       blink::PermissionType permission,
-      content::RenderFrameHost* render_frame_host,
-      const GURL& requesting_origin) override;
+      const url::Origin& origin) override;
   blink::mojom::PermissionStatus GetPermissionStatusForCurrentDocument(
       blink::PermissionType permission,
       content::RenderFrameHost* render_frame_host) override;
@@ -73,6 +81,15 @@ class AwPermissionManager : public content::PermissionControllerDelegate {
       override;
   void UnsubscribePermissionStatusChange(
       SubscriptionId subscription_id) override;
+  void SetOriginCanReadEnumerateDevicesAudioLabels(const GURL& origin,
+                                                   bool audio);
+  void SetOriginCanReadEnumerateDevicesVideoLabels(const GURL& origin,
+                                                   bool video);
+  bool ShouldShowEnumerateDevicesAudioLabels(const GURL& origin);
+  bool ShouldShowEnumerateDevicesVideoLabels(const GURL& origin);
+  void ClearEnumerateDevicesCachedPermission(const GURL& origin,
+                                             bool remove_audio,
+                                             bool remove_video);
 
  protected:
   void CancelPermissionRequest(int request_id);
@@ -100,6 +117,9 @@ class AwPermissionManager : public content::PermissionControllerDelegate {
 
   PendingRequestsMap pending_requests_;
   std::unique_ptr<LastRequestResultCache> result_cache_;
+  // Maps origins to whether they can view device labels.
+  // The pair is ordered as (Audio, Video).
+  std::map<GURL, std::pair<bool, bool>> enumerate_devices_labels_cache_;
 
   base::WeakPtrFactory<AwPermissionManager> weak_ptr_factory_{this};
 };

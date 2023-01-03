@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,10 @@
 #include "ash/ash_export.h"
 #include "ash/ime/ime_controller_impl.h"
 #include "ash/login/ui/animated_rounded_image_view.h"
-#include "ash/login/ui/login_palette.h"
 #include "ash/public/cpp/session/user_info.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/base/ime/ash/ime_keyboard.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/view.h"
@@ -52,9 +53,12 @@ enum class EasyUnlockIconState;
 //
 //  1 2 3 4 5 6    (o)  (=>)
 //  ------------------
-class ASH_EXPORT LoginPasswordView : public views::View,
-                                     public views::TextfieldController,
-                                     public ImeControllerImpl::Observer {
+class ASH_EXPORT LoginPasswordView
+    : public views::View,
+      public views::TextfieldController,
+      public ImeControllerImpl::Observer,
+      public ui::ImplicitAnimationObserver,
+      public base::SupportsWeakPtr<LoginPasswordView> {
  public:
   // TestApi is used for tests to get internal implementation details.
   class ASH_EXPORT TestApi {
@@ -85,7 +89,7 @@ class ASH_EXPORT LoginPasswordView : public views::View,
   using OnEasyUnlockIconHovered = base::RepeatingClosure;
 
   // Must call |Init| after construction.
-  explicit LoginPasswordView(const LoginPalette& palette);
+  LoginPasswordView();
 
   LoginPasswordView(const LoginPasswordView&) = delete;
   LoginPasswordView& operator=(const LoginPasswordView&) = delete;
@@ -134,6 +138,7 @@ class ASH_EXPORT LoginPasswordView : public views::View,
 
   // Makes the textfield read-only and enables/disables submitting.
   void SetReadOnly(bool read_only);
+  bool IsReadOnly() const;
 
   // views::View:
   const char* GetClassName() const override;
@@ -160,15 +165,14 @@ class ASH_EXPORT LoginPasswordView : public views::View,
   void OnCapsLockChanged(bool enabled) override;
   void OnKeyboardLayoutNameChanged(const std::string&) override {}
 
+  // ui::ImplicitAnimationObserver:
+  void OnImplicitAnimationsCompleted() override;
+
   void HandleLeftIconsVisibilities(bool handling_capslock);
 
   // Submits the current password field text to mojo call and resets the text
   // field.
   void SubmitPassword();
-
-  // When theme changes, palette should be updated and some subviews
-  // recalculated.
-  void UpdatePalette(const LoginPalette& palette);
 
  private:
   class EasyUnlockIcon;
@@ -203,8 +207,6 @@ class ASH_EXPORT LoginPasswordView : public views::View,
   // ChromeVox is enabled (otherwise, the user would not have time to navigate
   // through the password and make the characters read out loud one by one).
   base::RetainingOneShotTimer hide_password_timer_;
-
-  LoginPalette palette_;
 
   LoginPasswordRow* password_row_ = nullptr;
   LoginTextfield* textfield_ = nullptr;

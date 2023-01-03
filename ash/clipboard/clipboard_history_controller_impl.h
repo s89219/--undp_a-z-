@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,6 +48,23 @@ class ASH_EXPORT ClipboardHistoryControllerImpl
       public ClipboardHistory::Observer,
       public ClipboardHistoryResourceManager::Observer {
  public:
+  // Source and plain vs. rich text info for each paste. These values are used
+  // in the Ash.ClipboardHistory.PasteType histogram and therefore cannot be
+  // reordered. New types may be appended to the end of this enumeration.
+  enum class ClipboardHistoryPasteType {
+    kPlainTextAccelerator = 0,      // Plain text paste triggered by accelerator
+    kRichTextAccelerator = 1,       // Rich text paste triggered by accelerator
+    kPlainTextKeystroke = 2,        // Plain text paste triggered by keystroke
+    kRichTextKeystroke = 3,         // Rich text paste triggered by keystroke
+    kPlainTextMouse = 4,            // Plain text paste triggered by mouse click
+    kRichTextMouse = 5,             // Rich text paste triggered by mouse click
+    kPlainTextTouch = 6,            // Plain text paste triggered by gesture tap
+    kRichTextTouch = 7,             // Rich text paste triggered by gesture tap
+    kPlainTextVirtualKeyboard = 8,  // Plain text paste triggered by VK request
+    kRichTextVirtualKeyboard = 9,   // Rich text paste triggered by VK request
+    kMaxValue = 9
+  };
+
   ClipboardHistoryControllerImpl();
   ClipboardHistoryControllerImpl(const ClipboardHistoryControllerImpl&) =
       delete;
@@ -55,21 +72,23 @@ class ASH_EXPORT ClipboardHistoryControllerImpl
       const ClipboardHistoryControllerImpl&) = delete;
   ~ClipboardHistoryControllerImpl() override;
 
-  // Clean up th child widgets prior to destruction.
+  // Clean up the child widgets prior to destruction.
   void Shutdown();
-
-  void AddObserver(
-      ClipboardHistoryController::Observer* observer) const override;
-  void RemoveObserver(
-      ClipboardHistoryController::Observer* observer) const override;
 
   // Returns if the contextual menu is currently showing.
   bool IsMenuShowing() const;
 
-  // Shows the clipboard history menu through the keyboard accelerator.
-  void ShowMenuByAccelerator();
+  // Shows or hides the clipboard history menu through the keyboard accelerator.
+  // If the menu was already shown, pastes the selected menu item before hiding.
+  // If the menu was not already shown and `is_plain_text_paste` is true the
+  // menu will not be shown. The common case for `is_plain_text_paste` is to
+  // allow pasting plain text when menu is already open, otherwise do not allow
+  // the plain text shortcut to open the menu.
+  void ToggleMenuShownByAccelerator(bool is_plain_text_paste);
 
   // ClipboardHistoryController:
+  void AddObserver(ClipboardHistoryController::Observer* observer) override;
+  void RemoveObserver(ClipboardHistoryController::Observer* observer) override;
   void ShowMenu(const gfx::Rect& anchor_rect,
                 ui::MenuSourceType source_type,
                 crosapi::mojom::ClipboardHistoryControllerShowSource
@@ -131,8 +150,6 @@ class ASH_EXPORT ClipboardHistoryControllerImpl
 
   // ClipboardHistoryController:
   bool CanShowMenu() const override;
-  bool ShouldShowNewFeatureBadge() const override;
-  void MarkNewFeatureBadgeShown() override;
   void OnScreenshotNotificationCreated() override;
   std::unique_ptr<ScopedClipboardHistoryPause> CreateScopedPause() override;
   void GetHistoryValues(const std::set<std::string>& item_id_filter,
@@ -164,21 +181,20 @@ class ASH_EXPORT ClipboardHistoryControllerImpl
       std::unique_ptr<std::map<base::UnguessableToken, std::vector<uint8_t>>>
           encoded_pngs);
 
-  void ExecuteSelectedMenuItem(int event_flags);
-
-  // Executes the command specified by `command_id` with the given event flags.
+  // Executes the command specified by `command_id` with the given
+  // `event_flags`.
   void ExecuteCommand(int command_id, int event_flags);
 
   // Paste the clipboard data of the menu item specified by `command_id`.
-  // `paste_plain_text` indicates whether the plain text instead of the
-  // clipboard data should be pasted.
-  void PasteMenuItemData(int command_id, bool paste_plain_text);
+  void PasteMenuItemData(int command_id, ClipboardHistoryPasteType paste_type);
 
   // Pastes the specified clipboard history item, if |intended_window| matches
-  // the active window.
+  // the active window. `paste_type` indicates the source of the paste for
+  // metrics tracking as well as whether plain text should be pasted instead of
+  // the full, rich-text clipboard data.
   void PasteClipboardHistoryItem(aura::Window* intended_window,
                                  ClipboardHistoryItem item,
-                                 bool paste_plain_text);
+                                 ClipboardHistoryPasteType paste_type);
 
   // Delete the menu item being selected and its corresponding data. If no item
   // is selected, do nothing.
@@ -199,9 +215,8 @@ class ASH_EXPORT ClipboardHistoryControllerImpl
   // Called when the contextual menu is closed.
   void OnMenuClosed();
 
-  // Mutable to allow adding/removing from |observers_| through a const
-  // ClipboardHistoryControllerImpl.
-  mutable base::ObserverList<ClipboardHistoryController::Observer> observers_;
+  // Observers notified when clipboard history is shown, used, or updated.
+  base::ObserverList<ClipboardHistoryController::Observer> observers_;
 
   // The menu being shown.
   std::unique_ptr<ClipboardHistoryMenuModelAdapter> context_menu_;

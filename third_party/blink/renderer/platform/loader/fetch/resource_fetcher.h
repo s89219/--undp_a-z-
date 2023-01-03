@@ -31,6 +31,9 @@
 #include <utility>
 
 #include "base/task/single_thread_task_runner.h"
+#include "base/unguessable_token.h"
+#include "services/metrics/public/cpp/mojo_ukm_recorder.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/blob/blob_registry.mojom-blink.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/service_worker/controller_service_worker_mode.mojom-blink-forward.h"
@@ -69,6 +72,7 @@ class Resource;
 class ResourceError;
 class ResourceLoadObserver;
 class ResourceTimingInfo;
+class SubresourceWebBundle;
 class SubresourceWebBundleList;
 class WebBackForwardCacheLoaderHelper;
 class WebCodeCacheLoader;
@@ -192,10 +196,6 @@ class PLATFORM_EXPORT ResourceFetcher
   // call this method explicitly on cases such as ResourceNeedsLoad() returning
   // false.
   bool StartLoad(Resource*);
-  bool StartLoad(Resource*,
-                 ResourceRequestBody,
-                 ImageLoadBlockingPolicy,
-                 RenderBlockingBehavior);
 
   void SetAutoLoadImages(bool);
   void SetImagesEnabled(bool);
@@ -250,6 +250,13 @@ class PLATFORM_EXPORT ResourceFetcher
 
   String GetCacheIdentifier(const KURL& url) const;
 
+  // If `url` exists as a resource in a subresource bundle in this frame,
+  // returns its UnguessableToken; otherwise, returns absl::nullopt.
+  absl::optional<base::UnguessableToken> GetSubresourceBundleToken(
+      const KURL& url) const;
+
+  absl::optional<KURL> GetSubresourceBundleSourceUrl(const KURL& url) const;
+
   enum IsImageSet { kImageNotImageSet, kImageIsImageSet };
 
   [[nodiscard]] static mojom::blink::RequestContextType DetermineRequestContext(
@@ -294,9 +301,11 @@ class PLATFORM_EXPORT ResourceFetcher
       ResourcePriority::VisibilityStatus visibility_statue,
       FetchParameters::DeferOption defer_option,
       FetchParameters::SpeculativePreloadType speculative_preload_type,
+      RenderBlockingBehavior render_blocking_behavior,
       bool is_link_preload) {
     return ComputeLoadPriority(type, request, visibility_statue, defer_option,
-                               speculative_preload_type, is_link_preload);
+                               speculative_preload_type,
+                               render_blocking_behavior, is_link_preload);
   }
 
   void SetThrottleOptionOverride(
@@ -316,12 +325,23 @@ class PLATFORM_EXPORT ResourceFetcher
     early_hints_preloaded_resources_ = std::move(resources);
   }
 
+  // Access the UKMRecorder.
+  ukm::MojoUkmRecorder* UkmRecorder();
+
+  void CancelWebBundleSubresourceLoadersFor(
+      const base::UnguessableToken& web_bundle_token);
+
  private:
   friend class ResourceCacheValidationSuppressor;
   enum class StopFetchingTarget {
     kExcludingKeepaliveLoaders,
     kIncludingKeepaliveLoaders,
   };
+
+  bool StartLoad(Resource*,
+                 ResourceRequestBody,
+                 ImageLoadBlockingPolicy,
+                 RenderBlockingBehavior);
 
   void InitializeRevalidation(ResourceRequest&, Resource*);
   // When |security_origin| of the ResourceLoaderOptions is not a nullptr, it'll
@@ -331,7 +351,8 @@ class PLATFORM_EXPORT ResourceFetcher
   void AddToMemoryCacheIfNeeded(const FetchParameters&, Resource*);
   Resource* CreateResourceForLoading(const FetchParameters&,
                                      const ResourceFactory&);
-  void StorePerformanceTimingInitiatorInformation(Resource*);
+  void StorePerformanceTimingInitiatorInformation(Resource*,
+                                                  RenderBlockingBehavior);
   ResourceLoadPriority ComputeLoadPriority(
       ResourceType,
       const ResourceRequestHead&,
@@ -339,6 +360,7 @@ class PLATFORM_EXPORT ResourceFetcher
       FetchParameters::DeferOption = FetchParameters::DeferOption::kNoDefer,
       FetchParameters::SpeculativePreloadType =
           FetchParameters::SpeculativePreloadType::kNotSpeculative,
+      RenderBlockingBehavior = RenderBlockingBehavior::kNonBlocking,
       bool is_link_preload = false);
 
   // |virtual_time_pauser| is an output parameter. PrepareRequest may
@@ -367,14 +389,31 @@ class PLATFORM_EXPORT ResourceFetcher
   void StopFetchingInternal(StopFetchingTarget);
   void StopFetchingIncludingKeepaliveLoaders();
 
-  // RevalidationPolicy enum values are used in UMAs https://crbug.com/579496.
   enum class RevalidationPolicy {
     kUse,
     kRevalidate,
     kReload,
     kLoad,
-    kMaxValue = kLoad
+    kMaxValue = kLoad,
   };
+  // The Blink.MemoryCache.RevalationPolicy UMA uses the following enum
+  // rather than RevalidationPolicy to record the deferred resources in
+  // the resource fetcher.
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  enum class RevalidationPolicyForMetrics {
+    kUse,
+    kRevalidate,
+    kReload,
+    kLoad,
+    kDefer,
+    kPreviouslyDeferredLoad,
+    kMaxValue = kPreviouslyDeferredLoad,
+  };
+
+  // Friends required for accessing RevalidationPolicyForMetrics
+  FRIEND_TEST(ImageResourceCounterTest, RevalidationPolicyMetrics);
+  FRIEND_TEST(FontResourceTest, RevalidationPolicyMetrics);
 
   // A wrapper just for placing a trace_event macro.
   RevalidationPolicy DetermineRevalidationPolicy(
@@ -405,14 +444,24 @@ class PLATFORM_EXPORT ResourceFetcher
                                       bool is_static_data,
                                       RenderBlockingBehavior);
 
-  bool ResourceNeedsLoad(Resource*, const FetchParameters&, RevalidationPolicy);
+  bool ShouldDeferResource(ResourceType, const FetchParameters& params) const;
+
+  bool ResourceNeedsLoad(Resource*,
+                         RevalidationPolicy,
+                         bool should_defer) const;
+
+  static bool ResourceAlreadyLoadStarted(Resource*, RevalidationPolicy);
 
   void ResourceTimingReportTimerFired(TimerBase*);
 
   void ReloadImagesIfNotDeferred();
 
+  static RevalidationPolicyForMetrics MapToPolicyForMetrics(RevalidationPolicy,
+                                                            Resource*,
+                                                            bool should_defer);
+
   void UpdateMemoryCacheStats(Resource*,
-                              RevalidationPolicy,
+                              RevalidationPolicyForMetrics,
                               const FetchParameters&,
                               const ResourceFactory&,
                               bool is_static_data,
@@ -426,6 +475,7 @@ class PLATFORM_EXPORT ResourceFetcher
   void PopulateAndAddResourceTimingInfo(Resource* resource,
                                         scoped_refptr<ResourceTimingInfo> info,
                                         base::TimeTicks response_end);
+  SubresourceWebBundle* GetMatchingBundle(const KURL& url) const;
 
   Member<DetachableResourceFetcherProperties> properties_;
   Member<ResourceLoadObserver> resource_load_observer_;
@@ -479,7 +529,7 @@ class PLATFORM_EXPORT ResourceFetcher
 
   HeapMojoRemote<mojom::blink::BlobRegistry> blob_registry_remote_;
 
-  // Lazily initialized when the first <link rel=webbundle> is inserted.
+  // Lazily initialized when the first <script type=webbundle> is inserted.
   Member<SubresourceWebBundleList> subresource_web_bundles_;
 
   // This is not in the bit field below because we want to use AutoReset.
@@ -493,6 +543,14 @@ class PLATFORM_EXPORT ResourceFetcher
   bool stale_while_revalidate_enabled_ : 1;
 
   static constexpr uint32_t kKeepaliveInflightBytesQuota = 64 * 1024;
+
+  std::unique_ptr<ukm::MojoUkmRecorder> ukm_recorder_;
+
+  // The total number of sub resource loads except for ResourceType::kRaw.
+  uint32_t number_of_subresources_loaded_ = 0;
+  // The number of sub resource loads that a service worker fetch handler
+  // called respondWith. i.e. no fallback to network.
+  uint32_t number_of_subresource_loads_handled_by_service_worker_ = 0;
 
   // NOTE: This must be the last member.
   base::WeakPtrFactory<ResourceFetcher> weak_ptr_factory_{this};

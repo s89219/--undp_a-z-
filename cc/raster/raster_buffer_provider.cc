@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,6 +49,7 @@ bool IsSupportedPlaybackToMemoryFormat(viz::ResourceFormat format) {
     case viz::BGRA_1010102:
     case viz::YVU_420:
     case viz::YUV_420_BIPLANAR:
+    case viz::YUVA_420_TRIPLANAR:
     case viz::P010:
       return false;
   }
@@ -149,6 +150,7 @@ void RasterBufferProvider::PlaybackToMemory(
     case viz::BGRA_1010102:
     case viz::YVU_420:
     case viz::YUV_420_BIPLANAR:
+    case viz::YUVA_420_TRIPLANAR:
     case viz::P010:
       NOTREACHED();
       return;

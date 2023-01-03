@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,7 +41,7 @@ bool IsNGBlockFragmentationRoot(const LayoutNGBlockFlow* block_flow) {
 }  // anonymous namespace
 
 // With 100 unique strings, a 2^12 slot table has a false positive rate of ~2%.
-using ClassnameFilter = BloomFilter<12>;
+using ClassnameFilter = CountingBloomFilter<12>;
 using Corner = ScrollAnchor::Corner;
 
 ScrollAnchor::ScrollAnchor()
@@ -150,11 +150,9 @@ static LayoutPoint ComputeRelativeOffset(const LayoutObject* layout_object,
 
 static bool CandidateMayMoveWithScroller(const LayoutObject* candidate,
                                          const ScrollableArea* scroller) {
-  if (const ComputedStyle* style = candidate->Style()) {
-    if (style->HasViewportConstrainedPosition() ||
-        style->HasStickyConstrainedPosition())
-      return false;
-  }
+  if (candidate->IsFixedPositioned() ||
+      candidate->StyleRef().HasStickyConstrainedPosition())
+    return false;
 
   LayoutObject::AncestorSkipInfo skip_info(ScrollerLayoutBox(scroller));
   candidate->Container(&skip_info);
@@ -228,7 +226,7 @@ static const String UniqueSimpleSelectorAmongSiblings(Element* element) {
 
   if (element->HasClass()) {
     AtomicString unique_classname = UniqueClassnameAmongSiblings(element);
-    if (!unique_classname.IsEmpty()) {
+    if (!unique_classname.empty()) {
       return AtomicString(".") + unique_classname;
     }
   }
@@ -260,8 +258,6 @@ static const String ComputeUniqueSelector(Node* anchor_node) {
   }
 
   TRACE_EVENT0("blink", "ScrollAnchor::SerializeAnchor");
-  SCOPED_BLINK_UMA_HISTOGRAM_TIMER(
-      "Layout.ScrollAnchor.TimeToComputeAnchorNodeSelector");
 
   Vector<String> selector_list;
   for (Element* element = ElementTraversal::FirstAncestorOrSelf(*anchor_node);
@@ -285,11 +281,6 @@ static const String ComputeUniqueSelector(Node* anchor_node) {
       builder.Append(">");
     builder.Append(*reverse_iterator);
   }
-
-  DEFINE_STATIC_LOCAL(CustomCountHistogram, selector_length_histogram,
-                      ("Layout.ScrollAnchor.SerializedAnchorSelectorLength", 1,
-                       kMaxSerializedSelectorLength, 50));
-  selector_length_histogram.Count(builder.length());
 
   if (builder.length() > kMaxSerializedSelectorLength) {
     return String();
@@ -376,7 +367,7 @@ bool ScrollAnchor::FindAnchorInPriorityCandidates() {
   LayoutObject* candidate = nullptr;
   ExamineResult result{kSkip};
   auto* focused_element = document.FocusedElement();
-  if (focused_element && HasEditableStyle(*focused_element)) {
+  if (focused_element && IsEditable(*focused_element)) {
     candidate = PriorityCandidateFromNode(focused_element);
     if (candidate) {
       result = ExaminePriorityCandidate(candidate);
@@ -671,7 +662,6 @@ void ScrollAnchor::Adjust() {
   if (scroll_anchor_disabling_style_changed_) {
     // Note that we only clear if the adjustment would have been non-zero.
     // This minimizes redundant calls to findAnchor.
-    // TODO(skobes): add UMA metric for this.
     ClearSelf();
     return;
   }
@@ -688,8 +678,6 @@ bool ScrollAnchor::RestoreAnchor(const SerializedAnchor& serialized_anchor) {
   if (!scroller_ || !serialized_anchor.IsValid()) {
     return false;
   }
-
-  SCOPED_BLINK_UMA_HISTOGRAM_TIMER("Layout.ScrollAnchor.TimeToRestoreAnchor");
 
   if (anchor_object_ && serialized_anchor.selector == saved_selector_) {
     return true;
@@ -780,7 +768,7 @@ const SerializedAnchor ScrollAnchor::GetSerializedAnchor() {
 
   // It's safe to return saved_selector_ before checking anchor_object_, since
   // clearing anchor_object_ also clears saved_selector_.
-  if (!saved_selector_.IsEmpty()) {
+  if (!saved_selector_.empty()) {
     DCHECK(anchor_object_);
     return SerializedAnchor(
         saved_selector_,

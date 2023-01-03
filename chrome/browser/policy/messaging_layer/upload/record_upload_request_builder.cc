@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,12 +20,10 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_runner.h"
 #include "base/task/thread_pool.h"
+#include "base/token.h"
 #include "base/values.h"
-#include "chrome/browser/policy/messaging_layer/upload/dm_server_upload_service.h"
-#include "chrome/browser/policy/messaging_layer/upload/record_upload_request_builder.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/reporting_util.h"
-#include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/reporting/proto/synced/record.pb.h"
 #include "components/reporting/proto/synced/record_constants.pb.h"
 #include "components/reporting/util/status.h"
@@ -44,7 +42,7 @@ namespace {
 constexpr char kEncryptedRecordListKey[] = "encryptedRecord";
 constexpr char kAttachEncryptionSettingsKey[] = "attachEncryptionSettings";
 
-// EncrypedRecordDictionaryBuilder strings
+// EncryptedRecordDictionaryBuilder strings
 constexpr char kEncryptedWrappedRecord[] = "encryptedWrappedRecord";
 constexpr char kSequenceInformationKey[] = "sequenceInformation";
 constexpr char kEncryptionInfoKey[] = "encryptionInfo";
@@ -76,7 +74,9 @@ UploadEncryptedReportingRequestBuilder::
     ~UploadEncryptedReportingRequestBuilder() = default;
 
 UploadEncryptedReportingRequestBuilder&
-UploadEncryptedReportingRequestBuilder::AddRecord(EncryptedRecord record) {
+UploadEncryptedReportingRequestBuilder::AddRecord(
+    EncryptedRecord record,
+    ScopedReservation& scoped_reservation) {
   if (!result_.has_value()) {
     // Some errors were already detected.
     return *this;
@@ -90,7 +90,8 @@ UploadEncryptedReportingRequestBuilder::AddRecord(EncryptedRecord record) {
   }
 
   auto record_result =
-      EncryptedRecordDictionaryBuilder(std::move(record)).Build();
+      EncryptedRecordDictionaryBuilder(std::move(record), scoped_reservation)
+          .Build();
   if (!record_result.has_value()) {
     // Record has errors. Stop here.
     result_ = absl::nullopt;
@@ -143,7 +144,8 @@ UploadEncryptedReportingRequestBuilder::GetAttachEncryptionSettingsPath() {
 }
 
 EncryptedRecordDictionaryBuilder::EncryptedRecordDictionaryBuilder(
-    EncryptedRecord record) {
+    EncryptedRecord record,
+    ScopedReservation& scoped_reservation) {
   base::Value::Dict record_dictionary;
 
   // A record without sequence information cannot be uploaded - deny it.
@@ -174,8 +176,8 @@ EncryptedRecordDictionaryBuilder::EncryptedRecordDictionaryBuilder(
                           std::move(encryption_info_result.value()));
   }
 
-  // TODO (b/189130411) Compression information can be missing until we set up
-  // compression as mandatory.
+  // Compression information can be missing until we set up compression as
+  // mandatory.
   if (record.has_compression_information()) {
     auto compression_information_result =
         CompressionInformationDictionaryBuilder(
@@ -193,7 +195,17 @@ EncryptedRecordDictionaryBuilder::EncryptedRecordDictionaryBuilder(
   if (record.has_encrypted_wrapped_record()) {
     std::string base64_encode;
     base::Base64Encode(record.encrypted_wrapped_record(), &base64_encode);
-    record_dictionary.Set(GetEncryptedWrappedRecordPath(), base64_encode);
+    ScopedReservation base64_encode_reservation(base64_encode.size(),
+                                                scoped_reservation);
+    if (!base64_encode_reservation.reserved()) {
+      // Insufficient memory
+      return;
+    }
+    record_dictionary.Set(GetEncryptedWrappedRecordPath(),
+                          std::move(base64_encode));
+    // Replace record reservation with base64_encode.
+    scoped_reservation.Reduce(0uL);
+    scoped_reservation.HandOver(base64_encode_reservation);
   }
 
   // Result complete.
@@ -238,15 +250,12 @@ SequenceInformationDictionaryBuilder::SequenceInformationDictionaryBuilder(
     return;
   }
 
-  base::Value::Dict sequence_dictionary;
-  sequence_dictionary.Set(
-      GetSequencingIdPath(),
-      base::NumberToString(sequence_information.sequencing_id()));
-  sequence_dictionary.Set(
-      GetGenerationIdPath(),
-      base::NumberToString(sequence_information.generation_id()));
-  sequence_dictionary.Set(GetPriorityPath(), sequence_information.priority());
-  result_ = std::move(sequence_dictionary);
+  result_.emplace();
+  result_->Set(GetSequencingIdPath(),
+               base::NumberToString(sequence_information.sequencing_id()));
+  result_->Set(GetGenerationIdPath(),
+               base::NumberToString(sequence_information.generation_id()));
+  result_->Set(GetPriorityPath(), sequence_information.priority());
 }
 
 SequenceInformationDictionaryBuilder::~SequenceInformationDictionaryBuilder() =

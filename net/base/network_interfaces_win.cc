@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -152,6 +152,15 @@ bool GetNetworkListImpl(NetworkInterfaceList* networks,
       continue;
     }
 
+    absl::optional<Eui48MacAddress> mac_address;
+    mac_address.emplace();
+    if (adapter->PhysicalAddressLength == mac_address->size()) {
+      std::copy_n(reinterpret_cast<const uint8_t*>(adapter->PhysicalAddress),
+                  mac_address->size(), mac_address->begin());
+    } else {
+      mac_address.reset();
+    }
+
     for (IP_ADAPTER_UNICAST_ADDRESS* address = adapter->FirstUnicastAddress;
          address; address = address->Next) {
       int family = address->Address.lpSockaddr->sa_family;
@@ -188,7 +197,7 @@ bool GetNetworkListImpl(NetworkInterfaceList* networks,
               adapter->AdapterName,
               base::SysWideToNativeMB(adapter->FriendlyName), index,
               GetNetworkInterfaceType(adapter->IfType), endpoint.address(),
-              prefix_length, ip_address_attributes));
+              prefix_length, ip_address_attributes, mac_address));
         }
       }
     }
@@ -230,7 +239,7 @@ bool GetNetworkList(NetworkInterfaceList* networks, int policy) {
     for (int tries = 1; result == ERROR_BUFFER_OVERFLOW &&
                         tries < MAX_GETADAPTERSADDRESSES_TRIES;
          ++tries) {
-      buf.reset(new char[len]);
+      buf = std::make_unique<char[]>(len);
       adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.get());
       result = GetAdaptersAddresses(AF_UNSPEC, flags, nullptr, adapters, &len);
     }
@@ -326,7 +335,7 @@ class WifiOptionSetter : public ScopedWifiOptions {
 };
 
 std::unique_ptr<ScopedWifiOptions> SetWifiOptions(int options) {
-  return std::unique_ptr<ScopedWifiOptions>(new WifiOptionSetter(options));
+  return std::make_unique<WifiOptionSetter>(options);
 }
 
 std::string GetWifiSSID() {

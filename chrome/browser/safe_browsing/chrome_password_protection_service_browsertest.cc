@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include "chrome/browser/safe_browsing/chrome_password_protection_service.h"
@@ -561,10 +561,9 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
   Profile* profile = browser()->profile();
   ASSERT_TRUE(ui_test_utils::NavigateToURL(
       browser(), embedded_test_server()->GetURL(kLoginPageUrl)));
-  ASSERT_TRUE(
-      profile->GetPrefs()
-          ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-          ->DictEmpty());
+  ASSERT_TRUE(profile->GetPrefs()
+                  ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                  .empty());
 
   base::HistogramTester histograms;
   // Shows modal dialog on current web_contents.
@@ -579,10 +578,9 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
       request.get(), LoginReputationClientResponse::VERDICT_TYPE_UNSPECIFIED,
       "unused_token", account_type);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(1u,
-            profile->GetPrefs()
-                ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-                ->DictSize());
+  EXPECT_EQ(1u, profile->GetPrefs()
+                    ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                    .size());
 
   // Opens a new browser window.
   Browser* browser2 = CreateBrowser(profile);
@@ -598,19 +596,17 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
       LoginReputationClientResponse::VERDICT_TYPE_UNSPECIFIED, "unused_token",
       account_type);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(2u,
-            profile->GetPrefs()
-                ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-                ->DictSize());
+  EXPECT_EQ(2u, profile->GetPrefs()
+                    ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                    .size());
 
   // Simulates a Gaia password change.
   SimulateGaiaPasswordChanged(service, user_manager::kStubUserEmail,
                               /*is_other_password=*/true);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(0u,
-            profile->GetPrefs()
-                ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-                ->DictSize());
+  EXPECT_EQ(0u, profile->GetPrefs()
+                    ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                    .size());
 }
 
 IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
@@ -642,26 +638,23 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
       request.get(), LoginReputationClientResponse::VERDICT_TYPE_UNSPECIFIED,
       "unused_token", account_type);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(1u,
-            profile->GetPrefs()
-                ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-                ->DictSize());
+  EXPECT_EQ(1u, profile->GetPrefs()
+                    ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                    .size());
 
   // Save the same password will not trigger OnGaiaPasswordChanged(), thus no
   // change to size of unhandled_password_reuses().
   SimulateGaiaPasswordChange("password_1");
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(1u,
-            profile->GetPrefs()
-                ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-                ->DictSize());
+  EXPECT_EQ(1u, profile->GetPrefs()
+                    ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                    .size());
   // Save a different password will clear unhandled_password_reuses().
   SimulateGaiaPasswordChange("password_2");
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(0u,
-            profile->GetPrefs()
-                ->GetDictionary(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
-                ->DictSize());
+  EXPECT_EQ(0u, profile->GetPrefs()
+                    ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+                    .size());
 }
 
 IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
@@ -832,7 +825,6 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
   SimulateGaiaPasswordChange("password");
   ASSERT_EQ(1u, profile->GetPrefs()
                     ->GetList(password_manager::prefs::kPasswordHashDataList)
-                    ->GetListDeprecated()
                     .size());
   // Turn off trigger
   profile->GetPrefs()->SetInteger(
@@ -845,7 +837,6 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
       user_manager::kStubUserEmail, /*is_gaia_password=*/true));
   EXPECT_EQ(0u, profile->GetPrefs()
                     ->GetList(password_manager::prefs::kPasswordHashDataList)
-                    ->GetListDeprecated()
                     .size());
 }
 
@@ -858,7 +849,6 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
 
   ASSERT_EQ(0u, profile->GetPrefs()
                     ->GetList(password_manager::prefs::kPasswordHashDataList)
-                    ->GetListDeprecated()
                     .size());
   // Configures initial password to "password_1";
   password_manager::PasswordReuseManager* reuse_manager =
@@ -872,7 +862,6 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
           CHANGED_IN_CONTENT_AREA);
   ASSERT_EQ(2u, profile->GetPrefs()
                     ->GetList(password_manager::prefs::kPasswordHashDataList)
-                    ->GetListDeprecated()
                     .size());
 
   // Turn off trigger
@@ -889,7 +878,6 @@ IN_PROC_BROWSER_TEST_F(ChromePasswordProtectionServiceBrowserTest,
                                             /*is_gaia_password=*/true));
   EXPECT_EQ(0u, profile->GetPrefs()
                     ->GetList(password_manager::prefs::kPasswordHashDataList)
-                    ->GetListDeprecated()
                     .size());
 }
 
@@ -1029,7 +1017,7 @@ IN_PROC_BROWSER_TEST_F(
   // Start a renderer-initiated navigation away from the current page. The
   // navigation should be deferred.
   content::TestNavigationManager navigation(GetWebContents(), kNextPage);
-  ASSERT_TRUE(content::ExecJs(GetWebContents()->GetMainFrame(),
+  ASSERT_TRUE(content::ExecJs(GetWebContents()->GetPrimaryMainFrame(),
                               content::JsReplace("location = $1", kNextPage)));
 
   // Run the navigation until it defers on the
@@ -1063,7 +1051,7 @@ IN_PROC_BROWSER_TEST_F(
   // Start a renderer-initiated navigation away from the current page. The
   // navigation should be deferred.
   content::TestNavigationManager navigation(GetWebContents(), kNextPage);
-  ASSERT_TRUE(content::ExecJs(GetWebContents()->GetMainFrame(),
+  ASSERT_TRUE(content::ExecJs(GetWebContents()->GetPrimaryMainFrame(),
                               content::JsReplace("location = $1", kNextPage)));
 
   // Run the navigation until it defers on the
@@ -1098,7 +1086,7 @@ IN_PROC_BROWSER_TEST_F(
   // Start a renderer-initiated navigation away from the current page. The
   // navigation should be deferred.
   content::TestNavigationManager navigation(GetWebContents(), kNextPage);
-  ASSERT_TRUE(content::ExecJs(GetWebContents()->GetMainFrame(),
+  ASSERT_TRUE(content::ExecJs(GetWebContents()->GetPrimaryMainFrame(),
                               content::JsReplace("location = $1", kNextPage)));
   // Run the navigation until it defers on the
   // PasswordProtectionCommitDeferringCondition.
@@ -1127,9 +1115,8 @@ class ChromePasswordProtectionServiceDeferActivationBrowserTest
             &ChromePasswordProtectionServiceDeferActivationBrowserTest::
                 GetWebContents,
             base::Unretained(this))) {
-    std::vector<base::test::ScopedFeatureList::FeatureAndParams>
-        additional_features = {
-            {features::kBackForwardCache, {{"enable_same_site", "true"}}}};
+    std::vector<base::test::FeatureRefAndParams> additional_features = {
+        {features::kBackForwardCache, {}}};
     scoped_feature_list_.InitWithFeaturesAndParameters(
         content::DefaultEnabledBackForwardCacheParametersForTests(
             additional_features),
@@ -1219,7 +1206,7 @@ IN_PROC_BROWSER_TEST_F(
                                                    kPrerenderUrl);
 
   ASSERT_TRUE(
-      content::ExecJs(GetWebContents()->GetMainFrame(),
+      content::ExecJs(GetWebContents()->GetPrimaryMainFrame(),
                       content::JsReplace("location = $1", kPrerenderUrl)));
 
   // Run the navigation until it defers on the
@@ -1262,7 +1249,7 @@ IN_PROC_BROWSER_TEST_F(
   content::TestActivationManager prerender_manager(GetWebContents(),
                                                    kPrerenderUrl);
   ASSERT_TRUE(
-      content::ExecJs(GetWebContents()->GetMainFrame(),
+      content::ExecJs(GetWebContents()->GetPrimaryMainFrame(),
                       content::JsReplace("location = $1", kPrerenderUrl)));
 
   // Run the navigation until it defers on the
@@ -1303,7 +1290,7 @@ IN_PROC_BROWSER_TEST_F(
                                                    kPrerenderUrl);
 
   ASSERT_TRUE(
-      content::ExecJs(GetWebContents()->GetMainFrame(),
+      content::ExecJs(GetWebContents()->GetPrimaryMainFrame(),
                       content::JsReplace("location = $1", kPrerenderUrl)));
 
   // Run the navigation until it defers on the
@@ -1390,7 +1377,7 @@ IN_PROC_BROWSER_TEST_F(
   content::TestActivationManager prerender_manager(GetWebContents(),
                                                    kURLInBFCache);
   ASSERT_TRUE(content::ExecJs(
-      GetWebContents()->GetMainFrame(),
+      GetWebContents()->GetPrimaryMainFrame(),
       content::JsReplace("window.history.back()", kURLInBFCache)));
 
   // Run the navigation until it defers on the

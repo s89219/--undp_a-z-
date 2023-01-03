@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,14 +10,17 @@
 #include "ash/webui/camera_app_ui/url_constants.h"
 #include "ash/webui/grit/ash_camera_app_resources_map.h"
 #include "base/bind.h"
+#include "base/feature_list.h"
+#include "base/files/file_util.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
+#include "base/task/thread_pool.h"
 #include "components/arc/intent_helper/arc_intent_helper_bridge.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/media_device_id.h"
-#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/video_capture_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -25,7 +28,6 @@
 #include "media/capture/video/chromeos/camera_app_device_provider_impl.h"
 #include "media/capture/video/chromeos/mojom/camera_app.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
-#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
 #include "services/video_capture/public/mojom/video_capture_service.mojom.h"
 #include "ui/aura/window.h"
@@ -34,6 +36,44 @@
 namespace ash {
 
 namespace {
+
+BASE_FEATURE(kCCALocalOverride,
+             "CCALocalOverride",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FilePath::CharType kCCALocalOverrideDirectoryPath[] =
+    FILE_PATH_LITERAL("/etc/camera/cca");
+
+void HandleLocalOverrideRequest(
+    const std::string& url,
+    content::WebUIDataSource::GotDataCallback callback) {
+  base::ThreadPool::CreateSequencedTaskRunner(
+      {base::TaskPriority::USER_BLOCKING,
+       base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN, base::MayBlock()})
+      ->PostTask(
+          FROM_HERE,
+          base::BindOnce(
+              [](const std::string& url,
+                 content::WebUIDataSource::GotDataCallback callback) {
+                // The url passed in only contain path and query part.
+                auto parsed_url = GURL(kChromeUICameraAppURL + url);
+                // parsed_url.path() includes the leading "/" but
+                // FilePath::Append only allows relative path.
+                base::FilePath file_path =
+                    base::FilePath(kCCALocalOverrideDirectoryPath)
+                        .Append(base::TrimString(
+                            parsed_url.path_piece(), "/",
+                            base::TrimPositions::TRIM_LEADING));
+                std::string result;
+                if (base::ReadFileToString(file_path, &result)) {
+                  std::move(callback).Run(
+                      base::MakeRefCounted<base::RefCountedString>(
+                          std::move(result)));
+                } else {
+                  std::move(callback).Run(nullptr);
+                }
+              },
+              url, std::move(callback)));
+}
 
 content::WebUIDataSource* CreateCameraAppUIHTMLSource(
     CameraAppUIDelegate* delegate) {
@@ -53,6 +93,12 @@ content::WebUIDataSource* CreateCameraAppUIHTMLSource(
   }
 
   source->UseStringsJs();
+
+  if (base::FeatureList::IsEnabled(kCCALocalOverride)) {
+    source->SetRequestFilter(
+        base::BindRepeating(CameraAppUIShouldEnableLocalOverride),
+        base::BindRepeating(HandleLocalOverrideRequest));
+  }
 
   source->OverrideContentSecurityPolicy(
       network::mojom::CSPDirectiveName::WorkerSrc,
@@ -83,7 +129,8 @@ void TranslateVideoDeviceId(
              callback) {
         content::GetMediaDeviceIDForHMAC(
             blink::mojom::MediaStreamType::DEVICE_VIDEO_CAPTURE, salt,
-            std::move(origin), source_id, std::move(callback));
+            std::move(origin), source_id, content::GetIOThreadTaskRunner({}),
+            std::move(callback));
       },
       salt, std::move(origin), source_id, std::move(callback));
   content::GetIOThreadTaskRunner({})->PostTask(
@@ -146,6 +193,24 @@ std::unique_ptr<CameraAppHelperImpl> CreateCameraAppHelper(
 }
 
 }  // namespace
+
+bool CameraAppUIShouldEnableLocalOverride(const std::string& url) {
+  // Only override files that are copied locally with cca.py deploy.
+  if (!(base::StartsWith(url, "js/") || base::StartsWith(url, "css/") ||
+        base::StartsWith(url, "images/") || base::StartsWith(url, "views/") ||
+        base::StartsWith(url, "sounds/"))) {
+    return false;
+  }
+  // This file is written by `cca.py deploy` and contains version
+  // information of deployed file.
+  base::FilePath version_path = base::FilePath(kCCALocalOverrideDirectoryPath)
+                                    .Append("js/deployed_version.js");
+  base::ScopedAllowBlocking allow_blocking;
+  if (!base::PathExists(version_path)) {
+    return false;
+  }
+  return true;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 //

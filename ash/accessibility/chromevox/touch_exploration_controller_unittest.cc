@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,7 +50,7 @@ class EventCapturer : public ui::EventHandler {
   void OnEvent(ui::Event* event) override {
     if (event->IsMouseEvent() || event->IsTouchEvent() ||
         event->IsGestureEvent() || event->IsKeyEvent()) {
-      events_.push_back(ui::Event::Clone(*event));
+      events_.push_back(event->Clone());
     } else {
       return;
     }
@@ -1184,9 +1184,9 @@ TEST_F(TouchExplorationTest, GestureSwipe) {
 
 TEST_F(TouchExplorationTest, GestureSwipePortrit) {
   // Rotate the window 90-degrees counter-clockwise.
-  root_window()->GetHost()->SetRootTransform(
-      gfx::Transform(0, 1, 0, 0, -1, 0, 0, root_window()->bounds().height(), 0,
-                     0, 0, 0, 0, 0, 0, 0));
+  root_window()->GetHost()->SetRootTransform(gfx::Transform::RowMajor(
+      0, 1, 0, 0, -1, 0, 0, root_window()->bounds().height(), 0, 0, 0, 0, 0, 0,
+      0, 0));
 
   SwitchTouchExplorationMode(true);
 

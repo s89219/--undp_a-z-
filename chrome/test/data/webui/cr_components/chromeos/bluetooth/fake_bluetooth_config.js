@@ -1,11 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {stringToMojoString16} from 'chrome://resources/cr_components/chromeos/bluetooth/bluetooth_utils.js';
-import {AudioOutputCapability, BluetoothDeviceProperties, BluetoothDeviceStatusObserverInterface, BluetoothDiscoveryDelegateInterface, BluetoothModificationState, BluetoothSystemProperties, BluetoothSystemState, CrosBluetoothConfigInterface, DeviceConnectionState, DevicePairingHandlerReceiver, DeviceType, DiscoverySessionStatusObserverInterface, PairedBluetoothDeviceProperties, SystemPropertiesObserverInterface} from 'chrome://resources/mojo/chromeos/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
+import {stringToMojoString16} from 'chrome://resources/ash/common/bluetooth/bluetooth_utils.js';
+import {AudioOutputCapability, BluetoothDeviceProperties, BluetoothDeviceStatusObserverInterface, BluetoothDiscoveryDelegateInterface, BluetoothModificationState, BluetoothSystemProperties, BluetoothSystemState, CrosBluetoothConfigInterface, DeviceConnectionState, DevicePairingHandlerReceiver, DeviceType, DiscoverySessionStatusObserverInterface, PairedBluetoothDeviceProperties, SystemPropertiesObserverInterface} from 'chrome://resources/mojo/chromeos/ash/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
 
-import {assertFalse, assertNotReached, assertTrue} from '../../../chai_assert.js';
+import {assertFalse, assertNotReached, assertTrue} from '../../../chromeos/chai_assert.js';
 
 import {FakeDevicePairingHandler} from './fake_device_pairing_handler.js';
 
@@ -103,6 +103,9 @@ export class FakeBluetoothConfig {
      * @private {?FakeDevicePairingHandler}
      */
     this.lastPairingHandler_ = null;
+
+    /** @private {number} */
+    this.numStartDiscoveryCalls_ = 0;
   }
 
   /**
@@ -144,6 +147,7 @@ export class FakeBluetoothConfig {
     this.lastDiscoveryDelegate_ = delegate;
     this.notifyDiscoveryStarted_();
     this.notifyDelegatesPropertiesUpdated_();
+    this.numStartDiscoveryCalls_++;
   }
 
   /**
@@ -168,11 +172,17 @@ export class FakeBluetoothConfig {
                   bluetoothSystemState.kDisabling);
   }
 
+  /** @override */
+  setBluetoothHidDetectionActive() {
+    // This method is left unimplemented as it is only used in OOBE.
+    assertNotReached();
+  }
+
   /**
    * @override
-   * @param {boolean} active
+   * @param {boolean} isUsingBluetooth
    */
-  setBluetoothHidDetectionActive(active) {
+  setBluetoothHidDetectionInactive(isUsingBluetooth) {
     // This method is left unimplemented as it is only used in OOBE.
     assertNotReached();
   }
@@ -445,8 +455,18 @@ export class FakeBluetoothConfig {
    * Notifies the observer list that systemProperties_ has changed.
    */
   notifyObserversPropertiesUpdated_() {
+    const systemProperties =
+        /**
+         * @type {!BluetoothSystemProperties}
+         */
+        (Object.assign({}, this.systemProperties_));
+
+    // Don't provide paired devices if the system state is unavailable.
+    if (systemProperties.systemState === BluetoothSystemState.kUnavailable) {
+      systemProperties.pairedDevices = [];
+    }
     this.system_properties_observers_.forEach(
-        o => o.onPropertiesUpdated(this.systemProperties_));
+        o => o.onPropertiesUpdated(systemProperties));
   }
 
   /**
@@ -496,5 +516,12 @@ export class FakeBluetoothConfig {
     const device = this.systemProperties_.pairedDevices.find(
         d => d.deviceProperties.id === deviceId);
     return device ? device : null;
+  }
+
+  /**
+   * @return {number}
+   */
+  getNumStartDiscoveryCalls() {
+    return this.numStartDiscoveryCalls_;
   }
 }

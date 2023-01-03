@@ -1,7 +1,8 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import {createChild} from '../../common/js/dom_utils.js';
 import {metrics} from '../../common/js/metrics.js';
 import {str, strf, util} from '../../common/js/util.js';
 import {DirectoryChangeEvent} from '../../externs/directory_change_event.js';
@@ -29,24 +30,24 @@ export class FileTypeFiltersController {
     this.filterTypeToTranslationKeyMap_ = new Map([
       [
         chrome.fileManagerPrivate.RecentFileType.ALL,
-        'MEDIA_VIEW_ALL_ROOT_LABEL'
+        'MEDIA_VIEW_ALL_ROOT_LABEL',
       ],
       [
         chrome.fileManagerPrivate.RecentFileType.AUDIO,
-        'MEDIA_VIEW_AUDIO_ROOT_LABEL'
+        'MEDIA_VIEW_AUDIO_ROOT_LABEL',
       ],
       [
         chrome.fileManagerPrivate.RecentFileType.IMAGE,
-        'MEDIA_VIEW_IMAGES_ROOT_LABEL'
+        'MEDIA_VIEW_IMAGES_ROOT_LABEL',
       ],
       [
         chrome.fileManagerPrivate.RecentFileType.VIDEO,
-        'MEDIA_VIEW_VIDEOS_ROOT_LABEL'
+        'MEDIA_VIEW_VIDEOS_ROOT_LABEL',
       ],
       [
         chrome.fileManagerPrivate.RecentFileType.DOCUMENT,
         'MEDIA_VIEW_DOCUMENTS_ROOT_LABEL',
-      ]
+      ],
     ]);
 
     /**
@@ -88,6 +89,13 @@ export class FileTypeFiltersController {
         chrome.fileManagerPrivate.RecentFileType.AUDIO);
 
     /**
+     * @private {!HTMLElement|null}
+     * @const
+     */
+    this.documentFilterButton_ = this.createFilterButton_(
+        chrome.fileManagerPrivate.RecentFileType.DOCUMENT);
+
+    /**
      * @private {!HTMLElement}
      * @const
      */
@@ -100,15 +108,6 @@ export class FileTypeFiltersController {
      */
     this.videoFilterButton_ = this.createFilterButton_(
         chrome.fileManagerPrivate.RecentFileType.VIDEO);
-
-    /**
-     * @private {!HTMLElement|null}
-     * @const
-     */
-    this.documentFilterButton_ = util.isRecentsFilterV2Enabled() ?
-        this.createFilterButton_(
-            chrome.fileManagerPrivate.RecentFileType.DOCUMENT) :
-        null;
 
     this.directoryModel_.addEventListener(
         'directory-changed', this.onCurrentDirectoryChanged_.bind(this));
@@ -186,8 +185,8 @@ export class FileTypeFiltersController {
    */
   createFilterButton_(fileType) {
     const label = str(this.filterTypeToTranslationKeyMap_.get(fileType));
-    const button = util.createChild(
-        this.container_, 'file-type-filter-button', 'cr-button');
+    const button =
+        createChild(this.container_, 'file-type-filter-button', 'cr-button');
     button.textContent = label;
     button.setAttribute('aria-label', label);
     // Store the "RecentFileType" on the button element so we know the mapping
@@ -249,9 +248,8 @@ export class FileTypeFiltersController {
     if (isButtonActive) {
       this.allFilterButton_.focus();
     }
-    // Refresh current directory with the updated Recent setting.
-    // We don't need to invalidate the cached metadata for this rescan.
-    this.directoryModel_.rescan(false);
+    // Clear and scan the current directory with the updated Recent setting.
+    this.directoryModel_.clearCurrentDirAndScan();
     this.speakA11yMessage(currentFilter, newFilter);
     this.recordFileTypeFilterUMA_(newFilter);
   }

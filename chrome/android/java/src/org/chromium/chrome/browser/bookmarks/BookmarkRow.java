@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,8 @@ import androidx.appcompat.content.res.AppCompatResources;
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.app.bookmarks.BookmarkAddEditFolderActivity;
+import org.chromium.chrome.browser.app.bookmarks.BookmarkFolderSelectActivity;
 import org.chromium.components.bookmarks.BookmarkId;
 import org.chromium.components.bookmarks.BookmarkItem;
 import org.chromium.components.bookmarks.BookmarkType;
@@ -168,15 +170,17 @@ public abstract class BookmarkRow
             if (bookmarkItem != null) {
                 // Reading list items can sometimes be movable (for type swapping purposes), but for
                 // UI purposes they shouldn't be movable.
-                canMove = bookmarkItem.isMovable();
+                canMove = BookmarkUtils.isMovable(bookmarkItem);
                 canReorder = bookmarkItem.isReorderable() && !mFromFilterView;
             }
         }
         ModelList listItems = new ModelList();
         if (mBookmarkId.getType() == BookmarkType.READING_LIST) {
-            // TODO(crbug.com/1269434): Add ability to mark an item as unread.
-            if (bookmarkItem != null && !bookmarkItem.isRead()) {
-                listItems.add(buildMenuListItem(R.string.reading_list_mark_as_read, 0, 0));
+            if (bookmarkItem != null) {
+                listItems.add(buildMenuListItem(bookmarkItem.isRead()
+                                ? R.string.reading_list_mark_as_unread
+                                : R.string.reading_list_mark_as_read,
+                        0, 0));
             }
             listItems.add(buildMenuListItem(R.string.bookmark_item_select, 0, 0));
             listItems.add(buildMenuListItem(R.string.bookmark_item_delete, 0, 0));
@@ -228,8 +232,13 @@ public abstract class BookmarkRow
             } else if (textId == R.string.reading_list_mark_as_read) {
                 BookmarkItem bookmarkItem = mDelegate.getModel().getBookmarkById(mBookmarkId);
                 mDelegate.getModel().setReadStatusForReadingList(
-                        bookmarkItem.getUrl(), true /*read*/);
+                        bookmarkItem.getUrl(), /*read=*/true);
                 RecordUserAction.record("Android.BookmarkPage.ReadingList.MarkAsRead");
+            } else if (textId == R.string.reading_list_mark_as_unread) {
+                BookmarkItem bookmarkItem = mDelegate.getModel().getBookmarkById(mBookmarkId);
+                mDelegate.getModel().setReadStatusForReadingList(
+                        bookmarkItem.getUrl(), /*read=*/false);
+                RecordUserAction.record("Android.BookmarkPage.ReadingList.MarkAsUnread");
             } else if (textId == R.string.bookmark_item_move) {
                 BookmarkFolderSelectActivity.startFolderSelectActivity(getContext(), mBookmarkId);
                 RecordUserAction.record("MobileBookmarkManagerMoveToFolder");
@@ -321,8 +330,7 @@ public abstract class BookmarkRow
         mDragHandle.setOnTouchListener(l);
     }
 
-    @VisibleForTesting
-    String getTitle() {
+    public String getTitle() {
         return String.valueOf(mTitleView.getText());
     }
 
@@ -351,7 +359,7 @@ public abstract class BookmarkRow
     }
 
     @VisibleForTesting
-    View getDragHandleViewForTests() {
+    public View getDragHandleViewForTests() {
         return mDragHandle;
     }
 }

@@ -1,13 +1,13 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/webui/eche_app_ui/eche_stream_status_change_handler.h"
 
-#include "ash/components/multidevice/logging/logging.h"
 #include "ash/constants/ash_features.h"
 #include "ash/webui/eche_app_ui/launch_app_helper.h"
 #include "base/metrics/histogram_functions.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
 
 namespace ash {
 namespace eche_app {
@@ -27,13 +27,7 @@ void EcheStreamStatusChangeHandler::OnStreamStatusChanged(
                << status;
   NotifyStreamStatusChanged(status);
 
-  // This is for the connection reliability metric and only supported in the
-  // bubble widget. The reason is the bubble widget replaces SWA and we can
-  // identify the notification swap case easily there. The SWA widget is not
-  // deprecated yet, so we check the feature flag temporarily to avoid recording
-  // some SWA data if users disable the bubble widget.
-  if (status == mojom::StreamStatus::kStreamStatusStarted &&
-      features::IsEcheCustomWidgetEnabled()) {
+  if (status == mojom::StreamStatus::kStreamStatusStarted) {
     base::UmaHistogramEnumeration("Eche.StreamEvent",
                                   mojom::StreamStatus::kStreamStatusStarted);
   }

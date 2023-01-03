@@ -1,11 +1,10 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/android/compositor/compositor_view.h"
 
 #include <android/bitmap.h>
-#include <android/native_window_jni.h>
 
 #include <memory>
 #include <vector>
@@ -86,7 +85,7 @@ CompositorView::CompositorView(JNIEnv* env,
   compositor_.reset(content::Compositor::Create(this, window_android));
 
   root_layer_->SetIsDrawable(true);
-  root_layer_->SetBackgroundColor(SK_ColorWHITE);
+  root_layer_->SetBackgroundColor(SkColors::kWhite);
 
   // It is safe to not keep a ref on the feature checker because it adds one
   // internally in CheckGpuFeatureAvailability and unrefs after the callback is
@@ -234,7 +233,8 @@ void CompositorView::SetLayoutBounds(JNIEnv* env,
 
 void CompositorView::SetBackground(bool visible, SkColor color) {
   // TODO(crbug.com/770911): Set the background color on the compositor.
-  root_layer_->SetBackgroundColor(color);
+  // TODO(crbug/1308932): Remove FromColor and make all SkColor4f.
+  root_layer_->SetBackgroundColor(SkColor4f::FromColor(color));
   root_layer_->SetIsDrawable(visible);
 }
 
@@ -381,9 +381,9 @@ void CompositorView::OnTabChanged(
   std::unique_ptr<content::PeakGpuMemoryTracker> tracker =
       content::PeakGpuMemoryTracker::Create(
           content::PeakGpuMemoryTracker::Usage::CHANGE_TAB);
-  compositor_->RequestPresentationTimeForNextFrame(base::BindOnce(
+  compositor_->RequestSuccessfulPresentationTimeForNextFrame(base::BindOnce(
       [](std::unique_ptr<content::PeakGpuMemoryTracker> tracker,
-         const gfx::PresentationFeedback& feedback) {
+         base::TimeTicks presentation_timestamp) {
         // This callback will be ran once the content::Compositor presents the
         // next frame. The destruction of |tracker| will get the peak GPU memory
         // and record a histogram.

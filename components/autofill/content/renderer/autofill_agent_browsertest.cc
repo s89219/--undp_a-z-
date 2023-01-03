@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #include <stdint.h>
@@ -13,10 +13,10 @@
 #include "components/autofill/content/common/mojom/autofill_driver.mojom.h"
 #include "components/autofill/content/renderer/autofill_agent.h"
 #include "components/autofill/content/renderer/autofill_agent_test_api.h"
-#include "components/autofill/content/renderer/autofill_assistant_agent.h"
 #include "components/autofill/content/renderer/password_generation_agent.h"
 #include "components/autofill/content/renderer/test_password_autofill_agent.h"
 #include "components/autofill/core/common/autofill_features.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/render_view_test.h"
 #include "content/public/test/test_utils.h"
@@ -85,12 +85,18 @@ class MockAutofillDriver : public mojom::AutofillDriver {
               (const FormData& form),
               (override));
   MOCK_METHOD(void,
+              JavaScriptChangedAutofilledValue,
+              (const FormData& form,
+               const FormFieldData& field,
+               const std::u16string& old_value),
+              (override));
+  MOCK_METHOD(void,
               AskForValuesToFill,
-              (int32_t id,
-               const FormData& form,
+              (const FormData& form,
                const FormFieldData& field,
                const gfx::RectF& bounding_box,
-               bool autoselect_first_suggestion),
+               AutoselectFirstSuggestion autoselect_first_suggestion,
+               FormElementWasClicked form_element_was_clicked),
               (override));
   MOCK_METHOD(void, HidePopup, (), (override));
   MOCK_METHOD(void,
@@ -164,17 +170,13 @@ class AutofillAgentTest : public content::RenderViewTest {
     password_generation_ = std::make_unique<PasswordGenerationAgent>(
         GetMainRenderFrame(), password_autofill_agent_.get(),
         &associated_interfaces_);
-    autofill_assistant_agent_ =
-        std::make_unique<AutofillAssistantAgent>(GetMainRenderFrame());
     autofill_agent_ = std::make_unique<AutofillAgent>(
         GetMainRenderFrame(), password_autofill_agent_.get(),
-        password_generation_.get(), autofill_assistant_agent_.get(),
-        &associated_interfaces_);
+        password_generation_.get(), &associated_interfaces_);
   }
 
   void TearDown() override {
     autofill_agent_.reset();
-    autofill_assistant_agent_.reset();
     password_generation_.reset();
     password_autofill_agent_.reset();
     RenderViewTest::TearDown();
@@ -192,7 +194,6 @@ class AutofillAgentTest : public content::RenderViewTest {
   blink::AssociatedInterfaceRegistry associated_interfaces_;
   std::unique_ptr<PasswordAutofillAgent> password_autofill_agent_;
   std::unique_ptr<PasswordGenerationAgent> password_generation_;
-  std::unique_ptr<AutofillAssistantAgent> autofill_assistant_agent_;
 };
 
 // Enables AutofillAcrossIframes.

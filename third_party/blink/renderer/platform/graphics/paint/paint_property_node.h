@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iosfwd>
 
+#include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/memory/scoped_refptr.h"
 #include "cc/trees/property_tree.h"
@@ -117,6 +118,18 @@ class PaintPropertyNode
       n->ClearChanged(sequence_number);
   }
 
+  PaintPropertyChangeType SetParent(const NodeTypeOrAlias& parent) {
+    DCHECK(!IsRoot());
+    DCHECK_NE(&parent, this);
+    if (&parent == parent_) {
+      return PaintPropertyChangeType::kUnchanged;
+    }
+    parent_ = &parent;
+    static_cast<NodeTypeOrAlias*>(this)->AddChanged(
+        PaintPropertyChangeType::kChangedOnlyValues);
+    return PaintPropertyChangeType::kChangedOnlyValues;
+  }
+
   // Returns true if this node is an alias for its parent. A parent alias is a
   // node which on its own does not contribute to the rendering output, and only
   // exists to enforce a particular structure of the paint property tree. Its
@@ -208,23 +221,6 @@ class PaintPropertyNode
         changed_(PaintPropertyChangeType::kNodeAddedOrRemoved),
         parent_(&parent) {}
 
-  PaintPropertyChangeType SetParent(const NodeTypeOrAlias& parent) {
-    DCHECK(!IsRoot());
-    DCHECK_NE(&parent, this);
-    if (&parent == parent_)
-      return PaintPropertyChangeType::kUnchanged;
-
-    parent_ = &parent;
-    if (IsParentAlias()) {
-      static_cast<NodeTypeOrAlias*>(this)->AddChanged(
-          PaintPropertyChangeType::kChangedOnlyValues);
-    } else {
-      static_cast<NodeType*>(this)->AddChanged(
-          PaintPropertyChangeType::kChangedOnlyValues);
-    }
-    return PaintPropertyChangeType::kChangedOnlyValues;
-  }
-
   void AddChanged(PaintPropertyChangeType changed) {
     DCHECK(!IsRoot());
     changed_ = std::max(changed_, changed);
@@ -288,6 +284,8 @@ class PaintPropertyNode
 
 template <typename NodeType>
 class PropertyTreePrinter {
+  STACK_ALLOCATED();
+
  public:
   void AddNode(const NodeType* node) {
     if (node)
@@ -295,7 +293,7 @@ class PropertyTreePrinter {
   }
 
   String NodesAsTreeString() {
-    if (nodes_.IsEmpty())
+    if (nodes_.empty())
       return "";
     StringBuilder string_builder;
     BuildTreeString(string_builder, RootNode(), 0);
@@ -327,7 +325,7 @@ class PropertyTreePrinter {
     const auto* node = nodes_.back();
     while (!node->IsRoot())
       node = node->Parent();
-    if (node->DebugName().IsEmpty())
+    if (node->DebugName().empty())
       const_cast<NodeType*>(node)->SetDebugName("root");
     nodes_.insert(node);
     return *node;

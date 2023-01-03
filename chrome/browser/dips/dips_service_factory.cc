@@ -1,14 +1,13 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/dips/dips_service_factory.h"
 
-#include "base/logging.h"
 #include "base/memory/singleton.h"
+#include "chrome/browser/content_settings/cookie_settings_factory.h"
+#include "chrome/browser/dips/dips_features.h"
 #include "chrome/browser/dips/dips_service.h"
-#include "chrome/browser/profiles/incognito_helpers.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 DIPSService* DIPSServiceFactory::GetForBrowserContext(
@@ -21,19 +20,28 @@ DIPSServiceFactory* DIPSServiceFactory::GetInstance() {
   return base::Singleton<DIPSServiceFactory>::get();
 }
 
+/*static*/
+ProfileSelections DIPSServiceFactory::CreateProfileSelections() {
+  if (!base::FeatureList::IsEnabled(dips::kFeature)) {
+    return ProfileSelections::BuildNoProfilesSelected();
+  }
+
+  return ProfileSelections::Builder()
+      .WithRegular(ProfileSelection::kOwnInstance)
+      .WithGuest(ProfileSelection::kOffTheRecordOnly)
+      .WithSystem(ProfileSelection::kNone)
+      .WithAshInternals(ProfileSelection::kNone)
+      .Build();
+}
+
 DIPSServiceFactory::DIPSServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "DIPSService",
-          BrowserContextDependencyManager::GetInstance()) {}
+    : ProfileKeyedServiceFactory("DIPSService", CreateProfileSelections()) {
+  DependsOn(CookieSettingsFactory::GetInstance());
+}
 
 DIPSServiceFactory::~DIPSServiceFactory() = default;
 
 KeyedService* DIPSServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   return new DIPSService(context);
-}
-
-content::BrowserContext* DIPSServiceFactory::GetBrowserContextToUse(
-    content::BrowserContext* context) const {
-  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }

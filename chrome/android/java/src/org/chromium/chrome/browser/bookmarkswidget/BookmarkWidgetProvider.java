@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -119,6 +119,7 @@ public class BookmarkWidgetProvider extends AppWidgetProvider {
 
             appWidgetManager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.bookmarks_list);
             Intent ic = new Intent(context, BookmarkWidgetProxy.class);
+            IntentUtils.addTrustedIntentExtras(ic);
             ic.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             views.setPendingIntentTemplate(R.id.bookmarks_list,
                     PendingIntent.getActivity(context, 0, ic,

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,11 +14,10 @@ import androidx.annotation.MainThread;
 import androidx.annotation.Nullable;
 import androidx.annotation.WorkerThread;
 
-import com.google.common.base.Optional;
-
 import org.chromium.base.Callback;
 import org.chromium.base.Promise;
 import org.chromium.components.signin.base.AccountCapabilities;
+import org.chromium.components.signin.base.CoreAccountInfo;
 
 import java.util.List;
 
@@ -57,17 +56,30 @@ public interface AccountManagerFacade {
     void removeObserver(AccountsChangeObserver observer);
 
     /**
-     * Retrieves all the accounts on the device.
+     * Retrieves accounts on device after filtering them through account restriction patterns.
      * The {@link Promise} will be fulfilled once the accounts cache will be populated.
      * If an error occurs while getting account list, the returned {@link Promise} will wrap an
      * empty array.
      *
      * Since a different {@link Promise} will be returned every time the accounts get updated,
-     * this makes it a bad candidate for end users to cache the {@link Promise} locally unless
+     * this makes the {@link Promise} a bad candidate for end users to cache locally unless
      * the end users are awaiting the current list of accounts only.
      */
     @MainThread
     Promise<List<Account>> getAccounts();
+
+    /**
+     * Retrieves corresponding {@link CoreAccountInfo}s for filtered accounts.
+     * The {@link Promise} will be fulfilled once the accounts cache is populated and gaia ids are
+     * fetched. If an error occurs while getting account list, the returned {@link Promise} will
+     * wrap an empty array.
+     *
+     * Since a different {@link Promise} will be returned every time the accounts get updated,
+     * this makes he {@link Promise}t a bad candidate for end users to cache locally unless
+     * the end users are awaiting the {@link CoreAccountInfo}s for current list of accounts only.
+     */
+    @MainThread
+    Promise<List<CoreAccountInfo>> getCoreAccountInfos();
 
     /**
      * @return Whether or not there is an account authenticator for Google accounts.
@@ -109,12 +121,6 @@ public interface AccountManagerFacade {
      */
     @MainThread
     Promise<AccountCapabilities> getAccountCapabilities(Account account);
-
-    /**
-     * Gets the boolean for whether the account can offer extended sync promos.
-     * If the result is not yet fetched, the optional will be empty.
-     */
-    Optional<Boolean> canOfferExtendedSyncPromos(Account account);
 
     /**
      * Creates an intent that will ask the user to add a new account to the device. See

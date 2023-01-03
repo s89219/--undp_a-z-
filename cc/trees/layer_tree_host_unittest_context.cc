@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -94,7 +94,6 @@ class LayerTreeHostContextTest : public LayerTreeTest {
 
     auto gl_owned = std::make_unique<viz::TestGLES2Interface>();
     if (context_should_support_io_surface_) {
-      gl_owned->set_have_extension_io_surface(true);
       gl_owned->set_have_extension_egl_image(true);
     }
 
@@ -815,7 +814,7 @@ class LayerTreeHostContextTestDontUseLostResources
     context_should_support_io_surface_ = true;
 
     child_context_provider_ = viz::TestContextProvider::Create();
-    auto result = child_context_provider_->BindToCurrentThread();
+    auto result = child_context_provider_->BindToCurrentSequence();
     CHECK_EQ(result, gpu::ContextResult::kSuccess);
     shared_bitmap_manager_ = std::make_unique<viz::TestSharedBitmapManager>();
     child_resource_provider_ = std::make_unique<viz::ClientResourceProvider>();
@@ -846,8 +845,8 @@ class LayerTreeHostContextTestDontUseLostResources
     texture->SetBounds(gfx::Size(10, 10));
     texture->SetIsDrawable(true);
     constexpr gfx::Size size(64, 64);
-    auto resource = viz::TransferableResource::MakeGL(
-        mailbox, GL_LINEAR, GL_TEXTURE_2D, sync_token, size,
+    auto resource = viz::TransferableResource::MakeGpu(
+        mailbox, GL_LINEAR, GL_TEXTURE_2D, sync_token, size, viz::RGBA_8888,
         false /* is_overlay_candidate */);
     texture->SetTransferableResource(
         resource, base::BindOnce(&LayerTreeHostContextTestDontUseLostResources::

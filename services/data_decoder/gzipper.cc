@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@ void Gzipper::Deflate(mojo_base::BigBuffer data, DeflateCallback callback) {
   std::vector<uint8_t> compressed_data(compressed_data_size);
   if (zlib_internal::CompressHelper(
           zlib_internal::ZRAW, compressed_data.data(), &compressed_data_size,
-          bit_cast<const Bytef*>(data.data()), data.size(),
+          base::bit_cast<const Bytef*>(data.data()), data.size(),
           Z_DEFAULT_COMPRESSION,
           /*malloc_fn=*/nullptr, /*free_fn=*/nullptr) != Z_OK) {
     std::move(callback).Run(absl::nullopt);

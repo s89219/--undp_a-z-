@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,11 +17,11 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/values.h"
-#include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
-#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/policy/messaging_layer/util/dm_token_retriever_provider.h"
+#include "chrome/browser/policy/messaging_layer/util/reporting_server_connector.h"
+#include "chrome/browser/policy/messaging_layer/util/reporting_server_connector_test_util.h"
 #include "chrome/browser/policy/messaging_layer/util/test_request_payload.h"
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
 #include "components/reporting/client/dm_token_retriever.h"
 #include "components/reporting/client/mock_dm_token_retriever.h"
@@ -33,6 +33,7 @@
 #include "components/reporting/encryption/testing_primitives.h"
 #include "components/reporting/encryption/verification.h"
 #include "components/reporting/proto/synced/record_constants.pb.h"
+#include "components/reporting/storage_selector/storage_selector.h"
 #include "components/reporting/util/status.h"
 #include "components/reporting/util/status_macros.h"
 #include "components/reporting/util/statusor.h"
@@ -43,12 +44,6 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
-#include "chrome/test/base/testing_profile.h"
-#include "components/user_manager/scoped_user_manager.h"
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-
 using ::testing::_;
 using ::testing::Eq;
 using ::testing::Invoke;
@@ -57,6 +52,9 @@ using ::testing::SizeIs;
 using ::testing::StrEq;
 using ::testing::StrictMock;
 using ::testing::WithArgs;
+
+using ::policy::CloudPolicyClient;
+using ::policy::MockCloudPolicyClient;
 
 namespace reporting {
 namespace {
@@ -67,24 +65,6 @@ class ReportClientTest : public ::testing::TestWithParam<bool> {
  protected:
   void SetUp() override {
     ASSERT_TRUE(location_.CreateUniqueTempDir());
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    // Set up fake primary profile.
-    auto mock_user_manager =
-        std::make_unique<testing::NiceMock<ash::FakeChromeUserManager>>();
-    profile_ = std::make_unique<TestingProfile>(
-        base::FilePath(FILE_PATH_LITERAL("/home/chronos/u-0123456789abcdef")));
-    const AccountId account_id(AccountId::FromUserEmailGaiaId(
-        profile_->GetProfileUserName(), "12345"));
-    const user_manager::User* user =
-        mock_user_manager->AddPublicAccountUser(account_id);
-    ash::ProfileHelper::Get()->SetActiveUserIdForTesting(
-        profile_->GetProfileUserName());
-    mock_user_manager->UserLoggedIn(account_id, user->username_hash(),
-                                    /*browser_restart=*/false,
-                                    /*is_child=*/false);
-    user_manager_ = std::make_unique<user_manager::ScopedUserManager>(
-        std::move(mock_user_manager));
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
     // Encryption is enabled by default.
     ASSERT_TRUE(EncryptionModuleInterface::is_enabled());
@@ -107,14 +87,12 @@ class ReportClientTest : public ::testing::TestWithParam<bool> {
     }
 
     // Provide a mock cloud policy client.
-    client_ = std::make_unique<policy::MockCloudPolicyClient>();
-    client_->SetDMToken(kDMToken);
+    mock_client_.SetDMToken(kDMToken);
     test_reporting_ = std::make_unique<ReportingClient::TestEnvironment>(
         base::FilePath(location_.GetPath()),
         base::StringPiece(
             reinterpret_cast<const char*>(signature_verification_public_key_),
-            kKeySize),
-        client_.get());
+            kKeySize));
 
     // Use MockDMTokenRetriever and configure it to always return the test DM
     // token by default
@@ -124,11 +102,6 @@ class ReportClientTest : public ::testing::TestWithParam<bool> {
   void TearDown() override {
     // Let everything ongoing to finish.
     task_environment_.RunUntilIdle();
-
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    user_manager_.reset();
-    profile_.reset();
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   }
 
   SignedEncryptionInfo GenerateAndSignKey() {
@@ -223,7 +196,7 @@ class ReportClientTest : public ::testing::TestWithParam<bool> {
 
   auto GetEncryptionKeyInvocation() {
     return [this](base::Value::Dict payload,
-                  policy::CloudPolicyClient::ResponseCallback done_cb) {
+                  CloudPolicyClient::ResponseCallback done_cb) {
       absl::optional<bool> const attach_encryption_settings =
           payload.FindBool("attachEncryptionSettings");
       ASSERT_TRUE(attach_encryption_settings.has_value());
@@ -249,7 +222,7 @@ class ReportClientTest : public ::testing::TestWithParam<bool> {
 
   auto GetVerifyDataInvocation() {
     return [this](base::Value::Dict payload,
-                  policy::CloudPolicyClient::ResponseCallback done_cb) {
+                  ::policy::CloudPolicyClient::ResponseCallback done_cb) {
       base::Value::List* const records = payload.FindList("encryptedRecord");
       ASSERT_THAT(records, Ne(nullptr));
       ASSERT_THAT(*records, SizeIs(1));
@@ -311,11 +284,8 @@ class ReportClientTest : public ::testing::TestWithParam<bool> {
   scoped_refptr<test::Decryptor> decryptor_;
   SignedEncryptionInfo signed_encryption_key_;
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  std::unique_ptr<TestingProfile> profile_;
-  std::unique_ptr<user_manager::ScopedUserManager> user_manager_;
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-  std::unique_ptr<policy::MockCloudPolicyClient> client_;
+  MockCloudPolicyClient mock_client_;
+  ReportingServerConnector::TestEnvironment test_env_{&mock_client_};
   raw_ptr<ReportQueueConfiguration> report_queue_config_;
   const Destination destination_ = Destination::UPLOAD_EVENTS;
   ReportQueueConfiguration::PolicyCheckCallback policy_checker_callback_ =
@@ -393,8 +363,9 @@ TEST_P(ReportClientTest, EnqueueMessageAndUpload) {
     }
 
     // Uploader is available, let it set the key.
-    EXPECT_CALL(*client_, UploadEncryptedReport(
-                              IsEncryptionKeyRequestUploadRequestValid(), _, _))
+    EXPECT_CALL(
+        mock_client_,
+        UploadEncryptedReport(IsEncryptionKeyRequestUploadRequestValid(), _, _))
         .WillOnce(WithArgs<0, 2>(Invoke(GetEncryptionKeyInvocation())))
         .RetiresOnSaturation();
   }
@@ -407,7 +378,7 @@ TEST_P(ReportClientTest, EnqueueMessageAndUpload) {
 
   if (StorageSelector::is_uploader_required() &&
       !StorageSelector::is_use_missive()) {
-    EXPECT_CALL(*client_,
+    EXPECT_CALL(mock_client_,
                 UploadEncryptedReport(IsDataUploadRequestValid(), _, _))
         .WillOnce(WithArgs<0, 2>(Invoke(GetVerifyDataInvocation())));
   }
@@ -432,30 +403,24 @@ TEST_P(ReportClientTest, SpeculativelyEnqueueMessageAndUpload) {
     }
   }
 
+  if (StorageSelector::is_uploader_required() &&
+      !StorageSelector::is_use_missive()) {
+    if (is_encryption_enabled()) {
+      EXPECT_CALL(mock_client_,
+                  UploadEncryptedReport(
+                      IsEncryptionKeyRequestUploadRequestValid(), _, _))
+          .WillOnce(WithArgs<0, 2>(Invoke(GetEncryptionKeyInvocation())));
+    }
+    EXPECT_CALL(mock_client_,
+                UploadEncryptedReport(IsDataUploadRequestValid(), _, _))
+        .WillOnce(WithArgs<0, 2>(Invoke(GetVerifyDataInvocation())));
+  }
+
   // Enqueue event right away, before attaching an actual queue.
   test::TestEvent<Status> enqueue_record_event;
   report_queue->Enqueue("Record", FAST_BATCH, enqueue_record_event.cb());
   const auto enqueue_record_result = enqueue_record_event.result();
   EXPECT_OK(enqueue_record_result) << enqueue_record_result;
-
-  if (StorageSelector::is_uploader_required() &&
-      !StorageSelector::is_use_missive()) {
-    // Note: there does not seem to be another way to define the expectations
-    // A+B for encrypted case and just B for non-encrypted.
-    if (is_encryption_enabled()) {
-      EXPECT_CALL(*client_,
-                  UploadEncryptedReport(
-                      IsEncryptionKeyRequestUploadRequestValid(), _, _))
-          .WillOnce(WithArgs<0, 2>(Invoke(GetEncryptionKeyInvocation())));
-      EXPECT_CALL(*client_,
-                  UploadEncryptedReport(IsDataUploadRequestValid(), _, _))
-          .WillOnce(WithArgs<0, 2>(Invoke(GetVerifyDataInvocation())));
-    } else {
-      EXPECT_CALL(*client_,
-                  UploadEncryptedReport(IsDataUploadRequestValid(), _, _))
-          .WillOnce(WithArgs<0, 2>(Invoke(GetVerifyDataInvocation())));
-    }
-  }
 
   // Trigger upload.
   task_environment_.FastForwardBy(base::Seconds(1));

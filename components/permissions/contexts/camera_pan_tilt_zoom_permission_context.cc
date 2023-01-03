@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,7 +55,6 @@ CameraPanTiltZoomPermissionContext::~CameraPanTiltZoomPermissionContext() {
 }
 
 void CameraPanTiltZoomPermissionContext::RequestPermission(
-    content::WebContents* web_contents,
     const permissions::PermissionRequestID& id,
     const GURL& requesting_frame_origin,
     bool user_gesture,
@@ -63,8 +62,7 @@ void CameraPanTiltZoomPermissionContext::RequestPermission(
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (HasAvailableCameraPtzDevices()) {
-    PermissionContextBase::RequestPermission(web_contents, id,
-                                             requesting_frame_origin,
+    PermissionContextBase::RequestPermission(id, requesting_frame_origin,
                                              user_gesture, std::move(callback));
     return;
   }
@@ -72,12 +70,14 @@ void CameraPanTiltZoomPermissionContext::RequestPermission(
   // If there is no camera with PTZ capabilities, let's request a "regular"
   // camera permission instead.
   content::RenderFrameHost* render_frame_host =
-      content::RenderFrameHost::FromID(id.render_process_id(),
-                                       id.render_frame_id());
+      content::RenderFrameHost::FromID(id.global_render_frame_host_id());
 
-  CHECK_EQ(requesting_frame_origin,
-           PermissionUtil::GetLastCommittedOriginAsURL(render_frame_host));
-  web_contents->GetBrowserContext()
+  if (requesting_frame_origin !=
+      render_frame_host->GetLastCommittedOrigin().GetURL()) {
+    std::move(callback).Run(CONTENT_SETTING_BLOCK);
+    return;
+  }
+  render_frame_host->GetBrowserContext()
       ->GetPermissionController()
       ->RequestPermissionFromCurrentDocument(
           blink::PermissionType::VIDEO_CAPTURE, render_frame_host, user_gesture,
@@ -95,10 +95,6 @@ ContentSetting CameraPanTiltZoomPermissionContext::GetPermissionStatusInternal(
   }
   return PermissionContextBase::GetPermissionStatusInternal(
       render_frame_host, requesting_origin, embedding_origin);
-}
-
-bool CameraPanTiltZoomPermissionContext::IsRestrictedToSecureOrigins() const {
-  return true;
 }
 
 void CameraPanTiltZoomPermissionContext::OnContentSettingChanged(

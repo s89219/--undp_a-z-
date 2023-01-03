@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +54,6 @@ Response BrowserHandler::GetWindowForTarget(
   if (!web_contents)
     return Response::ServerError("No web contents for the given target id");
 
-  auto result = std::make_unique<base::DictionaryValue>();
   *out_window_id = web_contents->window_id();
   *out_bounds = CreateBrowserBounds(web_contents);
   return Response::Success();

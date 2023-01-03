@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,10 +14,10 @@ import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 import {installMock} from '../../test_support.js';
 
 suite('NewTabPageModulesDriveModuleTest', () => {
-  let handler: TestBrowserProxy;
+  let handler: TestBrowserProxy<DriveHandlerRemote>;
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     handler = installMock(DriveHandlerRemote, DriveProxy.setHandler);
   });
 
@@ -44,8 +44,8 @@ suite('NewTabPageModulesDriveModuleTest', () => {
           id: '345',
           mimeType: 'application/vnd.google-apps.presentation',
           itemUrl: {url: 'https://caz.com'},
-        }
-      ]
+        },
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
 
@@ -97,7 +97,7 @@ suite('NewTabPageModulesDriveModuleTest', () => {
           mimeType: '',
           itemUrl: {url: ''},
         },
-      ]
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
     const moduleElement =
@@ -133,7 +133,7 @@ suite('NewTabPageModulesDriveModuleTest', () => {
           mimeType: '',
           itemUrl: {url: ''},
         },
-      ]
+      ],
     };
     handler.setResultFor('getFiles', Promise.resolve(data));
     const module = await driveDescriptor.initialize(0);

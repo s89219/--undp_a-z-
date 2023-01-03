@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -90,6 +90,7 @@ enum FirstRunStage {
   // Sync screen is closed without sync.
   kSyncScreenCompletionWithoutSync = 4,
   // Sync screen is closed when user taps on advance sync settings button.
+  // Deprecated. This is not used anymore.
   kSyncScreenCompletionWithSyncSettings = 5,
   // SignIn screen is shown.
   kSignInScreenStart = 6,
@@ -109,9 +110,53 @@ enum FirstRunStage {
   kWelcomeAndSigninScreenCompletionWithSignIn = 13,
   // Welcome+SignIn screen is closed without sign in.
   kWelcomeAndSigninScreenCompletionWithoutSignIn = 14,
+  // Sync screen is shown.
+  kTangibleSyncScreenStart = 15,
+  // Sync screen is closed with sync.
+  kTangibleSyncScreenCompletionWithSync = 16,
+  // Sync screen is closed without sync.
+  kTangibleSyncScreenCompletionWithoutSync = 17,
   // Max value of the first run experience stages.
   // kMaxValue should share the value of the highest enumerator.
-  kMaxValue = kWelcomeAndSigninScreenCompletionWithoutSignIn,
+  kMaxValue = kTangibleSyncScreenCompletionWithoutSync,
+};
+
+// The different type of screens of the first run experience. This is mapped to
+// the variants of the metric IOS.FirstRun.ScrollButtonVisible.* in of
+// `tools/metrics/histograms/metadata/ios/histograms.xml`.
+enum FirstRunScreenType {
+  // The new FRE screen that instructs the user to set default browser to
+  // Chrome.
+  kDefaultBrowserPromoScreen,
+  // The screen that asks the user to sign in when no stored account is
+  // detected, with a footer shown at the bottom. Displayed when MICe is enabled
+  // without the welcome screen (2-steps MICe FRE), or when forced sign-in is
+  // enabled.
+  kSignInScreenWithFooter,
+  // The screen that asks the user to sign in a stored account, with a footer
+  // shown at the bottom. Displayed when MICe is enabled without the welcome
+  // screen (2-steps MICe FRE), or when forced sign-in is enabled.
+  kSignInScreenWithFooterAndIdentityPicker,
+  // The screen that asks the user to sign in a stored account, but with no
+  // footer shown at the bottom. Displayed when MICe is enabled with the welcome
+  // screen (3-steps MICe FRE).
+  kSignInScreenWithIdentityPicker,
+  // The screen that asks the user to sign in when no stored account is
+  // detected, but with no footer shown at the bottom. Displayed when MICe is
+  // enabled with the welcome screen (3-steps MICe FRE).
+  kSignInScreenWithoutFooterOrIdentityPicker,
+  // The screen that asks the user to turn on sync while no account picker is
+  // present. Displayed when MICe is enabled or when no account is detected.
+  kSyncScreenWithoutIdentityPicker,
+  // The screen that asks the user to turn on sync while showing an account
+  // picker. Displayed when MICe is disabled and an account is detected.
+  kSyncScreenWithIdentityPicker,
+  // Welcome screen without UMA checkbox. Displayed when MICe is enabled.
+  kWelcomeScreenWithoutUMACheckbox,
+  // Welcome screen with UMA checkbox. Displayed when MICe is disabled.
+  kWelcomeScreenWithUMACheckbox,
+  // The tangible sync screen that asks the user to turn on sync.
+  kTangibleSyncScreen,
 };
 
 }  // namespace first_run

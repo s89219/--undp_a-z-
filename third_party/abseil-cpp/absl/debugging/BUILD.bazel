@@ -49,6 +49,7 @@ cc_library(
         ":debugging_internal",
         "//absl/base:config",
         "//absl/base:core_headers",
+        "//absl/base:raw_logging_internal",
     ],
 )
 
@@ -121,7 +122,7 @@ cc_library(
     ],
     copts = ABSL_DEFAULT_COPTS,
     linkopts = ABSL_DEFAULT_LINKOPTS,
-    visibility = ["//visibility:private"],
+    visibility = ["//absl/log/internal:__pkg__"],
     deps = [
         ":stacktrace",
         ":symbolize",
@@ -143,7 +144,6 @@ cc_library(
         "//absl/base",
         "//absl/base:config",
         "//absl/base:core_headers",
-        "//absl/base:errno_saver",
         "//absl/base:raw_logging_internal",
     ],
 )
@@ -197,6 +197,7 @@ cc_library(
     srcs = ["internal/demangle.cc"],
     hdrs = ["internal/demangle.h"],
     copts = ABSL_DEFAULT_COPTS,
+    linkopts = ABSL_DEFAULT_LINKOPTS,
     visibility = ["//visibility:private"],
     deps = [
         "//absl/base",

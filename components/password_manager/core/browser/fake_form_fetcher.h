@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,7 @@ class FakeFormFetcher : public FormFetcher {
   State GetState() const override;
 
   const std::vector<InteractionsStats>& GetInteractionsStats() const override;
-  const std::vector<const PasswordForm*>& GetInsecureCredentials()
-      const override;
+  std::vector<const PasswordForm*> GetInsecureCredentials() const override;
   std::vector<const PasswordForm*> GetNonFederatedMatches() const override;
   std::vector<const PasswordForm*> GetFederatedMatches() const override;
   bool IsBlocklisted() const override;
@@ -55,6 +54,8 @@ class FakeFormFetcher : public FormFetcher {
   const PasswordForm* GetPreferredMatch() const override;
   // Returns a new FakeFormFetcher.
   std::unique_ptr<FormFetcher> Clone() override;
+  absl::optional<PasswordStoreBackendError> GetProfileStoreBackendError()
+      const override;
 
   void set_stats(const std::vector<InteractionsStats>& stats) {
     state_ = State::NOT_WAITING;
@@ -79,6 +80,9 @@ class FakeFormFetcher : public FormFetcher {
 
   void NotifyFetchCompleted();
 
+  void SetProfileStoreBackendError(
+      absl::optional<PasswordStoreBackendError> error);
+
  private:
   base::ObserverList<Consumer> consumers_;
   State state_ = State::NOT_WAITING;
@@ -91,6 +95,7 @@ class FakeFormFetcher : public FormFetcher {
   std::vector<const PasswordForm*> insecure_credentials_;
   const PasswordForm* preferred_match_ = nullptr;
   bool is_blocklisted_ = false;
+  absl::optional<PasswordStoreBackendError> profile_store_backend_error_;
 };
 
 }  // namespace password_manager

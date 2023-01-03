@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,8 +31,6 @@ OmniboxAction::LabelStrings::LabelStrings(const LabelStrings&) = default;
 
 OmniboxAction::LabelStrings::~LabelStrings() = default;
 
-// =============================================================================
-
 namespace base {
 namespace trace_event {
 size_t EstimateMemoryUsage(const OmniboxAction::LabelStrings& self) {
@@ -45,6 +43,12 @@ size_t EstimateMemoryUsage(const OmniboxAction::LabelStrings& self) {
 }
 }  // namespace trace_event
 }  // namespace base
+
+// =============================================================================
+
+bool OmniboxAction::Client::OpenJourneys(const std::string& query) {
+  return false;
+}
 
 // =============================================================================
 
@@ -62,8 +66,10 @@ OmniboxAction::ExecutionContext::~ExecutionContext() = default;
 
 // =============================================================================
 
-OmniboxAction::OmniboxAction(LabelStrings strings, GURL url)
-    : strings_(strings), url_(url) {}
+OmniboxAction::OmniboxAction(LabelStrings strings,
+                             GURL url,
+                             bool takes_over_match)
+    : strings_(strings), url_(url), takes_over_match_(takes_over_match) {}
 
 OmniboxAction::~OmniboxAction() = default;
 
@@ -80,6 +86,10 @@ bool OmniboxAction::IsReadyToTrigger(
     const AutocompleteInput& input,
     const AutocompleteProviderClient& client) const {
   return true;
+}
+
+bool OmniboxAction::TakesOverMatch() const {
+  return takes_over_match_;
 }
 
 #if defined(SUPPORT_PEDALS_VECTOR_ICONS)
@@ -119,5 +129,6 @@ void OmniboxAction::OpenURL(OmniboxAction::ExecutionContext& context,
            /*match_type=*/AutocompleteMatchType::URL_WHAT_YOU_TYPED,
            context.match_selection_timestamp_,
            /*destination_url_entered_without_scheme=*/false, u"",
-           AutocompleteMatch(), AutocompleteMatch());
+           AutocompleteMatch(), AutocompleteMatch(),
+           IDNA2008DeviationCharacter::kNone);
 }

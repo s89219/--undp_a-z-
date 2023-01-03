@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -83,8 +83,6 @@ class ASH_EXPORT WindowResizer {
 
  protected:
   gfx::Rect CalculateBoundsForDrag(const gfx::PointF& location);
-
-  static bool IsBottomEdge(int component);
 
   // Call during an active resize to change the bounds of the window. This
   // should not be called as the result of a revert.

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,18 @@ enum DurationPrecision {
 }
 
 message SiteDescription {
+  // The name of the site, e.g. "The New York Times".
+  // May not be present.
   optional string name = 1;
+
+  // The subtitle for the site.
+  // May not be present.
+  // If title is missing, subtitle will not be present either, but even for
+  // cases where there is a title there may not be a subtitle.
+  optional string subtitle = 5;
+
+  // The description of the site, e.g. "The New York Times is an American daily
+  // newspaper based in New York City..."
   optional string description = 2;
 
   // Information about the source of the description. Note that if your product
@@ -73,23 +84,10 @@ message SiteInfo {
   optional MoreAbout more_about = 3;
 }
 
-// Info for a site-specific banner.
-message BannerInfo {
-  // Optional title of a banner.
-  optional string title = 1;
-  // Label of a banner.
-  optional string label = 2;
-  // Source URL of the banner.
-  optional Hyperlink url = 3;
-}
-
 // Optimization metadata associated with SiteInfo.
 //
 // This is only populated for the ABOUT_THIS_SITE optimization type.
 message AboutThisSiteMetadata {
   // A SiteInfo hint that will be shown in PageInfo.
   optional SiteInfo site_info = 1;
-
-  // Info for a site-specific banner.
-  optional BannerInfo banner_info = 2;
 }

@@ -1,10 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/accelerator_table.h"
 
 #include <stddef.h>
+
+#include <vector>
 
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
@@ -14,6 +16,8 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "components/lens/buildflags.h"
+#include "components/lens/lens_features.h"
 #include "components/services/screen_ai/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -138,7 +142,7 @@ const AcceleratorMapping kAcceleratorMap[] = {
      IDC_SHOW_AVATAR_MENU},
 
 // Platform-specific key maps.
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_FUCHSIA)
     {ui::VKEY_BROWSER_BACK, ui::EF_NONE, IDC_BACK},
     {ui::VKEY_BROWSER_FORWARD, ui::EF_NONE, IDC_FORWARD},
     {ui::VKEY_BROWSER_HOME, ui::EF_NONE, IDC_HOME},
@@ -147,7 +151,8 @@ const AcceleratorMapping kAcceleratorMap[] = {
     {ui::VKEY_BROWSER_REFRESH, ui::EF_SHIFT_DOWN, IDC_RELOAD_BYPASSING_CACHE},
     {ui::VKEY_CLOSE, ui::EF_NONE, IDC_CLOSE_TAB},
     {ui::VKEY_NEW, ui::EF_NONE, IDC_NEW_TAB},
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
+        // BUILDFLAG(IS_FUCHSIA)
 
 #if BUILDFLAG(IS_CHROMEOS)
     // Chrome OS supports the print key, however XKB conflates the print
@@ -236,8 +241,10 @@ const AcceleratorMapping kAcceleratorMap[] = {
     {ui::VKEY_SPACE, ui::EF_CONTROL_DOWN, IDC_TOGGLE_QUICK_COMMANDS},
 #endif  // !BUILDFLAG(IS_CHROMEOS)
 #endif  // !BUILDFLAG(IS_MAC)
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-    {ui::VKEY_S, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN, IDC_RUN_SCREEN_AI},
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE) && \
+    (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS))
+    {ui::VKEY_S, ui::EF_CONTROL_DOWN | ui::EF_SHIFT_DOWN,
+     IDC_RUN_SCREEN_AI_VISUAL_ANNOTATIONS},
 #endif
 };
 
@@ -256,6 +263,16 @@ const AcceleratorMapping kEnableWithNewMappingAcceleratorMap[] = {
      IDC_CARET_BROWSING_TOGGLE},
 };
 #endif
+
+#if BUILDFLAG(ENABLE_LENS_DESKTOP_GOOGLE_BRANDED_FEATURES)
+// Accelerators to enable if lens::features::kEnableRegionSearchKeyboardShortcut
+// is true.
+constexpr AcceleratorMapping kRegionSearchAcceleratorMap[] = {
+    // TODO(nguyenbryan): This is a temporary hotkey; update when finalized.
+    {ui::VKEY_E, ui::EF_SHIFT_DOWN | ui::EF_PLATFORM_ACCELERATOR,
+     IDC_CONTENT_CONTEXT_LENS_REGION_SEARCH},
+};
+#endif  // BUILDFLAG(ENABLE_LENS_DESKTOP_GOOGLE_BRANDED_FEATURES)
 
 constexpr int kDebugModifier =
     ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN | ui::EF_SHIFT_DOWN;
@@ -281,7 +298,15 @@ std::vector<AcceleratorMapping> GetAcceleratorList() {
   if (accelerators->empty()) {
     accelerators->insert(accelerators->begin(), std::begin(kAcceleratorMap),
                          std::end(kAcceleratorMap));
-
+    // See https://devblogs.microsoft.com/oldnewthing/20040329-00/?p=40003
+    // Doing this check here and not at the bottom since kUIDebugAcceleratorMap
+    // contains Ctrl+Alt keys but we don't enable those for the public.
+#if DCHECK_IS_ON()
+    constexpr int kCtrlAlt = ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN;
+    for (auto& mapping : *accelerators)
+      DCHECK((mapping.modifiers & kCtrlAlt) != kCtrlAlt)
+          << "Accelerators with Ctrl+Alt are reserved by Windows.";
+#endif
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     if (::features::IsNewShortcutMappingEnabled()) {
       accelerators->insert(accelerators->begin(),
@@ -293,6 +318,15 @@ std::vector<AcceleratorMapping> GetAcceleratorList() {
                            std::end(kDisableWithNewMappingAcceleratorMap));
     }
 #endif
+
+#if BUILDFLAG(ENABLE_LENS_DESKTOP_GOOGLE_BRANDED_FEATURES)
+    if (base::FeatureList::IsEnabled(
+            lens::features::kEnableRegionSearchKeyboardShortcut)) {
+      accelerators->insert(accelerators->begin(),
+                           std::begin(kRegionSearchAcceleratorMap),
+                           std::end(kRegionSearchAcceleratorMap));
+    }
+#endif  // BUILDFLAG(ENABLE_LENS_DESKTOP_GOOGLE_BRANDED_FEATURES)
 
     if (base::FeatureList::IsEnabled(features::kUIDebugTools)) {
       accelerators->insert(accelerators->begin(),

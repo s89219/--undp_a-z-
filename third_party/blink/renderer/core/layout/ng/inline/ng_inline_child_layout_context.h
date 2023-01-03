@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,20 +25,21 @@ class CORE_EXPORT NGInlineChildLayoutContext {
   STACK_ALLOCATED();
 
  public:
-  NGInlineChildLayoutContext();
+  NGInlineChildLayoutContext(const NGInlineNode& node,
+                             NGBoxFragmentBuilder* container_builder);
   ~NGInlineChildLayoutContext();
 
-  NGFragmentItemsBuilder* ItemsBuilder() { return items_builder_; }
-  void SetItemsBuilder(NGFragmentItemsBuilder* builder) {
-    DCHECK(!items_builder_ || !builder);
-    items_builder_ = builder;
-    if (builder)
-      builder->AddLogicalLineItemsPool(&logical_line_items_);
-  }
+  NGFragmentItemsBuilder* ItemsBuilder() { return &items_builder_; }
 
   // Returns an instance of |NGLogicalLineItems|. This is reused when laying out
   // the next line.
+  // TODO(crbug.com/1402001): Deprecated, remove once all usages are gone.
   NGLogicalLineItems* LogicalLineItems() { return &logical_line_items_; }
+
+  // Acquire/release temporary |NGLogicalLineItems|, used for a short period of
+  // time, but needed multiple times in a context.
+  NGLogicalLineItems& AcquireTempLogicalLineItems();
+  void ReleaseTempLogicalLineItems(NGLogicalLineItems&);
 
   // Returns the NGInlineLayoutStateStack in this context.
   bool HasBoxStates() const { return box_states_.has_value(); }
@@ -67,12 +68,12 @@ class CORE_EXPORT NGInlineChildLayoutContext {
   void PropagateBreakToken(const NGBlockBreakToken*);
 
  private:
-  // TODO(kojii): Probably better to own |NGInlineChildLayoutContext|. While we
-  // transit, allocating separately is easier.
-  NGFragmentItemsBuilder* items_builder_ = nullptr;
+  NGBoxFragmentBuilder* container_builder_ = nullptr;
+  NGFragmentItemsBuilder items_builder_;
 
   NGLogicalLineItems& logical_line_items_ =
       *MakeGarbageCollected<NGLogicalLineItems>();
+  NGLogicalLineItems* temp_logical_line_items_ = nullptr;
 
   absl::optional<NGInlineLayoutStateStack> box_states_;
 
@@ -82,6 +83,23 @@ class CORE_EXPORT NGInlineChildLayoutContext {
 
   HeapVector<Member<const NGBlockBreakToken>> propagated_float_break_tokens_;
 };
+
+inline NGLogicalLineItems&
+NGInlineChildLayoutContext::AcquireTempLogicalLineItems() {
+  if (NGLogicalLineItems* line_items = temp_logical_line_items_) {
+    temp_logical_line_items_ = nullptr;
+    DCHECK_EQ(line_items->size(), 0u);
+    return *line_items;
+  }
+  return *MakeGarbageCollected<NGLogicalLineItems>();
+}
+
+inline void NGInlineChildLayoutContext::ReleaseTempLogicalLineItems(
+    NGLogicalLineItems& line_items) {
+  DCHECK(&line_items);
+  line_items.clear();
+  temp_logical_line_items_ = &line_items;
+}
 
 }  // namespace blink
 

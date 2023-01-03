@@ -1,14 +1,18 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.ui.android.webid;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Color;
 import android.os.Handler;
+import android.text.TextUtils;
 
 import androidx.annotation.Px;
-import androidx.annotation.VisibleForTesting;
 
+import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.browser.ui.android.webid.AccountSelectionProperties.AccountProperties;
 import org.chromium.chrome.browser.ui.android.webid.AccountSelectionProperties.AutoSignInCancelButtonProperties;
 import org.chromium.chrome.browser.ui.android.webid.AccountSelectionProperties.ContinueButtonProperties;
@@ -23,12 +27,14 @@ import org.chromium.components.browser_ui.bottomsheet.BottomSheetController;
 import org.chromium.components.browser_ui.bottomsheet.BottomSheetObserver;
 import org.chromium.components.browser_ui.bottomsheet.EmptyBottomSheetObserver;
 import org.chromium.components.image_fetcher.ImageFetcher;
-import org.chromium.components.url_formatter.SchemeDisplay;
-import org.chromium.components.url_formatter.UrlFormatter;
+import org.chromium.content.webid.IdentityRequestDialogDismissReason;
+import org.chromium.ui.KeyboardVisibilityDelegate;
+import org.chromium.ui.KeyboardVisibilityDelegate.KeyboardVisibilityListener;
 import org.chromium.ui.modelutil.MVCListAdapter.ListItem;
 import org.chromium.ui.modelutil.MVCListAdapter.ModelList;
 import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel;
+import org.chromium.url.GURL;
 
 import java.util.Arrays;
 import java.util.List;
@@ -38,7 +44,8 @@ import java.util.List;
  * to events like clicks.
  */
 class AccountSelectionMediator {
-    private boolean mVisible;
+    private boolean mRegisteredObservers;
+    private boolean mWasDismissed;
     private final AccountSelectionComponent.Delegate mDelegate;
     private final PropertyModel mModel;
     private final ModelList mSheetAccountItems;
@@ -53,9 +60,11 @@ class AccountSelectionMediator {
     // proceed. Eventually this should be specified by IDPs.
     private static final int AUTO_SIGN_IN_CANCELLATION_TIMER_MS = 5000;
 
-    private String mRpEtldPlusOne;
-    private String mIdpEtldPlusOne;
+    private HeaderType mHeaderType;
+    private String mRpForDisplay;
+    private String mIdpForDisplay;
     private IdentityProviderMetadata mIdpMetadata;
+    private Bitmap mBrandIcon;
     private ClientIdMetadata mClientMetadata;
 
     // All of the user's accounts.
@@ -64,12 +73,21 @@ class AccountSelectionMediator {
     // The account that the user has selected.
     private Account mSelectedAccount;
 
+    private KeyboardVisibilityListener mKeyboardVisibilityListener =
+            new KeyboardVisibilityListener() {
+                @Override
+                public void keyboardVisibilityChanged(boolean isShowing) {
+                    if (isShowing) {
+                        onDismissed(IdentityRequestDialogDismissReason.VIRTUAL_KEYBOARD_SHOWN);
+                    }
+                }
+            };
+
     AccountSelectionMediator(AccountSelectionComponent.Delegate delegate, PropertyModel model,
             ModelList sheetAccountItems, BottomSheetController bottomSheetController,
             AccountSelectionBottomSheetContent bottomSheetContent, ImageFetcher imageFetcher,
             @Px int desiredAvatarSize) {
         assert delegate != null;
-        mVisible = false;
         mDelegate = delegate;
         mModel = model;
         mSheetAccountItems = sheetAccountItems;
@@ -77,8 +95,6 @@ class AccountSelectionMediator {
         mDesiredAvatarSize = desiredAvatarSize;
         mBottomSheetController = bottomSheetController;
         mBottomSheetContent = bottomSheetContent;
-
-        mBottomSheetContent.setBackPressHandler(() -> { return handleBackPress(); });
 
         mBottomSheetObserver = new EmptyBottomSheetObserver() {
             // TODO(majidvp): We should override #onSheetStateChanged() and react to HIDDEN state
@@ -89,48 +105,50 @@ class AccountSelectionMediator {
                 super.onSheetClosed(reason);
                 mBottomSheetController.removeObserver(mBottomSheetObserver);
 
-                if (!mVisible) return;
+                if (mWasDismissed) return;
 
-                // Dismissing the FedCM bottom sheet via {@link StateChangeReason#SWIPE} is more
-                // intentional than other methods such as {@link StateChangeReason#OMNIBOX_FOCUS}.
-                onDismissed(/*shouldEmbargo=*/(
-                        reason == BottomSheetController.StateChangeReason.SWIPE));
+                @IdentityRequestDialogDismissReason
+                int dismissReason = (reason == BottomSheetController.StateChangeReason.SWIPE)
+                        ? IdentityRequestDialogDismissReason.SWIPE
+                        : IdentityRequestDialogDismissReason.OTHER;
+                onDismissed(dismissReason);
             }
         };
     }
 
-    private boolean handleBackPress() {
-        if (mVisible && mSelectedAccount != null && mAccounts.size() != 1) {
-            mSelectedAccount = null;
-            showAccountsInternal(mRpEtldPlusOne, mIdpEtldPlusOne, mAccounts, mIdpMetadata,
-                    mClientMetadata, /*isAutoSignIn=*/false, /*focusItem=*/ItemProperties.HEADER);
-            return true;
-        }
-        return false;
+    private void updateBackPressBehavior() {
+        mBottomSheetContent.setCustomBackPressBehavior(
+                !mWasDismissed && mSelectedAccount != null && mAccounts.size() != 1
+                        ? this::handleBackPress
+                        : null);
     }
 
-    private PropertyModel createHeaderItem(HeaderType headerType, String rpEtldPlusOne,
-            String idpEtldPlusOne, IdentityProviderMetadata idpMetadata) {
-        String formattedRpEtldPlusOne = UrlFormatter.formatUrlForSecurityDisplay(
-                UrlFormatter.fixupUrl(rpEtldPlusOne), SchemeDisplay.OMIT_HTTP_AND_HTTPS);
-        String formattedIdpEtldPlusOne = UrlFormatter.formatUrlForSecurityDisplay(
-                UrlFormatter.fixupUrl(idpEtldPlusOne), SchemeDisplay.OMIT_HTTP_AND_HTTPS);
+    private void handleBackPress() {
+        mSelectedAccount = null;
+        showAccountsInternal(mRpForDisplay, mIdpForDisplay, mAccounts, mIdpMetadata,
+                mClientMetadata, /*isAutoSignIn=*/false, /*focusItem=*/ItemProperties.HEADER);
+    }
 
+    private PropertyModel createHeaderItem(HeaderType headerType, String rpForDisplay,
+            String idpForDisplay, IdentityProviderMetadata idpMetadata) {
         Runnable closeOnClickRunnable = () -> {
-            onDismissed(/*shouldEmbargo=*/true);
+            onDismissed(IdentityRequestDialogDismissReason.CLOSE_BUTTON);
+
+            RecordHistogram.recordBooleanHistogram(
+                    "Blink.FedCm.CloseVerifySheet.Android", mHeaderType == HeaderType.VERIFY);
         };
 
         return new PropertyModel.Builder(HeaderProperties.ALL_KEYS)
-                .with(HeaderProperties.IDP_BRAND_ICON, idpMetadata.getBrandIcon())
+                .with(HeaderProperties.IDP_BRAND_ICON, mBrandIcon)
                 .with(HeaderProperties.CLOSE_ON_CLICK_LISTENER, closeOnClickRunnable)
-                .with(HeaderProperties.FORMATTED_IDP_ETLD_PLUS_ONE, formattedIdpEtldPlusOne)
-                .with(HeaderProperties.FORMATTED_RP_ETLD_PLUS_ONE, formattedRpEtldPlusOne)
+                .with(HeaderProperties.IDP_FOR_DISPLAY, idpForDisplay)
+                .with(HeaderProperties.RP_FOR_DISPLAY, rpForDisplay)
                 .with(HeaderProperties.TYPE, headerType)
                 .build();
     }
 
     private void updateAccounts(
-            String idpEtldPlusOne, List<Account> accounts, boolean areAccountsClickable) {
+            String idpForDisplay, List<Account> accounts, boolean areAccountsClickable) {
         mSheetAccountItems.clear();
 
         for (Account account : accounts) {
@@ -142,27 +160,52 @@ class AccountSelectionMediator {
     }
 
     void showVerifySheet(Account account) {
-        updateSheet(HeaderType.VERIFY, Arrays.asList(account), /*areAccountsClickable=*/false,
+        mHeaderType = HeaderType.VERIFY;
+        updateSheet(Arrays.asList(account), /*areAccountsClickable=*/false,
                 /* focusItem=*/ItemProperties.HEADER);
     }
 
-    void hideBottomSheet() {
-        if (mVisible) hideContent();
+    void close() {
+        if (!mWasDismissed) hideContent();
     }
 
-    void showAccounts(String rpEtldPlusOne, String idpEtldPlusOne, List<Account> accounts,
+    void showAccounts(String rpForDisplay, String idpForDisplay, List<Account> accounts,
             IdentityProviderMetadata idpMetadata, ClientIdMetadata clientMetadata,
             boolean isAutoSignIn) {
+        if (!TextUtils.isEmpty(idpMetadata.getBrandIconUrl())) {
+            // Use placeholder icon so that the header text wrapping does not change when the icon
+            // is fetched.
+            mBrandIcon = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+            Canvas brandIconCanvas = new Canvas(mBrandIcon);
+            brandIconCanvas.drawColor(Color.TRANSPARENT);
+        }
+
         mSelectedAccount = accounts.size() == 1 ? accounts.get(0) : null;
-        showAccountsInternal(rpEtldPlusOne, idpEtldPlusOne, accounts, idpMetadata, clientMetadata,
+        showAccountsInternal(rpForDisplay, idpForDisplay, accounts, idpMetadata, clientMetadata,
                 isAutoSignIn, /*focusItem=*/ItemProperties.HEADER);
+
+        if (!TextUtils.isEmpty(idpMetadata.getBrandIconUrl())) {
+            int brandIconIdealSize = AccountSelectionBridge.getBrandIconIdealSize();
+            ImageFetcher.Params params =
+                    ImageFetcher.Params.createNoResizing(new GURL(idpMetadata.getBrandIconUrl()),
+                            ImageFetcher.WEB_ID_ACCOUNT_SELECTION_UMA_CLIENT_NAME,
+                            brandIconIdealSize, brandIconIdealSize);
+
+            mImageFetcher.fetchImage(params, bitmap -> {
+                if (bitmap != null && bitmap.getWidth() == bitmap.getHeight()
+                        && bitmap.getWidth() >= AccountSelectionBridge.getBrandIconMinimumSize()) {
+                    mBrandIcon = bitmap;
+                    updateHeader();
+                }
+            });
+        }
     }
 
-    private void showAccountsInternal(String rpEtldPlusOne, String idpEtldPlusOne,
+    private void showAccountsInternal(String rpForDisplay, String idpForDisplay,
             List<Account> accounts, IdentityProviderMetadata idpMetadata,
             ClientIdMetadata clientMetadata, boolean isAutoSignIn, PropertyKey focusItem) {
-        mRpEtldPlusOne = rpEtldPlusOne;
-        mIdpEtldPlusOne = idpEtldPlusOne;
+        mRpForDisplay = rpForDisplay;
+        mIdpForDisplay = idpForDisplay;
         mAccounts = accounts;
         mIdpMetadata = idpMetadata;
         mClientMetadata = clientMetadata;
@@ -171,28 +214,25 @@ class AccountSelectionMediator {
             accounts = Arrays.asList(mSelectedAccount);
         }
 
-        HeaderType headerType = isAutoSignIn ? HeaderType.AUTO_SIGN_IN : HeaderType.SIGN_IN;
-        updateSheet(
-                headerType, accounts, /*areAccountsClickable=*/mSelectedAccount == null, focusItem);
+        mHeaderType = isAutoSignIn ? HeaderType.AUTO_SIGN_IN : HeaderType.SIGN_IN;
+        updateSheet(accounts, /*areAccountsClickable=*/mSelectedAccount == null, focusItem);
+        updateBackPressBehavior();
     }
 
-    private void updateSheet(HeaderType headerType, List<Account> accounts,
-            boolean areAccountsClickable, PropertyKey focusItem) {
-        updateAccounts(mIdpEtldPlusOne, accounts, areAccountsClickable);
-
-        PropertyModel headerModel =
-                createHeaderItem(headerType, mRpEtldPlusOne, mIdpEtldPlusOne, mIdpMetadata);
-        mModel.set(ItemProperties.HEADER, headerModel);
+    private void updateSheet(
+            List<Account> accounts, boolean areAccountsClickable, PropertyKey focusItem) {
+        updateAccounts(mIdpForDisplay, accounts, areAccountsClickable);
+        updateHeader();
 
         boolean isContinueButtonVisible = false;
         boolean isDataSharingConsentVisible = false;
-        if (headerType == HeaderType.SIGN_IN && mSelectedAccount != null) {
+        if (mHeaderType == HeaderType.SIGN_IN && mSelectedAccount != null) {
             isContinueButtonVisible = true;
             // Only show the user data sharing consent text for sign up.
             isDataSharingConsentVisible = !mSelectedAccount.isSignIn();
         }
 
-        if (headerType == HeaderType.AUTO_SIGN_IN) {
+        if (mHeaderType == HeaderType.AUTO_SIGN_IN) {
             assert mSelectedAccount != null;
             assert mSelectedAccount.isSignIn();
 
@@ -208,11 +248,18 @@ class AccountSelectionMediator {
                                         : null);
         mModel.set(ItemProperties.DATA_SHARING_CONSENT,
                 isDataSharingConsentVisible
-                        ? createDataSharingConsentItem(mIdpEtldPlusOne, mClientMetadata)
+                        ? createDataSharingConsentItem(mIdpForDisplay, mClientMetadata)
                         : null);
 
+        mBottomSheetContent.computeAndUpdateAccountListHeight();
         showContent();
         mBottomSheetContent.focusForAccessibility(focusItem);
+    }
+
+    private void updateHeader() {
+        PropertyModel headerModel =
+                createHeaderItem(mHeaderType, mRpForDisplay, mIdpForDisplay, mIdpMetadata);
+        mModel.set(ItemProperties.HEADER, headerModel);
     }
 
     /**
@@ -220,15 +267,16 @@ class AccountSelectionMediator {
      * (e.g., higher priority content is being shown) it removes the request from the bottom sheet
      * controller queue and notifies the delegate of the dismissal.
      */
-    @VisibleForTesting
-    void showContent() {
+    private void showContent() {
         if (mBottomSheetController.requestShowContent(mBottomSheetContent, true)) {
-            if (mVisible) return;
+            if (mRegisteredObservers) return;
 
-            mVisible = true;
+            mRegisteredObservers = true;
             mBottomSheetController.addObserver(mBottomSheetObserver);
+            KeyboardVisibilityDelegate.getInstance().addKeyboardVisibilityListener(
+                    mKeyboardVisibilityListener);
         } else {
-            onDismissed(/*shouldEmbargo=*/false);
+            onDismissed(IdentityRequestDialogDismissReason.OTHER);
         }
     }
 
@@ -236,8 +284,11 @@ class AccountSelectionMediator {
      * Requests to hide the bottom sheet.
      */
     void hideContent() {
-        mVisible = false;
+        mWasDismissed = true;
+        KeyboardVisibilityDelegate.getInstance().removeKeyboardVisibilityListener(
+                mKeyboardVisibilityListener);
         mBottomSheetController.hideContent(mBottomSheetContent, true);
+        updateBackPressBehavior();
     }
 
     private void requestAvatarImage(PropertyModel accountModel) {
@@ -260,29 +311,30 @@ class AccountSelectionMediator {
         }
     }
 
-    boolean isVisible() {
-        return mVisible;
+    boolean wasDismissed() {
+        return mWasDismissed;
     }
 
     void onAccountSelected(Account selectedAccount) {
-        if (!mVisible) return;
+        if (mWasDismissed) return;
 
         Account oldSelectedAccount = mSelectedAccount;
         mSelectedAccount = selectedAccount;
         if (oldSelectedAccount == null && !mSelectedAccount.isSignIn()) {
-            showAccountsInternal(mRpEtldPlusOne, mIdpEtldPlusOne, mAccounts, mIdpMetadata,
+            showAccountsInternal(mRpForDisplay, mIdpForDisplay, mAccounts, mIdpMetadata,
                     mClientMetadata, /*isAutoSignIn=*/false,
                     /*focusItem=*/ItemProperties.CONTINUE_BUTTON);
             return;
         }
 
-        mDelegate.onAccountSelected(selectedAccount);
+        mDelegate.onAccountSelected(mIdpMetadata.getConfigUrl(), selectedAccount);
         showVerifySheet(selectedAccount);
+        updateBackPressBehavior();
     }
 
-    void onDismissed(boolean shouldEmbargo) {
+    void onDismissed(@IdentityRequestDialogDismissReason int dismissReason) {
         hideContent();
-        mDelegate.onDismissed(shouldEmbargo);
+        mDelegate.onDismissed(dismissReason);
     }
 
     void onAutoSignInCancelled() {
@@ -315,13 +367,19 @@ class AccountSelectionMediator {
     }
 
     private PropertyModel createDataSharingConsentItem(
-            String idpEtldPlusOne, ClientIdMetadata metadata) {
+            String idpForDisplay, ClientIdMetadata metadata) {
         DataSharingConsentProperties.Properties properties =
                 new DataSharingConsentProperties.Properties();
-        properties.mFormattedIdpEtldPlusOne = UrlFormatter.formatUrlForSecurityDisplay(
-                UrlFormatter.fixupUrl(idpEtldPlusOne), SchemeDisplay.OMIT_HTTP_AND_HTTPS);
-        properties.mTermsOfServiceUrl = metadata.getTermsOfServiceUrl().getValidSpecOrEmpty();
-        properties.mPrivacyPolicyUrl = metadata.getPrivacyPolicyUrl().getValidSpecOrEmpty();
+        properties.mIdpForDisplay = idpForDisplay;
+        properties.mTermsOfServiceUrl = metadata.getTermsOfServiceUrl();
+        properties.mPrivacyPolicyUrl = metadata.getPrivacyPolicyUrl();
+        properties.mTermsOfServiceClickRunnable = () -> {
+            RecordHistogram.recordBooleanHistogram(
+                    "Blink.FedCm.SignUp.TermsOfServiceClicked", true);
+        };
+        properties.mPrivacyPolicyClickRunnable = () -> {
+            RecordHistogram.recordBooleanHistogram("Blink.FedCm.SignUp.PrivacyPolicyClicked", true);
+        };
 
         return new PropertyModel.Builder(DataSharingConsentProperties.ALL_KEYS)
                 .with(DataSharingConsentProperties.PROPERTIES, properties)

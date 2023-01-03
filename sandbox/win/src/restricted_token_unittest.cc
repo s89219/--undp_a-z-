@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,13 @@
 
 #include "sandbox/win/src/restricted_token.h"
 
+#include <utility>
 #include <vector>
 
 #include "base/win/access_token.h"
 #include "base/win/atl.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/sid.h"
-#include "base/win/windows_version.h"
 #include "sandbox/win/src/acl.h"
 #include "sandbox/win/src/security_capabilities.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -32,10 +32,10 @@ void TestDefaultDalc(bool restricted_required, bool additional_sid_required) {
   if (additional_sid_required) {
     token.AddDefaultDaclSid(
         *base::win::Sid::FromPSID(const_cast<SID*>(additional_sid.GetPSID())),
-        SecurityAccessMode::kGrant, READ_CONTROL);
+        base::win::SecurityAccessMode::kGrant, READ_CONTROL);
     token.AddDefaultDaclSid(
         *base::win::Sid::FromPSID(const_cast<SID*>(additional_sid2.GetPSID())),
-        SecurityAccessMode::kDeny, GENERIC_ALL);
+        base::win::SecurityAccessMode::kDeny, GENERIC_ALL);
   }
 
   ASSERT_EQ(static_cast<DWORD>(ERROR_SUCCESS),
@@ -107,7 +107,7 @@ void CheckDaclForPackageSid(const base::win::ScopedHandle& token,
 
   base::win::Sid package_sid =
       *base::win::Sid::FromPSID(security_capabilities->AppContainerSid);
-  base::win::Sid all_package_sid = *base::win::Sid::FromKnownSid(
+  base::win::Sid all_package_sid(
       base::win::WellKnownSid::kAllApplicationPackages);
 
   unsigned int ace_count = dacl.GetAceCount();
@@ -174,7 +174,7 @@ void CheckRestrictingSid(const base::win::AccessToken& token,
 void CheckRestrictingSid(const base::win::AccessToken& token,
                          base::win::WellKnownSid known_sid,
                          int count) {
-  CheckRestrictingSid(token, *base::win::Sid::FromKnownSid(known_sid), count);
+  CheckRestrictingSid(token, base::win::Sid(known_sid), count);
 }
 
 void CheckRestrictingSid(HANDLE restricted_token,
@@ -183,6 +183,33 @@ void CheckRestrictingSid(HANDLE restricted_token,
   auto token = base::win::AccessToken::FromToken(restricted_token);
   ASSERT_TRUE(token);
   CheckRestrictingSid(*token, known_sid, count);
+}
+
+DWORD GetMandatoryPolicy(const base::win::AccessToken& token) {
+  absl::optional<base::win::SecurityDescriptor> sd =
+      base::win::SecurityDescriptor::FromHandle(
+          token.get(), base::win::SecurityObjectType::kKernel,
+          LABEL_SECURITY_INFORMATION);
+  CHECK(sd);
+  PACL sacl = sd->sacl()->get();
+  for (DWORD ace_index = 0; ace_index < sacl->AceCount; ++ace_index) {
+    PSYSTEM_MANDATORY_LABEL_ACE ace;
+
+    if (::GetAce(sacl, ace_index, reinterpret_cast<LPVOID*>(&ace)) &&
+        ace->Header.AceType == SYSTEM_MANDATORY_LABEL_ACE_TYPE) {
+      return ace->Mask;
+    }
+  }
+  return 0;
+}
+
+base::win::AccessToken GetPrimaryToken(ACCESS_MASK desired_access) {
+  absl::optional<base::win::AccessToken> token =
+      base::win::AccessToken::FromCurrentProcess(false, TOKEN_DUPLICATE);
+  CHECK(token);
+  token = token->DuplicatePrimary(desired_access);
+  CHECK(token);
+  return std::move(*token);
 }
 
 }  // namespace
@@ -305,7 +332,7 @@ TEST(RestrictedTokenTest, DenySid) {
             token.GetRestrictedToken(&token_handle));
   auto restricted_token = base::win::AccessToken::FromToken(token_handle.Get());
   ASSERT_TRUE(restricted_token);
-  auto sid = base::win::Sid::FromKnownSid(base::win::WellKnownSid::kWorld);
+  auto sid = base::win::Sid(base::win::WellKnownSid::kWorld);
   bool found_sid = false;
   for (const auto& group : restricted_token->Groups()) {
     if (sid == group.GetSid()) {
@@ -344,10 +371,8 @@ TEST(RestrictedTokenTest, DenySidsException) {
   RestrictedToken token;
   base::win::ScopedHandle token_handle;
 
-  std::vector<base::win::Sid> sids_exception;
-  auto sid = base::win::Sid::FromKnownSid(base::win::WellKnownSid::kWorld);
-  ASSERT_TRUE(sid);
-  sids_exception.push_back(sid->Clone());
+  std::vector<base::win::Sid> sids_exception =
+      base::win::Sid::FromKnownSidVector({base::win::WellKnownSid::kWorld});
 
   ASSERT_EQ(static_cast<DWORD>(ERROR_SUCCESS), token.Init(nullptr));
   ASSERT_EQ(static_cast<DWORD>(ERROR_SUCCESS),
@@ -363,7 +388,7 @@ TEST(RestrictedTokenTest, DenySidsException) {
   for (const auto& group : restricted_token->Groups()) {
     if (group.IsLogonId() || group.IsIntegrity())
       continue;
-    if (sid == group.GetSid()) {
+    if (sids_exception[0] == group.GetSid()) {
       ASSERT_FALSE(group.IsDenyOnly());
       // Check we at least found one SID.
       found_sid = true;
@@ -579,8 +604,6 @@ TEST(RestrictedTokenTest, LockdownDefaultDaclNoLogonSid) {
 }
 
 TEST(RestrictedTokenTest, LowBoxToken) {
-  if (base::win::GetVersion() < base::win::Version::WIN8)
-    return;
   base::win::ScopedHandle token;
 
   auto package_sid = base::win::Sid::FromSddlString(L"S-1-15-2-1-2-3-4-5-6-7");
@@ -595,7 +618,8 @@ TEST(RestrictedTokenTest, LowBoxToken) {
   ASSERT_TRUE(token.IsValid());
   CheckLowBoxToken(token, false, &caps_no_capabilities);
 
-  ASSERT_TRUE(ReplacePackageSidInDacl(token.Get(), SecurityObjectType::kKernel,
+  ASSERT_TRUE(ReplacePackageSidInDacl(token.Get(),
+                                      base::win::SecurityObjectType::kKernel,
                                       *package_sid, TOKEN_ALL_ACCESS));
   CheckDaclForPackageSid(token, &caps_no_capabilities, false);
 
@@ -608,8 +632,7 @@ TEST(RestrictedTokenTest, LowBoxToken) {
   auto capabilities = base::win::Sid::FromKnownCapabilityVector(
       {base::win::WellKnownCapability::kInternetClient,
        base::win::WellKnownCapability::kPrivateNetworkClientServer});
-  ASSERT_TRUE(capabilities);
-  SecurityCapabilities caps_with_capabilities(*package_sid, *capabilities);
+  SecurityCapabilities caps_with_capabilities(*package_sid, capabilities);
   ASSERT_EQ(
       DWORD{ERROR_SUCCESS},
       CreateLowBoxToken(nullptr, PRIMARY, &caps_with_capabilities, &token));
@@ -648,6 +671,17 @@ TEST(RestrictedTokenTest, MediumIlDesktop) {
   ASSERT_FALSE(CanLowIntegrityAccessDesktop());
   ASSERT_TRUE(::SetThreadDesktop(old_hdesk));
   ASSERT_TRUE(::CloseDesktop(hdesk));
+}
+
+TEST(RestrictedTokenTest, HardenProcessIntegrityLevelPolicy) {
+  base::win::AccessToken token = GetPrimaryToken(0);
+  EXPECT_EQ(HardenTokenIntegrityLevelPolicy(token), DWORD{ERROR_ACCESS_DENIED});
+  token = GetPrimaryToken(READ_CONTROL | WRITE_OWNER);
+  DWORD current_policy = GetMandatoryPolicy(token);
+  EXPECT_EQ(HardenTokenIntegrityLevelPolicy(token), DWORD{ERROR_SUCCESS});
+  EXPECT_EQ(GetMandatoryPolicy(token),
+            current_policy | SYSTEM_MANDATORY_LABEL_NO_READ_UP |
+                SYSTEM_MANDATORY_LABEL_NO_EXECUTE_UP);
 }
 
 }  // namespace sandbox

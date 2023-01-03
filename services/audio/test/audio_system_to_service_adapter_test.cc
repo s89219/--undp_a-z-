@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -391,7 +391,7 @@ class AudioSystemToServiceAdapterDisconnectTest : public testing::Test {
     void GetAssociatedOutputDeviceID(
         const std::string& input_device_id,
         GetAssociatedOutputDeviceIDCallback callback) override {
-      base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
           FROM_HERE, base::BindOnce(std::move(callback), kValidReplyId),
           kResponseDelay);
     }

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/task/task_runner.h"
+#include "chrome/browser/web_applications/web_app_constants.h"
 
 namespace web_app {
 
@@ -29,14 +30,16 @@ bool CreatePlatformShortcuts(const base::FilePath& web_app_path,
 void DeletePlatformShortcuts(const base::FilePath& web_app_path,
                              const ShortcutInfo& shortcut_info,
                              scoped_refptr<base::TaskRunner> result_runner,
-                             web_app::DeleteShortcutsCallback callback) {
+                             DeleteShortcutsCallback callback) {
   result_runner->PostTask(FROM_HERE, base::BindOnce(std::move(callback),
                                                     /*shortcut_deleted=*/true));
 }
 
-void UpdatePlatformShortcuts(const base::FilePath& web_app_path,
-                             const std::u16string& old_app_title,
-                             const ShortcutInfo& shortcut_info) {}
+Result UpdatePlatformShortcuts(const base::FilePath& web_app_path,
+                               const std::u16string& old_app_title,
+                               const ShortcutInfo& shortcut_info) {
+  return Result::kOk;
+}
 
 ShortcutLocations GetAppExistingShortCutLocationImpl(
     const ShortcutInfo& shortcut_info) {

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,8 +76,8 @@ public class PageInfoViewDarkModeTest {
         ChromeActivity activity = mActivityTestRule.getActivity();
         Tab tab = activity.getActivityTab();
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            new ChromePageInfo(
-                    activity.getModalDialogManagerSupplier(), null, OpenedFromSource.TOOLBAR, null)
+            new ChromePageInfo(activity.getModalDialogManagerSupplier(), null,
+                    OpenedFromSource.TOOLBAR, null, null)
                     .show(tab, ChromePageInfoHighlight.noHighlight());
         });
         onViewWaiting(allOf(withId(R.id.page_info_url_wrapper), isDisplayed()));

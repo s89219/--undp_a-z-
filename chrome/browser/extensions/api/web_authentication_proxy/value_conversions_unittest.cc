@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,12 +48,10 @@ std::vector<uint8_t> ToByteVector(base::StringPiece in) {
 constexpr char kAppId[] = "https://example.test/appid.json";
 static const std::vector<uint8_t> kChallenge = ToByteVector("test challenge");
 constexpr char kOrigin[] = "https://login.example.test/";
-constexpr char kRpIconUrl[] = "https://example.test/favicon.ico";
 constexpr char kRpId[] = "example.test";
 constexpr char kRpName[] = "Example LLC";
 static const base::TimeDelta kTimeout = base::Seconds(30);
 constexpr char kUserDisplayName[] = "Example User";
-constexpr char kUserIconUrl[] = "https://example.test/user.png";
 static const std::vector<uint8_t> kUserId = ToByteVector("test user id");
 constexpr char kUserName[] = "user@example.test";
 
@@ -80,9 +78,9 @@ TEST(WebAuthenticationProxyValueConversionsTest,
      PublicKeyCredentialCreationOptionsToValue) {
   // Exercise all supported fields.
   auto options = PublicKeyCredentialCreationOptions::New(
-      device::PublicKeyCredentialRpEntity(kRpId, kRpName, GURL(kRpIconUrl)),
-      device::PublicKeyCredentialUserEntity(
-          kUserId, kUserName, kUserDisplayName, GURL(kUserIconUrl)),
+      device::PublicKeyCredentialRpEntity(kRpId, kRpName),
+      device::PublicKeyCredentialUserEntity(kUserId, kUserName,
+                                            kUserDisplayName),
       kChallenge, GetPublicKeyCredentialParameters(), kTimeout,
       GetCredentialList(),
       device::AuthenticatorSelectionCriteria(
@@ -97,11 +95,12 @@ TEST(WebAuthenticationProxyValueConversionsTest,
       /*cred_props=*/true, device::LargeBlobSupport::kRequired,
       /*is_payment_credential_creation=*/false,
       /*cred_blob=*/ToByteVector("test cred blob"),
-      /*google_legacy_app_id_support=*/true,
       /*min_pin_length_requested=*/true,
       blink::mojom::RemoteDesktopClientOverride::New(
           url::Origin::Create(GURL(kOrigin)),
-          /*same_origin_with_ancestors=*/true));
+          /*same_origin_with_ancestors=*/true),
+      // TODO(crbug.com/1356340): support devicePubKey in JSON when it's stable.
+      /*device_public_key=*/nullptr);
 
   base::Value value = ToValue(options);
   std::string json;
@@ -109,7 +108,7 @@ TEST(WebAuthenticationProxyValueConversionsTest,
   ASSERT_TRUE(serializer.Serialize(value));
   EXPECT_EQ(
       json,
-      R"({"attestation":"direct","authenticatorSelection":{"authenticatorAttachment":"platform","residentKey":"required","userVerification":"required"},"challenge":"dGVzdCBjaGFsbGVuZ2U","excludeCredentials":[{"id":"FBUW","transports":["usb"],"type":"public-key"},{"id":"Hh8g","type":"public-key"}],"extensions":{"appIdExclude":"https://example.test/appid.json","credBlob":"dGVzdCBjcmVkIGJsb2I","credProps":true,"credentialProtectionPolicy":"userVerificationRequired","enforceCredentialProtectionPolicy":true,"googleLegacyAppidSupport":true,"hmacCreateSecret":true,"largeBlob":{"support":"required"},"minPinLength":true,"remoteDesktopClientOverride":{"origin":"https://login.example.test","sameOriginWithAncestors":true}},"pubKeyCredParams":[{"alg":-7,"type":"public-key"},{"alg":-257,"type":"public-key"}],"rp":{"id":"example.test","name":"Example LLC"},"user":{"displayName":"Example User","id":"dGVzdCB1c2VyIGlk","name":"user@example.test"}})");
+      R"({"attestation":"direct","authenticatorSelection":{"authenticatorAttachment":"platform","residentKey":"required","userVerification":"required"},"challenge":"dGVzdCBjaGFsbGVuZ2U","excludeCredentials":[{"id":"FBUW","transports":["usb"],"type":"public-key"},{"id":"Hh8g","type":"public-key"}],"extensions":{"appIdExclude":"https://example.test/appid.json","credBlob":"dGVzdCBjcmVkIGJsb2I","credProps":true,"credentialProtectionPolicy":"userVerificationRequired","enforceCredentialProtectionPolicy":true,"hmacCreateSecret":true,"largeBlob":{"support":"required"},"minPinLength":true,"remoteDesktopClientOverride":{"origin":"https://login.example.test","sameOriginWithAncestors":true}},"pubKeyCredParams":[{"alg":-7,"type":"public-key"},{"alg":-257,"type":"public-key"}],"rp":{"id":"example.test","name":"Example LLC"},"user":{"displayName":"Example User","id":"dGVzdCB1c2VyIGlk","name":"user@example.test"}})");
 }
 
 TEST(WebAuthenticationProxyValueConversionsTest,
@@ -128,7 +127,9 @@ TEST(WebAuthenticationProxyValueConversionsTest,
       /*get_cred_blob=*/true,
       blink::mojom::RemoteDesktopClientOverride::New(
           url::Origin::Create(GURL(kOrigin)),
-          /*same_origin_with_ancestors=*/true));
+          /*same_origin_with_ancestors=*/true),
+      // TODO: support devicePubKey in JSON when it's stable.
+      /*device_public_key=*/nullptr);
 
   base::Value value = ToValue(options);
   std::string json;
@@ -196,7 +197,9 @@ TEST(WebAuthenticationProxyValueConversionsTest,
       /*public_key_algo=*/-7,
       /*echo_cred_props=*/true, /*has_cred_props_rk=*/true,
       /*cred_props_rk=*/true, /*echo_large_blob=*/true,
-      /*supports_large_blob=*/true);
+      /*supports_large_blob=*/true,
+      // TODO: support devicePubKey in JSON when it's stable.
+      /*device_public_key=*/nullptr);
 
   EXPECT_EQ(response->info, expected->info);
   EXPECT_EQ(response->authenticator_attachment,
@@ -276,8 +279,10 @@ TEST(WebAuthenticationProxyValueConversionsTest,
       /*echo_prf=*/false, /*prf_results=*/nullptr, /*prf_not_evaluated=*/false,
       /*echo_large_blob=*/true,
       /*large_blob=*/kLargeBlob, /*echo_large_blob_written=*/true,
-      /*large_blob_written=*/true, /*echo_get_cred_blob=*/true,
-      /*get_cred_blob=*/kCredBlob);
+      /*large_blob_written=*/true,
+      /*get_cred_blob=*/kCredBlob,
+      // TODO: support devicePubKey in JSON when it's stable.
+      /*device_public_key=*/nullptr);
 
   EXPECT_EQ(response->info, expected->info);
   EXPECT_EQ(response->authenticator_attachment,
@@ -294,7 +299,6 @@ TEST(WebAuthenticationProxyValueConversionsTest,
   EXPECT_EQ(response->echo_large_blob_written,
             expected->echo_large_blob_written);
   EXPECT_EQ(response->large_blob_written, expected->large_blob_written);
-  EXPECT_EQ(response->echo_get_cred_blob, expected->echo_get_cred_blob);
   EXPECT_EQ(response->get_cred_blob, expected->get_cred_blob);
   // Produce a failure even if the list above is missing any fields. But this
   // will not print any meaningful error.

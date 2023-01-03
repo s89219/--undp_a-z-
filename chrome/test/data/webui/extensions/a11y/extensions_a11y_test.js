@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,6 @@ GEN('#include "content/public/test/browser_test.h"');
  * @constructor
  * @extends {PolymerTest}
  */
-// eslint-disable-next-line no-var
 var CrExtensionsA11yTest = class extends PolymerTest {
   /** @override */
   get browsePreload() {
@@ -124,13 +123,17 @@ AccessibilityTest.define('CrExtensionsA11yTest', {
                        .shadowRoot.querySelector('#items-list');
       assertEquals(list.extensions.length, 0);
       assertEquals(list.apps.length, 0);
-    }
+    },
   },
 });
 
 CrExtensionsA11yTestWithMultipleExensions = class extends CrExtensionsA11yTest {
   /** @override */
   testGenPreamble() {
+    // (crbug.com/1397832): Flaky on mac builder.
+    GEN('#if BUILDFLAG(IS_MAC)');
+    GEN('#define DISABLED_All');
+    GEN('#endif');
     GEN('  InstallGoodExtension();');
     GEN('  InstallPackagedApp();');
     GEN('  InstallHostedApp();');

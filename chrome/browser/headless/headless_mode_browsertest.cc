@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,18 +26,15 @@
 #include "chrome/browser/headless/headless_mode_util.h"
 #include "chrome/browser/process_singleton.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_commands.h"
+#include "chrome/browser/ui/exclusive_access/exclusive_access_test.h"
 #include "chrome/common/chrome_switches.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/browser_task_environment.h"
-#include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/multiprocess_func_list.h"
 #include "ui/gfx/switches.h"
-
-#if BUILDFLAG(IS_LINUX)
-#include "ui/ozone/public/ozone_platform.h"
-#endif  // BUILDFLAG(IS_LINUX)
 
 namespace {
 const int kErrorResultCode = -1;
@@ -54,24 +51,30 @@ void HeadlessModeBrowserTest::SetUpCommandLine(
 void HeadlessModeBrowserTest::SetUpOnMainThread() {
   InProcessBrowserTest::SetUpOnMainThread();
 
-  ASSERT_TRUE(headless::IsChromeNativeHeadless());
+  ASSERT_TRUE(headless::IsHeadlessMode());
 }
 
-#if BUILDFLAG(IS_LINUX)
-IN_PROC_BROWSER_TEST_F(HeadlessModeBrowserTest, OzonePlatformHeadless) {
-  // On Linux, the Native Headless Chrome uses Ozone/Headless.
-  ASSERT_NE(ui::OzonePlatform::GetInstance(), nullptr);
-  EXPECT_EQ(ui::OzonePlatform::GetPlatformNameForTest(), "headless");
-}
-#endif  // BUILDFLAG(IS_LINUX)
+void HeadlessModeBrowserTestWithStartWindowMode::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  HeadlessModeBrowserTest::SetUpCommandLine(command_line);
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-IN_PROC_BROWSER_TEST_F(HeadlessModeBrowserTest, BrowserDesktopWindowHidden) {
-  // On Windows and Mac, the Native Headless Chrome browser window exists but is
-  // hidden.
-  EXPECT_FALSE(browser()->window()->IsVisible());
+  switch (start_window_mode()) {
+    case kStartWindowNormal:
+      break;
+    case kStartWindowMaximized:
+      command_line->AppendSwitch(switches::kStartMaximized);
+      break;
+    case kStartWindowFullscreen:
+      command_line->AppendSwitch(switches::kStartFullscreen);
+      break;
+  }
 }
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+
+void ToggleFullscreenModeSync(Browser* browser) {
+  FullscreenNotificationObserver observer(browser);
+  chrome::ToggleFullscreenMode(browser);
+  observer.Wait();
+}
 
 class HeadlessModeBrowserTestWithUserDataDir : public HeadlessModeBrowserTest {
  public:
@@ -99,23 +102,6 @@ class HeadlessModeBrowserTestWithUserDataDir : public HeadlessModeBrowserTest {
 
  private:
   base::ScopedTempDir user_data_dir_;
-};
-
-class MockChromeProcessSingleton : public ChromeProcessSingleton {
- public:
-  explicit MockChromeProcessSingleton(const base::FilePath& user_data_dir)
-      : ChromeProcessSingleton(
-            user_data_dir,
-            base::BindRepeating(
-                &MockChromeProcessSingleton::NotificationCallback,
-                base::Unretained(this))) {}
-
- private:
-  bool NotificationCallback(const base::CommandLine& command_line,
-                            const base::FilePath& current_directory) {
-    NOTREACHED();
-    return true;
-  }
 };
 
 IN_PROC_BROWSER_TEST_F(HeadlessModeBrowserTestWithUserDataDir,
@@ -148,7 +134,7 @@ MULTIPROCESS_TEST_MAIN(ChromeProcessSingletonChildProcessMain) {
   if (user_data_dir.empty())
     return kErrorResultCode;
 
-  MockChromeProcessSingleton chrome_process_singleton(user_data_dir);
+  ChromeProcessSingleton chrome_process_singleton(user_data_dir);
   ProcessSingleton::NotifyResult notify_result =
       chrome_process_singleton.NotifyOtherProcessOrCreate();
 

@@ -1,12 +1,12 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // clang-format off
 import 'chrome://settings/lazy_load.js';
 
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {CrInputElement, SettingsSyncEncryptionOptionsElement, SettingsSyncPageElement} from 'chrome://settings/lazy_load.js';
 // <if expr="not chromeos_ash">
@@ -15,7 +15,7 @@ import {CrDialogElement} from 'chrome://settings/lazy_load.js';
 
 import {CrButtonElement, CrRadioButtonElement, CrRadioGroupElement, PageStatus, Router, routes, StatusAction, SyncBrowserProxyImpl} from 'chrome://settings/settings.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {waitBeforeNextRender} from 'chrome://webui-test/test_util.js';
+import {waitBeforeNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 // <if expr="not chromeos_ash">
 import {eventToPromise} from 'chrome://webui-test/test_util.js';
@@ -40,8 +40,7 @@ suite('SyncSettingsTests', function() {
   let encryptWithPassphrase: CrRadioButtonElement;
 
   function setupSyncPage() {
-    loadTimeData.overrideValues({nonSyncingProfilesEnabled: true});
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     syncPage = document.createElement('settings-sync-page');
     const router = Router.getInstance();
     router.navigateTo((router.getRoutes() as SyncRoutes).SYNC);
@@ -51,7 +50,7 @@ suite('SyncSettingsTests', function() {
       profile: {password_manager_leak_detection: {value: true}},
       signin: {
         allowed_on_next_startup:
-            {type: chrome.settingsPrivate.PrefType.BOOLEAN, value: true}
+            {type: chrome.settingsPrivate.PrefType.BOOLEAN, value: true},
       },
       safebrowsing:
           {enabled: {value: true}, scout_reporting_enabled: {value: true}},
@@ -72,6 +71,7 @@ suite('SyncSettingsTests', function() {
     // enabled.
     webUIListenerCallback('sync-prefs-changed', getSyncAllPrefs());
     syncPage.set('syncStatus', {
+      signedIn: true,
       supervisedUser: false,
       statusAction: StatusAction.NO_ACTION,
     });
@@ -165,7 +165,7 @@ suite('SyncSettingsTests', function() {
       signedIn: true,
       disabled: false,
       hasError: true,
-      statusAction: StatusAction.REAUTHENTICATE
+      statusAction: StatusAction.REAUTHENTICATE,
     };
     assertTrue(syncSection.hidden);
     assertFalse(
@@ -177,7 +177,7 @@ suite('SyncSettingsTests', function() {
       signedIn: true,
       disabled: false,
       hasError: true,
-      statusAction: StatusAction.ENTER_PASSPHRASE
+      statusAction: StatusAction.ENTER_PASSPHRASE,
     };
     assertFalse(syncSection.hidden);
     assertTrue(
@@ -450,6 +450,39 @@ suite('SyncSettingsTests', function() {
         'none');
   });
 
+  test('EnterPassphraseLabelWhenNoPassphraseTime', () => {
+    const prefs = getSyncAllPrefs();
+    prefs.encryptAllData = true;
+    prefs.passphraseRequired = true;
+    webUIListenerCallback('sync-prefs-changed', prefs);
+    flush();
+    const enterPassphraseLabel =
+        syncPage.shadowRoot!.querySelector<HTMLElement>(
+            '#enterPassphraseLabel')!;
+
+    assertEquals(
+        'Your data is encrypted with your sync passphrase. Enter it to start' +
+            ' sync.',
+        enterPassphraseLabel.innerText);
+  });
+
+  test('EnterPassphraseLabelWhenHasPassphraseTime', () => {
+    const prefs = getSyncAllPrefs();
+    prefs.encryptAllData = true;
+    prefs.passphraseRequired = true;
+    prefs.explicitPassphraseTime = 'Jan 01, 1970';
+    webUIListenerCallback('sync-prefs-changed', prefs);
+    flush();
+    const enterPassphraseLabel =
+        syncPage.shadowRoot!.querySelector<HTMLElement>(
+            '#enterPassphraseLabel')!;
+
+    assertEquals(
+        `Your data was encrypted with your sync passphrase on ${
+            prefs.explicitPassphraseTime}. Enter it to start sync.`,
+        enterPassphraseLabel.innerText);
+  });
+
   test(
       'ExistingPassphraseSubmitButtonDisabledWhenExistingPassphraseEmpty',
       function() {
@@ -540,6 +573,24 @@ suite('SyncSettingsTests', function() {
     const router = Router.getInstance();
     assertEquals(
         (router.getRoutes() as SyncRoutes).PEOPLE, router.getCurrentRoute());
+  });
+
+  test('EnterExistingPassphraseDoesNotExistIfSignedOut', async function() {
+    syncPage.syncStatus = {
+      signedIn: false,
+      disabled: false,
+      hasError: true,
+      statusAction: StatusAction.ENTER_PASSPHRASE,
+    };
+
+    const prefs = getSyncAllPrefs();
+    prefs.encryptAllData = true;
+    prefs.passphraseRequired = true;
+    webUIListenerCallback('sync-prefs-changed', prefs);
+    flush();
+
+    assertFalse(!!syncPage.shadowRoot!.querySelector<CrInputElement>(
+        '#existingPassphraseInput'));
   });
 
   test('SyncAdvancedRow', function() {
@@ -635,7 +686,7 @@ suite('SyncSettingsTests', function() {
     // Normal user
     syncPage.syncStatus = {
       supervisedUser: false,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     flush();
     assertFalse(dashboardLink.hidden);
@@ -643,7 +694,7 @@ suite('SyncSettingsTests', function() {
     // Supervised user
     syncPage.syncStatus = {
       supervisedUser: true,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     flush();
     assertTrue(dashboardLink.hidden);
@@ -864,14 +915,14 @@ suite('SyncSettingsTests', function() {
         !!syncPage.shadowRoot!.querySelector('settings-sync-account-control'));
     syncPage.syncStatus = {
       syncSystemEnabled: false,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     flush();
     assertFalse(
         !!syncPage.shadowRoot!.querySelector('settings-sync-account-control'));
     syncPage.syncStatus = {
       syncSystemEnabled: true,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     flush();
     assertTrue(
@@ -886,14 +937,14 @@ suite('SyncSettingsTests', function() {
         !!syncPage.shadowRoot!.querySelector('settings-sync-account-control'));
     syncPage.syncStatus = {
       syncSystemEnabled: false,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     flush();
     assertFalse(
         !!syncPage.shadowRoot!.querySelector('settings-sync-account-control'));
     syncPage.syncStatus = {
       syncSystemEnabled: true,
-      statusAction: StatusAction.NO_ACTION
+      statusAction: StatusAction.NO_ACTION,
     };
     flush();
     assertFalse(

@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,12 @@
 
 #include "base/callback_forward.h"
 #include "base/callback_helpers.h"
+#include "base/feature_list.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/apps/intent_helper/apps_navigation_types.h"
 #include "chrome/browser/lifetime/browser_close_manager.h"
+#include "chrome/browser/share/share_attempt.h"
 #include "chrome/browser/signin/chrome_signin_helper.h"
 #include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
@@ -23,11 +25,12 @@
 #include "chrome/browser/ui/exclusive_access/exclusive_access_bubble_type.h"
 #include "chrome/browser/ui/hats/hats_service.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
-#include "chrome/browser/ui/user_education/feature_promo_controller.h"
-#include "chrome/browser/ui/user_education/feature_promo_specification.h"
+#include "chrome/browser/ui/translate/partial_translate_bubble_model.h"
 #include "chrome/common/buildflags.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/translate/core/common/translate_errors.h"
+#include "components/user_education/common/feature_promo_controller.h"
+#include "components/user_education/common/feature_promo_specification.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/base_window.h"
 #include "ui/base/interaction/element_identifier.h"
@@ -54,10 +57,6 @@ class DownloadBubbleUIController;
 namespace autofill {
 class AutofillBubbleHandler;
 }  // namespace autofill
-
-namespace base {
-struct Feature;
-}
 
 namespace content {
 class WebContents;
@@ -101,10 +100,11 @@ class WebContentsModalDialogHost;
 }
 
 enum class ShowTranslateBubbleResult {
-  // The translate bubble was successfully shown.
+  // The Full Page Translate bubble was successfully shown.
   SUCCESS,
 
-  // The various reasons for which the translate bubble could fail to be shown.
+  // The various reasons for which the Full Page Translate bubble could fail to
+  // be shown.
   BROWSER_WINDOW_NOT_VALID,
   BROWSER_WINDOW_MINIMIZED,
   BROWSER_WINDOW_NOT_ACTIVE,
@@ -244,10 +244,9 @@ class BrowserWindow : public ui::BaseWindow {
   // changed.
   virtual void UpdateDevTools() = 0;
 
-  // Update any loading animations running in the window. |should_animate| is
-  // true if there are tabs loading and the animations should continue, false
-  // if there are no active loads and the animations should end.
-  virtual void UpdateLoadingAnimations(bool should_animate) = 0;
+  // Update any loading animations running in the window. |is_visible| is true
+  // if the window is visible.
+  virtual void UpdateLoadingAnimations(bool is_visible) = 0;
 
   // Sets the starred state for the current tab.
   virtual void SetStarredState(bool is_starred) = 0;
@@ -429,22 +428,28 @@ class BrowserWindow : public ui::BaseWindow {
                             const GURL& url,
                             bool show_back_button) = 0;
 
-  // Shows the "send tab to self" bubble. This must only be called as a direct
-  // result of user action.
-  virtual send_tab_to_self::SendTabToSelfBubbleView* ShowSendTabToSelfBubble(
-      content::WebContents* contents) = 0;
+  // Shows the "send tab to self" device picker bubble. This must only be called
+  // as a direct result of user action.
+  virtual send_tab_to_self::SendTabToSelfBubbleView*
+  ShowSendTabToSelfDevicePickerBubble(content::WebContents* contents) = 0;
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // Shows the "send tab to self" promo bubble. This must only be called as a
+  // direct result of user action.
+  virtual send_tab_to_self::SendTabToSelfBubbleView*
+  ShowSendTabToSelfPromoBubble(content::WebContents* contents,
+                               bool show_signin_button) = 0;
+
+#if BUILDFLAG(IS_CHROMEOS)
   // Returns the PageActionIconView for the Sharing Hub.
   virtual views::Button* GetSharingHubIconButton() = 0;
 #else
   // Shows the Sharing Hub bubble. This must only be called as a direct result
   // of user action.
   virtual sharing_hub::SharingHubBubbleView* ShowSharingHubBubble(
-      content::WebContents* contents) = 0;
-#endif
+      share::ShareAttempt attempt) = 0;
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
-  // Shows the translate bubble.
+  // Shows the Full Page Translate bubble.
   //
   // |is_user_gesture| is true when the bubble is shown on the user's deliberate
   // action.
@@ -453,16 +458,19 @@ class BrowserWindow : public ui::BaseWindow {
       translate::TranslateStep step,
       const std::string& source_language,
       const std::string& target_language,
-      translate::TranslateErrors::Type error_type,
+      translate::TranslateErrors error_type,
       bool is_user_gesture) = 0;
 
-#if BUILDFLAG(ENABLE_ONE_CLICK_SIGNIN)
+  // Shows the Partial Translate bubble.
+  virtual void StartPartialTranslate(const std::string& source_language,
+                                     const std::string& target_language,
+                                     const std::u16string& text_selection) = 0;
+
   // Shows the one-click sign in confirmation UI. |email| holds the full email
   // address of the account that has signed in.
   virtual void ShowOneClickSigninConfirmation(
       const std::u16string& email,
       base::OnceCallback<void(bool)> confirmed_callback) = 0;
-#endif
 
   // Whether or not the shelf view is visible.
   virtual bool IsDownloadShelfVisible() const = 0;
@@ -517,21 +525,7 @@ class BrowserWindow : public ui::BaseWindow {
                                             bool user_gesture,
                                             bool in_tab_dragging);
 
-  // Shows the avatar bubble on the window frame off of the avatar button with
-  // the given mode. The Service Type specified by GAIA is provided as well.
-  // |access_point| indicates the access point used to open the Gaia sign in
-  // page.
-  enum AvatarBubbleMode {
-    AVATAR_BUBBLE_MODE_DEFAULT,
-    AVATAR_BUBBLE_MODE_SIGNIN,
-    AVATAR_BUBBLE_MODE_ADD_ACCOUNT,
-    AVATAR_BUBBLE_MODE_REAUTH,
-    AVATAR_BUBBLE_MODE_CONFIRM_SIGNIN
-  };
-  virtual void ShowAvatarBubbleFromAvatarButton(
-      AvatarBubbleMode mode,
-      signin_metrics::AccessPoint access_point,
-      bool is_source_accelerator) = 0;
+  virtual void ShowAvatarBubbleFromAvatarButton(bool is_source_accelerator) = 0;
 
   // Attempts showing the In-Produce-Help for profile Switching. This is called
   // after creating a new profile or opening an existing profile. If the profile
@@ -577,33 +571,61 @@ class BrowserWindow : public ui::BaseWindow {
 
   // Gets the windows's FeaturePromoController which manages display of
   // in-product help. Will return null in incognito and guest profiles.
-  virtual FeaturePromoController* GetFeaturePromoController() = 0;
+  virtual user_education::FeaturePromoController*
+  GetFeaturePromoController() = 0;
 
-  // Returns whether the promo bubble associated with `iph_feature` is visible.
-  // If `include_continued_promos` is true, will also return true if
-  // CloseFeaturePromoAndContinue() has been called to hide the bubble but the
-  // promo is still running in the background.
-  virtual bool IsFeaturePromoActive(
-      const base::Feature& iph_feature,
-      bool include_continued_promos = false) const = 0;
+  // Returns whether the promo associated with `iph_feature` is running.
+  //
+  // Includes promos with visible bubbles and those which have been continued
+  // with CloseFeaturePromoAndContinue() and are still running in the
+  // background.
+  virtual bool IsFeaturePromoActive(const base::Feature& iph_feature) const = 0;
 
   // Maybe shows an in-product help promo. Returns true if the promo is shown.
   // In cases where there is no promo controller, immediately returns false.
+  //
+  // If this feature promo is likely to be shown at browser startup, prefer
+  // calling MaybeShowStartupFeaturePromo() instead.
   virtual bool MaybeShowFeaturePromo(
       const base::Feature& iph_feature,
-      FeaturePromoSpecification::StringReplacements body_text_replacements = {},
-      FeaturePromoController::BubbleCloseCallback close_callback =
-          base::DoNothing()) = 0;
+      user_education::FeaturePromoSpecification::StringReplacements
+          body_text_replacements = {},
+      user_education::FeaturePromoController::BubbleCloseCallback
+          close_callback = base::DoNothing()) = 0;
 
-  // Closes the in-product help promo for `iph_feature` if it is showing;
-  // returns true if the promo was closed, false if it was not showing.
+  // Maybe shows an in-product help promo at startup, whenever the Feature
+  // Engagement system is fully initialized. If the promo cannot be queued for
+  // whatever reason, fails and returns false. The promo may still not run if it
+  // is excluded for other reasons (e.g. another promo starts first; its Feature
+  // Engagement conditions are not satisfied).
+  //
+  // On success, when the FE system is initialized (which might be immediately),
+  // `promo_callback` is called with the result of whether the promo was
+  // actually shown. Since `promo_callback` could be called any time, make sure
+  // that you will not experience any race conditions or UAFs if the calling
+  // object goes out of scope.
+  //
+  // If your promo is not likely to be shown at browser startup, prefer using
+  // MaybeShowFeaturePromo() - which always runs synchronously - instead.
+  virtual bool MaybeShowStartupFeaturePromo(
+      const base::Feature& iph_feature,
+      user_education::FeaturePromoSpecification::StringReplacements
+          body_text_replacements = {},
+      user_education::FeaturePromoController::StartupPromoCallback
+          promo_callback = base::DoNothing(),
+      user_education::FeaturePromoController::BubbleCloseCallback
+          close_callback = base::DoNothing()) = 0;
+
+  // Closes the in-product help promo for `iph_feature` if it is showing or
+  // cancels a pending startup promo; returns true if a promo bubble was
+  // actually closed.
   virtual bool CloseFeaturePromo(const base::Feature& iph_feature) = 0;
 
   // Closes the bubble for a feature promo but continues the promo; returns a
   // handle that can be used to end the promo when it is destructed. The handle
   // will be valid (i.e. have a true boolean value) if the promo was showing,
   // invalid otherwise.
-  virtual FeaturePromoController::PromoHandle CloseFeaturePromoAndContinue(
+  virtual user_education::FeaturePromoHandle CloseFeaturePromoAndContinue(
       const base::Feature& iph_feature) = 0;
 
   // Records that the user has engaged with a particular feature that has an
@@ -617,11 +639,9 @@ class BrowserWindow : public ui::BaseWindow {
   // Shows an Incognito history disclaimer dialog.
   virtual void ShowIncognitoHistoryDisclaimerDialog() = 0;
 
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
-  virtual bool IsSideSearchPanelVisible() const = 0;
-  virtual void MaybeRestoreSideSearchStatePerWindow(
-      const std::map<std::string, std::string>& extra_data) = 0;
-#endif
+  // Returns true when the borderless mode should be displayed instead
+  // of a full titlebar. This is only supported for desktop web apps.
+  virtual bool IsBorderlessModeEnabled() const = 0;
 
  protected:
   friend class BrowserCloseManager;

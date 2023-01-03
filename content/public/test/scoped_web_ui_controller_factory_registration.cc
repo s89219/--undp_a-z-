@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,32 @@
 #include "url/origin.h"
 
 namespace content {
+
+namespace {
+
+url::Origin GetOriginFromConfig(WebUIConfig& webui_config) {
+  return url::Origin::Create(
+      GURL(base::StrCat({webui_config.scheme(), url::kStandardSchemeSeparator,
+                         webui_config.host()})));
+}
+
+void AddWebUIConfig(std::unique_ptr<WebUIConfig> webui_config) {
+  auto& config_map = WebUIConfigMap::GetInstance();
+
+  if (webui_config->scheme() == kChromeUIScheme) {
+    config_map.AddWebUIConfig(std::move(webui_config));
+    return;
+  }
+
+  if (webui_config->scheme() == kChromeUIUntrustedScheme) {
+    config_map.AddUntrustedWebUIConfig(std::move(webui_config));
+    return;
+  }
+
+  NOTREACHED();
+}
+
+}  // namespace
 
 ScopedWebUIControllerFactoryRegistration::
     ScopedWebUIControllerFactoryRegistration(
@@ -37,23 +63,28 @@ ScopedWebUIControllerFactoryRegistration::
 
 ScopedWebUIConfigRegistration::ScopedWebUIConfigRegistration(
     std::unique_ptr<WebUIConfig> webui_config)
-    : webui_config_origin_(url::Origin::Create(GURL(
-          base::StrCat({webui_config->scheme(), url::kStandardSchemeSeparator,
-                        webui_config->host()})))) {
-  if (webui_config_origin_.scheme() == kChromeUIScheme) {
-    WebUIConfigMap::GetInstance().AddWebUIConfig(std::move(webui_config));
-    return;
-  }
-  if (webui_config_origin_.scheme() == kChromeUIUntrustedScheme) {
-    WebUIConfigMap::GetInstance().AddUntrustedWebUIConfig(
-        std::move(webui_config));
-    return;
-  }
-  NOTREACHED();
+    : webui_config_origin_(GetOriginFromConfig(*webui_config)) {
+  auto& config_map = WebUIConfigMap::GetInstance();
+  replaced_webui_config_ = config_map.RemoveConfig(webui_config_origin_);
+
+  DCHECK(webui_config.get() != nullptr);
+  AddWebUIConfig(std::move(webui_config));
+}
+
+ScopedWebUIConfigRegistration::ScopedWebUIConfigRegistration(
+    const GURL& webui_origin)
+    : webui_config_origin_(url::Origin::Create(webui_origin)) {
+  auto& config_map = WebUIConfigMap::GetInstance();
+  replaced_webui_config_ = config_map.RemoveConfig(webui_config_origin_);
 }
 
 ScopedWebUIConfigRegistration::~ScopedWebUIConfigRegistration() {
-  WebUIConfigMap::GetInstance().RemoveForTesting(webui_config_origin_);
+  WebUIConfigMap::GetInstance().RemoveConfig(webui_config_origin_);
+
+  // If we replaced a WebUIConfig, re-register it to keep the global state
+  // clean for future tests.
+  if (replaced_webui_config_ != nullptr)
+    AddWebUIConfig(std::move(replaced_webui_config_));
 }
 
 void CheckForLeakedWebUIRegistrations::OnTestStart(

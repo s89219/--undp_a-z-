@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,16 +31,19 @@
 #include "chrome/browser/ash/login/test/test_predicate_waiter.h"
 #include "chrome/browser/ash/login/ui/login_display_host.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
+#include "chrome/browser/ash/settings/cros_settings.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/speech/extension_api/tts_engine_extension_api.h"
-#include "chrome/browser/ui/webui/chromeos/login/enable_debugging_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/gaia_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/browser/ui/webui/chromeos/login/welcome_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/enable_debugging_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/gaia_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/oobe_ui.h"
+#include "chrome/browser/ui/webui/ash/login/welcome_screen_handler.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/interactive_test_utils.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
 #include "chromeos/dbus/constants/dbus_switches.h"
-#include "chromeos/system/fake_statistics_provider.h"
 #include "components/language/core/browser/pref_names.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/test/browser_test.h"
@@ -49,6 +52,7 @@
 #include "ui/base/ime/ash/extension_ime_util.h"
 
 namespace ash {
+
 namespace {
 
 const char kStartupManifestEnglish[] =
@@ -133,7 +137,7 @@ class WelcomeScreenBrowserTest : public OobeBaseTest {
     // done in chrome main, which has not happened yet.
     base::FilePath user_data_dir;
     EXPECT_TRUE(base::PathService::Get(chrome::DIR_USER_DATA, &user_data_dir));
-    ash::RegisterStubPathOverrides(user_data_dir);
+    RegisterStubPathOverrides(user_data_dir);
 
     return true;
   }
@@ -553,7 +557,7 @@ class WelcomeScreenChromadMigrationBrowserTest
       return false;
 
     base::FilePath preinstalled_components_dir;
-    EXPECT_TRUE(base::PathService::Get(ash::DIR_PREINSTALLED_COMPONENTS,
+    EXPECT_TRUE(base::PathService::Get(DIR_PREINSTALLED_COMPONENTS,
                                        &preinstalled_components_dir));
 
     base::FilePath preserve_dir =
@@ -675,7 +679,8 @@ class WelcomeScreenChromeVoxHintTest : public WelcomeScreenBrowserTest {
 
 // Assert that the ChromeVox hint gives speech output and shows a dialog.
 // Clicking the 'activate' button in the dialog should activate ChromeVox.
-IN_PROC_BROWSER_TEST_F(WelcomeScreenChromeVoxHintTest, LaptopClick) {
+// crbug.com/1341515 Disabled due to flakiness.
+IN_PROC_BROWSER_TEST_F(WelcomeScreenChromeVoxHintTest, DISABLED_LaptopClick) {
   OobeScreenWaiter(WelcomeView::kScreenId).Wait();
   // A consistency check to ensure the ChromeVox hint idle detector is disabled
   // for this and similar tests.
@@ -885,7 +890,7 @@ IN_PROC_BROWSER_TEST_F(WelcomeScreenChromeVoxHintTest, DISABLED_TrapFocus) {
 // skipToLoginForTesting is called.
 IN_PROC_BROWSER_TEST_F(WelcomeScreenChromeVoxHintTest, SkipToLoginForTesting) {
   OobeScreenWaiter(WelcomeView::kScreenId).Wait();
-  test::ExecuteOobeJS("Oobe.skipToLoginForTesting()");
+  WizardController::default_controller()->SkipToLoginForTesting();
   OobeScreenWaiter(GaiaView::kScreenId).Wait();
 
   EXPECT_TRUE(IdleDetectionCancelledForTesting());

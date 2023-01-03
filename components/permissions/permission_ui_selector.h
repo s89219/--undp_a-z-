@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,17 +27,18 @@ class PermissionUiSelector {
     kTriggeredDueToAbusiveContent,
     kServicePredictedVeryUnlikelyGrant,
     kOnDevicePredictedVeryUnlikelyGrant,
+    kTriggeredDueToDisruptiveBehavior,
   };
 
   enum class WarningReason {
     kAbusiveRequests,
     kAbusiveContent,
+    kDisruptiveBehavior,
   };
 
   struct Decision {
     Decision(absl::optional<QuietUiReason> quiet_ui_reason,
-             absl::optional<WarningReason> warning_reason,
-             absl::optional<bool> decision_held_back = absl::nullopt);
+             absl::optional<WarningReason> warning_reason);
     ~Decision();
 
     Decision(const Decision&);
@@ -60,9 +61,6 @@ class PermissionUiSelector {
     // The reason for printing a warning to the console, or `absl::nullopt` if
     // no warning should be printed.
     absl::optional<WarningReason> warning_reason;
-
-    // Whether the decision to show the quiet ui was held back.
-    absl::optional<bool> decision_held_back;
   };
 
   using DecisionMadeCallback = base::OnceCallback<void(const Decision&)>;
@@ -93,6 +91,10 @@ class PermissionUiSelector {
   // makes use of the Web Permission Predictions Service to make decisions.
   virtual absl::optional<PermissionUmaUtil::PredictionGrantLikelihood>
   PredictedGrantLikelihoodForUKM();
+
+  // Will return if the selector's decision was heldback. Currently only the
+  // Web Prediction Service selector supports holdbacks.
+  virtual absl::optional<bool> WasSelectorDecisionHeldback();
 };
 
 }  // namespace permissions

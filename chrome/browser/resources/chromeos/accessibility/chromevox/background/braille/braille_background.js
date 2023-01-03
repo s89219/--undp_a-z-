@@ -1,18 +1,26 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview Sends Braille commands to the Braille API.
  */
-import {BrailleDisplayManager} from '/chromevox/background/braille/braille_display_manager.js';
-import {BrailleInputHandler} from '/chromevox/background/braille/braille_input_handler.js';
-import {BrailleKeyEventRewriter} from '/chromevox/background/braille/braille_key_event_rewriter.js';
-import {BrailleTranslatorManager} from '/chromevox/background/braille/braille_translator_manager.js';
+import {LocalStorage} from '../../../common/local_storage.js';
+import {BrailleKeyEvent} from '../../common/braille/braille_key_types.js';
+import {NavBraille} from '../../common/braille/nav_braille.js';
+import {BridgeConstants} from '../../common/bridge_constants.js';
+import {BridgeHelper} from '../../common/bridge_helper.js';
+import {LogType} from '../../common/log_types.js';
+import {ChromeVoxState} from '../chromevox_state.js';
+import {LogStore} from '../logging/log_store.js';
 
-/**
- * @implements {BrailleInterface}
- */
+import {BrailleDisplayManager} from './braille_display_manager.js';
+import {BrailleInputHandler} from './braille_input_handler.js';
+import {BrailleInterface} from './braille_interface.js';
+import {BrailleKeyEventRewriter} from './braille_key_event_rewriter.js';
+import {BrailleTranslatorManager} from './braille_translator_manager.js';
+
+/** @implements {BrailleInterface} */
 export class BrailleBackground {
   /**
    * @param {BrailleDisplayManager=} opt_displayManagerForTest
@@ -25,50 +33,48 @@ export class BrailleBackground {
   constructor(
       opt_displayManagerForTest, opt_inputHandlerForTest,
       opt_translatorManagerForTest) {
-    /**
-     * @type {!BrailleTranslatorManager}
-     * @private
-     */
+    /** @private {!BrailleTranslatorManager} */
     this.translatorManager_ =
         opt_translatorManagerForTest || new BrailleTranslatorManager();
-    /**
-     * @type {BrailleDisplayManager}
-     * @private
-     */
+    /** @private {!BrailleDisplayManager} */
     this.displayManager_ = opt_displayManagerForTest ||
         new BrailleDisplayManager(this.translatorManager_);
-    this.displayManager_.setCommandListener(this.onBrailleKeyEvent_.bind(this));
-    /**
-     * @type {NavBraille}
-     * @private
-     */
-    this.lastContent_ = null;
-    /**
-     * @type {?string}
-     * @private
-     */
-    this.lastContentId_ = null;
-    /**
-     * @type {!BrailleInputHandler}
-     * @private
-     */
-    this.inputHandler_ = opt_inputHandlerForTest ||
-        new BrailleInputHandler(this.translatorManager_);
-    this.inputHandler_.init();
+    this.displayManager_.setCommandListener(
+        (evt, content) => this.onBrailleKeyEvent_(evt, content));
 
     /** @private {boolean} */
     this.frozen_ = false;
 
+    /** @private {!BrailleInputHandler} */
+    this.inputHandler_ = opt_inputHandlerForTest ||
+        new BrailleInputHandler(this.translatorManager_);
+
     /** @private {BrailleKeyEventRewriter} */
     this.keyEventRewriter_ = new BrailleKeyEventRewriter();
+
+    /** @private {NavBraille} */
+    this.lastContent_ = null;
+    /** @private {?string} */
+    this.lastContentId_ = null;
   }
 
-  /** @return {!BrailleBackground} */
-  static getInstance() {
-    if (!BrailleBackground.instance_) {
-      BrailleBackground.instance_ = new BrailleBackground();
-    }
-    return BrailleBackground.instance_;
+  static init() {
+    BrailleBackground.instance = new BrailleBackground();
+
+    BridgeHelper.registerHandler(
+        BridgeConstants.BrailleBackground.TARGET,
+        BridgeConstants.BrailleBackground.Action.BACK_TRANSLATE,
+        cells => new Promise(resolve => {
+          BrailleBackground.instance.getTranslatorManager()
+              .getDefaultTranslator()
+              .backTranslate(cells, resolve);
+        }));
+    BridgeHelper.registerHandler(
+        BridgeConstants.BrailleBackground.TARGET,
+        BridgeConstants.BrailleBackground.Action.REFRESH_BRAILLE_TABLE,
+        brailleTable =>
+            BrailleBackground.instance.getTranslatorManager().refresh(
+                brailleTable));
   }
 
   /** @override */
@@ -77,9 +83,9 @@ export class BrailleBackground {
       return;
     }
 
-    if (localStorage['enableBrailleLogging'] === 'true') {
+    if (LocalStorage.get('enableBrailleLogging')) {
       const logStr = 'Braille "' + params.text.toString() + '"';
-      LogStore.getInstance().writeTextLog(logStr, LogType.BRAILLE);
+      LogStore.instance.writeTextLog(logStr, LogType.BRAILLE);
       console.log(logStr);
     }
 
@@ -138,12 +144,12 @@ export class BrailleBackground {
    * @private
    */
   setContent_(newContent, newContentId) {
-    const updateContent = function() {
+    const updateContent = () => {
       this.lastContent_ = newContentId ? newContent : null;
       this.lastContentId_ = newContentId;
       this.displayManager_.setContent(
           newContent, this.inputHandler_.getExpansionType());
-    }.bind(this);
+    };
     this.inputHandler_.onDisplayContentChanged(newContent.text, updateContent);
     updateContent();
   }
@@ -163,27 +169,11 @@ export class BrailleBackground {
     if (this.inputHandler_.onBrailleKeyEvent(brailleEvt)) {
       return;
     }
-    if (ChromeVoxState.instance &&
-        ChromeVoxState.instance.onBrailleKeyEvent(brailleEvt, content)) {
-      return;
+    if (ChromeVoxState.instance) {
+      ChromeVoxState.instance.onBrailleKeyEvent(brailleEvt, content);
     }
   }
 }
 
-/** @type {?BrailleBackground} */
-BrailleBackground.instance_ = null;
-
-BridgeHelper.registerHandler(
-    BridgeTarget.BRAILLE_BACKGROUND, BridgeAction.BACK_TRANSLATE,
-    (cells) => new Promise(resolve => {
-      BrailleBackground.getInstance()
-          .getTranslatorManager()
-          .getDefaultTranslator()
-          .backTranslate(cells, resolve);
-    }));
-
-BridgeHelper.registerHandler(
-    BridgeTarget.BRAILLE_BACKGROUND, BridgeAction.REFRESH_BRAILLE_TABLE,
-    (brailleTable) =>
-        BrailleBackground.getInstance().getTranslatorManager().refresh(
-            brailleTable));
+/** @type {BrailleBackground} */
+BrailleBackground.instance;

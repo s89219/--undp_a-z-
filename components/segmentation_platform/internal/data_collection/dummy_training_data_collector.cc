@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,5 +15,14 @@ void DummyTrainingDataCollector::OnModelMetadataUpdated() {}
 void DummyTrainingDataCollector::OnServiceInitialized() {}
 
 void DummyTrainingDataCollector::ReportCollectedContinuousTrainingData() {}
+
+void DummyTrainingDataCollector::OnDecisionTime(
+    proto::SegmentId id,
+    scoped_refptr<InputContext> input_context,
+    DecisionType type) {}
+
+void DummyTrainingDataCollector::OnObservationTrigger(
+    TrainingDataCache::RequestId request_id,
+    const proto::SegmentInfo& segment_info) {}
 
 }  // namespace segmentation_platform

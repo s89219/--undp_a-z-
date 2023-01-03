@@ -1,4 +1,4 @@
-# Copyright 2021 The Chromium Authors. All rights reserved.
+# Copyright 2021 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Definitions of builders in the chromium.android builder group."""
@@ -12,17 +12,20 @@ load("../fallback-cq.star", "fallback_cq")
 
 try_.defaults.set(
     cores = 8,
-    execution_timeout = 15 * time.minute,
-    list_view = "presubmit",
-    main_list_view = "try",
-    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    os = os.LINUX_DEFAULT,
     pool = try_.DEFAULT_POOL,
+    main_list_view = "try",
+    list_view = "presubmit",
+    service_account = try_.DEFAULT_SERVICE_ACCOUNT,
+    execution_timeout = 15 * time.minute,
+
+    # TODO(crbug.com/1362440): remove this.
+    omit_python2 = False,
     # Default priority for buildbucket is 30, see
     # https://chromium.googlesource.com/infra/infra/+/bb68e62b4380ede486f65cd32d9ff3f1bbe288e4/appengine/cr-buildbucket/creation.py#42
     # This will improve our turnaround time for landing infra/config changes
     # when addressing outages
     priority = 25,
-    service_account = try_.DEFAULT_SERVICE_ACCOUNT,
 )
 
 consoles.list_view(
@@ -42,7 +45,7 @@ def presubmit_builder(*, name, tryjob, **kwargs):
     if tryjob:
         tryjob_args = {a: getattr(tryjob, a) for a in dir(tryjob)}
         tryjob_args["disable_reuse"] = True
-        tryjob_args["add_default_excludes"] = False
+        tryjob_args["add_default_filters"] = False
         tryjob = try_.job(**tryjob_args)
     return try_.builder(name = name, tryjob = tryjob, **kwargs)
 
@@ -83,7 +86,7 @@ presubmit_builder(
         "starlark_entry_points": ["infra/config/main.star", "infra/config/dev.star"],
     },
     tryjob = try_.job(
-        location_regexp = [r".+/[+]/infra/config/.+"],
+        location_filters = ["infra/config/.+"],
     ),
 )
 
@@ -105,9 +108,9 @@ presubmit_builder(
         ],
     },
     tryjob = try_.job(
-        location_regexp = [
-            r".+/[+]/tools/clang/scripts/update.py",
-            r".+/[+]/DEPS",
+        location_filters = [
+            "tools/clang/scripts/update.py",
+            "DEPS",
         ],
     ),
 )
@@ -120,7 +123,7 @@ presubmit_builder(
         "builder_config_directory": "infra/config/generated/builders",
     },
     tryjob = try_.job(
-        location_regexp = [r".+/[+]/infra/config/generated/builders/.*"],
+        location_filters = ["infra/config/generated/builders/.*"],
     ),
 )
 
@@ -141,8 +144,8 @@ presubmit_builder(
 
 presubmit_builder(
     name = "requires-testing-checker",
-    cq_group = fallback_cq.GROUP,
     description_html = "prevents CLs that requires testing from landing on branches with no CQ",
     executable = "recipe:requires_testing_checker",
+    cq_group = fallback_cq.GROUP,
     tryjob = try_.job(),
 )

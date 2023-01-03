@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,12 +37,11 @@ std::u16string IntentTypeToString(IntentType intent_type) {
   switch (intent_type) {
     case IntentType::kUnit:
       return l10n_util::GetStringUTF16(
-          IDS_ASH_QUICK_ANSWERS_UNIT_CONVERSION_INTENT);
+          IDS_QUICK_ANSWERS_UNIT_CONVERSION_INTENT);
     case IntentType::kDictionary:
-      return l10n_util::GetStringUTF16(IDS_ASH_QUICK_ANSWERS_DEFINITION_INTENT);
+      return l10n_util::GetStringUTF16(IDS_QUICK_ANSWERS_DEFINITION_INTENT);
     case IntentType::kTranslation:
-      return l10n_util::GetStringUTF16(
-          IDS_ASH_QUICK_ANSWERS_TRANSLATION_INTENT);
+      return l10n_util::GetStringUTF16(IDS_QUICK_ANSWERS_TRANSLATION_INTENT);
     case IntentType::kUnknown:
       return std::u16string();
   }
@@ -69,9 +68,7 @@ bool ShouldShowQuickAnswers() {
 
 QuickAnswersControllerImpl::QuickAnswersControllerImpl()
     : quick_answers_ui_controller_(
-          std::make_unique<QuickAnswersUiController>(this)),
-      quick_answers_access_token_fetcher_(
-          std::make_unique<QuickAnswersAccessTokenFetcher>()) {
+          std::make_unique<QuickAnswersUiController>(this)) {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   quick_answers_state_ = std::make_unique<QuickAnswersStateAsh>();
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -79,7 +76,10 @@ QuickAnswersControllerImpl::QuickAnswersControllerImpl()
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
-QuickAnswersControllerImpl::~QuickAnswersControllerImpl() = default;
+QuickAnswersControllerImpl::~QuickAnswersControllerImpl() {
+  quick_answers_client_.reset();
+  quick_answers_state_.reset();
+}
 
 void QuickAnswersControllerImpl::SetClient(
     std::unique_ptr<QuickAnswersClient> client) {
@@ -187,7 +187,7 @@ void QuickAnswersControllerImpl::OnQuickAnswerReceived(
         std::make_unique<quick_answers::QuickAnswerText>(title_));
     quick_answer_with_no_result.first_answer_row.push_back(
         std::make_unique<quick_answers::QuickAnswerResultText>(
-            l10n_util::GetStringUTF8(IDS_ASH_QUICK_ANSWERS_VIEW_NO_RESULT_V2)));
+            l10n_util::GetStringUTF8(IDS_QUICK_ANSWERS_VIEW_NO_RESULT_V2)));
     quick_answers_ui_controller_->RenderQuickAnswersViewWithResult(
         anchor_bounds_, quick_answer_with_no_result);
     // Fallback query to title if no result is available.
@@ -227,11 +227,6 @@ void QuickAnswersControllerImpl::OnRequestPreprocessFinished(
   title_ = processed_request.preprocessed_output.intent_info.intent_text;
 
   HandleQuickAnswerRequest(processed_request);
-}
-
-void QuickAnswersControllerImpl::RequestAccessToken(
-    AccessTokenCallback callback) {
-  quick_answers_access_token_fetcher_->RequestAccessToken(std::move(callback));
 }
 
 void QuickAnswersControllerImpl::OnRetryQuickAnswersRequest() {

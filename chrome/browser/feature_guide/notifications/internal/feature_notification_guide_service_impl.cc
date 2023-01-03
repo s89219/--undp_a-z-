@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,6 @@
 #include "chrome/browser/notifications/scheduler/public/schedule_params.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
-#include "components/optimization_guide/proto/models.pb.h"
 #include "components/segmentation_platform/public/config.h"
 #include "components/segmentation_platform/public/segment_selection_result.h"
 #include "components/segmentation_platform/public/segmentation_platform_service.h"
@@ -114,7 +113,7 @@ void FeatureNotificationGuideServiceImpl::CheckForLowEnagedUser() {
   is_low_engaged_user_ =
       result.is_ready && result.segment.has_value() &&
       result.segment.value() ==
-          optimization_guide::proto::OptimizationTarget::
+          segmentation_platform::proto::SegmentId::
               OPTIMIZATION_TARGET_SEGMENTATION_CHROME_LOW_USER_ENGAGEMENT;
 }
 

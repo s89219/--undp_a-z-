@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,8 +53,19 @@ async function loadVideoBlob(blob: Blob): Promise<HTMLVideoElement> {
       hasLoaded.signal(true);
     });
     const gotFrame = new WaitableEvent();
-    el.requestVideoFrameCallback(() => gotFrame.signal());
+    el.requestVideoFrameCallback(() => {
+      gotFrame.signal();
+    });
+    // Since callbacks registered in `requestVideoFrameCallback` doesn't fire
+    // when the page is in the background, use `timeupdate` event to indicate
+    // that the video has been played successfully. Note that waiting until
+    // `canplay` is not enough (see b/172214187).
+    el.addEventListener('timeupdate', () => {
+      gotFrame.signal();
+    }, {once: true});
+
     el.preload = 'auto';
+    el.muted = true;
     el.src = URL.createObjectURL(blob);
     if (!(await hasLoaded.wait())) {
       throw new LoadError(el.error?.message);
@@ -67,9 +78,8 @@ async function loadVideoBlob(blob: Blob): Promise<HTMLVideoElement> {
     }
 
     try {
-      // The |requestVideoFrameCallback| may not be triggered when playing
-      // malformed video. Set 1 second timeout here to prevent UI be blocked
-      // forever.
+      // `gotFrame` may not resolve when playing malformed video. Set 1 second
+      // timeout here to prevent UI from being blocked forever.
       await gotFrame.timedWait(1000);
     } catch (e) {
       throw new PlayMalformedError(assertInstanceof(e, Error).message);
@@ -206,7 +216,7 @@ async function getImageFromPdf(blob: Blob): Promise<Blob> {
     }
     if (isImage) {
       i += ' stream\n'.length;
-      return new Blob([buf.slice(i, i + length)]);
+      return new Blob([buf.slice(i, i + length)], {type: 'image/jpeg'});
     }
   }
   throw new NoImageInPdfError();

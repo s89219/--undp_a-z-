@@ -1,16 +1,16 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/gl/init/gl_factory.h"
 
-#include <algorithm>
 #include <string>
 #include <vector>
 
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -21,7 +21,7 @@
 #include "ui/gl/gl_version_info.h"
 #include "ui/gl/init/gl_initializer.h"
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 #include "ui/base/ui_base_features.h"
 #include "ui/ozone/public/ozone_platform.h"
 #endif
@@ -66,9 +66,9 @@ GLImplementationParts GetRequestedGLImplementation(
       GetAllowedGLImplementations();
 
   if (cmd->HasSwitch(switches::kDisableES3GLContext)) {
-    auto iter =
-        std::find(allowed_impls.begin(), allowed_impls.end(),
-                  GLImplementationParts(kGLImplementationDesktopGLCoreProfile));
+    auto iter = base::ranges::find(
+        allowed_impls,
+        GLImplementationParts(kGLImplementationDesktopGLCoreProfile));
     if (iter != allowed_impls.end())
       allowed_impls.erase(iter);
   }
@@ -131,8 +131,8 @@ GLImplementationParts GetRequestedGLImplementation(
   return GLImplementationParts(kGLImplementationNone);
 }
 
-bool InitializeGLOneOffPlatformHelper(bool init_extensions,
-                                      uint64_t system_device_id) {
+GLDisplay* InitializeGLOneOffPlatformHelper(bool init_extensions,
+                                            uint64_t system_device_id) {
   TRACE_EVENT1("gpu,startup", "gl::init::InitializeGLOneOffPlatformHelper",
                "init_extensions", init_extensions);
 
@@ -147,26 +147,28 @@ bool InitializeGLOneOffPlatformHelper(bool init_extensions,
 
 }  // namespace
 
-bool InitializeGLOneOff(uint64_t system_device_id) {
+GLDisplay* InitializeGLOneOff(uint64_t system_device_id) {
   TRACE_EVENT0("gpu,startup", "gl::init::InitializeOneOff");
 
   if (!InitializeStaticGLBindingsOneOff())
-    return false;
-  if (GetGLImplementation() == kGLImplementationDisabled)
-    return true;
+    return nullptr;
+  if (GetGLImplementation() == kGLImplementationDisabled) {
+    return GetDefaultDisplayEGL();
+  }
 
   return InitializeGLOneOffPlatformHelper(true, system_device_id);
 }
 
-bool InitializeGLNoExtensionsOneOff(bool init_bindings,
-                                    uint64_t system_device_id) {
+GLDisplay* InitializeGLNoExtensionsOneOff(bool init_bindings,
+                                          uint64_t system_device_id) {
   TRACE_EVENT1("gpu,startup", "gl::init::InitializeNoExtensionsOneOff",
                "init_bindings", init_bindings);
   if (init_bindings) {
     if (!InitializeStaticGLBindingsOneOff())
-      return false;
-    if (GetGLImplementation() == kGLImplementationDisabled)
-      return true;
+      return nullptr;
+    if (GetGLImplementation() == kGLImplementationDisabled) {
+      return GetDefaultDisplayEGL();
+    }
   }
 
   return InitializeGLOneOffPlatformHelper(false, system_device_id);
@@ -196,55 +198,58 @@ bool InitializeStaticGLBindingsImplementation(GLImplementationParts impl,
 
   bool initialized = InitializeStaticGLBindings(impl);
   if (!initialized && fallback_to_software_gl) {
-    ShutdownGL(/*due_to_fallback*/ true);
+    ShutdownGL(nullptr, /*due_to_fallback*/ true);
     initialized = InitializeStaticGLBindings(GetSoftwareGLImplementation());
   }
   if (!initialized) {
-    ShutdownGL(/*due_to_fallback*/ false);
+    ShutdownGL(nullptr, /*due_to_fallback*/ false);
     return false;
   }
   return true;
 }
 
-bool InitializeGLOneOffPlatformImplementation(bool fallback_to_software_gl,
-                                              bool disable_gl_drawing,
-                                              bool init_extensions,
-                                              uint64_t system_device_id) {
+GLDisplay* InitializeGLOneOffPlatformImplementation(
+    bool fallback_to_software_gl,
+    bool disable_gl_drawing,
+    bool init_extensions,
+    uint64_t system_device_id) {
   if (IsSoftwareGLImplementation(GetGLImplementationParts()))
     fallback_to_software_gl = false;
 
-  bool initialized = InitializeGLOneOffPlatform(system_device_id);
+  GLDisplay* display = InitializeGLOneOffPlatform(system_device_id);
+  bool initialized = !!display;
   if (!initialized && fallback_to_software_gl) {
-    ShutdownGL(/*due_to_fallback*/ true);
-    initialized = InitializeStaticGLBindings(GetSoftwareGLImplementation()) &&
-                  InitializeGLOneOffPlatform(system_device_id);
+    ShutdownGL(nullptr, /*due_to_fallback=*/true);
+    if (InitializeStaticGLBindings(GetSoftwareGLImplementation())) {
+      display = InitializeGLOneOffPlatform(system_device_id);
+      initialized = !!display;
+    }
   }
   if (initialized && init_extensions) {
-    initialized = InitializeExtensionSettingsOneOffPlatform();
+    initialized = InitializeExtensionSettingsOneOffPlatform(display);
   }
 
-  if (!initialized)
-    ShutdownGL(false);
-
-  if (initialized) {
-    DVLOG(1) << "Using "
-             << GetGLImplementationGLName(GetGLImplementationParts())
-             << " GL implementation.";
-    if (disable_gl_drawing)
-      InitializeNullDrawGLBindings();
+  if (!initialized) {
+    ShutdownGL(display, false);
+    return nullptr;
   }
-  return initialized;
+
+  DVLOG(1) << "Using " << GetGLImplementationGLName(GetGLImplementationParts())
+           << " GL implementation.";
+  SetNullDrawGLBindings(disable_gl_drawing);
+  return display;
 }
 
-void ShutdownGL(bool due_to_fallback) {
-  ShutdownGLPlatform();
+void ShutdownGL(GLDisplay* display, bool due_to_fallback) {
+  ShutdownGLPlatform(display);
 
   UnloadGLNativeLibraries(due_to_fallback);
   SetGLImplementation(kGLImplementationNone);
 }
 
-scoped_refptr<GLSurface> CreateOffscreenGLSurface(const gfx::Size& size) {
-  return CreateOffscreenGLSurfaceWithFormat(size, GLSurfaceFormat());
+scoped_refptr<GLSurface> CreateOffscreenGLSurface(gl::GLDisplay* display,
+                                                  const gfx::Size& size) {
+  return CreateOffscreenGLSurfaceWithFormat(display, size, GLSurfaceFormat());
 }
 
 void DisableANGLE() {

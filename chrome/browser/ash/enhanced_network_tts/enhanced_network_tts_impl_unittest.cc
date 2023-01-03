@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -143,7 +143,7 @@ class TestAudioDataObserverImpl : public mojom::AudioDataObserver {
     receiver_.Bind(std::move(receiver));
   }
 
-  // ash::enhanced_network_tts::mojom::AudioDataObserver:
+  // mojom::AudioDataObserver:
   void OnAudioDataReceived(mojom::TtsResponsePtr response) override {
     received_responses_.push_back(std::move(response));
   }

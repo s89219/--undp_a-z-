@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -86,13 +86,6 @@ public interface BrowserPaymentRequest {
      * @param spec The validated PaymentRequestSpec.
      */
     void onSpecValidated(PaymentRequestSpec spec);
-
-    /**
-     * Adds the PaymentAppFactory(s) specified by the implementers to the given PaymentAppService.
-     * @param service The PaymentAppService to be added with the factories.
-     * @param delegate The delegate of payment app factory.
-     */
-    void addPaymentAppFactories(PaymentAppService service, PaymentAppFactoryDelegate delegate);
 
     /**
      * @return Whether at least one payment app (including basic-card payment app) is available

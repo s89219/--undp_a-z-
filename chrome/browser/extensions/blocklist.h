@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,7 @@ class BlocklistStateFetcher;
 class ExtensionPrefs;
 
 // The blocklist of extensions backed by safe browsing.
-class Blocklist : public KeyedService, public base::SupportsWeakPtr<Blocklist> {
+class Blocklist : public KeyedService {
  public:
   class Observer {
    public:
@@ -59,6 +59,8 @@ class Blocklist : public KeyedService, public base::SupportsWeakPtr<Blocklist> {
       base::OnceCallback<void(const std::set<std::string>&)>;
 
   using IsBlocklistedCallback = base::OnceCallback<void(BlocklistState)>;
+
+  using DatabaseReadyCallback = base::OnceCallback<void(bool)>;
 
   explicit Blocklist(ExtensionPrefs* prefs);
 
@@ -110,6 +112,10 @@ class Blocklist : public KeyedService, public base::SupportsWeakPtr<Blocklist> {
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
+  // Invokes the callback method with a boolean indicating
+  // whether the database is ready.
+  void IsDatabaseReady(DatabaseReadyCallback callback);
+
  private:
   friend class ScopedDatabaseManagerForTest;
 
@@ -154,6 +160,8 @@ class Blocklist : public KeyedService, public base::SupportsWeakPtr<Blocklist> {
   // is a pair of [vector of string ids to check, response closure].
   std::list<std::pair<std::vector<std::string>, base::OnceClosure>>
       state_requests_;
+
+  base::WeakPtrFactory<Blocklist> weak_ptr_factory_{this};
 };
 
 }  // namespace extensions

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -267,8 +267,7 @@ std::set<std::string> NearbyShareContactManagerImpl::GetAllowedContacts()
     const {
   std::set<std::string> allowlist;
   for (const base::Value& id :
-       pref_service_->Get(prefs::kNearbySharingAllowedContactsPrefName)
-           ->GetListDeprecated()) {
+       pref_service_->GetList(prefs::kNearbySharingAllowedContactsPrefName)) {
     allowlist.insert(id.GetString());
   }
   return allowlist;
@@ -399,12 +398,12 @@ bool NearbyShareContactManagerImpl::SetAllowlist(
   if (new_allowlist == GetAllowedContacts())
     return false;
 
-  base::Value allowlist_value(base::Value::Type::LIST);
+  base::Value::List allowlist_value;
   for (const std::string& id : new_allowlist) {
     allowlist_value.Append(id);
   }
-  pref_service_->Set(prefs::kNearbySharingAllowedContactsPrefName,
-                     std::move(allowlist_value));
+  pref_service_->SetList(prefs::kNearbySharingAllowedContactsPrefName,
+                         std::move(allowlist_value));
 
   return true;
 }

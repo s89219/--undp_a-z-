@@ -1,38 +1,61 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import './scanning_mojom_imports.js';
 import 'chrome://scanning/loading_page.js';
 
 import {AppState} from 'chrome://scanning/scanning_app_types.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
+import {MockController} from 'chrome://webui-test/chromeos/mock_controller.m.js';
+import {isVisible} from 'chrome://webui-test/chromeos/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
-import {flushTasks, isVisible} from '../../test_util.js';
+import {FakeMediaQueryList} from './scanning_app_test_utils.js';
 
-export function loadingPageTest() {
+suite('loadingPageTest', function() {
   const scanningSrcBase = 'chrome://scanning/';
 
   /** @type {?LoadingPageElement} */
   let loadingPage = null;
 
+  /** @type {{createFunctionMock: Function, reset: Function}} */
+  let mockController;
+
+  /** @type {?FakeMediaQueryList} */
+  let fakePrefersColorSchemeDarkMediaQuery = null;
+
   /**
-   * @suppress {visibility}
    * @param {boolean} enabled
+   * @return {!Promise}
    */
-  function setIsDarkModeEnabled_(enabled) {
+  function setFakePrefersColorSchemeDark(enabled) {
     assertTrue(!!loadingPage);
-    loadingPage.isDarkModeEnabled_ = enabled;
+    fakePrefersColorSchemeDarkMediaQuery.matches = enabled;
+
+    return flushTasks();
   }
+
 
   setup(() => {
     loadingPage = /** @type {!LoadingPageElement} */ (
         document.createElement('loading-page'));
     assertTrue(!!loadingPage);
     loadingPage.appState = AppState.GETTING_SCANNERS;
+
+    // Setup mock for matchMedia.
+    mockController = new MockController();
+    const mockMatchMedia =
+        mockController.createFunctionMock(window, 'matchMedia');
+    fakePrefersColorSchemeDarkMediaQuery =
+        new FakeMediaQueryList('(prefers-color-scheme: dark)');
+    mockMatchMedia.returnValue = fakePrefersColorSchemeDarkMediaQuery;
+
     document.body.appendChild(loadingPage);
   });
 
   teardown(() => {
+    mockController.reset();
     loadingPage.remove();
     loadingPage = null;
   });
@@ -89,12 +112,11 @@ export function loadingPageTest() {
 
     // Setup UI to display no scanners div.
     loadingPage.appState = AppState.NO_SCANNERS;
-    await flushTasks();
+    await setFakePrefersColorSchemeDark(false);
     assertEquals(getNoScannersSvg().src, lightModeSvg);
 
     // Mock media query state for dark mode.
-    setIsDarkModeEnabled_(true);
-    await flushTasks();
+    await setFakePrefersColorSchemeDark(true);
     assertEquals(getNoScannersSvg().src, darkModeSvg);
   });
 
@@ -107,12 +129,11 @@ export function loadingPageTest() {
 
     // Setup UI to display no scanners div.
     loadingPage.appState = AppState.NO_SCANNERS;
-    await flushTasks();
+    await setFakePrefersColorSchemeDark(false);
     assertEquals(getLoadingSvg().src, lightModeSvg);
 
     // Mock media query state for dark mode.
-    setIsDarkModeEnabled_(true);
-    await flushTasks();
+    await setFakePrefersColorSchemeDark(true);
     assertEquals(getLoadingSvg().src, darkModeSvg);
   });
-}
+});

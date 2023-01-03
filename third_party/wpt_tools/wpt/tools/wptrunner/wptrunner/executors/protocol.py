@@ -1,3 +1,5 @@
+# mypy: allow-untyped-defs
+
 import traceback
 from http.client import HTTPConnection
 
@@ -308,6 +310,18 @@ class CookiesProtocolPart(ProtocolPart):
         """Delete all cookies."""
         pass
 
+    @abstractmethod
+    def get_all_cookies(self):
+        """Get all cookies."""
+        pass
+
+    @abstractmethod
+    def get_named_cookie(self, name):
+        """Get named cookie.
+
+        :param name: The name of the cookie to get."""
+        pass
+
 
 class SendKeysProtocolPart(ProtocolPart):
     """Protocol part for performing trusted clicks"""
@@ -360,12 +374,11 @@ class SetPermissionProtocolPart(ProtocolPart):
     name = "set_permission"
 
     @abstractmethod
-    def set_permission(self, descriptor, state, one_realm=False):
+    def set_permission(self, descriptor, state):
         """Set permission state.
 
         :param descriptor: A PermissionDescriptor object.
-        :param state: The state to set the permission to.
-        :param one_realm: Whether to set the permission for only one realm."""
+        :param state: The state to set the permission to."""
         pass
 
 
@@ -380,6 +393,9 @@ class ActionSequenceProtocolPart(ProtocolPart):
         """Send a sequence of actions to the window.
 
         :param actions: A protocol-specific handle to an array of actions."""
+        pass
+
+    def release(self):
         pass
 
 

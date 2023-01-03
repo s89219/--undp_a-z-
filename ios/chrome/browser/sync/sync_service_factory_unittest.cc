@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,11 @@
 #include <vector>
 
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "components/browser_sync/browser_sync_switches.h"
 #include "components/sync/base/command_line_switches.h"
+#include "components/sync/base/features.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/base/pref_names.h"
 #include "components/sync/driver/data_type_controller.h"
@@ -19,6 +21,7 @@
 #include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #include "ios/chrome/browser/favicon/favicon_service_factory.h"
 #include "ios/chrome/browser/history/history_service_factory.h"
+#include "ios/chrome/browser/webdata_services/web_data_service_factory.h"
 #include "ios/web/public/test/web_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
@@ -36,12 +39,11 @@ class SyncServiceFactoryTest : public PlatformTest {
     browser_state_builder.AddTestingFactory(
         ios::HistoryServiceFactory::GetInstance(),
         ios::HistoryServiceFactory::GetDefaultFactory());
-    chrome_browser_state_ = browser_state_builder.Build();
-  }
-
-  void SetUp() override {
     // Some services will only be created if there is a WebDataService.
-    chrome_browser_state_->CreateWebDataService();
+    browser_state_builder.AddTestingFactory(
+        ios::WebDataServiceFactory::GetInstance(),
+        ios::WebDataServiceFactory::GetDefaultFactory());
+    chrome_browser_state_ = browser_state_builder.Build();
   }
 
   void TearDown() override {
@@ -51,7 +53,7 @@ class SyncServiceFactoryTest : public PlatformTest {
  protected:
   // Returns the collection of default datatypes.
   syncer::ModelTypeSet DefaultDatatypes() {
-    static_assert(38 == syncer::GetNumModelTypes(),
+    static_assert(45 == syncer::GetNumModelTypes(),
                   "When adding a new type, you probably want to add it here as "
                   "well (assuming it is already enabled).");
 
@@ -65,11 +67,20 @@ class SyncServiceFactoryTest : public PlatformTest {
     datatypes.Put(syncer::AUTOFILL_WALLET_METADATA);
     datatypes.Put(syncer::AUTOFILL_WALLET_OFFER);
     datatypes.Put(syncer::BOOKMARKS);
+    if (base::FeatureList::IsEnabled(syncer::kSyncEnableContactInfoDataType)) {
+      datatypes.Put(syncer::CONTACT_INFO);
+    }
     datatypes.Put(syncer::DEVICE_INFO);
+    if (base::FeatureList::IsEnabled(syncer::kSyncEnableHistoryDataType)) {
+      datatypes.Put(syncer::HISTORY);
+    }
     datatypes.Put(syncer::HISTORY_DELETE_DIRECTIVES);
     datatypes.Put(syncer::PREFERENCES);
     datatypes.Put(syncer::PRIORITY_PREFERENCES);
     datatypes.Put(syncer::READING_LIST);
+    if (base::FeatureList::IsEnabled(syncer::kSyncSegmentationDataType)) {
+      datatypes.Put(syncer::SEGMENTATION);
+    }
     // TODO(crbug.com/919489) Add SECURITY_EVENTS data type once it is enabled.
     datatypes.Put(syncer::SESSIONS);
     datatypes.Put(syncer::PROXY_TABS);
@@ -100,7 +111,7 @@ TEST_F(SyncServiceFactoryTest, DisableSyncFlag) {
 // and properly initialized.
 TEST_F(SyncServiceFactoryTest, CreateSyncServiceImplDefault) {
   syncer::SyncServiceImpl* sync_service =
-      SyncServiceFactory::GetAsSyncServiceImplForBrowserState(
+      SyncServiceFactory::GetAsSyncServiceImplForBrowserStateForTesting(
           chrome_browser_state());
   syncer::ModelTypeSet types = sync_service->GetRegisteredDataTypesForTest();
   const syncer::ModelTypeSet default_types = DefaultDatatypes();

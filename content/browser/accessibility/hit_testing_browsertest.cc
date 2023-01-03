@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +30,9 @@
 #include "net/dns/mock_host_resolver.h"
 #include "ui/accessibility/ax_clipping_behavior.h"
 #include "ui/accessibility/ax_coordinate_system.h"
+#include "ui/accessibility/ax_node_id_forward.h"
 #include "ui/accessibility/platform/ax_platform_node_base.h"
+#include "ui/accessibility/platform/ax_platform_tree_manager.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 
@@ -142,7 +144,7 @@ AccessibilityHitTestingBrowserTest::HitTestAndWaitForResultWithEvent(
   action_data.hit_test_event_to_fire = event_to_fire;
   manager->delegate()->AccessibilityHitTest(CSSToFramePoint(point),
                                             event_to_fire, 0, {});
-  event_waiter.WaitForNotification();
+  EXPECT_TRUE(event_waiter.WaitForNotification());
 
   RenderFrameHostImpl* target_frame = event_waiter.event_render_frame_host();
   BrowserAccessibilityManager* target_manager =
@@ -165,10 +167,11 @@ AccessibilityHitTestingBrowserTest::AsyncHitTestAndWaitForCallback(
 
   gfx::Point target_point = CSSToFramePoint(point);
   base::RunLoop run_loop;
-  BrowserAccessibilityManager* hit_manager = nullptr;
-  int hit_node_id = 0;
+  ui::AXPlatformTreeManager* hit_manager = nullptr;
+  ui::AXNodeID hit_node_id = ui::kInvalidAXNodeID;
 
-  auto callback = [&](BrowserAccessibilityManager* manager, int node_id) {
+  auto callback = [&](ui::AXPlatformTreeManager* manager,
+                      ui::AXNodeID node_id) {
     hit_manager = manager;
     hit_node_id = node_id;
     run_loop.QuitClosure().Run();
@@ -178,7 +181,9 @@ AccessibilityHitTestingBrowserTest::AsyncHitTestAndWaitForCallback(
       base::BindLambdaForTesting(callback));
   run_loop.Run();
 
-  BrowserAccessibility* hit_node = hit_manager->GetFromID(hit_node_id);
+  BrowserAccessibility* hit_node =
+      static_cast<BrowserAccessibilityManager*>(hit_manager)
+          ->GetFromID(hit_node_id);
   return hit_node;
 }
 
@@ -196,7 +201,7 @@ AccessibilityHitTestingBrowserTest::CallCachingAsyncHitTest(
   BrowserAccessibility* result =
       GetRootBrowserAccessibilityManager()->CachingAsyncHitTest(screen_point);
 
-  hover_waiter.WaitForNotification();
+  EXPECT_TRUE(hover_waiter.WaitForNotification());
   return result;
 }
 
@@ -213,12 +218,13 @@ BrowserAccessibility* AccessibilityHitTestingBrowserTest::CallNearestLeafNode(
   AccessibilityNotificationWaiter hover_waiter(
       shell()->web_contents(), ui::kAXModeComplete, ax::mojom::Event::kHover);
   ui::AXPlatformNodeBase* platform_node = nullptr;
-  if (manager->GetRoot()->GetAXPlatformNode()) {
-    platform_node = static_cast<ui::AXPlatformNodeBase*>(
-                        manager->GetRoot()->GetAXPlatformNode())
-                        ->NearestLeafToPoint(screen_point);
+  if (manager->GetBrowserAccessibilityRoot()->GetAXPlatformNode()) {
+    platform_node =
+        static_cast<ui::AXPlatformNodeBase*>(
+            manager->GetBrowserAccessibilityRoot()->GetAXPlatformNode())
+            ->NearestLeafToPoint(screen_point);
   }
-  hover_waiter.WaitForNotification();
+  EXPECT_TRUE(hover_waiter.WaitForNotification());
   if (platform_node) {
     return BrowserAccessibility::FromAXPlatformNodeDelegate(
         platform_node->GetDelegate());
@@ -261,7 +267,8 @@ void AccessibilityHitTestingBrowserTest::SimulatePinchZoom(
   }
 
   // Ensure we get an accessibility update reflecting the new scale factor.
-  accessibility_waiter.WaitForNotification();
+  // TODO(https://crbug.com/1332468): Investigate why this does not return true.
+  ASSERT_TRUE(accessibility_waiter.WaitForNotification());
 }
 
 std::string
@@ -344,7 +351,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/simple_rectangles.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -385,7 +392,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest, MAYBE_HitTest) {
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/simple_rectangles.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -426,8 +433,8 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest, MAYBE_HitTest) {
 // this platform.
 #if !BUILDFLAG(IS_ANDROID)
 
-// crbug.com/1317505: Flaky on Lacros
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
+// crbug.com/1317505: Flaky on Lacros and Linux Wayland
+#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_LINUX)
 #define MAYBE_HitTestInPopup DISABLED_HitTestInPopup
 #else
 #define MAYBE_HitTestInPopup HitTestInPopup
@@ -444,7 +451,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/input-color-with-popup-open.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "color picker");
@@ -457,7 +464,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   action_data.action = ax::mojom::Action::kDoDefault;
   input->AccessibilityPerformAction(action_data);
 
-  click_waiter.WaitForNotification();
+  ASSERT_TRUE(click_waiter.WaitForNotification());
 
   auto* popup_root = GetRootBrowserAccessibilityManager()->GetPopupRoot();
   ASSERT_NE(nullptr, popup_root);
@@ -494,7 +501,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
       "</body></html>";
   GURL url(url_str);
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   gfx::Point out_of_bounds_point(-1, -1);
 
@@ -522,7 +529,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingCrossProcessBrowserTest,
                                          ax::mojom::Event::kLoadComplete);
 
   EXPECT_TRUE(NavigateToURL(shell(), url_a));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
 
@@ -590,7 +597,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/simple_rectangles_with_curtain.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -632,17 +639,10 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_MAC)
-// Fails flakily with compared ID differences. TODO(crbug.com/1121099): Re-nable
+// Fails flakily with compared ID differences. TODO(crbug.com/1121099): Re-enable
 // this test.
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-#define MAYBE_CachingAsyncHitTest_WithPinchZoom \
-  DISABLED_CachingAsyncHitTest_WithPinchZoom
-#else
-#define MAYBE_CachingAsyncHitTest_WithPinchZoom \
-  CachingAsyncHitTest_WithPinchZoom
-#endif
 IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
-                       MAYBE_CachingAsyncHitTest_WithPinchZoom) {
+                       DISABLED_CachingAsyncHitTest_WithPinchZoom) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   EXPECT_TRUE(NavigateToURL(shell(), GURL(url::kAboutBlankURL)));
@@ -655,7 +655,9 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
       "/accessibility/hit_testing/simple_rectangles.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
   SynchronizeThreads();
-  waiter.WaitForNotification();
+  // TODO(https://crbug.com/1332468): Investigate why this does not return
+  // true.
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -682,7 +684,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   }
 }
 
-#if defined(THREAD_SANITIZER)
+#if defined(THREAD_SANITIZER) || BUILDFLAG(IS_LINUX)
 // TODO(https://crbug.com/1224978): Times out flakily on TSAN builds.
 #define MAYBE_HitTest_WithPinchZoom DISABLED_HitTest_WithPinchZoom
 #else
@@ -702,7 +704,9 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
       "/accessibility/hit_testing/simple_rectangles.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
   SynchronizeThreads();
-  waiter.WaitForNotification();
+  // TODO(https://crbug.com/1332468): Investigate why this does not return
+  // true.
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -738,15 +742,9 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
 }
 
 // Timeouts on Linux. TODO(crbug.com/1083805): Enable this test.
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-#define MAYBE_CachingAsyncHitTestMissesElement_WithPinchZoom \
-  DISABLED_CachingAsyncHitTestMissesElement_WithPinchZoom
-#else
-#define MAYBE_CachingAsyncHitTestMissesElement_WithPinchZoom \
-  CachingAsyncHitTestMissesElement_WithPinchZoom
-#endif
-IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
-                       MAYBE_CachingAsyncHitTestMissesElement_WithPinchZoom) {
+IN_PROC_BROWSER_TEST_P(
+    AccessibilityHitTestingBrowserTest,
+    DISABLED_CachingAsyncHitTestMissesElement_WithPinchZoom) {
   ASSERT_TRUE(embedded_test_server()->Start());
 
   EXPECT_TRUE(NavigateToURL(shell(), GURL(url::kAboutBlankURL)));
@@ -757,7 +755,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/simple_rectangles_with_curtain.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -805,7 +803,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
 
 // GetAXPlatformNode is currently only supported on windows and linux (excluding
 // Chrome OS or Chromecast)
-#if BUILDFLAG(IS_WIN) || (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMECAST))
+#if BUILDFLAG(IS_WIN) || (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS))
 IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
                        NearestLeafInIframes) {
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -818,7 +816,7 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
   GURL url(embedded_test_server()->GetURL(
       "/accessibility/hit_testing/text_ranges.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
-  waiter.WaitForNotification();
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "rectA");
@@ -857,7 +855,8 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
       "/accessibility/hit_testing/aria_touchpassthrough_key.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
   SynchronizeThreads();
-  waiter.WaitForNotification();
+  // TODO(https://crbug.com/1332468): Investigate why this does not return true.
+  ASSERT_TRUE(waiter.WaitForNotification());
 
   WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
                                                 "Dial");
@@ -894,10 +893,11 @@ IN_PROC_BROWSER_TEST_P(AccessibilityHitTestingBrowserTest,
 
     // Simulate a tap at that point using TouchPassthroughManager.
     TouchPassthroughManager touch_passthrough_manager(
-        static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame());
+        static_cast<WebContentsImpl*>(shell()->web_contents())
+            ->GetPrimaryMainFrame());
     touch_passthrough_manager.OnTouchStart(CSSToFramePoint(key5_ctr));
     touch_passthrough_manager.OnTouchEnd();
-    event_waiter.WaitForNotification();
+    ASSERT_TRUE(event_waiter.WaitForNotification());
 
     EXPECT_EQ("5",
               field->GetStringAttribute(ax::mojom::StringAttribute::kValue));

@@ -1,9 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {TestBrowserProxy} from '../../test_browser_proxy.js';
-import {BrowserChannel,UpdateStatus} from 'chrome://os-settings/chromeos/os_settings.js';
+import {BrowserChannel, UpdateStatus} from 'chrome://os-settings/chromeos/os_settings.js';
+import {webUIListenerCallback} from 'chrome://resources/ash/common/cr.m.js';
+
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 /** @implements {AboutPageBrowserProxy} */
 export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
@@ -22,9 +24,10 @@ export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
       'launchReleaseNotes',
       'openOsHelpPage',
       'openDiagnostics',
-      'refreshTPMFirmwareUpdateStatus',
+      'refreshTpmFirmwareUpdateStatus',
       'requestUpdate',
       'setChannel',
+      'getFirmwareUpdateCount',
       'openFirmwareUpdatesPage',
       'isManagedAutoUpdateEnabled',
       'isConsumerAutoUpdateEnabled',
@@ -71,6 +74,9 @@ export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
 
     /** @private {!boolean} */
     this.consumerAutoUpdateEnabled_ = true;
+
+    /** @private {number} */
+    this.firmwareUpdateCount_ = 0;
   }
 
   /** @param {!UpdateStatus} updateStatus */
@@ -83,7 +89,7 @@ export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
   }
 
   sendStatusNoInternet() {
-    cr.webUIListenerCallback('update-status-changed', {
+    webUIListenerCallback('update-status-changed', {
       progress: 0,
       status: UpdateStatus.FAILED,
       message: 'offline',
@@ -109,7 +115,7 @@ export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
   /** @override */
   refreshUpdateStatus() {
     if (this.sendUpdateStatus_) {
-      cr.webUIListenerCallback('update-status-changed', {
+      webUIListenerCallback('update-status-changed', {
         progress: 1,
         status: this.updateStatus_,
       });
@@ -208,9 +214,9 @@ export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
   }
 
   /** @override */
-  refreshTPMFirmwareUpdateStatus() {
-    this.methodCalled('refreshTPMFirmwareUpdateStatus');
-    cr.webUIListenerCallback(
+  refreshTpmFirmwareUpdateStatus() {
+    this.methodCalled('refreshTpmFirmwareUpdateStatus');
+    webUIListenerCallback(
         'tpm-firmware-update-status-changed', this.tpmFirmwareUpdateStatus_);
   }
 
@@ -239,6 +245,17 @@ export class TestAboutPageBrowserProxyChromeOS extends TestBrowserProxy {
   /** @override */
   openFirmwareUpdatesPage() {
     this.methodCalled('openFirmwareUpdatesPage');
+  }
+
+  /** @override */
+  getFirmwareUpdateCount() {
+    this.methodCalled('getFirmwareUpdateCount');
+    return Promise.resolve(this.firmwareUpdateCount_);
+  }
+
+  /** @param {number} firmwareUpdatesCount */
+  setFirmwareUpdatesCount(firmwareUpdatesCount) {
+    this.firmwareUpdateCount_ = firmwareUpdatesCount;
   }
 
   /** @override */

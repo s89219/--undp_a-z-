@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include "ash/app_list/model/app_list_item_observer.h"
 #include "ash/public/cpp/app_list/app_list_config_provider.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/views/widget/widget.h"
 
 namespace ash {
 
@@ -91,6 +92,10 @@ void AppListItem::SetIconVersion(int icon_version) {
   }
 }
 
+SkColor AppListItem::GetNotificationBadgeColor() const {
+  return metadata_->badge_color;
+}
+
 void AppListItem::SetNotificationBadgeColor(const SkColor color) {
   metadata_->badge_color = color;
   for (auto& observer : observers_) {
@@ -128,8 +133,8 @@ bool AppListItem::IsFolderFull() const {
 }
 
 std::string AppListItem::ToDebugString() const {
-  return id().substr(0, 8) + " '" + (is_page_break() ? "page_break" : name()) +
-         "'" + " [" + position().ToDebugString() + "]";
+  return id().substr(0, 8) + " '" + "'" + " [" + position().ToDebugString() +
+         "]";
 }
 
 // Protected methods

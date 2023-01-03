@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,8 +37,6 @@ class StatusController {
   void clear_updated_types();
 
   // Various conflict counters.
-  int num_encryption_conflicts() const;
-  int num_hierarchy_conflicts() const;
   int num_server_conflicts() const;
 
   // Aggregate sum of all conflicting items over all conflict types.
@@ -62,8 +60,6 @@ class StatusController {
   void increment_num_tombstone_updates_downloaded_by(int value);
 
   // Update application and conflict resolution counters.
-  void increment_num_encryption_conflicts_by(int value);
-  void increment_num_hierarchy_conflicts_by(int value);
   void increment_num_server_conflicts();
 
   // Commit counters.

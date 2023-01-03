@@ -1,9 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "media/formats/hls/types.h"
 
+#include <initializer_list>
+#include <string>
 #include <utility>
 
 #include "base/location.h"
@@ -20,24 +22,23 @@ TEST(HlsTypesTest, ParseDecimalInteger) {
   const auto error_test = [](base::StringPiece input,
                              const base::Location& from =
                                  base::Location::Current()) {
-    auto result =
-        types::ParseDecimalInteger(SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+    auto result = types::ParseDecimalInteger(
+        ResolvedSourceString::CreateForTesting(input));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     auto error = std::move(result).error();
     EXPECT_EQ(error.code(), ParseStatusCode::kFailedToParseDecimalInteger)
         << from.ToString();
   };
 
-  const auto ok_test = [](base::StringPiece input,
-                          types::DecimalInteger expected,
-                          const base::Location& from =
-                              base::Location::Current()) {
-    auto result =
-        types::ParseDecimalInteger(SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_value()) << from.ToString();
-    auto value = std::move(result).value();
-    EXPECT_EQ(value, expected) << from.ToString();
-  };
+  const auto ok_test =
+      [](base::StringPiece input, types::DecimalInteger expected,
+         const base::Location& from = base::Location::Current()) {
+        auto result = types::ParseDecimalInteger(
+            ResolvedSourceString::CreateForTesting(input));
+        ASSERT_TRUE(result.has_value()) << from.ToString();
+        auto value = std::move(result).value();
+        EXPECT_EQ(value, expected) << from.ToString();
+      };
 
   // Empty string is not allowed
   error_test("");
@@ -76,23 +77,22 @@ TEST(HlsTypesTest, ParseDecimalFloatingPoint) {
                              const base::Location& from =
                                  base::Location::Current()) {
     auto result = types::ParseDecimalFloatingPoint(
-        SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+        ResolvedSourceString::CreateForTesting(input));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     auto error = std::move(result).error();
     EXPECT_EQ(error.code(), ParseStatusCode::kFailedToParseDecimalFloatingPoint)
         << from.ToString();
   };
 
-  const auto ok_test = [](base::StringPiece input,
-                          types::DecimalFloatingPoint expected,
-                          const base::Location& from =
-                              base::Location::Current()) {
-    auto result = types::ParseDecimalFloatingPoint(
-        SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_value()) << from.ToString();
-    auto value = std::move(result).value();
-    EXPECT_DOUBLE_EQ(value, expected) << from.ToString();
-  };
+  const auto ok_test =
+      [](base::StringPiece input, types::DecimalFloatingPoint expected,
+         const base::Location& from = base::Location::Current()) {
+        auto result = types::ParseDecimalFloatingPoint(
+            ResolvedSourceString::CreateForTesting(input));
+        ASSERT_TRUE(result.has_value()) << from.ToString();
+        auto value = std::move(result).value();
+        EXPECT_DOUBLE_EQ(value, expected) << from.ToString();
+      };
 
   // Empty string is not allowed
   error_test("");
@@ -128,24 +128,23 @@ TEST(HlsTypesTest, ParseSignedDecimalFloatingPoint) {
                              const base::Location& from =
                                  base::Location::Current()) {
     auto result = types::ParseSignedDecimalFloatingPoint(
-        SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+        ResolvedSourceString::CreateForTesting(input));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     auto error = std::move(result).error();
     EXPECT_EQ(error.code(),
               ParseStatusCode::kFailedToParseSignedDecimalFloatingPoint)
         << from.ToString();
   };
 
-  const auto ok_test = [](base::StringPiece input,
-                          types::SignedDecimalFloatingPoint expected,
-                          const base::Location& from =
-                              base::Location::Current()) {
-    auto result = types::ParseSignedDecimalFloatingPoint(
-        SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_value()) << from.ToString();
-    auto value = std::move(result).value();
-    EXPECT_DOUBLE_EQ(value, expected) << from.ToString();
-  };
+  const auto ok_test =
+      [](base::StringPiece input, types::SignedDecimalFloatingPoint expected,
+         const base::Location& from = base::Location::Current()) {
+        auto result = types::ParseSignedDecimalFloatingPoint(
+            ResolvedSourceString::CreateForTesting(input));
+        ASSERT_TRUE(result.has_value()) << from.ToString();
+        auto value = std::move(result).value();
+        EXPECT_DOUBLE_EQ(value, expected) << from.ToString();
+      };
 
   // Empty string is not allowed
   error_test("");
@@ -195,10 +194,10 @@ TEST(HlsTypesTest, AttributeListIterator) {
 
     // Afterwards, iterator should fail
     auto result = iter.Next();
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     EXPECT_EQ(std::move(result).error().code(), error) << from.ToString();
     result = iter.Next();
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     EXPECT_EQ(std::move(result).error().code(), error) << from.ToString();
   };
 
@@ -229,6 +228,7 @@ TEST(HlsTypesTest, AttributeListIterator) {
 
   // Attribute names may not be empty
   error_test(R"(=BAR,HELLO=WORLD)", {});
+  error_test(R"(  =BAR,HELLO=WORLD)", {});
 
   // Attribute values may not be empty
   error_test(R"(FOO=,HELLO=WORLD)", {});
@@ -243,33 +243,39 @@ TEST(HlsTypesTest, AttributeListIterator) {
   error_test(R"(FOO=BAR,HEL$LO=WORLD)", {{"FOO", "BAR"}});
   error_test(R"(FOO=BAR,HEL(LO=WORLD)", {{"FOO", "BAR"}});
 
-  // Attribute names may not have leading, trailing, or interior whitespace
-  error_test(R"(FOO=BAR, HELLO=WORLD)", {{"FOO", "BAR"}});
-  error_test(R"(FOO=BAR,HELLO =WORLD)", {{"FOO", "BAR"}});
-  error_test(R"(FOO=BAR,HE LLO=WORLD)", {{"FOO", "BAR"}});
+  // Attribute names may have leading or trailing whitespace, but not interior
+  // whitespace
+  ok_test(" FOO\t =BAR,\tHELLO    =WORLD",
+          {{"FOO", "BAR"}, {"HELLO", "WORLD"}});
+  error_test("FOO=BAR,HE LLO=WORLD", {{"FOO", "BAR"}});
 
   // Attribute names must be followed by an equals sign
   error_test(R"(FOO=BAR,HELLOWORLD,)", {{"FOO", "BAR"}});
 
-  // Attribute values may not contain leading, interior, or trailing whitespace
-  error_test(R"(FOO=BAR,HELLO= WORLD,)", {{"FOO", "BAR"}});
-  error_test(R"(FOO=BAR,HELLO=WO RLD,)", {{"FOO", "BAR"}});
-  error_test(R"(FOO=BAR,HELLO=WORLD ,)", {{"FOO", "BAR"}});
+  // Attribute values may contain leading or trailing whitespace, but
+  // it is not significant. Interior whitespace is not allowed in unquoted
+  // attribute values.
+  ok_test("FOO= BAR\t,HELLO= WORLD,", {{"FOO", "BAR"}, {"HELLO", "WORLD"}});
+  ok_test("FOO=BAR,HELLO=WORLD \t,", {{"FOO", "BAR"}, {"HELLO", "WORLD"}});
+  error_test("FOO=BAR,HELLO=WO RLD,", {{"FOO", "BAR"}});
 
   // Leading commas are not allowed
   error_test(R"(,FOO=BAR,HELLO=WORLD,)", {});
 
   // A single trailing comma is allowed, multiple are not
-  error_test(R"(FOO=BAR,HELLO=WORLD,,)", {{"FOO", "BAR"}, {"HELLO", "WORLD"}});
+  ok_test("FOO=BAR,HELLO=WORLD, \t", {{"FOO", "BAR"}, {"HELLO", "WORLD"}});
+  error_test("FOO=BAR,HELLO=WORLD, \t,", {{"FOO", "BAR"}, {"HELLO", "WORLD"}});
 
-  // Single-quotes are not allowed unquoted
-  error_test(R"(FOO='hahaha')", {});
-  ok_test(R"(FOO="'hahaha'")", {{"FOO", "\"'hahaha'\""}});
+  // Single-quotes are allowed, though not treated as strings
+  ok_test("FOO='hahaha'", {{"FOO", "'hahaha'"}});
+  error_test("FOO='hah aha'", {});
+  ok_test(R"(FOO="'hah aha'")", {{"FOO", "\"'hah aha'\""}});
 
-  // Unmatched double-quote is not allowed
+  // Unmatched leading quote is not allowed, interior or trailing quotes are.
   error_test(R"(FOO=")", {});
-  error_test(R"(FOO=BAR"BAZ)", {});
-  error_test(R"(FOO=BAR")", {});
+  error_test(R"(FOO="BAR)", {});
+  ok_test(R"(FOO= BAR"BAZ )", {{"FOO", "BAR\"BAZ"}});
+  ok_test(R"(FOO=BAR")", {{"FOO", "BAR\""}});
 
   // Double-quote (even escaped) inside double-quotes is not allowed
   error_test(R"(FOO=""")", {});
@@ -280,10 +286,6 @@ TEST(HlsTypesTest, AttributeListIterator) {
 
   // Tabs inside quotes are allowed
   ok_test("FOO=\"\t\"", {{"FOO", "\"\t\""}});
-
-  // Linefeed or carriage return inside quotes are not allowed
-  error_test("FOO=\"as\rdf\"", {});
-  error_test("FOO=\"as\ndf\"", {});
 }
 
 TEST(HlsTypesTest, AttributeMap) {
@@ -302,7 +304,7 @@ TEST(HlsTypesTest, AttributeMap) {
     auto iter = make_iter("FOO=foo,BAR=bar,BAZ=baz");
 
     auto result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(), ParseStatusCode::kReachedEOF);
 
     EXPECT_TRUE(storage[0].second.has_value());
@@ -319,7 +321,7 @@ TEST(HlsTypesTest, AttributeMap) {
     auto iter = make_iter("COO=coo,CAR=car,CAZ=caz");
 
     auto result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(), ParseStatusCode::kReachedEOF);
 
     EXPECT_TRUE(storage[0].second.has_value());
@@ -348,7 +350,7 @@ TEST(HlsTypesTest, AttributeMap) {
     EXPECT_EQ(storage[2].second.value().Str(), "doo");
 
     result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(), ParseStatusCode::kReachedEOF);
 
     EXPECT_TRUE(storage[0].second.has_value());
@@ -365,7 +367,7 @@ TEST(HlsTypesTest, AttributeMap) {
     auto iter = make_iter("EOO=eoo,EAR=ear,EOO=eoo2,EAZ=eaz,");
 
     auto result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(),
               ParseStatusCode::kAttributeListHasDuplicateNames);
 
@@ -377,7 +379,7 @@ TEST(HlsTypesTest, AttributeMap) {
 
     // Calling again should result in the same error
     result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(),
               ParseStatusCode::kAttributeListHasDuplicateNames);
 
@@ -391,10 +393,10 @@ TEST(HlsTypesTest, AttributeMap) {
   // Test that the attribute map forwards errors to the caller
   {
     auto storage = types::AttributeMap::MakeStorage("FAR", "FAZ", "FOO");
-    auto iter = make_iter("FOO=foo,FAR=far   ,FAZ=faz,");
+    auto iter = make_iter("FOO=foo,FAR=\"far,FAZ=faz,");
 
     auto result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(),
               ParseStatusCode::kMalformedAttributeList);
 
@@ -405,7 +407,7 @@ TEST(HlsTypesTest, AttributeMap) {
 
     // Calling again should return same error
     result = run_fill(storage, &iter);
-    EXPECT_TRUE(result.has_error());
+    EXPECT_FALSE(result.has_value());
     EXPECT_EQ(std::move(result).error().code(),
               ParseStatusCode::kMalformedAttributeList);
 
@@ -431,7 +433,7 @@ TEST(HlsTypesTest, ParseVariableName) {
                                  base::Location::Current()) {
     auto result =
         types::VariableName::Parse(SourceString::CreateForTesting(input));
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     EXPECT_EQ(std::move(result).error().code(),
               ParseStatusCode::kMalformedVariableName)
         << from.ToString();
@@ -461,106 +463,124 @@ TEST(HlsTypesTest, ParseVariableName) {
 }
 
 TEST(HlsTypesTest, ParseQuotedStringWithoutSubstitution) {
-  const auto ok_test = [](base::StringPiece in, base::StringPiece expected_out,
+  const auto ok_test = [](base::StringPiece in, bool allow_empty,
+                          base::StringPiece expected_out,
                           const base::Location& from =
                               base::Location::Current()) {
     auto in_str = SourceString::CreateForTesting(in);
-    auto out = types::ParseQuotedStringWithoutSubstitution(in_str);
+    auto out = types::ParseQuotedStringWithoutSubstitution(in_str, allow_empty);
     ASSERT_TRUE(out.has_value()) << from.ToString();
     EXPECT_EQ(std::move(out).value().Str(), expected_out) << from.ToString();
   };
 
-  const auto error_test = [](base::StringPiece in,
+  const auto error_test = [](base::StringPiece in, bool allow_empty,
                              const base::Location& from =
                                  base::Location::Current()) {
     auto in_str = SourceString::CreateForTesting(in);
-    auto out = types::ParseQuotedStringWithoutSubstitution(in_str);
-    ASSERT_TRUE(out.has_error()) << from.ToString();
+    auto out = types::ParseQuotedStringWithoutSubstitution(in_str, allow_empty);
+    ASSERT_FALSE(out.has_value()) << from.ToString();
     EXPECT_EQ(std::move(out).error().code(),
               ParseStatusCode::kFailedToParseQuotedString)
         << from.ToString();
   };
 
   // Test some basic examples
-  ok_test("\"\"", "");
-  ok_test("\" \"", " ");
-  ok_test("\"Hello, world!\"", "Hello, world!");
+  ok_test("\"a\"", false, "a");
+  ok_test("\" \"", false, " ");
+  ok_test("\"Hello, world!\"", false, "Hello, world!");
+
+  // Empty output string is not allowed by default
+  error_test("\"\"", false);
+  ok_test("\"\"", true, "");
 
   // Interior quotes are not checked by this function
-  ok_test("\"Hello, \"World!\"\"", "Hello, \"World!\"");
+  ok_test("\"Hello, \"World!\"\"", false, "Hello, \"World!\"");
 
   // Variables are not substituted by this function, and do not trigger an error
-  ok_test("\"Hello, {$WORLD}\"", "Hello, {$WORLD}");
+  ok_test("\"Hello, {$WORLD}\"", false, "Hello, {$WORLD}");
 
   // Single-quoted string is not allowed
-  error_test("''");
-  error_test("' '");
-  error_test("'Hello, world!'");
+  error_test("''", false);
+  error_test("' '", false);
+  error_test("'Hello, world!'", false);
 
   // Missing leading/trailing quote is not allowed
-  error_test("\"");
-  error_test("\" ");
-  error_test(" \"");
-  error_test("\"Hello, world!");
-  error_test("Hello, world!\"");
+  error_test("\"", false);
+  error_test("\" ", false);
+  error_test(" \"", false);
+  error_test("\"Hello, world!", false);
+  error_test("Hello, world!\"", false);
 
-  // Empty string is not allowed
-  error_test("");
+  // Empty input string is not allowed
+  error_test("", false);
 }
 
 TEST(HlsTypesTest, ParseQuotedString) {
   VariableDictionary dict;
   EXPECT_TRUE(dict.Insert(CreateVarName("FOO"), "bar"));
-  EXPECT_TRUE(dict.Insert(CreateVarName("BAZ"), "\"foo\""));
+  EXPECT_TRUE(dict.Insert(CreateVarName("BAZ"), "foo"));
+  EXPECT_TRUE(dict.Insert(CreateVarName("EMPTY"), ""));
 
-  const auto ok_test =
-      [&dict](base::StringPiece in, base::StringPiece expected_out,
-              const base::Location& from = base::Location::Current()) {
-        auto in_str = SourceString::CreateForTesting(in);
-        VariableDictionary::SubstitutionBuffer sub_buffer;
-        auto out = types::ParseQuotedString(in_str, dict, sub_buffer);
-        ASSERT_TRUE(out.has_value()) << from.ToString();
-        EXPECT_EQ(std::move(out).value(), expected_out) << from.ToString();
-      };
+  const auto ok_test = [&dict](base::StringPiece in, bool allow_empty,
+                               base::StringPiece expected_out,
+                               const base::Location& from =
+                                   base::Location::Current()) {
+    auto in_str = SourceString::CreateForTesting(in);
+    VariableDictionary::SubstitutionBuffer sub_buffer;
+    auto out = types::ParseQuotedString(in_str, dict, sub_buffer, allow_empty);
+    ASSERT_TRUE(out.has_value()) << from.ToString();
+    EXPECT_EQ(std::move(out).value().Str(), expected_out) << from.ToString();
+  };
 
-  const auto error_test = [&dict](base::StringPiece in,
+  const auto error_test = [&dict](base::StringPiece in, bool allow_empty,
                                   ParseStatusCode expected_error,
                                   const base::Location& from =
                                       base::Location::Current()) {
     auto in_str = SourceString::CreateForTesting(in);
     VariableDictionary::SubstitutionBuffer sub_buffer;
-    auto out = types::ParseQuotedString(in_str, dict, sub_buffer);
-    ASSERT_TRUE(out.has_error()) << from.ToString();
+    auto out = types::ParseQuotedString(in_str, dict, sub_buffer, allow_empty);
+    ASSERT_FALSE(out.has_value()) << from.ToString();
     EXPECT_EQ(std::move(out).error().code(), expected_error) << from.ToString();
   };
 
   // Test some basic examples
-  ok_test("\"\"", "");
-  ok_test("\" \"", " ");
-  ok_test("\"Hello, world!\"", "Hello, world!");
+  ok_test("\"a\"", false, "a");
+  ok_test("\" \"", false, " ");
+  ok_test("\"Hello, world!\"", false, "Hello, world!");
+
+  // Empty output string is not allowed by default (before or after
+  // variable substitution)
+  error_test("\"\"", false, ParseStatusCode::kFailedToParseQuotedString);
+  ok_test("\"\"", true, "");
+  error_test("\"{$EMPTY}\"", false,
+             ParseStatusCode::kFailedToParseQuotedString);
+  ok_test("\"{$EMPTY}\"", true, "");
 
   // Interior quotes are not checked by this function
-  ok_test("\"Hello, \"World!\"\"", "Hello, \"World!\"");
+  ok_test("\"Hello, \"World!\"\"", false, "Hello, \"World!\"");
 
-  // Variables ARE substituted by this function
-  ok_test("\"Hello, {$FOO}\"", "Hello, bar");
-  ok_test("\"Hello, {$BAZ}\"", "Hello, \"foo\"");
-  error_test("\"Hello, {$foo}\"", ParseStatusCode::kVariableUndefined);
+  // Variables are substituted by this function
+  ok_test("\"Hello, {$FOO}\"", false, "Hello, bar");
+  ok_test("\"Hello, {$BAZ}\"", false, "Hello, foo");
+  error_test("\"Hello, {$foo}\"", false, ParseStatusCode::kVariableUndefined);
 
   // Single-quoted string is not allowed
-  error_test("''", ParseStatusCode::kFailedToParseQuotedString);
-  error_test("' '", ParseStatusCode::kFailedToParseQuotedString);
-  error_test("'Hello, world!'", ParseStatusCode::kFailedToParseQuotedString);
+  error_test("''", false, ParseStatusCode::kFailedToParseQuotedString);
+  error_test("' '", false, ParseStatusCode::kFailedToParseQuotedString);
+  error_test("'Hello, world!'", false,
+             ParseStatusCode::kFailedToParseQuotedString);
 
   // Missing leading/trailing quote is not allowed
-  error_test("\"", ParseStatusCode::kFailedToParseQuotedString);
-  error_test("\" ", ParseStatusCode::kFailedToParseQuotedString);
-  error_test(" \"", ParseStatusCode::kFailedToParseQuotedString);
-  error_test("\"Hello, world!", ParseStatusCode::kFailedToParseQuotedString);
-  error_test("Hello, world!\"", ParseStatusCode::kFailedToParseQuotedString);
+  error_test("\"", false, ParseStatusCode::kFailedToParseQuotedString);
+  error_test("\" ", false, ParseStatusCode::kFailedToParseQuotedString);
+  error_test(" \"", false, ParseStatusCode::kFailedToParseQuotedString);
+  error_test("\"Hello, world!", false,
+             ParseStatusCode::kFailedToParseQuotedString);
+  error_test("Hello, world!\"", false,
+             ParseStatusCode::kFailedToParseQuotedString);
 
-  // Empty string is not allowed
-  error_test("", ParseStatusCode::kFailedToParseQuotedString);
+  // Empty input string is not allowed
+  error_test("", false, ParseStatusCode::kFailedToParseQuotedString);
 }
 
 TEST(HlsTypesTest, ParseDecimalResolution) {
@@ -568,8 +588,8 @@ TEST(HlsTypesTest, ParseDecimalResolution) {
                              const base::Location& from =
                                  base::Location::Current()) {
     auto result = types::DecimalResolution::Parse(
-        SourceString::CreateForTesting(1, 1, input));
-    ASSERT_TRUE(result.has_error()) << from.ToString();
+        ResolvedSourceString::CreateForTesting(input));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
     auto error = std::move(result).error();
     EXPECT_EQ(error.code(), ParseStatusCode::kFailedToParseDecimalResolution)
         << from.ToString();
@@ -579,7 +599,7 @@ TEST(HlsTypesTest, ParseDecimalResolution) {
       [](base::StringPiece input, types::DecimalResolution expected,
          const base::Location& from = base::Location::Current()) {
         auto result = types::DecimalResolution::Parse(
-            SourceString::CreateForTesting(1, 1, input));
+            ResolvedSourceString::CreateForTesting(input));
         ASSERT_TRUE(result.has_value()) << from.ToString();
         auto value = std::move(result).value();
         EXPECT_EQ(value.width, expected.width) << from.ToString();
@@ -636,6 +656,273 @@ TEST(HlsTypesTest, ParseDecimalResolution) {
           types::DecimalResolution{.width = 18446744073709551615u,
                                    .height = 18446744073709551615u});
   error_test("18446744073709551616x18446744073709551616");
+}
+
+TEST(HlsTypesTest, ParseByteRangeExpression) {
+  const auto error_test = [](base::StringPiece input,
+                             const base::Location& from =
+                                 base::Location::Current()) {
+    auto result = types::ByteRangeExpression::Parse(
+        ResolvedSourceString::CreateForTesting(input));
+    ASSERT_FALSE(result.has_value());
+    auto error = std::move(result).error();
+    EXPECT_EQ(error.code(), ParseStatusCode::kFailedToParseByteRange)
+        << from.ToString();
+  };
+  const auto ok_test =
+      [](base::StringPiece input, types::ByteRangeExpression expected,
+         const base::Location& from = base::Location::Current()) {
+        auto result = types::ByteRangeExpression::Parse(
+            ResolvedSourceString::CreateForTesting(input));
+        ASSERT_TRUE(result.has_value());
+        auto value = std::move(result).value();
+        EXPECT_EQ(value.length, expected.length);
+        EXPECT_EQ(value.offset, expected.offset);
+      };
+
+  // Empty string is not allowed
+  error_test("");
+
+  // Length must be a valid DecimalInteger
+  error_test("-1");
+  error_test(" 1");
+  error_test("1 ");
+  error_test(" 1 ");
+  error_test("1.2");
+  error_test("one");
+  error_test("{$length}");
+  error_test("@34");
+
+  // Offset must be a valid DecimalInteger
+  error_test("12@");
+  error_test("12@-3");
+  error_test("12@ 3");
+  error_test("12@3 ");
+  error_test("12@ 3 ");
+  error_test("12@3.4");
+  error_test("12@three");
+  error_test("12@{$offset}");
+  error_test("12@34@");
+
+  // ByteRange may not be quoted
+  error_test("'12@34'");
+  error_test("\"12@34\"");
+
+  // Test some valid inputs
+  ok_test("0",
+          types::ByteRangeExpression{.length = 0, .offset = absl::nullopt});
+  ok_test("12",
+          types::ByteRangeExpression{.length = 12, .offset = absl::nullopt});
+  ok_test("12@0", types::ByteRangeExpression{.length = 12, .offset = 0});
+  ok_test("12@34", types::ByteRangeExpression{.length = 12, .offset = 34});
+  ok_test("0@34", types::ByteRangeExpression{.length = 0, .offset = 34});
+  ok_test("0@0", types::ByteRangeExpression{.length = 0, .offset = 0});
+
+  // Test max supported values. These are valid ByteRangeExpressions, but not
+  // necessarily valid ByteRanges.
+  ok_test(
+      "18446744073709551615@0",
+      types::ByteRangeExpression{.length = 18446744073709551615u, .offset = 0});
+  error_test("18446744073709551616@0");
+  ok_test(
+      "0@18446744073709551615",
+      types::ByteRangeExpression{.length = 0, .offset = 18446744073709551615u});
+  error_test("0@18446744073709551616");
+  ok_test("18446744073709551615@18446744073709551615",
+          types::ByteRangeExpression{.length = 18446744073709551615u,
+                                     .offset = 18446744073709551615u});
+  error_test("18446744073709551616@18446744073709551615");
+  error_test("18446744073709551615@18446744073709551616");
+  error_test("18446744073709551616@18446744073709551616");
+}
+
+TEST(HlsTypesTest, ValidateByteRange) {
+  // Any non-empty range where `ByteRange::GetEnd()` doesn't overflow
+  // `DecimalInteger` is valid.
+  constexpr auto ok_test =
+      [](types::DecimalInteger length, types::DecimalInteger offset,
+         const base::Location& from = base::Location::Current()) {
+        const auto result = types::ByteRange::Validate(length, offset);
+        EXPECT_TRUE(result.has_value()) << from.ToString();
+      };
+  constexpr auto error_test =
+      [](types::DecimalInteger length, types::DecimalInteger offset,
+         const base::Location& from = base::Location::Current()) {
+        const auto result = types::ByteRange::Validate(length, offset);
+        EXPECT_FALSE(result.has_value()) << from.ToString();
+      };
+
+  ok_test(1, 1);
+  ok_test(1, 0);
+
+  // Empty range is not allowed
+  error_test(0, 0);
+  error_test(0, 1);
+  error_test(0, 18446744073709551615u);
+
+  // Overflowing range is not allowed
+  ok_test(18446744073709551615u, 0);
+  error_test(18446744073709551615u, 1);
+  error_test(1, 18446744073709551615u);
+  error_test(18446744073709551615u, 18446744073709551615u);
+  error_test(9223372036854775808u, 9223372036854775808u);
+  ok_test(9223372036854775808u, 9223372036854775807u);
+  ok_test(9223372036854775807u, 9223372036854775808u);
+}
+
+TEST(HlsTypesTest, ParseStableId) {
+  constexpr auto ok_test = [](base::StringPiece x,
+                              const base::Location& from =
+                                  base::Location::Current()) {
+    auto result =
+        types::StableId::Parse(ResolvedSourceString::CreateForTesting(x));
+    ASSERT_TRUE(result.has_value()) << from.ToString();
+    auto value = std::move(result).value();
+    EXPECT_EQ(value.Str(), x);
+  };
+  constexpr auto error_test = [](base::StringPiece x,
+                                 const base::Location& from =
+                                     base::Location::Current()) {
+    auto result =
+        types::StableId::Parse(ResolvedSourceString::CreateForTesting(x));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
+    EXPECT_EQ(std::move(result).error().code(),
+              ParseStatusCode::kFailedToParseStableId)
+        << from.ToString();
+  };
+
+  // StableId may not be empty
+  error_test("");
+
+  // StableId may not contain whitespace
+  error_test("hello world");
+  error_test(" world");
+  error_test("world ");
+  error_test("hello\tworld");
+
+  // StableId may not contain certain characters
+  error_test("hello&world");
+  error_test("hello*world");
+  error_test("hello,world");
+
+  ok_test("hello_world");
+  ok_test("HELLO_WORLD");
+  ok_test("HELLO_WORLD123");
+  ok_test("123HELLO/WORLD");
+  ok_test("HELLO=WORLD");
+  ok_test("H3Llo.World");
+  ok_test("-/HELLO+World");
+}
+
+TEST(HlsTypesTest, ParseInstreamId) {
+  constexpr auto ok_test =
+      [](base::StringPiece x, types::InstreamId::Type type, uint8_t number,
+         const base::Location& from = base::Location::Current()) {
+        auto result =
+            types::InstreamId::Parse(ResolvedSourceString::CreateForTesting(x));
+        ASSERT_TRUE(result.has_value()) << from.ToString();
+        auto value = std::move(result).value();
+        EXPECT_EQ(value.GetType(), type) << from.ToString();
+        EXPECT_EQ(value.GetNumber(), number) << from.ToString();
+      };
+  constexpr auto error_test = [](base::StringPiece x,
+                                 const base::Location& from =
+                                     base::Location::Current()) {
+    auto result =
+        types::InstreamId::Parse(ResolvedSourceString::CreateForTesting(x));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
+    EXPECT_EQ(std::move(result).error().code(),
+              ParseStatusCode::kFailedToParseInstreamId)
+        << from.ToString();
+  };
+
+  // InstreamId may not be empty
+  error_test("");
+
+  // InstreamId is case-sensitive
+  error_test("cc1");
+  error_test("Cc1");
+  error_test("cC1");
+  error_test("service1");
+  error_test("Service1");
+
+  // InstreamId may not contain spaces
+  error_test(" CC1");
+  error_test("CC1 ");
+  error_test("CC 1");
+  error_test(" SERVICE1");
+  error_test("SERVICE1 ");
+  error_test("SERVICE 1");
+
+  // Min/Max allowed value depends on type
+  error_test("CC0");
+  error_test("CC-1");
+  error_test("CC1.5");
+  error_test("CC5");
+  error_test("SERVICE0");
+  error_test("SERVICE-1");
+  error_test("SERVICE1.5");
+  error_test("SERVICE64");
+
+  // Test some valid inputs
+  ok_test("CC1", types::InstreamId::Type::kCc, 1);
+  ok_test("CC4", types::InstreamId::Type::kCc, 4);
+  ok_test("SERVICE1", types::InstreamId::Type::kService, 1);
+  ok_test("SERVICE63", types::InstreamId::Type::kService, 63);
+}
+
+TEST(HlsTypesTest, ParseAudioChannels) {
+  constexpr auto ok_test =
+      [](base::StringPiece str, types::DecimalInteger max_channels,
+         const std::initializer_list<std::string>& audio_coding_identifiers,
+         const base::Location& from = base::Location::Current()) {
+        auto result = types::AudioChannels::Parse(
+            ResolvedSourceString::CreateForTesting(str));
+        ASSERT_TRUE(result.has_value()) << from.ToString();
+        const auto value = std::move(result).value();
+        EXPECT_EQ(value.GetMaxChannels(), max_channels) << from.ToString();
+        EXPECT_TRUE(base::ranges::equal(value.GetAudioCodingIdentifiers(),
+                                        audio_coding_identifiers))
+            << from.ToString();
+      };
+  constexpr auto error_test = [](base::StringPiece str,
+                                 const base::Location& from =
+                                     base::Location::Current()) {
+    auto result = types::AudioChannels::Parse(
+        ResolvedSourceString::CreateForTesting(str));
+    ASSERT_FALSE(result.has_value()) << from.ToString();
+    EXPECT_EQ(std::move(result).error().code(),
+              ParseStatusCode::kFailedToParseAudioChannels)
+        << from.ToString();
+  };
+
+  // First parameter must be a valid DecimalInteger
+  error_test("");
+  error_test("/");
+  error_test("-1");
+  error_test("-1/");
+  error_test("/1");
+  error_test("/FOO");
+  error_test("1.5");
+  ok_test("1", 1, {});
+  ok_test("0", 0, {});
+  ok_test("2/", 2, {});
+  ok_test("99/", 99, {});
+
+  // Second parameter must be a valid list of audio coding identifiers
+  error_test("2/foo");
+  error_test("2/+");
+  error_test("2/,");
+  error_test("2/FOO,,");
+  ok_test("2/FOO", 2, {"FOO"});
+  ok_test("2/FOO,", 2, {"FOO"});
+  ok_test("2/FOO,BAR", 2, {"FOO", "BAR"});
+  ok_test("2/FOO-BAR,8AZ", 2, {"FOO-BAR", "8AZ"});
+  ok_test("2/-", 2, {"-"});
+
+  // Additional parameters are ignored
+  ok_test("2//19090zz**-0/", 2, {});
+  ok_test("2/FOO/19090zz**-0", 2, {"FOO"});
 }
 
 }  // namespace media::hls

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -127,7 +127,7 @@ public class UndoBarController implements SnackbarManager.SnackbarController {
             }
 
             @Override
-            public void didCloseTabs(List<Tab> tabs) {
+            public void onFinishingMultipleTabClosure(List<Tab> tabs) {
                 if (disableUndo(false)) return;
                 mSnackbarManagable.getSnackbarManager().dismissSnackbars(
                         UndoBarController.this, tabs);
@@ -147,7 +147,7 @@ public class UndoBarController implements SnackbarManager.SnackbarController {
             }
 
             @Override
-            public void allTabsClosureCommitted() {
+            public void allTabsClosureCommitted(boolean isIncognito) {
                 if (disableUndo(false)) return;
                 mSnackbarManagable.getSnackbarManager().dismissSnackbars(UndoBarController.this);
             }
@@ -236,7 +236,13 @@ public class UndoBarController implements SnackbarManager.SnackbarController {
             for (Tab tab : (List<Tab>) actionData) {
                 cancelTabClosure(tab.getId());
             }
+            notifyAllTabsClosureUndone();
         }
+    }
+
+    private void notifyAllTabsClosureUndone() {
+        TabModel model = mTabModelSelector.getCurrentModel();
+        if (model != null) model.notifyAllTabsClosureUndone();
     }
 
     private void cancelTabClosure(int tabId) {

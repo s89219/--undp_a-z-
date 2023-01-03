@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ash/constants/ash_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/run_loop.h"
@@ -20,6 +19,7 @@
 #include "ui/display/manager/test/test_native_display_delegate.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/display/util/display_util.h"
+#include "ui/ozone/public/ozone_switches.h"
 
 namespace display {
 namespace test {
@@ -244,7 +244,7 @@ class DisplayConfiguratorTest : public testing::Test {
 
     // Force system compositor mode to simulate on-device configurator behavior.
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        ash::switches::kForceSystemCompositorMode);
+        ::switches::kEnableRunningAsSystemCompositor);
 
     native_display_delegate_ = new TestNativeDisplayDelegate(log_.get());
     configurator_.SetDelegateForTesting(
@@ -327,9 +327,15 @@ class DisplayConfiguratorTest : public testing::Test {
     EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
     configurator_.ForceInitialConfigure();
     std::string actions = GetCrtcActions(DisplayConfig::kStack, modes...);
-    EXPECT_EQ(
-        actions.empty() ? kInit : JoinActions(kInit, actions.c_str(), nullptr),
-        log_->GetActionsAndClear());
+    EXPECT_EQ(actions.empty()
+                  ? kInit
+                  : JoinActions(
+                        kInit, kTestModesetStr,
+                        GetCrtcActions(DisplayConfig::kStack, modes...).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(DisplayConfig::kStack, modes...).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+              log_->GetActionsAndClear());
   }
 
   template <typename... Modes>
@@ -467,22 +473,38 @@ TEST_F(DisplayConfiguratorTest, ConnectSecondOutput) {
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED);
   UpdateOutputs(2, true);
 
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
 
   observer_.Reset();
   configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR);
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
 
   // Disconnect the second output.
   observer_.Reset();
   UpdateOutputs(1, true);
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
 
@@ -497,7 +519,11 @@ TEST_F(DisplayConfiguratorTest, ConnectSecondOutput) {
 
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED);
   UpdateOutputs(2, true);
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
 
@@ -529,7 +555,11 @@ TEST_F(DisplayConfiguratorTest, ConnectSecondOutput) {
   // Disconnect the second output.
   observer_.Reset();
   UpdateOutputs(1, true);
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
 }
@@ -540,8 +570,16 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR);
   observer_.Reset();
   UpdateOutputs(2, true);
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
 
@@ -555,7 +593,12 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
       config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(nullptr, &big_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTestModesetStr, GetCrtcActions(nullptr, &big_mode_).c_str(),
+                  kModesetOutcomeSuccess, kCommitModesetStr,
+                  GetCrtcActions(nullptr, &big_mode_).c_str(),
+                  kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_SINGLE, configurator_.display_state());
   EXPECT_EQ(1, observer_.num_changes());
 
@@ -568,8 +611,13 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTestModesetStr,
+                  GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+                  kModesetOutcomeSuccess, kCommitModesetStr,
+                  GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+                  kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR, configurator_.display_state());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
@@ -582,8 +630,16 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR, configurator_.display_state());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
@@ -601,7 +657,11 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
   observer_.Reset();
   UpdateOutputs(2, true);
 
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED,
             configurator_.display_state());
@@ -618,7 +678,12 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
       config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(nullptr, &big_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTestModesetStr, GetCrtcActions(nullptr, &big_mode_).c_str(),
+                  kModesetOutcomeSuccess, kCommitModesetStr,
+                  GetCrtcActions(nullptr, &big_mode_).c_str(),
+                  kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_SINGLE, configurator_.display_state());
   EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
   EXPECT_EQ(1, observer_.num_changes());
@@ -632,8 +697,14 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED,
             configurator_.display_state());
   EXPECT_TRUE(mirroring_controller_.SoftwareMirroringEnabled());
@@ -647,7 +718,11 @@ TEST_F(DisplayConfiguratorTest, SetDisplayPower) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED,
             configurator_.display_state());
@@ -671,14 +746,22 @@ TEST_F(DisplayConfiguratorTest, SuspendAndResume) {
   configurator_.SuspendDisplays(config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(nullptr), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(nullptr).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(nullptr).c_str(), kModesetOutcomeSuccess,
+                        nullptr),
+            log_->GetActionsAndClear());
 
   // No resume delay in single display mode.
   config_waiter_.Reset();
   configurator_.ResumeDisplays();
   // The timer should not be running.
   EXPECT_EQ(base::TimeDelta::Max(), config_waiter_.Wait());
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 
   // Now turn the display off before suspending and check that the
   // configurator turns it back on and syncs with the server.
@@ -688,7 +771,11 @@ TEST_F(DisplayConfiguratorTest, SuspendAndResume) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(nullptr), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(nullptr).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(nullptr).c_str(), kModesetOutcomeSuccess,
+                        nullptr),
+            log_->GetActionsAndClear());
 
   config_waiter_.Reset();
   configurator_.SuspendDisplays(config_waiter_.on_configuration_callback());
@@ -708,12 +795,24 @@ TEST_F(DisplayConfiguratorTest, SuspendAndResume) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR);
   UpdateOutputs(2, true);
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   config_waiter_.Reset();
   configurator_.SetDisplayPower(chromeos::DISPLAY_POWER_ALL_OFF,
@@ -722,8 +821,13 @@ TEST_F(DisplayConfiguratorTest, SuspendAndResume) {
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR, configurator_.display_state());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTestModesetStr,
+                  GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+                  kModesetOutcomeSuccess, kCommitModesetStr,
+                  GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+                  kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   // No delay in suspend.
   config_waiter_.Reset();
@@ -752,7 +856,11 @@ TEST_F(DisplayConfiguratorTest, SuspendAndResume) {
   EXPECT_EQ(CALLBACK_NOT_CALLED, config_waiter_.callback_result());
   EXPECT_EQ(kLongDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 }
 
 TEST_F(DisplayConfiguratorTest, Headless) {
@@ -786,7 +894,11 @@ TEST_F(DisplayConfiguratorTest, Headless) {
                     .Build();
 
   UpdateOutputs(1, true);
-  EXPECT_EQ(GetCrtcActions(&big_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 
   UpdateOutputs(0, true);
   EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
@@ -800,12 +912,16 @@ TEST_F(DisplayConfiguratorTest, StartWithTwoOutputs) {
 
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR);
   configurator_.ForceInitialConfigure();
-  EXPECT_EQ(JoinActions(kInit,
-                        GetCrtcActions(DisplayConfig::kMirror, &small_mode_,
-                                       &small_mode_)
-                            .c_str(),
-                        nullptr),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kInit, kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 }
 
 TEST_F(DisplayConfiguratorTest, InvalidMultipleDisplayStates) {
@@ -889,6 +1005,48 @@ TEST_F(DisplayConfiguratorTest, UpdateCachedOutputsEvenAfterFailure) {
   EXPECT_EQ(outputs_[1]->current_mode(), cached[1]->current_mode());
 }
 
+TEST_F(DisplayConfiguratorTest, VerifyInternalPanelIsAtTheTopOfTheList) {
+  InitWithOutputs(&small_mode_);
+
+  // Initialize with 3 displays where the internal panel is not at the top of
+  // the display list.
+  outputs_[0] = FakeDisplaySnapshot::Builder()
+                    .SetId(1L)
+                    .SetType(DISPLAY_CONNECTION_TYPE_DISPLAYPORT)
+                    .SetNativeMode(big_mode_.Clone())
+                    .Build();
+  outputs_[1] = FakeDisplaySnapshot::Builder()
+                    .SetId(2L)
+                    .SetType(DISPLAY_CONNECTION_TYPE_INTERNAL)
+                    .SetNativeMode(small_mode_.Clone())
+                    .Build();
+  outputs_[2] = FakeDisplaySnapshot::Builder()
+                    .SetId(3L)
+                    .SetType(DISPLAY_CONNECTION_TYPE_HDMI)
+                    .SetNativeMode(big_mode_.Clone())
+                    .Build();
+
+  native_display_delegate_->set_max_configurable_pixels(
+      big_mode_.size().GetArea());
+  UpdateOutputs(3, true);
+
+  // We expect the internal display to be at the top of DisplayConfigurator's
+  // |cached_displays_| list post configuration. The rest of the display should
+  // be in the original order from DRM.
+  const DisplayConfigurator::DisplayStateList& cached =
+      configurator_.cached_displays();
+  ASSERT_EQ(cached.size(), 3U);
+
+  EXPECT_EQ(cached[0]->display_id(), 2L);
+  EXPECT_EQ(cached[0]->type(), DISPLAY_CONNECTION_TYPE_INTERNAL);
+
+  EXPECT_EQ(cached[1]->display_id(), 1L);
+  EXPECT_EQ(cached[1]->type(), DISPLAY_CONNECTION_TYPE_DISPLAYPORT);
+
+  EXPECT_EQ(cached[2]->display_id(), 3L);
+  EXPECT_EQ(cached[2]->type(), DISPLAY_CONNECTION_TYPE_HDMI);
+}
+
 TEST_F(DisplayConfiguratorTest, DoNotConfigureWithSuspendedDisplays) {
   InitWithOutputs(&small_mode_);
 
@@ -900,7 +1058,11 @@ TEST_F(DisplayConfiguratorTest, DoNotConfigureWithSuspendedDisplays) {
   configurator_.SuspendDisplays(config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(nullptr), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(nullptr).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(nullptr).c_str(), kModesetOutcomeSuccess,
+                        nullptr),
+            log_->GetActionsAndClear());
 
   // The configuration timer should not be started when the displays
   // are suspended.
@@ -923,12 +1085,24 @@ TEST_F(DisplayConfiguratorTest, DoNotConfigureWithSuspendedDisplays) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 
   UpdateOutputs(2, false);
   configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR);
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   // The DisplayConfigurator should do nothing at resume time if there is no
   // state change.
@@ -945,7 +1119,11 @@ TEST_F(DisplayConfiguratorTest, DoNotConfigureWithSuspendedDisplays) {
   configurator_.SuspendDisplays(config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(nullptr), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(nullptr).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(nullptr).c_str(), kModesetOutcomeSuccess,
+                        nullptr),
+            log_->GetActionsAndClear());
   EXPECT_FALSE(test_api_.TriggerConfigureTimeout());
   EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
 
@@ -953,7 +1131,11 @@ TEST_F(DisplayConfiguratorTest, DoNotConfigureWithSuspendedDisplays) {
   configurator_.ResumeDisplays();
   // The timer should not be running.
   EXPECT_EQ(base::TimeDelta::Max(), config_waiter_.Wait());
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 }
 
 TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
@@ -990,21 +1172,21 @@ TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_SINGLE);
   UpdateOutputs(1, true);
 
-  EXPECT_EQ(
-      JoinActions(
-          // Initial attempt fails. Initiate retry logic.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
-                         outputs_[0]->native_mode()})
-              .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
-              .c_str(),
-          // Retry fails since it cannot downgrade the internal display.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
-                         outputs_[0]->native_mode()})
-              .c_str(),
-          nullptr),
-      log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(
+                // Initial attempt fails.
+                kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               outputs_[0]->native_mode()})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // Initiate retry logic, which fails since it cannot downgrade
+                // the internal display.
+                kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               outputs_[0]->native_mode()})
+                    .c_str(),
+                kModesetOutcomeFailure, nullptr),
+            log_->GetActionsAndClear());
 
   outputs_[0] = FakeDisplaySnapshot::Builder()
                     .SetId(kDisplayIds[0])
@@ -1024,30 +1206,40 @@ TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
   // is closed).
   UpdateOutputs(1, true);
 
-  EXPECT_EQ(
-      JoinActions(
-          // Initial attempt fails. Initiate retry logic.
-          GetCrtcAction(
-              {outputs_[0]->display_id(), gfx::Point(0, 0), modes[0].get()})
-              .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
-              .c_str(),
-          // Retry attempts trying all available modes.
-          GetCrtcAction(
-              {outputs_[0]->display_id(), gfx::Point(0, 0), modes[0].get()})
-              .c_str(),
-          GetCrtcAction(
-              {outputs_[0]->display_id(), gfx::Point(0, 0), modes[3].get()})
-              .c_str(),
-          GetCrtcAction(
-              {outputs_[0]->display_id(), gfx::Point(0, 0), modes[4].get()})
-              .c_str(),
-          GetCrtcAction(
-              {outputs_[0]->display_id(), gfx::Point(0, 0), modes[2].get()})
-              .c_str(),
-          nullptr),
-      log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(
+                // Initial attempt fails.
+                kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               modes[0].get()})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // Initiate retry logic.
+                kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               modes[0].get()})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // Retry attempts trying all available modes.
+                kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               modes[3].get()})
+                    .c_str(),
+                kModesetOutcomeFailure, kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               modes[4].get()})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // Test-modeset passes for this mode.
+                kTestModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               modes[2].get()})
+                    .c_str(),
+                kModesetOutcomeSuccess, kCommitModesetStr,
+                GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                               modes[2].get()})
+                    .c_str(),
+                kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 
   outputs_[0] = FakeDisplaySnapshot::Builder()
                     .SetId(kDisplayIds[0])
@@ -1085,44 +1277,71 @@ TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
   EXPECT_EQ(
       JoinActions(
           // Initial attempt fails. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
                          outputs_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {outputs_[1]->display_id(), gfx::Point(0, 0), modes[0].get()})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will fail.
+          kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                         outputs_[0]->native_mode()})
               .c_str(),
           GetCrtcAction({outputs_[1]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
-          // Retry logic fails to modeset internal display. Since internal
-          // displays are restricted to their preferred mode, there are no other
-          // modes to try. The configuration fails completely, but the external
-          // display will still try to modeset.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
-                         outputs_[0]->native_mode()})
+          kModesetOutcomeFailure,
+          // Since internal displays are restricted to their preferred mode,
+          // there are no other modes to try. Disable the internal display so we
+          // can attempt to modeset displays that are connected to other
+          // connectors. Next, the external display will cycle through all its
+          // available modes before failing completely.
+          kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
-          // The external display will cycle through all its available modes
-          // before failing completely.
           GetCrtcAction(
               {outputs_[1]->display_id(), gfx::Point(0, 0), modes[0].get()})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
           GetCrtcAction(
               {outputs_[1]->display_id(), gfx::Point(0, 0), modes[3].get()})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
           GetCrtcAction(
               {outputs_[1]->display_id(), gfx::Point(0, 0), modes[4].get()})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
           GetCrtcAction(
               {outputs_[1]->display_id(), gfx::Point(0, 0), modes[2].get()})
               .c_str(),
+          kModesetOutcomeFailure,
+          // This configuration still passes intermediate test-modeset.
+          kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
           GetCrtcAction(
               {outputs_[1]->display_id(), gfx::Point(0, 0), modes[1].get()})
               .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
+          GetCrtcAction(
+              {outputs_[1]->display_id(), gfx::Point(0, 0), modes[1].get()})
+              .c_str(),
+          kModesetOutcomeSuccess,
           // Since mirror mode configuration failed it should now attempt to
           // configure in extended mode. However, initial attempt fails.
           // Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
                          outputs_[0]->native_mode()})
               .c_str(),
@@ -1131,43 +1350,72 @@ TEST_F(DisplayConfiguratorTest, HandleConfigureCrtcFailure) {
                                            DisplayConfigurator::kVerticalGap),
                          modes[0].get()})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will fail.
+          kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
+                         outputs_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction({outputs_[1]->display_id(),
+                         gfx::Point(0, modes[0]->size().height() +
+                                           DisplayConfigurator::kVerticalGap),
+                         nullptr})
+              .c_str(),
+          kModesetOutcomeFailure,
+          // The configuration fails completely but still attempts to modeset
+          // the external display.
+          kTestModesetStr,
           GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
-          GetCrtcAction({outputs_[1]->display_id(), gfx::Point(0, 0), nullptr})
-              .c_str(),
-          // Just as above, retry logic fails to modeset internal display.
-          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0),
-                         outputs_[0]->native_mode()})
-              .c_str(),
-          //  The configuration fails completely but still attempts to modeset
-          // the external display.
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, modes[0]->size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          modes[0].get()})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, modes[0]->size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          modes[3].get()})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, modes[0]->size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          modes[4].get()})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, modes[0]->size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          modes[2].get()})
               .c_str(),
+          kModesetOutcomeFailure,
+          // This configuration passes test-modeset.
+          kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, modes[0]->size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          modes[1].get()})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
+          GetCrtcAction({outputs_[1]->display_id(),
+                         gfx::Point(0, modes[0]->size().height() +
+                                           DisplayConfigurator::kVerticalGap),
+                         modes[1].get()})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_->GetActionsAndClear());
 }
 
@@ -1211,7 +1459,11 @@ TEST_F(DisplayConfiguratorTest, SaveDisplayPowerStateOnConfigFailure) {
   // than the earlier DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON state.
   native_display_delegate_->set_max_configurable_pixels(0);
   UpdateOutputs(1, true);
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 }
 
 // Tests that the SetDisplayPowerState() task posted by HandleResume() doesn't
@@ -1234,8 +1486,14 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
   EXPECT_EQ(1, observer_.num_changes());
   EXPECT_EQ(0, observer_.num_failures());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, nullptr, &big_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, nullptr, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, nullptr, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   // Suspend and resume the system. Resuming should restore the previous power
   // state and force a probe. Suspend should turn off the displays since an
@@ -1245,8 +1503,13 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
   EXPECT_EQ(2, observer_.num_changes());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTestModesetStr,
+                  GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+                  kModesetOutcomeSuccess, kCommitModesetStr,
+                  GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+                  kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   // Before the task runs, exit docked mode.
   config_waiter_.Reset();
@@ -1257,8 +1520,16 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
   EXPECT_EQ(3, observer_.num_changes());
   EXPECT_EQ(0, observer_.num_failures());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   // Check that the display states are not changed after resuming.
   config_waiter_.Reset();
@@ -1271,8 +1542,16 @@ TEST_F(DisplayConfiguratorTest, DontRestoreStalePowerStateAfterResume) {
   EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
   // Now trigger that delayed configuration.
   EXPECT_EQ(kLongDelay, config_waiter_.Wait());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kMirror, &small_mode_, &small_mode_)
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 }
 
 TEST_F(DisplayConfiguratorTest, ExternalControl) {
@@ -1290,16 +1569,21 @@ TEST_F(DisplayConfiguratorTest, ExternalControl) {
       base::BindOnce(&DisplayConfiguratorTest::OnDisplayControlUpdated,
                      base::Unretained(this)));
   EXPECT_EQ(CALLBACK_SUCCESS, PopDisplayControlResult());
-  EXPECT_EQ(JoinActions(GetCrtcActions(nullptr).c_str(),
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(nullptr).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(nullptr).c_str(), kModesetOutcomeSuccess,
                         kRelinquishDisplayControl, nullptr),
             log_->GetActionsAndClear());
   configurator_.TakeControl(
       base::BindOnce(&DisplayConfiguratorTest::OnDisplayControlUpdated,
                      base::Unretained(this)));
   EXPECT_EQ(CALLBACK_SUCCESS, PopDisplayControlResult());
-  EXPECT_EQ(JoinActions(kTakeDisplayControl,
-                        GetCrtcActions(&small_mode_).c_str(), nullptr),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTakeDisplayControl, kTestModesetStr,
+                  GetCrtcActions(&small_mode_).c_str(), kModesetOutcomeSuccess,
+                  kCommitModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                  kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 }
 
 TEST_F(DisplayConfiguratorTest,
@@ -1329,8 +1613,14 @@ TEST_F(DisplayConfiguratorTest,
   EXPECT_EQ(1, observer_.num_changes());
   EXPECT_EQ(0, observer_.num_failures());
 
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   config_waiter_.Reset();
   EXPECT_EQ(base::Milliseconds(DisplayConfigurator::kConfigureDelayMs),
@@ -1341,7 +1631,11 @@ TEST_F(DisplayConfiguratorTest,
   EXPECT_EQ(2, observer_.num_changes());
   EXPECT_EQ(0, observer_.num_failures());
 
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 }
 
@@ -1368,11 +1662,13 @@ TEST_F(DisplayConfiguratorTest,
 
   EXPECT_EQ(
       JoinActions(
+          kTestModesetStr,
           GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
           GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
-          nullptr),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeFailure, nullptr),
       log_->GetActionsAndClear());
 
   // This configuration should trigger a display configuration since the
@@ -1387,21 +1683,38 @@ TEST_F(DisplayConfiguratorTest,
   EXPECT_EQ(2, observer_.num_failures());
   EXPECT_EQ(
       JoinActions(
-          GetCrtcActions(&small_mode_, &big_mode_).c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetCrtcActions(DisplayConfig::kOff, nullptr, nullptr).c_str(),
-          GetCrtcActions(&small_mode_).c_str(),
+          kTestModesetStr, GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeFailure,
+          // We first attempt to modeset the internal display with all
+          // other displays disabled, which will fail.
+          kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+          GetCrtcAction({outputs_[1]->display_id(),
+                         gfx::Point(0, small_mode_.size().height() +
+                                           DisplayConfigurator::kVerticalGap),
+                         nullptr})
+              .c_str(),
+          kModesetOutcomeFailure,
+          // Since internal displays are restricted to their preferred mode,
+          // there are no other modes to try. Disable the internal display while
+          // we attempt to modeset displays that are connected to other
+          // connectors. Configuration will fail.
+          kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
+              .c_str(),
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, small_mode_.size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          &big_mode_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({outputs_[0]->display_id(), gfx::Point(0, 0), nullptr})
               .c_str(),
           GetCrtcAction({outputs_[1]->display_id(),
                          gfx::Point(0, small_mode_.size().height() +
                                            DisplayConfigurator::kVerticalGap),
                          &small_mode_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeFailure, nullptr),
       log_->GetActionsAndClear());
 
   // Allow configuration to succeed.
@@ -1415,7 +1728,11 @@ TEST_F(DisplayConfiguratorTest,
   EXPECT_EQ(1, observer_.num_changes());
   EXPECT_EQ(2, observer_.num_failures());
 
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 }
 
@@ -1430,7 +1747,12 @@ TEST_F(DisplayConfiguratorTest, TestWithThreeDisplays) {
   UpdateOutputs(3, true);
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED);
 
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_, &small_mode_),
+  EXPECT_EQ(JoinActions(
+                kTestModesetStr,
+                GetCrtcActions(&small_mode_, &big_mode_, &small_mode_).c_str(),
+                kModesetOutcomeSuccess, kCommitModesetStr,
+                GetCrtcActions(&small_mode_, &big_mode_, &small_mode_).c_str(),
+                kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 
   // Verify that turning the power off works.
@@ -1440,8 +1762,15 @@ TEST_F(DisplayConfiguratorTest, TestWithThreeDisplays) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_,
-                           &small_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(DisplayConfig::kOff, &small_mode_,
+                                       &big_mode_, &small_mode_)
+                            .c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(DisplayConfig::kOff, &small_mode_,
+                                       &big_mode_, &small_mode_)
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 
   config_waiter_.Reset();
@@ -1450,14 +1779,23 @@ TEST_F(DisplayConfiguratorTest, TestWithThreeDisplays) {
                                 config_waiter_.on_configuration_callback());
   EXPECT_EQ(kNoDelay, config_waiter_.Wait());
   EXPECT_EQ(CALLBACK_SUCCESS, config_waiter_.callback_result());
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_, &small_mode_),
+  EXPECT_EQ(JoinActions(
+                kTestModesetStr,
+                GetCrtcActions(&small_mode_, &big_mode_, &small_mode_).c_str(),
+                kModesetOutcomeSuccess, kCommitModesetStr,
+                GetCrtcActions(&small_mode_, &big_mode_, &small_mode_).c_str(),
+                kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 
   // Disconnect the third output.
   observer_.Reset();
   state_controller_.set_state(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED);
   UpdateOutputs(2, true);
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 }
 
@@ -1481,7 +1819,11 @@ TEST_F(DisplayConfiguratorTest, SuspendResumeWithMultipleDisplays) {
   EXPECT_EQ(chromeos::DISPLAY_POWER_ALL_ON,
             configurator_.current_power_state());
 
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 
   // Suspending displays should result in an immediate configuration without
@@ -1494,8 +1836,14 @@ TEST_F(DisplayConfiguratorTest, SuspendResumeWithMultipleDisplays) {
             configurator_.current_power_state());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED,
             configurator_.display_state());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
 
   // Resuming from suspend with dual displays. Configuration should be done
   // after a long delay. Afterwards, we should still expect to be in a dual
@@ -1507,7 +1855,11 @@ TEST_F(DisplayConfiguratorTest, SuspendResumeWithMultipleDisplays) {
             configurator_.current_power_state());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_MULTI_EXTENDED,
             configurator_.display_state());
-  EXPECT_EQ(GetCrtcActions(&small_mode_, &big_mode_),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_, &big_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_->GetActionsAndClear());
 
   // Suspend displays and disconnect one of them while in suspend.
@@ -1519,8 +1871,14 @@ TEST_F(DisplayConfiguratorTest, SuspendResumeWithMultipleDisplays) {
             configurator_.display_state());
   EXPECT_EQ(chromeos::DISPLAY_POWER_ALL_OFF,
             configurator_.current_power_state());
-  EXPECT_EQ(GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_),
-            log_->GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(
+          kTestModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, kCommitModesetStr,
+          GetCrtcActions(DisplayConfig::kOff, &small_mode_, &big_mode_).c_str(),
+          kModesetOutcomeSuccess, nullptr),
+      log_->GetActionsAndClear());
   UpdateOutputs(1, false);
   EXPECT_EQ(kNoActions, log_->GetActionsAndClear());
 
@@ -1533,7 +1891,11 @@ TEST_F(DisplayConfiguratorTest, SuspendResumeWithMultipleDisplays) {
   EXPECT_EQ(chromeos::DISPLAY_POWER_ALL_ON,
             configurator_.current_power_state());
   EXPECT_EQ(MULTIPLE_DISPLAY_STATE_SINGLE, configurator_.display_state());
-  EXPECT_EQ(GetCrtcActions(&small_mode_), log_->GetActionsAndClear());
+  EXPECT_EQ(JoinActions(kTestModesetStr, GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcActions(&small_mode_).c_str(),
+                        kModesetOutcomeSuccess, nullptr),
+            log_->GetActionsAndClear());
 
   // Verify that the above is the exact same behavior for 3+ displays.
   UpdateOutputs(3, true);
@@ -1636,8 +1998,17 @@ class DisplayConfiguratorMultiMirroringTest : public DisplayConfiguratorTest {
     observer_.Reset();
     configurator_.SetDisplayMode(MULTIPLE_DISPLAY_STATE_MULTI_MIRROR);
     EXPECT_EQ(
-        GetCrtcActions(DisplayConfig::kMirror, expected_mirror_mode.get(),
-                       expected_mirror_mode.get(), expected_mirror_mode.get()),
+        JoinActions(kTestModesetStr,
+                    GetCrtcActions(
+                        DisplayConfig::kMirror, expected_mirror_mode.get(),
+                        expected_mirror_mode.get(), expected_mirror_mode.get())
+                        .c_str(),
+                    kModesetOutcomeSuccess, kCommitModesetStr,
+                    GetCrtcActions(
+                        DisplayConfig::kMirror, expected_mirror_mode.get(),
+                        expected_mirror_mode.get(), expected_mirror_mode.get())
+                        .c_str(),
+                    kModesetOutcomeSuccess, nullptr),
         log_->GetActionsAndClear());
     EXPECT_FALSE(mirroring_controller_.SoftwareMirroringEnabled());
     EXPECT_EQ(1, observer_.num_changes());

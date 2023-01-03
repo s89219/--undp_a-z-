@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -69,7 +69,7 @@ size_t ModelTypeSyncBridge::EstimateSyncOverheadMemoryUsage() const {
 }
 
 sync_pb::EntitySpecifics ModelTypeSyncBridge::TrimRemoteSpecificsForCaching(
-    const sync_pb::EntitySpecifics& entity_specifics) {
+    const sync_pb::EntitySpecifics& entity_specifics) const {
   // Clears all fields by default to avoid the memory and I/O overhead of an
   // additional copy of the data.
   return sync_pb::EntitySpecifics();

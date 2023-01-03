@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/trace_event/trace_event.h"
@@ -95,14 +96,12 @@ void RecordUkmCaptureData(ukm::SourceId source_id,
 base::flat_set<base::UnguessableToken> CreateAcceptedTokenList(
     content::RenderFrameHost* render_frame_host) {
   std::vector<base::UnguessableToken> tokens;
-  render_frame_host->ForEachRenderFrameHost(base::BindRepeating(
-      [](std::vector<base::UnguessableToken>* tokens,
-         content::RenderFrameHost* rfh) {
+  render_frame_host->ForEachRenderFrameHost(
+      [&tokens](content::RenderFrameHost* rfh) {
         auto maybe_token = rfh->GetEmbeddingToken();
         if (maybe_token.has_value())
-          tokens->push_back(maybe_token.value());
-      },
-      &tokens));
+          tokens.push_back(maybe_token.value());
+      });
   return base::flat_set<base::UnguessableToken>(std::move(tokens));
 }
 
@@ -196,15 +195,13 @@ PaintPreviewClient::InProgressDocumentCaptureState::
     for (const auto& subframe_guid : awaiting_subframes) {
       base::ThreadPool::PostTask(
           FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-          base::BindOnce(base::GetDeleteFileCallback(),
-                         FilePathForFrame(subframe_guid)));
+          base::GetDeleteFileCallback(FilePathForFrame(subframe_guid)));
     }
 
     for (const auto& subframe_guid : finished_subframes) {
       base::ThreadPool::PostTask(
           FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-          base::BindOnce(base::GetDeleteFileCallback(),
-                         FilePathForFrame(subframe_guid)));
+          base::GetDeleteFileCallback(FilePathForFrame(subframe_guid)));
     }
   }
 }
@@ -464,7 +461,7 @@ void PaintPreviewClient::RequestCaptureOnUIThread(
     return;
   }
 
-  // If the render frame host navigated or is no longer around treat this as a
+  // If the RenderFrameHost navigated or is no longer around treat this as a
   // failure as a navigation occurring during capture is bad.
   auto* render_frame_host = content::RenderFrameHost::FromID(render_frame_id);
 
@@ -516,7 +513,7 @@ void PaintPreviewClient::OnPaintPreviewCapturedCallback(
   // |status|
   MarkFrameAsProcessed(params.document_guid, frame_guid);
 
-  // If the render frame host navigated or is no longer around treat this as a
+  // If the RenderFrameHost navigated or is no longer around treat this as a
   // failure as a navigation occurring during capture is bad.
   auto* render_frame_host = content::RenderFrameHost::FromID(render_frame_id);
   if (!render_frame_host || render_frame_host->GetEmbeddingToken().value_or(
@@ -588,7 +585,7 @@ void PaintPreviewClient::OnFinished(
     // At a minimum one frame was captured successfully, it is up to the
     // caller to decide if a partial success is acceptable based on what is
     // contained in the proto.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(document_data->callback), guid,
                        document_data->had_error
@@ -597,7 +594,7 @@ void PaintPreviewClient::OnFinished(
                        std::move(*document_data).IntoCaptureResult()));
   } else {
     // A proto could not be created indicating all frames failed to capture.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(document_data->callback), guid,
                                   mojom::PaintPreviewStatus::kFailed, nullptr));
   }

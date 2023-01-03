@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,6 +37,7 @@ import org.chromium.base.ApplicationState;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.StrictModeContext;
+import org.chromium.base.TraceEvent;
 import org.chromium.base.compat.ApiHelperForM;
 import org.chromium.base.compat.ApiHelperForO;
 import org.chromium.base.compat.ApiHelperForP;
@@ -471,6 +472,24 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver {
                                    // be TYPE_VPN. In the case of a VPN, getAllNetworks() will have
                                    // returned just this VPN if it applies.
                                    || networkInfo.getType() == TYPE_VPN)) {
+                    // Android 10+ devices occasionally return multiple networks
+                    // of the same type that are stuck in the CONNECTING state.
+                    // Now that Java asserts are enabled, ignore these zombie
+                    // networks here to avoid hitting the assert below. crbug.com/1361170
+                    if (defaultNetwork != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        // If `network` is CONNECTING, ignore it.
+                        if (networkInfo.getDetailedState()
+                                == NetworkInfo.DetailedState.CONNECTING) {
+                            continue;
+                        }
+                        // If `defaultNetwork` is CONNECTING, ignore it.
+                        NetworkInfo prevDefaultNetworkInfo = getRawNetworkInfo(defaultNetwork);
+                        if (prevDefaultNetworkInfo != null
+                                && prevDefaultNetworkInfo.getDetailedState()
+                                        == NetworkInfo.DetailedState.CONNECTING) {
+                            defaultNetwork = null;
+                        }
+                    }
                     // There should not be multiple connected networks of the
                     // same type. At least as of Android Marshmallow this is
                     // not supported. If this becomes supported this assertion
@@ -744,95 +763,104 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver {
 
         @Override
         public void onAvailable(Network network) {
-            final NetworkCapabilities capabilities =
-                    mConnectivityManagerDelegate.getNetworkCapabilities(network);
-            if (ignoreConnectedNetwork(network, capabilities)) {
-                return;
-            }
-            final boolean makeVpnDefault = capabilities.hasTransport(TRANSPORT_VPN) &&
-                    // Only make the VPN the default if it isn't already.
-                    (mVpnInPlace == null || !network.equals(mVpnInPlace));
-            if (makeVpnDefault) {
-                mVpnInPlace = network;
-            }
-            final long netId = networkToNetId(network);
-            @ConnectionType
-            final int connectionType = mConnectivityManagerDelegate.getConnectionType(network);
-            runOnThread(new Runnable() {
-                @Override
-                public void run() {
-                    mObserver.onNetworkConnect(netId, connectionType);
-                    if (makeVpnDefault) {
-                        // Make VPN the default network.
-                        mObserver.onConnectionTypeChanged(connectionType);
-                        // Purge all other networks as they're inaccessible to Chrome now.
-                        mObserver.purgeActiveNetworkList(new long[] {netId});
-                    }
+            try (TraceEvent e = TraceEvent.scoped("NetworkChangeNotifierCallback::onAvailable")) {
+                final NetworkCapabilities capabilities =
+                        mConnectivityManagerDelegate.getNetworkCapabilities(network);
+                if (ignoreConnectedNetwork(network, capabilities)) {
+                    return;
                 }
-            });
+                final boolean makeVpnDefault = capabilities.hasTransport(TRANSPORT_VPN) &&
+                        // Only make the VPN the default if it isn't already.
+                        (mVpnInPlace == null || !network.equals(mVpnInPlace));
+                if (makeVpnDefault) {
+                    mVpnInPlace = network;
+                }
+                final long netId = networkToNetId(network);
+                @ConnectionType
+                final int connectionType = mConnectivityManagerDelegate.getConnectionType(network);
+                runOnThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mObserver.onNetworkConnect(netId, connectionType);
+                        if (makeVpnDefault) {
+                            // Make VPN the default network.
+                            mObserver.onConnectionTypeChanged(connectionType);
+                            // Purge all other networks as they're inaccessible to Chrome now.
+                            mObserver.purgeActiveNetworkList(new long[] {netId});
+                        }
+                    }
+                });
+            }
         }
 
         @Override
         public void onCapabilitiesChanged(
                 Network network, NetworkCapabilities networkCapabilities) {
-            if (ignoreConnectedNetwork(network, networkCapabilities)) {
-                return;
-            }
-            // A capabilities change may indicate the ConnectionType has changed,
-            // so forward the new ConnectionType along to observer.
-            final long netId = networkToNetId(network);
-            final int connectionType = mConnectivityManagerDelegate.getConnectionType(network);
-            runOnThread(new Runnable() {
-                @Override
-                public void run() {
-                    mObserver.onNetworkConnect(netId, connectionType);
+            try (TraceEvent e = TraceEvent.scoped(
+                         "NetworkChangeNotifierCallback::onCapabilitiesChanged")) {
+                if (ignoreConnectedNetwork(network, networkCapabilities)) {
+                    return;
                 }
-            });
+                // A capabilities change may indicate the ConnectionType has changed,
+                // so forward the new ConnectionType along to observer.
+                final long netId = networkToNetId(network);
+                final int connectionType = mConnectivityManagerDelegate.getConnectionType(network);
+                runOnThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mObserver.onNetworkConnect(netId, connectionType);
+                    }
+                });
+            }
         }
 
         @Override
         public void onLosing(Network network, int maxMsToLive) {
-            if (ignoreConnectedNetwork(network, null)) {
-                return;
-            }
-            final long netId = networkToNetId(network);
-            runOnThread(new Runnable() {
-                @Override
-                public void run() {
-                    mObserver.onNetworkSoonToDisconnect(netId);
+            try (TraceEvent e = TraceEvent.scoped("NetworkChangeNotifierCallback::onLosing")) {
+                if (ignoreConnectedNetwork(network, null)) {
+                    return;
                 }
-            });
+                final long netId = networkToNetId(network);
+                runOnThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        mObserver.onNetworkSoonToDisconnect(netId);
+                    }
+                });
+            }
         }
 
         @Override
         public void onLost(final Network network) {
-            if (ignoreNetworkDueToVpn(network)) {
-                return;
-            }
-            runOnThread(new Runnable() {
-                @Override
-                public void run() {
-                    mObserver.onNetworkDisconnect(networkToNetId(network));
+            try (TraceEvent e = TraceEvent.scoped("NetworkChangeNotifierCallback::onLost")) {
+                if (ignoreNetworkDueToVpn(network)) {
+                    return;
                 }
-            });
-            // If the VPN is going away, inform observer that other networks that were previously
-            // hidden by ignoreNetworkDueToVpn() are now available for use, now that this user's
-            // traffic is not forced into the VPN.
-            if (mVpnInPlace != null) {
-                assert network.equals(mVpnInPlace);
-                mVpnInPlace = null;
-                for (Network newNetwork :
-                        getAllNetworksFiltered(mConnectivityManagerDelegate, network)) {
-                    onAvailable(newNetwork);
-                }
-                @ConnectionType
-                final int newConnectionType = getCurrentNetworkState().getConnectionType();
                 runOnThread(new Runnable() {
                     @Override
                     public void run() {
-                        mObserver.onConnectionTypeChanged(newConnectionType);
+                        mObserver.onNetworkDisconnect(networkToNetId(network));
                     }
                 });
+                // If the VPN is going away, inform observer that other networks that were
+                // previously hidden by ignoreNetworkDueToVpn() are now available for use, now that
+                // this user's traffic is not forced into the VPN.
+                if (mVpnInPlace != null) {
+                    assert network.equals(mVpnInPlace);
+                    mVpnInPlace = null;
+                    for (Network newNetwork :
+                            getAllNetworksFiltered(mConnectivityManagerDelegate, network)) {
+                        onAvailable(newNetwork);
+                    }
+                    @ConnectionType
+                    final int newConnectionType = getCurrentNetworkState().getConnectionType();
+                    runOnThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            mObserver.onConnectionTypeChanged(newConnectionType);
+                        }
+                    });
+                }
             }
         }
     }
@@ -1098,7 +1126,8 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver {
             // callback doesn't actually indicate a network change, we can ignore it by setting
             // mIgnoreNextBroadcast.
             mIgnoreNextBroadcast =
-                    ContextUtils.getApplicationContext().registerReceiver(this, mIntentFilter)
+                    ContextUtils.registerProtectedBroadcastReceiver(
+                            ContextUtils.getApplicationContext(), this, mIntentFilter)
                     != null;
         }
         mRegistered = true;

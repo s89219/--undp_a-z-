@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,7 @@
 // view hierarchy.
 - (void)animateContentIn;
 
-// Dismisses the bubble. If |animated| is true, the bubble fades out.
+// Dismisses the bubble. If `animated` is true, the bubble fades out.
 //
 // The bubble view controller is automatically removed from the view hierarchy.
 - (void)dismissAnimated:(BOOL)animated;

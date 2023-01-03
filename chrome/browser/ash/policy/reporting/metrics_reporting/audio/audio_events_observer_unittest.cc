@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include <utility>
 
 #include "base/test/task_environment.h"
-#include "chromeos/services/cros_healthd/public/cpp/fake_cros_healthd.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/cpp/fake_cros_healthd.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
 #include "components/reporting/util/test_support_callbacks.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -38,7 +38,7 @@ TEST_F(AudioEventsObserverTest, SevereUnderrun) {
   AudioEventsObserver audio_observer;
   test::TestEvent<MetricData> result_metric_data;
 
-  audio_observer.SetOnEventObservedCallback(result_metric_data.cb());
+  audio_observer.SetOnEventObservedCallback(result_metric_data.repeating_cb());
   audio_observer.SetReportingEnabled(true);
 
   ::ash::cros_healthd::FakeCrosHealthd::Get()
@@ -49,5 +49,6 @@ TEST_F(AudioEventsObserverTest, SevereUnderrun) {
   EXPECT_EQ(metric_data.event_data().type(),
             reporting::MetricEventType::AUDIO_SEVERE_UNDERRUN);
 }
+
 }  // namespace
 }  // namespace reporting

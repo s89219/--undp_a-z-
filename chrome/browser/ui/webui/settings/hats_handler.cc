@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -139,6 +139,10 @@ void HatsHandler::InformSentimentService(TrustSafetyInteraction interaction) {
     sentiment_service->RanSafetyCheck();
   } else if (interaction == TrustSafetyInteraction::OPENED_PASSWORD_MANAGER) {
     sentiment_service->OpenedPasswordManager(web_ui()->GetWebContents());
+  } else if (interaction == TrustSafetyInteraction::RAN_PASSWORD_CHECK) {
+    sentiment_service->RanPasswordCheck();
+  } else if (interaction == TrustSafetyInteraction::COMPLETED_PRIVACY_GUIDE) {
+    sentiment_service->FinishedPrivacyGuide();
   }
 }
 

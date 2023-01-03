@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -62,7 +62,7 @@ export const RelaunchMixin = dedupingMixin(
         }
 
         // <if expr="not chromeos_ash">
-        private async performRestartForNonChromeOS_(restartType: RestartType) {
+        private async performRestartForNonChromeOs_(restartType: RestartType) {
           const shouldShowDialog = await this.lifetimeBrowserProxy_
                                        .shouldShowRelaunchConfirmationDialog();
           if (!shouldShowDialog) {
@@ -90,7 +90,7 @@ export const RelaunchMixin = dedupingMixin(
           // </if>
 
           // <if expr="not chromeos_ash">
-          this.performRestartForNonChromeOS_(restartType);
+          this.performRestartForNonChromeOs_(restartType);
           // </if>
         }
       }

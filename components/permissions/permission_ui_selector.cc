@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,17 +21,15 @@ bool PermissionUiSelector::ShouldSuppressAnimation(
     case QuietUiReason::kTriggeredByCrowdDeny:
     case QuietUiReason::kTriggeredDueToAbusiveRequests:
     case QuietUiReason::kTriggeredDueToAbusiveContent:
+    case QuietUiReason::kTriggeredDueToDisruptiveBehavior:
       return true;
   }
 }
 
 PermissionUiSelector::Decision::Decision(
     absl::optional<QuietUiReason> quiet_ui_reason,
-    absl::optional<WarningReason> warning_reason,
-    absl::optional<bool> decision_held_back)
-    : quiet_ui_reason(quiet_ui_reason),
-      warning_reason(warning_reason),
-      decision_held_back(decision_held_back) {}
+    absl::optional<WarningReason> warning_reason)
+    : quiet_ui_reason(quiet_ui_reason), warning_reason(warning_reason) {}
 PermissionUiSelector::Decision::~Decision() = default;
 
 PermissionUiSelector::Decision::Decision(const Decision&) = default;
@@ -46,6 +44,10 @@ PermissionUiSelector::Decision::UseNormalUiAndShowNoWarning() {
 
 absl::optional<PermissionUmaUtil::PredictionGrantLikelihood>
 PermissionUiSelector::PredictedGrantLikelihoodForUKM() {
+  return absl::nullopt;
+}
+
+absl::optional<bool> PermissionUiSelector::WasSelectorDecisionHeldback() {
   return absl::nullopt;
 }
 

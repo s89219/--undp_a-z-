@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -121,7 +121,7 @@ void SvgIconTranscoder::MaybeCreateWebContents() {
         content::WebContents::CreateParams::kInitializeAndWarmupRendererProcess;
     web_contents_ = content::WebContents::Create(params);
     // When we observe RenderProcessExited, we will need to recreate.
-    web_contents_->GetMainFrame()->GetProcess()->AddObserver(this);
+    web_contents_->GetPrimaryMainFrame()->GetProcess()->AddObserver(this);
   }
 }
 
@@ -129,7 +129,7 @@ bool SvgIconTranscoder::PrepareWebContents() {
   if (!web_contents_ready_) {
     // Old web_contents_ may have been destroyed.
     MaybeCreateWebContents();
-    if (web_contents_->GetMainFrame()->IsRenderFrameLive()) {
+    if (web_contents_->GetPrimaryMainFrame()->IsRenderFrameLive()) {
       web_contents_ready_ = true;
     }
     VLOG(1) << "web_contents "
@@ -151,8 +151,8 @@ void SvgIconTranscoder::RenderProcessExited(
 }
 
 void SvgIconTranscoder::RemoveObserver() {
-  if (web_contents_ && web_contents_->GetMainFrame()) {
-    web_contents_->GetMainFrame()->GetProcess()->RemoveObserver(this);
+  if (web_contents_ && web_contents_->GetPrimaryMainFrame()) {
+    web_contents_->GetPrimaryMainFrame()->GetProcess()->RemoveObserver(this);
   }
 }
 

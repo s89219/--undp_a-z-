@@ -1,9 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/crosapi/browser_loader.h"
 
+#include "base/auto_reset.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
@@ -36,8 +37,6 @@ constexpr char kLacrosUnmounterUpstartJob[] = "lacros_2dunmounter";
 class BrowserLoaderTest : public testing::Test {
  public:
   BrowserLoaderTest() {
-    browser_util::SetLacrosEnabledForTest(true);
-
     // Create dependencies for object under test.
     component_manager_ =
         base::MakeRefCounted<component_updater::FakeCrOSComponentManager>();
@@ -58,7 +57,6 @@ class BrowserLoaderTest : public testing::Test {
 
   ~BrowserLoaderTest() override {
     browser_part_->ShutdownCrosComponentManager();
-    browser_util::SetLacrosEnabledForTest(false);
   }
 
   // Public because this is test code.
@@ -70,6 +68,10 @@ class BrowserLoaderTest : public testing::Test {
   ash::FakeUpstartClient fake_upstart_client_;
   std::unique_ptr<BrowserProcessPlatformPartTestApi> browser_part_;
   std::unique_ptr<BrowserLoader> browser_loader_;
+
+ private:
+  base::AutoReset<bool> set_lacros_enabled_ =
+      browser_util::SetLacrosEnabledForTest(true);
 };
 
 TEST_F(BrowserLoaderTest, OnLoadSelectionQuicklyChooseRootfs) {
@@ -85,7 +87,8 @@ TEST_F(BrowserLoaderTest, OnLoadSelectionQuicklyChooseRootfs) {
   // Set `was_installed` to false, in order to quickly mount rootfs
   // lacros-chrome.
   browser_loader_->OnLoadSelection(
-      base::BindOnce([](const base::FilePath&, LacrosSelection selection) {
+      base::BindOnce([](const base::FilePath&, LacrosSelection selection,
+                        base::Version version) {
         EXPECT_EQ(LacrosSelection::kRootfs, selection);
       }),
       false);
@@ -107,9 +110,8 @@ TEST_F(BrowserLoaderTest, OnLoadVersionSelectionNeitherIsAvailable) {
   // Pass in an invalid `base::Version`.
   browser_loader_->OnLoadVersionSelection(
       /*is_stateful_lacros_available=*/false,
-      base::BindOnce([](const base::FilePath& path, LacrosSelection selection) {
-        EXPECT_TRUE(path.empty());
-      }),
+      base::BindOnce([](const base::FilePath& path, LacrosSelection selection,
+                        base::Version version) { EXPECT_TRUE(path.empty()); }),
       /*rootfs_lacros_version=*/base::Version());
   task_environment_.RunUntilIdle();
   EXPECT_FALSE(callback_called);
@@ -129,8 +131,8 @@ TEST_F(BrowserLoaderTest, OnLoadVersionSelectionStatefulIsUnavailable) {
   // Pass in an invalid `base::Version`.
   browser_loader_->OnLoadVersionSelection(
       /*is_stateful_lacros_available=*/false,
-      base::BindOnce([](const base::FilePath& path, LacrosSelection selection) {
-        EXPECT_FALSE(path.empty());
+      base::BindOnce([](const base::FilePath& path, LacrosSelection selection,
+                        base::Version version) {
         EXPECT_EQ(LacrosSelection::kRootfs, selection);
       }),
       /*rootfs_lacros_version=*/base::Version("2.0.0"));
@@ -159,8 +161,8 @@ TEST_F(BrowserLoaderTest, OnLoadVersionSelectionRootfsIsUnavailable) {
   // Pass in an invalid `base::Version`.
   browser_loader_->OnLoadVersionSelection(
       /*is_stateful_lacros_available=*/true,
-      base::BindOnce([](const base::FilePath& path, LacrosSelection selection) {
-        EXPECT_FALSE(path.empty());
+      base::BindOnce([](const base::FilePath& path, LacrosSelection selection,
+                        base::Version version) {
         EXPECT_EQ(LacrosSelection::kStateful, selection);
       }),
       /*rootfs_lacros_version=*/base::Version());
@@ -188,8 +190,8 @@ TEST_F(BrowserLoaderTest, OnLoadVersionSelectionRootfsIsNewer) {
   // Pass in a rootfs lacros-chrome version that is newer.
   browser_loader_->OnLoadVersionSelection(
       /*is_stateful_lacros_available=*/true,
-      base::BindOnce([](const base::FilePath& path, LacrosSelection selection) {
-        EXPECT_FALSE(path.empty());
+      base::BindOnce([](const base::FilePath& path, LacrosSelection selection,
+                        base::Version version) {
         EXPECT_EQ(LacrosSelection::kRootfs, selection);
       }),
       /*rootfs_lacros_version=*/base::Version("2.0.0"));
@@ -218,8 +220,8 @@ TEST_F(BrowserLoaderTest, OnLoadVersionSelectionRootfsIsOlder) {
   // Pass in a rootfs lacros-chrome version that is older.
   browser_loader_->OnLoadVersionSelection(
       /*is_stateful_lacros_available=*/true,
-      base::BindOnce([](const base::FilePath& path, LacrosSelection selection) {
-        EXPECT_FALSE(path.empty());
+      base::BindOnce([](const base::FilePath& path, LacrosSelection selection,
+                        base::Version version) {
         EXPECT_EQ(LacrosSelection::kStateful, selection);
       }),
       /*rootfs_lacros_version=*/base::Version("2.0.0"));

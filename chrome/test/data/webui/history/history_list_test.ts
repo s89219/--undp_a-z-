@@ -1,13 +1,14 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {BrowserServiceImpl, CrDialogElement, ensureLazyLoaded, HistoryAppElement, HistoryEntry, HistoryItemElement, HistoryListElement, HistoryToolbarElement} from 'chrome://history/history.js';
-import {isMac, webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
+import {isMac} from 'chrome://resources/js/platform.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
 import {pressAndReleaseKeyOn} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {assertDeepEquals, assertEquals, assertFalse, assertGT, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestBrowserService} from './test_browser_service.js';
 import {createHistoryEntry, createHistoryInfo, shiftClick, waitForEvent} from './test_util.js';
@@ -59,7 +60,7 @@ suite(history_list_test.suiteName, function() {
     createHistoryEntry('2016-03-15', 'https://www.google.com'),
     createHistoryEntry('2016-03-14 10:00', 'https://www.example.com'),
     createHistoryEntry('2016-03-14 9:00', 'https://www.google.com'),
-    createHistoryEntry('2016-03-13', 'https://en.wikipedia.org')
+    createHistoryEntry('2016-03-13', 'https://en.wikipedia.org'),
   ];
   TEST_HISTORY_RESULTS[2]!.starred = true;
 
@@ -67,12 +68,12 @@ suite(history_list_test.suiteName, function() {
     createHistoryEntry('2016-03-13 10:00', 'https://en.wikipedia.org'),
     createHistoryEntry('2016-03-13 9:50', 'https://www.youtube.com'),
     createHistoryEntry('2016-03-11', 'https://www.google.com'),
-    createHistoryEntry('2016-03-10', 'https://www.example.com')
+    createHistoryEntry('2016-03-10', 'https://www.example.com'),
   ];
 
   setup(function() {
     window.history.replaceState({}, '', '/');
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     testService = new TestBrowserService();
     BrowserServiceImpl.setInstance(testService);
 
@@ -801,7 +802,7 @@ suite(history_list_test.suiteName, function() {
               app.dispatchEvent(new CustomEvent('change-query', {
                 bubbles: true,
                 composed: true,
-                detail: {search: 'something else'}
+                detail: {search: 'something else'},
               }));
               return testService.whenCalled('queryHistory');
             })
@@ -809,7 +810,7 @@ suite(history_list_test.suiteName, function() {
               testService.resetResolver('queryHistory');
               testService.setQueryResult({
                 info: createHistoryInfo('something else'),
-                value: ADDITIONAL_RESULTS
+                value: ADDITIONAL_RESULTS,
               });
               element.dispatchEvent(new CustomEvent(
                   'query-history',

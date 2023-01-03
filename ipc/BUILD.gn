@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -140,7 +140,7 @@ component("message_support") {
     ]
   }
 
-  if (is_mac) {
+  if (is_apple) {
     sources += [
       "mach_port_attachment_mac.cc",
       "mach_port_attachment_mac.h",
@@ -253,6 +253,8 @@ if (!is_ios) {
       "//base/test:test_support",
       "//mojo/core/embedder",
       "//mojo/core/test:test_support",
+      "//third_party/ipcz/src:ipcz_test_support_chromium",
+      "//third_party/ipcz/src:test_buildflags",
     ]
   }
 
@@ -294,6 +296,7 @@ if (!is_ios) {
       "//base:i18n",
       "//base/test:test_support",
       "//crypto",
+      "//mojo/core:driver_for_ipcz_tests",
       "//mojo/core/test:test_support",
       "//testing/gtest",
       "//third_party/ipcz/src:ipcz_tests_sources_chromium",

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 
 #import "ios/chrome/browser/ui/coordinators/chrome_coordinator.h"
 
-@protocol ApplicationCommands;
 @class PrivacySafeBrowsingCoordinator;
 
 // Delegate for PrivacySafeBrowsingCoordinator.
@@ -29,8 +28,8 @@
                                    browser:(Browser*)browser NS_UNAVAILABLE;
 
 // Designated initializer.
-// |viewController|: navigation controller.
-// |browser|: browser.
+// `viewController`: navigation controller.
+// `browser`: browser.
 - (instancetype)initWithBaseNavigationController:
                     (UINavigationController*)navigationController
                                          browser:(Browser*)browser

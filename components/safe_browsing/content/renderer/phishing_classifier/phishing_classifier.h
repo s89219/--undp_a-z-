@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -26,9 +26,9 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/containers/flat_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "components/safe_browsing/content/renderer/phishing_classifier/scorer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace content {
@@ -66,12 +66,6 @@ class PhishingClassifier {
   PhishingClassifier& operator=(const PhishingClassifier&) = delete;
 
   virtual ~PhishingClassifier();
-
-  // Sets a scorer for the classifier to use in computing the phishiness score.
-  // This must live at least as long as the PhishingClassifier.  The caller is
-  // expected to cancel any pending classification before setting a phishing
-  // scorer.
-  void set_phishing_scorer(const Scorer* scorer);
 
   // Returns true if the classifier is ready to classify pages, i.e. it
   // has had a scorer set via set_phishing_scorer().
@@ -139,7 +133,7 @@ class PhishingClassifier {
   // Callback when the visual TFLite model has been applied, and returned a list
   // of scores.
   void OnVisualTfLiteModelDone(std::unique_ptr<ClientPhishingRequest> verdict,
-                               base::flat_map<std::string, double> result);
+                               std::vector<double> result);
 
   // Helper method to run the DoneCallback and clear the state.
   void RunCallback(const ClientPhishingRequest& verdict);
@@ -153,7 +147,6 @@ class PhishingClassifier {
   void Clear();
 
   content::RenderFrame* render_frame_;  // owns us
-  const Scorer* scorer_;                // owned by the caller
   std::unique_ptr<PhishingUrlFeatureExtractor> url_extractor_;
   std::unique_ptr<PhishingDOMFeatureExtractor> dom_extractor_;
   std::unique_ptr<PhishingTermFeatureExtractor> term_extractor_;

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,10 +37,9 @@ class LogManager;
 }
 
 namespace password_manager {
-class PasswordScriptsFetcher;
 class PasswordFormManagerForUI;
 class PasswordManagerDriver;
-}
+}  // namespace password_manager
 
 namespace safe_browsing {
 enum class WarningAction;
@@ -107,6 +106,7 @@ class IOSChromePasswordManagerClient
   const password_manager::PasswordFeatureManager* GetPasswordFeatureManager()
       const override;
   PrefService* GetPrefs() const override;
+  PrefService* GetLocalStatePrefs() const override;
   const syncer::SyncService* GetSyncService() const override;
   password_manager::PasswordStoreInterface* GetProfilePasswordStore()
       const override;
@@ -114,8 +114,6 @@ class IOSChromePasswordManagerClient
       const override;
   password_manager::PasswordReuseManager* GetPasswordReuseManager()
       const override;
-  password_manager::PasswordScriptsFetcher* GetPasswordScriptsFetcher()
-      override;
   password_manager::PasswordChangeSuccessTracker*
   GetPasswordChangeSuccessTracker() override;
 
@@ -140,7 +138,7 @@ class IOSChromePasswordManagerClient
   autofill::LanguageCode GetPageLanguage() const override;
   const password_manager::CredentialsFilter* GetStoreResultFilter()
       const override;
-  const autofill::LogManager* GetLogManager() const override;
+  autofill::LogManager* GetLogManager() override;
   ukm::SourceId GetUkmSourceId() override;
   password_manager::PasswordManagerMetricsRecorder* GetMetricsRecorder()
       override;
@@ -151,7 +149,6 @@ class IOSChromePasswordManagerClient
   bool IsIsolationForPasswordSitesEnabled() const override;
   bool IsNewTabPage() const override;
   password_manager::FieldInfoManager* GetFieldInfoManager() const override;
-  bool IsAutofillAssistantUIVisible() const override;
 
   safe_browsing::PasswordProtectionService* GetPasswordProtectionService()
       const override;
@@ -161,12 +158,14 @@ class IOSChromePasswordManagerClient
       const std::string& username,
       const std::vector<password_manager::MatchingReusedCredential>&
           matching_reused_credentials,
-      bool password_field_exists) override;
+      bool password_field_exists,
+      uint64_t reused_password_hash,
+      const std::string& domain) override;
 
   void LogPasswordReuseDetectedEvent() override;
 
-  // Shows the password protection UI. |warning_text| is the displayed text.
-  // |callback| is invoked when the user dismisses the UI.
+  // Shows the password protection UI. `warning_text` is the displayed text.
+  // `callback` is invoked when the user dismisses the UI.
   void NotifyUserPasswordProtectionWarning(
       const std::u16string& warning_text,
       base::OnceCallback<void(safe_browsing::WarningAction)> callback);

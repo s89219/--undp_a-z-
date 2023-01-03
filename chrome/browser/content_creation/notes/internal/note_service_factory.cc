@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@
 #include "components/content_creation/notes/core/note_service.h"
 #include "components/content_creation/notes/core/server/notes_repository.h"
 #include "components/content_creation/notes/core/templates/template_store.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/variations/service/variations_service.h"
 #include "content/public/browser/browser_context.h"
@@ -44,9 +43,7 @@ NoteService* NoteServiceFactory::GetForProfile(Profile* profile) {
 }
 
 NoteServiceFactory::NoteServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "NoteService",
-          BrowserContextDependencyManager::GetInstance()) {
+    : ProfileKeyedServiceFactory("NoteService") {
   DependsOn(IdentityManagerFactory::GetInstance());
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,13 +10,13 @@
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ash/policy/remote_commands/crd_logging.h"
+#include "chrome/browser/ash/policy/remote_commands/crd_remote_command_utils.h"
 #include "remoting/host/chromeos/remote_support_host_ash.h"
 #include "remoting/host/chromeos/remoting_service.h"
 #include "remoting/host/mojom/remote_support.mojom.h"
 
 namespace policy {
 
-using ResultCode = DeviceCommandStartCrdSessionJob::ResultCode;
 using AccessCodeCallback = DeviceCommandStartCrdSessionJob::AccessCodeCallback;
 using ErrorCallback = DeviceCommandStartCrdSessionJob::ErrorCallback;
 
@@ -62,7 +62,9 @@ class CrdHostDelegate::CrdHostSession
                  << parameters_.user_name << "', terminate_upon_input "
                  << parameters_.terminate_upon_input
                  << ", show_confirmation_dialog "
-                 << parameters_.show_confirmation_dialog << "}";
+                 << parameters_.show_confirmation_dialog
+                 << ", curtain_local_user_session "
+                 << parameters_.curtain_local_user_session << "}";
 
     remoting_service.StartSession(
         GetSessionParameters(), GetEnterpriseParameters(),
@@ -87,8 +89,10 @@ class CrdHostDelegate::CrdHostSession
   }
   void OnHostStateDisconnected(
       const absl::optional<std::string>& disconnect_reason) override {
-    CRD_DVLOG(3) << __FUNCTION__
-                 << " with reason: " << disconnect_reason.value_or("<none>");
+    // We always want to log this event, as it could help customers debug why
+    // their CRD connection is failing/disconnecting.
+    LOG(WARNING) << "CRD session disconnected with reason: "
+                 << disconnect_reason.value_or("<none>");
 
     ReportError(ResultCode::FAILURE_CRD_HOST_ERROR, "host disconnected");
   }
@@ -134,9 +138,10 @@ class CrdHostDelegate::CrdHostSession
 
   remoting::ChromeOsEnterpriseParams GetEnterpriseParameters() const {
     return remoting::ChromeOsEnterpriseParams{
-        /*suppress_user_dialogs=*/!parameters_.show_confirmation_dialog,
-        /*suppress_notifications=*/!parameters_.show_confirmation_dialog,
-        /*terminate_upon_input=*/parameters_.terminate_upon_input};
+        .suppress_user_dialogs = !parameters_.show_confirmation_dialog,
+        .suppress_notifications = !parameters_.show_confirmation_dialog,
+        .terminate_upon_input = parameters_.terminate_upon_input,
+        .curtain_local_user_session = parameters_.curtain_local_user_session};
   }
 
   void ReportSuccess(const std::string& access_code) {
@@ -175,12 +180,10 @@ CrdHostDelegate::CrdHostDelegate(
 CrdHostDelegate::~CrdHostDelegate() = default;
 
 bool CrdHostDelegate::HasActiveSession() const {
-  LOG(ERROR) << __FUNCTION__;
   return active_session_ != nullptr;
 }
 
 void CrdHostDelegate::TerminateSession(base::OnceClosure callback) {
-  LOG(ERROR) << __FUNCTION__;
   CRD_DVLOG(3) << "Terminating CRD session";
   active_session_ = nullptr;
   std::move(callback).Run();

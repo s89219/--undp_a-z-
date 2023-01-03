@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@ TSAN_TEST(FilterOperationResolverThreadedTest, SimpleMatrixFilter) {
         FilterOperationResolver::CreateOffscreenFilterOperations(*value, font);
     ASSERT_EQ(fo.size(), 1ul);
     EXPECT_EQ(*fo.at(0), *MakeGarbageCollected<BasicColorMatrixFilterOperation>(
-                             0.5, FilterOperation::kSepia));
+                             0.5, FilterOperation::OperationType::kSepia));
   });
 }
 
@@ -47,7 +47,7 @@ TSAN_TEST(FilterOperationResolverThreadedTest, SimpleTransferFilter) {
     ASSERT_EQ(fo.size(), 1ul);
     EXPECT_EQ(*fo.at(0),
               *MakeGarbageCollected<BasicComponentTransferFilterOperation>(
-                  0.5, FilterOperation::kBrightness));
+                  0.5, FilterOperation::OperationType::kBrightness));
   });
 }
 
@@ -101,10 +101,10 @@ TSAN_TEST(FilterOperationResolverThreadedTest, CompoundFilter) {
     EXPECT_FALSE(fo.IsEmpty());
     ASSERT_EQ(fo.size(), 2ul);
     EXPECT_EQ(*fo.at(0), *MakeGarbageCollected<BasicColorMatrixFilterOperation>(
-                             0.5, FilterOperation::kSepia));
+                             0.5, FilterOperation::OperationType::kSepia));
     EXPECT_EQ(*fo.at(1),
               *MakeGarbageCollected<BasicComponentTransferFilterOperation>(
-                  0.5, FilterOperation::kBrightness));
+                  0.5, FilterOperation::OperationType::kBrightness));
   });
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -96,6 +96,11 @@ struct COMPONENT_EXPORT(ICON_TYPES) IconValue {
   // PNG-encoded bytes for the icon
   std::vector<uint8_t> compressed;
 
+  // Specifies whether the icon provided is a maskable icon. This field should
+  // only be true if the icon type is kCompressed, and the compressed icon data
+  // is from a maskable icon.
+  bool is_maskable_icon = false;
+
   // Specifies whether the icon provided is a placeholder. That field should
   // only be true if the corresponding `LoadIcon` call had
   // `allow_placeholder_icon` set to true, which states whether the caller will
@@ -120,23 +125,6 @@ apps::mojom::IconType ConvertIconTypeToMojomIconType(IconType icon_type);
 
 COMPONENT_EXPORT(ICON_TYPES)
 IconType ConvertMojomIconTypeToIconType(apps::mojom::IconType mojom_icon_type);
-
-COMPONENT_EXPORT(ICON_TYPES)
-apps::mojom::IconValuePtr ConvertIconValueToMojomIconValue(
-    IconValuePtr icon_value);
-
-COMPONENT_EXPORT(ICON_TYPES)
-IconValuePtr ConvertMojomIconValueToIconValue(
-    apps::mojom::IconValuePtr mojom_icon_value);
-
-COMPONENT_EXPORT(ICON_TYPES)
-base::OnceCallback<void(IconValuePtr)> IconValueToMojomIconValueCallback(
-    base::OnceCallback<void(apps::mojom::IconValuePtr)> callback);
-
-COMPONENT_EXPORT(ICON_TYPES)
-base::OnceCallback<void(apps::mojom::IconValuePtr)>
-MojomIconValueToIconValueCallback(
-    base::OnceCallback<void(IconValuePtr)> callback);
 
 }  // namespace apps
 

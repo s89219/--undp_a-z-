@@ -1,13 +1,14 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/web_state_list/web_state_list_order_controller.h"
 
-#include <cstdint>
-#include <set>
+#import <cstdint>
+#import <set>
 
-#include "base/check_op.h"
+#import "base/check_op.h"
+#import "base/cxx17_backports.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/chrome/browser/web_state_list/web_state_list_removing_indexes.h"
 #import "ios/chrome/browser/web_state_list/web_state_opener.h"
@@ -18,7 +19,7 @@
 
 namespace {
 
-// Find the index of next non-removed WebState opened by |web_state|. It
+// Find the index of next non-removed WebState opened by `web_state`. It
 // may return WebStateList::kInvalidIndex if there is no such indexes.
 int FindIndexOfNextNonRemovedWebStateOpenedBy(
     const WebStateListRemovingIndexes& removing_indexes,
@@ -62,9 +63,20 @@ WebStateListOrderController::WebStateListOrderController(
 WebStateListOrderController::~WebStateListOrderController() = default;
 
 int WebStateListOrderController::DetermineInsertionIndex(
-    const web::WebState* opener) const {
+    int desired_index,
+    const web::WebState* opener,
+    bool forced,
+    bool pinned) const {
+  // Forced index has superiority over anything else. The only thing that should
+  // be checked here if `desired_index` is within the proper range of WebStates
+  // (e.g. pinned or regular).
+  if (forced)
+    return ConstrainInsertionIndex(desired_index, pinned);
+
+  // If there is no opener, WebState should be added at the end of the list of
+  // the same kind of WebStates (e.g. pinned or regular).
   if (!opener)
-    return web_state_list_.count();
+    return ConstrainInsertionIndex(WebStateList::kInvalidIndex, pinned);
 
   int opener_index = web_state_list_.GetIndexOfWebState(opener);
   DCHECK_NE(WebStateList::kInvalidIndex, opener_index);
@@ -78,7 +90,7 @@ int WebStateListOrderController::DetermineInsertionIndex(
 
   // Check for overflows (just a DCHECK as INT_MAX open WebState is unlikely).
   DCHECK_LT(reference_index, INT_MAX);
-  return reference_index + 1;
+  return ConstrainInsertionIndex(reference_index + 1, pinned);
 }
 
 int WebStateListOrderController::DetermineNewActiveIndex(
@@ -134,14 +146,38 @@ int WebStateListOrderController::DetermineNewActiveIndex(
       return opener_index_after_removal;
   }
 
-  // Look for the closest non-removed WebState after the active WebState, or
-  // if none, use the closest non-removed WebState before the active WebState.
+  const bool is_pinned = web_state_list_.IsWebStatePinnedAt(active_index);
+
+  const int first_non_pinned_tab =
+      web_state_list_.GetIndexOfFirstNonPinnedWebState();
+
+  const int start = is_pinned ? 0 : first_non_pinned_tab;
+  const int end = is_pinned ? first_non_pinned_tab : count;
+
+  // Look for the closest non-removed WebState after the active WebState in the
+  // same pinned/regular group.
+  for (int index = active_index + 1; index < end; ++index) {
+    const int index_after_removal = removing_indexes.IndexAfterRemoval(index);
+    if (index_after_removal != WebStateList::kInvalidIndex)
+      return index_after_removal;
+  }
+
+  // Look for the closest non-removed WebState before the active WebState in the
+  // same pinned/regular group.
+  for (int index = active_index - 1; index >= start; --index) {
+    const int index_after_removal = removing_indexes.IndexAfterRemoval(index);
+    if (index_after_removal != WebStateList::kInvalidIndex)
+      return index_after_removal;
+  }
+
+  // Look for the closest non-removed WebState after the active WebState.
   for (int index = active_index + 1; index < count; ++index) {
     const int index_after_removal = removing_indexes.IndexAfterRemoval(index);
     if (index_after_removal != WebStateList::kInvalidIndex)
       return index_after_removal;
   }
 
+  // Look for the closest non-removed WebState before the active WebState.
   for (int index = active_index - 1; index >= 0; --index) {
     const int index_after_removal = removing_indexes.IndexAfterRemoval(index);
     if (index_after_removal != WebStateList::kInvalidIndex)
@@ -150,4 +186,17 @@ int WebStateListOrderController::DetermineNewActiveIndex(
 
   NOTREACHED() << "No active WebState selected by WebStateList not empty";
   return WebStateList::kInvalidIndex;
+}
+
+int WebStateListOrderController::ConstrainInsertionIndex(int index,
+                                                         bool pinned) const {
+  int min = pinned ? 0 : web_state_list_.GetIndexOfFirstNonPinnedWebState();
+  int max = pinned ? web_state_list_.GetIndexOfFirstNonPinnedWebState()
+                   : web_state_list_.count();
+
+  if (index < min || index > max) {
+    return max;
+  }
+
+  return index;
 }

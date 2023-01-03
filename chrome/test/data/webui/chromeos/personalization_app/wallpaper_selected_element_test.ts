@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@
 import 'chrome://personalization/strings.m.js';
 import 'chrome://webui-test/mojo_webui_test_support.js';
 
-import {CurrentWallpaper, DailyRefreshType, Paths, WallpaperLayout, WallpaperSelected, WallpaperType} from 'chrome://personalization/trusted/personalization_app.js';
+import {CurrentWallpaper, DailyRefreshType, Paths, WallpaperLayout, WallpaperSelected, WallpaperType} from 'chrome://personalization/js/personalization_app.js';
 import {assertDeepEquals, assertEquals, assertFalse, assertNotEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {baseSetup, initElement} from './personalization_app_test_utils.js';
 import {TestPersonalizationStore} from './test_personalization_store.js';
@@ -92,8 +92,9 @@ suite('WallpaperSelectedTest', function() {
 
     const img = wallpaperSelectedElement.shadowRoot!.querySelector('img');
     assertEquals(
-        `chrome://image/?${wallpaperProvider.currentWallpaper.url.url}`,
-        img!.src);
+        `chrome://personalization/wallpaper.jpg?key=${
+            wallpaperProvider.currentWallpaper.key}`,
+        img!.src, 'sets current wallpaper key appended to url');
 
     const textContainerElements =
         wallpaperSelectedElement.shadowRoot!.querySelectorAll(
@@ -134,21 +135,6 @@ suite('WallpaperSelectedTest', function() {
         title!.textContent!.trim());
   });
 
-  test('removes high resolution suffix from image url', async () => {
-    personalizationStore.data.wallpaper.currentSelected = {
-      url: {url: 'https://images.googleusercontent.com/abc12=w456'},
-      attribution: [],
-      assetId: BigInt(100),
-    };
-    personalizationStore.data.wallpaper.loading.selected = false;
-    wallpaperSelectedElement = initElement(WallpaperSelected);
-    await waitAfterNextRender(wallpaperSelectedElement);
-
-    const img = wallpaperSelectedElement.shadowRoot!.querySelector('img');
-    assertEquals(
-        'chrome://image/?https://images.googleusercontent.com/abc12', img!.src);
-  });
-
   test('updates image when store is updated', async () => {
     personalizationStore.data.wallpaper.currentSelected =
         wallpaperProvider.currentWallpaper;
@@ -160,18 +146,21 @@ suite('WallpaperSelectedTest', function() {
     const img = wallpaperSelectedElement.shadowRoot!.querySelector('img') as
         HTMLImageElement;
     assertEquals(
-        `chrome://image/?${wallpaperProvider.currentWallpaper.url.url}`,
-        img.src);
+        `chrome://personalization/wallpaper.jpg?key=${
+            wallpaperProvider.currentWallpaper.key}`,
+        img!.src, 'sets current wallpaper key appended to url');
+
 
     personalizationStore.data.wallpaper.currentSelected = {
-      url: {url: 'https://testing'},
-      attribution: ['New attribution'],
-      assetId: BigInt(100),
+      ...personalizationStore.data.wallpaper.currentSelected,
+      key: 'new_key',
     };
     personalizationStore.notifyObservers();
     await waitAfterNextRender(wallpaperSelectedElement);
 
-    assertEquals('chrome://image/?https://testing', img.src);
+    assertEquals(
+        `chrome://personalization/wallpaper.jpg?key=new_key`, img.src,
+        'updates wallpaper key query parameter');
   });
 
   test('shows placeholders when image fails to load', async () => {
@@ -200,20 +189,6 @@ suite('WallpaperSelectedTest', function() {
         null, wallpaperSelectedElement.shadowRoot!.querySelector('img'));
   });
 
-  test('shows image url with data scheme', async () => {
-    personalizationStore.data.wallpaper.currentSelected = {
-      url: {url: 'data:image/png;base64,abc='},
-      attribution: [],
-      assetId: BigInt(100),
-    };
-    personalizationStore.data.wallpaper.loading.selected = false;
-    wallpaperSelectedElement = initElement(WallpaperSelected);
-    await waitAfterNextRender(wallpaperSelectedElement);
-
-    const img = wallpaperSelectedElement.shadowRoot!.querySelector('img');
-    assertEquals('data:image/png;base64,abc=', img!.src);
-  });
-
   test('shows daily refresh option on the collection view', async () => {
     personalizationStore.data.wallpaper.currentSelected = {
       url: {url: 'data:image/png;base64,abc='},
@@ -223,7 +198,7 @@ suite('WallpaperSelectedTest', function() {
     personalizationStore.data.wallpaper.loading.selected = false;
 
     wallpaperSelectedElement =
-        initElement(WallpaperSelected, {'path': Paths.CollectionImages});
+        initElement(WallpaperSelected, {'path': Paths.COLLECTION_IMAGES});
     await waitAfterNextRender(wallpaperSelectedElement);
 
     const dailyRefresh =
@@ -234,6 +209,32 @@ suite('WallpaperSelectedTest', function() {
         wallpaperSelectedElement.shadowRoot!.getElementById('refreshWallpaper');
     assertTrue(refreshWallpaper!.hidden);
   });
+
+  test(
+      'shows daily refresh option on the google photos album view',
+      async () => {
+        personalizationStore.data.wallpaper.currentSelected = {
+          url: {url: 'data:image/png;base64,abc='},
+          attribution: [],
+          assetId: BigInt(100),
+        };
+        personalizationStore.data.wallpaper.loading.selected = false;
+
+        wallpaperSelectedElement = initElement(WallpaperSelected, {
+          'path': Paths.GOOGLE_PHOTOS_COLLECTION,
+          'googlePhotosAlbumId': '',
+        });
+        await waitAfterNextRender(wallpaperSelectedElement);
+
+        const dailyRefresh =
+            wallpaperSelectedElement.shadowRoot!.getElementById('dailyRefresh');
+        assertTrue(!!dailyRefresh);
+
+        const refreshWallpaper =
+            wallpaperSelectedElement.shadowRoot!.getElementById(
+                'refreshWallpaper');
+        assertTrue(refreshWallpaper!.hidden);
+      });
 
   test(
       'shows refresh button only on collection with daily refresh enabled',
@@ -252,7 +253,37 @@ suite('WallpaperSelectedTest', function() {
 
         wallpaperSelectedElement = initElement(
             WallpaperSelected,
-            {'path': Paths.CollectionImages, 'collectionId': collection_id});
+            {'path': Paths.COLLECTION_IMAGES, 'collectionId': collection_id});
+        personalizationStore.notifyObservers();
+
+        await waitAfterNextRender(wallpaperSelectedElement);
+
+        const newRefreshWallpaper =
+            wallpaperSelectedElement.shadowRoot!.getElementById(
+                'refreshWallpaper');
+        assertFalse(newRefreshWallpaper!.hidden);
+      });
+
+  test(
+      'shows refresh button only on google photos album with daily refresh enabled',
+      async () => {
+        personalizationStore.data.wallpaper.currentSelected = {
+          url: {url: 'data:image/png;base64,abc='},
+          attribution: [],
+          assetId: BigInt(100),
+        };
+        personalizationStore.data.wallpaper.loading.selected = false;
+
+        const album_id = 'test_album_id';
+        personalizationStore.data.wallpaper.dailyRefresh = {
+          id: album_id,
+          type: DailyRefreshType.GOOGLE_PHOTOS,
+        };
+
+        wallpaperSelectedElement = initElement(WallpaperSelected, {
+          'path': Paths.GOOGLE_PHOTOS_COLLECTION,
+          'googlePhotosAlbumId': album_id,
+        });
         personalizationStore.notifyObservers();
 
         await waitAfterNextRender(wallpaperSelectedElement);
@@ -269,13 +300,13 @@ suite('WallpaperSelectedTest', function() {
       url: {url: 'url'},
       attribution: [],
       layout: WallpaperLayout.kStretch,
-      type: WallpaperType.kGooglePhotos,
+      type: WallpaperType.kOnceGooglePhotos,
       key: 'key',
     };
 
     // Initialize |wallpaperSelectedElement|.
     wallpaperSelectedElement =
-        initElement(WallpaperSelected, {'path': Paths.CollectionImages});
+        initElement(WallpaperSelected, {'path': Paths.COLLECTION_IMAGES});
     await waitAfterNextRender(wallpaperSelectedElement);
 
     // Verify layout options are *not* shown when not on Google Photos path.
@@ -284,7 +315,7 @@ suite('WallpaperSelectedTest', function() {
     assertEquals(shadowRoot?.querySelector(selector), null);
 
     // Set Google Photos path and verify layout options *are* shown.
-    wallpaperSelectedElement.path = Paths.GooglePhotosCollection;
+    wallpaperSelectedElement.path = Paths.GOOGLE_PHOTOS_COLLECTION;
     await waitAfterNextRender(wallpaperSelectedElement);
     assertNotEquals(shadowRoot?.querySelector(selector), null);
 
@@ -298,7 +329,6 @@ suite('WallpaperSelectedTest', function() {
 
   test('shows attribution for device default wallpaper', async () => {
     const currentSelected: CurrentWallpaper = {
-      url: {url: 'url'},
       attribution: ['testing attribution'],
       layout: WallpaperLayout.kStretch,
       type: WallpaperType.kDefault,
@@ -307,7 +337,7 @@ suite('WallpaperSelectedTest', function() {
     personalizationStore.data.wallpaper.currentSelected = currentSelected;
 
     wallpaperSelectedElement =
-        initElement(WallpaperSelected, {path: Paths.CollectionImages});
+        initElement(WallpaperSelected, {path: Paths.COLLECTION_IMAGES});
     await waitAfterNextRender(wallpaperSelectedElement);
 
     assertEquals(

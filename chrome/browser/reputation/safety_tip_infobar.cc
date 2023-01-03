@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/memory/ptr_util.h"
 #include "chrome/android/chrome_jni_headers/SafetyTipInfoBar_jni.h"
 #include "chrome/browser/reputation/safety_tip_infobar_delegate.h"
+#include "ui/base/models/image_model.h"
 #include "ui/gfx/android/java_bitmap.h"
 #include "ui/gfx/image/image.h"
 

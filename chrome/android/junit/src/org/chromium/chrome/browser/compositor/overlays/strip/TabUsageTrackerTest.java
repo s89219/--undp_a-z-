@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,8 @@ import org.mockito.Mockito;
 import org.mockito.MockitoAnnotations;
 import org.robolectric.annotation.Config;
 
-import org.chromium.base.metrics.test.ShadowRecordHistogram;
+import org.chromium.base.metrics.RecordHistogram;
+import org.chromium.base.metrics.UmaRecorderHolder;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.chrome.browser.TabUsageTracker;
 import org.chromium.chrome.browser.lifecycle.ActivityLifecycleDispatcher;
@@ -27,6 +28,8 @@ import org.chromium.chrome.browser.tabmodel.TabModel;
 import org.chromium.chrome.browser.tabmodel.TabModelSelector;
 import org.chromium.chrome.browser.tabmodel.TabModelSelectorTabModelObserver;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -34,7 +37,7 @@ import java.util.concurrent.TimeoutException;
  * percentage of tabs used.
  */
 @RunWith(BaseRobolectricTestRunner.class)
-@Config(manifest = Config.NONE, shadows = {ShadowRecordHistogram.class})
+@Config(manifest = Config.NONE)
 public class TabUsageTrackerTest {
     @Mock
     TabModelSelector mTabModelSelector;
@@ -53,15 +56,20 @@ public class TabUsageTrackerTest {
     @Before
     public void setUp() throws TimeoutException {
         MockitoAnnotations.initMocks(this);
+        List<TabModel> tabModels = new ArrayList<>();
+        tabModels.add(mTabModel);
+
         Mockito.when(mTabModel.getCount()).thenReturn(INITIAL_TAB_COUNT);
         Mockito.when(mTabModelSelector.getCurrentModel()).thenReturn(mTabModel);
+        Mockito.when(mTabModelSelector.getModels()).thenReturn(tabModels);
+        Mockito.when(mTabModelSelector.isTabStateInitialized()).thenReturn(true);
 
         mTabUsageTracker = new TabUsageTracker(mDispatcher, mTabModelSelector);
     }
 
     @After
     public void tearDown() {
-        ShadowRecordHistogram.reset();
+        UmaRecorderHolder.resetForTesting();
     }
 
     @Test
@@ -83,10 +91,9 @@ public class TabUsageTrackerTest {
 
         // Assert
         Assert.assertEquals(
-                1, ShadowRecordHistogram.getHistogramValueCountForTesting(NUMBER_OF_TABS_USED, 1));
-        Assert.assertEquals(1,
-                ShadowRecordHistogram.getHistogramValueCountForTesting(
-                        PERCENTAGE_OF_TABS_USED, 50));
+                1, RecordHistogram.getHistogramValueCountForTesting(NUMBER_OF_TABS_USED, 1));
+        Assert.assertEquals(
+                1, RecordHistogram.getHistogramValueCountForTesting(PERCENTAGE_OF_TABS_USED, 50));
     }
 
     @Test
@@ -110,10 +117,9 @@ public class TabUsageTrackerTest {
 
         // Assert that number of tabs used is 2 and percentage is 2/6 * 100 = 33
         Assert.assertEquals(
-                1, ShadowRecordHistogram.getHistogramValueCountForTesting(NUMBER_OF_TABS_USED, 2));
-        Assert.assertEquals(1,
-                ShadowRecordHistogram.getHistogramValueCountForTesting(
-                        PERCENTAGE_OF_TABS_USED, 33));
+                1, RecordHistogram.getHistogramValueCountForTesting(NUMBER_OF_TABS_USED, 2));
+        Assert.assertEquals(
+                1, RecordHistogram.getHistogramValueCountForTesting(PERCENTAGE_OF_TABS_USED, 33));
     }
 
     @Test
@@ -122,9 +128,9 @@ public class TabUsageTrackerTest {
         mTabUsageTracker.onStopWithNative();
 
         Assert.assertEquals(
-                0, ShadowRecordHistogram.getHistogramTotalCountForTesting(NUMBER_OF_TABS_USED));
+                0, RecordHistogram.getHistogramTotalCountForTesting(NUMBER_OF_TABS_USED));
         Assert.assertEquals(
-                0, ShadowRecordHistogram.getHistogramTotalCountForTesting(PERCENTAGE_OF_TABS_USED));
+                0, RecordHistogram.getHistogramTotalCountForTesting(PERCENTAGE_OF_TABS_USED));
     }
 
     @Test

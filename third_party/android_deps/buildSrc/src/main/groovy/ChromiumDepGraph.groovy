@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,6 +59,7 @@ class ChromiumDepGraph {
             licenseName: 'Apache 2.0'),
         com_google_code_gson_gson: new PropertyOverride(
             url: 'https://github.com/google/gson',
+            description: "A Java serialization/deserialization library to convert Java Objects into JSON and back",
             licenseUrl: 'https://raw.githubusercontent.com/google/gson/master/LICENSE',
             licenseName: 'Apache 2.0'),
         com_google_errorprone_error_prone_annotation: new PropertyOverride(
@@ -115,8 +116,16 @@ class ChromiumDepGraph {
             resolveVersion: '1.0',
             licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
             licenseName: 'Apache 2.0'),
+        org_bouncycastle_bcprov_jdk15on: new PropertyOverride(
+            cpePrefix: 'cpe:/a:bouncycastle:legion-of-the-bouncy-castle:1.68',
+            url: 'https://github.com/bcgit/bc-java',
+            licensePath: 'licenses/Bouncy_Castle-2015.txt',
+            licenseName: 'MIT',
+            overrideLatest: true),
         org_codehaus_mojo_animal_sniffer_annotations: new PropertyOverride(
             url: 'http://www.mojohaus.org/animal-sniffer/animal-sniffer-annotations/',
+            description: 'Animal Sniffer Annotations allow marking methods which Animal Sniffer should ignore ' +
+                         'signature violations of.',
             /* groovylint-disable-next-line LineLength */
             licenseUrl: 'https://raw.githubusercontent.com/mojohaus/animal-sniffer/master/animal-sniffer-annotations/pom.xml',
             licensePath: 'licenses/Codehaus_License-2009.txt',
@@ -134,6 +143,10 @@ class ChromiumDepGraph {
             url: 'https://github.com/protocolbuffers/protobuf/blob/master/java/lite.md',
             licenseUrl: 'https://raw.githubusercontent.com/protocolbuffers/protobuf/master/LICENSE',
             licenseName: 'BSD'),
+        com_google_protobuf_protobuf_lite: new PropertyOverride(
+            url: 'https://github.com/protocolbuffers/protobuf/blob/master/java/lite.md',
+            licenseUrl: 'https://raw.githubusercontent.com/protocolbuffers/protobuf/master/LICENSE',
+            licenseName: 'BSD'),
         javax_annotation_javax_annotation_api: new PropertyOverride(
             isShipped: false,  // Annotations are stripped by R8.
             licenseName: 'CDDLv1.1',
@@ -142,6 +155,16 @@ class ChromiumDepGraph {
             isShipped: false,  // Annotations are stripped by R8.
             licenseName: 'CDDLv1.0',
             licensePath: 'licenses/CDDLv1.0.txt'),
+        net_bytebuddy_byte_buddy: new PropertyOverride(
+            url: 'https://github.com/raphw/byte-buddy',
+            licenseUrl: 'https://raw.githubusercontent.com/raphw/byte-buddy/master/LICENSE',
+            licenseName: 'Apache 2.0',
+            overrideLatest: true),
+        net_bytebuddy_byte_buddy_agent: new PropertyOverride(
+            url: 'https://github.com/raphw/byte-buddy',
+            licenseUrl: 'https://raw.githubusercontent.com/raphw/byte-buddy/master/LICENSE',
+            licenseName: 'Apache 2.0',
+            overrideLatest: true),
         net_sf_kxml_kxml2: new PropertyOverride(
             licenseUrl: 'https://raw.githubusercontent.com/stefanhaustein/kxml2/master/license.txt',
             licenseName: 'MIT'),
@@ -151,9 +174,27 @@ class ChromiumDepGraph {
         org_checkerframework_checker_qual: new PropertyOverride(
             licenseUrl: 'https://raw.githubusercontent.com/typetools/checker-framework/master/LICENSE.txt',
             licenseName: 'GPL v2 with the classpath exception'),
+        org_checkerframework_checker_util: new PropertyOverride(
+            licenseUrl: 'https://raw.githubusercontent.com/typetools/checker-framework/master/checker-util/LICENSE.txt',
+            licenseName: 'MIT'),
         org_checkerframework_dataflow_errorprone: new PropertyOverride(
             licenseUrl: 'https://raw.githubusercontent.com/typetools/checker-framework/master/LICENSE.txt',
             licenseName: 'GPL v2 with the classpath exception'),
+        org_hamcrest_hamcrest: new PropertyOverride(
+            licenseUrl: 'https://raw.githubusercontent.com/hamcrest/JavaHamcrest/master/LICENSE.txt',
+            licenseName: 'BSD'),
+        org_jsoup_jsoup: new PropertyOverride(
+            cpePrefix: 'cpe:/a:jsoup:jsoup:1.14.3',
+            licenseUrl: 'https://raw.githubusercontent.com/jhy/jsoup/master/LICENSE',
+            licenseName: 'The MIT License'),
+        org_mockito_mockito_core: new PropertyOverride(
+            licenseUrl: 'https://raw.githubusercontent.com/mockito/mockito/main/LICENSE',
+            licenseName: 'The MIT License'),
+        org_objenesis_objenesis: new PropertyOverride(
+            url: 'http://objenesis.org/index.html',
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0',
+            overrideLatest: true),
         org_ow2_asm_asm: new PropertyOverride(
             licenseUrl: 'https://gitlab.ow2.org/asm/asm/raw/master/LICENSE.txt',
             licenseName: 'BSD'),
@@ -202,9 +243,6 @@ class ChromiumDepGraph {
         org_robolectric_shadows_framework: new PropertyOverride(
             licensePath: 'licenses/Codehaus_License-2009.txt',
             licenseName: 'MIT'),
-        org_robolectric_shadows_multidex: new PropertyOverride(
-            licensePath: 'licenses/Codehaus_License-2009.txt',
-            licenseName: 'MIT'),
         org_robolectric_shadows_playservices: new PropertyOverride(
             licensePath: 'licenses/Codehaus_License-2009.txt',
             licenseName: 'MIT'),
@@ -223,6 +261,31 @@ class ChromiumDepGraph {
             resolveVersion: '1.6.20'),
         org_jetbrains_kotlin_kotlin_stdlib_jdk7: new PropertyOverride(
             resolveVersion: '1.6.20'),
+        org_jetbrains_kotlin_kotlin_stdlib: new PropertyOverride(
+            resolveVersion: '1.7.10'),
+        org_jetbrains_kotlin_kotlin_stdlib_common: new PropertyOverride(
+            resolveVersion: '1.7.10'),
+        io_grpc_grpc_binder: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
+        io_grpc_grpc_core: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
+        io_grpc_grpc_api: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
+        io_grpc_grpc_context: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
+        io_grpc_grpc_protobuf_lite: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
+        io_grpc_grpc_stub: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
+        io_perfmark_perfmark_api: new PropertyOverride(
+            licenseUrl: 'https://www.apache.org/licenses/LICENSE-2.0.txt',
+            licenseName: 'Apache 2.0'),
     ]
 
     private static final Set<String> ALLOWED_EMPTY_DEPS = [
@@ -373,8 +436,11 @@ class ChromiumDepGraph {
     private void recursivelyOverrideLatestVersion(DependencyDescription dep) {
         dep.overrideLatest = true
         dep.children.each { childID ->
-            DependencyDescription child = dependencies.get(childID)
-            recursivelyOverrideLatestVersion(child)
+            PropertyOverride overrides = PROPERTY_OVERRIDES.get(childID)
+            if (!overrides?.resolveVersion) {
+                DependencyDescription child = dependencies.get(childID)
+                recursivelyOverrideLatestVersion(child)
+            }
         }
     }
 
@@ -501,6 +567,8 @@ class ChromiumDepGraph {
 
         // Build |fileUrl| by swapping '.pom' file extension with artifact file extension.
         String fileUrl = pomUrl[0..-4] + artifact.extension
+        // Check that the URL is correct explicitly here. Otherwise, we won't
+        // find out until 3pp bot runs.
         checkDownloadable(fileUrl)
 
         // Get rid of irrelevant indent that might be present in the XML file.
@@ -585,6 +653,7 @@ class ChromiumDepGraph {
                 description = fallbackProperties.description ?: description
                 url = fallbackProperties.url ?: url
                 cipdSuffix = fallbackProperties.cipdSuffix ?: cipdSuffix
+                cpePrefix = fallbackProperties.cpePrefix ?: cpePrefix
                 // Boolean properties require explicit null checks instead of only when truish.
                 if (fallbackProperties.generateTarget != null) {
                     generateTarget = fallbackProperties.generateTarget
@@ -680,16 +749,27 @@ class ChromiumDepGraph {
     }
 
     private void checkDownloadable(String url) {
-        try {
-            InputStream inStream = new URL(url).openStream()
-            if (inStream) {
-                inStream.close()
-                logger.debug("Succeeded in resolving url $url")
-                return
+        // file: URLs happen when using fetch_all_androidx.py --local-repo.
+        if (url.startsWith('file:')) {
+            if (!new File(new URI(url).getPath()).exists()) {
+                throw new RuntimeException("File not found: " + url)
             }
-        } catch (any) {
-            throw new RuntimeException("Resolved POM but could not resolve $url")
+            return
         }
+        // Use a background thread to avoid slowing down main thread.
+        // Saves about 80 seconds currently.
+        new Thread().start(() -> {
+            HttpURLConnection http = new URL(url).openConnection()
+            http.requestMethod = 'HEAD'
+            if (http.responseCode != 200) {
+                /* groovylint-disable-next-line PrintStackTrace */
+                new RuntimeException("Resolved POM but could not resolve $url").printStackTrace()
+                // Exception is logged and ignored if thrown, so explicitly exit.
+                /* groovylint-disable-next-line SystemExit */
+                System.exit(1)
+            }
+            http.disconnect()
+        });
     }
 
     // Checks if currentVersion is lower than versionInQuestion.
@@ -704,10 +784,9 @@ class ChromiumDepGraph {
                 int numA = verA[i].toInteger()
                 int numB = verB[i].toInteger()
                 if (numA == numB) {
-                  continue
+                    continue
                 }
                 return numA < numB
-
             } catch (any) {
                 logger.debug('Using String comparison for a version check.')
                 // This could lead to issues where a version such as 2.11.alpha11
@@ -723,6 +802,7 @@ class ChromiumDepGraph {
 
     @AutoClone
     static class DependencyDescription {
+
         String id
         ResolvedArtifact artifact
         String group, name, version, extension, displayName, description, url
@@ -742,21 +822,27 @@ class ChromiumDepGraph {
         ComponentIdentifier componentId
         List<String> children
         String cipdSuffix
+        String cpePrefix
         // When set overrides the version downloaded by the 3pp fetch script to
         // be, instead of the latest available, the resolved version by gradle
         // in this run.
         Boolean overrideLatest
+
     }
 
     static class LicenseSpec {
+
         String name, url, path
+
     }
 
     static class PropertyOverride {
+
         String description
         String url
         String licenseName, licenseUrl, licensePath
         String cipdSuffix
+        String cpePrefix
         String resolveVersion
         Boolean isShipped
         // Set to true if this dependency is not needed.
@@ -766,6 +852,7 @@ class ChromiumDepGraph {
         // Set to override the 3pp fetch script returing the latest version and
         // instead forcibly return the version required by gradle.
         Boolean overrideLatest
+
     }
 
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,26 +10,31 @@
 #include <string>
 #include <vector>
 
-#include "ash/components/drivefs/drivefs_host.h"
 #include "base/callback.h"
 #include "base/feature_list.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 #include "base/time/time.h"
+#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "chromeos/ash/components/drivefs/drivefs_host.h"
+#include "chromeos/ash/components/drivefs/drivefs_pin_manager.h"
+#include "chromeos/ash/components/drivefs/sync_status_tracker.h"
 #include "components/drive/drive_notification_observer.h"
 #include "components/drive/file_errors.h"
 #include "components/drive/file_system_core_util.h"
-#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "components/keyed_service/core/keyed_service.h"
+#include "google_apis/common/api_error_codes.h"
+#include "google_apis/common/auth_service_interface.h"
 
 class Profile;
 
 namespace base {
 class FilePath;
 class SequencedTaskRunner;
-}
+}  // namespace base
 
 namespace drivefs {
 class DriveFsHost;
@@ -69,12 +74,10 @@ struct QuickAccessItem {
 class DriveIntegrationServiceObserver : public base::CheckedObserver {
  public:
   // Triggered when the file system is mounted.
-  virtual void OnFileSystemMounted() {
-  }
+  virtual void OnFileSystemMounted() {}
 
   // Triggered when the file system is being unmounted.
-  virtual void OnFileSystemBeingUnmounted() {
-  }
+  virtual void OnFileSystemBeingUnmounted() {}
 
   // Triggered when mounting the filesystem has failed in a fashion that will
   // not be automatically retried.
@@ -111,6 +114,9 @@ class DriveIntegrationService : public KeyedService,
                               std::vector<drivefs::mojom::QueryItemPtr>)>;
   using GetThumbnailCallback =
       base::OnceCallback<void(const absl::optional<std::vector<uint8_t>>&)>;
+  using GetReadOnlyAuthenticationTokenCallback =
+      base::OnceCallback<void(google_apis::ApiErrorCode code,
+                              const std::string& access_token)>;
 
   // test_mount_point_name, test_cache_root and
   // test_drivefs_mojo_listener_factory are used by tests to inject customized
@@ -171,6 +177,9 @@ class DriveIntegrationService : public KeyedService,
   // Returns the DriveFsHost if it is enabled.
   drivefs::DriveFsHost* GetDriveFsHost() const;
 
+  // Returns the `DriveFsPinManager` iff DriveFS is mounted.
+  drivefs::pinning::DriveFsPinManager* GetDriveFsPinManager();
+
   // Returns the mojo interface to the DriveFs daemon if it is enabled and
   // connected.
   drivefs::mojom::DriveFs* GetDriveFsInterface() const;
@@ -198,6 +207,12 @@ class DriveIntegrationService : public KeyedService,
 
   // Returns the total and free space available in the user's Drive.
   void GetQuotaUsage(drivefs::mojom::DriveFs::GetQuotaUsageCallback callback);
+
+  // Returns the total and free space available in the user's Drive.
+  // Additionally, if the user belongs to an organization, whether the
+  // organization quota is full or not, and the name of the organization.
+  void GetPooledQuotaUsage(
+      drivefs::mojom::DriveFs::GetPooledQuotaUsageCallback callback);
 
   void RestartDrive();
 
@@ -255,11 +270,24 @@ class DriveIntegrationService : public KeyedService,
   void GetSyncingPaths(
       drivefs::mojom::DriveFs::GetSyncingPathsCallback callback);
 
+  drivefs::SyncStatusAndProgress GetSyncStatusForPath(
+      const base::FilePath& drive_path);
+
   // Tells DriveFS to update its cached pin states of hosted files (once).
   void PollHostedFilePinStates();
 
   // Returns whether mirroring is enabled.
   bool IsMirroringEnabled();
+
+  // Requests Drive to resync the office file at |local_path| from the cloud.
+  void ForceReSyncFile(const base::FilePath& local_path,
+                       base::OnceClosure callback);
+
+  // Gets a read-only OAuth token that allows downloading files from the user's
+  // Drive. If an error occurs or the user does not have access to download
+  // files from Drive, `access_token` will be an empty string.
+  void GetReadOnlyAuthenticationToken(
+      GetReadOnlyAuthenticationTokenCallback callback);
 
  private:
   enum State {
@@ -277,13 +305,17 @@ class DriveIntegrationService : public KeyedService,
   // Must be called on UI thread.
   bool IsDriveEnabled();
 
+  enum class DirResult { kError, kExisting, kCreated };
+  static DirResult EnsureDirectoryExists(const base::FilePath& data_dir);
+
   // Registers remote file system for drive mount point. If DriveFS is enabled,
   // but not yet mounted, this will start it mounting and wait for it to
   // complete before adding the mount point.
   void AddDriveMountPoint();
 
   // Mounts Drive if the directory exists.
-  void MaybeMountDrive(bool data_directory_exists);
+  void MaybeMountDrive(const base::FilePath& data_dir,
+                       DirResult data_dir_result);
 
   // Registers remote file system for drive mount point.
   bool AddDriveMountPointAfterMounted();
@@ -376,21 +408,26 @@ class DriveIntegrationService : public KeyedService,
 
   std::unique_ptr<DriveFsHolder> drivefs_holder_;
   std::unique_ptr<PreferenceWatcher> preference_watcher_;
+  std::unique_ptr<drivefs::pinning::DriveFsPinManager> pin_manager_;
   int drivefs_total_failures_count_ = 0;
   int drivefs_consecutive_failures_count_ = 0;
   bool remount_when_online_ = false;
+
+  // Used to fetch authentication and refresh tokens from Drive.
+  std::unique_ptr<google_apis::AuthServiceInterface> auth_service_;
 
   base::TimeTicks mount_start_;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<DriveIntegrationService> weak_ptr_factory_{this};
+
+  FRIEND_TEST_ALL_PREFIXES(DriveIntegrationServiceTest, EnsureDirectoryExists);
 };
 
 // Singleton that owns all instances of DriveIntegrationService and
 // associates them with Profiles.
-class DriveIntegrationServiceFactory
-    : public BrowserContextKeyedServiceFactory {
+class DriveIntegrationServiceFactory : public ProfileKeyedServiceFactory {
  public:
   // Factory function used by tests.
   using FactoryCallback =
@@ -422,8 +459,6 @@ class DriveIntegrationServiceFactory
   ~DriveIntegrationServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory overrides.
-  content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const override;
   KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const override;
 

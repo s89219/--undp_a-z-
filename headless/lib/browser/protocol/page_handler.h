@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,8 @@
 #include "printing/buildflags/buildflags.h"
 
 #if BUILDFLAG(ENABLE_PRINTING)
-#include "components/printing/browser/print_to_pdf/pdf_print_manager.h"
+#include "components/printing/browser/headless/headless_print_manager.h"
+#include "components/printing/browser/print_to_pdf/pdf_print_result.h"
 #include "headless/public/headless_export.h"
 #endif
 
@@ -59,7 +60,7 @@ class PageHandler : public DomainHandler, public Page::Backend {
 #if BUILDFLAG(ENABLE_PRINTING)
   void PDFCreated(bool return_as_stream,
                   std::unique_ptr<PrintToPDFCallback> callback,
-                  print_to_pdf::PdfPrintManager::PrintResult print_result,
+                  print_to_pdf::PdfPrintResult print_result,
                   scoped_refptr<base::RefCountedMemory> data);
 #endif
 

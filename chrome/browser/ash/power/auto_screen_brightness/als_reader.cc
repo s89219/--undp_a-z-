@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,8 @@ namespace power {
 namespace auto_screen_brightness {
 
 namespace {
+
+#if !BUILDFLAG(USE_IIOSERVICE)
 // Returns the number of ALS on this device that we can use. This should run in
 // another thread to be non-blocking to the main thread.
 int GetNumAls() {
@@ -54,6 +56,8 @@ int GetNumAls() {
 
   return num_als;
 }
+#endif  // !BUILDFLAG(USE_IIOSERVICE)
+
 }  // namespace
 
 AlsReader::AlsReader() = default;
@@ -70,8 +74,8 @@ void AlsReader::Init() {
       {base::TaskPriority::BEST_EFFORT, base::MayBlock(),
        base::TaskShutdownBehavior::CONTINUE_ON_SHUTDOWN});
 
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(), FROM_HERE, base::BindOnce(&GetNumAls),
+  blocking_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&GetNumAls),
       base::BindOnce(&AlsReader::OnNumAlsRetrieved,
                      weak_ptr_factory_.GetWeakPtr()));
 #endif  // BUILDFLAG(USE_IIOSERVICE)

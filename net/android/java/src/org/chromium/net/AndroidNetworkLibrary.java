@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,11 +32,11 @@ import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.CalledByNativeUnchecked;
-import org.chromium.base.annotations.MainDex;
 import org.chromium.base.compat.ApiHelperForM;
 import org.chromium.base.compat.ApiHelperForN;
 import org.chromium.base.compat.ApiHelperForP;
 import org.chromium.base.compat.ApiHelperForQ;
+import org.chromium.build.annotations.MainDex;
 
 import java.io.FileDescriptor;
 import java.io.IOException;
@@ -244,8 +244,9 @@ class AndroidNetworkLibrary {
         } else {
             // If we do not have permission to access the WiFi state, then try to get the WifiInfo
             // through broadcast. Note that this approach does not work on Android P+.
-            final Intent intent = ContextUtils.getApplicationContext().registerReceiver(
-                    null, new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION));
+            final Intent intent = ContextUtils.registerProtectedBroadcastReceiver(
+                    ContextUtils.getApplicationContext(), null,
+                    new IntentFilter(WifiManager.NETWORK_STATE_CHANGED_ACTION));
             if (intent != null) {
                 return intent.getParcelableExtra(WifiManager.EXTRA_WIFI_INFO);
             }
@@ -273,6 +274,18 @@ class AndroidNetworkLibrary {
             }
         }
         return "";
+    }
+
+    // For testing, turn Wifi on/off. Only for testing but we can not append
+    // "ForTest" hooter because jni generator creates code for @CalledByNative
+    // regardless of the hooter but Chromium Binary Size checker warns
+    // "XXXForTest" is included in the production binary.
+    @CalledByNative
+    public static void setWifiEnabled(boolean enabled) {
+        WifiManager wifiManager =
+                (WifiManager) ContextUtils.getApplicationContext().getSystemService(
+                        Context.WIFI_SERVICE);
+        wifiManager.setWifiEnabled(enabled);
     }
 
     /**
@@ -304,8 +317,9 @@ class AndroidNetworkLibrary {
         } else {
             Intent intent = null;
             try {
-                intent = ContextUtils.getApplicationContext().registerReceiver(
-                        null, new IntentFilter(WifiManager.RSSI_CHANGED_ACTION));
+                intent = ContextUtils.registerProtectedBroadcastReceiver(
+                        ContextUtils.getApplicationContext(), null,
+                        new IntentFilter(WifiManager.RSSI_CHANGED_ACTION));
             } catch (IllegalArgumentException e) {
                 // Some devices unexpectedly throw IllegalArgumentException when registering
                 // the broadcast receiver. See https://crbug.com/984179.

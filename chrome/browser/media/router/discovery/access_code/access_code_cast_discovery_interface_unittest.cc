@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,13 @@
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
-#include "chrome/browser/endpoint_fetcher/endpoint_fetcher.h"
 #include "chrome/browser/media/router/discovery/access_code/access_code_cast_constants.h"
 #include "chrome/browser/media/router/discovery/access_code/access_code_test_util.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/endpoint_fetcher/endpoint_fetcher.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "content/public/test/browser_task_environment.h"
 #include "net/http/http_util.h"
@@ -195,8 +196,11 @@ class AccessCodeCastDiscoveryInterfaceTest : public testing::Test {
 
     logger_ = std::make_unique<LoggerImpl>();
 
-    discovery_interface_ = std::make_unique<AccessCodeCastDiscoveryInterface>(
-        profile, "123456", logger_.get(), std::move(endpoint_fetcher_));
+    discovery_interface_ =
+        absl::WrapUnique(new AccessCodeCastDiscoveryInterface(
+            profile, "123456", logger_.get(),
+            identity_test_env_.identity_manager(),
+            std::move(endpoint_fetcher_)));
 
     in_process_data_decoder_ =
         std::make_unique<data_decoder::test::InProcessDataDecoder>();

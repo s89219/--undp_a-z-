@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,14 +8,15 @@
 #import <UIKit/UIKit.h>
 
 #import "ios/chrome/browser/ui/content_suggestions/content_suggestions_collection_controlling.h"
+#import "ios/chrome/browser/ui/content_suggestions/content_suggestions_header_view_controller_delegate.h"
 #import "ios/chrome/browser/ui/thumb_strip/thumb_strip_supporting.h"
 
 @class BubblePresenter;
 @class ContentSuggestionsHeaderViewController;
 @class ContentSuggestionsViewController;
-@class FeedMetricsRecorder;
-@class DiscoverFeedWrapperViewController;
 @class FeedHeaderViewController;
+@class FeedMetricsRecorder;
+@class FeedWrapperViewController;
 @protocol NewTabPageContentDelegate;
 @protocol OverscrollActionsControllerDelegate;
 @class ViewRevealingVerticalPanHandler;
@@ -25,11 +26,12 @@
 @interface NewTabPageViewController
     : UIViewController <ContentSuggestionsCollectionControlling,
                         ThumbStripSupporting,
+                        ContentSuggestionsHeaderViewControllerDelegate,
                         UIScrollViewDelegate>
 
-// View controller wrapping the Discover feed.
+// View controller wrapping the feed.
 @property(nonatomic, strong)
-    DiscoverFeedWrapperViewController* discoverFeedWrapperViewController;
+    FeedWrapperViewController* feedWrapperViewController;
 
 // Delegate for the overscroll actions.
 @property(nonatomic, weak) id<OverscrollActionsControllerDelegate>
@@ -46,17 +48,7 @@
 // controller.
 @property(nonatomic, weak) ViewRevealingVerticalPanHandler* panGestureHandler;
 
-// Identity disc shown in the NTP.
-// TODO(crbug.com/1170995): Remove once the Feed header properly supports
-// ContentSuggestions.
-@property(nonatomic, weak) UIButton* identityDiscButton;
-
-// View controller representing the NTP content suggestions. These suggestions
-// include the most visited site tiles, the shortcut tiles, the fake omnibox and
-// the Google doodle. |contentSuggestionsUIViewController| is used if
-// kContentSuggestionsUIViewControllerMigration is enabled.
-@property(nonatomic, strong)
-    UICollectionViewController* contentSuggestionsCollectionViewController;
+// The view controller representing the content suggestions.
 @property(nonatomic, strong)
     ContentSuggestionsViewController* contentSuggestionsViewController;
 
@@ -68,6 +60,10 @@
 
 // The view controller representing the NTP feed header.
 @property(nonatomic, assign) FeedHeaderViewController* feedHeaderViewController;
+
+// The view controller representing the Feed top section (between the feed
+// header and the feed collection).
+@property(nonatomic, assign) UIViewController* feedTopSectionViewController;
 
 // Bubble presenter for displaying IPH bubbles relating to the NTP.
 @property(nonatomic, strong) BubblePresenter* bubblePresenter;
@@ -92,7 +88,7 @@
 // Stops scrolling in the scroll view.
 - (void)stopScrolling;
 
-// Sets the feed collection contentOffset from the saved state to |offset| to
+// Sets the feed collection contentOffset from the saved state to `offset` to
 // set the initial scroll position.
 - (void)setSavedContentOffset:(CGFloat)offset;
 
@@ -125,10 +121,21 @@
 // Returns the y content offset of the NTP collection view.
 - (CGFloat)scrollPosition;
 
-// Sets the NTP collection view's scroll position to |contentOffset|, unless it
+// Sets the NTP collection view's scroll position to `contentOffset`, unless it
 // is beyond the top of the feed. In that case, sets the scroll position to the
 // top of the feed.
-- (void)setContentOffsetUpToTopOfFeed:(CGFloat)contentOffset;
+- (void)setContentOffsetToTopOfFeed:(CGFloat)contentOffset;
+
+// Checks the content size of the feed and updates the bottom content inset to
+// ensure the feed is still scrollable to the minimum height.
+- (void)updateFeedInsetsForMinimumHeight;
+
+// Updates the scroll position to account for the feed promo being removed.
+- (void)updateScrollPositionForFeedTopSectionClosed;
+
+// Forces the elements that stick to the top when scrolling (eg. omnibox, feed
+// header) to update for the current scroll position.
+- (void)updateStickyElements;
 
 @end
 

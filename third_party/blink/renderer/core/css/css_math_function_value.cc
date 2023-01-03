@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,8 +35,9 @@ CSSMathFunctionValue::CSSMathFunctionValue(
 CSSMathFunctionValue* CSSMathFunctionValue::Create(
     const CSSMathExpressionNode* expression,
     CSSPrimitiveValue::ValueRange range) {
-  if (!expression)
+  if (!expression) {
     return nullptr;
+  }
   return MakeGarbageCollected<CSSMathFunctionValue>(expression, range);
 }
 
@@ -76,11 +77,11 @@ double CSSMathFunctionValue::ComputeDegrees() const {
 }
 
 double CSSMathFunctionValue::ComputeLengthPx(
-    const CSSToLengthConversionData& conversion_data) const {
+    const CSSLengthResolver& length_resolver) const {
   // |CSSToLengthConversionData| only resolves relative length units, but not
   // percentages.
   DCHECK_EQ(kCalcLength, expression_->Category());
-  return ClampToPermittedRange(expression_->ComputeLengthPx(conversion_data));
+  return ClampToPermittedRange(expression_->ComputeLengthPx(length_resolver));
 }
 
 bool CSSMathFunctionValue::AccumulateLengthArray(CSSLengthArray& length_array,
@@ -89,10 +90,11 @@ bool CSSMathFunctionValue::AccumulateLengthArray(CSSLengthArray& length_array,
 }
 
 Length CSSMathFunctionValue::ConvertToLength(
-    const CSSToLengthConversionData& conversion_data) const {
-  if (IsLength())
-    return Length::Fixed(ComputeLengthPx(conversion_data));
-  return Length(ToCalcValue(conversion_data));
+    const CSSLengthResolver& length_resolver) const {
+  if (IsLength()) {
+    return Length::Fixed(ComputeLengthPx(length_resolver));
+  }
+  return Length(ToCalcValue(length_resolver));
 }
 
 static String BuildCSSText(const String& expression) {
@@ -134,8 +136,9 @@ double CSSMathFunctionValue::ClampToPermittedRange(double value) const {
 }
 
 bool CSSMathFunctionValue::IsZero() const {
-  if (expression_->ResolvedUnitType() == UnitType::kUnknown)
+  if (expression_->ResolvedUnitType() == UnitType::kUnknown) {
     return false;
+  }
   return expression_->IsZero();
 }
 
@@ -150,7 +153,7 @@ bool CSSMathFunctionValue::IsComputationallyIndependent() const {
 }
 
 scoped_refptr<const CalculationValue> CSSMathFunctionValue::ToCalcValue(
-    const CSSToLengthConversionData& conversion_data) const {
+    const CSSLengthResolver& length_resolver) const {
   DCHECK_NE(value_range_in_target_context_,
             CSSPrimitiveValue::ValueRange::kInteger);
   DCHECK_NE(value_range_in_target_context_,
@@ -158,7 +161,7 @@ scoped_refptr<const CalculationValue> CSSMathFunctionValue::ToCalcValue(
   DCHECK_NE(value_range_in_target_context_,
             CSSPrimitiveValue::ValueRange::kPositiveInteger);
   return expression_->ToCalcValue(
-      conversion_data,
+      length_resolver,
       CSSPrimitiveValue::ConversionToLengthValueRange(PermittedValueRange()),
       AllowsNegativePercentageReference());
 }

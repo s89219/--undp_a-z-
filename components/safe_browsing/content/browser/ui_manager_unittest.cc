@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "components/safe_browsing/content/browser/safe_browsing_blocking_page.h"
 #include "components/safe_browsing/content/browser/safe_browsing_blocking_page_factory.h"
 #include "components/safe_browsing/content/browser/safe_browsing_controller_client.h"
-#include "components/safe_browsing/content/browser/ui_manager.h"
 #include "components/safe_browsing/core/browser/db/util.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/security_interstitials/content/security_interstitial_controller_client.h"
@@ -122,7 +121,6 @@ class TestSafeBrowsingBlockingPage : public SafeBrowsingBlockingPage {
                 "cpn_safe_browsing"),  // help_center_article_link
             true,                      // should_trigger_reporting
             /*history_service=*/nullptr,
-            /*get_user_population_callback=*/base::NullCallback(),
             /*navigation_observer_manager=*/nullptr,
             /*metrics_collector=*/nullptr,
             /*trigger_manager=*/nullptr) {
@@ -148,6 +146,27 @@ class TestSafeBrowsingBlockingPageFactory
     return new TestSafeBrowsingBlockingPage(delegate, web_contents,
                                             main_frame_url, unsafe_resources);
   }
+#if !BUILDFLAG(IS_ANDROID)
+  security_interstitials::SecurityInterstitialPage* CreateEnterpriseWarnPage(
+      BaseUIManager* ui_manager,
+      content::WebContents* web_contents,
+      const GURL& main_frame_url,
+      const SafeBrowsingBlockingPage::UnsafeResourceList& unsafe_resources)
+      override {
+    NOTREACHED();
+    return nullptr;
+  }
+
+  security_interstitials::SecurityInterstitialPage* CreateEnterpriseBlockPage(
+      BaseUIManager* ui_manager,
+      content::WebContents* web_contents,
+      const GURL& main_frame_url,
+      const SafeBrowsingBlockingPage::UnsafeResourceList& unsafe_resources)
+      override {
+    NOTREACHED();
+    return nullptr;
+  }
+#endif
 };
 
 class TestSafeBrowsingUIManagerDelegate
@@ -171,6 +190,13 @@ class TestSafeBrowsingUIManagerDelegate
       const GURL& page_url,
       const std::string& reason,
       int net_error_code) override {}
+#if !BUILDFLAG(IS_ANDROID)
+  void TriggerUrlFilteringInterstitialExtensionEventIfDesired(
+      content::WebContents* web_contents,
+      const GURL& page_url,
+      const std::string& threat_type,
+      safe_browsing::RTLookupResponse rt_lookup_response) override {}
+#endif
   prerender::NoStatePrefetchContents* GetNoStatePrefetchContentsIfExists(
       content::WebContents* web_contents) override {
     return nullptr;
@@ -236,7 +262,7 @@ class SafeBrowsingUIManagerTest : public content::RenderViewHostTestHarness {
       const char* url,
       bool is_subresource) {
     const content::GlobalRenderFrameHostId primary_main_frame_id =
-        web_contents()->GetMainFrame()->GetGlobalId();
+        web_contents()->GetPrimaryMainFrame()->GetGlobalId();
     security_interstitials::UnsafeResource resource;
     resource.url = GURL(url);
     resource.is_subresource = is_subresource;

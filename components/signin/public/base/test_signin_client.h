@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,8 +51,12 @@ class TestSigninClient : public SigninClient {
   // once there is a unit test that requires it.
   PrefService* GetPrefs() override;
 
+  // Returns true if clear primary account is allowed regardless of the consent
+  // level.
+  bool IsClearPrimaryAccountAllowed() const override;
+
   // Allow or disallow continuation of sign-out depending on value of
-  // |is_signout_allowed_|;
+  // |is_clear_primary_account_allowed_|;
   void PreSignOut(
       base::OnceCallback<void(SignoutDecision)> on_signout_decision_reached,
       signin_metrics::ProfileSignout signout_source_metric) override;
@@ -77,7 +81,9 @@ class TestSigninClient : public SigninClient {
     are_signin_cookies_allowed_ = value;
   }
 
-  void set_is_signout_allowed(bool value) { is_signout_allowed_ = value; }
+  void set_is_clear_primary_account_allowed(SignoutDecision value) {
+    is_clear_primary_account_allowed_ = value;
+  }
 
   // When |value| is true, network calls posted through DelayNetworkCall() are
   // delayed indefinitely.
@@ -96,7 +102,6 @@ class TestSigninClient : public SigninClient {
   std::unique_ptr<GaiaAuthFetcher> CreateGaiaAuthFetcher(
       GaiaAuthConsumer* consumer,
       gaia::GaiaSource source) override;
-  bool IsNonEnterpriseUser(const std::string& email) override;
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   absl::optional<account_manager::Account> GetInitialPrimaryAccount() override;
@@ -118,7 +123,7 @@ class TestSigninClient : public SigninClient {
   std::unique_ptr<network::mojom::CookieManager> cookie_manager_;
   bool are_signin_cookies_allowed_;
   bool network_calls_delayed_;
-  bool is_signout_allowed_;
+  SignoutDecision is_clear_primary_account_allowed_ = SignoutDecision::ALLOW;
 
   std::vector<base::OnceClosure> delayed_network_calls_;
 

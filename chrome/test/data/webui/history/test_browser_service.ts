@@ -1,9 +1,9 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {BrowserService, ForeignSession, QueryResult, RemoveVisitsRequest} from 'chrome://history/history.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
 import {assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
@@ -30,8 +30,9 @@ export class TestBrowserService extends TestBrowserProxy implements
       'queryHistory',
       'queryHistoryContinuation',
       'recordHistogram',
+      'recordLongTime',
       'removeVisits',
-      'startSignInFlow',
+      'startTurnOnSyncFlow',
     ]);
 
     this.queryResult_ = {info: createHistoryInfo(), value: []};
@@ -159,6 +160,11 @@ export class TestBrowserService extends TestBrowserProxy implements
   }
 
   recordTime() {}
+
+  recordLongTime(histogram: string, value: number) {
+    this.methodCalled('recordLongTime', histogram, value);
+  }
+
   removeBookmark() {}
-  startSignInFlow() {}
+  startTurnOnSyncFlow() {}
 }

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -136,6 +136,12 @@ public interface TabModel extends TabList {
      * @param tabId The id of the {@link Tab} to undo.
      */
     public void cancelTabClosure(int tabId);
+
+    /**
+     * Notifies observers that all tabs closure action has been completed and tabs have been
+     * restored.
+     */
+    public void notifyAllTabsClosureUndone();
 
     /**
      * Restores the most recent closure, bringing the tab(s) back into their original tab model or

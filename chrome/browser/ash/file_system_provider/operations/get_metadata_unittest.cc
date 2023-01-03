@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,13 +45,11 @@ void CreateRequestValueFromJSON(const std::string& json,
   using extensions::api::file_system_provider_internal::
       GetMetadataRequestedSuccess::Params;
 
-  base::JSONReader::ValueWithError parsed_json =
-      base::JSONReader::ReadAndReturnValueWithError(json);
-  ASSERT_TRUE(parsed_json.value) << parsed_json.error_message;
+  auto parsed_json = base::JSONReader::ReadAndReturnValueWithError(json);
+  ASSERT_TRUE(parsed_json.has_value()) << parsed_json.error().message;
 
-  ASSERT_TRUE(parsed_json.value->is_list());
-  std::unique_ptr<Params> params(
-      Params::Create(parsed_json.value->GetListDeprecated()));
+  ASSERT_TRUE(parsed_json->is_list());
+  std::unique_ptr<Params> params(Params::Create(parsed_json->GetList()));
   ASSERT_TRUE(params.get());
   *result = RequestValue::CreateForGetMetadataSuccess(std::move(params));
   ASSERT_TRUE(result->get());
@@ -135,11 +133,11 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Correct metadata for non-root.
   {
     EntryMetadata metadata;
-    metadata.name = std::make_unique<std::string>(kValidFileName);
-    metadata.modification_time = std::make_unique<ModificationTime>();
-    metadata.modification_time->additional_properties.SetString(
+    metadata.name = kValidFileName;
+    metadata.modification_time.emplace();
+    metadata.modification_time->additional_properties.Set(
         "value", "invalid-date-time");  // Invalid modification time is OK.
-    metadata.thumbnail = std::make_unique<std::string>(kValidThumbnailUrl);
+    metadata.thumbnail = kValidThumbnailUrl;
     EXPECT_TRUE(ValidateIDLEntryMetadata(
         metadata,
         ProvidedFileSystemInterface::METADATA_FIELD_NAME |
@@ -151,9 +149,9 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Correct metadata for non-root (without thumbnail).
   {
     EntryMetadata metadata;
-    metadata.name = std::make_unique<std::string>(kValidFileName);
-    metadata.modification_time = std::make_unique<ModificationTime>();
-    metadata.modification_time->additional_properties.SetString(
+    metadata.name = kValidFileName;
+    metadata.modification_time.emplace();
+    metadata.modification_time->additional_properties.Set(
         "value", "invalid-date-time");  // Invalid modification time is OK.
     EXPECT_TRUE(ValidateIDLEntryMetadata(
         metadata,
@@ -166,9 +164,9 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Correct metadata for root.
   {
     EntryMetadata metadata;
-    metadata.name = std::make_unique<std::string>();
-    metadata.modification_time = std::make_unique<ModificationTime>();
-    metadata.modification_time->additional_properties.SetString(
+    metadata.name.emplace();
+    metadata.modification_time.emplace();
+    metadata.modification_time->additional_properties.Set(
         "value", "invalid-date-time");  // Invalid modification time is OK.
     EXPECT_TRUE(ValidateIDLEntryMetadata(
         metadata,
@@ -181,7 +179,7 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Invalid characters in the name.
   {
     EntryMetadata metadata;
-    metadata.name = std::make_unique<std::string>("hello/world");
+    metadata.name = "hello/world";
     EXPECT_FALSE(ValidateIDLEntryMetadata(
         metadata, ProvidedFileSystemInterface::METADATA_FIELD_NAME,
         false /* root_path */));
@@ -190,7 +188,7 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Empty name for non-root.
   {
     EntryMetadata metadata;
-    metadata.name = std::make_unique<std::string>();
+    metadata.name.emplace();
     EXPECT_FALSE(ValidateIDLEntryMetadata(
         metadata, ProvidedFileSystemInterface::METADATA_FIELD_NAME,
         false /* root_path */));
@@ -207,7 +205,7 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Invalid thumbnail.
   {
     EntryMetadata metadata;
-    metadata.thumbnail = std::make_unique<std::string>("http://invalid-scheme");
+    metadata.thumbnail = "http://invalid-scheme";
     EXPECT_FALSE(ValidateIDLEntryMetadata(
         metadata, ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
         false /* root_path */));
@@ -216,7 +214,7 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, ValidateIDLEntryMetadata) {
   // Empty string for thumbnail.
   {
     EntryMetadata metadata;
-    metadata.thumbnail = std::make_unique<std::string>();
+    metadata.thumbnail.emplace();
     EXPECT_FALSE(ValidateIDLEntryMetadata(
         metadata, ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
         false /* root_path */));
@@ -230,13 +228,10 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute) {
   CallbackLogger callback_logger;
 
   GetMetadata get_metadata(
-      NULL, file_system_info_, base::FilePath(kDirectoryPath),
+      &dispatcher, file_system_info_, base::FilePath(kDirectoryPath),
       ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
       base::BindOnce(&CallbackLogger::OnGetMetadata,
                      base::Unretained(&callback_logger)));
-  get_metadata.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
 
@@ -245,10 +240,10 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute) {
   EXPECT_EQ(
       extensions::api::file_system_provider::OnGetMetadataRequested::kEventName,
       event->event_name);
-  base::ListValue* event_args = event->event_args.get();
-  ASSERT_EQ(1u, event_args->GetListDeprecated().size());
+  const base::Value::List& event_args = event->event_args;
+  ASSERT_EQ(1u, event_args.size());
 
-  const base::Value* options_as_value = &event_args->GetListDeprecated()[0];
+  const base::Value* options_as_value = &event_args[0];
   ASSERT_TRUE(options_as_value->is_dict());
 
   GetMetadataRequestedOptions options;
@@ -265,13 +260,10 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, Execute_NoListener) {
   CallbackLogger callback_logger;
 
   GetMetadata get_metadata(
-      NULL, file_system_info_, base::FilePath(kDirectoryPath),
+      &dispatcher, file_system_info_, base::FilePath(kDirectoryPath),
       ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
       base::BindOnce(&CallbackLogger::OnGetMetadata,
                      base::Unretained(&callback_logger)));
-  get_metadata.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_FALSE(get_metadata.Execute(kRequestId));
 }
@@ -281,7 +273,7 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
   CallbackLogger callback_logger;
 
   GetMetadata get_metadata(
-      NULL, file_system_info_, base::FilePath(kDirectoryPath),
+      &dispatcher, file_system_info_, base::FilePath(kDirectoryPath),
       ProvidedFileSystemInterface::METADATA_FIELD_IS_DIRECTORY |
           ProvidedFileSystemInterface::METADATA_FIELD_NAME |
           ProvidedFileSystemInterface::METADATA_FIELD_SIZE |
@@ -290,9 +282,6 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess) {
           ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
       base::BindOnce(&CallbackLogger::OnGetMetadata,
                      base::Unretained(&callback_logger)));
-  get_metadata.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
 
@@ -341,7 +330,7 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess_InvalidMetadata) {
   CallbackLogger callback_logger;
 
   GetMetadata get_metadata(
-      NULL, file_system_info_, base::FilePath(kDirectoryPath),
+      &dispatcher, file_system_info_, base::FilePath(kDirectoryPath),
       ProvidedFileSystemInterface::METADATA_FIELD_IS_DIRECTORY |
           ProvidedFileSystemInterface::METADATA_FIELD_NAME |
           ProvidedFileSystemInterface::METADATA_FIELD_SIZE |
@@ -350,9 +339,6 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnSuccess_InvalidMetadata) {
           ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
       base::BindOnce(&CallbackLogger::OnGetMetadata,
                      base::Unretained(&callback_logger)));
-  get_metadata.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
 
@@ -395,13 +381,10 @@ TEST_F(FileSystemProviderOperationsGetMetadataTest, OnError) {
   CallbackLogger callback_logger;
 
   GetMetadata get_metadata(
-      NULL, file_system_info_, base::FilePath(kDirectoryPath),
+      &dispatcher, file_system_info_, base::FilePath(kDirectoryPath),
       ProvidedFileSystemInterface::METADATA_FIELD_THUMBNAIL,
       base::BindOnce(&CallbackLogger::OnGetMetadata,
                      base::Unretained(&callback_logger)));
-  get_metadata.SetDispatchEventImplForTesting(
-      base::BindRepeating(&util::LoggingDispatchEventImpl::OnDispatchEventImpl,
-                          base::Unretained(&dispatcher)));
 
   EXPECT_TRUE(get_metadata.Execute(kRequestId));
 

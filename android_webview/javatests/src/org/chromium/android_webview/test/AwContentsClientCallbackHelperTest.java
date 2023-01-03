@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -197,7 +197,7 @@ public class AwContentsClientCallbackHelperTest {
         int onReceivedErrorCount = receivedErrorHelper.getCallCount();
         AwContentsClient.AwWebResourceRequest request = new AwContentsClient.AwWebResourceRequest();
         request.url = TEST_URL;
-        request.isMainFrame = true;
+        request.isOutermostMainFrame = true;
         AwContentsClient.AwWebResourceError error = new AwContentsClient.AwWebResourceError();
         error.errorCode = ERROR_CODE;
         error.description = ERROR_MESSAGE;

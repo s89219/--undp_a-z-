@@ -1,6 +1,8 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+#include "base/memory/raw_ptr.h"
 
 #import "chrome/browser/ui/cocoa/touchbar/browser_window_default_touch_bar.h"
 
@@ -90,7 +92,6 @@ NSImage* CreateNSImageFromIcon(const gfx::VectorIcon& icon,
 }
 
 // Creates an NSButton for the touch bar using an existing NSImage.
-API_AVAILABLE(macos(10.12.2))
 NSButton* CreateTouchBarButtonWithImage(NSImage* image,
                                         BrowserWindowDefaultTouchBar* owner,
                                         int command,
@@ -104,7 +105,6 @@ NSButton* CreateTouchBarButtonWithImage(NSImage* image,
 }
 
 // Creates an NSButton for the touch bar using a vector icon.
-API_AVAILABLE(macos(10.12.2))
 NSButton* CreateTouchBarButton(const gfx::VectorIcon& icon,
                                BrowserWindowDefaultTouchBar* owner,
                                int command,
@@ -114,38 +114,13 @@ NSButton* CreateTouchBarButton(const gfx::VectorIcon& icon,
                                        owner, command, tooltip_id);
 }
 
-ui::TouchBarAction TouchBarActionFromCommand(int command) {
-  switch (command) {
-    case IDC_BACK:
-      return ui::TouchBarAction::BACK;
-    case IDC_FORWARD:
-      return ui::TouchBarAction::FORWARD;
-    case IDC_STOP:
-      return ui::TouchBarAction::STOP;
-    case IDC_RELOAD:
-      return ui::TouchBarAction::RELOAD;
-    case IDC_HOME:
-      return ui::TouchBarAction::HOME;
-    case IDC_FOCUS_LOCATION:
-      return ui::TouchBarAction::SEARCH;
-    case IDC_BOOKMARK_THIS_TAB:
-      return ui::TouchBarAction::STAR;
-    case IDC_NEW_TAB:
-      return ui::TouchBarAction::NEW_TAB;
-    default:
-      NOTREACHED();
-      return ui::TouchBarAction::TOUCH_BAR_ACTION_COUNT;
-  }
-}
-
 // A class registered for C++ notifications. This is used to detect changes in
 // the profile preferences and the back/forward commands.
-class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
-    : public CommandObserver,
-      public BrowserListObserver,
-      public BookmarkTabHelperObserver,
-      public TabStripModelObserver,
-      public content::WebContentsObserver {
+class TouchBarNotificationBridge : public CommandObserver,
+                                   public BrowserListObserver,
+                                   public BookmarkTabHelperObserver,
+                                   public TabStripModelObserver,
+                                   public content::WebContentsObserver {
  public:
   TouchBarNotificationBridge(BrowserWindowDefaultTouchBar* owner,
                              Browser* browser)
@@ -263,8 +238,8 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
 
  private:
   BrowserWindowDefaultTouchBar* owner_;  // Weak.
-  Browser* browser_;                     // Weak.
-  content::WebContents* contents_;       // Weak.
+  raw_ptr<Browser> browser_;             // Weak.
+  raw_ptr<content::WebContents> contents_;  // Weak.
 
   // Used to monitor the optional home button pref.
   BooleanPrefMember show_home_button_;
@@ -580,7 +555,7 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
   if (isGoogle) {
     image = NSImageFromImageSkiaWithColorSpace(
-        gfx::CreateVectorIcon(kGoogleGLogoIcon, kTouchBarIconSize,
+        gfx::CreateVectorIcon(vector_icons::kGoogleGLogoIcon, kTouchBarIconSize,
                               gfx::kPlaceholderColor),
         base::mac::GetSRGBColorSpace());
   } else {
@@ -613,7 +588,6 @@ class API_AVAILABLE(macos(10.12.2)) TouchBarNotificationBridge
 
 - (void)executeCommand:(id)sender {
   int command = [sender tag];
-  ui::LogTouchBarUMA(TouchBarActionFromCommand(command));
   _browser->command_controller()->ExecuteCommand(command);
 }
 

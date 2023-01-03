@@ -3,8 +3,8 @@
     --cr-dialog-width: 340px;
   }
 
-  h1 {
-    color: var(--cr-primary-text-color);
+  h2 {
+    color: var(--cros-primary-text-color);
     font-family: 'Google Sans';
     font-size: 16px;
     font-weight: normal;
@@ -35,9 +35,10 @@
     --paper-tooltip-background: var(--cros-tooltip-background-color);
     --paper-tooltip-opacity: 1;
     --paper-tooltip-text-color: var(--cros-tooltip-label-color);
-    --paper-tooltip: {
-      margin-inline-end: 6px;
-    };
+  }
+
+  #dataUsageDataTooltip::part(tooltip) {
+    margin-inline-end: 6px;
   }
 
   #dataUsageDataTooltipText {
@@ -47,12 +48,10 @@
   }
 </style>
 <cr-dialog id="dialog">
-  <h1 slot="title">
-    $i18n{nearbyShareDataUsageDialogTitle}
-  </h1>
+  <div slot="title">$i18n{nearbyShareDataUsageDialogTitle}</div>
   <div slot="body">
     <cr-radio-group selected="[[selectedDataUsage_(
-        prefs.nearby_sharing.data_usage.value)]]">
+        settings.dataUsage)]]">
       <cr-radio-button id="dataUsageDataButton"
           name="[[NearbyShareDataUsage.ONLINE]]"
           aria-labelledby="dataUsageDataLabel"
@@ -63,7 +62,8 @@
           $i18n{nearbyShareDataUsageDataLabel}
           <iron-icon id="dataUsageDataIcon"
               icon="cr:info-outline"
-              aria-hidden="true">
+              aria-hidden="true"
+              tabIndex="0">
           </iron-icon>
           <paper-tooltip id="dataUsageDataTooltip"
               for="dataUsageDataIcon"

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,6 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
@@ -91,8 +90,9 @@
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
+#include "net/http/http_status_code.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
-#include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/record_ontransfersizeupdate_utils.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/self_deleting_url_loader_factory.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
@@ -134,9 +134,12 @@ class ResultRecordingClient : public network::mojom::URLLoaderClient {
     real_client_->OnReceiveEarlyHints(std::move(early_hints));
   }
 
-  void OnReceiveResponse(network::mojom::URLResponseHeadPtr response_head,
-                         mojo::ScopedDataPipeConsumerHandle body) override {
-    real_client_->OnReceiveResponse(std::move(response_head), std::move(body));
+  void OnReceiveResponse(
+      network::mojom::URLResponseHeadPtr response_head,
+      mojo::ScopedDataPipeConsumerHandle body,
+      absl::optional<mojo_base::BigBuffer> cached_metadata) override {
+    real_client_->OnReceiveResponse(std::move(response_head), std::move(body),
+                                    std::move(cached_metadata));
   }
 
   void OnReceiveRedirect(
@@ -152,17 +155,11 @@ class ResultRecordingClient : public network::mojom::URLLoaderClient {
                                    std::move(ack_callback));
   }
 
-  void OnReceiveCachedMetadata(mojo_base::BigBuffer data) override {
-    real_client_->OnReceiveCachedMetadata(std::move(data));
-  }
-
   void OnTransferSizeUpdated(int32_t transfer_size_diff) override {
-    real_client_->OnTransferSizeUpdated(transfer_size_diff);
-  }
+    network::RecordOnTransferSizeUpdatedUMA(
+        network::OnTransferSizeUpdatedFrom::kResultRecordingClient);
 
-  void OnStartLoadingResponseBody(
-      mojo::ScopedDataPipeConsumerHandle body) override {
-    real_client_->OnStartLoadingResponseBody(std::move(body));
+    real_client_->OnTransferSizeUpdated(transfer_size_diff);
   }
 
   void OnComplete(const network::URLLoaderCompletionStatus& status) override {
@@ -219,15 +216,6 @@ base::Time GetFileLastModifiedTime(const base::FilePath& filename) {
   return base::Time();
 }
 
-base::Time GetFileCreationTime(const base::FilePath& filename) {
-  if (base::PathExists(filename)) {
-    base::File::Info info;
-    if (base::GetFileInfo(filename, &info))
-      return info.creation_time;
-  }
-  return base::Time();
-}
-
 std::pair<base::FilePath, base::Time> ReadResourceFilePathAndLastModifiedTime(
     const extensions::ExtensionResource& resource,
     const base::FilePath& directory) {
@@ -235,17 +223,6 @@ std::pair<base::FilePath, base::Time> ReadResourceFilePathAndLastModifiedTime(
   // tolerates blocking operations.
   base::FilePath file_path = resource.GetFilePath();
   base::Time last_modified_time = GetFileLastModifiedTime(file_path);
-  base::Time dir_creation_time = GetFileCreationTime(directory);
-  int64_t delta_seconds = (last_modified_time - dir_creation_time).InSeconds();
-  if (delta_seconds >= 0) {
-    UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ResourceLastModifiedDelta",
-                                delta_seconds, 1, base::Days(30).InSeconds(),
-                                50);
-  } else {
-    UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ResourceLastModifiedNegativeDelta",
-                                -delta_seconds, 1, base::Days(30).InSeconds(),
-                                50);
-  }
   return std::make_pair(file_path, last_modified_time);
 }
 
@@ -492,21 +469,6 @@ class FileLoaderObserver : public content::FileURLLoaderObserver {
   FileLoaderObserver(const FileLoaderObserver&) = delete;
   FileLoaderObserver& operator=(const FileLoaderObserver&) = delete;
 
-  ~FileLoaderObserver() override {
-    base::AutoLock auto_lock(lock_);
-    UMA_HISTOGRAM_COUNTS_1M("ExtensionUrlRequest.TotalKbRead",
-                            bytes_read_ / 1024);
-    UMA_HISTOGRAM_COUNTS_1M("ExtensionUrlRequest.SeekPosition", seek_position_);
-    if (request_timer_.get())
-      UMA_HISTOGRAM_TIMES("ExtensionUrlRequest.Latency",
-                          request_timer_->Elapsed());
-  }
-
-  void OnStart() override {
-    base::AutoLock auto_lock(lock_);
-    request_timer_ = std::make_unique<base::ElapsedTimer>();
-  }
-
   void OnSeekComplete(int64_t result) override {
     DCHECK_EQ(seek_position_, 0);
     base::AutoLock auto_lock(lock_);
@@ -543,7 +505,6 @@ class FileLoaderObserver : public content::FileURLLoaderObserver {
  private:
   int64_t bytes_read_ = 0;
   int64_t seek_position_ = 0;
-  std::unique_ptr<base::ElapsedTimer> request_timer_;
   scoped_refptr<ContentVerifyJob> verify_job_;
   // To synchronize access to all members.
   base::Lock lock_;
@@ -580,7 +541,13 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
       const std::vector<std::string>& removed_headers,
       const net::HttpRequestHeaders& modified_headers,
       const net::HttpRequestHeaders& modified_cors_exempt_headers,
-      const absl::optional<GURL>& new_url) override {}
+      const absl::optional<GURL>& new_url) override {
+    // new_url isn't expected to have a value, but prefer it if it's populated.
+    if (new_url.has_value())
+      request_.url = new_url.value();
+
+    Start();
+  }
   void SetPriority(net::RequestPriority priority,
                    int32_t intra_priority_value) override {}
   void PauseReadingBodyFromNet() override {}
@@ -622,6 +589,15 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
   }
 
   void Start() {
+    // Owner of BrowserContext should ensure that all WebContents are closed
+    // before starting BrowserContext destruction, but this doesn't stop
+    // incoming URLLoaderFactory IPCs which may still be in-flight until (as
+    // part of BrowserContext destruction sequence) OnBrowserContextDestroyed
+    // below is called (which will prevent future IPCs by calling
+    // DisconnectReceiversAndDestroy).  Note that DisconnectReceiversAndDestroy
+    // will only stop future ExtensionURLLoaderFactory IPCs, but it won't stop
+    // future ExtensionURLLoader IPCs - this is okay, because the loader doesn't
+    // directly interact with the BrowserContext.
     if (browser_context_->ShutdownStarted()) {
       CompleteRequestAndDeleteThis(net::ERR_FAILED);
       return;
@@ -630,11 +606,29 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
     const std::string extension_id = request_.url.host();
     ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context_);
     scoped_refptr<const Extension> extension =
-        registry->GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
+        registry->GenerateInstalledExtensionsSet()->GetByIDorGUID(extension_id);
     const ExtensionSet& enabled_extensions = registry->enabled_extensions();
     const ProcessMap* process_map = ProcessMap::Get(browser_context_);
     bool incognito_enabled =
         extensions::util::IsIncognitoEnabled(extension_id, browser_context_);
+
+    // Redirect guid to id.
+    if (base::FeatureList::IsEnabled(
+            extensions_features::kExtensionDynamicURLRedirection) &&
+        extension && request_.url.host() == extension->guid()) {
+      GURL::Replacements replace_host;
+      replace_host.SetHostStr(extension->id());
+      GURL new_url = request_.url.ReplaceComponents(replace_host);
+      request_.url = new_url;
+      net::RedirectInfo redirect_info;
+      redirect_info.new_method = request_.method,
+      redirect_info.new_url = request_.url;
+      redirect_info.status_code = net::HTTP_TEMPORARY_REDIRECT;
+      network::mojom::URLResponseHeadPtr response_head(
+          ::network::mojom::URLResponseHead::New());
+      client_->OnReceiveRedirect(redirect_info, std::move(response_head));
+      return;
+    }
 
     if (!AllowExtensionResourceLoad(
             request_, request_.destination,
@@ -727,13 +721,8 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
       return;
     }
 
-    if (base::FeatureList::IsEnabled(network::features::kCombineResponseBody)) {
-      client_->OnReceiveResponse(std::move(head), std::move(consumer_handle));
-    } else {
-      client_->OnReceiveResponse(std::move(head),
-                                 mojo::ScopedDataPipeConsumerHandle());
-      client_->OnStartLoadingResponseBody(std::move(consumer_handle));
-    }
+    client_->OnReceiveResponse(std::move(head), std::move(consumer_handle),
+                               absl::nullopt);
 
     CompleteRequestAndDeleteThis(net::OK);
   }
@@ -917,6 +906,11 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
 
     // Return an unbound |pending_remote| if the |browser_context| has already
     // started shutting down.
+    //
+    // TODO(https://crbug.com/1376879): This should be a DCHECK or a CHECK
+    // (no new ExtensionURLLoaderFactory should be created after BrowserContext
+    // shutdown has started *if* all WebContents got closed before starting the
+    // shutdown).
     if (browser_context->ShutdownStarted())
       return pending_remote;
 
@@ -977,6 +971,7 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
       const net::MutableNetworkTrafficAnnotationTag& traffic_annotation)
       override {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+    DCHECK_EQ(kExtensionScheme, request.url.scheme());
     ExtensionURLLoader::CreateAndStart(std::move(loader), std::move(client),
                                        request, is_web_view_request_,
                                        render_process_id_, extension_info_map_,
@@ -1012,6 +1007,13 @@ class ExtensionURLLoaderFactory : public network::SelfDeletingURLLoaderFactory {
               "BrowserContextShutdownNotifierFactory") {
       DependsOn(ExtensionRegistryFactory::GetInstance());
       DependsOn(ProcessMapFactory::GetInstance());
+    }
+
+    content::BrowserContext* GetBrowserContextToUse(
+        content::BrowserContext* context) const override {
+      return ExtensionsBrowserClient::Get()->GetContextForRegularAndIncognito(
+          context, /*force_guest_profile=*/true,
+          /*force_system_profile=*/false);
     }
   };
 
@@ -1067,11 +1069,10 @@ CreateExtensionURLLoaderFactory(int render_process_id, int render_frame_id) {
   content::RenderProcessHost* process_host =
       content::RenderProcessHost::FromID(render_process_id);
   content::BrowserContext* browser_context = process_host->GetBrowserContext();
-  bool is_web_view_request =
-      WebViewGuest::FromFrameID(render_process_id, render_frame_id) != nullptr;
-
   content::RenderFrameHost* rfh =
       content::RenderFrameHost::FromID(render_process_id, render_frame_id);
+  bool is_web_view_request = WebViewGuest::FromRenderFrameHost(rfh) != nullptr;
+
   ukm::SourceIdObj ukm_source_id = ukm::kInvalidSourceIdObj;
   if (rfh)
     ukm_source_id = ukm::SourceIdObj::FromInt64(rfh->GetPageUkmSourceId());

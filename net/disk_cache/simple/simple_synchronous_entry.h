@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,10 +19,11 @@
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/strings/string_piece_forward.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
+#include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_file_tracker.h"
@@ -40,7 +41,7 @@ namespace disk_cache {
 class BackendFileOperations;
 class UnboundBackendFileOperations;
 
-NET_EXPORT_PRIVATE extern const base::Feature kSimpleCachePrefetchExperiment;
+NET_EXPORT_PRIVATE BASE_DECLARE_FEATURE(kSimpleCachePrefetchExperiment);
 NET_EXPORT_PRIVATE extern const char kSimpleCacheFullPrefetchBytesParam[];
 NET_EXPORT_PRIVATE extern const char
     kSimpleCacheTrailerPrefetchSpeculativeBytesParam[];
@@ -112,8 +113,8 @@ struct SimpleEntryCreationResults {
 
   SimpleEntryStat entry_stat;
   int32_t computed_trailer_prefetch_size = -1;
-  int result;
-  bool created;
+  int result = net::OK;
+  bool created = false;
 };
 
 struct SimpleEntryCloseResults {
@@ -144,15 +145,15 @@ class SimpleSynchronousEntry {
     // Partial CRC of data immediately preceeding this read. Only relevant if
     // request_update_crc is set.
     uint32_t previous_crc32;
-    bool request_update_crc;
+    bool request_update_crc = false;
     bool request_verify_crc;  // only relevant if request_update_crc is set
   };
 
   struct ReadResult {
-    ReadResult() : crc_updated(false) {}
+    ReadResult() = default;
     int result;
     uint32_t updated_crc32;  // only relevant if crc_updated set
-    bool crc_updated;
+    bool crc_updated = false;
   };
 
   struct WriteRequest {
@@ -173,10 +174,10 @@ class SimpleSynchronousEntry {
   };
 
   struct WriteResult {
-    WriteResult() : crc_updated(false) {}
+    WriteResult() = default;
     int result;
     uint32_t updated_crc32;  // only relevant if crc_updated set
-    bool crc_updated;
+    bool crc_updated = false;
   };
 
   struct SparseRequest {

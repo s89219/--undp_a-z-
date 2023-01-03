@@ -1,12 +1,12 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {focusWithoutInk} from '//resources/js/cr/ui/focus_without_ink.m.js';
-import {beforeNextRender} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
+import {focusWithoutInk} from 'chrome://resources/ash/common/focus_without_ink_js.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
+import {beforeNextRender} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {Route, Router} from '../router.js';
+import {Route, Router} from './router.js';
 
 import {RouteObserverBehavior} from './route_observer_behavior.js';
 
@@ -109,4 +109,11 @@ export class RouteOriginBehaviorInterface {
    * @param {string} value
    */
   addFocusConfig(route, value) {}
+
+  /**
+   * @param {!Route} newRoute
+   * @param {!Route=} prevRoute
+   * @protected
+   */
+  currentRouteChanged(newRoute, prevRoute) {}
 }

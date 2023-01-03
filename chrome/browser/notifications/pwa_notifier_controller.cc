@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,11 @@
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/notifications/notifier_dataset.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_features.h"
 #include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/app_update.h"
 #include "components/services/app_service/public/cpp/permission.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
+#include "third_party/abseil-cpp/absl/types/variant.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/public/cpp/notifier_id.h"
 
@@ -48,7 +48,8 @@ std::vector<ash::NotifierMetadata> PwaNotifierController::GetNotifierList(
               apps::PermissionType::kNotifications) {
             continue;
           }
-          DCHECK(permission->value->tristate_value.has_value());
+          DCHECK(absl::holds_alternative<apps::TriState>(
+              permission->value->value));
           // Do not include notifier metadata for system apps.
           if (update.InstallReason() == apps::InstallReason::kSystem) {
             return;
@@ -76,7 +77,7 @@ std::vector<ash::NotifierMetadata> PwaNotifierController::GetNotifierList(
         std::make_pair(app_data.publisher_id, app_data.app_id));
   }
   if (!package_to_app_ids_.empty()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&PwaNotifierController::CallLoadIcons,
                                   weak_ptr_factory_.GetWeakPtr()));
   }
@@ -91,11 +92,12 @@ void PwaNotifierController::SetNotifierEnabled(
       apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(profile));
   // We should not set permissions for a profile we are not currently observing.
   DCHECK(observed_profile_->IsSameOrParent(profile));
-  auto permission = apps::mojom::Permission::New();
-  permission->permission_type = apps::mojom::PermissionType::kNotifications;
-  permission->value = apps::mojom::PermissionValue::NewTristateValue(
-      enabled ? apps::mojom::TriState::kAllow : apps::mojom::TriState::kBlock);
-  permission->is_managed = false;
+
+  auto permission = std::make_unique<apps::Permission>(
+      apps::PermissionType::kNotifications,
+      enabled ? std::make_unique<apps::PermissionValue>(apps::TriState::kAllow)
+              : std::make_unique<apps::PermissionValue>(apps::TriState::kBlock),
+      /*is_managed=*/false);
   apps::AppServiceProxy* service =
       apps::AppServiceProxyFactory::GetForProfile(profile);
   service->SetPermission(notifier_id.id, std::move(permission));
@@ -112,23 +114,12 @@ void PwaNotifierController::CallLoadIcon(const std::string& app_id,
   DCHECK(apps::AppServiceProxyFactory::IsAppServiceAvailableForProfile(
       observed_profile_));
 
-  if (base::FeatureList::IsEnabled(features::kAppServiceLoadIconWithoutMojom)) {
-    apps::AppServiceProxyFactory::GetForProfile(observed_profile_)
-        ->LoadIcon(apps::AppType::kWeb, app_id, apps::IconType::kStandard,
-                   message_center::kQuickSettingIconSizeInDp,
-                   allow_placeholder_icon,
-                   base::BindOnce(&PwaNotifierController::OnLoadIcon,
-                                  weak_ptr_factory_.GetWeakPtr(), app_id));
-  } else {
-    apps::AppServiceProxyFactory::GetForProfile(observed_profile_)
-        ->LoadIcon(apps::mojom::AppType::kWeb, app_id,
-                   apps::mojom::IconType::kStandard,
-                   message_center::kQuickSettingIconSizeInDp,
-                   allow_placeholder_icon,
-                   apps::MojomIconValueToIconValueCallback(
-                       base::BindOnce(&PwaNotifierController::OnLoadIcon,
-                                      weak_ptr_factory_.GetWeakPtr(), app_id)));
-  }
+  apps::AppServiceProxyFactory::GetForProfile(observed_profile_)
+      ->LoadIcon(apps::AppType::kWeb, app_id, apps::IconType::kStandard,
+                 message_center::kQuickSettingIconSizeInDp,
+                 allow_placeholder_icon,
+                 base::BindOnce(&PwaNotifierController::OnLoadIcon,
+                                weak_ptr_factory_.GetWeakPtr(), app_id));
 }
 
 void PwaNotifierController::OnLoadIcon(const std::string& app_id,

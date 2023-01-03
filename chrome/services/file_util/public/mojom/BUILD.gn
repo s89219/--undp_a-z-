@@ -1,4 +1,4 @@
-# Copyright 2017 The Chromium Authors. All rights reserved.
+# Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -27,9 +27,12 @@ mojom("mojom") {
     public_deps += [ "//components/services/filesystem/public/mojom" ]
   }
 
-  if (enable_xz_extractor) {
-    sources += [ "xz_file_extractor.mojom" ]
-    enabled_features += [ "xz_extractor" ]
+  if (enable_extractors) {
+    sources += [
+      "constants.mojom",
+      "single_file_extractor.mojom",
+    ]
+    enabled_features += [ "extractors" ]
   }
 
   if (safe_browsing_mode == 1 && enable_maldoca) {

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,9 +6,13 @@
 
 #include "base/logging.h"
 #include "media/base/video_frame.h"
+#include "media/cast/common/openscreen_conversion_helpers.h"
 #include "media/cast/common/sender_encoded_frame.h"
 #include "media/cast/constants.h"
 #include "third_party/libvpx/source/libvpx/vpx/vp8cx.h"
+#include "third_party/openscreen/src/cast/streaming/encoded_frame.h"
+
+using Dependency = openscreen::cast::EncodedFrame::Dependency;
 
 namespace media {
 namespace cast {
@@ -211,27 +215,27 @@ void VpxEncoder::Encode(scoped_refptr<media::VideoFrame> video_frame,
   vpx_image_t vpx_image;
   vpx_image_t* const result = vpx_img_wrap(
       &vpx_image, vpx_format, frame_size.width(), frame_size.height(), 1,
-      video_frame->data(VideoFrame::kYPlane));
+      video_frame->writable_data(VideoFrame::kYPlane));
   DCHECK_EQ(result, &vpx_image);
   switch (vpx_format) {
     case VPX_IMG_FMT_I420:
       vpx_image.planes[VPX_PLANE_Y] =
-          video_frame->visible_data(VideoFrame::kYPlane);
+          video_frame->GetWritableVisibleData(VideoFrame::kYPlane);
       vpx_image.planes[VPX_PLANE_U] =
-          video_frame->visible_data(VideoFrame::kUPlane);
+          video_frame->GetWritableVisibleData(VideoFrame::kUPlane);
       vpx_image.planes[VPX_PLANE_V] =
-          video_frame->visible_data(VideoFrame::kVPlane);
+          video_frame->GetWritableVisibleData(VideoFrame::kVPlane);
       vpx_image.stride[VPX_PLANE_Y] = video_frame->stride(VideoFrame::kYPlane);
       vpx_image.stride[VPX_PLANE_U] = video_frame->stride(VideoFrame::kUPlane);
       vpx_image.stride[VPX_PLANE_V] = video_frame->stride(VideoFrame::kVPlane);
       break;
     case VPX_IMG_FMT_NV12:
       vpx_image.planes[VPX_PLANE_Y] =
-          video_frame->visible_data(VideoFrame::kYPlane);
+          video_frame->GetWritableVisibleData(VideoFrame::kYPlane);
       // In libvpx, the UV plane of NV12 frames is represented by two planes
       // with the same stride, shifted by one byte.
       vpx_image.planes[VPX_PLANE_U] =
-          video_frame->visible_data(VideoFrame::kUVPlane);
+          video_frame->GetWritableVisibleData(VideoFrame::kUVPlane);
       vpx_image.planes[VPX_PLANE_V] = vpx_image.planes[VPX_PLANE_U] + 1;
       vpx_image.stride[VPX_PLANE_Y] = video_frame->stride(VideoFrame::kYPlane);
       vpx_image.stride[VPX_PLANE_U] = video_frame->stride(VideoFrame::kUVPlane);
@@ -284,17 +288,17 @@ void VpxEncoder::Encode(scoped_refptr<media::VideoFrame> video_frame,
       continue;
     if (pkt->data.frame.flags & VPX_FRAME_IS_KEY) {
       // TODO(hubbe): Replace "dependency" with a "bool is_key_frame".
-      encoded_frame->dependency = EncodedFrame::KEY;
+      encoded_frame->dependency = Dependency::kKeyFrame;
       encoded_frame->referenced_frame_id = encoded_frame->frame_id;
     } else {
-      encoded_frame->dependency = EncodedFrame::DEPENDENT;
+      encoded_frame->dependency = Dependency::kDependent;
       // Frame dependencies could theoretically be relaxed by looking for the
       // VPX_FRAME_IS_DROPPABLE flag, but in recent testing (Oct 2014), this
       // flag never seems to be set.
       encoded_frame->referenced_frame_id = encoded_frame->frame_id - 1;
     }
     encoded_frame->rtp_timestamp =
-        RtpTimeTicks::FromTimeDelta(video_frame->timestamp(), kVideoFrequency);
+        ToRtpTimeTicks(video_frame->timestamp(), kVideoFrequency);
     encoded_frame->reference_time = reference_time;
     encoded_frame->data.assign(
         static_cast<const uint8_t*>(pkt->data.frame.buf),
@@ -318,6 +322,7 @@ void VpxEncoder::Encode(scoped_refptr<media::VideoFrame> video_frame,
   // used as the lossy utilization.
   const double actual_bitrate =
       encoded_frame->data.size() * 8.0 / predicted_frame_duration.InSecondsF();
+  encoded_frame->encoder_bitrate = actual_bitrate;
   const double target_bitrate = 1000.0 * config_.rc_target_bitrate;
   DCHECK_GT(target_bitrate, 0.0);
   const double bitrate_utilization = actual_bitrate / target_bitrate;
@@ -328,18 +333,18 @@ void VpxEncoder::Encode(scoped_refptr<media::VideoFrame> video_frame,
   // Side note: If it was possible for the encoder to encode within the target
   // number of bytes, the |perfect_quantizer| will be in the range [0.0,63.0].
   // If it was never possible, the value will be greater than 63.0.
-  encoded_frame->lossy_utilization = perfect_quantizer / 63.0;
+  encoded_frame->lossiness = perfect_quantizer / 63.0;
 
   DVLOG(2) << "VPX encoded frame_id " << encoded_frame->frame_id
            << ", sized: " << encoded_frame->data.size()
            << ", encoder_utilization: " << encoded_frame->encoder_utilization
-           << ", lossy_utilization: " << encoded_frame->lossy_utilization
+           << ", lossiness: " << encoded_frame->lossiness
            << " (quantizer chosen by the encoder was " << quantizer << ')';
 
-  if (encoded_frame->dependency == EncodedFrame::KEY) {
+  if (encoded_frame->dependency == Dependency::kKeyFrame) {
     key_frame_requested_ = false;
   }
-  if (encoded_frame->dependency == EncodedFrame::KEY) {
+  if (encoded_frame->dependency == Dependency::kKeyFrame) {
     encoding_speed_acc_.Reset(kHighestEncodingSpeed, video_frame->timestamp());
   } else {
     // Equivalent encoding speed considering both cpu_used setting and

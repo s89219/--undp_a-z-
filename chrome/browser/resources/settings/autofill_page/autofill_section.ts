@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,26 @@
  */
 
 import 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
-import 'chrome://resources/cr_elements/shared_style_css.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import 'chrome://resources/cr_elements/cr_shared_style.css.js';
 import 'chrome://resources/polymer/v3_0/iron-flex-layout/iron-flex-layout-classes.js';
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 import '../controls/extension_controlled_indicator.js';
 import '../controls/settings_toggle_button.js';
 import '../prefs/prefs.js';
 import './address_edit_dialog.js';
 import './address_remove_confirmation_dialog.js';
-import './passwords_shared_css.js';
+import './passwords_shared.css.js';
 import '../i18n_setup.js';
 
-import {I18nMixin} from '//resources/js/i18n_mixin.js';
+import {getInstance as getAnnouncerInstance} from '//resources/cr_elements/cr_a11y_announcer/cr_a11y_announcer.js';
+import {I18nMixin} from '//resources/cr_elements/i18n_mixin.js';
+import {loadTimeData} from '//resources/js/load_time_data.js';
 import {CrActionMenuElement} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
-import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
+import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {focusWithoutInk} from 'chrome://resources/js/cr/ui/focus_without_ink.m.js';
+import {focusWithoutInk} from 'chrome://resources/js/focus_without_ink.js';
 import {DomRepeatEvent, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {SettingsToggleButtonElement} from '../controls/settings_toggle_button.js';
@@ -76,7 +78,7 @@ export class SettingsAutofillSectionElement extends
   }
 
   prefs: {[key: string]: any};
-  addresses: Array<chrome.autofillPrivate.AddressEntry>;
+  addresses: chrome.autofillPrivate.AddressEntry[];
   activeAddress: chrome.autofillPrivate.AddressEntry|null;
   private showAddressDialog_: boolean;
   private showAddressRemoveConfirmationDialog_: boolean;
@@ -105,7 +107,7 @@ export class SettingsAutofillSectionElement extends
 
     // Create listener functions.
     const setAddressesListener =
-        (addressList: Array<chrome.autofillPrivate.AddressEntry>) => {
+        (addressList: chrome.autofillPrivate.AddressEntry[]) => {
           this.addresses = addressList;
         };
 
@@ -118,7 +120,7 @@ export class SettingsAutofillSectionElement extends
     this.setPersonalDataListener_ = setPersonalDataListener;
 
     // Request initial data.
-    this.autofillManager_.getAddressList(setAddressesListener);
+    this.autofillManager_.getAddressList().then(setAddressesListener);
 
     // Listen for changes.
     this.autofillManager_.setPersonalDataManagerListener(
@@ -182,7 +184,15 @@ export class SettingsAutofillSectionElement extends
     if (this.shadowRoot!
             .querySelector('settings-address-remove-confirmation-dialog')!
             .wasConfirmed()) {
+      if (this.addresses.length === 1) {
+        // When user removes the last address, move focus to the Add Address
+        // button when the dialog closes. Otherwise, focus gets lost.
+        this.activeDialogAnchor_ = this.$.addAddress;
+      }
+
       this.autofillManager_.removeAddress(this.activeAddress!.guid as string);
+      getAnnouncerInstance().announce(
+          loadTimeData.getString('addressRemovedMessage'));
     }
     this.showAddressRemoveConfirmationDialog_ = false;
     assert(this.activeDialogAnchor_);
@@ -201,7 +211,7 @@ export class SettingsAutofillSectionElement extends
   /**
    * @return Whether the list exists and has items.
    */
-  private hasSome_(list: Array<Object>): boolean {
+  private hasSome_(list: Object[]): boolean {
     return !!(list && list.length);
   }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/rand_util.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/clock.h"
 #include "base/time/tick_clock.h"
 #include "base/values.h"
@@ -285,11 +285,11 @@ UpgradeDetector::GetRelaunchWindowPolicyValue() {
   DCHECK(policy_value->is_dict());
 
   const base::Value* entries = policy_value->FindListKey("entries");
-  if (!entries || entries->GetListDeprecated().empty())
+  if (!entries || entries->GetList().empty())
     return absl::nullopt;
 
   // Currently only single daily window is supported.
-  const auto& window = entries->GetListDeprecated().front();
+  const auto& window = entries->GetList().front();
   const absl::optional<int> hour = window.FindIntPath("start.hour");
   const absl::optional<int> minute = window.FindIntPath("start.minute");
   const absl::optional<int> duration_mins = window.FindIntKey("duration_mins");
@@ -345,6 +345,15 @@ void UpgradeDetector::NotifyCriticalUpgradeInstalled() {
 
   for (auto& observer : observer_list_)
     observer.OnCriticalUpgradeInstalled();
+}
+
+void UpgradeDetector::NotifyUpdateDeferred(bool use_notification) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  if (observer_list_.empty())
+    return;
+
+  for (auto& observer : observer_list_)
+    observer.OnUpdateDeferred(use_notification);
 }
 
 void UpgradeDetector::NotifyUpdateOverCellularAvailable() {
@@ -424,7 +433,7 @@ void UpgradeDetector::OnRelaunchPrefChanged() {
     return;
 
   pref_change_task_pending_ = true;
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(
                      [](base::WeakPtr<UpgradeDetector> weak_this) {
                        if (weak_this) {

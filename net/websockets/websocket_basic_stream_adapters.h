@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "net/spdy/spdy_stream.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/websockets/websocket_basic_stream.h"
+#include "net/websockets/websocket_quic_spdy_stream.h"
 
 namespace net {
 
@@ -115,13 +116,13 @@ class NET_EXPORT_PRIVATE WebSocketSpdyStreamAdapter
 
   // True if SpdyStream::Delegate::OnHeadersSent() has been called.
   // SpdyStream::SendData() must not be called before that.
-  bool headers_sent_;
+  bool headers_sent_ = false;
 
   // The underlying SpdyStream.
   base::WeakPtr<SpdyStream> stream_;
 
   // The error code with which SpdyStream was closed.
-  int stream_error_;
+  int stream_error_ = ERR_CONNECTION_CLOSED;
 
   raw_ptr<Delegate> delegate_;
 
@@ -140,7 +141,7 @@ class NET_EXPORT_PRIVATE WebSocketSpdyStreamAdapter
   // Write length saved to be passed to |write_callback_|.  This is necessary
   // because SpdyStream::Delegate::OnDataSent() does not pass number of bytes
   // written.
-  int write_length_;
+  int write_length_ = 0;
 
   // Write callback saved for asynchronous writes (all writes are asynchronous).
   CompletionOnceCallback write_callback_;
@@ -148,6 +149,45 @@ class NET_EXPORT_PRIVATE WebSocketSpdyStreamAdapter
   NetLogWithSource net_log_;
 
   base::WeakPtrFactory<WebSocketSpdyStreamAdapter> weak_factory_{this};
+};
+
+// Adapter to make WebSocketBasicStream use an HTTP/3 stream.
+// Sets itself as a delegate of the WebSocketQuicSpdyStream. Forwards
+// headers-related methods to Delegate.
+class NET_EXPORT_PRIVATE WebSocketQuicStreamAdapter
+    : public WebSocketBasicStream::Adapter,
+      public WebSocketQuicSpdyStream::Delegate {
+ public:
+  explicit WebSocketQuicStreamAdapter(
+      WebSocketQuicSpdyStream* websocket_quic_spdy_stream);
+
+  WebSocketQuicStreamAdapter(const WebSocketQuicStreamAdapter&) = delete;
+  WebSocketQuicStreamAdapter& operator=(const WebSocketQuicStreamAdapter&) =
+      delete;
+
+  ~WebSocketQuicStreamAdapter() override;
+
+  // WebSocketBasicStream::Adapter methods.
+  // TODO(momoka): Add functions that are needed to implement
+  // WebSocketHttp3HandshakeStream.
+  int Read(IOBuffer* buf,
+           int buf_len,
+           CompletionOnceCallback callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            CompletionOnceCallback callback,
+            const NetworkTrafficAnnotationTag& traffic_annotation) override;
+  void Disconnect() override;
+  bool is_initialized() const override;
+
+  // WebSocketQuicSpdyStream::Delegate methods.
+  void ClearStream() override;
+  void OnBodyAvailable() override;
+
+ private:
+  //  `websocket_quic_spdy_stream_` notifies this object of its destruction,
+  //  because they may be destroyed in any order.
+  raw_ptr<WebSocketQuicSpdyStream> websocket_quic_spdy_stream_;
 };
 
 }  // namespace net

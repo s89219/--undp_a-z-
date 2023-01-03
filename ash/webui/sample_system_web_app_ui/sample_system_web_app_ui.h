@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,22 +13,30 @@
 
 #include "ash/webui/sample_system_web_app_ui/mojom/sample_system_web_app_ui.mojom.h"
 #include "ash/webui/sample_system_web_app_ui/sample_page_handler.h"
+#include "ash/webui/sample_system_web_app_ui/url_constants.h"
+#include "ash/webui/system_apps/public/system_web_app_ui_config.h"
 #include "content/public/browser/webui_config.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "ui/webui/mojo_web_ui_controller.h"
+#include "ui/webui/resources/cr_components/color_change_listener/color_change_listener.mojom.h"
+
+namespace ui {
+class ColorChangeHandler;
+}
 
 namespace ash {
 
-// The WebUIConfig for chrome://sample-system-web-app/.
-class SampleSystemWebAppUIConfig : public content::WebUIConfig {
- public:
-  SampleSystemWebAppUIConfig();
-  ~SampleSystemWebAppUIConfig() override;
+class SampleSystemWebAppUI;
 
-  std::unique_ptr<content::WebUIController> CreateWebUIController(
-      content::WebUI* web_ui) override;
+// The WebUIConfig for chrome://sample-system-web-app/.
+class SampleSystemWebAppUIConfig
+    : public SystemWebAppUIConfig<SampleSystemWebAppUI> {
+ public:
+  SampleSystemWebAppUIConfig()
+      : SystemWebAppUIConfig(kChromeUISampleSystemWebAppHost,
+                             SystemWebAppType::SAMPLE) {}
 };
 
 class SampleSystemWebAppUI : public ui::MojoWebUIController,
@@ -41,6 +49,10 @@ class SampleSystemWebAppUI : public ui::MojoWebUIController,
 
   void BindInterface(
       mojo::PendingReceiver<mojom::sample_swa::PageHandlerFactory> factory);
+
+  void BindInterface(
+      mojo::PendingReceiver<color_change_listener::mojom::PageHandler>
+          receiver);
 
   void CreateParentPage(
       mojo::PendingRemote<mojom::sample_swa::ChildUntrustedPage> child_page,
@@ -60,6 +72,10 @@ class SampleSystemWebAppUI : public ui::MojoWebUIController,
   // matches the lifetime of the page. If the WebUIController is re-used for
   // same-origin navigations, it is recreated when the navigation commits.
   std::unique_ptr<PageHandler> sample_page_handler_;
+
+  // The color change handler notifies the WebUI when the color provider
+  // changes.
+  std::unique_ptr<ui::ColorChangeHandler> color_provider_handler_;
 
   // Called navigating to a WebUI page to create page handler.
   void WebUIPrimaryPageChanged(content::Page& page) override;

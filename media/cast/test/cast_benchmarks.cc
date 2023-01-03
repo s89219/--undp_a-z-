@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -172,7 +172,7 @@ class CastTransportWrapper : public CastTransport {
     transport_->SendRtcpFromRtpReceiver();
   }
 
-  void SetOptions(const base::DictionaryValue& options) final {}
+  void SetOptions(const base::Value::Dict& options) final {}
 
  private:
   std::unique_ptr<CastTransport> transport_;

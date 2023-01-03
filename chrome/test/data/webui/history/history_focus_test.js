@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,6 @@ GEN_INCLUDE(['//chrome/test/data/webui/polymer_interactive_ui_test.js']);
 GEN('#include "build/build_config.h"');
 GEN('#include "content/public/test/browser_test.h"');
 
-/* eslint-disable no-var */
-
 const HistoryFocusTest = class extends PolymerInteractiveUITest {
   /** @override */
   get browsePreload() {
@@ -24,7 +22,7 @@ const HistoryFocusTest = class extends PolymerInteractiveUITest {
 var HistoryToolbarFocusTest = class extends HistoryFocusTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_toolbar_focus_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_toolbar_focus_test.js';
   }
 };
 
@@ -42,7 +40,7 @@ GEN('#undef MAYBE_All');
 var HistoryListFocusTest = class extends HistoryFocusTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_list_focus_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_list_focus_test.js';
   }
 };
 
@@ -54,7 +52,7 @@ TEST_F('HistoryListFocusTest', 'DISABLED_All', function() {
 var HistorySyncedDeviceManagerFocusTest = class extends HistoryFocusTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_synced_device_manager_focus_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_synced_device_manager_focus_test.js';
   }
 };
 
@@ -65,7 +63,7 @@ TEST_F('HistorySyncedDeviceManagerFocusTest', 'All', function() {
 var HistoryItemFocusTest = class extends HistoryFocusTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_item_focus_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_item_focus_test.js';
   }
 };
 

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@ import static org.chromium.android_webview.test.AwActivityTestRule.WAIT_TIMEOUT_
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.graphics.Point;
 import android.support.test.InstrumentationRegistry;
 
 import androidx.test.filters.SmallTest;
@@ -729,10 +730,11 @@ public class AndroidScrollIntegrationTest {
         }
 
         @Override
-        public void onFlingStartGesture(int scrollOffsetY, int scrollExtentY) {}
+        public void onFlingStartGesture(
+                int scrollOffsetY, int scrollExtentY, boolean isDirectionUp) {}
 
         @Override
-        public void onScrollUpdateGestureConsumed() {
+        public void onScrollUpdateGestureConsumed(Point rootScrollOffset) {
             mOnScrollUpdateGestureConsumedHelper.notifyCalled();
         }
     }

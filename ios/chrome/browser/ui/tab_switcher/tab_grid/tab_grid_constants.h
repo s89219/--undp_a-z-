@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,5 +75,8 @@ extern const CGFloat kThumbStripSlideInHeight;
 // The distance travelled by the thumb strip's plus sign button during the
 // slide-out animation of the transition from Peeked to Revealed state.
 extern const CGFloat kThumbStripPlusSignButtonSlideOutDistance;
+
+// Alpha of the background color of the toolbar.
+extern const CGFloat kToolbarBackgroundAlpha;
 
 #endif  // IOS_CHROME_BROWSER_UI_TAB_SWITCHER_TAB_GRID_TAB_GRID_CONSTANTS_H_

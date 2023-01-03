@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -195,7 +195,11 @@ TEST_F(ShimlessRmaMojoToProtoTest, ErrorsMatch) {
        {mojom::RmadErrorCode::kCannotWrite,
         rmad::RmadErrorCode::RMAD_ERROR_CANNOT_WRITE},
        {mojom::RmadErrorCode::kCannotSaveLog,
-        rmad::RmadErrorCode::RMAD_ERROR_CANNOT_SAVE_LOG}});
+        rmad::RmadErrorCode::RMAD_ERROR_CANNOT_SAVE_LOG},
+       {mojom::RmadErrorCode::kCannotRecordBrowserAction,
+        rmad::RmadErrorCode::RMAD_ERROR_CANNOT_RECORD_BROWSER_ACTION},
+       {mojom::RmadErrorCode::kUsbNotFound,
+        rmad::RmadErrorCode::RMAD_ERROR_USB_NOT_FOUND}});
 
   TestProtoToMojo(enums);
   TestMojoToProto(enums);
@@ -292,7 +296,10 @@ TEST_F(ShimlessRmaMojoToProtoTest, WriteProtectDisableCompleteActionMatch) {
                 RMAD_WP_DISABLE_COMPLETE_ASSEMBLE_DEVICE},
            {mojom::WriteProtectDisableCompleteAction::kCompleteKeepDeviceOpen,
             rmad::WriteProtectDisableCompleteState::
-                RMAD_WP_DISABLE_COMPLETE_KEEP_DEVICE_OPEN}});
+                RMAD_WP_DISABLE_COMPLETE_KEEP_DEVICE_OPEN},
+           {mojom::WriteProtectDisableCompleteAction::kCompleteNoOp,
+            rmad::WriteProtectDisableCompleteState::
+                RMAD_WP_DISABLE_COMPLETE_NO_OP}});
 
   TestProtoToMojo(enums);
   TestMojoToProto(enums);

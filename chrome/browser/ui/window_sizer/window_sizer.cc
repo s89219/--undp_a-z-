@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/functional/function_ref.h"
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/browser_window_state.h"
+#include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/prefs/pref_service.h"
 #include "ui/base/ui_base_switches.h"
@@ -32,6 +34,20 @@ namespace {
 const int kMinVisibleHeight = 30;
 // Minimum width of the visible part of a window.
 const int kMinVisibleWidth = 30;
+
+BrowserWindow* FindMostRecentBrowserWindow(
+    base::FunctionRef<bool(Browser*)> matcher) {
+  const BrowserList* browser_list = BrowserList::GetInstance();
+  for (auto it = browser_list->begin_browsers_ordered_by_activation();
+       it != browser_list->end_browsers_ordered_by_activation(); ++it) {
+    Browser* last_active = *it;
+    if (last_active && matcher(last_active)) {
+      DCHECK(last_active->window());
+      return last_active->window();
+    }
+  }
+  return nullptr;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // An implementation of WindowSizer::StateProvider that gets the last active
@@ -53,14 +69,15 @@ class DefaultStateProvider : public WindowSizer::StateProvider {
     if (!browser_ || !browser_->profile()->GetPrefs())
       return false;
 
-    const base::Value* pref = chrome::GetWindowPlacementDictionaryReadOnly(
-        chrome::GetWindowName(browser_), browser_->profile()->GetPrefs());
+    const base::Value::Dict* pref =
+        chrome::GetWindowPlacementDictionaryReadOnly(
+            chrome::GetWindowName(browser_), browser_->profile()->GetPrefs());
 
     absl::optional<gfx::Rect> pref_bounds = RectFromPrefixedPref(pref, "");
     absl::optional<gfx::Rect> pref_area =
         RectFromPrefixedPref(pref, "work_area_");
     absl::optional<bool> maximized =
-        pref ? pref->FindBoolPath("maximized") : absl::nullopt;
+        pref ? pref->FindBool("maximized") : absl::nullopt;
 
     if (!pref_bounds || !maximized)
       return false;
@@ -78,29 +95,45 @@ class DefaultStateProvider : public WindowSizer::StateProvider {
       gfx::Rect* bounds,
       ui::WindowShowState* show_state) const override {
     DCHECK(show_state);
-    // Applications and devtools are always restored with the same position.
-    if (browser_ && (browser_->is_type_app() || browser_->is_type_app_popup() ||
-                     browser_->is_type_devtools()))
+    // Legacy Applications and Devtools are always restored with the same
+    // position.
+    if (browser_ && !web_app::AppBrowserController::IsWebApp(browser_) &&
+        (browser_->is_type_app() || browser_->is_type_app_popup() ||
+         browser_->is_type_devtools())) {
       return false;
+    }
 
     // If a reference browser is set, use its window. Otherwise find last
-    // active. Panels are never used as reference browsers as panels are
-    // specially positioned.
-    BrowserWindow* window = NULL;
+    // active. Depending on the type of browser being created, different logic
+    // determines if a particular browser can be a reference browser.
+    BrowserWindow* window = nullptr;
     // Window may be null if browser is just starting up.
     if (browser_ && browser_->window()) {
       window = browser_->window();
+    } else if (web_app::AppBrowserController::IsWebApp(browser_)) {
+      window = FindMostRecentBrowserWindow(
+          [profile = browser_->profile(),
+           app_id = browser_->app_controller()->app_id(),
+           display = display::Screen::GetScreen()->GetDisplayForNewWindows()](
+              Browser* browser) {
+            if (browser->profile() != profile)
+              return false;
+            if (!web_app::AppBrowserController::IsForWebApp(browser, app_id)) {
+              return false;
+            }
+#if BUILDFLAG(IS_CHROMEOS)
+            if (display::Screen::GetScreen()->GetDisplayNearestWindow(
+                    browser->window()->GetNativeWindow()) != display) {
+              return false;
+            }
+#endif
+            if (!browser->window()->IsOnCurrentWorkspace())
+              return false;
+            return true;
+          });
     } else {
-      const BrowserList* browser_list = BrowserList::GetInstance();
-      for (auto it = browser_list->begin_browsers_ordered_by_activation();
-           it != browser_list->end_browsers_ordered_by_activation(); ++it) {
-        Browser* last_active = *it;
-        if (last_active && last_active->is_type_normal()) {
-          window = last_active->window();
-          DCHECK(window);
-          break;
-        }
-      }
+      window = FindMostRecentBrowserWindow(
+          [](Browser* browser) { return browser->is_type_normal(); });
     }
 
     if (window) {
@@ -120,17 +153,17 @@ class DefaultStateProvider : public WindowSizer::StateProvider {
 
  private:
   static absl::optional<gfx::Rect> RectFromPrefixedPref(
-      const base::Value* pref,
+      const base::Value::Dict* pref,
       const std::string& prefix) {
     if (!pref)
       return absl::nullopt;
 
     absl::optional<int> top, left, bottom, right;
 
-    top = pref->FindIntKey(prefix + "top");
-    left = pref->FindIntKey(prefix + "left");
-    bottom = pref->FindIntKey(prefix + "bottom");
-    right = pref->FindIntKey(prefix + "right");
+    top = pref->FindInt(prefix + "top");
+    left = pref->FindInt(prefix + "left");
+    bottom = pref->FindInt(prefix + "bottom");
+    right = pref->FindInt(prefix + "right");
 
     if (!top || !left || !bottom || !right)
       return absl::nullopt;

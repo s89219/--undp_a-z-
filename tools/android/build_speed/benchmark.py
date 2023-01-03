@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """Tool to run build benchmarks (e.g. incremental build time).
@@ -40,7 +40,7 @@ from typing import Dict, Callable, Iterator, List, Tuple, Optional
 
 USE_PYTHON_3 = f'{__file__} will only run under python3.'
 
-_SRC_ROOT = pathlib.Path(__file__).parents[3].resolve()
+_SRC_ROOT = pathlib.Path(__file__).resolve().parents[3]
 sys.path.append(str(_SRC_ROOT / 'build' / 'android'))
 from pylib import constants
 import devil_chromium
@@ -114,70 +114,102 @@ class Benchmark:
 
 
 _BENCHMARKS = [
-    Benchmark('chrome_java_nosig', {
-        'kind': 'incremental_build_and_install',
-        'from_string': 'sInstance = instance;',
-        'to_string': 'sInstance = instance;String test = "Test";',
-        # pylint: disable=line-too-long
-        'change_file': 'chrome/android/java/src/org/chromium/chrome/browser/AppHooks.java',
-    }),
-    Benchmark('chrome_java_sig', {
-        'kind': 'incremental_build_and_install',
-        'from_string': 'AppHooksImpl sInstance;',
-        'to_string': 'AppHooksImpl sInstance;public void NewInterfaceMethod(){}',
-        # pylint: disable=line-too-long
-        'change_file': 'chrome/android/java/src/org/chromium/chrome/browser/AppHooks.java',
-    }),
-    Benchmark('chrome_java_res', {
-        'kind': 'incremental_build_and_install',
-        'from_string': '14181C',
-        'to_string': '14181D',
-        'change_file': 'chrome/android/java/res/values/colors.xml',
-    }),
-    Benchmark('module_java_public_sig', {
-        'kind': 'incremental_build_and_install',
-        'from_string': 'INVALID_WINDOW_INDEX = -1',
-        'to_string': 'INVALID_WINDOW_INDEX = -2',
-        # pylint: disable=line-too-long
-        'change_file': 'chrome/browser/tabmodel/android/java/src/org/chromium/chrome/browser/tabmodel/TabWindowManager.java',
-    }),
-    Benchmark('module_java_internal_nosig', {
-        'kind': 'incremental_build_and_install',
-        'from_string': '"TabModelSelector',
-        'to_string': '"DifferentUniqueString',
-        # pylint: disable=line-too-long
-        'change_file': 'chrome/browser/tabmodel/internal/android/java/src/org/chromium/chrome/browser/tabmodel/TabWindowManagerImpl.java',
-    }),
-    Benchmark('base_java_nosig', {
-        'kind': 'incremental_build_and_install',
-        'from_string': '"SysUtil',
-        'to_string': '"SysUtil1',
-        'change_file': 'base/android/java/src/org/chromium/base/SysUtils.java',
-    }),
-    Benchmark('base_java_sig', {
-        'kind': 'incremental_build_and_install',
-        'from_string': 'SysUtils";',
-        'to_string': 'SysUtils";public void NewInterfaceMethod(){}',
-        'change_file': 'base/android/java/src/org/chromium/base/SysUtils.java',
-    }),
-    Benchmark('turbine_headers', {
-        'kind': 'incremental_build',
-        'from_string': '# found in the LICENSE file.',
-        'to_string': '#temporary_edit_for_benchmark.py',
-        'change_file': 'build/android/gyp/turbine.py',
-    }),
-    Benchmark('compile_java', {
-        'kind': 'incremental_build',
-        'from_string': '# found in the LICENSE file.',
-        'to_string': '#temporary_edit_for_benchmark.py',
-        'change_file': 'build/android/gyp/compile_java.py',
-    }),
-    Benchmark('write_build_config', {
-        'kind': 'incremental_build',
-        'from_string': '# found in the LICENSE file.',
-        'to_string': '#temporary_edit_for_benchmark.py',
-        'change_file': 'build/android/gyp/write_build_config.py',
-    }),
+    Benchmark(
+        'chrome_java_nosig',
+        {
+            'kind':
+            'incremental_build_and_install',
+            'from_string':
+            'sInstance = instance;',
+            'to_string':
+            'sInstance = instance;String test = "Test";',
+            # pylint: disable=line-too-long
+            'change_file':
+            'chrome/android/java/src/org/chromium/chrome/browser/AppHooks.java',
+        }),
+    Benchmark(
+        'chrome_java_sig',
+        {
+            'kind':
+            'incremental_build_and_install',
+            'from_string':
+            'AppHooksImpl sInstance;',
+            'to_string':
+            'AppHooksImpl sInstance;public void NewInterfaceMethod(){}',
+            # pylint: disable=line-too-long
+            'change_file':
+            'chrome/android/java/src/org/chromium/chrome/browser/AppHooks.java',
+        }),
+    Benchmark(
+        'chrome_java_res', {
+            'kind': 'incremental_build_and_install',
+            'from_string': '14181C',
+            'to_string': '14181D',
+            'change_file': 'chrome/android/java/res/values/colors.xml',
+        }),
+    Benchmark(
+        'module_java_public_sig',
+        {
+            'kind':
+            'incremental_build_and_install',
+            'from_string':
+            'INVALID_WINDOW_INDEX = -1',
+            'to_string':
+            'INVALID_WINDOW_INDEX = -2',
+            # pylint: disable=line-too-long
+            'change_file':
+            'chrome/browser/tabmodel/android/java/src/org/chromium/chrome/browser/tabmodel/TabWindowManager.java',
+        }),
+    Benchmark(
+        'module_java_internal_nosig',
+        {
+            'kind':
+            'incremental_build_and_install',
+            'from_string':
+            '"TabModelSelector',
+            'to_string':
+            '"DifferentUniqueString',
+            # pylint: disable=line-too-long
+            'change_file':
+            'chrome/browser/tabmodel/internal/android/java/src/org/chromium/chrome/browser/tabmodel/TabWindowManagerImpl.java',
+        }),
+    Benchmark(
+        'base_java_nosig', {
+            'kind': 'incremental_build_and_install',
+            'from_string': '"SysUtil',
+            'to_string': '"SysUtil1',
+            'change_file':
+            'base/android/java/src/org/chromium/base/SysUtils.java',
+        }),
+    Benchmark(
+        'base_java_sig', {
+            'kind': 'incremental_build_and_install',
+            'from_string': 'SysUtils";',
+            'to_string': 'SysUtils";public void NewInterfaceMethod(){}',
+            'change_file':
+            'base/android/java/src/org/chromium/base/SysUtils.java',
+        }),
+    Benchmark(
+        'turbine_headers', {
+            'kind': 'incremental_build',
+            'from_string': '# found in the LICENSE file.',
+            'to_string': '#temporary_edit_for_benchmark.py',
+            'change_file': 'build/android/gyp/turbine.py',
+        }),
+    Benchmark(
+        'compile_java', {
+            'kind': 'incremental_build',
+            'from_string': '# found in the LICENSE file.',
+            'to_string': '#temporary_edit_for_benchmark.py',
+            'change_file': 'build/android/gyp/compile_java.py',
+        }),
+    Benchmark(
+        'write_build_config', {
+            'kind': 'incremental_build',
+            'from_string': '# found in the LICENSE file.',
+            'to_string': '#temporary_edit_for_benchmark.py',
+            'change_file': 'build/android/gyp/write_build_config.py',
+        }),
 ]
 
 
@@ -244,7 +276,9 @@ def _emulator(emulator_avd_name):
                         expected='no running emulators')
     avd_config = _AVD_CONFIG_DIR / emulator_avd_name
     is_verbose = logging.getLogger().isEnabledFor(logging.INFO)
-    cmd = [_AVD_SCRIPT, 'start', '--avd-config', avd_config]
+    # Always start with --wipe-data to get consistent results. It adds around
+    # 20 seconds to startup timing but is essential to avoid Timeout errors.
+    cmd = [_AVD_SCRIPT, 'start', '--wipe-data', '--avd-config', avd_config]
     if not is_verbose:
         cmd.append('-q')
     logging.debug('Running AVD cmd: %s', cmd)
@@ -446,11 +480,13 @@ def main():
     parser = argparse.ArgumentParser(
         description=__doc__ + _list_benchmarks(),
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('benchmark',
-                        nargs='+',
-                        metavar='BENCHMARK',
-                        choices=list(_all_benchmark_and_suite_names()),
-                        help='Names of benchmark(s) or suites(s) to run.')
+    parser.add_argument(
+        'benchmark',
+        nargs='*',
+        metavar='BENCHMARK',
+        # Allow empty to just test `gn gen` speed.
+        choices=list(_all_benchmark_and_suite_names()) + [[]],
+        help='Names of benchmark(s) or suites(s) to run.')
     parser.add_argument('--bundle',
                         action='store_true',
                         help='Switch the default target from apk to bundle.')

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 
 #include "base/component_export.h"
 #include "base/debug/crash_logging.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/unguessable_token.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/isolation_info.h"
@@ -62,6 +62,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
     net::IsolationInfo isolation_info;
     bool disable_secure_dns = false;
     bool has_user_activation = false;
+    bool allow_cookies_from_browser = false;
     mojo::PendingRemote<mojom::CookieAccessObserver> cookie_observer;
     mojo::PendingRemote<mojom::URLLoaderNetworkServiceObserver>
         url_loader_network_observer;
@@ -144,6 +145,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   bool skip_service_worker = false;
   bool corb_detachable = false;
   mojom::RequestMode mode = mojom::RequestMode::kNoCors;
+  mojom::IPAddressSpace target_address_space = mojom::IPAddressSpace::kUnknown;
   mojom::CredentialsMode credentials_mode = mojom::CredentialsMode::kInclude;
   mojom::RedirectMode redirect_mode = mojom::RedirectMode::kFollow;
   std::string fetch_integrity;
@@ -152,6 +154,7 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
       mojom::RequestDestination::kEmpty;
   scoped_refptr<ResourceRequestBody> request_body;
   bool keepalive = false;
+  bool browsing_topics = false;
   bool has_user_gesture = false;
   bool enable_load_timing = false;
   bool enable_upload_progress = false;
@@ -167,10 +170,8 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE) ResourceRequest {
   absl::optional<base::UnguessableToken> fetch_window_id;
   absl::optional<std::string> devtools_request_id;
   absl::optional<std::string> devtools_stack_id;
-  bool is_signed_exchange_prefetch_cache_enabled = false;
   bool is_fetch_like_api = false;
   bool is_favicon = false;
-  bool obey_origin_policy = false;
   absl::optional<base::UnguessableToken> recursive_prefetch_token;
   absl::optional<TrustedParams> trusted_params;
   // |trust_token_params| uses a custom absl::optional-like type to make the

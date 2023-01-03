@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ class WebUIIOSDataSource : public base::SupportsUserData {
 
   static WebUIIOSDataSource* Create(const std::string& source_name);
 
-  // Adds a WebUIIOS data source to |browser_state|.
+  // Adds a WebUIIOS data source to `browser_state`.
   static void Add(BrowserState* browser_state, WebUIIOSDataSource* source);
 
   // Adds a string keyed to its name to our dictionary.
@@ -37,7 +37,7 @@ class WebUIIOSDataSource : public base::SupportsUserData {
   // Adds a string keyed to its name to our dictionary.
   virtual void AddString(const std::string& name, const std::string& value) = 0;
 
-  // Adds a localized string with resource |ids| keyed to its name to our
+  // Adds a localized string with resource `ids` keyed to its name to our
   // dictionary.
   virtual void AddLocalizedString(const std::string& name, int ids) = 0;
 
@@ -53,6 +53,10 @@ class WebUIIOSDataSource : public base::SupportsUserData {
   // Call this to enable a virtual "strings.js" (or "strings.m.js" for modules)
   // URL that provides translations and dynamic data when requested.
   virtual void UseStringsJs() = 0;
+
+  // Call this to enable i18n replacements in JS files (needed by Web UIs that
+  // use Web Components).
+  virtual void EnableReplaceI18nInJS() = 0;
 
   // Adds a mapping between a path name and a resource to return.
   virtual void AddResourcePath(const std::string& path, int resource_id) = 0;

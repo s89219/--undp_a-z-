@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -51,10 +52,6 @@ class ClientTagBasedModelTypeProcessor : public ModelTypeProcessor,
  public:
   ClientTagBasedModelTypeProcessor(ModelType type,
                                    const base::RepeatingClosure& dump_stack);
-  // Used only for unit-tests.
-  ClientTagBasedModelTypeProcessor(ModelType type,
-                                   const base::RepeatingClosure& dump_stack,
-                                   bool commit_only);
 
   ClientTagBasedModelTypeProcessor(const ClientTagBasedModelTypeProcessor&) =
       delete;
@@ -78,6 +75,7 @@ class ClientTagBasedModelTypeProcessor : public ModelTypeProcessor,
   void UntrackEntityForStorageKey(const std::string& storage_key) override;
   void UntrackEntityForClientTagHash(
       const ClientTagHash& client_tag_hash) override;
+  std::vector<std::string> GetAllTrackedStorageKeys() const override;
   bool IsEntityUnsynced(const std::string& storage_key) override;
   base::Time GetEntityCreationTime(
       const std::string& storage_key) const override;
@@ -86,13 +84,14 @@ class ClientTagBasedModelTypeProcessor : public ModelTypeProcessor,
   void OnModelStarting(ModelTypeSyncBridge* bridge) override;
   void ModelReadyToSync(std::unique_ptr<MetadataBatch> batch) override;
   bool IsTrackingMetadata() const override;
-  std::string TrackedAccountId() override;
-  std::string TrackedCacheGuid() override;
+  std::string TrackedAccountId() const override;
+  std::string TrackedCacheGuid() const override;
   void ReportError(const ModelError& error) override;
   absl::optional<ModelError> GetError() const override;
   base::WeakPtr<ModelTypeControllerDelegate> GetControllerDelegate() override;
   const sync_pb::EntitySpecifics& GetPossiblyTrimmedRemoteSpecifics(
       const std::string& storage_key) const override;
+  base::WeakPtr<ModelTypeChangeProcessor> GetWeakPtr() override;
 
   // ModelTypeProcessor implementation.
   void ConnectSync(std::unique_ptr<CommitQueue> worker) override;
@@ -105,7 +104,12 @@ class ClientTagBasedModelTypeProcessor : public ModelTypeProcessor,
       const FailedCommitResponseDataList& error_response_list) override;
   void OnCommitFailed(SyncCommitError commit_error) override;
   void OnUpdateReceived(const sync_pb::ModelTypeState& type_state,
-                        UpdateResponseDataList updates) override;
+                        UpdateResponseDataList updates,
+                        absl::optional<sync_pb::GarbageCollectionDirective>
+                            gc_directive) override;
+  void StorePendingInvalidations(
+      std::vector<sync_pb::ModelTypeState::Invalidation> invalidations_to_store)
+      override;
 
   // ModelTypeControllerDelegate implementation.
   // |start_callback| will never be called synchronously.
@@ -163,15 +167,18 @@ class ClientTagBasedModelTypeProcessor : public ModelTypeProcessor,
   // Validates the update specified by the input parameters and returns whether
   // it should get further processed. If the update is incorrect, this function
   // also reports an error.
-  bool ValidateUpdate(const sync_pb::ModelTypeState& model_type_state,
-                      const UpdateResponseDataList& updates);
+  bool ValidateUpdate(
+      const sync_pb::ModelTypeState& model_type_state,
+      const UpdateResponseDataList& updates,
+      const absl::optional<sync_pb::GarbageCollectionDirective>& gc_directive);
 
   // Handle the first update received from the server after being enabled. If
   // the data type does not support incremental updates, this will be called for
   // any server update.
   absl::optional<ModelError> OnFullUpdateReceived(
       const sync_pb::ModelTypeState& type_state,
-      UpdateResponseDataList updates);
+      UpdateResponseDataList updates,
+      absl::optional<sync_pb::GarbageCollectionDirective> gc_directive);
 
   // Handle any incremental updates received from the server after being
   // enabled.
@@ -285,17 +292,11 @@ class ClientTagBasedModelTypeProcessor : public ModelTypeProcessor,
 
   std::unique_ptr<ProcessorEntityTracker> entity_tracker_;
 
-  // If the processor should behave as if |type_| is one of the commit only
-  // model types. For this processor, being commit only means that on commit
-  // confirmation, we should delete local data, because the model side never
-  // intends to read it. This includes both data and metadata.
-  const bool commit_only_;
-
   SEQUENCE_CHECKER(sequence_checker_);
 
   // WeakPtrFactory for this processor for ModelTypeController (only gets
   // invalidated during destruction).
-  base::WeakPtrFactory<ModelTypeControllerDelegate>
+  base::WeakPtrFactory<ClientTagBasedModelTypeProcessor>
       weak_ptr_factory_for_controller_{this};
 
   // WeakPtrFactory for this processor which will be sent to sync thread.

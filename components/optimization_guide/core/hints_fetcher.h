@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -184,7 +184,8 @@ class HintsFetcher {
   base::TimeTicks hints_fetch_start_time_;
 
   // Owned by OptimizationGuideKeyedService and outlives |this|.
-  raw_ptr<OptimizationGuideLogger> optimization_guide_logger_;
+  raw_ptr<OptimizationGuideLogger, DanglingUntriaged>
+      optimization_guide_logger_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "ash/constants/tray_background_view_catalog.h"
 #include "ash/focus_cycler.h"
 #include "ash/login/ui/lock_screen.h"
 #include "ash/public/cpp/session/session_observer.h"
@@ -29,13 +30,18 @@
 #include "ash/system/tray/tray_event_filter.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/bind.h"
+#include "base/functional/callback.h"
+#include "base/functional/callback_helpers.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/scoped_multi_source_observation.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/aura/window.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/models/menu_model.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/color/color_id.h"
 #include "ui/compositor/animation_throughput_reporter.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/animation/tween.h"
@@ -45,6 +51,7 @@
 #include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/transform.h"
+#include "ui/gfx/geometry/transform_util.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/views/accessibility/view_accessibility.h"
@@ -203,8 +210,8 @@ class TrayBackgroundView::TrayBackgroundViewSessionChangeHandler
   // in the current task sequence are run.
   void DisableShowAnimationInSequence() {
     base::ScopedClosureRunner callback = tray_->DisableShowAnimation();
-    base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                     callback.Release());
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, callback.Release());
   }
 
   TrayBackgroundView* const tray_;
@@ -214,11 +221,14 @@ class TrayBackgroundView::TrayBackgroundViewSessionChangeHandler
 ////////////////////////////////////////////////////////////////////////////////
 // TrayBackgroundView
 
-TrayBackgroundView::TrayBackgroundView(Shelf* shelf,
-                                       RoundedCornerBehavior corner_behavior)
+TrayBackgroundView::TrayBackgroundView(
+    Shelf* shelf,
+    TrayBackgroundViewCatalogName catalog_name,
+    RoundedCornerBehavior corner_behavior)
     // Note the ink drop style is ignored.
     : ActionableView(TrayPopupInkDropStyle::FILL_BOUNDS),
       shelf_(shelf),
+      catalog_name_(catalog_name),
       tray_container_(new TrayContainer(shelf, this)),
       is_active_(false),
       separator_visible_(true),
@@ -243,6 +253,7 @@ TrayBackgroundView::TrayBackgroundView(Shelf* shelf,
   views::FocusRing::Get(this)->SetPathGenerator(
       std::make_unique<HighlightPathGenerator>(this,
                                                kTrayBackgroundFocusPadding));
+  views::FocusRing::Get(this)->SetColorId(ui::kColorAshFocusRing);
   SetFocusPainter(nullptr);
 
   views::HighlightPathGenerator::Install(
@@ -260,6 +271,13 @@ TrayBackgroundView::TrayBackgroundView(Shelf* shelf,
   // Start the tray items not visible, because visibility changes are animated.
   views::View::SetVisible(false);
 }
+
+void TrayBackgroundView::SetPressedCallback(
+    base::RepeatingCallback<void(const ui::Event& event)> pressed_callback) {
+  pressed_callback_ = std::move(pressed_callback);
+}
+
+void TrayBackgroundView::OnTrayActivated(const ui::Event& event) {}
 
 TrayBackgroundView::~TrayBackgroundView() {
   Shell::Get()->system_tray_model()->virtual_keyboard()->RemoveObserver(this);
@@ -288,7 +306,12 @@ void TrayBackgroundView::InitializeBubbleAnimations(
 void TrayBackgroundView::SetVisiblePreferred(bool visible_preferred) {
   if (visible_preferred_ == visible_preferred)
     return;
+
   visible_preferred_ = visible_preferred;
+  base::UmaHistogramEnumeration(
+      visible_preferred_ ? "Ash.StatusArea.TrayBackgroundView.Shown"
+                         : "Ash.StatusArea.TrayBackgroundView.Hidden",
+      catalog_name_);
   StartVisibilityAnimation(GetEffectiveVisibility());
 
   // We need to update which trays overflow after showing or hiding a tray.
@@ -302,6 +325,12 @@ bool TrayBackgroundView::IsShowingMenu() const {
   return context_menu_runner_ && context_menu_runner_->IsRunning();
 }
 
+void TrayBackgroundView::SetRoundedCornerBehavior(
+    RoundedCornerBehavior corner_behavior) {
+  corner_behavior_ = corner_behavior;
+  UpdateBackground();
+}
+
 gfx::RoundedCornersF TrayBackgroundView::GetRoundedCorners() {
   const float radius = ShelfConfig::Get()->control_border_radius();
   if (shelf_->IsHorizontalAlignment()) {
@@ -312,6 +341,10 @@ gfx::RoundedCornersF TrayBackgroundView::GetRoundedCorners() {
                                         radius, radius,
                                         kUnifiedTrayNonRoundedSideRadius};
     switch (corner_behavior_) {
+      case kNotRounded:
+        return {
+            kUnifiedTrayNonRoundedSideRadius, kUnifiedTrayNonRoundedSideRadius,
+            kUnifiedTrayNonRoundedSideRadius, kUnifiedTrayNonRoundedSideRadius};
       case kAllRounded:
         return {radius, radius, radius, radius};
       case kStartRounded:
@@ -322,6 +355,10 @@ gfx::RoundedCornersF TrayBackgroundView::GetRoundedCorners() {
   }
 
   switch (corner_behavior_) {
+    case kNotRounded:
+      return {
+          kUnifiedTrayNonRoundedSideRadius, kUnifiedTrayNonRoundedSideRadius,
+          kUnifiedTrayNonRoundedSideRadius, kUnifiedTrayNonRoundedSideRadius};
     case kAllRounded:
       return {radius, radius, radius, radius};
     case kStartRounded:
@@ -489,12 +526,11 @@ std::unique_ptr<ui::Layer> TrayBackgroundView::RecreateLayer() {
 void TrayBackgroundView::OnThemeChanged() {
   ActionableView::OnThemeChanged();
   UpdateBackground();
+  layer()->SetColor(
+      ShelfConfig::Get()->GetShelfControlButtonColor(GetWidget()));
   StyleUtil::ConfigureInkDropAttributes(this, StyleUtil::kBaseColor |
                                                   StyleUtil::kInkDropOpacity |
                                                   StyleUtil::kHighlightOpacity);
-  views::FocusRing::Get(this)->SetColor(
-      AshColorProvider::Get()->GetControlsLayerColor(
-          AshColorProvider::ControlsLayerType::kFocusRingColor));
 }
 
 void TrayBackgroundView::OnVirtualKeyboardVisibilityChanged() {
@@ -532,13 +568,20 @@ void TrayBackgroundView::UpdateAfterStatusAreaCollapseChange() {
 
 void TrayBackgroundView::BubbleResized(const TrayBubbleView* bubble_view) {}
 
+void TrayBackgroundView::OnAnyBubbleVisibilityChanged(
+    views::Widget* bubble_widget,
+    bool visible) {}
+
 void TrayBackgroundView::UpdateBackground() {
   layer()->SetRoundedCornerRadius(GetRoundedCorners());
   layer()->SetIsFastRoundedCorner(true);
   layer()->SetBackgroundBlur(
       ShelfConfig::Get()->GetShelfControlButtonBlurRadius());
-  layer()->SetColor(ShelfConfig::Get()->GetShelfControlButtonColor());
   layer()->SetClipRect(GetBackgroundBounds());
+
+  const views::Widget* widget = GetWidget();
+  if (widget)
+    layer()->SetColor(ShelfConfig::Get()->GetShelfControlButtonColor(widget));
 }
 
 void TrayBackgroundView::OnAnimationAborted() {
@@ -616,11 +659,11 @@ void TrayBackgroundView::BounceInAnimation() {
   initial_scale.Scale3d(kAnimationBounceScaleFactor,
                         kAnimationBounceScaleFactor, 1);
 
-  gfx::Transform initial_state =
-      gfx::TransformAboutPivot(GetLocalBounds().CenterPoint(), initial_scale);
+  const gfx::Transform initial_state = gfx::TransformAboutPivot(
+      gfx::RectF(GetLocalBounds()).CenterPoint(), initial_scale);
 
   gfx::Transform scale_about_pivot = gfx::TransformAboutPivot(
-      GetLocalBounds().CenterPoint(), gfx::Transform());
+      gfx::RectF(GetLocalBounds()).CenterPoint(), gfx::Transform());
   scale_about_pivot.Translate(bounce_up_location);
 
   gfx::Transform move_down;
@@ -672,8 +715,8 @@ void TrayBackgroundView::HideAnimation() {
   gfx::Transform scale;
   scale.Scale3d(kAnimationBounceScaleFactor, kAnimationBounceScaleFactor, 1);
 
-  gfx::Transform scale_about_pivot =
-      gfx::TransformAboutPivot(GetLocalBounds().CenterPoint(), scale);
+  const gfx::Transform scale_about_pivot = gfx::TransformAboutPivot(
+      gfx::RectF(GetLocalBounds()).CenterPoint(), scale);
 
   ui::AnimationThroughputReporter reporter(
       layer()->GetAnimator(),
@@ -745,6 +788,19 @@ gfx::Rect TrayBackgroundView::GetBackgroundBounds() const {
 }
 
 bool TrayBackgroundView::PerformAction(const ui::Event& event) {
+  base::UmaHistogramEnumeration("Ash.StatusArea.TrayBackgroundView.Pressed",
+                                catalog_name_);
+
+  base::ScopedClosureRunner scoped_runner(
+      base::BindOnce(&TrayBackgroundView::OnTrayActivated,
+                     base::Unretained(this), std::cref(event)));
+
+  // `pressed_callback_` can be provided to override default press handling.
+  if (pressed_callback_) {
+    pressed_callback_.Run(event);
+    return true;
+  }
+
   if (GetBubbleWidget())
     CloseBubble();
   else
@@ -804,8 +860,12 @@ gfx::Insets TrayBackgroundView::GetBackgroundInsets() const {
 bool TrayBackgroundView::GetEffectiveVisibility() {
   // When the virtual keyboard is visible, the effective visibility of the view
   // is solely determined by |show_with_virtual_keyboard_|.
-  if (Shell::Get()->system_tray_model()->virtual_keyboard()->visible())
+  if (Shell::Get()
+          ->system_tray_model()
+          ->virtual_keyboard()
+          ->arc_keyboard_visible()) {
     return show_with_virtual_keyboard_;
+  }
 
   if (!visible_preferred_)
     return false;
@@ -822,6 +882,10 @@ bool TrayBackgroundView::GetEffectiveVisibility() {
     return show_when_collapsed_;
 
   return true;
+}
+
+bool TrayBackgroundView::CacheBubbleViewForHide() const {
+  return false;
 }
 
 BEGIN_METADATA(TrayBackgroundView, ActionableView)

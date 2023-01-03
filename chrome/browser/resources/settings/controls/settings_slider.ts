@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
  * linear UI range to a range of real values.  When |value| does not map exactly
  * to a tick mark, it interpolates to the nearest tick.
  */
-import '../settings_vars_css.js';
+import '../settings_vars.css.js';
 import '//resources/cr_elements/cr_slider/cr_slider.js';
 
 import {CrSliderElement, SliderTick} from '//resources/cr_elements/cr_slider/cr_slider.js';
@@ -94,8 +94,8 @@ export class SettingsSliderElement extends SettingsSliderElementBase {
     ];
   }
 
-  pref: chrome.settingsPrivate.PrefObject;
-  ticks: Array<SliderTick>|Array<number>;
+  pref: chrome.settingsPrivate.PrefObject<number>;
+  ticks: SliderTick[]|number[];
   scale: number;
   min: number;
   max: number;

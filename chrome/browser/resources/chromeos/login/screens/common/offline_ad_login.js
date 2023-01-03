@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,28 @@
  * Authenticate user screens.
  */
 
-/* #js_imports_placeholder */
+import '//resources/cr_elements/cr_toggle/cr_toggle.js';
+import '//resources/cr_elements/icons.html.js';
+import '//resources/cr_elements/md_select.css.js';
+import '//resources/polymer/v3_0/iron-icon/iron-icon.js';
+import '../../components/oobe_icons.m.js';
+import '../../components/buttons/oobe_back_button.js';
+import '../../components/buttons/oobe_next_button.js';
+import '../../components/buttons/oobe_text_button.js';
+import '../../components/common_styles/oobe_common_styles.css.js';
+import '../../components/common_styles/oobe_dialog_host_styles.css.js';
+
+import {I18nBehavior} from '//resources/ash/common/i18n_behavior.js';
+import {loadTimeData} from '//resources/ash/common/load_time_data.m.js';
+import {html, mixinBehaviors, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {LoginScreenBehavior, LoginScreenBehaviorInterface} from '../../components/behaviors/login_screen_behavior.js';
+import {MultiStepBehavior, MultiStepBehaviorInterface} from '../../components/behaviors/multi_step_behavior.js';
+import {OobeI18nBehavior, OobeI18nBehaviorInterface} from '../../components/behaviors/oobe_i18n_behavior.js';
+import {OobeAdaptiveDialog} from '../../components/dialogs/oobe_adaptive_dialog.js';
+import {OobeA11yOption} from '../../components/oobe_a11y_option.js';
+import {getSelectedTitle, getSelectedValue, SelectListType, setupSelect} from '../../components/oobe_select.js';
+
 
 // The definitions below (JoinConfigType, ActiveDirectoryErrorState) are
 // used in enterprise_enrollment.js as well.
@@ -17,14 +38,14 @@
  *             computer_ou: ?string, encryption_types: ?string,
  *             computer_name_validation_regex: ?string}}
  */
-/* #export */ var JoinConfigType;
+export var JoinConfigType;
 
 // Possible error states of the screen. Must be in the same order as
 // ActiveDirectoryErrorState enum values. Used in enterprise_enrollment
 /**
  * @enum {number}
  */
-/* #export */ const ActiveDirectoryErrorState = {
+export const ActiveDirectoryErrorState = {
   NONE: 0,
   MACHINE_NAME_INVALID: 1,
   MACHINE_NAME_TOO_LONG: 2,
@@ -34,7 +55,7 @@
 };
 
 // Used by enterprise_enrollment.js
-/* #export */ const ADLoginStep = {
+export const ADLoginStep = {
   UNLOCK: 'unlock',
   CREDS: 'creds',
 };
@@ -54,13 +75,12 @@ var EncryptionSelectListType;
  * @implements {MultiStepBehaviorInterface}
  * @implements {OobeI18nBehaviorInterface}
  */
-const OfflineAdLoginBase = Polymer.mixinBehaviors(
-    [OobeI18nBehavior, MultiStepBehavior, LoginScreenBehavior],
-    Polymer.Element);
+const OfflineAdLoginBase = mixinBehaviors(
+    [OobeI18nBehavior, MultiStepBehavior, LoginScreenBehavior], PolymerElement);
 
 /**
  * @typedef {{
- *   marketingOptInOverviewDialog:  OobeAdaptiveDialogElement,
+ *   marketingOptInOverviewDialog:  OobeAdaptiveDialog,
  *   chromebookUpdatesOption:  CrToggleElement,
  *   a11yNavButtonToggle:  OobeA11yOption,
  * }}
@@ -75,7 +95,9 @@ class OfflineAdLogin extends OfflineAdLoginBase {
     return 'offline-ad-login-element';
   }
 
-  /* #html_template_placeholder */
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
   static get properties() {
     return {
@@ -114,7 +136,7 @@ class OfflineAdLogin extends OfflineAdLoginBase {
       /**
        * ID of localized welcome message on top of the UI.
        */
-      adWelcomeMessageKey: String,
+      adWelcomeMessageKey: {type: String, value: 'loginWelcomeMessage'},
       /**
        * Error message for the machine name input.
        */
@@ -125,7 +147,7 @@ class OfflineAdLogin extends OfflineAdLoginBase {
       errorState: {
         type: Number,
         value: ActiveDirectoryErrorState.NONE,
-        observer: 'errorStateObserver_'
+        observer: 'errorStateObserver_',
       },
       /**
        * Whether machine name input should be invalid.
@@ -133,7 +155,7 @@ class OfflineAdLogin extends OfflineAdLoginBase {
       machineNameInvalid: {
         type: Boolean,
         value: false,
-        observer: 'machineNameInvalidObserver_'
+        observer: 'machineNameInvalidObserver_',
       },
       /**
        * Whether username input should be invalid.
@@ -146,7 +168,7 @@ class OfflineAdLogin extends OfflineAdLoginBase {
       authPasswordInvalid: {
         type: Boolean,
         value: false,
-        observer: 'authPasswordInvalidObserver_'
+        observer: 'authPasswordInvalidObserver_',
       },
       /**
        * Whether unlock password input should be invalid.
@@ -154,7 +176,7 @@ class OfflineAdLogin extends OfflineAdLoginBase {
       unlockPasswordInvalid: {
         type: Boolean,
         value: false,
-        observer: 'unlockPasswordInvalidObserver_'
+        observer: 'unlockPasswordInvalidObserver_',
       },
 
       /**
@@ -258,9 +280,7 @@ class OfflineAdLogin extends OfflineAdLoginBase {
     if (this.isDomainJoin) {
       this.setupEncList();
     } else {
-      this.initializeLoginScreen('ActiveDirectoryLoginScreen', {
-        resetAllowed: true,
-      });
+      this.initializeLoginScreen('ActiveDirectoryLoginScreen');
     }
   }
 
@@ -270,9 +290,6 @@ class OfflineAdLogin extends OfflineAdLoginBase {
       if ('emailDomain' in data) {
         this.userRealm = '@' + data['emailDomain'];
       }
-    }
-    if (!this.adWelcomeMessageKey) {
-      this.adWelcomeMessageKey = 'loginWelcomeMessage';
     }
     this.focus();
   }
@@ -572,14 +589,14 @@ class OfflineAdLogin extends OfflineAdLoginBase {
 
   getMachineNameError_(locale, errorState) {
     if (errorState == ActiveDirectoryErrorState.MACHINE_NAME_TOO_LONG) {
-      return this.i18nDynamic(locale, 'adJoinErrorMachineNameTooLong');
+      return this.i18n('adJoinErrorMachineNameTooLong');
     }
     if (errorState == ActiveDirectoryErrorState.MACHINE_NAME_INVALID) {
       if (this.machineNameInputPattern_) {
-        return this.i18nDynamic(locale, 'adJoinErrorMachineNameInvalidFormat');
+        return this.i18n('adJoinErrorMachineNameInvalidFormat');
       }
     }
-    return this.i18nDynamic(locale, 'adJoinErrorMachineNameInvalid');
+    return this.i18n('adJoinErrorMachineNameInvalid');
   }
 
   onKeydownUnlockPassword_(e) {

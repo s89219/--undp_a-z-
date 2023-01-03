@@ -1,8 +1,10 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.download.interstitial;
+
+import androidx.annotation.Nullable;
 
 import org.chromium.base.UnownedUserDataKey;
 import org.chromium.ui.base.WindowAndroid;
@@ -16,7 +18,9 @@ public class NewDownloadTabProvider {
      * @param windowAndroid The {@link WindowAndroid} the {@link NewDownloadTab} is attached to.
      * @return The {@link NewDownloadTab} attached to a given {@link WindowAndroid}.
      */
+    @Nullable
     public static NewDownloadTab from(WindowAndroid windowAndroid) {
+        if (windowAndroid == null) return null;
         return KEY.retrieveDataFromHost(windowAndroid.getUnownedUserDataHost());
     }
 

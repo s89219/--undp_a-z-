@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,12 +47,4 @@ std::string DevToolsEndpoint::GetVersionUrl() const {
 
 std::string DevToolsEndpoint::GetListUrl() const {
   return server_url_.Resolve("json/list").spec();
-}
-
-std::string DevToolsEndpoint::GetCloseUrl(const std::string& id) const {
-  return server_url_.Resolve("json/close/" + id).spec();
-}
-
-std::string DevToolsEndpoint::GetActivateUrl(const std::string& id) const {
-  return server_url_.Resolve("json/activate/" + id).spec();
 }

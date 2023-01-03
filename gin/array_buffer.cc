@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,10 @@
 #include <stdlib.h>
 
 #include "base/allocator/partition_allocator/page_allocator.h"
+#include "base/allocator/partition_allocator/partition_alloc.h"
 #include "base/bits.h"
 #include "base/check_op.h"
+#include "base/no_destructor.h"
 #include "build/build_config.h"
 #include "gin/per_isolate_data.h"
 #include "v8/include/v8-initialization.h"
@@ -28,23 +30,65 @@ static_assert(V8_ARRAY_BUFFER_INTERNAL_FIELD_COUNT == 2,
               "array buffers must have two internal fields");
 
 // ArrayBufferAllocator -------------------------------------------------------
+partition_alloc::ThreadSafePartitionRoot* ArrayBufferAllocator::partition_ =
+    nullptr;
 
 void* ArrayBufferAllocator::Allocate(size_t length) {
-  // TODO(bbudge) Use partition allocator for malloc/calloc allocations.
-  return calloc(1, length);
+  unsigned int flags = partition_alloc::AllocFlags::kZeroFill |
+                       partition_alloc::AllocFlags::kReturnNull;
+  return AllocateInternal(length, flags);
 }
 
 void* ArrayBufferAllocator::AllocateUninitialized(size_t length) {
-  return malloc(length);
+  unsigned int flags = partition_alloc::AllocFlags::kReturnNull;
+  return AllocateInternal(length, flags);
+}
+
+void* ArrayBufferAllocator::AllocateInternal(size_t length,
+                                             unsigned int flags) {
+#ifdef V8_ENABLE_SANDBOX
+  // The V8 sandbox requires all ArrayBuffer backing stores to be allocated
+  // inside the sandbox address space. This isn't guaranteed if allocation
+  // override hooks (which are e.g. used by GWP-ASan) are enabled or if a
+  // memory tool (e.g. ASan) overrides malloc, so disable both.
+  flags |= partition_alloc::AllocFlags::kNoOverrideHooks;
+  flags |= partition_alloc::AllocFlags::kNoMemoryToolOverride;
+#endif
+  return partition_->AllocWithFlags(flags, length, "gin::ArrayBufferAllocator");
 }
 
 void ArrayBufferAllocator::Free(void* data, size_t length) {
-  free(data);
+  unsigned int flags = 0;
+#ifdef V8_ENABLE_SANDBOX
+  // See |AllocateInternal|.
+  flags |= partition_alloc::FreeFlags::kNoMemoryToolOverride;
+#endif
+  partition_->FreeWithFlags(flags, data);
 }
 
+// static
 ArrayBufferAllocator* ArrayBufferAllocator::SharedInstance() {
   static ArrayBufferAllocator* instance = new ArrayBufferAllocator();
   return instance;
+}
+
+// static
+void ArrayBufferAllocator::InitializePartition() {
+  static base::NoDestructor<partition_alloc::PartitionAllocator>
+      partition_allocator{};
+
+  // These configuration options are copied from blink's ArrayBufferPartition.
+  partition_allocator->init({
+      partition_alloc::PartitionOptions::AlignedAlloc::kDisallowed,
+      partition_alloc::PartitionOptions::ThreadCache::kDisabled,
+      partition_alloc::PartitionOptions::Quarantine::kAllowed,
+      partition_alloc::PartitionOptions::Cookie::kAllowed,
+      partition_alloc::PartitionOptions::BackupRefPtr::kDisabled,
+      partition_alloc::PartitionOptions::BackupRefPtrZapping::kDisabled,
+      partition_alloc::PartitionOptions::UseConfigurablePool::kIfAvailable,
+  });
+
+  partition_ = partition_allocator->root();
 }
 
 // ArrayBuffer ----------------------------------------------------------------
@@ -101,7 +145,7 @@ bool Converter<ArrayBufferView>::FromV8(v8::Isolate* isolate,
 // ArrayBufferSharedMemoryMapper ---------------------------------------------
 
 namespace {
-#ifdef V8_SANDBOX
+#ifdef V8_ENABLE_SANDBOX
 // When the V8 sandbox is enabled, shared memory backing ArrayBuffers must be
 // mapped into the sandbox address space. This custom SharedMemoryMapper
 // implements this.
@@ -160,29 +204,16 @@ class ArrayBufferSharedMemoryMapper : public base::SharedMemoryMapper {
     address_space->FreeSharedPages(address, mapping_size);
   }
 };
-#endif  // V8_SANDBOX
-
-base::SharedMemoryMapper* CreateSharedMemoryMapperForArrayBuffers() {
-#if V8_SANDBOX
-  static ArrayBufferSharedMemoryMapper instance;
-  // Currently, it is still possible for the sandbox to be disabled at runtime
-  // (by not initializing it), in which case the default shared memory mapper
-  // must be used. In the future, this will no longer be allowed and this helper
-  // function can then be removed entirely.
-  // TODO(saelo) remove once sandbox initialization is mandatory.
-  if (v8::V8::GetSandboxSizeInBytes() > 0)
-    return &instance;
-  else
-#endif
-    // Use nullptr here and let //base select the default mapper.
-    return nullptr;
-}
+#endif  // V8_ENABLE_SANDBOX
 }  // namespace
 
 base::SharedMemoryMapper* GetSharedMemoryMapperForArrayBuffers() {
-  static base::SharedMemoryMapper* mapper =
-      CreateSharedMemoryMapperForArrayBuffers();
-  return mapper;
+#if V8_ENABLE_SANDBOX
+  static ArrayBufferSharedMemoryMapper instance;
+  return &instance;
+#else
+  return base::SharedMemoryMapper::GetDefaultInstance();
+#endif
 }
 
 }  // namespace gin

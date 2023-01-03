@@ -1,6 +1,17 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+//
+// If you are looking to write a new browser test, you are probably looking for
+// one of the already-implemented subclasses, e.g. `content::ContentBrowserTest`
+// for tests that can run directly on top of content_shell,
+// `InProcessBrowserTest` for tests that require `//chrome`-layer functionality,
+// et cetera. See `//content/public/test/browser_test.h` for more information.
+//
+// `content::BrowserTestBase` is a base class that provides shared functionality
+// across various types of browser tests. It is not intended for direct use in
+// tests, as it does not actually define how to launch a browser, nor how to run
+// a test in said browser.
 
 #ifndef CONTENT_PUBLIC_TEST_BROWSER_TEST_BASE_H_
 #define CONTENT_PUBLIC_TEST_BROWSER_TEST_BASE_H_
@@ -30,7 +41,7 @@ namespace base {
 class CommandLine;
 class FilePath;
 class TimeDelta;
-}
+}  // namespace base
 
 namespace chromeos {
 class ScopedDisableCrosapiForTesting;
@@ -38,6 +49,7 @@ class ScopedDisableCrosapiForTesting;
 
 namespace content {
 class BrowserMainParts;
+class ContentMainDelegate;
 class WebContents;
 
 class BrowserTestBase : public ::testing::Test {
@@ -74,7 +86,7 @@ class BrowserTestBase : public ::testing::Test {
   virtual bool UseProductionQuotaSettings();
 
   // This is invoked if the test receives SIGTERM or SIGSEGV.
-  virtual void SignalRunTestOnMainThread(int signal){};
+  virtual void SignalRunTestOnMainThread(int signal) {}
 
   // Crash the Network Service process. Should only be called when
   // out-of-process Network Service is enabled. Re-applies any added host
@@ -89,6 +101,10 @@ class BrowserTestBase : public ::testing::Test {
   // trigger crashes. Note that calling IgnoreNetworkServiceCrashes is *not*
   // needed when triggering the crash via SimulateNetworkServiceCrash method.
   void IgnoreNetworkServiceCrashes();
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  void StartAshChrome();
+#endif
 
   // Returns the host resolver being used for the tests. Subclasses might want
   // to configure it inside tests.
@@ -117,6 +133,11 @@ class BrowserTestBase : public ::testing::Test {
   // Called after the BrowserMainParts have been created, and before
   // PreEarlyInitialization() has been called.
   virtual void CreatedBrowserMainParts(BrowserMainParts* browser_main_parts) {}
+
+  // Returns a custom ContentMainDelegate to use for the test, or nullptr to use
+  // the standard delegate. The returned object must live at least until
+  // TearDownInProcessBrowserTextFixture is called.
+  virtual ContentMainDelegate* GetOptionalContentMainDelegateOverride();
 
   // GTest assertions that the connection to `network_service_test_` did not get
   // dropped unexpectedly.
@@ -254,7 +275,7 @@ class BrowserTestBase : public ::testing::Test {
   bool use_software_compositing_ = false;
 
   // Initial WebContents to watch for navigations during SetUpOnMainThread.
-  raw_ptr<WebContents> initial_web_contents_ = nullptr;
+  raw_ptr<WebContents, DanglingUntriaged> initial_web_contents_ = nullptr;
 
   // Whether SetUp was called. This value is checked in the destructor of this
   // class to ensure that SetUp was called. If it's not called, the test will
@@ -275,7 +296,7 @@ class BrowserTestBase : public ::testing::Test {
 
   bool allow_network_access_to_host_resolutions_ = false;
 
-  raw_ptr<BrowserMainParts> browser_main_parts_ = nullptr;
+  raw_ptr<BrowserMainParts, DanglingUntriaged> browser_main_parts_ = nullptr;
 
 #if BUILDFLAG(IS_POSIX)
   bool handle_sigterm_;

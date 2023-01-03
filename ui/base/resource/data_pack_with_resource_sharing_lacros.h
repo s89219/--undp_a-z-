@@ -1,10 +1,12 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_BASE_RESOURCE_DATA_PACK_WITH_RESOURCE_SHARING_LACROS_H_
 #define UI_BASE_RESOURCE_DATA_PACK_WITH_RESOURCE_SHARING_LACROS_H_
 
+#include <map>
+#include <memory>
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -150,16 +152,10 @@ class UI_DATA_PACK_EXPORT DataPackWithResourceSharing : public ResourceHandle {
       std::map<uint16_t, base::StringPiece> fallback_resources,
       size_t margin_to_skip,
       ScopedFileWriter& file);
-  // Empty the content in `path` before finishing a file generation.
-  // Close `file` which is ScopedFileWriter for `path` and reopen it to empty
-  // the whole content.
+  // Close and delete temp shared resource file used for generating.
   // This should be called when failing during generating a shared resource.
-  // DO NOT remove a file itself with empty content because zygote/utility
-  // processes will check if `path` exists or not to distinguish followings:
-  // 1. A file generation has finished with failure.
-  // 2. A file is still under construction.
   static void OnFailedToGenerate(ScopedFileWriter& file,
-                                 const base::FilePath& path);
+                                 const base::FilePath& shared_resource_path);
 
   std::unique_ptr<DataPack::DataSource> data_source_;
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -148,15 +148,6 @@ enum IDBTransactionMode {
   ReadOnly,
   ReadWrite,
   VersionChange,
-};
-
-enum IDBStatus {
-  OK,
-  NotFound,
-  Corruption,
-  NotSupported,
-  InvalidArgument,
-  IOError,
 };
 
 // These values need to match core/dom/exception_code.h
@@ -477,7 +468,4 @@ interface IDBFactory {
   // immediately.
   DeleteDatabase(pending_associated_remote<IDBCallbacks> pending_callbacks,
                  mojo_base.mojom.String16 name, bool force_close);
-
-  AbortTransactionsAndCompactDatabase() => (IDBStatus status);
-  AbortTransactionsForDatabase() => (IDBStatus status);
 };

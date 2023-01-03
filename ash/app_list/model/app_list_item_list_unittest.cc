@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -195,26 +195,6 @@ class AppListItemListTest : public testing::Test {
   AppListItemListWithUpdater item_updater_;
   TestObserver observer_;
   AppListItemList* item_list_ = nullptr;
-};
-
-class AppListItemListWithPageBreaksTest : public AppListItemListTest {
- public:
-  AppListItemListWithPageBreaksTest() {
-    // Productivity launcher does not use page breaks (which are filtered out of
-    // the app list model in chrome), so disable productivity launcher for tests
-    // that use page breaks.
-    feature_list_.InitAndDisableFeature(features::kProductivityLauncher);
-  }
-
-  AppListItemListWithPageBreaksTest(const AppListItemListWithPageBreaksTest&) =
-      delete;
-  AppListItemListWithPageBreaksTest& operator=(
-      const AppListItemListWithPageBreaksTest&) = delete;
-
-  ~AppListItemListWithPageBreaksTest() override = default;
-
- private:
-  base::test::ScopedFeatureList feature_list_;
 };
 
 TEST_F(AppListItemListTest, FindItemIndex) {
@@ -436,41 +416,6 @@ TEST_F(AppListItemListTest, SetItemPosition) {
                               item_list_->item_at(3)->position().CreateAfter());
   EXPECT_TRUE(VerifyItemListOrdinals());
   EXPECT_TRUE(VerifyItemOrder4(2, 0, 3, 1));
-}
-
-// Test adding a page break item between two items with different position.
-TEST_F(AppListItemListWithPageBreaksTest, AddPageBreakItem) {
-  AppListItem* item_0 = CreateAndAddItem(GetItemId(0));
-  AppListItem* item_1 = CreateAndAddItem(GetItemId(1));
-  EXPECT_EQ(item_0, item_list_->item_at(0));
-  EXPECT_EQ(item_1, item_list_->item_at(1));
-  EXPECT_TRUE(item_0->position().LessThan(item_1->position()));
-
-  AppListItem* page_break_item = item_list_->AddPageBreakItemAfter(item_0);
-  EXPECT_EQ(item_0, item_list_->item_at(0));
-  EXPECT_EQ(page_break_item, item_list_->item_at(1));
-  EXPECT_EQ(item_1, item_list_->item_at(2));
-  EXPECT_TRUE(item_0->position().LessThan(page_break_item->position()));
-  EXPECT_TRUE(page_break_item->position().LessThan(item_1->position()));
-}
-
-// Test adding a page break item between two items with the same position.
-TEST_F(AppListItemListWithPageBreaksTest, AddPageBreakItemWithSamePosition) {
-  AppListItem* item_0 = CreateAndAddItem(GetItemId(0));
-  AppListItem* item_1 = CreateAndAddItem(GetItemId(1));
-  item_list_->SetItemPosition(item_list_->item_at(1),
-                              item_list_->item_at(0)->position());
-  EXPECT_EQ(item_0, item_list_->item_at(0));
-  EXPECT_EQ(item_1, item_list_->item_at(1));
-  EXPECT_TRUE(item_0->position().Equals(item_1->position()));
-
-  // Position of items should be fixed.
-  AppListItem* page_break_item = item_list_->AddPageBreakItemAfter(item_0);
-  EXPECT_EQ(item_0, item_list_->item_at(0));
-  EXPECT_EQ(page_break_item, item_list_->item_at(1));
-  EXPECT_EQ(item_1, item_list_->item_at(2));
-  EXPECT_TRUE(item_0->position().LessThan(page_break_item->position()));
-  EXPECT_TRUE(page_break_item->position().LessThan(item_1->position()));
 }
 
 TEST_F(AppListItemListTest, MoveItemPastEnd) {

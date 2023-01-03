@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,12 +15,13 @@
 #include "base/containers/contains.h"
 #include "base/files/scoped_file.h"
 #include "base/memory/ptr_util.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/events/devices/device_data_manager.h"
 #include "ui/events/devices/device_util_linux.h"
 #include "ui/events/devices/stylus_state.h"
+#include "ui/events/event_switches.h"
 #include "ui/events/ozone/evdev/device_event_dispatcher_evdev.h"
 #include "ui/events/ozone/evdev/event_converter_evdev_impl.h"
 #include "ui/events/ozone/evdev/event_device_info.h"
@@ -28,7 +29,6 @@
 #include "ui/events/ozone/evdev/keyboard_imposter_checker_evdev.h"
 #include "ui/events/ozone/evdev/microphone_mute_switch_event_converter_evdev.h"
 #include "ui/events/ozone/evdev/stylus_button_event_converter_evdev.h"
-#include "ui/events/ozone/evdev/switches.h"
 #include "ui/events/ozone/evdev/tablet_event_converter_evdev.h"
 #include "ui/events/ozone/evdev/touch_evdev_types.h"
 #include "ui/events/ozone/evdev/touch_event_converter_evdev.h"
@@ -91,7 +91,7 @@ InputDeviceFactoryEvdev::InputDeviceFactoryEvdev(
     std::unique_ptr<DeviceEventDispatcherEvdev> dispatcher,
     CursorDelegateEvdev* cursor,
     std::unique_ptr<InputDeviceOpener> input_device_opener)
-    : task_runner_(base::ThreadTaskRunnerHandle::Get()),
+    : task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       cursor_(cursor),
       shared_palm_state_(new SharedPalmDetectionFilterState),
 #if defined(USE_EVDEV_GESTURES)
@@ -120,7 +120,7 @@ void InputDeviceFactoryEvdev::AddInputDevice(int id,
   std::unique_ptr<EventConverterEvdev> converter =
       input_device_opener_->OpenInputDevice(params);
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&InputDeviceFactoryEvdev::AttachInputDevice,
                      weak_ptr_factory_.GetWeakPtr(), std::move(converter)));
@@ -197,6 +197,7 @@ void InputDeviceFactoryEvdev::AttachInputDevice(
         UpdateDirtyFlags(it.second.get());
     }
 
+    input_device_factory_metrics_.OnDeviceAttach(converters_[path].get());
     // Sync settings to new device.
     ApplyInputDeviceSettings();
     ApplyCapsLockLed();
@@ -527,14 +528,16 @@ void InputDeviceFactoryEvdev::NotifyTouchscreensUpdated() {
 }
 
 void InputDeviceFactoryEvdev::NotifyKeyboardsUpdated() {
+  base::flat_map<int, std::vector<uint64_t>> key_bits_mapping;
   std::vector<InputDevice> keyboards;
   for (auto it = converters_.begin(); it != converters_.end(); ++it) {
     if (it->second->HasKeyboard()) {
       keyboards.push_back(InputDevice(it->second->input_device()));
+      key_bits_mapping[it->second->id()] = it->second->GetKeyboardKeyBits();
     }
   }
-
-  dispatcher_->DispatchKeyboardDevicesUpdated(keyboards);
+  dispatcher_->DispatchKeyboardDevicesUpdated(keyboards,
+                                              std::move(key_bits_mapping));
 }
 
 void InputDeviceFactoryEvdev::NotifyMouseDevicesUpdated() {
@@ -543,7 +546,9 @@ void InputDeviceFactoryEvdev::NotifyMouseDevicesUpdated() {
   for (auto it = converters_.begin(); it != converters_.end(); ++it) {
     if (it->second->HasMouse()) {
       mice.push_back(it->second->input_device());
-      has_mouse = true;
+      // Some I2C touchpads falsely claim to be mice, see b/205272718
+      if (it->second->type() != ui::InputDeviceType::INPUT_DEVICE_INTERNAL)
+        has_mouse = true;
     } else if (it->second->HasPointingStick()) {
       mice.push_back(it->second->input_device());
       has_pointing_stick = true;
@@ -568,16 +573,18 @@ void InputDeviceFactoryEvdev::NotifyTouchpadDevicesUpdated() {
 }
 
 void InputDeviceFactoryEvdev::NotifyGamepadDevicesUpdated() {
+  base::flat_map<int, std::vector<uint64_t>> key_bits_mapping;
   std::vector<GamepadDevice> gamepads;
   for (auto it = converters_.begin(); it != converters_.end(); ++it) {
     if (it->second->HasGamepad()) {
       gamepads.emplace_back(it->second->input_device(),
                             it->second->GetGamepadAxes(),
                             it->second->GetGamepadRumbleCapability());
+      key_bits_mapping[it->second->id()] = it->second->GetGamepadKeyBits();
     }
   }
 
-  dispatcher_->DispatchGamepadDevicesUpdated(gamepads);
+  dispatcher_->DispatchGamepadDevicesUpdated(gamepads, std::move(key_bits_mapping));
 }
 
 void InputDeviceFactoryEvdev::NotifyUncategorizedDevicesUpdated() {
@@ -634,7 +641,7 @@ void InputDeviceFactoryEvdev::EnablePalmSuppression(bool enabled) {
 
   // This function can be called while disabling pen devices, so don't disable
   // inline here.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&InputDeviceFactoryEvdev::EnableDevices,
                                 weak_ptr_factory_.GetWeakPtr()));
 }

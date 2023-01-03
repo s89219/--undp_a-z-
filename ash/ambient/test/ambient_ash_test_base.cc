@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,6 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/threading/scoped_blocking_call.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power/power_manager_client.h"
@@ -60,34 +59,28 @@ class TestAmbientPhotoCacheImpl : public AmbientPhotoCache {
   void DownloadPhoto(
       const std::string& url,
       base::OnceCallback<void(std::string&&)> callback) override {
-    // Reply with a unique string each time to avoid check to skip loading
-    // duplicate images.
-    std::string data = std::string(
-        download_data_ ? *download_data_
-                       : base::StringPrintf("test_image_%i", download_count_));
-    download_count_++;
     // Pretend to respond asynchronously.
-    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
-        FROM_HERE, base::BindOnce(std::move(callback), std::move(data)),
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE, base::BindOnce(std::move(callback), GetDownloadData()),
         photo_download_delay_);
   }
 
   void DownloadPhotoToFile(const std::string& url,
                            int cache_index,
                            base::OnceCallback<void(bool)> callback) override {
-    if (!download_data_) {
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+    std::string download_data = GetDownloadData();
+    if (download_data.empty()) {
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), /*success=*/false));
       return;
     }
-
     ::ambient::PhotoCacheEntry cache_entry;
-    cache_entry.mutable_primary_photo()->set_image(*download_data_);
+    cache_entry.mutable_primary_photo()->set_image(std::move(download_data));
 
     files_.insert(
         std::pair<int, ::ambient::PhotoCacheEntry>(cache_index, cache_entry));
 
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), /*success=*/true));
   }
 
@@ -102,7 +95,7 @@ class TestAmbientPhotoCacheImpl : public AmbientPhotoCache {
     decoded_image_.reset();
 
     // Pretend to respond asynchronously.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), image));
   }
 
@@ -114,17 +107,16 @@ class TestAmbientPhotoCacheImpl : public AmbientPhotoCache {
     std::move(callback).Run();
   }
 
-  void ReadPhotoCache(int cache_index,
-                      ::ambient::PhotoCacheEntry* cache_entry,
-                      base::OnceCallback<void()> callback) override {
+  void ReadPhotoCache(
+      int cache_index,
+      base::OnceCallback<void(::ambient::PhotoCacheEntry)> callback) override {
     auto it = files_.find(cache_index);
     if (it == files_.end()) {
-      std::move(callback).Run();
+      std::move(callback).Run(::ambient::PhotoCacheEntry());
       return;
     }
 
-    *cache_entry = it->second;
-    std::move(callback).Run();
+    std::move(callback).Run(it->second);
   }
 
   void Clear() override {
@@ -155,6 +147,14 @@ class TestAmbientPhotoCacheImpl : public AmbientPhotoCache {
   }
 
  private:
+  std::string GetDownloadData() {
+    // Reply with a unique string each time to avoid check to skip loading
+    // duplicate images.
+    return download_data_
+               ? *download_data_
+               : base::StringPrintf("test_image_%i", download_count_++);
+  }
+
   int download_count_ = 0;
 
   // If not null, will return this data when downloading.
@@ -267,6 +267,14 @@ void AmbientAshTestBase::SimulateSystemSuspendAndWait(
 void AmbientAshTestBase::SimulateSystemResumeAndWait() {
   chromeos::FakePowerManagerClient::Get()->SendSuspendDone();
   base::RunLoop().RunUntilIdle();
+}
+
+void AmbientAshTestBase::SimulatePowerButtonClick() {
+  chromeos::FakePowerManagerClient::Get()->SendPowerButtonEvent(
+      true, task_environment()->NowTicks());
+  FastForwardTiny();
+  chromeos::FakePowerManagerClient::Get()->SendPowerButtonEvent(
+      false, task_environment()->NowTicks());
 }
 
 void AmbientAshTestBase::SetScreenIdleStateAndWait(bool is_screen_dimmed,
@@ -499,6 +507,10 @@ AmbientPhotoController* AmbientAshTestBase::photo_controller() {
 
 AmbientPhotoCache* AmbientAshTestBase::photo_cache() {
   return photo_controller()->get_photo_cache_for_testing();
+}
+
+AmbientWeatherController* AmbientAshTestBase::weather_controller() {
+  return ambient_controller()->ambient_weather_controller();
 }
 
 std::vector<AmbientContainerView*> AmbientAshTestBase::GetContainerViews() {

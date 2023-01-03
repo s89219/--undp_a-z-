@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -88,16 +88,6 @@ void AppListTestViewDelegate::SetIsTabletModeEnabled(bool is_tablet_mode) {
   is_tablet_mode_ = is_tablet_mode;
 }
 
-void AppListTestViewDelegate::SetShouldShowSuggestedContentInfo(
-    bool should_show) {
-  should_show_suggested_content_info_ = should_show;
-}
-
-const std::vector<SkColor>&
-AppListTestViewDelegate::GetWallpaperProminentColors() {
-  return wallpaper_prominent_colors_;
-}
-
 void AppListTestViewDelegate::ActivateItem(
     const std::string& id,
     int event_flags,
@@ -148,11 +138,6 @@ int AppListTestViewDelegate::GetTargetYForAppListHide(
   return 0;
 }
 
-int AppListTestViewDelegate::AdjustAppListViewScrollOffset(int offset,
-                                                           ui::EventType type) {
-  return offset;
-}
-
 bool AppListTestViewDelegate::HasValidProfile() const {
   return true;
 }
@@ -163,17 +148,6 @@ bool AppListTestViewDelegate::ShouldHideContinueSection() const {
 
 void AppListTestViewDelegate::SetHideContinueSection(bool hide) {}
 
-void AppListTestViewDelegate::GetSearchResultContextMenuModel(
-    const std::string& result_id,
-    GetContextMenuModelCallback callback) {
-  auto menu = std::make_unique<ui::SimpleMenuModel>(this);
-  // Change items if needed.
-  int command_id = 0;
-  menu->AddItem(command_id++, u"Item0");
-  menu->AddItem(command_id++, u"Item1");
-  std::move(callback).Run(std::move(menu));
-}
-
 ash::AssistantViewDelegate*
 AppListTestViewDelegate::GetAssistantViewDelegate() {
   return nullptr;
@@ -183,23 +157,8 @@ void AppListTestViewDelegate::OnSearchResultVisibilityChanged(
     const std::string& id,
     bool visibility) {}
 
-void AppListTestViewDelegate::NotifySearchResultsForLogging(
-    const std::u16string& raw_query,
-    const ash::SearchResultIdWithPositionIndices& results,
-    int position_index) {}
-
-void AppListTestViewDelegate::MaybeIncreaseSuggestedContentInfoShownCount() {}
-
 bool AppListTestViewDelegate::IsAssistantAllowedAndEnabled() const {
   return false;
-}
-
-bool AppListTestViewDelegate::ShouldShowSuggestedContentInfo() const {
-  return should_show_suggested_content_info_;
-}
-
-void AppListTestViewDelegate::MarkSuggestedContentInfoDismissed() {
-  should_show_suggested_content_info_ = false;
 }
 
 void AppListTestViewDelegate::OnStateTransitionAnimationCompleted(

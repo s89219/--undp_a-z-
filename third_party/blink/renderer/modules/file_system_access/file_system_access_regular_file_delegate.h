@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,8 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/file_system_access/file_system_access_capacity_tracker.h"
 #include "third_party/blink/renderer/modules/file_system_access/file_system_access_file_delegate.h"
+#include "third_party/blink/renderer/platform/heap/cross_thread_handle.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-#include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 
@@ -65,15 +65,17 @@ class FileSystemAccessRegularFileDelegate final
                               base::span<uint8_t> data) override;
   base::FileErrorOr<int> Write(int64_t offset,
                                const base::span<uint8_t> data) override;
-
-  void GetLength(
+  base::FileErrorOr<int64_t> GetLength() override;
+  void GetLengthAsync(
       base::OnceCallback<void(base::FileErrorOr<int64_t>)> callback) override;
-  void SetLength(int64_t new_length,
-                 base::OnceCallback<void(base::File::Error)> callback) override;
-
-  void Flush(base::OnceCallback<void(bool)> callback) override;
-  void Close(base::OnceClosure callback) override;
-
+  base::FileErrorOr<bool> SetLength(int64_t new_length) override;
+  void SetLengthAsync(
+      int64_t new_length,
+      base::OnceCallback<void(base::File::Error)> callback) override;
+  bool Flush() override;
+  void FlushAsync(base::OnceCallback<void(bool)> callback) override;
+  void Close() override;
+  void CloseAsync(base::OnceClosure callback) override;
   bool IsValid() const override { return backing_file_.IsValid(); }
 
  private:
@@ -84,7 +86,7 @@ class FileSystemAccessRegularFileDelegate final
 
   // Performs the file I/O part of getSize(), off the main thread.
   static void DoGetLength(
-      CrossThreadPersistent<FileSystemAccessRegularFileDelegate> delegate,
+      CrossThreadHandle<FileSystemAccessRegularFileDelegate> delegate,
       CrossThreadOnceFunction<void(base::FileErrorOr<int64_t>)> callback,
       base::File file,
       scoped_refptr<base::SequencedTaskRunner> file_task_runner);
@@ -96,7 +98,7 @@ class FileSystemAccessRegularFileDelegate final
 
   // Performs the file I/O part of truncate(), off the main thread.
   static void DoSetLength(
-      CrossThreadPersistent<FileSystemAccessRegularFileDelegate> delegate,
+      CrossThreadHandle<FileSystemAccessRegularFileDelegate> delegate,
       CrossThreadOnceFunction<void(base::File::Error)> callback,
       base::File file,
       scoped_refptr<base::SequencedTaskRunner> task_runner,
@@ -109,7 +111,7 @@ class FileSystemAccessRegularFileDelegate final
 
   // Performs the file I/O part of flush(), off the main thread.
   static void DoFlush(
-      CrossThreadPersistent<FileSystemAccessRegularFileDelegate> delegate,
+      CrossThreadHandle<FileSystemAccessRegularFileDelegate> delegate,
       CrossThreadOnceFunction<void(bool)> callback,
       base::File file,
       scoped_refptr<base::SequencedTaskRunner> task_runner);
@@ -120,7 +122,7 @@ class FileSystemAccessRegularFileDelegate final
 
   // Performs the file I/O part of close(), off the main thread.
   static void DoClose(
-      CrossThreadPersistent<FileSystemAccessRegularFileDelegate> delegate,
+      CrossThreadHandle<FileSystemAccessRegularFileDelegate> delegate,
       CrossThreadOnceClosure callback,
       base::File file,
       scoped_refptr<base::SequencedTaskRunner> task_runner);

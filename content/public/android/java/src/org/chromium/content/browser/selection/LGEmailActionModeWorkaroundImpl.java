@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,6 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.PopupWindow;
-
-import androidx.annotation.RequiresApi;
 
 import org.chromium.base.Log;
 import org.chromium.base.PackageUtils;
@@ -60,7 +58,7 @@ public final class LGEmailActionModeWorkaroundImpl {
 
     private static boolean shouldAllowActionModeDestroyOnNonUiThread(Context context) {
         String appName = context.getPackageName();
-        int versionCode = PackageUtils.getPackageVersion(context, appName);
+        int versionCode = PackageUtils.getPackageVersion(appName);
         if (versionCode == -1) return false;
 
         int appTargetSdkVersion = context.getApplicationInfo().targetSdkVersion;
@@ -79,7 +77,6 @@ public final class LGEmailActionModeWorkaroundImpl {
         return true;
     }
 
-    @RequiresApi(Build.VERSION_CODES.M)
     private static void allowActionModeDestroyOnNonUiThread(ActionMode actionMode) {
         // LG Email app dismisses ActionMode whenever InputConnection#setComposingText() or
         // InputConnection#commitText() occurs. But they do on ImeThread, not on UI thread and

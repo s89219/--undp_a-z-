@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,6 @@
 #include "chrome/browser/ui/views/bubble/bubble_contents_wrapper.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
-
-class Browser;
 
 namespace ui {
 class MenuModel;
@@ -29,8 +27,7 @@ class MenuRunner;
 class SidePanelWebUIView : public views::WebView,
                            public BubbleContentsWrapper::Host {
  public:
-  SidePanelWebUIView(Browser* browser,
-                     base::RepeatingClosure on_show_cb,
+  SidePanelWebUIView(base::RepeatingClosure on_show_cb,
                      base::RepeatingClosure close_cb,
                      BubbleContentsWrapper* contents_wrapper);
   SidePanelWebUIView(const SidePanelWebUIView&) = delete;
@@ -54,10 +51,9 @@ class SidePanelWebUIView : public views::WebView,
       const content::NativeWebKeyboardEvent& event) override;
 
  private:
-  const raw_ptr<Browser> browser_;
   base::RepeatingClosure on_show_cb_;
   base::RepeatingClosure close_cb_;
-  raw_ptr<BubbleContentsWrapper> contents_wrapper_;
+  raw_ptr<BubbleContentsWrapper, DanglingUntriaged> contents_wrapper_;
   std::unique_ptr<views::MenuRunner> context_menu_runner_;
   std::unique_ptr<ui::MenuModel> context_menu_model_;
   // A handler to handle unhandled keyboard messages coming back from the
@@ -70,12 +66,10 @@ template <class T>
 class SidePanelWebUIViewT : public SidePanelWebUIView {
  public:
   SidePanelWebUIViewT(
-      Browser* browser,
       base::RepeatingClosure on_show_cb,
       base::RepeatingClosure close_cb,
       std::unique_ptr<BubbleContentsWrapperT<T>> contents_wrapper)
-      : SidePanelWebUIView(browser,
-                           std::move(on_show_cb),
+      : SidePanelWebUIView(std::move(on_show_cb),
                            std::move(close_cb),
                            contents_wrapper.get()),
         contents_wrapper_(std::move(contents_wrapper)) {

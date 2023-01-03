@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "build/chromeos_buildflags.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "third_party/skia/include/core/SkRRect.h"
 #include "ui/color/color_id.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
@@ -132,23 +133,23 @@ class VIEWS_EXPORT BubbleBorder : public Border {
   }
 
   static bool is_arrow_on_horizontal(Arrow a) {
-    return a >= NONE ? false : !(a & VERTICAL);
+    return a >= NONE ? false : !(int{a} & VERTICAL);
   }
 
   static bool is_arrow_at_center(Arrow a) {
-    return has_arrow(a) && !!(a & CENTER);
+    return has_arrow(a) && !!(int{a} & CENTER);
   }
 
   static Arrow horizontal_mirror(Arrow a) {
     return (a == TOP_CENTER || a == BOTTOM_CENTER || a >= NONE)
                ? a
-               : static_cast<Arrow>(a ^ RIGHT);
+               : static_cast<Arrow>(int{a} ^ RIGHT);
   }
 
   static Arrow vertical_mirror(Arrow a) {
     return (a == LEFT_CENTER || a == RIGHT_CENTER || a >= NONE)
                ? a
-               : static_cast<Arrow>(a ^ BOTTOM);
+               : static_cast<Arrow>(int{a} ^ BOTTOM);
   }
 
   // Returns the insets required by a border and shadow based on
@@ -166,6 +167,12 @@ class VIEWS_EXPORT BubbleBorder : public Border {
 
   // Set the corner radius, enables Material Design.
   void SetCornerRadius(int radius);
+
+  // Set the customized rounded corners.
+  void SetRoundedCorners(int top_left,
+                         int top_right,
+                         int bottom_right,
+                         int bottom_left);
 
   // Get or set the arrow type.
   void set_arrow(Arrow arrow) { arrow_ = arrow; }
@@ -235,15 +242,13 @@ class VIEWS_EXPORT BubbleBorder : public Border {
   // significant direction, the arrow is placed at the most extreme allowed
   // position that is closest to the targeted point.
   //
-  // If |move_bubble_to_add_arrow| is true, the |bubble_bounds| are displaced to
-  // account for the size of the arrow.
+  // Note that |bubble_bounds| can be slightly shifted to accommodate appended
+  // arrow and make the whole popup visialy pointing to the anchor element.
   //
   // Returns false if the arrow cannot be added due to missing space on the
   // bubble border.
-  bool AddArrowToBubbleCornerAndPointTowardsAnchor(
-      const gfx::Rect& anchor_rect,
-      bool move_bubble_to_add_arrow,
-      gfx::Rect& bubble_bounds);
+  bool AddArrowToBubbleCornerAndPointTowardsAnchor(const gfx::Rect& anchor_rect,
+                                                   gfx::Rect& bubble_bounds);
 
   // Returns a constant reference to the |visible_arrow_rect_| for teseting
   // purposes.
@@ -303,6 +308,9 @@ class VIEWS_EXPORT BubbleBorder : public Border {
   // material design.
   int corner_radius_ = 0;
 
+  // The rounded corner radius for the 4 corners.
+  SkVector radii_[4]{{}, {}, {}, {}};
+
   // Whether a visible arrow should be present.
   bool visible_arrow_ = false;
   // Cached arrow bounding box, calculated when bounds are calculated.
@@ -330,7 +338,7 @@ class VIEWS_EXPORT BubbleBackground : public Background {
   void Paint(gfx::Canvas* canvas, View* view) const override;
 
  private:
-  raw_ptr<BubbleBorder> border_;
+  raw_ptr<BubbleBorder, DanglingUntriaged> border_;
 };
 
 }  // namespace views

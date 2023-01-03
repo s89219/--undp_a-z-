@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,16 +13,16 @@
 // corresponding changes must happen in the unit tests, and new migration test
 // added.  See |WebDatabaseMigrationTest::kCurrentTestedVersionNumber|.
 // static
-const int WebDatabase::kCurrentVersionNumber = 104;
+const int WebDatabase::kCurrentVersionNumber = 109;
 
-const int WebDatabase::kDeprecatedVersionNumber = 51;
+const int WebDatabase::kDeprecatedVersionNumber = 82;
 
 const base::FilePath::CharType WebDatabase::kInMemoryPath[] =
     FILE_PATH_LITERAL(":memory");
 
 namespace {
 
-const int kCompatibleVersionNumber = 99;
+const int kCompatibleVersionNumber = 106;
 
 // Change the version number and possibly the compatibility version of
 // |meta_table_|.
@@ -187,6 +187,9 @@ bool WebDatabase::MigrateToVersion(int version,
     case 79:
       *update_compatible_version = true;
       return MigrateToVersion79DropLoginsTable();
+    case 105:
+      *update_compatible_version = true;
+      return MigrateToVersion105DropIbansTable();
   }
 
   return true;
@@ -206,4 +209,8 @@ bool WebDatabase::MigrateToVersion79DropLoginsTable() {
   return transaction.Begin() &&
          db_.Execute("DROP TABLE IF EXISTS ie7_logins") &&
          db_.Execute("DROP TABLE IF EXISTS logins") && transaction.Commit();
+}
+
+bool WebDatabase::MigrateToVersion105DropIbansTable() {
+  return db_.Execute("DROP TABLE IF EXISTS ibans");
 }

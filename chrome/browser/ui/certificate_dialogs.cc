@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,10 +46,9 @@ enum CertFileType {
 };
 
 void WriterCallback(const base::FilePath& path, const std::string& data) {
-  int bytes_written = base::WriteFile(path, data.data(), data.size());
-  if (bytes_written != static_cast<ssize_t>(data.size())) {
-    LOG(ERROR) << "Writing " << path.value() << " (" << data.size()
-               << "B) returned " << bytes_written;
+  if (!base::WriteFile(path, data)) {
+    LOG(ERROR) << "Error writing " << path.value() << " (" << data.size()
+               << "B)";
   }
 }
 

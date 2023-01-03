@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
+#include "base/ranges/algorithm.h"
 #include "base/time/time.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
@@ -62,7 +63,13 @@ bool RemoveValueFromMap(std::map<Key, T>* map, const Value& value) {
 
 GestureRecognizerImpl::GestureRecognizerImpl() = default;
 
-GestureRecognizerImpl::~GestureRecognizerImpl() = default;
+GestureRecognizerImpl::~GestureRecognizerImpl() {
+  // The gesture recognizer impl observes the gesture providers that are owned
+  // by `consumer_gesture_provider_`. Clear `consumer_gesture_provider_`
+  // explicitly so that the notifications sent by gesture providers during
+  // destruction are handled properly.
+  consumer_gesture_provider_.clear();
+}
 
 // Checks if this finger is already down, if so, returns the current target.
 // Otherwise, returns nullptr.
@@ -322,12 +329,11 @@ void GestureRecognizerImpl::CancelActiveTouchesExceptImpl(
   // Do not iterate directly over |consumer_gesture_provider_| because canceling
   // active touches may cause the consumer to be removed from
   // |consumer_gesture_provider_|. See https://crbug.com/651258 for more info.
-  std::vector<GestureConsumer*> consumers(consumer_gesture_provider_.size());
+  std::vector<GestureConsumer*> consumers;
+  consumers.reserve(consumer_gesture_provider_.size());
   for (const auto& entry : consumer_gesture_provider_) {
-    if (entry.first == not_cancelled)
-      continue;
-
-    consumers.push_back(entry.first);
+    if (entry.first != not_cancelled)
+      consumers.push_back(entry.first);
   }
 
   for (auto* consumer : consumers)
@@ -375,7 +381,7 @@ void GestureRecognizerImpl::AddGestureEventHelper(GestureEventHelper* helper) {
 
 void GestureRecognizerImpl::RemoveGestureEventHelper(
     GestureEventHelper* helper) {
-  auto it = std::find(helpers_.begin(), helpers_.end(), helper);
+  auto it = base::ranges::find(helpers_, helper);
   if (it != helpers_.end())
     helpers_.erase(it);
 }

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 #include "chrome/browser/extensions/api/favicon/favicon_util.h"
 #include "chrome/browser/extensions/api/runtime/chrome_runtime_api_delegate.h"
 #include "chrome/browser/extensions/chrome_component_extension_resource_manager.h"
+#include "chrome/browser/extensions/chrome_content_browser_client_extensions_part.h"
 #include "chrome/browser/extensions/chrome_extension_host_delegate.h"
 #include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/chrome_extensions_browser_api_provider.h"
@@ -43,6 +44,8 @@
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_selections.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/renderer_host/chrome_navigation_ui_data.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/extension_telemetry_service.h"
 #include "chrome/browser/safe_browsing/extension_telemetry/extension_telemetry_service_factory.h"
@@ -66,7 +69,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/browser/api/content_settings/content_settings_service.h"
-#include "extensions/browser/core_extensions_browser_api_provider.h"
+#include "extensions/browser/api/core_extensions_browser_api_provider.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_util.h"
@@ -76,6 +79,7 @@
 #include "extensions/browser/url_request_util.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/features/feature_channel.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -91,6 +95,10 @@
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/dlp/dlp_content_manager.h"
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chromeos/startup/browser_params_proxy.h"
 #endif
 
 namespace extensions {
@@ -133,6 +141,10 @@ ChromeExtensionsBrowserClient::ChromeExtensionsBrowserClient() {
 }
 
 ChromeExtensionsBrowserClient::~ChromeExtensionsBrowserClient() {}
+
+void ChromeExtensionsBrowserClient::StartTearDown() {
+  user_script_listener_.StartTearDown();
+}
 
 bool ChromeExtensionsBrowserClient::IsShuttingDown() {
   return g_browser_process->IsShuttingDown();
@@ -184,11 +196,49 @@ content::BrowserContext* ChromeExtensionsBrowserClient::GetOriginalContext(
   return static_cast<Profile*>(context)->GetOriginalProfile();
 }
 
+content::BrowserContext*
+ChromeExtensionsBrowserClient::GetRedirectedContextInIncognito(
+    content::BrowserContext* context,
+    bool force_guest_profile,
+    bool force_system_profile) {
+  const ProfileSelections selections =
+      ProfileSelections::BuildRedirectedInIncognito(force_guest_profile,
+                                                    force_system_profile);
+  return selections.ApplyProfileSelection(Profile::FromBrowserContext(context));
+}
+
+content::BrowserContext*
+ChromeExtensionsBrowserClient::GetContextForRegularAndIncognito(
+    content::BrowserContext* context,
+    bool force_guest_profile,
+    bool force_system_profile) {
+  const ProfileSelections selections =
+      ProfileSelections::BuildForRegularAndIncognito(force_guest_profile,
+                                                     force_system_profile);
+  return selections.ApplyProfileSelection(Profile::FromBrowserContext(context));
+}
+
+content::BrowserContext* ChromeExtensionsBrowserClient::GetRegularProfile(
+    content::BrowserContext* context,
+    bool force_guest_profile,
+    bool force_system_profile) {
+  const ProfileSelections selections = ProfileSelections::BuildDefault(
+      force_guest_profile, force_system_profile);
+  return selections.ApplyProfileSelection(Profile::FromBrowserContext(context));
+}
+
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 std::string ChromeExtensionsBrowserClient::GetUserIdHashFromContext(
     content::BrowserContext* context) {
   return ash::ProfileHelper::GetUserIdHashFromProfile(
       static_cast<Profile*>(context));
+}
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+bool ChromeExtensionsBrowserClient::IsFromMainProfile(
+    content::BrowserContext* browser_context) {
+  return Profile::FromBrowserContext(browser_context)->IsMainProfile();
 }
 #endif
 
@@ -316,8 +366,10 @@ void ChromeExtensionsBrowserClient::PermitExternalProtocolHandler() {
 
 bool ChromeExtensionsBrowserClient::IsInDemoMode() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  const auto* const demo_session = ash::DemoSession::Get();
-  return demo_session && demo_session->started();
+  return ash::DemoSession::IsDeviceInDemoMode();
+#elif BUILDFLAG(IS_CHROMEOS_LACROS)
+  return chromeos::BrowserParamsProxy::Get()->DeviceMode() ==
+         crosapi::mojom::DeviceMode::kDemo;
 #else
   return false;
 #endif
@@ -342,11 +394,7 @@ bool ChromeExtensionsBrowserClient::IsAppModeForcedForApp(
 }
 
 bool ChromeExtensionsBrowserClient::IsLoggedInAsPublicAccount() {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  return user_manager::UserManager::Get()->IsLoggedInAsPublicAccount();
-#else
-  return false;
-#endif
+  return profiles::IsPublicSession();
 }
 
 ExtensionSystemProvider*
@@ -378,7 +426,7 @@ ChromeExtensionsBrowserClient::GetComponentExtensionResourceManager() {
 void ChromeExtensionsBrowserClient::BroadcastEventToRenderers(
     events::HistogramValue histogram_value,
     const std::string& event_name,
-    std::unique_ptr<base::ListValue> args,
+    base::Value::List args,
     bool dispatch_to_off_the_record_profiles) {
   g_browser_process->extension_event_router_forwarder()
       ->BroadcastEventToRenderers(histogram_value, event_name, std::move(args),
@@ -426,9 +474,15 @@ void ChromeExtensionsBrowserClient::CleanUpWebView(
     content::BrowserContext* browser_context,
     int embedder_process_id,
     int view_instance_id) {
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  if (extensions::ChromeContentBrowserClientExtensionsPart::
+          AreExtensionsDisabledForProfile(profile)) {
+    return;
+  }
+
   // Clean up context menus for the WebView.
-  auto* menu_manager =
-      MenuManager::Get(Profile::FromBrowserContext(browser_context));
+  auto* menu_manager = MenuManager::Get(profile);
+  DCHECK(menu_manager);
   menu_manager->RemoveAllContextItems(
       MenuItem::ExtensionKey("", embedder_process_id, view_instance_id));
 }
@@ -446,6 +500,8 @@ void ChromeExtensionsBrowserClient::AttachExtensionTaskManagerTag(
     case mojom::ViewType::kExtensionBackgroundPage:
     case mojom::ViewType::kExtensionDialog:
     case mojom::ViewType::kExtensionPopup:
+    case mojom::ViewType::kOffscreenDocument:
+    case mojom::ViewType::kExtensionSidePanel:
       // These are the only types that are tracked by the ExtensionTag.
       task_manager::WebContentsTags::CreateForExtension(web_contents,
                                                         view_type);
@@ -636,17 +692,22 @@ bool ChromeExtensionsBrowserClient::IsExtensionTelemetryServiceEnabled(
   return telemetry_service && telemetry_service->enabled();
 }
 
-bool ChromeExtensionsBrowserClient::
-    IsExtensionTelemetryRemoteHostContactedSignalEnabled() const {
-  return base::FeatureList::IsEnabled(
-      safe_browsing::kExtensionTelemetryReportContactedHosts);
-}
-
 void ChromeExtensionsBrowserClient::NotifyExtensionRemoteHostContacted(
     content::BrowserContext* context,
     const ExtensionId& extension_id,
     const GURL& url) const {
-  if (!url.SchemeIsHTTPOrHTTPS()) {
+  safe_browsing::RemoteHostInfo::ProtocolType protocol =
+      safe_browsing::RemoteHostInfo::UNSPECIFIED;
+  if (base::FeatureList::IsEnabled(
+          safe_browsing::kExtensionTelemetryReportContactedHosts) &&
+      url.SchemeIsHTTPOrHTTPS()) {
+    protocol = safe_browsing::RemoteHostInfo::HTTP_HTTPS;
+  } else if (base::FeatureList::IsEnabled(
+                 safe_browsing::
+                     kExtensionTelemetryReportHostsContactedViaWebSocket) &&
+             url.SchemeIsWSOrWSS()) {
+    protocol = safe_browsing::RemoteHostInfo::WEBSOCKET;
+  } else {
     return;
   }
   auto* telemetry_service =
@@ -657,7 +718,7 @@ void ChromeExtensionsBrowserClient::NotifyExtensionRemoteHostContacted(
   }
   auto remote_host_signal =
       std::make_unique<safe_browsing::RemoteHostContactedSignal>(extension_id,
-                                                                 url);
+                                                                 url, protocol);
   telemetry_service->AddSignal(std::move(remote_host_signal));
 }
 
@@ -694,6 +755,45 @@ void ChromeExtensionsBrowserClient::GetFavicon(
         callback) const {
   favicon_util::GetFaviconForExtensionRequest(browser_context, extension, url,
                                               tracker, std::move(callback));
+}
+
+std::vector<content::BrowserContext*>
+ChromeExtensionsBrowserClient::GetRelatedContextsForExtension(
+    content::BrowserContext* browser_context,
+    const Extension& extension) const {
+  return util::GetAllRelatedProfiles(
+      Profile::FromBrowserContext(browser_context), extension);
+}
+
+void ChromeExtensionsBrowserClient::AddAdditionalAllowedHosts(
+    const PermissionSet& desired_permissions,
+    PermissionSet* granted_permissions) const {
+  auto get_new_host_patterns = [](const URLPatternSet& desired_patterns,
+                                  const URLPatternSet& granted_patterns) {
+    URLPatternSet new_patterns = granted_patterns.Clone();
+    for (const URLPattern& pattern : desired_patterns) {
+      // The chrome://favicon permission is special. It is requested by
+      // extensions to access stored favicons, but is not a traditional
+      // host permission. Since it cannot be reasonably runtime-granted
+      // while the user is on the site (i.e., the user never visits
+      // chrome://favicon/), we auto-grant it and treat it like an API
+      // permission.
+      bool is_chrome_favicon = pattern.scheme() == content::kChromeUIScheme &&
+                               pattern.host() == chrome::kChromeUIFaviconHost;
+      if (is_chrome_favicon)
+        new_patterns.AddPattern(pattern);
+    }
+    return new_patterns;
+  };
+
+  URLPatternSet new_explicit_hosts =
+      get_new_host_patterns(desired_permissions.explicit_hosts(),
+                            granted_permissions->explicit_hosts());
+  URLPatternSet new_scriptable_hosts =
+      get_new_host_patterns(desired_permissions.scriptable_hosts(),
+                            granted_permissions->scriptable_hosts());
+  granted_permissions->SetExplicitHosts(std::move(new_explicit_hosts));
+  granted_permissions->SetScriptableHosts(std::move(new_scriptable_hosts));
 }
 
 }  // namespace extensions

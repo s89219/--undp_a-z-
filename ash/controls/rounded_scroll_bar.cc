@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -68,6 +68,10 @@ class RoundedScrollBar::Thumb : public views::BaseScrollBarThumb {
     canvas->DrawRoundRect(GetLocalBounds(), kScrollThumbRadiusDp, fill_flags);
   }
 
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override {
+    scroll_bar_->OnThumbBoundsChanged();
+  }
+
   void OnStateChanged() override { scroll_bar_->OnThumbStateChanged(); }
 
  private:
@@ -100,6 +104,10 @@ void RoundedScrollBar::SetInsets(const gfx::Insets& insets) {
 
 void RoundedScrollBar::SetSnapBackOnDragOutside(bool snap) {
   thumb_->SetSnapBackOnDragOutside(snap);
+}
+
+void RoundedScrollBar::SetShowOnThumbBoundsChanged(bool show) {
+  show_on_thumb_bounds_changed_ = show;
 }
 
 gfx::Rect RoundedScrollBar::GetTrackBounds() const {
@@ -177,6 +185,13 @@ void RoundedScrollBar::OnThumbStateChanged() {
   // If the mouse is still in the scroll bar, the thumb hover state may have
   // changed, so recompute opacity.
   if (IsMouseHovered())
+    ShowScrollbar();
+}
+
+void RoundedScrollBar::OnThumbBoundsChanged() {
+  // Optionally show the scroll bar on thumb bounds changes (e.g. keyboard
+  // driven scroll position changes).
+  if (show_on_thumb_bounds_changed_)
     ShowScrollbar();
 }
 

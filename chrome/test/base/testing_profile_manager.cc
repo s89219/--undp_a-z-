@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,9 @@
 
 #include "base/bind.h"
 #include "base/feature_list.h"
+#include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/test_file_util.h"
 #include "build/build_config.h"
@@ -17,6 +19,7 @@
 #include "chrome/browser/browser_features.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
+#include "chrome/browser/profiles/profile_destroyer.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -27,6 +30,9 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#include "chrome/browser/profiles/profile_types_ash.h"
+#include "components/account_id/account_id.h"
+#include "components/user_manager/fake_user_manager.h"
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -38,7 +44,9 @@
 #endif
 
 const char kGuestProfileName[] = "Guest";
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 const char kSystemProfileName[] = "System";
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 
 TestingProfileManager::TestingProfileManager(TestingBrowserProcess* process)
     : called_set_up_(false),
@@ -57,6 +65,8 @@ TestingProfileManager::TestingProfileManager(
       profile_manager_(nullptr) {}
 
 TestingProfileManager::~TestingProfileManager() {
+  ProfileDestroyer::DestroyPendingProfilesForShutdown();
+
   // Destroying this class also destroys the LocalState, so make sure the
   // associated ProfileManager is also destroyed.
   browser_process_->SetProfileManager(nullptr);
@@ -75,18 +85,22 @@ TestingProfile* TestingProfileManager::CreateTestingProfile(
     TestingProfile::TestingFactories testing_factories,
     bool is_supervised_profile,
     absl::optional<bool> is_new_profile,
-    absl::optional<std::unique_ptr<policy::PolicyService>> policy_service) {
+    absl::optional<std::unique_ptr<policy::PolicyService>> policy_service,
+    bool is_main_profile) {
   DCHECK(called_set_up_);
 
   // Create a path for the profile based on the name.
   base::FilePath profile_path(profiles_path_);
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-  if (profile_name != chrome::kInitialProfile &&
-      profile_name != chrome::kLockScreenProfile &&
-      profile_name != ash::ProfileHelper::GetLockScreenAppProfileName()) {
+  if (IsUserProfilePath(base::FilePath(profile_name))) {
+    const std::string fake_email =
+        profile_name.find('@') == std::string::npos
+            ? base::ToLowerASCII(profile_name) + "@test"
+            : profile_name;
     profile_path =
         profile_path.Append(ash::ProfileHelper::Get()->GetUserProfileDir(
-            ash::ProfileHelper::GetUserIdHashByUserIdForTesting(profile_name)));
+            user_manager::FakeUserManager::GetFakeUsernameHash(
+                AccountId::FromUserEmail(fake_email))));
   } else {
     profile_path = profile_path.AppendASCII(profile_name);
   }
@@ -106,6 +120,9 @@ TestingProfile* TestingProfileManager::CreateTestingProfile(
   builder.SetIsNewProfile(is_new_profile.value_or(false));
   if (policy_service)
     builder.SetPolicyService(std::move(*policy_service));
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  builder.SetIsMainProfile(is_main_profile);
+#endif
 
   for (TestingProfile::TestingFactories::value_type& pair : testing_factories)
     builder.AddTestingFactory(pair.first, std::move(pair.second));
@@ -135,18 +152,22 @@ TestingProfile* TestingProfileManager::CreateTestingProfile(
 }
 
 TestingProfile* TestingProfileManager::CreateTestingProfile(
-    const std::string& name) {
+    const std::string& name,
+    bool is_main_profile) {
   DCHECK(called_set_up_);
-  return CreateTestingProfile(name, /*testing_factories=*/{});
+  return CreateTestingProfile(name, /*testing_factories=*/{}, is_main_profile);
 }
 
 TestingProfile* TestingProfileManager::CreateTestingProfile(
     const std::string& name,
-    TestingProfile::TestingFactories testing_factories) {
+    TestingProfile::TestingFactories testing_factories,
+    bool is_main_profile) {
   DCHECK(called_set_up_);
   return CreateTestingProfile(
       name, std::unique_ptr<sync_preferences::PrefServiceSyncable>(),
-      base::UTF8ToUTF16(name), 0, std::move(testing_factories));
+      base::UTF8ToUTF16(name), 0, std::move(testing_factories),
+      /*is_supervised_profile=*/false, /*is_new_profile=*/absl::nullopt,
+      /*policy_service=*/absl::nullopt, is_main_profile);
 }
 
 TestingProfile* TestingProfileManager::CreateGuestProfile() {
@@ -177,6 +198,7 @@ TestingProfile* TestingProfileManager::CreateGuestProfile() {
   return profile_ptr;
 }
 
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 TestingProfile* TestingProfileManager::CreateSystemProfile() {
   DCHECK(called_set_up_);
 
@@ -196,6 +218,7 @@ TestingProfile* TestingProfileManager::CreateSystemProfile() {
 
   return profile_ptr;
 }
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 
 void TestingProfileManager::DeleteTestingProfile(const std::string& name) {
   DCHECK(called_set_up_);
@@ -242,6 +265,7 @@ void TestingProfileManager::DeleteGuestProfile() {
   profile_manager_->profiles_info_.erase(ProfileManager::GetGuestProfilePath());
 }
 
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 void TestingProfileManager::DeleteSystemProfile() {
   DCHECK(called_set_up_);
 
@@ -251,6 +275,7 @@ void TestingProfileManager::DeleteSystemProfile() {
   profile_manager_->profiles_info_.erase(
       ProfileManager::GetSystemProfilePath());
 }
+#endif  // !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_ANDROID)
 
 void TestingProfileManager::DeleteProfileAttributesStorage() {
   profile_manager_->profile_attributes_storage_.reset(nullptr);
@@ -297,7 +322,11 @@ void TestingProfileManager::SetUpInternal(const base::FilePath& profiles_path) {
 
   // Set up the directory for profiles.
   if (profiles_path.empty()) {
-    profiles_path_ = base::CreateUniqueTempDirectoryScopedToTest();
+    // ScopedPathOverride below calls MakeAbsoluteFilePath before setting the
+    // path, so do the same here to make sure the path returned for
+    // DIR_USER_DATA and the paths used for profiles actually match.
+    profiles_path_ = base::MakeAbsoluteFilePath(
+        base::CreateUniqueTempDirectoryScopedToTest());
   } else {
     profiles_path_ = profiles_path;
   }

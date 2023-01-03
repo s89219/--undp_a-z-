@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,6 @@ GEN('#include "build/build_config.h"');
 GEN('#include "chrome/test/data/webui/history_ui_browsertest.h"');
 GEN('#include "content/public/test/browser_test.h"');
 
-/* eslint-disable no-var */
-
 const HistoryBrowserTest = class extends PolymerTest {
   /** @override */
   get browsePreload() {
@@ -25,7 +23,7 @@ const HistoryBrowserTest = class extends PolymerTest {
 var HistoryDrawerTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_drawer_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_drawer_test.js';
   }
 };
 
@@ -36,7 +34,7 @@ TEST_F('HistoryDrawerTest', 'All', function() {
 var HistoryItemTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_item_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_item_test.js';
   }
 };
 
@@ -47,7 +45,7 @@ TEST_F('HistoryItemTest', 'All', function() {
 var HistoryLinkClickTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/link_click_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/link_click_test.js';
   }
 };
 
@@ -58,7 +56,7 @@ TEST_F('HistoryLinkClickTest', 'All', function() {
 var HistoryListTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_list_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_list_test.js';
   }
 
   /** @override */
@@ -161,19 +159,18 @@ TEST_F(
 var HistoryMetricsTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_metrics_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_metrics_test.js';
   }
 };
 
-// TODO(https://crbug.com/1000573): Re-enable once flakiness is fixed.
-TEST_F('HistoryMetricsTest', 'DISABLED_All', function() {
+TEST_F('HistoryMetricsTest', 'All', function() {
   mocha.run();
 });
 
 var HistoryOverflowMenuTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_overflow_menu_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_overflow_menu_test.js';
   }
 };
 
@@ -184,7 +181,7 @@ TEST_F('HistoryOverflowMenuTest', 'All', function() {
 var HistoryRoutingTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_routing_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_routing_test.js';
   }
 };
 
@@ -195,7 +192,7 @@ TEST_F('HistoryRoutingTest', 'All', function() {
 var HistoryRoutingWithQueryParamTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_routing_with_query_param_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_routing_with_query_param_test.js';
   }
 };
 
@@ -206,7 +203,7 @@ TEST_F('HistoryRoutingWithQueryParamTest', 'All', function() {
 var HistorySyncedTabsTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_synced_tabs_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_synced_tabs_test.js';
   }
 };
 
@@ -217,7 +214,7 @@ TEST_F('HistorySyncedTabsTest', 'All', function() {
 var HistorySupervisedUserTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_supervised_user_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_supervised_user_test.js';
   }
 
   get typedefCppFixture() {
@@ -243,7 +240,7 @@ TEST_F('HistorySupervisedUserTest', 'MAYBE_AllSupervised', function() {
 var HistoryToolbarTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/history_toolbar_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/history_toolbar_test.js';
   }
 };
 
@@ -254,7 +251,7 @@ TEST_F('HistoryToolbarTest', 'All', function() {
 var HistorySearchedLabelTest = class extends HistoryBrowserTest {
   /** @override */
   get browsePreload() {
-    return 'chrome://history/test_loader.html?module=history/searched_label_test.js&host=webui-test';
+    return 'chrome://history/test_loader.html?module=history/searched_label_test.js';
   }
 };
 

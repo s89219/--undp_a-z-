@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/win/shortcut.h"
+#include "base/win/windows_version.h"
 #include "chrome/install_static/install_details.h"
 #include "chrome/install_static/install_util.h"
 #include "chrome/installer/setup/install_params.h"
@@ -47,6 +48,7 @@
 #include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/installer_util_strings.h"
 #include "chrome/installer/util/l10n_string_util.h"
+#include "chrome/installer/util/taskbar_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/installer/util/work_item.h"
 #include "chrome/installer/util/work_item_list.h"
@@ -108,7 +110,7 @@ void LogShortcutOperation(ShellUtil::ShortcutLocation location,
   if (properties.has_arguments())
     message.append(base::WideToUTF8(properties.arguments));
 
-  if (properties.pin_to_taskbar && base::win::CanPinShortcutToTaskbar())
+  if (properties.pin_to_taskbar && CanPinShortcutToTaskbar())
     message.append(" and pinning to the taskbar");
 
   message.push_back('.');
@@ -123,9 +125,19 @@ void ExecuteAndLogShortcutOperation(
     ShellUtil::ShortcutLocation location,
     const ShellUtil::ShortcutProperties& properties,
     ShellUtil::ShortcutOperation operation) {
-  LogShortcutOperation(location, properties, operation, false);
-  if (!ShellUtil::CreateOrUpdateShortcut(location, properties, operation)) {
-    LogShortcutOperation(location, properties, operation, true);
+  LogShortcutOperation(location, properties, operation, /*failed=*/false);
+  bool pinned = false;
+  bool success = ShellUtil::CreateOrUpdateShortcut(location, properties,
+                                                   operation, &pinned);
+  if (!success)
+    LogShortcutOperation(location, properties, operation, /*failed=*/true);
+
+  // For Start Menu shortcut creation on versions of Win10 that support
+  // pinning, record whether or not the installer pinned Chrome.
+  if (location == ShellUtil::SHORTCUT_LOCATION_START_MENU_ROOT &&
+      base::win::GetVersion() >= base::win::Version::WIN10 &&
+      CanPinShortcutToTaskbar()) {
+    SetInstallerPinnedChromeToTaskbar(properties.pin_to_taskbar && pinned);
   }
 }
 
@@ -169,9 +181,9 @@ void CopyPreferenceFileForFirstRun(const InstallerState& installer_state,
 // and removes the whole directory during rollback.
 InstallStatus InstallNewVersion(const InstallParams& install_params,
                                 bool is_downgrade_allowed) {
-  const InstallerState& installer_state = install_params.installer_state;
-  const base::Version& current_version = install_params.current_version;
-  const base::Version& new_version = install_params.new_version;
+  const InstallerState& installer_state = *install_params.installer_state;
+  const base::Version& current_version = *install_params.current_version;
+  const base::Version& new_version = *install_params.new_version;
 
   installer_state.SetStage(BUILDING);
 
@@ -396,9 +408,11 @@ void CreateOrUpdateShortcuts(const base::FilePath& target,
   // previous location (under a subdirectory) and, if so, move it to the new
   // location.
   base::FilePath old_shortcut_path;
-  ShellUtil::GetShortcutPath(
-      ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR_DEPRECATED,
-      shortcut_level, &old_shortcut_path);
+  if (!ShellUtil::GetShortcutPath(
+          ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR_DEPRECATED,
+          shortcut_level, &old_shortcut_path)) {
+    return;
+  }
   if (base::PathExists(old_shortcut_path)) {
     ShellUtil::MoveExistingShortcut(
         ShellUtil::SHORTCUT_LOCATION_START_MENU_CHROME_DIR_DEPRECATED,
@@ -492,11 +506,11 @@ void RunShortcutCreationInChildProc(
 InstallStatus InstallOrUpdateProduct(const InstallParams& install_params,
                                      const base::FilePath& prefs_path,
                                      const InitialPreferences& prefs) {
-  const InstallationState& original_state = install_params.installation_state;
-  const InstallerState& installer_state = install_params.installer_state;
-  const base::FilePath& setup_path = install_params.setup_path;
-  const base::FilePath& src_path = install_params.src_path;
-  const base::Version& new_version = install_params.new_version;
+  const InstallationState& original_state = *install_params.installation_state;
+  const InstallerState& installer_state = *install_params.installer_state;
+  const base::FilePath& setup_path = *install_params.setup_path;
+  const base::FilePath& src_path = *install_params.src_path;
+  const base::Version& new_version = *install_params.new_version;
 
   // TODO(robertshield): Removing the pending on-reboot moves should be done
   // elsewhere.

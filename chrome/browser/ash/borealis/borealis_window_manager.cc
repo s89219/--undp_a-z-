@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,10 +17,10 @@
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/ash/borealis/borealis_util.h"
-#include "chrome/browser/ash/crostini/crostini_shelf_utils.h"
 #include "chrome/browser/ash/guest_os/guest_os_pref_names.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service.h"
 #include "chrome/browser/ash/guest_os/guest_os_registry_service_factory.h"
+#include "chrome/browser/ash/guest_os/guest_os_shelf_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/exo/shell_surface_util.h"
 #include "components/prefs/pref_service.h"
@@ -54,8 +54,7 @@ const std::string* GetWindowId(const aura::Window* window) {
 std::string BorealisIdToAppId(Profile* profile, unsigned borealis_id) {
   for (const auto& item :
        guest_os::GuestOsRegistryServiceFactory::GetForProfile(profile)
-           ->GetRegisteredApps(guest_os::GuestOsRegistryService::VmType::
-                                   ApplicationList_VmType_BOREALIS)) {
+           ->GetRegisteredApps(guest_os::VmType::BOREALIS)) {
     absl::optional<int> app_id = GetBorealisAppId(item.second.Exec());
     if (app_id && app_id.value() == static_cast<int>(borealis_id)) {
       return item.first;
@@ -81,11 +80,11 @@ std::string WindowToAppId(Profile* profile, const aura::Window* window) {
   base::ReplaceFirstSubstringAfterOffset(
       &pretend_crostini_id, 0, kBorealisWindowPrefix, "org.chromium.termina.");
   std::string crostini_equivalent_id =
-      crostini::GetCrostiniShelfAppId(profile, &pretend_crostini_id, nullptr);
+      guest_os::GetGuestShelfAppId(profile, &pretend_crostini_id, nullptr);
 
   // If Crostini thinks this app is registered, then it's actually registered
   // for Borealis.
-  if (!crostini::IsUnmatchedCrostiniShelfAppId(crostini_equivalent_id))
+  if (!guest_os::IsUnregisteredCrostiniShelfAppId(crostini_equivalent_id))
     return crostini_equivalent_id;
 
   // Unregistered app. Unlike Crostini, we expect all Borealis apps to be

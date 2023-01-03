@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -616,6 +616,40 @@ IN_PROC_BROWSER_TEST_F(RecordLanguagesMetricsBrowserTest, XmlLangEmpty) {
   NavigateAndVerifyXmlHtmlHistogramsMetric(
       xml_html_language_url(),
       blink::AcceptLanguageAndXmlHtmlLangUsage::kXmlLangEmpty, 1);
+}
+
+IN_PROC_BROWSER_TEST_F(RecordLanguagesMetricsBrowserTest, XmlLangIsDash) {
+  SetTestOptions({/*has_content_language_in_parent=*/false,
+                  /*has_content_language_in_child=*/false,
+                  /*parent_content_language_value=*/"",
+                  /*child_content_language_value=*/"",
+                  /*has_xml_lang=*/true,
+                  /*has_html_lang=*/true,
+                  /*xml_lang_value=*/"-",
+                  /*html_lang_value=*/"en-US"},
+                 {xml_html_language_url()});
+  // Make sure no crash and no metric reports.
+  base::HistogramTester histograms;
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), xml_html_language_url()));
+  RetryForHistogramUntilCountReached(&histograms,
+                                     kXmlHtmlLanguageHistorgramName, 0);
+}
+
+IN_PROC_BROWSER_TEST_F(RecordLanguagesMetricsBrowserTest, HtmlLangIsDash) {
+  SetTestOptions({/*has_content_language_in_parent=*/false,
+                  /*has_content_language_in_child=*/false,
+                  /*parent_content_language_value=*/"",
+                  /*child_content_language_value=*/"",
+                  /*has_xml_lang=*/true,
+                  /*has_html_lang=*/true,
+                  /*xml_lang_value=*/"",
+                  /*html_lang_value=*/"-"},
+                 {xml_html_language_url()});
+  // Make sure no crash and no metric reports.
+  base::HistogramTester histograms;
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), xml_html_language_url()));
+  RetryForHistogramUntilCountReached(&histograms,
+                                     kXmlHtmlLanguageHistorgramName, 0);
 }
 
 IN_PROC_BROWSER_TEST_F(RecordLanguagesMetricsBrowserTest, XmlLangWildcard) {

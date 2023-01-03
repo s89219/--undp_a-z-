@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,23 +11,24 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/ui_features.h"
-#include "chrome/browser/ui/user_education/feature_promo_controller.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/side_panel/side_panel_content_proxy.h"
+#include "chrome/browser/ui/views/side_panel/side_panel_util.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/feature_engagement/public/feature_constants.h"
 #include "components/feature_engagement/public/tracker.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
-SidePanelWebUIView::SidePanelWebUIView(Browser* browser,
-                                       base::RepeatingClosure on_show_cb,
+SidePanelWebUIView::SidePanelWebUIView(base::RepeatingClosure on_show_cb,
                                        base::RepeatingClosure close_cb,
                                        BubbleContentsWrapper* contents_wrapper)
-    : browser_(browser),
-      on_show_cb_(std::move(on_show_cb)),
+    : on_show_cb_(std::move(on_show_cb)),
       close_cb_(std::move(close_cb)),
       contents_wrapper_(contents_wrapper) {
+  SidePanelUtil::GetSidePanelContentProxy(this)->SetAvailable(false);
   SetVisible(false);
   set_allow_accelerators(true);
   contents_wrapper_->SetHost(weak_factory_.GetWeakPtr());
@@ -36,20 +37,23 @@ SidePanelWebUIView::SidePanelWebUIView(Browser* browser,
 
 void SidePanelWebUIView::SetVisible(bool visible) {
   views::WebView::SetVisible(visible);
-  if (!base::FeatureList::IsEnabled(features::kUnifiedSidePanel)) {
-    base::RecordAction(
-        base::UserMetricsAction(visible ? "SidePanel.Show" : "SidePanel.Hide"));
-    if (visible) {
-      // Record usage for side panel promo.
-      feature_engagement::TrackerFactory::GetForBrowserContext(
-          browser_->profile())
-          ->NotifyEvent("side_panel_shown");
+  if (base::FeatureList::IsEnabled(features::kUnifiedSidePanel))
+    return;
+  base::RecordAction(
+      base::UserMetricsAction(visible ? "SidePanel.Show" : "SidePanel.Hide"));
+  auto* browser_window = BrowserWindow::FindBrowserWindowWithWebContents(
+      contents_wrapper_->web_contents());
+  if (!visible || !browser_window)
+    return;
+  // Record usage for side panel promo.
+  feature_engagement::TrackerFactory::GetForBrowserContext(
+      Profile::FromBrowserContext(
+          contents_wrapper_->web_contents()->GetBrowserContext()))
+      ->NotifyEvent("side_panel_shown");
 
-      // Close IPH for side panel if shown.
-      browser_->window()->CloseFeaturePromo(
-          feature_engagement::kIPHReadingListInSidePanelFeature);
-    }
-  }
+  // Close IPH for side panel if shown.
+  browser_window->CloseFeaturePromo(
+      feature_engagement::kIPHReadingListInSidePanelFeature);
 }
 
 SidePanelWebUIView::~SidePanelWebUIView() = default;
@@ -65,7 +69,9 @@ void SidePanelWebUIView::ViewHierarchyChanged(
 
 void SidePanelWebUIView::ShowUI() {
   SetVisible(true);
-  RequestFocus();
+  SidePanelUtil::GetSidePanelContentProxy(this)->SetAvailable(true);
+  if (!base::FeatureList::IsEnabled(features::kUnifiedSidePanel))
+    RequestFocus();
   if (on_show_cb_)
     on_show_cb_.Run();
 }

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@ import {
   VideoResolutionOptionGroup,
 } from '../../device/type.js';
 import * as dom from '../../dom.js';
+import * as expert from '../../expert.js';
 import {I18nString} from '../../i18n_string.js';
 import * as loadTimeData from '../../models/load_time_data.js';
 import {Facing, Resolution, ViewName} from '../../type.js';
@@ -24,6 +25,8 @@ export class VideoResolutionSettings extends BaseSettings {
   private readonly menu: HTMLElement;
 
   private focusedDeviceId: string|null = null;
+
+  private menuScrollTop = 0;
 
   constructor(readonly cameraManager: CameraManager) {
     super(ViewName.VIDEO_RESOLUTION_SETTINGS);
@@ -46,6 +49,10 @@ export class VideoResolutionSettings extends BaseSettings {
 
     this.cameraManager.addVideoResolutionOptionListener(
         (groups) => this.onOptionsUpdate(groups));
+
+    expert.addObserver(
+        expert.ExpertOption.ENABLE_FPS_PICKER_FOR_BUILTIN,
+        () => this.toggleFPSPickerVisiblity);
   }
 
   private onOptionsUpdate(groups: VideoResolutionOptionGroup[]): void {
@@ -66,6 +73,7 @@ export class VideoResolutionSettings extends BaseSettings {
       }
     }
     setupI18nElements(this.menu);
+    this.menu.scrollTop = this.menuScrollTop;
   }
 
   private addResolutionItem(
@@ -73,7 +81,17 @@ export class VideoResolutionSettings extends BaseSettings {
     const optionElement =
         instantiateTemplate('#video-resolution-item-template');
     const span = dom.getFrom(optionElement, 'span', HTMLSpanElement);
-    const text = util.toVideoResoloutionOptionLabel(option.resolutionLevel);
+
+    let text;
+    const label = util.toVideoResoloutionOptionLabel(option.resolutionLevel);
+    if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+      const mpInfo = loadTimeData.getI18nMessage(
+          I18nString.LABEL_RESOLUTION_MP,
+          option.fpsOptions[0].resolutions[0].mp);
+      text = `${label} (${mpInfo})`;
+    } else {
+      text = label;
+    }
     span.textContent = text;
     const deviceName =
         loadTimeData.getI18nMessage(util.getLabelFromFacing(facing));
@@ -85,11 +103,17 @@ export class VideoResolutionSettings extends BaseSettings {
             SUPPORTED_CONSTANT_FPS.some((fps) => fps === fpsOption.constFps));
     const showFpsButton =
         constFpsOptions.length > 1 && facing === Facing.EXTERNAL;
+    const isFPSEnabled =
+        expert.isEnabled(expert.ExpertOption.ENABLE_FPS_PICKER_FOR_BUILTIN);
     let resolution = new Resolution();
     for (const fps of SUPPORTED_CONSTANT_FPS) {
       const fpsButton =
           dom.getFrom(optionElement, `.fps-${fps}`, HTMLButtonElement);
-      fpsButton.hidden = !showFpsButton;
+      if (!isFPSEnabled) {
+        fpsButton.hidden = true;
+      } else if (!showFpsButton) {
+        fpsButton.classList.add('invisible');
+      }
 
       const fpsOption =
           option.fpsOptions.find((fpsOption) => fpsOption.constFps === fps);
@@ -119,8 +143,13 @@ export class VideoResolutionSettings extends BaseSettings {
     if (!input.checked) {
       input.addEventListener('click', (event) => {
         this.focusedDeviceId = deviceId;
-        this.cameraManager.setPrefVideoResolutionLevel(
-            deviceId, option.resolutionLevel);
+        this.menuScrollTop = this.menu.scrollTop;
+        if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+          this.cameraManager.setPrefVideoResolution(deviceId, resolution);
+        } else {
+          this.cameraManager.setPrefVideoResolutionLevel(
+              deviceId, option.resolutionLevel);
+        }
         event.preventDefault();
       });
     }
@@ -130,6 +159,16 @@ export class VideoResolutionSettings extends BaseSettings {
 
     if (input.checked && this.focusedDeviceId === deviceId) {
       input.focus();
+    }
+  }
+
+  private toggleFPSPickerVisiblity(): void {
+    const isFPSEnabled =
+        expert.isEnabled(expert.ExpertOption.ENABLE_FPS_PICKER_FOR_BUILTIN);
+    const fpsButtons = dom.getAllFrom(
+      this.menu, '.fps-buttons button', HTMLButtonElement);
+    for (const fpsButton of fpsButtons) {
+      fpsButton.hidden = !isFPSEnabled;
     }
   }
 }

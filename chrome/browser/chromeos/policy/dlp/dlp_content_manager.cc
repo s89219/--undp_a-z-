@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "base/containers/cxx20_erase.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
+#include "base/ranges/algorithm.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_confidential_contents.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_content_manager_observer.h"
 #include "chrome/browser/chromeos/policy/dlp/dlp_content_restriction_set.h"
@@ -117,9 +118,10 @@ bool DlpContentManager::IsScreenShareBlocked(
 
 void DlpContentManager::CheckPrintingRestriction(
     content::WebContents* web_contents,
+    content::GlobalRenderFrameHostId rfh_id,
     OnDlpRestrictionCheckedCallback callback) {
   const RestrictionLevelAndUrl restriction_info =
-      GetPrintingRestrictionInfo(web_contents);
+      GetPrintingRestrictionInfo(web_contents, rfh_id);
   MaybeReportEvent(restriction_info, DlpRulesManager::Restriction::kPrinting);
   DlpBooleanHistogram(dlp::kPrintingBlockedUMA, IsBlocked(restriction_info));
   DlpBooleanHistogram(dlp::kPrintingWarnedUMA, IsWarn(restriction_info));
@@ -233,6 +235,8 @@ void DlpContentManager::ScreenShareInfo::UpdateAfterSourceChange(
   source_callback_ = std::move(source_callback);
   auto* web_contents = GetWebContentsFromMediaId(media_id);
   web_contents_ = web_contents ? web_contents->GetWeakPtr() : nullptr;
+  // If it's a resume after source change, request to start it if pending.
+  StartIfPending();
   // This is called from AddScreenShare() which is only called when a new stream
   // is starting or when the source was successfully changed and the stream is
   // running again, so we can set the state to running.
@@ -290,9 +294,23 @@ DlpContentManager::ScreenShareInfo::web_contents() const {
   return web_contents_;
 }
 
+void DlpContentManager::ScreenShareInfo::set_dialog_widget(
+    base::WeakPtr<views::Widget> dialog_widget) {
+  DCHECK(!HasOpenDialogWidget());
+  dialog_widget_ = dialog_widget;
+}
+
 void DlpContentManager::ScreenShareInfo::set_latest_confidential_contents_info(
     ConfidentialContentsInfo confidential_contents_info) {
   latest_confidential_contents_info_ = confidential_contents_info;
+}
+
+void DlpContentManager::ScreenShareInfo::StartIfPending() {
+  if (pending_start_on_source_change_) {
+    state_change_callback_.Run(media_id_,
+                               blink::mojom::MediaStreamStateChange::PLAY);
+    pending_start_on_source_change_ = false;
+  }
 }
 
 const RestrictionLevelAndUrl&
@@ -320,13 +338,15 @@ void DlpContentManager::ScreenShareInfo::Resume() {
   // here explicitly.
   if (media_id_.type == content::DesktopMediaID::TYPE_WEB_CONTENTS &&
       web_contents_ && source_callback_) {
-    content::RenderFrameHost* main_frame = web_contents_->GetMainFrame();
+    content::RenderFrameHost* main_frame = web_contents_->GetPrimaryMainFrame();
     DCHECK(main_frame);
     source_callback_.Run(content::DesktopMediaID(
         content::DesktopMediaID::TYPE_WEB_CONTENTS,
         content::DesktopMediaID::kNullId,
         content::WebContentsMediaCaptureId(main_frame->GetProcess()->GetID(),
                                            main_frame->GetRoutingID())));
+    // Start after source will be changed and notified.
+    pending_start_on_source_change_ = true;
   } else {
     state_change_callback_.Run(media_id_,
                                blink::mojom::MediaStreamStateChange::PLAY);
@@ -373,10 +393,8 @@ void DlpContentManager::ScreenShareInfo::MaybeCloseDialogWidget() {
   }
 }
 
-void DlpContentManager::ScreenShareInfo::SetDialogWidget(
-    base::WeakPtr<views::Widget> dialog_widget) {
-  DCHECK(!dialog_widget_ || dialog_widget_->IsClosed());
-  dialog_widget_ = dialog_widget;
+bool DlpContentManager::ScreenShareInfo::HasOpenDialogWidget() {
+  return dialog_widget_ && !dialog_widget_->IsClosed();
 }
 
 base::WeakPtr<DlpContentManager::ScreenShareInfo>
@@ -423,7 +441,8 @@ void DlpContentManager::OnScreenShareSourceChanging(
     const content::DesktopMediaID& new_media_id) {
   for (auto& screen_share : running_screen_shares_) {
     if (screen_share->label() == label &&
-        screen_share->media_id() == old_media_id) {
+        screen_share->media_id() == old_media_id &&
+        screen_share->new_media_id() != new_media_id) {
       screen_share->ChangeStateBeforeSourceChange();
       screen_share->set_new_media_id(new_media_id);
     }
@@ -507,11 +526,7 @@ void DlpContentManager::OnConfidentialityChanged(
   if (confidential_web_contents_.contains(web_contents)) {
     old_restriction_set = confidential_web_contents_[web_contents];
   }
-  if (restriction_set.IsEmpty()) {
-    RemoveFromConfidential(web_contents);
-  } else {
-    confidential_web_contents_[web_contents] = restriction_set;
-  }
+  UpdateConfidentiality(web_contents, restriction_set);
   NotifyOnConfidentialityChanged(old_restriction_set, restriction_set,
                                  web_contents);
 }
@@ -546,11 +561,12 @@ void DlpContentManager::RemoveFromConfidential(
 }
 
 RestrictionLevelAndUrl DlpContentManager::GetPrintingRestrictionInfo(
-    content::WebContents* web_contents) const {
+    content::WebContents* web_contents,
+    content::GlobalRenderFrameHostId rfh_id) const {
   // If we're viewing the PDF in a MimeHandlerViewGuest, use its embedded
   // WebContents.
   auto* guest_view =
-      extensions::MimeHandlerViewGuest::FromWebContents(web_contents);
+      extensions::MimeHandlerViewGuest::FromRenderFrameHostId(rfh_id);
   web_contents =
       guest_view ? guest_view->embedder_web_contents() : web_contents;
 
@@ -566,7 +582,8 @@ DlpContentManager::GetScreenShareConfidentialContentsInfoForWebContents(
     info.restriction_info =
         GetConfidentialRestrictions(web_contents)
             .GetRestrictionLevelAndUrl(DlpContentRestriction::kScreenShare);
-    info.confidential_contents.Add(web_contents);
+    if (info.restriction_info.level != DlpRulesManager::Level::kNotSet)
+      info.confidential_contents.Add(web_contents);
   }
   return info;
 }
@@ -626,9 +643,9 @@ void DlpContentManager::AddOrUpdateScreenShare(
     base::RepeatingClosure stop_callback,
     content::MediaStreamUI::StateChangeCallback state_change_callback,
     content::MediaStreamUI::SourceCallback source_callback) {
-  auto screen_share_it = std::find_if(
-      running_screen_shares_.begin(), running_screen_shares_.end(),
-      [&label, media_id](const std::unique_ptr<ScreenShareInfo>& info) -> bool {
+  auto screen_share_it = base::ranges::find_if(
+      running_screen_shares_,
+      [&label, media_id](const std::unique_ptr<ScreenShareInfo>& info) {
         return info && info->label() == label &&
                info->new_media_id() == media_id;
       });
@@ -675,7 +692,6 @@ void DlpContentManager::CheckRunningScreenShares() {
   for (auto& screen_share : running_screen_shares_) {
     ConfidentialContentsInfo info = GetScreenShareConfidentialContentsInfo(
         screen_share->media_id(), screen_share->web_contents().get());
-
     if (IsReported(info.restriction_info) && reporting_manager_ &&
         last_reported_screen_share_.ShouldReportAndUpdate(
             screen_share->label(), info.confidential_contents)) {
@@ -684,16 +700,33 @@ void DlpContentManager::CheckRunningScreenShares() {
                   info.restriction_info.level, reporting_manager_);
     }
 
+    // TODO(crbug.com/1326541): Fix for new tab shares.
     if (screen_share->GetLatestRestriction() == info.restriction_info &&
         screen_share->GetConfidentialContents() == info.confidential_contents) {
       // No change in restrictions that apply to this screen share.
+      // Additional information, such as the titles, might have changed so we
+      // check if need to update the warning.
+      if (screen_share->HasOpenDialogWidget()) {
+        if (EqualWithTitles(screen_share->GetConfidentialContents(),
+                            info.confidential_contents))
+          continue;
+
+        screen_share->set_latest_confidential_contents_info(info);
+        screen_share->MaybeCloseDialogWidget();
+        RemoveAllowedContents(info.confidential_contents,
+                              DlpRulesManager::Restriction::kScreenShare);
+        // base::Unretained(this) is safe here because DlpContentManager is
+        // initialized as a singleton that's always available in the system.
+        screen_share->set_dialog_widget(
+            warn_notifier_->ShowDlpScreenShareWarningDialog(
+                base::BindOnce(
+                    &DlpContentManager::OnDlpScreenShareWarnDialogReply,
+                    base::Unretained(this), info, screen_share->GetWeakPtr()),
+                info.confidential_contents, screen_share->application_title()));
+      }
       continue;
     }
 
-    if (IsWarn(screen_share->GetLatestRestriction())) {
-      // Close previously opened dialog, if any.
-      screen_share->MaybeCloseDialogWidget();
-    }
     screen_share->set_latest_confidential_contents_info(info);
 
     DlpBooleanHistogram(dlp::kScreenShareBlockedUMA,
@@ -710,6 +743,8 @@ void DlpContentManager::CheckRunningScreenShares() {
     }
 
     if (IsWarn(info.restriction_info)) {
+      // Close previously opened dialog, if any.
+      screen_share->MaybeCloseDialogWidget();
       // Check which of the contents were already allowed and don't warn for
       // those.
       RemoveAllowedContents(info.confidential_contents,
@@ -740,7 +775,7 @@ void DlpContentManager::CheckRunningScreenShares() {
 
       // base::Unretained(this) is safe here because DlpContentManager is
       // initialized as a singleton that's always available in the system.
-      screen_share->SetDialogWidget(
+      screen_share->set_dialog_widget(
           warn_notifier_->ShowDlpScreenShareWarningDialog(
               base::BindOnce(
                   &DlpContentManager::OnDlpScreenShareWarnDialogReply,
@@ -836,6 +871,16 @@ void DlpContentManager::RemoveAllowedContents(
       });
 }
 
+void DlpContentManager::UpdateConfidentiality(
+    content::WebContents* web_contents,
+    const DlpContentRestrictionSet& restriction_set) {
+  if (restriction_set.IsEmpty()) {
+    RemoveFromConfidential(web_contents);
+  } else {
+    confidential_web_contents_[web_contents] = restriction_set;
+  }
+}
+
 void DlpContentManager::NotifyOnConfidentialityChanged(
     const DlpContentRestrictionSet& old_restriction_set,
     const DlpContentRestrictionSet& new_restriction_set,
@@ -876,7 +921,7 @@ bool DlpContentManager::LastReportedScreenShare::ShouldReportAndUpdate(
                      confidential_contents_.GetContents().end(),
                      confidential_contents.GetContents().begin(),
                      confidential_contents.GetContents().end())) {
-    confidential_contents_.UnionWith(confidential_contents);
+    confidential_contents_.InsertOrUpdate(confidential_contents);
     return true;
   }
   return false;

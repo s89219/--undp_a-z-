@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,38 +26,56 @@ enum class TagKind {
 using TagName = uint32_t;
 
 // Tags common to multivariant and media playlists.
+// For organization, this list is in alphabetical order.
 enum class CommonTagName : TagName {
   kMinValue = 0,
   kM3u = kMinValue,
-  kXVersion,
-  kXIndependentSegments,
   kXDefine,
-  kMaxValue = kXDefine,
+  kXIndependentSegments,
+  kXStart,
+  kXVersion,
+  kMaxValue = kXVersion,
 };
 
 // Tags exclusive to multivariant playlists.
+// For organization, this list is in alphabetical order.
 enum class MultivariantPlaylistTagName : TagName {
   kMinValue = static_cast<TagName>(CommonTagName::kMaxValue) + 1,
-  kXMedia = kMinValue,
-  kXStreamInf,
+  kXContentSteering = kMinValue,
   kXIFrameStreamInf,
+  kXMedia,
   kXSessionData,
   kXSessionKey,
-  kXContentSteering,
-  kMaxValue = kXContentSteering,
+  kXStreamInf,
+  kMaxValue = kXStreamInf,
 };
 
 // Tags exclusive to media playlists.
+// For organization, this list is in alphabetical order.
 enum class MediaPlaylistTagName : TagName {
   kMinValue = static_cast<TagName>(MultivariantPlaylistTagName::kMaxValue) + 1,
   kInf = kMinValue,
-  kXTargetDuration,
-  kXEndList,
-  kXIFramesOnly,
+  kXBitrate,
+  kXByteRange,
+  kXDateRange,
   kXDiscontinuity,
+  kXDiscontinuitySequence,
+  kXEndList,
   kXGap,
+  kXIFramesOnly,
+  kXKey,
+  kXMap,
+  kXMediaSequence,
+  kXPart,
+  kXPartInf,
   kXPlaylistType,
-  kMaxValue = kXPlaylistType,
+  kXPreloadHint,
+  kXProgramDateTime,
+  kXRenditionReport,
+  kXServerControl,
+  kXSkip,
+  kXTargetDuration,
+  kMaxValue = kXTargetDuration,
 };
 
 constexpr TagKind GetTagKind(CommonTagName) {

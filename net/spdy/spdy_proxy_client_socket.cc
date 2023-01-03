@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
@@ -38,17 +37,14 @@ SpdyProxyClientSocket::SpdyProxyClientSocket(
     const std::string& user_agent,
     const HostPortPair& endpoint,
     const NetLogWithSource& source_net_log,
-    HttpAuthController* auth_controller,
+    scoped_refptr<HttpAuthController> auth_controller,
     ProxyDelegate* proxy_delegate)
     : spdy_stream_(spdy_stream),
       endpoint_(endpoint),
-      auth_(auth_controller),
+      auth_(std::move(auth_controller)),
       proxy_server_(proxy_server),
       proxy_delegate_(proxy_delegate),
       user_agent_(user_agent),
-      user_buffer_len_(0),
-      write_buffer_len_(0),
-      was_ever_used_(false),
       net_log_(NetLogWithSource::Make(spdy_stream->net_log().net_log(),
                                       NetLogSourceType::PROXY_CLIENT_SOCKET)),
       source_dependency_(source_net_log.source()) {
@@ -245,6 +241,8 @@ int SpdyProxyClientSocket::Write(
   DCHECK(write_callback_.is_null());
   if (next_state_ != STATE_OPEN)
     return ERR_SOCKET_NOT_CONNECTED;
+  if (end_stream_state_ == EndStreamState::kEndStreamSent)
+    return ERR_CONNECTION_CLOSED;
 
   DCHECK(spdy_stream_.get());
   spdy_stream_->SendData(buf, buf_len, MORE_DATA_TO_SEND);
@@ -284,9 +282,9 @@ void SpdyProxyClientSocket::RunWriteCallback(CompletionOnceCallback callback,
   std::move(callback).Run(result);
 
   if (end_stream_state_ == EndStreamState::kEndStreamReceived) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&SpdyProxyClientSocket::MaybeSendEndStream,
-                                  weak_factory_.GetWeakPtr()));
+                                  weak_factory_.GetMutableWeakPtr()));
   }
 }
 
@@ -483,7 +481,7 @@ void SpdyProxyClientSocket::OnDataReceived(std::unique_ptr<SpdyBuffer> buffer) {
     if (end_stream_state_ == EndStreamState::kNone) {
       // The peer sent END_STREAM. Schedule a DATA frame with END_STREAM.
       end_stream_state_ = EndStreamState::kEndStreamReceived;
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(&SpdyProxyClientSocket::MaybeSendEndStream,
                                     weak_factory_.GetWeakPtr()));
     }
@@ -516,7 +514,7 @@ void SpdyProxyClientSocket::OnDataSent() {
 
   // Proxy write callbacks result in deep callback chains. Post to allow the
   // stream's write callback chain to unwind (see crbug.com/355511).
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&SpdyProxyClientSocket::RunWriteCallback,
                                 write_callback_weak_factory_.GetWeakPtr(),
                                 std::move(write_callback_), rv));

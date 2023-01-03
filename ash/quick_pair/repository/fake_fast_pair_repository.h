@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,13 +11,12 @@
 #include "ash/quick_pair/repository/fast_pair_repository.h"
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
+#include "base/containers/flat_set.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
-namespace chromeos {
-namespace bluetooth_config {
+namespace ash::bluetooth_config {
 class DeviceImageInfo;
-}  // namespace bluetooth_config
-}  // namespace chromeos
+}
 
 namespace device {
 class BluetoothDevice;
@@ -54,6 +53,12 @@ class FakeFastPairRepository : public FastPairRepository {
   }
 
   void SetOptInStatus(nearby::fastpair::OptInStatus status);
+  nearby::fastpair::OptInStatus GetOptInStatus();
+
+  void SetSavedDevices(nearby::fastpair::OptInStatus status,
+                       std::vector<nearby::fastpair::FastPairDevice> devices);
+
+  void SaveMacAddressToAccount(const std::string& mac_address);
 
   // FastPairRepository::
   void GetDeviceMetadata(const std::string& hex_model_id,
@@ -62,12 +67,16 @@ class FakeFastPairRepository : public FastPairRepository {
                         CheckAccountKeysCallback callback) override;
   void AssociateAccountKey(scoped_refptr<Device> device,
                            const std::vector<uint8_t>& account_key) override;
-  bool DeleteAssociatedDevice(const device::BluetoothDevice* device) override;
+  bool AssociateAccountKeyLocally(scoped_refptr<Device> device) override;
+  void DeleteAssociatedDevice(const std::string& mac_address,
+                              DeleteAssociatedDeviceCallback callback) override;
   void FetchDeviceImages(scoped_refptr<Device> device) override;
+  absl::optional<std::string> GetDeviceDisplayNameFromCache(
+      std::vector<uint8_t> account_key) override;
   bool PersistDeviceImages(scoped_refptr<Device> device) override;
   bool EvictDeviceImages(const device::BluetoothDevice* device) override;
-  absl::optional<chromeos::bluetooth_config::DeviceImageInfo>
-  GetImagesForDevice(const std::string& device_id) override;
+  absl::optional<bluetooth_config::DeviceImageInfo> GetImagesForDevice(
+      const std::string& device_id) override;
   void CheckOptInStatus(CheckOptInStatusCallback callback) override;
   void UpdateOptInStatus(nearby::fastpair::OptInStatus opt_in_status,
                          UpdateOptInStatusCallback callback) override;
@@ -77,14 +86,28 @@ class FakeFastPairRepository : public FastPairRepository {
   void GetSavedDevices(GetSavedDevicesCallback callback) override;
   bool IsAccountKeyPairedLocally(
       const std::vector<uint8_t>& account_key) override;
+  void IsDeviceSavedToAccount(const std::string& mac_address,
+                              IsDeviceSavedToAccountCallback callback) override;
+
+  // `SetIsDeviceSavedToAccountCallbackDelay` and
+  // `TriggerIsDeviceSavedToAccountCallback` are used together to control when
+  // the callback is triggered.
+  void TriggerIsDeviceSavedToAccountCallback();
+  void SetIsDeviceSavedToAccountCallbackDelayed(bool is_delayed) {
+    saved_to_account_callback_is_delayed_ = is_delayed;
+  }
 
  private:
   static void SetInstance(FastPairRepository* instance);
 
+  IsDeviceSavedToAccountCallback saved_to_account_callback_;
+  bool saved_to_account_callback_is_delayed_ = false;
   nearby::fastpair::OptInStatus status_ =
       nearby::fastpair::OptInStatus::STATUS_UNKNOWN;
+  std::vector<nearby::fastpair::FastPairDevice> devices_;
   bool is_network_connected_ = true;
   bool is_account_key_paired_locally_ = true;
+  base::flat_set<std::string> saved_mac_addresses_;
   base::flat_map<std::string, std::unique_ptr<DeviceMetadata>> data_;
   base::flat_map<std::string, std::vector<uint8_t>> saved_account_keys_;
   absl::optional<PairingMetadata> check_account_keys_result_;

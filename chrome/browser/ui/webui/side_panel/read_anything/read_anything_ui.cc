@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,8 @@
 
 ReadAnythingUI::ReadAnythingUI(content::WebUI* web_ui)
     : ui::MojoBubbleWebUIController(web_ui) {
-  content::WebUIDataSource* source = content::WebUIDataSource::Create(
+  content::WebUIDataSource* source = content::WebUIDataSource::CreateAndAdd(
+      web_ui->GetWebContents()->GetBrowserContext(),
       chrome::kChromeUIReadAnythingSidePanelHost);
   static constexpr webui::LocalizedString kLocalizedStrings[] = {
       {"readAnythingTabTitle", IDS_READ_ANYTHING_TITLE},
@@ -35,8 +36,6 @@ ReadAnythingUI::ReadAnythingUI(content::WebUI* web_ui)
   webui::SetupWebUIDataSource(
       source, base::make_span(kSidePanelResources, kSidePanelResourcesSize),
       IDR_SIDE_PANEL_READ_ANYTHING_READ_ANYTHING_HTML);
-  content::WebUIDataSource::Add(web_ui->GetWebContents()->GetBrowserContext(),
-                                source);
 }
 
 ReadAnythingUI::~ReadAnythingUI() = default;
@@ -54,7 +53,7 @@ void ReadAnythingUI::CreatePageHandler(
     mojo::PendingReceiver<read_anything::mojom::PageHandler> receiver) {
   DCHECK(page);
   read_anything_page_handler_ = std::make_unique<ReadAnythingPageHandler>(
-      std::move(page), std::move(receiver));
+      std::move(page), std::move(receiver), web_ui());
   if (embedder())
     embedder()->ShowUI();
 }

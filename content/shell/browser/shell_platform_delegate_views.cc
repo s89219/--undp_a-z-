@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,7 +37,6 @@
 #include "ui/views/layout/box_layout_view.h"
 #include "ui/views/layout/flex_layout_types.h"
 #include "ui/views/layout/flex_layout_view.h"
-#include "ui/views/layout/grid_layout.h"
 #include "ui/views/test/desktop_test_views_delegate.h"
 #include "ui/views/view.h"
 #include "ui/views/view_class_properties.h"
@@ -62,7 +61,7 @@ namespace content {
 struct ShellPlatformDelegate::ShellData {
   gfx::Size content_size;
   // Self-owned Widget, destroyed through CloseNow().
-  views::Widget* window_widget = nullptr;
+  raw_ptr<views::Widget> window_widget = nullptr;
 };
 
 struct ShellPlatformDelegate::PlatformData {
@@ -100,9 +99,11 @@ class ShellView : public views::BoxLayoutView,
   void SetWebContents(WebContents* web_contents, const gfx::Size& size) {
     // If there was a previous WebView in this Shell it should be removed and
     // deleted.
-    if (web_view_)
-      contents_view_->RemoveChildViewT(web_view_.get());
-
+    if (web_view_) {
+      // ExtractAsDangling clears the underlying pointer and returns another
+      // raw_ptr instance that is allowed to dangle.
+      contents_view_->RemoveChildViewT(web_view_.ExtractAsDangling().get());
+    }
     views::Builder<views::View>(contents_view_)
         .AddChild(views::Builder<views::WebView>()
                       .CopyAddressTo(&web_view_)
@@ -332,8 +333,9 @@ void ShellPlatformDelegate::Initialize(const gfx::Size& default_window_size) {
       std::make_unique<wm::WMTestHelper>(default_window_size);
 #else
   platform_->wm_state = std::make_unique<wm::WMState>();
-  CHECK(!display::Screen::GetScreen());
-  platform_->screen = views::CreateDesktopScreen();
+  // FakeScreen tests create their own screen.
+  if (!display::Screen::HasScreen())
+    platform_->screen = views::CreateDesktopScreen();
 #endif
 
   platform_->views_delegate =
@@ -398,7 +400,7 @@ void ShellPlatformDelegate::SetContents(Shell* shell) {
 
 void ShellPlatformDelegate::ResizeWebContent(Shell* shell,
                                              const gfx::Size& content_size) {
-  shell->web_contents()->GetRenderWidgetHostView()->SetSize(content_size);
+  shell->web_contents()->Resize(gfx::Rect(content_size));
 }
 
 void ShellPlatformDelegate::EnableUIControl(Shell* shell,

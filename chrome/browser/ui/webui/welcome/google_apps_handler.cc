@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -134,9 +134,8 @@ void GoogleAppsHandler::HandleGetGoogleAppsList(const base::Value::List& args) {
   AllowJavascript();
   CHECK_EQ(1U, args.size());
   const base::Value& callback_id = args[0];
-  ResolveJavascriptCallback(
-      callback_id,
-      BookmarkItemsToListValue(google_apps_.data(), google_apps_.size()));
+  ResolveJavascriptCallback(callback_id,
+                            BookmarkItemsToListValue(google_apps_));
 }
 
 }  // namespace welcome

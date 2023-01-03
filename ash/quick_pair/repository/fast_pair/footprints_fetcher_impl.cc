@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,7 @@ const char kUserDevicesUrl[] =
     "?key=%s&alt=proto";
 
 const char kUserDeleteDeviceUrl[] =
-    "https://nearbydevices-pa.googleapis.com/v1/user/devices/%s"
+    "https://nearbydevices-pa.googleapis.com/v1/user/device/%s"
     "?key=%s&alt=proto";
 
 const net::PartialNetworkTrafficAnnotationTag kTrafficAnnotation =
@@ -153,21 +153,23 @@ void FootprintsFetcherImpl::OnPostComplete(
 
   if (!response_body) {
     QP_LOG(WARNING) << __func__ << ": No response.";
-    std::move(callback).Run(false);
+    std::move(callback).Run(/*success=*/false);
     return;
   }
 
   QP_LOG(VERBOSE) << __func__ << ": Successfully saved new footprints data.";
-  std::move(callback).Run(true);
+  std::move(callback).Run(/*success=*/true);
 }
 
 void FootprintsFetcherImpl::DeleteUserDevice(const std::string& hex_account_key,
                                              DeleteDeviceCallback callback) {
+  QP_LOG(VERBOSE) << __func__ << " Deleting user device for acc key "
+                  << hex_account_key;
   auto http_fetcher = CreateHttpFetcher();
   auto* raw_http_fetcher = http_fetcher.get();
   raw_http_fetcher->ExecuteDeleteRequest(
       GetUserDeleteDeviceUrl(hex_account_key),
-      base::BindOnce(&FootprintsFetcherImpl::OnPostComplete,
+      base::BindOnce(&FootprintsFetcherImpl::OnDeleteComplete,
                      weak_ptr_factory_.GetWeakPtr(), std::move(callback),
                      std::move(http_fetcher)));
 }
@@ -185,12 +187,12 @@ void FootprintsFetcherImpl::OnDeleteComplete(
 
   if (!response_body) {
     QP_LOG(WARNING) << __func__ << ": No response.";
-    std::move(callback).Run(false);
+    std::move(callback).Run(/*success=*/false);
     return;
   }
 
   QP_LOG(VERBOSE) << __func__ << ": Successfully deleted footprints data.";
-  std::move(callback).Run(true);
+  std::move(callback).Run(/*success=*/true);
 }
 
 }  // namespace quick_pair

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,6 +36,9 @@ typedef LONG NTSTATUS;
 #define STATUS_NO_TOKEN               ((NTSTATUS)0xC000007CL)
 #define STATUS_NOT_SUPPORTED          ((NTSTATUS)0xC00000BBL)
 #define STATUS_INVALID_IMAGE_HASH     ((NTSTATUS)0xC0000428L)
+
+#define NTSTATUS_INVALID_PARAMETER    ((NTSTATUS)0xC000000DL)
+#define NTSTATUS_NO_MEMORY            ((NTSTATUS)0xC0000017L)
 // clang-format on
 
 #define CURRENT_PROCESS ((HANDLE)-1)

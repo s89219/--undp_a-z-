@@ -1,12 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/public/provider/chrome/browser/lens/lens_api.h"
 #import "ios/public/provider/chrome/browser/lens/lens_configuration.h"
+#import "ios/web/public/navigation/navigation_manager.h"
 
-#include "base/bind.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#import "base/bind.h"
+#import "base/notreached.h"
+#import "base/threading/sequenced_task_runner_handle.h"
 
 #import <UIKit/UIKit.h>
 
@@ -29,6 +31,9 @@ enum ChromiumLensProviderErrors : NSInteger {
 
 }
 
+using LensWebParamsCallback =
+    base::OnceCallback<void(web::NavigationManager::WebLoadParams)>;
+
 id<ChromeLensController> NewChromeLensController(LensConfiguration* config) {
   // Lens is not supported in Chromium.
   return nil;
@@ -39,17 +44,18 @@ bool IsLensSupported() {
   return false;
 }
 
-void GenerateLensWebURLForImage(
-    UIImage* image,
-    ios::provider::LensWebURLCompletion completion) {
-  NSError* error =
-      [NSError errorWithDomain:kChromiumLensProviderErrorDomain
-                          code:kChromiumLensProviderErrorNotImplemented
-                      userInfo:nil];
-  base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                   base::BindOnce(^() {
-                                                     completion(nil, error);
-                                                   }));
+bool IsLensWebResultsURL(const GURL& url) {
+  // Lens is not supported in Chromium.
+  return false;
+}
+
+absl::optional<LensEntrypoint> GetLensEntryPointFromURL(const GURL& url) {
+  return absl::nullopt;
+}
+
+void GenerateLensLoadParamsAsync(LensQuery* query,
+                                 LensWebParamsCallback completion) {
+  NOTREACHED() << "Lens is not supported.";
 }
 
 }  // namespace provider

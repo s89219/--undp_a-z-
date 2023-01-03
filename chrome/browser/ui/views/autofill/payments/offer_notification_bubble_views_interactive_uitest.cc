@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,11 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/data_model/autofill_offer_data.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
+#include "components/autofill/core/browser/metrics/payments/offers_metrics.h"
 #include "components/autofill/core/browser/payments/offer_notification_handler.h"
+#include "components/autofill/core/browser/test_autofill_clock.h"
 #include "components/autofill/core/browser/ui/payments/payments_bubble_closed_reasons.h"
+#include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/test/browser_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -59,6 +62,9 @@ class OfferNotificationBubbleViewsInteractiveUiTest
       case AutofillOfferData::OfferType::FREE_LISTING_COUPON_OFFER:
         ShowBubbleForFreeListingCouponOfferAndVerify();
         break;
+      case AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER:
+        ShowBubbleForGPayPromoCodeOfferAndVerify();
+        break;
       case AutofillOfferData::OfferType::UNKNOWN:
         NOTREACHED();
         break;
@@ -82,6 +88,19 @@ class OfferNotificationBubbleViewsInteractiveUiTest
     NavigateTo(chrome::kChromeUINewTabPageURL);
     // Set the initial origin that the bubble will be displayed on.
     SetUpFreeListingCouponOfferDataWithDomains(
+        {GURL("https://www.merchantsite1.com/"),
+         GURL("https://www.merchantsite2.com/")});
+    ResetEventWaiterForSequence({DialogEvent::BUBBLE_SHOWN});
+    NavigateTo("https://www.merchantsite1.com/first");
+    WaitForObservedEvent();
+    EXPECT_TRUE(IsIconVisible());
+    EXPECT_TRUE(GetOfferNotificationBubbleViews());
+  }
+
+  void ShowBubbleForGPayPromoCodeOfferAndVerify() {
+    NavigateTo(chrome::kChromeUINewTabPageURL);
+    // Set the initial origin that the bubble will be displayed on.
+    SetUpGPayPromoCodeOfferDataWithDomains(
         {GURL("https://www.merchantsite1.com/"),
          GURL("https://www.merchantsite2.com/")});
     ResetEventWaiterForSequence({DialogEvent::BUBBLE_SHOWN});
@@ -115,6 +134,8 @@ class OfferNotificationBubbleViewsInteractiveUiTest
     switch (test_offer_type_) {
       case AutofillOfferData::OfferType::GPAY_CARD_LINKED_OFFER:
         return "CardLinkedOffer";
+      case AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER:
+        return "GPayPromoCodeOffer";
       case AutofillOfferData::OfferType::FREE_LISTING_COUPON_OFFER:
         return "FreeListingCouponOffer";
       case AutofillOfferData::OfferType::UNKNOWN:
@@ -128,9 +149,12 @@ class OfferNotificationBubbleViewsInteractiveUiTest
         ->notification_handler_.ClearShownNotificationIdForTesting();
   }
 
+  TestAutofillClock test_clock_;
   const AutofillOfferData::OfferType test_offer_type_;
 };
 
+// TODO(https://crbug.com/1334806): Split parameterized tests that are
+// applicable for only one offer type.
 INSTANTIATE_TEST_SUITE_P(
     GpayCardLinked,
     OfferNotificationBubbleViewsInteractiveUiTest,
@@ -139,6 +163,10 @@ INSTANTIATE_TEST_SUITE_P(
     FreeListingCoupon,
     OfferNotificationBubbleViewsInteractiveUiTest,
     testing::Values(AutofillOfferData::OfferType::FREE_LISTING_COUPON_OFFER));
+INSTANTIATE_TEST_SUITE_P(
+    GPayPromoCode,
+    OfferNotificationBubbleViewsInteractiveUiTest,
+    testing::Values(AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER));
 
 // TODO(https://crbug.com/1289161): Flaky failures.
 #if BUILDFLAG(IS_LINUX)
@@ -332,7 +360,7 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".FirstShow",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_ACKNOWLEDGED,
       1);
 
@@ -345,7 +373,7 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".Reshows",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_ACKNOWLEDGED,
       1);
 }
@@ -361,7 +389,7 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".FirstShow",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_CLOSED,
       1);
 
@@ -374,7 +402,7 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".Reshows",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_CLOSED,
       1);
 }
@@ -393,7 +421,7 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".FirstShow",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_NOT_INTERACTED,
       1);
 }
@@ -409,7 +437,7 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".FirstShow",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_LOST_FOCUS,
       1);
 
@@ -422,17 +450,19 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
   histogram_tester.ExpectUniqueSample(
       "Autofill.OfferNotificationBubbleResult." +
           GetSubhistogramNameForOfferType() + ".Reshows",
-      AutofillMetrics::OfferNotificationBubbleResultMetric::
+      autofill_metrics::OfferNotificationBubbleResultMetric::
           OFFER_NOTIFICATION_BUBBLE_LOST_FOCUS,
       1);
 }
 
 IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
                        TooltipAndAccessibleName) {
-  // Applies to promo code offers only, as card-linked offers do not have a
+  // Applies to free listing coupons offers only, as other offers do not have a
   // clickable promo code copy button.
-  if (test_offer_type_ == AutofillOfferData::OfferType::GPAY_CARD_LINKED_OFFER)
+  if (test_offer_type_ !=
+      AutofillOfferData::OfferType::FREE_LISTING_COUPON_OFFER) {
     return;
+  }
 
   ShowBubbleForOfferAndVerify();
   ASSERT_TRUE(GetOfferNotificationBubbleViews());
@@ -457,10 +487,12 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
 
 IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
                        CopyPromoCode) {
-  // Applies to promo code offers only, as card-linked offers do not have a
+  // Applies to free listing coupons offers only, as other offers do not have a
   // clickable promo code copy button.
-  if (test_offer_type_ == AutofillOfferData::OfferType::GPAY_CARD_LINKED_OFFER)
+  if (test_offer_type_ !=
+      AutofillOfferData::OfferType::FREE_LISTING_COUPON_OFFER) {
     return;
+  }
 
   ShowBubbleForOfferAndVerify();
   ASSERT_TRUE(GetOfferNotificationBubbleViews());
@@ -486,6 +518,114 @@ IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
       "Autofill.OfferNotificationBubblePromoCodeButtonClicked." +
           GetSubhistogramNameForOfferType(),
       true, 1);
+}
+
+IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
+                       ShowGPayPromoCodeBubble) {
+  // Applies to GPay promo code offers only.
+  if (test_offer_type_ != AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER) {
+    return;
+  }
+
+  ShowBubbleForOfferAndVerify();
+  ASSERT_TRUE(GetOfferNotificationBubbleViews());
+  ASSERT_TRUE(IsIconVisible());
+
+  auto* promo_code_styled_label =
+      GetOfferNotificationBubbleViews()->promo_code_label_.get();
+  auto* promo_code_usage_instructions_ =
+      GetOfferNotificationBubbleViews()->instructions_label_.get();
+
+  EXPECT_EQ(promo_code_styled_label->GetText(),
+            base::ASCIIToUTF16(GetDefaultTestValuePropText()) + u" " +
+                base::ASCIIToUTF16(GetDefaultTestSeeDetailsText()));
+  EXPECT_EQ(promo_code_usage_instructions_->GetText(),
+            base::ASCIIToUTF16(GetDefaultTestUsageInstructionsText()));
+
+  // Simulate clicking on see details part of the text.
+  GetOfferNotificationBubbleViews()->OnPromoCodeSeeDetailsClicked();
+  EXPECT_EQ(
+      browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
+      GURL(GetDefaultTestDetailsUrlString()));
+}
+
+IN_PROC_BROWSER_TEST_P(OfferNotificationBubbleViewsInteractiveUiTest,
+                       ReshowOfferNotificationBubble_OfferDeletedBetweenShows) {
+  // Applies to GPay promo code offers and card linked offers only.
+  if (test_offer_type_ != AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER &&
+      test_offer_type_ !=
+          AutofillOfferData::OfferType::GPAY_CARD_LINKED_OFFER) {
+    return;
+  }
+
+  ShowBubbleForOfferAndVerify();
+  ASSERT_TRUE(GetOfferNotificationBubbleViews());
+  ASSERT_TRUE(IsIconVisible());
+
+  // Simulate the user closing the bubble.
+  CloseBubbleWithReason(views::Widget::ClosedReason::kCloseButtonClicked);
+
+  // Simulate the user clearing server data.
+  personal_data()->ClearAllServerData();
+
+  // Simulate the user re-showing the bubble by clicking on the icon.
+  SimulateClickOnIconAndReshowBubble();
+  ASSERT_TRUE(GetOfferNotificationBubbleViews());
+  ASSERT_TRUE(IsIconVisible());
+
+  if (test_offer_type_ == AutofillOfferData::OfferType::GPAY_PROMO_CODE_OFFER) {
+    auto* promo_code_styled_label =
+        GetOfferNotificationBubbleViews()->promo_code_label_.get();
+    auto* promo_code_usage_instructions_ =
+        GetOfferNotificationBubbleViews()->instructions_label_.get();
+
+    EXPECT_EQ(promo_code_styled_label->GetText(),
+              base::ASCIIToUTF16(GetDefaultTestValuePropText()) + u" " +
+                  base::ASCIIToUTF16(GetDefaultTestSeeDetailsText()));
+    EXPECT_EQ(promo_code_usage_instructions_->GetText(),
+              base::ASCIIToUTF16(GetDefaultTestUsageInstructionsText()));
+
+    // Simulate clicking on see details part of the text.
+    GetOfferNotificationBubbleViews()->OnPromoCodeSeeDetailsClicked();
+    EXPECT_EQ(
+        browser()->tab_strip_model()->GetActiveWebContents()->GetVisibleURL(),
+        GURL(GetDefaultTestDetailsUrlString()));
+  }
+}
+
+IN_PROC_BROWSER_TEST_P(
+    OfferNotificationBubbleViewsInteractiveUiTest,
+    RecordPageLoadsWithPromoOfferIconShowingMetricForFreeListingOffer) {
+  // Applies to free listing coupons offers only, as we don't log this metric
+  // for other offers.
+  if (test_offer_type_ !=
+      AutofillOfferData::OfferType::FREE_LISTING_COUPON_OFFER) {
+    return;
+  }
+
+  base::HistogramTester histogram_tester;
+
+  ShowBubbleForOfferAndVerify();
+  ASSERT_TRUE(GetOfferNotificationBubbleViews());
+  ASSERT_TRUE(IsIconVisible());
+  histogram_tester.ExpectBucketCount(
+      "Autofill.PageLoadsWithOfferIconShowing.FreeListingCouponOffer", true, 1);
+
+  test_clock_.Advance(kAutofillBubbleSurviveNavigationTime);
+
+  // Navigates to another valid domain will not reshow the bubble.
+  NavigateTo("https://www.merchantsite1.com/second");
+  EXPECT_FALSE(GetOfferNotificationBubbleViews());
+  EXPECT_TRUE(IsIconVisible());
+  histogram_tester.ExpectBucketCount(
+      "Autofill.PageLoadsWithOfferIconShowing.FreeListingCouponOffer", true, 2);
+
+  // Navigates to an invalid domain will dismiss the icon.
+  NavigateTo("https://www.about.com/");
+  EXPECT_FALSE(GetOfferNotificationBubbleViews());
+  EXPECT_FALSE(IsIconVisible());
+  histogram_tester.ExpectBucketCount(
+      "Autofill.PageLoadsWithOfferIconShowing.FreeListingCouponOffer", true, 2);
 }
 
 }  // namespace autofill

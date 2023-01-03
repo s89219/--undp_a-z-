@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "base/gtest_prod_util.h"
 #include "base/strings/string_piece.h"
 #include "base/values.h"
+#include "base/version.h"
 #include "components/component_updater/component_installer.h"
 
 namespace base {
@@ -28,7 +29,8 @@ class ComponentUpdateService;
 
 class FirstPartySetsComponentInstallerPolicy : public ComponentInstallerPolicy {
  public:
-  using SetsReadyOnceCallback = base::OnceCallback<void(base::File)>;
+  using SetsReadyOnceCallback =
+      base::OnceCallback<void(base::Version, base::File)>;
 
   // |on_sets_ready| will be called on the UI thread when the sets are ready. It
   // is exposed here for testing.
@@ -51,7 +53,8 @@ class FirstPartySetsComponentInstallerPolicy : public ComponentInstallerPolicy {
 
   // Seeds a component at `install_dir` with the given `contents`. Only to be
   // used in testing.
-  static void WriteComponentForTesting(const base::FilePath& install_dir,
+  static void WriteComponentForTesting(base::Version version,
+                                       const base::FilePath& install_dir,
                                        base::StringPiece contents);
 
  private:
@@ -80,10 +83,10 @@ class FirstPartySetsComponentInstallerPolicy : public ComponentInstallerPolicy {
   bool SupportsGroupPolicyEnabledComponentUpdates() const override;
   bool RequiresNetworkEncryption() const override;
   update_client::CrxInstaller::Result OnCustomInstall(
-      const base::Value& manifest,
+      const base::Value::Dict& manifest,
       const base::FilePath& install_dir) override;
   void OnCustomUninstall() override;
-  bool VerifyInstallation(const base::Value& manifest,
+  bool VerifyInstallation(const base::Value::Dict& manifest,
                           const base::FilePath& install_dir) const override;
   // After the first call, ComponentReady will be no-op for new versions
   // delivered from Component Updater, i.e. new components will be installed
@@ -91,7 +94,7 @@ class FirstPartySetsComponentInstallerPolicy : public ComponentInstallerPolicy {
   // browser startup.
   void ComponentReady(const base::Version& version,
                       const base::FilePath& install_dir,
-                      base::Value manifest) override;
+                      base::Value::Dict manifest) override;
   base::FilePath GetRelativeInstallDir() const override;
   void GetHash(std::vector<uint8_t>* hash) const override;
   std::string GetName() const override;

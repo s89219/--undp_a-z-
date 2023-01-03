@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,9 +40,9 @@ PaintWorkletGlobalScopeProxy::PaintWorkletGlobalScopeProxy(
   const String user_agent =
       RuntimeEnabledFeatures::SendFullUserAgentAfterReductionEnabled(window)
           ? frame_client->FullUserAgent()
-          : RuntimeEnabledFeatures::UserAgentReductionEnabled(window)
-                ? frame_client->ReducedUserAgent()
-                : frame_client->UserAgent();
+      : RuntimeEnabledFeatures::UserAgentReductionEnabled(window)
+          ? frame_client->ReducedUserAgent()
+          : frame_client->UserAgent();
 
   auto creation_params = std::make_unique<GlobalScopeCreationParams>(
       window->Url(), mojom::blink::ScriptType::kModule, global_scope_name,
@@ -59,11 +59,10 @@ PaintWorkletGlobalScopeProxy::PaintWorkletGlobalScopeProxy(
       mojom::blink::V8CacheOptions::kDefault, module_responses_map,
       mojo::NullRemote() /* browser_interface_broker */,
       window->GetFrame()->Loader().CreateWorkerCodeCacheHost(),
-      BeginFrameProviderParams(), nullptr /* parent_permissions_policy */,
-      window->GetAgentClusterID(), ukm::kInvalidSourceId,
-      window->GetExecutionContextToken(),
-      window->CrossOriginIsolatedCapability(),
-      window->DirectSocketCapability());
+      mojo::NullRemote() /* blob_url_store */, BeginFrameProviderParams(),
+      nullptr /* parent_permissions_policy */, window->GetAgentClusterID(),
+      ukm::kInvalidSourceId, window->GetExecutionContextToken(),
+      window->CrossOriginIsolatedCapability(), window->IsIsolatedContext());
   global_scope_ = PaintWorkletGlobalScope::Create(
       frame, std::move(creation_params), *reporting_proxy_);
 }

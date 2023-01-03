@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,7 +32,7 @@ extern const char kContextMenuElementSource[];
 extern const char kContextMenuElementTitle[];
 
 // Optional key. Represents referrer policy to use for navigations away from the
-// current page. Key is present if |kContextMenuElementError| is |NO_ERROR|.
+// current page. Key is present if `kContextMenuElementError` is `NO_ERROR`.
 extern const char kContextMenuElementReferrerPolicy[];
 
 // Optional key. Represents element's innerText attribute if present (<a>
@@ -47,20 +47,13 @@ extern const char kContextMenuElementTextOffset[];
 // only).
 extern const char kContextMenuElementAlt[];
 
-// Optional key. Represents element's naturalWidth attribute if present (<img>
-// element only).
-extern const char kContextMenuElementNaturalWidth[];
+// Optional key. Reprensents the extended text surrounding the selected
+// character.
+extern const char kContextMenuElementSurroundingText[];
 
-// Optional key. Represents element's naturalHeight attribute if present (<img>
-// element only).
-extern const char kContextMenuElementNaturalHeight[];
-
-// Optional key. Represents element's client bounding box if present.
-extern const char kContextMenuElementBoundingBox[];
-extern const char kContextMenuElementBoundingBoxX[];
-extern const char kContextMenuElementBoundingBoxY[];
-extern const char kContextMenuElementBoundingBoxWidth[];
-extern const char kContextMenuElementBoundingBoxHeight[];
+// Optional key. Reprensents the extended offset of the a selected character
+// within its surrounding text.
+extern const char kContextMenuElementSurroundingTextOffset[];
 
 }  // namespace web
 

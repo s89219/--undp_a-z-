@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,17 +17,25 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "chrome/browser/ash/crostini/crostini_pref_names.h"
-#include "chrome/browser/ash/crostini/crostini_terminal.h"
 #include "chrome/browser/ash/file_manager/path_util.h"
+#include "chrome/browser/ash/file_system_provider/provided_file_system_info.h"
+#include "chrome/browser/ash/file_system_provider/provider_interface.h"
+#include "chrome/browser/ash/file_system_provider/service.h"
+#include "chrome/browser/ash/guest_os/guest_os_terminal.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/channel_info.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/prefs/pref_service.h"
 #include "components/version_info/channel.h"
+#include "content/public/browser/web_contents.h"
 #include "net/base/mime_util.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/zlib/google/compression_utils.h"
 #include "ui/webui/webui_allowlist.h"
 
@@ -57,7 +65,7 @@ void ReadFile(const base::FilePath downloads,
 
   // If chrome://flags#terminal-dev set on dev channel, check Downloads.
   if (chrome::GetChannel() <= version_info::Channel::DEV &&
-      base::FeatureList::IsEnabled(chromeos::features::kTerminalDev)) {
+      base::FeatureList::IsEnabled(ash::features::kTerminalDev)) {
     path = downloads.Append("crosh_builtin").Append(relative_path);
     result = ReadUncompressedOrGzip(path, &content);
   }
@@ -84,27 +92,33 @@ void ReadFile(const base::FilePath downloads,
   }
 
   DCHECK(result) << path;
-
-  scoped_refptr<base::RefCountedString> response =
-      base::RefCountedString::TakeString(&content);
-  std::move(callback).Run(response.get());
+  std::move(callback).Run(
+      base::MakeRefCounted<base::RefCountedString>(std::move(content)));
 }
 }  // namespace
 
 // static
 std::unique_ptr<TerminalSource> TerminalSource::ForCrosh(Profile* profile) {
-  std::string default_file = "html/crosh.html";
-  if (base::FeatureList::IsEnabled(chromeos::features::kCroshSWA)) {
-    default_file = "html/terminal.html";
-  }
-  return base::WrapUnique(new TerminalSource(
-      profile, chrome::kChromeUIUntrustedCroshURL, default_file, false));
+  return base::WrapUnique(
+      new TerminalSource(profile, chrome::kChromeUIUntrustedCroshURL, false));
 }
 
 // static
 std::unique_ptr<TerminalSource> TerminalSource::ForTerminal(Profile* profile) {
+  auto provider_id =
+      ash::file_system_provider::ProviderId::CreateFromExtensionId(
+          guest_os::kTerminalSystemAppId);
+  ash::file_system_provider::Capabilities capabilities(
+      /*configurable=*/true, /*watchable=*/false, /*multiple_mounts=*/true,
+      extensions::FileSystemProviderSource::SOURCE_NETWORK);
+  auto provider =
+      std::make_unique<ash::file_system_provider::ExtensionProvider>(
+          ProfileManager::GetPrimaryUserProfile(), std::move(provider_id),
+          std::move(capabilities), chrome::kChromeUIUntrustedTerminalURL);
+  ash::file_system_provider::Service::Get(profile)->RegisterProvider(
+      std::move(provider));
   return base::WrapUnique(new TerminalSource(
-      profile, chrome::kChromeUIUntrustedTerminalURL, "html/terminal.html",
+      profile, chrome::kChromeUIUntrustedTerminalURL,
       profile->GetPrefs()
           ->FindPreference(crostini::prefs::kTerminalSshAllowedByPolicy)
           ->GetValue()
@@ -113,11 +127,9 @@ std::unique_ptr<TerminalSource> TerminalSource::ForTerminal(Profile* profile) {
 
 TerminalSource::TerminalSource(Profile* profile,
                                std::string source,
-                               std::string default_file,
                                bool ssh_allowed)
     : profile_(profile),
       source_(source),
-      default_file_(default_file),
       ssh_allowed_(ssh_allowed),
       downloads_(file_manager::util::GetDownloadsFolderForProfile(profile)) {
   auto* webui_allowlist = WebUIAllowlist::GetOrCreate(profile);
@@ -147,12 +159,28 @@ void TerminalSource::StartDataRequest(
   // skip first '/' in path.
   std::string path = url.path().substr(1);
   if (path.empty())
-    path = default_file_;
+    path = "html/terminal.html";
 
   // Refresh the $i8n{themeColor} replacement for css files.
   if (base::EndsWith(path, ".css", base::CompareCase::INSENSITIVE_ASCII)) {
-    replacements_["themeColor"] = base::EscapeForHTML(
-        crostini::GetTerminalSettingBackgroundColor(profile_));
+    GURL contents_url;
+    absl::optional<SkColor> opener_background_color;
+    content::WebContents* contents = wc_getter.Run();
+    if (contents) {
+      contents_url = contents->GetVisibleURL();
+      TabStripModel* tab_strip;
+      int tab_index;
+      extensions::ExtensionTabUtil::GetTabStripModel(contents, &tab_strip,
+                                                     &tab_index);
+      content::WebContents* opener =
+          tab_strip->GetOpenerOfWebContentsAt(tab_index);
+      if (opener) {
+        opener_background_color = opener->GetBackgroundColor();
+      }
+    }
+    replacements_["themeColor"] =
+        base::EscapeForHTML(guest_os::GetTerminalSettingBackgroundColor(
+            profile_, contents_url, opener_background_color));
   }
 
   base::ThreadPool::PostTask(
@@ -160,9 +188,9 @@ void TerminalSource::StartDataRequest(
       base::BindOnce(&ReadFile, downloads_, path, std::move(callback)));
 }
 
-std::string TerminalSource::GetMimeType(const std::string& path) {
+std::string TerminalSource::GetMimeType(const GURL& url) {
   std::string mime_type(kDefaultMime);
-  std::string ext = base::FilePath(path).Extension();
+  std::string ext = base::FilePath(url.path_piece()).Extension();
   if (!ext.empty())
     net::GetWellKnownMimeTypeFromExtension(ext.substr(1), &mime_type);
   return mime_type;
@@ -183,15 +211,17 @@ std::string TerminalSource::GetContentSecurityPolicy(
   if (ssh_allowed_) {
     switch (directive) {
       case network::mojom::CSPDirectiveName::ConnectSrc:
-        return "connect-src 'self' "
-               "https://*.corp.google.com:* wss://*.corp.google.com:* "
-               "https://*.r.ext.google.com:* wss://*.r.ext.google.com:*;";
+        return "connect-src *;";
       case network::mojom::CSPDirectiveName::FrameAncestors:
         return "frame-ancestors 'self';";
       case network::mojom::CSPDirectiveName::FrameSrc:
         return "frame-src 'self';";
       case network::mojom::CSPDirectiveName::ObjectSrc:
         return "object-src 'self';";
+      case network::mojom::CSPDirectiveName::ScriptSrc:
+        return "script-src 'self' 'wasm-unsafe-eval';";
+      case network::mojom::CSPDirectiveName::WorkerSrc:
+        return "worker-src 'self';";
       default:
         break;
     }
@@ -214,4 +244,14 @@ std::string TerminalSource::GetContentSecurityPolicy(
     default:
       return content::URLDataSource::GetContentSecurityPolicy(directive);
   }
+}
+
+// Improve security, and it is required for wasm SharedArrayBuffer.
+std::string TerminalSource::GetCrossOriginOpenerPolicy() {
+  return "same-origin";
+}
+
+// Required for wasm SharedArrayBuffer.
+std::string TerminalSource::GetCrossOriginEmbedderPolicy() {
+  return "require-corp";
 }

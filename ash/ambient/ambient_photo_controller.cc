@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "ash/ambient/ambient_constants.h"
 #include "ash/ambient/ambient_controller.h"
 #include "ash/ambient/ambient_photo_cache.h"
+#include "ash/ambient/ambient_weather_controller.h"
 #include "ash/ambient/model/ambient_backend_model.h"
 #include "ash/public/cpp/ambient/ambient_backend_controller.h"
 #include "ash/public/cpp/ambient/ambient_client.h"
@@ -33,10 +34,9 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/system/sys_info.h"
-#include "base/task/task_runner_util.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/sequenced_task_runner_handle.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -58,40 +58,6 @@ constexpr net::BackoffEntry::Policy kResumeFetchImageBackoffPolicy = {
     -1,             // Never discard the entry.
     true,           // Use initial delay.
 };
-
-constexpr net::NetworkTrafficAnnotationTag kAmbientPhotoControllerTag =
-    net::DefineNetworkTrafficAnnotation("ambient_photo_controller", R"(
-        semantics {
-          sender: "Ambient photo"
-          description:
-            "Download ambient image weather icon from Google."
-          trigger:
-            "Triggered periodically when the battery is charged and the user "
-            "is idle."
-          data: "None."
-          destination: GOOGLE_OWNED_SERVICE
-        }
-        policy {
-         cookies_allowed: NO
-         setting:
-           "This feature is off by default and can be overridden by user."
-         policy_exception_justification:
-           "This feature is set by user settings.ambient_mode.enabled pref. "
-           "The user setting is per device and cannot be overriden by admin."
-        })");
-
-void DownloadImageFromUrl(
-    const std::string& url,
-    base::OnceCallback<void(const gfx::ImageSkia&)> callback) {
-  DCHECK(!url.empty());
-
-  // During shutdown, we may not have `ImageDownloader` when reach here.
-  if (!ImageDownloader::Get())
-    return;
-
-  ImageDownloader::Get()->Download(GURL(url), kAmbientPhotoControllerTag,
-                                   std::move(callback));
-}
 
 base::TaskTraits GetTaskTraits() {
   return {base::MayBlock(), base::TaskPriority::USER_BLOCKING,
@@ -117,6 +83,7 @@ base::FilePath GetCacheRootPath() {
 AmbientPhotoController::AmbientPhotoController(
     AmbientClient& ambient_client,
     AmbientAccessTokenController& access_token_controller,
+    AmbientViewDelegate& view_delegate,
     AmbientPhotoConfig photo_config)
     : ambient_backend_model_(std::move(photo_config)),
       resume_fetch_image_backoff_(&kResumeFetchImageBackoffPolicy),
@@ -132,6 +99,7 @@ AmbientPhotoController::AmbientPhotoController(
           access_token_controller)),
       task_runner_(
           base::ThreadPool::CreateSequencedTaskRunner(GetTaskTraits())) {
+  scoped_view_delegate_observation_.Observe(&view_delegate);
   ScheduleFetchBackupImages();
 }
 
@@ -221,17 +189,13 @@ void AmbientPhotoController::OnMarkerHit(AmbientPhotoConfig::Marker marker) {
 void AmbientPhotoController::FetchWeather() {
   Shell::Get()
       ->ambient_controller()
-      ->ambient_backend_controller()
-      ->FetchWeather(base::BindOnce(
-          &AmbientPhotoController::StartDownloadingWeatherConditionIcon,
-          weak_factory_.GetWeakPtr()));
+      ->ambient_weather_controller()
+      ->FetchWeather();
 }
 
 void AmbientPhotoController::ClearCache() {
   DCHECK(photo_cache_);
-  DCHECK(backup_photo_cache_);
   photo_cache_->Clear();
-  backup_photo_cache_->Clear();
 }
 
 void AmbientPhotoController::ScheduleFetchBackupImages() {
@@ -298,7 +262,7 @@ void AmbientPhotoController::ReadPhotoFromTopicQueue() {
   ResetImageData();
   DVLOG(3) << "Downloading topic photos";
   AmbientModeTopic topic = ambient_topic_queue_->Pop();
-  ambient::Photo* photo = cache_entry_.mutable_primary_photo();
+  ::ambient::Photo* photo = cache_entry_.mutable_primary_photo();
   photo->set_details(topic.details);
   photo->set_is_portrait(topic.is_portrait);
   photo->set_type(topic.topic_type);
@@ -316,10 +280,10 @@ void AmbientPhotoController::ReadPhotoFromTopicQueue() {
                      /*is_related_image=*/false, on_done));
 
   if (!topic.related_image_url.empty()) {
-    ambient::Photo* photo = cache_entry_.mutable_related_photo();
-    photo->set_details(topic.related_details);
-    photo->set_is_portrait(topic.is_portrait);
-    photo->set_type(topic.topic_type);
+    ::ambient::Photo* related_photo = cache_entry_.mutable_related_photo();
+    related_photo->set_details(topic.related_details);
+    related_photo->set_is_portrait(topic.is_portrait);
+    related_photo->set_type(topic.topic_type);
 
     photo_cache_->DownloadPhoto(
         topic.related_image_url,
@@ -337,9 +301,11 @@ void AmbientPhotoController::TryReadPhotoFromCache() {
       LOG(WARNING) << "Failed to read from cache";
       ambient_backend_model_.AddImageFailure();
       // Do not refresh image if image loading has failed repeatedly, or there
-      // are no more topics to retry.
+      // are no more topics to retry. Note |ambient_topic_queue_| may be null
+      // if AddImageFailure() ultimately led to an AmbientBackendModelObserver
+      // calling StopScreenUpdate().
       if (ambient_backend_model_.ImageLoadingFailed() ||
-          ambient_topic_queue_->IsEmpty()) {
+          !ambient_topic_queue_ || ambient_topic_queue_->IsEmpty()) {
         LOG(WARNING) << "Not attempting image refresh";
         return;
       }
@@ -347,7 +313,7 @@ void AmbientPhotoController::TryReadPhotoFromCache() {
       // Try to resume normal workflow with backoff.
       const base::TimeDelta delay =
           resume_fetch_image_backoff_.GetTimeUntilRelease();
-      base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
           FROM_HERE,
           base::BindOnce(&AmbientPhotoController::StartPreparingNextTopic,
                          weak_factory_.GetWeakPtr()),
@@ -361,9 +327,9 @@ void AmbientPhotoController::TryReadPhotoFromCache() {
              << backup_cache_index_for_display_;
     // Try to read a backup image.
     backup_photo_cache_->ReadPhotoCache(
-        /*cache_index=*/backup_cache_index_for_display_, &cache_entry_,
-        base::BindOnce(&AmbientPhotoController::OnAllPhotoRawDataAvailable,
-                       weak_factory_.GetWeakPtr(), /*from_downloading=*/false));
+        /*cache_index=*/backup_cache_index_for_display_,
+        base::BindOnce(&AmbientPhotoController::OnPhotoCacheReadComplete,
+                       weak_factory_.GetWeakPtr()));
 
     backup_cache_index_for_display_++;
     if (backup_cache_index_for_display_ == GetBackupPhotoUrls().size())
@@ -380,9 +346,15 @@ void AmbientPhotoController::TryReadPhotoFromCache() {
 
   DVLOG(3) << "Read from cache index: " << current_cache_index;
   photo_cache_->ReadPhotoCache(
-      current_cache_index, &cache_entry_,
-      base::BindOnce(&AmbientPhotoController::OnAllPhotoRawDataAvailable,
-                     weak_factory_.GetWeakPtr(), /*from_downloading=*/false));
+      current_cache_index,
+      base::BindOnce(&AmbientPhotoController::OnPhotoCacheReadComplete,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void AmbientPhotoController::OnPhotoCacheReadComplete(
+    ::ambient::PhotoCacheEntry cache_entry) {
+  cache_entry_ = std::move(cache_entry);
+  OnAllPhotoRawDataAvailable(/*from_downloading=*/false);
 }
 
 void AmbientPhotoController::OnPhotoRawDataDownloaded(
@@ -533,48 +505,6 @@ void AmbientPhotoController::OnAllPhotoDecoded(bool from_downloading,
 
   if (state_ == State::kPreparingNextTopicSet)
     StartPreparingNextTopic();
-}
-
-void AmbientPhotoController::StartDownloadingWeatherConditionIcon(
-    const absl::optional<WeatherInfo>& weather_info) {
-  if (!weather_info) {
-    LOG(WARNING) << "No weather info included in the response.";
-    return;
-  }
-
-  if (!weather_info->temp_f.has_value()) {
-    LOG(WARNING) << "No temperature included in weather info.";
-    return;
-  }
-
-  if (weather_info->condition_icon_url.value_or(std::string()).empty()) {
-    LOG(WARNING) << "No value found for condition icon url in the weather info "
-                    "response.";
-    return;
-  }
-
-  // Ideally we should avoid downloading from the same url again to reduce the
-  // overhead, as it's unlikely that the weather condition is changing
-  // frequently during the day.
-  // TODO(meilinw): avoid repeated downloading by caching the last N url hashes,
-  // where N should depend on the icon image size.
-  DownloadImageFromUrl(
-      weather_info->condition_icon_url.value(),
-      base::BindOnce(&AmbientPhotoController::OnWeatherConditionIconDownloaded,
-                     weak_factory_.GetWeakPtr(), weather_info->temp_f.value(),
-                     weather_info->show_celsius));
-}
-
-void AmbientPhotoController::OnWeatherConditionIconDownloaded(
-    float temp_f,
-    bool show_celsius,
-    const gfx::ImageSkia& icon) {
-  // For now we only show the weather card when both fields have values.
-  // TODO(meilinw): optimize the behavior with more specific error handling.
-  if (icon.isNull())
-    return;
-
-  ambient_backend_model_.UpdateWeatherInfo(icon, temp_f, show_celsius);
 }
 
 void AmbientPhotoController::FetchTopicsForTesting() {

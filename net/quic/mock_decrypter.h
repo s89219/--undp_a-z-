@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,7 +26,7 @@ class MockDecrypter : public quic::QuicDecrypter {
   MockDecrypter(const MockDecrypter&) = delete;
   MockDecrypter& operator=(const MockDecrypter&) = delete;
 
-  ~MockDecrypter() override {}
+  ~MockDecrypter() override = default;
 
   // QuicCrypter implementation
   bool SetKey(absl::string_view key) override;

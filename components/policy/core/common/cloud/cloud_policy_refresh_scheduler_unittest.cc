@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,7 +60,8 @@ class MockObserver : public CloudPolicyRefreshSchedulerObserver {
 class CloudPolicyRefreshSchedulerTest : public testing::Test {
  protected:
   CloudPolicyRefreshSchedulerTest()
-      : service_(std::make_unique<MockCloudPolicyService>(&client_, &store_)),
+      : task_environment_(base::test::TaskEnvironment::TimeSource::MOCK_TIME),
+        service_(std::make_unique<MockCloudPolicyService>(&client_, &store_)),
         task_runner_(new base::TestSimpleTaskRunner()),
         mock_clock_(std::make_unique<base::SimpleTestClock>()) {}
 
@@ -605,7 +606,9 @@ static const ClientErrorTestParam kClientErrorTestCases[] = {
     {DM_STATUS_SERVICE_ENTERPRISE_ACCOUNT_IS_NOT_ELIGIBLE_TO_ENROLL, -1, 1},
     {DM_STATUS_SERVICE_ENTERPRISE_TOS_HAS_NOT_BEEN_ACCEPTED, -1, 1},
     {DM_STATUS_SERVICE_TOO_MANY_REQUESTS, kPolicyRefreshRate, 1},
+    {DM_STATUS_SERVICE_DEVICE_NEEDS_RESET, -1, 1},
     {DM_STATUS_SERVICE_ILLEGAL_ACCOUNT_FOR_PACKAGED_EDU_LICENSE, -1, 1},
+    {DM_STATUS_SERVICE_INVALID_PACKAGED_DEVICE_FOR_KIOSK, -1, 1},
 };
 
 class CloudPolicyRefreshSchedulerClientErrorTest

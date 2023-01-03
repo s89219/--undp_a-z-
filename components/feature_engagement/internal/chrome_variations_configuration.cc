@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,7 +81,7 @@ bool ParseComparatorSubstring(const base::StringPiece& definition,
 
 bool ParseComparator(const base::StringPiece& definition,
                      Comparator* comparator) {
-  if (base::LowerCaseEqualsASCII(definition, kComparatorTypeAny)) {
+  if (base::EqualsCaseInsensitiveASCII(definition, kComparatorTypeAny)) {
     comparator->type = ANY;
     comparator->value = 0;
     return true;
@@ -149,7 +149,7 @@ bool ParseEventConfig(const base::StringPiece& definition,
     const base::StringPiece& value = pair[1];
     // TODO(nyquist): Ensure that key matches regex /^[a-zA-Z0-9-_]+$/.
 
-    if (base::LowerCaseEqualsASCII(key, kEventConfigDataNameKey)) {
+    if (base::EqualsCaseInsensitiveASCII(key, kEventConfigDataNameKey)) {
       if (has_name) {
         *event_config = EventConfig();
         return false;
@@ -157,7 +157,8 @@ bool ParseEventConfig(const base::StringPiece& definition,
       has_name = true;
 
       event_config->name = std::string(value);
-    } else if (base::LowerCaseEqualsASCII(key, kEventConfigDataComparatorKey)) {
+    } else if (base::EqualsCaseInsensitiveASCII(
+                   key, kEventConfigDataComparatorKey)) {
       if (has_comparator) {
         *event_config = EventConfig();
         return false;
@@ -171,7 +172,8 @@ bool ParseEventConfig(const base::StringPiece& definition,
       }
 
       event_config->comparator = comparator;
-    } else if (base::LowerCaseEqualsASCII(key, kEventConfigDataWindowKey)) {
+    } else if (base::EqualsCaseInsensitiveASCII(key,
+                                                kEventConfigDataWindowKey)) {
       if (has_window) {
         *event_config = EventConfig();
         return false;
@@ -185,7 +187,8 @@ bool ParseEventConfig(const base::StringPiece& definition,
       }
 
       event_config->window = parsed_value;
-    } else if (base::LowerCaseEqualsASCII(key, kEventConfigDataStorageKey)) {
+    } else if (base::EqualsCaseInsensitiveASCII(key,
+                                                kEventConfigDataStorageKey)) {
       if (has_storage) {
         *event_config = EventConfig();
         return false;
@@ -224,12 +227,13 @@ bool ParseSessionRateImpact(const base::StringPiece& definition,
   if (trimmed_def.length() == 0)
     return false;
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kImpactedFeaturesTypeAll)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def, kImpactedFeaturesTypeAll)) {
     session_rate_impact->type = SessionRateImpact::Type::ALL;
     return true;
   }
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kImpactedFeaturesTypeNone)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def,
+                                       kImpactedFeaturesTypeNone)) {
     session_rate_impact->type = SessionRateImpact::Type::NONE;
     return true;
   }
@@ -246,8 +250,10 @@ bool ParseSessionRateImpact(const base::StringPiece& definition,
                << "for feature " << this_feature->name;
       continue;
     }
-    if (base::LowerCaseEqualsASCII(feature_name, kImpactedFeaturesTypeAll) ||
-        base::LowerCaseEqualsASCII(feature_name, kImpactedFeaturesTypeNone)) {
+    if (base::EqualsCaseInsensitiveASCII(feature_name,
+                                         kImpactedFeaturesTypeAll) ||
+        base::EqualsCaseInsensitiveASCII(feature_name,
+                                         kImpactedFeaturesTypeNone)) {
       DVLOG(1) << "Illegal feature name when parsing session_rate_impact "
                << "for feature " << this_feature->name << ": " << feature_name;
       return false;
@@ -281,12 +287,13 @@ bool ParseBlockedBy(const base::StringPiece& definition,
   if (trimmed_def.length() == 0)
     return false;
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kImpactedFeaturesTypeAll)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def, kImpactedFeaturesTypeAll)) {
     blocked_by->type = BlockedBy::Type::ALL;
     return true;
   }
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kImpactedFeaturesTypeNone)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def,
+                                       kImpactedFeaturesTypeNone)) {
     blocked_by->type = BlockedBy::Type::NONE;
     return true;
   }
@@ -303,8 +310,10 @@ bool ParseBlockedBy(const base::StringPiece& definition,
                << "for feature " << this_feature->name;
       continue;
     }
-    if (base::LowerCaseEqualsASCII(feature_name, kImpactedFeaturesTypeAll) ||
-        base::LowerCaseEqualsASCII(feature_name, kImpactedFeaturesTypeNone)) {
+    if (base::EqualsCaseInsensitiveASCII(feature_name,
+                                         kImpactedFeaturesTypeAll) ||
+        base::EqualsCaseInsensitiveASCII(feature_name,
+                                         kImpactedFeaturesTypeNone)) {
       DVLOG(1) << "Illegal feature name when parsing blocked_by "
                << "for feature " << this_feature->name << ": " << feature_name;
       return false;
@@ -334,12 +343,13 @@ bool ParseBlocking(const base::StringPiece& definition, Blocking* blocking) {
   if (trimmed_def.length() == 0)
     return false;
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kImpactedFeaturesTypeAll)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def, kImpactedFeaturesTypeAll)) {
     blocking->type = Blocking::Type::ALL;
     return true;
   }
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kImpactedFeaturesTypeNone)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def,
+                                       kImpactedFeaturesTypeNone)) {
     blocking->type = Blocking::Type::NONE;
     return true;
   }
@@ -365,7 +375,7 @@ bool ParseSnoozeParams(const base::StringPiece& definition,
 
     const base::StringPiece& key = pair[0];
     const base::StringPiece& value = pair[1];
-    if (base::LowerCaseEqualsASCII(key, kSnoozeParamsMaxLimit)) {
+    if (base::EqualsCaseInsensitiveASCII(key, kSnoozeParamsMaxLimit)) {
       uint32_t parsed_value;
       if (!base::StringToUint(value, &parsed_value)) {
         snooze_params->snooze_interval = 0u;
@@ -373,7 +383,7 @@ bool ParseSnoozeParams(const base::StringPiece& definition,
       }
       snooze_params->max_limit = parsed_value;
       has_max_limit = true;
-    } else if (base::LowerCaseEqualsASCII(key, kSnoozeParamsInterval)) {
+    } else if (base::EqualsCaseInsensitiveASCII(key, kSnoozeParamsInterval)) {
       uint32_t parsed_value;
       if (!base::StringToUint(value, &parsed_value)) {
         snooze_params->max_limit = 0u;
@@ -395,12 +405,12 @@ bool ParseTrackingOnly(const base::StringPiece& definition,
   base::StringPiece trimmed_def =
       base::TrimWhitespaceASCII(definition, base::TRIM_ALL);
 
-  if (base::LowerCaseEqualsASCII(trimmed_def, kTrackingOnlyTrue)) {
+  if (base::EqualsCaseInsensitiveASCII(trimmed_def, kTrackingOnlyTrue)) {
     *tracking_only = true;
     return true;
   }
 
-  return base::LowerCaseEqualsASCII(trimmed_def, kTrackingOnlyFalse);
+  return base::EqualsCaseInsensitiveASCII(trimmed_def, kTrackingOnlyFalse);
 }
 }  // namespace
 
@@ -423,22 +433,21 @@ void ChromeVariationsConfiguration::ParseFeatureConfig(
 
   DVLOG(3) << "Parsing feature config for " << feature->name;
 
+  // Client-side configuration is used under any of the following circumstances:
+  // - The UseClientConfigIPH feature flag is enabled
+  // - There are no field trial parameters set for the feature
+  // - The field trial configuration is empty
+  //
+  // Note that the "empty configuration = use client-side" is quite useful, as
+  // it means that json field trial configs, Finch configurations, and tests can
+  // simply enable a feature engagement feature, and it will default to using
+  // the client-side configuration; there is no need to duplicate a standard
+  // configuration in more than one place.
   std::map<std::string, std::string> params;
-
-  // Check the use client configuration flag; if enabled, client configuration
-  // will be used and server configuration will be ignored.
-  bool use_client_config = base::FeatureList::IsEnabled(kUseClientConfigIPH);
-  bool result = !use_client_config &&
-                base::GetFieldTrialParamsByFeature(*feature, &params);
-
-  // No |result| means that there was no server side configuration, or the
-  // feature was disabled. The feature could be disabled either because it
-  // is not configured to be base::FEATURE_ENABLED_BY_DEFAULT, or it has been
-  // disabled from the server.
-  if (!result) {
-    // Some features have a checked in client side configuration, and for those
-    // use that and and record success, otherwise fall back to invalid
-    // configuration below.
+  if (base::FeatureList::IsEnabled(kUseClientConfigIPH) ||
+      !base::GetFieldTrialParamsByFeature(*feature, &params) ||
+      params.empty()) {
+    // Try to read the client-side configuration.
     if (MaybeAddClientSideFeatureConfig(feature)) {
       stats::RecordConfigParsingEvent(
           stats::ConfigParsingEvent::SUCCESS_FROM_SOURCE);
@@ -446,8 +455,8 @@ void ChromeVariationsConfiguration::ParseFeatureConfig(
       return;
     }
 
-    // No server-side, nor client side configuration available, but the feature
-    // was passed in as one of all the feature available, so give it an invalid
+    // No server-side nor client side configuration is available, but the
+    // feature was on the list of available features, so give it an invalid
     // config.
     FeatureConfig& config = configs_[feature->name];
     config.valid = false;
@@ -645,6 +654,33 @@ ChromeVariationsConfiguration::GetRegisteredFeatures() const {
   for (const auto& element : configs_)
     features.push_back(element.first);
   return features;
+}
+
+const GroupConfig& ChromeVariationsConfiguration::GetGroupConfig(
+    const base::Feature& group) const {
+  auto it = group_configs_.find(group.name);
+  DCHECK(it != group_configs_.end());
+  return it->second;
+}
+
+const GroupConfig& ChromeVariationsConfiguration::GetGroupConfigByName(
+    const std::string& group_name) const {
+  auto it = group_configs_.find(group_name);
+  DCHECK(it != group_configs_.end());
+  return it->second;
+}
+
+const Configuration::GroupConfigMap&
+ChromeVariationsConfiguration::GetRegisteredGroupConfigs() const {
+  return group_configs_;
+}
+
+const std::vector<std::string>
+ChromeVariationsConfiguration::GetRegisteredGroups() const {
+  std::vector<std::string> groups;
+  for (const auto& element : group_configs_)
+    groups.push_back(element.first);
+  return groups;
 }
 
 }  // namespace feature_engagement

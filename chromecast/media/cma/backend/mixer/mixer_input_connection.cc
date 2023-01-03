@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,12 +17,12 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/task/sequenced_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "chromecast/base/chromecast_switches.h"
+#include "chromecast/media/api/audio_provider.h"
 #include "chromecast/media/audio/audio_fader.h"
 #include "chromecast/media/audio/audio_log.h"
-#include "chromecast/media/audio/audio_provider.h"
 #include "chromecast/media/audio/mixer_service/mixer_service_transport.pb.h"
 #include "chromecast/media/audio/net/conversions.h"
 #include "chromecast/media/audio/rate_adjuster.h"
@@ -374,7 +374,7 @@ MixerInputConnection::MixerInputConnection(
       enable_audio_clock_simulation_(pts_is_timestamp_ ||
                                      params.enable_audio_clock_simulation()),
       effective_playout_channel_(playout_channel_),
-      io_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      io_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       max_queued_frames_(std::max(GetQueueSize(params), algorithm_fill_size_)),
       start_threshold_frames_(GetStartThreshold(params)),
       never_timeout_connection_(params.never_timeout_connection()),

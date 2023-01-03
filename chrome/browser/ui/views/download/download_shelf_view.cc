@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,12 +6,12 @@
 
 #include <stddef.h>
 
-#include <algorithm>
 #include <utility>
 
 #include "base/check.h"
 #include "base/containers/adapters.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/ranges/algorithm.h"
 #include "base/time/time.h"
 #include "chrome/browser/download/download_ui_model.h"
 #include "chrome/browser/themes/theme_properties.h"
@@ -30,7 +30,6 @@
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
-#include "ui/compositor/compositor.h"
 #include "ui/gfx/animation/animation.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
@@ -107,8 +106,8 @@ DownloadShelfView::DownloadShelfView(Browser* browser, BrowserView* parent)
   // and return to chrome with the download shelf still open.
   mouse_watcher_.set_notify_on_exit_time(base::Seconds(5));
   SetID(VIEW_ID_DOWNLOAD_SHELF);
-  views::SetCascadingThemeProviderColor(this, views::kCascadingBackgroundColor,
-                                        ThemeProperties::COLOR_TOOLBAR);
+  views::SetCascadingColorProviderColor(this, views::kCascadingBackgroundColor,
+                                        kColorToolbar);
 }
 
 DownloadShelfView::~DownloadShelfView() = default;
@@ -249,15 +248,15 @@ void DownloadShelfView::MouseMovedOutOfHost() {
 }
 
 void DownloadShelfView::AutoClose() {
-  if (std::all_of(download_views_.cbegin(), download_views_.cend(),
-                  [](const auto* view) { return view->model()->GetOpened(); }))
+  if (base::ranges::all_of(download_views_, [](const auto* view) {
+        return view->model()->GetOpened();
+      }))
     mouse_watcher_.Start(GetWidget()->GetNativeWindow());
 }
 
 void DownloadShelfView::RemoveDownloadView(View* view) {
   DCHECK(view);
-  const auto i =
-      std::find(download_views_.begin(), download_views_.end(), view);
+  const auto i = base::ranges::find(download_views_, view);
   DCHECK(i != download_views_.end());
   download_views_.erase(i);
   RemoveChildViewT(view);
@@ -277,7 +276,6 @@ void DownloadShelfView::ConfigureButtonForTheme(views::MdTextButton* button) {
 
 void DownloadShelfView::DoShowDownload(
     DownloadUIModel::DownloadUIModelPtr download) {
-  const base::TimeTicks show_download_start_time_ticks = base::TimeTicks::Now();
   mouse_watcher_.Stop();
 
   const bool was_empty = download_views_.empty();
@@ -285,28 +283,10 @@ void DownloadShelfView::DoShowDownload(
   // Insert the new view as the first child, so the logical child order matches
   // the visual order.  This ensures that tabbing through downloads happens in
   // the order users would expect.
-  download::DownloadItem* download_item = download->download();
   auto view = std::make_unique<DownloadItemView>(std::move(download), this,
                                                  accessible_alert_);
   DownloadItemView* download_item_view = AddChildViewAt(std::move(view), 0);
   download_views_.push_back(download_item_view);
-
-  // Check download_item is not null, as it can be in some cases. See
-  // DownloadUIModel::download() description.
-  if (download_item) {
-    download_item_view->GetWidget()
-        ->GetCompositor()
-        ->RequestPresentationTimeForNextFrame(base::BindOnce(
-            [](base::TimeTicks start_time_ticks, int download_count,
-               const gfx::PresentationFeedback& feedback) {
-              base::UmaHistogramTimes(
-                  download_count > 1
-                      ? "Download.Shelf.Views.NotFirstDownloadPaintTime"
-                      : "Download.Shelf.Views.FirstDownloadPaintTime",
-                  base::TimeTicks::Now() - start_time_ticks);
-            },
-            show_download_start_time_ticks, download_views_.size()));
-  }
 
   // Max number of download views we'll contain. Any time a view is added and
   // we already have this many download views, one is removed.

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,17 +10,8 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "build/branding_buildflags.h"
-#include "chromeos/system/factory_ping_embargo_check.h"
-#include "chromeos/system/statistics_provider.h"
-
-namespace ash::system {
-// TODO(https://crbug.com/1164001): remove when migrated to ash::
-using ::chromeos::system::FactoryPingEmbargoState;
-using ::chromeos::system::GetEnterpriseManagementPingEmbargoState;
-using ::chromeos::system::kFirmwareTypeKey;
-using ::chromeos::system::kFirmwareTypeValueNonchrome;
-using ::chromeos::system::kRlzBrandCodeKey;
-}  // namespace ash::system
+#include "chromeos/ash/components/system/factory_ping_embargo_check.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 
 namespace policy {
 
@@ -31,12 +22,10 @@ bool IsGoogleBrandedChrome() {
 #if !BUILDFLAG(GOOGLE_CHROME_BRANDING)
   return false;
 #else
-  std::string firmware_type;
-  bool is_chrome_branded =
-      !ash::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
-          ash::system::kFirmwareTypeKey, &firmware_type) ||
-      firmware_type != ash::system::kFirmwareTypeValueNonchrome;
-  return is_chrome_branded;
+  const absl::optional<base::StringPiece> firmware_type =
+      ash::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
+          ash::system::kFirmwareTypeKey);
+  return firmware_type != ash::system::kFirmwareTypeValueNonchrome;
 #endif  // !BUILDFLAG(GOOGLE_CHROME_BRANDING)
 }
 
@@ -65,9 +54,9 @@ bool AutoEnrollmentTypeChecker::IsFREEnabled() {
 
   std::string command_line_mode = command_line->GetSwitchValueASCII(
       ash::switches::kEnterpriseEnableForcedReEnrollment);
-  if (command_line_mode == kForcedReEnrollmentAlways)
+  if (command_line_mode == kForcedReEnrollmentAlways) {
     return true;
-
+  }
   if (command_line_mode.empty() ||
       command_line_mode == kForcedReEnrollmentOfficialBuild) {
     return IsGoogleBrandedChrome();
@@ -113,44 +102,73 @@ bool AutoEnrollmentTypeChecker::IsEnabled() {
 
 // static
 AutoEnrollmentTypeChecker::FRERequirement
-AutoEnrollmentTypeChecker::GetFRERequirementAccordingToVPD() {
-  std::string check_enrollment_value;
-  ash::system::StatisticsProvider* provider =
-      ash::system::StatisticsProvider::GetInstance();
-  bool fre_flag_found = provider->GetMachineStatistic(
-      ash::system::kCheckEnrollmentKey, &check_enrollment_value);
+AutoEnrollmentTypeChecker::GetFRERequirementAccordingToVPD(
+    ash::system::StatisticsProvider* statistics_provider) {
+  const absl::optional<base::StringPiece> check_enrollment_value =
+      statistics_provider->GetMachineStatistic(
+          ash::system::kCheckEnrollmentKey);
 
-  if (fre_flag_found) {
+  if (check_enrollment_value) {
     if (check_enrollment_value == "0")
       return FRERequirement::kExplicitlyNotRequired;
     if (check_enrollment_value == "1")
       return FRERequirement::kExplicitlyRequired;
 
     LOG(ERROR) << "Unexpected value for " << ash::system::kCheckEnrollmentKey
-               << ": " << check_enrollment_value;
+               << ": " << check_enrollment_value.value();
     LOG(WARNING) << "Forcing auto enrollment check.";
     return FRERequirement::kExplicitlyRequired;
   }
-  // Assume that the presence of the machine serial number means that VPD has
-  // been read successfully. Don't trust a missing ActivateDate if VPD could not
-  // be read successfully.
-  bool vpd_read_successfully = !provider->GetEnterpriseMachineID().empty();
-  if (vpd_read_successfully &&
-      !provider->GetMachineStatistic(ash::system::kActivateDateKey, nullptr)) {
-    // The device has never been activated (enterprise enrolled or
-    // consumer-owned) so doing a FRE check is not necessary.
-    return FRERequirement::kNotRequired;
+
+  // FRE fails on reven, do not force FRE check.
+  if (ash::switches::IsRevenBranding() &&
+      statistics_provider->GetVpdStatus() !=
+          ash::system::StatisticsProvider::VpdStatus::kValid) {
+    LOG(WARNING) << "Re-enrollment is not forced on reven device";
+    return FRERequirement::kRequired;
   }
-  if (!vpd_read_successfully) {
-    LOG(ERROR) << "VPD could not be read, skipping explicitly required auto "
-                  "enrollment check.";
+
+  // The FRE flag is not found. If VPD is in valid state, do not require FRE
+  // check if the device was never owned. If VPD is broken, continue with FRE
+  // check.
+  switch (statistics_provider->GetVpdStatus()) {
+    // If RO_VPD is broken, state keys are not available and FRE check
+    // cannot start. To not to get stuck with forced re-enrollment, do not
+    // enforce it and let users cancel in case of permanent error.
+    case ash::system::StatisticsProvider::VpdStatus::kInvalid:
+      // Both RO and RW VPDs are broken and state keys are not available.
+      // Require re-enrollment but do not force it.
+      LOG(WARNING) << "RO_VPD and RW_VPD are broken.";
+      return FRERequirement::kRequired;
+    case ash::system::StatisticsProvider::VpdStatus::kRoInvalid:
+      // RO_VPD is broken, but RW_VPD is valid. `kActivateDateKey` indicating
+      // ownership is available and trustworthy. Proceed with with ownership
+      // check and require  re-enrollment if the device was owned.
+      LOG(WARNING) << "RO_VPD is broken. Proceeding with ownership check.";
+      [[fallthrough]];
+    case ash::system::StatisticsProvider::VpdStatus::kValid:
+      if (!statistics_provider->GetMachineStatistic(
+              ash::system::kActivateDateKey)) {
+        // The device has never been activated (enterprise enrolled or
+        // consumer-owned) so doing a FRE check is not necessary.
+        return FRERequirement::kNotRequired;
+      }
+      return FRERequirement::kRequired;
+    case ash::system::StatisticsProvider::VpdStatus::kRwInvalid:
+      // VPD is in invalid state and FRE flag cannot be assessed. Force FRE
+      // check to prevent enrollment escapes.
+      LOG(ERROR) << "VPD could not be read, forcing auto-enrollment check.";
+      return FRERequirement::kExplicitlyRequired;
+    case ash::system::StatisticsProvider::VpdStatus::kUnknown:
+      NOTREACHED() << "VPD status is unknown";
+      return FRERequirement::kRequired;
   }
-  return FRERequirement::kRequired;
 }
 
 // static
 AutoEnrollmentTypeChecker::FRERequirement
-AutoEnrollmentTypeChecker::GetFRERequirement() {
+AutoEnrollmentTypeChecker::GetFRERequirement(
+    ash::system::StatisticsProvider* statistics_provider) {
   // Skip FRE check if it is not enabled by command-line switches.
   if (!IsFREEnabled()) {
     LOG(WARNING) << "FRE disabled.";
@@ -158,7 +176,8 @@ AutoEnrollmentTypeChecker::GetFRERequirement() {
   }
 
   const auto fre_vpd_requirement =
-      AutoEnrollmentTypeChecker::GetFRERequirementAccordingToVPD();
+      AutoEnrollmentTypeChecker::GetFRERequirementAccordingToVPD(
+          statistics_provider);
   if (fre_vpd_requirement == FRERequirement::kExplicitlyNotRequired)
     return fre_vpd_requirement;
 
@@ -178,28 +197,27 @@ AutoEnrollmentTypeChecker::GetFRERequirement() {
 // static
 AutoEnrollmentTypeChecker::InitialStateDeterminationRequirement
 AutoEnrollmentTypeChecker::GetInitialStateDeterminationRequirement(
-    bool is_system_clock_synchronized) {
+    bool is_system_clock_synchronized,
+    ash::system::StatisticsProvider* statistics_provider) {
   // Skip Initial State Determination if it is not enabled according to
   // command-line flags.
   if (!IsInitialEnrollmentEnabled()) {
     LOG(WARNING) << "Initial Enrollment is disabled.";
     return InitialStateDeterminationRequirement::kDisabled;
   }
-
-  ash::system::StatisticsProvider* provider =
-      ash::system::StatisticsProvider::GetInstance();
   const ash::system::FactoryPingEmbargoState embargo_state =
-      ash::system::GetEnterpriseManagementPingEmbargoState(provider);
-  if (provider->GetEnterpriseMachineID().empty()) {
+      ash::system::GetEnterpriseManagementPingEmbargoState(statistics_provider);
+  const absl::optional<base::StringPiece> serial_number =
+      statistics_provider->GetMachineID();
+  if (!serial_number || serial_number->empty()) {
     LOG(WARNING)
         << "Skip Initial State Determination due to missing serial number.";
     return InitialStateDeterminationRequirement::kNotRequired;
   }
 
-  std::string rlz_brand_code;
-  const bool rlz_brand_code_found = provider->GetMachineStatistic(
-      ash::system::kRlzBrandCodeKey, &rlz_brand_code);
-  if (!rlz_brand_code_found || rlz_brand_code.empty()) {
+  const absl::optional<base::StringPiece> rlz_brand_code =
+      statistics_provider->GetMachineStatistic(ash::system::kRlzBrandCodeKey);
+  if (!rlz_brand_code || rlz_brand_code->empty()) {
     LOG(WARNING)
         << "Skip Initial State Determination due to missing brand code.";
     return InitialStateDeterminationRequirement::kNotRequired;
@@ -240,7 +258,8 @@ AutoEnrollmentTypeChecker::GetInitialStateDeterminationRequirement(
 // static
 AutoEnrollmentTypeChecker::CheckType
 AutoEnrollmentTypeChecker::DetermineAutoEnrollmentCheckType(
-    bool is_system_clock_synchronized) {
+    bool is_system_clock_synchronized,
+    ash::system::StatisticsProvider* statistics_provider) {
   // Skip everything if neither FRE nor Initial Enrollment are enabled.
   if (!IsEnabled()) {
     LOG(WARNING) << "Auto-enrollment disabled.";
@@ -256,7 +275,7 @@ AutoEnrollmentTypeChecker::DetermineAutoEnrollmentCheckType(
 
   // Determine whether to do an FRE check or an initial state determination.
   // FRE has precedence since managed devices must go through an FRE check.
-  FRERequirement fre_requirement = GetFRERequirement();
+  FRERequirement fre_requirement = GetFRERequirement(statistics_provider);
   LOG(WARNING) << FRERequirementToString(fre_requirement);
 
   switch (fre_requirement) {
@@ -265,9 +284,10 @@ AutoEnrollmentTypeChecker::DetermineAutoEnrollmentCheckType(
       // Fall to the initial state determination check.
       break;
     case FRERequirement::kExplicitlyNotRequired:
-      // Skip FRE check and initial determination check if the device is
-      // explicitly marked as consumer owned.
-      return CheckType::kNone;
+      // Force initial determination check even if explicitly not required.
+      // TODO(igorcov): b/238592446 Return CheckType::kNone when that gets
+      // fixed.
+      break;
     case FRERequirement::kExplicitlyRequired:
       LOG(WARNING) << "Proceeding with FRE check.";
       return CheckType::kForcedReEnrollmentExplicitlyRequired;
@@ -278,8 +298,8 @@ AutoEnrollmentTypeChecker::DetermineAutoEnrollmentCheckType(
 
   // FRE is not required. Check whether an initial state determination should be
   // done.
-  switch (
-      GetInitialStateDeterminationRequirement(is_system_clock_synchronized)) {
+  switch (GetInitialStateDeterminationRequirement(is_system_clock_synchronized,
+                                                  statistics_provider)) {
     case InitialStateDeterminationRequirement::kDisabled:
     case InitialStateDeterminationRequirement::kNotRequired:
       return CheckType::kNone;

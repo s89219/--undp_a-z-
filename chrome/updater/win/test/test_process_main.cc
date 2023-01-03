@@ -1,7 +1,8 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <shlobj.h>
 #include <windows.h>
 
 #include <string>
@@ -14,7 +15,7 @@
 #include "base/time/time.h"
 #include "chrome/updater/constants.h"
 #include "chrome/updater/updater_scope.h"
-#include "chrome/updater/util.h"
+#include "chrome/updater/util/util.h"
 #include "chrome/updater/win/test/test_initializer.h"
 #include "chrome/updater/win/test/test_strings.h"
 
@@ -50,6 +51,11 @@ int main(int, char**) {
 
   updater::NotifyInitializationDoneForTesting();
 
+  if (command_line->HasSwitch(updater::kTestName)) {
+    VLOG(1) << "Running for test: "
+            << command_line->GetSwitchValueASCII(updater::kTestName);
+  }
+
   if (command_line->HasSwitch(updater::kTestSleepMinutesSwitch)) {
     std::string value =
         command_line->GetSwitchValueASCII(updater::kTestSleepMinutesSwitch);
@@ -66,8 +72,28 @@ int main(int, char**) {
 
   if (command_line->HasSwitch(updater::kTestEventToSignal)) {
     EventForSwitch(*command_line, updater::kTestEventToSignal).Signal();
-  } else if (command_line->HasSwitch(updater::kTestEventToWaitOn)) {
+  }
+
+  if (command_line->HasSwitch(updater::kTestEventToSignalIfMediumIntegrity)) {
+    if (!::IsUserAnAdmin()) {
+      EventForSwitch(*command_line,
+                     updater::kTestEventToSignalIfMediumIntegrity)
+          .Signal();
+    } else {
+      LOG(ERROR) << "Process running at High Integrity instead of Medium";
+    }
+  }
+
+  if (command_line->HasSwitch(updater::kTestEventToWaitOn)) {
     EventForSwitch(*command_line, updater::kTestEventToWaitOn).Wait();
+  }
+
+  if (command_line->HasSwitch(updater::kTestExitCode)) {
+    int exit_code = 0;
+    CHECK(base::StringToInt(
+        command_line->GetSwitchValueASCII(updater::kTestExitCode), &exit_code));
+    VLOG(1) << "Process ending with exit code: " << exit_code;
+    return exit_code;
   }
 
   VLOG(1) << "Process ended.";

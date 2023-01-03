@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include <math.h>
 #include <stddef.h>
 
-#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
@@ -17,11 +16,11 @@
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/process/process.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
@@ -48,14 +47,14 @@
 
 namespace safe_browsing {
 
-const base::Feature kIncidentReportingEnableUpload {
-  "IncidentReportingEnableUpload",
+BASE_FEATURE(kIncidentReportingEnableUpload,
+             "IncidentReportingEnableUpload",
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-      base::FEATURE_ENABLED_BY_DEFAULT
+             base::FEATURE_ENABLED_BY_DEFAULT
 #else
-      base::FEATURE_DISABLED_BY_DEFAULT
+             base::FEATURE_DISABLED_BY_DEFAULT
 #endif
-};
+);
 
 namespace {
 
@@ -215,8 +214,7 @@ class IncidentReportingService::Receiver : public IncidentReceiver {
 IncidentReportingService::Receiver::Receiver(
     const base::WeakPtr<IncidentReportingService>& service)
     : service_(service),
-      thread_runner_(base::ThreadTaskRunnerHandle::Get()) {
-}
+      thread_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()) {}
 
 IncidentReportingService::Receiver::~Receiver() {
 }
@@ -980,11 +978,8 @@ void IncidentReportingService::OnReportUploadResult(
 
   // The upload is no longer outstanding, so take ownership of the context (from
   // the collection of outstanding uploads) in this scope.
-  auto it =
-      std::find_if(uploads_.begin(), uploads_.end(),
-                   [context](const std::unique_ptr<UploadContext>& value) {
-                     return value.get() == context;
-                   });
+  auto it = base::ranges::find(uploads_, context,
+                               &std::unique_ptr<UploadContext>::get);
   DCHECK(it != uploads_.end());
   std::unique_ptr<UploadContext> upload(std::move(*it));
   uploads_.erase(it);

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,10 @@
 #include "base/logging.h"
 #include "chrome/browser/ash/app_mode/kiosk_app_launch_error.h"
 #include "chrome/browser/ash/login/existing_user_controller.h"
+#include "chrome/browser/ash/login/session/user_session_manager.h"
 #include "chrome/browser/ash/login/ui/login_display_host.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
+#include "components/session_manager/core/session_manager.h"
 #include "components/user_manager/user_manager.h"
 
 namespace policy {
@@ -102,6 +104,14 @@ void ManagedSessionService::OnUserProfileLoaded(const AccountId& account_id) {
   SetLoginStatus();
   for (auto& observer : observers_) {
     observer.OnLogin(profile);
+  }
+}
+
+void ManagedSessionService::OnUnlockScreenAttempt(
+    const bool success,
+    const session_manager::UnlockType unlock_type) {
+  for (auto& observer : observers_) {
+    observer.OnUnlockAttempt(success, unlock_type);
   }
 }
 

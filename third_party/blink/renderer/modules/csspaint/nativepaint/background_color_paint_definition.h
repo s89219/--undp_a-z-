@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,7 +32,7 @@ class MODULES_EXPORT BackgroundColorPaintDefinition final
       const BackgroundColorPaintDefinition&) = delete;
 
   // PaintDefinition override
-  sk_sp<PaintRecord> Paint(
+  PaintRecord Paint(
       const CompositorPaintWorkletInput*,
       const CompositorPaintWorkletJob::AnimatedPropertyValues&) override;
 
@@ -64,11 +64,17 @@ class MODULES_EXPORT BackgroundColorPaintDefinition final
 
   // Constructor for testing purpose only.
   BackgroundColorPaintDefinition() = default;
-  sk_sp<PaintRecord> PaintForTest(
+  PaintRecord PaintForTest(
       const Vector<Color>& animated_colors,
       const Vector<double>& offsets,
       const CompositorPaintWorkletJob::AnimatedPropertyValues&
-          animated_property_values);
+          animated_property_values,
+      scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+
+  PaintRecord Paint(const CompositorPaintWorkletInput* compositor_input,
+                    const CompositorPaintWorkletJob::AnimatedPropertyValues&
+                        animated_property_values,
+                    scoped_refptr<base::SingleThreadTaskRunner> task_runner);
 
   // The instance of BackgroundColorPaintDefinition is created on the main
   // thread, which means |context_| is initialized on the main thread's heap.

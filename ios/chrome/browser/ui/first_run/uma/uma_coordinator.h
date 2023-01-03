@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 @protocol UMACoordinatorDelegate <NSObject>
 
 // Called when the coordinator has been removed from the screen.
-// |userChoice| whether the user accepts UMA reporting.
+// `userChoice` whether the user accepts UMA reporting.
 - (void)UMACoordinatorDidRemoveWithCoordinator:(UMACoordinator*)coordinator
                         UMAReportingUserChoice:(BOOL)UMAReportingUserChoice;
 
@@ -26,8 +26,8 @@
 
 @property(nonatomic, weak) id<UMACoordinatorDelegate> delegate;
 
-// Initiates UMACoordinator with |viewController| and |browser|.
-// |UMAReportingValue| is the UMA toggle value, when opening the dialog.
+// Initiates UMACoordinator with `viewController` and `browser`.
+// `UMAReportingValue` is the UMA toggle value, when opening the dialog.
 // It should be kDefaultMetricsReportingCheckboxValue if the user never opened
 // the dialog yet.
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,8 +60,8 @@ class ReportingServiceSettingsTest : public testing::Test {
                                            base::JSON_ALLOW_TRAILING_COMMAS);
     EXPECT_TRUE(settings.has_value());
 
-    ServiceProviderConfig config(kServiceProviderConfig);
-    ReportingServiceSettings service_settings(settings.value(), config);
+    ReportingServiceSettings service_settings(settings.value(),
+                                              *GetServiceProviderConfig());
 
     return service_settings.GetReportingSettings();
   }

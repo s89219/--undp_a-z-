@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -213,6 +213,8 @@ public class AccountChooserDialog
         mDialog.show();
     }
 
+    // status_bar_height is not a public framework resource, so we have to getIdentifier()
+    @SuppressWarnings("DiscouragedApi")
     private void showTooltip(View view, String message, int layoutId) {
         Context context = view.getContext();
         Resources resources = context.getResources();

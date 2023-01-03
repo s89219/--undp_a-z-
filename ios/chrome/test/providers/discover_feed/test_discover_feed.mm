@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,6 +34,9 @@ class TestDiscoverFeedService final : public DiscoverFeedService {
   void UpdateTheme() final {}
   void RefreshFeedIfNeeded() final {}
   void RefreshFeed() final {}
+  void PerformBackgroundRefreshes(void (^completion)(BOOL)) final {}
+  void HandleBackgroundRefreshTaskExpiration() final {}
+  NSDate* GetEarliestBackgroundRefreshBeginDate() final { return nil; }
   BOOL GetFollowingFeedHasUnseenContent() final { return NO; }
   void SetFollowingFeedContentSeen() final {}
 };

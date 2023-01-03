@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -125,7 +125,7 @@ int AppRecover::ReinstallUpdater() const {
   uninstall_command.AppendSwitch(kEnableLoggingSwitch);
   uninstall_command.AppendSwitchASCII(kLoggingModuleSwitch,
                                       kLoggingModuleSwitchValue);
-  if (updater_scope() == UpdaterScope::kSystem) {
+  if (IsSystemInstall(updater_scope())) {
     uninstall_command.AppendSwitch(kSystemSwitch);
   }
   if (!base::LaunchProcess(uninstall_command, {}).WaitForExit(&exit_code)) {
@@ -141,7 +141,7 @@ int AppRecover::ReinstallUpdater() const {
   install_command.AppendSwitch(kEnableLoggingSwitch);
   install_command.AppendSwitchASCII(kLoggingModuleSwitch,
                                     kLoggingModuleSwitchValue);
-  if (updater_scope() == UpdaterScope::kSystem) {
+  if (IsSystemInstall(updater_scope())) {
     install_command.AppendSwitch(kSystemSwitch);
   }
   // TODO(crbug.com/1281971): suppress the installer's UI.
@@ -170,16 +170,15 @@ void AppRecover::RegisterApps(
              base::OnceClosure shutdown) { std::move(shutdown).Run(); },
           service, base::BindOnce(&AppRecover::Shutdown, this, kErrorOk)));
   for (const RegistrationRequest& registration : registrations) {
-    service->RegisterApp(
-        registration,
-        base::BindOnce(
-            [](const std::string& app, base::RepeatingClosure barrier,
-               const RegistrationResponse& response) {
-              VLOG(0) << "Registration for " << app
-                      << " result: " << response.status_code << ".";
-              barrier.Run();
-            },
-            registration.app_id, barrier));
+    service->RegisterApp(registration,
+                         base::BindOnce(
+                             [](const std::string& app,
+                                base::RepeatingClosure barrier, int result) {
+                               VLOG(0) << "Registration for " << app
+                                       << " result: " << result << ".";
+                               barrier.Run();
+                             },
+                             registration.app_id, barrier));
   }
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -69,13 +69,13 @@ DOMTask::DOMTask(ScriptPromiseResolver* resolver,
   DCHECK(callback_);
 
   if (signal_) {
-    signal_->AddAlgorithm(
-        WTF::Bind(&DOMTask::OnAbort, WrapWeakPersistent(this)));
+    abort_handle_ = signal_->AddAlgorithm(
+        WTF::BindOnce(&DOMTask::OnAbort, WrapWeakPersistent(this)));
   }
 
   task_handle_ = PostDelayedCancellableTask(
       task_queue_->GetTaskRunner(), FROM_HERE,
-      WTF::Bind(&DOMTask::Invoke, WrapPersistent(this)), delay);
+      WTF::BindOnce(&DOMTask::Invoke, WrapPersistent(this)), delay);
 
   ScriptState* script_state =
       callback_->CallbackRelevantScriptStateOrReportError("DOMTask", "Create");
@@ -88,6 +88,7 @@ void DOMTask::Trace(Visitor* visitor) const {
   visitor->Trace(callback_);
   visitor->Trace(resolver_);
   visitor->Trace(signal_);
+  visitor->Trace(abort_handle_);
   visitor->Trace(task_queue_);
 }
 

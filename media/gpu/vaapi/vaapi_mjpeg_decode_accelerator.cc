@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,17 +17,17 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/page_size.h"
+#include "base/memory/shared_memory_mapping.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/ipc/common/gpu_memory_buffer_impl.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/bitstream_buffer.h"
 #include "media/base/format_utils.h"
-#include "media/base/unaligned_shared_memory.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_layout.h"
 #include "media/base/video_util.h"
@@ -114,7 +114,7 @@ void VaapiMjpegDecodeAccelerator::VideoFrameReady(int32_t task_id) {
 
 VaapiMjpegDecodeAccelerator::VaapiMjpegDecodeAccelerator(
     const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner)
-    : task_runner_(base::ThreadTaskRunnerHandle::Get()),
+    : task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       io_task_runner_(io_task_runner),
       client_(nullptr),
       decoder_thread_("VaapiMjpegDecoderThread"),
@@ -404,14 +404,13 @@ bool VaapiMjpegDecodeAccelerator::OutputPictureVppOnTaskRunner(
 
 void VaapiMjpegDecodeAccelerator::DecodeFromShmTask(
     int32_t task_id,
-    std::unique_ptr<UnalignedSharedMemory> shm,
+    base::WritableSharedMemoryMapping mapping,
     scoped_refptr<VideoFrame> dst_frame) {
   DVLOGF(4);
   DCHECK(decoder_task_runner_->BelongsToCurrentThread());
   TRACE_EVENT0("jpeg", __func__);
 
-  auto src_image =
-      base::make_span(static_cast<const uint8_t*>(shm->memory()), shm->size());
+  auto src_image = mapping.GetMemoryAsSpan<uint8_t>();
   DecodeImpl(task_id, src_image, std::move(dst_frame));
 }
 
@@ -577,12 +576,10 @@ void VaapiMjpegDecodeAccelerator::Decode(
     return;
   }
 
-  // UnalignedSharedMemory will take over the |bitstream_buffer.handle()|.
-  auto shm = std::make_unique<UnalignedSharedMemory>(
-      bitstream_buffer.TakeRegion(), bitstream_buffer.size(),
-      false /* read_only */);
-
-  if (!shm->MapAt(bitstream_buffer.offset(), bitstream_buffer.size())) {
+  auto region = bitstream_buffer.TakeRegion();
+  auto mapping =
+      region.MapAt(bitstream_buffer.offset(), bitstream_buffer.size());
+  if (!mapping.IsValid()) {
     VLOGF(1) << "Failed to map input buffer";
     NotifyError(bitstream_buffer.id(), UNREADABLE_INPUT);
     return;
@@ -593,7 +590,7 @@ void VaapiMjpegDecodeAccelerator::Decode(
   decoder_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&VaapiMjpegDecodeAccelerator::DecodeFromShmTask,
                                 base::Unretained(this), bitstream_buffer.id(),
-                                std::move(shm), std::move(video_frame)));
+                                std::move(mapping), std::move(video_frame)));
 }
 
 void VaapiMjpegDecodeAccelerator::Decode(int32_t task_id,

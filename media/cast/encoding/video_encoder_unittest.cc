@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "media/base/fake_single_thread_task_runner.h"
 #include "media/base/video_frame.h"
 #include "media/cast/cast_environment.h"
+#include "media/cast/common/openscreen_conversion_helpers.h"
 #include "media/cast/common/rtp_time.h"
 #include "media/cast/common/sender_encoded_frame.h"
 #include "media/cast/common/video_frame_factory.h"
@@ -28,6 +29,7 @@
 #include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/video_utility.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/openscreen/src/cast/streaming/encoded_frame.h"
 
 #if BUILDFLAG(IS_MAC)
 #include "base/threading/platform_thread.h"
@@ -65,8 +67,9 @@ class VideoEncoderTest
       video_config_.enable_fake_codec_for_tests = true;
 
     video_config_.codec = codec;
-    video_config_.use_external_encoder = GetParam().second;
-    if (video_config_.use_external_encoder) {
+    video_config_.use_hardware_encoder = GetParam().second;
+
+    if (is_testing_external_video_encoder()) {
       vea_factory_ =
           std::make_unique<FakeVideoEncodeAcceleratorFactory>(task_runner_);
     }
@@ -96,25 +99,21 @@ class VideoEncoderTest
 
   bool is_testing_software_vp8_encoder() const {
     return video_config_.codec == CODEC_VIDEO_VP8 &&
-           !video_config_.use_external_encoder;
+           !video_config_.use_hardware_encoder;
   }
 
   bool is_testing_video_toolbox_encoder() const {
     return
 #if BUILDFLAG(IS_MAC)
-        (!video_config_.use_external_encoder &&
+        (video_config_.use_hardware_encoder &&
          H264VideoToolboxEncoder::IsSupported(video_config_)) ||
 #endif
         false;
   }
 
-  bool is_testing_platform_encoder() const {
-    return video_config_.use_external_encoder ||
-           is_testing_video_toolbox_encoder();
-  }
-
-  bool encoder_has_resize_delay() const {
-    return is_testing_platform_encoder() && !is_testing_video_toolbox_encoder();
+  bool is_testing_external_video_encoder() const {
+    return video_config_.use_hardware_encoder &&
+           !is_testing_video_toolbox_encoder();
   }
 
   VideoEncoder* video_encoder() const { return video_encoder_.get(); }
@@ -265,12 +264,11 @@ TEST_P(VideoEncoderTest, EncodesVariedFrameSizes) {
                 encoded_frames->emplace_back(std::move(encoded_frame));
               },
               encoded_frames_weak_factory.GetWeakPtr(),
-              RtpTimeTicks::FromTimeDelta(timestamp, kVideoFrequency),
-              reference_time));
+              ToRtpTimeTicks(timestamp, kVideoFrequency), reference_time));
       if (accepted_request) {
         ++count_frames_accepted;
       }
-      if (!encoder_has_resize_delay()) {
+      if (!is_testing_external_video_encoder()) {
         EXPECT_TRUE(accepted_request);
       }
       RunTasksAndAdvanceClock();
@@ -295,11 +293,13 @@ TEST_P(VideoEncoderTest, EncodesVariedFrameSizes) {
       continue;
     }
 
-    if (encoded_frame->dependency == EncodedFrame::KEY) {
+    if (encoded_frame->dependency ==
+        openscreen::cast::EncodedFrame::Dependency::kKeyFrame) {
       EXPECT_EQ(encoded_frame->frame_id, encoded_frame->referenced_frame_id);
       last_key_frame_id = encoded_frame->frame_id;
     } else {
-      EXPECT_EQ(EncodedFrame::DEPENDENT, encoded_frame->dependency);
+      EXPECT_EQ(openscreen::cast::EncodedFrame::Dependency::kDependent,
+                encoded_frame->dependency);
       EXPECT_GT(encoded_frame->frame_id, encoded_frame->referenced_frame_id);
       // There must always be a KEY frame before any DEPENDENT ones.
       ASSERT_FALSE(last_key_frame_id.is_null());
@@ -313,8 +313,9 @@ TEST_P(VideoEncoderTest, EncodesVariedFrameSizes) {
     if (is_testing_software_vp8_encoder()) {
       ASSERT_TRUE(std::isfinite(encoded_frame->encoder_utilization));
       EXPECT_LE(0.0, encoded_frame->encoder_utilization);
-      ASSERT_TRUE(std::isfinite(encoded_frame->lossy_utilization));
-      EXPECT_LE(0.0, encoded_frame->lossy_utilization);
+      EXPECT_LE(0, encoded_frame->encoder_bitrate);
+      ASSERT_TRUE(std::isfinite(encoded_frame->lossiness));
+      EXPECT_LE(0.0, encoded_frame->lossiness);
     }
   }
 }
@@ -347,18 +348,22 @@ namespace {
 std::vector<std::pair<Codec, bool>> DetermineEncodersToTest() {
   std::vector<std::pair<Codec, bool>> values;
   // Fake encoder.
-  values.push_back(std::make_pair(CODEC_VIDEO_FAKE, false));
+  values.emplace_back(CODEC_VIDEO_FAKE, false);
+
   // Software VP8 encoder.
-  values.push_back(std::make_pair(CODEC_VIDEO_VP8, false));
+  values.emplace_back(CODEC_VIDEO_VP8, false);
+
   // Hardware-accelerated encoder (faked).
-  values.push_back(std::make_pair(CODEC_VIDEO_VP8, true));
+  values.emplace_back(CODEC_VIDEO_VP8, true);
+
 #if BUILDFLAG(IS_MAC)
   // VideoToolbox encoder (when VideoToolbox is present).
   FrameSenderConfig video_config = GetDefaultVideoSenderConfig();
-  video_config.use_external_encoder = false;
+  video_config.use_hardware_encoder = true;
   video_config.codec = CODEC_VIDEO_H264;
-  if (H264VideoToolboxEncoder::IsSupported(video_config))
-    values.push_back(std::make_pair(CODEC_VIDEO_H264, false));
+  if (H264VideoToolboxEncoder::IsSupported(video_config)) {
+    values.emplace_back(CODEC_VIDEO_H264, true);
+  }
 #endif
   return values;
 }

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/check_is_test.h"
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/task/thread_pool.h"
@@ -72,7 +73,7 @@
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chrome/browser/lacros/device_settings_lacros.h"
 #include "chromeos/crosapi/mojom/crosapi.mojom.h"
-#include "chromeos/lacros/lacros_service.h"
+#include "chromeos/startup/browser_params_proxy.h"
 #include "components/policy/core/common/policy_loader_lacros.h"
 #endif
 
@@ -136,8 +137,7 @@ ChromeBrowserPolicyConnector::GetDeviceSettings() const {
 
 bool ChromeBrowserPolicyConnector::IsDeviceEnterpriseManaged() const {
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-  auto* lacros_service = chromeos::LacrosService::Get();
-  return lacros_service->init_params()->is_device_enterprised_managed;
+  return chromeos::BrowserParamsProxy::Get()->IsDeviceEnterprisedManaged();
 #else
   NOTREACHED() << "This method is only defined for ChromeOS";
   return false;
@@ -170,9 +170,12 @@ void ChromeBrowserPolicyConnector::Shutdown() {
 
 ConfigurationPolicyProvider*
 ChromeBrowserPolicyConnector::GetPlatformProvider() {
-  ConfigurationPolicyProvider* provider =
-      BrowserPolicyConnectorBase::GetPolicyProviderForTesting();
-  return provider ? provider : platform_provider_.get();
+  if (ConfigurationPolicyProvider* provider =
+          BrowserPolicyConnectorBase::GetPolicyProviderForTesting()) {
+    CHECK_IS_TEST();
+    return provider;
+  }
+  return platform_provider_.get();
 }
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
@@ -259,8 +262,7 @@ ChromeBrowserPolicyConnector::CreatePlatformProvider() {
   std::unique_ptr<AsyncPolicyLoader> loader(PolicyLoaderWin::Create(
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT}),
-      ManagementServiceFactory::GetForPlatform(), kRegistryChromePolicyKey,
-      IsCommandLineSwitchSupported()));
+      ManagementServiceFactory::GetForPlatform(), kRegistryChromePolicyKey));
   return std::make_unique<AsyncPolicyProvider>(GetSchemaRegistry(),
                                                std::move(loader));
 #elif BUILDFLAG(IS_MAC)

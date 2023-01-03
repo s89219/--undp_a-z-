@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,7 +47,10 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerTest, FullscreenOnFileURL) {
       base::FilePath(kEmptyFile)));
   ASSERT_TRUE(AddTabAtIndex(0, file_url, PAGE_TRANSITION_TYPED));
   GetFullscreenController()->EnterFullscreenModeForTab(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame());
+      browser()
+          ->tab_strip_model()
+          ->GetActiveWebContents()
+          ->GetPrimaryMainFrame());
   ASSERT_TRUE(IsExclusiveAccessBubbleDisplayed());
 }
 
@@ -144,8 +147,16 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerTest,
                   ->IsKeyboardLockActive());
 }
 
+// Disabled for flaky SEGFAULTs on Lacros: crbug.com/1340114
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#define MAYBE_KeyboardLockNotLockedInExtensionFullscreenMode \
+  DISABLED_KeyboardLockNotLockedInExtensionFullscreenMode
+#else
+#define MAYBE_KeyboardLockNotLockedInExtensionFullscreenMode \
+  KeyboardLockNotLockedInExtensionFullscreenMode
+#endif  // IS_CHROMEOS_LACROS
 IN_PROC_BROWSER_TEST_F(FullscreenControllerTest,
-                       KeyboardLockNotLockedInExtensionFullscreenMode) {
+                       MAYBE_KeyboardLockNotLockedInExtensionFullscreenMode) {
   EnterExtensionInitiatedFullscreen();
   ASSERT_TRUE(RequestKeyboardLock(/*esc_key_locked=*/true));
   ASSERT_FALSE(GetExclusiveAccessManager()
@@ -478,5 +489,8 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerTest,
                        EnterFullscreenWhenInFullscreen) {
   EnterActiveTabFullscreen();
   EXPECT_TRUE(GetFullscreenController()->CanEnterFullscreenModeForTab(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame()));
+      browser()
+          ->tab_strip_model()
+          ->GetActiveWebContents()
+          ->GetPrimaryMainFrame()));
 }

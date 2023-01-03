@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,11 +15,13 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "components/embedder_support/android/util/input_stream.h"
 #include "components/embedder_support/android/util/input_stream_reader.h"
+#include "net/base/features.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
 #include "net/http/http_status_code.h"
@@ -86,6 +88,38 @@ class InputStreamReaderWrapper
   }
 
   int ReadRawData(net::IOBuffer* buffer, int buffer_size) {
+    if (base::FeatureList::IsEnabled(net::features::kOptimizeNetworkBuffers) &&
+        net::features::kOptimizeNetworkBuffersInputStreamCheckAvailable.Get()) {
+      int available = 0;
+      // Only use `available` if the app has an estimate, otherwise it'll return
+      // 0. In that case we still want to do a blocking read until there's data
+      // or EOF.
+      if (input_stream_->BytesAvailable(&available) && available > 0) {
+        // Some implementations might return 1 even when there's more data. To
+        // avoid slowdowns in that case use a minimum of 1KB to read.
+        if (available <
+            net::features::
+                kOptimizeNetworkBuffersMinInputStreamAvailableValueToIgnore
+                    .Get()) {
+          available =
+              net::features::kOptimizeNetworkBuffersMinInputStreamReadSize
+                  .Get();
+        }
+
+        // Make sure a we don't read past the buffer size.
+        buffer_size = std::min(available, buffer_size);
+      } else {
+        // `buffer_size' could be large since it comes from the size of the data
+        // pipe, but we don't want to synchronously wait for too many bytes in
+        // case they're coming from the network.
+        buffer_size = std::min(
+            net::features::
+                kOptimizeNetworkBuffersMaxInputStreamBytesToReadWhenAvailableUnknown
+                    .Get(),
+            buffer_size);
+      }
+    }
+
     return input_stream_reader_->ReadRawData(buffer, buffer_size);
   }
 
@@ -116,7 +150,7 @@ AndroidStreamReaderURLLoader::AndroidStreamReaderURLLoader(
       response_delegate_(std::move(response_delegate)),
       writable_handle_watcher_(FROM_HERE,
                                mojo::SimpleWatcher::ArmingPolicy::MANUAL,
-                               base::SequencedTaskRunnerHandle::Get()),
+                               base::SequencedTaskRunner::GetCurrentDefault()),
       start_time_(base::Time::Now()) {
   DCHECK(response_delegate_);
   // If there is a client error, clean up the request.
@@ -170,7 +204,8 @@ void AndroidStreamReaderURLLoader::Start() {
   base::ThreadPool::PostTask(
       FROM_HERE, {base::MayBlock()},
       base::BindOnce(
-          &OpenInputStreamOnWorkerThread, base::ThreadTaskRunnerHandle::Get(),
+          &OpenInputStreamOnWorkerThread,
+          base::SingleThreadTaskRunner::GetCurrentDefault(),
           // This is intentional - the loader could be deleted while the
           // callback is executing on the background thread. The delegate will
           // be "returned" to the loader once the InputStream open attempt is
@@ -290,8 +325,7 @@ void AndroidStreamReaderURLLoader::SendBody() {
 
   MojoCreateDataPipeOptions* options_ptr = nullptr;
   MojoCreateDataPipeOptions options;
-  if (base::FeatureList::IsEnabled(
-          network::features::kOptimizeNetworkBuffers)) {
+  if (base::FeatureList::IsEnabled(net::features::kOptimizeNetworkBuffers)) {
     options_ptr = &options;
     options.struct_size = sizeof(MojoCreateDataPipeOptions);
     options.flags = MOJO_CREATE_DATA_PIPE_FLAG_NONE;
@@ -330,8 +364,7 @@ void AndroidStreamReaderURLLoader::SendResponseToClient() {
   cache_response_ =
       response_delegate_->ShouldCacheResponse(response_head_.get());
   client_->OnReceiveResponse(std::move(response_head_),
-                             mojo::ScopedDataPipeConsumerHandle());
-  client_->OnStartLoadingResponseBody(std::move(consumer_handle_));
+                             std::move(consumer_handle_), absl::nullopt);
 }
 
 void AndroidStreamReaderURLLoader::ReadMore() {
@@ -421,7 +454,7 @@ void AndroidStreamReaderURLLoader::DidRead(int result) {
   pending_buffer_ = nullptr;
 
   // TODO(timvolodine): consider using a sequenced task runner.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&AndroidStreamReaderURLLoader::ReadMore,
                                 weak_factory_.GetWeakPtr()));
 }

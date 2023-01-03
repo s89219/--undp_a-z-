@@ -1,4 +1,4 @@
-/* Copyright (c) 2012 The Chromium Authors. All rights reserved.
+/* Copyright 2012 The Chromium Authors
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
@@ -213,6 +213,13 @@ cr-menu.chrome-menu > [checked]::before {
   border-radius: 3px;
   height: 6px;
   min-width: 6px;
+}
+
+.menu-warning {
+  color: var(--cros-textfield-label-color-error);
+  font-size: 11px;
+  line-height: 16px;
+  margin-top: 6px;
 }
 
 /* Entry names (File names, Folder names, Volume names, ...). */

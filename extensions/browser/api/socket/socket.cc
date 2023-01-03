@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@ static base::LazyInstance<
 
 // static
 template <>
-BrowserContextKeyedAPIFactory<ApiResourceManager<Socket> >*
+BrowserContextKeyedAPIFactory<ApiResourceManager<Socket>>*
 ApiResourceManager<Socket>::GetFactoryInstance() {
   return g_factory.Pointer();
 }

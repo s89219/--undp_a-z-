@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -71,7 +71,7 @@ public class CardUnmaskPrompt
     private final TextView mVerificationView;
     private final long mSuccessMessageDurationMilliseconds;
     private final int mGooglePayDrawableId;
-    private final boolean mIsCardLocal;
+    private final boolean mIsVirtualCard;
 
     private int mThisYear;
     private int mThisMonth;
@@ -146,18 +146,19 @@ public class CardUnmaskPrompt
 
     public CardUnmaskPrompt(Context context, CardUnmaskPromptDelegate delegate, String title,
             String instructions, String confirmButtonLabel, int cvcDrawableId,
-            int googlePayDrawableId, boolean isCardLocal, boolean shouldRequestExpirationDate,
-            boolean defaultToStoringLocally, boolean shouldOfferWebauthn,
-            boolean defaultUseScreenlockChecked, long successMessageDurationMilliseconds) {
+            int googlePayDrawableId, boolean isVirtualCard, boolean shouldRequestExpirationDate,
+            boolean shouldOfferWebauthn, boolean defaultUseScreenlockChecked,
+            long successMessageDurationMilliseconds) {
         mDelegate = delegate;
         mGooglePayDrawableId = googlePayDrawableId;
-        mIsCardLocal = isCardLocal;
+        mIsVirtualCard = isVirtualCard;
 
         LayoutInflater inflater = LayoutInflater.from(context);
         View v = inflater.inflate(R.layout.autofill_card_unmask_prompt, null);
         mInstructions = (TextView) v.findViewById(R.id.instructions);
         mInstructions.setText(instructions);
         mTitleView = (TextView) v.findViewById(R.id.title);
+        updateTitleForCustomView(title, context);
 
         mMainView = v;
         mNoRetryErrorMessage = (TextView) v.findViewById(R.id.no_retry_error_message);
@@ -182,13 +183,6 @@ public class CardUnmaskPrompt
         ((ImageView) v.findViewById(R.id.cvc_hint_image)).setImageResource(cvcDrawableId);
 
         Resources resources = context.getResources();
-        String modalDialogTitle = null;
-        if (isCardLocal) {
-            mTitleView.setVisibility(View.GONE);
-            modalDialogTitle = title;
-        } else {
-            updateTitleForCustomView(title, context);
-        }
         PropertyModel.Builder dialogModelBuilder =
                 new PropertyModel.Builder(ModalDialogProperties.ALL_KEYS)
                         .with(ModalDialogProperties.CONTROLLER, this)
@@ -196,9 +190,6 @@ public class CardUnmaskPrompt
                         .with(ModalDialogProperties.POSITIVE_BUTTON_TEXT, confirmButtonLabel)
                         .with(ModalDialogProperties.NEGATIVE_BUTTON_TEXT, resources,
                                 R.string.cancel);
-        if (modalDialogTitle != null) {
-            dialogModelBuilder.with(ModalDialogProperties.TITLE, modalDialogTitle);
-        }
         mDialogModel = dialogModelBuilder.build();
 
         mShouldRequestExpirationDate = shouldRequestExpirationDate;
@@ -281,12 +272,7 @@ public class CardUnmaskPrompt
     }
 
     public void update(String title, String instructions, boolean shouldRequestExpirationDate) {
-        if (mIsCardLocal) {
-            mDialogModel.set(ModalDialogProperties.TITLE, title);
-        } else {
-            updateTitleForCustomView(title, mContext);
-            mDialogModel.set(ModalDialogProperties.CUSTOM_VIEW, mMainView);
-        }
+        updateTitleForCustomView(title, mContext);
         mInstructions.setText(instructions);
         mShouldRequestExpirationDate = shouldRequestExpirationDate;
         if (mShouldRequestExpirationDate && (mThisYear == -1 || mThisMonth == -1)) {
@@ -334,7 +320,11 @@ public class CardUnmaskPrompt
                 setInputsEnabled(true);
                 setInitialFocus();
 
-                if (!mShouldRequestExpirationDate) mNewCardLink.setVisibility(View.VISIBLE);
+                if (!mShouldRequestExpirationDate && !mIsVirtualCard) {
+                    mNewCardLink.setVisibility(View.VISIBLE);
+                } else {
+                    mNewCardLink.setVisibility(View.GONE);
+                }
             } else {
                 clearInputError();
                 setNoRetryError(errorMessage);

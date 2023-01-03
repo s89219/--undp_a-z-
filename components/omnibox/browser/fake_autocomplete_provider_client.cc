@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,6 @@
 #include "components/history/core/browser/history_service.h"
 #include "components/history/core/test/history_service_test_util.h"
 #include "components/omnibox/browser/in_memory_url_index.h"
-#include "components/omnibox/browser/in_memory_url_index_test_util.h"
 #include "components/omnibox/browser/shortcuts_backend.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/query_tiles/test/fake_tile_service.h"
@@ -55,6 +54,11 @@ history::HistoryService* FakeAutocompleteProviderClient::GetHistoryService() {
   return history_service_.get();
 }
 
+history_clusters::HistoryClustersService*
+FakeAutocompleteProviderClient::GetHistoryClustersService() {
+  return history_clusters_service_;
+}
+
 bookmarks::BookmarkModel* FakeAutocompleteProviderClient::GetBookmarkModel() {
   return bookmark_model_.get();
 }
@@ -84,9 +88,4 @@ const TabMatcher& FakeAutocompleteProviderClient::GetTabMatcher() const {
 
 scoped_refptr<history::TopSites> FakeAutocompleteProviderClient::GetTopSites() {
   return top_sites_;
-}
-
-ntp_tiles::MostVisitedSites*
-FakeAutocompleteProviderClient::GetNtpMostVisitedSites() {
-  return ntp_most_visited_sites_;
 }

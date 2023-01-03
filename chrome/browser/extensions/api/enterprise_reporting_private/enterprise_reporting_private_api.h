@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,10 @@
 #include "components/reporting/proto/synced/record.pb.h"
 #include "components/reporting/proto/synced/record_constants.pb.h"
 #include "components/reporting/util/statusor.h"
-#endif
+#elif BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#include "base/time/time.h"
+#include "components/device_signals/core/browser/signals_types.h"
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #include "extensions/browser/extension_function.h"
 
@@ -75,9 +78,9 @@ class EnterpriseReportingPrivateGetPersistentSecretFunction
   // Callback once the data was retrieved from the file.
   void OnDataRetrieved(scoped_refptr<base::SequencedTaskRunner> task_runner,
                        const std::string& data,
-                       long int status);
+                       int32_t status);
 
-  void SendResponse(const std::string& data, long int status);
+  void SendResponse(const std::string& data, int32_t status);
 };
 
 #endif  // !BUILDFLAG(IS_LINUX)
@@ -257,10 +260,124 @@ class EnterpriseReportingPrivateEnqueueRecordFunction
 
   bool IsProfileAffiliated(Profile* profile);
 
-  bool profile_is_affiliated_for_testing_;
+  bool profile_is_affiliated_for_testing_ = false;
 };
 
 #endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+
+class EnterpriseReportingPrivateGetFileSystemInfoFunction
+    : public ExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("enterprise.reportingPrivate.getFileSystemInfo",
+                             ENTERPRISEREPORTINGPRIVATE_GETFILESYSTEMINFO)
+
+  EnterpriseReportingPrivateGetFileSystemInfoFunction();
+  EnterpriseReportingPrivateGetFileSystemInfoFunction(
+      const EnterpriseReportingPrivateGetFileSystemInfoFunction&) = delete;
+  EnterpriseReportingPrivateGetFileSystemInfoFunction& operator=(
+      const EnterpriseReportingPrivateGetFileSystemInfoFunction&) = delete;
+
+ private:
+  ~EnterpriseReportingPrivateGetFileSystemInfoFunction() override;
+
+  // ExtensionFunction
+  ExtensionFunction::ResponseAction Run() override;
+
+  void OnSignalRetrieved(base::TimeTicks start_time,
+                         size_t request_items_count,
+                         device_signals::SignalsAggregationResponse response);
+
+  device_signals::SignalName signal_name() {
+    return device_signals::SignalName::kFileSystemInfo;
+  }
+};
+
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+class EnterpriseReportingPrivateGetSettingsFunction : public ExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("enterprise.reportingPrivate.getSettings",
+                             ENTERPRISEREPORTINGPRIVATE_GETSETTINGS)
+
+  EnterpriseReportingPrivateGetSettingsFunction();
+  EnterpriseReportingPrivateGetSettingsFunction(
+      const EnterpriseReportingPrivateGetSettingsFunction&) = delete;
+  EnterpriseReportingPrivateGetSettingsFunction& operator=(
+      const EnterpriseReportingPrivateGetSettingsFunction&) = delete;
+
+ private:
+  ~EnterpriseReportingPrivateGetSettingsFunction() override;
+
+  // ExtensionFunction
+  ExtensionFunction::ResponseAction Run() override;
+
+  void OnSignalRetrieved(base::TimeTicks start_time,
+                         size_t request_items_count,
+                         device_signals::SignalsAggregationResponse response);
+
+  device_signals::SignalName signal_name() {
+    return device_signals::SignalName::kSystemSettings;
+  }
+};
+
+#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+
+#if BUILDFLAG(IS_WIN)
+
+class EnterpriseReportingPrivateGetAvInfoFunction : public ExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("enterprise.reportingPrivate.getAvInfo",
+                             ENTERPRISEREPORTINGPRIVATE_GETAVINFO)
+
+  EnterpriseReportingPrivateGetAvInfoFunction();
+  EnterpriseReportingPrivateGetAvInfoFunction(
+      const EnterpriseReportingPrivateGetAvInfoFunction&) = delete;
+  EnterpriseReportingPrivateGetAvInfoFunction& operator=(
+      const EnterpriseReportingPrivateGetAvInfoFunction&) = delete;
+
+ private:
+  ~EnterpriseReportingPrivateGetAvInfoFunction() override;
+
+  // ExtensionFunction
+  ExtensionFunction::ResponseAction Run() override;
+
+  void OnSignalRetrieved(base::TimeTicks start_time,
+                         device_signals::SignalsAggregationResponse response);
+
+  device_signals::SignalName signal_name() {
+    return device_signals::SignalName::kAntiVirus;
+  }
+};
+
+class EnterpriseReportingPrivateGetHotfixesFunction : public ExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("enterprise.reportingPrivate.getHotfixes",
+                             ENTERPRISEREPORTINGPRIVATE_GETHOTFIXES)
+
+  EnterpriseReportingPrivateGetHotfixesFunction();
+  EnterpriseReportingPrivateGetHotfixesFunction(
+      const EnterpriseReportingPrivateGetHotfixesFunction&) = delete;
+  EnterpriseReportingPrivateGetHotfixesFunction& operator=(
+      const EnterpriseReportingPrivateGetHotfixesFunction&) = delete;
+
+ private:
+  ~EnterpriseReportingPrivateGetHotfixesFunction() override;
+
+  // ExtensionFunction
+  ExtensionFunction::ResponseAction Run() override;
+
+  void OnSignalRetrieved(base::TimeTicks start_time,
+                         device_signals::SignalsAggregationResponse response);
+
+  device_signals::SignalName signal_name() {
+    return device_signals::SignalName::kHotfixes;
+  }
+};
+
+#endif  // BUILDFLAG(IS_WIN)
 
 }  // namespace extensions
 

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/lru_cache.h"
 #include "base/containers/unique_ptr_adapters.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
@@ -40,65 +41,124 @@ class OnDeviceClusteringBackend : public ClusteringBackend {
       optimization_guide::EntityMetadataProvider* entity_metadata_provider,
       site_engagement::SiteEngagementScoreProvider* engagement_score_provider,
       optimization_guide::NewOptimizationGuideDecider*
-          optimization_guide_decider);
+          optimization_guide_decider,
+      base::flat_set<std::string> mid_blocklist);
   ~OnDeviceClusteringBackend() override;
 
   // ClusteringBackend:
   void GetClusters(ClusteringRequestSource clustering_request_source,
                    ClustersCallback callback,
                    std::vector<history::AnnotatedVisit> visits) override;
+  void GetClustersForUI(ClustersCallback callback,
+                        std::vector<history::Cluster> clusters) override;
+  void GetClusterTriggerability(
+      ClustersCallback callback,
+      std::vector<history::Cluster> clusters) override;
 
  private:
+  // Returns the unique set of entity IDs that were annotated for the visits in
+  // `clusters`.
+  base::flat_set<std::string> GetEntityIdsForClusters(
+      const std::vector<history::Cluster>& clusters);
+
+  // Whether to retrieve entity metadata for `entity`.
+  bool ShouldRetrieveEntityMetadataForEntity(
+      const history::VisitContentModelAnnotations::Category& entity);
+
+  using EntityRetrievedCallback = base::OnceCallback<void(
+      base::flat_map<std::string, optimization_guide::EntityMetadata>)>;
+  // Retrieves batch entity metadata for `entity_ids` and later invokes
+  // `entity_retrieved_callback` once the metadata has been retrieved.
+  void RetrieveBatchEntityMetadata(
+      base::flat_set<std::string> entity_ids,
+      EntityRetrievedCallback entity_retrieved_callback);
+
   // Callback invoked when batch entity metadata has been received from
-  // |completed_task|. This will normalize |annotated_visits| and proceed to
-  // cluster them after normalization.
+  // `completed_task`. Will invoke `entity_retrieved_callback` with
+  // `entity_metadata_map` after metrics collected.
   void OnBatchEntityMetadataRetrieved(
-      ClusteringRequestSource clustering_request_source,
       optimization_guide::BatchEntityMetadataTask* completed_task,
-      std::vector<history::AnnotatedVisit> annotated_visits,
       absl::optional<base::TimeTicks> entity_metadata_start,
-      ClustersCallback callback,
+      EntityRetrievedCallback entity_retrieved_callback,
       const base::flat_map<std::string, optimization_guide::EntityMetadata>&
           entity_metadata_map);
 
-  // ProcessBatchOfVisits is called repeatedly to process the visits in batches.
-  void ProcessBatchOfVisits(
+  // Adds additional metadata that might be used for clustering or
+  // Journeys to each visit in `annotated_visits`, such as human-readable
+  // entities and categories, site engagement, etc.
+  void ProcessVisits(
       ClusteringRequestSource clustering_request_source,
-      size_t num_batches_processed_so_far,
-      size_t index_to_process,
-      std::vector<history::ClusterVisit> cluster_visits,
-      optimization_guide::BatchEntityMetadataTask* completed_task,
       std::vector<history::AnnotatedVisit> annotated_visits,
-      absl::optional<base::TimeTicks> entity_metadata_start,
       ClustersCallback callback,
-      const base::flat_map<std::string, optimization_guide::EntityMetadata>&
+      base::flat_map<std::string, optimization_guide::EntityMetadata>
           entity_metadata_map);
 
   // Called when all visits have been processed.
   void OnAllVisitsFinishedProcessing(
       ClusteringRequestSource clustering_request_source,
-      size_t num_batches_processed,
-      optimization_guide::BatchEntityMetadataTask* completed_task,
       std::vector<history::ClusterVisit> cluster_visits,
+      base::flat_map<std::string, optimization_guide::EntityMetadata>
+          entity_id_to_entity_metadata_map,
       ClustersCallback callback);
 
-  // Clusters |visits| on background thread.
+  // Dispatches call to `GetClustersForUIOnBackgroundThread()` from the main
+  // thread.
+  void DispatchGetClustersForUIToBackgroundThread(
+      ClustersCallback callback,
+      std::vector<history::Cluster> clusters,
+      base::flat_map<std::string, optimization_guide::EntityMetadata>
+          entity_metadata_map);
+
+  // Dispatches call to `GetClusterTriggerabilityOnBackgroundThread()` from the
+  // main thread.
+  void DispatchGetClusterTriggerabilityToBackgroundThread(
+      ClustersCallback callback,
+      std::vector<history::Cluster> clusters,
+      base::flat_map<std::string, optimization_guide::EntityMetadata>
+          entity_metadata_map);
+
+  // Clusters `visits` on background thread.
   static std::vector<history::Cluster> ClusterVisitsOnBackgroundThread(
       bool engagement_score_provider_is_valid,
-      std::vector<history::ClusterVisit> visits);
+      std::vector<history::ClusterVisit> visits,
+      base::flat_map<std::string, optimization_guide::EntityMetadata>&
+          entity_id_to_entity_metadata_map);
 
-  // The object to fetch entity metadata from. Not owned. Must outlive |this|.
-  optimization_guide::EntityMetadataProvider* entity_metadata_provider_ =
-      nullptr;
+  // Gets the displayable variant of `clusters` that will be shown on the WebUI
+  // and Side Panel on background thread. This will merge similar clusters, rank
+  // visits within the cluster, as well as provide a label.
+  //
+  // TODO(sophiechang): When we support more than one surface, add an enum for
+  //   which UI surface we want to calculate for.
+  static std::vector<history::Cluster> GetClustersForUIOnBackgroundThread(
+      std::vector<history::Cluster> clusters,
+      base::flat_map<std::string, optimization_guide::EntityMetadata>&
+          entity_id_to_entity_metadata_map);
 
-  // The object to get engagement scores from. Not owned. Must outlive |this|.
-  site_engagement::SiteEngagementScoreProvider* engagement_score_provider_ =
-      nullptr;
+  // Gets the metadata required for cluster triggerability (e.g. keywords,
+  // whether to show on prominent UI surfaces) for each cluster in `clusters` on
+  // background thread.
+  static std::vector<history::Cluster>
+  GetClusterTriggerabilityOnBackgroundThread(
+      bool engagement_score_provider_is_valid,
+      std::vector<history::Cluster> clusters,
+      base::flat_map<std::string, optimization_guide::EntityMetadata>&
+          entity_id_to_entity_metadata_map);
 
-  // The object to fetch page load metadata from. Not owned. Must outlive
-  // |this|.
-  optimization_guide::NewOptimizationGuideDecider* optimization_guide_decider_ =
-      nullptr;
+  // Used to fetch entity metadata. Can be null if feature not enabled. Not
+  // owned. Must outlive `this`.
+  raw_ptr<optimization_guide::EntityMetadataProvider>
+      entity_metadata_provider_ = nullptr;
+
+  // Used to get engagement scores. Can be null during tests. Not owned. Must
+  // outlive `this`.
+  raw_ptr<site_engagement::SiteEngagementScoreProvider>
+      engagement_score_provider_ = nullptr;
+
+  // Used to get page load metadata. Can be null if feature not enabled. Not
+  // owned. Must outlive `this`.
+  raw_ptr<optimization_guide::NewOptimizationGuideDecider>
+      optimization_guide_decider_ = nullptr;
 
   // The set of batch entity metadata tasks currently in flight.
   base::flat_set<std::unique_ptr<optimization_guide::BatchEntityMetadataTask>,
@@ -106,7 +166,7 @@ class OnDeviceClusteringBackend : public ClusteringBackend {
       in_flight_batch_entity_metadata_tasks_;
 
   // The task runners to run clustering passes on.
-  // |user_visible_priority_background_task_runner_| should be used iff
+  // `user_visible_priority_background_task_runner_` should be used iff
   // clustering is blocking content on a page that user is actively looking at.
   const base::TaskTraits user_visible_task_traits_;
   const base::TaskTraits continue_on_shutdown_user_visible_task_traits_;
@@ -117,10 +177,14 @@ class OnDeviceClusteringBackend : public ClusteringBackend {
   scoped_refptr<base::SequencedTaskRunner>
       best_effort_priority_background_task_runner_;
 
-  // Last time |engagement_score_cache_| was refreshed.
+  // Last time `engagement_score_cache_` was refreshed.
   base::TimeTicks engagement_score_cache_last_refresh_timestamp_;
   // URL host to score mapping.
   base::HashingLRUCache<std::string, float> engagement_score_cache_;
+
+  // The set of mid strings that should be blocked from included in the backend
+  // for both clustering and keywords.
+  base::flat_set<std::string> mid_blocklist_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

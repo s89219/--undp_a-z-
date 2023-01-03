@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/modules/webaudio/audio_node.h"
 
+#include <inttypes.h>
+
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_node_options.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
@@ -50,7 +52,7 @@ AudioNode::AudioNode(BaseAudioContext& context)
 
 AudioNode::~AudioNode() {
   // The graph lock is required to destroy the handler. And we can't use
-  // |context_| to touch it, since that object may also be a dead heap object.
+  // `context_` to touch it, since that object may also be a dead heap object.
   {
     DeferredTaskHandler::GraphAutoLocker locker(*deferred_task_handler_);
     handler_ = nullptr;
@@ -493,7 +495,7 @@ void AudioNode::disconnect(AudioParam* destination_param,
   unsigned number_of_disconnections = 0;
 
   // Check if the node output is connected the destination AudioParam.
-  // Disconnect if connected and increase |numberOfDisconnectios| by 1.
+  // Disconnect if connected and increase `number_of_disconnections` by 1.
   for (unsigned output_index = 0; output_index < Handler().NumberOfOutputs();
        ++output_index) {
     if (DisconnectFromOutputIfConnected(output_index, *destination_param)) {
@@ -518,6 +520,14 @@ void AudioNode::disconnect(AudioParam* destination_param,
                            ExceptionState& exception_state) {
   DCHECK(IsMainThread());
   BaseAudioContext::GraphAutoLocker locker(context());
+
+  if (context() != destination_param->Context()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidAccessError,
+        "cannot disconnect from an AudioParam belonging to a different "
+        "BaseAudioContext.");
+    return;
+  }
 
   if (output_index >= Handler().NumberOfOutputs()) {
     // The output index is out of range. Throw an exception.

@@ -1,11 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {KerberosAccountsBrowserProxyImpl, Route, Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {assertEquals, assertFalse} from '../../chai_assert.js';
+import {assertEquals, assertFalse} from 'chrome://webui-test/chai_assert.js';
 
 import {TestKerberosAccountsBrowserProxy} from './test_kerberos_accounts_browser_proxy.js';
 
@@ -24,14 +24,14 @@ suite('KerberosPageTests', function() {
     Router.resetInstanceForTesting(new Router(routes));
 
     browserProxy = new TestKerberosAccountsBrowserProxy();
-    KerberosAccountsBrowserProxyImpl.instance_ = browserProxy;
+    KerberosAccountsBrowserProxyImpl.setInstanceForTesting(browserProxy);
     PolymerTest.clearBody();
   });
 
   teardown(function() {
     kerberosPage.remove();
     Router.getInstance().resetRouteForTesting();
-    KerberosAccountsBrowserProxyImpl.instance_ = undefined;
+    KerberosAccountsBrowserProxyImpl.setInstanceForTesting(undefined);
   });
 
   test('Kerberos Section contains a link to Kerberos Accounts', () => {

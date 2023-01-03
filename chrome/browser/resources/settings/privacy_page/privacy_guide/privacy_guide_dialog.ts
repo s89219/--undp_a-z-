@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,20 +7,19 @@
  * 'settings-rivacy-guide-dialog' is a settings dialog that helps users guide
  * various privacy settings.
  */
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
-import 'chrome://resources/cr_elements/shared_style_css.m.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import 'chrome://resources/cr_elements/cr_shared_style.css.js';
 import '../../prefs/prefs.js';
-import '../../settings_shared_css.js';
+import '../../settings_shared.css.js';
 import './privacy_guide_page.js';
 
-import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
 import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {getTemplate} from './privacy_guide_dialog.html.js';
 
 export interface SettingsPrivacyGuideDialogElement {
   $: {
-    dialog: CrDialogElement,
+    dialog: HTMLDialogElement,
   };
 }
 
@@ -48,24 +47,39 @@ export class SettingsPrivacyGuideDialogElement extends PolymerElement {
   override connectedCallback() {
     super.connectedCallback();
 
-    // TODO(crbug/1215630): Instead of this focus code, it should be possible to
-    // use |autofocus| on the corresponding element in the cr-dialog to put the
-    // focus on it when the dialog is shown. For an unknown reason this does not
-    // work atm [1]. Use |autofocus| once this reason has been found and fixed.
-    // [1] https://crrev.com/c/3541986/comments/a3a6bdfb_3e1e0e29
+    this.$.dialog.showModal();
+
     const elementToFocus =
         this.shadowRoot!.querySelector<HTMLElement>('#backToSettingsButton')!;
     afterNextRender(this, () => elementToFocus!.focus());
   }
 
-  private onClose_(event: Event) {
-    // Closing the cr-dialog fires its own close event.
-    event.stopPropagation();
+  private onDialogCancel_(e: Event) {
+    if (e.target === this.$.dialog) {
+      e.preventDefault();
+    }
+  }
 
+  private onDialogClose_(e: Event) {
+    // Ignore any 'close' events not fired directly by the <dialog> element.
+    if (e.target !== this.$.dialog) {
+      return;
+    }
+
+    // Catch and re-fire the 'close' event such that it bubbles across Shadow
+    // DOM v1.
+    this.dispatchEvent(
+        new CustomEvent('close', {bubbles: true, composed: true}));
+  }
+
+  private onPrivacyGuidePageClose_(e: Event) {
+    e.stopPropagation();
     this.$.dialog.close();
   }
 
-  private onSettingsBackClick_() {
+  private onSettingsBackClick_(e: Event) {
+    e.stopPropagation();
+
     this.$.dialog.close();
   }
 }

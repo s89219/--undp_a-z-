@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,11 +36,14 @@ class ChromeClientSideDetectionHostDelegate
   scoped_refptr<SafeBrowsingDatabaseManager> GetSafeBrowsingDBManager()
       override;
   scoped_refptr<BaseUIManager> GetSafeBrowsingUIManager() override;
-  ClientSideDetectionService* GetClientSideDetectionService() override;
+  base::WeakPtr<ClientSideDetectionService> GetClientSideDetectionService()
+      override;
   void AddReferrerChain(ClientPhishingRequest* verdict,
                         GURL current_url,
                         const content::GlobalRenderFrameHostId&
                             current_outermost_main_frame_id) override;
+  raw_ptr<VerdictCacheManager> GetCacheManager() override;
+  ChromeUserPopulation GetUserPopulation() override;
 
   void SetNavigationObserverManagerForTesting(
       SafeBrowsingNavigationObserverManager* navigation_observer_manager) {

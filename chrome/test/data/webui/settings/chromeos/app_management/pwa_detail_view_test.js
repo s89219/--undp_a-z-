@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -70,8 +70,8 @@ suite('<app-management-pwa-detail-view>', function() {
   });
 
   test('Pin to shelf toggle', async function() {
-    const pinToShelfItem = pwaPermissionView.$['pin-to-shelf-setting'];
-    const toggle = pinToShelfItem.$['toggle-row'].$.toggle;
+    const pinToShelfItem = pwaPermissionView.$.pinToShelfSetting;
+    const toggle = pinToShelfItem.$.toggleRow.$.toggle;
 
     assertFalse(toggle.checked);
     assertEquals(

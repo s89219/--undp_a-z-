@@ -1,44 +1,45 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/ui/omnibox/omnibox_view_ios.h"
+#import "ios/chrome/browser/ui/omnibox/omnibox_view_ios.h"
 
 #import <CoreText/CoreText.h>
 #import <MobileCoreServices/MobileCoreServices.h>
 
-#include <string>
+#import <string>
 
-#include "base/command_line.h"
-#include "base/ios/device_util.h"
-#include "base/ios/ios_util.h"
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
-#include "base/strings/sys_string_conversions.h"
-#include "components/omnibox/browser/autocomplete_input.h"
-#include "components/omnibox/browser/autocomplete_match.h"
-#include "components/omnibox/browser/clipboard_provider.h"
-#include "components/omnibox/browser/location_bar_model.h"
-#include "components/omnibox/browser/omnibox_edit_model.h"
-#include "components/omnibox/common/omnibox_focus_state.h"
-#include "components/open_from_clipboard/clipboard_recent_content.h"
-#include "ios/chrome/browser/autocomplete/autocomplete_scheme_classifier_impl.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "base/command_line.h"
+#import "base/ios/device_util.h"
+#import "base/ios/ios_util.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
+#import "base/strings/sys_string_conversions.h"
+#import "components/omnibox/browser/autocomplete_input.h"
+#import "components/omnibox/browser/autocomplete_match.h"
+#import "components/omnibox/browser/clipboard_provider.h"
+#import "components/omnibox/browser/location_bar_model.h"
+#import "components/omnibox/browser/omnibox_edit_model.h"
+#import "components/omnibox/common/omnibox_focus_state.h"
+#import "components/open_from_clipboard/clipboard_recent_content.h"
+#import "ios/chrome/browser/autocomplete/autocomplete_scheme_classifier_impl.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
 #import "ios/chrome/browser/ui/commands/omnibox_commands.h"
-#include "ios/chrome/browser/ui/omnibox/chrome_omnibox_client_ios.h"
+#import "ios/chrome/browser/ui/omnibox/chrome_omnibox_client_ios.h"
+#import "ios/chrome/browser/ui/omnibox/omnibox_ui_features.h"
 #import "ios/chrome/browser/ui/omnibox/omnibox_util.h"
-#include "ios/chrome/browser/ui/omnibox/web_omnibox_edit_controller.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/browser/ui/omnibox/web_omnibox_edit_controller.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ios/chrome/grit/ios_theme_resources.h"
-#include "ios/web/public/navigation/referrer.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ios/chrome/grit/ios_theme_resources.h"
+#import "ios/web/public/navigation/referrer.h"
 #import "net/base/mac/url_conversions.h"
-#include "ui/base/device_form_factor.h"
-#include "ui/base/page_transition_types.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "ui/base/window_open_disposition.h"
-#include "ui/gfx/image/image.h"
+#import "ui/base/device_form_factor.h"
+#import "ui/base/page_transition_types.h"
+#import "ui/base/resource/resource_bundle.h"
+#import "ui/base/window_open_disposition.h"
+#import "ui/gfx/image/image.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -50,7 +51,6 @@ using base::UserMetricsAction;
 
 OmniboxViewIOS::OmniboxViewIOS(OmniboxTextFieldIOS* field,
                                WebOmniboxEditController* controller,
-                               id<OmniboxLeftImageConsumer> left_image_consumer,
                                ChromeBrowserState* browser_state,
                                id<OmniboxCommands> omnibox_focuser)
     : OmniboxView(controller,
@@ -60,7 +60,6 @@ OmniboxViewIOS::OmniboxViewIOS(OmniboxTextFieldIOS* field,
                       : nullptr),
       field_(field),
       controller_(controller),
-      left_image_consumer_(left_image_consumer),
       omnibox_focuser_(omnibox_focuser),
       ignore_popup_updates_(false),
       popup_provider_(nullptr) {
@@ -349,9 +348,8 @@ gfx::NativeView OmniboxViewIOS::GetRelativeWindowForPopup() const {
 }
 
 void OmniboxViewIOS::OnDidBeginEditing() {
-
   // If Open from Clipboard offers a suggestion, the popup may be opened when
-  // |OnSetFocus| is called on the model. The state of the popup is saved early
+  // `OnSetFocus` is called on the model. The state of the popup is saved early
   // to ignore that case.
   DCHECK(popup_provider_);
   bool popup_was_open_before_editing_began = popup_provider_->IsPopupOpen();
@@ -381,7 +379,7 @@ void OmniboxViewIOS::OnDidBeginEditing() {
   if (!popup_was_open_before_editing_began)
     [field_ enterPreEditState];
 
-  // |controller_| is only forwarding the call to the BVC. This should only
+  // `controller_` is only forwarding the call to the BVC. This should only
   // happen when the omnibox is being focused and it starts showing the popup;
   // if the popup was already open, no need to call this.
   if (!popup_was_open_before_editing_began)
@@ -390,13 +388,15 @@ void OmniboxViewIOS::OnDidBeginEditing() {
 
 void OmniboxViewIOS::OnWillEndEditing() {
   // On iPad, this will be called when the "hide keyboard" button is pressed
-  // on the software keyboard. This should be equivalent to tapping the typing
-  // shield and should defocus the omnibox, transition the location bar to
-  // steady view, and close the popup.
+  // on the software keyboard.
   // This will also be called if -resignFirstResponder is called
   // programmatically. On phone, the omnibox may still be editing when
   // the popup is open, so the Cancel button calls OnWillEndEditing.
-  if (ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET) {
+  if (!base::FeatureList::IsEnabled(kEnableSuggestionsScrollingOnIPad) &&
+      ui::GetDeviceFormFactor() == ui::DEVICE_FORM_FACTOR_TABLET) {
+    // This should be equivalent to tapping the typing
+    // shield and should defocus the omnibox, transition the location bar to
+    // steady view, and close the popup.
     [omnibox_focuser_ cancelOmniboxEdit];
   }
 }
@@ -416,13 +416,13 @@ bool OmniboxViewIOS::OnWillChange(NSRange range, NSString* new_text) {
       field_.text = @"";
     }
 
-    // Reset |range| to be of zero-length at location zero, as the field will be
+    // Reset `range` to be of zero-length at location zero, as the field will be
     // now cleared.
     range = NSMakeRange(0, 0);
   }
 
   // Figure out the old and current (new) selections.  Assume the new selection
-  // will be of zero-length, located at the end of |new_text|.
+  // will be of zero-length, located at the end of `new_text`.
   NSRange old_range = range;
   NSRange new_range = NSMakeRange(range.location + [new_text length], 0);
 
@@ -443,7 +443,12 @@ bool OmniboxViewIOS::OnWillChange(NSRange range, NSString* new_text) {
       // or if the user pastes some text in.  Let's loosen this test to allow
       // multiple characters, as long as the "old range" ends at the end of the
       // permanent text.
-      if ([new_text length] == 1 && range.location == [field_.text length]) {
+      NSString* userText = field_.text;
+      if (base::FeatureList::IsEnabled(kIOSNewOmniboxImplementation)) {
+        userText = field_.userText;
+      }
+
+      if (new_text.length == 1 && range.location == userText.length) {
         old_range =
             NSMakeRange(field_.text.length, field_.autocompleteText.length);
       }
@@ -570,7 +575,7 @@ void OmniboxViewIOS::OnCopy() {
     UITextRange* selected_range = [field_ selectedTextRange];
     selectedText = [field_ textInRange:selected_range];
     UITextPosition* start = [field_ beginningOfDocument];
-    // The following call to |-offsetFromPosition:toPosition:| gives the offset
+    // The following call to `-offsetFromPosition:toPosition:` gives the offset
     // in terms of the number of "visible characters."  The documentation does
     // not specify whether this means glyphs or UTF16 chars.  This does not
     // matter for the current implementation of AdjustTextForCopy(), but it may
@@ -627,7 +632,7 @@ void OmniboxViewIOS::OnDeleteBackward() {
   if (field_.text.length == 0) {
     // If the user taps backspace while the pre-edit text is showing,
     // OnWillChange is invoked before this method and sets the text to an empty
-    // string, so use the |clearingPreEditText| to determine if the chip should
+    // string, so use the `clearingPreEditText` to determine if the chip should
     // be cleared or not.
     if ([field_ clearingPreEditText]) {
       // In the case where backspace is tapped while in pre-edit mode,
@@ -653,7 +658,7 @@ void OmniboxViewIOS::ClearText() {
   if (![field_ isFirstResponder])
     [field_ becomeFirstResponder];
   if (field_.text.length == 0) {
-    // If |field_| is empty, remove the query refinement chip.
+    // If `field_` is empty, remove the query refinement chip.
     RemoveQueryRefinementChip();
   } else {
     // Otherwise, just remove the text in the omnibox.
@@ -712,34 +717,9 @@ int OmniboxViewIOS::GetOmniboxTextLength() const {
 
 #pragma mark - OmniboxPopupViewSuggestionsDelegate
 
-void OmniboxViewIOS::OnSelectedMatchImageChanged(
-    bool has_match,
-    AutocompleteMatchType::Type match_type,
-    absl::optional<SuggestionAnswer::AnswerType> answer_type,
-    GURL favicon_url) {
-  if (has_match) {
-    [left_image_consumer_ setLeftImageForAutocompleteType:match_type
-                                               answerType:answer_type
-                                               faviconURL:favicon_url];
-  } else {
-    [left_image_consumer_ setDefaultLeftImage];
-  }
-}
-
-void OmniboxViewIOS::OnResultsChanged(const AutocompleteResult& result) {
-  if (ignore_popup_updates_) {
-    // Please contact rohitrao@ if the following DCHECK ever fires.  If
-    // |ignore_popup_updates_| is true but |result| is not empty, then the new
-    // prerender code in ChromeOmniboxClientIOS will incorrectly discard its
-    // prerender.
-    // TODO(crbug.com/754050): Remove this whole method once we are reasonably
-    // confident that we are not throwing away prerenders.
-    DCHECK(result.empty());
-  }
-}
-
 void OmniboxViewIOS::OnPopupDidScroll() {
-  if (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET) {
+  if (ui::GetDeviceFormFactor() != ui::DEVICE_FORM_FACTOR_TABLET ||
+      base::FeatureList::IsEnabled(kEnableSuggestionsScrollingOnIPad)) {
     this->HideKeyboard();
   }
 }

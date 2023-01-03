@@ -1,11 +1,10 @@
-# Copyright 2018 The Chromium Authors. All rights reserved.
+# Copyright 2018 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 import("//components/feed/features.gni")
 
 feed_deps = [
-  "//base:base_java",
   "//chrome/android/feed:chrome_feed_java_resources",
   "//third_party/android_deps:com_google_code_findbugs_jsr305_java",
   "//third_party/android_deps:javax_inject_javax_inject_java",
@@ -27,6 +26,7 @@ feed_deps = [
 feed_java_sources = [
   "//chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/FeedSurfaceCoordinator.java",
   "//chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/FeedSurfaceMediator.java",
+  "//chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/HasContentListener.java",
   "//chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/NtpFeedSurfaceLifecycleManager.java",
   "//chrome/android/feed/core/java/src/org/chromium/chrome/browser/feed/shared/ui/MaterialSpinnerView.java",
 ]

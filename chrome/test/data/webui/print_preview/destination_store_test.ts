@@ -1,20 +1,19 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {Destination, DestinationErrorType, DestinationStore, DestinationStoreEventType, GooglePromotedDestinationId, LocalDestinationInfo, makeRecentDestination, NativeInitialSettings, NativeLayerImpl, PrinterType} from 'chrome://print/print_preview.js';
-// <if expr="not chromeos_ash and not chromeos_lacros">
+// <if expr="not is_chromeos">
 import {RecentDestination} from 'chrome://print/print_preview.js';
 // </if>
-import {assert} from 'chrome://resources/js/assert.m.js';
-// <if expr="not chromeos_ash and not chromeos_lacros">
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+// <if expr="not is_chromeos">
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 // </if>
 
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-// <if expr="chromeos_ash or chromeos_lacros">
+// <if expr="is_chromeos">
 import {setNativeLayerCrosInstance} from './native_layer_cros_stub.js';
 // </if>
 import {NativeLayerStub} from './native_layer_stub.js';
@@ -30,18 +29,18 @@ const destination_store_test = {
     MultipleRecentDestinationsOneRequest:
         'multiple recent destinations one request',
     DefaultDestinationSelectionRules: 'default destination selection rules',
-    // <if expr="not chromeos_ash and not chromeos_lacros">
+    // <if expr="not is_chromeos">
     SystemDefaultPrinterPolicy: 'system default printer policy',
     // </if>
     KioskModeSelectsFirstPrinter: 'kiosk mode selects first printer',
     NoPrintersShowsError: 'no printers shows error',
     RecentSaveAsPdf: 'recent save as pdf',
     LoadAndSelectDestination: 'select loaded destination',
-    // <if expr="chromeos_ash or chromeos_lacros">
+    // <if expr="is_chromeos">
     LoadSaveToDriveCros: 'load Save to Drive Cros',
     DriveNotMounted: 'drive not mounted',
     // </if>
-  }
+  },
 };
 
 Object.assign(window, {destination_store_test: destination_store_test});
@@ -61,13 +60,13 @@ suite(destination_store_test.suiteName, function() {
 
   setup(function() {
     // Clear the UI.
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     setupTestListenerElement();
 
     nativeLayer = new NativeLayerStub();
     NativeLayerImpl.setInstance(nativeLayer);
-    // <if expr="chromeos_ash or chromeos_lacros">
+    // <if expr="is_chromeos">
     setNativeLayerCrosInstance();
     // </if>
 
@@ -78,13 +77,13 @@ suite(destination_store_test.suiteName, function() {
 
   /*
    * Sets the initial settings to the stored value and creates the page.
-   * @param opt_expectPrinterFailure Whether printer fetch is
+   * @param expectPrinterFailure Whether printer fetch is
    *     expected to fail
    * @return Promise that resolves when initial settings and,
    *     if printer failure is not expected, printer capabilities have
    *     been returned.
    */
-  function setInitialSettings(opt_expectPrinterFailure?: boolean):
+  function setInitialSettings(expectPrinterFailure?: boolean):
       Promise<{destinationId: string, printerType: PrinterType}> {
     // Set local print list.
     nativeLayer.setLocalDestinations(localDestinations);
@@ -109,8 +108,9 @@ suite(destination_store_test.suiteName, function() {
         initialSettings.printerName,
         initialSettings.serializedDefaultDestinationSelectionRulesStr,
         recentDestinations);
-    return opt_expectPrinterFailure ? Promise.resolve() : Promise.race([
-      nativeLayer.whenCalled('getPrinterCapabilities'), whenCapabilitiesReady
+    return expectPrinterFailure ? Promise.resolve() : Promise.race([
+      nativeLayer.whenCalled('getPrinterCapabilities'),
+      whenCapabilitiesReady,
     ]);
   }
 
@@ -119,8 +119,7 @@ suite(destination_store_test.suiteName, function() {
    * destination is automatically reselected.
    */
   test(
-      assert(destination_store_test.TestNames.SingleRecentDestination),
-      function() {
+      destination_store_test.TestNames.SingleRecentDestination, function() {
         const recentDestination = makeRecentDestination(destinations[0]!);
         initialSettings.serializedAppStateStr = JSON.stringify({
           version: 2,
@@ -140,8 +139,7 @@ suite(destination_store_test.suiteName, function() {
    * fetched.
    */
   test(
-      assert(destination_store_test.TestNames.MultipleRecentDestinations),
-      function() {
+      destination_store_test.TestNames.MultipleRecentDestinations, function() {
         const recentDestinations = destinations.slice(0, 3).map(
             destination => makeRecentDestination(destination));
 
@@ -172,8 +170,7 @@ suite(destination_store_test.suiteName, function() {
    * PDF.
    */
   test(
-      assert(destination_store_test.TestNames.RecentDestinationsFallback),
-      function() {
+      destination_store_test.TestNames.RecentDestinationsFallback, function() {
         initialSettings.serializedAppStateStr = JSON.stringify({
           version: 2,
           recentDestinations: [],
@@ -193,8 +190,7 @@ suite(destination_store_test.suiteName, function() {
    * For crbug.com/666595.
    */
   test(
-      assert(destination_store_test.TestNames
-                 .MultipleRecentDestinationsOneRequest),
+      destination_store_test.TestNames.MultipleRecentDestinationsOneRequest,
       function() {
         const recentDestinations = destinations.slice(0, 3).map(
             destination => makeRecentDestination(destination));
@@ -215,10 +211,10 @@ suite(destination_store_test.suiteName, function() {
           // should have been selected so there was only one preview request.
           const reportedPrinters = destinationStore.destinations();
           const expectedPrinters =
-              // <if expr="chromeos_ash or chromeos_lacros">
+              // <if expr="is_chromeos">
               7;
           // </if>
-          // <if expr="not chromeos_ash and not chromeos_lacros">
+          // <if expr="not is_chromeos">
           6;
           // </if>
           assertEquals(expectedPrinters, reportedPrinters.length);
@@ -234,7 +230,7 @@ suite(destination_store_test.suiteName, function() {
    * respected and a matching destination is automatically selected.
    */
   test(
-      assert(destination_store_test.TestNames.DefaultDestinationSelectionRules),
+      destination_store_test.TestNames.DefaultDestinationSelectionRules,
       function() {
         initialSettings.serializedDefaultDestinationSelectionRulesStr =
             JSON.stringify({namePattern: '.*Four.*'});
@@ -248,15 +244,14 @@ suite(destination_store_test.suiteName, function() {
         });
       });
 
-  // <if expr="not chromeos_ash and not chromeos_lacros">
+  // <if expr="not is_chromeos">
   /**
    * Tests that if the system default printer policy is enabled the system
    * default printer is automatically selected even if the user has recent
    * destinations.
    */
   test(
-      assert(destination_store_test.TestNames.SystemDefaultPrinterPolicy),
-      function() {
+      destination_store_test.TestNames.SystemDefaultPrinterPolicy, function() {
         // Set the policy in loadTimeData.
         loadTimeData.overrideValues({useSystemDefaultPrinter: true});
 
@@ -295,7 +290,7 @@ suite(destination_store_test.suiteName, function() {
    * from printer fetch is selected.
    */
   test(
-      assert(destination_store_test.TestNames.KioskModeSelectsFirstPrinter),
+      destination_store_test.TestNames.KioskModeSelectsFirstPrinter,
       function() {
         initialSettings.serializedDefaultDestinationSelectionRulesStr = '';
         initialSettings.serializedAppStateStr = '';
@@ -320,8 +315,7 @@ suite(destination_store_test.suiteName, function() {
    * destination is null.
    */
   test(
-      assert(destination_store_test.TestNames.NoPrintersShowsError),
-      function() {
+      destination_store_test.TestNames.NoPrintersShowsError, function() {
         initialSettings.serializedDefaultDestinationSelectionRulesStr = '';
         initialSettings.serializedAppStateStr = '';
         initialSettings.pdfPrinterDisabled = true;
@@ -347,7 +341,7 @@ suite(destination_store_test.suiteName, function() {
    * store (PDF printer), the DestinationStore does not try to select a
    * printer again later. Regression test for https://crbug.com/927162.
    */
-  test(assert(destination_store_test.TestNames.RecentSaveAsPdf), function() {
+  test(destination_store_test.TestNames.RecentSaveAsPdf, function() {
     const pdfPrinter = getSaveAsPdfDestination();
     const recentDestination = makeRecentDestination(pdfPrinter);
     initialSettings.serializedAppStateStr = JSON.stringify({
@@ -375,8 +369,7 @@ suite(destination_store_test.suiteName, function() {
    * destination is automatically reselected.
    */
   test(
-      assert(destination_store_test.TestNames.LoadAndSelectDestination),
-      function() {
+      destination_store_test.TestNames.LoadAndSelectDestination, function() {
         destinations = getDestinations(localDestinations);
         initialSettings.printerName = '';
         const id1 = 'ID1';
@@ -393,7 +386,7 @@ suite(destination_store_test.suiteName, function() {
                   destinationStore.selectedDestination!.id);
               const localDestinationInfo = {
                 deviceName: id1,
-                printerName: name1
+                printerName: name1,
               };
               // Typecast localDestinationInfo to work around the fact that
               // policy types are only defined on Chrome OS.
@@ -419,10 +412,10 @@ suite(destination_store_test.suiteName, function() {
             });
       });
 
-  // <if expr="chromeos_ash or chromeos_lacros">
+  // <if expr="is_chromeos">
   /** Tests that the SAVE_TO_DRIVE_CROS destination is loaded on Chrome OS. */
   test(
-      assert(destination_store_test.TestNames.LoadSaveToDriveCros), function() {
+      destination_store_test.TestNames.LoadSaveToDriveCros, function() {
         return setInitialSettings(false).then(() => {
           assertTrue(!!destinationStore.destinations().find(
               destination => destination.id ===
@@ -432,7 +425,7 @@ suite(destination_store_test.suiteName, function() {
 
   // Tests that the SAVE_TO_DRIVE_CROS destination is not loaded on Chrome OS
   // when Google Drive is not mounted.
-  test(assert(destination_store_test.TestNames.DriveNotMounted), function() {
+  test(destination_store_test.TestNames.DriveNotMounted, function() {
     initialSettings.isDriveMounted = false;
     return setInitialSettings(false).then(() => {
       assertFalse(!!destinationStore.destinations().find(

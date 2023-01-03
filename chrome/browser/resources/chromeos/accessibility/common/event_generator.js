@@ -1,6 +1,8 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
+import {KeyCode} from './key_code.js';
 
 /** Functions to send synthetic key and mouse events. */
 export class EventGenerator {
@@ -10,15 +12,18 @@ export class EventGenerator {
    *     being held).
    * @param {!KeyCode} keyCode
    * @param {!chrome.accessibilityPrivate.SyntheticKeyboardModifiers} modifiers
+   * @param {boolean} useRewriters If true, uses rewriters for the key event;
+   *     only allowed if used from Dictation. Otherwise indicates that rewriters
+   *     should be skipped.
    */
-  static sendKeyPress(keyCode, modifiers = {}) {
+  static sendKeyPress(keyCode, modifiers = {}, useRewriters = false) {
     let type = chrome.accessibilityPrivate.SyntheticKeyboardEventType.KEYDOWN;
     chrome.accessibilityPrivate.sendSyntheticKeyEvent(
-        {type, keyCode, modifiers});
+        {type, keyCode, modifiers}, useRewriters);
 
     type = chrome.accessibilityPrivate.SyntheticKeyboardEventType.KEYUP;
     chrome.accessibilityPrivate.sendSyntheticKeyEvent(
-        {type, keyCode, modifiers});
+        {type, keyCode, modifiers}, useRewriters);
   }
 
   /**
@@ -34,7 +39,7 @@ export class EventGenerator {
    */
   static sendMouseClick(x, y, params = {
     delayMs: 0,
-    mouseButton: chrome.accessibilityPrivate.SyntheticMouseEventButton.LEFT
+    mouseButton: chrome.accessibilityPrivate.SyntheticMouseEventButton.LEFT,
   }) {
     if (EventGenerator.currentlyMidMouseClick) {
       EventGenerator.mouseClickQueue.push(arguments);
@@ -59,8 +64,8 @@ export class EventGenerator {
 
       EventGenerator.currentlyMidMouseClick = false;
       if (EventGenerator.mouseClickQueue.length > 0) {
-        EventGenerator.sendMouseClick.apply(
-            null /* this */, EventGenerator.mouseClickQueue.shift());
+        EventGenerator.sendMouseClick(
+            ...EventGenerator.mouseClickQueue.shift());
       }
     };
     if (delayMs > 0) {

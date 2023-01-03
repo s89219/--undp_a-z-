@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,8 +47,9 @@ class ArrowButtonView : public LoginButton {
   // the animation is looped.
   void EnableLoadingAnimation(bool enabled);
 
-  void SetBackgroundColor(SkColor color) { background_color_ = color; }
-  void SetIconColor(SkColor color) { icon_color_ = color; }
+  void SetBackgroundColorId(ui::ColorId color_id) {
+    background_color_id_ = color_id;
+  }
 
  private:
   // Helper class that translates events from the loading animation events into
@@ -70,8 +71,7 @@ class ArrowButtonView : public LoginButton {
 
   LoadingAnimationDelegate loading_animation_delegate_{this};
   std::unique_ptr<gfx::MultiAnimation> loading_animation_;
-  absl::optional<SkColor> background_color_;
-  absl::optional<SkColor> icon_color_;
+  absl::optional<ui::ColorId> background_color_id_;
 };
 
 }  // namespace ash

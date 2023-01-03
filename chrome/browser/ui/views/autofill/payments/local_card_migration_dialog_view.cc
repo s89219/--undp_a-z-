@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -341,7 +341,8 @@ class LocalCardMigrationOfferView : public views::View {
     legal_message_container->SetHorizontalScrollBarMode(
         views::ScrollView::ScrollBarMode::kDisabled);
     legal_message_container->SetContents(std::make_unique<LegalMessageView>(
-        controller->GetLegalMessageLines(),
+        controller->GetLegalMessageLines(), /*user_email=*/absl::nullopt,
+        /*user_avatar=*/absl::nullopt,
         base::BindRepeating(
             &LocalCardMigrationDialogController::OnLegalMessageLinkClicked,
             base::Unretained(controller_))));
@@ -369,9 +370,9 @@ class LocalCardMigrationOfferView : public views::View {
  private:
   friend class LocalCardMigrationDialogView;
 
-  raw_ptr<LocalCardMigrationDialogController> controller_;
+  raw_ptr<LocalCardMigrationDialogController, DanglingUntriaged> controller_;
 
-  raw_ptr<views::View> card_list_view_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> card_list_view_ = nullptr;
 };
 
 BEGIN_METADATA(LocalCardMigrationOfferView, views::View)
@@ -417,8 +418,11 @@ void LocalCardMigrationDialogView::ShowDialog(
 }
 
 void LocalCardMigrationDialogView::CloseDialog() {
-  controller_ = nullptr;
   GetWidget()->Close();
+  if (controller_) {
+    controller_->OnDialogClosed();
+    controller_ = nullptr;
+  }
 }
 
 void LocalCardMigrationDialogView::OnDialogAccepted() {

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,6 @@
 #include "chrome/browser/content_settings/page_specific_content_settings_delegate.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
 #include "chrome/browser/download/download_request_limiter.h"
-#include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/permission_bubble_media_access_handler.h"
 #include "chrome/browser/permissions/permission_decision_auto_blocker_factory.h"
@@ -80,11 +79,13 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/window_open_disposition.h"
+#include "ui/base/window_open_disposition_utils.h"
 #include "ui/events/event.h"
 #include "ui/gfx/vector_icon_types.h"
 #include "ui/resources/grit/ui_resources.h"
 
 #if BUILDFLAG(IS_MAC)
+#include "base/mac/mac_util.h"
 #include "chrome/browser/browser_process_platform_part.h"
 #include "chrome/browser/media/webrtc/system_media_capture_permissions_mac.h"
 #include "services/device/public/cpp/geolocation/geolocation_manager.h"
@@ -104,18 +105,6 @@ namespace {
 
 using QuietUiReason = permissions::PermissionRequestManager::QuietUiReason;
 
-#if BUILDFLAG(IS_MAC)
-static constexpr char kCameraSettingsURI[] =
-    "x-apple.systempreferences:com.apple.preference.security?Privacy_"
-    "Camera";
-static constexpr char kMicSettingsURI[] =
-    "x-apple.systempreferences:com.apple.preference.security?Privacy_"
-    "Microphone";
-static constexpr char kLocationSettingsURI[] =
-    "x-apple.systempreferences:com.apple.preference.security?Privacy_"
-    "LocationServices";
-#endif  // BUILDFLAG(IS_MAC)
-
 // Returns a boolean indicating whether the setting should be managed by the
 // user (i.e. it is not controlled by policy). Also takes a (nullable) out-param
 // which is populated by the actual setting for the given URL.
@@ -129,7 +118,8 @@ bool GetSettingManagedByUser(const GURL& url,
   ContentSetting setting;
   if (type == ContentSettingsType::COOKIES) {
     setting = CookieSettingsFactory::GetForProfile(profile)->GetCookieSetting(
-        url, url, &source);
+        url, url, &source,
+        content_settings::CookieSettings::QueryReason::kSetting);
   } else {
     SettingInfo info;
     const base::Value value = map->GetWebsiteSetting(url, url, type, &info);
@@ -387,9 +377,8 @@ void ContentSettingMixedScriptBubbleModel::OnCustomLinkClicked() {
   }
 
   // Update renderer side settings to allow active mixed content.
-  GetPage().GetMainDocument().ForEachRenderFrameHost(base::BindRepeating(
-      [](MixedContentSettingsTabHelper* mixed_content_settings,
-         content::RenderFrameHost* frame) {
+  GetPage().GetMainDocument().ForEachRenderFrameHostWithAction(
+      [mixed_content_settings](content::RenderFrameHost* frame) {
         // Stop the child frame enumeration if we have reached a fenced frame.
         // This is correct since fence frames should ignore InsecureContent
         // setting.
@@ -397,8 +386,7 @@ void ContentSettingMixedScriptBubbleModel::OnCustomLinkClicked() {
           return content::RenderFrameHost::FrameIterationAction::kSkipChildren;
         SetAllowRunningInsecureContent(mixed_content_settings, frame);
         return content::RenderFrameHost::FrameIterationAction::kContinue;
-      },
-      mixed_content_settings));
+      });
 }
 
 // Don't set any manage text since none is displayed.
@@ -905,11 +893,11 @@ void ContentSettingMediaStreamBubbleModel::OnDoneButtonClicked() {
     DCHECK(ShouldShowSystemMediaPermissions());
 
     if (CameraAccessed()) {
-      ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
-          GURL(kCameraSettingsURI), web_contents(), content::WeakDocumentPtr());
+      base::mac::OpenSystemSettingsPane(
+          base::mac::SystemSettingsPane::kPrivacySecurity_Camera);
     } else if (MicrophoneAccessed()) {
-      ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
-          GURL(kMicSettingsURI), web_contents(), content::WeakDocumentPtr());
+      base::mac::OpenSystemSettingsPane(
+          base::mac::SystemSettingsPane::kPrivacySecurity_Microphone);
     }
     return;
 #endif  // BUILDFLAG(IS_MAC)
@@ -1286,8 +1274,8 @@ void ContentSettingGeolocationBubbleModel::OnDoneButtonClicked() {
           "ContentSettings.GeolocationDialog.OpenPreferencesClicked"));
     }
 
-    ExternalProtocolHandler::LaunchUrlWithoutSecurityCheck(
-        GURL(kLocationSettingsURI), web_contents(), content::WeakDocumentPtr());
+    base::mac::OpenSystemSettingsPane(
+        base::mac::SystemSettingsPane::kPrivacySecurity_LocationServices);
     return;
 #endif  // BUILDFLAG(IS_MAC)
   }
@@ -1333,7 +1321,7 @@ void ContentSettingGeolocationBubbleModel::SetCustomLink() {
   const GURL url =
       GetPage().GetMainDocument().GetLastCommittedOrigin().GetURL();
   map->GetWebsiteSetting(url, url, ContentSettingsType::GEOLOCATION, &info);
-  if (info.session_model == SessionModel::OneTime)
+  if (info.metadata.session_model == SessionModel::OneTime)
     set_custom_link(l10n_util::GetStringUTF16(IDS_GEOLOCATION_WILL_ASK_AGAIN));
 }
 
@@ -1599,6 +1587,19 @@ ContentSettingQuietRequestBubbleModel::ContentSettingQuietRequestBubbleModel(
       base::RecordAction(
           base::UserMetricsAction("Notifications.Quiet.StaticIconClicked"));
       break;
+    case QuietUiReason::kTriggeredDueToDisruptiveBehavior:
+      DCHECK_EQ(request_type, permissions::RequestType::kNotifications);
+      set_message(l10n_util::GetStringUTF16(
+          IDS_NOTIFICATIONS_QUIET_PERMISSION_BUBBLE_DISRUPTIVE_DESCRIPTION));
+      set_cancel_button_text(l10n_util::GetStringUTF16(
+          IDS_NOTIFICATIONS_QUIET_PERMISSION_BUBBLE_COMPACT_ALLOW_BUTTON));
+      set_done_button_text(l10n_util::GetStringUTF16(
+          IDS_NOTIFICATIONS_QUIET_PERMISSION_BUBBLE_CONTINUE_BLOCKING_BUTTON));
+      set_show_learn_more(true);
+      set_manage_text_style(ManageTextStyle::kNone);
+      base::RecordAction(
+          base::UserMetricsAction("Notifications.Quiet.StaticIconClicked"));
+      break;
     case QuietUiReason::kServicePredictedVeryUnlikelyGrant:
     case QuietUiReason::kOnDevicePredictedVeryUnlikelyGrant:
       int bubble_message_string_id = 0;
@@ -1715,6 +1716,7 @@ void ContentSettingQuietRequestBubbleModel::OnDoneButtonClicked() {
       break;
     case QuietUiReason::kTriggeredDueToAbusiveRequests:
     case QuietUiReason::kTriggeredDueToAbusiveContent:
+    case QuietUiReason::kTriggeredDueToDisruptiveBehavior:
       manager->Deny();
       base::RecordAction(base::UserMetricsAction(
           "Notifications.Quiet.ContinueBlockingClicked"));
@@ -1738,16 +1740,11 @@ void ContentSettingQuietRequestBubbleModel::OnCancelButtonClicked() {
       break;
     case QuietUiReason::kTriggeredDueToAbusiveRequests:
     case QuietUiReason::kTriggeredDueToAbusiveContent:
+    case QuietUiReason::kTriggeredDueToDisruptiveBehavior:
       manager->Accept();
       base::RecordAction(
           base::UserMetricsAction("Notifications.Quiet.ShowForSiteClicked"));
       break;
-  }
-}
-
-void ContentSettingQuietRequestBubbleModel::OnBubbleDismissedByUser() {
-  if (on_bubble_dismissed_by_user_callback_) {
-    std::move(on_bubble_dismissed_by_user_callback_).Run();
   }
 }
 

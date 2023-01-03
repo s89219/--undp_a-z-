@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,11 +18,11 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
 #include "base/task/bind_post_task.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/support_tool/data_collector.h"
 #include "components/feedback/pii_types.h"
 #include "testing/gmock/include/gmock/gmock-matchers.h"
@@ -30,6 +30,12 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/zlib/google/zip_reader.h"
 
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+using testing::IsSupersetOf;
 using testing::Pair;
 using testing::UnorderedElementsAre;
 
@@ -66,8 +72,9 @@ class TestDataCollector : public DataCollector {
       scoped_refptr<base::SequencedTaskRunner> task_runner_for_redaction_tool,
       scoped_refptr<feedback::RedactionToolContainer> redaction_tool_container,
       DataCollectorDoneCallback on_exported_callback) override {
-    on_exported_callback = base::BindPostTask(
-        base::ThreadTaskRunnerHandle::Get(), std::move(on_exported_callback));
+    on_exported_callback =
+        base::BindPostTask(base::SingleThreadTaskRunner::GetCurrentDefault(),
+                           std::move(on_exported_callback));
     base::ThreadPool::PostTask(
         FROM_HERE, {base::MayBlock()},
         base::BindOnce(&TestDataCollector::WriteFileForTesting,
@@ -121,7 +128,15 @@ class SupportToolHandlerTest : public ::testing::Test {
   SupportToolHandlerTest(const SupportToolHandlerTest&) = delete;
   SupportToolHandlerTest& operator=(const SupportToolHandlerTest&) = delete;
 
-  void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
+  void SetUp() override {
+    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+    // Set serial number for testing.
+    fake_statistics_provider_.SetMachineStatistic("serial_number", "000000");
+    ash::system::StatisticsProvider::SetTestProvider(
+        &fake_statistics_provider_);
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+  }
 
   void TearDown() override {
     if (!temp_dir_.IsValid())
@@ -164,6 +179,9 @@ class SupportToolHandlerTest : public ::testing::Test {
  private:
   // The temporary directory that we'll store the output files.
   base::ScopedTempDir temp_dir_;
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  ash::system::FakeStatisticsProvider fake_statistics_provider_;
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
   base::test::TaskEnvironment task_environment;
 };
 
@@ -222,10 +240,15 @@ TEST_F(SupportToolHandlerTest, ExportSupportDataTest) {
       ReadZipFileContents(target_path);
   // Each TestDataCollector should write the output contents on a file in the
   // .zip file which has a same name as the data collector.
-  EXPECT_THAT(zip_contents,
-              UnorderedElementsAre(
-                  Pair("test_data_collector_1", kTestDataToWriteOnFile),
-                  Pair("test_data_collector_2", kTestDataToWriteOnFile)));
+  EXPECT_THAT(
+      zip_contents,
+      IsSupersetOf({Pair("test_data_collector_1", kTestDataToWriteOnFile),
+                    Pair("test_data_collector_2", kTestDataToWriteOnFile)}));
+  // Check metadata file.
+  auto metadata_file_contents = zip_contents.find("metadata.txt");
+  EXPECT_TRUE(metadata_file_contents != zip_contents.end());
+  // Metadata file should not be empty.
+  EXPECT_FALSE(metadata_file_contents->second.empty());
 }
 
 TEST_F(SupportToolHandlerTest, ErrorMessageOnCollectData) {
@@ -303,8 +326,13 @@ TEST_F(SupportToolHandlerTest, ErrorMessageOnExportSupportData) {
   // Each TestDataCollector should write the output contents on a file in the
   // .zip file which has a same name as the data collector. The data collectors
   // with error won't create and write to any file.
-  EXPECT_THAT(zip_contents,
-              UnorderedElementsAre(
-                  Pair("test_data_collector_1", kTestDataToWriteOnFile),
-                  Pair("test_data_collector_2", kTestDataToWriteOnFile)));
+  EXPECT_THAT(
+      zip_contents,
+      IsSupersetOf({Pair("test_data_collector_1", kTestDataToWriteOnFile),
+                    Pair("test_data_collector_2", kTestDataToWriteOnFile)}));
+  // Check metadata file.
+  auto metadata_file_contents = zip_contents.find("metadata.txt");
+  EXPECT_TRUE(metadata_file_contents != zip_contents.end());
+  // Metadata file should not be empty.
+  EXPECT_FALSE(metadata_file_contents->second.empty());
 }

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,9 @@ class Window;
 
 namespace ash {
 
+inline constexpr char kFloatingWorkspaceTemplateUuid[] =
+    "c098bdcf-5803-484b-9bfd-d3a9a4b497ab";
+
 class DeskTemplate;
 enum class DeskTemplateType;
 
@@ -43,10 +46,10 @@ class RestoreDataCollector {
 
   // Captures the active desk and returns it as a `DeskTemplate` object via the
   // `callback`.
-  void CaptureActiveDeskAsTemplate(GetDeskTemplateCallback callback,
-                                   DeskTemplateType template_type,
-                                   const std::string& template_name,
-                                   aura::Window* root_window_to_show);
+  void CaptureActiveDeskAsSavedDesk(GetDeskTemplateCallback callback,
+                                    DeskTemplateType template_type,
+                                    const std::string& template_name,
+                                    aura::Window* root_window_to_show);
 
  private:
   // Keeps the state for the asynchronous call for `AppLaunchData` to the apps.
@@ -60,6 +63,7 @@ class RestoreDataCollector {
     std::string template_name;
     aura::Window* root_window_to_show;
     std::vector<aura::Window*> unsupported_apps;
+    size_t incognito_window_count = 0;
     std::unique_ptr<app_restore::RestoreData> data;
     uint32_t pending_request_count = 0;
     GetDeskTemplateCallback callback;
@@ -70,8 +74,7 @@ class RestoreDataCollector {
   // is collected, invokes the `SendDeskTemplate()` method.
   void OnAppLaunchDataReceived(
       uint32_t serial,
-      const std::string app_id,
-      const int32_t window_id,
+      const std::string& app_id,
       std::unique_ptr<app_restore::WindowInfo> window_info,
       std::unique_ptr<app_restore::AppLaunchInfo> app_launch_info);
 

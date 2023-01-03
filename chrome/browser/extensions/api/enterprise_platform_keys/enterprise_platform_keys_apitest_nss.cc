@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "base/json/json_writer.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/test/gtest_tags.h"
 #include "base/values.h"
 #include "chrome/browser/ash/login/test/device_state_mixin.h"
 #include "chrome/browser/ash/platform_keys/platform_keys_service_factory.h"
@@ -189,9 +190,9 @@ void ImportPrivateKeyPKCS8ToSlot(const unsigned char* pkcs8_der,
 
 // Builds the tests configuration dictionary and serializes it.
 std::string BuildCustomArg(bool user_session_test, bool system_token_enabled) {
-  base::Value custom_arg_value(base::Value::Type::DICTIONARY);
-  custom_arg_value.SetBoolKey(kIsUserSessionTestConfig, user_session_test);
-  custom_arg_value.SetBoolKey(kSystemTokenEnabledConfig, system_token_enabled);
+  base::Value::Dict custom_arg_value;
+  custom_arg_value.Set(kIsUserSessionTestConfig, user_session_test);
+  custom_arg_value.Set(kSystemTokenEnabledConfig, system_token_enabled);
 
   std::string custom_arg;
   if (!base::JSONWriter::Write(custom_arg_value, &custom_arg)) {
@@ -224,16 +225,14 @@ class EnterprisePlatformKeysTest
       : PlatformKeysTestBase(std::get<0>(GetParam()).system_token_status_,
                              std::get<0>(GetParam()).enrollment_status_,
                              std::get<0>(GetParam()).user_status_) {
-    // TODO(crbug.com/1311355): This test is run with the feature
-    // kUseAuthsessionAuthentication enabled and disabled because of a
+    // TODO(b/239422391): This test is run with the feature
+    // kUseAuthFactors enabled and disabled because of a
     // transitive dependency of AffiliationTestHelper on that feature. Remove
-    // the parameter when kUseAuthsessionAuthentication is removed.
+    // the parameter when kUseAuthFactors is removed.
     if (std::get<1>(GetParam())) {
-      feature_list_.InitAndEnableFeature(
-          ash::features::kUseAuthsessionAuthentication);
+      feature_list_.InitAndEnableFeature(ash::features::kUseAuthFactors);
     } else {
-      feature_list_.InitAndDisableFeature(
-          ash::features::kUseAuthsessionAuthentication);
+      feature_list_.InitAndDisableFeature(ash::features::kUseAuthFactors);
     }
   }
 
@@ -273,6 +272,11 @@ class EnterprisePlatformKeysTest
            user_status() == UserStatus::MANAGED_AFFILIATED_DOMAIN;
   }
 
+  void AddScreenplayTag() {
+    base::AddTagToTestResult("feature_id",
+                             "screenplay-f9cdeb9c-d567-4d70-a2dc-9ee4203175e6");
+  }
+
   ExtensionForceInstallMixin extension_force_install_mixin_{&mixin_host_};
 
  private:
@@ -296,10 +300,12 @@ class EnterprisePlatformKeysTest
 }  // namespace
 
 IN_PROC_BROWSER_TEST_P(EnterprisePlatformKeysTest, PRE_Basic) {
+  AddScreenplayTag();
   RunPreTest();
 }
 
 IN_PROC_BROWSER_TEST_P(EnterprisePlatformKeysTest, Basic) {
+  AddScreenplayTag();
   {
     base::RunLoop loop;
     NssServiceFactory::GetForContext(profile())
@@ -428,6 +434,11 @@ class EnterprisePlatformKeysLoginScreenTest
     return &extension_force_install_mixin_;
   }
 
+  void AddScreenplayTag() {
+    base::AddTagToTestResult("feature_id",
+                             "screenplay-f9cdeb9c-d567-4d70-a2dc-9ee4203175e6");
+  }
+
  private:
   void SetUp() override {
     ash::platform_keys::PlatformKeysServiceFactory::GetInstance()
@@ -465,10 +476,10 @@ class EnterprisePlatformKeysLoginScreenTest
 };
 
 IN_PROC_BROWSER_TEST_P(EnterprisePlatformKeysLoginScreenTest, Basic) {
-  base::DictionaryValue config;
-  config.SetStringKey("customArg",
-                      BuildCustomArg(/*user_session_test=*/false,
-                                     /*system_token_enabled=*/true));
+  AddScreenplayTag();
+  base::Value::Dict config;
+  config.Set("customArg", BuildCustomArg(/*user_session_test=*/false,
+                                         /*system_token_enabled=*/true));
   extensions::TestGetConfigFunction::set_test_config_state(&config);
 
   extensions::ResultCatcher catcher;

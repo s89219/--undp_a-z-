@@ -1,12 +1,15 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview Keeps track of the current braille translators.
  */
-import {ExpandingBrailleTranslator} from '/chromevox/background/braille/expanding_braille_translator.js';
-import {BrailleTable} from '/chromevox/common/braille/braille_table.js';
+import {LocalStorage} from '../../../common/local_storage.js';
+import {BrailleTable} from '../../common/braille/braille_table.js';
+
+import {ExpandingBrailleTranslator} from './expanding_braille_translator.js';
+import {LibLouis} from './liblouis.js';
 
 export class BrailleTranslatorManager {
   /**
@@ -14,10 +17,7 @@ export class BrailleTranslatorManager {
    *     for testing.
    */
   constructor(opt_liblouisForTest) {
-    /**
-     * @type {!LibLouis}
-     * @private
-     */
+    /** @private {!LibLouis} */
     this.liblouis_ =
         opt_liblouisForTest ||
         new LibLouis(
@@ -26,40 +26,19 @@ export class BrailleTranslatorManager {
             chrome.extension.getURL('chromevox/background/braille/tables'),
             this.loadLiblouis_.bind(this));
 
-    /**
-     * @type {!Array<function()>}
-     * @private
-     */
+    /** @private {!Array<function()>} */
     this.changeListeners_ = [];
-    /**
-     * @type {!Array<BrailleTable.Table>}
-     * @private
-     */
+    /** @private {!Array<BrailleTable.Table>} */
     this.tables_ = [];
-    /**
-     * @type {?ExpandingBrailleTranslator}
-     * @private
-     */
+    /** @private {?ExpandingBrailleTranslator} */
     this.expandingTranslator_ = null;
-    /**
-     * @type {?LibLouis.Translator}
-     * @private
-     */
+    /** @private {?LibLouis.Translator} */
     this.defaultTranslator_ = null;
-    /**
-     * @type {?string}
-     * @private
-     */
+    /** @private {?string} */
     this.defaultTableId_ = null;
-    /**
-     * @type {?LibLouis.Translator}
-     * @private
-     */
+    /** @private {?LibLouis.Translator} */
     this.uncontractedTranslator_ = null;
-    /**
-     * @type {?string}
-     * @private
-     */
+    /** @private {?string} */
     this.uncontractedTableId_ = null;
   }
 
@@ -81,13 +60,16 @@ export class BrailleTranslatorManager {
    * table.
    * @param {function()=} opt_finishCallback Called when the refresh finishes.
    */
-  refresh(brailleTable, opt_brailleTable8, opt_finishCallback) {
+  async refresh(brailleTable, opt_brailleTable8, opt_finishCallback) {
+    const finishCallback = opt_finishCallback || (() => {});
     if (brailleTable && brailleTable === this.defaultTableId_) {
+      finishCallback();
       return;
     }
 
     const tables = this.tables_;
     if (tables.length === 0) {
+      finishCallback();
       return;
     }
 
@@ -98,15 +80,13 @@ export class BrailleTranslatorManager {
       const currentLocale = chrome.i18n.getMessage('@@ui_locale').split(/[_-]/);
       const major = currentLocale[0];
       const minor = currentLocale[1];
-      const firstPass = tables.filter(function(table) {
-        return table.locale.split(/[_-]/)[0] === major;
-      });
+      const firstPass =
+          tables.filter(table => table.locale.split(/[_-]/)[0] === major);
       if (firstPass.length > 0) {
         table = firstPass[0];
         if (minor) {
-          const secondPass = firstPass.filter(function(table) {
-            return table.locale.split(/[_-]/)[1] === minor;
-          });
+          const secondPass = firstPass.filter(
+              table => table.locale.split(/[_-]/)[1] === minor);
           if (secondPass.length > 0) {
             table = secondPass[0];
           }
@@ -130,35 +110,31 @@ export class BrailleTranslatorManager {
         table.id === uncontractedTable.id ? null : uncontractedTable.id;
     if (newDefaultTableId === this.defaultTableId_ &&
         newUncontractedTableId === this.uncontractedTableId_) {
+      finishCallback();
       return;
     }
 
-    const finishRefresh = function(defaultTranslator, uncontractedTranslator) {
+    const finishRefresh = (defaultTranslator, uncontractedTranslator) => {
       this.defaultTableId_ = newDefaultTableId;
       this.uncontractedTableId_ = newUncontractedTableId;
       this.expandingTranslator_ = new ExpandingBrailleTranslator(
           defaultTranslator, uncontractedTranslator);
       this.defaultTranslator_ = defaultTranslator;
       this.uncontractedTranslator_ = uncontractedTranslator;
-      this.changeListeners_.forEach(function(listener) {
-        listener();
-      });
-    }.bind(this);
+      this.changeListeners_.forEach(listener => listener());
+      finishCallback();
+    };
 
-    this.liblouis_.getTranslator(table.fileNames, function(translator) {
-      if (!newUncontractedTableId) {
-        finishRefresh(translator, null);
-      } else {
-        this.liblouis_.getTranslator(
-            uncontractedTable.fileNames, function(uncontractedTranslator) {
-              finishRefresh(translator, uncontractedTranslator);
-
-              if (opt_finishCallback) {
-                opt_finishCallback();
-              }
-            });
-      }
-    }.bind(this));
+    const translator = await new Promise(
+        resolve => this.liblouis_.getTranslator(table.fileNames, resolve));
+    if (!newUncontractedTableId) {
+      finishRefresh(translator, null);
+    } else {
+      const uncontractedTranslator = await new Promise(
+          resolve => this.liblouis_.getTranslator(
+              uncontractedTable.fileNames, resolve));
+      finishRefresh(translator, uncontractedTranslator);
+    }
   }
 
   /**
@@ -198,7 +174,7 @@ export class BrailleTranslatorManager {
         this.tables_ = tables;
 
         // Initial refresh; set options from user preferences.
-        this.refresh(localStorage['brailleTable'], undefined, r);
+        this.refresh(LocalStorage.get('brailleTable'), undefined, r);
       });
     });
   }

@@ -1,16 +1,16 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://os-settings/chromeos/os_settings.js';
 import 'chrome://os-settings/strings.m.js';
 
-import {DeviceConnectionState} from 'chrome://resources/mojo/chromeos/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
+import {DeviceConnectionState} from 'chrome://resources/mojo/chromeos/ash/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {createDefaultBluetoothDevice} from 'chrome://test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
-import {eventToPromise} from 'chrome://test/test_util.js';
+import {createDefaultBluetoothDevice} from 'chrome://webui-test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-import {assertEquals, assertTrue} from '../../../chai_assert.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('OsPairedBluetoothListTest', function() {
   /** @type {!SettingsPairedBluetoothListElement|undefined} */
@@ -59,7 +59,7 @@ suite('OsPairedBluetoothListTest', function() {
 
   test('Tooltip is shown', async function() {
     const getTooltip = () => {
-      return pairedBluetoothList.$$('#tooltip');
+      return pairedBluetoothList.shadowRoot.querySelector('#tooltip');
     };
 
     assertFalse(getTooltip()._showing);
@@ -81,7 +81,7 @@ suite('OsPairedBluetoothListTest', function() {
         address: 'device-address',
         show: true,
         element: document.createElement('div'),
-      }
+      },
     }));
 
     await flushAsync();
@@ -94,7 +94,7 @@ suite('OsPairedBluetoothListTest', function() {
         address: 'device-address',
         show: false,
         element: document.createElement('div'),
-      }
+      },
     }));
     await flushAsync();
     assertFalse(getTooltip()._showing);

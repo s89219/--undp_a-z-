@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,14 @@
 #include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/test_future.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/types/optional_util.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/web_contents_tester.h"
+#include "third_party/blink/public/common/permissions_policy/origin_with_possible_wildcards.h"
+#include "url/origin.h"
 
 namespace content::test {
 
@@ -28,19 +30,27 @@ MockHostResolver::MockHostResolver(
 MockHostResolver::~MockHostResolver() = default;
 
 void MockHostResolver::ResolveHost(
-    const ::net::HostPortPair& host,
-    const ::net::NetworkIsolationKey& network_isolation_key,
+    network::mojom::HostResolverHostPtr host,
+    const ::net::NetworkAnonymizationKey& network_anonymization_key,
     network::mojom::ResolveHostParametersPtr optional_parameters,
     ::mojo::PendingRemote<network::mojom::ResolveHostClient>
         pending_response_client) {
   DCHECK(!internal_request_);
   DCHECK(!response_client_.is_bound());
 
-  internal_request_ = internal_resolver_->CreateRequest(
-      host, network_isolation_key,
-      net::NetLogWithSource::Make(net::NetLog::Get(),
-                                  net::NetLogSourceType::NONE),
-      absl::nullopt);
+  internal_request_ =
+      host->is_host_port_pair()
+          ? internal_resolver_->CreateRequest(
+                host->get_host_port_pair(), network_anonymization_key,
+                net::NetLogWithSource::Make(net::NetLog::Get(),
+                                            net::NetLogSourceType::NONE),
+                absl::nullopt)
+          : internal_resolver_->CreateRequest(
+                host->get_scheme_host_port(), network_anonymization_key,
+                net::NetLogWithSource::Make(net::NetLog::Get(),
+                                            net::NetLogSourceType::NONE),
+                absl::nullopt);
+
   mojo::Remote<network::mojom::ResolveHostClient> response_client(
       std::move(pending_response_client));
 
@@ -49,7 +59,8 @@ void MockHostResolver::ResolveHost(
   if (rv != net::ERR_IO_PENDING) {
     response_client->OnComplete(
         rv, internal_request_->GetResolveErrorInfo(),
-        base::OptionalFromPtr(internal_request_->GetAddressResults()));
+        base::OptionalFromPtr(internal_request_->GetAddressResults()),
+        /*endpoint_results_with_metadata=*/absl::nullopt);
     return;
   }
 
@@ -70,7 +81,8 @@ void MockHostResolver::OnComplete(int error) {
 
   response_client_->OnComplete(
       error, internal_request_->GetResolveErrorInfo(),
-      base::OptionalFromPtr(internal_request_->GetAddressResults()));
+      base::OptionalFromPtr(internal_request_->GetAddressResults()),
+      /*endpoint_results_with_metadata=*/absl::nullopt);
   response_client_.reset();
 }
 
@@ -92,7 +104,7 @@ MockUDPSocket::~MockUDPSocket() {
 void MockUDPSocket::Connect(const net::IPEndPoint& remote_addr,
                             network::mojom::UDPSocketOptionsPtr socket_options,
                             ConnectCallback callback) {
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), net::OK,
                      net::IPEndPoint{net::IPAddress::IPv4Localhost(), 0}));
@@ -171,10 +183,10 @@ void AsyncJsRunner::DomOperationResponse(RenderFrameHost* render_frame_host,
 
   auto parsed = base::JSONReader::ReadAndReturnValueWithError(
       json_string, base::JSON_ALLOW_TRAILING_COMMAS);
-  DCHECK(parsed.value);
-  DCHECK_EQ(parsed.value->type(), base::Value::Type::LIST);
+  DCHECK(parsed.has_value());
+  DCHECK_EQ(parsed->type(), base::Value::Type::LIST);
 
-  const auto& list = parsed.value->GetList();
+  const auto& list = parsed->GetList();
   DCHECK_EQ(list.size(), 2U);
   DCHECK(list[0].is_string());
   DCHECK(list[1].is_string());
@@ -193,6 +205,32 @@ std::string AsyncJsRunner::MakeScriptSendResultToDomQueue(
         window.domAutomationController.send([result, '%s']);
       )",
       script.c_str(), token_.ToString().c_str()));
+}
+
+IsolatedWebAppContentBrowserClient::IsolatedWebAppContentBrowserClient(
+    const url::Origin& isolated_app_origin)
+    : isolated_app_origin_(isolated_app_origin) {}
+
+bool IsolatedWebAppContentBrowserClient::ShouldUrlUseApplicationIsolationLevel(
+    BrowserContext* browser_context,
+    const GURL& url,
+    bool origin_matches_flag) {
+  return isolated_app_origin_ == url::Origin::Create(url);
+}
+
+absl::optional<blink::ParsedPermissionsPolicy>
+IsolatedWebAppContentBrowserClient::GetPermissionsPolicyForIsolatedWebApp(
+    content::BrowserContext* browser_context,
+    const url::Origin& app_origin) {
+  blink::ParsedPermissionsPolicy out;
+  blink::ParsedPermissionsPolicyDeclaration decl(
+      blink::mojom::PermissionsPolicyFeature::kDirectSockets,
+      /*allowed_origins=*/
+      {blink::OriginWithPossibleWildcards(app_origin,
+                                          /*has_subdomain_wildcard=*/false)},
+      /*matches_all_origins=*/false, /*matches_opaque_src=*/false);
+  out.push_back(decl);
+  return out;
 }
 
 // misc

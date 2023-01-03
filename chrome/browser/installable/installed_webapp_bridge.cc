@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,17 +24,6 @@ static void JNI_InstalledWebappBridge_NotifyPermissionsChange(JNIEnv* env,
   provider->Notify(static_cast<ContentSettingsType>(type));
 }
 
-static void JNI_InstalledWebappBridge_NotifyPermissionResult(JNIEnv* env,
-                                                             jlong callback_ptr,
-                                                             jboolean allowed) {
-  auto* callback = reinterpret_cast<InstalledWebappBridge::PermissionCallback*>(
-      callback_ptr);
-  std::move(*callback).Run(
-      allowed ? CONTENT_SETTING_ALLOW : CONTENT_SETTING_BLOCK,
-      /*is_one_time=*/false);
-  delete callback;
-}
-
 static void JNI_InstalledWebappBridge_RunPermissionCallback(JNIEnv* env,
                                                             jlong callback_ptr,
                                                             int setting) {
@@ -43,7 +32,7 @@ static void JNI_InstalledWebappBridge_RunPermissionCallback(JNIEnv* env,
   auto* callback = reinterpret_cast<InstalledWebappBridge::PermissionCallback*>(
       callback_ptr);
   std::move(*callback).Run(static_cast<ContentSetting>(setting),
-                           /*is_one_time=*/false);
+                           /*is_one_time=*/false, /*is_final_decision=*/true);
   delete callback;
 }
 
@@ -71,25 +60,9 @@ void InstalledWebappBridge::SetProviderInstance(
       base::android::AttachCurrentThread(), (jlong) provider);
 }
 
-void InstalledWebappBridge::DecidePermission(const GURL& origin_url,
-                                             PermissionCallback callback) {
-  JNIEnv* env = base::android::AttachCurrentThread();
-
-  // Transfers the ownership of the callback to the Java callback. The Java
-  // callback is guaranteed to be called unless the user never replies to the
-  // dialog, but as the dialog is modal, the only other thing the user can do
-  // is quit Chrome which will also free the pointer. The callback pointer will
-  // be destroyed in NotifyPermissionResult.
-  auto* callback_ptr = new PermissionCallback(std::move(callback));
-
-  ScopedJavaLocalRef<jstring> j_origin =
-      base::android::ConvertUTF8ToJavaString(env, origin_url.spec());
-  Java_InstalledWebappBridge_decidePermission(
-      env, j_origin, reinterpret_cast<jlong>(callback_ptr));
-}
-
 void InstalledWebappBridge::DecidePermission(ContentSettingsType type,
                                              const GURL& origin_url,
+                                             const GURL& last_committed_url,
                                              PermissionCallback callback) {
   JNIEnv* env = base::android::AttachCurrentThread();
 
@@ -100,9 +73,11 @@ void InstalledWebappBridge::DecidePermission(ContentSettingsType type,
   // be destroyed in RunPermissionCallback.
   auto* callback_ptr = new PermissionCallback(std::move(callback));
 
-  ScopedJavaLocalRef<jstring> j_origin =
+  ScopedJavaLocalRef<jstring> j_origin_url =
       base::android::ConvertUTF8ToJavaString(env, origin_url.spec());
-  Java_InstalledWebappBridge_decidePermissionSetting(
-      env, static_cast<int>(type), j_origin,
+  ScopedJavaLocalRef<jstring> j_last_committed_url =
+      base::android::ConvertUTF8ToJavaString(env, last_committed_url.spec());
+  Java_InstalledWebappBridge_decidePermission(
+      env, static_cast<int>(type), j_origin_url, j_last_committed_url,
       reinterpret_cast<jlong>(callback_ptr));
 }

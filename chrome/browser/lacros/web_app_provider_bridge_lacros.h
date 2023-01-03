@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@
 
 #include "chromeos/crosapi/mojom/web_app_service.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
+
+class Profile;
 
 namespace crosapi {
 
@@ -25,8 +27,27 @@ class WebAppProviderBridgeLacros : public mojom::WebAppProviderBridge {
                             WebAppInstalledInArcCallback callback) override;
   void WebAppUninstalledInArc(const std::string& app_id,
                               WebAppUninstalledInArcCallback callback) override;
+  void GetWebApkCreationParams(
+      const std::string& app_id,
+      GetWebApkCreationParamsCallback callback) override;
+  void InstallMicrosoft365(InstallMicrosoft365Callback callback) override;
 
  private:
+  static void WebAppInstalledInArcImpl(
+      mojom::ArcWebAppInstallInfoPtr arc_install_info,
+      WebAppInstalledInArcCallback callback,
+      Profile* profile);
+  static void WebAppUninstalledInArcImpl(
+      const std::string& app_id,
+      WebAppUninstalledInArcCallback callback,
+      Profile* profile);
+  static void GetWebApkCreationParamsImpl(
+      const std::string& app_id,
+      GetWebApkCreationParamsCallback callback,
+      Profile* profile);
+  static void InstallMicrosoft365Impl(InstallMicrosoft365Callback callback,
+                                      Profile* profile);
+
   mojo::Receiver<mojom::WebAppProviderBridge> receiver_{this};
 };
 

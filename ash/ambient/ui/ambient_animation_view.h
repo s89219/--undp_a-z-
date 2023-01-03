@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,11 +29,13 @@ class BoxLayoutView;
 namespace ash {
 
 class AmbientAnimationAttributionProvider;
+class AmbientAnimationFrameRateController;
 class AmbientAnimationPlayer;
+class AmbientAnimationProgressTracker;
 class AmbientAnimationStaticResources;
 class AmbientAnimationShieldController;
-class AmbientViewDelegate;
-class AmbientViewEventHandler;
+class AmbientMultiScreenMetricsRecorder;
+class AmbientViewDelegateImpl;
 
 class ASH_EXPORT AmbientAnimationView : public views::View,
                                         public lottie::AnimationObserver,
@@ -42,28 +44,34 @@ class ASH_EXPORT AmbientAnimationView : public views::View,
   METADATA_HEADER(AmbientAnimationView);
 
   AmbientAnimationView(
-      AmbientViewDelegate* view_delegate,
-      std::unique_ptr<const AmbientAnimationStaticResources> static_resources);
+      AmbientViewDelegateImpl* view_delegate,
+      AmbientAnimationProgressTracker* progress_tracker,
+      std::unique_ptr<const AmbientAnimationStaticResources> static_resources,
+      AmbientMultiScreenMetricsRecorder* multi_screen_metrics_recorder,
+      AmbientAnimationFrameRateController* frame_rate_controller);
   AmbientAnimationView(const AmbientAnimationView&) = delete;
   AmbientAnimationView& operator=(AmbientAnimationView&) = delete;
   ~AmbientAnimationView() override;
 
  private:
-  void Init(AmbientViewDelegate* view_delegate);
+  void Init(AmbientMultiScreenMetricsRecorder* multi_screen_metrics_recorder);
 
   void AnimationCycleEnded(const lottie::Animation* animation) override;
 
   void OnViewBoundsChanged(View* observed_view) override;
+  void OnViewAddedToWidget(View* observed_view) override;
 
   void StartPlayingAnimation();
   void StartThroughputTracking();
   void RestartThroughputTracking();
   void ApplyJitter();
 
-  AmbientViewEventHandler* const event_handler_;
-
+  const base::raw_ptr<AmbientViewDelegateImpl> view_delegate_;
+  const base::raw_ptr<AmbientAnimationProgressTracker> progress_tracker_;
   const std::unique_ptr<const AmbientAnimationStaticResources>
       static_resources_;
+  const base::raw_ptr<AmbientAnimationFrameRateController>
+      frame_rate_controller_;
   AmbientAnimationPhotoProvider animation_photo_provider_;
   std::unique_ptr<AmbientAnimationAttributionProvider>
       animation_attribution_provider_;

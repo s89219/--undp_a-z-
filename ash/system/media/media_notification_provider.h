@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,7 +45,8 @@ class ASH_EXPORT MediaNotificationProvider {
   // MediaNotificationContainerImpls. Used to populate the dialog on the Ash
   // shelf.
   virtual std::unique_ptr<views::View> GetMediaNotificationListView(
-      int separator_thickness) = 0;
+      int separator_thickness,
+      bool should_clip_height) = 0;
 
   // Returns a MediaNotificationContainerimplView for the active MediaSession.
   // Displayed in the quick settings of the Ash shelf.

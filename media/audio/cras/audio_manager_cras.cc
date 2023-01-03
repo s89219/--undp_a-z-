@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,7 @@
 #include "base/nix/xdg_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/system/sys_info.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "media/audio/audio_device_description.h"
 #include "media/audio/audio_features.h"
 #include "media/audio/cras/cras_input.h"
@@ -54,7 +54,7 @@ AudioManagerCras::AudioManagerCras(std::unique_ptr<AudioThread> audio_thread,
                                    AudioLogFactory* audio_log_factory)
     : AudioManagerCrasBase(std::move(audio_thread), audio_log_factory),
       cras_util_(std::make_unique<CrasUtil>()),
-      main_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      main_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       weak_ptr_factory_(this) {
   weak_this_ = weak_ptr_factory_.GetWeakPtr();
 }
@@ -63,20 +63,22 @@ AudioManagerCras::~AudioManagerCras() = default;
 
 void AudioManagerCras::GetAudioInputDeviceNames(
     AudioDeviceNames* device_names) {
-  device_names->push_back(AudioDeviceName::CreateDefault());
   for (const auto& device :
        cras_util_->CrasGetAudioDevices(DeviceType::kInput)) {
     device_names->emplace_back(device.name, base::NumberToString(device.id));
   }
+  if (!device_names->empty())
+    device_names->push_front(AudioDeviceName::CreateDefault());
 }
 
 void AudioManagerCras::GetAudioOutputDeviceNames(
     AudioDeviceNames* device_names) {
-  device_names->push_back(AudioDeviceName::CreateDefault());
   for (const auto& device :
        cras_util_->CrasGetAudioDevices(DeviceType::kOutput)) {
     device_names->emplace_back(device.name, base::NumberToString(device.id));
   }
+  if (!device_names->empty())
+    device_names->push_front(AudioDeviceName::CreateDefault());
 }
 
 // Checks if a system AEC with a specific group ID is flagged to be deactivated
@@ -181,7 +183,7 @@ void RetrieveSystemEffectFeatures(bool& enforce_system_aec,
 AudioParameters AudioManagerCras::GetStreamParametersForSystem(
     int user_buffer_size) {
   AudioParameters params(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, ChannelLayoutConfig::Stereo(),
       kDefaultSampleRate, user_buffer_size,
       AudioParameters::HardwareCapabilities(limits::kMinAudioBufferSize,
                                             limits::kMaxAudioBufferSize));
@@ -311,11 +313,11 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
     const std::string& output_device_id,
     const AudioParameters& input_params) {
   DCHECK(GetTaskRunner()->BelongsToCurrentThread());
-  ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
+  ChannelLayoutConfig channel_layout_config = ChannelLayoutConfig::Stereo();
   int sample_rate = kDefaultSampleRate;
   int buffer_size = GetUserBufferSize();
   if (input_params.IsValid()) {
-    channel_layout = input_params.channel_layout();
+    channel_layout_config = input_params.channel_layout_config();
     sample_rate = input_params.sample_rate();
     if (!buffer_size)  // Not user-provided.
       buffer_size =
@@ -323,8 +325,8 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
                    std::max(static_cast<int>(limits::kMinAudioBufferSize),
                             input_params.frames_per_buffer()));
     return AudioParameters(
-        AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, sample_rate,
-        buffer_size,
+        AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout_config,
+        sample_rate, buffer_size,
         AudioParameters::HardwareCapabilities(limits::kMinAudioBufferSize,
                                               limits::kMaxAudioBufferSize));
   }
@@ -342,11 +344,12 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
   for (const auto& device :
        cras_util_->CrasGetAudioDevices(DeviceType::kOutput)) {
     if (device.id == preferred_device_id) {
-      channel_layout =
-          GuessChannelLayout(static_cast<int>(device.max_supported_channels));
+      channel_layout_config = ChannelLayoutConfig::Guess(
+          static_cast<int>(device.max_supported_channels));
       // Fall-back to old fashion: always fixed to STEREO layout.
-      if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED) {
-        channel_layout = CHANNEL_LAYOUT_STEREO;
+      if (channel_layout_config.channel_layout() ==
+          CHANNEL_LAYOUT_UNSUPPORTED) {
+        channel_layout_config = ChannelLayoutConfig::Stereo();
       }
       break;
     }
@@ -359,8 +362,8 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
     buffer_size = kDefaultOutputBufferSize;
 
   return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, sample_rate,
-      buffer_size,
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout_config,
+      sample_rate, buffer_size,
       AudioParameters::HardwareCapabilities(limits::kMinAudioBufferSize,
                                             limits::kMaxAudioBufferSize));
 }
@@ -388,7 +391,11 @@ bool AudioManagerCras::IsDefault(const std::string& device_id, bool is_input) {
 }
 
 enum CRAS_CLIENT_TYPE AudioManagerCras::GetClientType() {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  return CRAS_CLIENT_TYPE_CHROME;
+#else
   return CRAS_CLIENT_TYPE_LACROS;
+#endif
 }
 
 }  // namespace media

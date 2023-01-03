@@ -1,24 +1,32 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assertInstanceof} from '../assert.js';
+import {assertExists, assertInstanceof} from '../assert.js';
 import * as dom from '../dom.js';
 import {I18nString} from '../i18n_string.js';
 import * as state from '../state.js';
 import {ViewName} from '../type.js';
+import {KeyboardShortcut} from '../util.js';
 import {WaitableEvent} from '../waitable_event.js';
 
 export interface DialogEnterOptions {
   /**
-   * Message of the dialog view.
-   */
-  message?: string;
-
-  /**
    * Whether the dialog view is cancellable.
    */
   cancellable?: boolean;
+  /**
+   * Description of the dialog.
+   */
+  description?: I18nString;
+  /**
+   * Message of the dialog view.
+   */
+  message?: string;
+  /**
+   * Title of the dialog.
+   */
+  title?: I18nString;
 }
 
 /**
@@ -116,7 +124,7 @@ interface ViewOptions {
 }
 
 /**
- * Base controller of a view for views' navigation sessions (nav.js).
+ * Base controller of a view for views' navigation sessions (nav.ts).
  */
 export class View {
   root: HTMLElement;
@@ -129,6 +137,8 @@ export class View {
   private readonly dismissByEsc: boolean;
 
   private readonly defaultFocusSelector: string;
+
+  protected lastFocusedElement: HTMLElement|null = null;
 
   /**
    * @param name Unique name of view which should be same as its DOM element id.
@@ -174,7 +184,7 @@ export class View {
    * @param key Key to be handled.
    * @return Whether the key has been handled or not.
    */
-  onKeyPressed(key: string): boolean {
+  onKeyPressed(key: KeyboardShortcut): boolean {
     if (this.handlingKey(key)) {
       return true;
     } else if (this.dismissByEsc && key === 'Escape') {
@@ -185,12 +195,86 @@ export class View {
   }
 
   /**
-   * Focuses the default element on the view if applicable.
+   * Deactivates the view to be unfocusable.
    */
-  focus(): void {
+  protected setUnfocusable(): void {
+    this.root.setAttribute('aria-hidden', 'true');
+    for (const element of dom.getAllFrom(
+             this.root, '[tabindex]', HTMLElement)) {
+      element.dataset['tabindex'] =
+          assertExists(element.getAttribute('tabindex'));
+      element.setAttribute('tabindex', '-1');
+    }
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+  }
+
+  /**
+   * Activates the view to be focusable.
+   */
+  protected setFocusable(): void {
+    this.root.setAttribute('aria-hidden', 'false');
+    for (const element of dom.getAllFrom(
+             this.root, '[tabindex]', HTMLElement)) {
+      if (element.dataset['tabindex'] === undefined) {
+        // First activation, no need to restore tabindex from data-tabindex.
+        continue;
+      }
+      element.setAttribute('tabindex', element.dataset['tabindex']);
+      element.removeAttribute('data-tabindex');
+    }
+  }
+
+  /**
+   * The view is newly shown as the topmost view.
+   */
+  onShownAsTop(): void {
+    this.setFocusable();
+    // Focus on the default selector on enter.
     const el = this.root.querySelector(this.defaultFocusSelector);
     if (el !== null) {
       assertInstanceof(el, HTMLElement).focus();
+    }
+  }
+
+  /**
+   * The view was the topmost shown view and is being hidden.
+   */
+  onHideAsTop(): void {
+    this.lastFocusedElement = null;
+    this.setUnfocusable();
+  }
+
+  /**
+   * The view was the topmost shown view and is being covered by newly shown
+   * view.
+   */
+  onCoveredAsTop(): void {
+    this.lastFocusedElement = document.activeElement === null ?
+        null :
+        assertInstanceof(document.activeElement, HTMLElement);
+    this.setUnfocusable();
+  }
+
+  /**
+   * The view becomes the new topmost shown view after some upper view is
+   * hidden.
+   *
+   * @param _viewName The name of the upper view that is hidden.
+   */
+  onUncoveredAsTop(_viewName: ViewName): void {
+    this.setFocusable();
+    // Focus on last focused element or default selector
+    if (this.lastFocusedElement !== null) {
+      this.lastFocusedElement.focus();
+      this.lastFocusedElement = null;
+    } else {
+      const el = this.root.querySelector(this.defaultFocusSelector);
+      if (el !== null) {
+        assertInstanceof(el, HTMLElement).focus();
+      }
     }
   }
 
@@ -206,7 +290,7 @@ export class View {
    *
    * @param _options Optional rest parameters for entering the view.
    */
-  entering(_options?: EnterOptions): void {
+  protected entering(_options?: EnterOptions): void {
     // To be overridden by subclasses.
   }
 
@@ -232,7 +316,7 @@ export class View {
    * @param _condition Optional condition for leaving the view.
    * @return Whether able to leaving the view or not.
    */
-  leaving(_condition: LeaveCondition): boolean {
+  protected leaving(_condition: LeaveCondition): boolean {
     return true;
   }
 
@@ -241,14 +325,11 @@ export class View {
    *
    * @param condition Optional condition for leaving the view and also as
    *     the result for the ended session.
-   * @return Whether able to leaving the view or not.
    */
-  leave(condition: LeaveCondition = {kind: 'CLOSED'}): boolean {
+  leave(condition: LeaveCondition = {kind: 'CLOSED'}): void {
     if (this.session !== null && this.leaving(condition)) {
       this.session.signal(condition);
       this.session = null;
-      return true;
     }
-    return false;
   }
 }

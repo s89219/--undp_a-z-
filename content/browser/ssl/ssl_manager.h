@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "net/base/net_errors.h"
 #include "net/cert/cert_status_flags.h"
 #include "url/gurl.h"
+#include "url/scheme_host_port.h"
 
 namespace net {
 class SSLInfo;
@@ -67,7 +68,14 @@ class SSLManager {
   NavigationControllerImpl* controller() { return controller_; }
 
   void DidCommitProvisionalLoad(const LoadCommittedDetails& details);
-  void DidStartResourceResponse(const GURL& url, bool has_certificate_errors);
+
+  // TODO(crbug.com/1385424): Revert function DidStartResourceResponse to return
+  // void after expiry of histogram SSL.Experimental.SubresourceResponse.
+  // Return true when a good certificate is seen and any exceptions that were
+  // made by the user for bad certificates are cleared out, returns false
+  // otherwise without processing anything.
+  bool DidStartResourceResponse(const url::SchemeHostPort& final_response_url,
+                                bool has_certificate_errors);
 
   // The following methods are called when a page includes insecure
   // content. These methods update the SSLStatus on the NavigationEntry

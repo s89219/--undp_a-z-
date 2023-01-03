@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,21 +7,23 @@ import 'chrome://webui-test/mojo_webui_test_support.js';
 import {CartHandlerRemote, ConsentStatus} from 'chrome://new-tab-page/chrome_cart.mojom-webui.js';
 import {chromeCartDescriptor, ChromeCartModuleElement, ChromeCartProxy, DiscountConsentCard, DiscountConsentVariation} from 'chrome://new-tab-page/lazy_load.js';
 import {$$, CrAutoImgElement} from 'chrome://new-tab-page/new_tab_page.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {eventToPromise, flushTasks, isVisible} from 'chrome://webui-test/test_util.js';
+import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 
-import {fakeMetricsPrivate, MetricsTracker} from '../../metrics_test_support.js';
+import {fakeMetricsPrivate, MetricsTracker} from '../../../metrics_test_support.js';
 import {assertNotStyle, installMock} from '../../test_support.js';
+
 import {clickAcceptButton, clickCloseButton, clickRejectButton, nextStep} from './discount_consent_card_test_utils.js';
 
 suite('NewTabPageModulesChromeCartModuleTest', () => {
-  let handler: TestBrowserProxy;
+  let handler: TestBrowserProxy<CartHandlerRemote>;
   let metrics: MetricsTracker;
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     handler = installMock(CartHandlerRemote, ChromeCartProxy.setHandler);
     metrics = fakeMetricsPrivate();
@@ -38,7 +40,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
     suiteSetup(() => {
       loadTimeData.overrideValues({
         ruleBasedDiscountEnabled: false,
-        modulesCartDiscountConsentVariation: DiscountConsentVariation.Default
+        modulesCartDiscountConsentVariation: DiscountConsentVariation.DEFAULT,
       });
     });
 
@@ -60,8 +62,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
         },
         {
@@ -79,8 +82,10 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Walmart',
           cartUrl: {url: 'https://walmart.com'},
           productImageUrls: [
-            {url: 'https://image6.com'}, {url: 'https://image7.com'},
-            {url: 'https://image8.com'}, {url: 'https://image9.com'}
+            {url: 'https://image6.com'},
+            {url: 'https://image7.com'},
+            {url: 'https://image8.com'},
+            {url: 'https://image9.com'},
           ],
         },
       ];
@@ -100,6 +105,10 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
       assertEquals(4, cartItems.length);
       assertEquals(220, moduleElement.offsetHeight);
       assertEquals(1, metrics.count('NewTabPage.Carts.CartCount', 4));
+      assertEquals(1, metrics.count('NewTabPage.Carts.CartImageCount', 3));
+      assertEquals(1, metrics.count('NewTabPage.Carts.CartImageCount', 2));
+      assertEquals(1, metrics.count('NewTabPage.Carts.CartImageCount', 0));
+      assertEquals(1, metrics.count('NewTabPage.Carts.CartImageCount', 4));
 
       assertEquals('https://amazon.com/', cartItems[0]!.href);
       assertEquals(
@@ -190,6 +199,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           loadTimeData.getString('modulesCartWarmWelcome'),
           headerDescription!.innerText);
       assertEquals(227, moduleElement.offsetHeight);
+      assertEquals(0, metrics.count('NewTabPage.Carts.CartImageCount', 0));
     });
 
     test(
@@ -201,8 +211,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
               merchant: 'Amazon',
               cartUrl: {url: 'https://amazon.com'},
               productImageUrls: [
-                {url: 'https://image1.com'}, {url: 'https://image2.com'},
-                {url: 'https://image3.com'}
+                {url: 'https://image1.com'},
+                {url: 'https://image2.com'},
+                {url: 'https://image3.com'},
               ],
             },
           ];
@@ -840,8 +851,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
         },
         {
@@ -966,52 +978,52 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
     checkVisibleRange(moduleElement, 0, 1);
   }
 
-    function checkScrollButtonVisibility(
-        moduleElement: ChromeCartModuleElement, isLeftVisible: boolean,
-        isRightVisible: boolean) {
-      assertEquals(
-          isLeftVisible,
-          isVisible(
-              moduleElement.shadowRoot!.querySelector('#leftScrollShadow')));
-      assertEquals(
-          isLeftVisible,
-          isVisible(
-              moduleElement.shadowRoot!.querySelector('#leftScrollButton')));
-      assertEquals(
-          isRightVisible,
-          isVisible(
-              moduleElement.shadowRoot!.querySelector('#rightScrollShadow')));
-      assertEquals(
-          isRightVisible,
-          isVisible(
-              moduleElement.shadowRoot!.querySelector('#rightScrollButton')));
-    }
+  function checkScrollButtonVisibility(
+      moduleElement: ChromeCartModuleElement, isLeftVisible: boolean,
+      isRightVisible: boolean) {
+    assertEquals(
+        isLeftVisible,
+        isVisible(
+            moduleElement.shadowRoot!.querySelector('#leftScrollShadow')));
+    assertEquals(
+        isLeftVisible,
+        isVisible(
+            moduleElement.shadowRoot!.querySelector('#leftScrollButton')));
+    assertEquals(
+        isRightVisible,
+        isVisible(
+            moduleElement.shadowRoot!.querySelector('#rightScrollShadow')));
+    assertEquals(
+        isRightVisible,
+        isVisible(
+            moduleElement.shadowRoot!.querySelector('#rightScrollButton')));
+  }
 
-    function checkVisibleRange(
-        moduleElement: ChromeCartModuleElement, startIndex: number,
-        endIndex: number) {
-      const carts =
-          moduleElement.$.cartCarousel.querySelectorAll('.cart-container');
-      assertTrue(startIndex >= 0);
-      assertTrue(endIndex < carts.length);
-      for (let i = 0; i < carts.length; i++) {
-        if (i >= startIndex && i <= endIndex) {
-          assertTrue(getVisibilityForIndex(moduleElement, i));
-        } else {
-          assertFalse(getVisibilityForIndex(moduleElement, i));
-        }
+  function checkVisibleRange(
+      moduleElement: ChromeCartModuleElement, startIndex: number,
+      endIndex: number) {
+    const carts =
+        moduleElement.$.cartCarousel.querySelectorAll('.cart-container');
+    assertTrue(startIndex >= 0);
+    assertTrue(endIndex < carts.length);
+    for (let i = 0; i < carts.length; i++) {
+      if (i >= startIndex && i <= endIndex) {
+        assertTrue(getVisibilityForIndex(moduleElement, i));
+      } else {
+        assertFalse(getVisibilityForIndex(moduleElement, i));
       }
     }
+  }
 
-    function getVisibilityForIndex(
-        moduleElement: ChromeCartModuleElement, index: number) {
-      const cartCarousel = moduleElement.$.cartCarousel;
-      const cart =
-          cartCarousel.querySelectorAll<HTMLElement>('.cart-container')[index]!;
-      return (cart.offsetLeft > cartCarousel.scrollLeft) &&
-          (cartCarousel.scrollLeft + cartCarousel.clientWidth) >
-          (cart.offsetLeft + cart.offsetWidth);
-    }
+  function getVisibilityForIndex(
+      moduleElement: ChromeCartModuleElement, index: number) {
+    const cartCarousel = moduleElement.$.cartCarousel;
+    const cart =
+        cartCarousel.querySelectorAll<HTMLElement>('.cart-container')[index]!;
+    return (cart.offsetLeft > cartCarousel.scrollLeft) &&
+        (cartCarousel.scrollLeft + cartCarousel.clientWidth) >
+        (cart.offsetLeft + cart.offsetWidth);
+  }
 
   suite('rule-based discount', () => {
     suiteSetup(() => {
@@ -1025,8 +1037,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
         },
         {
@@ -1144,7 +1157,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Boo',
           cartUrl: {url: 'https://Boo.com'},
           productImageUrls: [],
-          discountText: '5% off'
+          discountText: '5% off',
         },
         {
           merchant: 'Foo',
@@ -1155,22 +1168,28 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Koo',
           cartUrl: {url: 'https://Koo.com'},
           productImageUrls: [],
-          discountText: '10% off'
+          discountText: '10% off',
         },
       ];
       handler.setResultFor('getMerchantCarts', Promise.resolve({carts}));
 
       assertEquals(0, metrics.count('NewTabPage.Carts.DiscountCountAtLoad', 2));
+      assertEquals(
+          0, metrics.count('NewTabPage.Carts.NonDiscountCountAtLoad', 1));
       assertEquals(0, metrics.count('NewTabPage.Carts.DiscountAt', 0));
       assertEquals(0, metrics.count('NewTabPage.Carts.DiscountAt', 2));
+      assertEquals(0, metrics.count('NewTabPage.Carts.CartCount', 3));
 
       // Act.
       await chromeCartDescriptor.initialize(0);
 
       // Assert.
       assertEquals(1, metrics.count('NewTabPage.Carts.DiscountCountAtLoad', 2));
+      assertEquals(
+          1, metrics.count('NewTabPage.Carts.NonDiscountCountAtLoad', 1));
       assertEquals(1, metrics.count('NewTabPage.Carts.DiscountAt', 0));
       assertEquals(1, metrics.count('NewTabPage.Carts.DiscountAt', 2));
+      assertEquals(1, metrics.count('NewTabPage.Carts.CartCount', 3));
     });
   });
 
@@ -1186,7 +1205,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         modulesCartConsentStepTwoDifferentColor: false,
         modulesCartDiscountConsentRejectConfirmation: 'Reject confirmation!',
         modulesCartDiscountConsentAcceptConfirmation: 'Accept confirmation!',
-        modulesCartDiscountConsentVariation: DiscountConsentVariation.Inline,
+        modulesCartDiscountConsentVariation: DiscountConsentVariation.INLINE,
         modulesCartStepOneUseStaticContent: true,
         modulesCartConsentStepOneButton: 'Continue',
         modulesCartStepOneStaticContent: 'Step one consent',
@@ -1226,7 +1245,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
         {
           merchant: 'Foo',
           cartUrl: {url: 'https://foo.com'},
-          productImageUrls: []
+          productImageUrls: [],
         },
         {
           merchant: 'Boo',
@@ -1263,7 +1282,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           {
             merchant: 'Foo',
             cartUrl: {url: 'https://foo.com'},
-            productImageUrls: []
+            productImageUrls: [],
           },
           {
             merchant: 'Boo',
@@ -1349,7 +1368,7 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           {
             merchant: 'Foo',
             cartUrl: {url: 'https://foo.com'},
-            productImageUrls: []
+            productImageUrls: [],
           },
           {
             merchant: 'Boo',
@@ -1406,14 +1425,14 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
       setup(async () => {
         loadTimeData.overrideValues({
           modulesCartDiscountConsentVariation:
-              DiscountConsentVariation.NativeDialog
+              DiscountConsentVariation.NATIVE_DIALOG,
         });
 
         const carts = [
           {
             merchant: 'Foo',
             cartUrl: {url: 'https://foo.com'},
-            productImageUrls: []
+            productImageUrls: [],
           },
           {
             merchant: 'Boo',

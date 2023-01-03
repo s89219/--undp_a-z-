@@ -1,11 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/guest_os/guest_os_stability_monitor.h"
 
 #include "base/metrics/histogram_functions.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/chunneld/chunneld_client.h"
 
 namespace guest_os {
 
@@ -15,13 +15,13 @@ GuestOsStabilityMonitor::GuestOsStabilityMonitor(const std::string& histogram)
       cicerone_observer_(this),
       seneschal_observer_(this),
       chunneld_observer_(this) {
-  auto* concierge_client = chromeos::ConciergeClient::Get();
+  auto* concierge_client = ash::ConciergeClient::Get();
   DCHECK(concierge_client);
   concierge_client->WaitForServiceToBeAvailable(
       base::BindOnce(&GuestOsStabilityMonitor::ConciergeStarted,
                      weak_ptr_factory_.GetWeakPtr()));
 
-  auto* cicerone_client = chromeos::CiceroneClient::Get();
+  auto* cicerone_client = ash::CiceroneClient::Get();
   DCHECK(cicerone_client);
   cicerone_client->WaitForServiceToBeAvailable(
       base::BindOnce(&GuestOsStabilityMonitor::CiceroneStarted,
@@ -33,8 +33,7 @@ GuestOsStabilityMonitor::GuestOsStabilityMonitor(const std::string& histogram)
       base::BindOnce(&GuestOsStabilityMonitor::SeneschalStarted,
                      weak_ptr_factory_.GetWeakPtr()));
 
-  auto* chunneld_client =
-      chromeos::DBusThreadManager::Get()->GetChunneldClient();
+  auto* chunneld_client = ash::ChunneldClient::Get();
   DCHECK(chunneld_client);
   chunneld_client->WaitForServiceToBeAvailable(
       base::BindOnce(&GuestOsStabilityMonitor::ChunneldStarted,
@@ -46,7 +45,7 @@ GuestOsStabilityMonitor::~GuestOsStabilityMonitor() {}
 void GuestOsStabilityMonitor::ConciergeStarted(bool is_available) {
   DCHECK(is_available);
 
-  auto* concierge_client = chromeos::ConciergeClient::Get();
+  auto* concierge_client = ash::ConciergeClient::Get();
   DCHECK(concierge_client);
   concierge_observer_.Observe(concierge_client);
 }
@@ -54,7 +53,7 @@ void GuestOsStabilityMonitor::ConciergeStarted(bool is_available) {
 void GuestOsStabilityMonitor::CiceroneStarted(bool is_available) {
   DCHECK(is_available);
 
-  auto* cicerone_client = chromeos::CiceroneClient::Get();
+  auto* cicerone_client = ash::CiceroneClient::Get();
   DCHECK(cicerone_client);
   cicerone_observer_.Observe(cicerone_client);
 }
@@ -70,8 +69,7 @@ void GuestOsStabilityMonitor::SeneschalStarted(bool is_available) {
 void GuestOsStabilityMonitor::ChunneldStarted(bool is_available) {
   DCHECK(is_available);
 
-  auto* chunneld_client =
-      chromeos::DBusThreadManager::Get()->GetChunneldClient();
+  auto* chunneld_client = ash::ChunneldClient::Get();
   DCHECK(chunneld_client);
   chunneld_observer_.Observe(chunneld_client);
 }

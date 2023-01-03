@@ -1,10 +1,11 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.m.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
 
 import {FilesAppEntry} from '../../externs/files_app_entry_interfaces.js';
+import {FileData} from '../../externs/ts/state.js';
 
 import {EXTENSION_TO_TYPE, FileExtensionType, MIME_TO_TYPE} from './file_types_data.js';
 import {VolumeEntry} from './files_app_entry_types.js';
@@ -29,7 +30,7 @@ FileType.DIRECTORY = {
   translationKey: 'FOLDER',
   type: '.folder',
   icon: 'folder',
-  subtype: ''
+  subtype: '',
 };
 
 /**
@@ -41,7 +42,7 @@ FileType.PLACEHOLDER = {
   translationKey: 'NO_EXTENSION_FILE_TYPE',
   type: 'UNKNOWN',
   icon: '',
-  subtype: ''
+  subtype: '',
 };
 
 /**
@@ -115,7 +116,7 @@ FileType.getTypeForName = name => {
     translationKey: 'GENERIC_FILE_TYPE',
     type: 'UNKNOWN',
     subtype: extension.substr(1).toUpperCase(),
-    icon: ''
+    icon: '',
   };
 };
 
@@ -194,6 +195,16 @@ FileType.isVideo = (entry, opt_mimeType) => {
 /**
  * @param {Entry} entry Reference to the file.
  * @param {string=} opt_mimeType Optional mime type for the file.
+ * @return {boolean} True if document file.
+ */
+FileType.isDocument = (entry, opt_mimeType) => {
+  const type = FileType.getMediaType(entry, opt_mimeType);
+  return type === 'document' || type === 'hosted' || type === 'text';
+};
+
+/**
+ * @param {Entry} entry Reference to the file.
+ * @param {string=} opt_mimeType Optional mime type for the file.
  * @return {boolean} True if raw file.
  */
 FileType.isRaw = (entry, opt_mimeType) => {
@@ -231,7 +242,7 @@ FileType.isHosted = (entry, opt_mimeType) => {
 };
 
 /**
- * @param {Entry|VolumeEntry} entry Reference to the file.
+ * @param {Entry|VolumeEntry|FileData} entry Reference to the file.
  * @param {string=} opt_mimeType Optional mime type for the file.
  * @param {VolumeManagerCommon.RootType=} opt_rootType The root type of the
  *     entry.
@@ -239,10 +250,19 @@ FileType.isHosted = (entry, opt_mimeType) => {
  *     It refers to a file 'images/filetype_' + icon + '.png'.
  */
 FileType.getIcon = (entry, opt_mimeType, opt_rootType) => {
-  const fileType = FileType.getType(entry, opt_mimeType);
-  const overridenIcon = FileType.getIconOverrides(entry, opt_rootType);
-  return entry.iconName || overridenIcon || fileType.icon || fileType.type ||
-      'unknown';
+  let icon;
+  // Handles the FileData and FilesAppEntry types.
+  if (entry && entry.iconName) {
+    return entry.iconName;
+  }
+  // Handles other types of entries.
+  if (entry) {
+    entry = /** @type {!Entry|!VolumeEntry} */ (entry);
+    const fileType = FileType.getType(entry, opt_mimeType);
+    const overridenIcon = FileType.getIconOverrides(entry, opt_rootType);
+    icon = overridenIcon || fileType.icon || fileType.type;
+  }
+  return icon || 'unknown';
 };
 
 /**

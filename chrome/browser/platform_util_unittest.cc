@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,13 +24,12 @@
 #include "chrome/browser/apps/app_service/app_service_test.h"
 #include "chrome/browser/apps/app_service/intent_util.h"
 #include "chrome/browser/ash/file_manager/app_id.h"
+#include "chrome/browser/ash/fileapi/file_system_backend.h"
+#include "chrome/browser/ash/fileapi/file_system_backend_delegate.h"
 #include "chrome/browser/chrome_content_browser_client.h"
-#include "chrome/browser/chromeos/fileapi/file_system_backend.h"
-#include "chrome/browser/chromeos/fileapi/file_system_backend_delegate.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "components/services/app_service/public/cpp/app_types.h"
-#include "components/services/app_service/public/cpp/features.h"
 #include "components/services/app_service/public/cpp/intent_filter.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/common/content_client.h"
@@ -63,17 +62,16 @@ class PlatformUtilTestContentBrowserClient : public ChromeContentBrowserClient {
         browser_context->GetMountPoints();
 
     // New FileSystemBackend that uses our MockSpecialStoragePolicy.
-    additional_backends->push_back(
-        std::make_unique<chromeos::FileSystemBackend>(
-            nullptr,  // profile
-            nullptr,  // file_system_provider_delegate
-            nullptr,  // mtp_delegate
-            nullptr,  // arc_content_delegate
-            nullptr,  // arc_documents_provider_delegate
-            nullptr,  // drivefs_delegate
-            nullptr,  // smbfs_delegate
-            external_mount_points,
-            storage::ExternalMountPoints::GetSystemInstance()));
+    additional_backends->push_back(std::make_unique<ash::FileSystemBackend>(
+        nullptr,  // profile
+        nullptr,  // file_system_provider_delegate
+        nullptr,  // mtp_delegate
+        nullptr,  // arc_content_delegate
+        nullptr,  // arc_documents_provider_delegate
+        nullptr,  // drivefs_delegate
+        nullptr,  // smbfs_delegate
+        external_mount_points,
+        storage::ExternalMountPoints::GetSystemInstance()));
   }
 };
 
@@ -119,9 +117,7 @@ class PlatformUtilTestBase : public BrowserWithTestWindowTest {
     JSONStringValueDeserializer json_string_deserializer(json_manifest);
     std::unique_ptr<base::Value> manifest =
         json_string_deserializer.Deserialize(&error_code, &error);
-    base::DictionaryValue* manifest_dictionary;
-
-    manifest->GetAsDictionary(&manifest_dictionary);
+    base::Value::Dict* manifest_dictionary = manifest->GetIfDict();
     ASSERT_TRUE(manifest_dictionary);
 
     scoped_refptr<extensions::Extension> extension =
@@ -139,19 +135,9 @@ class PlatformUtilTestBase : public BrowserWithTestWindowTest {
     app->intent_filters =
         apps_util::CreateIntentFiltersForChromeApp(extension.get());
     apps.push_back(std::move(app));
-    if (base::FeatureList::IsEnabled(
-            apps::kAppServiceOnAppUpdateWithoutMojom)) {
-      app_service_proxy_->AppRegistryCache().OnApps(
-          std::move(apps), apps::AppType::kChromeApp,
-          /*should_notify_initialized=*/false);
-    } else {
-      std::vector<apps::mojom::AppPtr> mojom_apps;
-      mojom_apps.push_back(apps::ConvertAppToMojomApp(apps[0]));
-      app_service_proxy_->AppRegistryCache().OnApps(
-          std::move(mojom_apps), apps::mojom::AppType::kChromeApp,
-          /*should_notify_initialized=*/false);
-    }
-    app_service_test_.WaitForAppService();
+    app_service_proxy_->AppRegistryCache().OnApps(
+        std::move(apps), apps::AppType::kChromeApp,
+        /*should_notify_initialized=*/false);
   }
 
   void SetUp() override {

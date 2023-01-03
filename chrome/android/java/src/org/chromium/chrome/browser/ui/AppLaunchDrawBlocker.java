@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,12 +76,20 @@ public class AppLaunchDrawBlocker {
     private final Supplier<Boolean> mIsInstantStartEnabledSupplier;
 
     /**
+     * An app draw blocker that takes care of blocking the draw when we are restoring tabs with
+     * Incognito.
+     */
+    private final IncognitoRestoreAppLaunchDrawBlocker mIncognitoRestoreAppLaunchDrawBlocker;
+
+    /**
      * Whether to return false from #onPreDraw of the content view to prevent drawing the browser UI
      * before the tab is ready.
      */
     private boolean mBlockDrawForInitialTab;
     private boolean mBlockDrawForOverviewPage;
+    private boolean mBlockDrawForIncognitoRestore;
     private long mTimeStartedBlockingDrawForInitialTab;
+    private long mTimeStartedBlockingDrawForIncognitoRestore;
 
     /**
      * Constructor for AppLaunchDrawBlocker.
@@ -94,13 +102,17 @@ public class AppLaunchDrawBlocker {
      * @param isTabletSupplier {@link Supplier<Boolean>} for whether the device is a tablet.
      * @param shouldShowTabSwitcherOnStartSupplier {@link Supplier<Boolean>} for whether the tab
      *        switcher should be shown on start.
+     * @param incognitoRestoreAppLaunchDrawBlockerFactory Factory to create
+     *    {@link IncognitoRestoreAppLaunchDrawBlocker}.
      */
     public AppLaunchDrawBlocker(@NonNull ActivityLifecycleDispatcher activityLifecycleDispatcher,
             @NonNull Supplier<View> viewSupplier, @NonNull Supplier<Intent> intentSupplier,
             @NonNull Supplier<Boolean> shouldIgnoreIntentSupplier,
             @NonNull Supplier<Boolean> isTabletSupplier,
             @NonNull Supplier<Boolean> shouldShowTabSwitcherOnStartSupplier,
-            @NonNull Supplier<Boolean> isInstantStartEnabledSupplier) {
+            @NonNull Supplier<Boolean> isInstantStartEnabledSupplier,
+            @NonNull IncognitoRestoreAppLaunchDrawBlockerFactory
+                    incognitoRestoreAppLaunchDrawBlockerFactory) {
         mActivityLifecycleDispatcher = activityLifecycleDispatcher;
         mViewSupplier = viewSupplier;
         mInflationObserver = new InflationObserver() {
@@ -110,6 +122,7 @@ public class AppLaunchDrawBlocker {
             @Override
             public void onPostInflationStartup() {
                 maybeBlockDraw();
+                maybeBlockDrawForIncognitoRestore();
             }
         };
         mActivityLifecycleDispatcher.register(mInflationObserver);
@@ -128,12 +141,16 @@ public class AppLaunchDrawBlocker {
         mIsTabletSupplier = isTabletSupplier;
         mShouldShowOverviewPageOnStartSupplier = shouldShowTabSwitcherOnStartSupplier;
         mIsInstantStartEnabledSupplier = isInstantStartEnabledSupplier;
+        mIncognitoRestoreAppLaunchDrawBlocker = incognitoRestoreAppLaunchDrawBlockerFactory.create(
+                intentSupplier, shouldIgnoreIntentSupplier, activityLifecycleDispatcher,
+                this::onIncognitoRestoreUnblockConditionsFired);
     }
 
     /** Unregister lifecycle observers. */
     public void destroy() {
         mActivityLifecycleDispatcher.unregister(mInflationObserver);
         mActivityLifecycleDispatcher.unregister(mStartStopWithNativeObserver);
+        mIncognitoRestoreAppLaunchDrawBlocker.destroy();
     }
 
     /** Should be called when the initial tab is available. */
@@ -156,11 +173,40 @@ public class AppLaunchDrawBlocker {
         mBlockDrawForOverviewPage = false;
     }
 
+    /**
+     * A method that is passed as a {@link Runnable} to {@link
+     * IncognitoRestoreAppLaunchDrawBlocker}.
+     *
+     * This gets fired when all the conditions needed to unblock the draw from the Incognito restore
+     * are fired.
+     */
+    @VisibleForTesting
+    public void onIncognitoRestoreUnblockConditionsFired() {
+        if (mBlockDrawForIncognitoRestore) {
+            mBlockDrawForIncognitoRestore = false;
+            RecordHistogram.recordTimesHistogram(
+                    "Android.AppLaunch.DurationDrawWasBlocked.OnIncognitoReauth",
+                    SystemClock.elapsedRealtime() - mTimeStartedBlockingDrawForIncognitoRestore);
+        }
+    }
+
     private void writeSearchEngineHadLogoPref() {
         boolean searchEngineHasLogo =
                 TemplateUrlServiceFactory.get().doesDefaultSearchEngineHaveLogo();
         SharedPreferencesManager.getInstance().writeBoolean(
                 ChromePreferenceKeys.APP_LAUNCH_SEARCH_ENGINE_HAD_LOGO, searchEngineHasLogo);
+    }
+
+    /**
+     * Conditionally blocks the draw independently from the other clients for the Incognito restore
+     * use-case.
+     */
+    private void maybeBlockDrawForIncognitoRestore() {
+        if (!mIncognitoRestoreAppLaunchDrawBlocker.shouldBlockDraw()) return;
+        mBlockDrawForIncognitoRestore = true;
+        mTimeStartedBlockingDrawForIncognitoRestore = SystemClock.elapsedRealtime();
+        ViewDrawBlocker.blockViewDrawUntilReady(
+                mViewSupplier.get(), () -> !mBlockDrawForIncognitoRestore);
     }
 
     /** Only block the draw if we believe the initial tab will be the NTP. */
@@ -190,7 +236,6 @@ public class AppLaunchDrawBlocker {
                 tabState, HomepageManager.isHomepageNonNtpPreNative(), singleUrlBarMode);
 
         if (shouldBlockDrawForNtpOnColdStartWithIntent(hasValidIntentUrl, isNtpUrl,
-                    IntentHandler.shouldIntentShowNewTabOmniboxFocused(mIntentSupplier.get()),
                     IncognitoTabLauncher.didCreateIntent(mIntentSupplier.get()),
                     shouldBlockWithoutIntent)) {
             mTimeStartedBlockingDrawForInitialTab = SystemClock.elapsedRealtime();
@@ -218,21 +263,16 @@ public class AppLaunchDrawBlocker {
     /**
      * @param hasValidIntentUrl Whether there is an intent that isn't ignored with a non-empty Url.
      * @param isNtpUrl Whether the intent has NTP Url.
-     * @param shouldShowNewTabOmniboxFocused Whether the intent will open a new tab with omnibox
-     *        focused.
      * @param shouldLaunchIncognitoTab Whether the intent is launching an incognito tab.
      * @param shouldBlockDrawForNtpOnColdStartWithoutIntent Result of
      *        {@link #shouldBlockDrawForNtpOnColdStartWithoutIntent}.
      * @return Whether the View draw should be blocked because the NTP will be shown on cold start.
      */
     private boolean shouldBlockDrawForNtpOnColdStartWithIntent(boolean hasValidIntentUrl,
-            boolean isNtpUrl, boolean shouldShowNewTabOmniboxFocused,
-            boolean shouldLaunchIncognitoTab,
+            boolean isNtpUrl, boolean shouldLaunchIncognitoTab,
             boolean shouldBlockDrawForNtpOnColdStartWithoutIntent) {
         if (hasValidIntentUrl && isNtpUrl) {
-            // TODO(crbug.com/1199374): We should find another solution for focusing on new tab
-            // rather than special casing it here.
-            return !shouldShowNewTabOmniboxFocused && !shouldLaunchIncognitoTab;
+            return !shouldLaunchIncognitoTab;
         } else if (hasValidIntentUrl && !isNtpUrl) {
             return false;
         } else {
@@ -250,8 +290,6 @@ public class AppLaunchDrawBlocker {
      */
     private void recordBlockDrawForInitialTabHistograms(
             boolean isTabRegularNtp, boolean isOverviewShownWithoutInstantStart) {
-        boolean focusedOmnibox =
-                IntentHandler.shouldIntentShowNewTabOmniboxFocused(mIntentSupplier.get());
         long durationDrawBlocked =
                 SystemClock.elapsedRealtime() - mTimeStartedBlockingDrawForInitialTab;
 
@@ -266,8 +304,7 @@ public class AppLaunchDrawBlocker {
 
         @BlockDrawForInitialTabAccuracy
         int enumEntry;
-        boolean shouldBlockDraw =
-                (singleUrlBarNtp && !focusedOmnibox) || isOverviewShownWithoutInstantStart;
+        boolean shouldBlockDraw = singleUrlBarNtp || isOverviewShownWithoutInstantStart;
         if (mBlockDrawForInitialTab || mBlockDrawForOverviewPage) {
             enumEntry = shouldBlockDraw
                     ? BlockDrawForInitialTabAccuracy.BLOCKED_CORRECTLY

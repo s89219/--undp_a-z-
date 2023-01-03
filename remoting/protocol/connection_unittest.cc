@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "remoting/protocol/audio_source.h"
 #include "remoting/protocol/audio_stream.h"
 #include "remoting/protocol/audio_stub.h"
+#include "remoting/protocol/desktop_capturer.h"
 #include "remoting/protocol/fake_session.h"
 #include "remoting/protocol/fake_video_renderer.h"
 #include "remoting/protocol/ice_connection_to_client.h"
@@ -32,7 +33,6 @@
 #include "remoting/protocol/webrtc_connection_to_host.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/webrtc/modules/desktop_capture/desktop_capturer.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
 
 using ::testing::_;
@@ -40,8 +40,7 @@ using ::testing::InvokeWithoutArgs;
 using ::testing::NotNull;
 using ::testing::StrictMock;
 
-namespace remoting {
-namespace protocol {
+namespace remoting::protocol {
 
 namespace {
 
@@ -72,7 +71,7 @@ class MockConnectionToHostEventCallback
                     const TransportRoute& route));
 };
 
-class TestScreenCapturer : public webrtc::DesktopCapturer {
+class TestScreenCapturer : public DesktopCapturer {
  public:
   TestScreenCapturer() = default;
   ~TestScreenCapturer() override = default;
@@ -558,7 +557,7 @@ TEST_P(ConnectionTest, MAYBE_Video) {
 
   std::unique_ptr<VideoStream> video_stream =
       host_connection_->StartVideoStream(
-          "stream", std::make_unique<TestScreenCapturer>());
+          "screen_stream", std::make_unique<TestScreenCapturer>());
 
   // Receive 5 frames.
   for (int i = 0; i < 5; ++i) {
@@ -572,7 +571,7 @@ TEST_P(ConnectionTest, MAYBE_Video) {
 #else
 #define MAYBE_VideoWithSlowSignaling VideoWithSlowSignaling
 #endif
-// Verifies that the VideoStream doesn't loose any video frames while the
+// Verifies that the VideoStream doesn't lose any video frames while the
 // connection is being established.
 TEST_P(ConnectionTest, MAYBE_VideoWithSlowSignaling) {
   // Add signaling delay to slow down connection handshake.
@@ -583,7 +582,7 @@ TEST_P(ConnectionTest, MAYBE_VideoWithSlowSignaling) {
 
   std::unique_ptr<VideoStream> video_stream =
       host_connection_->StartVideoStream(
-          "stream", base::WrapUnique(new TestScreenCapturer()));
+          "screen_stream", base::WrapUnique(new TestScreenCapturer()));
 
   WaitNextVideoFrame();
 }
@@ -615,8 +614,8 @@ TEST_P(ConnectionTest, MAYBE_DestroyOnIncomingMessage) {
 
 // TODO(crbug.com/1146302): Test is flaky.
 TEST_P(ConnectionTest, DISABLED_VideoStats) {
-  // Currently this test only works for WebRTC because for ICE connections stats
-  // are reported by SoftwareVideoRenderer which is not used in this test.
+  // Currently this test only works for WebRTC because ICE connections stats are
+  // reported by SoftwareVideoRenderer which is not used in this test.
   // TODO(sergeyu): Fix this.
   if (!is_using_webrtc())
     return;
@@ -633,7 +632,7 @@ TEST_P(ConnectionTest, DISABLED_VideoStats) {
 
   std::unique_ptr<VideoStream> video_stream =
       host_connection_->StartVideoStream(
-          "stream", std::make_unique<TestScreenCapturer>());
+          "screen_stream", std::make_unique<TestScreenCapturer>());
   video_stream->SetEventTimestampsSource(input_event_timestamps_source);
 
   WaitNextVideoFrame();
@@ -696,7 +695,7 @@ TEST_P(ConnectionTest, DISABLED_FirstCaptureFailed) {
   auto capturer = std::make_unique<TestScreenCapturer>();
   capturer->FailNthFrame(0);
   auto video_stream =
-      host_connection_->StartVideoStream("stream", std::move(capturer));
+      host_connection_->StartVideoStream("screen_stream", std::move(capturer));
 
   WaitNextVideoFrame();
 }
@@ -709,11 +708,10 @@ TEST_P(ConnectionTest, DISABLED_SecondCaptureFailed) {
   auto capturer = std::make_unique<TestScreenCapturer>();
   capturer->FailNthFrame(1);
   auto video_stream =
-      host_connection_->StartVideoStream("stream", std::move(capturer));
+      host_connection_->StartVideoStream("screen_stream", std::move(capturer));
 
   WaitNextVideoFrame();
   WaitNextVideoFrame();
 }
 
-}  // namespace protocol
-}  // namespace remoting
+}  // namespace remoting::protocol

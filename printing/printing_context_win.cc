@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -347,8 +347,9 @@ mojom::ResultCode PrintingContextWin::NewDocument(
   }
 
   // No message loop running in unit tests.
-  DCHECK(!base::CurrentThread::Get() ||
-         !base::CurrentThread::Get()->NestableTasksAllowed());
+  DCHECK(
+      !base::CurrentThread::Get() ||
+      !base::CurrentThread::Get()->ApplicationTasksAllowedInNativeNestedLoop());
 
   // Begin a print job by calling the StartDoc function.
   // NOTE: StartDoc() starts a message loop. That causes a lot of problems with

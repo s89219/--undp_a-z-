@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@ import {
   assertInstanceof,
 } from '../assert.js';
 import * as error from '../error.js';
+import * as expert from '../expert.js';
 import {Point} from '../geometry.js';
 import {ChromeHelper} from '../mojo/chrome_helper.js';
 import {ScreenState} from '../mojo/type.js';
@@ -34,7 +35,6 @@ import {windowController} from '../window_controller.js';
 
 import {EventListener, OperationScheduler} from './camera_operation.js';
 import {VideoCaptureCandidate} from './capture_candidate.js';
-import {DeviceInfoUpdater} from './device_info_updater.js';
 import {Preview} from './preview.js';
 import {
   CameraConfig,
@@ -99,8 +99,6 @@ export class CameraManager implements EventListener {
 
   private watchdog: ResumeStateWatchdog|null = null;
 
-  private readonly infoUpdater = new DeviceInfoUpdater();
-
   private readonly cameraUIs: CameraUI[] = [];
 
   private readonly preview: Preview;
@@ -115,7 +113,6 @@ export class CameraManager implements EventListener {
     });
 
     this.scheduler = new OperationScheduler(
-        this.infoUpdater,
         this,
         this.preview,
         defaultFacing,
@@ -142,6 +139,17 @@ export class CameraManager implements EventListener {
         this.reconfigure();
       }
     });
+
+    expert.addObserver(
+        expert.ExpertOption.SHOW_ALL_RESOLUTIONS,
+        async () => {
+          // Rebuilds the options to adapt to the new state. Then, reconfigure
+          // the stream so that it will apply the new resolution order. At last,
+          // update the checked status of the resolution options.
+          this.scheduler.reconfigurer.capturePreferrer.buildOptions();
+          await this.tryReconfigure(() => {/* Do nothing */});
+        },
+    );
   }
 
   getCameraInfo(): CameraInfo {
@@ -172,6 +180,10 @@ export class CameraManager implements EventListener {
   getPreviewResolution(): Resolution {
     const {video} = this.getPreviewVideo();
     const {videoWidth, videoHeight} = video;
+    if (this.useSquareResolution()) {
+      const size = Math.min(videoWidth, videoHeight);
+      return new Resolution(size, size);
+    }
     return new Resolution(videoWidth, videoHeight);
   }
 
@@ -261,7 +273,6 @@ export class CameraManager implements EventListener {
     };
     const screenState =
         await helper.initScreenStateMonitor(updateScreenOffAuto);
-    updateScreenOffAuto(screenState);
 
     const updateExternalScreen = (hasExternalScreen: boolean) => {
       if (this.hasExternalScreen !== hasExternalScreen) {
@@ -271,7 +282,9 @@ export class CameraManager implements EventListener {
     };
     const hasExternalScreen =
         await helper.initExternalScreenMonitor(updateExternalScreen);
-    updateExternalScreen(hasExternalScreen);
+
+    this.screenOffAuto = screenState === ScreenState.OFF_AUTO;
+    this.hasExternalScreen = hasExternalScreen;
 
     await this.scheduler.initialize(cameraViewUI);
   }
@@ -297,7 +310,7 @@ export class CameraManager implements EventListener {
   switchCamera(): Promise<void>|null {
     const promise = this.tryReconfigure(() => {
       state.set(PerfEvent.CAMERA_SWITCHING, true);
-      const devices = this.infoUpdater.getDevicesInfo();
+      const devices = this.getCameraInfo().devicesInfo;
       let index =
           devices.findIndex((entry) => entry.deviceId === this.getDeviceId());
       if (index === -1) {
@@ -381,6 +394,26 @@ export class CameraManager implements EventListener {
   }
 
   /**
+   * Used when showing all resolutions.
+   */
+  setPrefPhotoResolution(deviceId: string, resolution: Resolution): void {
+    this.setCapturePref(deviceId, () => {
+      this.scheduler.reconfigurer.capturePreferrer.setPrefPhotoResolution(
+          deviceId, resolution);
+    });
+  }
+
+  /**
+   * Used when showing all resolutions.
+   */
+  setPrefVideoResolution(deviceId: string, resolution: Resolution): void {
+    this.setCapturePref(deviceId, () => {
+      this.scheduler.reconfigurer.capturePreferrer.setPrefVideoResolution(
+          deviceId, resolution);
+    });
+  }
+
+  /**
    * Sets fps of constant video recording on currently opened camera and
    * resolution.
    */
@@ -412,7 +445,7 @@ export class CameraManager implements EventListener {
   }
 
   getAspectRatioSet(resolution: Resolution): AspectRatioSet {
-    if (this.preferSquarePhoto()) {
+    if (this.useSquareResolution()) {
       return AspectRatioSet.RATIO_SQUARE;
     }
     return util.toAspectRatioSet(resolution);
@@ -442,9 +475,12 @@ export class CameraManager implements EventListener {
 
   async startCapture(): Promise<[Promise<void>]> {
     this.setCameraAvailable(false);
-    const captureDone = await this.scheduler.startCapture();
-    this.setCameraAvailable(true);
-    return assertExists(captureDone);
+    try {
+      const captureDone = await this.scheduler.startCapture();
+      return assertExists(captureDone);
+    } finally {
+      this.setCameraAvailable(true);
+    }
   }
 
   stopCapture(): void {
@@ -459,7 +495,10 @@ export class CameraManager implements EventListener {
     this.scheduler.toggleVideoRecordingPause();
   }
 
-  preferSquarePhoto(): boolean {
+  useSquareResolution(): boolean {
+    if (!(state.get(Mode.PHOTO) || state.get(Mode.PORTRAIT))) {
+      return false;
+    }
     const deviceId = this.getDeviceId();
     if (deviceId === null) {
       return false;

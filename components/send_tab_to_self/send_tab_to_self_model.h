@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,9 +31,6 @@ class SendTabToSelfModel {
 
   // Returns a vector of entry IDs in the model.
   virtual std::vector<std::string> GetAllGuids() const = 0;
-
-  // Delete all entries.
-  virtual void DeleteAllEntries() = 0;
 
   // Returns a specific entry. Returns null if the entry does not exist.
   virtual const SendTabToSelfEntry* GetEntryByGUID(

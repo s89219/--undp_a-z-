@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -116,6 +116,8 @@ const gfx::VectorIcon* GetVectorIconForMediaAction(MediaSessionAction action) {
     case MediaSessionAction::kHangUp:
     case MediaSessionAction::kRaise:
     case MediaSessionAction::kSetMute:
+    case MediaSessionAction::kPreviousSlide:
+    case MediaSessionAction::kNextSlide:
       NOTREACHED();
       break;
   }
@@ -160,6 +162,8 @@ const std::u16string GetAccessibleNameForMediaAction(
     case MediaSessionAction::kHangUp:
     case MediaSessionAction::kRaise:
     case MediaSessionAction::kSetMute:
+    case MediaSessionAction::kPreviousSlide:
+    case MediaSessionAction::kNextSlide:
       NOTREACHED();
       break;
   }
@@ -500,7 +504,7 @@ void MediaNotificationViewModernImpl::GetAccessibleNodeData(
           IDS_MEDIA_MESSAGE_CENTER_MEDIA_NOTIFICATION_ACCESSIBLE_NAME));
 
   if (!accessible_name_.empty())
-    node_data->SetName(accessible_name_);
+    node_data->SetNameChecked(accessible_name_);
 }
 
 void MediaNotificationViewModernImpl::UpdateWithMediaSessionInfo(

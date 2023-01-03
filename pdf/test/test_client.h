@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,7 +36,7 @@ class TestClient : public PDFEngine::Client {
                                                const char16_t* term,
                                                bool case_sensitive) override;
   bool IsPrintPreview() const override;
-  SkColor GetBackgroundColor() override;
+  SkColor GetBackgroundColor() const override;
   void SetSelectedText(const std::string& selected_text) override;
   void SetLinkUnderCursor(const std::string& link_under_cursor) override;
   bool IsValidLink(const std::string& url) override;

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,11 +12,13 @@
 #include <sys/ioctl.h>
 
 #include "base/callback_helpers.h"
+#include "base/containers/fixed_flat_set.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/sequenced_task_runner.h"
 #include "device/gamepad/dualshock4_controller.h"
 #include "device/gamepad/gamepad_data_fetcher.h"
 #include "device/gamepad/hid_haptic_gamepad.h"
@@ -75,8 +77,9 @@ bool HasRumbleCapability(const base::ScopedFD& fd) {
   unsigned long evbit[BITS_TO_LONGS(EV_MAX)];
   unsigned long ffbit[BITS_TO_LONGS(FF_MAX)];
 
-  if (HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(0, EV_MAX), evbit)) < 0 ||
-      HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(EV_FF, FF_MAX), ffbit)) < 0) {
+  if (HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(0, sizeof(evbit)), evbit)) < 0 ||
+      HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(EV_FF, sizeof(ffbit)), ffbit)) <
+          0) {
     return false;
   }
 
@@ -99,8 +102,9 @@ size_t CheckSpecialKeys(const base::ScopedFD& fd,
   size_t found_special_keys = 0;
 
   has_special_key->clear();
-  if (HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(0, EV_MAX), evbit)) < 0 ||
-      HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(EV_KEY, KEY_MAX), keybit)) < 0) {
+  if (HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(0, sizeof(evbit)), evbit)) < 0 ||
+      HANDLE_EINTR(ioctl(fd.get(), EVIOCGBIT(EV_KEY, sizeof(keybit)), keybit)) <
+          0) {
     return 0;
   }
 
@@ -244,7 +248,7 @@ GamepadDeviceLinux::GamepadDeviceLinux(
     : syspath_prefix_(syspath_prefix),
       button_indices_used_(Gamepad::kButtonsLengthCap, false),
       dbus_runner_(dbus_runner),
-      polling_runner_(base::SequencedTaskRunnerHandle::Get()) {}
+      polling_runner_(base::SequencedTaskRunner::GetCurrentDefault()) {}
 
 GamepadDeviceLinux::~GamepadDeviceLinux() = default;
 
@@ -260,12 +264,19 @@ bool GamepadDeviceLinux::IsEmpty() const {
 }
 
 bool GamepadDeviceLinux::SupportsVibration() const {
+  static constexpr auto kNoVibration = base::MakeFixedFlatSet<GamepadId>({
+      // The Xbox Adaptive Controller reports force feedback capability, but
+      // the device itself does not have any vibration actuators.
+      GamepadId::kMicrosoftProduct0b0a,
+      // SteelSeries Stratus Duo is XInput but does not support vibration.
+      GamepadId::kSteelSeriesProduct1430,
+      GamepadId::kSteelSeriesProduct1431,
+  });
+
   if (dualshock4_ || xbox_hid_ || hid_haptics_)
     return true;
 
-  // The Xbox Adaptive Controller reports force feedback capability, but the
-  // device itself does not have any vibration actuators.
-  if (gamepad_id_ == GamepadId::kMicrosoftProduct0b0a)
+  if (kNoVibration.contains(gamepad_id_))
     return false;
 
   return supports_force_feedback_ && evdev_fd_.is_valid();
@@ -647,28 +658,28 @@ void GamepadDeviceLinux::CloseHidrawNode() {
   hidraw_fd_.reset();
 }
 
-void GamepadDeviceLinux::SetVibration(double strong_magnitude,
-                                      double weak_magnitude) {
+void GamepadDeviceLinux::SetVibration(
+    mojom::GamepadEffectParametersPtr params) {
   DCHECK(polling_runner_->RunsTasksInCurrentSequence());
   if (dualshock4_) {
-    dualshock4_->SetVibration(strong_magnitude, weak_magnitude);
+    dualshock4_->SetVibration(std::move(params));
     return;
   }
 
   if (xbox_hid_) {
-    xbox_hid_->SetVibration(strong_magnitude, weak_magnitude);
+    xbox_hid_->SetVibration(std::move(params));
     return;
   }
 
   if (hid_haptics_) {
-    hid_haptics_->SetVibration(strong_magnitude, weak_magnitude);
+    hid_haptics_->SetVibration(std::move(params));
     return;
   }
 
   uint16_t strong_magnitude_scaled =
-      static_cast<uint16_t>(strong_magnitude * kRumbleMagnitudeMax);
+      static_cast<uint16_t>(params->strong_magnitude * kRumbleMagnitudeMax);
   uint16_t weak_magnitude_scaled =
-      static_cast<uint16_t>(weak_magnitude * kRumbleMagnitudeMax);
+      static_cast<uint16_t>(params->weak_magnitude * kRumbleMagnitudeMax);
 
   // AbstractHapticGamepad will call SetZeroVibration when the effect is
   // complete, so we don't need to set the duration here except to make sure it

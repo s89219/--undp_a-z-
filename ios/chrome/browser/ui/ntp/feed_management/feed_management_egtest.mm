@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,13 @@
 #import <XCTest/XCTest.h>
 
 #import "ios/chrome/browser/ntp/features.h"
+#import "ios/chrome/browser/signin/fake_system_identity.h"
 #import "ios/chrome/browser/ui/authentication/signin_earl_grey.h"
 #import "ios/chrome/browser/ui/authentication/signin_earl_grey_ui_test_util.h"
-#include "ios/chrome/grit/ios_strings.h"
+#import "ios/chrome/grit/ios_strings.h"
 #import "ios/chrome/test/earl_grey/chrome_earl_grey.h"
 #import "ios/chrome/test/earl_grey/chrome_matchers.h"
 #import "ios/chrome/test/earl_grey/chrome_test_case.h"
-#import "ios/public/provider/chrome/browser/signin/fake_chrome_identity.h"
 #import "ios/testing/earl_grey/earl_grey_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -55,6 +55,15 @@ void DismissSignOut() {
   }
 }
 
+void SelectFeedMenu() {
+  [[[EarlGrey
+      selectElementWithMatcher:grey_allOf(FeedMenuButton(),
+                                          grey_sufficientlyVisible(), nil)]
+         usingSearchAction:grey_scrollInDirection(kGREYDirectionDown, 100.0f)
+      onElementWithMatcher:chrome_test_util::NTPCollectionView()]
+      performAction:grey_tap()];
+}
+
 }  // namespace
 
 @interface FeedManagementTestCase : ChromeTestCase
@@ -63,14 +72,13 @@ void DismissSignOut() {
 @implementation FeedManagementTestCase
 
 - (AppLaunchConfiguration)appConfigurationForTestCase {
-  AppLaunchConfiguration config;
+  AppLaunchConfiguration config = [super appConfigurationForTestCase];
   config.features_enabled.push_back(kEnableWebChannels);
   return config;
 }
 
 - (void)testSignedOutOpenAndCloseFeedMenu {
-  [[EarlGrey selectElementWithMatcher:FeedMenuButton()]
-      performAction:grey_tap()];
+  SelectFeedMenu();
 
   [[EarlGrey selectElementWithMatcher:TurnOffFeedMenuItem()]
       assertWithMatcher:grey_notNil()];
@@ -91,12 +99,11 @@ void DismissSignOut() {
 #endif
 - (void)MAYBE_testSignedInOpenAndCloseFeedMenu {
   // Sign into a fake identity.
-  FakeChromeIdentity* fakeIdentity1 = [FakeChromeIdentity fakeIdentity1];
+  FakeSystemIdentity* fakeIdentity1 = [FakeSystemIdentity fakeIdentity1];
   [SigninEarlGrey addFakeIdentity:fakeIdentity1];
   [SigninEarlGreyUI signinWithFakeIdentity:fakeIdentity1];
 
-  [[EarlGrey selectElementWithMatcher:FeedMenuButton()]
-      performAction:grey_tap()];
+  SelectFeedMenu();
 
   [[EarlGrey selectElementWithMatcher:ManageFeedMenuItem()]
       assertWithMatcher:grey_notNil()];
@@ -117,12 +124,11 @@ void DismissSignOut() {
 #endif
 - (void)MAYBE_testOpenFeedManagementSurface {
   // Sign into a fake identity.
-  FakeChromeIdentity* fakeIdentity1 = [FakeChromeIdentity fakeIdentity1];
+  FakeSystemIdentity* fakeIdentity1 = [FakeSystemIdentity fakeIdentity1];
   [SigninEarlGrey addFakeIdentity:fakeIdentity1];
   [SigninEarlGreyUI signinWithFakeIdentity:fakeIdentity1];
 
-  [[EarlGrey selectElementWithMatcher:FeedMenuButton()]
-      performAction:grey_tap()];
+  SelectFeedMenu();
   [[EarlGrey selectElementWithMatcher:ManageFeedMenuItem()]
       performAction:grey_tap()];
 

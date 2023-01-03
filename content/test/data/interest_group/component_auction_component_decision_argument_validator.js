@@ -1,21 +1,23 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 function scoreAd(adMetadata, bid, auctionConfig, trustedScoringSignals,
-                 browserSignals) {
+                 browserSignals, directFromSellerSignals) {
   validateAdMetadata(adMetadata);
   validateBid(bid);
   validateAuctionConfig(auctionConfig);
   validateTrustedScoringSignals(trustedScoringSignals);
   validateBrowserSignals(browserSignals, /*isScoreAd=*/true);
+  validateDirectFromSellerSignals(directFromSellerSignals);
   return {desirability: 13, allowComponentAuction: true,
           bid:42, ad:['Replaced metadata']};
 }
 
-function reportResult(auctionConfig, browserSignals) {
+function reportResult(auctionConfig, browserSignals, directFromSellerSignals) {
   validateAuctionConfig(auctionConfig);
   validateBrowserSignals(browserSignals, /*isScoreAd=*/false);
+  validateDirectFromSellerSignals(directFromSellerSignals);
 
   sendReportTo(auctionConfig.seller + '/echo?report_component_seller');
   return ['component seller signals for winner'];
@@ -36,6 +38,11 @@ function validateBid(bid) {
 }
 
 function validateAuctionConfig(auctionConfig) {
+  if (Object.keys(auctionConfig).length !== 10) {
+    throw 'Wrong number of auctionConfig fields ' +
+        JSON.stringify(auctionConfig);
+  }
+
   if (!auctionConfig.seller.includes('d.test'))
     throw 'Wrong seller ' + auctionConfig.seller;
 
@@ -55,6 +62,8 @@ function validateAuctionConfig(auctionConfig) {
       !auctionConfig.interestGroupBuyers[0].startsWith('https://a.test')) {
     throw 'Wrong interestGroupBuyers ' + auctionConfig.interestGroupBuyers;
   }
+  const buyerOrigin = auctionConfig.interestGroupBuyers[0];
+
   // If auctionSignals is passed as a JSON string instead of an object,
   // stringify() will wrap it in another layer of quotes, causing the test to
   // fail.
@@ -66,15 +75,26 @@ function validateAuctionConfig(auctionConfig) {
     throw 'Wrong sellerSignals ' + auctionConfig.sellerSignalsJson;
   if (auctionConfig.sellerTimeout !== 200)
     throw 'Wrong sellerTimeout ' + auctionConfig.sellerTimeout;
-  const perBuyerSignalsJson = JSON.stringify(auctionConfig.perBuyerSignals);
-  if (!perBuyerSignalsJson.includes('a.test') ||
-      !perBuyerSignalsJson.includes('["component buyer signals"]')) {
-    throw 'Wrong perBuyerSignals ' + perBuyerSignalsJson;
+
+  if (JSON.stringify(auctionConfig.perBuyerSignals[buyerOrigin]) !==
+          '["component buyer signals"]') {
+    throw 'Wrong perBuyerSignals ' +
+        JSON.stringify(auctionConfig.perBuyerSignals);
   }
-  const perBuyerTimeoutsJson = JSON.stringify(auctionConfig.perBuyerTimeouts);
-  if (!perBuyerTimeoutsJson.includes('a.test') ||
-      !perBuyerTimeoutsJson.includes('200')) {
-    throw 'Wrong perBuyerTimeouts ' + perBuyerTimeoutsJson;
+
+  if (auctionConfig.perBuyerTimeouts[buyerOrigin] !== 200) {
+    throw 'Wrong perBuyerTimeouts ' +
+        JSON.stringify(auctionConfig.perBuyerTimeouts);
+  }
+
+  const perBuyerPrioritySignals = auctionConfig.perBuyerPrioritySignals;
+  if (Object.keys(perBuyerPrioritySignals).length !== 2 ||
+      JSON.stringify(perBuyerPrioritySignals[buyerOrigin]) !==
+         '{"bar":1}' ||
+      JSON.stringify(perBuyerPrioritySignals['*']) !==
+         '{"BaZ":-2}') {
+    throw 'Wrong perBuyerPrioritySignals ' +
+        JSON.stringify(perBuyerPrioritySignals);
   }
 
   if ('componentAuctions' in auctionConfig) {
@@ -142,5 +162,22 @@ function validateBrowserSignals(browserSignals, isScoreAd) {
         JSON.stringify(browserSignals.topLevelSellerSignals);
     if (topLevelSellerSignals !== '["top-level seller signals for winner"]')
       throw 'Wrong topLevelSellerSignals ' + topLevelSellerSignals;
+  }
+}
+
+function validateDirectFromSellerSignals(directFromSellerSignals) {
+  const sellerSignalsJSON =
+      JSON.stringify(directFromSellerSignals.sellerSignals);
+  if (sellerSignalsJSON !==
+      '{"from":"component","json":"for","the":["seller"]}') {
+    throw 'Wrong directFromSellerSignals.sellerSignals ' +
+        sellerSignalsJSON;
+  }
+  const auctionSignalsJSON =
+      JSON.stringify(directFromSellerSignals.auctionSignals);
+  if (auctionSignalsJSON !==
+      '{"from":"component","json":"for","all":["parties"]}') {
+    throw 'Wrong directFromSellerSignals.auctionSignals ' +
+        auctionSignalsJSON;
   }
 }

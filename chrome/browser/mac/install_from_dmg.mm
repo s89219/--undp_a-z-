@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -299,7 +299,7 @@ bool ShouldInstallDialog() {
 
   NSAlert* alert = [[[NSAlert alloc] init] autorelease];
 
-  [alert setAlertStyle:NSInformationalAlertStyle];
+  [alert setAlertStyle:NSAlertStyleInformational];
   [alert setMessageText:title];
   [alert setInformativeText:prompt];
   [alert addButtonWithTitle:yes];
@@ -311,16 +311,17 @@ bool ShouldInstallDialog() {
   return result == NSAlertFirstButtonReturn;
 }
 
-// Potentially shows an authorization dialog to request authentication to
-// copy.  If application_directory appears to be unwritable, attempts to
-// obtain authorization, which may result in the display of the dialog.
-// Returns NULL if authorization is not performed because it does not appear
-// to be necessary because the user has permission to write to
-// application_directory.  Returns NULL if authorization fails.
-AuthorizationRef MaybeShowAuthorizationDialog(NSString* application_directory) {
-  NSFileManager* file_manager = [NSFileManager defaultManager];
-  if ([file_manager isWritableFileAtPath:application_directory]) {
-    return NULL;
+// Potentially shows an authorization dialog to request authentication to copy.
+// If application_directory appears to be unwritable, attempts to obtain
+// authorization, which may result in the display of the dialog. Returns null if
+// authorization is not performed because it does not appear to be necessary
+// because the user has permission to write to application_directory. Returns
+// null if authorization fails.
+base::mac::ScopedAuthorizationRef MaybeShowAuthorizationDialog(
+    NSString* application_directory) {
+  if ([NSFileManager.defaultManager
+          isWritableFileAtPath:application_directory]) {
+    return base::mac::ScopedAuthorizationRef();
   }
 
   NSString* prompt = l10n_util::GetNSStringFWithFixup(
@@ -387,7 +388,7 @@ bool InstallFromDiskImage(AuthorizationRef authorization_arg,
     // ticket.  Inform KeystoneGlue of the new path to use.
     KeystoneGlue* keystone_glue = [KeystoneGlue defaultKeystoneGlue];
     [keystone_glue setAppPath:target_path];
-    [keystone_glue promoteTicketWithAuthorization:authorization.release()
+    [keystone_glue promoteTicketWithAuthorization:std::move(authorization)
                                       synchronous:YES];
   }
 
@@ -437,7 +438,7 @@ void ShowErrorDialog() {
 
   NSAlert* alert = [[[NSAlert alloc] init] autorelease];
 
-  [alert setAlertStyle:NSWarningAlertStyle];
+  [alert setAlertStyle:NSAlertStyleWarning];
   [alert setMessageText:title];
   [alert setInformativeText:error];
   [alert addButtonWithTitle:ok];
@@ -503,9 +504,9 @@ bool MaybeInstallFromDiskImage() {
       return false;
     }
 
-    base::mac::ScopedAuthorizationRef authorization(
-        MaybeShowAuthorizationDialog(application_directory));
-    // authorization will be NULL if it's deemed unnecessary or if
+    base::mac::ScopedAuthorizationRef authorization =
+        MaybeShowAuthorizationDialog(application_directory);
+    // `authorization` will be null if it's deemed unnecessary or if
     // authentication fails.  In either case, try to install without privilege
     // escalation.
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,11 +28,11 @@ ComputePendingSheetTypeAndRenderBlockingBehavior(Element& sheet_owner,
                               ? RenderBlockingBehavior::kInBodyParserBlocking
                               : RenderBlockingBehavior::kBlocking);
   }
-  bool has_render_blocking_attr =
+  bool potentially_render_blocking =
       RuntimeEnabledFeatures::BlockingAttributeEnabled() &&
-      BlockingAttribute::IsExplicitlyRenderBlocking(
-          sheet_owner.FastGetAttribute(html_names::kBlockingAttr));
-  return has_render_blocking_attr
+      IsA<HTMLElement>(sheet_owner) &&
+      To<HTMLElement>(sheet_owner).IsPotentiallyRenderBlocking();
+  return potentially_render_blocking
              ? std::make_pair(PendingSheetType::kDynamicRenderBlocking,
                               RenderBlockingBehavior::kBlocking)
              : std::make_pair(PendingSheetType::kNonBlocking,

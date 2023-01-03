@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #define ASH_AMBIENT_AMBIENT_CONTROLLER_H_
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "ash/ambient/ambient_access_token_controller.h"
@@ -18,8 +19,10 @@
 #include "ash/assistant/model/assistant_interaction_model_observer.h"
 #include "ash/constants/ambient_animation_theme.h"
 #include "ash/public/cpp/ambient/ambient_ui_model.h"
+#include "ash/public/cpp/screen_backlight_observer.h"
 #include "ash/public/cpp/session/session_observer.h"
 #include "ash/session/session_controller_impl.h"
+#include "ash/system/power/backlights_forced_off_setter.h"
 #include "ash/system/power/power_status.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
@@ -30,6 +33,7 @@
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/device/public/mojom/fingerprint.mojom.h"
 #include "services/device/public/mojom/wake_lock.mojom.h"
@@ -44,15 +48,19 @@ class PrefRegistrySimple;
 
 namespace ash {
 
-class AmbientAnimationStaticResources;
+class AmbientAnimationFrameRateController;
+class AmbientAnimationProgressTracker;
 class AmbientBackendController;
 class AmbientContainerView;
+class AmbientMultiScreenMetricsRecorder;
 class AmbientPhotoController;
+class AmbientWeatherController;
 
 // Class to handle all ambient mode functionalities.
 class ASH_EXPORT AmbientController
     : public AmbientUiModelObserver,
       public AmbientBackendModelObserver,
+      public ScreenBacklightObserver,
       public SessionObserver,
       public PowerStatus::Observer,
       public chromeos::PowerManagerClient::Observer,
@@ -73,6 +81,9 @@ class ASH_EXPORT AmbientController
 
   // AmbientUiModelObserver:
   void OnAmbientUiVisibilityChanged(AmbientUiVisibility visibility) override;
+
+  // Screen backlights off observer:
+  void OnBacklightsForcedOffChanged(bool backlights_forced_off) override;
 
   // SessionObserver:
   void OnLockStateChanged(bool locked) override;
@@ -108,10 +119,11 @@ class ASH_EXPORT AmbientController
   void OnInteractionStateChanged(InteractionState interaction_state) override;
 
   void ShowUi();
+  void StartScreenSaverPreview();
   // Ui will be enabled but not shown immediately. If there is no user activity
   // Ui will be shown after a short delay.
   void ShowHiddenUi();
-  void CloseUi();
+  void CloseUi(bool immediately = false);
 
   void ToggleInSessionUi();
 
@@ -127,6 +139,7 @@ class ASH_EXPORT AmbientController
   std::unique_ptr<views::Widget> CreateWidget(aura::Window* container);
 
   AmbientBackendModel* GetAmbientBackendModel();
+  AmbientWeatherModel* GetAmbientWeatherModel();
 
   AmbientBackendController* ambient_backend_controller() {
     return ambient_backend_controller_.get();
@@ -136,9 +149,18 @@ class ASH_EXPORT AmbientController
     return ambient_photo_controller_.get();
   }
 
+  AmbientWeatherController* ambient_weather_controller() {
+    return ambient_weather_controller_.get();
+  }
+
   AmbientUiModel* ambient_ui_model() { return &ambient_ui_model_; }
 
   AmbientViewDelegate* ambient_view_delegate() { return &delegate_; }
+
+  void set_backend_controller_for_testing(
+      std::unique_ptr<AmbientBackendController> backend_controller) {
+    ambient_backend_controller_ = std::move(backend_controller);
+  }
 
  private:
   friend class AmbientAshTestBase;
@@ -160,14 +182,12 @@ class ASH_EXPORT AmbientController
 
   void StartRefreshingImages();
   void StopRefreshingImages();
-  AmbientPhotoConfig CreatePhotoConfigForCurrentTheme();
+  void MaybeStartScreenSaver();
+  AmbientAnimationTheme GetCurrentTheme() const;
 
   // Invoked when the auto-show timer in |InactivityMonitor| gets fired after
   // device being inactive for a specific amount of time.
   void OnAutoShowTimeOut();
-
-  void set_backend_controller_for_testing(
-      std::unique_ptr<AmbientBackendController> photo_client);
 
   // Creates (if not created) and acquires |wake_lock_|. Unbalanced call
   // without subsequently |ReleaseWakeLock| will have no effect.
@@ -184,6 +204,7 @@ class ASH_EXPORT AmbientController
   void OnLockScreenBackgroundTimeoutPrefChanged();
   void OnPhotoRefreshIntervalPrefChanged();
   void OnAnimationThemePrefChanged();
+  void OnAnimationPlaybackSpeedChanged();
 
   AmbientAccessTokenController* access_token_controller_for_testing() {
     return &access_token_controller_;
@@ -195,6 +216,10 @@ class ASH_EXPORT AmbientController
   AmbientAccessTokenController access_token_controller_;
   std::unique_ptr<AmbientBackendController> ambient_backend_controller_;
   std::unique_ptr<AmbientPhotoController> ambient_photo_controller_;
+  std::unique_ptr<AmbientWeatherController> ambient_weather_controller_;
+  std::unique_ptr<AmbientAnimationProgressTracker>
+      ambient_animation_progress_tracker_;
+  std::unique_ptr<AmbientAnimationFrameRateController> frame_rate_controller_;
 
   // Monitors the device inactivity and controls the auto-show of ambient.
   base::OneShotTimer inactivity_timer_;
@@ -215,6 +240,9 @@ class ASH_EXPORT AmbientController
       power_manager_client_observer_{this};
   base::ScopedObservation<ui::UserActivityDetector, ui::UserActivityObserver>
       user_activity_observer_{this};
+
+  base::ScopedObservation<BacklightsForcedOffSetter, ScreenBacklightObserver>
+      backlights_forced_off_observation_{this};
 
   // Observes user profile prefs for ambient.
   std::unique_ptr<PrefChangeRegistrar> pref_change_registrar_;
@@ -237,17 +265,14 @@ class ASH_EXPORT AmbientController
   // called. Used to prevent Ambient mode starting after screen is off.
   bool is_screen_off_ = false;
 
-  // Transient location to hold an animation's static resources while the
-  // model is being buffered with an initial set of topics. Once the animation
-  // is ready to be rendered, this gets transferred to an AmbientAnimationView.
-  //
-  // Null if the slideshow theme is active.
-  std::unique_ptr<AmbientAnimationStaticResources>
-      pending_animation_static_resources_;
+  bool close_widgets_immediately_ = false;
 
   // Not set until the AmbientAnimationTheme is initially read from pref
   // storage when ambient mode is enabled.
   absl::optional<AmbientAnimationTheme> current_theme_from_pref_;
+
+  std::unique_ptr<AmbientMultiScreenMetricsRecorder>
+      multi_screen_metrics_recorder_;
 
   base::WeakPtrFactory<AmbientController> weak_ptr_factory_{this};
 };

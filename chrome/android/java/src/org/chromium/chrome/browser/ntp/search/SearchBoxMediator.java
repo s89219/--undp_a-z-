@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -87,7 +87,7 @@ class SearchBoxMediator
     public void onFinishNativeInitialization() {
         mAssistantVoiceSearchService = new AssistantVoiceSearchService(mContext,
                 ExternalAuthUtils.getInstance(), TemplateUrlServiceFactory.get(),
-                GSAState.getInstance(mContext), this, SharedPreferencesManager.getInstance(),
+                GSAState.getInstance(), this, SharedPreferencesManager.getInstance(),
                 IdentityServicesProvider.get().getIdentityManager(
                         Profile.getLastUsedRegularProfile()),
                 AccountManagerFacadeProvider.getInstance());
@@ -175,10 +175,6 @@ class SearchBoxMediator
 
     void setEndPadding(int endPadding) {
         mModel.set(SearchBoxProperties.SEARCH_BOX_END_PADDING, endPadding);
-    }
-
-    void setTextSize(float textSize) {
-        mModel.set(SearchBoxProperties.SEARCH_TEXT_SIZE, textSize);
     }
 
     void setTextViewTranslationX(float translationX) {

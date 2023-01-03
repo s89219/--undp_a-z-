@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,7 @@
 #include "third_party/webrtc/modules/desktop_capture/linux/wayland/scoped_glib.h"
 #include "third_party/webrtc/modules/desktop_capture/linux/wayland/xdg_desktop_portal_utils.h"
 
-namespace remoting {
-namespace xdg_portal {
+namespace remoting::xdg_portal {
 
 using webrtc::Scoped;
 
@@ -125,46 +124,24 @@ void RemoteDesktopPortalInjector::InjectKeyPress(int code,
   g_variant_builder_init(&builder, G_VARIANT_TYPE_VARDICT);
   Scoped<GError> error;
   VLOG(6) << "session handle: " << session_handle_;
-  g_dbus_proxy_call(proxy_,
-                    is_code ? "NotifyKeyboardKeycode" : "NotifyKeyboardKeysym",
-                    g_variant_new("(oa{sv}iu)", session_handle_.c_str(),
-                                  &builder, code, pressed),
-                    G_DBUS_CALL_FLAGS_NONE, /*timeout=*/-1, cancellable_,
-                    NotifyKeyboardDone, this);
+  g_dbus_proxy_call_sync(
+      proxy_, is_code ? "NotifyKeyboardKeycode" : "NotifyKeyboardKeysym",
+      g_variant_new("(oa{sv}iu)", session_handle_.c_str(), &builder, code,
+                    pressed),
+      G_DBUS_CALL_FLAGS_NONE, /*timeout=*/-1, cancellable_, error.receive());
+  if (error.get()) {
+    LOG(ERROR) << "Failed to inject key press";
+  }
 }
 
 void RemoteDesktopPortalInjector::SetSessionDetails(
     webrtc::xdg_portal::SessionDetails session_details) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   HOST_LOG << "Desktop portal session details received";
-  DCHECK(session_details.proxy);
-  DCHECK(session_details.cancellable);
-  DCHECK(!session_details.session_handle.empty());
-  DCHECK(session_details.pipewire_stream_node_id);
   proxy_ = session_details.proxy;
   cancellable_ = session_details.cancellable;
   session_handle_ = session_details.session_handle;
   pipewire_stream_node_id_ = session_details.pipewire_stream_node_id;
 }
 
-// static
-void RemoteDesktopPortalInjector::NotifyKeyboardDone(GObject* gobject,
-                                                     GAsyncResult* result,
-                                                     gpointer user_data) {
-  RemoteDesktopPortalInjector* that =
-      static_cast<RemoteDesktopPortalInjector*>(user_data);
-  DCHECK(that);
-  DCHECK_CALLED_ON_VALID_SEQUENCE(that->sequence_checker_);
-  Scoped<GError> error;
-  Scoped<GVariant> variant(
-      g_dbus_proxy_call_finish(that->proxy_, result, error.receive()));
-  if (!variant) {
-    LOG(ERROR) << "Failed to notify keyboard";
-    if (error.get()) {
-      LOG(ERROR) << "Failed to press/release a key, error: " << error->message;
-    }
-  }
-}
-
-}  // namespace xdg_portal
-}  // namespace remoting
+}  // namespace remoting::xdg_portal

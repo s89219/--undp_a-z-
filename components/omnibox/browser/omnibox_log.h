@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 
 #include <string>
 
+#include "base/memory/raw_ref.h"
 #include "base/time/time.h"
 #include "components/omnibox/browser/autocomplete_provider.h"
 #include "components/omnibox/browser/omnibox_triggered_feature_service.h"
@@ -39,7 +40,8 @@ struct OmniboxLog {
              size_t completed_length,
              base::TimeDelta elapsed_time_since_last_change_to_default_match,
              const AutocompleteResult& result,
-             const GURL& destination_url);
+             const GURL& destination_url,
+             bool is_incognito);
   ~OmniboxLog();
 
   // The user's input text in the omnibox.
@@ -108,7 +110,7 @@ struct OmniboxLog {
   base::TimeDelta elapsed_time_since_last_change_to_default_match;
 
   // Result set.
-  const AutocompleteResult& result;
+  const raw_ref<const AutocompleteResult> result;
 
   // Diagnostic information from providers.  See
   // AutocompleteController::AddProviderAndTriggeringLogs() and
@@ -127,6 +129,10 @@ struct OmniboxLog {
   // destination URL within |result| as the match URLs are computed to add
   // additional data from the client.
   GURL final_destination_url;
+
+  // Whether the item selection happened on an off-the-record/incognito profile.
+  // This is used to disable logging of scoring signals in incognito mode.
+  bool is_incognito;
 };
 
 #endif  // COMPONENTS_OMNIBOX_BROWSER_OMNIBOX_LOG_H_

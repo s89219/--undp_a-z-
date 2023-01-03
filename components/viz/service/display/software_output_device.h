@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "components/viz/service/display/software_output_device_client.h"
 #include "components/viz/service/viz_service_export.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "ui/gfx/frame_data.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/vector2d.h"
@@ -75,7 +76,8 @@ class VIZ_SERVICE_EXPORT SoftwareOutputDevice {
   // immediately run |swap_ack_callback| via PostTask. If swap isn't synchronous
   // this can be overriden so that |swap_ack_callback| is run after swap
   // completes.
-  virtual void OnSwapBuffers(SwapBuffersCallback swap_ack_callback);
+  virtual void OnSwapBuffers(SwapBuffersCallback swap_ack_callback,
+                             gfx::FrameData data);
 
   virtual int MaxFramesPending() const;
 

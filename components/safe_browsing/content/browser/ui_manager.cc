@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -235,6 +235,10 @@ std::string SafeBrowsingUIManager::GetThreatTypeStringForInterstitial(
       return "UNWANTED_SOFTWARE";
     case safe_browsing::SB_THREAT_TYPE_BILLING:
       return "THREAT_TYPE_UNSPECIFIED";
+    case safe_browsing::SB_THREAT_TYPE_MANAGED_POLICY_WARN:
+      return "MANAGED_POLICY_WARN";
+    case safe_browsing::SB_THREAT_TYPE_MANAGED_POLICY_BLOCK:
+      return "MANAGED_POLICY_BLOCK";
     case safe_browsing::SB_THREAT_TYPE_UNUSED:
     case safe_browsing::SB_THREAT_TYPE_SAFE:
     case safe_browsing::SB_THREAT_TYPE_URL_BINARY_MALWARE:
@@ -255,7 +259,6 @@ std::string SafeBrowsingUIManager::GetThreatTypeStringForInterstitial(
     case safe_browsing::SB_THREAT_TYPE_ENTERPRISE_PASSWORD_REUSE:
     case safe_browsing::SB_THREAT_TYPE_APK_DOWNLOAD:
     case safe_browsing::SB_THREAT_TYPE_HIGH_CONFIDENCE_ALLOWLIST:
-    case safe_browsing::SB_THREAT_TYPE_ACCURACY_TIPS:
       NOTREACHED();
       break;
   }
@@ -289,18 +292,17 @@ const GURL SafeBrowsingUIManager::default_safe_page() const {
 
 // If the user had opted-in to send ThreatDetails, this gets called
 // when the report is ready.
-void SafeBrowsingUIManager::SendSerializedThreatDetails(
+void SafeBrowsingUIManager::SendThreatDetails(
     content::BrowserContext* browser_context,
-    const std::string& serialized) {
+    std::unique_ptr<ClientSafeBrowsingReportRequest> report) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (shut_down_)
     return;
 
-  if (!serialized.empty()) {
-    DVLOG(1) << "Sending serialized threat details.";
-    delegate_->GetPingManager(browser_context)->ReportThreatDetails(serialized);
-  }
+  DVLOG(1) << "Sending threat details.";
+  delegate_->GetPingManager(browser_context)
+      ->ReportThreatDetails(std::move(report));
 }
 
 void SafeBrowsingUIManager::OnBlockingPageDone(
@@ -312,12 +314,23 @@ void SafeBrowsingUIManager::OnBlockingPageDone(
   BaseUIManager::OnBlockingPageDone(resources, proceed, web_contents,
                                     main_frame_url, showed_interstitial);
   if (proceed && !resources.empty()) {
+#if !BUILDFLAG(IS_ANDROID)
+    if (base::FeatureList::IsEnabled((kRealTimeUrlFilteringForEnterprise)) &&
+        resources[0].threat_type ==
+            safe_browsing::SB_THREAT_TYPE_MANAGED_POLICY_WARN) {
+      delegate_->TriggerUrlFilteringInterstitialExtensionEventIfDesired(
+          web_contents, main_frame_url, "ENTERPRISE_WARNED_BYPASS",
+          resources[0].rt_lookup_response);
+      return;
+    }
+#endif
     delegate_->TriggerSecurityInterstitialProceededExtensionEventIfDesired(
         web_contents, main_frame_url,
         GetThreatTypeStringForInterstitial(resources[0].threat_type),
         /*net_error_code=*/0);
   }
 }
+
 // Static.
 GURL SafeBrowsingUIManager::GetMainFrameAllowlistUrlForResourceForTesting(
     const security_interstitials::UnsafeResource& resource) {
@@ -351,5 +364,15 @@ void SafeBrowsingUIManager::
   delegate_->TriggerSecurityInterstitialShownExtensionEventIfDesired(
       web_contents, page_url, reason, net_error_code);
 }
-
+#if !BUILDFLAG(IS_ANDROID)
+void SafeBrowsingUIManager::
+    ForwardUrlFilteringInterstitialExtensionEventToEmbedder(
+        content::WebContents* web_contents,
+        const GURL& page_url,
+        const std::string& threat_type,
+        safe_browsing::RTLookupResponse rt_lookup_response) {
+  delegate_->TriggerUrlFilteringInterstitialExtensionEventIfDesired(
+      web_contents, page_url, threat_type, rt_lookup_response);
+}
+#endif
 }  // namespace safe_browsing

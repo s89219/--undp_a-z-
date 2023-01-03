@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "chrome/browser/apps/app_service/browser_app_instance.h"
 #include "chrome/browser/apps/app_service/browser_app_instance_observer.h"
 #include "chrome/browser/apps/app_service/browser_app_instance_tracker.h"
+#include "chrome/browser/ash/system_web_apps/system_web_app_manager.h"
 #include "chrome/browser/ash/web_applications/crosh_system_web_app_info.h"
 #include "chrome/browser/devtools/devtools_window_testing.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -16,7 +17,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_manager.h"
+#include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_id.h"
@@ -287,35 +288,29 @@ class BrowserAppInstanceTrackerTest : public InProcessBrowserTest {
                            WindowOpenDisposition::NEW_FOREGROUND_TAB);
   }
 
-  web_app::AppId InstallWebApp(const std::string& start_url,
-                               web_app::UserDisplayMode user_display_mode) {
+  web_app::AppId InstallWebApp(
+      const std::string& start_url,
+      web_app::mojom::UserDisplayMode user_display_mode) {
     auto info = std::make_unique<WebAppInstallInfo>();
     info->start_url = GURL(start_url);
     info->user_display_mode = user_display_mode;
     Profile* profile = ProfileManager::GetPrimaryUserProfile();
     auto app_id = web_app::test::InstallWebApp(profile, std::move(info));
-    FlushAppService();
     return app_id;
   }
 
   web_app::AppId InstallWebAppOpeningAsTab(const std::string& start_url) {
-    return InstallWebApp(start_url, web_app::UserDisplayMode::kBrowser);
+    return InstallWebApp(start_url, web_app::mojom::UserDisplayMode::kBrowser);
   }
 
   web_app::AppId InstallWebAppOpeningAsWindow(const std::string& start_url) {
-    return InstallWebApp(start_url, web_app::UserDisplayMode::kStandalone);
+    return InstallWebApp(start_url,
+                         web_app::mojom::UserDisplayMode::kStandalone);
   }
 
   void UninstallWebApp(const web_app::AppId& app_id) {
     Profile* profile = ProfileManager::GetPrimaryUserProfile();
     web_app::test::UninstallWebApp(profile, app_id);
-    FlushAppService();
-  }
-
-  void FlushAppService() {
-    Profile* profile = ProfileManager::GetPrimaryUserProfile();
-    apps::AppServiceProxyFactory::GetForProfile(profile)
-        ->FlushMojoCallsForTesting();
   }
 
   uint64_t GetId(content::WebContents* contents) {
@@ -419,10 +414,10 @@ IN_PROC_BROWSER_TEST_F(BrowserAppInstanceTrackerTest, InsertAndCloseTabs) {
     // Close in reverse order.
     int i = browser->tab_strip_model()->GetIndexOfWebContents(tab_app4);
     browser->tab_strip_model()->CloseWebContentsAt(
-        i, TabStripModel::CLOSE_USER_GESTURE);
+        i, TabCloseTypes::CLOSE_USER_GESTURE);
     i = browser->tab_strip_model()->GetIndexOfWebContents(tab_app3);
     browser->tab_strip_model()->CloseWebContentsAt(
-        i, TabStripModel::CLOSE_USER_GESTURE);
+        i, TabCloseTypes::CLOSE_USER_GESTURE);
 
     recorder.Verify({
         // tab 4 opened: no events for tab 3 as it has no app
@@ -718,10 +713,8 @@ IN_PROC_BROWSER_TEST_F(BrowserAppInstanceTrackerTest, WindowedWebApp) {
 IN_PROC_BROWSER_TEST_F(BrowserAppInstanceTrackerTest, TabbedSystemWebApp) {
   // Make sure we can use crosh.
   Profile* profile = ProfileManager::GetPrimaryUserProfile();
-  DCHECK(web_app::WebAppProvider::GetForSystemWebApps(profile));
-  web_app::WebAppProvider::GetForSystemWebApps(profile)
-      ->system_web_app_manager()
-      .InstallSystemAppsForTesting();
+  DCHECK(ash::SystemWebAppManager::Get(profile));
+  ash::SystemWebAppManager::Get(profile)->InstallSystemAppsForTesting();
 
   Browser* browser = nullptr;
   aura::Window* window = nullptr;
@@ -942,7 +935,7 @@ IN_PROC_BROWSER_TEST_F(BrowserAppInstanceTrackerTest, TabDrag) {
   // Attach.
   int dst_index = browser1->tab_strip_model()->count();
   browser1->tab_strip_model()->InsertWebContentsAt(
-      dst_index, std::move(detached), TabStripModel::ADD_ACTIVE);
+      dst_index, std::move(detached), AddTabTypes::ADD_ACTIVE);
   recorder.Verify({
       // background tab in the dragged-from browser gets activated when the
       // active tab is detached
@@ -996,7 +989,7 @@ IN_PROC_BROWSER_TEST_F(BrowserAppInstanceTrackerTest, MoveTabToAppWindow) {
   // Attach.
   int dst_index = browser2->tab_strip_model()->count();
   browser2->tab_strip_model()->InsertWebContentsAt(
-      dst_index, std::move(detached), TabStripModel::ADD_ACTIVE);
+      dst_index, std::move(detached), AddTabTypes::ADD_ACTIVE);
   recorder.Verify({
       // source browser goes into background when app browser is created
       {"updated", 1, kChromeWindow, "", window1, "", kInactive, false},

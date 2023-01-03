@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,6 @@ import com.google.android.gms.tasks.Task;
 import com.google.android.gms.tasks.TaskCompletionSource;
 
 import org.chromium.content_public.browser.WebAuthenticationDelegate;
-import org.chromium.content_public.browser.WebAuthnCredentialDetails;
 
 import java.util.List;
 
@@ -337,8 +336,8 @@ public final class Fido2ApiCall extends GoogleApi<ApiOptions.NoOptions> {
 
         @Override
         public int getMinApkVersion() {
-            // This minimum should be moot because it's enforced in `Fido2ApiHandler`.
-            return Fido2ApiHandler.GMSCORE_MIN_VERSION;
+            // This minimum should be moot because it's enforced in `AuthenticatorImpl`.
+            return AuthenticatorImpl.GMSCORE_MIN_VERSION;
         }
 
         public static class Builder

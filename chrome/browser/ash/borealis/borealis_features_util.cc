@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
-#include "chromeos/system/statistics_provider.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "crypto/sha2.h"
 #include "third_party/re2/src/re2/re2.h"
 
@@ -53,10 +53,10 @@ std::string GetBoardName() {
 // Returns the model name of this device (either from its CustomizationId or by
 // parsing its hardware class). Returns "" if it fails.
 std::string GetModelName() {
-  std::string ret;
-  if (chromeos::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
-          chromeos::system::kCustomizationIdKey, &ret)) {
-    return ret;
+  if (const absl::optional<base::StringPiece> ret =
+          ash::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
+              ash::system::kCustomizationIdKey)) {
+    return std::string(ret.value());
   }
   LOG(WARNING)
       << "CustomizationId unavailable, attempting to parse hardware class";
@@ -64,9 +64,10 @@ std::string GetModelName() {
   // As a fallback when the CustomizationId is not available, we try to parse it
   // out of the hardware class. If The hardware class is unavailable, all bets
   // are off.
-  std::string hardware_class;
-  if (!chromeos::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
-          chromeos::system::kHardwareClassKey, &hardware_class)) {
+  const absl::optional<base::StringPiece> hardware_class_statistic =
+      ash::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
+          ash::system::kHardwareClassKey);
+  if (!hardware_class_statistic) {
     return "";
   }
 
@@ -79,6 +80,7 @@ std::string GetModelName() {
   //
   // Naively searching for the first hyphen is fine until we start caring about
   // models with hyphens in the name.
+  base::StringPiece hardware_class = hardware_class_statistic.value();
   size_t hyphen_pos = hardware_class.find('-');
   if (hyphen_pos != std::string::npos)
     hardware_class = hardware_class.substr(0, hyphen_pos);
@@ -91,7 +93,7 @@ TokenHardwareChecker::Data::Data(std::string token_hash,
                                  std::string board,
                                  std::string model,
                                  std::string cpu,
-                                 int64_t memory)
+                                 uint64_t memory)
     : token_hash(std::move(token_hash)),
       board(std::move(board)),
       model(std::move(model)),
@@ -120,7 +122,7 @@ std::string TokenHardwareChecker::H(std::string input,
   // not to call this method if you're on a thread that disallows blocking.
   base::ScopedBlockingCall sbc(FROM_HERE, base::BlockingType::WILL_BLOCK);
   std::string ret = std::move(input);
-  for (int i = 0; i < kHashIterations; ++i) {
+  for (unsigned i = 0; i < kHashIterations; ++i) {
     std::string raw_sha = crypto::SHA256HashString(ret + salt);
     base::Base64Encode(raw_sha, &ret);
   }
@@ -129,7 +131,7 @@ std::string TokenHardwareChecker::H(std::string input,
 
 void TokenHardwareChecker::GetData(std::string token_hash,
                                    base::OnceCallback<void(Data)> callback) {
-  chromeos::system::StatisticsProvider::GetInstance()
+  ash::system::StatisticsProvider::GetInstance()
       ->ScheduleOnMachineStatisticsLoaded(base::BindOnce(
           [](base::OnceCallback<void(Data)> callback, std::string token_hash) {
             base::ThreadPool::PostTaskAndReplyWithResult(
@@ -176,7 +178,7 @@ bool TokenHardwareChecker::CpuRegexMatches(const std::string& cpu_regex) const {
   return RE2::PartialMatch(token_hardware_.cpu, cpu_regex);
 }
 
-bool TokenHardwareChecker::HasMemory(int64_t mem_bytes) const {
+bool TokenHardwareChecker::HasMemory(uint64_t mem_bytes) const {
   return token_hardware_.memory >= mem_bytes;
 }
 

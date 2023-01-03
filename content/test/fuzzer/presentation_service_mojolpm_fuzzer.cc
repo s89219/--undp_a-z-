@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -224,7 +224,8 @@ void PresentationServiceTestcase::SetUp() {
 
 void PresentationServiceTestcase::SetUpOnUIThread() {
   content::TestRenderFrameHost* render_frame_host =
-      static_cast<content::TestWebContents*>(web_contents())->GetMainFrame();
+      static_cast<content::TestWebContents*>(web_contents())
+          ->GetPrimaryMainFrame();
   render_frame_host->InitializeRenderFrameIfNeeded();
 
   presentation_service_ =

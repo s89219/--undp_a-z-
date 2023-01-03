@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@ import org.chromium.base.Log;
 import org.chromium.base.TraceEvent;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.chrome.browser.SyncFirstSetupCompleteSource;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.signin.services.SigninManager.SignInCallback;
 import org.chromium.chrome.browser.sync.SyncService;
 import org.chromium.components.signin.AccountManagerFacade;
@@ -40,8 +39,8 @@ public class SigninChecker implements AccountTrackerService.Observer {
     private int mNumOfChildAccountChecksDone;
 
     /**
-     * Please use SigninHelperProvider to get {@link SigninChecker} instance instead of creating it
-     * manually.
+     * Please use {@link SigninCheckerProvider} to get {@link SigninChecker} instance instead of
+     * creating it manually.
      */
     public SigninChecker(SigninManager signinManager, AccountTrackerService accountTrackerService) {
         mSigninManager = signinManager;
@@ -111,13 +110,15 @@ public class SigninChecker implements AccountTrackerService.Observer {
                         resigninAfterAccountRename(newAccountName, oldSyncConsent);
                     } else {
                         // Sign out if the current primary account is not renamed
-                        mSigninManager.signOut(SignoutReason.ACCOUNT_REMOVED_FROM_DEVICE);
+                        mSigninManager.runAfterOperationInProgress(() -> {
+                            mSigninManager.signOut(SignoutReason.ACCOUNT_REMOVED_FROM_DEVICE);
+                        });
                     }
                 });
     }
 
     private void resigninAfterAccountRename(String newAccountName, boolean shouldEnableSync) {
-        mSigninManager.signOut(SignoutReason.USER_CLICKED_SIGNOUT_SETTINGS, () -> {
+        mSigninManager.signOut(SignoutReason.ACCOUNT_EMAIL_UPDATED, () -> {
             if (shouldEnableSync) {
                 mSigninManager.signinAndEnableSync(SigninAccessPoint.ACCOUNT_RENAMED,
                         AccountUtils.createAccountFromName(newAccountName), new SignInCallback() {
@@ -144,12 +145,8 @@ public class SigninChecker implements AccountTrackerService.Observer {
     private void onChildAccountStatusReady(boolean isChild, @Nullable Account childAccount) {
         if (isChild) {
             assert childAccount != null;
-            mSigninManager.onFirstRunCheckDone();
             mSigninManager.runAfterOperationInProgress(() -> {
-                final boolean forceSync = !ChromeFeatureList.isEnabled(
-                        ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS);
-                if ((!forceSync && mSigninManager.isSigninAllowed())
-                        || (forceSync && mSigninManager.isSyncOptInAllowed())) {
+                if (mSigninManager.isSigninAllowed()) {
                     Log.d(TAG, "The child account sign-in starts.");
 
                     final SignInCallback signInCallback = new SignInCallback() {
@@ -161,31 +158,9 @@ public class SigninChecker implements AccountTrackerService.Observer {
                         @Override
                         public void onSignInAborted() {}
                     };
-
-                    final SignInCallback signInCallbackForSync = new SignInCallback() {
-                        @Override
-                        public void onSignInComplete() {
-                            final SyncService syncService = SyncService.get();
-                            if (syncService != null) {
-                                syncService.setFirstSetupComplete(
-                                        SyncFirstSetupCompleteSource.BASIC_FLOW);
-                            }
-                            ++mNumOfChildAccountChecksDone;
-                        }
-
-                        @Override
-                        public void onSignInAborted() {}
-                    };
-
                     mSigninManager.wipeSyncUserData(() -> {
                         RecordUserAction.record("Signin_Signin_WipeDataOnChildAccountSignin2");
-                        if (ChromeFeatureList.isEnabled(
-                                    ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS)) {
-                            mSigninManager.signin(childAccount, signInCallback);
-                        } else {
-                            mSigninManager.signinAndEnableSync(SigninAccessPoint.FORCED_SIGNIN,
-                                    childAccount, signInCallbackForSync);
-                        }
+                        mSigninManager.signin(childAccount, signInCallback);
                     });
                     return;
                 }
@@ -200,7 +175,7 @@ public class SigninChecker implements AccountTrackerService.Observer {
      * and updates state accordingly.
      */
     public void onMainActivityStart() {
-        try (TraceEvent ignored = TraceEvent.scoped("SigninHelper.onMainActivityStart")) {
+        try (TraceEvent ignored = TraceEvent.scoped("SigninChecker.onMainActivityStart")) {
             validateAccountSettings();
         }
     }

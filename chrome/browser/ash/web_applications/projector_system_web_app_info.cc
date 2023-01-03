@@ -1,44 +1,32 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/web_applications/projector_system_web_app_info.h"
 
-#include "ash/constants/ash_features.h"
 #include "ash/webui/grit/ash_projector_app_trusted_resources.h"
 #include "ash/webui/projector_app/public/cpp/projector_app_constants.h"
 #include "chrome/browser/ash/web_applications/system_web_app_install_utils.h"
 #include "chrome/browser/ui/ash/projector/projector_utils.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/grit/generated_resources.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/chromeos/styles/cros_styles.h"
-
-namespace {
-
-SkColor GetBgColor(bool use_dark_mode) {
-  return cros_styles::ResolveColor(
-      cros_styles::ColorName::kBgColor, use_dark_mode,
-      base::FeatureList::IsEnabled(
-          ash::features::kSemanticColorsDebugOverride));
-}
-
-}  // namespace
 
 ProjectorSystemWebAppDelegate::ProjectorSystemWebAppDelegate(Profile* profile)
-    : web_app::SystemWebAppDelegate(web_app::SystemAppType::PROJECTOR,
-                                    "Projector",
-                                    GURL(ash::kChromeUITrustedProjectorAppUrl),
-                                    profile) {}
+    : ash::SystemWebAppDelegate(ash::SystemWebAppType::PROJECTOR,
+                                "Projector",
+                                GURL(ash::kChromeUITrustedProjectorUrl),
+                                profile) {}
 
 ProjectorSystemWebAppDelegate::~ProjectorSystemWebAppDelegate() = default;
 
 std::unique_ptr<WebAppInstallInfo>
 ProjectorSystemWebAppDelegate::GetWebAppInfo() const {
   auto info = std::make_unique<WebAppInstallInfo>();
-  info->start_url = GURL(ash::kChromeUITrustedProjectorAppUrl);
-  info->scope = GURL(ash::kChromeUITrustedProjectorAppUrl);
+  info->start_url = GURL(ash::kChromeUITrustedProjectorUrl);
+  info->scope = GURL(ash::kChromeUITrustedProjectorUrl);
 
   info->title = l10n_util::GetStringUTF16(IDS_PROJECTOR_APP_NAME);
 
@@ -64,10 +52,12 @@ ProjectorSystemWebAppDelegate::GetWebAppInfo() const {
       },
       *info);
 
-  info->theme_color = GetBgColor(/*use_dark_mode=*/false);
-  info->dark_mode_theme_color = GetBgColor(/*use_dark_mode=*/true);
+  info->theme_color =
+      web_app::GetDefaultBackgroundColor(/*use_dark_mode=*/false);
+  info->dark_mode_theme_color =
+      web_app::GetDefaultBackgroundColor(/*use_dark_mode=*/true);
   info->display_mode = blink::mojom::DisplayMode::kStandalone;
-  info->user_display_mode = web_app::UserDisplayMode::kStandalone;
+  info->user_display_mode = web_app::mojom::UserDisplayMode::kStandalone;
 
   return info;
 }

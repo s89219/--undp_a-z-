@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,8 @@
 
 #include "base/files/file_path.h"
 #include "base/memory/raw_ptr.h"
+
+class Profile;
 
 namespace extensions {
 
@@ -48,6 +50,13 @@ class InstalledLoader {
   // Allows tests to verify metrics without needing to go through
   // LoadAllExtensions().
   void RecordExtensionsMetricsForTesting();
+
+  // TODO(crbug.com/1383740): Expand to CrOS.
+  // TODO(crbug.com/1383740): Move to another file in
+  // //chrome/browser/extensions.
+  // Returns true for profiles that can use anything other than component
+  // extensions.
+  static bool ProfileCanUseNonComponentExtensions(const Profile* profile);
 
  private:
   // Returns the flags that should be used with Extension::Create() for an

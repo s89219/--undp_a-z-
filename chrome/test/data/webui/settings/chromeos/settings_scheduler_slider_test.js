@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@ import 'chrome://os-settings/chromeos/os_settings.js';
 
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
-import {assertEquals, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 /** @fileoverview Suite of tests for settings-scheduler-slider. */
 suite('SettingsSchedulerSlider', function() {
@@ -40,7 +40,7 @@ suite('SettingsSchedulerSlider', function() {
             type: chrome.settingsPrivate.PrefType.NUMBER,
             value: 120,
           },
-        }
+        },
       },
       settings: {
         clock: {
@@ -50,7 +50,7 @@ suite('SettingsSchedulerSlider', function() {
             value: false,
           },
         },
-      }
+      },
     };
     document.body.appendChild(slider);
     flush();
@@ -61,15 +61,15 @@ suite('SettingsSchedulerSlider', function() {
   test.skip('pref value update time string', function() {
     // Test that the slider time string is updated after the pref is
     // saved.
-    assertTrue(!!slider.$$('#startLabel'));
-    assertTrue(!!slider.$$('#endLabel'));
+    assertTrue(!!slider.shadowRoot.querySelector('#startLabel'));
+    assertTrue(!!slider.shadowRoot.querySelector('#endLabel'));
 
     const getStartTimeString = () => {
-      return slider.$$('#startLabel').innerHTML.trim();
+      return slider.shadowRoot.querySelector('#startLabel').innerHTML.trim();
     };
 
     const getEndTimeString = () => {
-      return slider.$$('#endLabel').innerHTML.trim();
+      return slider.shadowRoot.querySelector('#endLabel').innerHTML.trim();
     };
 
     assertEquals('1:00 AM', getStartTimeString());
@@ -109,15 +109,15 @@ suite('SettingsSchedulerSlider', function() {
   // daylight savings is active.
   test.skip('pref value update aria label', function() {
     // Test that the aria label is updated after the pref is saved.
-    assertTrue(!!slider.$$('#startKnob'));
-    assertTrue(!!slider.$$('#endKnob'));
+    assertTrue(!!slider.shadowRoot.querySelector('#startKnob'));
+    assertTrue(!!slider.shadowRoot.querySelector('#endKnob'));
 
     const getStartTimeAriaLabel = () => {
-      return slider.$$('#startKnob').ariaLabel.trim();
+      return slider.shadowRoot.querySelector('#startKnob').ariaLabel.trim();
     };
 
     const getEndTimeAriaLabel = () => {
-      return slider.$$('#endKnob').ariaLabel.trim();
+      return slider.shadowRoot.querySelector('#endKnob').ariaLabel.trim();
     };
 
     assertEquals(slider.i18n('startTime', '1:00 AM'), getStartTimeAriaLabel());

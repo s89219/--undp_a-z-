@@ -1,17 +1,18 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// clang-format off
-// #import 'chrome://os-settings/strings.m.js';
-// #import 'chrome://resources/cr_components/chromeos/cellular_setup/activation_code_page.m.js';
+import 'chrome://os-settings/strings.m.js';
+import 'chrome://resources/ash/common/cellular_setup/activation_code_page.js';
 
-// #import {flush, Polymer} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-// #import {assertTrue} from '../../../chai_assert.js';
-// #import {FakeMediaDevices} from './fake_media_devices.m.js';
-// #import {FakeBarcodeDetector, FakeImageCapture} from './fake_barcode_detector.m.js';
-// #import {eventToPromise, flushTasks, waitAfterNextRender} from 'chrome://test/test_util.js';
-// clang-format on
+import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
+
+import {assertTrue} from '../../../chromeos/chai_assert.js';
+
+import {FakeBarcodeDetector, FakeImageCapture} from './fake_barcode_detector.js';
+import {FakeMediaDevices} from './fake_media_devices.js';
 
 suite('CrComponentsActivationCodePageTest', function() {
   /** @type {string} */
@@ -29,7 +30,7 @@ suite('CrComponentsActivationCodePageTest', function() {
   let intervalFunction = null;
 
   function flushAsync() {
-    Polymer.dom.flush();
+    flush();
     // Use setTimeout to wait for the next macrotask.
     return new Promise(resolve => setTimeout(resolve));
   }
@@ -53,14 +54,13 @@ suite('CrComponentsActivationCodePageTest', function() {
         FakeBarcodeDetector, FakeImageCapture, setIntervalFunction,
         playVideoFunction, stopStreamFunction);
     document.body.appendChild(activationCodePage);
-    Polymer.dom.flush();
+    await flushAsync();
 
-    mediaDevices = new cellular_setup.FakeMediaDevices();
-    mediaDevices.addDevice();
+    mediaDevices = new FakeMediaDevices();
     activationCodePage.setMediaDevices(mediaDevices);
-    mediaDevices.resolveEnumerateDevices();
-    await waitAfterNextRender(activationCodePage);
-    Polymer.dom.flush();
+    await flushAsync();
+
+    await addMediaDevice();
   });
 
   teardown(function() {
@@ -68,8 +68,25 @@ suite('CrComponentsActivationCodePageTest', function() {
     FakeBarcodeDetector.setShouldFail(false);
   });
 
-  test('UI states', async function() {
+  async function addMediaDevice() {
+    mediaDevices.addDevice();
     await flushAsync();
+
+    await resolveEnumeratedDevicesPromise();
+  }
+
+  async function resolveEnumeratedDevicesPromise() {
+    let resolver;
+    const enumerateDeviceResolvedPromise = new Promise((resolve, reject) => {
+      resolver = resolve;
+    });
+    mediaDevices.resolveEnumerateDevices(function() {
+      resolver();
+    });
+    await enumerateDeviceResolvedPromise;
+  }
+
+  test('UI states', async function() {
     let qrCodeDetectorContainer = activationCodePage.$$('#esimQrCodeDetection');
     const activationCodeContainer =
         activationCodePage.$$('#activationCodeContainer');
@@ -108,7 +125,7 @@ suite('CrComponentsActivationCodePageTest', function() {
     // Click the start scanning button.
     startScanningButton.click();
     mediaDevices.resolveGetUserMedia();
-    await waitAfterNextRender(activationCodePage);
+    await flushAsync();
 
     // The video should be visible and start scanning UI hidden.
     assertFalse(video.hidden);
@@ -117,7 +134,7 @@ suite('CrComponentsActivationCodePageTest', function() {
     assertTrue(switchCameraButton.hidden);
 
     const focusNextButtonPromise =
-        test_util.eventToPromise('focus-default-button', activationCodePage);
+        eventToPromise('focus-default-button', activationCodePage);
 
     // Mock camera scanning a code.
     await intervalFunction();
@@ -126,7 +143,7 @@ suite('CrComponentsActivationCodePageTest', function() {
     // The scanFinishContainer and scanSuccessContainer should now be visible,
     // video, start scanning UI, scanFailureContainer hidden and nextbutton
     // is focused.
-    await Promise.all([focusNextButtonPromise, test_util.flushTasks()]);
+    await Promise.all([focusNextButtonPromise, flushTasks()]);
     assertFalse(scanFinishContainer.hidden);
     assertTrue(startScanningContainer.hidden);
     assertTrue(video.hidden);
@@ -154,8 +171,7 @@ suite('CrComponentsActivationCodePageTest', function() {
 
     // Mock, no media devices present
     mediaDevices.removeDevice();
-    mediaDevices.resolveEnumerateDevices();
-    await waitAfterNextRender(activationCodePage);
+    await resolveEnumeratedDevicesPromise();
 
     // When no camera device is present qrCodeDetector container should
     // not be shown
@@ -165,7 +181,6 @@ suite('CrComponentsActivationCodePageTest', function() {
   });
 
   test('Switch camera button states', async function() {
-    await flushAsync();
     const video = activationCodePage.$$('#video');
     const startScanningButton = activationCodePage.$$('#startScanningButton');
     const switchCameraButton = activationCodePage.$$('#switchCameraButton');
@@ -181,7 +196,7 @@ suite('CrComponentsActivationCodePageTest', function() {
     // Click the start scanning button.
     startScanningButton.click();
     mediaDevices.resolveGetUserMedia();
-    await waitAfterNextRender(activationCodePage);
+    await flushAsync();
 
     // The video should be visible and switch camera button hidden.
     assertFalse(video.hidden);
@@ -189,9 +204,7 @@ suite('CrComponentsActivationCodePageTest', function() {
     assertTrue(mediaDevices.isStreamingUserFacingCamera);
 
     // Add a new video device.
-    mediaDevices.addDevice();
-    mediaDevices.resolveEnumerateDevices();
-    await waitAfterNextRender(activationCodePage);
+    await addMediaDevice();
 
     // The switch camera button should now be visible.
     assertFalse(switchCameraButton.hidden);
@@ -199,7 +212,7 @@ suite('CrComponentsActivationCodePageTest', function() {
 
     switchCameraButton.click();
     mediaDevices.resolveGetUserMedia();
-    await waitAfterNextRender(activationCodePage);
+    await flushAsync();
 
     // The second device should now be streaming.
     assertFalse(mediaDevices.isStreamingUserFacingCamera);
@@ -208,7 +221,7 @@ suite('CrComponentsActivationCodePageTest', function() {
     // Switch back.
     switchCameraButton.click();
     mediaDevices.resolveGetUserMedia();
-    await waitAfterNextRender(activationCodePage);
+    await flushAsync();
 
     // The first device should be streaming again.
     assertTrue(mediaDevices.isStreamingUserFacingCamera);
@@ -217,15 +230,14 @@ suite('CrComponentsActivationCodePageTest', function() {
     // Switch to the second device again.
     switchCameraButton.click();
     mediaDevices.resolveGetUserMedia();
-    await waitAfterNextRender(activationCodePage);
+    await flushAsync();
 
     assertFalse(mediaDevices.isStreamingUserFacingCamera);
     assertFalse(switchCameraButton.hidden);
 
     // Disconnect the second device.
     mediaDevices.removeDevice();
-    mediaDevices.resolveEnumerateDevices();
-    await waitAfterNextRender(activationCodePage);
+    await resolveEnumeratedDevicesPromise();
 
     // The first device should now be streaming and the switch camera button
     // hidden.
@@ -240,7 +252,6 @@ suite('CrComponentsActivationCodePageTest', function() {
   });
 
   test('UI is disabled when showBusy property is set', async function() {
-    await flushAsync();
     const startScanningButton = activationCodePage.$$('#startScanningButton');
     const switchCameraButton = activationCodePage.$$('#switchCameraButton');
     const tryAgainButton = activationCodePage.$$('#tryAgainButton');
@@ -267,7 +278,6 @@ suite('CrComponentsActivationCodePageTest', function() {
   test(
       'Do not show qrContainer when BarcodeDetector is not ready',
       async function() {
-        await flushAsync();
         let qrCodeDetectorContainer =
             activationCodePage.$$('#esimQrCodeDetection');
 
@@ -290,7 +300,6 @@ suite('CrComponentsActivationCodePageTest', function() {
       });
 
   test('Event is fired when enter is pressed on input', async function() {
-    await flushAsync();
     let eventFired = false;
     activationCodePage.addEventListener('forward-navigation-requested', () => {
       eventFired = true;
@@ -305,7 +314,6 @@ suite('CrComponentsActivationCodePageTest', function() {
   test(
       'Install error after manual entry should show error on input',
       async function() {
-        await flushAsync();
         const input = activationCodePage.$$('#activationCode');
         const startScanningContainer =
             activationCodePage.$$('#startScanningContainer');
@@ -328,7 +336,6 @@ suite('CrComponentsActivationCodePageTest', function() {
   test(
       'Install error after scanning should show error on camera',
       async function() {
-        await flushAsync();
         const input = activationCodePage.$$('#activationCode');
         const startScanningContainer =
             activationCodePage.$$('#startScanningContainer');
@@ -383,7 +390,6 @@ suite('CrComponentsActivationCodePageTest', function() {
       });
 
   test('Tabbing does not close video stream', async function() {
-    await flushAsync();
     const startScanningButton = activationCodePage.$$('#startScanningButton');
     const getVideo = () => activationCodePage.$$('#video');
     const input = activationCodePage.$$('#activationCode');
@@ -415,7 +421,6 @@ suite('CrComponentsActivationCodePageTest', function() {
 
   test(
       'Clear qr code detection timeout when video is hidden', async function() {
-        await flushAsync();
         const startScanningButton =
             activationCodePage.$$('#startScanningButton');
         const getVideo = () => activationCodePage.$$('#video');
@@ -440,17 +445,17 @@ suite('CrComponentsActivationCodePageTest', function() {
       });
 
   test('Input entered manually is validated', async function() {
-    await flushAsync();
     const input = activationCodePage.$$('#activationCode');
     assertTrue(!!input);
     assertFalse(input.invalid);
 
     const setInputAndAssert =
         async (activationCode, isInputInvalid, shouldEventContainCode) => {
-      const activationCodeUpdatedPromise = test_util.eventToPromise(
-          'activation-code-updated', activationCodePage);
+      const activationCodeUpdatedPromise =
+          eventToPromise('activation-code-updated', activationCodePage);
       input.value = activationCode;
       const activationCodeUpdatedEvent = await activationCodeUpdatedPromise;
+      assertFalse(activationCodePage.isFromQrCode);
       assertEquals(
           activationCodeUpdatedEvent.detail.activationCode,
           shouldEventContainCode ? activationCode : null);
@@ -494,7 +499,6 @@ suite('CrComponentsActivationCodePageTest', function() {
   });
 
   test('Scanned code is validated', async function() {
-    await flushAsync();
     const input = activationCodePage.$$('#activationCode');
     const startScanningContainer =
         activationCodePage.$$('#startScanningContainer');
@@ -522,7 +526,7 @@ suite('CrComponentsActivationCodePageTest', function() {
 
     // Mock camera scanning an invalid code.
     let activationCodeUpdatedPromise =
-        test_util.eventToPromise('activation-code-updated', activationCodePage);
+        eventToPromise('activation-code-updated', activationCodePage);
     FakeBarcodeDetector.setDetectedBarcode(ACTIVATION_CODE_INVALID);
     await intervalFunction();
     await flushAsync();
@@ -544,7 +548,7 @@ suite('CrComponentsActivationCodePageTest', function() {
 
     // Mock camera scanning a valid, incomplete code.
     activationCodeUpdatedPromise =
-        test_util.eventToPromise('activation-code-updated', activationCodePage);
+        eventToPromise('activation-code-updated', activationCodePage);
     FakeBarcodeDetector.setDetectedBarcode(/*barcode=*/ 'LPA:');
     await intervalFunction();
     await flushAsync();
@@ -566,12 +570,13 @@ suite('CrComponentsActivationCodePageTest', function() {
 
     // Mock camera scanning a valid code.
     activationCodeUpdatedPromise =
-        test_util.eventToPromise('activation-code-updated', activationCodePage);
+        eventToPromise('activation-code-updated', activationCodePage);
     FakeBarcodeDetector.setDetectedBarcode(ACTIVATION_CODE_VALID);
     await intervalFunction();
     await flushAsync();
 
     // The code detected UI should be showing.
+    assertTrue(activationCodePage.isFromQrCode);
     assertTrue(startScanningContainer.hidden);
     assertFalse(scanFinishContainer.hidden);
     assertFalse(scanSucessHeader.hidden);

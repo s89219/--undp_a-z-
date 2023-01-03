@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,12 +10,12 @@
 
 #include "base/bind.h"
 #include "base/check_op.h"
+#include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
 #include "chrome/browser/extensions/extension_view.h"
 #include "chrome/browser/extensions/extension_view_host.h"
@@ -30,13 +30,14 @@
 #include "chrome/browser/ui/toolbar/toolbar_action_view_delegate.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/sessions/content/session_tab_helper.h"
+#include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_action.h"
 #include "extensions/browser/extension_action_manager.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/api/extension_action/action_info.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_features.h"
 #include "extensions/common/manifest_constants.h"
-#include "extensions/common/permissions/api_permission.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/color/color_provider_manager.h"
 #include "ui/gfx/image/image_skia.h"
@@ -46,12 +47,78 @@
 using extensions::ActionInfo;
 using extensions::CommandService;
 using extensions::ExtensionActionRunner;
+using extensions::PermissionsManager;
 
 namespace {
 
 void RecordInvocationSource(
     ToolbarActionViewController::InvocationSource source) {
   base::UmaHistogramEnumeration("Extensions.Toolbar.InvocationSource", source);
+}
+
+// Computes hover card site access status based on:
+// 1. Extension wants site access: user site settings takes precedence
+// over the extension's site access.
+// 2. Extension does not want access: if all extensions are blocked display
+// such message because a) user could wrongly infer that an extension that
+// does not want access has access if we only show the blocked message for
+// extensions that want access; and b) it helps us work around tricky
+// calculations where we get into collisions between withheld and denied
+// permission. Otherwise, it should display "does not want access".
+ExtensionActionViewController::HoverCardState::SiteAccess
+GetHoverCardSiteAccessState(
+    extensions::PermissionsManager::UserSiteSetting site_setting,
+    extensions::SitePermissionsHelper::SiteInteraction site_interaction) {
+  switch (site_interaction) {
+    case extensions::SitePermissionsHelper::SiteInteraction::kGranted:
+      return site_setting == extensions::PermissionsManager::UserSiteSetting::
+                                 kGrantAllExtensions
+                 ? ExtensionActionViewController::HoverCardState::SiteAccess::
+                       kAllExtensionsAllowed
+                 : ExtensionActionViewController::HoverCardState::SiteAccess::
+                       kExtensionHasAccess;
+
+    case extensions::SitePermissionsHelper::SiteInteraction::kWithheld:
+    case extensions::SitePermissionsHelper::SiteInteraction::kActiveTab:
+      return site_setting == extensions::PermissionsManager::UserSiteSetting::
+                                 kBlockAllExtensions
+                 ? ExtensionActionViewController::HoverCardState::SiteAccess::
+                       kAllExtensionsBlocked
+                 : ExtensionActionViewController::HoverCardState::SiteAccess::
+                       kExtensionRequestsAccess;
+
+    case extensions::SitePermissionsHelper::SiteInteraction::kNone:
+      // kNone site interaction includes extensions that don't want access when
+      // user site setting is "block all extensions".
+      return site_setting == extensions::PermissionsManager::UserSiteSetting::
+                                 kBlockAllExtensions
+                 ? ExtensionActionViewController::HoverCardState::SiteAccess::
+                       kAllExtensionsBlocked
+                 : ExtensionActionViewController::HoverCardState::SiteAccess::
+                       kExtensionDoesNotWantAccess;
+  }
+}
+
+// Computes hover card policy status based on admin policy. Note that an
+// extension pinned by admin is also installed by admin. Thus, "pinned by admin"
+// has preference.
+ExtensionActionViewController::HoverCardState::AdminPolicy
+GetHoverCardPolicyState(Browser* browser,
+                        const extensions::ExtensionId& extension_id) {
+  auto* const model = ToolbarActionsModel::Get(browser->profile());
+  if (model->IsActionForcePinned(extension_id))
+    return ExtensionActionViewController::HoverCardState::AdminPolicy::
+        kPinnedByAdmin;
+
+  scoped_refptr<const extensions::Extension> extension =
+      extensions::ExtensionRegistry::Get(browser->profile())
+          ->enabled_extensions()
+          .GetByID(extension_id);
+  if (extensions::Manifest::IsPolicyLocation(extension->location()))
+    return ExtensionActionViewController::HoverCardState::AdminPolicy::
+        kInstalledByAdmin;
+
+  return ExtensionActionViewController::HoverCardState::AdminPolicy::kNone;
 }
 
 }  // namespace
@@ -86,7 +153,7 @@ bool ExtensionActionViewController::AnyActionHasCurrentSiteAccess(
     content::WebContents* web_contents) {
   for (const auto& action : actions) {
     if (action->GetSiteInteraction(web_contents) ==
-        extensions::SitePermissionsHelper::SiteInteraction::kActive) {
+        extensions::SitePermissionsHelper::SiteInteraction::kGranted) {
       return true;
     }
   }
@@ -173,10 +240,11 @@ std::u16string ExtensionActionViewController::GetAccessibleName(
     case extensions::SitePermissionsHelper::SiteInteraction::kNone:
       // No string for neither having nor wanting access.
       break;
-    case extensions::SitePermissionsHelper::SiteInteraction::kPending:
+    case extensions::SitePermissionsHelper::SiteInteraction::kWithheld:
+    case extensions::SitePermissionsHelper::SiteInteraction::kActiveTab:
       site_interaction_description_id = IDS_EXTENSIONS_WANTS_ACCESS_TO_SITE;
       break;
-    case extensions::SitePermissionsHelper::SiteInteraction::kActive:
+    case extensions::SitePermissionsHelper::SiteInteraction::kGranted:
       site_interaction_description_id = IDS_EXTENSIONS_HAS_ACCESS_TO_SITE;
       break;
   }
@@ -200,10 +268,15 @@ bool ExtensionActionViewController::IsEnabled(
   if (!ExtensionIsValid())
     return false;
 
+  extensions::SitePermissionsHelper::SiteInteraction site_interaction =
+      GetSiteInteraction(web_contents);
+
   return extension_action_->GetIsVisible(
              sessions::SessionTabHelper::IdForTab(web_contents).id()) ||
-         GetSiteInteraction(web_contents) ==
-             extensions::SitePermissionsHelper::SiteInteraction::kPending;
+         site_interaction ==
+             extensions::SitePermissionsHelper::SiteInteraction::kWithheld ||
+         site_interaction ==
+             extensions::SitePermissionsHelper::SiteInteraction::kActiveTab;
 }
 
 bool ExtensionActionViewController::IsShowingPopup() const {
@@ -213,12 +286,15 @@ bool ExtensionActionViewController::IsShowingPopup() const {
 bool ExtensionActionViewController::IsRequestingSiteAccess(
     content::WebContents* web_contents) const {
   return GetSiteInteraction(web_contents) ==
-         extensions::SitePermissionsHelper::SiteInteraction::kPending;
+         extensions::SitePermissionsHelper::SiteInteraction::kWithheld;
 }
 
 void ExtensionActionViewController::HidePopup() {
   if (IsShowingPopup()) {
-    popup_host_->Close();
+    // Only call Close() on the popup if it's been shown; otherwise, the popup
+    // will be cleaned up in ShowPopup().
+    if (has_opened_popup_)
+      popup_host_->Close();
     // We need to do these actions synchronously (instead of closing and then
     // performing the rest of the cleanup in OnExtensionHostDestroyed()) because
     // the extension host may close asynchronously, and we need to keep the view
@@ -306,6 +382,15 @@ void ExtensionActionViewController::UpdateState() {
   view_delegate_->UpdateState();
 }
 
+void ExtensionActionViewController::UpdateHoverCard(
+    ToolbarActionView* action_view,
+    ToolbarActionHoverCardUpdateType update_type) {
+  if (!ExtensionIsValid())
+    return;
+
+  extensions_container_->UpdateToolbarActionHoverCard(action_view, update_type);
+}
+
 void ExtensionActionViewController::RegisterCommand() {
   if (!ExtensionIsValid())
     return;
@@ -360,6 +445,27 @@ bool ExtensionActionViewController::GetExtensionCommand(
       CommandService::ACTIVE, command, nullptr);
 }
 
+ToolbarActionViewController::HoverCardState
+ExtensionActionViewController::GetHoverCardState(
+    content::WebContents* web_contents) const {
+  DCHECK(ExtensionIsValid());
+  DCHECK(web_contents);
+
+  url::Origin origin =
+      web_contents->GetPrimaryMainFrame()->GetLastCommittedOrigin();
+  extensions::PermissionsManager::UserSiteSetting site_setting =
+      extensions::PermissionsManager::Get(browser_->profile())
+          ->GetUserSiteSetting(origin);
+  auto site_interaction = GetSiteInteraction(web_contents);
+
+  HoverCardState state;
+  state.site_access =
+      GetHoverCardSiteAccessState(site_setting, site_interaction);
+  state.policy = GetHoverCardPolicyState(browser_, GetId());
+
+  return state;
+}
+
 bool ExtensionActionViewController::CanHandleAccelerators() const {
   if (!ExtensionIsValid())
     return false;
@@ -388,12 +494,6 @@ ExtensionActionViewController::GetIconImageSourceForTesting(
     content::WebContents* web_contents,
     const gfx::Size& size) {
   return GetIconImageSource(web_contents, size);
-}
-
-bool ExtensionActionViewController::HasBeenBlockedForTesting(
-    content::WebContents* web_contents) const {
-  return extensions::SitePermissionsHelper(browser_->profile())
-      .HasBeenBlocked(*extension(), web_contents);
 }
 
 ExtensionActionViewController*
@@ -451,6 +551,12 @@ void ExtensionActionViewController::ShowPopup(
       std::move(callback).Run(nullptr);
     return;
   }
+  // NOTE: Today, ShowPopup() always synchronously creates the platform-specific
+  // popup class, which is what we care most about (since `has_opened_popup_`
+  // is used to determine whether we need to manually close the
+  // ExtensionViewHost). This doesn't necessarily mean that the popup has
+  // completed rendering on the screen.
+  has_opened_popup_ = true;
   platform_delegate_->ShowPopup(std::move(popup_host), show_action,
                                 std::move(callback));
   view_delegate_->OnPopupShown(grant_tab_permissions);
@@ -460,6 +566,7 @@ void ExtensionActionViewController::OnPopupClosed() {
   DCHECK(popup_host_observation_.IsObservingSource(popup_host_.get()));
   popup_host_observation_.Reset();
   popup_host_ = nullptr;
+  has_opened_popup_ = false;
   extensions_container_->SetPopupOwner(nullptr);
   if (extensions_container_->GetPoppedOutAction() == this)
     extensions_container_->UndoPopOut();
@@ -470,18 +577,22 @@ std::unique_ptr<IconWithBadgeImageSource>
 ExtensionActionViewController::GetIconImageSource(
     content::WebContents* web_contents,
     const gfx::Size& size) {
-  int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
   // `web_contents` may be null during tab closure or in tests.  Fall back on a
   // generic color provider.
-  const auto* const color_provider =
-      web_contents
-          ? &web_contents->GetColorProvider()
-          : ui::ColorProviderManager::Get().GetColorProviderFor(
-                ui::NativeTheme::GetInstanceForNativeUi()->GetColorProviderKey(
-                    nullptr));
-  auto image_source =
-      std::make_unique<IconWithBadgeImageSource>(size, color_provider);
+  auto get_color_provider_callback = base::BindRepeating(
+      [](base::WeakPtr<content::WebContents> weak_web_contents) {
+        return weak_web_contents
+                   ? &weak_web_contents->GetColorProvider()
+                   : ui::ColorProviderManager::Get().GetColorProviderFor(
+                         ui::NativeTheme::GetInstanceForNativeUi()
+                             ->GetColorProviderKey(nullptr));
+      },
+      web_contents ? web_contents->GetWeakPtr()
+                   : base::WeakPtr<content::WebContents>());
+  auto image_source = std::make_unique<IconWithBadgeImageSource>(
+      size, std::move(get_color_provider_callback));
 
+  int tab_id = sessions::SessionTabHelper::IdForTab(web_contents).id();
   image_source->SetIcon(icon_factory_.GetIcon(tab_id));
 
   std::unique_ptr<IconWithBadgeImageSource::Badge> badge;
@@ -501,6 +612,11 @@ ExtensionActionViewController::GetIconImageSource(
           extensions::SitePermissionsHelper::SiteInteraction::kNone &&
       !action_is_visible;
   image_source->set_grayscale(grayscale);
+
+  if (base::FeatureList::IsEnabled(
+          extensions_features::kExtensionsMenuAccessControl)) {
+    return image_source;
+  }
 
   bool was_blocked = extensions::SitePermissionsHelper(browser_->profile())
                          .HasBeenBlocked(*extension(), web_contents);

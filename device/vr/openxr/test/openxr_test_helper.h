@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -200,6 +200,7 @@ class OpenXrTestHelper : public device::ServiceTestHook {
       const XrCompositionLayerProjectionView& projection_view,
       uint32_t view_count,
       uint32_t index);
+  bool GetCanCreateSession();
 
   // Properties of the mock OpenXR runtime that doesn't change throughout the
   // lifetime of the instance. However, these aren't static because they are

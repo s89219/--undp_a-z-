@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,11 +27,6 @@ constexpr float kMicronsPerInch = kMmPerInch * kMicronsPerMm;
 // we have no use for them.
 constexpr base::StringPiece kMediaCustomMinPrefix = "custom_min";
 constexpr base::StringPiece kMediaCustomMaxPrefix = "custom_max";
-
-enum class Unit {
-  kInches,
-  kMillimeters,
-};
 
 gfx::Size DimensionsToMicrons(base::StringPiece value) {
   Unit unit;

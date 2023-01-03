@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,11 @@
 #include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/form_parsing/autofill_scanner.h"
+#include "components/autofill/core/browser/form_parsing/parsing_test_utils.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -33,9 +35,24 @@ const char* const kFieldTypes[] = {
 
 }  // namespace
 
-class PhoneFieldTest : public testing::Test {
+class PhoneFieldTest
+    : public testing::TestWithParam<PatternProviderFeatureState> {
  public:
-  PhoneFieldTest() = default;
+  PhoneFieldTest() {
+    std::vector<base::test::FeatureRefAndParams> enabled;
+    std::vector<base::test::FeatureRef> disabled;
+    if (GetParam().enable) {
+      enabled.emplace_back(
+          features::kAutofillParsingPatternProvider,
+          base::FieldTrialParams{
+              {features::kAutofillParsingPatternActiveSource.name,
+               GetParam().active_source}});
+    } else {
+      disabled.push_back(features::kAutofillParsingPatternProvider);
+    }
+    scoped_feature_list_.InitWithFeaturesAndParameters(enabled, disabled);
+  }
+
   PhoneFieldTest(const PhoneFieldTest&) = delete;
   PhoneFieldTest& operator=(const PhoneFieldTest&) = delete;
 
@@ -44,9 +61,9 @@ class PhoneFieldTest : public testing::Test {
   static std::unique_ptr<PhoneField> Parse(AutofillScanner* scanner) {
     // An empty page_language means the language is unknown and patterns of all
     // languages are used.
-    std::unique_ptr<FormField> field = PhoneField::Parse(
-        scanner, LanguageCode(""), PredictionSource::kDefaultHeuristics,
-        /*log_manager=*/nullptr);
+    std::unique_ptr<FormField> field =
+        PhoneField::Parse(scanner, LanguageCode(""), GetActivePatternSource(),
+                          /*log_manager=*/nullptr);
     return std::unique_ptr<PhoneField>(
         static_cast<PhoneField*>(field.release()));
   }
@@ -85,6 +102,7 @@ class PhoneFieldTest : public testing::Test {
   std::vector<std::unique_ptr<AutofillField>> list_;
 
  private:
+  base::test::ScopedFeatureList scoped_feature_list_;
   std::unique_ptr<PhoneField> field_;
   uint64_t id_counter_ = 0;
   FieldCandidatesMap field_candidates_map_;
@@ -130,7 +148,7 @@ void PhoneFieldTest::RunParsingTest(const std::vector<TestFieldData>& fields,
 
   // Verify expecations.
   if (expect_success) {
-    field_->AddClassificationsForTesting(&field_candidates_map_);
+    field_->AddClassificationsForTesting(field_candidates_map_);
     for (size_t i = 0; i < fields.size(); i++) {
       CheckField(global_ids[i], fields[i].expected_type);
     }
@@ -147,22 +165,27 @@ void PhoneFieldTest::Clear() {
   field_candidates_map_.clear();
 }
 
-TEST_F(PhoneFieldTest, Empty) {
+INSTANTIATE_TEST_SUITE_P(
+    PhoneFieldTest,
+    PhoneFieldTest,
+    ::testing::ValuesIn(PatternProviderFeatureState::All()));
+
+TEST_P(PhoneFieldTest, Empty) {
   RunParsingTest({}, /*expect_success=*/false);
 }
 
-TEST_F(PhoneFieldTest, NonParse) {
+TEST_P(PhoneFieldTest, NonParse) {
   list_.push_back(std::make_unique<AutofillField>());
   RunParsingTest({}, /*expect_success=*/false);
 }
 
-TEST_F(PhoneFieldTest, ParseOneLinePhone) {
+TEST_P(PhoneFieldTest, ParseOneLinePhone) {
   for (const char* field_type : kFieldTypes) {
     RunParsingTest({{field_type, u"Phone", u"phone", PHONE_HOME_WHOLE_NUMBER}});
   }
 }
 
-TEST_F(PhoneFieldTest, ParseTwoLinePhone) {
+TEST_P(PhoneFieldTest, ParseTwoLinePhone) {
   for (const char* field_type : kFieldTypes) {
     RunParsingTest(
         {{field_type, u"Area Code", u"area code", PHONE_HOME_CITY_CODE},
@@ -175,12 +198,14 @@ TEST_F(PhoneFieldTest, ParseTwoLinePhone) {
 // <country code> - <area code> - <phone>. The only distinguishing feature is
 // size: <prefix> is no bigger than 3 characters, and <suffix> is no bigger
 // than 4.
-TEST_F(PhoneFieldTest, ThreePartPhoneNumber) {
+TEST_P(PhoneFieldTest, ThreePartPhoneNumber) {
   for (const char* field_type : kFieldTypes) {
     RunParsingTest(
         {{field_type, u"Phone:", u"dayphone1", PHONE_HOME_CITY_CODE},
-         {field_type, u"-", u"dayphone2", PHONE_HOME_NUMBER, /*max_length=*/3},
-         {field_type, u"-", u"dayphone3", PHONE_HOME_NUMBER, /*max_length=*/4},
+         {field_type, u"-", u"dayphone2", PHONE_HOME_NUMBER_PREFIX,
+          /*max_length=*/3},
+         {field_type, u"-", u"dayphone3", PHONE_HOME_NUMBER_SUFFIX,
+          /*max_length=*/4},
          {field_type, u"ext.:", u"dayphone4", PHONE_HOME_EXTENSION}});
   }
 }
@@ -188,27 +213,28 @@ TEST_F(PhoneFieldTest, ThreePartPhoneNumber) {
 // This scenario of explicitly labeled "prefix" and "suffix" phone numbers
 // encountered in http://crbug.com/40694 with page
 // https://www.wrapables.com/jsp/Signup.jsp.
-TEST_F(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix) {
+TEST_P(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix) {
   for (const char* field_type : kFieldTypes) {
     RunParsingTest({{field_type, u"Phone:", u"area", PHONE_HOME_CITY_CODE},
-                    {field_type, u"", u"prefix", PHONE_HOME_NUMBER},
-                    {field_type, u"", u"suffix", PHONE_HOME_NUMBER,
+                    {field_type, u"", u"prefix", PHONE_HOME_NUMBER_PREFIX},
+                    {field_type, u"", u"suffix", PHONE_HOME_NUMBER_SUFFIX,
                      /*max_length=*/4}});
   }
 }
 
-TEST_F(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix2) {
+TEST_P(PhoneFieldTest, ThreePartPhoneNumberPrefixSuffix2) {
   for (const char* field_type : kFieldTypes) {
     RunParsingTest(
         {{field_type, u"(", u"phone1", PHONE_HOME_CITY_CODE, /*max_length=*/3},
-         {field_type, u")", u"phone2", PHONE_HOME_NUMBER, /*max_length=*/3},
-         {field_type, u"", u"phone3", PHONE_HOME_NUMBER,
+         {field_type, u")", u"phone2", PHONE_HOME_NUMBER_PREFIX,
+          /*max_length=*/3},
+         {field_type, u"", u"phone3", PHONE_HOME_NUMBER_SUFFIX,
           /*max_length=*/4}});
   }
 }
 
 // Phone in format <country code> - <city and number>
-TEST_F(PhoneFieldTest, CountryAndCityAndPhoneNumber) {
+TEST_P(PhoneFieldTest, CountryAndCityAndPhoneNumber) {
   for (const char* field_type : kFieldTypes) {
     RunParsingTest({{field_type, u"Phone Number", u"CountryCode",
                      PHONE_HOME_COUNTRY_CODE, /*max_length=*/3},
@@ -217,7 +243,38 @@ TEST_F(PhoneFieldTest, CountryAndCityAndPhoneNumber) {
   }
 }
 
-TEST_F(PhoneFieldTest, TrunkPrefixTypes) {
+TEST_P(PhoneFieldTest, EmptyLabels) {
+  base::test::ScopedFeatureList enabled_features;
+  enabled_features.InitWithFeatures(
+      /*enabled_features=*/
+      {features::kAutofillEnableSupportForPhoneNumberTrunkTypes,
+       features::kAutofillEnableParsingEmptyPhoneNumberLabels},
+      /*disabled_features=*/{});
+
+  // Phone: <input><input>
+  RunParsingTest(
+      {{"text", u"Phone", u"", PHONE_HOME_COUNTRY_CODE},
+       {"text", u"", u"", PHONE_HOME_CITY_AND_NUMBER_WITHOUT_TRUNK_PREFIX}});
+
+  // Phone: <input><input><input>
+  RunParsingTest({{"text", u"Phone", u"", PHONE_HOME_COUNTRY_CODE},
+                  {"text", u"", u"", PHONE_HOME_CITY_CODE},
+                  {"text", u"", u"", PHONE_HOME_NUMBER}});
+}
+
+// Tests that when a phone field is parsed, a metric indicating the used grammar
+// is emitted.
+TEST_P(PhoneFieldTest, GrammarMetrics) {
+  // PHONE_HOME_WHOLE_NUMBER corresponds to the last grammar. We thus expect
+  // that 2*16 + 1 = 33 is logged.
+  base::HistogramTester histogram_tester;
+  RunParsingTest({{"text", u"Phone", u"phone", PHONE_HOME_WHOLE_NUMBER}});
+  EXPECT_THAT(histogram_tester.GetAllSamples(
+                  "Autofill.FieldPrediction.PhoneNumberGrammarUsage"),
+              BucketsAre(base::Bucket(33, 1)));
+}
+
+TEST_P(PhoneFieldTest, TrunkPrefixTypes) {
   base::test::ScopedFeatureList trunk_types_enabled;
   trunk_types_enabled.InitAndEnableFeature(
       features::kAutofillEnableSupportForPhoneNumberTrunkTypes);
@@ -247,7 +304,7 @@ TEST_F(PhoneFieldTest, TrunkPrefixTypes) {
 
 // Tests if the country code, city code and phone number fields are correctly
 // classified by the heuristic when the phone code is a select element.
-TEST_F(PhoneFieldTest, CountryCodeIsSelectElement) {
+TEST_P(PhoneFieldTest, CountryCodeIsSelectElement) {
   RunParsingTest(
       {{"select-one", u"Phone Country Code", u"ccode", PHONE_HOME_COUNTRY_CODE},
        {"text", u"Phone City Code", u"areacode", PHONE_HOME_CITY_CODE,
@@ -258,11 +315,7 @@ TEST_F(PhoneFieldTest, CountryCodeIsSelectElement) {
 // Tests if the country code, city code and phone number fields are correctly
 // classified by the heuristic when the phone code field is a select element
 // consisting of valid options.
-TEST_F(PhoneFieldTest, CountryCodeWithOptions) {
-  base::test::ScopedFeatureList enabled;
-  enabled.InitAndEnableFeature(
-      features::kAutofillEnableAugmentedPhoneCountryCode);
-
+TEST_P(PhoneFieldTest, CountryCodeWithOptions) {
   // Options consisting of the country code followed by the country names.
   std::vector<const char*> augmented_field_options_list = {
       "(+91) India",     "(+49) Germany",  "(+1) United States", "(+20) Egypt",
@@ -277,11 +330,7 @@ TEST_F(PhoneFieldTest, CountryCodeWithOptions) {
 
 // Tests if the country code field is correctly classified by the heuristic when
 // the phone code is a select element and consists of valid options.
-TEST_F(PhoneFieldTest, IsPhoneCountryCodeField) {
-  base::test::ScopedFeatureList enabled;
-  enabled.InitAndEnableFeature(
-      features::kAutofillEnableAugmentedPhoneCountryCode);
-
+TEST_P(PhoneFieldTest, IsPhoneCountryCodeField) {
   std::vector<std::vector<const char*>> augmented_field_options_list = {
       // Options with the country name followed by the country code in brackets.
       {"India(+91) ", "Germany(+49)", "United States(+1)", "Egypt(+20)",
@@ -347,11 +396,7 @@ TEST_F(PhoneFieldTest, IsPhoneCountryCodeField) {
 }
 
 // Tests that the month field is not classified as |PHONE_HOME_COUNTRY_CODE|.
-TEST_F(PhoneFieldTest, IsMonthField) {
-  base::test::ScopedFeatureList enabled;
-  enabled.InitAndEnableFeature(
-      features::kAutofillEnableAugmentedPhoneCountryCode);
-
+TEST_P(PhoneFieldTest, IsMonthField) {
   std::vector<std::vector<const char*>> augmented_field_options_list = {
       // Month options in numeric.
       {"01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"},
@@ -372,11 +417,7 @@ TEST_F(PhoneFieldTest, IsMonthField) {
 }
 
 // Tests that the day field is not classified as |PHONE_HOME_COUNTRY_CODE|.
-TEST_F(PhoneFieldTest, IsDayField) {
-  base::test::ScopedFeatureList enabled;
-  enabled.InitAndEnableFeature(
-      features::kAutofillEnableAugmentedPhoneCountryCode);
-
+TEST_P(PhoneFieldTest, IsDayField) {
   std::vector<std::vector<const char*>> augmented_field_options_list = {
       // Numeric day options.
       {"01", "02", "03", "04", "05", "06", "07", "08", "09", "10",
@@ -427,11 +468,7 @@ TEST_F(PhoneFieldTest, IsDayField) {
 }
 
 // Tests that the field is not classified as |PHONE_HOME_COUNTRY_CODE|.
-TEST_F(PhoneFieldTest, IsYearField) {
-  base::test::ScopedFeatureList enabled;
-  enabled.InitAndEnableFeature(
-      features::kAutofillEnableAugmentedPhoneCountryCode);
-
+TEST_P(PhoneFieldTest, IsYearField) {
   std::vector<std::vector<const char*>> augmented_field_options_list = {
       // Numeric four digit year options.
       {"1990", "1991", "1992", "1993", "1994", "1995", "1996",
@@ -468,11 +505,7 @@ TEST_F(PhoneFieldTest, IsYearField) {
 }
 
 // Tests that the timezone field is not classified as |PHONE_HOME_COUNTRY_CODE|.
-TEST_F(PhoneFieldTest, IsTimeZoneField) {
-  base::test::ScopedFeatureList enabled;
-  enabled.InitAndEnableFeature(
-      features::kAutofillEnableAugmentedPhoneCountryCode);
-
+TEST_P(PhoneFieldTest, IsTimeZoneField) {
   std::vector<std::vector<const char*>> augmented_field_options_list = {
       // Time Zone options.
       {"Yemen (UTC+03:00)", "Uruguay (UTC−03:00)", "UAE (UTC+04:00)",

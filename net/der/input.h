@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,9 +14,7 @@
 #include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 
-namespace net {
-
-namespace der {
+namespace net::der {
 
 // An opaque class that represents a fixed buffer of data of a fixed length,
 // to be used as an input to other operations. An Input object does not own
@@ -42,12 +40,15 @@ class NET_EXPORT_PRIVATE Input {
       : data_(data), len_(len) {}
 
   // Creates an Input from a base::StringPiece.
-  explicit Input(const base::StringPiece& sp);
+  explicit Input(base::StringPiece sp);
+
+  // Creates an Input from a std::string_view
+  explicit Input(std::string_view sp);
 
   // Creates an Input from a std::string. The lifetimes are a bit subtle when
   // using this function: The constructed Input is only valid so long as |s| is
   // still alive and not mutated.
-  Input(const std::string* s);
+  explicit Input(const std::string* s);
 
   // Returns the length in bytes of an Input's data.
   constexpr size_t Length() const { return len_; }
@@ -65,6 +66,11 @@ class NET_EXPORT_PRIVATE Input {
   // StringPiece must not outlive the data that was used to construct this
   // Input.
   base::StringPiece AsStringPiece() const;
+
+  // Returns a std::string_view pointing to the same data as the Input. The
+  // resulting string_view must not outlive the data that was used to construct
+  // this Input.
+  std::string_view AsStringView() const;
 
   // Returns a base::span pointing to the same data as the Input. The resulting
   // base::span must not outlive the data that was used to construct this
@@ -153,8 +159,6 @@ class NET_EXPORT_PRIVATE ByteReader {
   size_t len_;
 };
 
-}  // namespace der
-
-}  // namespace net
+}  // namespace net::der
 
 #endif  // NET_DER_INPUT_H_

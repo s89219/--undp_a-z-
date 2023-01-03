@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -78,9 +78,9 @@ class MainThreadWorkletTest : public PageTestBase {
         MakeGarbageCollected<WorkletModuleResponsesMap>(),
         mojo::NullRemote() /* browser_interface_broker */,
         window->GetFrame()->Loader().CreateWorkerCodeCacheHost(),
-        BeginFrameProviderParams(), nullptr /* parent_permissions_policy */,
-        window->GetAgentClusterID(), ukm::kInvalidSourceId,
-        window->GetExecutionContextToken());
+        mojo::NullRemote() /* blob_url_store */, BeginFrameProviderParams(),
+        nullptr /* parent_permissions_policy */, window->GetAgentClusterID(),
+        ukm::kInvalidSourceId, window->GetExecutionContextToken());
     global_scope_ = MakeGarbageCollected<FakeWorkletGlobalScope>(
         std::move(creation_params), *reporting_proxy_, &GetFrame(),
         false /* create_microtask_queue */);

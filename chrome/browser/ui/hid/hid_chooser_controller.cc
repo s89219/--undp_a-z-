@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,6 @@
 #include "chrome/grit/generated_resources.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/web_contents.h"
-#include "services/device/public/cpp/hid/hid_blocklist.h"
 #include "services/device/public/cpp/hid/hid_switches.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -56,24 +55,22 @@ bool FilterMatch(const blink::mojom::HidDeviceFilterPtr& filter,
 
   if (filter->usage) {
     if (filter->usage->is_page()) {
-      const uint16_t usage_page = filter->usage->get_page();
-      auto find_it =
-          std::find_if(device.collections.begin(), device.collections.end(),
-                       [=](const device::mojom::HidCollectionInfoPtr& c) {
-                         return usage_page == c->usage->usage_page;
-                       });
-      if (find_it == device.collections.end())
+      if (!base::Contains(device.collections, filter->usage->get_page(),
+                          [](const device::mojom::HidCollectionInfoPtr& c) {
+                            return c->usage->usage_page;
+                          })) {
         return false;
+      }
     } else if (filter->usage->is_usage_and_page()) {
       const auto& usage_and_page = filter->usage->get_usage_and_page();
-      auto find_it = std::find_if(
-          device.collections.begin(), device.collections.end(),
-          [&usage_and_page](const device::mojom::HidCollectionInfoPtr& c) {
-            return usage_and_page->usage_page == c->usage->usage_page &&
-                   usage_and_page->usage == c->usage->usage;
-          });
-      if (find_it == device.collections.end())
+      if (base::ranges::none_of(
+              device.collections,
+              [&usage_and_page](const device::mojom::HidCollectionInfoPtr& c) {
+                return usage_and_page->usage_page == c->usage->usage_page &&
+                       usage_and_page->usage == c->usage->usage;
+              })) {
         return false;
+      }
     }
   }
   return true;
@@ -234,7 +231,7 @@ void HidChooserController::OnDeviceAdded(
 void HidChooserController::OnDeviceRemoved(
     const device::mojom::HidDeviceInfo& device) {
   auto id = PhysicalDeviceIdFromDeviceInfo(device);
-  auto items_it = std::find(items_.begin(), items_.end(), id);
+  auto items_it = base::ranges::find(items_, id);
   if (items_it == items_.end())
     return;
   size_t index = std::distance(items_.begin(), items_it);
@@ -312,27 +309,15 @@ bool HidChooserController::DisplayDevice(
     return false;
   }
 
-  if (device::HidBlocklist::IsDeviceExcluded(device)) {
+  if (device.is_excluded_by_blocklist) {
     AddMessageToConsole(
         blink::mojom::ConsoleMessageLevel::kInfo,
         base::StringPrintf(
-            "Chooser dialog is not displaying a device blocked by "
+            "Chooser dialog is not displaying a device excluded by "
             "the HID blocklist: vendorId=%d, "
-            "productId=%d, name='%s', serial='%s', numberOfCollections=%zu, "
-            "numberOfProtectedInputReports=%zu, "
-            "numberOfProtectedOutputReports=%zu, "
-            "numberOfProtectedFeatureReports=%zu",
+            "productId=%d, name='%s', serial='%s'",
             device.vendor_id, device.product_id, device.product_name.c_str(),
-            device.serial_number.c_str(), device.collections.size(),
-            device.protected_input_report_ids
-                ? device.protected_input_report_ids->size()
-                : 0,
-            device.protected_output_report_ids
-                ? device.protected_output_report_ids->size()
-                : 0,
-            device.protected_feature_report_ids
-                ? device.protected_feature_report_ids->size()
-                : 0));
+            device.serial_number.c_str()));
     return false;
   }
 
@@ -407,10 +392,8 @@ void HidChooserController::UpdateDeviceInfo(
   auto physical_device_it = device_map_.find(id);
   DCHECK(physical_device_it != device_map_.end());
   auto& device_infos = physical_device_it->second;
-  auto device_it = base::ranges::find_if(
-      device_infos, [&device](const device::mojom::HidDeviceInfoPtr& d) {
-        return d->guid == device.guid;
-      });
+  auto device_it = base::ranges::find(device_infos, device.guid,
+                                      &device::mojom::HidDeviceInfo::guid);
   DCHECK(device_it != device_infos.end());
   *device_it = device.Clone();
 }

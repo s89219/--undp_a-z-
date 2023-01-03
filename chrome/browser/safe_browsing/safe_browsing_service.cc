@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_features.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/net/system_network_context_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -35,6 +36,8 @@
 #include "chrome/browser/safe_browsing/chrome_ui_manager_delegate.h"
 #include "chrome/browser/safe_browsing/chrome_user_population_helper.h"
 #include "chrome/browser/safe_browsing/chrome_v4_protocol_config_provider.h"
+#include "chrome/browser/safe_browsing/download_protection/download_protection_service.h"
+#include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
 #include "chrome/browser/safe_browsing/network_context_service.h"
 #include "chrome/browser/safe_browsing/network_context_service_factory.h"
 #include "chrome/browser/safe_browsing/safe_browsing_metrics_collector_factory.h"
@@ -43,6 +46,7 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/download/public/common/download_item.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/safe_browsing/buildflags.h"
@@ -58,11 +62,13 @@
 #include "components/safe_browsing/core/browser/referrer_chain_provider.h"
 #include "components/safe_browsing/core/browser/safe_browsing_metrics_collector.h"
 #include "components/safe_browsing/core/common/features.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/safe_browsing/core/common/safebrowsing_constants.h"
 #include "components/unified_consent/pref_names.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/download_item_utils.h"
 #include "services/network/public/cpp/cross_thread_pending_shared_url_loader_factory.h"
 #include "services/network/public/cpp/features.h"
 #include "services/preferences/public/mojom/tracked_preference_validation_delegate.mojom.h"
@@ -103,6 +109,21 @@ void OnGotCookies(
     base::UmaHistogramCounts10000("SafeBrowsing.CookieAgeHours", age.InHours());
   }
 }
+
+#if BUILDFLAG(FULL_SAFE_BROWSING)
+void PopulateDownloadWarningActions(download::DownloadItem* download,
+                                    ClientSafeBrowsingReportRequest* report) {
+  for (auto& event :
+       DownloadItemWarningData::GetWarningActionEvents(download)) {
+    report->mutable_download_warning_actions()->Add(
+        DownloadItemWarningData::ConstructCsbrrDownloadWarningAction(event));
+  }
+  base::UmaHistogramCounts100(
+      "SafeBrowsing.ClientSafeBrowsingReport.DownloadWarningActionSize",
+      report->download_warning_actions_size());
+}
+#endif
+
 }  // namespace
 
 // static
@@ -336,6 +357,11 @@ void SafeBrowsingService::Stop(bool shutdown) {
 }
 
 void SafeBrowsingService::OnProfileAdded(Profile* profile) {
+  // Some services are disabled by default based on the profile type, e.g. the
+  // System Profile, in which Safe browsing is not needed.
+  if (AreKeyedServicesDisabledForProfileByDefault(profile))
+    return;
+
   // Start following the safe browsing preference on |pref_service|.
   PrefService* pref_service = profile->GetPrefs();
   DCHECK(prefs_map_.find(pref_service) == prefs_map_.end());
@@ -446,13 +472,36 @@ void SafeBrowsingService::RefreshState() {
   services_delegate_->RefreshState(enabled_by_prefs_);
 }
 
-void SafeBrowsingService::SendSerializedDownloadReport(
-    Profile* profile,
-    const std::string& report) {
+#if BUILDFLAG(FULL_SAFE_BROWSING)
+bool SafeBrowsingService::SendDownloadReport(
+    download::DownloadItem* download,
+    ClientSafeBrowsingReportRequest::ReportType report_type,
+    bool did_proceed,
+    absl::optional<bool> show_download_in_folder) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  ChromePingManagerFactory::GetForBrowserContext(profile)->ReportThreatDetails(
-      report);
+  Profile* profile = Profile::FromBrowserContext(
+      content::DownloadItemUtils::GetBrowserContext(download));
+  auto report = std::make_unique<ClientSafeBrowsingReportRequest>();
+  report->set_type(report_type);
+  report->set_download_verdict(
+      DownloadProtectionService::GetDownloadProtectionVerdict(download));
+  report->set_url(download->GetURL().spec());
+  report->set_did_proceed(did_proceed);
+  if (show_download_in_folder) {
+    report->set_show_download_in_folder(show_download_in_folder.value());
+  }
+  std::string token = DownloadProtectionService::GetDownloadPingToken(download);
+  if (!token.empty())
+    report->set_token(token);
+  if (IsExtendedReportingEnabled(*profile->GetPrefs()) &&
+      base::FeatureList::IsEnabled(kSafeBrowsingCsbrrNewDownloadTrigger)) {
+    PopulateDownloadWarningActions(download, report.get());
+  }
+  return ChromePingManagerFactory::GetForBrowserContext(profile)
+             ->ReportThreatDetails(std::move(report)) ==
+         PingManager::ReportThreatDetailsResult::SUCCESS;
 }
+#endif
 
 void SafeBrowsingService::CreateTriggerManager() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);

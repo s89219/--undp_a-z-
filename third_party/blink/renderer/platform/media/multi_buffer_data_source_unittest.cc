@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -360,7 +360,7 @@ class MultiBufferDataSourceTest : public testing::Test {
 
   MOCK_METHOD1(ReadCallback, void(int size));
 
-  void ReadAt(int64_t position, int64_t howmuch = kDataSize) {
+  void ReadAt(int64_t position, int howmuch = kDataSize) {
     data_source_->Read(position, howmuch, buffer_,
                        base::BindOnce(&MultiBufferDataSourceTest::ReadCallback,
                                       base::Unretained(this)));
@@ -965,7 +965,7 @@ TEST_F(MultiBufferDataSourceTest, SetBitrate) {
 TEST_F(MultiBufferDataSourceTest, MediaPlaybackRateChanged) {
   InitializeWith206Response();
 
-  data_source_->MediaPlaybackRateChanged(2.0);
+  data_source_->OnMediaPlaybackRateChanged(2.0);
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(2.0, data_source_playback_rate());
 
@@ -1107,7 +1107,7 @@ TEST_F(MultiBufferDataSourceTest, LocalResource_DeferStrategy) {
   EXPECT_TRUE(is_local_source());
   CheckCapacityDefer();
 
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   Stop();
@@ -1121,7 +1121,7 @@ TEST_F(MultiBufferDataSourceTest, LocalResource_PreloadMetadata_DeferStrategy) {
   EXPECT_TRUE(is_local_source());
   CheckReadThenDefer();
 
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   Stop();
@@ -1135,7 +1135,7 @@ TEST_F(MultiBufferDataSourceTest, ExternalResource_Reponse200_DeferStrategy) {
   EXPECT_FALSE(data_source_->range_supported());
   CheckCapacityDefer();
 
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   Stop();
@@ -1151,7 +1151,7 @@ TEST_F(MultiBufferDataSourceTest,
   EXPECT_FALSE(data_source_->range_supported());
   CheckReadThenDefer();
 
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   Stop();
@@ -1165,11 +1165,11 @@ TEST_F(MultiBufferDataSourceTest, ExternalResource_Reponse206_DeferStrategy) {
   EXPECT_TRUE(data_source_->range_supported());
   CheckCapacityDefer();
 
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   set_might_be_reused_from_cache_in_future(true);
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   Stop();
@@ -1185,11 +1185,11 @@ TEST_F(MultiBufferDataSourceTest,
   EXPECT_TRUE(data_source_->range_supported());
   CheckReadThenDefer();
 
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   set_might_be_reused_from_cache_in_future(true);
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   CheckCapacityDefer();
 
   set_might_be_reused_from_cache_in_future(false);
@@ -1335,7 +1335,7 @@ TEST_F(MultiBufferDataSourceTest,
   // Marking the media as playing should prevent deferral. It also tells the
   // data source to start buffering beyond the initial load.
   EXPECT_FALSE(data_source_->cancel_on_defer_for_testing());
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   data_source_->OnBufferingHaveEnough(false);
   CheckCapacityDefer();
   ASSERT_TRUE(active_loader());
@@ -1362,7 +1362,7 @@ TEST_F(MultiBufferDataSourceTest,
   EXPECT_FALSE(active_loader_allownull());
 
   // Verify playback resumes correctly too.
-  data_source_->MediaIsPlaying();
+  data_source_->OnMediaIsPlaying();
   EXPECT_FALSE(data_source_->cancel_on_defer_for_testing());
 
   // A read from a previously buffered range won't create a new loader yet.

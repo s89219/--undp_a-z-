@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,8 +18,8 @@
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
 #include "third_party/blink/public/mojom/use_counter/use_counter_feature.mojom-shared.h"
-#include "third_party/blink/public/mojom/web_feature/web_feature.mojom-shared.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace page_load_metrics {
@@ -86,12 +86,39 @@ void PageTimingMetricsSender::DidObserveLoadingBehavior(
   EnsureSendTimer();
 }
 
+void PageTimingMetricsSender::DidObserveSubresourceLoad(
+    uint32_t number_of_subresources_loaded,
+    uint32_t number_of_subresource_loads_handled_by_service_worker) {
+  if (!subresource_load_metrics_) {
+    subresource_load_metrics_ = mojom::SubresourceLoadMetrics::New();
+  }
+  if (subresource_load_metrics_->number_of_subresources_loaded ==
+          number_of_subresources_loaded &&
+      subresource_load_metrics_
+              ->number_of_subresource_loads_handled_by_service_worker ==
+          number_of_subresource_loads_handled_by_service_worker) {
+    return;
+  }
+  subresource_load_metrics_->number_of_subresources_loaded =
+      number_of_subresources_loaded;
+  subresource_load_metrics_
+      ->number_of_subresource_loads_handled_by_service_worker =
+      number_of_subresource_loads_handled_by_service_worker;
+  EnsureSendTimer();
+}
+
 void PageTimingMetricsSender::DidObserveNewFeatureUsage(
     const blink::UseCounterFeature& feature) {
   if (feature_tracker_.TestAndSet(feature))
     return;
 
   new_features_.push_back(feature);
+  EnsureSendTimer();
+}
+
+void PageTimingMetricsSender::DidObserveSoftNavigation(uint32_t count) {
+  DCHECK(count > soft_navigation_count_);
+  soft_navigation_count_ = count;
   EnsureSendTimer();
 }
 
@@ -107,25 +134,8 @@ void PageTimingMetricsSender::DidObserveLayoutShift(
   EnsureSendTimer();
 }
 
-void PageTimingMetricsSender::DidObserveLayoutNg(uint32_t all_block_count,
-                                                 uint32_t ng_block_count,
-                                                 uint32_t all_call_count,
-                                                 uint32_t ng_call_count) {
-  render_data_.all_layout_block_count_delta += all_block_count;
-  render_data_.ng_layout_block_count_delta += ng_block_count;
-  render_data_.all_layout_call_count_delta += all_call_count;
-  render_data_.ng_layout_call_count_delta += ng_call_count;
-  EnsureSendTimer();
-}
-
-void PageTimingMetricsSender::DidObserveMobileFriendlinessChanged(
-    const blink::MobileFriendliness& mf) {
-  mobile_friendliness_ = mf;
-  EnsureSendTimer();
-}
-
 void PageTimingMetricsSender::DidStartResponse(
-    const GURL& response_url,
+    const url::SchemeHostPort& final_response_url,
     int resource_id,
     const network::mojom::URLResponseHead& response_head,
     network::mojom::RequestDestination request_destination) {
@@ -135,7 +145,7 @@ void PageTimingMetricsSender::DidStartResponse(
       std::piecewise_construct, std::forward_as_tuple(resource_id),
       std::forward_as_tuple(std::make_unique<PageResourceDataUse>()));
   resource_it.first->second->DidStartResponse(
-      response_url, resource_id, response_head, request_destination);
+      final_response_url, resource_id, response_head, request_destination);
 }
 
 void PageTimingMetricsSender::DidReceiveTransferSizeUpdate(
@@ -205,8 +215,21 @@ void PageTimingMetricsSender::DidLoadResourceFromMemoryCache(
 }
 
 void PageTimingMetricsSender::OnMainFrameIntersectionChanged(
-    const gfx::Rect& main_frame_intersection) {
-  metadata_->main_frame_intersection_rect = main_frame_intersection;
+    const gfx::Rect& main_frame_intersection_rect) {
+  metadata_->main_frame_intersection_rect = main_frame_intersection_rect;
+  EnsureSendTimer();
+}
+
+void PageTimingMetricsSender::OnMainFrameViewportRectangleChanged(
+    const gfx::Rect& main_frame_viewport_rect) {
+  metadata_->main_frame_viewport_rect = main_frame_viewport_rect;
+  EnsureSendTimer();
+}
+
+void PageTimingMetricsSender::OnMainFrameImageAdRectangleChanged(
+    int element_id,
+    const gfx::Rect& image_ad_rect) {
+  metadata_->main_frame_image_ad_rects[element_id] = image_ad_rect;
   EnsureSendTimer();
 }
 
@@ -311,23 +334,24 @@ void PageTimingMetricsSender::SendNow() {
       page_resource_data_use_.erase(resource->resource_id());
     }
   }
-  sender_->SendTiming(last_timing_, metadata_, std::move(new_features_),
-                      std::move(resources), render_data_, last_cpu_timing_,
-                      std::move(input_timing_delta_), mobile_friendliness_);
+  sender_->SendTiming(
+      last_timing_, metadata_, std::move(new_features_), std::move(resources),
+      render_data_, last_cpu_timing_, std::move(input_timing_delta_),
+      subresource_load_metrics_.Clone(), soft_navigation_count_);
   input_timing_delta_ = mojom::InputTiming::New();
-  mobile_friendliness_ = absl::nullopt;
   InitiateUserInteractionTiming();
   new_features_.clear();
   metadata_->main_frame_intersection_rect.reset();
+  metadata_->main_frame_viewport_rect.reset();
+  metadata_->main_frame_image_ad_rects.clear();
   last_cpu_timing_->task_time = base::TimeDelta();
   modified_resources_.clear();
   render_data_.new_layout_shifts.clear();
   render_data_.layout_shift_delta = 0;
   render_data_.layout_shift_delta_before_input_or_scroll = 0;
-  render_data_.all_layout_block_count_delta = 0;
-  render_data_.ng_layout_block_count_delta = 0;
-  render_data_.all_layout_call_count_delta = 0;
-  render_data_.ng_layout_call_count_delta = 0;
+  // As PageTimingMetricsSender is owned by MetricsRenderFrameObserver, which is
+  // instantiated for each frame, there's no need to make soft_navigation_count_
+  // zero here, as its value only increments through the lifetime of the frame.
 }
 
 void PageTimingMetricsSender::DidObserveInputDelay(

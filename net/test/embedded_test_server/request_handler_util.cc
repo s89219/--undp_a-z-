@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,8 +26,7 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "url/gurl.h"
 
-namespace net {
-namespace test_server {
+namespace net::test_server {
 constexpr base::FilePath::CharType kMockHttpHeadersExtension[] =
     FILE_PATH_LITERAL("mock-http-headers");
 
@@ -80,6 +79,10 @@ std::string GetContentType(const base::FilePath& path) {
 }
 
 bool ShouldHandle(const HttpRequest& request, const std::string& path_prefix) {
+  if (request.method == METHOD_CONNECT) {
+    return false;
+  }
+
   GURL url = request.GetURL();
   return url.path() == path_prefix ||
          base::StartsWith(url.path(), path_prefix + "/",
@@ -155,6 +158,10 @@ std::unique_ptr<HttpResponse> HandleFileRequest(
   // This is a test-only server. Ignore I/O thread restrictions.
   // TODO(svaldez): Figure out why thread is I/O restricted in the first place.
   base::ScopedAllowBlockingForTesting allow_blocking;
+
+  if (request.method == METHOD_CONNECT) {
+    return nullptr;
+  }
 
   // A proxy request will have an absolute path. Simulate the proxy by stripping
   // the scheme, host, and port.
@@ -254,5 +261,4 @@ std::unique_ptr<HttpResponse> HandleFileRequest(
   return http_response;
 }
 
-}  // namespace test_server
-}  // namespace net
+}  // namespace net::test_server

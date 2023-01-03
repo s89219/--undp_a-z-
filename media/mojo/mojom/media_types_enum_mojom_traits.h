@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "build/build_config.h"
 #include "media/base/renderer_factory_selector.h"
 #include "media/base/svc_scalability_mode.h"
-#include "media/base/video_frame_metadata.h"
 #include "media/base/video_transformation.h"
 #include "media/cdm/cdm_document_service.h"
 #include "media/mojo/mojom/media_types.mojom-shared.h"
@@ -271,45 +270,11 @@ struct EnumTraits<media::mojom::VideoRotation, ::media::VideoRotation> {
 };
 
 template <>
-struct EnumTraits<media::mojom::CopyMode,
-                  ::media::VideoFrameMetadata::CopyMode> {
-  static media::mojom::CopyMode ToMojom(
-      ::media::VideoFrameMetadata::CopyMode input) {
-    switch (input) {
-      case ::media::VideoFrameMetadata::CopyMode::kCopyToNewTexture:
-        return media::mojom::CopyMode::kCopyToNewTexture;
-      case ::media::VideoFrameMetadata::CopyMode::kCopyMailboxesOnly:
-        return media::mojom::CopyMode::kCopyMailboxesOnly;
-    }
-
-    NOTREACHED();
-    return static_cast<media::mojom::CopyMode>(input);
-  }
-
-  // Returning false results in deserialization failure and causes the
-  // message pipe receiving it to be disconnected.
-  static bool FromMojom(media::mojom::CopyMode input,
-                        media::VideoFrameMetadata::CopyMode* output) {
-    switch (input) {
-      case media::mojom::CopyMode::kCopyToNewTexture:
-        *output = ::media::VideoFrameMetadata::CopyMode::kCopyToNewTexture;
-        return true;
-      case media::mojom::CopyMode::kCopyMailboxesOnly:
-        *output = ::media::VideoFrameMetadata::CopyMode::kCopyMailboxesOnly;
-        return true;
-    }
-
-    NOTREACHED();
-    return false;
-  }
-};
-
-template <>
 struct EnumTraits<media::mojom::RendererType, ::media::RendererType> {
   static media::mojom::RendererType ToMojom(::media::RendererType input) {
     switch (input) {
-      case ::media::RendererType::kDefault:
-        return media::mojom::RendererType::kDefault;
+      case ::media::RendererType::kRendererImpl:
+        return media::mojom::RendererType::kRendererImpl;
       case ::media::RendererType::kMojo:
         return media::mojom::RendererType::kMojo;
       case ::media::RendererType::kMediaPlayer:
@@ -328,6 +293,8 @@ struct EnumTraits<media::mojom::RendererType, ::media::RendererType> {
         return media::mojom::RendererType::kCastStreaming;
       case ::media::RendererType::kContentEmbedderDefined:
         return media::mojom::RendererType::kContentEmbedderDefined;
+      case ::media::RendererType::kTest:
+        return media::mojom::RendererType::kTest;
     }
 
     NOTREACHED();
@@ -339,8 +306,8 @@ struct EnumTraits<media::mojom::RendererType, ::media::RendererType> {
   static bool FromMojom(media::mojom::RendererType input,
                         ::media::RendererType* output) {
     switch (input) {
-      case media::mojom::RendererType::kDefault:
-        *output = ::media::RendererType::kDefault;
+      case media::mojom::RendererType::kRendererImpl:
+        *output = ::media::RendererType::kRendererImpl;
         return true;
       case media::mojom::RendererType::kMojo:
         *output = ::media::RendererType::kMojo;
@@ -368,6 +335,9 @@ struct EnumTraits<media::mojom::RendererType, ::media::RendererType> {
         return true;
       case media::mojom::RendererType::kContentEmbedderDefined:
         *output = ::media::RendererType::kContentEmbedderDefined;
+        return true;
+      case media::mojom::RendererType::kTest:
+        *output = ::media::RendererType::kTest;
         return true;
     }
 

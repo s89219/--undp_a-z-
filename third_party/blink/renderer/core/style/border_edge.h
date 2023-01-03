@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,9 @@ struct BorderEdge {
   float Width() const { return width_; }
 
   void ClampWidth(float width) {
-    if (width_ > width)
+    if (width_ > width) {
       width_ = width;
+    }
   }
 
   Color color;

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,7 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/view.h"
 
-namespace arc {
-namespace input_overlay {
+namespace arc::input_overlay {
 
 class DisplayOverlayController;
 class ActionView;
@@ -58,7 +57,6 @@ class ActionEditMenu : public views::View {
   raw_ptr<BindingButton> reset_ = nullptr;
 };
 
-}  // namespace input_overlay
-}  // namespace arc
+}  // namespace arc::input_overlay
 
 #endif  // CHROME_BROWSER_ASH_ARC_INPUT_OVERLAY_UI_ACTION_EDIT_MENU_H_

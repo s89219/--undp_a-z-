@@ -35,12 +35,12 @@
 #include "gin/public/v8_platform.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_deque.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_counted_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_linked_hash_set.h"
+#include "third_party/blink/renderer/platform/heap/cross_thread_persistent.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/heap_test_objects.h"
 #include "third_party/blink/renderer/platform/heap/heap_test_platform.h"
@@ -48,8 +48,8 @@
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 #include "third_party/blink/renderer/platform/heap/self_keep_alive.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
+#include "third_party/blink/renderer/platform/scheduler/public/non_main_thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
-#include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/hash_traits.h"
@@ -249,7 +249,7 @@ class HeapTestResurrectingPreFinalizer
     GlobalStorage() {
       // Reserve storage upfront to avoid allocations during pre-finalizer
       // insertion.
-      vector_member.ReserveCapacity(32);
+      vector_member.reserve(32);
       hash_set_member.ReserveCapacityForSize(32);
       hash_set_weak_member.ReserveCapacityForSize(32);
     }
@@ -333,9 +333,9 @@ class ThreadedTesterBase {
  protected:
   static void Test(ThreadedTesterBase* tester) {
     HeapTestingPlatformAdapter platform_for_threads(gin::V8Platform::Get());
-    std::unique_ptr<Thread> threads[kNumberOfThreads];
+    std::unique_ptr<NonMainThread> threads[kNumberOfThreads];
     for (auto& thread : threads) {
-      thread = Platform::Current()->CreateThread(
+      thread = NonMainThread::CreateThread(
           ThreadCreationParams(ThreadType::kTestThread)
               .SetThreadNameForTest("blink gc testing thread"));
       PostCrossThreadTask(
@@ -498,9 +498,7 @@ namespace WTF {
 template <typename T>
 struct DefaultHash;
 template <>
-struct DefaultHash<blink::ThreadMarker> {
-  typedef blink::ThreadMarkerHash Hash;
-};
+struct DefaultHash<blink::ThreadMarker> : blink::ThreadMarkerHash {};
 
 // ThreadMarkerHash is the default hash for ThreadMarker
 template <>
@@ -547,7 +545,7 @@ class ThreadedWeaknessTester : public ThreadedTesterBase {
         }
 
         TestSupportingGC::PreciselyCollectGarbage();
-        EXPECT_TRUE(weak_map->IsEmpty());
+        EXPECT_TRUE(weak_map->empty());
       }
       test::YieldCurrentThread();
     }
@@ -634,10 +632,9 @@ TEST_F(HeapTest, HashMapOfMembers) {
   IntWrapper::destructor_calls_ = 0;
   size_t initial_object_payload_size = GetOverallObjectSize();
   {
-    typedef HeapHashMap<Member<IntWrapper>, Member<IntWrapper>,
-                        DefaultHash<Member<IntWrapper>>::Hash,
-                        HashTraits<Member<IntWrapper>>,
-                        HashTraits<Member<IntWrapper>>>
+    typedef HeapHashMap<
+        Member<IntWrapper>, Member<IntWrapper>, DefaultHash<Member<IntWrapper>>,
+        HashTraits<Member<IntWrapper>>, HashTraits<Member<IntWrapper>>>
         HeapObjectIdentityMap;
 
     Persistent<HeapObjectIdentityMap> map =
@@ -834,20 +831,20 @@ TEST_F(HeapTest, HeapVectorShrinkCapacity) {
   ClearOutOldGarbage();
   HeapVector<Member<IntWrapper>> vector1;
   HeapVector<Member<IntWrapper>> vector2;
-  vector1.ReserveCapacity(96);
+  vector1.reserve(96);
   EXPECT_LE(96u, vector1.capacity());
   vector1.Grow(vector1.capacity());
 
   // Assumes none was allocated just after a vector backing of vector1.
   vector1.Shrink(56);
-  vector1.ShrinkToFit();
+  vector1.shrink_to_fit();
   EXPECT_GT(96u, vector1.capacity());
 
-  vector2.ReserveCapacity(20);
+  vector2.reserve(20);
   // Assumes another vector backing was allocated just after the vector
   // backing of vector1.
   vector1.Shrink(10);
-  vector1.ShrinkToFit();
+  vector1.shrink_to_fit();
   EXPECT_GT(56u, vector1.capacity());
 
   vector1.Grow(192);
@@ -858,13 +855,13 @@ TEST_F(HeapTest, HeapVectorShrinkInlineCapacity) {
   ClearOutOldGarbage();
   const size_t kInlineCapacity = 64;
   HeapVector<Member<IntWrapper>, kInlineCapacity> vector1;
-  vector1.ReserveCapacity(128);
+  vector1.reserve(128);
   EXPECT_LE(128u, vector1.capacity());
   vector1.Grow(vector1.capacity());
 
   // Shrink the external buffer.
   vector1.Shrink(90);
-  vector1.ShrinkToFit();
+  vector1.shrink_to_fit();
   EXPECT_GT(128u, vector1.capacity());
 
 // TODO(sof): if the ASan support for 'contiguous containers' is enabled,
@@ -874,12 +871,12 @@ TEST_F(HeapTest, HeapVectorShrinkInlineCapacity) {
 #if !defined(ANNOTATE_CONTIGUOUS_CONTAINER)
   // Shrinking switches the buffer from the external one to the inline one.
   vector1.Shrink(kInlineCapacity - 1);
-  vector1.ShrinkToFit();
+  vector1.shrink_to_fit();
   EXPECT_EQ(kInlineCapacity, vector1.capacity());
 
   // Try to shrink the inline buffer.
   vector1.Shrink(1);
-  vector1.ShrinkToFit();
+  vector1.shrink_to_fit();
   EXPECT_EQ(kInlineCapacity, vector1.capacity());
 #endif
 }
@@ -919,7 +916,7 @@ TEST_F(HeapTest, HeapVectorOnStackLargeObjectPageSized) {
   Container vector;
   wtf_size_t size = (kLargeObjectSizeThreshold + sizeof(Container::ValueType)) /
                     sizeof(Container::ValueType);
-  vector.ReserveCapacity(size);
+  vector.reserve(size);
   for (unsigned i = 0; i < size; ++i)
     vector.push_back(MakeGarbageCollected<IntWrapper>(i));
   ConservativelyCollectGarbage();
@@ -1736,7 +1733,7 @@ static void HeapMapDestructorHelper(bool clear_maps) {
       RefMap;
 
   typedef HeapHashMap<WeakMember<IntWrapper>, ThingWithDestructor,
-                      DefaultHash<WeakMember<IntWrapper>>::Hash,
+                      DefaultHash<WeakMember<IntWrapper>>,
                       HashTraits<WeakMember<IntWrapper>>>
       Map;
 
@@ -2612,11 +2609,11 @@ int OffHeapInt::destructor_calls_ = 0;
 
 TEST_F(HeapTest, Bind) {
   base::OnceClosure closure =
-      WTF::Bind(static_cast<void (Bar::*)(Visitor*) const>(&Bar::Trace),
-                WrapPersistent(MakeGarbageCollected<Bar>()), nullptr);
+      WTF::BindOnce(static_cast<void (Bar::*)(Visitor*) const>(&Bar::Trace),
+                    WrapPersistent(MakeGarbageCollected<Bar>()), nullptr);
   // OffHeapInt* should not make Persistent.
   base::OnceClosure closure2 =
-      WTF::Bind(&OffHeapInt::VoidFunction, OffHeapInt::Create(1));
+      WTF::BindOnce(&OffHeapInt::VoidFunction, OffHeapInt::Create(1));
   PreciselyCollectGarbage();
   // The closure should have a persistent handle to the Bar.
   EXPECT_EQ(1u, Bar::live_);
@@ -2624,8 +2621,8 @@ TEST_F(HeapTest, Bind) {
   UseMixin::trace_count_ = 0;
   auto* mixin = MakeGarbageCollected<UseMixin>();
   base::OnceClosure mixin_closure =
-      WTF::Bind(static_cast<void (Mixin::*)(Visitor*) const>(&Mixin::Trace),
-                WrapPersistent(mixin), nullptr);
+      WTF::BindOnce(static_cast<void (Mixin::*)(Visitor*) const>(&Mixin::Trace),
+                    WrapPersistent(mixin), nullptr);
   PreciselyCollectGarbage();
   // The closure should have a persistent handle to the mixin.
   EXPECT_LE(1, UseMixin::trace_count_);
@@ -2984,11 +2981,11 @@ TEST_F(HeapTest, HeapVectorPartObjects) {
     vector2.push_back(PartObjectWithRef(i));
   }
 
-  vector1.ReserveCapacity(150);
+  vector1.reserve(150);
   EXPECT_LE(150u, vector1.capacity());
   EXPECT_EQ(10u, vector1.size());
 
-  vector2.ReserveCapacity(100);
+  vector2.reserve(100);
   EXPECT_LE(100u, vector2.capacity());
   EXPECT_EQ(10u, vector2.size());
 
@@ -3113,7 +3110,7 @@ class KeyWithCopyingMoveConstructor final {
   DISALLOW_NEW();
 
  public:
-  struct Hash final {
+  struct Hash {
     STATIC_ONLY(Hash);
 
    public:
@@ -3161,9 +3158,8 @@ class KeyWithCopyingMoveConstructor final {
 namespace WTF {
 
 template <>
-struct DefaultHash<blink::KeyWithCopyingMoveConstructor> {
-  using Hash = blink::KeyWithCopyingMoveConstructor::Hash;
-};
+struct DefaultHash<blink::KeyWithCopyingMoveConstructor>
+    : blink::KeyWithCopyingMoveConstructor::Hash {};
 
 template <>
 struct HashTraits<blink::KeyWithCopyingMoveConstructor>
@@ -3265,12 +3261,12 @@ TEST_F(HeapTest, ContainerAnnotationOnTinyBacking) {
   // =1, and capacity = 1.
   HeapVector<uint32_t> vector;
   DCHECK_EQ(0u, vector.capacity());
-  vector.ReserveCapacity(1);
-  DCHECK_EQ(1u, vector.capacity());
+  vector.reserve(1);
+  DCHECK_LE(1u, vector.capacity());
   // The following push_back() should not crash, even with container
   // annotations. The critical path expands the backing without allocating a new
   // one.
-  vector.ReserveCapacity(2);
+  vector.reserve(2);
 }
 
 }  // namespace blink

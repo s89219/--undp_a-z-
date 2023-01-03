@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,8 @@ void TestLoginScreenModel::SetFingerprintState(const AccountId& account_id,
 void TestLoginScreenModel::NotifyFingerprintAuthResult(
     const AccountId& account_id,
     bool successful) {}
+void TestLoginScreenModel::ResetFingerprintUIState(
+    const AccountId& account_id) {}
 void TestLoginScreenModel::SetSmartLockState(const AccountId& account_id,
                                              ash::SmartLockState state) {}
 void TestLoginScreenModel::NotifySmartLockAuthResult(

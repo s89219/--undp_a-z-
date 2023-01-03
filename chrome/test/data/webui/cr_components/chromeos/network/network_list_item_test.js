@@ -1,45 +1,36 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// clang-format off
-// #import 'chrome://os-settings/strings.m.js';
-// #import 'chrome://resources/cr_components/chromeos/network/network_list_item.m.js';
+import 'chrome://os-settings/strings.m.js';
+import 'chrome://resources/ash/common/network/network_list_item.js';
 
-// #import 'chrome://resources/mojo/mojo/public/js/mojo_bindings_lite.js';
-// #import 'chrome://resources/mojo/services/network/public/mojom/ip_address.mojom-lite.js';
-// #import 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/network_types.mojom-lite.js';
-// #import 'chrome://resources/mojo/mojo/public/mojom/base/time.mojom-lite.js';
-// #import 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/cros_network_config.mojom-lite.js';
-
-// #import {OncMojo} from 'chrome://resources/cr_components/chromeos/network/onc_mojo.m.js';
-// #import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-// #import {FakeNetworkConfig} from 'chrome://test/chromeos/fake_network_config_mojom.js';
-// #import {setESimManagerRemoteForTesting} from 'chrome://resources/cr_components/chromeos/cellular_setup/mojo_interface_provider.m.js';
-// #import {FakeESimManagerRemote} from 'chrome://test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.m.js';
-// #import {MojoInterfaceProviderImpl} from 'chrome://resources/cr_components/chromeos/network/mojo_interface_provider.m.js';
-// #import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
-// #import {NetworkList} from 'chrome://resources/cr_components/chromeos/network/network_list_types.m.js';
-// #import {keyDownOn, move} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
-// #import {eventToPromise} from 'chrome://test/test_util.js';
-// #import {CellularSetupPageName} from 'chrome://resources/cr_components/chromeos/cellular_setup/cellular_types.m.js';
-// clang-format on
+import {CellularSetupPageName} from 'chrome://resources/ash/common/cellular_setup/cellular_types.js';
+import {setESimManagerRemoteForTesting} from 'chrome://resources/ash/common/cellular_setup/mojo_interface_provider.js';
+import {MojoInterfaceProviderImpl} from 'chrome://resources/ash/common/network/mojo_interface_provider.js';
+import {NetworkList} from 'chrome://resources/ash/common/network/network_list_types.js';
+import {OncMojo} from 'chrome://resources/ash/common/network/onc_mojo.js';
+import {ActivationStateType, CrosNetworkConfigRemote, InhibitReason, SecurityType} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/cros_network_config.mojom-webui.js';
+import {ConnectionStateType, NetworkType, OncSource, PortalState} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/network_types.mojom-webui.js';
+import {keyDownOn} from 'chrome://resources/polymer/v3_0/iron-test-helpers/mock-interactions.js';
+import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {FakeNetworkConfig} from 'chrome://test/chromeos/fake_network_config_mojom.js';
+import {FakeESimManagerRemote} from 'chrome://test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
 suite('NetworkListItemTest', function() {
   /** @type {!NetworkListItem|undefined} */
   let listItem;
-  let mojom;
   let eSimManagerRemote = null;
 
-  /** @type {!chromeos.networkConfig.mojom.CrosNetworkConfigRemote|undefined} */
+  /** @type {!CrosNetworkConfigRemote|undefined} */
   let mojoApi_;
 
   let eventTriggered;
 
   setup(function() {
-    mojom = chromeos.networkConfig.mojom;
     mojoApi_ = new FakeNetworkConfig();
-    network_config.MojoInterfaceProviderImpl.getInstance().remote_ = mojoApi_;
+    MojoInterfaceProviderImpl.getInstance().remote_ = mojoApi_;
     eSimManagerRemote = new FakeESimManagerRemote();
     setESimManagerRemoteForTesting(eSimManagerRemote);
   });
@@ -50,12 +41,12 @@ suite('NetworkListItemTest', function() {
     setEventListeners();
     eventTriggered = false;
     document.body.appendChild(listItem);
-    Polymer.dom.flush();
+    flush();
   }
 
-  function initCellularNetwork(iccid, eid, simLocked) {
+  function initCellularNetwork(iccid, eid, simLocked, name) {
     const properties = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+        NetworkType.kCellular, 'cellular', name);
     properties.typeProperties.cellular.iccid = iccid;
     properties.typeProperties.cellular.eid = eid;
     properties.typeProperties.cellular.simLocked = simLocked;
@@ -79,7 +70,7 @@ suite('NetworkListItemTest', function() {
   }
 
   function flushAsync() {
-    Polymer.dom.flush();
+    flush();
     // Use setTimeout to wait for the next macrotask.
     return new Promise(resolve => setTimeout(resolve));
   }
@@ -95,13 +86,13 @@ suite('NetworkListItemTest', function() {
     let networkIcon = listItem.$$('network-icon');
     assertFalse(!!networkIcon);
 
-    const properties = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kEthernet, 'eth0');
+    const properties =
+        OncMojo.getDefaultManagedProperties(NetworkType.kEthernet, 'eth0');
     mojoApi_.setManagedPropertiesForTest(properties);
     listItem.item = OncMojo.managedPropertiesToNetworkState(properties);
 
     // Update the network state.
-    Polymer.dom.flush();
+    flush();
 
     // The network icon exists now.
     networkIcon = listItem.$$('network-icon');
@@ -150,12 +141,37 @@ suite('NetworkListItemTest', function() {
 
     // Change to network state without provider name and verify that that title
     // is displayed correctly.
-    const ethernetProperties = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kEthernet, 'eth0');
+    const ethernetProperties =
+        OncMojo.getDefaultManagedProperties(NetworkType.kEthernet, 'eth0');
     mojoApi_.setManagedPropertiesForTest(ethernetProperties);
     listItem.item = OncMojo.managedPropertiesToNetworkState(ethernetProperties);
     await flushAsync();
     assertEquals('Ethernet', getTitle());
+  });
+
+  test('eSIM network title', async () => {
+    init();
+
+    const getTitle = () => {
+      const element = listItem.$$('#itemTitle');
+      return element ? element.textContent.trim() : '';
+    };
+
+    const euicc = eSimManagerRemote.addEuiccForTest(/*numProfiles=*/ 1);
+    const providerName = 'provider1';
+    listItem.item = initCellularNetwork(
+        /*iccid=*/ '1', /*eid=*/ '1', /*simlock=*/ false, 'nickname');
+    await flushAsync();
+    assertEquals(
+        listItem.i18n('networkListItemTitle', 'nickname', providerName),
+        getTitle());
+
+    // Change eSIM network's name to the same as provider name, verifies that
+    // the title only show the network name.
+    listItem.item = initCellularNetwork(
+        /*iccid=*/ '1', /*eid=*/ '1', /*simlock=*/ false, providerName);
+    await flushAsync();
+    assertEquals(providerName, getTitle());
   });
 
   test('Network title is escaped', async () => {
@@ -184,12 +200,12 @@ suite('NetworkListItemTest', function() {
     assertFalse(!!listItem.$$('#activateButton'));
 
     // Set item to an activated pSIM network first.
-    const managedPropertiesActivated = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+    const managedPropertiesActivated =
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesActivated.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kActivated;
+        ActivationStateType.kActivated;
     managedPropertiesActivated.typeProperties.cellular.paymentPortal = {
-      url: 'url'
+      url: 'url',
     };
     mojoApi_.setManagedPropertiesForTest(managedPropertiesActivated);
 
@@ -204,13 +220,12 @@ suite('NetworkListItemTest', function() {
 
     // Set item to an unactivated eSIM network with a payment URL.
     const managedPropertiesESimNotActivated =
-        OncMojo.getDefaultManagedProperties(
-            mojom.NetworkType.kCellular, 'cellular');
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesESimNotActivated.typeProperties.cellular.eid = 'eid';
     managedPropertiesESimNotActivated.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kNotActivated;
+        ActivationStateType.kNotActivated;
     managedPropertiesESimNotActivated.typeProperties.cellular.paymentPortal = {
-      url: 'url'
+      url: 'url',
     };
     mojoApi_.setManagedPropertiesForTest(managedPropertiesESimNotActivated);
 
@@ -223,12 +238,12 @@ suite('NetworkListItemTest', function() {
     assertFalse(networkStateText.hidden);
 
     // Set item to an unactivated pSIM network with a payment URL.
-    const managedPropertiesNotActivated = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+    const managedPropertiesNotActivated =
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesNotActivated.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kNotActivated;
+        ActivationStateType.kNotActivated;
     managedPropertiesNotActivated.typeProperties.cellular.paymentPortal = {
-      url: 'url'
+      url: 'url',
     };
     mojoApi_.setManagedPropertiesForTest(managedPropertiesNotActivated);
 
@@ -250,15 +265,15 @@ suite('NetworkListItemTest', function() {
 
     // Clicking the activate button should fire the show-cellular-setup event.
     const showCellularSetupPromise =
-        test_util.eventToPromise('show-cellular-setup', listItem);
+        eventToPromise('show-cellular-setup', listItem);
     activateButton.click();
     const showCellularSetupEvent = await showCellularSetupPromise;
     assertEquals(
         showCellularSetupEvent.detail.pageName,
-        cellularSetup.CellularSetupPageName.PSIM_FLOW_UI);
+        CellularSetupPageName.PSIM_FLOW_UI);
 
     // Selecting the row should fire the show-detail event.
-    const showDetailPromise = test_util.eventToPromise('show-detail', listItem);
+    const showDetailPromise = eventToPromise('show-detail', listItem);
     listItem.$.divOuter.click();
     const showDetailEvent = await showDetailPromise;
     assertEquals(showDetailEvent.detail, networkState);
@@ -280,14 +295,13 @@ suite('NetworkListItemTest', function() {
 
     // Set item to an unactivated eSIM network without a payment URL.
     const managedPropertiesESimUnavailable =
-        OncMojo.getDefaultManagedProperties(
-            mojom.NetworkType.kCellular, 'cellular');
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesESimUnavailable.typeProperties.cellular.eid = 'eid';
     managedPropertiesESimUnavailable.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kNotActivated;
+        ActivationStateType.kNotActivated;
     managedPropertiesESimUnavailable.typeProperties.cellular.paymentPortal = {};
     managedPropertiesESimUnavailable.connectionState =
-        mojom.ConnectionStateType.kConnected;
+        ConnectionStateType.kConnected;
     mojoApi_.setManagedPropertiesForTest(managedPropertiesESimUnavailable);
 
     listItem.item = OncMojo.managedPropertiesToNetworkState(
@@ -304,16 +318,16 @@ suite('NetworkListItemTest', function() {
         listItem.i18n('networkListItemUnavailableSimNetwork'));
 
     // Selecting the row should fire the show-detail event.
-    let showDetailPromise = test_util.eventToPromise('show-detail', listItem);
+    let showDetailPromise = eventToPromise('show-detail', listItem);
     listItem.$.divOuter.click();
     let showDetailEvent = await showDetailPromise;
     assertEquals(showDetailEvent.detail, listItem.item);
 
     // Set item to an unactivated pSIM network without a payment URL.
-    const managedPropertiesUnavailable = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+    const managedPropertiesUnavailable =
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesUnavailable.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kNotActivated;
+        ActivationStateType.kNotActivated;
     managedPropertiesUnavailable.typeProperties.cellular.paymentPortal = {};
     mojoApi_.setManagedPropertiesForTest(managedPropertiesUnavailable);
 
@@ -336,7 +350,7 @@ suite('NetworkListItemTest', function() {
     assertTrue(!!arrow);
 
     // Selecting the row should fire the show-detail event.
-    showDetailPromise = test_util.eventToPromise('show-detail', listItem);
+    showDetailPromise = eventToPromise('show-detail', listItem);
     listItem.$.divOuter.click();
     showDetailEvent = await showDetailPromise;
     assertEquals(showDetailEvent.detail, networkState);
@@ -346,10 +360,10 @@ suite('NetworkListItemTest', function() {
     assertFalse(!!listItem.$$('#activatingPSimSpinner'));
 
     // Set item to an activated pSIM network first.
-    const managedPropertiesActivated = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+    const managedPropertiesActivated =
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesActivated.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kActivated;
+        ActivationStateType.kActivated;
     mojoApi_.setManagedPropertiesForTest(managedPropertiesActivated);
 
     listItem.item =
@@ -360,12 +374,12 @@ suite('NetworkListItemTest', function() {
     assertFalse(!!listItem.$$('#activatingPSimSpinner'));
 
     // Set item to an activating eSIM network.
-    const managedPropertiesESimActivating = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+    const managedPropertiesESimActivating =
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
 
     managedPropertiesESimActivating.typeProperties.cellular.eid = 'eid';
     managedPropertiesESimActivating.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kActivating;
+        ActivationStateType.kActivating;
     mojoApi_.setManagedPropertiesForTest(managedPropertiesESimActivating);
 
     listItem.item = OncMojo.managedPropertiesToNetworkState(
@@ -376,10 +390,10 @@ suite('NetworkListItemTest', function() {
     assertFalse(!!listItem.$$('#activatingPSimSpinner'));
 
     // Set item to an activating pSIM network.
-    const managedPropertiesActivating = OncMojo.getDefaultManagedProperties(
-        mojom.NetworkType.kCellular, 'cellular');
+    const managedPropertiesActivating =
+        OncMojo.getDefaultManagedProperties(NetworkType.kCellular, 'cellular');
     managedPropertiesActivating.typeProperties.cellular.activationState =
-        mojom.ActivationStateType.kActivating;
+        ActivationStateType.kActivating;
     mojoApi_.setManagedPropertiesForTest(managedPropertiesActivating);
 
     const networkState =
@@ -395,7 +409,7 @@ suite('NetworkListItemTest', function() {
     assertTrue(!!arrow);
 
     // Selecting the row should fire the show-detail event.
-    const showDetailPromise = test_util.eventToPromise('show-detail', listItem);
+    const showDetailPromise = eventToPromise('show-detail', listItem);
     listItem.$.divOuter.click();
     const showDetailEvent = await showDetailPromise;
     assertEquals(showDetailEvent.detail, networkState);
@@ -533,8 +547,8 @@ suite('NetworkListItemTest', function() {
 
     listItem.item = initCellularNetwork(iccid, eid, /*simlocked=*/ true);
     listItem.deviceState = {
-      type: mojom.NetworkType.kCellular,
-      inhibitedReason: mojom.InhibitReason.kInstallingProfile,
+      type: NetworkType.kCellular,
+      inhibitedReason: InhibitReason.kInstallingProfile,
     };
 
     await flushAsync();
@@ -559,14 +573,13 @@ suite('NetworkListItemTest', function() {
       },
     };
     listItem.deviceState = {
-      type: mojom.NetworkType.kCellular,
-      inhibitedReason: mojom.InhibitReason.kInstallingProfile,
+      type: NetworkType.kCellular,
+      inhibitedReason: InhibitReason.kInstallingProfile,
     };
 
     await flushAsync();
 
-    listItem.deviceState.inhibitedReason =
-        mojom.InhibitReason.kInstallingProfile;
+    listItem.deviceState.inhibitedReason = InhibitReason.kInstallingProfile;
 
     const installButton = listItem.$$('#installButton');
     assertTrue(!!installButton);
@@ -591,13 +604,13 @@ suite('NetworkListItemTest', function() {
         init();
 
         const properties = OncMojo.getDefaultManagedProperties(
-            mojom.NetworkType.kCellular, 'cellular');
+            NetworkType.kCellular, 'cellular');
         mojoApi_.setManagedPropertiesForTest(properties);
         listItem.networkState =
             OncMojo.managedPropertiesToNetworkState(properties);
         listItem.deviceState = {
-          type: mojom.NetworkType.kCellular,
-          inhibitedReason: mojom.InhibitReason.kInstallingProfile,
+          type: NetworkType.kCellular,
+          inhibitedReason: InhibitReason.kInstallingProfile,
         };
         await flushAsync();
 
@@ -679,11 +692,10 @@ suite('NetworkListItemTest', function() {
     assertFalse(listItem.computeIsBlockedNetwork_());
 
     // Set item to a policy blocked wifi network.
-    const managedProperties = OncMojo.getDefaultManagedProperties(
-        chromeos.networkConfig.mojom.NetworkType.kWiFi, 'wifiguid');
-    managedProperties.source = chromeos.networkConfig.mojom.OncSource.kUser;
-    managedProperties.typeProperties.wifi.security =
-        chromeos.networkConfig.mojom.SecurityType.kWepPsk;
+    const managedProperties =
+        OncMojo.getDefaultManagedProperties(NetworkType.kWiFi, 'wifiguid');
+    managedProperties.source = OncSource.kUser;
+    managedProperties.typeProperties.wifi.security = SecurityType.kWepPsk;
     mojoApi_.setManagedPropertiesForTest(managedProperties);
     const networkState =
         OncMojo.managedPropertiesToNetworkState(managedProperties);
@@ -703,10 +715,9 @@ suite('NetworkListItemTest', function() {
 
         // Set item to a policy blocked cellular network.
         const managedProperties = OncMojo.getDefaultManagedProperties(
-            mojom.NetworkType.kCellular, 'cellular');
-        managedProperties.connectionState =
-            mojom.ConnectionStateType.kNotConnected;
-        managedProperties.source = mojom.OncSource.kNone;
+            NetworkType.kCellular, 'cellular');
+        managedProperties.connectionState = ConnectionStateType.kNotConnected;
+        managedProperties.source = OncSource.kNone;
         mojoApi_.setManagedPropertiesForTest(managedProperties);
 
         const networkState =
@@ -719,10 +730,106 @@ suite('NetworkListItemTest', function() {
         await flushAsync();
 
         // Selecting the row should fire the show-detail event.
-        const showDetailPromise =
-            test_util.eventToPromise('selected', listItem);
+        const showDetailPromise = eventToPromise('selected', listItem);
         listItem.$.divOuter.click();
         const showDetailEvent = await showDetailPromise;
         assertEquals(showDetailEvent.detail, networkState);
       });
+
+  suite('Portal', function() {
+    function initWithPortalState(flagEnabled, portalState) {
+      const managedProperties =
+          OncMojo.getDefaultManagedProperties(NetworkType.kWiFi, 'wifiguid');
+      managedProperties.source = OncSource.kUser;
+      managedProperties.typeProperties.wifi.security = SecurityType.kNone;
+      mojoApi_.setManagedPropertiesForTest(managedProperties);
+      const networkState =
+          OncMojo.managedPropertiesToNetworkState(managedProperties);
+      networkState.portalState = portalState;
+      networkState.connectionState = ConnectionStateType.kPortal;
+      listItem.isCaptivePortalUI2022Enabled_ = flagEnabled;
+      listItem.item = networkState;
+      flush();
+    }
+
+    test('kPortal portalState flag disabled', async () => {
+      init();
+      initWithPortalState(false /* flagEnabled */, PortalState.kPortal);
+      const getNetworkStateText = () => {
+        const element = listItem.$$('#networkStateText');
+        return element ? element.textContent.trim() : '';
+      };
+      assertNotEquals(
+          getNetworkStateText(), listItem.i18n('networkListItemSignIn'));
+      assertFalse(
+          listItem.$$('#networkStateText').classList.contains('warning'));
+      assertTrue(!!listItem.$$('#networkStateText').hasAttribute('active'));
+    });
+
+    test('kPortal portalState show sign in description', async () => {
+      init();
+      initWithPortalState(true /* flagEnabled */, PortalState.kPortal);
+      const getNetworkStateText = () => {
+        const element = listItem.$$('#networkStateText');
+        return element ? element.textContent.trim() : '';
+      };
+      assertEquals(
+          getNetworkStateText(), listItem.i18n('networkListItemSignIn'));
+      assertTrue(
+          listItem.$$('#networkStateText').classList.contains('warning'));
+      assertFalse(!!listItem.$$('#networkStateText').hasAttribute('active'));
+    });
+
+    test('kPortalProxyAuth portalState show sign in description', async () => {
+      init();
+      initWithPortalState(
+          true /* flagEnabled */, PortalState.kProxyAuthRequired);
+      const getNetworkStateText = () => {
+        const element = listItem.$$('#networkStateText');
+        return element ? element.textContent.trim() : '';
+      };
+      assertEquals(
+          getNetworkStateText(), listItem.i18n('networkListItemSignIn'));
+      assertTrue(
+          listItem.$$('#networkStateText').classList.contains('warning'));
+      assertFalse(!!listItem.$$('#networkStateText').hasAttribute('active'));
+    });
+
+    test(
+        'kPortalSuspected portalState show limited connectivity description',
+        async () => {
+          init();
+          initWithPortalState(
+              true /* flagEnabled */, PortalState.kPortalSuspected);
+          const getNetworkStateText = () => {
+            const element = listItem.$$('#networkStateText');
+            return element ? element.textContent.trim() : '';
+          };
+          assertEquals(
+              getNetworkStateText(),
+              listItem.i18n('networkListItemConnectedLimited'));
+          assertTrue(
+              listItem.$$('#networkStateText').classList.contains('warning'));
+          assertFalse(
+              !!listItem.$$('#networkStateText').hasAttribute('active'));
+        });
+
+    test(
+        'kNoInternet portalState show no connectivity description',
+        async () => {
+          init();
+          initWithPortalState(true /* flagEnabled */, PortalState.kNoInternet);
+          const getNetworkStateText = () => {
+            const element = listItem.$$('#networkStateText');
+            return element ? element.textContent.trim() : '';
+          };
+          assertEquals(
+              getNetworkStateText(),
+              listItem.i18n('networkListItemConnectedNoConnectivity'));
+          assertTrue(
+              listItem.$$('#networkStateText').classList.contains('warning'));
+          assertFalse(
+              !!listItem.$$('#networkStateText').hasAttribute('active'));
+        });
+  });
 });

@@ -1,16 +1,16 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // Include test fixture.
-GEN_INCLUDE(['../../testing/chromevox_e2e_test_base.js']);
+GEN_INCLUDE(['../../testing/chromevox_next_e2e_test_base.js']);
 
 /**
  * Test fixture for BrailleTranslatorManager tests.
  * This is an E2E test because there's no easy way to load a data file in
  * a webui-style test.
  */
-ChromeVoxBrailleTranslatorManagerTest = class extends ChromeVoxE2ETest {
+ChromeVoxBrailleTranslatorManagerTest = class extends ChromeVoxNextE2ETest {
   /** @override */
   async setUpDeferred() {
     await super.setUpDeferred();
@@ -19,6 +19,7 @@ ChromeVoxBrailleTranslatorManagerTest = class extends ChromeVoxE2ETest {
     await importModule(
         'BrailleTranslatorManager',
         '/chromevox/background/braille/braille_translator_manager.js');
+    await importModule('LocalStorage', '/common/local_storage.js');
 
     this.liblouis = new FakeLibLouis();
     this.manager = new BrailleTranslatorManager(this.liblouis);
@@ -46,15 +47,13 @@ FakeLibLouis.prototype = {
     const tables = this.translatorManager.getTablesForTest();
     let result = null;
     if (tables != null) {
-      const found = tables.filter(function(table) {
-        return table.fileNames === fileNames;
-      })[0];
+      const found = tables.filter(table => table.fileNames === fileNames)[0];
       if (found) {
         result = new FakeTranslator(found);
       }
     }
     callback(result);
-  }
+  },
 };
 
 FakeTranslator = class {
@@ -96,7 +95,7 @@ TEST_F(
         this.manager.addChangeListener(function() {
           assertNotReached('Refresh should not be called without a change.');
         });
-        this.manager.refresh(localStorage['brailleTable']);
+        this.manager.refresh(LocalStorage.get('brailleTable'));
       });
     });
 

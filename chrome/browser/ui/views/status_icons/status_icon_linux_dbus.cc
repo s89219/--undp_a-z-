@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,6 @@
 #include "base/process/process.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/task_runner_util.h"
 #include "base/task/thread_pool.h"
 #include "components/dbus/menu/menu.h"
 #include "components/dbus/properties/dbus_properties.h"
@@ -41,7 +40,7 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
-#include "ui/views/linux_ui/status_icon_linux.h"
+#include "ui/linux/status_icon_linux.h"
 
 namespace {
 
@@ -151,12 +150,14 @@ bool ShouldWriteIconToFile() {
       return true;
     case base::nix::DESKTOP_ENVIRONMENT_OTHER:
     case base::nix::DESKTOP_ENVIRONMENT_CINNAMON:
+    case base::nix::DESKTOP_ENVIRONMENT_DEEPIN:
     case base::nix::DESKTOP_ENVIRONMENT_KDE3:
     case base::nix::DESKTOP_ENVIRONMENT_KDE4:
     case base::nix::DESKTOP_ENVIRONMENT_KDE5:
     case base::nix::DESKTOP_ENVIRONMENT_UKUI:
     case base::nix::DESKTOP_ENVIRONMENT_UNITY:
     case base::nix::DESKTOP_ENVIRONMENT_XFCE:
+    case base::nix::DESKTOP_ENVIRONMENT_LXQT:
       return false;
   }
   NOTREACHED();
@@ -474,8 +475,8 @@ void StatusIconLinuxDbus::SetIconImpl(const gfx::ImageSkia& image,
     return;
 
   if (should_write_icon_to_file_) {
-    base::PostTaskAndReplyWithResult(
-        icon_task_runner_.get(), FROM_HERE,
+    icon_task_runner_->PostTaskAndReplyWithResult(
+        FROM_HERE,
         base::BindOnce(WriteIconFile, icon_file_id_++,
                        gfx::Image(image).As1xPNGBytes()),
         base::BindOnce(&StatusIconLinuxDbus::OnIconFileWritten, this));
@@ -515,7 +516,7 @@ void StatusIconLinuxDbus::CleanupIconFile() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!icon_file_.empty()) {
     icon_task_runner_->PostTask(
-        FROM_HERE, (base::BindOnce(base::GetDeletePathRecursivelyCallback(),
-                                   icon_file_.DirName())));
+        FROM_HERE,
+        (base::GetDeletePathRecursivelyCallback(icon_file_.DirName())));
   }
 }

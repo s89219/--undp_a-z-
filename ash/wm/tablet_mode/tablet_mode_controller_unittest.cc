@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,8 +42,10 @@
 #include "base/run_loop.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/metrics/user_action_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
+#include "chromeos/ui/wm/features.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/base/hit_test.h"
@@ -64,6 +66,7 @@
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/vector3d_f.h"
 #include "ui/message_center/message_center.h"
+#include "ui/ozone/public/ozone_switches.h"
 #include "ui/views/test/native_widget_factory.h"
 #include "ui/wm/core/cursor_manager.h"
 #include "ui/wm/core/window_util.h"
@@ -196,13 +199,6 @@ class TabletModeControllerTest : public AshTestBase {
 
   bool IsScreenshotShown() const { return test_api_->IsScreenshotShown(); }
   float GetLidAngle() const { return test_api_->GetLidAngle(); }
-
-  bool IsShelfOpaque() const {
-    const aura::Window* shelf_container =
-        Shell::GetPrimaryRootWindow()->GetChildById(
-            kShellWindowId_ShelfContainer);
-    return shelf_container->layer()->opacity() == 1.0;
-  }
 
   // Creates a test window snapped on the left in desktop mode.
   std::unique_ptr<aura::Window> CreateDesktopWindowSnappedLeft(
@@ -1197,9 +1193,9 @@ TEST_F(TabletModeControllerTest, StartTabletActiveNoSnap) {
 TEST_F(TabletModeControllerTest, StartTabletActiveLeftSnap) {
   std::unique_ptr<aura::Window> window = CreateDesktopWindowSnappedLeft();
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(window.get(), split_view_controller()->left_window());
+  EXPECT_EQ(window.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(window.get(), window_util::GetActiveWindow());
 }
@@ -1209,9 +1205,9 @@ TEST_F(TabletModeControllerTest, StartTabletActiveLeftSnap) {
 TEST_F(TabletModeControllerTest, StartTabletActiveRightSnap) {
   std::unique_ptr<aura::Window> window = CreateDesktopWindowSnappedRight();
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kRightSnapped,
+  EXPECT_EQ(SplitViewController::State::kSecondarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(window.get(), split_view_controller()->right_window());
+  EXPECT_EQ(window.get(), split_view_controller()->secondary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(window.get(), window_util::GetActiveWindow());
 }
@@ -1227,8 +1223,8 @@ TEST_F(TabletModeControllerTest, StartTabletActiveLeftSnapPreviousRightSnap) {
   tablet_mode_controller()->SetEnabledForTest(true);
   EXPECT_EQ(SplitViewController::State::kBothSnapped,
             split_view_controller()->state());
-  EXPECT_EQ(left_window.get(), split_view_controller()->left_window());
-  EXPECT_EQ(right_window.get(), split_view_controller()->right_window());
+  EXPECT_EQ(left_window.get(), split_view_controller()->primary_window());
+  EXPECT_EQ(right_window.get(), split_view_controller()->secondary_window());
   EXPECT_FALSE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(left_window.get(), window_util::GetActiveWindow());
 }
@@ -1244,8 +1240,8 @@ TEST_F(TabletModeControllerTest, StartTabletActiveRightSnapPreviousLeftSnap) {
   tablet_mode_controller()->SetEnabledForTest(true);
   EXPECT_EQ(SplitViewController::State::kBothSnapped,
             split_view_controller()->state());
-  EXPECT_EQ(left_window.get(), split_view_controller()->left_window());
-  EXPECT_EQ(right_window.get(), split_view_controller()->right_window());
+  EXPECT_EQ(left_window.get(), split_view_controller()->primary_window());
+  EXPECT_EQ(right_window.get(), split_view_controller()->secondary_window());
   EXPECT_FALSE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(right_window.get(), window_util::GetActiveWindow());
 }
@@ -1260,9 +1256,9 @@ TEST_F(TabletModeControllerTest, StartTabletActiveTransientChildOfLeftSnap) {
   ::wm::AddTransientChild(parent.get(), child.get());
   wm::ActivateWindow(child.get());
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(parent.get(), split_view_controller()->left_window());
+  EXPECT_EQ(parent.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(child.get(), window_util::GetActiveWindow());
 }
@@ -1273,14 +1269,14 @@ TEST_F(TabletModeControllerTest, StartTabletActiveTransientChildOfLeftSnap) {
 TEST_F(TabletModeControllerTest, StartTabletActiveAppListPreviousLeftSnap) {
   std::unique_ptr<aura::Window> window = CreateDesktopWindowSnappedLeft();
   auto* app_list_controller = Shell::Get()->app_list_controller();
-  app_list_controller->ShowAppList();
+  app_list_controller->ShowAppList(AppListShowSource::kSearchKey);
   aura::Window* app_list_window = app_list_controller->GetWindow();
   ASSERT_TRUE(app_list_window);
   ASSERT_TRUE(wm::IsActiveWindow(app_list_window));
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(window.get(), split_view_controller()->left_window());
+  EXPECT_EQ(window.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(window.get(), window_util::GetActiveWindow());
 }
@@ -1297,9 +1293,9 @@ TEST_F(TabletModeControllerTest, StartTabletActiveDraggedPreviousLeftSnap) {
       dragged_window.get(), gfx::PointF(), HTCAPTION,
       ToplevelWindowEventHandler::EndClosure()));
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(snapped_window.get(), split_view_controller()->left_window());
+  EXPECT_EQ(snapped_window.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(snapped_window.get(), window_util::GetActiveWindow());
 }
@@ -1316,9 +1312,9 @@ TEST_F(TabletModeControllerTest,
       CreateDesktopWindowSnappedLeft();
   wm::ActivateWindow(window_hidden_from_overview.get());
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(snapped_window.get(), split_view_controller()->left_window());
+  EXPECT_EQ(snapped_window.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(snapped_window.get(), window_util::GetActiveWindow());
 }
@@ -1339,9 +1335,9 @@ TEST_F(TabletModeControllerTest,
       dragged_window.get(), gfx::PointF(), HTCAPTION,
       ToplevelWindowEventHandler::EndClosure()));
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(parent.get(), split_view_controller()->left_window());
+  EXPECT_EQ(parent.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(parent.get(), window_util::GetActiveWindow());
 }
@@ -1425,9 +1421,9 @@ TEST_F(TabletModeControllerTest,
   right_window_state->OnWMEvent(&snap_to_right);
   ASSERT_EQ(left_window.get(), window_util::GetActiveWindow());
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(left_window.get(), split_view_controller()->left_window());
+  EXPECT_EQ(left_window.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(left_window.get(), window_util::GetActiveWindow());
 }
@@ -1455,9 +1451,9 @@ TEST_F(TabletModeControllerTest,
       CreateDesktopWindowSnappedRight();
   ASSERT_EQ(right_window.get(), window_util::GetActiveWindow());
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kRightSnapped,
+  EXPECT_EQ(SplitViewController::State::kSecondarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(right_window.get(), split_view_controller()->right_window());
+  EXPECT_EQ(right_window.get(), split_view_controller()->secondary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(right_window.get(), window_util::GetActiveWindow());
 }
@@ -1470,7 +1466,7 @@ TEST_F(TabletModeControllerTest,
       Shell::Get()->app_list_controller();
   std::unique_ptr<aura::Window> window = CreateDesktopWindowSnappedLeft();
   tablet_mode_controller()->SetEnabledForTest(true);
-  app_list_controller->ShowAppList();
+  app_list_controller->ShowAppList(AppListShowSource::kSearchKey);
 
   EXPECT_FALSE(app_list_controller->IsVisible());
 }
@@ -1483,9 +1479,9 @@ TEST_F(TabletModeControllerTest, StartTabletActiveLeftSnapPreviousLeftSnap) {
   std::unique_ptr<aura::Window> window2 = CreateDesktopWindowSnappedLeft();
   wm::ActivateWindow(window1.get());
   tablet_mode_controller()->SetEnabledForTest(true);
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(window1.get(), split_view_controller()->left_window());
+  EXPECT_EQ(window1.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(window1.get(), window_util::GetActiveWindow());
 }
@@ -1501,9 +1497,9 @@ TEST_F(TabletModeControllerTest,
   // Make sure display mirroring triggers without any crashes.
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(1u, Shell::GetAllRootWindows().size());
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
-  EXPECT_EQ(window.get(), split_view_controller()->left_window());
+  EXPECT_EQ(window.get(), split_view_controller()->primary_window());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
   EXPECT_EQ(window.get(), window_util::GetActiveWindow());
 }
@@ -1546,9 +1542,9 @@ TEST_F(TabletModeControllerTest,
   wm::ActivateWindow(window1.get());
   tablet_mode_controller()->SetEnabledForTest(true);
   // After display mirroring triggers, as the split view state will still be
-  // |SplitViewController::State::kLeftSnapped|, check for overview mode.
+  // |SplitViewController::State::kPrimarySnapped|, check for overview mode.
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(SplitViewController::State::kLeftSnapped,
+  EXPECT_EQ(SplitViewController::State::kPrimarySnapped,
             split_view_controller()->state());
   EXPECT_TRUE(Shell::Get()->overview_controller()->InOverviewSession());
 }
@@ -1594,7 +1590,9 @@ TEST_F(TabletModeControllerTest, TabletModeTransitionHistogramsNotLogged) {
   histogram_tester.ExpectTotalCount(kExitHistogram, 0);
 }
 
-TEST_F(TabletModeControllerTest, TabletModeTransitionHistogramsLogged) {
+// TODO(crbug.com/1382272): Flaky on Linux Chromium OS ASan LSan Tests.
+TEST_F(TabletModeControllerTest,
+       DISABLED_TabletModeTransitionHistogramsLogged) {
   ui::ScopedAnimationDurationScaleMode test_duration_mode(
       ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
   base::HistogramTester histogram_tester;
@@ -1790,7 +1788,7 @@ class TabletModeControllerOnDeviceTest : public TabletModeControllerTest {
   void SetUp() override {
     // We need to simulate the real on-device behavior for some tests.
     base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kForceSystemCompositorMode);
+        ::switches::kEnableRunningAsSystemCompositor);
     TabletModeControllerTest::SetUp();
     // PowerManagerClient callback is a posted task.
     base::RunLoop().RunUntilIdle();
@@ -1823,14 +1821,27 @@ TEST_F(TabletModeControllerOnDeviceTest, DoNotEnterClamshellWithNoInputDevice) {
 class TabletModeControllerScreenshotTest : public TabletModeControllerTest {
  public:
   TabletModeControllerScreenshotTest() = default;
-
   TabletModeControllerScreenshotTest(
       const TabletModeControllerScreenshotTest&) = delete;
   TabletModeControllerScreenshotTest& operator=(
       const TabletModeControllerScreenshotTest&) = delete;
-
   ~TabletModeControllerScreenshotTest() override = default;
 
+  // While taking the screenshot, we temporarily hide the shelf and float
+  // containers. This helper helps us check if it gets hidden and reshown
+  // correctly.
+  bool IsShelfAndFloatContainerOpaque() const {
+    aura::Window* root = Shell::GetPrimaryRootWindow();
+    for (int id :
+         {kShellWindowId_FloatContainer, kShellWindowId_ShelfContainer}) {
+      const aura::Window* container = root->GetChildById(id);
+      if (container->layer()->opacity() != 1.0f)
+        return false;
+    }
+    return true;
+  }
+
+  // TabletModeControllerTest:
   void SetUp() override {
     TabletModeControllerTest::SetUp();
     TabletModeController::SetUseScreenshotForTest(true);
@@ -1868,7 +1879,7 @@ TEST_F(TabletModeControllerScreenshotTest, NoAnimationNoScreenshot) {
   // Tests that no windows means no screenshot.
   SetTabletMode(true);
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   SetTabletMode(false);
 
@@ -1884,7 +1895,7 @@ TEST_F(TabletModeControllerScreenshotTest, NoAnimationNoScreenshot) {
 
   waiter.Wait();
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 }
 
 // Regression test for screenshot staying visible when entering tablet mode when
@@ -1908,18 +1919,18 @@ TEST_F(TabletModeControllerScreenshotTest, FromOverviewNoScreenshot) {
   TabletMode::Waiter waiter(/*enable=*/true);
   SetTabletMode(true);
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   waiter.Wait();
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   // Tests that after ending the window animation, the screenshot is still not
   // shown.
   window->layer()->GetAnimator()->StopAnimating();
   window2->layer()->GetAnimator()->StopAnimating();
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 }
 
 // Regression test for screenshot staying visible when entering tablet mode when
@@ -1932,11 +1943,11 @@ TEST_F(TabletModeControllerScreenshotTest, EnterTabletModeWhileAnimating) {
   TabletMode::Waiter waiter(/*enable=*/true);
   SetTabletMode(true);
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   waiter.Wait();
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 }
 
 namespace {
@@ -1978,11 +1989,11 @@ TEST_F(TabletModeControllerScreenshotTest, ScreenshotVisibility) {
   window->layer()->GetAnimator()->StopAnimating();
   window2->layer()->GetAnimator()->StopAnimating();
   ASSERT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   SetTabletMode(true);
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_FALSE(IsShelfOpaque());
+  EXPECT_FALSE(IsShelfAndFloatContainerOpaque());
 
   // The layer we observe is actually the windows layer before starting the
   // animation. The animation performed is a cross-fade animation which
@@ -1993,13 +2004,13 @@ TEST_F(TabletModeControllerScreenshotTest, ScreenshotVisibility) {
   ASSERT_FALSE(old_animator->is_animating());
   { LayerStartAnimationWaiter waiter(old_animator); }
   EXPECT_TRUE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   // Tests that the screenshot is destroyed after the window is done animating.
   old_animator->StopAnimating();
   window2->layer()->GetAnimator()->StopAnimating();
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 }
 
 // Tests that if we exit tablet mode before the screenshot is taken, there is no
@@ -2010,16 +2021,16 @@ TEST_F(TabletModeControllerScreenshotTest, NoCrashWhenExitingWithoutWaiting) {
   window->layer()->GetAnimator()->StopAnimating();
 
   SetTabletMode(true);
-  EXPECT_FALSE(IsShelfOpaque());
+  EXPECT_FALSE(IsShelfAndFloatContainerOpaque());
 
   SetTabletMode(false);
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 
   // Tests that reentering tablet mode without waiting causes no crash either.
   SetTabletMode(true);
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_FALSE(IsShelfOpaque());
+  EXPECT_FALSE(IsShelfAndFloatContainerOpaque());
 }
 
 // Tests that the screenshot gets deleted after transition with a transient
@@ -2040,7 +2051,47 @@ TEST_F(TabletModeControllerScreenshotTest, TransientChildTypeWindow) {
   SetTabletMode(true);
   ShellTestApi().WaitForWindowFinishAnimating(child.get());
   EXPECT_FALSE(IsScreenshotShown());
-  EXPECT_TRUE(IsShelfOpaque());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
+}
+
+class TabletModeControllerFloatScreenshotTest
+    : public TabletModeControllerScreenshotTest {
+ public:
+  TabletModeControllerFloatScreenshotTest()
+      : scoped_feature_list_(chromeos::wm::features::kFloatWindow) {}
+  TabletModeControllerFloatScreenshotTest(
+      const TabletModeControllerFloatScreenshotTest&) = delete;
+  TabletModeControllerFloatScreenshotTest& operator=(
+      const TabletModeControllerFloatScreenshotTest&) = delete;
+  ~TabletModeControllerFloatScreenshotTest() override = default;
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+// Floated window in tablet mode only covers a portion of the work area, so we
+// don't take a screenshot.
+TEST_F(TabletModeControllerFloatScreenshotTest, NoScreenshotFloatedWindow) {
+  auto window = CreateAppWindow();
+  PressAndReleaseKey(ui::VKEY_F, ui::EF_ALT_DOWN | ui::EF_COMMAND_DOWN);
+  ASSERT_TRUE(WindowState::Get(window.get())->IsFloated());
+  window->layer()->GetAnimator()->StopAnimating();
+
+  // Enter tablet mode. Test that there is no screenshot.
+  TabletMode::Waiter waiter(/*enable=*/true);
+  SetTabletMode(true);
+  EXPECT_FALSE(IsScreenshotShown());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
+
+  waiter.Wait();
+  EXPECT_FALSE(IsScreenshotShown());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
+
+  // Tests that after ending `window`'s animation, the screenshot is still not
+  // shown.
+  window->layer()->GetAnimator()->StopAnimating();
+  EXPECT_FALSE(IsScreenshotShown());
+  EXPECT_TRUE(IsShelfAndFloatContainerOpaque());
 }
 
 }  // namespace ash

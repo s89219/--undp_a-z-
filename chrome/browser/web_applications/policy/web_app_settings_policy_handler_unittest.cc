@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -65,11 +65,11 @@ const char kWebAppSettingDefaultConfiguration_MissingManifestId[] = R"([
 ])";
 
 base::Value ReturnPolicyValueFromJson(base::StringPiece policy) {
-  base::JSONReader::ValueWithError result =
-      base::JSONReader::ReadAndReturnValueWithError(
-          policy, base::JSONParserOptions::JSON_ALLOW_TRAILING_COMMAS);
-  DCHECK(result.value && result.value->is_list()) << result.error_message;
-  return std::move(*result.value);
+  auto result = base::JSONReader::ReadAndReturnValueWithError(
+      policy, base::JSONParserOptions::JSON_ALLOW_TRAILING_COMMAS);
+  DCHECK(result.has_value()) << result.error().message;
+  DCHECK(result->is_list());
+  return std::move(*result);
 }
 
 }  // namespace

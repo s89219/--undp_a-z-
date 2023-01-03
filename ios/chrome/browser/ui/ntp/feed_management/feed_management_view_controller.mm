@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,6 +37,8 @@ typedef NS_ENUM(NSInteger, ItemType) {
 
 - (void)viewDidLoad {
   [super viewDidLoad];
+  self.tableView.separatorInset =
+      UIEdgeInsetsMake(0, kTableViewSeparatorInset, 0, 0);
   self.title = l10n_util::GetNSString(IDS_IOS_FEED_MANAGEMENT_TITLE);
   self.navigationController.navigationBar.prefersLargeTitles = YES;
 
@@ -82,6 +84,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
       l10n_util::GetNSString(IDS_IOS_FEED_MANAGEMENT_INTERESTS_DETAIL);
   interestsItem.accessorySymbol =
       TableViewDetailTextCellAccessorySymbolExternalLink;
+  interestsItem.allowMultilineDetailText = YES;
   [model addItem:interestsItem toSectionWithIdentifier:OtherSectionIdentifier];
 
   TableViewDetailTextItem* hiddenItem =
@@ -91,6 +94,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
       l10n_util::GetNSString(IDS_IOS_FEED_MANAGEMENT_HIDDEN_DETAIL);
   hiddenItem.accessorySymbol =
       TableViewDetailTextCellAccessorySymbolExternalLink;
+  hiddenItem.allowMultilineDetailText = YES;
   [model addItem:hiddenItem toSectionWithIdentifier:OtherSectionIdentifier];
 
   TableViewDetailTextItem* activityItem =
@@ -101,6 +105,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
       l10n_util::GetNSString(IDS_IOS_FEED_MANAGEMENT_ACTIVITY_DETAIL);
   activityItem.accessorySymbol =
       TableViewDetailTextCellAccessorySymbolExternalLink;
+  activityItem.allowMultilineDetailText = YES;
   [model addItem:activityItem toSectionWithIdentifier:OtherSectionIdentifier];
 }
 
@@ -109,20 +114,35 @@ typedef NS_ENUM(NSInteger, ItemType) {
 - (void)tableView:(UITableView*)tableView
     didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
   NSInteger itemType = [self.tableViewModel itemTypeForIndexPath:indexPath];
-
+  __weak FeedManagementViewController* weakSelf = self;
   switch (itemType) {
     case FollowingItemType:
       [self.followDelegate handleFollowingTapped];
       break;
-    case InterestsItemType:
-      [self.navigationDelegate handleNavigateToInterests];
+    case InterestsItemType: {
+      [self dismissViewControllerAnimated:YES
+                               completion:^{
+                                 [weakSelf.navigationDelegate
+                                         handleNavigateToInterests];
+                               }];
       break;
-    case HiddenItemType:
-      [self.navigationDelegate handleNavigateToHidden];
+    }
+    case HiddenItemType: {
+      [self dismissViewControllerAnimated:YES
+                               completion:^{
+                                 [weakSelf.navigationDelegate
+                                         handleNavigateToHidden];
+                               }];
       break;
-    case ActivityItemType:
-      [self.navigationDelegate handleNavigateToActivity];
+    }
+    case ActivityItemType: {
+      [self dismissViewControllerAnimated:YES
+                               completion:^{
+                                 [weakSelf.navigationDelegate
+                                         handleNavigateToActivity];
+                               }];
       break;
+    }
   }
 }
 

@@ -1,11 +1,11 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "chromeos/ash/components/dbus/media_analytics/fake_media_analytics_client.h"
 #include "chromeos/ash/components/dbus/media_analytics/media_analytics_client.h"
 #include "chromeos/ash/components/dbus/media_perception/media_perception.pb.h"
@@ -35,7 +35,7 @@ class TestMediaPerceptionAPIDelegate : public MediaPerceptionAPIDelegate {
     // For testing both success and failure cases, test class has the LIGHT
     // component succeed install and the others fail.
     if (type == media_perception::COMPONENT_TYPE_LIGHT) {
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(
               std::move(load_callback),
@@ -44,7 +44,7 @@ class TestMediaPerceptionAPIDelegate : public MediaPerceptionAPIDelegate {
       return;
     }
 
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(load_callback),
                        media_perception::COMPONENT_INSTALLATION_ERROR_NOT_FOUND,
@@ -172,7 +172,7 @@ IN_PROC_BROWSER_TEST_F(MediaPerceptionPrivateApiTest, MediaPerception) {
   catcher.RestrictToBrowserContext(browser_context());
 
   ExtensionTestMessageListener handler_registered_listener(
-      "mediaPerceptionListenerSet", false);
+      "mediaPerceptionListenerSet");
   ASSERT_TRUE(LoadApp("media_perception_private/media_perception")) << message_;
   ASSERT_TRUE(handler_registered_listener.WaitUntilSatisfied());
 

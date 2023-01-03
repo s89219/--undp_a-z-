@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,11 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "components/optimization_guide/proto/models.pb.h"
 #include "components/segmentation_platform/internal/database/signal_database.h"
 #include "components/segmentation_platform/internal/execution/processing/feature_aggregator.h"
 #include "components/segmentation_platform/internal/execution/processing/query_processor.h"
-#include "components/segmentation_platform/internal/proto/model_metadata.pb.h"
+#include "components/segmentation_platform/public/proto/model_metadata.pb.h"
+#include "components/segmentation_platform/public/proto/segmentation_platform.pb.h"
 
 namespace segmentation_platform::processing {
 class FeatureProcessorState;
@@ -24,13 +24,14 @@ class FeatureProcessorState;
 // execution.
 class UmaFeatureProcessor : public QueryProcessor {
  public:
-  UmaFeatureProcessor(
-      base::flat_map<FeatureIndex, proto::UMAFeature>&& uma_features,
-      SignalDatabase* signal_database,
-      FeatureAggregator* feature_aggregator,
-      const base::Time prediction_time,
-      const base::TimeDelta bucket_duration,
-      const optimization_guide::proto::OptimizationTarget segment_id);
+  UmaFeatureProcessor(base::flat_map<FeatureIndex, Data>&& uma_features,
+                      SignalDatabase* signal_database,
+                      FeatureAggregator* feature_aggregator,
+                      const base::Time prediction_time,
+                      const base::Time observation_time,
+                      const base::TimeDelta bucket_duration,
+                      const proto::SegmentId segment_id,
+                      bool is_output);
 
   ~UmaFeatureProcessor() override;
 
@@ -55,10 +56,11 @@ class UmaFeatureProcessor : public QueryProcessor {
   void OnGetSamplesForUmaFeature(FeatureIndex index,
                                  const proto::UMAFeature& feature,
                                  const std::vector<int32_t>& accepted_enum_ids,
+                                 const base::Time end_time,
                                  std::vector<SignalDatabase::Sample> samples);
 
   // List of custom inputs to process into input tensors.
-  base::flat_map<FeatureIndex, proto::UMAFeature> uma_features_;
+  base::flat_map<FeatureIndex, Data> uma_features_;
 
   // Main signal database for user actions and histograms.
   const raw_ptr<SignalDatabase> signal_database_;
@@ -68,8 +70,10 @@ class UmaFeatureProcessor : public QueryProcessor {
 
   // Data needed for the processing of uma features.
   const base::Time prediction_time_;
+  const base::Time observation_time_;
   const base::TimeDelta bucket_duration_;
-  const optimization_guide::proto::OptimizationTarget segment_id_;
+  const proto::SegmentId segment_id_;
+  const bool is_output_;
 
   // Temporary storage of the processing state object.
   // TODO(haileywang): Remove dependency to the state object once error check is

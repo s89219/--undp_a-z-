@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,11 +29,7 @@
 
 namespace {
 
-SkColor GetDefaultInactiveFrameColor() {
-  return base::win::GetVersion() < base::win::Version::WIN10
-             ? SkColorSetRGB(0xEB, 0xEB, 0xEB)
-             : SK_ColorWHITE;
-}
+const SkColor kDefaultInactiveFrameColor = SK_ColorWHITE;
 
 // This class encapsulates much of the same logic from ThemeHelperWin pertaining
 // to the calculation of frame colors on Windows 8, 10 and up. Once the
@@ -121,7 +117,7 @@ void FrameColorHelper::AddNativeChromeColors(
     } else if (dwm_inactive_frame_color_) {
       mixer[ui::kColorFrameInactive] = {dwm_inactive_frame_color_.value()};
     } else if (!ShouldCustomDrawSystemTitlebar()) {
-      mixer[ui::kColorFrameInactive] = {GetDefaultInactiveFrameColor()};
+      mixer[ui::kColorFrameInactive] = {kDefaultInactiveFrameColor};
     } else if (dwm_frame_color_) {
       mixer[ui::kColorFrameInactive] =
           ui::HSLShift({dwm_frame_color_.value()},
@@ -165,8 +161,7 @@ bool FrameColorHelper::DwmColorsAllowed(
     const ui::ColorProviderManager::Key& key) const {
   const bool use_native_frame_if_enabled =
       (ShouldCustomDrawSystemTitlebar() ||
-       !HasCustomImage(IDR_THEME_FRAME, key)) &&
-      (base::win::GetVersion() >= base::win::Version::WIN8);
+       !HasCustomImage(IDR_THEME_FRAME, key));
   return use_native_frame_if_enabled && ui::win::IsAeroGlassEnabled();
 }
 
@@ -192,14 +187,10 @@ void FrameColorHelper::FetchAccentColors() {
   const auto* accent_color_observer = ui::AccentColorObserver::Get();
   dwm_accent_border_color_ =
       accent_color_observer->accent_border_color().value_or(
-          GetDefaultInactiveFrameColor());
+          kDefaultInactiveFrameColor);
 
-  if (base::win::GetVersion() < base::win::Version::WIN10) {
-    dwm_frame_color_ = dwm_accent_border_color_;
-  } else {
-    dwm_frame_color_ = accent_color_observer->accent_color();
-    dwm_inactive_frame_color_ = accent_color_observer->accent_color_inactive();
-  }
+  dwm_frame_color_ = accent_color_observer->accent_color();
+  dwm_inactive_frame_color_ = accent_color_observer->accent_color_inactive();
 }
 
 ui::ColorTransform GetCaptionForegroundColor(
@@ -272,11 +263,13 @@ void AddNativeChromeColorMixer(ui::ColorProvider* provider,
   mixer[kColorInfoBarContentAreaSeparator] = {
       kColorToolbarContentAreaSeparator};
   mixer[kColorLocationBarBorder] = {ui::kColorNativeWindowText};
-  mixer[kColorOmniboxBackground] = {ui::kColorNativeBtnFace};
-  mixer[kColorOmniboxBackgroundHovered] = {kColorOmniboxBackground};
+  mixer[kColorToolbarBackgroundSubtleEmphasis] = {ui::kColorNativeBtnFace};
+  mixer[kColorToolbarBackgroundSubtleEmphasisHovered] = {
+      kColorToolbarBackgroundSubtleEmphasis};
   mixer[kColorOmniboxBubbleOutline] = {kColorOmniboxText};
   mixer[kColorOmniboxKeywordSelected] = {kColorOmniboxText};
-  mixer[kColorOmniboxResultsBackground] = {kColorOmniboxBackground};
+  mixer[kColorOmniboxResultsBackground] = {
+      kColorToolbarBackgroundSubtleEmphasis};
   mixer[kColorOmniboxResultsBackgroundHovered] = {
       kColorOmniboxResultsBackgroundSelected};
   mixer[kColorOmniboxResultsBackgroundSelected] = {ui::kColorNativeHighlight};
@@ -300,9 +293,9 @@ void AddNativeChromeColorMixer(ui::ColorProvider* provider,
   mixer[kColorOmniboxSecurityChipDangerous] = {kColorOmniboxText};
   mixer[kColorOmniboxSecurityChipDefault] = {kColorOmniboxText};
   mixer[kColorOmniboxSecurityChipSecure] = {kColorOmniboxText};
-  mixer[kColorOmniboxText] = {ui::kColorNativeBtnText};
+  mixer[kColorOmniboxText] = {ui::kColorTextfieldForeground};
   mixer[kColorOmniboxTextDimmed] = {kColorOmniboxText};
-  mixer[kColorTabBackgroundActiveFrameActive] = {kColorToolbar};
+  mixer[kColorTabBackgroundActiveFrameActive] = {ui::kColorNativeHighlight};
   mixer[kColorTabBackgroundActiveFrameInactive] = {
       kColorTabBackgroundActiveFrameActive};
   mixer[kColorTabForegroundActiveFrameActive] = {ui::kColorNativeHighlightText};

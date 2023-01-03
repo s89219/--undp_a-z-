@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -107,6 +107,8 @@ const gfx::VectorIcon* GetVectorIconForMediaAction(MediaSessionAction action) {
     case MediaSessionAction::kHangUp:
     case MediaSessionAction::kRaise:
     case MediaSessionAction::kSetMute:
+    case MediaSessionAction::kPreviousSlide:
+    case MediaSessionAction::kNextSlide:
       NOTREACHED();
       break;
   }
@@ -117,6 +119,17 @@ const gfx::VectorIcon* GetVectorIconForMediaAction(MediaSessionAction action) {
 size_t GetMaxNumActions(bool expanded) {
   return expanded ? kMediaNotificationExpandedActionsCount
                   : kMediaNotificationActionsCount;
+}
+
+void UpdateAppIconVisibility(message_center::NotificationHeaderView* header_row,
+                             bool should_show_icon) {
+  DCHECK(header_row);
+
+  header_row->SetAppIconVisible(should_show_icon);
+  header_row->SetProperty(views::kMarginsKey,
+                          should_show_icon
+                              ? kIconMediaNotificationHeaderInsets
+                              : kIconlessMediaNotificationHeaderInsets);
 }
 
 }  // namespace
@@ -367,7 +380,7 @@ void MediaNotificationViewImpl::GetAccessibleNodeData(
           IDS_MEDIA_MESSAGE_CENTER_MEDIA_NOTIFICATION_ACCESSIBLE_NAME));
 
   if (!accessible_name_.empty())
-    node_data->SetName(accessible_name_);
+    node_data->SetNameChecked(accessible_name_);
 }
 
 void MediaNotificationViewImpl::UpdateWithMediaSessionInfo(
@@ -490,14 +503,12 @@ void MediaNotificationViewImpl::UpdateWithFavicon(const gfx::ImageSkia& icon) {
 }
 
 void MediaNotificationViewImpl::UpdateWithVectorIcon(
-    const gfx::VectorIcon& vector_icon) {
+    const gfx::VectorIcon* vector_icon) {
   if (!header_row_)
     return;
 
-  vector_header_icon_ = &vector_icon;
-  header_row_->SetAppIconVisible(true);
-  header_row_->SetProperty(views::kMarginsKey,
-                           kIconMediaNotificationHeaderInsets);
+  vector_header_icon_ = vector_icon;
+  UpdateAppIconVisibility(header_row_, vector_header_icon_ != nullptr);
   if (GetWidget())
     UpdateForegroundColor();
 }
@@ -656,13 +667,8 @@ void MediaNotificationViewImpl::CreateHeaderRow(
 
   if (should_show_icon) {
     header_row->ClearAppIcon();
-    header_row->SetProperty(views::kMarginsKey,
-                            kIconMediaNotificationHeaderInsets);
-  } else {
-    header_row->SetAppIconVisible(false);
-    header_row->SetProperty(views::kMarginsKey,
-                            kIconlessMediaNotificationHeaderInsets);
   }
+  UpdateAppIconVisibility(header_row.get(), should_show_icon);
 
   header_row_ = AddChildView(std::move(header_row));
 }

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "components/sync/base/features.h"
 #include "components/sync/base/invalidation_adapter.h"
 #include "components/sync/base/legacy_directory_deletion.h"
+#include "components/sync/base/sync_invalidation_adapter.h"
 #include "components/sync/driver/configure_context.h"
 #include "components/sync/driver/glue/sync_engine_impl.h"
 #include "components/sync/driver/model_type_controller.h"
@@ -45,31 +46,6 @@ namespace {
 
 const base::FilePath::CharType kNigoriStorageFilename[] =
     FILE_PATH_LITERAL("Nigori.bin");
-
-class SyncInvalidationAdapter : public SyncInvalidation {
- public:
-  explicit SyncInvalidationAdapter(const std::string& payload)
-      : payload_(payload) {}
-  ~SyncInvalidationAdapter() override = default;
-
-  bool IsUnknownVersion() const override { return true; }
-
-  const std::string& GetPayload() const override { return payload_; }
-
-  int64_t GetVersion() const override {
-    // TODO(crbug.com/1102322): implement versions. This method is not called
-    // until IsUnknownVersion() returns true.
-    NOTREACHED();
-    return 0;
-  }
-
-  void Acknowledge() override { NOTIMPLEMENTED(); }
-
-  void Drop() override { NOTIMPLEMENTED(); }
-
- private:
-  const std::string payload_;
-};
 
 void RecordInvalidationPerModelType(ModelType type) {
   UMA_HISTOGRAM_ENUMERATION("Sync.InvalidationPerModelType",
@@ -327,7 +303,6 @@ void SyncEngineBackend::DoInitialProcessControlTypes() {
 
   host_.Call(FROM_HERE,
              &SyncEngineImpl::HandleInitializationSuccessOnFrontendLoop,
-             sync_manager_->GetDebugInfoListener(),
              sync_manager_->GetModelTypeConnectorProxy(),
              sync_manager_->birthday(), sync_manager_->bag_of_chips());
 }
@@ -492,15 +467,15 @@ SyncEngineBackend::DoOnStandaloneInvalidationReceivedImpl(
   }
 
   bool contains_valid_model_type = false;
+
+  std::vector<int> field_numbers;
+  field_numbers.reserve(payload_message.data_type_invalidations_size());
   for (const auto& data_type_invalidation :
        payload_message.data_type_invalidations()) {
-    const int field_number = data_type_invalidation.data_type_id();
-    ModelType model_type = GetModelTypeFromSpecificsFieldNumber(field_number);
-    if (!IsRealDataType(model_type)) {
-      DLOG(WARNING) << "Unknown field number " << field_number;
-      continue;
-    }
-
+    field_numbers.push_back(data_type_invalidation.data_type_id());
+  }
+  for (auto model_type :
+       GetModelTypeSetFromSpecificsFieldNumberList(field_numbers)) {
     if (!interested_data_types.Has(model_type)) {
       // Filter out invalidations for unsubscribed data types.
       continue;
@@ -508,8 +483,13 @@ SyncEngineBackend::DoOnStandaloneInvalidationReceivedImpl(
 
     contains_valid_model_type = true;
     RecordInvalidationPerModelType(model_type);
+    absl::optional<int64_t> version;
+    if (payload_message.has_version()) {
+      version = payload_message.version();
+    }
     std::unique_ptr<SyncInvalidation> inv_adapter =
-        std::make_unique<SyncInvalidationAdapter>(payload_message.hint());
+        std::make_unique<SyncInvalidationAdapter>(payload_message.hint(),
+                                                  version);
     sync_manager_->OnIncomingInvalidation(model_type, std::move(inv_adapter));
   }
   if (contains_valid_model_type) {

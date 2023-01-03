@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +30,6 @@
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/content_features.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -49,10 +48,6 @@ namespace {
 
 const char kChromeURLContentSecurityPolicyHeaderName[] =
     "Content-Security-Policy";
-const char kChromeURLContentSecurityPolicyReportOnlyHeaderName[] =
-    "Content-Security-Policy-Report-Only";
-const char kChromeURLContentSecurityPolicyReportOnlyHeaderValue[] =
-    "require-trusted-types-for 'script'";
 
 const char kChromeURLCrossOriginOpenerPolicyName[] =
     "Cross-Origin-Opener-Policy";
@@ -147,7 +142,7 @@ URLDataSourceImpl* URLDataManagerBackend::GetDataSourceFromURL(
 
 scoped_refptr<net::HttpResponseHeaders> URLDataManagerBackend::GetHeaders(
     URLDataSourceImpl* source_impl,
-    const std::string& path,
+    const GURL& url,
     const std::string& origin) {
   // Set the headers so that requests serviced by ChromeURLDataManager return a
   // status code of 200. Without this they return a 0, which makes the status
@@ -203,15 +198,10 @@ scoped_refptr<net::HttpResponseHeaders> URLDataManagerBackend::GetHeaders(
                        kChromeURLXFrameOptionsHeaderValue);
   }
 
-  if (base::FeatureList::IsEnabled(features::kWebUIReportOnlyTrustedTypes)) {
-    headers->SetHeader(kChromeURLContentSecurityPolicyReportOnlyHeaderName,
-                       kChromeURLContentSecurityPolicyReportOnlyHeaderValue);
-  }
-
   if (!source->AllowCaching())
     headers->SetHeader("Cache-Control", "no-cache");
 
-  std::string mime_type = source->GetMimeType(path);
+  std::string mime_type = source->GetMimeType(url);
   if (source->ShouldServeMimeTypeAsContentTypeHeader() && !mime_type.empty())
     headers->SetHeader(net::HttpRequestHeaders::kContentType, mime_type);
 
@@ -258,20 +248,14 @@ bool URLDataManagerBackend::CheckURLIsValid(const GURL& url) {
 }
 
 bool URLDataManagerBackend::IsValidNetworkErrorCode(int error_code) {
-  base::Value error_codes = net::GetNetConstants();
-  const base::DictionaryValue* net_error_codes_dict = nullptr;
-
-  for (auto item : error_codes.DictItems()) {
-    if (item.first == kNetworkErrorKey) {
-      item.second.GetAsDictionary(&net_error_codes_dict);
-      break;
-    }
-  }
+  base::Value::Dict error_codes = net::GetNetConstants();
+  const base::Value::Dict* net_error_codes_dict =
+      error_codes.FindDict(kNetworkErrorKey);
 
   if (net_error_codes_dict != nullptr) {
-    for (base::DictionaryValue::Iterator itr(*net_error_codes_dict);
-         !itr.IsAtEnd(); itr.Advance()) {
-      if (error_code == itr.value().GetInt())
+    for (auto it = net_error_codes_dict->begin();
+         it != net_error_codes_dict->end(); ++it) {
+      if (error_code == it->second.GetInt())
         return true;
     }
   }

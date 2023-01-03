@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,7 +44,7 @@ void EncodeVideoFrameOnEncoderThread(
   }
   encoder->UpdateRates(dynamic_config.bit_rate);
 
-  std::unique_ptr<SenderEncodedFrame> encoded_frame(new SenderEncodedFrame());
+  auto encoded_frame = std::make_unique<SenderEncodedFrame>();
   encoder->Encode(std::move(video_frame), reference_time, encoded_frame.get());
   encoded_frame->encode_completion_time = environment->Clock()->NowTicks();
   environment->PostTask(CastEnvironment::MAIN, FROM_HERE,
@@ -52,15 +52,6 @@ void EncodeVideoFrameOnEncoderThread(
                                        std::move(encoded_frame)));
 }
 }  // namespace
-
-// static
-bool VideoEncoderImpl::IsSupported(const FrameSenderConfig& video_config) {
-  return video_config.codec == CODEC_VIDEO_VP8 ||
-         video_config.codec == CODEC_VIDEO_VP9 ||
-         video_config.codec == CODEC_VIDEO_AV1 ||
-         (video_config.enable_fake_codec_for_tests &&
-          video_config.codec == CODEC_VIDEO_FAKE);
-}
 
 VideoEncoderImpl::VideoEncoderImpl(
     scoped_refptr<CastEnvironment> cast_environment,

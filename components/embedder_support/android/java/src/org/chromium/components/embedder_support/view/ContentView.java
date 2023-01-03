@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,6 +74,8 @@ public class ContentView extends FrameLayout
 
     @Nullable
     private final EventOffsetHandler mEventOffsetHandler;
+    private boolean mDeferKeepScreenOnChanges;
+    private Boolean mPendingKeepScreenOnValue;
 
     /**
      * Constructs a new ContentView for the appropriate Android version.
@@ -160,6 +162,28 @@ public class ContentView extends FrameLayout
         return wcax != null && wcax.supportsAction(action)
                 ? wcax.performAction(action, arguments)
                 : super.performAccessibilityAction(action, arguments);
+    }
+
+    /**
+     * Instructs the ContentView to defer (or stop deferring) the application of changes to its
+     * KeepScreenOn flag. If deferring is being turned off, super.setKeepScreenOn will be called
+     * with the latest value passed to setKeepScreenOn.
+     */
+    public void setDeferKeepScreenOnChanges(boolean deferKeepScreenOnChanges) {
+        mDeferKeepScreenOnChanges = deferKeepScreenOnChanges;
+        if (!mDeferKeepScreenOnChanges && mPendingKeepScreenOnValue != null) {
+            super.setKeepScreenOn(mPendingKeepScreenOnValue);
+            mPendingKeepScreenOnValue = null;
+        }
+    }
+
+    @Override
+    public void setKeepScreenOn(boolean keepScreenOn) {
+        if (mDeferKeepScreenOnChanges) {
+            mPendingKeepScreenOnValue = keepScreenOn;
+        } else {
+            super.setKeepScreenOn(keepScreenOn);
+        }
     }
 
     /**

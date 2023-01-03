@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,8 +38,8 @@ void DumpDatabaseHandler::HandleGetDatabaseDump(const base::Value::List& args) {
 }
 
 void DumpDatabaseHandler::DidGetDatabaseDump(std::string callback_id,
-                                             const base::ListValue& list) {
-  ResolveJavascriptCallback(base::Value(callback_id), list);
+                                             base::Value::List list) {
+  ResolveJavascriptCallback(base::Value(callback_id), std::move(list));
 }
 
 }  // namespace syncfs_internals

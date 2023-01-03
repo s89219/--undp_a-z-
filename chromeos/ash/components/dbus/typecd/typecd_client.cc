@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,9 @@ class TypecdClientImpl : public TypecdClient {
   TypecdClientImpl(const TypecdClientImpl&) = delete;
   TypecdClientImpl& operator=(const TypecdClientImpl&) = delete;
   ~TypecdClientImpl() override = default;
+
+  // TypecdClient overrides
+  void SetPeripheralDataAccessPermissionState(bool permitted) override;
 
   void Init(dbus::Bus* bus);
 
@@ -102,6 +105,19 @@ void TypecdClientImpl::OnSignalConnected(const std::string& interface_name,
     return;
   }
   VLOG(1) << "Typecd: Successfully connected to signal " << signal_name << ".";
+}
+
+void TypecdClientImpl::SetPeripheralDataAccessPermissionState(bool permitted) {
+  dbus::MethodCall method_call(typecd::kTypecdServiceInterface,
+                               typecd::kTypecdSetPeripheralDataAccessMethod);
+  VLOG(1) << "Typecd: Sending peripheral data access enabled state: "
+          << permitted;
+
+  dbus::MessageWriter writer(&method_call);
+  writer.AppendBool(permitted);
+
+  typecd_proxy_->CallMethod(
+      &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT, base::DoNothing());
 }
 
 // TypecdClient

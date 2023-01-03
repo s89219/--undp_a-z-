@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -209,7 +209,7 @@ interface PrintRenderer {
   // The returned |preview_document_region| contains the preview document data
   // as a flattened PDF. It will be invalid if errors occurred while rendering
   // the preview document.
-  CreatePreviewDocument(mojo_base.mojom.DeprecatedDictionaryValue job_settings)
+  CreatePreviewDocument(mojo_base.mojom.DictionaryValue job_settings)
       => (mojo_base.mojom.ReadOnlySharedMemoryRegion? preview_document_region);
 };
 
@@ -250,9 +250,12 @@ interface PrintPreviewUI {
 
   // Tell the browser print preview found the selected printer has invalid
   // settings (which typically caused by disconnected network printer or
-  // printer driver is bogus).
+  // printer driver is bogus).  Extra information about the error provided in
+  // `details` can assist with debugging.
   [EnableIf=enable_print_preview]
-  PrinterSettingsInvalid(int32 document_cookie, int32 request_id);
+  PrinterSettingsInvalid(int32 document_cookie,
+                         int32 request_id,
+                         string details);
 
   // Notifies the browser of the default page layout according to the currently
   // selected printer and page size.
@@ -273,6 +276,12 @@ interface PrintPreviewUI {
 enum PrintFailureReason {
   kGeneralFailure,
   kInvalidPageRange,
+  kPrintingInProgress,
+};
+
+union PrintWithParamsResult {
+  DidPrintDocumentParams params;
+  PrintFailureReason failure_reason;
 };
 
 // Render process interface exposed to the browser to handle most of the
@@ -289,7 +298,8 @@ interface PrintRenderFrame {
   // interactive print preview -- the final print settings are supplied by
   // the caller and printing is completed without further round-trips to the
   // browser.
-  PrintWithParams(PrintPagesParams params);
+  PrintWithParams(PrintPagesParams params)
+      => (PrintWithParamsResult result);
 
   // Tells the RenderFrame to switch the CSS to print media type, render every
   // requested page using the print preview document's frame/node, and then
@@ -311,7 +321,7 @@ interface PrintRenderFrame {
   // every requested page for print preview using the given |settings|. This
   // gets called multiple times as the user updates settings.
   [EnableIf=enable_print_preview]
-  PrintPreview(mojo_base.mojom.DeprecatedDictionaryValue settings);
+  PrintPreview(mojo_base.mojom.DictionaryValue settings);
 
   // Tells the RenderFrame that the print preview dialog was closed.
   [EnableIf=enable_print_preview]
@@ -322,8 +332,11 @@ interface PrintRenderFrame {
   PrintFrameContent(PrintFrameContentParams params)
       => (int32 document_cookie, DidPrintContentParams params);
 
-  // Tells the RenderFrame whether printing is enabled or not.
-  SetPrintingEnabled(bool enabled);
+  // Message with no arguments and no reply that is used to simply ensure the
+  // communication channel between the browser and renderer exists. Without the
+  // connection, PrintViewManager cannot correctly keep track of associated PDF
+  // renderers. See crbug.com/1251431 for context.
+  ConnectToPdfRenderer();
 
   // Tells the RenderFrame that printing is done so it can clean up.
   PrintingDone(bool success);
@@ -333,10 +346,11 @@ interface PrintRenderFrame {
   PrintNodeUnderContextMenu();
 
   // Prints the content as a snapshot of the page to be analyzed for sensitive
-  // content.
+  // content. Returns nothing if the snapshot couldn't be obtained for any
+  // reason.
   [EnableIf=enable_print_content_analysis]
   SnapshotForContentAnalysis()
-      => (DidPrintDocumentParams params);
+      => (DidPrintDocumentParams? params);
 };
 
 // Browser process interface exposed to the renderer to handle the general
@@ -346,7 +360,7 @@ interface PrintManagerHost {
   // rendered pages according to the specified settings.
   DidGetPrintedPagesCount(int32 cookie, uint32 number_pages);
 
-  // Request the default print settings.
+  // Requests the default print settings.
   [Sync]
   GetDefaultPrintSettings() => (PrintParams default_settings);
 
@@ -359,7 +373,11 @@ interface PrintManagerHost {
   [Sync]
   DidPrintDocument(DidPrintDocumentParams params) => (bool completed);
 
-  // Request the print settings from the user. This step is about showing
+  // Asks the browser whether printing is enabled or not.
+  [Sync]
+  IsPrintingEnabled() => (bool printing_enabled);
+
+  // Requests the print settings from the user. This step is about showing
   // UI to the user to select the final print settings.
   [Sync]
   ScriptedPrint(ScriptedPrintParams params) => (PrintPagesParams settings);
@@ -370,7 +388,7 @@ interface PrintManagerHost {
   // Tells the browser printing failed.
   PrintingFailed(int32 cookie, PrintFailureReason reason);
 
-  // Update the current print settings with new |job_settings|.
+  // Updates the current print settings with new |job_settings|.
   [EnableIf=enable_print_preview, Sync]
   UpdatePrintSettings(
       int32 cookie,

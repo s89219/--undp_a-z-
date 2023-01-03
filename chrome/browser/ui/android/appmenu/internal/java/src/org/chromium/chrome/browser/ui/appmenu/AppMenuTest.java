@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -96,12 +96,18 @@ public class AppMenuTest extends BlankUiTestActivityTestCase {
         mTestMenuButtonDelegate = new TestMenuButtonDelegate();
         mAppMenuCoordinator = new AppMenuCoordinatorImpl(getActivity(), mLifecycleDispatcher,
                 mTestMenuButtonDelegate, mDelegate, getActivity().getWindow().getDecorView(),
-                getActivity().findViewById(R.id.menu_anchor_stub));
+                getActivity().findViewById(R.id.menu_anchor_stub), this::getAppRect);
         mAppMenuHandler = mAppMenuCoordinator.getAppMenuHandlerImplForTesting();
         mMenuObserver = new TestAppMenuObserver();
         mAppMenuCoordinator.getAppMenuHandler().addObserver(mMenuObserver);
         mPropertiesDelegate =
                 (TestAppMenuPropertiesDelegate) mAppMenuCoordinator.getAppMenuPropertiesDelegate();
+    }
+
+    private Rect getAppRect() {
+        Rect appRect = new Rect();
+        getActivity().getWindow().getDecorView().getWindowVisibleDisplayFrame(appRect);
+        return appRect;
     }
 
     @Test

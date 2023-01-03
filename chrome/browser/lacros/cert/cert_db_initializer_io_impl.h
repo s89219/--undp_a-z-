@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,15 +75,6 @@ class CertDbInitializerIOImpl : public net::NSSCertDatabase::Observer {
   // `init_callback` will be called when the initialization is done.
   void InitializeReadOnlyNssCertDatabase(base::OnceClosure init_callback);
 
-  // Initializes a read-only database with the access to user and system
-  // certificates. `init_callback` will be called when
-  // the initialization is done.
-  // TODO(b/200784079): This is backwards compatibility code. It can be
-  // removed in ChromeOS-M100.
-  void InitializeLegacyNssCertDatabase(
-      crosapi::mojom::GetCertDatabaseInfoResultPtr cert_db_info,
-      base::OnceClosure init_callback);
-
   // net::NSSCertDatabase::Observer
   void OnCertDBChanged() override;
 
@@ -94,8 +85,6 @@ class CertDbInitializerIOImpl : public net::NSSCertDatabase::Observer {
   void DidLoadSlots(base::OnceClosure init_callback,
                     crypto::ScopedPK11Slot private_slot,
                     crypto::ScopedPK11Slot system_slot);
-
-  void DidLegacyInitialize(base::OnceClosure init_callback);
 
   crypto::ScopedPK11Slot pending_public_slot_;
   std::unique_ptr<net::NSSCertDatabaseChromeOS> nss_cert_database_;

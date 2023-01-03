@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,14 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/raw_ref.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/omnibox/browser/autocomplete_match_type.h"
 #include "components/omnibox/browser/buildflags.h"
 #include "components/search_engines/template_url.h"
+#include "components/url_formatter/spoof_checks/idna_metrics.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/color_utils.h"
@@ -77,6 +79,11 @@ class OmniboxAction : public base::RefCounted<OmniboxAction> {
 
     // Presents translation prompt for current tab web contents.
     virtual void PromptPageTranslation() = 0;
+
+    // Opens Journeys in an embedder-specific way. If this returns true, that
+    // means that the embedder successfully opened Journeys, and the caller can
+    // early exit. If this returns false, the caller should open the WebUI.
+    virtual bool OpenJourneys(const std::string& query);
   };
 
   // ExecutionContext provides the necessary structure for Action
@@ -105,20 +112,21 @@ class OmniboxAction : public base::RefCounted<OmniboxAction> {
                                 bool destination_url_entered_without_scheme,
                                 const std::u16string&,
                                 const AutocompleteMatch&,
-                                const AutocompleteMatch&)>;
+                                const AutocompleteMatch&,
+                                IDNA2008DeviationCharacter)>;
 
     ExecutionContext(Client& client,
                      OpenUrlCallback callback,
                      base::TimeTicks match_selection_timestamp,
                      WindowOpenDisposition disposition);
     ~ExecutionContext();
-    Client& client_;
+    const raw_ref<Client> client_;
     OpenUrlCallback open_url_callback_;
     base::TimeTicks match_selection_timestamp_;
     WindowOpenDisposition disposition_;
   };
 
-  OmniboxAction(LabelStrings strings, GURL url);
+  OmniboxAction(LabelStrings strings, GURL url, bool takes_over_match = false);
 
   // Provides read access to labels associated with this Action.
   const LabelStrings& GetLabelStrings() const;
@@ -140,6 +148,12 @@ class OmniboxAction : public base::RefCounted<OmniboxAction> {
   // Pedal may not be ready to trigger if no update is available.)
   virtual bool IsReadyToTrigger(const AutocompleteInput& input,
                                 const AutocompleteProviderClient& client) const;
+
+  // Returns true if the Action should take over the whole match - that is:
+  // If the user presses Enter or clicks on the match at all, the navigation
+  // is ignored and the action is executed. Note, when this returns true, the
+  // action chip should be un-rendered, because the whole match IS the action.
+  bool TakesOverMatch() const;
 
 #if defined(SUPPORT_PEDALS_VECTOR_ICONS)
   // Returns the vector icon to represent this Action.
@@ -167,6 +181,9 @@ class OmniboxAction : public base::RefCounted<OmniboxAction> {
 
   // For navigation Actions, this holds the destination URL. Otherwise, empty.
   GURL url_;
+
+  // Used to make the action chip take over the whole match.
+  const bool takes_over_match_;
 };
 
 #endif  // COMPONENTS_OMNIBOX_BROWSER_ACTIONS_OMNIBOX_ACTION_H_

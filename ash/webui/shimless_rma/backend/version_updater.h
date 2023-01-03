@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/callback.h"
-#include "chromeos/dbus/update_engine/update_engine.pb.h"
-#include "chromeos/dbus/update_engine/update_engine_client.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine.pb.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine_client.h"
 
 namespace ash {
 namespace shimless_rma {
@@ -17,7 +17,7 @@ namespace shimless_rma {
 // TODO(gavindodd): Consider if this can be shared with
 // chrome/browser/ash/login/version_updater/version_updater
 
-class VersionUpdater : public chromeos::UpdateEngineClient::Observer {
+class VersionUpdater : public UpdateEngineClient::Observer {
  public:
   typedef base::RepeatingCallback<void(update_engine::Operation operation,
                                        double progress,
@@ -40,11 +40,11 @@ class VersionUpdater : public chromeos::UpdateEngineClient::Observer {
   bool IsUpdateEngineIdle();
 
   void UpdateStatusChangedForTesting(const update_engine::StatusResult& status);
+  void DisableUpdateOnceForTesting();
 
  private:
   // Callback from UpdateEngineClient::RequestUpdateCheck().
-  void OnRequestUpdateCheck(
-      chromeos::UpdateEngineClient::UpdateCheckResult result);
+  void OnRequestUpdateCheck(UpdateEngineClient::UpdateCheckResult result);
 
   // UpdateEngineClient::Observer implementation.
   void UpdateStatusChanged(const update_engine::StatusResult& status) override;
@@ -58,6 +58,7 @@ class VersionUpdater : public chromeos::UpdateEngineClient::Observer {
   };
   CheckUpdateState check_update_available_ = IDLE;
   std::string new_version_;
+  bool disable_update_for_testing_ = false;
 
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.

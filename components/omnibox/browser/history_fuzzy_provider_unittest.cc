@@ -1,13 +1,13 @@
-// Copyright (c) 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/omnibox/browser/history_fuzzy_provider.h"
 
-#include <algorithm>
 #include <vector>
 
 #include "base/logging.h"
+#include "base/ranges/algorithm.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -21,8 +21,7 @@ struct TestCase {
 
 template <typename Container, typename Item>
 void SwapRemoveElement(Container& container, const Item& item) {
-  typename Container::iterator it =
-      std::find(container.begin(), container.end(), item);
+  typename Container::iterator it = base::ranges::find(container, item);
   if (it == container.end()) {
     return;
   }
@@ -31,6 +30,50 @@ void SwapRemoveElement(Container& container, const Item& item) {
     std::iter_swap(it, last);
   }
   container.pop_back();
+}
+
+// These operator implementations are for debugging.
+std::ostream& operator<<(std::ostream& os, const fuzzy::Edit& edit) {
+  os << '{';
+  switch (edit.kind) {
+    case fuzzy::Edit::Kind::KEEP: {
+      os << 'K';
+      break;
+    }
+    case fuzzy::Edit::Kind::DELETE: {
+      os << 'D';
+      break;
+    }
+    case fuzzy::Edit::Kind::INSERT: {
+      os << 'I';
+      break;
+    }
+    case fuzzy::Edit::Kind::REPLACE: {
+      os << 'R';
+      break;
+    }
+    case fuzzy::Edit::Kind::TRANSPOSE: {
+      os << 'T';
+      break;
+    }
+    default: {
+      NOTREACHED();
+      break;
+    }
+  }
+  os << "," << edit.at << "," << static_cast<char>(edit.new_char) << "}";
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const fuzzy::Correction& correction) {
+  os << '[';
+  for (size_t i = 0; i < correction.edit_count; i++) {
+    os << correction.edits[i];
+    os << " <- ";
+  }
+  os << ']';
+  return os;
 }
 
 // Note: The `test_case` is destroyed in place as it is checked.
@@ -43,7 +86,7 @@ void VerifyTestCase(fuzzy::Node* node,
   for (const fuzzy::Correction& correction : corrections) {
     std::u16string corrected_input = test_case.input;
     correction.ApplyTo(corrected_input);
-    DVLOG(1) << "-> " << corrected_input;
+    DVLOG(1) << correction << " -> " << corrected_input;
   }
   CHECK_EQ(found, test_case.expect_found)
       << " input(" << test_case.tolerance << "): " << test_case.input;
@@ -203,24 +246,6 @@ TEST_F(HistoryFuzzyProviderTest, ReplacementWorksAnywhere) {
           false,
           {
               u"abcdef",
-          },
-      },
-      {
-          4,
-          u"____xyz",
-          false,
-          {
-              u"abcdxyz",
-              u"tuvwxyz",
-          },
-      },
-      {
-          4,
-          u"abc____",
-          false,
-          {
-              u"abcdefg",
-              u"abcdxyz",
           },
       },
   };
@@ -421,4 +446,125 @@ TEST_F(HistoryFuzzyProviderTest, ToleranceScheduleIsEnforced) {
 
   VerifyCasesWithSchedule(&node, cases,
                           {.start_index = 2, .step_length = 4, .limit = 3});
+}
+
+// This test ensures that transposition swaps two adjacent characters with
+// a single operation at edit distance one. Only directly adjacent characters
+// can be transposed and nonadjacent character swaps still require two edits.
+TEST_F(HistoryFuzzyProviderTest, TransposeIsEditDistanceOne) {
+  fuzzy::Node node;
+  node.Insert(u"transpose", 0);
+
+  std::vector<TestCase> cases = {
+      {
+          // Direct transposition 'op' -> 'po'. Finding the correction
+          // with tolerance 1 implies a single transposition edit was enough.
+          1,
+          u"transopse",
+          false,
+          {
+              u"transpose",
+          },
+      },
+      {
+          // Not a direct transposition, as the 's' is in between,
+          // so this case requires insert + delete pair (tolerance 2).
+          2,
+          u"transpeso",
+          false,
+          {
+              u"transpose",
+          },
+      },
+  };
+
+  VerifyCases(&node, cases);
+}
+
+// This test covers a subtlety in the algorithm. It ensures we don't take
+// replacements at the same position of a previous insertion because we
+// only want one of {I,1,e}~{R,0,t} (ler ter) | {R,0,e}~{I,0,t} (er ter).
+TEST_F(HistoryFuzzyProviderTest, DoesNotProduceDuplicate) {
+  fuzzy::Node node;
+  node.Insert(u"ter", 0);
+
+  std::vector<TestCase> cases = {
+      {
+          2,
+          u"lr",
+          false,
+          {
+              u"ter",
+          },
+      },
+  };
+
+  VerifyCases(&node, cases);
+}
+
+TEST_F(HistoryFuzzyProviderTest, NodesDeleteAndPreserveStructure) {
+  fuzzy::Node node;
+  const auto checked_delete = [&](const std::u16string& s) {
+    node.Delete(s, 0);
+    return node.TerminalCount() == 0;
+  };
+  node.Insert(u"abc", 0);
+  CHECK(checked_delete(u"abc"));
+  CHECK(node.next.empty());
+  node.Insert(u"def", 0);
+  CHECK(!checked_delete(u"de"));
+  CHECK(!node.next.empty());
+  CHECK(checked_delete(u"def"));
+  node.Insert(u"ghi", 0);
+  node.Insert(u"ghost", 0);
+  CHECK(!checked_delete(u"gh"));
+  CHECK(!node.next.empty());
+  CHECK(!checked_delete(u"ghi"));
+  CHECK(checked_delete(u"ghost"));
+  CHECK(node.next.empty());
+}
+
+TEST_F(HistoryFuzzyProviderTest, NodesMaintainRelevanceTotalTerminalCount) {
+  fuzzy::Node node;
+
+  // Start with no terminals.
+  CHECK_EQ(node.TerminalCount(), 0);
+
+  // Support including the empty string as terminal.
+  node.Insert(u"", 0);
+  CHECK_EQ(node.TerminalCount(), 1);
+
+  // Ensure repeated insertions don't cause growth.
+  node.Insert(u"abc", 0);
+  CHECK_EQ(node.TerminalCount(), 2);
+  node.Insert(u"abc", 0);
+  CHECK_EQ(node.TerminalCount(), 2);
+
+  // Check further additions on different, same, and partially same paths.
+  node.Insert(u"def", 0);
+  CHECK_EQ(node.TerminalCount(), 3);
+  node.Insert(u"abcd", 0);
+  CHECK_EQ(node.TerminalCount(), 4);
+  node.Insert(u"ab", 0);
+  CHECK_EQ(node.next[u'a']->TerminalCount(), 3);
+  CHECK_EQ(node.next[u'd']->TerminalCount(), 1);
+  CHECK_EQ(node.TerminalCount(), 5);
+
+  // Check deletion, including no-op and empty string deletion.
+  node.Delete(u"a", 0);
+  CHECK_EQ(node.TerminalCount(), 5);
+  node.Delete(u"x", 0);
+  CHECK_EQ(node.TerminalCount(), 5);
+  node.Delete(u"", 0);
+  CHECK_EQ(node.TerminalCount(), 4);
+  node.Delete(u"abc", 0);
+  CHECK_EQ(node.TerminalCount(), 3);
+  node.Delete(u"abcd", 0);
+  CHECK_EQ(node.TerminalCount(), 2);
+  node.Delete(u"ab", 0);
+  CHECK_EQ(node.TerminalCount(), 1);
+  node.Delete(u"defx", 0);
+  CHECK_EQ(node.TerminalCount(), 1);
+  node.Delete(u"def", 0);
+  CHECK_EQ(node.TerminalCount(), 0);
 }

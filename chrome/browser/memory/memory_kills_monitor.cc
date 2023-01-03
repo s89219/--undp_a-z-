@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/threading/platform_thread.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/memory/memory_kills_histogram.h"
 #include "chrome/browser/memory/oom_kills_monitor.h"
 #include "content/public/browser/browser_thread.h"
@@ -34,7 +35,7 @@ void MemoryKillsMonitor::Initialize() {
 
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  auto* login_state = chromeos::LoginState::Get();
+  auto* login_state = ash::LoginState::Get();
   if (login_state)
     login_state->AddObserver(g_memory_kills_monitor_instance.Pointer());
   else
@@ -52,7 +53,7 @@ void MemoryKillsMonitor::LogLowMemoryKill(const std::string& type,
 
 void MemoryKillsMonitor::LoggedInStateChanged() {
   VLOG(2) << "LoggedInStateChanged";
-  auto* login_state = chromeos::LoginState::Get();
+  auto* login_state = ash::LoginState::Get();
   if (login_state) {
     // Note: LoginState never fires a notification when logged out.
     if (login_state->IsUserLoggedIn()) {
@@ -81,7 +82,10 @@ void MemoryKillsMonitor::StartMonitoring() {
   monitoring_started_.Set();
 
   // Starts the OOM kills monitor.
-  OOMKillsMonitor::GetInstance().Initialize();
+  if (g_browser_process != nullptr &&
+      g_browser_process->local_state() != nullptr) {
+    OOMKillsMonitor::GetInstance().Initialize(g_browser_process->local_state());
+  }
 }
 
 void MemoryKillsMonitor::LogLowMemoryKillImpl(const std::string& type,
@@ -95,14 +99,6 @@ void MemoryKillsMonitor::LogLowMemoryKillImpl(const std::string& type,
   }
 
   VLOG(1) << "LOW_MEMORY_KILL_" << type;
-
-  base::Time now = base::Time::Now();
-  const base::TimeDelta time_delta = last_low_memory_kill_time_.is_null()
-                                         ? kMaxMemoryKillTimeDelta
-                                         : (now - last_low_memory_kill_time_);
-  UMA_HISTOGRAM_MEMORY_KILL_TIME_INTERVAL("Memory.LowMemoryKiller.TimeDelta",
-                                          time_delta);
-  last_low_memory_kill_time_ = now;
 
   ++low_memory_kills_count_;
   base::UmaHistogramCustomCounts("Memory.LowMemoryKiller.Count",

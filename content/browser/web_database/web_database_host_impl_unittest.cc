@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -67,9 +67,11 @@ class WebDatabaseHostImplTest : public ::testing::Test {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     quota_manager_ = base::MakeRefCounted<storage::MockQuotaManager>(
         /*is_incognito=*/false, data_dir_.GetPath(),
-        base::ThreadTaskRunnerHandle::Get(), special_storage_policy_);
+        base::SingleThreadTaskRunner::GetCurrentDefault(),
+        special_storage_policy_);
     quota_manager_proxy_ = base::MakeRefCounted<storage::MockQuotaManagerProxy>(
-        quota_manager_.get(), base::ThreadTaskRunnerHandle::Get());
+        quota_manager_.get(),
+        base::SingleThreadTaskRunner::GetCurrentDefault());
 
     db_tracker_ = storage::DatabaseTracker::Create(
         base::FilePath(),
@@ -137,7 +139,7 @@ class WebDatabaseHostImplTest : public ::testing::Test {
   void LockProcessToURL(const GURL& url) {
     ChildProcessSecurityPolicyImpl::GetInstance()->LockProcessForTesting(
         IsolationContext(BrowsingInstanceId(1), browser_context(),
-                         /*is_guest=*/false),
+                         /*is_guest=*/false, /*is_fenced=*/false),
         process_id(), url);
   }
 

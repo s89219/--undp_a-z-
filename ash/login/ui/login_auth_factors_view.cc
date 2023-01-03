@@ -1,8 +1,6 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
-#include <algorithm>
 
 #include "ash/login/ui/login_auth_factors_view.h"
 
@@ -14,8 +12,10 @@
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/style/ash_color_provider.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/ranges/algorithm.h"
 #include "base/time/time.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -92,8 +92,9 @@ PrioritizedAuthFactorViewState GetPrioritizedAuthFactorViewState(
     case AuthFactorState::kUnavailable:
       return PrioritizedAuthFactorViewState::kUnavailable;
     case AuthFactorState::kErrorPermanent:
-      if (auth_factor.has_permanent_error_display_timed_out())
+      if (auth_factor.has_permanent_error_display_timed_out()) {
         return PrioritizedAuthFactorViewState::kErrorBackground;
+      }
 
       return PrioritizedAuthFactorViewState::kErrorForeground;
     case AuthFactorState::kAvailable:
@@ -116,8 +117,9 @@ PrioritizedAuthFactorViewState GetPrioritizedAuthFactorViewState(
 // state determines the behavior of LoginAuthFactorsView.
 AuthFactorModel* GetHighestPriorityAuthFactor(
     const std::vector<std::unique_ptr<AuthFactorModel>>& auth_factors) {
-  if (auth_factors.empty())
+  if (auth_factors.empty()) {
     return nullptr;
+  }
 
   // PrioritizedAuthFactorViewState enum values are assigned so that the
   // highest numerical value corresponds to the highest priority.
@@ -216,9 +218,9 @@ LoginAuthFactorsView::LoginAuthFactorsView(
   arrow_nudge_animation_ =
       arrow_icon_container_->AddChildView(std::make_unique<AuthIconView>());
   arrow_nudge_animation_->SetCircleImage(
-      kArrowButtonSizeDp / 2, AshColorProvider::Get()->GetControlsLayerColor(
-                                  AshColorProvider::ControlsLayerType::
-                                      kHairlineBorderColor));
+      kArrowButtonSizeDp / 2,
+      AshColorProvider::Get()->GetControlsLayerColor(
+          AshColorProvider::ControlsLayerType::kHairlineBorderColor));
 
   arrow_nudge_animation_->set_on_tap_or_click_callback(base::BindRepeating(
       &LoginAuthFactorsView::RelayArrowButtonPressed, base::Unretained(this)));
@@ -256,8 +258,9 @@ void LoginAuthFactorsView::AddAuthFactor(
 }
 
 void LoginAuthFactorsView::SetCanUsePin(bool can_use_pin) {
-  if (can_use_pin == AuthFactorModel::can_use_pin())
+  if (can_use_pin == AuthFactorModel::can_use_pin()) {
     return;
+  }
 
   AuthFactorModel::set_can_use_pin(can_use_pin);
   UpdateState();
@@ -343,8 +346,9 @@ void LoginAuthFactorsView::UpdateState() {
       // the error for a period of time.
 
       // Do not replace the current error if an error is already showing.
-      if (error_timer_.IsRunning())
+      if (error_timer_.IsRunning()) {
         return;
+      }
 
       error_timer_.Start(FROM_HERE, kErrorTimeout,
                          base::BindOnce(&LoginAuthFactorsView::OnErrorTimeout,
@@ -365,10 +369,10 @@ void LoginAuthFactorsView::UpdateState() {
       // their password.
       ShowReadyAndDisabledAuthFactors();
 
-      num_factors_in_error_background_state = std::count_if(
-          auth_factors_.begin(), auth_factors_.end(), [](const auto& factor) {
-            return GetPrioritizedAuthFactorViewState(*factor) ==
-                   PrioritizedAuthFactorViewState::kErrorBackground;
+      num_factors_in_error_background_state = base::ranges::count(
+          auth_factors_, PrioritizedAuthFactorViewState::kErrorBackground,
+          [](const auto& factor) {
+            return GetPrioritizedAuthFactorViewState(*factor);
           });
 
       if (num_factors_in_error_background_state == 1) {
@@ -421,9 +425,10 @@ void LoginAuthFactorsView::ShowCheckmark() {
   checkmark_icon_->SetVisible(true);
   SetArrowVisibility(false);
   if (arrow_button_was_visible) {
-    const auto& resource = AshColorProvider::Get()->IsDarkModeEnabled()
-                               ? IDR_LOGIN_ARROW_CHECKMARK_SPINNER_DARKMODE
-                               : IDR_LOGIN_ARROW_CHECKMARK_SPINNER_LIGHTMODE;
+    const auto& resource =
+        DarkLightModeControllerImpl::Get()->IsDarkModeEnabled()
+            ? IDR_LOGIN_ARROW_CHECKMARK_SPINNER_DARKMODE
+            : IDR_LOGIN_ARROW_CHECKMARK_SPINNER_LIGHTMODE;
     checkmark_icon_->SetAnimation(resource, kCheckmarkAnimationDuration,
                                   kCheckmarkAnimationNumFrames);
   } else {
@@ -450,8 +455,9 @@ int LoginAuthFactorsView::GetReadyLabelId() const {
     return GetDefaultLabelId();
   }
 
-  if (ready_factor_count == 1u)
+  if (ready_factor_count == 1u) {
     return ready_factor->GetLabelId();
+  }
 
   // Multiple auth factors are ready.
   switch (ready_factors) {

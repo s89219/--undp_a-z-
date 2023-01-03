@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,6 +56,7 @@ class UsbDeviceLinux : public UsbDevice {
 #if BUILDFLAG(IS_CHROMEOS)
   void OnOpenRequestComplete(OpenCallback callback,
                              base::ScopedFD fd,
+                             const std::string& client_id,
                              base::ScopedFD lifeline_fd);
   void OnOpenRequestError(OpenCallback callback,
                           const std::string& error_name,
@@ -68,6 +69,7 @@ class UsbDeviceLinux : public UsbDevice {
 #endif  // BUILDFLAG(IS_CHROMEOS)
   void Opened(base::ScopedFD fd,
               base::ScopedFD lifeline_fd,
+              const std::string& client_id,
               OpenCallback callback,
               scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
 

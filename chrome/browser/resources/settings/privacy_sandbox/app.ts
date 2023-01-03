@@ -1,25 +1,23 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-import 'chrome://resources/cr_elements/cr_page_host_style_css.js';
-import 'chrome://resources/cr_elements/shared_style_css.m.js';
-import 'chrome://resources/cr_elements/shared_vars_css.m.js';
-import './icons.js';
+import 'chrome://resources/cr_elements/cr_page_host_style.css.js';
+import 'chrome://resources/cr_elements/cr_shared_style.css.js';
+import 'chrome://resources/cr_elements/cr_shared_vars.css.js';
+import './icons.html.js';
 import './interest_item.js';
 import '../settings.js';
 
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {addWebUIListener} from 'chrome://resources/js/cr.m.js';
 import {PaperTooltipElement} from 'chrome://resources/polymer/v3_0/paper-tooltip/paper-tooltip.js';
 import {afterNextRender, PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 // Those resources are loaded through settings.js as the privacy sandbox page
 // lives outside regular settings, hence can't access those resources directly
 // with |optimize_webui="true"|.
-import {CrSettingsPrefs, HatsBrowserProxyImpl, loadTimeData, MetricsBrowserProxy, MetricsBrowserProxyImpl, PrefsMixin, SettingsToggleButtonElement, TrustSafetyInteraction} from '../settings.js';
+import {CrSettingsPrefs, FledgeState, HatsBrowserProxyImpl, loadTimeData, MetricsBrowserProxy, MetricsBrowserProxyImpl, PrefsMixin, PrivacySandboxBrowserProxy, PrivacySandboxBrowserProxyImpl, PrivacySandboxInterest, SettingsToggleButtonElement, TooltipMixin, TopicsState, TrustSafetyInteraction} from '../settings.js';
 
 import {getTemplate} from './app.html.js';
-import {FledgeState, FlocIdentifier, PrivacySandboxBrowserProxy, PrivacySandboxBrowserProxyImpl, PrivacySandboxInterest, TopicsState} from './privacy_sandbox_browser_proxy.js';
 
 /** Views of the PrivacySandboxSettings page. */
 export enum PrivacySandboxSettingsView {
@@ -31,7 +29,16 @@ export enum PrivacySandboxSettingsView {
   SPAM_AND_FRAUD_DIALOG = 'spamAndFraudDialog',
 }
 
-const PrivacySandboxAppElementBase = PrefsMixin(PolymerElement);
+export interface PrivacySandboxAppElement {
+  $: {
+    learnMoreLink: HTMLElement,
+    adPersonalizationRow: HTMLElement,
+    adMeasurementRow: HTMLElement,
+    spamAndFraudRow: HTMLElement,
+  };
+}
+
+const PrivacySandboxAppElementBase = TooltipMixin(PrefsMixin(PolymerElement));
 
 export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
   static get is() {
@@ -44,13 +51,6 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
 
   static get properties() {
     return {
-      flocId_: Object,
-
-      privacySandboxSettings3Enabled_: {
-        type: Boolean,
-        value: () => loadTimeData.getBoolean('privacySandboxSettings3Enabled'),
-      },
-
       /** Valid privacy sandbox settings view states. */
       privacySandboxSettingsViewEnum_: {
         type: Object,
@@ -58,7 +58,7 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
       },
 
       /** The current view. */
-      privacySandboxSettingsView_: {
+      privacySandboxSettingsView: {
         type: String,
         value: PrivacySandboxSettingsView.MAIN,
       },
@@ -98,32 +98,22 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
     };
   }
 
-  static get observers() {
-    return ['onFlocChanged_(prefs.generated.floc_enabled.*)'];
-  }
-
-  private flocId_: FlocIdentifier;
   private metricsBrowserProxy_: MetricsBrowserProxy =
       MetricsBrowserProxyImpl.getInstance();
   private privacySandboxBrowserProxy_: PrivacySandboxBrowserProxy =
       PrivacySandboxBrowserProxyImpl.getInstance();
-  private privacySandboxSettings3Enabled_: boolean;
-  privacySandboxSettingsView_: PrivacySandboxSettingsView;
-  private topTopics_: Array<PrivacySandboxInterest>;
-  private blockedTopics_: Array<PrivacySandboxInterest>;
-  private joiningSites_: Array<PrivacySandboxInterest>;
-  private blockedSites_: Array<PrivacySandboxInterest>;
+  privacySandboxSettingsView: PrivacySandboxSettingsView;
+  private topTopics_: PrivacySandboxInterest[];
+  private blockedTopics_: PrivacySandboxInterest[];
+  private joiningSites_: PrivacySandboxInterest[];
+  private blockedSites_: PrivacySandboxInterest[];
 
   override ready() {
     super.ready();
     assert(!loadTimeData.getBoolean('isPrivacySandboxRestricted'));
 
-    chrome.metricsPrivate.recordSparseHashable(
+    chrome.metricsPrivate.recordSparseValueWithPersistentHash(
         'WebUI.Settings.PathVisited', '/privacySandbox');
-
-    this.privacySandboxBrowserProxy_.getFlocId().then(id => this.flocId_ = id);
-    addWebUIListener(
-        'floc-id-changed', (id: FlocIdentifier) => this.flocId_ = id);
 
     this.privacySandboxBrowserProxy_.getTopicsState().then(
         state => this.onTopicsStateChanged_(state));
@@ -153,23 +143,15 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
       const view = new URLSearchParams(window.location.search).get('view');
       if (Object.values(PrivacySandboxSettingsView)
               .includes(view as PrivacySandboxSettingsView)) {
-        this.privacySandboxSettingsView_ = view as PrivacySandboxSettingsView;
+        this.privacySandboxSettingsView = view as PrivacySandboxSettingsView;
       } else {
         // If no view has been specified, then navigate to main page.
-        this.privacySandboxSettingsView_ = PrivacySandboxSettingsView.MAIN;
+        this.privacySandboxSettingsView = PrivacySandboxSettingsView.MAIN;
       }
     });
 
     HatsBrowserProxyImpl.getInstance().trustSafetyInteractionOccurred(
         TrustSafetyInteraction.OPENED_PRIVACY_SANDBOX);
-  }
-
-  private onFlocChanged_() {
-    this.privacySandboxBrowserProxy_.getFlocId().then(id => this.flocId_ = id);
-  }
-
-  private onResetFlocClick_() {
-    this.privacySandboxBrowserProxy_.resetFlocId();
   }
 
   private onApiToggleButtonChange_(event: Event) {
@@ -178,11 +160,7 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
     this.metricsBrowserProxy_.recordAction(
         privacySandboxApisEnabled ? 'Settings.PrivacySandbox.ApisEnabled' :
                                     'Settings.PrivacySandbox.ApisDisabled');
-    this.setPrefValue(
-        this.privacySandboxSettings3Enabled_ ?
-            'privacy_sandbox.manually_controlled_v2' :
-            'privacy_sandbox.manually_controlled',
-        true);
+    this.setPrefValue('privacy_sandbox.manually_controlled_v2', true);
 
     // As the backend will have cleared any data when the API is disabled, clear
     // the associated model entries.
@@ -192,41 +170,33 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
     }
   }
 
-  private onFlocToggleButtonChange_(event: Event) {
-    const flocEnabled = (event.target as SettingsToggleButtonElement).checked;
-    this.metricsBrowserProxy_.recordAction(
-        flocEnabled ? 'Settings.PrivacySandbox.FlocEnabled' :
-                      'Settings.PrivacySandbox.FlocDisabled');
-  }
-
   private showFragment_(view: PrivacySandboxSettingsView): boolean {
-    return this.privacySandboxSettingsView_ === view;
+    return this.privacySandboxSettingsView === view;
   }
 
   private onDialogClose_() {
-    const lastView = this.privacySandboxSettingsView_;
-    this.privacySandboxSettingsView_ = PrivacySandboxSettingsView.MAIN;
+    // This function will only be called once, regardless of how the dialog is
+    // shut (either via ESC or via the button), as in the latter the dialog is
+    // not "closed", but rather removed from the DOM.
+    const lastView = this.privacySandboxSettingsView;
+    this.privacySandboxSettingsView = PrivacySandboxSettingsView.MAIN;
     afterNextRender(this, async () => {
       switch (lastView) {
         case PrivacySandboxSettingsView.LEARN_MORE_DIALOG:
-          this.getElement_('#learnMoreLink')!.focus();
+          this.$.learnMoreLink.focus();
           break;
         case PrivacySandboxSettingsView.AD_PERSONALIZATION_DIALOG:
         case PrivacySandboxSettingsView.AD_PERSONALIZATION_REMOVED_DIALOG:
-          this.getElement_('#adPersonalizationRow')!.focus();
+          this.$.adPersonalizationRow.focus();
           break;
         case PrivacySandboxSettingsView.AD_MEASUREMENT_DIALOG:
-          this.getElement_('#adMeasurementRow')!.focus();
+          this.$.adMeasurementRow.focus();
           break;
         case PrivacySandboxSettingsView.SPAM_AND_FRAUD_DIALOG:
-          this.getElement_('#spamAndFraudRow')!.focus();
+          this.$.spamAndFraudRow.focus();
           break;
       }
     });
-  }
-
-  private getElement_(selector: string): HTMLElement|null {
-    return this.shadowRoot!.querySelector<HTMLElement>(selector);
   }
 
   private onLearnMoreClick_(e: Event) {
@@ -235,14 +205,14 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
     e.stopPropagation();
     this.metricsBrowserProxy_.recordAction(
         'Settings.PrivacySandbox.AdPersonalization.LearnMoreClicked');
-    this.privacySandboxSettingsView_ =
+    this.privacySandboxSettingsView =
         PrivacySandboxSettingsView.LEARN_MORE_DIALOG;
   }
 
   private onAdPersonalizationRowClick_() {
     this.metricsBrowserProxy_.recordAction(
         'Settings.PrivacySandbox.AdPersonalization.Opened');
-    this.privacySandboxSettingsView_ =
+    this.privacySandboxSettingsView =
         PrivacySandboxSettingsView.AD_PERSONALIZATION_DIALOG;
   }
 
@@ -262,19 +232,19 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
   private onAdPersonalizationRemovedRowClick_() {
     this.metricsBrowserProxy_.recordAction(
         'Settings.PrivacySandbox.RemovedInterests.Opened');
-    this.privacySandboxSettingsView_ =
+    this.privacySandboxSettingsView =
         PrivacySandboxSettingsView.AD_PERSONALIZATION_REMOVED_DIALOG;
   }
 
   private onAdPersonalizationBackButtonClick_() {
-    this.privacySandboxSettingsView_ =
+    this.privacySandboxSettingsView =
         PrivacySandboxSettingsView.AD_PERSONALIZATION_DIALOG;
   }
 
   private onAdMeasurementRowClick_() {
     this.metricsBrowserProxy_.recordAction(
         'Settings.PrivacySandbox.AdMeasurement.Opened');
-    this.privacySandboxSettingsView_ =
+    this.privacySandboxSettingsView =
         PrivacySandboxSettingsView.AD_MEASUREMENT_DIALOG;
   }
 
@@ -288,7 +258,7 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
   private onSpamAndFraudRowClick_() {
     this.metricsBrowserProxy_.recordAction(
         'Settings.PrivacySandbox.SpamFraud.Opened');
-    this.privacySandboxSettingsView_ =
+    this.privacySandboxSettingsView =
         PrivacySandboxSettingsView.SPAM_AND_FRAUD_DIALOG;
   }
 
@@ -386,46 +356,7 @@ export class PrivacySandboxAppElement extends PrivacySandboxAppElementBase {
     const tooltip = this.shadowRoot!.querySelector<PaperTooltipElement>(
         target.id === 'topicsTooltipIcon' ? '#topicsTooltip' :
                                             '#fledgeTooltip')!;
-
-    // Directly inject the required style into the stylesheets of the paper
-    // tooltip element. This is a workaround for CSS mixin properties seemingly
-    // being removed in optimized WebUI builds, and the paper-tooltip not
-    // supporting other styling methods.
-    // TODO(crbug.com/1308262): Expose required style hooks on paper-tooltip
-    const sheet = new CSSStyleSheet();
-    // @ts-ignore
-    sheet.replaceSync(`
-      #tooltip {
-            border-radius: 4px;
-            box-shadow: var(--cr-elevation-2);
-            font-family: Roboto, Arial, sans-serif;
-            font-size: inherit;
-            font-weight: 400;
-            line-height: 154%;  /* 20px. */
-            margin: 0 4px;
-      }`);
-    // @ts-ignore
-    const elemStyleSheets = tooltip.shadowRoot.adoptedStyleSheets;
-
-    if (elemStyleSheets.length === 0 ||
-        JSON.stringify(elemStyleSheets.slice(-1)[0]) !==
-            JSON.stringify(sheet)) {
-      // @ts-ignore
-      tooltip.shadowRoot.adoptedStyleSheets = [...elemStyleSheets, sheet];
-    }
-
-    const hide = () => {
-      tooltip.hide();
-      target.removeEventListener('mouseleave', hide);
-      target.removeEventListener('blur', hide);
-      target.removeEventListener('click', hide);
-      tooltip.removeEventListener('mouseenter', hide);
-    };
-    target.addEventListener('mouseleave', hide);
-    target.addEventListener('blur', hide);
-    target.addEventListener('click', hide);
-    tooltip.addEventListener('mouseenter', hide);
-    tooltip.show();
+    this.showTooltipAtTarget(tooltip, target);
   }
 }
 

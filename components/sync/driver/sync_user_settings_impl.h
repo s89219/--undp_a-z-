@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,6 +50,10 @@ class SyncUserSettingsImpl : public SyncUserSettings {
   void SetSelectedOsTypes(bool sync_all_os_types,
                           UserSelectableOsTypeSet types) override;
   UserSelectableOsTypeSet GetRegisteredSelectableOsTypes() const override;
+#endif
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  void SetAppsSyncEnabledByOs(bool apps_sync_enabled) override;
 #endif
 
   bool IsCustomPassphraseAllowed() const override;

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include <memory>
 #include <string>
 
-#include "ash/components/account_manager/account_manager_factory.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/public/cpp/notification_utils.h"
 #include "base/bind.h"
 #include "base/logging.h"
@@ -36,7 +36,7 @@
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/grit/theme_resources.h"
-#include "chromeos/ui/vector_icons/vector_icons.h"
+#include "chromeos/ash/components/account_manager/account_manager_factory.h"
 #include "components/account_id/account_id.h"
 #include "components/account_manager_core/account.h"
 #include "components/account_manager_core/chromeos/account_manager.h"
@@ -104,13 +104,14 @@ CreateDeviceAccountErrorNotification(
 
   message_center::NotifierId notifier_id(
       message_center::NotifierType::SYSTEM_COMPONENT,
-      kProfileSigninNotificationId);
+      kProfileSigninNotificationId,
+      NotificationCatalogName::kDeviceAccountSigninError);
 
   // Set `profile_id` for multi-user notification blocker.
   notifier_id.profile_id = email;
 
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           message_center::NOTIFICATION_TYPE_SIMPLE,
           device_account_notification_id,
           l10n_util::GetStringUTF16(IDS_SIGNIN_ERROR_BUBBLE_VIEW_TITLE),
@@ -119,7 +120,7 @@ CreateDeviceAccountErrorNotification(
           GURL(device_account_notification_id), notifier_id, data,
           new message_center::HandleNotificationClickDelegate(
               base::BindRepeating(&HandleDeviceAccountReauthNotificationClick)),
-          chromeos::kNotificationWarningIcon,
+          vector_icons::kNotificationWarningIcon,
           message_center::SystemNotificationWarningLevel::WARNING);
   notification->SetSystemPriority();
 
@@ -195,7 +196,7 @@ void SigninErrorNotifier::OnTokenHandleCheck(
     TokenHandleUtil::TokenHandleStatus status) {
   if (status != TokenHandleUtil::INVALID)
     return;
-  RecordReauthReason(account_id, ReauthReason::INVALID_TOKEN_HANDLE);
+  RecordReauthReason(account_id, ReauthReason::kInvalidTokenHandle);
   HandleDeviceAccountError(/*error_message=*/l10n_util::GetStringUTF16(
       IDS_SYNC_TOKEN_HANDLE_ERROR_BUBBLE_VIEW_MESSAGE));
 }
@@ -246,7 +247,7 @@ void SigninErrorNotifier::OnErrorChanged() {
   if (!IsAccountManagerAvailable(profile_)) {
     // If this flag is disabled, Chrome OS does not have a concept of Secondary
     // Accounts. Preserve existing behavior.
-    RecordReauthReason(account_id, ReauthReason::SYNC_FAILED);
+    RecordReauthReason(account_id, ReauthReason::kSyncFailed);
     HandleDeviceAccountError(
         /*error_message=*/GetMessageBodyForDeviceAccountErrors(
             /*error=*/error_controller_->auth_error().state()));
@@ -257,7 +258,7 @@ void SigninErrorNotifier::OnErrorChanged() {
   const CoreAccountId primary_account_id =
       identity_manager_->GetPrimaryAccountId(signin::ConsentLevel::kSignin);
   if (error_account_id == primary_account_id) {
-    RecordReauthReason(account_id, ReauthReason::SYNC_FAILED);
+    RecordReauthReason(account_id, ReauthReason::kSyncFailed);
     HandleDeviceAccountError(
         /*error_message=*/GetMessageBodyForDeviceAccountErrors(
             /*error=*/error_controller_->auth_error().state()));
@@ -303,7 +304,8 @@ void SigninErrorNotifier::OnCheckDummyGaiaTokenForAllAccounts(
         account_dummy_token_list) {
   message_center::NotifierId notifier_id(
       message_center::NotifierType::SYSTEM_COMPONENT,
-      kProfileSigninNotificationId);
+      kProfileSigninNotificationId,
+      NotificationCatalogName::kSecondaryAccountSigninError);
   // Set `profile_id` for multi-user notification blocker. Note the primary user
   // account id is used to identify the profile for the blocker so it is used
   // instead of the secondary user account id.
@@ -327,26 +329,23 @@ void SigninErrorNotifier::OnCheckDummyGaiaTokenForAllAccounts(
           : l10n_util::GetStringUTF16(
                 IDS_SIGNIN_ERROR_SECONDARY_ACCOUNT_MIGRATION_BUBBLE_VIEW_MESSAGE);
 
-  std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
-          message_center::NOTIFICATION_TYPE_SIMPLE,
-          secondary_account_notification_id_, message_title, message_body,
-          l10n_util::GetStringUTF16(
-              IDS_SIGNIN_ERROR_SECONDARY_ACCOUNT_DISPLAY_SOURCE),
-          GURL(secondary_account_notification_id_), notifier_id,
-          message_center::RichNotificationData(),
-          new message_center::HandleNotificationClickDelegate(
-              base::BindRepeating(
-                  &SigninErrorNotifier::
-                      HandleSecondaryAccountReauthNotificationClick,
-                  weak_factory_.GetWeakPtr())),
-          vector_icons::kSettingsIcon,
-          message_center::SystemNotificationWarningLevel::NORMAL);
-  notification->SetSystemPriority();
+  message_center::Notification notification = CreateSystemNotification(
+      message_center::NOTIFICATION_TYPE_SIMPLE,
+      secondary_account_notification_id_, message_title, message_body,
+      l10n_util::GetStringUTF16(
+          IDS_SIGNIN_ERROR_SECONDARY_ACCOUNT_DISPLAY_SOURCE),
+      GURL(secondary_account_notification_id_), notifier_id,
+      message_center::RichNotificationData(),
+      new message_center::HandleNotificationClickDelegate(base::BindRepeating(
+          &SigninErrorNotifier::HandleSecondaryAccountReauthNotificationClick,
+          weak_factory_.GetWeakPtr())),
+      vector_icons::kSettingsIcon,
+      message_center::SystemNotificationWarningLevel::NORMAL);
+  notification.SetSystemPriority();
 
   // Update or add the notification.
   NotificationDisplayService::GetForProfile(profile_)->Display(
-      NotificationHandler::Type::TRANSIENT, *notification,
+      NotificationHandler::Type::TRANSIENT, notification,
       /*metadata=*/nullptr);
 }
 

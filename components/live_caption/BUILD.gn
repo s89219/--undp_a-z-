@@ -1,4 +1,4 @@
-# Copyright 2021 The Chromium Authors. All rights reserved.
+# Copyright 2021 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,6 +9,7 @@ if (!is_android) {
     sources = [
       "caption_bubble_context.h",
       "caption_bubble_controller.h",
+      "caption_bubble_session_observer.h",
       "live_caption_controller.cc",
       "live_caption_controller.h",
     ]
@@ -50,6 +51,34 @@ if (!is_android) {
       ]
     }  # toolkit_views
   }
+
+  static_library("live_translate") {
+    sources = [
+      "live_translate_controller.cc",
+      "live_translate_controller.h",
+    ]
+
+    deps = [
+      "//base",
+      "//components/keyed_service/core",
+      "//components/live_caption:constants",
+      "//components/live_caption:utils",
+      "//components/pref_registry",
+      "//components/prefs",
+      "//components/soda",
+      "//components/soda:constants",
+      "//components/sync_preferences",
+      "//content/public/browser",
+      "//google_apis:google_apis",
+      "//media",
+      "//media/mojo/mojom",
+      "//services/data_decoder/public/cpp:cpp",
+      "//services/data_decoder/public/mojom:mojom",
+      "//services/network/public/cpp",
+      "//services/network/public/mojom",
+      "//ui/native_theme",
+    ]
+  }
 }  # !is_android
 
 source_set("constants") {
@@ -89,6 +118,6 @@ source_set("utils") {
   }
 
   if (is_chromeos_lacros) {
-    deps += [ "//chromeos/lacros" ]
+    deps += [ "//chromeos/startup" ]
   }
 }

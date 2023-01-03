@@ -1,11 +1,11 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 'use strict';
 
-import {BrowserProxy} from 'chrome://os-settings/chromeos/os_settings.js';
-import {flushTasks} from 'chrome://test/test_util.js';
+import {AppManagementBrowserProxy} from 'chrome://os-settings/chromeos/os_settings.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 import {setupFakeHandler, replaceStore, replaceBody, isHiddenByDomIf} from './test_util.js';
 
 suite('AppManagementPageTests', () => {
@@ -15,7 +15,9 @@ suite('AppManagementPageTests', () => {
 
   /** @return {Element} */
   function getAppList() {
-    return appManagementPage.$$('app-management-main-view').$['app-list'];
+    return appManagementPage.shadowRoot
+        .querySelector('app-management-main-view')
+        .$.appList;
   }
 
   /** @return {number} */
@@ -26,8 +28,9 @@ suite('AppManagementPageTests', () => {
 
   /** @return {Element} */
   function getNoAppsFoundLabel() {
-    return appManagementPage.$$('app-management-main-view')
-        .$$('#no-apps-label');
+    return appManagementPage.shadowRoot
+        .querySelector('app-management-main-view')
+        .shadowRoot.querySelector('#noAppsLabel');
   }
 
   setup(async () => {
@@ -41,7 +44,7 @@ suite('AppManagementPageTests', () => {
   test('loads', async () => {
     // Check that the browser responds to the getApps() message.
     const {apps: initialApps} =
-        await BrowserProxy.getInstance().handler.getApps();
+        await AppManagementBrowserProxy.getInstance().handler.getApps();
   });
 
   test('App list renders on page change', async () => {

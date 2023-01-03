@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,7 @@
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane_listener.h"
+#include "ui/views/controls/throbber.h"
 #include "ui/views/window/non_client_view.h"
 
 namespace views {
@@ -56,6 +57,11 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kSourceLanguageDoneButton);
   DECLARE_CLASS_ELEMENT_IDENTIFIER_VALUE(kErrorMessage);
 
+  PartialTranslateBubbleView(views::View* anchor_view,
+                             std::unique_ptr<PartialTranslateBubbleModel> model,
+                             content::WebContents* web_contents,
+                             base::OnceClosure on_closing);
+
   PartialTranslateBubbleView(const PartialTranslateBubbleView&) = delete;
   PartialTranslateBubbleView& operator=(const PartialTranslateBubbleView&) =
       delete;
@@ -69,9 +75,10 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
   View* GetInitiallyFocusedView() override;
   bool ShouldShowCloseButton() const override;
   bool ShouldShowWindowTitle() const override;
+  void WindowClosing() override;
   bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
   gfx::Size CalculatePreferredSize() const override;
-  void OnWidgetClosing(views::Widget* widget) override;
+  void OnWidgetDestroying(views::Widget* widget) override;
 
   // ui::SimpleMenuModel::Delegate:
   void ExecuteCommand(int command_id, int event_flags) override;
@@ -79,15 +86,43 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
   // Returns the current view state.
   PartialTranslateBubbleModel::ViewState GetViewState() const;
 
- protected:
+  // Initialize the bubble in the correct view state when it is shown.
+  void SetViewState(PartialTranslateBubbleModel::ViewState view_state,
+                    translate::TranslateErrors error_type);
+
+  // Update the source language combobox's selected index to match the current
+  // index in the model. These values desynchronize when a request does not
+  // specify a source language, such as with initial translations from the menu,
+  // or when "Detected Language" is used.
+  void MaybeUpdateSourceLanguageCombobox();
+
   // LocationBarBubbleDelegateView:
   void CloseBubble() override;
 
  private:
-  PartialTranslateBubbleView(views::View* anchor_view,
-                             std::unique_ptr<PartialTranslateBubbleModel> model,
-                             translate::TranslateErrors::Type error_type,
-                             content::WebContents* web_contents);
+  // IDs used by PartialTranslateBubbleViewTest to simulate button presses.
+  enum ButtonID {
+    BUTTON_ID_DONE = 1,
+    BUTTON_ID_TRY_AGAIN,
+    BUTTON_ID_OPTIONS_MENU,
+    BUTTON_ID_CLOSE,
+    BUTTON_ID_RESET,
+    BUTTON_ID_FULL_PAGE_TRANSLATE
+  };
+
+  friend class PartialTranslateBubbleViewTest;
+  FRIEND_TEST_ALL_PREFIXES(PartialTranslateBubbleViewTest,
+                           TargetLanguageTabDoesntTriggerTranslate);
+  FRIEND_TEST_ALL_PREFIXES(PartialTranslateBubbleViewTest,
+                           TabSelectedAfterTranslation);
+  FRIEND_TEST_ALL_PREFIXES(PartialTranslateBubbleViewTest,
+                           UpdateLanguageTabsFromResponse);
+  FRIEND_TEST_ALL_PREFIXES(PartialTranslateBubbleViewTest,
+                           SourceLanguageTabUpdatesViewState);
+  FRIEND_TEST_ALL_PREFIXES(PartialTranslateBubbleViewTest,
+                           SourceLanguageTabSelectedLogged);
+  FRIEND_TEST_ALL_PREFIXES(PartialTranslateBubbleViewTest,
+                           TranslateFullPageButton);
 
   // views::TabbedPaneListener:
   void TabSelectedAt(int index) override;
@@ -117,7 +152,10 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
 
   // Creates the 'error' view skeleton UI with no title.
   std::unique_ptr<views::View> CreateViewErrorNoTitle(
-      std::unique_ptr<views::Button> advanced_button);
+      std::unique_ptr<views::Button> button);
+
+  // Creates the 'waiting' view that shows an empty bubble with a throbber.
+  std::unique_ptr<views::View> CreateViewWaiting();
 
   // Creates source language label and combobox for Tab UI advanced view. Caller
   // takes ownership of the returned view.
@@ -149,6 +187,12 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
   // is not shown, for accessibility purposes.
   void SetWindowTitle(PartialTranslateBubbleModel::ViewState view_state);
 
+  // Finds and saves the width of the bubble's largest child view, excluding
+  // |translate_view_|. This value is needed to properly resize
+  // |partial_text_label_| as the width of the tabbed pane changes with changes
+  // in selected languages.
+  void ComputeLargestViewStateWidth();
+
   // Updates the view state. Whenever the view state is updated, the title needs
   // to be updated for accessibility.
   void UpdateViewState(PartialTranslateBubbleModel::ViewState view_state);
@@ -160,13 +204,13 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
   void SwitchTabForViewState(PartialTranslateBubbleModel::ViewState view_state);
 
   // Switches to the error view.
-  void SwitchToErrorView(translate::TranslateErrors::Type error_type);
+  void SwitchToErrorView(translate::TranslateErrors error_type);
 
   // Updates the advanced view.
   void UpdateAdvancedView();
 
   // Actions for button presses shared with accelerators.
-  void Translate();
+  void ShowTranslated();
   void ShowOriginal();
   void ConfirmAdvancedOptions();
 
@@ -178,42 +222,98 @@ class PartialTranslateBubbleView : public LocationBarBubbleDelegateView,
   // Handles the reset button in advanced view under Tab UI.
   void ResetLanguage();
 
-  // Retrieve the names of the from/to languages and reset the language
-  // indices.
-  void UpdateLanguageNames(std::u16string* source_language_name,
-                           std::u16string* target_language_name);
+  // Updates the body text for the bubble based on the view state (either the
+  // source text if we're pre-translate or translating, or the target text if
+  // we're done translating).
+  void UpdateTextForViewState(
+      PartialTranslateBubbleModel::ViewState view_state);
+
+  // Update the names of the source/target language tabs.
+  void UpdateLanguageTabNames();
 
   void UpdateInsets(PartialTranslateBubbleModel::ViewState state);
 
+  // Function bound to the "Translate full page" button.
+  void TranslateFullPage();
+
+  // Update the alignment of |partial_text_label_| to match the direction of
+  // the locale being used.
+  void SetTextAlignmentForLocaleTextDirection(std::string locale);
+
+  // Forces announcement of translation state and conditionally also accounces
+  // the translated text.
+  void AnnounceForAccessibility(
+      PartialTranslateBubbleModel::ViewState view_state);
+
   static PartialTranslateBubbleView* partial_translate_bubble_view_;
 
-  raw_ptr<views::View> translate_view_ = nullptr;
-  raw_ptr<views::View> error_view_ = nullptr;
-  raw_ptr<views::View> advanced_view_source_ = nullptr;
-  raw_ptr<views::View> advanced_view_target_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> translate_view_waiting_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> translate_view_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> error_view_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> advanced_view_source_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> advanced_view_target_ = nullptr;
 
-  raw_ptr<views::Combobox> source_language_combobox_ = nullptr;
-  raw_ptr<views::Combobox> target_language_combobox_ = nullptr;
+  raw_ptr<views::Throbber, DanglingUntriaged> throbber_;
 
-  raw_ptr<views::TabbedPane> tabbed_pane_ = nullptr;
+  raw_ptr<views::Combobox, DanglingUntriaged> source_language_combobox_ =
+      nullptr;
+  raw_ptr<views::Combobox, DanglingUntriaged> target_language_combobox_ =
+      nullptr;
 
-  raw_ptr<views::LabelButton> advanced_reset_button_source_ = nullptr;
-  raw_ptr<views::LabelButton> advanced_reset_button_target_ = nullptr;
-  raw_ptr<views::LabelButton> advanced_done_button_source_ = nullptr;
-  raw_ptr<views::LabelButton> advanced_done_button_target_ = nullptr;
+  raw_ptr<views::TabbedPane, DanglingUntriaged> tabbed_pane_ = nullptr;
+  raw_ptr<views::View, DanglingUntriaged> tab_view_top_row_ = nullptr;
+  raw_ptr<views::Label, DanglingUntriaged> partial_text_label_ = nullptr;
+
+  raw_ptr<views::LabelButton, DanglingUntriaged> advanced_reset_button_source_ =
+      nullptr;
+  raw_ptr<views::LabelButton, DanglingUntriaged> advanced_reset_button_target_ =
+      nullptr;
+  raw_ptr<views::LabelButton, DanglingUntriaged> advanced_done_button_source_ =
+      nullptr;
+  raw_ptr<views::LabelButton, DanglingUntriaged> advanced_done_button_target_ =
+      nullptr;
 
   // Default source/target language without user interaction.
-  int previous_source_language_index_;
-  int previous_target_language_index_;
+  size_t previous_source_language_index_;
+  size_t previous_target_language_index_;
+
+  // Whether or not user changed target language and triggered translation from
+  // the advanced options.
+  bool target_language_changed_ = false;
 
   std::unique_ptr<ui::SimpleMenuModel> options_menu_model_;
   std::unique_ptr<views::MenuRunner> options_menu_runner_;
 
   std::unique_ptr<PartialTranslateBubbleModel> model_;
 
-  translate::TranslateErrors::Type error_type_;
+  translate::TranslateErrors error_type_;
 
   std::unique_ptr<WebContentMouseHandler> mouse_handler_;
+
+  std::u16string text_selection_;
+
+  // The width of the largest non-|translate_view_| child view at
+  // initialization. The default minimum width is set to 300dp to provide a more
+  // consistent experience between different UI languages - for high density
+  // languages the width would otherwise be very narrow.
+  int largest_view_state_width_ = 300;
+
+  // The threshold for character volume of |partial_text_label_|. If the volume
+  // is larger than the threshold, use the preset maximum width allowable for
+  // the bubble. Otherwise, resize normally.
+  const size_t char_threshold_for_max_width_ = 1300;
+
+  // The max allowable width for the bubble, used when the character volume of
+  // |partial_text_label_| exceeds |char_threshold_for_max_width_|. This is
+  // necessary to accommodate the size of the label in cases of largest possible
+  // character volume. It follows that this is based off of
+  // translate::kDesktopPartialTranslateTextSelectionMaxCharacters and should be
+  // updated alongside it.
+  const int bubble_max_width_ = 550;
+
+  base::OnceClosure on_closing_;
+
+  raw_ptr<content::WebContents> web_contents_;
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_TRANSLATE_PARTIAL_TRANSLATE_BUBBLE_VIEW_H_

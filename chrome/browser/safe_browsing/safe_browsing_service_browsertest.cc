@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -31,7 +31,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/task/single_thread_task_runner.h"
@@ -41,7 +40,6 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/extensions/browsertest_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -80,8 +78,6 @@
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_features.h"
@@ -711,8 +707,17 @@ IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest, MainFrameHitWithReferrer) {
   EXPECT_FALSE(hit_report().is_subresource);
 }
 
+// TODO(https://crbug.com/1345215): Flaky on Mac.
+// TODO(https://crbug.com/1399454): Flaky on Linux.
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#define MAYBE_SubResourceHitWithMainFrameReferrer \
+  DISABLED_SubResourceHitWithMainFrameReferrer
+#else
+#define MAYBE_SubResourceHitWithMainFrameReferrer \
+  SubResourceHitWithMainFrameReferrer
+#endif
 IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest,
-                       SubResourceHitWithMainFrameReferrer) {
+                       MAYBE_SubResourceHitWithMainFrameReferrer) {
   GURL first_url = embedded_test_server()->GetURL(kEmptyPage);
   GURL second_url = embedded_test_server()->GetURL(kMalwarePage);
   GURL bad_url = embedded_test_server()->GetURL(kMalwareImg);
@@ -776,7 +781,7 @@ IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest,
   // malware image, and also starts a renderer-initiated top-level navigation to
   // a site that does not respond.  Should show interstitial and have first page
   // in referrer.
-  contents->GetMainFrame()->ExecuteJavaScriptForTests(
+  contents->GetPrimaryMainFrame()->ExecuteJavaScriptForTests(
       u"navigateAndLoadMalwareImage()", base::NullCallback());
   load_stop_observer.Wait();
 
@@ -818,7 +823,7 @@ IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest,
       .Times(1);
 
   WebContents* contents = browser()->tab_strip_model()->GetActiveWebContents();
-  content::RenderFrameHost* rfh = contents->GetMainFrame();
+  content::RenderFrameHost* rfh = contents->GetPrimaryMainFrame();
   content::LoadStopObserver load_stop_observer(contents);
   // Start a browser initiated top-level navigation to a site that does not
   // respond.
@@ -855,17 +860,16 @@ IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest, SubResourceHitOnFreshTab) {
   // Have the current tab open a new tab with window.open().
   WebContents* main_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  content::RenderFrameHost* main_rfh = main_contents->GetMainFrame();
+  content::RenderFrameHost* main_rfh = main_contents->GetPrimaryMainFrame();
 
   content::WebContentsAddedObserver web_contents_added_observer;
   main_rfh->ExecuteJavaScriptForTests(u"w=window.open();",
                                       base::NullCallback());
   WebContents* new_tab_contents = web_contents_added_observer.GetWebContents();
-  content::RenderFrameHost* new_tab_rfh = new_tab_contents->GetMainFrame();
-  // A fresh WebContents should be on the initial NavigationEntry, or have
-  // no NavigationEntry (if InitialNavigationEntry is disabled).
-  EXPECT_TRUE(!new_tab_contents->GetController().GetLastCommittedEntry() ||
-              new_tab_contents->GetController()
+  content::RenderFrameHost* new_tab_rfh =
+      new_tab_contents->GetPrimaryMainFrame();
+  // A fresh WebContents should be on the initial NavigationEntry.
+  EXPECT_TRUE(new_tab_contents->GetController()
                   .GetLastCommittedEntry()
                   ->IsInitialEntry());
   EXPECT_EQ(nullptr, new_tab_contents->GetController().GetPendingEntry());
@@ -873,15 +877,10 @@ IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest, SubResourceHitOnFreshTab) {
   // Run javascript in the blank new tab to load the malware image.
   EXPECT_CALL(observer_, OnSafeBrowsingHit(IsUnsafeResourceFor(img_url)))
       .Times(1);
-  // When InitialNavigationEntry is enabled, wait for 2 navigations to finish:
-  // the synchronous about:blank commit triggered by the window.open() above,
-  // and the interstitial page navigation triggered by Safe Browsing code for
-  // the image load below. When InitialNavigationEntry is disabled, the
-  // synchronous about:blank commit will be ignored (won't create
-  // NavigationEntry).
-  content::TestNavigationObserver observer(
-      new_tab_contents,
-      blink::features::IsInitialNavigationEntryEnabled() ? 2 : 1);
+  // Wait for 2 navigations to finish: the synchronous about:blank commit
+  // triggered by the window.open() above, and the interstitial page
+  // navigation triggered by Safe Browsing code for the image load below.
+  content::TestNavigationObserver observer(new_tab_contents, 2);
   new_tab_rfh->ExecuteJavaScriptForTests(
       u"var img=new Image();"
       u"img.src=\"" +
@@ -896,15 +895,10 @@ IN_PROC_BROWSER_TEST_F(V4SafeBrowsingServiceTest, SubResourceHitOnFreshTab) {
   EXPECT_TRUE(got_hit_report());
   EXPECT_EQ(img_url, hit_report().malicious_url);
   EXPECT_TRUE(hit_report().is_subresource);
-  // When InitialNavigationEntry is enabled, the page report URL should be
-  // about:blank, as the last committed entry is the synchronous about:blank
-  // commit. When InitialNavigationEntry is disabled, it should be empty as the
-  // synchronous about:blank commit was ignored (didn't create NavigationEntry).
-  EXPECT_EQ(blink::features::IsInitialNavigationEntryEnabled()
-                ? GURL(url::kAboutBlankURL)
-                : GURL(),
-            hit_report().page_url);
-  EXPECT_EQ(GURL(), hit_report().referrer_url);
+  // Page report URLs should be about:blank, as the last committed navigation is
+  // the synchronous about:blank commit.
+  EXPECT_EQ(GURL(url::kAboutBlankURL), hit_report().page_url);
+  EXPECT_EQ(GURL(url::kAboutBlankURL), hit_report().referrer_url);
 
   // Proceed through it.
   security_interstitials::SecurityInterstitialTabHelper* helper =
@@ -1076,9 +1070,6 @@ class V4SafeBrowsingServiceJsRequestTest
 using V4SafeBrowsingServiceJsRequestInterstitialTest =
     V4SafeBrowsingServiceJsRequestTest;
 
-// This is almost identical to
-// SafeBrowsingServiceWebSocketTest.MalwareWebSocketBlocked. That test will be
-// deleted when the old database backend is removed.
 IN_PROC_BROWSER_TEST_P(V4SafeBrowsingServiceJsRequestInterstitialTest,
                        MalwareBlocked) {
   GURL base_url = embedded_test_server()->GetURL(kMalwareJsRequestPage);
@@ -1088,23 +1079,16 @@ IN_PROC_BROWSER_TEST_P(V4SafeBrowsingServiceJsRequestInterstitialTest,
 
   MarkUrlForMalwareUnexpired(js_request_url);
 
-  // Brute force method for waiting for the interstitial to be displayed.
-  content::WindowedNotificationObserver load_stop_observer(
-      content::NOTIFICATION_ALL,
-      base::BindRepeating(
-          [](V4SafeBrowsingServiceTest* self,
-             const content::NotificationSource& source,
-             const content::NotificationDetails& details) {
-            return self->ShowingInterstitialPage();
-          },
-          base::Unretained(this)));
-
   EXPECT_CALL(observer_,
               OnSafeBrowsingHit(IsUnsafeResourceFor(js_request_url)));
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
 
-  // If the interstitial fails to be displayed, the test will hang here.
-  load_stop_observer.Wait();
+  content::TestNavigationObserver error_observer(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      net::ERR_BLOCKED_BY_CLIENT);
+  error_observer.set_wait_event(
+      content::TestNavigationObserver::WaitEvent::kNavigationFinished);
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
+  error_observer.WaitForNavigationFinished();
 
   EXPECT_TRUE(ShowingInterstitialPage());
   EXPECT_TRUE(got_hit_report());

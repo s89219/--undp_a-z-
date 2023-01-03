@@ -1,20 +1,23 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 // clang-format off
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {SafeBrowsingSetting, SettingsSecurityPageElement} from 'chrome://settings/lazy_load.js';
 import {MetricsBrowserProxyImpl, PrivacyElementInteractions, PrivacyPageBrowserProxyImpl, Router, routes, SafeBrowsingInteractions, SecureDnsMode} from 'chrome://settings/settings.js';
-// <if expr="is_win">
-import {buildRouter} from 'chrome://settings/settings.js';
-import {SettingsRoutes} from 'chrome://settings/settings_routes.js';
+// <if expr="chrome_root_store_supported">
+import {OpenWindowProxyImpl} from 'chrome://settings/settings.js';
 // </if>
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks, isChildVisible} from 'chrome://webui-test/test_util.js';
+import {isChildVisible} from 'chrome://webui-test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestMetricsBrowserProxy} from './test_metrics_browser_proxy.js';
+// <if expr="chrome_root_store_supported">
+import {TestOpenWindowProxy} from './test_open_window_proxy.js';
+// </if>
 import {TestPrivacyPageBrowserProxy} from './test_privacy_page_browser_proxy.js';
 
 // clang-format on
@@ -38,16 +41,19 @@ function pagePrefs() {
   };
 }
 
-suite('CrSettingsSecurityPageTest', function() {
+suite('SecurityPage', function() {
   let testMetricsBrowserProxy: TestMetricsBrowserProxy;
   let testPrivacyBrowserProxy: TestPrivacyPageBrowserProxy;
   let page: SettingsSecurityPageElement;
+  // <if expr="chrome_root_store_supported">
+  let openWindowProxy: TestOpenWindowProxy;
+  // </if>
 
   suiteSetup(function() {
     loadTimeData.overrideValues({
       enableSecurityKeysSubpage: true,
-      enableSecurityKeysPhonesSubpage: false,
       showHttpsOnlyModeSetting: true,
+      showChromeRootStoreCertificates: true,
     });
   });
 
@@ -56,7 +62,11 @@ suite('CrSettingsSecurityPageTest', function() {
     MetricsBrowserProxyImpl.setInstance(testMetricsBrowserProxy);
     testPrivacyBrowserProxy = new TestPrivacyPageBrowserProxy();
     PrivacyPageBrowserProxyImpl.setInstance(testPrivacyBrowserProxy);
-    document.body.innerHTML = '';
+    // <if expr="chrome_root_store_supported">
+    openWindowProxy = new TestOpenWindowProxy();
+    OpenWindowProxyImpl.setInstance(openWindowProxy);
+    // </if>
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     page = document.createElement('settings-security-page');
     page.prefs = pagePrefs();
     document.body.appendChild(page);
@@ -73,15 +83,20 @@ suite('CrSettingsSecurityPageTest', function() {
   // <if expr="is_macosx or is_win">
   test('NativeCertificateManager', function() {
     page.shadowRoot!.querySelector<HTMLElement>('#manageCertificates')!.click();
-    return testPrivacyBrowserProxy.whenCalled('showManageSSLCertificates');
+    return testPrivacyBrowserProxy.whenCalled('showManageSslCertificates');
   });
   // </if>
 
-  // Initially specified pref option should be expanded
-  test('SafeBrowsingRadio_InitialPrefOptionIsExpanded', function() {
-    assertFalse(page.$.safeBrowsingEnhanced.expanded);
-    assertTrue(page.$.safeBrowsingStandard.expanded);
+  // <if expr="chrome_root_store_supported">
+  test('ChromeRootStorePage', async function() {
+    const row =
+        page.shadowRoot!.querySelector<HTMLElement>('#chromeCertificates');
+    assertTrue(!!row);
+    row.click();
+    const url = await openWindowProxy.whenCalled('openUrl');
+    assertEquals(url, loadTimeData.getString('chromeRootStoreHelpCenterURL'));
   });
+  // </if>
 
   // <if expr="not chromeos_lacros">
   // TODO(crbug.com/1148302): This class directly calls
@@ -103,6 +118,100 @@ suite('CrSettingsSecurityPageTest', function() {
 
   test('ManageSecurityKeysPhonesSubpageHidden', function() {
     assertFalse(isChildVisible(page, '#security-keys-phones-subpage-trigger'));
+  });
+
+  // Tests that toggling the HTTPS-Only Mode setting sets the associated pref.
+  test('httpsOnlyModeToggle', function() {
+    const httpsOnlyModeToggle =
+        page.shadowRoot!.querySelector<HTMLElement>('#httpsOnlyModeToggle')!;
+    assertFalse(page.prefs.https_only_mode_enabled.value);
+    httpsOnlyModeToggle.click();
+    assertTrue(page.prefs.https_only_mode_enabled.value);
+  });
+});
+
+suite('SecurityPage_FlagsDisabled', function() {
+  let page: SettingsSecurityPageElement;
+
+  suiteSetup(function() {
+    loadTimeData.overrideValues({
+      enableSecurityKeysSubpage: false,
+      showHttpsOnlyModeSetting: false,
+    });
+  });
+
+  setup(function() {
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+    page = document.createElement('settings-security-page');
+    page.prefs = pagePrefs();
+    document.body.appendChild(page);
+    flush();
+  });
+
+  teardown(function() {
+    page.remove();
+  });
+
+  test('ManageSecurityKeysSubpageHidden', function() {
+    assertFalse(isChildVisible(page, '#security-keys-subpage-trigger'));
+  });
+
+  // The element only exists on Windows.
+  // <if expr="is_win">
+  test('ManageSecurityKeysPhonesSubpageVisibleAndNavigates', function() {
+    // On modern versions of Windows the security keys subpage will be disabled
+    // because Windows manages that itself, but a link to the subpage for
+    // managing phones as security keys will be included.
+    const triggerId = '#security-keys-phones-subpage-trigger';
+    assertTrue(isChildVisible(page, triggerId));
+    page.shadowRoot!.querySelector<HTMLElement>(triggerId)!.click();
+    flush();
+    assertEquals(
+        routes.SECURITY_KEYS_PHONES, Router.getInstance().getCurrentRoute());
+  });
+  // </if>
+
+  test('HttpsOnlyModeSettingHidden', function() {
+    assertFalse(isChildVisible(page, '#httpsOnlyModeToggle'));
+  });
+});
+
+// Separate test suite for tests specifically related to Safe Browsing controls.
+suite('SecurityPage_SafeBrowsing', function() {
+  let testMetricsBrowserProxy: TestMetricsBrowserProxy;
+  let testPrivacyBrowserProxy: TestPrivacyPageBrowserProxy;
+  let page: SettingsSecurityPageElement;
+  // <if expr="chrome_root_store_supported">
+  let openWindowProxy: TestOpenWindowProxy;
+  // </if>
+
+  setup(function() {
+    testMetricsBrowserProxy = new TestMetricsBrowserProxy();
+    MetricsBrowserProxyImpl.setInstance(testMetricsBrowserProxy);
+    testPrivacyBrowserProxy = new TestPrivacyPageBrowserProxy();
+    PrivacyPageBrowserProxyImpl.setInstance(testPrivacyBrowserProxy);
+    // <if expr="chrome_root_store_supported">
+    openWindowProxy = new TestOpenWindowProxy();
+    OpenWindowProxyImpl.setInstance(openWindowProxy);
+    // </if>
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
+    page = document.createElement('settings-security-page');
+    page.prefs = pagePrefs();
+    document.body.appendChild(page);
+    page.$.safeBrowsingEnhanced.updateCollapsed();
+    page.$.safeBrowsingStandard.updateCollapsed();
+    flush();
+  });
+
+  teardown(function() {
+    page.remove();
+    Router.getInstance().navigateTo(routes.BASIC);
+  });
+
+  // Initially specified pref option should be expanded
+  test('SafeBrowsingRadio_InitialPrefOptionIsExpanded', function() {
+    assertFalse(page.$.safeBrowsingEnhanced.expanded);
+    assertTrue(page.$.safeBrowsingStandard.expanded);
   });
 
   test('PasswordsLeakDetectionSubLabel', function() {
@@ -247,9 +356,7 @@ suite('CrSettingsSecurityPageTest', function() {
     // Wait for onDisableSafebrowsingDialogClose_ to finish.
     await flushTasks();
 
-    assertEquals(
-        null,
-        page.shadowRoot!.querySelector('settings-disable-safebrowsing-dialog'));
+    assertFalse(isChildVisible(page, 'settings-disable-safebrowsing-dialog'));
 
     assertFalse(page.$.safeBrowsingEnhanced.checked);
     assertFalse(page.$.safeBrowsingStandard.checked);
@@ -277,9 +384,7 @@ suite('CrSettingsSecurityPageTest', function() {
     // Wait for onDisableSafebrowsingDialogClose_ to finish.
     await flushTasks();
 
-    assertEquals(
-        null,
-        page.shadowRoot!.querySelector('settings-disable-safebrowsing-dialog'));
+    assertFalse(isChildVisible(page, 'settings-disable-safebrowsing-dialog'));
 
     assertTrue(page.$.safeBrowsingEnhanced.checked);
     assertFalse(page.$.safeBrowsingStandard.checked);
@@ -307,9 +412,7 @@ suite('CrSettingsSecurityPageTest', function() {
     // Wait for onDisableSafebrowsingDialogClose_ to finish.
     await flushTasks();
 
-    assertEquals(
-        null,
-        page.shadowRoot!.querySelector('settings-disable-safebrowsing-dialog'));
+    assertFalse(isChildVisible(page, 'settings-disable-safebrowsing-dialog'));
 
     assertFalse(page.$.safeBrowsingEnhanced.checked);
     assertTrue(page.$.safeBrowsingStandard.checked);
@@ -438,7 +541,7 @@ suite('CrSettingsSecurityPageTest', function() {
     const [enhancedClickedResult, enhancedClickedAction] = await Promise.all([
       testMetricsBrowserProxy.whenCalled(
           'recordSafeBrowsingInteractionHistogram'),
-      testMetricsBrowserProxy.whenCalled('recordAction')
+      testMetricsBrowserProxy.whenCalled('recordAction'),
     ]);
     assertEquals(
         SafeBrowsingInteractions.SAFE_BROWSING_ENHANCED_PROTECTION_CLICKED,
@@ -455,7 +558,7 @@ suite('CrSettingsSecurityPageTest', function() {
     const [enhancedExpandedResult, enhancedExpandedAction] = await Promise.all([
       testMetricsBrowserProxy.whenCalled(
           'recordSafeBrowsingInteractionHistogram'),
-      testMetricsBrowserProxy.whenCalled('recordAction')
+      testMetricsBrowserProxy.whenCalled('recordAction'),
     ]);
     assertEquals(
         SafeBrowsingInteractions
@@ -473,7 +576,7 @@ suite('CrSettingsSecurityPageTest', function() {
     const [standardExpandedResult, standardExpandedAction] = await Promise.all([
       testMetricsBrowserProxy.whenCalled(
           'recordSafeBrowsingInteractionHistogram'),
-      testMetricsBrowserProxy.whenCalled('recordAction')
+      testMetricsBrowserProxy.whenCalled('recordAction'),
     ]);
     assertEquals(
         SafeBrowsingInteractions
@@ -491,7 +594,7 @@ suite('CrSettingsSecurityPageTest', function() {
     const [disableClickedResult, disableClickedAction] = await Promise.all([
       testMetricsBrowserProxy.whenCalled(
           'recordSafeBrowsingInteractionHistogram'),
-      testMetricsBrowserProxy.whenCalled('recordAction')
+      testMetricsBrowserProxy.whenCalled('recordAction'),
     ]);
     assertEquals(
         SafeBrowsingInteractions.SAFE_BROWSING_DISABLE_SAFE_BROWSING_CLICKED,
@@ -509,7 +612,7 @@ suite('CrSettingsSecurityPageTest', function() {
     const [disableDeniedResult, disableDeniedAction] = await Promise.all([
       testMetricsBrowserProxy.whenCalled(
           'recordSafeBrowsingInteractionHistogram'),
-      testMetricsBrowserProxy.whenCalled('recordAction')
+      testMetricsBrowserProxy.whenCalled('recordAction'),
     ]);
     assertEquals(
         SafeBrowsingInteractions
@@ -532,7 +635,7 @@ suite('CrSettingsSecurityPageTest', function() {
     const [disableConfirmedResult, disableConfirmedAction] = await Promise.all([
       testMetricsBrowserProxy.whenCalled(
           'recordSafeBrowsingInteractionHistogram'),
-      testMetricsBrowserProxy.whenCalled('recordAction')
+      testMetricsBrowserProxy.whenCalled('recordAction'),
     ]);
     assertEquals(
         SafeBrowsingInteractions
@@ -570,102 +673,4 @@ suite('CrSettingsSecurityPageTest', function() {
     assertTrue(page.$.safeBrowsingEnhanced.expanded);
     assertFalse(page.$.safeBrowsingStandard.expanded);
   });
-
-  // Tests that toggling the HTTPS-Only Mode setting sets the associated pref.
-  test('httpsOnlyModeToggle', function() {
-    const httpsOnlyModeToggle =
-        page.shadowRoot!.querySelector<HTMLElement>('#httpsOnlyModeToggle')!;
-    assertFalse(page.prefs.https_only_mode_enabled.value);
-    httpsOnlyModeToggle.click();
-    assertTrue(page.prefs.https_only_mode_enabled.value);
-  });
-});
-
-
-suite('CrSettingsSecurityPageTest_FlagsDisabled', function() {
-  let page: SettingsSecurityPageElement;
-
-  suiteSetup(function() {
-    loadTimeData.overrideValues({
-      enableSecurityKeysSubpage: false,
-      enableSecurityKeysPhonesSubpage: false,
-      showHttpsOnlyModeSetting: false,
-    });
-  });
-
-  setup(function() {
-    document.body.innerHTML = '';
-    page = document.createElement('settings-security-page');
-    page.prefs = pagePrefs();
-    document.body.appendChild(page);
-    flush();
-  });
-
-  teardown(function() {
-    page.remove();
-  });
-
-  test('ManageSecurityKeysSubpageHidden', function() {
-    assertFalse(isChildVisible(page, '#security-keys-subpage-trigger'));
-  });
-
-  test('ManageSecurityKeysPhonesSubpageHidden', function() {
-    assertFalse(isChildVisible(page, '#security-keys-phones-subpage-trigger'));
-  });
-
-  test('HttpsOnlyModeSettingHidden', function() {
-    assertFalse(isChildVisible(page, '#httpsOnlyModeToggle'));
-  });
-});
-
-suite('CrSettingsSecurityPageTest_SecurityKeysWindowsApi', function() {
-  // On modern versions of Windows the security keys subpage will be disabled
-  // because Windows manages that itself, but a link to the subpage for
-  // managing phones as security keys will be included.
-  let page: SettingsSecurityPageElement;
-
-  suiteSetup(function() {
-    loadTimeData.overrideValues({
-      enableSecurityKeysSubpage: false,
-      enableSecurityKeysPhonesSubpage: true,
-    });
-
-    // <if expr="is_win">
-    // Setting `enableSecurityKeysPhonesSubpage` updates the list of routes,
-    // thus the `Router` needs to be rebuilt.
-    Router.resetInstanceForTesting(buildRouter());
-    // The code under test needs to be able to find `SECURITY_KEYS_PHONES`.
-    routes.SECURITY_KEYS_PHONES =
-        (Router.getInstance().getRoutes() as SettingsRoutes)
-            .SECURITY_KEYS_PHONES;
-    // </if>
-  });
-
-  setup(function() {
-    document.body.innerHTML = '';
-    page = document.createElement('settings-security-page');
-    page.prefs = pagePrefs();
-    document.body.appendChild(page);
-    flush();
-  });
-
-  teardown(function() {
-    page.remove();
-  });
-
-  test('ManageSecurityKeysSubpageHidden', function() {
-    assertFalse(isChildVisible(page, '#security-keys-subpage-trigger'));
-  });
-
-  // The element only exists on Windows.
-  // <if expr="is_win">
-  test('ManageSecurityKeysPhonesSubpageVisibleAndNavigates', function() {
-    const triggerId = '#security-keys-phones-subpage-trigger';
-    assertTrue(isChildVisible(page, triggerId));
-    page.shadowRoot!.querySelector<HTMLElement>(triggerId)!.click();
-    flush();
-    assertEquals(
-        routes.SECURITY_KEYS_PHONES, Router.getInstance().getCurrentRoute());
-  });
-  // </if>
 });

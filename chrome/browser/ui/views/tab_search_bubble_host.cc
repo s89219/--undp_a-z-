@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,6 @@
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/paint_vector_icon.h"
-#include "ui/gfx/presentation_feedback.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -73,16 +72,17 @@ void TabSearchBubbleHost::OnWidgetVisibilityChanged(views::Widget* widget,
                                                     bool visible) {
   DCHECK_EQ(webui_bubble_manager_.GetBubbleWidget(), widget);
   if (visible && bubble_created_time_.has_value()) {
-    button_->GetWidget()->GetCompositor()->RequestPresentationTimeForNextFrame(
-        base::BindOnce(
+    button_->GetWidget()
+        ->GetCompositor()
+        ->RequestSuccessfulPresentationTimeForNextFrame(base::BindOnce(
             [](base::TimeTicks bubble_created_time,
                bool bubble_using_cached_web_contents,
-               const gfx::PresentationFeedback& feedback) {
+               base::TimeTicks presentation_timestamp) {
               base::UmaHistogramMediumTimes(
                   bubble_using_cached_web_contents
                       ? "Tabs.TabSearch.WindowTimeToShowCachedWebView"
                       : "Tabs.TabSearch.WindowTimeToShowUncachedWebView",
-                  feedback.timestamp - bubble_created_time);
+                  presentation_timestamp - bubble_created_time);
             },
             *bubble_created_time_,
             webui_bubble_manager_.bubble_using_cached_web_contents()));
@@ -107,7 +107,7 @@ bool TabSearchBubbleHost::ShowTabSearchBubble(
   BrowserFeaturePromoController* controller =
       BrowserFeaturePromoController::GetForView(button_);
   if (controller)
-    controller->CloseBubble(feature_engagement::kIPHTabSearchFeature);
+    controller->EndPromo(feature_engagement::kIPHTabSearchFeature);
 
   absl::optional<gfx::Rect> anchor;
   if (button_->GetWidget()->IsFullscreen() && !button_->IsDrawn()) {

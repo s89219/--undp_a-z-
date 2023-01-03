@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -60,15 +60,7 @@ WebFeedTabHelper::WebFeedTabHelper(content::WebContents* web_contents)
 
 WebFeedTabHelper::~WebFeedTabHelper() = default;
 
-void WebFeedTabHelper::DidFinishNavigation(
-    content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInPrimaryMainFrame())
-    return;
-  if (!navigation_handle->HasCommitted())
-    return;
-  if (navigation_handle->IsSameDocument())
-    return;
-
+void WebFeedTabHelper::PrimaryPageChanged(content::Page& page) {
   // This is a new navigation so we can invalidate any previously scheduled
   // operations.
   weak_ptr_factory_.InvalidateWeakPtrs();

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@
 #include "chrome/browser/apps/app_service/launch_utils.h"
 #include "chrome/browser/apps/app_service/menu_item_constants.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/startup/first_run_lacros.h"
+#include "chrome/browser/ui/startup/first_run_service.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
@@ -30,6 +30,8 @@
 #include "chrome/common/chrome_features.h"
 #include "chromeos/lacros/lacros_service.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
+#include "components/services/app_service/public/cpp/capability_access.h"
+#include "components/services/app_service/public/cpp/intent.h"
 #include "components/services/app_service/public/cpp/intent_util.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
@@ -71,10 +73,10 @@ LacrosWebAppsController::LacrosWebAppsController(Profile* profile)
       provider_(WebAppProvider::GetForWebApps(profile)),
       publisher_helper_(profile,
                         provider_,
-                        apps::AppType::kWeb,
                         this,
                         /*observe_media_requests=*/true) {
   DCHECK(provider_);
+  DCHECK_EQ(publisher_helper_.app_type(), apps::AppType::kWeb);
 }
 
 LacrosWebAppsController::~LacrosWebAppsController() = default;
@@ -92,14 +94,6 @@ void LacrosWebAppsController::Init() {
     remote_publisher_version_ =
         service->GetInterfaceVersion(crosapi::mojom::AppPublisher::Uuid_);
 
-    if (remote_publisher_version_ <
-        int{crosapi::mojom::AppPublisher::MethodMinVersions::
-                kRegisterAppControllerMinVersion}) {
-      LOG(WARNING) << "Ash AppPublisher version " << remote_publisher_version_
-                   << " does not support RegisterAppController().";
-      return;
-    }
-
     service->GetRemote<crosapi::mojom::AppPublisher>()->RegisterAppController(
         receiver_.BindNewPipeAndPassRemoteWithVersion());
     remote_publisher_ =
@@ -116,7 +110,7 @@ void LacrosWebAppsController::Shutdown() {
 }
 
 WebAppRegistrar& LacrosWebAppsController::registrar() const {
-  return provider_->registrar();
+  return provider_->registrar_unsafe();
 }
 
 void LacrosWebAppsController::SetPublisherForTesting(
@@ -138,11 +132,10 @@ void LacrosWebAppsController::OnReady() {
   PublishWebApps(std::move(apps));
 }
 
-void LacrosWebAppsController::Uninstall(
-    const std::string& app_id,
-    apps::mojom::UninstallSource uninstall_source,
-    bool clear_site_data,
-    bool report_abuse) {
+void LacrosWebAppsController::Uninstall(const std::string& app_id,
+                                        apps::UninstallSource uninstall_source,
+                                        bool clear_site_data,
+                                        bool report_abuse) {
   const WebApp* web_app = GetWebApp(app_id);
   if (!web_app) {
     return;
@@ -176,14 +169,22 @@ void LacrosWebAppsController::LoadIcon(const std::string& app_id,
                               std::move(callback));
 }
 
+void LacrosWebAppsController::GetCompressedIcon(
+    const std::string& app_id,
+    int32_t size_in_dip,
+    ui::ResourceScaleFactor scale_factor,
+    apps::LoadIconCallback callback) {
+  publisher_helper().GetCompressedIconData(app_id, size_in_dip, scale_factor,
+                                           std::move(callback));
+}
+
 void LacrosWebAppsController::OpenNativeSettings(const std::string& app_id) {
   publisher_helper().OpenNativeSettings(app_id);
 }
 
 void LacrosWebAppsController::SetWindowMode(const std::string& app_id,
                                             apps::WindowMode window_mode) {
-  return publisher_helper().SetWindowMode(
-      app_id, apps::ConvertWindowModeToMojomWindowMode(window_mode));
+  return publisher_helper().SetWindowMode(app_id, window_mode);
 }
 
 void LacrosWebAppsController::GetMenuModel(const std::string& app_id,
@@ -215,28 +216,38 @@ void LacrosWebAppsController::ExecuteContextMenuCommand(
       base::BindOnce(&LacrosWebAppsController::ReturnLaunchResults,
                      weak_ptr_factory_.GetWeakPtr(), std::move(mojo_callback));
 
-  if (!ShouldOpenPrimaryProfileFirstRun(profile_)) {
+  auto* fre_service = FirstRunServiceFactory::GetForBrowserContext(profile_);
+  if (!fre_service || !fre_service->ShouldOpenFirstRun()) {
     ExecuteContextMenuCommandInternal(app_id, id,
                                       std::move(execution_finished_callback));
     return;
   }
 
-  OpenPrimaryProfileFirstRunIfNeeded(base::BindOnce(
-      &OnOpenPrimaryProfileFirstRunExited,
-      std::move(execution_finished_callback),
+  fre_service->OpenFirstRunIfNeeded(
+      FirstRunService::EntryPoint::kWebAppContextMenu,
       base::BindOnce(
-          &LacrosWebAppsController::ExecuteContextMenuCommandInternal,
-          weak_ptr_factory_.GetWeakPtr(), app_id, id)));
+          &OnOpenPrimaryProfileFirstRunExited,
+          std::move(execution_finished_callback),
+          base::BindOnce(
+              &LacrosWebAppsController::ExecuteContextMenuCommandInternal,
+              weak_ptr_factory_.GetWeakPtr(), app_id, id)));
 }
 
 void LacrosWebAppsController::ExecuteContextMenuCommandInternal(
     const std::string& app_id,
     const std::string& id,
     CommandFinishedCallback callback) {
-  content::WebContents* web_contents =
-      publisher_helper().ExecuteContextMenuCommand(app_id, id,
-                                                   display::kDefaultDisplayId);
-  std::move(callback).Run({web_contents});
+  // CommandFinishedCallback needs a vector, so this lambda is an adapter to
+  // transform a single WebContents into a vector.
+  publisher_helper().ExecuteContextMenuCommand(
+      app_id, id, display::kDefaultDisplayId,
+      base::BindOnce(
+          [](base::OnceCallback<void(const std::vector<content::WebContents*>&)>
+                 callback,
+             content::WebContents* contents) {
+            std::move(callback).Run({contents});
+          },
+          std::move(callback)));
 }
 
 void LacrosWebAppsController::StopApp(const std::string& app_id) {
@@ -245,8 +256,7 @@ void LacrosWebAppsController::StopApp(const std::string& app_id) {
 
 void LacrosWebAppsController::SetPermission(const std::string& app_id,
                                             apps::PermissionPtr permission) {
-  publisher_helper().SetPermission(
-      app_id, apps::ConvertPermissionToMojomPermission(permission));
+  publisher_helper().SetPermission(app_id, std::move(permission));
 }
 
 // TODO(crbug.com/1144877): Clean up the multiple launch interfaces and remove
@@ -265,24 +275,29 @@ void LacrosWebAppsController::Launch(
       base::BindOnce(&LacrosWebAppsController::ReturnLaunchResults,
                      weak_ptr_factory_.GetWeakPtr(), std::move(mojo_callback));
   auto params = apps::ConvertCrosapiToLaunchParams(launch_params, profile_);
-  if (!ShouldOpenPrimaryProfileFirstRun(profile_)) {
+  auto* fre_service = FirstRunServiceFactory::GetForBrowserContext(profile_);
+
+  if (!fre_service || !fre_service->ShouldOpenFirstRun()) {
     LaunchInternal(launch_params->app_id, std::move(params),
                    std::move(launch_finished_callback));
     return;
   }
 
-  OpenPrimaryProfileFirstRunIfNeeded(base::BindOnce(
-      &OnOpenPrimaryProfileFirstRunExited, std::move(launch_finished_callback),
-      base::BindOnce(&LacrosWebAppsController::LaunchInternal,
-                     weak_ptr_factory_.GetWeakPtr(), launch_params->app_id,
-                     std::move(params))));
+  fre_service->OpenFirstRunIfNeeded(
+      FirstRunService::EntryPoint::kWebAppLaunch,
+      base::BindOnce(&OnOpenPrimaryProfileFirstRunExited,
+                     std::move(launch_finished_callback),
+                     base::BindOnce(&LacrosWebAppsController::LaunchInternal,
+                                    weak_ptr_factory_.GetWeakPtr(),
+                                    launch_params->app_id, std::move(params))));
 }
 
 void LacrosWebAppsController::LaunchInternal(const std::string& app_id,
                                              apps::AppLaunchParams params,
                                              CommandFinishedCallback callback) {
   bool is_file_handling_launch =
-      !params.launch_files.empty() && !apps_util::IsShareIntent(params.intent);
+      !params.launch_files.empty() &&
+      !(params.intent && params.intent->IsShareIntent());
   if (is_file_handling_launch) {
     // File handling may create the WebContents asynchronously.
     publisher_helper().LaunchAppWithFilesCheckingUserPermission(
@@ -290,9 +305,17 @@ void LacrosWebAppsController::LaunchInternal(const std::string& app_id,
     return;
   }
 
-  content::WebContents* web_contents =
-      publisher_helper().LaunchAppWithParams(std::move(params));
-  std::move(callback).Run({web_contents});
+  // CommandFinishedCallback needs a vector, so this lambda is an adapter to
+  // transform a single WebContents into a vector.
+  publisher_helper().LaunchAppWithParams(
+      std::move(params),
+      base::BindOnce(
+          [](base::OnceCallback<void(const std::vector<content::WebContents*>&)>
+                 callback,
+             content::WebContents* contents) {
+            std::move(callback).Run({contents});
+          },
+          std::move(callback)));
 }
 
 void LacrosWebAppsController::ReturnLaunchResults(
@@ -304,6 +327,7 @@ void LacrosWebAppsController::ReturnLaunchResults(
   auto launch_result = crosapi::mojom::LaunchResult::New();
   launch_result->instance_id = base::UnguessableToken::Create();
   launch_result->instance_ids = std::vector<base::UnguessableToken>();
+  launch_result->state = crosapi::mojom::LaunchResultState::kSuccess;
 
   // TODO(crbug.com/1144877): Replaced with DCHECK when the app instance tracker
   // flag is turned on.
@@ -375,13 +399,6 @@ void LacrosWebAppsController::PublishWebApps(std::vector<apps::AppPtr> apps) {
     return;
   }
 
-  if (remote_publisher_version_ <
-      int{crosapi::mojom::AppPublisher::MethodMinVersions::kOnAppsMinVersion}) {
-    LOG(WARNING) << "Ash AppPublisher version " << remote_publisher_version_
-                 << " does not support OnApps().";
-    return;
-  }
-
   remote_publisher_->OnApps(std::move(apps));
 }
 
@@ -407,31 +424,12 @@ void LacrosWebAppsController::ModifyWebAppCapabilityAccess(
     return;
   }
 
-  std::vector<apps::mojom::CapabilityAccessPtr> capability_accesses;
-  auto capability_access = apps::mojom::CapabilityAccess::New();
-  capability_access->app_id = app_id;
-
-  if (accessing_camera.has_value()) {
-    capability_access->camera = accessing_camera.value()
-                                    ? apps::mojom::OptionalBool::kTrue
-                                    : apps::mojom::OptionalBool::kFalse;
-  }
-
-  if (accessing_microphone.has_value()) {
-    capability_access->microphone = accessing_microphone.value()
-                                        ? apps::mojom::OptionalBool::kTrue
-                                        : apps::mojom::OptionalBool::kFalse;
-  }
-
+  std::vector<apps::CapabilityAccessPtr> capability_accesses;
+  auto capability_access = std::make_unique<apps::CapabilityAccess>(app_id);
+  capability_access->camera = accessing_camera;
+  capability_access->microphone = accessing_microphone;
   capability_accesses.push_back(std::move(capability_access));
 
-  if (remote_publisher_version_ <
-      int{crosapi::mojom::AppPublisher::MethodMinVersions::
-              kOnCapabilityAccessesMinVersion}) {
-    LOG(WARNING) << "Ash AppPublisher version " << remote_publisher_version_
-                 << " does not support OnCapabilityAccesses().";
-    return;
-  }
   remote_publisher_->OnCapabilityAccesses(std::move(capability_accesses));
 }
 

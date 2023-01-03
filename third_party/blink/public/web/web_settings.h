@@ -233,7 +233,6 @@ class WebSettings {
   virtual void SetTextTrackTextShadow(const WebString&) = 0;
   virtual void SetTextTrackTextSize(const WebString&) = 0;
   virtual void SetTextTrackWindowColor(const WebString&) = 0;
-  virtual void SetTextTrackWindowPadding(const WebString&) = 0;
   virtual void SetTextTrackWindowRadius(const WebString&) = 0;
   virtual void SetThreadedScrollingEnabled(bool) = 0;
   virtual void SetTouchDragDropEnabled(bool) = 0;
@@ -277,6 +276,7 @@ class WebSettings {
   virtual void SetSelectionClipboardBufferAvailable(bool) = 0;
   virtual void SetAccessibilityIncludeSvgGElement(bool) = 0;
   virtual void SetWebXRImmersiveArAllowed(bool) = 0;
+  virtual void SetModalContextMenu(bool) = 0;
 
  protected:
   ~WebSettings() = default;

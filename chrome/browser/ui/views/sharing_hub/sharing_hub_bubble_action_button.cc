@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,10 +23,10 @@ namespace sharing_hub {
 namespace {
 
 // These values values come directly from the Figma redlines. See
-// https://crbug.com/1314486.
-static constexpr gfx::Insets kInteriorMargin = gfx::Insets::VH(8, 12);
-static constexpr gfx::Insets kDefaultMargin = gfx::Insets::VH(0, 12);
-static constexpr gfx::Size kPrimaryIconSize{24, 24};
+// https://crbug.com/1314486 and https://crbug.com/1343564.
+static constexpr gfx::Insets kInteriorMargin = gfx::Insets::VH(10, 16);
+static constexpr gfx::Insets kDefaultMargin = gfx::Insets::VH(0, 16);
+static constexpr gfx::Size kPrimaryIconSize{16, 16};
 
 // The layout will break if this icon isn't square - you may need to adjust the
 // vector icon creation below.

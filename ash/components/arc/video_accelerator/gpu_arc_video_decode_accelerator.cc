@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,12 @@
 #include "ash/components/arc/video_accelerator/protected_buffer_manager.h"
 #include "base/bind.h"
 #include "base/files/scoped_file.h"
+#include "base/memory/platform_shared_memory_region.h"
+#include "base/memory/unsafe_shared_memory_region.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/posix/eintr_wrapper.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "build/build_config.h"
 #include "media/base/media_log.h"
 #include "media/base/video_frame.h"
@@ -396,9 +398,12 @@ void GpuArcVideoDecodeAccelerator::InitializeTask(
       CreateVdaConfig(profile_, use_vd);
   if (use_vd) {
     VLOGF(2) << "Using VideoDecoder-backed VdVideoDecodeAccelerator.";
+    // Decoded video frames are sent "quickly" (i.e. without much buffering)
+    // to SurfaceFlinger, so we consider it a |low_delay| pipeline.
     vda_ = media::VdVideoDecodeAccelerator::Create(
         base::BindRepeating(&media::VideoDecoderPipeline::Create), this,
-        vda_config, base::SequencedTaskRunnerHandle::Get());
+        vda_config, true /* low_delay */,
+        base::SequencedTaskRunner::GetCurrentDefault());
   } else {
     VLOGF(2) << "Using original VDA";
     auto vda_factory = media::GpuVideoDecodeAcceleratorFactory::Create(
@@ -526,13 +531,13 @@ void GpuArcVideoDecodeAccelerator::Decode(
   DCHECK(secure_mode_);
   DCHECK(!*secure_mode_);
   ContinueDecode(std::move(bitstream_buffer), std::move(handle_fd),
-                 base::subtle::PlatformSharedMemoryRegion());
+                 base::UnsafeSharedMemoryRegion());
 }
 
 void GpuArcVideoDecodeAccelerator::ContinueDecode(
     mojom::BitstreamBufferPtr bitstream_buffer,
     base::ScopedFD handle_fd,
-    base::subtle::PlatformSharedMemoryRegion shm_region) {
+    base::UnsafeSharedMemoryRegion shm_region) {
   DVLOGF(4);
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   if (!vda_) {
@@ -548,7 +553,7 @@ void GpuArcVideoDecodeAccelerator::ContinueDecode(
       // Note: we PostTask() in order to keep the right order of input buffers
       // and to avoid having to reason about the re-entrancy of Decode() and/or
       // ContinueDecode().
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(&GpuArcVideoDecodeAccelerator::
                              ResumeDecodingAfterFirstSecureBuffer,
@@ -560,9 +565,6 @@ void GpuArcVideoDecodeAccelerator::ContinueDecode(
       VLOGF(2) << "Reinitializing decoder for secure mode";
       media::VideoDecodeAccelerator::Config vda_config =
           CreateVdaConfig(profile_, true);
-      // TODO(jkardatzke): Properly set the encryption scheme when we
-      // implement this for Intel. For AMD it doesn't matter since it uses
-      // transcryption.
       vda_config.encryption_scheme = media::EncryptionScheme::kCenc;
       // Set a |pending_init_callback_| to force queueing up any incoming decode
       // requests.
@@ -583,10 +585,11 @@ void GpuArcVideoDecodeAccelerator::ContinueDecode(
       return;
     }
     DCHECK(!shm_region.IsValid());
-    shm_region = base::subtle::PlatformSharedMemoryRegion::Take(
-        std::move(handle_fd),
-        base::subtle::PlatformSharedMemoryRegion::Mode::kUnsafe, handle_size,
-        base::UnguessableToken::Create());
+    shm_region = base::UnsafeSharedMemoryRegion::Deserialize(
+        base::subtle::PlatformSharedMemoryRegion::Take(
+            std::move(handle_fd),
+            base::subtle::PlatformSharedMemoryRegion::Mode::kUnsafe,
+            handle_size, base::UnguessableToken::Create()));
   }
 
   if (!shm_region.IsValid()) {

@@ -1,23 +1,21 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/base/test_browser_window.h"
 
+#include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/sharing/sharing_dialog_data.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
-#include "chrome/browser/ui/user_education/feature_promo_controller.h"
+#include "components/user_education/common/feature_promo_controller.h"
+#include "components/user_education/common/feature_promo_handle.h"
 #include "content/public/browser/keyboard_event_processing_result.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/color/color_provider_manager.h"
 #include "ui/gfx/geometry/rect.h"
-
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
-#include "base/values.h"
-#endif
 
 // Helpers --------------------------------------------------------------------
 
@@ -59,16 +57,16 @@ base::TimeTicks TestBrowserWindow::TestLocationBar::GetMatchSelectionTimestamp()
 }
 
 const OmniboxView* TestBrowserWindow::TestLocationBar::GetOmniboxView() const {
-  return NULL;
+  return nullptr;
 }
 
 OmniboxView* TestBrowserWindow::TestLocationBar::GetOmniboxView() {
-  return NULL;
+  return nullptr;
 }
 
 LocationBarTesting*
     TestBrowserWindow::TestLocationBar::GetLocationBarForTesting() {
-  return NULL;
+  return nullptr;
 }
 
 bool TestBrowserWindow::TestLocationBar::IsInputTypedUrlWithoutScheme() const {
@@ -123,12 +121,12 @@ const ui::ColorProvider* TestBrowserWindow::GetColorProvider() const {
   return ui::ColorProviderManager::Get().GetColorProviderFor(
       {ui::ColorProviderManager::ColorMode::kLight,
        ui::ColorProviderManager::ContrastMode::kNormal,
-       ui::ColorProviderManager::SystemTheme::kDefault,
-       ui::ColorProviderManager::FrameType::kChromium, nullptr});
+       ui::SystemTheme::kDefault,
+       ui::ColorProviderManager::FrameType::kChromium});
 }
 
 ui::ElementContext TestBrowserWindow::GetElementContext() {
-  return ui::ElementContext();
+  return element_context_;
 }
 
 int TestBrowserWindow::GetTopControlsHeight() const {
@@ -239,15 +237,24 @@ bool TestBrowserWindow::IsLocationBarVisible() const {
   return false;
 }
 
+bool TestBrowserWindow::IsBorderlessModeEnabled() const {
+  return false;
+}
+
 ShowTranslateBubbleResult TestBrowserWindow::ShowTranslateBubble(
     content::WebContents* contents,
     translate::TranslateStep step,
     const std::string& source_language,
     const std::string& target_language,
-    translate::TranslateErrors::Type error_type,
+    translate::TranslateErrors error_type,
     bool is_user_gesture) {
   return ShowTranslateBubbleResult::SUCCESS;
 }
+
+void TestBrowserWindow::StartPartialTranslate(
+    const std::string& source_language,
+    const std::string& target_language,
+    const std::u16string& text_selection) {}
 
 qrcode_generator::QRCodeGeneratorBubbleView*
 TestBrowserWindow::ShowQRCodeGeneratorBubble(content::WebContents* contents,
@@ -271,20 +278,27 @@ TestBrowserWindow::ShowScreenshotCapturedBubble(content::WebContents* contents,
 #endif
 
 send_tab_to_self::SendTabToSelfBubbleView*
-TestBrowserWindow::ShowSendTabToSelfBubble(content::WebContents* contents) {
+TestBrowserWindow::ShowSendTabToSelfDevicePickerBubble(
+    content::WebContents* contents) {
   return nullptr;
 }
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+send_tab_to_self::SendTabToSelfBubbleView*
+TestBrowserWindow::ShowSendTabToSelfPromoBubble(content::WebContents* contents,
+                                                bool show_signin_button) {
+  return nullptr;
+}
+
+#if BUILDFLAG(IS_CHROMEOS)
 views::Button* TestBrowserWindow::GetSharingHubIconButton() {
   return nullptr;
 }
 #else
 sharing_hub::SharingHubBubbleView* TestBrowserWindow::ShowSharingHubBubble(
-    content::WebContents* contents) {
+    share::ShareAttempt attempt) {
   return nullptr;
 }
-#endif
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 bool TestBrowserWindow::IsDownloadShelfVisible() const {
   return false;
@@ -299,12 +313,12 @@ DownloadBubbleUIController* TestBrowserWindow::GetDownloadBubbleUIController() {
 }
 
 std::unique_ptr<FindBar> TestBrowserWindow::CreateFindBar() {
-  return NULL;
+  return nullptr;
 }
 
 web_modal::WebContentsModalDialogHost*
     TestBrowserWindow::GetWebContentsModalDialogHost() {
-  return NULL;
+  return nullptr;
 }
 
 ExclusiveAccessContext* TestBrowserWindow::GetExclusiveAccessContext() {
@@ -333,54 +347,63 @@ void TestBrowserWindow::SetCloseCallback(base::OnceClosure close_callback) {
   close_callback_ = std::move(close_callback);
 }
 
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
-bool TestBrowserWindow::IsSideSearchPanelVisible() const {
-  return false;
-}
-
-void TestBrowserWindow::MaybeRestoreSideSearchStatePerWindow(
-    const std::map<std::string, std::string>& extra_data) {}
-#endif
-
-FeaturePromoController* TestBrowserWindow::GetFeaturePromoController() {
+user_education::FeaturePromoController*
+TestBrowserWindow::GetFeaturePromoController() {
   return feature_promo_controller_.get();
 }
 
 bool TestBrowserWindow::IsFeaturePromoActive(
-    const base::Feature& iph_feature,
-    bool include_continued_promos) const {
+    const base::Feature& iph_feature) const {
   return feature_promo_controller_ &&
-         feature_promo_controller_->IsPromoActive(iph_feature,
-                                                  include_continued_promos);
+         feature_promo_controller_->IsPromoActive(
+             iph_feature, user_education::FeaturePromoStatus::kContinued);
 }
 
 bool TestBrowserWindow::MaybeShowFeaturePromo(
     const base::Feature& iph_feature,
-    FeaturePromoSpecification::StringReplacements body_text_replacements,
-    FeaturePromoController::BubbleCloseCallback close_callback) {
+    user_education::FeaturePromoSpecification::StringReplacements
+        body_text_replacements,
+    user_education::FeaturePromoController::BubbleCloseCallback
+        close_callback) {
   return feature_promo_controller_ &&
          feature_promo_controller_->MaybeShowPromo(
              iph_feature, body_text_replacements, std::move(close_callback));
 }
 
-bool TestBrowserWindow::CloseFeaturePromo(const base::Feature& iph_feature) {
-  return feature_promo_controller_ &&
-         feature_promo_controller_->CloseBubble(iph_feature);
+bool TestBrowserWindow::MaybeShowStartupFeaturePromo(
+    const base::Feature& iph_feature,
+    user_education::FeaturePromoSpecification::StringReplacements
+        body_text_replacements,
+    user_education::FeaturePromoController::StartupPromoCallback promo_callback,
+    user_education::FeaturePromoController::BubbleCloseCallback
+        close_callback) {
+  if (!feature_promo_controller_)
+    return false;
+  return feature_promo_controller_->MaybeShowStartupPromo(
+      iph_feature, body_text_replacements, std::move(promo_callback),
+      std::move(close_callback));
 }
 
-FeaturePromoController::PromoHandle
+bool TestBrowserWindow::CloseFeaturePromo(const base::Feature& iph_feature) {
+  return feature_promo_controller_ &&
+         feature_promo_controller_->EndPromo(iph_feature);
+}
+
+user_education::FeaturePromoHandle
 TestBrowserWindow::CloseFeaturePromoAndContinue(
     const base::Feature& iph_feature) {
   return feature_promo_controller_
              ? feature_promo_controller_->CloseBubbleAndContinuePromo(
                    iph_feature)
-             : FeaturePromoController::PromoHandle();
+             : user_education::FeaturePromoHandle();
 }
 
 void TestBrowserWindow::NotifyFeatureEngagementEvent(const char* event_name) {}
 
-FeaturePromoController* TestBrowserWindow::SetFeaturePromoController(
-    std::unique_ptr<FeaturePromoController> feature_promo_controller) {
+user_education::FeaturePromoController*
+TestBrowserWindow::SetFeaturePromoController(
+    std::unique_ptr<user_education::FeaturePromoController>
+        feature_promo_controller) {
   feature_promo_controller_ = std::move(feature_promo_controller);
   return feature_promo_controller_.get();
 }

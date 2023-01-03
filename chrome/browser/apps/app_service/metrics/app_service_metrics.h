@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include <string>
 
 #include "build/chromeos_buildflags.h"
-#include "components/services/app_service/public/mojom/types.mojom.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 
 namespace apps {
 
@@ -68,9 +68,10 @@ enum class DefaultAppName {
   kProjector = 49,
   kCalculator = 50,
   kFirmwareUpdateApp = 51,
+  kGoogleTv = 52,
   // Add any new values above this one, and update kMaxValue to the highest
   // enumerator value.
-  kMaxValue = kFirmwareUpdateApp,
+  kMaxValue = kGoogleTv,
 };
 
 // The built-in app's histogram name. This is used for logging so do not change
@@ -87,7 +88,7 @@ enum class BuiltInAppName {
 };
 
 void RecordAppLaunch(const std::string& app_id,
-                     apps::mojom::LaunchSource launch_source);
+                     apps::LaunchSource launch_source);
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 void RecordBuiltInAppSearchResult(const std::string& app_id);

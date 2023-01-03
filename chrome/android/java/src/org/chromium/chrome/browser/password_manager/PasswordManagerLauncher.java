@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@ import android.app.Activity;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.supplier.ObservableSupplier;
 import org.chromium.base.supplier.ObservableSupplierImpl;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.settings.SettingsLauncherImpl;
 import org.chromium.chrome.browser.sync.SyncService;
 import org.chromium.content_public.browser.WebContents;
@@ -33,19 +32,8 @@ public class PasswordManagerLauncher {
             @ManagePasswordsReferrer int referrer,
             ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier) {
         SyncService syncService = SyncService.get();
-        if (syncService.isEngineInitialized()
-                && PasswordManagerHelper.hasChosenToSyncPasswordsWithNoCustomPassphrase(syncService)
-                && (ChromeFeatureList.isEnabled(ChromeFeatureList.PASSWORD_SCRIPTS_FETCHING)
-                        || ChromeFeatureList.isEnabled(
-                                ChromeFeatureList.PASSWORD_DOMAIN_CAPABILITIES_FETCHING))) {
-            PasswordScriptsFetcherBridge.prewarmCache();
-        }
-        CredentialManagerLauncher credentialManagerLauncher =
-                PasswordManagerHelper.usesUnifiedPasswordManagerUI()
-                ? CredentialManagerLauncherFactory.getInstance().createLauncher()
-                : null;
         PasswordManagerHelper.showPasswordSettings(activity, referrer, new SettingsLauncherImpl(),
-                credentialManagerLauncher, syncService, modalDialogManagerSupplier);
+                syncService, modalDialogManagerSupplier);
     }
 
     @CalledByNative

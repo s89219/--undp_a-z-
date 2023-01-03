@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,11 +10,10 @@
 #include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/task/task_runner_util.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "cc/paint/skia_paint_canvas.h"
-#include "chrome/browser/thumbnail/generator/android/local_media_data_source_factory.h"
+#include "chrome/services/media_gallery_util/public/cpp/local_media_data_source_factory.h"
 #include "content/public/browser/android/gpu_video_accelerator_factories_provider.h"
 #include "content/public/browser/media_service.h"
 #include "media/base/overlay_info.h"
@@ -82,9 +81,8 @@ void ThumbnailMediaParserImpl::Start(ParseCompleteCB parse_complete_cb) {
   }
 
   // Get the size of the file if needed.
-  base::PostTaskAndReplyWithResult(
-      file_task_runner_.get(), FROM_HERE,
-      base::BindOnce(&GetFileSize, file_path_),
+  file_task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&GetFileSize, file_path_),
       base::BindOnce(&ThumbnailMediaParserImpl::OnReadFileSize,
                      weak_factory_.GetWeakPtr()));
 }
@@ -143,7 +141,7 @@ void ThumbnailMediaParserImpl::OnMediaMetadataParsed(
                           base::CompareCase::INSENSITIVE_ASCII));
 
   // Start to retrieve video thumbnail.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&ThumbnailMediaParserImpl::RetrieveEncodedVideoFrame,
                      weak_factory_.GetWeakPtr()));
@@ -219,8 +217,8 @@ void ThumbnailMediaParserImpl::DecodeVideoFrame() {
   // Build and config the decoder.
   DCHECK(gpu_factories_);
   auto mojo_decoder = std::make_unique<media::MojoVideoDecoder>(
-      base::ThreadTaskRunnerHandle::Get(), gpu_factories_.get(), this,
-      std::move(video_decoder_remote),
+      base::SingleThreadTaskRunner::GetCurrentDefault(), gpu_factories_.get(),
+      this, std::move(video_decoder_remote),
       base::BindRepeating(&OnRequestOverlayInfo), gfx::ColorSpace());
 
   decoder_ = std::make_unique<media::VideoThumbnailDecoder>(

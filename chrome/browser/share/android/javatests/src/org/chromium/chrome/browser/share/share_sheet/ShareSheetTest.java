@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -135,9 +135,9 @@ public class ShareSheetTest {
         final int kTileVisualWidth = kTileWidth + 2 * kTileMargin;
         final int kScreenWidth = 4 * kTileVisualWidth + 2 * kTileMargin;
 
-        ShareSheetCoordinator.FORCED_TILE_WIDTH_FOR_TEST = kTileWidth;
-        ShareSheetCoordinator.FORCED_TILE_MARGIN_FOR_TEST = kTileMargin;
-        ShareSheetCoordinator.FORCED_SCREEN_WIDTH_FOR_TEST = kScreenWidth;
+        ShareSheetUsageRankingHelper.FORCED_TILE_WIDTH_FOR_TEST = kTileWidth;
+        ShareSheetUsageRankingHelper.FORCED_TILE_MARGIN_FOR_TEST = kTileMargin;
+        ShareSheetUsageRankingHelper.FORCED_SCREEN_WIDTH_FOR_TEST = kScreenWidth;
     }
 
     @Before

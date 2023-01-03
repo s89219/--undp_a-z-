@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -153,8 +153,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   metrics_util::CredentialSourceType GetCredentialSource() const override;
   PasswordFormMetricsRecorder* GetMetricsRecorder() override;
   base::span<const InteractionsStats> GetInteractionsStats() const override;
-  const std::vector<const PasswordForm*>& GetInsecureCredentials()
-      const override;
+  std::vector<const PasswordForm*> GetInsecureCredentials() const override;
   bool IsBlocklisted() const override;
   bool WasUnblocklisted() const override;
   bool IsMovableToAccountStore() const override;
@@ -191,20 +190,10 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   int driver_id() { return driver_id_; }
 
 #if BUILDFLAG(IS_IOS)
-  // Presaves the form with |generated_password|. This function is called once
-  // when the user accepts the generated password. The password was generated in
-  // the field with identifier |generation_element|. |driver| corresponds to the
-  // |form| parent frame.
-  void PresaveGeneratedPassword(PasswordManagerDriver* driver,
-                                const autofill::FormData& form,
-                                const std::u16string& generated_password,
-                                autofill::FieldRendererId generation_element);
-
-  // Return false and do nothing if |form_identifier| does not correspond to
-  // |observed_form()|. Otherwise set a value of the field with
-  // |field_identifier| of |observed_form()| to |field_value|. In case if there
-  // is a presaved credential this function updates the presaved credential.
-  bool UpdateStateOnUserInput(autofill::FormRendererId form_id,
+  // Sets a value of the field with |field_identifier| of |observed_form()|
+  // to |field_value|. In case if there is a presaved credential this function
+  // updates the presaved credential.
+  void UpdateStateOnUserInput(autofill::FormRendererId form_id,
                               autofill::FieldRendererId field_id,
                               const std::u16string& field_value);
 
@@ -263,6 +252,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // PasswordFormPredictionWaiter::Client:
   void OnWaitCompleted() override;
+  void OnTimeout() override;
 
   // Create pending credentials from |parsed_submitted_form_| and forms received
   // from the password store.
@@ -319,6 +309,11 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   void CalculateFillingAssistanceMetric(
       const autofill::FormData& submitted_form);
 
+  // Calculates SubmittedPasswordFormFrame metric value (main frame, iframe,
+  // etc) for |submitted_form|. The metric is recorded when the form manager is
+  // destroyed.
+  void CalculateSubmittedFormFrameMetric();
+
   // Save/update |pending_credentials_| to the password store.
   void SavePendingToStore(bool update);
 
@@ -344,8 +339,12 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   // server-side predictions.
   void DelayFillForServerSidePredictions();
 
+  // Returns true if WebAuthn credential filling is enabled and there are
+  // credentials available to use.
+  bool WebAuthnCredentialsAvailable() const;
+
   // The client which implements embedder-specific PasswordManager operations.
-  raw_ptr<PasswordManagerClient> client_;
+  raw_ptr<PasswordManagerClient, DanglingUntriaged> client_;
 
   base::WeakPtr<PasswordManagerDriver> driver_;
 
@@ -375,7 +374,7 @@ class PasswordFormManager : public PasswordFormManagerForUI,
   std::unique_ptr<FormFetcher> owned_form_fetcher_;
 
   // FormFetcher instance which owns the login data from PasswordStore.
-  raw_ptr<FormFetcher> form_fetcher_;
+  raw_ptr<FormFetcher, DanglingUntriaged> form_fetcher_;
 
   std::unique_ptr<PasswordSaveManager> password_save_manager_;
 
@@ -395,6 +394,9 @@ class PasswordFormManager : public PasswordFormManagerForUI,
 
   // True until server predictions received or waiting for them timed out.
   bool waiting_for_server_predictions_ = false;
+
+  // Closure to call when server predictions are received.
+  base::OnceClosure server_predictions_closure_;
 
   // Controls whether to wait or not server before filling. It is used in tests.
   static bool wait_for_server_predictions_for_filling_;

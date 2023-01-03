@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,7 +53,7 @@ EventConverterEvdevImpl::EventConverterEvdevImpl(
                           devinfo.product_id(),
                           devinfo.version()),
       input_device_fd_(std::move(fd)),
-      has_keyboard_(devinfo.HasKeyboard()),
+      keyboard_type_(devinfo.GetKeyboardType()),
       has_touchpad_(devinfo.HasTouchpad()),
       has_numberpad_(devinfo.HasNumberpad()),
       has_stylus_switch_(devinfo.HasStylusSwitch()),
@@ -65,6 +65,14 @@ EventConverterEvdevImpl::EventConverterEvdevImpl(
   if (has_numberpad_)
     NumberpadMetricsRecorder::GetInstance()->AddDevice(input_device_);
 #endif
+  // Converts unsigned long to uint64_t.
+  const auto key_bits = devinfo.GetKeyBits();
+  key_bits_.resize(EVDEV_BITS_TO_INT64(KEY_CNT));
+  for (int i = 0; i < KEY_CNT; i++) {
+    if (EvdevBitIsSet(key_bits.data(), i)) {
+      EvdevSetUint64Bit(key_bits_.data(), i);
+    }
+  }
 }
 
 EventConverterEvdevImpl::~EventConverterEvdevImpl() {
@@ -96,8 +104,12 @@ void EventConverterEvdevImpl::OnFileCanReadWithoutBlocking(int fd) {
   ProcessEvents(inputs, read_size / sizeof(*inputs));
 }
 
+KeyboardType EventConverterEvdevImpl::GetKeyboardType() const {
+  return keyboard_type_;
+}
+
 bool EventConverterEvdevImpl::HasKeyboard() const {
-  return has_keyboard_;
+  return keyboard_type_ == KeyboardType::VALID_KEYBOARD;
 }
 
 bool EventConverterEvdevImpl::HasTouchpad() const {
@@ -135,6 +147,10 @@ void EventConverterEvdevImpl::SetKeyFilter(bool enable_filter,
 void EventConverterEvdevImpl::OnDisabled() {
   ReleaseKeys();
   ReleaseMouseButtons();
+}
+
+std::vector<uint64_t> EventConverterEvdevImpl::GetKeyboardKeyBits() const {
+  return key_bits_;
 }
 
 ui::StylusState EventConverterEvdevImpl::GetStylusSwitchState() {
@@ -239,7 +255,7 @@ void EventConverterEvdevImpl::OnKeyChange(unsigned int key,
   // the dispatched list of keyboards with this new information.
   if (key_state_.count() == 1 && ((key >= KEY_1 && key <= KEY_EQUAL) ||
                                   (key >= KEY_Q && key <= KEY_RIGHTBRACE) ||
-                                  (key <= KEY_A && key >= KEY_APOSTROPHE) ||
+                                  (key >= KEY_A && key <= KEY_APOSTROPHE) ||
                                   (key >= KEY_BACKSLASH && key <= KEY_SLASH))) {
     bool was_suspected = IsSuspectedImposter();
     SetSuspectedImposter(false);

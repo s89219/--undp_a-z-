@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -96,6 +96,8 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   bool IsBidiEnabled() const { return Data().is_bidi_enabled_; }
   TextDirection BaseDirection() const { return Data().BaseDirection(); }
 
+  bool HasInitialLetterBox() const { return Data().has_initial_letter_box_; }
+
   bool HasRuby() const { return Data().has_ruby_; }
 
   bool IsBlockLevel() { return EnsureData().is_block_level_; }
@@ -103,7 +105,7 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
   // This returns true if Deferred Shaping was applied to this IFC, and
   // it's unlocked and should be reshaped.
   bool ShouldBeReshaped() const;
-  DisplayLockContext* GetDisplayLockContext() const;
+  // TODO(crbug.com/1259085): Rename this function.
   bool IsDisplayLocked() const;
 
   // @return if this node can contain the "first formatted line".
@@ -115,11 +117,6 @@ class CORE_EXPORT NGInlineNode : public NGLayoutInputNode {
 
   bool UseFirstLineStyle() const;
   void CheckConsistency() const;
-
-  bool ShouldReportLetterSpacingUseCounterForTesting(
-      const LayoutObject* layout_object,
-      bool first_line,
-      const LayoutBlockFlow* block_flow);
 
   // This function is available after PrepareLayout(), only for SVG <text>.
   const Vector<std::pair<unsigned, NGSvgCharacterData>>& SvgCharacterDataList()

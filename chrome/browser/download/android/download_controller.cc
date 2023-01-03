@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -185,6 +185,12 @@ static void JNI_DownloadController_OnAcquirePermissionResult(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(callback_id);
 
+  if (!DownloadController::GetInstance()
+           ->validator()
+           ->ValidateAndClearJavaCallback(callback_id)) {
+    return;
+  }
+
   std::string permission_to_update;
   if (jpermission_to_update) {
     permission_to_update =
@@ -316,7 +322,7 @@ void DownloadController::AcquireFileAccessPermission(
   // Make copy on the heap so we can pass the pointer through JNI.
   intptr_t callback_id = reinterpret_cast<intptr_t>(
       new AcquirePermissionCallback(std::move(callback)));
-
+  validator_.AddJavaCallback(callback_id);
   Java_DownloadController_requestFileAccess(env, callback_id, jwindow_android);
 }
 
@@ -382,8 +388,8 @@ void DownloadController::StartAndroidDownloadInternal(
       ConvertUTF8ToJavaString(env, info.original_mime_type);
   ScopedJavaLocalRef<jstring> jcookie =
       ConvertUTF8ToJavaString(env, info.cookie);
-  ScopedJavaLocalRef<jstring> jreferer =
-      ConvertUTF8ToJavaString(env, info.referer);
+  ScopedJavaLocalRef<jobject> jreferer =
+      url::GURLAndroid::FromNativeGURL(env, info.referer);
   ScopedJavaLocalRef<jstring> jfile_name =
       base::android::ConvertUTF16ToJavaString(env, file_name);
   Java_DownloadController_enqueueAndroidDownloadManagerRequest(

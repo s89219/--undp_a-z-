@@ -1,13 +1,13 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {waitAfterNextRender} from 'chrome://test/test_util.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
-import {assertEquals, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('OSSearchPageTests', function() {
   /** @type {?SettingsSearchPageElement} */
@@ -32,16 +32,11 @@ suite('OSSearchPageTests', function() {
     params.append('settingId', '600');
     Router.getInstance().navigateTo(routes.OS_SEARCH, params);
 
-    let deepLinkElement;
-    if (loadTimeData.getBoolean('syncSettingsCategorizationEnabled')) {
-      const browserSearchSettingsLink =
-          page.$$('settings-search-engine').$$('#browserSearchSettingsLink');
-      deepLinkElement =
-          browserSearchSettingsLink.shadowRoot.querySelector('cr-icon-button');
-    } else {
-      deepLinkElement =
-          page.$$('settings-search-engine').$$('#searchSelectionDialogButton');
-    }
+    const browserSearchSettingsLink =
+        page.shadowRoot.querySelector('settings-search-engine')
+            .shadowRoot.querySelector('#browserSearchSettingsLink');
+    const deepLinkElement =
+        browserSearchSettingsLink.shadowRoot.querySelector('cr-icon-button');
     assertTrue(!!deepLinkElement);
     await waitAfterNextRender(deepLinkElement);
     assertEquals(

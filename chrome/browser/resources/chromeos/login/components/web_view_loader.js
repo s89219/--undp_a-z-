@@ -1,14 +1,14 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// #import {assert, assertNotReached} from '//resources/js/assert.m.js';
+import {assert, assertNotReached} from '//resources/ash/common/assert.js';
 
 /**
  * @fileoverview web view loader.
  */
 
-/* #export */ const CLEAR_ANCHORS_CONTENT_SCRIPT = {
+export const CLEAR_ANCHORS_CONTENT_SCRIPT = {
   code: 'A=Array.from(document.getElementsByTagName("a"));' +
       'for(var i = 0; i < A.length; ++i) {' +
       '  const el = A[i];' +
@@ -17,7 +17,7 @@
       '    e.textContent=el.textContent + "(" + el.href + ")";' +
       '  }' +
       '  el.parentNode.replaceChild(e,el);' +
-      '}'
+      '}',
 };
 
 const WEB_VIEW_FONTS_CSS = {
@@ -27,7 +27,7 @@ const WEB_VIEW_FONTS_CSS = {
         line-height: 20px !important;}
        body h2 {
          font-size: 15px !important;
-         line-height: 22px !important;}`
+         line-height: 22px !important;}`,
 };
 
 /**
@@ -36,10 +36,36 @@ const WEB_VIEW_FONTS_CSS = {
  */
 const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
 
+/**
+ * Histogram name for the first load result UMA metric.
+ * @type {string}
+ */
+const FIRST_LOAD_RESULT_HISTOGRAM = 'OOBE.WebViewLoader.FirstLoadResult';
+
+/**
+ * This enum is tied directly to a UMA enum defined in
+ * //tools/metrics/histograms/enums.xml, and should always reflect it (do not
+ * change one without changing the other).
+ * These values are persisted to logs. Entries should not be renumbered and
+ * numeric values should never be reused.
+ * @enum {number}
+ */
+const OobeWebViewLoadResult = {
+  SUCCESS: 0,
+  LOAD_TIMEOUT: 1,
+  LOAD_ERROR: 2,
+  HTTP_ERROR: 3,
+  MAX: 4,
+};
+
+
 // WebViewLoader assists on the process of loading an URL into a webview.
 // It listens for events from the webRequest API for the given URL and
 // calls load_failure_callback case of failure.
-/* #export */ class WebViewLoader {
+// When using WebViewLoader to load a new webview, add the webview id with the
+// first character capitalized to the variants of
+// `OOBE.WebViewLoader.FirstLoadResult` histogram.
+export class WebViewLoader {
   /**
    * @suppress {missingProperties} as WebView type has no addContentScripts
    */
@@ -60,6 +86,7 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
     this.backOffTimer_ = 0;
     this.loadFailureCallback_ = load_failure_callback;
     this.url_ = '';
+    this.loadResultRecorded_ = false;
 
     if (clear_anchors) {
       // Add the CLEAR_ANCHORS_CONTENT_SCRIPT that will clear <a><\a>
@@ -70,7 +97,13 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
         js: CLEAR_ANCHORS_CONTENT_SCRIPT,
       }]);
       webview.addEventListener('contentload', () => {
-        webview.executeScript(CLEAR_ANCHORS_CONTENT_SCRIPT);
+        webview.executeScript(CLEAR_ANCHORS_CONTENT_SCRIPT, () => {
+          if (chrome.runtime.lastError) {
+            console.error(
+                'Clear anchors script failed: ' +
+                chrome.runtime.lastError.message);
+          }
+        });
       });
     }
     if (inject_css) {
@@ -126,9 +159,17 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
   // fire either 'onErrorOccurred' or 'onCompleted' before the timer runs out.
   // See: https://developer.chrome.com/extensions/webRequest
   onTimeoutError_() {
+    console.warn('Loading ' + this.url_ + ' timed out');
+
     // Return if we are no longer monitoring requests. Confidence check.
     if (!this.isPerformingRequests_) {
       return;
+    }
+
+    if (!this.loadResultRecorded_) {
+      this.loadResultRecorded_ = true;
+      this.RecordUMAHistogramForFirstLoadResult_(
+          OobeWebViewLoadResult.LOAD_TIMEOUT);
     }
 
     if (this.reloadRequested_) {
@@ -144,8 +185,22 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
    * @param {!Object} details
    */
   onErrorOccurred_(details) {
+    console.warn(
+        'Failed to load ' + details.url + ' with error ' + details.error);
     if (!this.isPerformingRequests_) {
       return;
+    }
+
+    if (details && details.error == 'net::ERR_ABORTED') {
+      // Retry triggers net::ERR_ABORTED, so ignore it.
+      // TODO(crbug.com/1327977): Load an embedded offline copy as a fallback.
+      return;
+    }
+
+    if (!this.loadResultRecorded_) {
+      this.loadResultRecorded_ = true;
+      this.RecordUMAHistogramForFirstLoadResult_(
+          OobeWebViewLoadResult.LOAD_ERROR);
     }
 
     if (this.reloadRequested_) {
@@ -168,6 +223,13 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
     // Http errors such as 4xx, 5xx hit here instead of 'onErrorOccurred'.
     if (details.statusCode != 200) {
       // Not a successful request. Perform a reload if requested.
+      console.info('Loading ' + this.url_ + ' has completed with HTTP error.');
+      if (!this.loadResultRecorded_) {
+        this.loadResultRecorded_ = true;
+        this.RecordUMAHistogramForFirstLoadResult_(
+            OobeWebViewLoadResult.HTTP_ERROR);
+      }
+
       if (this.reloadRequested_) {
         this.loadWithFallbackTimer();
       } else {
@@ -175,12 +237,20 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
       }
     } else {
       // Success!
+      console.info('Loading ' + this.url_ + ' has completed successfully.');
+      if (!this.loadResultRecorded_) {
+        this.loadResultRecorded_ = true;
+        this.RecordUMAHistogramForFirstLoadResult_(
+            OobeWebViewLoadResult.SUCCESS);
+      }
+
       this.clearInternalState();
     }
   }
 
   // Loads the URL into the webview and starts a timer.
   loadWithFallbackTimer() {
+    console.info('Trying to load ' + this.url_);
     // Clear previous timer and perform a load.
     window.clearTimeout(this.loadTimer_);
     this.loadTimer_ =
@@ -189,6 +259,7 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
   }
 
   loadAfterBackoff() {
+    console.info('Trying to reload ' + this.url_);
     window.clearTimeout(this.backOffTimer_);
     this.backOffTimer_ = window.setTimeout(
         this.tryLoadOnline.bind(this), ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS);
@@ -204,6 +275,14 @@ const ONLINE_RETRY_BACKOFF_TIMEOUT_IN_MS = 1000;
     } else {
       this.webview_.src = this.url_;
     }
+  }
+
+  RecordUMAHistogramForFirstLoadResult_(result) {
+    const id = this.webview_.id[0].toUpperCase() + this.webview_.id.slice(1);
+    const histogramName = FIRST_LOAD_RESULT_HISTOGRAM + '.' + id;
+    chrome.send(
+        'metricsHandler:recordInHistogram',
+        [histogramName, result, OobeWebViewLoadResult.MAX]);
   }
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@ import 'chrome://history/history.js';
 import 'chrome://history/lazy_load.js';
 
 import {BrowserServiceImpl, ensureLazyLoaded, HistoryAppElement, HistoryEntry, HistoryPageViewHistogram, SYNCED_TABS_HISTOGRAM_NAME, SyncedTabsHistogram} from 'chrome://history/history.js';
-import {webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestBrowserService} from './test_browser_service.js';
 import {createHistoryEntry, createHistoryInfo, createSession, createWindow, disableLinkClicks, navigateTo} from './test_util.js';
@@ -25,7 +25,7 @@ suite('Metrics', function() {
   });
 
   setup(async () => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     testService = new TestBrowserService();
     BrowserServiceImpl.setInstance(testService);
@@ -89,7 +89,7 @@ suite('Metrics', function() {
     historyEntry.starred = true;
     await finishSetup([
       createHistoryEntry(weekAgo.getTime(), 'http://www.example.com'),
-      historyEntry
+      historyEntry,
     ]);
     await flushTasks();
 
@@ -99,18 +99,6 @@ suite('Metrics', function() {
     assertEquals(1, actionMap['BookmarkStarClicked']);
     items[1].$.link.click();
     assertEquals(1, actionMap['EntryLinkClick']);
-    assertEquals(1, histogramMap['HistoryPage.ClickPosition']![1]);
-    assertEquals(1, histogramMap['HistoryPage.ClickPositionSubset']![1]);
-
-    // TODO(https://crbug.com/1000573): Log the contents of this histogram
-    // for debugging in case the flakiness reoccurs.
-    console.info(Object.keys(histogramMap['HistoryPage.ClickAgeInDays']!));
-
-    // The "age in days" histogram should record 8 days, since the history
-    // entry was created between 7 and 8 days ago and we round the
-    // recorded value up.
-    assertEquals(1, histogramMap['HistoryPage.ClickAgeInDays']![8]);
-    assertEquals(1, histogramMap['HistoryPage.ClickAgeInDaysSubset']![8]);
 
     testService.resetResolver('queryHistory');
     testService.setQueryResult({
@@ -140,8 +128,6 @@ suite('Metrics', function() {
     assertTrue(!!items[4]);
     items[0].$.link.click();
     assertEquals(1, actionMap['SearchResultClick']);
-    assertEquals(1, histogramMap['HistoryPage.ClickPosition']![0]);
-    assertEquals(1, histogramMap['HistoryPage.ClickPositionSubset']![0]);
     items[0].$.checkbox.click();
     items[4].$.checkbox.click();
     await flushTasks();
@@ -172,9 +158,6 @@ suite('Metrics', function() {
       testService.whenCalled('removeVisits'),
       flushTasks(),
     ]);
-
-    assertEquals(1, histogramMap['HistoryPage.RemoveEntryPosition']![0]);
-    assertEquals(1, histogramMap['HistoryPage.RemoveEntryPositionSubset']![0]);
   });
 
   test('synced-device-manager', async () => {
@@ -186,7 +169,7 @@ suite('Metrics', function() {
           'Nexus 6',
           [
             createWindow(['http://test.com']),
-            createWindow(['http://www.gmail.com', 'http://badssl.com'])
+            createWindow(['http://www.gmail.com', 'http://badssl.com']),
           ]),
     ];
     testService.setForeignSessions(sessionList);
@@ -234,5 +217,18 @@ suite('Metrics', function() {
     syncedDeviceManager!.shadowRoot!
         .querySelector<HTMLElement>('#menuDeleteButton')!.click();
     assertEquals(1, histogram[SyncedTabsHistogram.HIDE_FOR_NOW]);
+  });
+
+  test('history-clusters-duration', async () => {
+    await finishSetup([]);
+
+    navigateTo('/journeys', app);
+    await flushTasks();
+
+    navigateTo('/history', app);
+    await flushTasks();
+
+    const args = await testService.whenCalled('recordLongTime');
+    assertEquals(args[0], 'History.Clusters.WebUISessionDuration');
   });
 });

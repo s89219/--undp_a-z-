@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,8 +52,8 @@ enum class ProjectorToolbar {
 // reused. Please keep in sync with "ProjectorMarkerColor" in
 // src/tools/metrics/histograms/enums.xml.
 enum class ProjectorMarkerColor {
-  kBlack = 0,
-  kWhite = 1,
+  // kBlack = 0,
+  // kWhite = 1,
   kBlue = 2,
   kRed = 3,
   kYellow = 4,
@@ -87,10 +87,24 @@ enum class ProjectorCreationFlow {
 enum class ProjectorCreationFlowError {
   kSaveError = 0,
   kTranscriptionError = 1,
+  kSessionAbortedByAudioPolicyDisabled = 2,
   // Add future entries above this comment, in sync with
   // "ProjectorCreationFlowError" in src/tools/metrics/histograms/enums.xml.
   // Update kMaxValue to the last value.
-  kMaxValue = kTranscriptionError
+  kMaxValue = kSessionAbortedByAudioPolicyDisabled
+};
+
+// These enum values represent potential error that occurs at policy value
+// change handling and log to UMA. Entries should not be renumbered and numeric
+// values should never be reused. Please keep in sync with
+// "ProjectorPolicyChangeHandlingError" in
+// src/tools/metrics/histograms/enums.xml.
+enum class ProjectorPolicyChangeHandlingError {
+  kSwaManager = 0,
+  kWebAppProvider = 1,
+  kWebAppProviderOnRegistryReady = 2,
+  kSyncBridge = 3,
+  kMaxValue = kSyncBridge
 };
 
 // Records the buttons the user presses on the Projector toolbar.
@@ -111,6 +125,14 @@ void RecordCreationFlowError(int message_id);
 
 // Records the IO task processing Time for screencast validation.
 void RecordPendingScreencastBatchIOTaskDuration(const base::TimeDelta duration);
+
+// Records the interval between the UI changes of pending screencasts.
+void RecordPendingScreencastChangeInterval(const base::TimeDelta interval);
+
+// Records potential error occurs at policy change.
+// TODO(b/240497023): remove this once confirmed the nullptr should never
+// occurs and the nullptr check is converted to DCEHCK.
+void RecordPolicyChangeHandlingError(ProjectorPolicyChangeHandlingError error);
 
 }  // namespace ash
 

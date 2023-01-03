@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,13 +14,14 @@
 #include "base/strings/strcat.h"
 #include "base/test/bind.h"
 #include "build/branding_buildflags.h"
+#include "build/build_config.h"
 #include "build/buildflag.h"
 #include "chrome/updater/constants.h"
 #include "chrome/updater/crash_client.h"
 #include "chrome/updater/persisted_data.h"
 #include "chrome/updater/test_scope.h"
 #include "chrome/updater/updater_branding.h"
-#include "chrome/updater/util.h"
+#include "chrome/updater/util/util.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/update_client/update_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,14 +29,14 @@
 #include "third_party/crashpad/crashpad/client/settings.h"
 
 #if BUILDFLAG(IS_MAC)
-#include "chrome/updater/mac/mac_util.h"
+#include "chrome/updater/util/mac_util.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #elif BUILDFLAG(IS_WIN)
 #include "base/strings/sys_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/windows_types.h"
+#include "chrome/updater/util/win_util.h"
 #include "chrome/updater/win/win_constants.h"
-#include "chrome/updater/win/win_util.h"
 #endif
 
 namespace updater {
@@ -59,9 +60,8 @@ void ClearAppUsageStats(const std::string& app_id, UpdaterScope scope) {
 #elif BUILDFLAG(IS_WIN)
   LONG outcome =
       base::win::RegKey(
-          scope == UpdaterScope::kUser ? HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE,
-          scope == UpdaterScope::kUser ? CLIENT_STATE_KEY
-                                       : CLIENT_STATE_MEDIUM_KEY,
+          UpdaterScopeToHKeyRoot(scope),
+          IsSystemInstall(scope) ? CLIENT_STATE_MEDIUM_KEY : CLIENT_STATE_KEY,
           Wow6432(KEY_WRITE))
           .DeleteKey(base::SysUTF8ToWide(app_id).c_str());
   ASSERT_TRUE(outcome == ERROR_SUCCESS || outcome == ERROR_FILE_NOT_FOUND);
@@ -90,10 +90,9 @@ class UpdateUsageStatsTaskTest : public testing::Test {
     database->GetSettings()->SetUploadsEnabled(enabled);
 #elif BUILDFLAG(IS_WIN)
     base::win::RegKey key = base::win::RegKey(
-        GetTestScope() == UpdaterScope::kUser ? HKEY_CURRENT_USER
-                                              : HKEY_LOCAL_MACHINE,
-        GetTestScope() == UpdaterScope::kUser ? CLIENT_STATE_KEY
-                                              : CLIENT_STATE_MEDIUM_KEY,
+        UpdaterScopeToHKeyRoot(GetTestScope()),
+        IsSystemInstall(GetTestScope()) ? CLIENT_STATE_MEDIUM_KEY
+                                        : CLIENT_STATE_KEY,
         Wow6432(KEY_WRITE));
     ASSERT_EQ(
         key.CreateKey(base::SysUTF8ToWide(app_id).c_str(), Wow6432(KEY_WRITE)),
@@ -121,6 +120,8 @@ TEST_F(UpdateUsageStatsTaskTest, NoApps) {
                    ->UsageStatsAllowed({"app1", "app2"}));
 }
 
+// TODO(crbug.com/1367437): Enable tests once updater is implemented for Linux
+#if !BUILDFLAG(IS_LINUX)
 TEST_F(UpdateUsageStatsTaskTest, OneAppEnabled) {
   SetAppUsageStats("app1", true);
   SetAppUsageStats("app2", false);
@@ -128,6 +129,7 @@ TEST_F(UpdateUsageStatsTaskTest, OneAppEnabled) {
                                                          persisted_data_)
                   ->UsageStatsAllowed({"app1", "app2"}));
 }
+#endif  // !BUILDFLAG(IS_LINUX)
 
 TEST_F(UpdateUsageStatsTaskTest, ZeroAppsEnabled) {
   SetAppUsageStats("app1", false);

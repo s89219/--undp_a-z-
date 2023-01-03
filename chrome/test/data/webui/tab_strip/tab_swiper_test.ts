@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@ suite('TabSwiper', () => {
   let tabSwiper: TabSwiper;
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     tabElement = document.createElement('div');
     document.body.appendChild(tabElement);
@@ -34,7 +34,7 @@ suite('TabSwiper', () => {
     const pointerState: PointerEventInit = {
       clientY: startY,
       pointerId: 1,
-      pointerType: 'touch'
+      pointerType: 'touch',
     };
     tabElement.dispatchEvent(new PointerEvent('pointerdown', pointerState));
 
@@ -79,7 +79,7 @@ suite('TabSwiper', () => {
     const pointerState: PointerEventInit = {
       clientY: startY,
       pointerId: 1,
-      pointerType: 'touch'
+      pointerType: 'touch',
     };
     tabElement.dispatchEvent(new PointerEvent('pointerdown', pointerState));
 

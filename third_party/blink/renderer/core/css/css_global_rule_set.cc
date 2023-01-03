@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,22 +16,27 @@ void CSSGlobalRuleSet::InitWatchedSelectorsRuleSet(Document& document) {
   MarkDirty();
   watched_selectors_rule_set_ = nullptr;
   CSSSelectorWatch* watch = CSSSelectorWatch::FromIfExists(document);
-  if (!watch)
+  if (!watch) {
     return;
+  }
   const HeapVector<Member<StyleRule>>& watched_selectors =
       watch->WatchedCallbackSelectors();
-  if (!watched_selectors.size())
+  if (!watched_selectors.size()) {
     return;
+  }
   watched_selectors_rule_set_ = MakeGarbageCollected<RuleSet>();
+  MediaQueryEvaluator* medium =
+      MakeGarbageCollected<MediaQueryEvaluator>(document.GetFrame());
   for (unsigned i = 0; i < watched_selectors.size(); ++i) {
-    watched_selectors_rule_set_->AddStyleRule(watched_selectors[i],
+    watched_selectors_rule_set_->AddStyleRule(watched_selectors[i], *medium,
                                               kRuleHasNoSpecialState);
   }
 }
 
 void CSSGlobalRuleSet::Update(Document& document) {
-  if (!is_dirty_)
+  if (!is_dirty_) {
     return;
+  }
 
   is_dirty_ = false;
   features_.Clear();
@@ -43,8 +48,9 @@ void CSSGlobalRuleSet::Update(Document& document) {
 
   default_style_sheets.CollectFeaturesTo(document, features_);
 
-  if (watched_selectors_rule_set_)
-    features_.Add(watched_selectors_rule_set_->Features());
+  if (watched_selectors_rule_set_) {
+    features_.Merge(watched_selectors_rule_set_->Features());
+  }
 
   document.GetStyleEngine().CollectFeaturesTo(features_);
 }

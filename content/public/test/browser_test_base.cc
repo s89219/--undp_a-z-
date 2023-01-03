@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,6 @@
 #include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_file.h"
 #include "base/i18n/icu_util.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -36,7 +35,6 @@
 #include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/typed_macros.h"
 #include "build/build_config.h"
@@ -56,6 +54,7 @@
 #include "content/browser/tracing/startup_tracing_controller.h"
 #include "content/browser/tracing/tracing_controller_impl.h"
 #include "content/public/app/content_main.h"
+#include "content/public/app/initialize_mojo_core.h"
 #include "content/public/browser/browser_main_parts.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -81,6 +80,7 @@
 #include "net/dns/public/dns_over_https_server_config.h"
 #include "net/dns/public/secure_dns_mode.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+#include "services/network/network_service.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/network_service_test.mojom.h"
 #include "services/tracing/public/cpp/trace_startup.h"
@@ -123,18 +123,21 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-#include "base/files/file_path.h"
+#include "base/base_switches.h"
+#include "base/files/file_path_watcher.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
+#include "base/strings/string_util.h"
+#include "base/test/task_environment.h"
 #include "chromeos/crosapi/cpp/crosapi_constants.h"  // nogncheck
 #include "chromeos/lacros/lacros_test_helper.h"
 #include "chromeos/startup/startup_switches.h"  // nogncheck
-#include "mojo/public/cpp/platform/named_platform_channel.h"
-#include "mojo/public/cpp/platform/platform_channel.h"
+#include "content/public/test/browser_test_switches.h"
 #include "mojo/public/cpp/platform/socket_utils_posix.h"
 #endif
 
 #if BUILDFLAG(IS_FUCHSIA)
-#include "base/fuchsia/build_info.h"
+#include "base/fuchsia/system_info.h"
 #include "ui/platform_window/fuchsia/initialize_presenter_api_view.h"
 #endif  // BUILDFLAG(IS_FUCHSIA)
 
@@ -277,6 +280,7 @@ BrowserTestBase::BrowserTestBase() {
 #elif BUILDFLAG(IS_MAC)
   ui::test::EventGeneratorDelegate::SetFactoryFunction(
       base::BindRepeating(&views::test::CreateEventGeneratorDelegateMac));
+  EnableNativeWindowActivation();
 #endif
 }
 
@@ -357,7 +361,7 @@ void BrowserTestBase::SetUp() {
     enable_pixel_output_ = true;
 
   if (command_line->HasSwitch(switches::kDisableGLDrawingForTests)) {
-    NOTREACHED() << "kDisableGLDrawingForTests should not be used as it"
+    NOTREACHED() << "kDisableGLDrawingForTests should not be used as it "
                     "is chosen by tests. Use kEnablePixelOutputInTests "
                     "to enable pixel output.";
   }
@@ -407,12 +411,12 @@ void BrowserTestBase::SetUp() {
 
   ui::fuchsia::IgnorePresentCallsForTest();
 
-  // Clear the per-process cached BuildInfo, which was initialized by
+  // Clear the per-process cached system info, which was initialized by
   // TestSuite::Initialize(), to prevent a DCHECK for multiple calls during
   // in-process browser tests. There is not a single TestSuite for all browser
   // tests and some use the cached values, so skipping the earlier
   // initialization is not an option.
-  base::ClearCachedBuildInfoForTesting();
+  base::ClearCachedSystemInfoForTesting();
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -432,17 +436,35 @@ void BrowserTestBase::SetUp() {
       disable_crosapi_ =
           std::make_unique<chromeos::ScopedDisableCrosapiForTesting>();
     } else {
-      auto channel = mojo::NamedPlatformChannel::ConnectToServer(socket_path);
-      base::ScopedFD socket_fd = channel.TakePlatformHandle().TakeFD();
+      bool connected_to_ash = false;
+      int retry_left = 2;
+      base::ScopedFD socket_fd;
+      int flags = 0;
+      while (retry_left-- > 0 && !connected_to_ash) {
+        auto channel = mojo::NamedPlatformChannel::ConnectToServer(socket_path);
+        socket_fd = channel.TakePlatformHandle().TakeFD();
 
-      // Mark the channel as blocking.
-      int flags = fcntl(socket_fd.get(), F_GETFL);
+        // Mark the channel as blocking.
+        flags = fcntl(socket_fd.get(), F_GETFL);
+
+        connected_to_ash = flags != -1;
+
+        if (!connected_to_ash) {
+          LOG(WARNING) << "Ash is probably not running. Perhaps it crashed?"
+                       << " Try to start ash again.";
+          StartAshChrome();
+        }
+      }
       std::string helper_msg =
           "On bot, open CAS outputs on test result page(Milo),"
           "there is a ash_chrome.log file which contains ash log."
           "For local debugging, pass in --ash-logging-path to test runner.";
-      PCHECK(flags != -1) << "Ash is probably not running. Perhaps it crashed?"
-                          << helper_msg;
+      if (connected_to_ash) {
+        LOG(INFO) << "Connected to ash.";
+      } else {
+        LOG(FATAL) << "Ash is probably not running. Perhaps it crashed?"
+                   << helper_msg;
+      }
       fcntl(socket_fd.get(), F_SETFL, flags & ~O_NONBLOCK);
 
       uint8_t buf[32];
@@ -451,45 +473,22 @@ void BrowserTestBase::SetUp() {
                                       &descriptors, true /*block*/);
       if (size < 0)
         PLOG(ERROR) << "Error receiving message from the socket" << helper_msg;
-      ASSERT_EQ(1, size);
 
-      // TODO(crbug.com/1156033): Clean up when both ash-chrome and
-      // lacros-chrome become new enough.
-      if (buf[0] == 0u) {
-        // We have three variation of ash-chrome behaviors depending on the age.
-        // Older ash-chrome gives us one FD, which will become a Mojo
-        // connection. Next ash-chrome gives us another FD, too, which contains
-        // startup data. The newest ash-chrome gives us yet another FD, which
-        // will become a crosapi Mojo connection.
-        ASSERT_LE(descriptors.size(), 3u);
-        // It's OK to release the FD because lacros-chrome's code will consume
-        // it.
-        command_line->AppendSwitchASCII(
-            mojo::PlatformChannel::kHandleSwitch,
-            base::NumberToString(descriptors[0].release()));
-        if (descriptors.size() >= 2) {
-          // Ok to release the FD here, too.
-          command_line->AppendSwitchASCII(
-              chromeos::switches::kCrosStartupDataFD,
-              base::NumberToString(descriptors[1].release()));
-        }
-        if (descriptors.size() == 3) {
-          command_line->AppendSwitchASCII(
-              crosapi::kCrosapiMojoPlatformChannelHandle,
-              base::NumberToString(descriptors[2].release()));
-        }
-      } else if (buf[0] == 1u) {
-        ASSERT_EQ(descriptors.size(), 2u);
-        // Ok to release the FD here, too.
-        command_line->AppendSwitchASCII(
-            chromeos::switches::kCrosStartupDataFD,
-            base::NumberToString(descriptors[0].release()));
-        command_line->AppendSwitchASCII(
-            crosapi::kCrosapiMojoPlatformChannelHandle,
-            base::NumberToString(descriptors[1].release()));
-      } else {
-        FAIL() << "Unexpected version";
-      }
+      ASSERT_EQ(1, size) << "It must receive a version number with 1 byte.";
+      ASSERT_EQ(buf[0], 1u)
+          << "Mojo connection protocol version must be 1. Version 0 is "
+          << "deprecated.";
+      ASSERT_EQ(descriptors.size(), 2u)
+          << "ash-chrome must sends 2 FDs, the first one contains startup data "
+          << "and the second one is for a crosapi Mojo connection.";
+
+      // Ok to release the FD here, too.
+      command_line->AppendSwitchASCII(
+          chromeos::switches::kCrosStartupDataFD,
+          base::NumberToString(descriptors[0].release()));
+      command_line->AppendSwitchASCII(
+          crosapi::kCrosapiMojoPlatformChannelHandle,
+          base::NumberToString(descriptors[1].release()));
     }
   }
 #endif
@@ -541,7 +540,7 @@ void BrowserTestBase::SetUp() {
   // process startup code. Pass the currently active trials to the subsequent
   // list via the command line.
   std::string field_trial_states;
-  base::FieldTrialList::AllStatesToString(&field_trial_states, false);
+  base::FieldTrialList::AllStatesToString(&field_trial_states);
   if (!field_trial_states.empty()) {
     // Please use ScopedFeatureList to modify feature and field trials at the
     // same time.
@@ -583,9 +582,23 @@ void BrowserTestBase::SetUp() {
     });
   }
 
-#if BUILDFLAG(IS_ANDROID)
-  // For all other platforms, we call ContentMain for browser tests which goes
-  // through the normal browser initialization paths. For Android, we must set
+  auto content_main_params = CopyContentMainParams();
+  content_main_params.created_main_parts_closure =
+      std::move(created_main_parts_closure);
+  content_main_params.ui_task = base::BindOnce(
+      &BrowserTestBase::ProxyRunTestOnMainThreadLoop, base::Unretained(this));
+
+  ContentMainDelegate* overridden_delegate =
+      GetOptionalContentMainDelegateOverride();
+  if (overridden_delegate)
+    content_main_params.delegate = overridden_delegate;
+
+#if !BUILDFLAG(IS_ANDROID)
+  // ContentMain which goes through the normal browser initialization paths
+  // and will invoke `content_main_params.ui_task`, which runs the test.
+  EXPECT_EQ(expected_exit_code_, ContentMain(std::move(content_main_params)));
+#else
+  // Android's equivalent of ContentMain is in Java so browser tests must set
   // things up manually. A meager re-implementation of ContentMainRunnerImpl
   // follows.
 
@@ -597,14 +610,14 @@ void BrowserTestBase::SetUp() {
   base::i18n::AllowMultipleInitializeCallsForTesting();
   base::i18n::InitializeICU();
 
-  ContentMainDelegate* delegate = GetContentMainDelegateForTesting();
-  // The delegate should have been set by JNI_OnLoad for the test target.
-  DCHECK(delegate);
+  // The ContentMainDelegate and ContentClient should have been set by
+  // JNI_OnLoad for the test target.
+  ContentMainDelegate* delegate = content_main_params.delegate;
+  ASSERT_TRUE(delegate);
+  ASSERT_TRUE(GetContentClientForTesting());
 
-  bool startup_error = delegate->BasicStartupComplete(/*exit_code=*/nullptr);
-  DCHECK(!startup_error);
-
-  InitializeMojo();
+  absl::optional<int> startup_error = delegate->BasicStartupComplete();
+  ASSERT_FALSE(startup_error.has_value());
 
   // We can only setup startup tracing after mojo is initialized above.
   tracing::EnableStartupTracingIfNeeded();
@@ -618,16 +631,22 @@ void BrowserTestBase::SetUp() {
     ui::RegisterPathProvider();
 
     delegate->PreSandboxStartup();
+    delegate->SandboxInitialized("");
 
+    const ContentMainDelegate::InvokedInBrowserProcess invoked_in_browser{
+        .is_running_test = true};
     DCHECK(!field_trial_list_);
-    if (delegate->ShouldCreateFeatureList()) {
+    if (delegate->ShouldCreateFeatureList(invoked_in_browser))
       field_trial_list_ = SetUpFieldTrialsAndFeatureList();
-      delegate->PostFieldTrialInitialization();
-    }
+    if (delegate->ShouldInitializeMojo(invoked_in_browser))
+      InitializeMojoCore();
 
-    base::ThreadPoolInstance::Create("Browser");
+    const bool has_thread_pool =
+        GetContentClientForTesting()->browser()->CreateThreadPool("Browser");
 
-    delegate->PreBrowserMain();
+    absl::optional<int> pre_browser_main_exit_code = delegate->PreBrowserMain();
+    ASSERT_FALSE(pre_browser_main_exit_code.has_value());
+
     BrowserTaskExecutor::Create();
 
     auto* provider = delegate->CreateVariationsIdsProvider();
@@ -636,9 +655,13 @@ void BrowserTestBase::SetUp() {
           variations::VariationsIdsProvider::Mode::kUseSignedInState);
     }
 
-    delegate->PostEarlyInitialization(/*is_running_tests=*/true);
+    absl::optional<int> post_early_initialization_exit_code =
+        delegate->PostEarlyInitialization(invoked_in_browser);
+    ASSERT_FALSE(post_early_initialization_exit_code.has_value());
 
-    StartBrowserThreadPool();
+    if (has_thread_pool)
+      StartBrowserThreadPool();
+
     BrowserTaskExecutor::PostFeatureListSetup();
     tracing::InitTracingPostThreadPoolStartAndFeatureList(
         /* enable_consumer */ true);
@@ -675,16 +698,15 @@ void BrowserTestBase::SetUp() {
     // run.
     base::RunLoop loop{base::RunLoop::Type::kNestableTasksAllowed};
 
-    auto ui_task = base::BindOnce(&BrowserTestBase::WaitUntilJavaIsReady,
-                                  base::Unretained(this), loop.QuitClosure(),
-                                  /*wait_retry_left=*/
-                                  TestTimeouts::action_max_timeout());
-
     // The MainFunctionParams must out-live all the startup tasks running.
     MainFunctionParams params(command_line);
-    params.ui_task = std::move(ui_task);
-    params.created_main_parts_closure = std::move(created_main_parts_closure);
+    params.created_main_parts_closure =
+        std::move(content_main_params.created_main_parts_closure);
     params.startup_data = std::move(startup_data);
+    params.ui_task = base::BindOnce(&BrowserTestBase::WaitUntilJavaIsReady,
+                                    base::Unretained(this), loop.QuitClosure(),
+                                    /*wait_retry_left=*/
+                                    TestTimeouts::action_max_timeout());
     // Passing "" as the process type to indicate the browser process.
     auto exit_code = delegate->RunProcess("", std::move(params));
     DCHECK(absl::holds_alternative<int>(exit_code));
@@ -697,11 +719,11 @@ void BrowserTestBase::SetUp() {
     // So when we run the ProxyRunTestOnMainThreadLoop() we no longer can block,
     // but tests should be allowed to. So we undo that blocking inside here.
     base::ScopedAllowUnresponsiveTasksForTesting allow_unresponsive;
-    // Runs the test now that the Java setup is complete. This must be called
-    // directly from the same call stack as RUN_ALL_TESTS(), it may not be
-    // inside a posted task, or it would prevent NonNestable tasks from running
-    // inside tests.
-    ProxyRunTestOnMainThreadLoop();
+    // Runs the test now that the Java setup is complete. The closure must be
+    // invoked directly from the same call stack as RUN_ALL_TESTS(), it may not
+    // be inside a posted task, or it would prevent NonNestable tasks from
+    // running inside tests.
+    std::move(content_main_params.ui_task).Run();
   }
 
   {
@@ -718,14 +740,6 @@ void BrowserTestBase::SetUp() {
 
   base::PostTaskAndroid::SignalNativeSchedulerShutdownForTesting();
   BrowserTaskExecutor::Shutdown();
-
-#else   // BUILDFLAG(IS_ANDROID)
-  auto ui_task = base::BindOnce(&BrowserTestBase::ProxyRunTestOnMainThreadLoop,
-                                base::Unretained(this));
-  auto params = CopyContentMainParams();
-  params.ui_task = std::move(ui_task);
-  params.created_main_parts_closure = std::move(created_main_parts_closure);
-  EXPECT_EQ(expected_exit_code_, ContentMain(std::move(params)));
 #endif  // BUILDFLAG(IS_ANDROID)
 
   TearDownInProcessBrowserTestFixture();
@@ -794,7 +808,7 @@ void BrowserTestBase::WaitUntilJavaIsReady(
   }
 
   base::TimeDelta retry_interval = base::Milliseconds(100);
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&BrowserTestBase::WaitUntilJavaIsReady,
                      base::Unretained(this), std::move(quit_closure),
@@ -822,7 +836,7 @@ void BrowserTestBase::ProxyRunTestOnMainThreadLoop() {
 #endif
 
   // Install a RunLoop timeout if none is present but do not override tests that
-  // set a ScopedLoopRunTimeout from their fixture's constructor (which
+  // set a ScopedRunLoopTimeout from their fixture's constructor (which
   // happens as part of setting up the test factory in gtest while
   // ProxyRunTestOnMainThreadLoop() happens later as part of SetUp()).
   absl::optional<base::test::ScopedRunLoopTimeout> scoped_run_timeout;
@@ -844,10 +858,8 @@ void BrowserTestBase::ProxyRunTestOnMainThreadLoop() {
 #endif  // BUILDFLAG(IS_POSIX)
 
   {
-    // This can be called from a posted task. Allow nested tasks here, because
-    // otherwise the test body will have to do it in order to use RunLoop for
-    // waiting.
-    base::CurrentThread::ScopedNestableTaskAllower allow;
+    // This shouldn't be invoked from a posted task.
+    DCHECK(!base::RunLoop::IsRunningOnCurrentThread());
 
 #if !BUILDFLAG(IS_ANDROID)
     // Fail the test if a renderer crashes while the test is running.
@@ -1021,10 +1033,27 @@ void BrowserTestBase::InitializeNetworkProcess() {
   // pick up the host resolver rules, but it will not automatically see
   // `replace_system_dns_config_` and `test_doh_config_`.
   //
-  // TODO(https://crbug.com/1295732) Always send `replace_system_dns_config_`
-  // and `test_doh_config_` to the network process, regardless of where it's
-  // running.
+  // TODO(https://crbug.com/1295732): Can the Mojo interface also be used in
+  // this case?
   if (IsInProcessNetworkService()) {
+    if (replace_system_dns_config_ || test_doh_config_) {
+      base::RunLoop run_loop;
+      content::GetNetworkTaskRunner()->PostTaskAndReply(
+          FROM_HERE, base::BindLambdaForTesting([&] {
+            network::NetworkService* network_service =
+                network::NetworkService::GetNetworkServiceForTesting();
+            ASSERT_TRUE(network_service);
+            if (replace_system_dns_config_) {
+              network_service->ReplaceSystemDnsConfigForTesting();
+            }
+            if (test_doh_config_) {
+              network_service->SetTestDohConfigForTesting(
+                  test_doh_config_->first, test_doh_config_->second);
+            }
+          }),
+          run_loop.QuitClosure());
+      run_loop.Run();
+    }
     return;
   }
 
@@ -1124,5 +1153,87 @@ void BrowserTestBase::CreatedBrowserMainPartsImpl(
   browser_main_parts_ = browser_main_parts;
   CreatedBrowserMainParts(browser_main_parts);
 }
+
+ContentMainDelegate* BrowserTestBase::GetOptionalContentMainDelegateOverride() {
+  return nullptr;
+}
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+void BrowserTestBase::StartAshChrome() {
+  base::test::SingleThreadTaskEnvironment task_environment;
+  base::CommandLine* cmdline = base::CommandLine::ForCurrentProcess();
+
+  base::FilePath mojo_socket_file =
+      cmdline->GetSwitchValuePath("lacros-mojo-socket-for-testing");
+  if (mojo_socket_file.empty()) {
+    LOG(WARNING) << "Start ash failed because of missing "
+                 << "--lacros-mojo-socket-for-testing";
+    return;
+  }
+  // Delete the existing file because we will reuse the same file for the new
+  // ash chrome instance.
+  CHECK(base::DeleteFile(mojo_socket_file));
+  base::FilePath ash_chrome_path =
+      cmdline->GetSwitchValuePath("ash-chrome-path");
+  CHECK(!ash_chrome_path.empty());
+
+  base::CommandLine ash_cmdline(ash_chrome_path);
+  base::FilePath ash_user_data_dir =
+      cmdline->GetSwitchValuePath(content::test::switches::kAshUserDataDir);
+  CHECK(base::DeletePathRecursively(ash_user_data_dir));
+  ash_cmdline.AppendSwitchPath("user-data-dir", ash_user_data_dir);
+  ash_cmdline.AppendSwitch("enable-wayland-server");
+  ash_cmdline.AppendSwitch("no-startup-window");
+  ash_cmdline.AppendSwitch("disable-lacros-keep-alive");
+  ash_cmdline.AppendSwitch("disable-login-lacros-opening");
+
+  std::string ash_features = "LacrosSupport,LacrosPrimary,LacrosOnly";
+  ash_cmdline.AppendSwitchASCII(switches::kEnableFeatures, ash_features);
+
+  ash_cmdline.AppendSwitchPath("lacros-mojo-socket-for-testing",
+                               mojo_socket_file);
+
+  std::string wayland_socket;
+  CHECK(
+      base::Environment::Create()->GetVar("WAYLAND_DISPLAY", &wayland_socket));
+  DCHECK(wayland_socket.length() > 0);
+  ash_cmdline.AppendSwitchASCII("wayland-server-socket", wayland_socket);
+
+  const std::string ash_ready_file =
+      ash_user_data_dir.AppendASCII("ash_ready.txt").MaybeAsASCII();
+  ash_cmdline.AppendSwitchASCII(content::test::switches::kAshReadyFilePath,
+                                ash_ready_file);
+
+  base::FilePathWatcher watcher;
+  base::RunLoop run_loop;
+  CHECK(watcher.Watch(base::FilePath(ash_ready_file),
+                      base::FilePathWatcher::Type::kNonRecursive,
+                      base::BindLambdaForTesting(
+                          [&](const base::FilePath& filepath, bool error) {
+                            CHECK(!error);
+                            run_loop.Quit();
+                          })));
+  base::LaunchOptions option;
+  option.new_process_group = true;
+  base::Process process = base::LaunchProcess(ash_cmdline, option);
+  CHECK(process.IsValid());
+  run_loop.Run();
+  // When ash is ready and crosapi was enabled, we expect mojo socket is
+  // also ready.
+  CHECK(base::PathExists(mojo_socket_file));
+  base::FilePath ash_processes_dir = cmdline->GetSwitchValuePath(
+      content::test::switches::kAshProcessesDirPath);
+  CHECK(!ash_processes_dir.empty());
+  base::FilePath temp_filepath;
+  std::string str_pid = base::StringPrintf("%d", process.Pid());
+  base::File f =
+      CreateAndOpenTemporaryFileInDir(ash_processes_dir, &temp_filepath);
+  int ret_code = f.Write(0, str_pid.c_str(), str_pid.length());
+  CHECK(ret_code >= 0 && (unsigned int)ret_code == str_pid.length())
+      << "Cannot write to file " << temp_filepath.AsUTF8Unsafe()
+      << "Return code is " << ret_code;
+  f.Close();
+}
+#endif
 
 }  // namespace content

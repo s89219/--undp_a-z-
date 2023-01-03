@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,13 +7,26 @@
 #include <wayland-client-core.h>
 #include <cstring>
 
+#include "base/environment.h"
 #include "base/logging.h"
+#include "base/nix/xdg_util.h"
 #include "base/strings/stringprintf.h"
 #include "components/crash/core/common/crash_key.h"
+#include "third_party/re2/src/re2/re2.h"
 
 namespace ui {
 
 namespace {
+
+// Formats the |message| by removing '@' char followed by any digits until the
+// next char. Also removes new line, tab and carriage-return.
+void FormatErrorMessage(std::string* message) {
+  const re2::RE2 kInvalidChars[] = {"\n", "\r", "\t", "[@]+[0-9]+"};
+  if (message) {
+    for (const auto& pattern : kInvalidChars)
+      re2::RE2::Replace(message, pattern, "");
+  }
+}
 
 // Wayland error log that will be stored if the client (Chromium) is
 // disconnected due to a protocol error.
@@ -23,6 +36,9 @@ void wayland_log(const char* fmt, va_list argp) {
   DCHECK(!g_error_log);
   g_error_log = new std::string(base::StringPrintV(fmt, argp));
   LOG(ERROR) << "libwayland: " << *g_error_log;
+  // Format the error message only after it's printed. Otherwise, object id will
+  // be lost and local development and debugging will be harder to do.
+  FormatErrorMessage(g_error_log);
 }
 
 std::string GetWaylandProtocolError(int err, wl_display* display) {
@@ -36,18 +52,30 @@ std::string GetWaylandProtocolError(int err, wl_display* display) {
           "Fatal Wayland protocol error %u on interface %s (object %u). "
           "Shutting down..",
           ec, intf->name, id);
-      LOG(ERROR) << error_string;
     } else {
       error_string = base::StringPrintf(
           "Fatal Wayland protocol error %u. Shutting down..", ec);
-      LOG(ERROR) << error_string;
     }
   } else {
     error_string = base::StringPrintf("Fatal Wayland communication error: %s.",
                                       std::strerror(err));
-    LOG(ERROR) << error_string;
   }
+  LOG(ERROR) << error_string;
+  // Format the error message only after it's printed. Otherwise, object id will
+  // be lost and local development and debugging will be harder to do.
+  FormatErrorMessage(&error_string);
   return error_string;
+}
+
+void RecordCrashKeys(const std::string& error_string) {
+  static crash_reporter::CrashKeyString<256> error("wayland_error");
+  error.Set(error_string);
+
+  static crash_reporter::CrashKeyString<32> compositor("wayland_compositor");
+  std::string compositor_name("Unknown");
+  base::Environment::Create()->GetVar(base::nix::kXdgCurrentDesktopEnvVar,
+                                      &compositor_name);
+  compositor.Set(compositor_name);
 }
 
 }  // namespace
@@ -165,9 +193,10 @@ void WaylandEventWatcher::WlDisplayCheckForErrors() {
     } else {
       error_string = GetWaylandProtocolError(err, display_);
     }
-    // Add a crash key so we can figure out why this is happening.
-    static crash_reporter::CrashKeyString<256> wayland_error("wayland_error");
-    wayland_error.Set(std::move(error_string));
+
+    // Record the Wayland compositor name as well as the protocol error message
+    // into crash keys, so we can figure out why it is happening.
+    RecordCrashKeys(error_string);
 
     // This can be null in tests.
     if (!shutdown_cb_.is_null()) {

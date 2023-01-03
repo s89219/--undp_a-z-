@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/atomic_sequence_num.h"
 #include "base/hash/hash.h"
 #include "base/logging.h"
+#include "base/types/optional_util.h"
 #include "cc/paint/paint_image_builder.h"
 #include "cc/paint/paint_image_generator.h"
 #include "cc/paint/paint_record.h"
@@ -71,6 +72,8 @@ bool PaintImage::operator==(const PaintImage& other) const {
     return false;
   if (paint_worklet_input_ != other.paint_worklet_input_)
     return false;
+  // Do not check may_be_lcp_candidate_ as it should not affect any rendering
+  // operation, only metrics collection.
   return true;
 }
 
@@ -158,8 +161,8 @@ SkImageInfo PaintImage::GetSkImageInfo() const {
     return cached_sk_image_->imageInfo();
   } else if (paint_worklet_input_) {
     auto size = paint_worklet_input_->GetSize();
-    return SkImageInfo::MakeUnknown(static_cast<int>(size.width()),
-                                    static_cast<int>(size.height()));
+    return SkImageInfo::MakeUnknown(base::ClampCeil(size.width()),
+                                    base::ClampCeil(size.height()));
   } else {
     return SkImageInfo::MakeUnknown();
   }
@@ -183,7 +186,7 @@ void PaintImage::CreateSkImage() {
     cached_sk_image_ = sk_image_;
   } else if (paint_record_) {
     cached_sk_image_ = SkImage::MakeFromPicture(
-        ToSkPicture(paint_record_, gfx::RectToSkRect(paint_record_rect_)),
+        paint_record_->ToSkPicture(gfx::RectToSkRect(paint_record_rect_)),
         SkISize::Make(paint_record_rect_.width(), paint_record_rect_.height()),
         nullptr, nullptr, SkImage::BitDepth::kU8, SkColorSpace::MakeSRGB());
   } else if (paint_image_generator_) {
@@ -230,7 +233,7 @@ bool PaintImage::DecodeYuv(const SkYUVAPixmaps& pixmaps,
   DCHECK(paint_image_generator_);
   const uint32_t lazy_pixel_ref = stable_id();
   return paint_image_generator_->GetYUVAPlanes(pixmaps, frame_index,
-                                               lazy_pixel_ref);
+                                               lazy_pixel_ref, client_id);
 }
 
 bool PaintImage::DecodeFromGenerator(void* memory,
@@ -390,13 +393,15 @@ sk_sp<SkImage> PaintImage::GetSkImageForFrame(
 
 std::string PaintImage::ToString() const {
   std::ostringstream str;
-  str << "sk_image_: " << sk_image_ << " paint_record_: " << paint_record_
+  str << "sk_image_: " << sk_image_
+      << " paint_record_: " << base::OptionalToPtr(paint_record_)
       << " paint_record_rect_: " << paint_record_rect_.ToString()
       << " paint_image_generator_: " << paint_image_generator_
       << " id_: " << id_
       << " animation_type_: " << static_cast<int>(animation_type_)
       << " completion_state_: " << static_cast<int>(completion_state_)
       << " is_multipart_: " << is_multipart_
+      << " may_be_lcp_candidate_: " << may_be_lcp_candidate_
       << " is YUV: " << IsYuv(SkYUVAPixmapInfo::SupportedDataTypes::All());
   return str.str();
 }

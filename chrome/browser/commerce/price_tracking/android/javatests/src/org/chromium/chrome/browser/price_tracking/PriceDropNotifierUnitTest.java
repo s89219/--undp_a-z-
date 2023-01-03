@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -139,10 +139,10 @@ public class PriceDropNotifierUnitTest {
 
     private void showNotification() {
         List<ActionData> actionDataList = new ArrayList<>();
-        actionDataList.add(
-                new ActionData(PriceDropNotificationManager.ACTION_ID_VISIT_SITE, ACTION_TEXT_0));
         actionDataList.add(new ActionData(
-                PriceDropNotificationManager.ACTION_ID_TURN_OFF_ALERT, ACTION_TEXT_1));
+                PriceDropNotificationManagerImpl.ACTION_ID_VISIT_SITE, ACTION_TEXT_0));
+        actionDataList.add(new ActionData(
+                PriceDropNotificationManagerImpl.ACTION_ID_TURN_OFF_ALERT, ACTION_TEXT_1));
         showNotification(actionDataList);
     }
 
@@ -161,7 +161,7 @@ public class PriceDropNotifierUnitTest {
         // Simulate to send a PendingIntent by manually starting the TrampolineActivity.
         ShadowPendingIntent shadowPendingIntent = Shadows.shadowOf(pendingIntent);
         Robolectric
-                .buildActivity(PriceDropNotificationManager.TrampolineActivity.class,
+                .buildActivity(PriceDropNotificationManagerImpl.TrampolineActivity.class,
                         shadowPendingIntent.getSavedIntent())
                 .create();
     }

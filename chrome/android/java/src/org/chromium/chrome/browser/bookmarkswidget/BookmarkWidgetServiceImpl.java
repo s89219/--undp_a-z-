@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,8 +27,9 @@ import org.chromium.base.Log;
 import org.chromium.base.metrics.RecordUserAction;
 import org.chromium.base.task.PostTask;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.bookmarks.BookmarkBridge.BookmarkModelObserver;
+import org.chromium.chrome.browser.IntentHandler;
 import org.chromium.chrome.browser.bookmarks.BookmarkModel;
+import org.chromium.chrome.browser.bookmarks.BookmarkModelObserver;
 import org.chromium.chrome.browser.init.ChromeBrowserInitializer;
 import org.chromium.chrome.browser.night_mode.SystemNightModeMonitor;
 import org.chromium.chrome.browser.profiles.Profile;
@@ -181,7 +182,7 @@ public class BookmarkWidgetServiceImpl extends BookmarkWidgetService.Impl {
             mIconGenerator = FaviconUtils.createRoundedRectangleIconGenerator(context);
 
             mRemainingTaskCount = 1;
-            mBookmarkModel = new BookmarkModel();
+            mBookmarkModel = BookmarkModel.getForProfile(Profile.getLastUsedRegularProfile());
             mBookmarkModel.finishLoadingBookmarkModel(new Runnable() {
                 @Override
                 public void run() {
@@ -261,7 +262,6 @@ public class BookmarkWidgetServiceImpl extends BookmarkWidgetService.Impl {
 
         @UiThread
         private void destroy() {
-            mBookmarkModel.destroy();
             mLargeIconBridge.destroy();
         }
     }
@@ -302,7 +302,7 @@ public class BookmarkWidgetServiceImpl extends BookmarkWidgetService.Impl {
                 RecordUserAction.record("BookmarkNavigatorWidgetAdded");
             }
 
-            mBookmarkModel = new BookmarkModel();
+            mBookmarkModel = BookmarkModel.getForProfile(Profile.getLastUsedRegularProfile());
             mBookmarkModel.addObserver(new BookmarkModelObserver() {
                 @Override
                 public void bookmarkModelLoaded() {
@@ -344,10 +344,8 @@ public class BookmarkWidgetServiceImpl extends BookmarkWidgetService.Impl {
         @BinderThread
         @Override
         public void onDestroy() {
-            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT, () -> {
-                if (mBookmarkModel != null) mBookmarkModel.destroy();
-                SystemNightModeMonitor.getInstance().removeObserver(this);
-            });
+            PostTask.runOrPostTask(UiThreadTaskTraits.DEFAULT,
+                    () -> { SystemNightModeMonitor.getInstance().removeObserver(this); });
             deleteWidgetState(mWidgetId);
         }
 
@@ -493,6 +491,7 @@ public class BookmarkWidgetServiceImpl extends BookmarkWidgetService.Impl {
                                  .putExtra(EXTRA_FOLDER_ID, id.toString());
             } else {
                 fillIn = new Intent(Intent.ACTION_VIEW);
+                fillIn.putExtra(IntentHandler.EXTRA_PAGE_TRANSITION_BOOKMARK_ID, id.toString());
                 if (!TextUtils.isEmpty(url)) {
                     fillIn = fillIn.addCategory(Intent.CATEGORY_BROWSABLE).setData(Uri.parse(url));
                 } else {

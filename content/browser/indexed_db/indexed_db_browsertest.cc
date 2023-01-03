@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@
 #include "base/run_loop.h"
 #include "base/strings/escape.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/thread_test_helper.h"
@@ -28,9 +29,9 @@
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/services/storage/indexed_db/transactional_leveldb/transactional_leveldb_database.h"
+#include "components/services/storage/privileged/mojom/indexed_db_control.mojom-test-utils.h"
+#include "components/services/storage/privileged/mojom/indexed_db_control_test.mojom.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
-#include "components/services/storage/public/mojom/indexed_db_control.mojom-test-utils.h"
-#include "components/services/storage/public/mojom/indexed_db_control_test.mojom.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_main_loop.h"
@@ -57,6 +58,7 @@
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/database/database_util.h"
 #include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/quota/quota_settings.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/switches.h"
@@ -73,8 +75,7 @@ namespace content {
 
 // This browser test is aimed towards exercising the IndexedDB bindings and
 // the actual implementation that lives in the browser side.
-class IndexedDBBrowserTest : public ContentBrowserTest,
-                             public ::testing::WithParamInterface<const char*> {
+class IndexedDBBrowserTest : public ContentBrowserTest {
  public:
   IndexedDBBrowserTest() = default;
 
@@ -89,6 +90,13 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
 
     GetControlTest()->BindMockFailureSingletonForTesting(
         failure_injector_.BindNewPipeAndPassReceiver());
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    // Enable experimental web platform features to enable write access.
+    command_line->AppendSwitch(
+        switches::kEnableExperimentalWebPlatformFeatures);
+    ContentBrowserTest::SetUpCommandLine(command_line);
   }
 
   void TearDownOnMainThread() override { failure_injector_.reset(); }
@@ -206,11 +214,11 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
     base::RunLoop loop;
     auto& control = GetControl(browser);
     bool result = false;
-    control.DeleteForBucket(storage_key,
-                            base::BindLambdaForTesting([&](bool success) {
-                              result = success;
-                              loop.Quit();
-                            }));
+    control.DeleteForStorageKey(storage_key,
+                                base::BindLambdaForTesting([&](bool success) {
+                                  result = success;
+                                  loop.Quit();
+                                }));
     loop.Run();
     return result;
   }
@@ -220,26 +228,25 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
     base::RunLoop loop;
     int64_t size = 0;
     auto& control = GetControl(browser);
-    control.GetUsage(base::BindOnce(base::BindLambdaForTesting(
+    control.GetUsage(base::BindLambdaForTesting(
         [&](std::vector<storage::mojom::StorageUsageInfoPtr> usages) {
           for (auto& usage : usages)
             size += usage->total_size_bytes;
           loop.Quit();
-        })));
+        }));
     loop.Run();
     return size;
   }
 
-  int64_t RequestBlobFileCount(const blink::StorageKey& storage_key) {
+  int64_t RequestBlobFileCount(const storage::BucketLocator& bucket_locator) {
     base::RunLoop loop;
     int64_t count = 0;
     auto control_test = GetControlTest();
     control_test->GetBlobCountForTesting(
-        storage_key,
-        base::BindOnce(base::BindLambdaForTesting([&](int64_t returned_count) {
+        bucket_locator, base::BindLambdaForTesting([&](int64_t returned_count) {
           count = returned_count;
           loop.Quit();
-        })));
+        }));
     loop.Run();
     return count;
   }
@@ -249,11 +256,10 @@ class IndexedDBBrowserTest : public ContentBrowserTest,
     bool downgraded;
     auto control_test = GetControlTest();
     control_test->ForceSchemaDowngradeForTesting(
-        bucket_locator,
-        base::BindOnce(base::BindLambdaForTesting([&](bool was_downgraded) {
+        bucket_locator, base::BindLambdaForTesting([&](bool was_downgraded) {
           downgraded = was_downgraded;
           loop.Quit();
-        })));
+        }));
     loop.Run();
     return downgraded;
   }
@@ -392,9 +398,8 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, NegativeDBSchemaVersion) {
           ->GetDefaultStoragePartition()
           ->GetQuotaManager()
           ->proxy()
-          ->GetOrCreateBucketSync(
-              blink::StorageKey(url::Origin::Create(database_open_url)),
-              storage::kDefaultBucketName);
+          ->GetOrCreateBucketSync(storage::BucketInitParams::ForDefaultBucket(
+              blink::StorageKey(url::Origin::Create(database_open_url))));
   ASSERT_TRUE(maybe_bucket_info.ok());
   const auto bucket_locator = maybe_bucket_info->ToBucketLocator();
 
@@ -431,9 +436,8 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, NegativeDBDataVersion) {
           ->GetDefaultStoragePartition()
           ->GetQuotaManager()
           ->proxy()
-          ->GetOrCreateBucketSync(
-              blink::StorageKey(url::Origin::Create(database_open_url)),
-              storage::kDefaultBucketName);
+          ->GetOrCreateBucketSync(storage::BucketInitParams::ForDefaultBucket(
+              blink::StorageKey(url::Origin::Create(database_open_url))));
   ASSERT_TRUE(maybe_bucket_info.ok());
   const auto bucket_locator = maybe_bucket_info->ToBucketLocator();
 
@@ -550,15 +554,19 @@ class IndexedDBBrowserTestWithPreexistingLevelDB : public IndexedDBBrowserTest {
       const IndexedDBBrowserTestWithPreexistingLevelDB&) = delete;
 
   void SetUpOnMainThread() override {
-    base::RunLoop loop;
+    base::RunLoop loop_move;
     auto control_test = GetControlTest();
     control_test->GetBaseDataPathForTesting(
         base::BindLambdaForTesting([&](const base::FilePath& data_path) {
           CopyLevelDBToProfile(shell(), data_path, EnclosingLevelDBDir(),
                                CustomModificationTimes());
-          loop.Quit();
+          loop_move.Quit();
         }));
-    loop.Run();
+    loop_move.Run();
+    base::RunLoop loop_init;
+    control_test->ForceInitializeFromFilesForTesting(
+        base::BindLambdaForTesting([&]() { loop_init.Quit(); }));
+    loop_init.Run();
   }
 
   virtual std::string EnclosingLevelDBDir() = 0;
@@ -754,8 +762,19 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, EmptyBlob) {
   const blink::StorageKey kTestStorageKey =
       blink::StorageKey(url::Origin::Create(kTestUrl));
   DeleteForStorageKey(kTestStorageKey);
-  EXPECT_EQ(
-      0, RequestBlobFileCount(kTestStorageKey));  // Start with no blob files.
+  const auto maybe_bucket_info =
+      shell()
+          ->web_contents()
+          ->GetBrowserContext()
+          ->GetDefaultStoragePartition()
+          ->GetQuotaManager()
+          ->proxy()
+          ->GetOrCreateBucketSync(
+              storage::BucketInitParams::ForDefaultBucket(kTestStorageKey));
+  ASSERT_TRUE(maybe_bucket_info.ok());
+  const auto bucket_locator = maybe_bucket_info->ToBucketLocator();
+  EXPECT_EQ(0,
+            RequestBlobFileCount(bucket_locator));  // Start with no blob files.
   // For some reason Android's futimes fails (EPERM) in this test. Do not assert
   // file times on Android, but do so on other platforms. crbug.com/467247
   // TODO(cmumford): Figure out why this is the case and fix if possible.
@@ -827,8 +846,7 @@ std::unique_ptr<net::test_server::HttpResponse> ServePath(
 }
 
 #if !BUILDFLAG(IS_WIN)
-void CorruptIndexedDBDatabase(const blink::StorageKey& storage_key,
-                              const base::FilePath& idb_data_path) {
+void CorruptIndexedDBDatabase(const base::FilePath& idb_data_path) {
   int num_files = 0;
   int num_errors = 0;
   const bool recursive = false;
@@ -861,7 +879,7 @@ const char s_corrupt_db_test_prefix[] = "/corrupt/test/";
 
 std::unique_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
     scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const blink::StorageKey& storage_key,
+    const storage::BucketLocator& bucket_locator,
     const std::string& path,
     IndexedDBBrowserTest* test,
     const net::test_server::HttpRequest& request) {
@@ -901,11 +919,11 @@ std::unique_ptr<net::test_server::HttpResponse> CorruptDBRequestHandler(
     // The less ideal temporary solution is to only run these tests on Windows.
     base::RunLoop loop;
     control_test->CompactBackingStoreForTesting(
-        storage_key, base::BindLambdaForTesting([&]() {
+        bucket_locator, base::BindLambdaForTesting([&]() {
           control_test->GetFilePathForTesting(
-              storage_key,
+              bucket_locator,
               base::BindLambdaForTesting([&](const base::FilePath& path) {
-                CorruptIndexedDBDatabase(storage_key, path);
+                CorruptIndexedDBDatabase(path);
                 loop.Quit();
               }));
         }));
@@ -1015,14 +1033,46 @@ std::unique_ptr<net::test_server::HttpResponse> StaticFileRequestHandler(
 // See TODO in CorruptDBRequestHandler.  Windows does not support nested
 // message loops on the IO thread, so run this test on other platforms.
 #if !BUILDFLAG(IS_WIN)
-IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, OperationOnCorruptedOpenDatabase) {
+class IndexedDBBrowserTestWithCorruption
+    : public IndexedDBBrowserTest,
+      public ::testing::WithParamInterface<const char*> {};
+
+INSTANTIATE_TEST_SUITE_P(/* no prefix */,
+                         IndexedDBBrowserTestWithCorruption,
+                         ::testing::Values("failGetBlobJournal",
+                                           "get",
+                                           "getAll",
+                                           "iterate",
+                                           "failTransactionCommit",
+                                           "clearObjectStore"));
+
+IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTestWithCorruption,
+                       OperationOnCorruptedOpenDatabase) {
   ASSERT_TRUE(embedded_test_server()->Started() ||
               embedded_test_server()->InitializeAndListen());
   const blink::StorageKey storage_key = blink::StorageKey(
       url::Origin::Create(embedded_test_server()->base_url()));
+  base::RunLoop loop;
+  storage::BucketLocator bucket_locator;
+  shell()
+      ->web_contents()
+      ->GetBrowserContext()
+      ->GetDefaultStoragePartition()
+      ->GetQuotaManager()
+      ->proxy()
+      ->UpdateOrCreateBucket(
+          storage::BucketInitParams::ForDefaultBucket(storage_key),
+          base::SequencedTaskRunner::GetCurrentDefault(),
+          base::BindLambdaForTesting(
+              [&](storage::QuotaErrorOr<storage::BucketInfo> result) {
+                ASSERT_TRUE(result.ok());
+                bucket_locator = result->ToBucketLocator();
+                loop.Quit();
+              }));
+  loop.Run();
   embedded_test_server()->RegisterRequestHandler(base::BindRepeating(
-      &CorruptDBRequestHandler, base::SequencedTaskRunnerHandle::Get(),
-      storage_key, s_corrupt_db_test_prefix, this));
+      &CorruptDBRequestHandler, base::SequencedTaskRunner::GetCurrentDefault(),
+      bucket_locator, s_corrupt_db_test_prefix, this));
   embedded_test_server()->StartAcceptingConnections();
 
   std::string test_file = std::string(s_corrupt_db_test_prefix) +
@@ -1033,16 +1083,6 @@ IN_PROC_BROWSER_TEST_P(IndexedDBBrowserTest, OperationOnCorruptedOpenDatabase) {
       std::string(s_corrupt_db_test_prefix) + "corrupted_open_db_recovery.html";
   SimpleTest(embedded_test_server()->GetURL(test_file));
 }
-
-// Only instantiate on platforms that run the parameterized test.
-INSTANTIATE_TEST_SUITE_P(IndexedDBBrowserTestInstantiation,
-                         IndexedDBBrowserTest,
-                         ::testing::Values("failGetBlobJournal",
-                                           "get",
-                                           "getAll",
-                                           "iterate",
-                                           "failTransactionCommit",
-                                           "clearObjectStore"));
 #endif  // !BUILDFLAG(IS_WIN)
 
 // TODO: http://crbug.com/510520, flaky on all platforms
@@ -1142,7 +1182,7 @@ IN_PROC_BROWSER_TEST_F(
   std::u16string expected_title16(u"setVersion(3) complete");
   TitleWatcher title_watcher(new_shell->web_contents(), expected_title16);
 
-  shell()->web_contents()->GetMainFrame()->GetProcess()->Shutdown(0);
+  shell()->web_contents()->GetPrimaryMainFrame()->GetProcess()->Shutdown(0);
   shell()->Close();
 
   EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
@@ -1193,9 +1233,9 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestV2SchemaCorruption, LifecycleTest) {
           ->GetDefaultStoragePartition()
           ->GetQuotaManager()
           ->proxy()
-          ->GetOrCreateBucketSync(blink::StorageKey(url::Origin::Create(
-                                      embedded_test_server()->base_url())),
-                                  storage::kDefaultBucketName);
+          ->GetOrCreateBucketSync(
+              storage::BucketInitParams::ForDefaultBucket(blink::StorageKey(
+                  url::Origin::Create(embedded_test_server()->base_url()))));
   ASSERT_TRUE(maybe_bucket_info.ok());
   const auto bucket_locator = maybe_bucket_info->ToBucketLocator();
 
@@ -1289,9 +1329,9 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestBlobKeyCorruption, LifecycleTest) {
           ->GetDefaultStoragePartition()
           ->GetQuotaManager()
           ->proxy()
-          ->GetOrCreateBucketSync(blink::StorageKey(url::Origin::Create(
-                                      embedded_test_server()->base_url())),
-                                  storage::kDefaultBucketName);
+          ->GetOrCreateBucketSync(
+              storage::BucketInitParams::ForDefaultBucket(blink::StorageKey(
+                  url::Origin::Create(embedded_test_server()->base_url()))));
   ASSERT_TRUE(maybe_bucket_info.ok());
   const auto bucket_locator = maybe_bucket_info->ToBucketLocator();
   int64_t next_blob_number = GetNextBlobNumber(bucket_locator, 1);
@@ -1309,6 +1349,21 @@ IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTestBlobKeyCorruption, LifecycleTest) {
   }
 
   SimpleTest(embedded_test_server()->GetURL(test_file));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, BucketDurabilityStrict) {
+  FailOperation(FailClass::LEVELDB_TRANSACTION, FailMethod::COMMIT_SYNC, 2, 1);
+  SimpleTest(GetTestUrl("indexeddb", "bucket_durability_strict.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, BucketDurabilityRelaxed) {
+  FailOperation(FailClass::LEVELDB_TRANSACTION, FailMethod::COMMIT_SYNC, 2, 1);
+  SimpleTest(GetTestUrl("indexeddb", "bucket_durability_relaxed.html"));
+}
+
+IN_PROC_BROWSER_TEST_F(IndexedDBBrowserTest, BucketDurabilityOverride) {
+  FailOperation(FailClass::LEVELDB_TRANSACTION, FailMethod::COMMIT_SYNC, 2, 1);
+  SimpleTest(GetTestUrl("indexeddb", "bucket_durability_override.html"));
 }
 
 }  // namespace content

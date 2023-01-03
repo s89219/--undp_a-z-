@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -34,7 +34,9 @@ enum class ArchiveAnalysisResult {
   kTimeout = 4,
   kFailedToOpen = 5,
   kFailedToOpenTempFile = 6,
-  kMaxValue = kFailedToOpenTempFile
+  kDmgNoPartitions = 7,
+  kFailedDuringIteration = 8,
+  kMaxValue = kFailedDuringIteration,
 };
 
 struct ArchiveAnalyzerResults {

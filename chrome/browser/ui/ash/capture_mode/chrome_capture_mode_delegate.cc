@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 
 #include <memory>
 
-#include "ash/services/recording/public/mojom/recording_service.mojom.h"
 #include "base/bind.h"
 #include "base/check.h"
 #include "base/files/file_path.h"
@@ -25,12 +24,14 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/capture_mode/recording_overlay_view_impl.h"
 #include "chrome/browser/ui/ash/screenshot_area.h"
-#include "chrome/browser/ui/web_applications/system_web_app_ui_utils.h"
+#include "chrome/browser/ui/ash/system_web_apps/system_web_app_ui_utils.h"
 #include "chrome/browser/web_applications/web_app_id_constants.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/login/login_state/login_state.h"
+#include "chromeos/ash/components/login/login_state/login_state.h"
+#include "chromeos/ash/services/recording/public/mojom/recording_service.mojom.h"
 #include "components/drive/file_errors.h"
 #include "components/prefs/pref_service.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "content/public/browser/audio_service.h"
 #include "content/public/browser/download_manager.h"
 #include "content/public/browser/service_process_host.h"
@@ -89,7 +90,7 @@ bool ChromeCaptureModeDelegate::InterruptVideoRecordingIfAny() {
 
 base::FilePath ChromeCaptureModeDelegate::GetUserDefaultDownloadsFolder()
     const {
-  DCHECK(chromeos::LoginState::Get()->IsUserLoggedIn());
+  DCHECK(ash::LoginState::Get()->IsUserLoggedIn());
 
   auto* profile = ProfileManager::GetActiveUserProfile();
   DCHECK(profile);
@@ -122,11 +123,10 @@ void ChromeCaptureModeDelegate::OpenScreenshotInImageEditor(
   if (!profile)
     return;
 
-  web_app::SystemAppLaunchParams params;
+  ash::SystemAppLaunchParams params;
   params.launch_paths = {file_path};
-  params.launch_source = apps::mojom::LaunchSource::kFromFileManager;
-  web_app::LaunchSystemWebAppAsync(profile, web_app::SystemAppType::MEDIA,
-                                   params);
+  params.launch_source = apps::LaunchSource::kFromFileManager;
+  ash::LaunchSystemWebAppAsync(profile, ash::SystemWebAppType::MEDIA, params);
 }
 
 bool ChromeCaptureModeDelegate::Uses24HourFormat() const {
@@ -205,7 +205,7 @@ void ChromeCaptureModeDelegate::OnServiceRemoteReset() {}
 
 bool ChromeCaptureModeDelegate::GetDriveFsMountPointPath(
     base::FilePath* result) const {
-  if (!chromeos::LoginState::Get()->IsUserLoggedIn())
+  if (!ash::LoginState::Get()->IsUserLoggedIn())
     return false;
 
   drive::DriveIntegrationService* integration_service =
@@ -241,7 +241,7 @@ void ChromeCaptureModeDelegate::ConnectToVideoSourceProvider(
 
 void ChromeCaptureModeDelegate::GetDriveFsFreeSpaceBytes(
     ash::OnGotDriveFsFreeSpace callback) {
-  DCHECK(chromeos::LoginState::Get()->IsUserLoggedIn());
+  DCHECK(ash::LoginState::Get()->IsUserLoggedIn());
 
   drive::DriveIntegrationService* integration_service =
       drive::DriveIntegrationServiceFactory::FindForProfile(
@@ -260,6 +260,11 @@ bool ChromeCaptureModeDelegate::IsCameraDisabledByPolicy() const {
   return policy::SystemFeaturesDisableListPolicyHandler::
       IsSystemFeatureDisabled(policy::SystemFeature::kCamera,
                               g_browser_process->local_state());
+}
+
+bool ChromeCaptureModeDelegate::IsAudioCaptureDisabledByPolicy() const {
+  return !ProfileManager::GetActiveUserProfile()->GetPrefs()->GetBoolean(
+      prefs::kAudioCaptureAllowed);
 }
 
 void ChromeCaptureModeDelegate::OnGetDriveQuotaUsage(

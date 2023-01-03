@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,7 +57,7 @@ TEST_F(InMemoryURLIndexTypesTest, StaticFunctions) {
   string_vec = String16VectorFromString16(string_b, &actual_starts_b);
   ASSERT_EQ(8U, string_vec.size());
   // Note that we stop collecting words and word starts at kMaxSignificantChars.
-  size_t expected_starts_b[] = {1, 7, 16, 22, 32, 43, 52, 55};
+  size_t expected_starts_b[] = {1, 7, 16, 21, 32, 43, 52, 55};
   EXPECT_TRUE(IntArraysEqual(expected_starts_b, std::size(expected_starts_b),
                              actual_starts_b));
 

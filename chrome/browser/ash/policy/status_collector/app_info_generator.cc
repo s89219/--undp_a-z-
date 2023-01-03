@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -69,6 +69,8 @@ em::AppInfo::AppType ExtractAppType(const apps::AppType app_type) {
       return em::AppInfo::AppType::AppInfo_AppType_TYPE_WEB;
     case apps::AppType::kBorealis:
       return em::AppInfo::AppType::AppInfo_AppType_TYPE_BOREALIS;
+    case apps::AppType::kBruschetta:
+      return em::AppInfo::AppType::AppInfo_AppType_TYPE_BRUSCHETTA;
     case apps::AppType::kMacOs:
     case apps::AppType::kStandaloneBrowser:
     case apps::AppType::kExtension:

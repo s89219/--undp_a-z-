@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,11 +25,11 @@ class UkmDataManagerImpl;
 // entries or on source URL changes.
 class UkmObserver : public ukm::UkmRecorderObserver {
  public:
-  UkmObserver(ukm::UkmRecorderImpl* ukm_recorder, bool is_ukm_allowed);
+  explicit UkmObserver(ukm::UkmRecorderImpl* ukm_recorder);
   ~UkmObserver() override;
 
-  UkmObserver(UkmObserver&) = delete;
-  UkmObserver& operator=(UkmObserver&) = delete;
+  UkmObserver(const UkmObserver&) = delete;
+  UkmObserver& operator=(const UkmObserver&) = delete;
 
   // Starts observing with the given |config| if not started. Otherwise, merges
   // the currently observed config with the new |config|, and observes a
@@ -47,11 +47,14 @@ class UkmObserver : public ukm::UkmRecorderObserver {
   void OnEntryAdded(ukm::mojom::UkmEntryPtr entry) override;
   void OnUpdateSourceURL(ukm::SourceId source_id,
                          const std::vector<GURL>& urls) override;
-  void OnUkmAllowedStateChanged(bool allowed) override;
+  void OnUkmAllowedStateChanged(ukm::UkmConsentState state) override;
 
   void set_ukm_data_manager(UkmDataManagerImpl* ukm_data_manager) {
     ukm_data_manager_ = ukm_data_manager;
   }
+
+  bool is_started_for_testing() const { return !!config_; }
+  bool is_paused_for_testing() const { return paused_; }
 
  private:
   // UkmDataManagerImpl destroys this observer before the UKM service is

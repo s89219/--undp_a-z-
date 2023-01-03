@@ -1,15 +1,16 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
 import '../i18n_setup.js';
+import './passwords_shared.css.js';
 
-import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.m.js';
+import {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import {CrDialogElement} from 'chrome://resources/cr_elements/cr_dialog/cr_dialog.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {I18nMixin} from 'chrome://resources/js/i18n_mixin.js';
+import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {PasswordCheckInteraction, PasswordManagerImpl, PasswordManagerProxy} from './password_manager_proxy.js';
@@ -46,7 +47,7 @@ export class SettingsPasswordRemoveConfirmationDialogElement extends
     };
   }
 
-  item: chrome.passwordsPrivate.InsecureCredential;
+  item: chrome.passwordsPrivate.PasswordUiEntry;
   private passwordManager_: PasswordManagerProxy =
       PasswordManagerImpl.getInstance();
 
@@ -59,7 +60,7 @@ export class SettingsPasswordRemoveConfirmationDialogElement extends
   private onRemoveClick_() {
     this.passwordManager_.recordPasswordCheckInteraction(
         PasswordCheckInteraction.REMOVE_PASSWORD);
-    this.passwordManager_.removeInsecureCredential(this.item);
+    this.passwordManager_.removeSavedPassword(this.item.id, this.item.storedIn);
     this.$.dialog.close();
   }
 
@@ -76,14 +77,14 @@ export class SettingsPasswordRemoveConfirmationDialogElement extends
    * Returns the remove password description with a linkified change password
    * URL. Requires the change password URL to be present and secure.
    */
-  private getRemovePasswordDescriptionHtml_(): string {
+  private getRemovePasswordDescriptionHtml_(): TrustedHTML {
     if (!this.hasSecureChangePasswordUrl_()) {
-      return '';
+      return window.trustedTypes!.emptyHTML;
     }
 
     const url: string|undefined = this.item.changePasswordUrl;
     assert(url);
-    const origin = this.item.formattedOrigin;
+    const origin = this.item.urls.shown;
     return this.i18nAdvanced(
         'removeCompromisedPasswordConfirmationDescription', {
           substitutions:
@@ -96,7 +97,7 @@ export class SettingsPasswordRemoveConfirmationDialogElement extends
    * Used when the change password URL is not present or insecure.
    */
   private getRemovePasswordDescriptionText_(): string {
-    const origin = this.item.formattedOrigin;
+    const origin = this.item.urls.shown;
     return this.i18n(
         'removeCompromisedPasswordConfirmationDescription', origin, origin);
   }

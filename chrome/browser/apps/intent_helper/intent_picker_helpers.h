@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,11 +23,17 @@ void MaybeShowIntentPicker(content::NavigationHandle* navigation_handle);
 // URL in |web_contents|.
 void MaybeShowIntentPicker(content::WebContents* web_contents);
 
-void ShowIntentPickerBubble(content::WebContents* web_contents,
-                            const GURL& url);
+// Shows the intent picker bubble to present a choice between apps to handle
+// |url|. May launch directly into an app based on user preferences and
+// installed apps.
+void ShowIntentPickerOrLaunchApp(content::WebContents* web_contents,
+                                 const GURL& url);
 
 // Returns true if persistence for PWA entries in the Intent Picker is enabled.
 bool IntentPickerPwaPersistenceEnabled();
+
+// Returns the size, in dp, of app icons shown in the intent picker bubble.
+int GetIntentPickerBubbleIconSize();
 
 }  // namespace apps
 

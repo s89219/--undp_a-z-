@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,8 +52,8 @@ class SimpleRootWindowTransformer : public RootWindowTransformer {
     gfx::Rect host_bounds_in_pixels(host_size);
     gfx::RectF host_bounds_in_dips = gfx::ConvertRectToDips(
         host_bounds_in_pixels, root_window_->layer()->device_scale_factor());
-    gfx::RectF root_window_bounds = host_bounds_in_dips;
-    GetInverseTransform().TransformRect(&root_window_bounds);
+    gfx::RectF root_window_bounds =
+        GetInverseTransform().MapRect(host_bounds_in_dips);
     return gfx::Rect(gfx::ToFlooredSize(root_window_bounds.size()));
   }
 
@@ -101,7 +101,7 @@ void TransformerHelper::SetRootWindowTransformer(
   // update the root window size immediately.
   if (!window->layer()->GetAnimator()->IsAnimatingProperty(
           ui::LayerAnimationElement::TRANSFORM)) {
-    host->UpdateRootWindowSizeInPixels();
+    ash_host_->UpdateRootWindowSize();
   }
 }
 

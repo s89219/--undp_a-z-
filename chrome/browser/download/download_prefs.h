@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -93,13 +93,6 @@ class DownloadPrefs {
   // to choose another download location).
   bool PromptForDownload() const;
 
-  // Returns whether to prompt download later dialog to let the user choose
-  // download time.
-  bool PromptDownloadLater() const;
-
-  // Returns whether the download later prompt is ever shown to the user.
-  bool HasDownloadLaterPromptShown() const;
-
   // Returns true if the download path preference is managed.
   bool IsDownloadPathManaged() const;
 
@@ -143,6 +136,7 @@ class DownloadPrefs {
 
  private:
   void SaveAutoOpenState();
+  bool CanPlatformEnableAutoOpenForPdf() const;
 
   // Checks whether |path| is a valid download target path. If it is, returns
   // it as is. If it isn't returns the default download directory.
@@ -157,7 +151,6 @@ class DownloadPrefs {
   BooleanPrefMember prompt_for_download_;
 #if BUILDFLAG(IS_ANDROID)
   IntegerPrefMember prompt_for_download_android_;
-  IntegerPrefMember prompt_for_download_later_;
 #endif
 
   FilePathPrefMember download_path_;

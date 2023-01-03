@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,8 @@ class GURL;
 
 namespace ash {
 
+using GetScreenshotPngCallback =
+    base::OnceCallback<void(const std::vector<uint8_t>&)>;
 using SendReportCallback =
     base::OnceCallback<void(os_feedback_ui::mojom::SendReportStatus)>;
 
@@ -31,9 +33,25 @@ class OsFeedbackDelegate {
   // Returns the normalized email address of the signed-in user associated with
   // the browser context, if any.
   virtual absl::optional<std::string> GetSignedInUserEmail() const = 0;
+  // Returns id for performance trace data. If tracing is off, returns zero.
+  virtual int GetPerformanceTraceId() = 0;
+  // Return the screenshot of the primary display in PNG format. It was taken
+  // right before the feedback tool is launched.
+  virtual void GetScreenshotPng(GetScreenshotPngCallback callback) = 0;
   // Collect data and send the report to Google.
   virtual void SendReport(os_feedback_ui::mojom::ReportPtr report,
                           SendReportCallback callback) = 0;
+  // Open Diagnostics app.
+  virtual void OpenDiagnosticsApp() = 0;
+  // Open Explore app.
+  virtual void OpenExploreApp() = 0;
+  // Open metrics dialog (which displays chrome://histograms).
+  virtual void OpenMetricsDialog() = 0;
+  // Open system info dialog (which displays the system logs
+  // to be sent with the report if the user has opted in).
+  virtual void OpenSystemInfoDialog() = 0;
+  // Gets the isChild to check if the account is a unicorn account.
+  virtual bool IsChildAccount() = 0;
 };
 
 }  // namespace ash

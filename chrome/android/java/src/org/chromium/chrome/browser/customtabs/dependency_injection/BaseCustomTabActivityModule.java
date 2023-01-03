@@ -1,10 +1,10 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.customtabs.dependency_injection;
 
-import org.chromium.chrome.browser.browserservices.ClientAppDataRegister;
+import org.chromium.chrome.browser.browserservices.InstalledWebappDataRegister;
 import org.chromium.chrome.browser.browserservices.intents.BrowserServicesIntentDataProvider;
 import org.chromium.chrome.browser.browserservices.trustedwebactivityui.TwaIntentHandlingStrategy;
 import org.chromium.chrome.browser.browserservices.ui.controller.EmptyVerifier;
@@ -12,8 +12,8 @@ import org.chromium.chrome.browser.browserservices.ui.controller.Verifier;
 import org.chromium.chrome.browser.browserservices.ui.controller.trustedwebactivity.TwaVerifier;
 import org.chromium.chrome.browser.browserservices.ui.controller.webapps.AddToHomescreenVerifier;
 import org.chromium.chrome.browser.browserservices.ui.controller.webapps.WebApkVerifier;
-import org.chromium.chrome.browser.browserservices.verification.OriginVerifierFactory;
-import org.chromium.chrome.browser.browserservices.verification.OriginVerifierFactoryImpl;
+import org.chromium.chrome.browser.browserservices.verification.ChromeOriginVerifierFactory;
+import org.chromium.chrome.browser.browserservices.verification.ChromeOriginVerifierFactoryImpl;
 import org.chromium.chrome.browser.customtabs.CustomTabNightModeStateController;
 import org.chromium.chrome.browser.customtabs.DefaultBrowserProviderImpl;
 import org.chromium.chrome.browser.customtabs.content.CustomTabActivityNavigationController;
@@ -21,7 +21,6 @@ import org.chromium.chrome.browser.customtabs.content.CustomTabIntentHandler.Int
 import org.chromium.chrome.browser.customtabs.content.CustomTabIntentHandlingStrategy;
 import org.chromium.chrome.browser.customtabs.content.DefaultCustomTabIntentHandlingStrategy;
 import org.chromium.chrome.browser.flags.ActivityType;
-import org.chromium.chrome.browser.init.StartupTabPreloader;
 import org.chromium.chrome.browser.tabmodel.IncognitoTabHostRegistry;
 import org.chromium.chrome.browser.theme.TopUiThemeColorProvider;
 import org.chromium.chrome.browser.webapps.WebApkPostShareTargetNavigator;
@@ -37,7 +36,6 @@ import dagger.Reusable;
 @Module
 public class BaseCustomTabActivityModule {
     private final BrowserServicesIntentDataProvider mIntentDataProvider;
-    private final StartupTabPreloader mStartupTabPreloader;
     private final @ActivityType int mActivityType;
     private final CustomTabNightModeStateController mNightModeController;
     private final IntentIgnoringCriterion mIntentIgnoringCriterion;
@@ -46,13 +44,11 @@ public class BaseCustomTabActivityModule {
             .DefaultBrowserProvider mDefaultBrowserProvider;
 
     public BaseCustomTabActivityModule(BrowserServicesIntentDataProvider intentDataProvider,
-            StartupTabPreloader startupTabPreloader,
             CustomTabNightModeStateController nightModeController,
             IntentIgnoringCriterion intentIgnoringCriterion,
             TopUiThemeColorProvider topUiThemeColorProvider,
             CustomTabActivityNavigationController.DefaultBrowserProvider defaultBrowserProvider) {
         mIntentDataProvider = intentDataProvider;
-        mStartupTabPreloader = startupTabPreloader;
         mActivityType = intentDataProvider.getActivityType();
         mNightModeController = nightModeController;
         mIntentIgnoringCriterion = intentIgnoringCriterion;
@@ -73,11 +69,6 @@ public class BaseCustomTabActivityModule {
                        || mActivityType == ActivityType.WEB_APK)
                 ? twaHandler.get()
                 : defaultHandler.get();
-    }
-
-    @Provides
-    public StartupTabPreloader provideStartupTabPreloader() {
-        return mStartupTabPreloader;
     }
 
     @Provides
@@ -118,14 +109,14 @@ public class BaseCustomTabActivityModule {
     }
 
     @Provides
-    public ClientAppDataRegister provideClientAppDataRegister() {
-        return new ClientAppDataRegister();
+    public InstalledWebappDataRegister provideInstalledWebappDataRegister() {
+        return new InstalledWebappDataRegister();
     }
 
     @Provides
     @Reusable
-    public OriginVerifierFactory providesOriginVerifierFactory() {
-        return new OriginVerifierFactoryImpl();
+    public ChromeOriginVerifierFactory providesOriginVerifierFactory() {
+        return new ChromeOriginVerifierFactoryImpl();
     }
 
     @Provides
@@ -142,7 +133,6 @@ public class BaseCustomTabActivityModule {
 
     public interface Factory {
         BaseCustomTabActivityModule create(BrowserServicesIntentDataProvider intentDataProvider,
-                StartupTabPreloader startupTabPreloader,
                 CustomTabNightModeStateController nightModeController,
                 IntentIgnoringCriterion intentIgnoringCriterion,
                 TopUiThemeColorProvider topUiThemeColorProvider,

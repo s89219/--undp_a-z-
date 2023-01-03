@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "cc/paint/paint_op_buffer.h"
 #include "cc/paint/paint_op_writer.h"
 #include "cc/paint/paint_shader.h"
+#include "third_party/skia/include/core/SkPathUtils.h"
 
 namespace {
 
@@ -99,28 +100,7 @@ bool PaintFlags::getFillPath(const SkPath& src,
                              const SkRect* cull_rect,
                              SkScalar res_scale) const {
   SkPaint paint = ToSkPaint();
-  return paint.getFillPath(src, dst, cull_rect, res_scale);
-}
-
-bool PaintFlags::IsSimpleOpacity() const {
-  uint32_t color = getColor();
-  if (SK_ColorTRANSPARENT != SkColorSetA(color, SK_AlphaTRANSPARENT))
-    return false;
-  if (getBlendMode() != SkBlendMode::kSrcOver)
-    return false;
-  if (getLooper())
-    return false;
-  if (getPathEffect())
-    return false;
-  if (HasShader())
-    return false;
-  if (getMaskFilter())
-    return false;
-  if (getColorFilter())
-    return false;
-  if (getImageFilter())
-    return false;
-  return true;
+  return skpathutils::FillPathWithPaint(src, paint, dst, cull_rect, res_scale);
 }
 
 bool PaintFlags::SupportsFoldingAlpha() const {
@@ -144,7 +124,7 @@ SkPaint PaintFlags::ToSkPaint() const {
   paint.setColorFilter(color_filter_);
   if (image_filter_)
     paint.setImageFilter(image_filter_->cached_sk_filter_);
-  paint.setColor4f(color_);
+  paint.setColor(color_);
   paint.setStrokeWidth(width_);
   paint.setStrokeMiter(miter_limit_);
   paint.setBlendMode(getBlendMode());

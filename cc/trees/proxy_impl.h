@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,6 +57,7 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
   void InitializePaintWorkletLayerPainterOnImpl(
       std::unique_ptr<PaintWorkletLayerPainter> painter);
   void SetDeferBeginMainFrameFromMain(bool defer_begin_main_frame);
+  void SetPauseRendering(bool pause_rendering);
   void SetNeedsRedrawOnImpl(const gfx::Rect& damage_rect);
   void SetNeedsCommitOnImpl();
   void SetTargetLocalSurfaceIdOnImpl(
@@ -74,6 +75,7 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
                                  const ThreadUnsafeCommitState* unsafe_state,
                                  base::TimeTicks main_thread_start_time,
                                  const viz::BeginFrameArgs& commit_args,
+                                 bool scroll_and_viewport_changes_synced,
                                  CommitTimestamps* commit_timestamps,
                                  bool commit_timeout = false);
   void SetSourceURL(ukm::SourceId source_id, const GURL& url);
@@ -118,6 +120,7 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
                                    bool skip_draw) override;
   void NeedsImplSideInvalidation(bool needs_first_draw_on_activation) override;
   void NotifyImageDecodeRequestFinished() override;
+  void NotifyTransitionRequestFinished(uint32_t sequence_id) override;
   void DidPresentCompositorFrameOnImplThread(
       uint32_t frame_token,
       PresentationTimeCallbackBuffer::PendingCallbacks activated,
@@ -147,6 +150,7 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
   DrawResult ScheduledActionDrawIfPossible() override;
   DrawResult ScheduledActionDrawForced() override;
   void ScheduledActionCommit() override;
+  void ScheduledActionPostCommit() override;
   void ScheduledActionActivateSyncTree() override;
   void ScheduledActionBeginLayerTreeFrameSinkCreation() override;
   void ScheduledActionPrepareTiles() override;
@@ -164,6 +168,8 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
   bool IsMainThreadBlocked() const;
   base::SingleThreadTaskRunner* MainThreadTaskRunner();
   bool ShouldDeferBeginMainFrame() const;
+
+  void OnHungCommit();
 
   const int layer_tree_host_id_;
 
@@ -183,10 +189,10 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
     // Set when the main thread is waiting on a commit to complete.
     std::unique_ptr<ScopedCommitCompletionEvent> commit_completion_event;
     std::unique_ptr<CommitState> commit_state;
-    const ThreadUnsafeCommitState* unsafe_state;
+    raw_ptr<const ThreadUnsafeCommitState> unsafe_state;
     // This is passed from the main thread so the impl thread can record
     // timestamps at the beginning and end of commit.
-    CommitTimestamps* commit_timestamps = nullptr;
+    raw_ptr<CommitTimestamps> commit_timestamps = nullptr;
   };
 
   std::unique_ptr<DataForCommit> data_for_commit_;
@@ -224,6 +230,9 @@ class CC_EXPORT ProxyImpl : public LayerTreeHostImplClient,
   // Either thread can request deferring BeginMainFrame; keep track of both.
   bool main_wants_defer_begin_main_frame_ = false;
   bool impl_wants_defer_begin_main_frame_ = false;
+
+  // Temporary for production debugging of renderer hang (crbug.com/1159366).
+  base::OneShotTimer hung_commit_timer_;
 };
 
 }  // namespace cc

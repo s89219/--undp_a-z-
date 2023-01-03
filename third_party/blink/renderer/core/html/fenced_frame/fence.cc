@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/html/fenced_frame/fence.h"
 
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
 #include "third_party/blink/public/mojom/fenced_frame/fenced_frame.mojom-blink.h"
@@ -23,15 +24,17 @@ namespace blink {
 
 namespace {
 
-mojom::blink::ReportingDestination ToMojom(
+blink::FencedFrame::ReportingDestination ToPublicDestination(
     const V8FenceReportingDestination& destination) {
   switch (destination.AsEnum()) {
     case V8FenceReportingDestination::Enum::kBuyer:
-      return mojom::blink::ReportingDestination::kBuyer;
+      return blink::FencedFrame::ReportingDestination::kBuyer;
     case V8FenceReportingDestination::Enum::kSeller:
-      return mojom::blink::ReportingDestination::kSeller;
+      return blink::FencedFrame::ReportingDestination::kSeller;
     case V8FenceReportingDestination::Enum::kComponentSeller:
-      return mojom::blink::ReportingDestination::kComponentSeller;
+      return blink::FencedFrame::ReportingDestination::kComponentSeller;
+    case V8FenceReportingDestination::Enum::kSharedStorageSelectUrl:
+      return blink::FencedFrame::ReportingDestination::kSharedStorageSelectUrl;
   }
 }
 
@@ -56,21 +59,45 @@ void Fence::reportEvent(ScriptState* script_state,
 
   LocalFrame* frame = DomWindow()->GetFrame();
   DCHECK(frame);
-  DCHECK(frame->IsInFencedFrameTree());
 
-  if (frame->GetFencedFrameMode() !=
-      mojom::blink::FencedFrameMode::kOpaqueAds) {
-    AddConsoleMessage(
-        "fence.reportEvent is only available in the 'opaque-ads' mode.");
-    return;
+  LocalFrame* fenced_frame = nullptr;
+  if (blink::features::IsAllowURNsInIframeEnabled() &&
+      !frame->IsInFencedFrameTree()) {
+    // The only way to get a Fence outside a fenced frame is from
+    // LocalDOMWindow::fence(), when both:
+    // - blink::features::IsAllowURNsInIframeEnabled() is true
+    // - the Document itself was loaded from a urn:uuid
+    // In that case, pretend that the frame is a fenced frame root for this
+    // temporary experiment.
+    // TODO(crbug.com/1123606): Disable window.fence.reportEvent in iframes.
+    // In order to disable, run the else branch unconditionally.
+    // Also remove the features.h include above.
+    fenced_frame = frame;
+  } else {
+    DCHECK(frame->IsInFencedFrameTree());
+
+    if (frame->GetFencedFrameMode() !=
+        mojom::blink::FencedFrameMode::kOpaqueAds) {
+      AddConsoleMessage(
+          "fence.reportEvent is only available in the 'opaque-ads' mode.");
+      return;
+    }
+
+    Frame* possibly_remote_fenced_frame = DomWindow()->GetFrame()->Top();
+    if (!frame->GetSecurityContext()->GetSecurityOrigin()->CanAccess(
+            possibly_remote_fenced_frame->GetSecurityContext()
+                ->GetSecurityOrigin())) {
+      AddConsoleMessage(
+          "fence.reportEvent is only available in same-origin subframes.");
+      return;
+    }
+    fenced_frame = DynamicTo<LocalFrame>(possibly_remote_fenced_frame);
   }
 
-  LocalFrame* fenced_frame = DynamicTo<LocalFrame>(
-      DomWindow()->GetFrame()->Top(FrameTreeBoundary::kFenced));
   DCHECK(fenced_frame);
   DCHECK(fenced_frame->GetDocument());
 
-  const mojom::blink::FencedFrameReportingPtr& fenced_frame_reporting =
+  const absl::optional<blink::FencedFrameReporting>& fenced_frame_reporting =
       fenced_frame->GetDocument()->Loader()->FencedFrameReporting();
   if (!fenced_frame_reporting) {
     AddConsoleMessage("This frame did not register reporting metadata.");
@@ -79,7 +106,8 @@ void Fence::reportEvent(ScriptState* script_state,
 
   for (const V8FenceReportingDestination& web_destination :
        event->destination()) {
-    mojom::blink::ReportingDestination destination = ToMojom(web_destination);
+    blink::FencedFrame::ReportingDestination destination =
+        ToPublicDestination(web_destination);
 
     const auto metadata_iter =
         fenced_frame_reporting->metadata.find(destination);
@@ -113,6 +141,28 @@ void Fence::reportEvent(ScriptState* script_state,
 
     PingLoader::SendBeacon(*script_state, frame, url, event->eventData());
   }
+}
+
+HeapVector<Member<FencedFrameConfig>> Fence::getNestedConfigs(
+    ExceptionState& exception_state) {
+  HeapVector<Member<FencedFrameConfig>> out;
+  const absl::optional<FencedFrame::RedactedFencedFrameProperties>&
+      fenced_frame_properties =
+          DomWindow()->document()->Loader()->FencedFrameProperties();
+  if (fenced_frame_properties.has_value() &&
+      fenced_frame_properties.value().nested_urn_config_pairs() &&
+      fenced_frame_properties.value()
+          .nested_urn_config_pairs()
+          ->potentially_opaque_value) {
+    for (const std::pair<GURL, FencedFrame::RedactedFencedFrameConfig>&
+             config_pair : fenced_frame_properties.value()
+                               .nested_urn_config_pairs()
+                               ->potentially_opaque_value.value()) {
+      FencedFrame::RedactedFencedFrameConfig config = config_pair.second;
+      out.push_back(FencedFrameConfig::From(config));
+    }
+  }
+  return out;
 }
 
 void Fence::AddConsoleMessage(const String& message) {

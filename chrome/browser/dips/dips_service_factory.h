@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_DIPS_DIPS_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "chrome/browser/profiles/profile_keyed_service_factory.h"
 
 namespace content {
 class BrowserContext;
@@ -14,10 +14,12 @@ class BrowserContext;
 
 class DIPSService;
 
-class DIPSServiceFactory : public BrowserContextKeyedServiceFactory {
+class DIPSServiceFactory : public ProfileKeyedServiceFactory {
  public:
   static DIPSServiceFactory* GetInstance();
   static DIPSService* GetForBrowserContext(content::BrowserContext* context);
+
+  static ProfileSelections CreateProfileSelections();
 
  private:
   friend struct base::DefaultSingletonTraits<DIPSServiceFactory>;
@@ -26,8 +28,6 @@ class DIPSServiceFactory : public BrowserContextKeyedServiceFactory {
   ~DIPSServiceFactory() override;
 
   // BrowserContextKeyedServiceFactory:
-  content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const override;
   KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const override;
 };

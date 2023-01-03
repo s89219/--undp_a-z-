@@ -1,35 +1,41 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <string>
+#include <tuple>
 
-#include "net/cookies/cookie_partition_key.h"
 #include "base/test/scoped_feature_list.h"
 #include "net/base/features.h"
 #include "net/cookies/cookie_constants.h"
+#include "net/cookies/cookie_partition_key.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
 
-class CookiePartitionKeyTest : public testing::TestWithParam<bool> {
+class CookiePartitionKeyTest
+    : public testing::TestWithParam<std::tuple<bool, bool>> {
  protected:
   // testing::Test
   void SetUp() override {
-    if (PartitionedCookiesEnabled())
-      scoped_feature_list_.InitAndEnableFeature(features::kPartitionedCookies);
-    testing::TestWithParam<bool>::SetUp();
+    scoped_feature_list_[0].InitWithFeatureState(features::kPartitionedCookies,
+                                                 PartitionedCookiesEnabled());
+    scoped_feature_list_[1].InitWithFeatureState(
+        features::kNoncedPartitionedCookies, NoncedPartitionedCookiesEnabled());
   }
 
-  bool PartitionedCookiesEnabled() { return GetParam(); }
+  bool PartitionedCookiesEnabled() { return std::get<0>(GetParam()); }
+  bool NoncedPartitionedCookiesEnabled() { return std::get<1>(GetParam()); }
 
  private:
-  base::test::ScopedFeatureList scoped_feature_list_;
+  base::test::ScopedFeatureList scoped_feature_list_[2];
 };
 
 INSTANTIATE_TEST_SUITE_P(/* no label */,
                          CookiePartitionKeyTest,
-                         testing::Bool());
+                         ::testing::Values(std::make_tuple(false, false),
+                                           std::make_tuple(false, true),
+                                           std::make_tuple(true, true)));
 
 TEST_P(CookiePartitionKeyTest, Serialization) {
   base::UnguessableToken nonce = base::UnguessableToken::Create();
@@ -114,65 +120,41 @@ TEST_P(CookiePartitionKeyTest, FromNetworkIsolationKey) {
       SchemefulSite(GURL("https://toplevelsite.com"));
   const SchemefulSite kCookieSite =
       SchemefulSite(GURL("https://cookiesite.com"));
-  const SchemefulSite kFirstPartySetOwnerSite =
-      SchemefulSite(GURL("https://setowner.com"));
   const base::UnguessableToken kNonce = base::UnguessableToken::Create();
 
   struct TestCase {
     const std::string desc;
     const NetworkIsolationKey network_isolation_key;
-    bool use_first_party_sets;
     bool allow_nonced_partition_keys;
     const absl::optional<CookiePartitionKey> expected;
   } test_cases[] = {
       {
           "Empty",
           NetworkIsolationKey(),
-          /*use_first_party_sets=*/false,
           /*allow_nonced_partition_keys=*/false,
           absl::nullopt,
       },
       {
           "WithTopLevelSite",
           NetworkIsolationKey(kTopLevelSite, kCookieSite),
-          /*use_first_party_sets=*/false,
           /*allow_nonced_partition_keys=*/false,
           CookiePartitionKey::FromURLForTesting(kTopLevelSite.GetURL()),
       },
       {
-          "WithFirstPartySetOwner",
-          NetworkIsolationKey(kTopLevelSite, kCookieSite),
-          /*use_first_party_sets=*/true,
-          /*allow_nonced_partition_keys=*/false,
-          CookiePartitionKey::FromURLForTesting(
-              kFirstPartySetOwnerSite.GetURL()),
-      },
-      {
           "WithNonce",
           NetworkIsolationKey(kTopLevelSite, kCookieSite, &kNonce),
-          /*use_first_party_sets=*/false,
           /*allow_nonced_partition_keys=*/false,
           CookiePartitionKey::FromURLForTesting(kTopLevelSite.GetURL(), kNonce),
       },
       {
-          "FirstPartySetWithNonce",
-          NetworkIsolationKey(kTopLevelSite, kCookieSite, &kNonce),
-          /*use_first_party_sets=*/true,
-          /*allow_nonced_partition_keys=*/false,
-          CookiePartitionKey::FromURLForTesting(
-              kFirstPartySetOwnerSite.GetURL(), kNonce),
-      },
-      {
           "NoncedAllowed_KeyWithoutNonce",
           NetworkIsolationKey(kTopLevelSite, kCookieSite),
-          /*use_first_party_sets=*/false,
           /*allow_nonced_partition_keys=*/true,
           CookiePartitionKey::FromURLForTesting(kTopLevelSite.GetURL()),
       },
       {
           "NoncedAllowed_KeyWithoutNonce",
           NetworkIsolationKey(kTopLevelSite, kCookieSite, &kNonce),
-          /*use_first_party_sets=*/false,
           /*allow_nonced_partition_keys=*/true,
           CookiePartitionKey::FromURLForTesting(kTopLevelSite.GetURL(), kNonce),
       },
@@ -182,8 +164,8 @@ TEST_P(CookiePartitionKeyTest, FromNetworkIsolationKey) {
     SCOPED_TRACE(test_case.desc);
 
     base::test::ScopedFeatureList feature_list;
-    std::vector<base::Feature> enabled_features;
-    std::vector<base::Feature> disabled_features;
+    std::vector<base::test::FeatureRef> enabled_features;
+    std::vector<base::test::FeatureRef> disabled_features;
     if (PartitionedCookiesEnabled()) {
       enabled_features.push_back(features::kPartitionedCookies);
     } else {
@@ -198,9 +180,7 @@ TEST_P(CookiePartitionKeyTest, FromNetworkIsolationKey) {
 
     absl::optional<CookiePartitionKey> got =
         CookiePartitionKey::FromNetworkIsolationKey(
-            test_case.network_isolation_key, test_case.use_first_party_sets
-                                                 ? &kFirstPartySetOwnerSite
-                                                 : nullptr);
+            test_case.network_isolation_key);
 
     if (got)
       EXPECT_FALSE(got->from_script());
@@ -261,7 +241,8 @@ TEST_P(CookiePartitionKeyTest, Equality_WithNonce) {
   EXPECT_NE(nonce1, nonce2);
   auto key1 = CookiePartitionKey::FromNetworkIsolationKey(
       NetworkIsolationKey(top_level_site, frame_site, &nonce1));
-  bool partitioned_cookies_enabled = PartitionedCookiesEnabled();
+  bool partitioned_cookies_enabled =
+      PartitionedCookiesEnabled() || NoncedPartitionedCookiesEnabled();
   EXPECT_EQ(partitioned_cookies_enabled, key1.has_value());
   if (!partitioned_cookies_enabled)
     return;

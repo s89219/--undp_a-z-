@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,6 +57,26 @@ mediaApp.AbstractFile.prototype.fromClipboard;
  * @type {string|undefined}
  */
 mediaApp.AbstractFile.prototype.error;
+/**
+ * A function that queries the original file's path to see if it is in a
+ * filesystem that ARC is able to write to. Returns a promise that resolves once
+ * this has been determined.
+ * @type {function(): !Promise<boolean>|undefined}
+ */
+mediaApp.AbstractFile.prototype.isArcWritable;
+/**
+ * A function that queries the original file's path to see if it is writable
+ * according to Ash. Returns a promise that resolves once this has been
+ * determined.
+ * @type {function(): !Promise<boolean>|undefined}
+ */
+mediaApp.AbstractFile.prototype.isBrowserWritable;
+/**
+ * A function that attempts to launch the file in Photos in editing mode.
+ * Returns a promise that resolves when the launch has initiated.
+ * @type {function(): !Promise<undefined>|undefined}
+ */
+mediaApp.AbstractFile.prototype.editInPhotos;
 /**
  * A function that will overwrite the original file with the provided Blob.
  * Returns a promise that resolves when the write operations are complete. Or
@@ -151,7 +171,7 @@ mediaApp.AbstractFileList.prototype.addObserver = function(observer) {};
 /**
  * Request for the user to be prompted with an open file dialog. Files chosen
  * will be added to the last received file list.
- * TODO(b/203466987): Remove the undefined here once we can ensure all file
+ * TODO(b/230670565): Remove the undefined here once we can ensure all file
  * lists implement a openFilesWithFilePicker function.
  * @type {function(!Array<string>, ?mediaApp.AbstractFile, ?boolean):
  *     !Promise<undefined>|undefined}
@@ -230,6 +250,17 @@ mediaApp.ClientApiDelegate.prototype.openInSandboxedViewer = function(
  * @type {function(string)|undefined}
  */
 mediaApp.ClientApiDelegate.prototype.openUrlInBrowserTab = function(url) {};
+/**
+ * Reloads the main frame, reloading launch files.
+ * @type {function()|undefined}
+ */
+mediaApp.ClientApiDelegate.prototype.reloadMainFrame = function() {};
+/**
+ * Indicates to the WebUI Controller that a trigger for displaying the PDF HaTS
+ * survey has occurred.
+ * @type {function()|undefined}
+ */
+mediaApp.ClientApiDelegate.prototype.maybeTriggerPdfHats = function() {};
 
 /**
  * The client Api for interacting with the media app instance.

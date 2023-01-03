@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "content/browser/renderer_host/navigation_controller_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
+#include "content/browser/runtime_feature_state/runtime_feature_state_document_data.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/content_navigation_policy.h"
@@ -30,6 +31,7 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/browser_test.h"
@@ -43,6 +45,7 @@
 #include "content/public/test/test_frame_navigation_observer.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
+#include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_content_browser_client.h"
@@ -54,7 +57,10 @@
 #include "net/test/url_request/url_request_failed_job.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/common/chrome_debug_urls.h"
+#include "third_party/blink/public/common/runtime_feature_state/runtime_feature_state_context.h"
+#include "third_party/blink/public/common/runtime_feature_state/runtime_feature_state_read_context.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
+#include "third_party/blink/public/mojom/runtime_feature_state/runtime_feature_state.mojom.h"
 #include "ui/base/page_transition_types.h"
 #include "url/scheme_host_port.h"
 #include "url/url_constants.h"
@@ -480,7 +486,8 @@ class NavigationRequestBrowserTest : public ContentBrowserTest {
     EXPECT_TRUE(observer.has_committed());
     EXPECT_TRUE(observer.is_error());
 
-    content::RenderFrameHost* rfh = shell()->web_contents()->GetMainFrame();
+    content::RenderFrameHost* rfh =
+        shell()->web_contents()->GetPrimaryMainFrame();
     EXPECT_EQ(kBodyTextContent, EvalJs(rfh, "document.body.textContent"));
   }
 };
@@ -618,6 +625,141 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest, VerifyRedirect) {
     EXPECT_FALSE(observer.is_error());
     EXPECT_TRUE(observer.was_redirected());
   }
+}
+
+// Ensure that we can read and write to the browser process's copy of the blink
+// runtime-enabled features via NavigationRequest's method
+// GetMutableRuntimeFeatureStateContext() during commit. Then ensure that its
+// values are persisted to the RenderFrameHostImpl's read-only context.
+IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
+                       RuntimeFeatureStatePersisted) {
+  // Sets up the NavigationRequest where we can begin accessing the
+  // RuntimeFeatureStateContext class.
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+  TestNavigationManager manager(shell()->web_contents(), url);
+
+  // Begin loading our url and wait for the request to start.
+  shell()->LoadURL(url);
+  EXPECT_TRUE(manager.WaitForRequestStart());
+
+  // Ensure we can get and set values in RuntimeFeatureStateContext.
+  blink::RuntimeFeatureStateContext& context =
+      NavigationRequest::From(manager.GetNavigationHandle())
+          ->GetMutableRuntimeFeatureStateContext();
+  bool is_test_feature_enabled(context.IsTestFeatureEnabled());
+  context.SetTestFeatureEnabled(!is_test_feature_enabled);
+  EXPECT_EQ(context.IsTestFeatureEnabled(), !is_test_feature_enabled);
+
+  // Check the override value map as well.
+  base::flat_map<::blink::mojom::RuntimeFeatureState, bool>
+      expected_feature_overrides = context.GetFeatureOverrides();
+  EXPECT_EQ(expected_feature_overrides
+                [blink::mojom::RuntimeFeatureState::kTestFeature],
+            !is_test_feature_enabled);
+
+  // Continue with the navigation until completion.
+  manager.WaitForNavigationFinished();
+  EXPECT_TRUE(manager.was_successful());
+
+  // Check that the changes were saved to the RenderFrameHost.
+  RuntimeFeatureStateDocumentData* document_data =
+      RuntimeFeatureStateDocumentData::GetForCurrentDocument(
+          shell()->web_contents()->GetPrimaryMainFrame());
+  EXPECT_TRUE(document_data);
+  blink::RuntimeFeatureStateReadContext read_context =
+      document_data->runtime_feature_read_context();
+  EXPECT_EQ(expected_feature_overrides, read_context.GetFeatureOverrides());
+}
+
+// Similar to RuntimeFeatureStatePersisted but ensures that even for
+// runtime-enabled feature values that are equivalent to the previous state.
+// This is important to persist as it helps the renderer determine force-enabled
+// and force-disabled values.
+IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
+                       RuntimeFeatureStatePersistedForSameValue) {
+  // Sets up the NavigationRequest where we can begin accessing the
+  // RuntimeFeatureStateContext class.
+  GURL url(embedded_test_server()->GetURL("/title1.html"));
+  TestNavigationManager manager(shell()->web_contents(), url);
+
+  // Begin loading our url and wait for the request to start.
+  shell()->LoadURL(url);
+  EXPECT_TRUE(manager.WaitForRequestStart());
+
+  // Ensure we can set values in RuntimeFeatureStateContext that are
+  // equivalent to the feature's previous state.
+  blink::RuntimeFeatureStateContext& context =
+      NavigationRequest::From(manager.GetNavigationHandle())
+          ->GetMutableRuntimeFeatureStateContext();
+  bool is_test_feature_enabled(context.IsTestFeatureEnabled());
+  context.SetTestFeatureEnabled(is_test_feature_enabled);
+  EXPECT_EQ(context.IsTestFeatureEnabled(), is_test_feature_enabled);
+
+  // Check the override value map as well.
+  base::flat_map<::blink::mojom::RuntimeFeatureState, bool>
+      expected_feature_overrides = context.GetFeatureOverrides();
+  EXPECT_EQ(expected_feature_overrides
+                [blink::mojom::RuntimeFeatureState::kTestFeature],
+            is_test_feature_enabled);
+
+  // Continue with the navigation until completion.
+  manager.WaitForNavigationFinished();
+  EXPECT_TRUE(manager.was_successful());
+
+  // Check that the changes were saved to the RenderFrameHost's feature
+  // overrides.
+  RuntimeFeatureStateDocumentData* document_data =
+      RuntimeFeatureStateDocumentData::GetForCurrentDocument(
+          shell()->web_contents()->GetPrimaryMainFrame());
+  EXPECT_TRUE(document_data);
+  blink::RuntimeFeatureStateReadContext read_context =
+      document_data->runtime_feature_read_context();
+  EXPECT_EQ(expected_feature_overrides, read_context.GetFeatureOverrides());
+}
+
+// Similar to RuntimeFeatureStatePersisted but ensures that even for
+// runtime-enabled feature values are cleared across redirects.
+IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
+                       RuntimeFeatureStateClearOnRedirect) {
+  // Sets up the NavigationRequest where we can begin accessing the
+  // RuntimeFeatureStateContext class.
+  GURL redirect_url(
+      embedded_test_server()->GetURL("/cross-site/bar.com/title2.html"));
+  TestNavigationManager redirect_manager(shell()->web_contents(), redirect_url);
+  shell()->LoadURL(redirect_url);
+
+  EXPECT_TRUE(redirect_manager.WaitForRequestStart());
+
+  // Set a feature value we expect to be cleared upon redirect.
+  blink::RuntimeFeatureStateContext& context =
+      NavigationRequest::From(redirect_manager.GetNavigationHandle())
+          ->GetMutableRuntimeFeatureStateContext();
+  bool is_test_feature_enabled(context.IsTestFeatureEnabled());
+  context.SetTestFeatureEnabled(!is_test_feature_enabled);
+  EXPECT_FALSE(context.GetFeatureOverrides().empty());
+
+  redirect_manager.ResumeNavigation();
+  EXPECT_TRUE(redirect_manager.WaitForResponse());
+
+  // Ensure NavigationRequest's new RuntimeFeatureStateContext is clear
+  const blink::RuntimeFeatureStateContext& new_context =
+      NavigationRequest::From(redirect_manager.GetNavigationHandle())
+          ->GetRuntimeFeatureStateContext();
+  EXPECT_TRUE(new_context.GetFeatureOverrides().empty());
+
+  // Continue with the navigation until completion.
+  redirect_manager.WaitForNavigationFinished();
+  EXPECT_TRUE(redirect_manager.was_successful());
+
+  // Ensure that the changes made to the features before redirect do not
+  // persist to the read context.
+  RuntimeFeatureStateDocumentData* document_data =
+      RuntimeFeatureStateDocumentData::GetForCurrentDocument(
+          shell()->web_contents()->GetPrimaryMainFrame());
+  EXPECT_TRUE(document_data);
+  blink::RuntimeFeatureStateReadContext read_context =
+      document_data->runtime_feature_read_context();
+  EXPECT_TRUE(read_context.GetFeatureOverrides().empty());
 }
 
 // Ensure that a certificate error results in a committed navigation with
@@ -1421,7 +1563,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
 
   // Kill the a.com process, to test what happens with the next navigation.
   scoped_refptr<SiteInstance> site_instance_a =
-      shell()->web_contents()->GetMainFrame()->GetSiteInstance();
+      shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance();
   EXPECT_TRUE(site_instance_a->HasProcess());
   RenderProcessHost* process_1 = site_instance_a->GetProcess();
   RenderProcessHostWatcher process_exit_observer_1(
@@ -1442,7 +1584,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
   // RenderFrameHost.
   scoped_refptr<SiteInstance> starting_site_instance =
       navigation_b.GetNavigationHandle()->GetStartingSiteInstance();
-  EXPECT_EQ(shell()->web_contents()->GetMainFrame()->GetSiteInstance(),
+  EXPECT_EQ(shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance(),
             starting_site_instance);
   if (ShouldSkipEarlyCommitPendingForCrashedFrame()) {
     EXPECT_EQ(GURL("http://a.com"), starting_site_instance->GetSiteURL());
@@ -1578,7 +1720,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
   TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
 
   RenderFrameHostImpl* main_frame = static_cast<RenderFrameHostImpl*>(
-      shell()->web_contents()->GetMainFrame());
+      shell()->web_contents()->GetPrimaryMainFrame());
   ASSERT_EQ(1u, main_frame->child_count());
   FrameTreeNode* child = main_frame->child_at(0u);
   auto* navigation_controller = static_cast<NavigationControllerImpl*>(
@@ -1823,7 +1965,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
   }
 
   scoped_refptr<SiteInstance> site_instance =
-      shell()->web_contents()->GetMainFrame()->GetSiteInstance();
+      shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance();
 
   auto installer = std::make_unique<TestNavigationThrottleInstaller>(
       shell()->web_contents(), NavigationThrottle::BLOCK_REQUEST,
@@ -1842,16 +1984,18 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
     EXPECT_TRUE(observer.has_committed());
     EXPECT_TRUE(observer.is_error());
     if (SiteIsolationPolicy::IsErrorPageIsolationEnabled(true)) {
-      EXPECT_NE(site_instance,
-                shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+      EXPECT_NE(
+          site_instance,
+          shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
       EXPECT_EQ(kUnreachableWebDataURL, shell()
                                             ->web_contents()
-                                            ->GetMainFrame()
+                                            ->GetPrimaryMainFrame()
                                             ->GetSiteInstance()
                                             ->GetSiteURL());
     } else {
-      EXPECT_EQ(site_instance,
-                shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+      EXPECT_EQ(
+          site_instance,
+          shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
     }
   }
 
@@ -1859,7 +2003,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
     // Reloading the blocked document from the browser process still ends up
     // in the error page process.
     int process_id =
-        shell()->web_contents()->GetMainFrame()->GetProcess()->GetID();
+        shell()->web_contents()->GetPrimaryMainFrame()->GetProcess()->GetID();
     NavigationHandleObserver observer(shell()->web_contents(), blocked_url);
     TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
 
@@ -1870,17 +2014,22 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
     if (SiteIsolationPolicy::IsErrorPageIsolationEnabled(true)) {
       EXPECT_EQ(kUnreachableWebDataURL, shell()
                                             ->web_contents()
-                                            ->GetMainFrame()
+                                            ->GetPrimaryMainFrame()
                                             ->GetSiteInstance()
                                             ->GetSiteURL());
-      EXPECT_EQ(process_id,
-                shell()->web_contents()->GetMainFrame()->GetProcess()->GetID());
+      EXPECT_EQ(process_id, shell()
+                                ->web_contents()
+                                ->GetPrimaryMainFrame()
+                                ->GetProcess()
+                                ->GetID());
     } else if (AreAllSitesIsolatedForTesting()) {
-      EXPECT_NE(site_instance,
-                shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+      EXPECT_NE(
+          site_instance,
+          shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
     } else {
-      EXPECT_EQ(site_instance,
-                shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+      EXPECT_EQ(
+          site_instance,
+          shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
     }
   }
 
@@ -1896,8 +2045,9 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
     navigation_observer.Wait();
     EXPECT_TRUE(observer.has_committed());
     EXPECT_FALSE(observer.is_error());
-    EXPECT_EQ(site_instance,
-              shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+    EXPECT_EQ(
+        site_instance,
+        shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
   }
 
   installer = std::make_unique<TestNavigationThrottleInstaller>(
@@ -1916,12 +2066,13 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
     navigation_observer.Wait();
     EXPECT_TRUE(observer.has_committed());
     EXPECT_TRUE(observer.is_error());
-    EXPECT_NE(site_instance,
-              shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+    EXPECT_NE(
+        site_instance,
+        shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
     if (SiteIsolationPolicy::IsErrorPageIsolationEnabled(true)) {
       EXPECT_EQ(kUnreachableWebDataURL, shell()
                                             ->web_contents()
-                                            ->GetMainFrame()
+                                            ->GetPrimaryMainFrame()
                                             ->GetSiteInstance()
                                             ->GetSiteURL());
     }
@@ -1945,7 +2096,8 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
         NavigationThrottle::PROCEED, NavigationThrottle::PROCEED,
         NavigationThrottle::PROCEED);
 
-    content::RenderFrameHost* rfh = shell()->web_contents()->GetMainFrame();
+    content::RenderFrameHost* rfh =
+        shell()->web_contents()->GetPrimaryMainFrame();
     scoped_refptr<SiteInstance> initial_site_instance = rfh->GetSiteInstance();
     TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
     ASSERT_TRUE(content::ExecJs(rfh, javascript));
@@ -1981,18 +2133,19 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest, ErrorPageNetworkError) {
   }
 
   scoped_refptr<SiteInstance> site_instance =
-      shell()->web_contents()->GetMainFrame()->GetSiteInstance();
+      shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance();
   {
     NavigationHandleObserver observer(shell()->web_contents(), error_url);
     EXPECT_FALSE(NavigateToURL(shell(), error_url));
     EXPECT_TRUE(observer.has_committed());
     EXPECT_TRUE(observer.is_error());
-    EXPECT_NE(site_instance,
-              shell()->web_contents()->GetMainFrame()->GetSiteInstance());
+    EXPECT_NE(
+        site_instance,
+        shell()->web_contents()->GetPrimaryMainFrame()->GetSiteInstance());
     if (SiteIsolationPolicy::IsErrorPageIsolationEnabled(true)) {
       EXPECT_EQ(kUnreachableWebDataURL, shell()
                                             ->web_contents()
-                                            ->GetMainFrame()
+                                            ->GetPrimaryMainFrame()
                                             ->GetSiteInstance()
                                             ->GetSiteURL());
     }
@@ -2208,10 +2361,10 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest, BlockedRequestAfterWebUI) {
   WebContents* web_contents = shell()->web_contents();
 
   // Navigate to the initial page.
-  EXPECT_FALSE(web_contents->GetMainFrame()->GetEnabledBindings() &
+  EXPECT_FALSE(web_contents->GetPrimaryMainFrame()->GetEnabledBindings() &
                BINDINGS_POLICY_WEB_UI);
   EXPECT_TRUE(NavigateToURL(shell(), web_ui_url));
-  EXPECT_TRUE(web_contents->GetMainFrame()->GetEnabledBindings() &
+  EXPECT_TRUE(web_contents->GetPrimaryMainFrame()->GetEnabledBindings() &
               BINDINGS_POLICY_WEB_UI);
   scoped_refptr<SiteInstance> web_ui_process = web_contents->GetSiteInstance();
 
@@ -2492,11 +2645,11 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest, StartToCommitMetrics) {
   {
     base::HistogramTester histograms;
     int previous_process_id =
-        shell()->web_contents()->GetMainFrame()->GetProcess()->GetID();
+        shell()->web_contents()->GetPrimaryMainFrame()->GetProcess()->GetID();
     EXPECT_TRUE(NavigateToURL(shell(), GURL(url::kAboutBlankURL)));
     bool process_changed =
         (previous_process_id !=
-         shell()->web_contents()->GetMainFrame()->GetProcess()->GetID());
+         shell()->web_contents()->GetPrimaryMainFrame()->GetProcess()->GetID());
     check_navigation(histograms,
                      process_changed ? ProcessType::kCross : ProcessType::kSame,
                      FrameType::kMain, TransitionType::kNew);
@@ -2841,7 +2994,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestDownloadBrowserTest,
   shell()->LoadURL(simple_url);
   EXPECT_TRUE(manager.WaitForRequestStart());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
-                            ->GetMainFrame()
+                            ->GetPrimaryMainFrame()
                             ->frame_tree_node();
   EXPECT_TRUE(root->navigation_request()
                   ->common_params()
@@ -2865,7 +3018,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestDownloadBrowserTest,
   shell()->LoadURL(download_url);
   EXPECT_TRUE(manager.WaitForRequestStart());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
-                            ->GetMainFrame()
+                            ->GetPrimaryMainFrame()
                             ->frame_tree_node();
   EXPECT_TRUE(root->navigation_request()
                   ->common_params()
@@ -2892,7 +3045,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestDownloadBrowserTest, Disallowed) {
   shell()->LoadURL(view_source_url);
   EXPECT_TRUE(manager.WaitForRequestStart());
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
-                            ->GetMainFrame()
+                            ->GetPrimaryMainFrame()
                             ->frame_tree_node();
   EXPECT_TRUE(
       root->navigation_request()->common_params().download_policy.IsType(
@@ -3277,6 +3430,171 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
   }
 }
 
+// Verify that when navigating to a site that doesn't require a dedicated
+// process from a initial siteless SiteInstance, the SiteInstance sets its site
+// at ready-to-commit time (rather than at DidCommitNavigation time).
+IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
+                       SiteIsSetAtResponseTimeWithoutSiteIsolation) {
+  // A custom ContentBrowserClient to turn off strict site isolation.
+  class NoSiteIsolationContentBrowserClient : public ContentBrowserClient {
+   public:
+    bool ShouldEnableStrictSiteIsolation() override { return false; }
+  } no_site_isolation_client;
+
+  ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&no_site_isolation_client);
+
+  // The test should start in a blank shell with a siteless SiteInstance.
+  EXPECT_FALSE(
+      static_cast<SiteInstanceImpl*>(shell()->web_contents()->GetSiteInstance())
+          ->HasSite());
+
+  // Start a navigation and wait for response.  Note that this won't require a
+  // dedicated process due to the custom ContentBrowserClient.
+  GURL main_url(embedded_test_server()->GetURL("bar.com", "/title1.html"));
+  TestNavigationManager manager(shell()->web_contents(), main_url);
+  shell()->web_contents()->GetController().LoadURL(
+      main_url, Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
+  EXPECT_TRUE(manager.WaitForResponse());
+
+  // At this point, the navigation should be processing the response but not
+  // committed yet. It should have already determined the final
+  // RenderFrameHost, which should just be the initial RenderFrameHost.
+  NavigationRequest* request =
+      static_cast<NavigationRequest*>(manager.GetNavigationHandle());
+  EXPECT_EQ(request->state(), NavigationRequest::WILL_PROCESS_RESPONSE);
+  EXPECT_EQ(shell()->web_contents()->GetPrimaryMainFrame(),
+            request->GetRenderFrameHost());
+
+  // The navigation will stay in the initial SiteInstance, and that
+  // SiteInstance's site should now be set.
+  EXPECT_TRUE(
+      static_cast<SiteInstanceImpl*>(shell()->web_contents()->GetSiteInstance())
+          ->HasSite());
+
+  // The process should also be considered used at this point.
+  EXPECT_FALSE(
+      shell()->web_contents()->GetPrimaryMainFrame()->GetProcess()->IsUnused());
+
+  SetBrowserClientForTesting(old_client);
+}
+
+// Check that a subframe can load an error page with an about:srcdoc URL, and
+// that the origin does not inherit the parent's origin (i.e., behaves like all
+// error pages) in this case.  In practice, this path may be taken by the heavy
+// ads intervention (for an example, see the
+// HeavyAdInterventionEnabled_ErrorPageLoaded test).
+IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
+                       OriginForSrcdocErrorPageInSubframe) {
+  // Start on a page with a blank subframe.
+  GURL start_url =
+      embedded_test_server()->GetURL("a.test", "/page_with_blank_iframe.html");
+  EXPECT_TRUE(NavigateToURL(shell(), start_url));
+
+  // Do a srcdoc navigation in the subframe.
+  EXPECT_TRUE(
+      ExecJs(shell(), "document.querySelector('iframe').srcdoc='foo';"));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetPrimaryFrameTree()
+                            .root();
+  RenderFrameHostImpl* subframe_rfh = root->child_at(0)->current_frame_host();
+  EXPECT_EQ(GURL("about:srcdoc"), subframe_rfh->GetLastCommittedURL());
+
+  // Navigate the subframe to a post-commit error page, reusing its current
+  // srcdoc URL.  A post-commit error page provides a way to reach an error
+  // page for a srcdoc subframe; note that it isn't possible to use
+  // NavigationThrottles to block srcdoc navigations, since throttles don't
+  // currently run in that case.
+  TestNavigationObserver navigation_observer(shell()->web_contents(), 1);
+  shell()->web_contents()->GetController().LoadPostCommitErrorPage(
+      subframe_rfh, subframe_rfh->GetLastCommittedURL(), "error_page_contents",
+      net::ERR_BLOCKED_BY_CLIENT);
+  navigation_observer.Wait();
+  EXPECT_FALSE(navigation_observer.last_navigation_succeeded());
+
+  // Verify that the origin of the srcdoc frame's parent wasn't inherited and
+  // also wasn't used for the precursor.  The error page's origin should be
+  // opaque without a valid precursor.
+  url::Origin origin =
+      root->child_at(0)->current_frame_host()->GetLastCommittedOrigin();
+  EXPECT_TRUE(origin.opaque());
+  EXPECT_FALSE(origin.GetTupleOrPrecursorTupleIfOpaque().IsValid());
+}
+
+// Verify that when navigation 1, which starts in an initial siteless
+// SiteInstance and results in an error page, races with navigation 2, which
+// requires a dedicated process and wants to reuse an existing process,
+// navigation 2 does not incorrectly reuse navigation 1's process.
+IN_PROC_BROWSER_TEST_F(NavigationRequestBrowserTest,
+                       ErrorPageMarksProcessAsUsed) {
+  // The scenario in this test originally led to a site isolation bypass only
+  // when error page isolation for main frames is turned off.  Do this via a
+  // custom ContentBrowserClient.
+  class NoErrorPageIsolationContentBrowserClient : public ContentBrowserClient {
+   public:
+    bool ShouldIsolateErrorPage(bool in_main_frame) override { return false; }
+  } no_error_isolation_client;
+
+  ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&no_error_isolation_client);
+
+  // Set the process limit to 1.  This will force main frame navigations to
+  // attempt to reuse existing processes.
+  RenderProcessHost::SetMaxRendererProcessCount(1);
+
+  // The test should start in a blank shell with a siteless SiteInstance.
+  EXPECT_FALSE(
+      static_cast<SiteInstanceImpl*>(shell()->web_contents()->GetSiteInstance())
+          ->HasSite());
+
+  // Set up a foo.com URL which will fail to load.
+  GURL foo_url(embedded_test_server()->GetURL("foo.com", "/title1.html"));
+  std::unique_ptr<URLLoaderInterceptor> interceptor =
+      URLLoaderInterceptor::SetupRequestFailForURL(foo_url,
+                                                   net::ERR_CONNECTION_REFUSED);
+
+  // Set up a throttle that will be used to wait for WillFailRequest() and then
+  // defer the navigation.
+  TestNavigationThrottleInstaller installer(
+      shell()->web_contents(),
+      NavigationThrottle::PROCEED /* will_start_result */,
+      NavigationThrottle::PROCEED /* will_redirect_result */,
+      NavigationThrottle::DEFER /* will_fail_result */,
+      NavigationThrottle::PROCEED /* will_process_result */);
+
+  // Start a navigation to foo.com that will result in an error.
+  shell()->web_contents()->GetController().LoadURL(
+      foo_url, Referrer(), ui::PAGE_TRANSITION_LINK, std::string());
+
+  // Wait for WillFailRequest(). After this point, we will have picked the
+  // final RenderFrameHost for the error page.
+  installer.WaitForThrottleWillFail();
+
+  // Create a new tab and navigate it to a different site.  Ensure this site
+  // requires a dedicated process, even on Android.
+  GURL bar_url(embedded_test_server()->GetURL("bar.com", "/title1.html"));
+  auto* policy = ChildProcessSecurityPolicyImpl::GetInstance();
+  policy->AddFutureIsolatedOrigins(
+      {url::Origin::Create(bar_url)},
+      ChildProcessSecurityPolicy::IsolatedOriginSource::TEST);
+  Shell* new_shell = CreateBrowser();
+  EXPECT_TRUE(NavigateToURL(new_shell, bar_url));
+
+  // Resume the error page navigation.  It should be able to finish without
+  // crashing.
+  installer.navigation_throttle()->ResumeNavigation();
+  EXPECT_FALSE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_TRUE(
+      shell()->web_contents()->GetPrimaryMainFrame()->IsErrorDocument());
+
+  // Ensure that bar.com didn't reuse the foo.com error page process.
+  EXPECT_NE(shell()->web_contents()->GetPrimaryMainFrame()->GetProcess(),
+            new_shell->web_contents()->GetPrimaryMainFrame()->GetProcess());
+
+  SetBrowserClientForTesting(old_client);
+}
+
 using CSPEmbeddedEnforcementBrowserTest = NavigationRequestBrowserTest;
 
 IN_PROC_BROWSER_TEST_F(CSPEmbeddedEnforcementBrowserTest,
@@ -3440,7 +3758,8 @@ IN_PROC_BROWSER_TEST_F(
   content::RenderFrameHostImpl* fenced_frame_host =
       static_cast<content::RenderFrameHostImpl*>(
           fenced_frame_test_helper().CreateFencedFrame(
-              shell()->web_contents()->GetMainFrame(), fenced_frame_url));
+              shell()->web_contents()->GetPrimaryMainFrame(),
+              fenced_frame_url));
   ASSERT_TRUE(fenced_frame_host);
   EXPECT_EQ(network::mojom::CrossOriginEmbedderPolicyValue::kNone,
             fenced_frame_host->cross_origin_embedder_policy().value);
@@ -3465,7 +3784,8 @@ IN_PROC_BROWSER_TEST_F(
   content::RenderFrameHostImpl* fenced_frame_host =
       static_cast<content::RenderFrameHostImpl*>(
           fenced_frame_test_helper().CreateFencedFrame(
-              shell()->web_contents()->GetMainFrame(), fenced_frame_url));
+              shell()->web_contents()->GetPrimaryMainFrame(),
+              fenced_frame_url));
   ASSERT_TRUE(fenced_frame_host);
   EXPECT_EQ(network::mojom::CrossOriginEmbedderPolicyValue::kNone,
             fenced_frame_host->cross_origin_embedder_policy().value);
@@ -3482,7 +3802,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestFencedFrameBrowserTest,
       embedded_test_server()->GetURL("/fenced_frames/title1.html");
   RenderFrameHost* fenced_frame_host =
       fenced_frame_test_helper().CreateFencedFrame(
-          shell()->web_contents()->GetMainFrame(), fenced_frame_url);
+          shell()->web_contents()->GetPrimaryMainFrame(), fenced_frame_url);
   EXPECT_NE(nullptr, fenced_frame_host);
 
   GURL view_source_url(kViewSourceScheme + std::string(":") +
@@ -3495,7 +3815,7 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestFencedFrameBrowserTest,
   EXPECT_EQ(view_source_url.spec(),
             EvalJs(fenced_frame_host,
                    JsReplace(R"({location.href = $1;})", view_source_url)));
-  console_observer.Wait();
+  ASSERT_TRUE(console_observer.Wait());
 
   // Original page shouldn't navigate away.
   EXPECT_EQ(fenced_frame_url, fenced_frame_host->GetLastCommittedURL());
@@ -3504,6 +3824,84 @@ IN_PROC_BROWSER_TEST_F(NavigationRequestFencedFrameBrowserTest,
                    ->GetController()
                    .GetLastCommittedEntry()
                    ->IsViewSourceMode());
+}
+
+class NavigationRequestPrerenderBrowserTest
+    : public NavigationRequestBrowserTest {
+ public:
+  NavigationRequestPrerenderBrowserTest() {
+    prerender_helper_ =
+        std::make_unique<test::PrerenderTestHelper>(base::BindRepeating(
+            &NavigationRequestPrerenderBrowserTest::web_contents,
+            base::Unretained(this)));
+  }
+  ~NavigationRequestPrerenderBrowserTest() override = default;
+
+  NavigationRequestPrerenderBrowserTest(
+      const NavigationRequestPrerenderBrowserTest&) = delete;
+  NavigationRequestPrerenderBrowserTest& operator=(
+      const NavigationRequestPrerenderBrowserTest&) = delete;
+
+  void SetUpOnMainThread() override {
+    NavigationRequestBrowserTest::SetUpOnMainThread();
+
+    https_server_ = std::make_unique<net::EmbeddedTestServer>(
+        net::EmbeddedTestServer::TYPE_HTTPS);
+    https_server_->AddDefaultHandlers(GetTestDataFilePath());
+    https_server_->SetSSLConfig(net::EmbeddedTestServer::CERT_TEST_NAMES);
+
+    ASSERT_TRUE(https_server()->Start());
+  }
+
+ protected:
+  net::EmbeddedTestServer* https_server() { return https_server_.get(); }
+
+  test::PrerenderTestHelper& prerender_helper() { return *prerender_helper_; }
+
+  WebContents* web_contents() { return shell()->web_contents(); }
+
+ private:
+  std::unique_ptr<net::EmbeddedTestServer> https_server_;
+  std::unique_ptr<test::PrerenderTestHelper> prerender_helper_;
+};
+
+IN_PROC_BROWSER_TEST_F(NavigationRequestPrerenderBrowserTest,
+                       CoopCoepCheckWithPrerender) {
+  GURL url(
+      https_server()->GetURL("a.test",
+                             "/set-header"
+                             "?cross-origin-opener-policy: same-origin"
+                             "&cross-origin-embedder-policy: require-corp"));
+
+  // Navigate to a document that sets COOP and COEP.
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  content::RenderFrameHostImpl* primary_main_frame =
+      static_cast<content::RenderFrameHostImpl*>(
+          shell()->web_contents()->GetPrimaryMainFrame());
+
+  EXPECT_EQ(network::mojom::CrossOriginOpenerPolicyValue::kSameOriginPlusCoep,
+            primary_main_frame->cross_origin_opener_policy().value);
+  EXPECT_EQ(network::mojom::CrossOriginEmbedderPolicyValue::kRequireCorp,
+            primary_main_frame->cross_origin_embedder_policy().value);
+
+  // Add a prerender.
+  int host_id = prerender_helper().AddPrerender(
+      https_server()->GetURL("a.test", "/title1.html?prerendering"));
+  content::RenderFrameHostImpl* prerender_main_frame =
+      static_cast<content::RenderFrameHostImpl*>(
+          prerender_helper().GetPrerenderedMainFrameHost(host_id));
+
+  // The prerender rfh's polices are none.
+  EXPECT_EQ(network::mojom::CrossOriginEmbedderPolicyValue::kNone,
+            prerender_main_frame->cross_origin_embedder_policy().value);
+  EXPECT_EQ(network::mojom::CrossOriginOpenerPolicyValue::kUnsafeNone,
+            prerender_main_frame->cross_origin_opener_policy().value);
+
+  // Prerendering should not affect the primary rfh's polices.
+  EXPECT_EQ(network::mojom::CrossOriginOpenerPolicyValue::kSameOriginPlusCoep,
+            primary_main_frame->cross_origin_opener_policy().value);
+  EXPECT_EQ(network::mojom::CrossOriginEmbedderPolicyValue::kRequireCorp,
+            primary_main_frame->cross_origin_embedder_policy().value);
 }
 
 enum class TestMPArchType {
@@ -3566,14 +3964,8 @@ INSTANTIATE_TEST_SUITE_P(All,
                                            TestMPArchType::kFencedFrame,
                                            TestMPArchType::kPortal));
 
-// TODO(https://crbug.com/1317838): The kPortal variant is flaky on Mac bots.
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_ShouldNotUpdateHistory DISABLED_ShouldNotUpdateHistory
-#else
-#define MAYBE_ShouldNotUpdateHistory ShouldNotUpdateHistory
-#endif
 IN_PROC_BROWSER_TEST_P(NavigationRequestMPArchBrowserTest,
-                       MAYBE_ShouldNotUpdateHistory) {
+                       ShouldNotUpdateHistory) {
   const auto get_observer = [&](WebContents* web_contents) {
     return DidFinishNavigationObserver(
         web_contents,
@@ -3615,31 +4007,25 @@ IN_PROC_BROWSER_TEST_P(NavigationRequestMPArchBrowserTest,
         const auto fenced_frame_observer = get_observer(web_contents());
         // Create a fenced frame.
         ASSERT_TRUE(fenced_frame_test_helper().CreateFencedFrame(
-            web_contents()->GetMainFrame(),
+            web_contents()->GetPrimaryMainFrame(),
             embedded_test_server()->GetURL("/fenced_frames/title1.html")));
         break;
       }
 
       case TestMPArchType::kPortal: {
         GURL portal_url(embedded_test_server()->GetURL("/title1.html"));
-        WebContentsAddedObserver contents_observer;
-        TestNavigationObserver portal_nav_observer(portal_url);
-        portal_nav_observer.StartWatchingNewWebContents();
 
         // Create a portal.
-        EXPECT_TRUE(
-            ExecJs(web_contents()->GetMainFrame(),
-                   JsReplace("{"
-                             "  let portal = document.createElement('portal');"
-                             "  portal.src = $1;"
-                             "  document.body.appendChild(portal);"
-                             "}",
-                             portal_url),
-                   EXECUTE_SCRIPT_NO_USER_GESTURE));
-
-        const auto portal_observer =
-            get_observer(contents_observer.GetWebContents());
-        portal_nav_observer.WaitForNavigationFinished();
+        const char script[] = R"(
+           new Promise(async resolve => {
+             let portal = document.createElement('portal');
+             portal.src = $1;
+             portal.onload = resolve;
+             document.body.appendChild(portal);
+           });
+        )";
+        ASSERT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                           content::JsReplace(script, portal_url)));
         break;
       }
     }

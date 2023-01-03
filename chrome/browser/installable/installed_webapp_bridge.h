@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,8 +14,8 @@ class GURL;
 
 class InstalledWebappBridge {
  public:
-  using PermissionCallback =
-      base::OnceCallback<void(ContentSetting setting, bool is_one_time)>;
+  using PermissionCallback = base::OnceCallback<
+      void(ContentSetting setting, bool is_one_time, bool is_final_decision)>;
 
   InstalledWebappBridge() = delete;
   InstalledWebappBridge(const InstalledWebappBridge&) = delete;
@@ -26,11 +26,9 @@ class InstalledWebappBridge {
 
   static void SetProviderInstance(InstalledWebappProvider* provider);
 
-  static void DecidePermission(const GURL& origin_url,
-                               PermissionCallback callback);
-
   static void DecidePermission(ContentSettingsType type,
                                const GURL& origin_url,
+                               const GURL& last_committed_url,
                                PermissionCallback callback);
 };
 

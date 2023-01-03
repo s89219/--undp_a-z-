@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "ash/public/cpp/ambient/proto/photo_cache_entry.pb.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
+#include "ash/wallpaper/wallpaper_utils/wallpaper_language.h"
 #include "base/barrier_closure.h"
 #include "base/base64.h"
 #include "base/bind.h"
@@ -77,6 +78,7 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   resource_request->load_flags =
       net::LOAD_BYPASS_CACHE | net::LOAD_DISABLE_CACHE;
   resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
+  auto language_tag = ash::GetLanguageTag();
 
   for (const auto& header : request.headers) {
     std::string encoded_value;
@@ -86,6 +88,11 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
       encoded_value = header.value;
 
     resource_request->headers.SetHeader(header.name, encoded_value);
+
+    if (!language_tag.empty()) {
+      resource_request->headers.SetHeader(
+          net::HttpRequestHeaders::kAcceptLanguage, language_tag);
+    }
   }
 
   return resource_request;
@@ -131,7 +138,7 @@ std::string BuildBackdropTopicDetails(
   }
 }
 
-absl::optional<std::string> GetStringValue(base::Value::ConstListView values,
+absl::optional<std::string> GetStringValue(const base::Value::List& values,
                                            size_t field_number) {
   if (values.empty() || values.size() < field_number)
     return absl::nullopt;
@@ -143,7 +150,7 @@ absl::optional<std::string> GetStringValue(base::Value::ConstListView values,
   return v.GetString();
 }
 
-absl::optional<double> GetDoubleValue(base::Value::ConstListView values,
+absl::optional<double> GetDoubleValue(const base::Value::List& values,
                                       size_t field_number) {
   if (values.empty() || values.size() < field_number)
     return absl::nullopt;
@@ -155,7 +162,7 @@ absl::optional<double> GetDoubleValue(base::Value::ConstListView values,
   return v.GetDouble();
 }
 
-absl::optional<bool> GetBoolValue(base::Value::ConstListView values,
+absl::optional<bool> GetBoolValue(const base::Value::List& values,
                                   size_t field_number) {
   if (values.empty() || values.size() < field_number)
     return absl::nullopt;
@@ -176,7 +183,7 @@ absl::optional<WeatherInfo> ToWeatherInfo(const base::Value& result) {
     return absl::nullopt;
 
   WeatherInfo weather_info;
-  const auto& list_result = result.GetListDeprecated();
+  const auto& list_result = result.GetList();
 
   weather_info.condition_icon_url = GetStringValue(
       list_result, backdrop::WeatherInfo::kConditionIconUrlFieldNumber);
@@ -260,19 +267,19 @@ bool IsArtSettingVisible(const ArtSetting& art_setting) {
   const auto& album_id = art_setting.album_id;
 
   if (album_id == kAmbientModeStreetArtAlbumId)
-    return chromeos::features::kAmbientModeStreetArtAlbumEnabled.Get();
+    return features::kAmbientModeStreetArtAlbumEnabled.Get();
 
   if (album_id == kAmbientModeCapturedOnPixelAlbumId)
-    return chromeos::features::kAmbientModeCapturedOnPixelAlbumEnabled.Get();
+    return features::kAmbientModeCapturedOnPixelAlbumEnabled.Get();
 
   if (album_id == kAmbientModeEarthAndSpaceAlbumId)
-    return chromeos::features::kAmbientModeEarthAndSpaceAlbumEnabled.Get();
+    return features::kAmbientModeEarthAndSpaceAlbumEnabled.Get();
 
   if (album_id == kAmbientModeFeaturedPhotoAlbumId)
-    return chromeos::features::kAmbientModeFeaturedPhotoAlbumEnabled.Get();
+    return features::kAmbientModeFeaturedPhotoAlbumEnabled.Get();
 
   if (album_id == kAmbientModeFineArtAlbumId)
-    return chromeos::features::kAmbientModeFineArtAlbumEnabled.Get();
+    return features::kAmbientModeFineArtAlbumEnabled.Get();
 
   return false;
 }
@@ -376,7 +383,7 @@ void AmbientBackendControllerImpl::UpdateSettings(
   // race condition with |AmbientPhotoController| possibly being destructed if
   // |kAmbientModeEnabled| pref is toggled off.
   auto* photo_controller = ambient_controller->ambient_photo_controller();
-  DCHECK(photo_controller);
+  CHECK(photo_controller) << "Photo controller is required to update settings";
   photo_controller->ClearCache();
 
   ambient_controller->RequestAccessToken(base::BindOnce(
@@ -407,8 +414,8 @@ void AmbientBackendControllerImpl::FetchWeather(FetchWeatherCallback callback) {
           auto json_handler =
               [](FetchWeatherCallback callback,
                  data_decoder::DataDecoder::ValueOrError result) {
-                if (result.value) {
-                  std::move(callback).Run(ToWeatherInfo(result.value.value()));
+                if (result.has_value()) {
+                  std::move(callback).Run(ToWeatherInfo(*result));
                 } else {
                   DVLOG(1) << "Failed to parse weather json.";
                   std::move(callback).Run(absl::nullopt);
@@ -723,7 +730,7 @@ void AmbientBackendControllerImpl::OnGetGooglePhotosAlbumsPreview(
   std::vector<GURL> preview_urls;
   for (const std::string& preview_url :
        get_google_photos_albums_preview_response.preview_url()) {
-    preview_urls.push_back(GURL(preview_url));
+    preview_urls.emplace_back(preview_url);
   }
   std::move(callback).Run(preview_urls);
 }

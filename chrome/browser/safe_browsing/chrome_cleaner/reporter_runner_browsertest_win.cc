@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,8 +21,7 @@
 #include "base/process/process.h"
 #include "base/run_loop.h"
 #include "base/synchronization/lock.h"
-#include "base/test/scoped_feature_list.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
@@ -205,9 +204,6 @@ class ReporterRunnerTest
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
         &policy_provider_);
 
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        kChromeCleanupInBrowserPromptFeature, {{"Seed", incoming_seed_}});
-
     switch (policy_state_) {
       case PolicyState::kNoLogs:
         break;
@@ -226,6 +222,9 @@ class ReporterRunnerTest
         break;
       }
     }
+
+    EXPECT_CALL(mock_chrome_cleaner_controller_, GetIncomingPromptSeed())
+        .WillRepeatedly(Return(incoming_seed_));
   }
 
   void SetUpOnMainThread() override {
@@ -259,7 +258,7 @@ class ReporterRunnerTest
   bool WaitForReporterExit(
       [[maybe_unused]] const base::Process& reporter_process,
       base::TimeDelta timeout,
-      int* exit_code) {
+      int* exit_code) override {
     if (reporter_wait_count_++ < 2 * reporter_launch_count_) {
       // Simulate a timeout to test the path where ReporterRunner waits more
       // than once.
@@ -290,7 +289,7 @@ class ReporterRunnerTest
     // message loop. Since the test calls LaunchReporter instead of actually
     // doing a blocking reporter launch, it doesn't matter that the task runner
     // doesn't have the MayBlock trait.
-    return base::ThreadTaskRunnerHandle::Get().get();
+    return base::SingleThreadTaskRunner::GetCurrentDefault().get();
   }
 
   void ResetReporterRuns(int exit_code_to_report) {
@@ -606,8 +605,6 @@ class ReporterRunnerTest
   // can be used to perform actions in the middle of a queue of reporters which
   // all launch on the same mock clock tick.
   base::OnceClosure first_launch_callback_;
-
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 }  // namespace

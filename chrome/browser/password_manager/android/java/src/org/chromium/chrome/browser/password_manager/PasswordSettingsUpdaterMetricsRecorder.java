@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@ import static org.chromium.chrome.browser.password_manager.PasswordManagerSettin
 import android.os.SystemClock;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.metrics.RecordHistogram;
 
@@ -78,8 +79,18 @@ class PasswordSettingsUpdaterMetricsRecorder {
                 getHistogramName("ErrorCode"), error, AndroidBackendErrorType.MAX_VALUE + 1);
         if (error == AndroidBackendErrorType.EXTERNAL_ERROR) {
             int apiErrorCode = PasswordManagerAndroidBackendUtil.getApiErrorCode(exception);
-            RecordHistogram.recordEnumeratedHistogram(
-                    getHistogramName("APIError"), apiErrorCode, ChromeSyncStatusCode.MAX_VALUE + 1);
+            RecordHistogram.recordSparseHistogram(getHistogramName("APIError1"), apiErrorCode);
         }
+    }
+
+    @VisibleForTesting
+    String getFunctionSuffixForTesting() {
+        return mFunctionSuffix;
+    }
+
+    @VisibleForTesting
+    @PasswordManagerSetting
+    int getSettingForTesting() {
+        return mSetting;
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/components/login/auth/cryptohome_key_constants.h"
-#include "ash/components/login/auth/key.h"
-#include "ash/components/login/auth/user_context.h"
-#include "ash/components/settings/cros_settings_names.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
@@ -23,7 +19,6 @@
 #include "chrome/browser/ash/login/signin_specifics.h"
 #include "chrome/browser/ash/login/ui/mock_login_display_host.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
-#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/extensions/login_screen/login/cleanup/cleanup_manager_ash.h"
 #include "chrome/browser/chromeos/extensions/login_screen/login/cleanup/mock_cleanup_handler.h"
@@ -36,6 +31,10 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "chromeos/ash/components/login/auth/public/cryptohome_key_constants.h"
+#include "chromeos/ash/components/login/auth/public/key.h"
+#include "chromeos/ash/components/login/auth/public/user_context.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
 #include "components/account_id/account_id.h"
 #include "components/prefs/pref_service.h"
 #include "components/session_manager/session_manager_types.h"
@@ -57,13 +56,13 @@ using testing::StrictMock;
 
 namespace {
 
-const char kEmail[] = "email@test";
-const char kGaiaId[] = "gaia@test";
+constexpr char kEmail[] = "email@test";
+constexpr char kGaiaId[] = "gaia";
 
 const char kLaunchSamlUserSessionArguments[] =
     R"([{
           "email": "email@test",
-          "gaiaId": "gaia@test",
+          "gaiaId": "gaia",
           "password": "password",
           "oauthCode": "oauth_code"
        }])";
@@ -156,6 +155,7 @@ class LoginApiUnittest : public ExtensionApiUnittest {
   void SetUp() override {
     ExtensionApiUnittest::SetUp();
 
+    auth_metrics_recorder_ = ash::AuthMetricsRecorder::CreateForTesting();
     fake_chrome_user_manager_ = new ash::FakeChromeUserManager();
     scoped_user_manager_ = std::make_unique<user_manager::ScopedUserManager>(
         std::unique_ptr<ash::FakeChromeUserManager>(fake_chrome_user_manager_));
@@ -182,17 +182,16 @@ class LoginApiUnittest : public ExtensionApiUnittest {
     mock_existing_user_controller_.reset();
     mock_login_display_host_.reset();
     scoped_user_manager_.reset();
+    auth_metrics_recorder_.reset();
 
     ExtensionApiUnittest::TearDown();
   }
 
   std::unique_ptr<ScopedTestingProfile> AddPublicAccountUser(
       const std::string& email) {
-    AccountId account_id = AccountId::FromUserEmail(email);
-    user_manager::User* user =
-        fake_chrome_user_manager_->AddPublicAccountUser(account_id);
+    fake_chrome_user_manager_->AddPublicAccountUser(
+        AccountId::FromUserEmail(email));
     TestingProfile* profile = profile_manager()->CreateTestingProfile(email);
-    ash::ProfileHelper::Get()->SetUserToProfileMappingForTesting(user, profile);
 
     return std::make_unique<ScopedTestingProfile>(profile, profile_manager());
   }
@@ -202,6 +201,7 @@ class LoginApiUnittest : public ExtensionApiUnittest {
   std::unique_ptr<ash::MockLoginDisplayHost> mock_login_display_host_;
   std::unique_ptr<MockExistingUserController> mock_existing_user_controller_;
   std::unique_ptr<MockLoginApiLockHandler> mock_lock_handler_;
+  std::unique_ptr<ash::AuthMetricsRecorder> auth_metrics_recorder_;
 };
 
 MATCHER_P(MatchSigninSpecifics, expected, "") {
@@ -385,7 +385,7 @@ TEST_F(LoginApiUnittest, LockManagedGuestSessionNoActiveUser) {
 }
 
 TEST_F(LoginApiUnittest, LockManagedGuestSessionNotManagedGuestSession) {
-  AccountId account_id = AccountId::FromGaiaId(kGaiaId);
+  AccountId account_id = AccountId::FromUserEmailGaiaId(kEmail, kGaiaId);
   fake_chrome_user_manager_->AddUser(account_id);
   fake_chrome_user_manager_->SwitchActiveUser(account_id);
 
@@ -480,7 +480,7 @@ TEST_F(LoginApiUnittest, UnlockManagedGuestSessionNoActiveUser) {
 }
 
 TEST_F(LoginApiUnittest, UnlockManagedGuestSessionNotManagedGuestSession) {
-  AccountId account_id = AccountId::FromGaiaId(kGaiaId);
+  AccountId account_id = AccountId::FromUserEmailGaiaId(kEmail, kGaiaId);
   fake_chrome_user_manager_->AddUser(account_id);
   fake_chrome_user_manager_->SwitchActiveUser(account_id);
 
@@ -566,12 +566,10 @@ class LoginApiUserSessionUnittest : public LoginApiUnittest {
  protected:
   std::unique_ptr<ScopedTestingProfile> AddRegularUser(
       const std::string& email) {
-    AccountId account_id = AccountId::FromUserEmailGaiaId(email, kGaiaId);
-    user_manager::User* user =
-        fake_chrome_user_manager_->AddUserWithAffiliation(
-            account_id, /* is_affiliated= */ true);
+    fake_chrome_user_manager_->AddUserWithAffiliation(
+        AccountId::FromUserEmailGaiaId(email, kGaiaId),
+        /* is_affiliated= */ true);
     TestingProfile* profile = profile_manager()->CreateTestingProfile(email);
-    ash::ProfileHelper::Get()->SetUserToProfileMappingForTesting(user, profile);
 
     return std::make_unique<ScopedTestingProfile>(profile, profile_manager());
   }
@@ -593,11 +591,11 @@ TEST_F(LoginApiUserSessionUnittest, LaunchSamlUserSession) {
   std::unique_ptr<ScopedTestingProfile> profile = AddRegularUser(kEmail);
   ash::UserContext user_context = GetRegularUserContext(kEmail, kGaiaId);
 
-  chromeos::Key key("password");
+  ash::Key key("password");
   key.SetLabel(ash::kCryptohomeGaiaKeyLabel);
   user_context.SetKey(key);
-  user_context.SetPasswordKey(chromeos::Key("password"));
-  user_context.SetAuthFlow(chromeos::UserContext::AUTH_FLOW_GAIA_WITH_SAML);
+  user_context.SetPasswordKey(ash::Key("password"));
+  user_context.SetAuthFlow(ash::UserContext::AUTH_FLOW_GAIA_WITH_SAML);
   user_context.SetIsUsingSamlPrincipalsApi(false);
   user_context.SetAuthCode("oauth_code");
 
@@ -825,7 +823,7 @@ class LoginApiSharedSessionUnittest : public LoginApiUnittest {
 
   void LaunchSharedManagedGuestSession(const std::string& password) {
     EXPECT_CALL(*mock_existing_user_controller_,
-                Login(_, MatchSigninSpecifics(chromeos::SigninSpecifics())))
+                Login(_, MatchSigninSpecifics(ash::SigninSpecifics())))
         .Times(1);
 
     testing_profile_ = AddPublicAccountUser(kEmail);
@@ -865,7 +863,7 @@ TEST_F(LoginApiSharedSessionUnittest, LaunchSharedManagedGuestSession) {
   std::unique_ptr<ScopedTestingProfile> profile = AddPublicAccountUser(kEmail);
   ash::UserContext user_context;
   EXPECT_CALL(*mock_existing_user_controller_,
-              Login(_, MatchSigninSpecifics(chromeos::SigninSpecifics())))
+              Login(_, MatchSigninSpecifics(ash::SigninSpecifics())))
       .WillOnce(SaveArg<0>(&user_context));
 
   RunFunction(new LoginLaunchSharedManagedGuestSessionFunction(), "[\"foo\"]");
@@ -1275,7 +1273,7 @@ class LoginApiExternalLogoutRequestUnittest : public ExtensionApiUnittest {
     explicit MockExternalLogoutRequestEventHandler(
         content::BrowserContext* context)
         : ExternalLogoutRequestEventHandler(context) {}
-    ~MockExternalLogoutRequestEventHandler() = default;
+    ~MockExternalLogoutRequestEventHandler() override = default;
     MOCK_METHOD0(OnRequestExternalLogout, void());
   };
 
@@ -1318,7 +1316,7 @@ class LoginApiExternalLogoutDoneUnittest : public ExtensionApiUnittest {
     explicit MockExternalLogoutDoneEventHandler(
         content::BrowserContext* context)
         : ExternalLogoutDoneEventHandler(context) {}
-    ~MockExternalLogoutDoneEventHandler() = default;
+    ~MockExternalLogoutDoneEventHandler() override = default;
     MOCK_METHOD0(OnExternalLogoutDone, void());
   };
 

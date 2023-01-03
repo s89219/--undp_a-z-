@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <vector>
 
 #include "base/files/file_path.h"
+#include "base/memory/raw_ptr.h"
 #include "base/strings/strcat.h"
 #include "base/test/bind.h"
 #include "build/build_config.h"
@@ -87,26 +88,24 @@ struct MultiProfileStartupTestParam {
 };
 
 const MultiProfileStartupTestParam kTestParams[] = {
-    {false, false, {{HasBaseName(chrome::kInitialProfile), true}}},
-    {false, true, {{Property(&Profile::IsGuestSession, true), true}}},
-    {true,
-     false,
-     {{HasBaseName(chrome::kInitialProfile), true},
-      {HasBaseName(kOtherProfileDirPath), false}}},
-    {true,
-     true,
-     {// TODO(https://crbug.com/1150326): The first call with guest profile
-      // should be skipped.
-      {Property(&Profile::IsGuestSession, true), true},
-#if !BUILDFLAG(IS_CHROMEOS_LACROS)
-      // Lacros loads the primary profile earlier and it is already loaded when
-      // `PostProfileInit()` is called for the first time.
-      // TODO(https://crbug.com/1150326): Re-add the primary profile once
-      // `PostProfileInit()` is called for profiles that were created before
-      // the initial startup profile.
-      {HasBaseName(chrome::kInitialProfile), false},
-#endif
-      {HasBaseName(kOtherProfileDirPath), false}}}};
+    {.should_enable_profile_observer = false,
+     .should_show_profile_picker = false,
+     .expected_post_profile_init_call_args =
+         {{HasBaseName(chrome::kInitialProfile), true}}},
+    {.should_enable_profile_observer = false,
+     .should_show_profile_picker = true,
+     .expected_post_profile_init_call_args =
+         {{Property(&Profile::IsGuestSession, true), true}}},
+    {.should_enable_profile_observer = true,
+     .should_show_profile_picker = false,
+     .expected_post_profile_init_call_args =
+         {{HasBaseName(chrome::kInitialProfile), true},
+          {HasBaseName(kOtherProfileDirPath), false}}},
+    {.should_enable_profile_observer = true,
+     .should_show_profile_picker = true,
+     .expected_post_profile_init_call_args = {
+         {HasBaseName(chrome::kInitialProfile), true},
+         {HasBaseName(kOtherProfileDirPath), false}}}};
 
 // Creates a new profile to be picked up on the actual test.
 void SetUpSecondaryProfileForPreTest(
@@ -123,15 +122,6 @@ void SetUpSecondaryProfileForPreTest(
           .GetProfileAttributesWithPath(profile_path);
   ASSERT_NE(entry, nullptr);
   entry->SetActiveTimeToNow();
-
-  // Enabling sync, as Lacros only supports syncing profiles.
-  // TODO(https://crbug.com/1260291): Revisit this once non-syncing profiles
-  // are allowed.
-  entry->SetAuthInfo(
-      base::StringPrintf("gaia_id_%s", profile_path.MaybeAsASCII().c_str()),
-      base::UTF8ToUTF16(base::StringPrintf(
-          "user%s@gmail.com", profile_path.MaybeAsASCII().c_str())),
-      /*is_consented_primary_account=*/true);
 }
 
 void CreateBrowserForProfileDir(const base::FilePath& profile_dir_basename) {
@@ -191,7 +181,7 @@ class ChromeMultiProfileStartupBrowserTestBase
     }
   }
 
-  MockMainExtraParts* mock_part_;
+  raw_ptr<MockMainExtraParts, DanglingUntriaged> mock_part_;
 
  protected:
   base::test::ScopedFeatureList feature_list_;

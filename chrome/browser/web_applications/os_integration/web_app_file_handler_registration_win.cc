@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,7 +81,7 @@ void RegisterFileHandlersWithOsTask(const AppId& app_id,
         file_handler_progids.back(), app_specific_launcher_command,
         user_visible_app_name,
         base::AsWString(base::StringPiece16(file_handler.display_name)),
-        icon_path, icon_path, file_extensions_wide);
+        icon_path, file_extensions_wide);
   }
   if (!result)
     RecordRegistration(RegistrationResult::kFailToAddFileAssociation);
@@ -97,7 +97,8 @@ void RegisterFileHandlersWithOsTask(const AppId& app_id,
 void RegisterFileHandlersWithOs(const AppId& app_id,
                                 const std::string& app_name,
                                 Profile* profile,
-                                const apps::FileHandlers& file_handlers) {
+                                const apps::FileHandlers& file_handlers,
+                                ResultCallback callback) {
   DCHECK(!file_handlers.empty());
 
   const std::wstring app_name_extension =
@@ -110,7 +111,7 @@ void RegisterFileHandlersWithOs(const AppId& app_id,
                      base::UTF8ToWide(app_name), profile->GetPath(),
                      file_handlers, app_name_extension),
       base::BindOnce(&CheckAndUpdateExternalInstallations, profile->GetPath(),
-                     app_id, base::DoNothing()));
+                     app_id, std::move(callback)));
 }
 
 void DeleteAppLauncher(const base::FilePath& launcher_path) {

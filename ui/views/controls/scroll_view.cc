@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
+#include "base/ranges/algorithm.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -28,6 +29,7 @@
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/focus_ring.h"
@@ -76,10 +78,9 @@ END_METADATA
 // Returns true if any descendants of |view| have a layer (not including
 // |view|).
 bool DoesDescendantHaveLayer(View* view) {
-  return std::any_of(view->children().cbegin(), view->children().cend(),
-                     [](View* child) {
-                       return child->layer() || DoesDescendantHaveLayer(child);
-                     });
+  return base::ranges::any_of(view->children(), [](View* child) {
+    return child->layer() || DoesDescendantHaveLayer(child);
+  });
 }
 
 // Returns the position for the view so that it isn't scrolled off the visible
@@ -285,6 +286,13 @@ ScrollView::ScrollView(ScrollWithLayers scroll_with_layers)
   vert_sb_->set_controller(this);
   corner_view_->SetVisible(false);
 
+  // "Ignored" removes the scrollbar from the accessibility tree.
+  // "IsLeaf" removes their children (e.g. the buttons and thumb).
+  horiz_sb_->GetViewAccessibility().OverrideIsIgnored(true);
+  horiz_sb_->GetViewAccessibility().OverrideIsLeaf(true);
+  vert_sb_->GetViewAccessibility().OverrideIsIgnored(true);
+  vert_sb_->GetViewAccessibility().OverrideIsLeaf(true);
+
   // Just make sure the more_content indicators aren't visible for now. They'll
   // be added as child controls and appropriately made visible depending on
   // |show_edges_with_hidden_content_|.
@@ -410,6 +418,12 @@ void ScrollView::SetHorizontalScrollBarMode(
     return;
   horizontal_scroll_bar_mode_ = horizontal_scroll_bar_mode;
   OnPropertyChanged(&horizontal_scroll_bar_mode_, kPropertyEffectsPaint);
+
+  // "Ignored" removes the scrollbar from the accessibility tree.
+  // "IsLeaf" removes their children (e.g. the buttons and thumb).
+  bool is_disabled = horizontal_scroll_bar_mode == ScrollBarMode::kDisabled;
+  horiz_sb_->GetViewAccessibility().OverrideIsIgnored(is_disabled);
+  horiz_sb_->GetViewAccessibility().OverrideIsLeaf(is_disabled);
 }
 
 void ScrollView::SetVerticalScrollBarMode(
@@ -424,6 +438,12 @@ void ScrollView::SetVerticalScrollBarMode(
 
   vertical_scroll_bar_mode_ = vertical_scroll_bar_mode;
   OnPropertyChanged(&vertical_scroll_bar_mode_, kPropertyEffectsPaint);
+
+  // "Ignored" removes the scrollbar from the accessibility tree.
+  // "IsLeaf" removes their children (e.g. the buttons and thumb).
+  bool is_disabled = vertical_scroll_bar_mode == ScrollBarMode::kDisabled;
+  vert_sb_->GetViewAccessibility().OverrideIsIgnored(is_disabled);
+  vert_sb_->GetViewAccessibility().OverrideIsLeaf(is_disabled);
 }
 
 void ScrollView::SetTreatAllScrollEventsAsHorizontal(
@@ -884,6 +904,7 @@ void ScrollView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   if (!contents_)
     return;
 
+  node_data->role = ax::mojom::Role::kScrollView;
   node_data->AddIntAttribute(ax::mojom::IntAttribute::kScrollX,
                              CurrentOffset().x());
   node_data->AddIntAttribute(ax::mojom::IntAttribute::kScrollXMin,
@@ -1115,6 +1136,15 @@ void ScrollView::UpdateScrollBarPositions() {
 gfx::PointF ScrollView::CurrentOffset() const {
   return ScrollsWithLayers() ? contents_->layer()->CurrentScrollOffset()
                              : gfx::PointF(-contents_->x(), -contents_->y());
+}
+
+void ScrollView::ScrollByOffset(const gfx::PointF& offset) {
+  if (!contents_)
+    return;
+
+  gfx::PointF current_offset = CurrentOffset();
+  ScrollToOffset(gfx::PointF(current_offset.x() + offset.x(),
+                             current_offset.y() + offset.y()));
 }
 
 void ScrollView::ScrollToOffset(const gfx::PointF& offset) {

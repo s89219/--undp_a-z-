@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,18 +6,18 @@
  * @fileoverview 'settings-search-engine-entry' is a component for showing a
  * search engine with its name, domain and query URL.
  */
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
-import 'chrome://resources/cr_elements/icons.m.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import 'chrome://resources/cr_elements/icons.html.js';
 import '../controls/extension_controlled_indicator.js';
-import './search_engine_entry_css.js';
-import '../settings_shared_css.js';
+import './search_engine_entry.css.js';
+import '../settings_shared.css.js';
 import '../site_favicon.js';
 
 import {AnchorAlignment} from 'chrome://resources/cr_elements/cr_action_menu/cr_action_menu.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {getTemplate} from './search_engine_entry.html.js';
 
+import {getTemplate} from './search_engine_entry.html.js';
 import {SearchEngine, SearchEnginesBrowserProxy, SearchEnginesBrowserProxyImpl} from './search_engines_browser_proxy.js';
 
 export interface SettingsSearchEngineEntryElement {
@@ -45,18 +45,11 @@ export class SettingsSearchEngineEntryElement extends PolymerElement {
 
       showQueryUrl: {type: Boolean, value: false, reflectToAttribute: true},
 
-      isActiveSearchEnginesFlagEnabled: Boolean,
 
       isDefault: {
         reflectToAttribute: true,
         type: Boolean,
-        computed: 'computeIsDefault_(engine)'
-      },
-
-      disableMenuButton: {
-        reflectToAttribute: true,
-        type: Boolean,
-        computed: 'computeDisableMenuButton_(engine)'
+        computed: 'computeIsDefault_(engine)',
       },
 
     };
@@ -65,9 +58,7 @@ export class SettingsSearchEngineEntryElement extends PolymerElement {
   engine: SearchEngine;
   showShortcut: boolean;
   showQueryUrl: boolean;
-  isActiveSearchEnginesFlagEnabled: boolean;
   isDefault: boolean;
-  disableMenuButton: boolean;
   private browserProxy_: SearchEnginesBrowserProxy =
       SearchEnginesBrowserProxyImpl.getInstance();
 
@@ -77,10 +68,6 @@ export class SettingsSearchEngineEntryElement extends PolymerElement {
 
   private computeIsDefault_(): boolean {
     return this.engine.default;
-  }
-
-  private computeDisableMenuButton_(): boolean {
-    return this.isActiveSearchEnginesFlagEnabled && this.engine.default;
   }
 
   private onDeleteTap_(e: Event) {

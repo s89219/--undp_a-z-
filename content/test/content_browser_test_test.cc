@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,6 @@
 #include "base/test/test_switches.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
@@ -39,7 +38,7 @@
 #include "testing/gtest/include/gtest/gtest-spi.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
 #include "ui/ozone/public/ozone_switches.h"
 #endif
 
@@ -60,7 +59,7 @@ namespace {
 base::CommandLine CreateCommandLine() {
   const base::CommandLine& cmdline = *base::CommandLine::ForCurrentProcess();
   base::CommandLine command_line = base::CommandLine(cmdline.GetProgram());
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
   const char* kSwitchesToCopy[] = {
       // Keep the kOzonePlatform switch that the Ozone must use.
       switches::kOzonePlatform,
@@ -80,7 +79,7 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MANUAL_ShouldntRun) {
 
 IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MANUAL_RendererCrash) {
   content::RenderProcessHostWatcher renderer_shutdown_observer(
-      shell()->web_contents()->GetMainFrame()->GetProcess(),
+      shell()->web_contents()->GetPrimaryMainFrame()->GetProcess(),
       content::RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
 
   EXPECT_FALSE(NavigateToURL(shell(), GetWebUIURL("crash")));
@@ -209,7 +208,7 @@ IN_PROC_BROWSER_TEST_F(MockContentBrowserTest, DISABLED_FailTest) {
 }
 // Basic Test to crash
 IN_PROC_BROWSER_TEST_F(MockContentBrowserTest, DISABLED_CrashTest) {
-  IMMEDIATE_CRASH();
+  base::ImmediateCrash();
 }
 
 // This is disabled due to flakiness: https://crbug.com/1086372
@@ -241,31 +240,30 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, MAYBE_RunMockTests) {
   base::GetAppOutputAndError(command_line, &output);
 
   // Validate the resulting JSON file is the expected output.
-  absl::optional<base::Value> root =
+  absl::optional<base::Value::Dict> root =
       base::test_launcher_utils::ReadSummary(path);
   ASSERT_TRUE(root);
 
-  base::Value* val = root->FindDictKey("test_locations");
-  ASSERT_TRUE(val);
-  EXPECT_EQ(3u, val->DictSize());
+  base::Value::Dict* dict = root->FindDict("test_locations");
+  ASSERT_TRUE(dict);
+  EXPECT_EQ(3u, dict->size());
   EXPECT_TRUE(base::test_launcher_utils::ValidateTestLocations(
-      val, "MockContentBrowserTest"));
+      *dict, "MockContentBrowserTest"));
 
-  val = root->FindListKey("per_iteration_data");
-  ASSERT_TRUE(val);
-  ASSERT_EQ(1u, val->GetListDeprecated().size());
+  base::Value::List* list = root->FindList("per_iteration_data");
+  ASSERT_TRUE(list);
+  ASSERT_EQ(1u, list->size());
 
-  base::Value* iteration_val = &(val->GetListDeprecated()[0]);
-  ASSERT_TRUE(iteration_val);
-  ASSERT_TRUE(iteration_val->is_dict());
-  EXPECT_EQ(3u, iteration_val->DictSize());
+  base::Value::Dict* iteration_dict = (*list)[0].GetIfDict();
+  ASSERT_TRUE(iteration_dict);
+  EXPECT_EQ(3u, iteration_dict->size());
   // We expect the result to be stripped of disabled prefix.
   EXPECT_TRUE(base::test_launcher_utils::ValidateTestResult(
-      iteration_val, "MockContentBrowserTest.PassTest", "SUCCESS", 0u));
+      *iteration_dict, "MockContentBrowserTest.PassTest", "SUCCESS", 0u));
   EXPECT_TRUE(base::test_launcher_utils::ValidateTestResult(
-      iteration_val, "MockContentBrowserTest.FailTest", "FAILURE", 1u));
+      *iteration_dict, "MockContentBrowserTest.FailTest", "FAILURE", 1u));
   EXPECT_TRUE(base::test_launcher_utils::ValidateTestResult(
-      iteration_val, "MockContentBrowserTest.CrashTest", "CRASH", 0u));
+      *iteration_dict, "MockContentBrowserTest.CrashTest", "CRASH", 0u));
 }
 
 #endif
@@ -324,14 +322,18 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTestSanityTest, SingleProcess) {
 
 namespace {
 
-const base::Feature kTestFeatureForBrowserTest1{
-    "TestFeatureForBrowserTest1", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kTestFeatureForBrowserTest2{
-    "TestFeatureForBrowserTest2", base::FEATURE_ENABLED_BY_DEFAULT};
-const base::Feature kTestFeatureForBrowserTest3{
-    "TestFeatureForBrowserTest3", base::FEATURE_DISABLED_BY_DEFAULT};
-const base::Feature kTestFeatureForBrowserTest4{
-    "TestFeatureForBrowserTest4", base::FEATURE_ENABLED_BY_DEFAULT};
+BASE_FEATURE(kTestFeatureForBrowserTest1,
+             "TestFeatureForBrowserTest1",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kTestFeatureForBrowserTest2,
+             "TestFeatureForBrowserTest2",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kTestFeatureForBrowserTest3,
+             "TestFeatureForBrowserTest3",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kTestFeatureForBrowserTest4,
+             "TestFeatureForBrowserTest4",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace
 
@@ -371,7 +373,7 @@ void CallbackChecker(bool* non_nested_task_ran) {
 
 IN_PROC_BROWSER_TEST_F(ContentBrowserTest, NonNestableTask) {
   bool non_nested_task_ran = false;
-  base::ThreadTaskRunnerHandle::Get()->PostNonNestableTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostNonNestableTask(
       FROM_HERE, base::BindOnce(&CallbackChecker, &non_nested_task_ran));
   content::RunAllPendingInMessageLoop();
   ASSERT_TRUE(non_nested_task_ran);
@@ -386,11 +388,19 @@ IN_PROC_BROWSER_TEST_F(ContentBrowserTest, RunTimeoutInstalled) {
   EXPECT_LT(run_timeout->timeout, TestTimeouts::test_launcher_timeout());
 
   static auto& static_on_timeout_cb = run_timeout->on_timeout;
+#if defined(__clang__) && defined(_MSC_VER)
+  EXPECT_FATAL_FAILURE(static_on_timeout_cb.Run(FROM_HERE),
+                       "RunLoop::Run() timed out. Timeout set at "
+                       // We don't test the line number but it would be present.
+                       "ProxyRunTestOnMainThreadLoop@content\\public\\test\\"
+                       "browser_test_base.cc:");
+#else
   EXPECT_FATAL_FAILURE(static_on_timeout_cb.Run(FROM_HERE),
                        "RunLoop::Run() timed out. Timeout set at "
                        // We don't test the line number but it would be present.
                        "ProxyRunTestOnMainThreadLoop@content/public/test/"
                        "browser_test_base.cc:");
+#endif
 }
 
 }  // namespace content

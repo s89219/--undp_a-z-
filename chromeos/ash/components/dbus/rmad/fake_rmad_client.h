@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,16 +30,26 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
   void SetRmaRequiredCallbackForSessionManager(
       base::OnceClosure session_manager_callback) override;
   void GetCurrentState(
-      DBusMethodCallback<rmad::GetStateReply> callback) override;
+      chromeos::DBusMethodCallback<rmad::GetStateReply> callback) override;
   void TransitionNextState(
       const rmad::RmadState& state,
-      DBusMethodCallback<rmad::GetStateReply> callback) override;
+      chromeos::DBusMethodCallback<rmad::GetStateReply> callback) override;
   void TransitionPreviousState(
-      DBusMethodCallback<rmad::GetStateReply> callback) override;
+      chromeos::DBusMethodCallback<rmad::GetStateReply> callback) override;
 
-  void AbortRma(DBusMethodCallback<rmad::AbortRmaReply> callback) override;
+  void AbortRma(
+      chromeos::DBusMethodCallback<rmad::AbortRmaReply> callback) override;
 
-  void GetLog(DBusMethodCallback<rmad::GetLogReply> callback) override;
+  void GetLog(
+      chromeos::DBusMethodCallback<rmad::GetLogReply> callback) override;
+
+  void SaveLog(
+      chromeos::DBusMethodCallback<rmad::SaveLogReply> callback) override;
+
+  void RecordBrowserActionMetric(
+      const rmad::RecordBrowserActionMetricRequest request,
+      chromeos::DBusMethodCallback<rmad::RecordBrowserActionMetricReply>
+          callback) override;
 
   void AddObserver(Observer* observer) override;
   void RemoveObserver(Observer* observer) override;
@@ -50,6 +60,8 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
 
   void SetAbortable(bool abortable);
   void SetGetLogReply(const std::string& log, rmad::RmadErrorCode error);
+  void SetSaveLogReply(const std::string& save_path, rmad::RmadErrorCode error);
+  void SetRecordBrowserActionMetricReply(rmad::RmadErrorCode error);
 
   void TriggerErrorObservation(rmad::RmadErrorCode error);
   void TriggerCalibrationProgressObservation(
@@ -64,6 +76,7 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
       rmad::ProvisionStatus::Error error);
   void TriggerHardwareWriteProtectionStateObservation(bool enabled);
   void TriggerPowerCableStateObservation(bool plugged_in);
+  void TriggerExternalDiskStateObservation(bool detected_);
   void TriggerHardwareVerificationResultObservation(
       bool is_compliant,
       const std::string& error_str);
@@ -84,6 +97,8 @@ class COMPONENT_EXPORT(RMAD) FakeRmadClient : public RmadClient {
   size_t state_index_;
   rmad::AbortRmaReply abort_rma_reply_;
   rmad::GetLogReply get_log_reply_;
+  rmad::SaveLogReply save_log_reply_;
+  rmad::RecordBrowserActionMetricReply record_browser_action_metric_reply_;
   base::ObserverList<Observer, /*check_empty=*/true, /*allow_reentrancy=*/false>
       observers_;
 };

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,13 +8,12 @@
 
 #include "ash/accelerators/accelerator_controller_impl.h"
 #include "ash/constants/ash_pref_names.h"
-#include "ash/frame/header_view.h"
 #include "ash/frame/wide_frame_view.h"
-#include "ash/public/cpp/style/color_provider.h"
 #include "ash/resources/vector_icons/vector_icons.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
 #include "ash/style/ash_color_provider.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/test_widget_builder.h"
 #include "ash/wm/desks/desks_util.h"
@@ -23,6 +22,7 @@
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_delegate.h"
+#include "ash/wm/window_util.h"
 #include "ash/wm/wm_event.h"
 #include "base/command_line.h"
 #include "base/containers/flat_set.h"
@@ -31,6 +31,7 @@
 #include "chromeos/ui/base/window_properties.h"
 #include "chromeos/ui/frame/caption_buttons/frame_caption_button_container_view.h"
 #include "chromeos/ui/frame/default_frame_header.h"
+#include "chromeos/ui/frame/header_view.h"
 #include "chromeos/ui/frame/immersive/immersive_fullscreen_controller.h"
 #include "chromeos/ui/frame/immersive/immersive_fullscreen_controller_test_api.h"
 #include "chromeos/ui/vector_icons/vector_icons.h"
@@ -40,6 +41,7 @@
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/test_accelerator_target.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/chromeos/styles/cros_tokens_color_mappings.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/test/draw_waiter_for_test.h"
 #include "ui/events/test/event_generator.h"
@@ -47,6 +49,7 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_unittest_util.h"
 #include "ui/gfx/vector_icon_types.h"
+#include "ui/views/test/views_test_utils.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 #include "ui/views/window/caption_button_layout_constants.h"
@@ -69,10 +72,7 @@ using ::chromeos::kTrackDefaultFrameColors;
 class NonClientFrameViewAshTestWidgetDelegate
     : public views::WidgetDelegateView {
  public:
-  NonClientFrameViewAshTestWidgetDelegate() : views::WidgetDelegateView() {
-    SetCanMaximize(true);
-    SetCanResize(true);
-  }
+  NonClientFrameViewAshTestWidgetDelegate() = default;
 
   NonClientFrameViewAshTestWidgetDelegate(
       const NonClientFrameViewAshTestWidgetDelegate&) = delete;
@@ -97,7 +97,7 @@ class NonClientFrameViewAshTestWidgetDelegate
     return non_client_frame_view_;
   }
 
-  HeaderView* header_view() const {
+  chromeos::HeaderView* header_view() const {
     return non_client_frame_view_->header_view_;
   }
 
@@ -319,7 +319,6 @@ TEST_F(NonClientFrameViewAshTest, FrameHiddenInTabletModeForMaximizedWindows) {
 TEST_F(NonClientFrameViewAshTest,
        FrameShownInTabletModeForNonMaximizedWindows) {
   auto* delegate = new NonClientFrameViewAshTestWidgetDelegate();
-  delegate->SetCanMaximize(false);
   std::unique_ptr<views::Widget> widget = CreateTestWidget(delegate);
 
   Shell::Get()->tablet_mode_controller()->SetEnabledForTest(true);
@@ -417,7 +416,7 @@ TEST_F(NonClientFrameViewAshTest, HeaderVisibilityInFullscreen) {
   std::unique_ptr<views::Widget> widget = CreateTestWidget(delegate);
   NonClientFrameViewAsh* non_client_frame_view =
       delegate->non_client_frame_view();
-  HeaderView* header_view = non_client_frame_view->GetHeaderView();
+  chromeos::HeaderView* header_view = non_client_frame_view->GetHeaderView();
   EXPECT_FALSE(header_view->in_immersive_mode());
   EXPECT_TRUE(header_view->GetVisible());
   widget->SetFullscreen(true);
@@ -511,7 +510,7 @@ TEST_F(NonClientFrameViewAshTest, BackButton) {
       delegate->non_client_frame_view();
   non_client_frame_view->SetCaptionButtonModel(std::move(model));
 
-  HeaderView* header_view = non_client_frame_view->GetHeaderView();
+  chromeos::HeaderView* header_view = non_client_frame_view->GetHeaderView();
   EXPECT_FALSE(header_view->GetBackButton());
   model_ptr->SetVisible(views::CAPTION_BUTTON_ICON_BACK, true);
   non_client_frame_view->SizeConstraintsChanged();
@@ -565,7 +564,7 @@ TEST_F(NonClientFrameViewAshTest, FrameVisibility) {
   EXPECT_EQ(client_bounds, widget->client_view()->GetLocalBounds().size());
 
   non_client_frame_view->SetFrameEnabled(false);
-  widget->GetRootView()->Layout();
+  views::test::RunScheduledLayout(widget->GetRootView());
   EXPECT_EQ(gfx::Size(200, 100),
             widget->client_view()->GetLocalBounds().size());
   EXPECT_FALSE(non_client_frame_view->GetFrameEnabled());
@@ -574,7 +573,7 @@ TEST_F(NonClientFrameViewAshTest, FrameVisibility) {
       non_client_frame_view->GetClientBoundsForWindowBounds(window_bounds));
 
   non_client_frame_view->SetFrameEnabled(true);
-  widget->GetRootView()->Layout();
+  views::test::RunScheduledLayout(widget->GetRootView());
   EXPECT_EQ(client_bounds, widget->client_view()->GetLocalBounds().size());
   EXPECT_TRUE(non_client_frame_view->GetFrameEnabled());
   EXPECT_EQ(32, delegate->GetNonClientFrameViewTopBorderHeight());
@@ -594,7 +593,7 @@ TEST_F(NonClientFrameViewAshTest, CustomButtonModel) {
       delegate->non_client_frame_view();
   non_client_frame_view->SetCaptionButtonModel(std::move(model));
 
-  HeaderView* header_view = non_client_frame_view->GetHeaderView();
+  chromeos::HeaderView* header_view = non_client_frame_view->GetHeaderView();
   FrameCaptionButtonContainerView::TestApi test_api(
       header_view->caption_button_container());
 
@@ -609,7 +608,7 @@ TEST_F(NonClientFrameViewAshTest, CustomButtonModel) {
   EXPECT_TRUE(test_api.close_button()->GetVisible());
 
   EXPECT_FALSE(test_api.minimize_button()->GetVisible());
-  EXPECT_TRUE(test_api.size_button()->GetVisible());
+  EXPECT_FALSE(test_api.size_button()->GetVisible());
   EXPECT_FALSE(test_api.menu_button()->GetVisible());
 
   // Back button
@@ -681,14 +680,14 @@ TEST_F(NonClientFrameViewAshTest, WideFrame) {
 
   NonClientFrameViewAsh* non_client_frame_view =
       delegate->non_client_frame_view();
-  HeaderView* header_view = non_client_frame_view->GetHeaderView();
+  chromeos::HeaderView* header_view = non_client_frame_view->GetHeaderView();
   widget->Maximize();
 
   std::unique_ptr<WideFrameView> wide_frame_view =
       std::make_unique<WideFrameView>(widget.get());
   wide_frame_view->GetWidget()->Show();
 
-  HeaderView* wide_header_view = wide_frame_view->header_view();
+  chromeos::HeaderView* wide_header_view = wide_frame_view->header_view();
   display::Screen* screen = display::Screen::GetScreen();
 
   const gfx::Rect work_area = screen->GetPrimaryDisplay().work_area();
@@ -761,7 +760,7 @@ TEST_F(NonClientFrameViewAshTest, WideFrameButton) {
   std::unique_ptr<WideFrameView> wide_frame_view =
       std::make_unique<WideFrameView>(widget.get());
   wide_frame_view->GetWidget()->Show();
-  HeaderView* header_view = wide_frame_view->header_view();
+  chromeos::HeaderView* header_view = wide_frame_view->header_view();
   FrameCaptionButtonContainerView::TestApi test_api(
       header_view->caption_button_container());
 
@@ -769,23 +768,50 @@ TEST_F(NonClientFrameViewAshTest, WideFrameButton) {
                test_api.size_button()->icon_definition_for_test()->name);
 
   widget->SetFullscreen(true);
-  header_view->Layout();
+  views::test::RunScheduledLayout(header_view);
   EXPECT_STREQ(views::kWindowControlRestoreIcon.name,
                test_api.size_button()->icon_definition_for_test()->name);
   {
     WMEvent event(WM_EVENT_PIN);
     WindowState::Get(widget->GetNativeWindow())->OnWMEvent(&event);
-    header_view->Layout();
+    views::test::RunScheduledLayout(header_view);
     EXPECT_STREQ(views::kWindowControlRestoreIcon.name,
                  test_api.size_button()->icon_definition_for_test()->name);
   }
   {
     WMEvent event(WM_EVENT_TRUSTED_PIN);
     WindowState::Get(widget->GetNativeWindow())->OnWMEvent(&event);
-    header_view->Layout();
+    views::test::RunScheduledLayout(header_view);
     EXPECT_STREQ(views::kWindowControlRestoreIcon.name,
                  test_api.size_button()->icon_definition_for_test()->name);
   }
+}
+
+TEST_F(NonClientFrameViewAshTest, MoveFullscreenWideFrameBetweenDisplay) {
+  UpdateDisplay("800x600, 1000x600");
+
+  auto* screen = display::Screen::GetScreen();
+  auto display_list = screen->GetAllDisplays();
+
+  auto* delegate = new NonClientFrameViewAshTestWidgetDelegate();
+  std::unique_ptr<views::Widget> widget =
+      CreateTestWidget(delegate, desks_util::GetActiveDeskContainerId(),
+                       gfx::Rect(100, 0, 400, 500));
+  widget->SetFullscreen(true);
+  std::unique_ptr<WideFrameView> wide_frame_view =
+      std::make_unique<WideFrameView>(widget.get());
+  wide_frame_view->GetWidget()->Show();
+  ASSERT_EQ(display_list[0].id(),
+            screen->GetDisplayNearestWindow(widget->GetNativeWindow()).id());
+  EXPECT_EQ(800,
+            wide_frame_view->GetWidget()->GetWindowBoundsInScreen().width());
+
+  window_util::MoveWindowToDisplay(widget->GetNativeWindow(),
+                                   display_list[1].id());
+  EXPECT_EQ(display_list[1].id(),
+            screen->GetDisplayNearestWindow(widget->GetNativeWindow()).id());
+  EXPECT_EQ(1000,
+            wide_frame_view->GetWidget()->GetWindowBoundsInScreen().width());
 }
 
 namespace {
@@ -926,7 +952,7 @@ TEST_P(NonClientFrameViewAshFrameColorTest, WideFrameInitialColor) {
 
   std::unique_ptr<WideFrameView> wide_frame_view =
       std::make_unique<WideFrameView>(widget.get());
-  HeaderView* wide_header_view = wide_frame_view->header_view();
+  chromeos::HeaderView* wide_header_view = wide_frame_view->header_view();
   DefaultFrameHeader* header = wide_header_view->GetFrameHeader();
   EXPECT_EQ(new_active_color, header->active_frame_color_for_testing());
   EXPECT_EQ(new_inactive_color, header->inactive_frame_color_for_testing());
@@ -937,20 +963,22 @@ TEST_P(NonClientFrameViewAshFrameColorTest, WideFrameInitialColor) {
 TEST_P(NonClientFrameViewAshFrameColorTest, DefaultFrameColorsDarkAndLight) {
   base::test::ScopedFeatureList scoped_feature_list(
       chromeos::features::kDarkLightMode);
-  auto* color_provider = AshColorProvider::Get();
-  color_provider->OnActiveUserPrefServiceChanged(
+  auto* dark_light_mode_controller = DarkLightModeControllerImpl::Get();
+  dark_light_mode_controller->OnActiveUserPrefServiceChanged(
       Shell::Get()->session_controller()->GetActivePrefService());
   ASSERT_TRUE(chromeos::features::IsDarkLightModeEnabled());
-  const bool initial_dark_mode_status = color_provider->IsDarkModeEnabled();
+  const bool initial_dark_mode_status =
+      dark_light_mode_controller->IsDarkModeEnabled();
 
   TestWidgetDelegate* delegate = new TestWidgetDelegate(GetParam());
   std::unique_ptr<views::Widget> widget = CreateTestWidget(delegate);
   aura::Window* window = widget->GetNativeWindow();
 
-  const SkColor initial_active_default =
-      color_provider->GetActiveDialogTitleBarColor();
-  const SkColor initial_inactive_default =
-      color_provider->GetInactiveDialogTitleBarColor();
+  auto* color_provider = delegate->non_client_frame_view()->GetColorProvider();
+  SkColor dialog_title_bar_color =
+      color_provider->GetColor(cros_tokens::kDialogTitleBarColor);
+  const SkColor initial_active_default = dialog_title_bar_color;
+  const SkColor initial_inactive_default = dialog_title_bar_color;
   SkColor active_color = window->GetProperty(kFrameActiveColorKey);
   SkColor inactive_color = window->GetProperty(kFrameInactiveColorKey);
 
@@ -958,12 +986,17 @@ TEST_P(NonClientFrameViewAshFrameColorTest, DefaultFrameColorsDarkAndLight) {
   EXPECT_EQ(initial_inactive_default, inactive_color);
 
   // Switch the color mode
-  color_provider->ToggleColorMode();
-  ASSERT_NE(initial_dark_mode_status, color_provider->IsDarkModeEnabled());
+  dark_light_mode_controller->ToggleColorMode();
+  ASSERT_NE(initial_dark_mode_status,
+            dark_light_mode_controller->IsDarkModeEnabled());
+  // Get the `color_provider` again as it might have changed because of the
+  // color mode change.
+  color_provider = delegate->non_client_frame_view()->GetColorProvider();
+  dialog_title_bar_color =
+      color_provider->GetColor(cros_tokens::kDialogTitleBarColor);
 
-  const SkColor active_default = color_provider->GetActiveDialogTitleBarColor();
-  const SkColor inactive_default =
-      color_provider->GetInactiveDialogTitleBarColor();
+  const SkColor active_default = dialog_title_bar_color;
+  const SkColor inactive_default = dialog_title_bar_color;
   active_color = window->GetProperty(kFrameActiveColorKey);
   inactive_color = window->GetProperty(kFrameInactiveColorKey);
 
@@ -979,11 +1012,12 @@ TEST_P(NonClientFrameViewAshFrameColorTest,
        CanSetPersistentFrameColorsDarkAndLight) {
   base::test::ScopedFeatureList scoped_feature_list(
       chromeos::features::kDarkLightMode);
-  auto* color_provider = AshColorProvider::Get();
-  color_provider->OnActiveUserPrefServiceChanged(
+  auto* dark_light_mode_controller = DarkLightModeControllerImpl::Get();
+  dark_light_mode_controller->OnActiveUserPrefServiceChanged(
       Shell::Get()->session_controller()->GetActivePrefService());
   ASSERT_TRUE(chromeos::features::IsDarkLightModeEnabled());
-  const bool initial_dark_mode_status = color_provider->IsDarkModeEnabled();
+  const bool initial_dark_mode_status =
+      dark_light_mode_controller->IsDarkModeEnabled();
 
   TestWidgetDelegate* delegate = new TestWidgetDelegate(GetParam());
   std::unique_ptr<views::Widget> widget = CreateTestWidget(delegate);
@@ -1003,8 +1037,9 @@ TEST_P(NonClientFrameViewAshFrameColorTest,
   EXPECT_EQ(new_inactive_color, window->GetProperty(kFrameInactiveColorKey));
 
   // Switch the color mode.
-  color_provider->ToggleColorMode();
-  ASSERT_NE(initial_dark_mode_status, color_provider->IsDarkModeEnabled());
+  dark_light_mode_controller->ToggleColorMode();
+  ASSERT_NE(initial_dark_mode_status,
+            dark_light_mode_controller->IsDarkModeEnabled());
 
   EXPECT_EQ(new_active_color, window->GetProperty(kFrameActiveColorKey));
   EXPECT_EQ(new_inactive_color, window->GetProperty(kFrameInactiveColorKey));

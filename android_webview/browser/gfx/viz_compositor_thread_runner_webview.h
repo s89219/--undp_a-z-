@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,10 +63,7 @@ class VizCompositorThreadRunnerWebView : public viz::VizCompositorThreadRunner {
   bool CreateHintSessionFactory(
       base::flat_set<base::PlatformThreadId> thread_ids,
       base::RepeatingClosure* wake_up_closure) override;
-  void CreateFrameSinkManager(
-      viz::mojom::FrameSinkManagerParamsPtr params) override;
   void CreateFrameSinkManager(viz::mojom::FrameSinkManagerParamsPtr params,
-                              gpu::CommandBufferTaskExecutor* task_executor,
                               viz::GpuServiceImpl* gpu_service) override;
 
  private:

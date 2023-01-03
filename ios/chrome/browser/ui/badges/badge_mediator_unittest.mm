@@ -1,37 +1,37 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/badges/badge_mediator.h"
 
-#include <map>
+#import <map>
 
-#include "base/strings/utf_string_conversions.h"
-#include "base/test/task_environment.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#include "ios/chrome/browser/infobars/badge_state.h"
-#include "ios/chrome/browser/infobars/infobar_badge_tab_helper.h"
-#include "ios/chrome/browser/infobars/infobar_badge_tab_helper_delegate.h"
-#include "ios/chrome/browser/infobars/infobar_ios.h"
-#include "ios/chrome/browser/infobars/infobar_manager_impl.h"
+#import "base/strings/utf_string_conversions.h"
+#import "base/test/task_environment.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/infobars/badge_state.h"
+#import "ios/chrome/browser/infobars/infobar_badge_tab_helper.h"
+#import "ios/chrome/browser/infobars/infobar_badge_tab_helper_delegate.h"
+#import "ios/chrome/browser/infobars/infobar_ios.h"
+#import "ios/chrome/browser/infobars/infobar_manager_impl.h"
 #import "ios/chrome/browser/infobars/test/fake_infobar_ios.h"
 #import "ios/chrome/browser/main/test_browser.h"
 #import "ios/chrome/browser/overlays/public/common/infobars/infobar_overlay_request_config.h"
 #import "ios/chrome/browser/overlays/public/overlay_presenter.h"
 #import "ios/chrome/browser/overlays/public/overlay_request.h"
 #import "ios/chrome/browser/overlays/public/overlay_request_queue.h"
-#include "ios/chrome/browser/overlays/test/fake_overlay_presentation_context.h"
+#import "ios/chrome/browser/overlays/test/fake_overlay_presentation_context.h"
 #import "ios/chrome/browser/ui/badges/badge_consumer.h"
 #import "ios/chrome/browser/ui/badges/badge_item.h"
 #import "ios/chrome/browser/ui/badges/badge_type.h"
-#include "ios/chrome/browser/ui/badges/badge_type_util.h"
+#import "ios/chrome/browser/ui/badges/badge_type_util.h"
 #import "ios/chrome/browser/ui/infobars/test_infobar_delegate.h"
 #import "ios/chrome/browser/web_state_list/web_state_list.h"
 #import "ios/chrome/browser/web_state_list/web_state_opener.h"
 #import "ios/web/public/test/fakes/fake_navigation_manager.h"
 #import "ios/web/public/test/fakes/fake_web_state.h"
 #import "ios/web/public/web_state_user_data.h"
-#include "testing/gtest/include/gtest/gtest.h"
+#import "testing/gtest/include/gtest/gtest.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -95,7 +95,7 @@ class BadgeMediatorTest : public testing::TestWithParam<TestParam> {
     [badge_mediator_ disconnect];
   }
 
-  // Inserts a new WebState to the WebStateList at |index| and activates it.
+  // Inserts a new WebState to the WebStateList at `index` and activates it.
   void InsertActivatedWebState(int index) {
     auto web_state = std::make_unique<web::FakeWebState>();
     web_state->SetNavigationManager(
@@ -108,8 +108,8 @@ class BadgeMediatorTest : public testing::TestWithParam<TestParam> {
                                      WebStateOpener());
   }
 
-  // Adds an Infobar of |type| to the InfoBarManager and returns the infobar.
-  // Pass in different |message_text| to avoid replacing existing infobar.
+  // Adds an Infobar of `type` to the InfoBarManager and returns the infobar.
+  // Pass in different `message_text` to avoid replacing existing infobar.
   InfoBarIOS* AddInfobar(InfobarType type, std::u16string message_text) {
     std::unique_ptr<InfoBarIOS> added_infobar =
         std::make_unique<FakeInfobarIOS>(type, message_text);
@@ -118,7 +118,7 @@ class BadgeMediatorTest : public testing::TestWithParam<TestParam> {
     return infobar;
   }
 
-  // Removes |infobar| from its manager.
+  // Removes `infobar` from its manager.
   void RemoveInfobar(InfoBarIOS* infobar) {
     infobar_manager()->RemoveInfoBar(infobar);
   }
@@ -289,7 +289,7 @@ TEST_P(BadgeMediatorTest, BadgeMediatorTestCloseLastTab) {
 // Tests that the badge mediator successfully updates the InfobarBadgeTabHelper
 // for the active WebState for infobar banner presentation and dismissal.
 TEST_P(BadgeMediatorTest, InfobarBannerOverlayObserving) {
-  // Add an active WebState at index 0 and add an InfoBar with |type| to the
+  // Add an active WebState at index 0 and add an InfoBar with `type` to the
   // WebState's InfoBarManager, checking that the badge item has been created
   // with the default BadgeState.
   InsertActivatedWebState(/*index=*/0);

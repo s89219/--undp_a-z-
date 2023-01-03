@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "cc/paint/display_item_list.h"
 #include "cc/paint/paint_filter.h"
 #include "cc/paint/paint_flags.h"
-#include "cc/paint/paint_op_buffer.h"
+#include "cc/paint/paint_op_buffer_iterator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/graphics/paint/clip_paint_property_node.h"
@@ -42,8 +42,8 @@ void PrintTo(const Vector<cc::PaintOpType>& ops, std::ostream* os) {
 
 void PrintTo(const cc::PaintRecord& record, std::ostream* os) {
   Vector<cc::PaintOpType> ops;
-  for (const auto* op : cc::PaintOpBuffer::Iterator(&record))
-    ops.push_back(op->GetType());
+  for (const cc::PaintOp& op : record)
+    ops.push_back(op.GetType());
   PrintTo(ops, os);
 }
 
@@ -62,25 +62,28 @@ INSTANTIATE_PAINT_TEST_SUITE_P(PaintChunksToCcLayerTest);
 
 // Matches PaintOpTypes in a PaintRecord.
 class PaintRecordMatcher
-    : public testing::MatcherInterface<const cc::PaintOpBuffer&> {
+    : public testing::MatcherInterface<const cc::PaintRecord&> {
  public:
-  static testing::Matcher<const cc::PaintOpBuffer&> Make(
+  static testing::Matcher<const cc::PaintRecord&> Make(
       std::initializer_list<cc::PaintOpType> args) {
     return testing::MakeMatcher(new PaintRecordMatcher(args));
   }
   PaintRecordMatcher(std::initializer_list<cc::PaintOpType> args)
       : expected_ops_(args) {}
 
-  bool MatchAndExplain(const cc::PaintOpBuffer& buffer,
+  bool MatchAndExplain(const cc::PaintRecord& record,
                        testing::MatchResultListener* listener) const override {
     size_t index = 0;
-    for (cc::PaintOpBuffer::Iterator it(&buffer); it; ++it, ++index) {
-      auto op = (*it)->GetType();
-      if (index < expected_ops_.size() && expected_ops_[index] == op)
+    for (const cc::PaintOp& op : record) {
+      cc::PaintOpType op_type = op.GetType();
+      if (index < expected_ops_.size() && expected_ops_[index] == op_type) {
+        ++index;
         continue;
+      }
 
       if (listener->IsInterested()) {
-        *listener << "unexpected op " << op << " at index " << index << ",";
+        *listener << "unexpected op " << op_type << " at index " << index
+                  << ",";
         if (index < expected_ops_.size())
           *listener << " expecting " << expected_ops_[index] << ".";
         else
@@ -124,7 +127,7 @@ class PaintRecordMatcher
   do {                                                                       \
     const auto* concat = (op_buffer).GetOpAtForTesting<cc::ConcatOp>(index); \
     ASSERT_NE(nullptr, concat);                                              \
-    EXPECT_EQ((transform).ToSkM44(), concat->matrix);                        \
+    EXPECT_EQ(gfx::TransformToSkM44(transform), concat->matrix);             \
   } while (false)
 
 #define EXPECT_TRANSLATE(x, y, op_buffer, index)               \
@@ -172,16 +175,16 @@ class TestChunks {
       const EffectPaintPropertyNodeOrAlias& e,
       const gfx::Rect& bounds = gfx::Rect(0, 0, 100, 100),
       const absl::optional<gfx::Rect>& drawable_bounds = absl::nullopt) {
-    auto record = sk_make_sp<PaintRecord>();
-    record->push<cc::DrawRectOp>(
+    cc::PaintOpBuffer buffer;
+    buffer.push<cc::DrawRectOp>(
         gfx::RectToSkRect(drawable_bounds ? *drawable_bounds : bounds),
         cc::PaintFlags());
-    AddChunk(std::move(record), t, c, e, bounds, drawable_bounds);
+    AddChunk(buffer.ReleaseAsRecord(), t, c, e, bounds, drawable_bounds);
   }
 
   // Add a paint chunk with a given paint record and property nodes.
   void AddChunk(
-      sk_sp<PaintRecord> record,
+      PaintRecord record,
       const TransformPaintPropertyNodeOrAlias& t,
       const ClipPaintPropertyNodeOrAlias& c,
       const EffectPaintPropertyNodeOrAlias& e,
@@ -230,18 +233,15 @@ TEST_P(PaintChunksToCcLayerTest, EffectGroupingSimple) {
   chunks.AddChunk(t0(), c0(), *e1, gfx::Rect(0, 0, 50, 50));
   chunks.AddChunk(t0(), c0(), *e1, gfx::Rect(20, 20, 70, 70));
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,  // <e1>
                                 cc::PaintOpType::DrawRecord,      // <p0/>
                                 cc::PaintOpType::DrawRecord,      // <p1/>
                                 cc::PaintOpType::Restore}));      // </e1>
-  EXPECT_EFFECT_BOUNDS(0, 0, 90, 90, *output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 90, 90, output, 0);
 }
 
 TEST_P(PaintChunksToCcLayerTest, EffectGroupingNested) {
@@ -253,13 +253,10 @@ TEST_P(PaintChunksToCcLayerTest, EffectGroupingNested) {
   chunks.AddChunk(t0(), c0(), *e2);
   chunks.AddChunk(t0(), c0(), *e3, gfx::Rect(111, 222, 333, 444));
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,  // <e1>
                                 cc::PaintOpType::SaveLayerAlpha,  // <e2>
                                 cc::PaintOpType::DrawRecord,      // <p0/>
@@ -268,14 +265,14 @@ TEST_P(PaintChunksToCcLayerTest, EffectGroupingNested) {
                                 cc::PaintOpType::DrawRecord,      // <p1/>
                                 cc::PaintOpType::Restore,         // </e3>
                                 cc::PaintOpType::Restore}));      // </e1>
-  EXPECT_EFFECT_BOUNDS(0, 0, 444, 666, *output, 0);
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 1);
-  EXPECT_EFFECT_BOUNDS(111, 222, 333, 444, *output, 4);
+  EXPECT_EFFECT_BOUNDS(0, 0, 444, 666, output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 1);
+  EXPECT_EFFECT_BOUNDS(111, 222, 333, 444, output, 4);
 }
 
 TEST_P(PaintChunksToCcLayerTest, EffectFilterGroupingNestedWithTransforms) {
   // This test verifies nested effects with transforms are grouped properly.
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto t2 = Create2DTranslation(*t1, -50, -50);
   auto e1 = CreateOpacityEffect(e0(), *t2, &c0(), 0.5);
 
@@ -286,13 +283,10 @@ TEST_P(PaintChunksToCcLayerTest, EffectFilterGroupingNestedWithTransforms) {
   chunks.AddChunk(*t2, c0(), *e1, gfx::Rect(0, 0, 50, 50));
   chunks.AddChunk(*t1, c0(), *e2, gfx::Rect(20, 20, 70, 70));
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make(
           {cc::PaintOpType::Save, cc::PaintOpType::Concat,     // <t1*t2>
            cc::PaintOpType::SaveLayerAlpha,                    // <e1>
@@ -304,14 +298,14 @@ TEST_P(PaintChunksToCcLayerTest, EffectFilterGroupingNestedWithTransforms) {
            cc::PaintOpType::Restore,                           // </e2>
            cc::PaintOpType::Restore,                           // </e1>
            cc::PaintOpType::Restore}));                        // </t1*t2>
-  EXPECT_TRANSFORM_MATRIX(t1->Matrix() * t2->SlowMatrix(), *output, 1);
+  EXPECT_TRANSFORM_MATRIX(t1->Matrix() * t2->Matrix(), output, 1);
   // chunk1.bounds + e2(t2^-1(chunk2.bounds))
-  EXPECT_EFFECT_BOUNDS(0, 0, 155, 155, *output, 2);
+  EXPECT_EFFECT_BOUNDS(0, 0, 155, 155, output, 2);
   // t2^-1(chunk2.bounds)
-  EXPECT_EFFECT_BOUNDS(70, 70, 70, 70, *output, 4);
+  EXPECT_EFFECT_BOUNDS(70, 70, 70, 70, output, 4);
   // t2^1
-  EXPECT_TRANSLATE(-t2->Translation2D().x(), -t2->Translation2D().y(), *output,
-                   6);
+  EXPECT_TRANSLATE(-t2->Get2dTranslation().x(), -t2->Get2dTranslation().y(),
+                   output, 6);
 }
 
 TEST_P(PaintChunksToCcLayerTest, InterleavedClipEffect) {
@@ -333,38 +327,35 @@ TEST_P(PaintChunksToCcLayerTest, InterleavedClipEffect) {
   chunks.AddChunk(t0(), *c3, *e1, gfx::Rect(20, 20, 70, 70));
   chunks.AddChunk(t0(), *c4, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
-  EXPECT_THAT(*output, PaintRecordMatcher::Make(
-                           {cc::PaintOpType::Save,
-                            cc::PaintOpType::ClipRect,    // <c1+c2>
-                            cc::PaintOpType::DrawRecord,  // <p0/>
-                            cc::PaintOpType::Save,
-                            cc::PaintOpType::ClipRect,        // <c3>
-                            cc::PaintOpType::DrawRecord,      // <p1/>
-                            cc::PaintOpType::Restore,         // </c3>
-                            cc::PaintOpType::SaveLayerAlpha,  // <e1>
-                            cc::PaintOpType::Save,
-                            cc::PaintOpType::ClipRect,        // <c3+c4>
-                            cc::PaintOpType::SaveLayerAlpha,  // <e2>
-                            cc::PaintOpType::DrawRecord,      // <p2/>
-                            cc::PaintOpType::Restore,         // </e2>
-                            cc::PaintOpType::Restore,         // </c3+c4>
-                            cc::PaintOpType::Save,
-                            cc::PaintOpType::ClipRect,    // <c3>
-                            cc::PaintOpType::DrawRecord,  // <p3/>
-                            cc::PaintOpType::Restore,     // </c3>
-                            cc::PaintOpType::Restore,     // </e1>
-                            cc::PaintOpType::Save,
-                            cc::PaintOpType::ClipRect,    // <c3+c4>
-                            cc::PaintOpType::DrawRecord,  // <p4/>
-                            cc::PaintOpType::Restore,     // </c3+c4>
-                            cc::PaintOpType::Restore}));  // </c1+c2>
-  EXPECT_EFFECT_BOUNDS(0, 0, 90, 90, *output, 7);
-  EXPECT_EFFECT_BOUNDS(0, 0, 50, 50, *output, 10);
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  EXPECT_THAT(output, PaintRecordMatcher::Make(
+                          {cc::PaintOpType::Save,
+                           cc::PaintOpType::ClipRect,    // <c1+c2>
+                           cc::PaintOpType::DrawRecord,  // <p0/>
+                           cc::PaintOpType::Save,
+                           cc::PaintOpType::ClipRect,        // <c3>
+                           cc::PaintOpType::DrawRecord,      // <p1/>
+                           cc::PaintOpType::Restore,         // </c3>
+                           cc::PaintOpType::SaveLayerAlpha,  // <e1>
+                           cc::PaintOpType::Save,
+                           cc::PaintOpType::ClipRect,        // <c3+c4>
+                           cc::PaintOpType::SaveLayerAlpha,  // <e2>
+                           cc::PaintOpType::DrawRecord,      // <p2/>
+                           cc::PaintOpType::Restore,         // </e2>
+                           cc::PaintOpType::Restore,         // </c3+c4>
+                           cc::PaintOpType::Save,
+                           cc::PaintOpType::ClipRect,    // <c3>
+                           cc::PaintOpType::DrawRecord,  // <p3/>
+                           cc::PaintOpType::Restore,     // </c3>
+                           cc::PaintOpType::Restore,     // </e1>
+                           cc::PaintOpType::Save,
+                           cc::PaintOpType::ClipRect,    // <c3+c4>
+                           cc::PaintOpType::DrawRecord,  // <p4/>
+                           cc::PaintOpType::Restore,     // </c3+c4>
+                           cc::PaintOpType::Restore}));  // </c1+c2>
+  EXPECT_EFFECT_BOUNDS(0, 0, 90, 90, output, 7);
+  EXPECT_EFFECT_BOUNDS(0, 0, 50, 50, output, 10);
 }
 
 TEST_P(PaintChunksToCcLayerTest, ClipSpaceInversion) {
@@ -373,17 +364,14 @@ TEST_P(PaintChunksToCcLayerTest, ClipSpaceInversion) {
   // <div style="position:absolute; clip:rect(...)">
   //     <div style="position:fixed;">Clipped but not scroll along.</div>
   // </div>
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto c1 = CreateClip(c0(), *t1, FloatRoundedRect(0.f, 0.f, 1.f, 1.f));
   TestChunks chunks;
   chunks.AddChunk(t0(), *c1, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
-  EXPECT_THAT(*output,
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1
                    cc::PaintOpType::ClipRect,                       //  c1>
@@ -401,18 +389,15 @@ TEST_P(PaintChunksToCcLayerTest, OpacityEffectSpaceInversion) {
   //     <div style="position:absolute;">Transparent but not scroll along.</div>
   //   </div>
   // </div>
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto e1 = CreateOpacityEffect(e0(), *t1, &c0(), 0.5);
   TestChunks chunks;
   chunks.AddChunk(t0(), c0(), *e1);
   chunks.AddChunk(*t1, c0(), *e1);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
-  EXPECT_THAT(*output,
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1>
                    cc::PaintOpType::SaveLayerAlpha,                 // <e1>
@@ -422,9 +407,9 @@ TEST_P(PaintChunksToCcLayerTest, OpacityEffectSpaceInversion) {
                    cc::PaintOpType::DrawRecord,                     // <p1/>
                    cc::PaintOpType::Restore,                        // </e1>
                    cc::PaintOpType::Restore}));                     // </t1>
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 2);
-  EXPECT_TRANSFORM_MATRIX(t1->Matrix(), *output, 1);
-  EXPECT_TRANSFORM_MATRIX(t1->Matrix().Inverse(), *output, 4);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 2);
+  EXPECT_TRANSFORM_MATRIX(t1->Matrix(), output, 1);
+  EXPECT_TRANSFORM_MATRIX(t1->Matrix().GetCheckedInverse(), output, 4);
 }
 
 TEST_P(PaintChunksToCcLayerTest, FilterEffectSpaceInversion) {
@@ -435,7 +420,7 @@ TEST_P(PaintChunksToCcLayerTest, FilterEffectSpaceInversion) {
   //     <div style="position:absolute;">Filtered but not scroll along.</div>
   //   </div>
   // </div>
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   CompositorFilterOperations filter;
   filter.AppendBlurFilter(5);
   auto e1 = CreateFilterEffect(e0(), *t1, &c0(), filter);
@@ -443,56 +428,47 @@ TEST_P(PaintChunksToCcLayerTest, FilterEffectSpaceInversion) {
   chunks.AddChunk(t0(), c0(), *e1);
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
-  EXPECT_THAT(
-      *output,
-      PaintRecordMatcher::Make(
-          {cc::PaintOpType::Save, cc::PaintOpType::Concat,     // <t1>
-           cc::PaintOpType::SaveLayer,                         // <e1>
-           cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1^-1>
-           cc::PaintOpType::DrawRecord,                     // <p0/>
-           cc::PaintOpType::Restore,                        // </t1^-1>
-           cc::PaintOpType::Restore,                        // </e1>
-           cc::PaintOpType::Restore}));                     // </t1>
-  EXPECT_TRANSFORM_MATRIX(t1->Matrix(), *output, 1);
-  EXPECT_EFFECT_BOUNDS(0, 0, 50, 50, *output, 2);
-  EXPECT_TRANSFORM_MATRIX(t1->Matrix().Inverse(), *output, 4);
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  EXPECT_THAT(output,
+              PaintRecordMatcher::Make(
+                  {cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1>
+                   cc::PaintOpType::SaveLayer,                      // <e1>
+                   cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1^-1>
+                   cc::PaintOpType::DrawRecord,                     // <p0/>
+                   cc::PaintOpType::Restore,                        // </t1^-1>
+                   cc::PaintOpType::Restore,                        // </e1>
+                   cc::PaintOpType::Restore}));                     // </t1>
+  EXPECT_TRANSFORM_MATRIX(t1->Matrix(), output, 1);
+  EXPECT_EFFECT_BOUNDS(0, 0, 50, 50, output, 2);
+  EXPECT_TRANSFORM_MATRIX(t1->Matrix().GetCheckedInverse(), output, 4);
 }
 
 TEST_P(PaintChunksToCcLayerTest, NonRootLayerSimple) {
   // This test verifies a layer with composited property state does not
   // apply properties again internally.
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto c1 = CreateClip(c0(), t0(), FloatRoundedRect(0.f, 0.f, 1.f, 1.f));
   auto e1 = CreateOpacityEffect(e0(), 0.5f);
   TestChunks chunks;
   chunks.AddChunk(*t1, *c1, *e1);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState(*t1, *c1, *e1), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({cc::PaintOpType::DrawRecord}));
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState(*t1, *c1, *e1), gfx::Vector2dF());
+  EXPECT_THAT(output, PaintRecordMatcher::Make({cc::PaintOpType::DrawRecord}));
 }
 
 TEST_P(PaintChunksToCcLayerTest, NonRootLayerTransformEscape) {
   // This test verifies chunks that have a shallower transform state than the
   // layer can still be painted.
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto c1 = CreateClip(c0(), t0(), FloatRoundedRect(0.f, 0.f, 1.f, 1.f));
   auto e1 = CreateOpacityEffect(e0(), 0.5f);
   TestChunks chunks;
   chunks.AddChunk(t0(), *c1, *e1);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState(*t1, *c1, *e1), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
-  EXPECT_THAT(*output,
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState(*t1, *c1, *e1), gfx::Vector2dF());
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1^-1>
                    cc::PaintOpType::DrawRecord,                     // <p0/>
@@ -508,20 +484,17 @@ TEST_P(PaintChunksToCcLayerTest, EffectWithNoOutputClip) {
   TestChunks chunks;
   chunks.AddChunk(t0(), *c2, *e1);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState(t0(), *c1, e0()), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState(t0(), *c1, e0()), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,  // <e1>
                                 cc::PaintOpType::Save,
                                 cc::PaintOpType::ClipRect,    // <c2>
                                 cc::PaintOpType::DrawRecord,  // <p0/>
                                 cc::PaintOpType::Restore,     // </c2>
                                 cc::PaintOpType::Restore}));  // </e1>
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 0);
 }
 
 TEST_P(PaintChunksToCcLayerTest,
@@ -533,13 +506,10 @@ TEST_P(PaintChunksToCcLayerTest,
   TestChunks chunks;
   chunks.AddChunk(t0(), *c1, *e2);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,  // <e1>
                                 cc::PaintOpType::SaveLayerAlpha,  // <e2>
                                 cc::PaintOpType::Save,
@@ -548,8 +518,8 @@ TEST_P(PaintChunksToCcLayerTest,
                                 cc::PaintOpType::Restore,     // </c1>
                                 cc::PaintOpType::Restore,     // </e2>
                                 cc::PaintOpType::Restore}));  // </e1>
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 0);
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 1);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 1);
 }
 
 TEST_P(PaintChunksToCcLayerTest,
@@ -561,20 +531,17 @@ TEST_P(PaintChunksToCcLayerTest,
   TestChunks chunks;
   chunks.AddChunk(t0(), *c1, *e2);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState(t0(), c0(), *e1), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState(t0(), c0(), *e1), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,  // <e2>
                                 cc::PaintOpType::Save,
                                 cc::PaintOpType::ClipRect,    // <c1>
                                 cc::PaintOpType::DrawRecord,  // <p0/>
                                 cc::PaintOpType::Restore,     // </c1>
                                 cc::PaintOpType::Restore}));  // </e2>
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 0);
 }
 
 TEST_P(PaintChunksToCcLayerTest,
@@ -586,35 +553,30 @@ TEST_P(PaintChunksToCcLayerTest,
   TestChunks chunks;
   chunks.AddChunk(t0(), *c1, *e2);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState(t0(), *c1, *e1), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState(t0(), *c1, *e1), gfx::Vector2dF());
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,  // <e2>
                                 cc::PaintOpType::DrawRecord,      // <p0/>
                                 cc::PaintOpType::Restore}));      // </e2>
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 0);
 }
 
 TEST_P(PaintChunksToCcLayerTest, VisualRect) {
-  auto layer_transform =
-      CreateTransform(t0(), TransformationMatrix().Scale(20));
+  auto layer_transform = CreateTransform(t0(), MakeScaleMatrix(20));
   auto chunk_transform = Create2DTranslation(*layer_transform, 50, 100);
 
   TestChunks chunks;
   chunks.AddChunk(*chunk_transform, c0(), e0());
 
-  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>(
-      cc::DisplayItemList::kTopLevelDisplayItemList);
+  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>();
   PaintChunksToCcLayer::ConvertInto(
       chunks.Build(), PropertyTreeState(*layer_transform, c0(), e0()),
-      gfx::Vector2dF(100, 200), *cc_list);
+      gfx::Vector2dF(100, 200), nullptr, *cc_list);
   EXPECT_EQ(gfx::Rect(-50, -100, 100, 100), cc_list->VisualRectForTesting(4));
 
-  EXPECT_THAT(*cc_list->ReleaseAsRecord(),
+  EXPECT_THAT(cc_list->FinalizeAndReleaseAsRecord(),
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::Save,        //
                    cc::PaintOpType::Translate,   // <layer_offset>
@@ -630,13 +592,11 @@ TEST_P(PaintChunksToCcLayerTest, NoncompositedClipPath) {
   TestChunks chunks;
   chunks.AddChunk(t0(), *c1, e0());
 
-  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>(
-      cc::DisplayItemList::kTopLevelDisplayItemList);
-  PaintChunksToCcLayer::ConvertInto(chunks.Build(), PropertyTreeState::Root(),
-                                    gfx::Vector2dF(), *cc_list);
+  auto output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
   EXPECT_THAT(
-      *cc_list->ReleaseAsRecord(),
+      output,
       PaintRecordMatcher::Make({cc::PaintOpType::Save,        //
                                 cc::PaintOpType::ClipRect,    //
                                 cc::PaintOpType::ClipPath,    // <clip_path>
@@ -650,27 +610,24 @@ TEST_P(PaintChunksToCcLayerTest, EmptyClipsAreElided) {
   auto c2 = CreateClip(c0(), t0(), FloatRoundedRect(0.f, 0.f, 1.f, 1.f));
 
   TestChunks chunks;
-  chunks.AddChunk(nullptr, t0(), *c1, e0());
-  chunks.AddChunk(nullptr, t0(), *c1c2, e0());
-  chunks.AddChunk(nullptr, t0(), *c1c2, e0());
-  chunks.AddChunk(nullptr, t0(), *c1c2, e0());
-  chunks.AddChunk(nullptr, t0(), *c1, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1c2, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1c2, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1c2, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1, e0());
   // D1
   chunks.AddChunk(t0(), *c2, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
   // Note that c1 and c1c2 are elided.
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({
-                           cc::PaintOpType::Save,        //
-                           cc::PaintOpType::ClipRect,    // <c2>
-                           cc::PaintOpType::DrawRecord,  // D1
-                           cc::PaintOpType::Restore,     // </c2>
-                       }));
+  EXPECT_THAT(output, PaintRecordMatcher::Make({
+                          cc::PaintOpType::Save,        //
+                          cc::PaintOpType::ClipRect,    // <c2>
+                          cc::PaintOpType::DrawRecord,  // D1
+                          cc::PaintOpType::Restore,     // </c2>
+                      }));
 }
 
 TEST_P(PaintChunksToCcLayerTest, NonEmptyClipsAreStored) {
@@ -679,22 +636,19 @@ TEST_P(PaintChunksToCcLayerTest, NonEmptyClipsAreStored) {
   auto c2 = CreateClip(c0(), t0(), FloatRoundedRect(0.f, 0.f, 1.f, 1.f));
 
   TestChunks chunks;
-  chunks.AddChunk(nullptr, t0(), *c1, e0());
-  chunks.AddChunk(nullptr, t0(), *c1c2, e0());
-  chunks.AddChunk(nullptr, t0(), *c1c2, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1c2, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1c2, e0());
   // D1
   chunks.AddChunk(t0(), *c1c2, e0());
-  chunks.AddChunk(nullptr, t0(), *c1, e0());
+  chunks.AddChunk(PaintRecord(), t0(), *c1, e0());
   // D2
   chunks.AddChunk(t0(), *c2, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make({
                   cc::PaintOpType::Save, cc::PaintOpType::ClipRect,  // <c1+c2>
                   cc::PaintOpType::DrawRecord,                       // D1
@@ -709,25 +663,22 @@ TEST_P(PaintChunksToCcLayerTest, EmptyEffectsAreStored) {
   auto e1 = CreateOpacityEffect(e0(), 0.5);
 
   TestChunks chunks;
-  chunks.AddChunk(nullptr, t0(), c0(), e0());
-  chunks.AddChunk(nullptr, t0(), c0(), *e1);
+  chunks.AddChunk(PaintRecord(), t0(), c0(), e0());
+  chunks.AddChunk(PaintRecord(), t0(), c0(), *e1);
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({
-                           cc::PaintOpType::SaveLayerAlpha,  // <e1>
-                           cc::PaintOpType::Restore,         // </e1>
-                       }));
-  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, *output, 0);
+  EXPECT_THAT(output, PaintRecordMatcher::Make({
+                          cc::PaintOpType::SaveLayerAlpha,  // <e1>
+                          cc::PaintOpType::Restore,         // </e1>
+                      }));
+  EXPECT_EFFECT_BOUNDS(0, 0, 100, 100, output, 0);
 }
 
 TEST_P(PaintChunksToCcLayerTest, CombineClips) {
   FloatRoundedRect clip_rect(0, 0, 100, 100);
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto c1 = CreateClip(c0(), t0(), clip_rect);
   auto c2 = CreateClip(*c1, t0(), clip_rect);
   auto c3 = CreateClip(*c2, *t1, clip_rect);
@@ -739,14 +690,11 @@ TEST_P(PaintChunksToCcLayerTest, CombineClips) {
   chunks.AddChunk(*t1, *c6, e0());
   chunks.AddChunk(*t1, *c3, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make(
           {cc::PaintOpType::Save, cc::PaintOpType::ClipRect,      // <c1+c2>
            cc::PaintOpType::Save, cc::PaintOpType::Concat,        // <t1
@@ -765,10 +713,8 @@ TEST_P(PaintChunksToCcLayerTest, CombineClips) {
 TEST_P(PaintChunksToCcLayerTest, CombineClipsAcrossTransform) {
   FloatRoundedRect clip_rect(0, 0, 100, 100);
   auto identity = Create2DTranslation(t0(), 0, 0);
-  auto non_identity =
-      CreateTransform(*identity, TransformationMatrix().Scale(2));
-  auto non_invertible =
-      CreateTransform(*non_identity, TransformationMatrix().Scale(0));
+  auto non_identity = CreateTransform(*identity, MakeScaleMatrix(2));
+  auto non_invertible = CreateTransform(*non_identity, MakeScaleMatrix(0));
   EXPECT_FALSE(non_invertible->Matrix().IsInvertible());
   auto c1 = CreateClip(c0(), t0(), FloatRoundedRect(0, 0, 100, 100));
   auto c2 = CreateClip(*c1, *identity, FloatRoundedRect(50, 50, 100, 100));
@@ -778,16 +724,13 @@ TEST_P(PaintChunksToCcLayerTest, CombineClipsAcrossTransform) {
   TestChunks chunks;
   chunks.AddChunk(*non_invertible, *c4, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
   // We combine c1/c2 across |identity|, but not c2/c3 across |non_identity|
   // and c3/c4 across |non_invertible|.
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make(
           {cc::PaintOpType::Save, cc::PaintOpType::ClipRect,  // <c1+c2>
            cc::PaintOpType::Save, cc::PaintOpType::Concat,    // <non_identity
@@ -799,11 +742,11 @@ TEST_P(PaintChunksToCcLayerTest, CombineClipsAcrossTransform) {
            cc::PaintOpType::Restore,     // </c3 non_identity>
            cc::PaintOpType::Restore}));  // </c1+c2>
 
-  EXPECT_CLIP(gfx::RectF(50, 50, 50, 50), *output, 1);
-  EXPECT_TRANSFORM_MATRIX(non_identity->Matrix(), *output, 3);
-  EXPECT_CLIP(gfx::RectF(1, 2, 3, 4), *output, 4);
-  EXPECT_TRANSFORM_MATRIX(non_invertible->Matrix(), *output, 6);
-  EXPECT_CLIP(gfx::RectF(5, 6, 7, 8), *output, 7);
+  EXPECT_CLIP(gfx::RectF(50, 50, 50, 50), output, 1);
+  EXPECT_TRANSFORM_MATRIX(non_identity->Matrix(), output, 3);
+  EXPECT_CLIP(gfx::RectF(1, 2, 3, 4), output, 4);
+  EXPECT_TRANSFORM_MATRIX(non_invertible->Matrix(), output, 6);
+  EXPECT_CLIP(gfx::RectF(5, 6, 7, 8), output, 7);
 }
 
 TEST_P(PaintChunksToCcLayerTest, CombineClipsWithRoundedRects) {
@@ -822,14 +765,11 @@ TEST_P(PaintChunksToCcLayerTest, CombineClipsWithRoundedRects) {
   TestChunks chunks;
   chunks.AddChunk(t0(), *c7, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
   EXPECT_THAT(
-      *output,
+      output,
       PaintRecordMatcher::Make(
           {cc::PaintOpType::Save, cc::PaintOpType::ClipRRect,  // <c1+c2+c3>
            cc::PaintOpType::Save, cc::PaintOpType::ClipRRect,  // <c4>
@@ -843,16 +783,16 @@ TEST_P(PaintChunksToCcLayerTest, CombineClipsWithRoundedRects) {
            cc::PaintOpType::Restore,                           // </c4>
            cc::PaintOpType::Restore}));                        // </c1+c2+c3>
 
-  EXPECT_ROUNDED_CLIP(small_rounded_clip_rect, *output, 1);
-  EXPECT_ROUNDED_CLIP(big_rounded_clip_rect, *output, 3);
-  EXPECT_CLIP(clip_rect.Rect(), *output, 5);
-  EXPECT_ROUNDED_CLIP(big_rounded_clip_rect, *output, 7);
-  EXPECT_ROUNDED_CLIP(small_rounded_clip_rect, *output, 9);
+  EXPECT_ROUNDED_CLIP(small_rounded_clip_rect, output, 1);
+  EXPECT_ROUNDED_CLIP(big_rounded_clip_rect, output, 3);
+  EXPECT_CLIP(clip_rect.Rect(), output, 5);
+  EXPECT_ROUNDED_CLIP(big_rounded_clip_rect, output, 7);
+  EXPECT_ROUNDED_CLIP(small_rounded_clip_rect, output, 9);
 }
 
 TEST_P(PaintChunksToCcLayerTest, ChunksSamePropertyTreeState) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
-  auto t2 = CreateTransform(*t1, TransformationMatrix().Scale(3.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
+  auto t2 = CreateTransform(*t1, MakeScaleMatrix(3));
   auto c1 = CreateClip(c0(), *t1, FloatRoundedRect(0, 0, 100, 100));
 
   TestChunks chunks;
@@ -864,13 +804,10 @@ TEST_P(PaintChunksToCcLayerTest, ChunksSamePropertyTreeState) {
   chunks.AddChunk(*t2, *c1, e0());
   chunks.AddChunk(*t2, *c1, e0());
 
-  sk_sp<PaintRecord> output =
-      PaintChunksToCcLayer::Convert(
-          chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-          cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-          ->ReleaseAsRecord();
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::DrawRecord,                       // <p0/>
                    cc::PaintOpType::Save, cc::PaintOpType::Concat,    // <t1>
@@ -904,11 +841,9 @@ TEST_P(PaintChunksToCcLayerTest, NoOpForIdentityTransforms) {
   chunks.AddChunk(*t1, *c2, e0());
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::DrawRecord,                       // <p0/>
                    cc::PaintOpType::DrawRecord,                       // <p1/>
@@ -922,7 +857,7 @@ TEST_P(PaintChunksToCcLayerTest, NoOpForIdentityTransforms) {
 }
 
 TEST_P(PaintChunksToCcLayerTest, EffectsWithSameTransform) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto e1 = CreateOpacityEffect(e0(), *t1, &c0(), 0.1f);
   auto e2 = CreateOpacityEffect(e0(), *t1, &c0(), 0.2f);
 
@@ -932,11 +867,9 @@ TEST_P(PaintChunksToCcLayerTest, EffectsWithSameTransform) {
   chunks.AddChunk(*t1, c0(), *e2);
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::DrawRecord,                     // <p0/>
                    cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1>
@@ -950,7 +883,7 @@ TEST_P(PaintChunksToCcLayerTest, EffectsWithSameTransform) {
 }
 
 TEST_P(PaintChunksToCcLayerTest, NestedEffectsWithSameTransform) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto e1 = CreateOpacityEffect(e0(), *t1, &c0(), 0.1f);
   auto e2 = CreateOpacityEffect(*e1, *t1, &c0(), 0.2f);
 
@@ -960,11 +893,9 @@ TEST_P(PaintChunksToCcLayerTest, NestedEffectsWithSameTransform) {
   chunks.AddChunk(*t1, c0(), *e2);
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::DrawRecord,                     // <p0/>
                    cc::PaintOpType::Save, cc::PaintOpType::Concat,  // <t1>
@@ -978,10 +909,10 @@ TEST_P(PaintChunksToCcLayerTest, NestedEffectsWithSameTransform) {
 }
 
 TEST_P(PaintChunksToCcLayerTest, NoopTransformIsNotEmitted) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2.f));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto noop_t2 = TransformPaintPropertyNodeAlias::Create(*t1);
   auto noop_t3 = TransformPaintPropertyNodeAlias::Create(*noop_t2);
-  auto t4 = CreateTransform(*noop_t3, TransformationMatrix().Scale(2.f));
+  auto t4 = CreateTransform(*noop_t3, MakeScaleMatrix(2));
   auto noop_t5 = TransformPaintPropertyNodeAlias::Create(*t4);
   TestChunks chunks;
   chunks.AddChunk(t0(), c0(), e0());
@@ -994,11 +925,9 @@ TEST_P(PaintChunksToCcLayerTest, NoopTransformIsNotEmitted) {
   chunks.AddChunk(*t4, c0(), e0());
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make({
                   cc::PaintOpType::DrawRecord,  // draw with t0
                   cc::PaintOpType::Save, cc::PaintOpType::Concat,  // t1
@@ -1025,17 +954,15 @@ TEST_P(PaintChunksToCcLayerTest, OnlyNoopTransformIsNotEmitted) {
   chunks.AddChunk(*noop_t2, c0(), e0());
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({cc::PaintOpType::DrawRecord,
-                                                 cc::PaintOpType::DrawRecord,
-                                                 cc::PaintOpType::DrawRecord}));
+  EXPECT_THAT(output, PaintRecordMatcher::Make({cc::PaintOpType::DrawRecord,
+                                                cc::PaintOpType::DrawRecord,
+                                                cc::PaintOpType::DrawRecord}));
 }
 
 TEST_P(PaintChunksToCcLayerTest, NoopTransformFirstThenBackToParent) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto noop_t2 = TransformPaintPropertyNodeAlias::Create(*t1);
 
   TestChunks chunks;
@@ -1044,22 +971,20 @@ TEST_P(PaintChunksToCcLayerTest, NoopTransformFirstThenBackToParent) {
   chunks.AddChunk(*t1, c0(), e0());
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({
-                           cc::PaintOpType::DrawRecord,  // t0
-                           cc::PaintOpType::Save,
-                           cc::PaintOpType::Concat,      // t1 + noop_t2
-                           cc::PaintOpType::DrawRecord,  // draw with above
-                           cc::PaintOpType::DrawRecord,  // draw with just t1
-                           cc::PaintOpType::Restore      // end t1
-                       }));
+  EXPECT_THAT(output, PaintRecordMatcher::Make({
+                          cc::PaintOpType::DrawRecord,  // t0
+                          cc::PaintOpType::Save,
+                          cc::PaintOpType::Concat,      // t1 + noop_t2
+                          cc::PaintOpType::DrawRecord,  // draw with above
+                          cc::PaintOpType::DrawRecord,  // draw with just t1
+                          cc::PaintOpType::Restore      // end t1
+                      }));
 }
 
 TEST_P(PaintChunksToCcLayerTest, ClipUndoesNoopTransform) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto noop_t2 = TransformPaintPropertyNodeAlias::Create(*t1);
   auto c1 = CreateClip(c0(), *t1, FloatRoundedRect(0.f, 0.f, 1.f, 1.f));
 
@@ -1070,24 +995,22 @@ TEST_P(PaintChunksToCcLayerTest, ClipUndoesNoopTransform) {
   chunks.AddChunk(*noop_t2, *c1, e0());
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({
-                           cc::PaintOpType::DrawRecord,  // t0
-                           cc::PaintOpType::Save,
-                           cc::PaintOpType::Concat,  // t1 + noop_t2
-                           cc::PaintOpType::DrawRecord, cc::PaintOpType::Save,
-                           cc::PaintOpType::ClipRect,  // c1 (with t1 space)
-                           cc::PaintOpType::DrawRecord,
-                           cc::PaintOpType::Restore,  // end c1
-                           cc::PaintOpType::Restore   // end t1
-                       }));
+  EXPECT_THAT(output, PaintRecordMatcher::Make({
+                          cc::PaintOpType::DrawRecord,  // t0
+                          cc::PaintOpType::Save,
+                          cc::PaintOpType::Concat,  // t1 + noop_t2
+                          cc::PaintOpType::DrawRecord, cc::PaintOpType::Save,
+                          cc::PaintOpType::ClipRect,  // c1 (with t1 space)
+                          cc::PaintOpType::DrawRecord,
+                          cc::PaintOpType::Restore,  // end c1
+                          cc::PaintOpType::Restore   // end t1
+                      }));
 }
 
 TEST_P(PaintChunksToCcLayerTest, EffectUndoesNoopTransform) {
-  auto t1 = CreateTransform(t0(), TransformationMatrix().Scale(2));
+  auto t1 = CreateTransform(t0(), MakeScaleMatrix(2));
   auto noop_t2 = TransformPaintPropertyNodeAlias::Create(*t1);
   auto e1 = CreateOpacityEffect(e0(), *t1, &c0(), 0.5);
 
@@ -1098,20 +1021,18 @@ TEST_P(PaintChunksToCcLayerTest, EffectUndoesNoopTransform) {
   chunks.AddChunk(*noop_t2, c0(), *e1);
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output, PaintRecordMatcher::Make({
-                           cc::PaintOpType::DrawRecord,  // t0
-                           cc::PaintOpType::Save,
-                           cc::PaintOpType::Concat,  // t1 + noop_t2
-                           cc::PaintOpType::DrawRecord,
-                           cc::PaintOpType::SaveLayerAlpha,  // e1
-                           cc::PaintOpType::DrawRecord,
-                           cc::PaintOpType::Restore,  // end e1
-                           cc::PaintOpType::Restore   // end t1
-                       }));
+  EXPECT_THAT(output, PaintRecordMatcher::Make({
+                          cc::PaintOpType::DrawRecord,  // t0
+                          cc::PaintOpType::Save,
+                          cc::PaintOpType::Concat,  // t1 + noop_t2
+                          cc::PaintOpType::DrawRecord,
+                          cc::PaintOpType::SaveLayerAlpha,  // e1
+                          cc::PaintOpType::DrawRecord,
+                          cc::PaintOpType::Restore,  // end e1
+                          cc::PaintOpType::Restore   // end t1
+                      }));
 }
 
 TEST_P(PaintChunksToCcLayerTest, NoopClipDoesNotEmitItems) {
@@ -1131,11 +1052,9 @@ TEST_P(PaintChunksToCcLayerTest, NoopClipDoesNotEmitItems) {
   chunks.AddChunk(t0(), *c1, e0());
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make({
                   cc::PaintOpType::DrawRecord,                       // c0
                   cc::PaintOpType::Save, cc::PaintOpType::ClipRect,  // c1
@@ -1162,11 +1081,9 @@ TEST_P(PaintChunksToCcLayerTest, EffectUndoesNoopClip) {
   chunks.AddChunk(t0(), *noop_c2, *e1);
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make({
                   cc::PaintOpType::Save, cc::PaintOpType::ClipRect,  // noop_c2
                   cc::PaintOpType::DrawRecord,      // draw with noop_c2
@@ -1193,11 +1110,9 @@ TEST_P(PaintChunksToCcLayerTest, NoopEffectDoesNotEmitItems) {
   chunks.AddChunk(t0(), c0(), *e1);
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
 
-  EXPECT_THAT(*output,
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make({
                   cc::PaintOpType::DrawRecord,      // e0
                   cc::PaintOpType::SaveLayerAlpha,  // e1
@@ -1218,16 +1133,14 @@ TEST_P(PaintChunksToCcLayerTest, EmptyChunkRect) {
   filter.AppendBlurFilter(5);
   auto e1 = CreateFilterEffect(e0(), t0(), &c0(), filter);
   TestChunks chunks;
-  chunks.AddChunk(nullptr, t0(), c0(), *e1, {0, 0, 0, 0});
+  chunks.AddChunk(PaintRecord(), t0(), c0(), *e1, {0, 0, 0, 0});
 
   auto output = PaintChunksToCcLayer::Convert(
-                    chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF(),
-                    cc::DisplayItemList::kToBeReleasedAsPaintOpBuffer)
-                    ->ReleaseAsRecord();
-  EXPECT_THAT(*output,
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make({cc::PaintOpType::SaveLayer,   // <e1>
                                         cc::PaintOpType::Restore}));  // </e1>
-  EXPECT_EFFECT_BOUNDS(0, 0, 0, 0, *output, 0);
+  EXPECT_EFFECT_BOUNDS(0, 0, 0, 0, output, 0);
 }
 
 static sk_sp<cc::PaintFilter> MakeFilter(gfx::RectF bounds) {
@@ -1245,10 +1158,9 @@ TEST_P(PaintChunksToCcLayerTest, ReferenceFilterOnEmptyChunk) {
   TestChunks chunks;
   chunks.AddEmptyChunk(t0(), c0(), *e1, gfx::Rect(0, 0, 200, 300));
 
-  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>(
-      cc::DisplayItemList::kTopLevelDisplayItemList);
+  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>();
   PaintChunksToCcLayer::ConvertInto(chunks.Build(), PropertyTreeState::Root(),
-                                    gfx::Vector2dF(5, 10), *cc_list);
+                                    gfx::Vector2dF(5, 10), nullptr, *cc_list);
   ASSERT_EQ(5u, cc_list->TotalOpCount());
   // (7 16) is (12, 26) - layer_offset.
   gfx::Rect expected_visual_rect(7, 16, 93, 84);
@@ -1257,14 +1169,14 @@ TEST_P(PaintChunksToCcLayerTest, ReferenceFilterOnEmptyChunk) {
     EXPECT_EQ(expected_visual_rect, cc_list->VisualRectForTesting(i));
   }
 
-  auto output = cc_list->ReleaseAsRecord();
-  EXPECT_THAT(*output, PaintRecordMatcher::Make(
-                           {cc::PaintOpType::Save,
-                            cc::PaintOpType::Translate,  // layer offset
-                            cc::PaintOpType::SaveLayer,  // <e1>
-                            cc::PaintOpType::Restore,    // </e1>
-                            cc::PaintOpType::Restore}));
-  EXPECT_EFFECT_BOUNDS(12, 26, 93, 84, *output, 2);
+  auto output = cc_list->FinalizeAndReleaseAsRecord();
+  EXPECT_THAT(output, PaintRecordMatcher::Make(
+                          {cc::PaintOpType::Save,
+                           cc::PaintOpType::Translate,  // layer offset
+                           cc::PaintOpType::SaveLayer,  // <e1>
+                           cc::PaintOpType::Restore,    // </e1>
+                           cc::PaintOpType::Restore}));
+  EXPECT_EFFECT_BOUNDS(12, 26, 93, 84, output, 2);
 }
 
 TEST_P(PaintChunksToCcLayerTest, ReferenceFilterOnChunkWithDrawingDisplayItem) {
@@ -1273,14 +1185,14 @@ TEST_P(PaintChunksToCcLayerTest, ReferenceFilterOnChunkWithDrawingDisplayItem) {
   filter.SetReferenceBox(gfx::RectF(11, 22, 33, 44));
   ASSERT_TRUE(filter.HasReferenceFilter());
   auto e1 = CreateFilterEffect(e0(), t0(), &c0(), filter);
+  auto clip_expander = CreatePixelMovingFilterClipExpander(c0(), *e1);
   TestChunks chunks;
-  chunks.AddChunk(t0(), c0(), *e1, gfx::Rect(5, 10, 200, 300),
+  chunks.AddChunk(t0(), *clip_expander, *e1, gfx::Rect(5, 10, 200, 300),
                   gfx::Rect(10, 15, 20, 30));
 
-  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>(
-      cc::DisplayItemList::kTopLevelDisplayItemList);
+  auto cc_list = base::MakeRefCounted<cc::DisplayItemList>();
   PaintChunksToCcLayer::ConvertInto(chunks.Build(), PropertyTreeState::Root(),
-                                    gfx::Vector2dF(5, 10), *cc_list);
+                                    gfx::Vector2dF(5, 10), nullptr, *cc_list);
   ASSERT_EQ(7u, cc_list->TotalOpCount());
   // This is the visual rect for all filter related paint operations, which is
   // the union of the draw record and the output bounds of the filter with empty
@@ -1293,8 +1205,8 @@ TEST_P(PaintChunksToCcLayerTest, ReferenceFilterOnChunkWithDrawingDisplayItem) {
     EXPECT_EQ(expected_filter_visual_rect, cc_list->VisualRectForTesting(i));
   }
 
-  auto output = cc_list->ReleaseAsRecord();
-  EXPECT_THAT(*output,
+  auto output = cc_list->FinalizeAndReleaseAsRecord();
+  EXPECT_THAT(output,
               PaintRecordMatcher::Make(
                   {cc::PaintOpType::Save,
                    cc::PaintOpType::Translate,   // layer offset
@@ -1304,7 +1216,31 @@ TEST_P(PaintChunksToCcLayerTest, ReferenceFilterOnChunkWithDrawingDisplayItem) {
                    cc::PaintOpType::Restore}));
   // The effect bounds are the union of the chunk's drawable_bounds and the
   // output bounds of the filter with empty input in the filter's space.
-  EXPECT_EFFECT_BOUNDS(7, 15, 93, 85, *output, 2);
+  EXPECT_EFFECT_BOUNDS(7, 15, 93, 85, output, 2);
+}
+
+TEST_P(PaintChunksToCcLayerTest, FilterClipExpanderUnderClip) {
+  // This tests the situation of crbug.com/1350017.
+  CompositorFilterOperations filter;
+  filter.AppendBlurFilter(10);
+  auto e1 = CreateFilterEffect(e0(), t0(), &c0(), filter);
+  auto c1 = CreateClip(c0(), t0(), FloatRoundedRect(10, 20, 30, 40));
+  auto clip_expander = CreatePixelMovingFilterClipExpander(*c1, *e1);
+  TestChunks chunks;
+  chunks.AddChunk(t0(), *clip_expander, *e1, gfx::Rect(5, 10, 200, 300),
+                  gfx::Rect(10, 15, 20, 30));
+
+  auto output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  ASSERT_EQ(7u, output.total_op_count());
+  EXPECT_THAT(output,
+              PaintRecordMatcher::Make(
+                  {cc::PaintOpType::SaveLayer,  // <e1>
+                   cc::PaintOpType::Save,
+                   cc::PaintOpType::ClipRect,    // <c1>
+                   cc::PaintOpType::DrawRecord,  // the DrawingDisplayItem
+                   cc::PaintOpType::Restore,     // </c1>
+                   cc::PaintOpType::Restore}));  // </e1>
 }
 
 TEST_P(PaintChunksToCcLayerTest,
@@ -1416,6 +1352,22 @@ TEST_P(PaintChunksToCcLayerTest,
   EXPECT_EQ(
       (gfx::Rect{52, 62, 102, 202}),
       layer->capture_bounds().bounds().find(kThirdCropId.value())->second);
+}
+
+TEST_P(PaintChunksToCcLayerTest, NonCompositedBackdropFilter) {
+  CompositorFilterOperations filter;
+  filter.AppendBlurFilter(5);
+  auto e1 = CreateBackdropFilterEffect(e0(), filter);
+  TestChunks chunks;
+  chunks.AddChunk(t0(), c0(), *e1, gfx::Rect(0, 0, 50, 50));
+
+  PaintRecord output = PaintChunksToCcLayer::Convert(
+      chunks.Build(), PropertyTreeState::Root(), gfx::Vector2dF());
+  // TODO(crbug.com/1334293): For now non-composited backdrop filters are
+  // ignored.
+  EXPECT_THAT(output, PaintRecordMatcher::Make({cc::PaintOpType::SaveLayerAlpha,
+                                                cc::PaintOpType::DrawRecord,
+                                                cc::PaintOpType::Restore}));
 }
 
 }  // namespace

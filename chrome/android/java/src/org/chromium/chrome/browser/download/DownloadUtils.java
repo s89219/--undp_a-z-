@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Typeface;
 import android.net.Uri;
-import android.os.Build;
 import android.text.Spannable;
 import android.text.SpannableString;
 import android.text.TextUtils;
@@ -67,8 +66,10 @@ import org.chromium.components.offline_items_collection.OfflineItem;
 import org.chromium.components.offline_items_collection.OpenParams;
 import org.chromium.content_public.browser.BrowserStartupController;
 import org.chromium.content_public.browser.LoadUrlParams;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.base.DeviceFormFactor;
 import org.chromium.ui.widget.Toast;
+import org.chromium.url.GURL;
 
 import java.io.File;
 
@@ -296,8 +297,12 @@ public class DownloadUtils {
             DownloadUtils.recordDownloadPageMetrics(tab);
         }
 
-        Tracker tracker =
-                TrackerFactory.getTrackerForProfile(Profile.fromWebContents(tab.getWebContents()));
+        WebContents webContents = tab.getWebContents();
+        if (webContents == null) return;
+
+        Profile profile = Profile.fromWebContents(webContents);
+        if (profile == null) return;
+        Tracker tracker = TrackerFactory.getTrackerForProfile(profile);
         tracker.notifyEvent(EventConstants.DOWNLOAD_PAGE_STARTED);
     }
 
@@ -342,7 +347,7 @@ public class DownloadUtils {
         // It's ok to use blocking calls on main thread here, since the user is waiting to open or
         // share the file to other apps.
         boolean isOnSDCard = DownloadDirectoryProvider.isDownloadOnSDCard(filePath);
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.DOWNLOAD_FILE_PROVIDER) && isOnSDCard) {
+        if (isOnSDCard) {
             // Use custom file provider to generate content URI for download on SD card.
             return DownloadFileProvider.createContentUri(filePath);
         }
@@ -357,9 +362,7 @@ public class DownloadUtils {
      * @return URI for other apps to use the file via {@link android.content.ContentResolver}.
      */
     public static Uri getUriForOtherApps(String filePath) {
-        // Some old Samsung devices with Android M- must use file URI. See https://crbug.com/705748.
-        return Build.VERSION.SDK_INT > Build.VERSION_CODES.M ? getUriForItem(filePath)
-                                                             : Uri.fromFile(new File(filePath));
+        return getUriForItem(filePath);
     }
 
     @CalledByNative
@@ -479,15 +482,18 @@ public class DownloadUtils {
     public static void openDownload(String filePath, String mimeType, String downloadGuid,
             OTRProfileID otrProfileID, String originalUrl, String referer,
             @DownloadOpenSource int source) {
-        if (ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_NEW_DOWNLOAD_TAB)
-                && source == DownloadOpenSource.UNKNOWN
-                && DownloadManagerService.inProgressCCTDownloadsContains(downloadGuid)) {
-            DownloadManagerService.removeCCTDownload(downloadGuid);
-            return;
-        }
         // Mapping generic MIME type to android openable type based on URL and file extension.
         String newMimeType = MimeUtils.remapGenericMimeType(mimeType, originalUrl, filePath);
         Activity activity = ApplicationStatus.getLastTrackedFocusedActivity();
+        if (ChromeFeatureList.isEnabled(ChromeFeatureList.CCT_NEW_DOWNLOAD_TAB)) {
+            DownloadMessageUiController messageUiController =
+                    DownloadManagerService.getDownloadManagerService().getMessageUiController(null);
+            if (messageUiController != null
+                    && messageUiController.isDownloadInterstitialItem(
+                            new GURL(originalUrl), downloadGuid)) {
+                return;
+            }
+        }
         boolean canOpen = DownloadUtils.openFile(filePath, newMimeType, downloadGuid, otrProfileID,
                 originalUrl, referer, source,
                 activity == null ? ContextUtils.getApplicationContext() : activity);

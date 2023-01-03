@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,12 +9,14 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequence_checker.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/bind.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/task_environment.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/mock_filters.h"
 #include "media/base/video_frame.h"
+#include "media/video/video_encoder_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -33,7 +35,7 @@ class VideoEncoderFallbackTest : public testing::Test {
     main_video_encoder_ = main_video_encoder.get();
     secondary_video_encoder_holder_ = std::make_unique<MockVideoEncoder>();
     secondary_video_encoder_ = secondary_video_encoder_holder_.get();
-    callback_runner_ = base::SequencedTaskRunnerHandle::Get();
+    callback_runner_ = base::SequencedTaskRunner::GetCurrentDefault();
     fallback_encoder_ = std::make_unique<VideoEncoderFallback>(
         std::move(main_video_encoder),
         base::BindOnce(&VideoEncoderFallbackTest::CreateSecondaryEncoder,
@@ -87,20 +89,28 @@ class VideoEncoderFallbackTest : public testing::Test {
 };
 
 TEST_F(VideoEncoderFallbackTest, NoFallbackEncoding) {
-  int outputs = 0;
   VideoEncoder::Options options;
   VideoCodecProfile profile = VIDEO_CODEC_PROFILE_UNKNOWN;
+
+  int info_cb_count = 0;
+  VideoEncoder::EncoderInfoCB info_cb =
+      BindToCurrentLoop(base::BindLambdaForTesting(
+          [&](const VideoEncoderInfo& info) { info_cb_count++; }));
+
+  int outputs = 0;
   VideoEncoder::OutputCB output_cb =
       BindToCurrentLoop(base::BindLambdaForTesting(
           [&](VideoEncoderOutput,
               absl::optional<VideoEncoder::CodecDescription>) { outputs++; }));
   VideoEncoder::OutputCB saved_output_cb;
 
-  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
+        info_cb.Run(VideoEncoderInfo());
         saved_output_cb = std::move(output_cb);
         RunStatusCallbackAync(std::move(done_cb));
       }));
@@ -115,8 +125,8 @@ TEST_F(VideoEncoderFallbackTest, NoFallbackEncoding) {
             RunStatusCallbackAync(std::move(done_cb));
           }));
 
-  fallback_encoder_->Initialize(profile, options, std::move(output_cb),
-                                ValidatingStatusCB());
+  fallback_encoder_->Initialize(profile, options, std::move(info_cb),
+                                std::move(output_cb), ValidatingStatusCB());
 
   RunLoop();
   for (int i = 0; i < kFrameCount; i++) {
@@ -127,15 +137,22 @@ TEST_F(VideoEncoderFallbackTest, NoFallbackEncoding) {
   }
   RunLoop();
   EXPECT_FALSE(FallbackHappened());
+  EXPECT_EQ(info_cb_count, 1);
   EXPECT_EQ(outputs, kFrameCount);
 }
 
 // Test that VideoEncoderFallback can switch to a secondary encoder if
 // the main encoder fails to initialize.
 TEST_F(VideoEncoderFallbackTest, FallbackOnInitialize) {
-  int outputs = 0;
   VideoEncoder::Options options;
   VideoCodecProfile profile = VIDEO_CODEC_PROFILE_UNKNOWN;
+
+  int info_cb_count = 0;
+  VideoEncoder::EncoderInfoCB info_cb =
+      BindToCurrentLoop(base::BindLambdaForTesting(
+          [&](const VideoEncoderInfo& info) { info_cb_count++; }));
+
+  int outputs = 0;
   VideoEncoder::OutputCB output_cb =
       BindToCurrentLoop(base::BindLambdaForTesting(
           [&](VideoEncoderOutput,
@@ -143,9 +160,10 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnInitialize) {
   VideoEncoder::OutputCB saved_output_cb;
 
   // Initialize() on the main encoder should fail
-  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
         RunStatusCallbackAync(
@@ -154,11 +172,13 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnInitialize) {
       }));
 
   // Initialize() on the second encoder should succeed
-  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
+        info_cb.Run(VideoEncoderInfo());
         saved_output_cb = std::move(output_cb);
         RunStatusCallbackAync(std::move(done_cb));
       }));
@@ -174,8 +194,8 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnInitialize) {
             RunStatusCallbackAync(std::move(done_cb));
           }));
 
-  fallback_encoder_->Initialize(profile, options, std::move(output_cb),
-                                ValidatingStatusCB());
+  fallback_encoder_->Initialize(profile, options, std::move(info_cb),
+                                std::move(output_cb), ValidatingStatusCB());
 
   RunLoop();
   for (int i = 0; i < kFrameCount; i++) {
@@ -186,15 +206,23 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnInitialize) {
   }
   RunLoop();
   EXPECT_TRUE(FallbackHappened());
+  EXPECT_EQ(info_cb_count, 1);
   EXPECT_EQ(outputs, kFrameCount);
 }
 
 // Test that VideoEncoderFallback can switch to a secondary encoder if
 // the main encoder fails on encode.
 TEST_F(VideoEncoderFallbackTest, FallbackOnEncode) {
-  int outputs = 0;
   VideoEncoder::Options options;
   VideoCodecProfile profile = VIDEO_CODEC_PROFILE_UNKNOWN;
+
+  int info_cb_count = 0;
+  VideoEncoder::EncoderInfoCB info_cb =
+      BindToCurrentLoop(base::BindLambdaForTesting(
+          [&](const VideoEncoderInfo& info) { info_cb_count++; }));
+  VideoEncoder::EncoderInfoCB saved_info_cb;
+
+  int outputs = 0;
   VideoEncoder::OutputCB output_cb =
       BindToCurrentLoop(base::BindLambdaForTesting(
           [&](VideoEncoderOutput,
@@ -203,21 +231,26 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnEncode) {
   VideoEncoder::OutputCB secondary_output_cb;
 
   // Initialize() on the main encoder should succeed
-  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
+        info_cb.Run(VideoEncoderInfo());
+        saved_info_cb = std::move(info_cb);
         primary_output_cb = std::move(output_cb);
         RunStatusCallbackAync(std::move(done_cb));
       }));
 
   // Initialize() on the second encoder should succeed as well
-  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
+        info_cb.Run(VideoEncoderInfo());
         secondary_output_cb = std::move(output_cb);
         RunStatusCallbackAync(std::move(done_cb));
       }));
@@ -256,8 +289,8 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnEncode) {
             RunStatusCallbackAync(std::move(done_cb));
           }));
 
-  fallback_encoder_->Initialize(profile, options, std::move(output_cb),
-                                ValidatingStatusCB());
+  fallback_encoder_->Initialize(profile, options, std::move(info_cb),
+                                std::move(output_cb), ValidatingStatusCB());
 
   RunLoop();
   for (int i = 0; i < kFrameCount; i++) {
@@ -268,6 +301,7 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnEncode) {
   }
   RunLoop();
   EXPECT_TRUE(FallbackHappened());
+  EXPECT_EQ(info_cb_count, 2);
   EXPECT_EQ(outputs, kFrameCount);
 }
 
@@ -276,14 +310,12 @@ TEST_F(VideoEncoderFallbackTest, FallbackOnEncode) {
 TEST_F(VideoEncoderFallbackTest, SecondaryFailureOnInitialize) {
   VideoEncoder::Options options;
   VideoCodecProfile profile = VIDEO_CODEC_PROFILE_UNKNOWN;
-  auto output_cb = BindToCurrentLoop(base::BindLambdaForTesting(
-      [&](VideoEncoderOutput, absl::optional<VideoEncoder::CodecDescription>) {
-      }));
 
   // Initialize() on the main encoder should fail
-  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
         RunStatusCallbackAync(std::move(done_cb),
@@ -291,9 +323,10 @@ TEST_F(VideoEncoderFallbackTest, SecondaryFailureOnInitialize) {
       }));
 
   // Initialize() on the second encoder should also fail
-  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
         RunStatusCallbackAync(std::move(done_cb),
@@ -301,7 +334,8 @@ TEST_F(VideoEncoderFallbackTest, SecondaryFailureOnInitialize) {
       }));
 
   fallback_encoder_->Initialize(
-      profile, options, std::move(output_cb),
+      profile, options, /*info_cb=*/base::DoNothing(),
+      /*output_cb=*/base::DoNothing(),
       ValidatingStatusCB(EncoderStatus::Codes::kEncoderUnsupportedCodec));
   RunLoop();
 
@@ -344,9 +378,10 @@ TEST_F(VideoEncoderFallbackTest, SecondaryFailureOnEncode) {
   VideoEncoder::OutputCB secondary_output_cb;
 
   // Initialize() on the main encoder should succeed
-  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*main_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
         primary_output_cb = std::move(output_cb);
@@ -354,9 +389,10 @@ TEST_F(VideoEncoderFallbackTest, SecondaryFailureOnEncode) {
       }));
 
   // Initialize() on the second encoder should succeed as well
-  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _))
+  EXPECT_CALL(*secondary_video_encoder_, Initialize(_, _, _, _, _))
       .WillOnce(Invoke([&, this](VideoCodecProfile profile,
                                  const VideoEncoder::Options& options,
+                                 VideoEncoder::EncoderInfoCB info_cb,
                                  VideoEncoder::OutputCB output_cb,
                                  VideoEncoder::EncoderStatusCB done_cb) {
         secondary_output_cb = std::move(output_cb);
@@ -403,8 +439,8 @@ TEST_F(VideoEncoderFallbackTest, SecondaryFailureOnEncode) {
         RunStatusCallbackAync(std::move(done_cb));
       }));
 
-  fallback_encoder_->Initialize(profile, options, std::move(output_cb),
-                                ValidatingStatusCB());
+  fallback_encoder_->Initialize(profile, options, /*info_cb=*/base::DoNothing(),
+                                std::move(output_cb), ValidatingStatusCB());
   RunLoop();
 
   for (int i = 1; i <= kFrameCount; i++) {

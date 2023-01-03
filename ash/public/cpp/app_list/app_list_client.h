@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,13 +73,6 @@ class ASH_PUBLIC_EXPORT AppListClient {
   // Invokes a custom action |action| on a result with |result_id|.
   virtual void InvokeSearchResultAction(const std::string& result_id,
                                         SearchResultActionType action) = 0;
-  // Returns the context menu model for the search result with |result_id|, or
-  // an empty array if there is currently no menu for the result.
-  using GetSearchResultContextMenuModelCallback =
-      base::OnceCallback<void(std::unique_ptr<ui::SimpleMenuModel>)>;
-  virtual void GetSearchResultContextMenuModel(
-      const std::string& result_id,
-      GetSearchResultContextMenuModelCallback callback) = 0;
 
   //////////////////////////////////////////////////////////////////////////////
   // Interfaces on the app list UI:
@@ -120,14 +113,6 @@ class ASH_PUBLIC_EXPORT AppListClient {
   virtual void OnSearchResultVisibilityChanged(const std::string& id,
                                                bool visibility) = 0;
 
-  // TODO(crbug.com/1076270): This method exists for chrome-side logging of UI
-  // actions, and can be folded into the AppListNotifier once it is
-  // complete.
-  virtual void NotifySearchResultsForLogging(
-      const std::u16string& trimmed_query,
-      const SearchResultIdWithPositionIndices& results,
-      int position_index) = 0;
-
   // Returns the AppListNotifier instance owned by this client. Depending on the
   // implementation, this can return nullptr.
   virtual AppListNotifier* GetNotifier() = 0;
@@ -138,6 +123,9 @@ class ASH_PUBLIC_EXPORT AppListClient {
   // Returns the sorting order that is saved in perf service and gets shared
   // among synced devices.
   virtual ash::AppListSortOrder GetPermanentSortingOrder() const = 0;
+
+  // Invoked to commit the app list temporary sort order.
+  virtual void CommitTemporarySortOrder() = 0;
 
  protected:
   virtual ~AppListClient() = default;

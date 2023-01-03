@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,17 +53,13 @@ class SiteIsolationPrefsObserver;
 class SystemNotificationHelper;
 class StartupData;
 
-namespace base {
-class CommandLine;
-}
-
 namespace breadcrumbs {
 class ApplicationBreadcrumbsLogger;
 class BreadcrumbPersistentStorageManager;
 }  // namespace breadcrumbs
 
 namespace extensions {
-class ExtensionsBrowserClient;
+class ChromeExtensionsBrowserClient;
 }
 
 namespace gcm {
@@ -119,7 +115,7 @@ class BrowserProcessImpl : public BrowserProcess,
 #endif
 
   // Called before the browser threads are created.
-  void PreCreateThreads(const base::CommandLine& command_line);
+  void PreCreateThreads();
 
   // Called after the threads have been created but before the message loops
   // starts running. Allows the browser process to do any initialization that
@@ -210,6 +206,7 @@ class BrowserProcessImpl : public BrowserProcess,
 #if !BUILDFLAG(IS_ANDROID)
   SerialPolicyAllowedPorts* serial_policy_allowed_ports() override;
   HidPolicyAllowedDevices* hid_policy_allowed_devices() override;
+  HidSystemTrayIcon* hid_system_tray_icon() override;
 #endif
 
   BuildState* GetBuildState() override;
@@ -241,6 +238,7 @@ class BrowserProcessImpl : public BrowserProcess,
   void CreateStatusTray();
   void CreateBackgroundModeManager();
   void CreateGCMDriver();
+  void CreateNetworkTimeTracker();
 
   void ApplyDefaultBrowserPolicy();
 
@@ -252,17 +250,19 @@ class BrowserProcessImpl : public BrowserProcess,
   const raw_ptr<StartupData> startup_data_;
 
   // Must be destroyed after |local_state_|.
-  std::unique_ptr<policy::ChromeBrowserPolicyConnector>
+  // Must be destroyed after |profile_manager_|.
+  std::unique_ptr<policy::ChromeBrowserPolicyConnector> const
       browser_policy_connector_;
 
+  // Must be destroyed before |browser_policy_connector_|.
   bool created_profile_manager_ = false;
   std::unique_ptr<ProfileManager> profile_manager_;
 
   const std::unique_ptr<PrefService> local_state_;
 
   // |metrics_services_manager_| owns this.
-  raw_ptr<ChromeMetricsServicesManagerClient> metrics_services_manager_client_ =
-      nullptr;
+  raw_ptr<ChromeMetricsServicesManagerClient, DanglingUntriaged>
+      metrics_services_manager_client_ = nullptr;
 
   // Must be destroyed before |local_state_|.
   std::unique_ptr<metrics_services_manager::MetricsServicesManager>
@@ -282,7 +282,7 @@ class BrowserProcessImpl : public BrowserProcess,
   std::unique_ptr<GpuModeManager> gpu_mode_manager_;
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  std::unique_ptr<extensions::ExtensionsBrowserClient>
+  std::unique_ptr<extensions::ChromeExtensionsBrowserClient>
       extensions_browser_client_;
 
   scoped_refptr<extensions::EventRouterForwarder>
@@ -342,8 +342,10 @@ class BrowserProcessImpl : public BrowserProcess,
 
   bool tearing_down_ = false;
 
+#if BUILDFLAG(ENABLE_PRINTING)
   // Ensures that all the print jobs are finished before closing the browser.
   std::unique_ptr<printing::PrintJobManager> print_job_manager_;
+#endif
 
   std::string locale_;
 
@@ -419,6 +421,7 @@ class BrowserProcessImpl : public BrowserProcess,
 
   std::unique_ptr<SerialPolicyAllowedPorts> serial_policy_allowed_ports_;
   std::unique_ptr<HidPolicyAllowedDevices> hid_policy_allowed_devices_;
+  std::unique_ptr<HidSystemTrayIcon> hid_system_tray_icon_;
 
   BuildState build_state_;
 #endif

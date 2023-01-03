@@ -26,6 +26,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_TIMER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_TIMER_H_
 
+#include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
@@ -103,7 +104,7 @@ class PLATFORM_EXPORT TimerBase {
   virtual void Fired() = 0;
 
   virtual base::OnceClosure BindTimerClosure() {
-    return WTF::Bind(&TimerBase::RunInternal, WTF::Unretained(this));
+    return WTF::BindOnce(&TimerBase::RunInternal, WTF::Unretained(this));
   }
 
   void RunInternal();
@@ -179,8 +180,9 @@ class HeapTaskRunnerTimer final : public TimerBase {
   void Fired() final { (object_->*function_)(this); }
 
   base::OnceClosure BindTimerClosure() final {
-    return WTF::Bind(&HeapTaskRunnerTimer::RunInternalTrampoline,
-                     WTF::Unretained(this), WrapWeakPersistent(object_.Get()));
+    return WTF::BindOnce(&HeapTaskRunnerTimer::RunInternalTrampoline,
+                         WTF::Unretained(this),
+                         WrapWeakPersistent(object_.Get()));
   }
 
  private:

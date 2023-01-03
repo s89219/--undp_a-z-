@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@
 #define IOS_CHROME_BROWSER_NTP_NEW_TAB_PAGE_TAB_HELPER_H_
 
 #import <UIKit/UIKit.h>
-#include <memory>
 
 #include "base/timer/timer.h"
 #include "ios/chrome/browser/discover_feed/feed_constants.h"
@@ -27,8 +26,6 @@ class NewTabPageTabHelper : public web::WebStateObserver,
   NewTabPageTabHelper& operator=(const NewTabPageTabHelper&) = delete;
 
   ~NewTabPageTabHelper() override;
-
-  static void CreateForWebState(web::WebState* web_state);
 
   // Sets the NTP's NavigationItem title and virtualURL to the appropriate
   // string and chrome://newtab respectively.
@@ -53,14 +50,7 @@ class NewTabPageTabHelper : public web::WebStateObserver,
   // WebStateObserver callback.
   void Deactivate();
 
-  // Sometimes the underlying ios/web page used for the NTP (about://newtab)
-  // takes a long time to load.  Loading any page before the newtab is committed
-  // will leave ios/web in a bad state.  See: crbug.com/925304 for more context.
-  // Remove this when ios/web supports queueing multiple loads during this
-  // state.
-  bool IgnoreLoadRequests() const;
-
-  // Returns true if an |url| is either chrome://newtab or about://newtab.
+  // Returns true if an `url` is either chrome://newtab or about://newtab.
   bool IsNTPURL(const GURL& url);
 
   // Returns the initially selected feed for the next NTP and then resets it to
@@ -79,7 +69,7 @@ class NewTabPageTabHelper : public web::WebStateObserver,
   // Saves the NTP state for when users navigate back to it.
   void SaveNTPState(CGFloat scroll_position, FeedType feed_type);
 
-  // Returns the saved scroll position of the NTP from |SaveNTPState|.
+  // Returns the saved scroll position of the NTP from `SaveNTPState`.
   CGFloat ScrollPositionFromSavedState();
 
  private:
@@ -99,29 +89,18 @@ class NewTabPageTabHelper : public web::WebStateObserver,
   // Enable or disable the tab helper.
   void SetActive(bool active);
 
-  // Sets the |ignore_load_requests_| flag to YES and starts the ignore load
-  // timer.
-  void EnableIgnoreLoadRequests();
-
-  // Sets the |ignore_load_requests_| flag to NO and stops the ignore load
-  // timer.
-  void DisableIgnoreLoadRequests();
-
   // Used to present and dismiss the NTP.
   __weak id<NewTabPageTabHelperDelegate> delegate_ = nil;
 
   // The WebState with which this object is associated.
   web::WebState* web_state_ = nullptr;
 
-  // |YES| if the current tab helper is active.
+  // `YES` if the current tab helper is active.
   BOOL active_ = NO;
 
-  // |YES| if the NTP for this WebState should be configured to show the Start
+  // `YES` if the NTP for this WebState should be configured to show the Start
   // Surface.
   BOOL show_start_surface_ = false;
-
-  // |YES| if the NTP's underlying ios/web page is still loading.
-  BOOL ignore_load_requests_ = NO;
 
   // The default feed type of the next NTP.
   FeedType next_ntp_feed_type_;
@@ -131,10 +110,6 @@ class NewTabPageTabHelper : public web::WebStateObserver,
 
   // The saved scroll position for navigating back to the NTP.
   CGFloat saved_scroll_position_ = -CGFLOAT_MAX;
-
-  // Ensure the ignore_load_requests_ flag is never set to NO for more than
-  // |kMaximumIgnoreLoadRequestsTime| seconds.
-  std::unique_ptr<base::OneShotTimer> ignore_load_requests_timer_;
 
   WEB_STATE_USER_DATA_KEY_DECL();
 };

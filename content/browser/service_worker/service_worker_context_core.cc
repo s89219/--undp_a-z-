@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,6 @@
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "components/services/storage/public/cpp/quota_client_callback_wrapper.h"
 #include "content/browser/log_console_message.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -380,7 +379,7 @@ void ServiceWorkerContextCore::HasMainFrameWindowClient(
                                            /*include_reserved_clients=*/false);
 
   if (container_host_iterator->IsAtEnd()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), false));
     return;
   }
@@ -399,7 +398,7 @@ void ServiceWorkerContextCore::HasMainFrameWindowClient(
     container_host_iterator->Advance();
   }
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), has_main_frame));
 }
 
@@ -512,7 +511,8 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
     blink::mojom::FetchClientSettingsObjectPtr
         outside_fetch_client_settings_object,
     RegistrationCallback callback,
-    const GlobalRenderFrameHostId& requesting_frame_id) {
+    const GlobalRenderFrameHostId& requesting_frame_id,
+    const PolicyContainerPolicies& policy_container_policies) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   std::string error_message;
   if (!IsValidRegisterRequest(script_url, options.scope, key, &error_message)) {
@@ -521,12 +521,20 @@ void ServiceWorkerContextCore::RegisterServiceWorker(
         blink::mojom::kInvalidServiceWorkerRegistrationId);
     return;
   }
+
+  auto* render_frame_host = RenderFrameHostImpl::FromID(requesting_frame_id);
+  const blink::mojom::AncestorFrameType ancestor_frame_type =
+      render_frame_host && render_frame_host->IsNestedWithinFencedFrame()
+          ? blink::mojom::AncestorFrameType::kFencedFrame
+          : blink::mojom::AncestorFrameType::kNormalFrame;
+
   was_service_worker_registered_ = true;
   job_coordinator_->Register(
       script_url, options, key, std::move(outside_fetch_client_settings_object),
-      requesting_frame_id,
+      requesting_frame_id, ancestor_frame_type,
       base::BindOnce(&ServiceWorkerContextCore::RegistrationComplete,
-                     AsWeakPtr(), options.scope, key, std::move(callback)));
+                     AsWeakPtr(), options.scope, key, std::move(callback)),
+      policy_container_policies);
 }
 
 void ServiceWorkerContextCore::UpdateServiceWorker(
@@ -846,7 +854,7 @@ void ServiceWorkerContextCore::UnprotectVersion(int64_t version_id) {
 
 void ServiceWorkerContextCore::ScheduleDeleteAndStartOver() const {
   registry()->PrepareForDeleteAndStartOver();
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&ServiceWorkerContextWrapper::DeleteAndStartOver,
                      wrapper_));

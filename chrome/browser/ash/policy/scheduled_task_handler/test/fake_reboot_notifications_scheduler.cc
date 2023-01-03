@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,9 @@ int FakeRebootNotificationsScheduler::GetShowDialogCalls() const {
 }
 int FakeRebootNotificationsScheduler::GetShowNotificationCalls() const {
   return show_notification_calls_;
+}
+int FakeRebootNotificationsScheduler::GetCloseNotificationCalls() const {
+  return close_notification_calls_;
 }
 void FakeRebootNotificationsScheduler::SetUptime(base::TimeDelta uptime) {
   uptime_ = uptime;
@@ -62,7 +65,9 @@ const base::TimeDelta FakeRebootNotificationsScheduler::GetSystemUptime()
   return uptime_;
 }
 
-void FakeRebootNotificationsScheduler::CloseNotifications() {}
+void FakeRebootNotificationsScheduler::CloseNotifications() {
+  ++close_notification_calls_;
+}
 
 bool FakeRebootNotificationsScheduler::ShouldWaitFullRestoreInit() const {
   return wait_full_restore_init_;

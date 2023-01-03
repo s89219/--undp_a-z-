@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,22 +28,11 @@ class ASH_PUBLIC_EXPORT WallpaperControllerClient {
   // Opens the wallpaper picker window.
   virtual void OpenWallpaperPicker() = 0;
 
-  // Closes the app side of the wallpaper preview (top header bar) if it is
-  // currently open.
-  virtual void MaybeClosePreviewWallpaper() = 0;
-
   // Sets the default wallpaper and removes the file for the previous wallpaper.
   virtual void SetDefaultWallpaper(
       const AccountId& account_id,
       bool show_wallpaper,
       base::OnceCallback<void(bool success)> callback) = 0;
-
-  // Retrieves the current collection id from the Wallpaper Picker Chrome App
-  // for migration and returns it via |result_callback|. The string in
-  // |result_callback| will be empty if the fetch failed.
-  virtual void MigrateCollectionIdFromChromeApp(
-      const AccountId& account_id,
-      base::OnceCallback<void(const std::string&)> result_callback) = 0;
 
   // Downloads and sets a new random wallpaper from the collection of the
   // specified collection_id.
@@ -53,11 +42,13 @@ class ASH_PUBLIC_EXPORT WallpaperControllerClient {
       const std::string& collection_id,
       DailyWallpaperUrlFetchedCallback callback) = 0;
 
+  // TODO(b/245611754) move to `WallpaperDriveFsDelegate`.
   virtual void SaveWallpaperToDriveFs(
       const AccountId& account_id,
       const base::FilePath& origin,
       base::OnceCallback<void(bool)> wallpaper_saved_callback) = 0;
 
+  // TODO(b/245611754) move to `WallpaperDriveFsDelegate`.
   virtual base::FilePath GetWallpaperPathFromDriveFs(
       const AccountId& account_id) = 0;
 
@@ -84,8 +75,13 @@ class ASH_PUBLIC_EXPORT WallpaperControllerClient {
   virtual void FetchDailyGooglePhotosPhoto(
       const AccountId& account_id,
       const std::string& album_id,
-      const absl::optional<std::string>& current_photo_id,
       FetchGooglePhotosPhotoCallback callback) = 0;
+
+  using FetchGooglePhotosAccessTokenCallback =
+      base::OnceCallback<void(const absl::optional<std::string>& token)>;
+  virtual void FetchGooglePhotosAccessToken(
+      const AccountId& account_id,
+      FetchGooglePhotosAccessTokenCallback callback) = 0;
 };
 
 }  // namespace ash

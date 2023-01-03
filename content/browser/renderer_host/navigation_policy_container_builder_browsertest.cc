@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,7 +63,7 @@ class NavigationPolicyContainerBuilderBrowserTest : public ContentBrowserTest {
   // Returns a pointer to the current root RenderFrameHostImpl.
   RenderFrameHostImpl* root_frame_host() {
     return static_cast<RenderFrameHostImpl*>(
-        shell()->web_contents()->GetMainFrame());
+        shell()->web_contents()->GetPrimaryMainFrame());
   }
 
   // Returns the URL of a page in the local address space.
@@ -182,8 +182,8 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   NavigationPolicyContainerBuilder builder(nullptr, nullptr, nullptr);
   builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kPublic);
 
-  builder.ComputePolicies(GURL(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePolicies(GURL(), false, network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
   // This must be called on a task runner, hence the need for this test to be
   // a browser test and not a simple unit test.
@@ -194,8 +194,6 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
 
   const blink::mojom::PolicyContainerPolicies& policies = *container->policies;
   EXPECT_EQ(policies.referrer_policy, builder.FinalPolicies().referrer_policy);
-  EXPECT_EQ(policies.ip_address_space,
-            builder.FinalPolicies().ip_address_space);
 }
 
 // Verifies that when the URL of the document to commit is `about:blank`, and
@@ -213,8 +211,8 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   EXPECT_TRUE(NavigateToURL(shell()->web_contents(), PublicUrl()));
   EXPECT_TRUE(NavigateToURLFromRenderer(root, AboutBlankUrl()));
 
-  auto initiator_policies = std::make_unique<PolicyContainerPolicies>();
-  initiator_policies->ip_address_space = network::mojom::IPAddressSpace::kLocal;
+  PolicyContainerPolicies initiator_policies;
+  initiator_policies.ip_address_space = network::mojom::IPAddressSpace::kLocal;
 
   blink::LocalFrameToken token;
   auto initiator_host =
@@ -226,8 +224,7 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
 
   EXPECT_NE(*builder.HistoryPolicies(), *builder.InitiatorPolicies());
 
-  std::unique_ptr<PolicyContainerPolicies> history_policies =
-      builder.HistoryPolicies()->Clone();
+  PolicyContainerPolicies history_policies = builder.HistoryPolicies()->Clone();
 
   // Deliver a Content Security Policy via `AddContentSecurityPolicy`. This
   // policy should not be incorporated in the final policies, since the builder
@@ -235,9 +232,10 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   builder.AddContentSecurityPolicy(MakeTestCSP());
 
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *history_policies);
+  EXPECT_EQ(builder.FinalPolicies(), history_policies);
 }
 
 // Verifies that when the URL of the document to commit is `about:srcdoc`, and
@@ -271,8 +269,7 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
 
   EXPECT_NE(*builder.HistoryPolicies(), *builder.ParentPolicies());
 
-  std::unique_ptr<PolicyContainerPolicies> history_policies =
-      builder.HistoryPolicies()->Clone();
+  PolicyContainerPolicies history_policies = builder.HistoryPolicies()->Clone();
 
   // Deliver a Content Security Policy via `AddContentSecurityPolicy`. This
   // policy should not be incorporated in the final policies, since the builder
@@ -280,9 +277,10 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   builder.AddContentSecurityPolicy(MakeTestCSP());
 
   builder.ComputePolicies(AboutSrcdocUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *history_policies);
+  EXPECT_EQ(builder.FinalPolicies(), history_policies);
 }
 
 // Verifies that history policies are ignored in the case of error pages.
@@ -299,8 +297,7 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   NavigationPolicyContainerBuilder builder(
       nullptr, nullptr, GetLastCommittedFrameNavigationEntry());
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
+  builder.ComputePoliciesForError();
 
   // Error pages commit with default policies, ignoring the history policies.
   EXPECT_EQ(builder.FinalPolicies(), PolicyContainerPolicies());
@@ -321,16 +318,15 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   NavigationPolicyContainerBuilder builder(
       nullptr, nullptr, GetLastCommittedFrameNavigationEntry());
 
-  std::unique_ptr<PolicyContainerPolicies> history_policies =
-      builder.HistoryPolicies()->Clone();
+  PolicyContainerPolicies history_policies = builder.HistoryPolicies()->Clone();
 
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
-  EXPECT_THAT(builder.HistoryPolicies(), Pointee(Eq(ByRef(*history_policies))));
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
+  EXPECT_THAT(builder.HistoryPolicies(), Pointee(Eq(ByRef(history_policies))));
 
-  builder.ComputePoliciesForError(false,
-                                  network::mojom::WebSandboxFlags::kNone);
-  EXPECT_THAT(builder.HistoryPolicies(), Pointee(Eq(ByRef(*history_policies))));
+  builder.ComputePoliciesForError();
+  EXPECT_THAT(builder.HistoryPolicies(), Pointee(Eq(ByRef(history_policies))));
 }
 
 // Verifies that history policies from a reused navigation entry aren't used for
@@ -418,21 +414,22 @@ IN_PROC_BROWSER_TEST_F(NavigationPolicyContainerBuilderBrowserTest,
   NavigationPolicyContainerBuilder builder(
       nullptr, nullptr, GetLastCommittedFrameNavigationEntry());
 
-  std::unique_ptr<PolicyContainerPolicies> history_policies =
-      builder.HistoryPolicies()->Clone();
+  PolicyContainerPolicies history_policies = builder.HistoryPolicies()->Clone();
 
   builder.ComputePolicies(GURL("http://foo.test"), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
   EXPECT_EQ(builder.FinalPolicies(), PolicyContainerPolicies());
 
   builder.ResetForCrossDocumentRestart();
-  EXPECT_THAT(builder.HistoryPolicies(), Pointee(Eq(ByRef(*history_policies))));
+  EXPECT_THAT(builder.HistoryPolicies(), Pointee(Eq(ByRef(history_policies))));
 
   builder.ComputePolicies(AboutBlankUrl(), false,
-                          network::mojom::WebSandboxFlags::kNone);
+                          network::mojom::WebSandboxFlags::kNone,
+                          /*is_credentialless=*/false);
 
-  EXPECT_EQ(builder.FinalPolicies(), *history_policies);
+  EXPECT_EQ(builder.FinalPolicies(), history_policies);
 }
 
 }  // namespace

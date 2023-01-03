@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,7 +17,6 @@
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/test_completion_callback.h"
@@ -157,7 +156,7 @@ class WrappedSimpleIndexFile : public SimpleIndexFile {
   using SimpleIndexFile::SerializeFinalData;
 
   explicit WrappedSimpleIndexFile(const base::FilePath& index_file_directory)
-      : SimpleIndexFile(base::ThreadTaskRunnerHandle::Get(),
+      : SimpleIndexFile(base::SingleThreadTaskRunner::GetCurrentDefault(),
                         base::MakeRefCounted<TrivialFileOperationsFactory>(),
                         net::DISK_CACHE,
                         index_file_directory) {}
@@ -493,8 +492,8 @@ TEST_F(SimpleIndexFileTest, WriteThenLoadIndex) {
   EXPECT_FALSE(load_index_result.flush_required);
 
   EXPECT_EQ(kNumHashes, load_index_result.entries.size());
-  for (size_t i = 0; i < kNumHashes; ++i)
-    EXPECT_EQ(1U, load_index_result.entries.count(kHashes[i]));
+  for (uint64_t hash : kHashes)
+    EXPECT_EQ(1U, load_index_result.entries.count(hash));
 }
 
 TEST_F(SimpleIndexFileTest, LoadCorruptIndex) {
@@ -603,10 +602,10 @@ TEST_F(SimpleIndexFileTest, SimpleCacheUpgrade) {
       /*file_tracker=*/nullptr, 0, net::DISK_CACHE,
       /*net_log=*/nullptr);
   net::TestCompletionCallback cb;
-  int rv = simple_cache->Init(cb.callback());
-  EXPECT_THAT(cb.GetResult(rv), IsOk());
+  simple_cache->Init(cb.callback());
+  EXPECT_THAT(cb.WaitForResult(), IsOk());
   simple_cache->index()->ExecuteWhenReady(cb.callback());
-  rv = cb.WaitForResult();
+  int rv = cb.WaitForResult();
   EXPECT_THAT(rv, IsOk());
   simple_cache.reset();
   cleanup_tracker = nullptr;

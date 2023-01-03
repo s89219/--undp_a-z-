@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,15 +38,17 @@ class FederatedIdentityApiPermissionContext
       const FederatedIdentityApiPermissionContext&) = delete;
 
   // content::FederatedIdentityApiPermissionContextDelegate:
-  bool HasApiPermission(const url::Origin& rp_origin) override;
-  bool AreThirdPartyCookiesBlocked() override;
-  void RecordDismissAndEmbargo(const url::Origin& rp_origin) override;
-  void RemoveEmbargoAndResetCounts(const url::Origin& rp_origin) override;
+  content::FederatedIdentityApiPermissionContextDelegate::PermissionStatus
+  GetApiPermissionStatus(const url::Origin& relying_party_embedder) override;
+  void RecordDismissAndEmbargo(
+      const url::Origin& relying_party_embedder) override;
+  void RemoveEmbargoAndResetCounts(
+      const url::Origin& relying_party_embedder) override;
 
  private:
   const raw_ptr<HostContentSettingsMap> host_content_settings_map_;
   scoped_refptr<content_settings::CookieSettings> cookie_settings_;
-  const raw_ptr<permissions::PermissionDecisionAutoBlocker>
+  const raw_ptr<permissions::PermissionDecisionAutoBlocker, DanglingUntriaged>
       permission_autoblocker_;
 };
 

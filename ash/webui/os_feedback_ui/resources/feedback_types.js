@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,12 @@
  * Type aliases for the mojo API.
  */
 
+import '//resources/mojo/mojo/public/mojom/base/big_buffer.mojom-lite.js';
+import '//resources/mojo/mojo/public/mojom/base/string16.mojom-lite.js';
 import '//resources/mojo/mojo/public/js/mojo_bindings_lite.js';
 import '//resources/mojo/url/mojom/url.mojom-lite.js';
+import './file_path.mojom-lite.js';
+import './safe_base_name.mojom-lite.js';
 import './mojom/os_feedback_ui.mojom-lite.js';
 
 /**
@@ -75,10 +79,43 @@ export const HelpContentProvider = ash.osFeedbackUi.mojom.HelpContentProvider;
 export const FeedbackContext = ash.osFeedbackUi.mojom.FeedbackContext;
 
 /**
+ * Type alias for FeedbackAppPreSubmitAction.
+ * @typedef {ash.osFeedbackUi.mojom.FeedbackAppPreSubmitAction}
+ */
+export const FeedbackAppPreSubmitAction =
+    ash.osFeedbackUi.mojom.FeedbackAppPreSubmitAction;
+
+/**
+ * Type alias for FeedbackAppPostSubmitAction.
+ * @typedef {ash.osFeedbackUi.mojom.FeedbackAppPostSubmitAction}
+ */
+export const FeedbackAppPostSubmitAction =
+    ash.osFeedbackUi.mojom.FeedbackAppPostSubmitAction;
+
+/**
+ * Type alias for FeedbackAppExitPath.
+ * @typedef {ash.osFeedbackUi.mojom.FeedbackAppExitPath}
+ */
+export const FeedbackAppExitPath = ash.osFeedbackUi.mojom.FeedbackAppExitPath;
+
+/**
+ * Type alias for FeedbackAppHelpContentOutcome.
+ * @typedef {ash.osFeedbackUi.mojom.FeedbackAppHelpContentOutcome}
+ */
+export const FeedbackAppHelpContentOutcome =
+    ash.osFeedbackUi.mojom.FeedbackAppHelpContentOutcome;
+
+/**
  * Type alias for SendReportStatus.
  * @typedef {ash.osFeedbackUi.mojom.SendReportStatus}
  */
 export const SendReportStatus = ash.osFeedbackUi.mojom.SendReportStatus;
+
+/**
+ * Type alias for AttachedFile.
+ * @typedef {ash.osFeedbackUi.mojom.AttachedFile}
+ */
+export const AttachedFile = ash.osFeedbackUi.mojom.AttachedFile;
 
 /**
  * Type alias for Report.

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,8 @@
 #include "chrome/browser/devtools/devtools_toggle_action.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/ui/chrome_pages.h"
-#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_delegate.h"
+#include "chrome/browser/ui/tabs/tab_strip_user_gesture_details.h"
 #include "components/services/screen_ai/buildflags/buildflags.h"
 #include "content/public/common/page_zoom.h"
 #include "printing/buildflags/buildflags.h"
@@ -97,23 +97,23 @@ bool CanResetZoom(content::WebContents* contents);
 void RestoreTab(Browser* browser);
 void SelectNextTab(
     Browser* browser,
-    TabStripModel::UserGestureDetails gesture_detail =
-        TabStripModel::UserGestureDetails(TabStripModel::GestureType::kOther));
+    TabStripUserGestureDetails gesture_detail = TabStripUserGestureDetails(
+        TabStripUserGestureDetails::GestureType::kOther));
 void SelectPreviousTab(
     Browser* browser,
-    TabStripModel::UserGestureDetails gesture_detail =
-        TabStripModel::UserGestureDetails(TabStripModel::GestureType::kOther));
+    TabStripUserGestureDetails gesture_detail = TabStripUserGestureDetails(
+        TabStripUserGestureDetails::GestureType::kOther));
 void MoveTabNext(Browser* browser);
 void MoveTabPrevious(Browser* browser);
 void SelectNumberedTab(
     Browser* browser,
     int index,
-    TabStripModel::UserGestureDetails gesture_detail =
-        TabStripModel::UserGestureDetails(TabStripModel::GestureType::kOther));
+    TabStripUserGestureDetails gesture_detail = TabStripUserGestureDetails(
+        TabStripUserGestureDetails::GestureType::kOther));
 void SelectLastTab(
     Browser* browser,
-    TabStripModel::UserGestureDetails gesture_detail =
-        TabStripModel::UserGestureDetails(TabStripModel::GestureType::kOther));
+    TabStripUserGestureDetails gesture_detail = TabStripUserGestureDetails(
+        TabStripUserGestureDetails::GestureType::kOther));
 void DuplicateTab(Browser* browser);
 bool CanDuplicateTab(const Browser* browser);
 bool CanDuplicateKeyboardFocusedTab(const Browser* browser);
@@ -148,7 +148,12 @@ void ConvertPopupToTabbedBrowser(Browser* browser);
 void CloseTabsToRight(Browser* browser);
 void CloseOtherTabs(Browser* browser);
 void Exit();
+// Bookmarks the current tab in the most recently used folder and shows the
+// edit dialog.
 void BookmarkCurrentTab(Browser* browser);
+// Bookmarks the current tab in the given folder and does not show the edit
+// dialog.
+void BookmarkCurrentTabInFolder(Browser* browser, int64_t folder_id);
 bool CanBookmarkCurrentTab(const Browser* browser);
 void BookmarkAllTabs(Browser* browser);
 bool CanBookmarkAllTabs(const Browser* browser);
@@ -227,7 +232,7 @@ void SetAndroidOsForTabletSite(content::WebContents* current_tab);
 void ToggleFullscreenMode(Browser* browser);
 void ClearCache(Browser* browser);
 bool IsDebuggerAttachedToCurrentTab(Browser* browser);
-void CopyURL(Browser* browser);
+void CopyURL(content::WebContents* web_contents);
 // Moves the WebContents of a hosted app Browser to a tabbed Browser. Returns
 // the tabbed Browser.
 Browser* OpenInChrome(Browser* hosted_app_browser);
@@ -253,9 +258,11 @@ void FollowSite(content::WebContents* web_contents);
 void UnfollowSite(content::WebContents* web_contents);
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-// Triggers the Screen AI to be run once on the |browser|.
-void RunScreenAi(Browser* browser);
+// Triggers the Screen AI visual annotations to be run once on the |browser|.
+void RunScreenAIVisualAnnotation(Browser* browser);
 #endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+
+void ExecLensRegionSearch(Browser* browser);
 
 }  // namespace chrome
 

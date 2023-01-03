@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 
 #include "base/check.h"
 #include "base/containers/extend.h"
+#include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/apps/app_service/app_icon/app_icon_factory.h"
 #include "chrome/browser/apps/app_service/extension_apps_utils.h"
@@ -17,7 +18,6 @@
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/lacros/lacros_extensions_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/app_list/extension_app_utils.h"
 #include "chrome/browser/ui/lacros/window_utility.h"
 #include "chromeos/crosapi/mojom/app_window_tracker.mojom.h"
 #include "chromeos/lacros/lacros_service.h"
@@ -35,6 +35,7 @@
 #include "extensions/browser/management_policy.h"
 #include "extensions/browser/unloaded_extension_reason.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/manifest_handlers/app_display_info.h"
 
 namespace {
 
@@ -205,7 +206,11 @@ class LacrosExtensionAppsPublisher::ProfileTracker
 
   // AppWindowRegistry::Observer overrides.
   void OnAppWindowAdded(extensions::AppWindow* app_window) override {
+    // Only chrome app windows are added to the dock.
     if (!which_type_.IsChromeApps())
+      return;
+    // The extension also has to match.
+    if (!which_type_.Matches(app_window->GetExtension()))
       return;
     std::string muxed_id =
         lacros_extensions_util::MuxId(profile_, app_window->GetExtension());
@@ -217,10 +222,15 @@ class LacrosExtensionAppsPublisher::ProfileTracker
   }
 
   void OnAppWindowRemoved(extensions::AppWindow* app_window) override {
+    // Only chrome app windows are added to the dock.
     if (!which_type_.IsChromeApps())
       return;
+    // The extension also has to match. As the extension may be destroyed at
+    // this point, we use presence in app_window_id_cache_ to decide whether to
+    // continue.
     auto it = app_window_id_cache_.find(app_window);
-    DCHECK(it != app_window_id_cache_.end());
+    if (it == app_window_id_cache_.end())
+      return;
 
     std::string muxed_id = apps::MuxId(profile_, app_window->extension_id());
     std::string window_id = it->second;
@@ -273,6 +283,11 @@ class LacrosExtensionAppsPublisher::ProfileTracker
     app->name = extension->name();
     app->short_name = extension->short_name();
 
+    // TODO(crbug.com/1367337): Work out how pinning interacts with Lacros
+    // multi-profile support once there is a product decision on what that looks
+    // like.
+    app->policy_ids = {extension->id()};
+
     // We always use an empty icon key since we currently do not support
     // dynamically changing icons or modifying the appearance of icons.
     // This bug is tracked at https://crbug.com/1248499, but given that Chrome
@@ -285,7 +300,7 @@ class LacrosExtensionAppsPublisher::ProfileTracker
     auto* prefs = extensions::ExtensionPrefs::Get(profile_);
     if (prefs) {
       app->last_launch_time = prefs->GetLastLaunchTime(extension->id());
-      app->install_time = prefs->GetInstallTime(extension->id());
+      app->install_time = prefs->GetLastUpdateTime(extension->id());
     } else {
       app->last_launch_time = base::Time();
       app->install_time = base::Time();
@@ -300,7 +315,8 @@ class LacrosExtensionAppsPublisher::ProfileTracker
     app->show_in_launcher = show;
     app->show_in_shelf = show;
     app->show_in_search = show;
-    app->show_in_management = extension->ShouldDisplayInAppLauncher();
+    app->show_in_management =
+        extensions::AppDisplayInfo::ShouldDisplayInAppLauncher(*extension);
     app->handles_intents = which_type_.IsExtensions() || show;
 
     if (which_type_.IsChromeApps()) {
@@ -321,20 +337,21 @@ class LacrosExtensionAppsPublisher::ProfileTracker
     app->allow_uninstall = (policy->UserMayModifySettings(extension, nullptr) &&
                             !policy->MustRemainInstalled(extension, nullptr));
 
-    // Add file_handlers for Chrome Apps, or file_browser_handler for
-    // Extensions.
+    // Add file_handlers for Chrome Apps and quickoffice, or
+    // file_browser_handler for Extensions.
     base::Extend(app->intent_filters,
-                 which_type_.ChooseForChromeAppOrExtension(
+                 which_type_.ChooseIntentFilter(
+                     extension_misc::IsQuickOfficeExtension(extension->id()),
                      apps_util::CreateIntentFiltersForChromeApp,
                      apps_util::CreateIntentFiltersForExtension)(extension));
     return app;
   }
 
   // This pointer is guaranteed to be valid and to outlive this object.
-  Profile* const profile_;
+  const raw_ptr<Profile> profile_;
 
   // This pointer is guaranteed to be valid and to outlive this object.
-  LacrosExtensionAppsPublisher* const publisher_;
+  const raw_ptr<LacrosExtensionAppsPublisher> publisher_;
 
   // State to decide which extension type (e.g., Chrome Apps vs. Extensions)
   // to support.
@@ -462,6 +479,7 @@ void LacrosExtensionAppsPublisher::OnProfileMarkedForPermanentDeletion(
 }
 
 void LacrosExtensionAppsPublisher::OnProfileManagerDestroying() {
+  profile_trackers_.clear();
   profile_manager_observation_.Reset();
 }
 

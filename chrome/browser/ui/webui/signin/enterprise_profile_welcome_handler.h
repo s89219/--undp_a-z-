@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,7 +41,8 @@ class EnterpriseProfileWelcomeHandler
   EnterpriseProfileWelcomeHandler(
       Browser* browser,
       EnterpriseProfileWelcomeUI::ScreenType type,
-      bool force_new_profile,
+      bool profile_creation_required_by_policy,
+      bool show_link_data_option,
       const AccountInfo& account_info,
       absl::optional<SkColor> profile_color,
       signin::SigninChoiceCallback proceed_callback);
@@ -91,7 +92,7 @@ class EnterpriseProfileWelcomeHandler
   void UpdateProfileInfo(const base::FilePath& profile_path);
 
   // Computes the profile info (avatar and colors) to be sent to the WebUI.
-  base::Value GetProfileInfoValue();
+  base::Value::Dict GetProfileInfoValue();
 
   // Returns the ProfilesAttributesEntry associated with the current profile.
   ProfileAttributesEntry* GetProfileEntry() const;
@@ -113,7 +114,10 @@ class EnterpriseProfileWelcomeHandler
 
   raw_ptr<Browser> browser_ = nullptr;
   const EnterpriseProfileWelcomeUI::ScreenType type_;
-  const bool force_new_profile_;
+  const bool profile_creation_required_by_policy_;
+#if !BUILDFLAG(IS_CHROMEOS)
+  const bool show_link_data_option_;
+#endif
   const std::u16string email_;
   const std::string domain_name_;
   const CoreAccountId account_id_;

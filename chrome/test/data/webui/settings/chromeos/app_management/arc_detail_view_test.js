@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,16 @@
 
 import {AppManagementStore, FakePageHandler, PermissionType, updateSelectedAppId, getPermissionValueBool} from 'chrome://os-settings/chromeos/os_settings.js';
 import {setupFakeHandler, replaceStore, replaceBody, isHiddenByDomIf, isHidden, getPermissionItemByType, getPermissionCrToggleByType} from './test_util.js';
-import {flushTasks} from 'chrome://test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {AppType} from 'chrome://resources/cr_components/app_management/app_management.mojom-webui.js';
 
 suite('<app-management-arc-detail-view>', () => {
   let arcPermissionView;
   let fakeHandler;
 
   function expandPermissions() {
-    arcPermissionView.root.querySelector('#subpermission-expand-row').click();
+    arcPermissionView.shadowRoot.querySelector('#subpermissionExpandRow')
+        .click();
   }
 
   function getPermissionBoolByType(permissionType) {
@@ -36,14 +38,14 @@ suite('<app-management-arc-detail-view>', () => {
 
     // Create an ARC app without microphone permissions.
     const arcOptions = {
-      type: appManagement.mojom.AppType.kArc,
+      type: AppType.kArc,
       permissions: FakePageHandler.createArcPermissions([
         PermissionType.kCamera,
         PermissionType.kLocation,
         PermissionType.kNotifications,
         PermissionType.kContacts,
         PermissionType.kStorage,
-      ])
+      ]),
     };
 
     // Add an arc app, and make it the currently selected app.
@@ -130,12 +132,12 @@ suite('<app-management-arc-detail-view>', () => {
 
   test('No permissions requested label', async () => {
     assertTrue(isHiddenByDomIf(
-        arcPermissionView.root.querySelector('#no-permissions')));
+        arcPermissionView.shadowRoot.querySelector('#noPermissions')));
 
     // Create an ARC app without any permissions.
     const arcOptions = {
-      type: appManagement.mojom.AppType.kArc,
-      permissions: FakePageHandler.createArcPermissions([])
+      type: AppType.kArc,
+      permissions: FakePageHandler.createArcPermissions([]),
     };
 
     // Add an arc app, and make it the currently selected app.
@@ -144,6 +146,6 @@ suite('<app-management-arc-detail-view>', () => {
     await flushTasks();
 
     assertFalse(isHiddenByDomIf(
-        arcPermissionView.root.querySelector('#no-permissions')));
+        arcPermissionView.shadowRoot.querySelector('#noPermissions')));
   });
 });

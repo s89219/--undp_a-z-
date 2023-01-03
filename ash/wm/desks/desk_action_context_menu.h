@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,11 +44,20 @@ class DeskActionContextMenu : public views::ContextMenuController,
   void UpdateCombineDesksTargetName(
       const std::u16string& new_combine_desks_target_name);
 
+  // Changes the visibility of the combine desks context menu item so that it
+  // can reflect whether there are windows on the desk.
+  void SetCombineDesksMenuItemVisibility(bool visible);
+
+  // Closes the context menu if one is running.
+  void MaybeCloseMenu();
+
   // ui::SimpleMenuModel::Delegate:
   void ExecuteCommand(int command_id, int event_flags) override;
   void MenuClosed(ui::SimpleMenuModel* menu) override;
 
  private:
+  friend class DesksTestApi;
+
   // views::ContextMenuController:
   void ShowContextMenuForViewImpl(views::View* source,
                                   const gfx::Point& point,

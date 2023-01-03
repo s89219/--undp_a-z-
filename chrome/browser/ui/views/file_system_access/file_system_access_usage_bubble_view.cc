@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -162,7 +162,8 @@ class CollapsibleListView : public views::View {
       label_text = base::i18n::MessageFormatter::FormatWithNumberedArgs(
           l10n_util::GetStringUTF16(
               IDS_FILE_SYSTEM_ACCESS_USAGE_BUBBLE_FILES_TEXT),
-          model->RowCount(), first_item, second_item);
+          base::checked_cast<int64_t>(model->RowCount()), first_item,
+          second_item);
     }
     auto* label = label_container->AddChildView(std::make_unique<views::Label>(
         label_text, CONTEXT_DIALOG_BODY_TEXT_SMALL,
@@ -249,31 +250,30 @@ FileSystemAccessUsageBubbleView::FilePathListModel::FilePathListModel(
 FileSystemAccessUsageBubbleView::FilePathListModel::~FilePathListModel() =
     default;
 
-int FileSystemAccessUsageBubbleView::FilePathListModel::RowCount() {
+size_t FileSystemAccessUsageBubbleView::FilePathListModel::RowCount() {
   return files_.size() + directories_.size();
 }
 
 std::u16string FileSystemAccessUsageBubbleView::FilePathListModel::GetText(
-    int row,
+    size_t row,
     int column_id) {
-  if (static_cast<size_t>(row) < files_.size())
+  if (row < files_.size())
     return file_system_access_ui_helper::GetPathForDisplay(files_[row]);
   return file_system_access_ui_helper::GetPathForDisplay(
       directories_[row - files_.size()]);
 }
 
 ui::ImageModel FileSystemAccessUsageBubbleView::FilePathListModel::GetIcon(
-    int row) {
+    size_t row) {
   return ui::ImageModel::FromVectorIcon(
-      static_cast<size_t>(row) < files_.size()
-          ? vector_icons::kInsertDriveFileOutlineIcon
-          : vector_icons::kFolderOpenIcon,
+      row < files_.size() ? vector_icons::kInsertDriveFileOutlineIcon
+                          : vector_icons::kFolderOpenIcon,
       ui::kColorIcon, kIconSize);
 }
 
 std::u16string FileSystemAccessUsageBubbleView::FilePathListModel::GetTooltip(
-    int row) {
-  if (static_cast<size_t>(row) < files_.size())
+    size_t row) {
+  if (row < files_.size())
     return files_[row].LossyDisplayName();
   return directories_[row - files_.size()].LossyDisplayName();
 }
@@ -400,14 +400,16 @@ void FileSystemAccessUsageBubbleView::Init() {
   int heading_message_id =
       ComputeHeadingMessageFromUsage(usage_, &embedded_path);
 
+  auto* browser = chrome::FindBrowserWithWebContents(web_contents());
   if (!embedded_path.empty()) {
     AddChildView(file_system_access_ui_helper::CreateOriginPathLabel(
-        heading_message_id, origin_, embedded_path,
+        browser, heading_message_id, origin_, embedded_path,
         views::style::CONTEXT_DIALOG_BODY_TEXT,
         /*show_emphasis=*/false));
   } else {
     AddChildView(file_system_access_ui_helper::CreateOriginLabel(
-        heading_message_id, origin_, views::style::CONTEXT_DIALOG_BODY_TEXT,
+        browser, heading_message_id, origin_,
+        views::style::CONTEXT_DIALOG_BODY_TEXT,
         /*show_emphasis=*/false));
 
     if (writable_paths_model_.RowCount() > 0) {

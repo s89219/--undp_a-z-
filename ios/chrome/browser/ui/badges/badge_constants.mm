@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,12 +25,6 @@ NSString* const kBadgeButtonIncognitoAccessibilityIdentifier =
 
 NSString* const kBadgeButtonOverflowAccessibilityIdentifier =
     @"badgeButtonOverflowAXID";
-
-NSString* const kBadgeButtonReadingListAccessibilityIdentifier =
-    @"badgeButtonReadingListAXID";
-
-NSString* const kBadgeButtonReadingListAcceptedAccessibilityIdentifier =
-    @"badgeButtonReadingListAcceptedAXID";
 
 NSString* const kBadgeButtonSaveAddressProfileAccessibilityIdentifier =
     @"badgeButtonSaveAddressProfileAXID";
@@ -74,9 +68,6 @@ NSString* const kBadgeButtonSavePasswordActionIdentifier =
 
 NSString* const kBadgeButtonUpdatePasswordActionIdentifier =
     @"badgeButtonUpdatePasswordActionIdentifier";
-
-NSString* const kBadgeButtonReadingListActionIdentifier =
-    @"badgeButtonReadingListActionIdentifier";
 
 NSString* const kBadgeButtonSaveAddressProfileActionIdentifier =
     @"badgeButtonSaveAddressProfileActionIdentifier";

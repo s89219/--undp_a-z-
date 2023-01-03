@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,8 +53,9 @@ class CONTENT_EXPORT WebUIConfigMap {
   WebUIConfig* GetConfig(BrowserContext* browser_context,
                          const url::Origin& origin);
 
-  // Removes the WebUIConfig with |origin|.
-  void RemoveForTesting(const url::Origin& origin);
+  // Removes and returns the WebUIConfig with |origin|. Returns nullptr if
+  // there is no WebUIConfig with |origin|.
+  std::unique_ptr<WebUIConfig> RemoveConfig(const url::Origin& origin);
 
   // Returns the size of the map, i.e. how many WebUIConfigs are registered.
   size_t GetSizeForTesting() { return configs_map_.size(); }

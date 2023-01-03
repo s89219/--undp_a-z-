@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,12 +29,6 @@ std::ostream& operator<<(std::ostream& os, const StructWithOperator& v) {
 struct StructWithToString {
   std::string ToString() const { return ""; }
 };
-
-// is_non_const_reference<Type>
-static_assert(!is_non_const_reference<int>::value, "IsNonConstReference");
-static_assert(!is_non_const_reference<const int&>::value,
-              "IsNonConstReference");
-static_assert(is_non_const_reference<int&>::value, "IsNonConstReference");
 
 // A few standard types that definitely support printing.
 static_assert(internal::SupportsOstreamOperator<int>::value,
@@ -118,13 +112,6 @@ TEST(TemplateUtil, RemoveCvRefT) {
                 "");
   static_assert(
       std::is_same<void (*)(int), remove_cvref_t<void (*)(int)>>::value, "");
-}
-
-TEST(TemplateUtil, IsConstantEvaluated) {
-  // base::is_constant_evaluated() should return whether it is evaluated as part
-  // of a constant expression.
-  static_assert(is_constant_evaluated(), "");
-  EXPECT_FALSE(is_constant_evaluated());
 }
 
 }  // namespace

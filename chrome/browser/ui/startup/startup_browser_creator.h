@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -18,7 +19,7 @@
 
 class Browser;
 class GURL;
-class LaunchModeRecorder;
+class OldLaunchModeRecorder;
 class PrefRegistrySimple;
 
 namespace base {
@@ -66,7 +67,7 @@ struct StartupProfilePathInfo {
 // TODO(https://crbug.com/1150326): return a guest profile for the Guest mode
 // and return nullptr for kProfilePicker.
 struct StartupProfileInfo {
-  Profile* profile;
+  raw_ptr<Profile> profile;
   StartupProfileMode mode;
 };
 
@@ -132,12 +133,13 @@ class StartupBrowserCreator {
   // |is_first_run| indicates that this is a new profile.
   // If |launch_mode_recorder| is non null, and a browser is launched, a launch
   // mode histogram will be recorded.
-  void LaunchBrowser(const base::CommandLine& command_line,
-                     Profile* profile,
-                     const base::FilePath& cur_dir,
-                     chrome::startup::IsProcessStartup process_startup,
-                     chrome::startup::IsFirstRun is_first_run,
-                     std::unique_ptr<LaunchModeRecorder> launch_mode_recorder);
+  void LaunchBrowser(
+      const base::CommandLine& command_line,
+      Profile* profile,
+      const base::FilePath& cur_dir,
+      chrome::startup::IsProcessStartup process_startup,
+      chrome::startup::IsFirstRun is_first_run,
+      std::unique_ptr<OldLaunchModeRecorder> launch_mode_recorder);
 
   // Launches browser for `last_opened_profiles` if it's not empty. Otherwise,
   // launches browser for `profile_info`.
@@ -148,10 +150,6 @@ class StartupBrowserCreator {
       chrome::startup::IsFirstRun is_first_run,
       StartupProfileInfo profile_info,
       const Profiles& last_opened_profiles);
-
-  // Returns true if we're in the process of restoring the session for the
-  // last opened profiles in `LaunchBrowserForLastProfiles()`.
-  static bool IsLaunchingBrowserForLastProfiles();
 
   // Returns true during browser process startup if the previous browser was
   // restarted. This only returns true before the first StartupBrowserCreator
@@ -206,6 +204,14 @@ class StartupBrowserCreator {
                            OpenAppShortcutWindowPref);
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorChromeAppShortcutTest,
                            OpenPolicyForcedAppShortcut);
+  FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorChromeAppShortcutTestWithLaunch,
+                           OpenAppShortcutNoPref);
+  FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorChromeAppShortcutTestWithLaunch,
+                           OpenAppShortcutTabPref);
+  FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorChromeAppShortcutTestWithLaunch,
+                           OpenAppShortcutWindowPref);
+  FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorChromeAppShortcutTestWithLaunch,
+                           OpenPolicyForcedAppShortcut);
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest, OpenAppUrlShortcut);
   FRIEND_TEST_ALL_PREFIXES(StartupBrowserCreatorTest,
                            OpenAppUrlIncognitoShortcut);
@@ -246,13 +252,13 @@ class StartupBrowserCreator {
                               const base::FilePath& cur_dir,
                               Profile* profile);
 
-  // Callback after a profile has been created.
-  static void ProcessCommandLineOnProfileCreated(
+  // Callback after a profile has been initialized. `profile` should be nullptr
+  // if `mode` is `StartupProfileMode::kProfilePicker`.
+  static void ProcessCommandLineWithProfile(
       const base::CommandLine& command_line,
       const base::FilePath& cur_dir,
       StartupProfileMode mode,
-      Profile* profile,
-      Profile::CreateStatus status);
+      Profile* profile);
 
   // Returns true once a profile was activated. Used by the
   // StartupBrowserCreatorTest.LastUsedProfileActivated test.

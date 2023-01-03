@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 #include "ash/public/cpp/keyboard/keyboard_controller.h"
 #include "ash/public/cpp/login_screen_test_api.h"
 #include "base/command_line.h"
+#include "base/feature_list.h"
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/ash/login/startup_utils.h"
 #include "chrome/browser/ash/login/test/js_checker.h"
@@ -14,12 +15,12 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
-#include "chrome/browser/ui/webui/chromeos/login/guest_tos_screen_handler.h"
-#include "chrome/browser/ui/webui/chromeos/login/user_creation_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/guest_tos_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/user_creation_screen_handler.h"
 #include "chrome/test/base/mixin_based_in_process_browser_test.h"
+#include "chromeos/ash/components/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/ash/components/dbus/userdataauth/fake_userdataauth_client.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
-#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
-#include "chromeos/dbus/userdataauth/fake_userdataauth_client.h"
 #include "components/flags_ui/feature_entry_macros.h"
 #include "components/user_manager/user_manager.h"
 #include "content/public/test/browser_test.h"
@@ -56,15 +57,21 @@ class GuestLoginTest : public MixinBasedInProcessBrowserTest {
     OobeScreenWaiter(UserCreationView::kScreenId).Wait();
     ASSERT_TRUE(LoginScreenTestApi::ClickGuestButton());
 
-    if (chromeos::features::IsOobeConsolidatedConsentEnabled()) {
+    if (features::IsOobeConsolidatedConsentEnabled()) {
       OobeScreenWaiter(GuestTosScreenView::kScreenId).Wait();
       test::OobeJS().CreateVisibilityWaiter(true, kLoadedDialog)->Wait();
       test::OobeJS().ClickOnPath(kGuestTosAcceptButton);
     }
   }
 
+  void CheckCryptohomeMountAssertions() {
+    ASSERT_EQ(FakeUserDataAuthClient::Get()->get_prepare_guest_request_count(),
+              1);
+  }
+
  protected:
   LoginManagerMixin login_manager_{&mixin_host_, {}};
+  base::HistogramTester histogram_tester_;
 };
 
 class GuestLoginWithLoginSwitchesTest : public GuestLoginTest {
@@ -98,9 +105,14 @@ IN_PROC_BROWSER_TEST_F(GuestLoginTest, PRE_Login) {
 
   restart_job_waiter.Run();
   EXPECT_TRUE(FakeSessionManagerClient::Get()->restart_job_argv().has_value());
-  ASSERT_EQ(FakeUserDataAuthClient::Get()->get_mount_request_count(), 1);
-  EXPECT_TRUE(
-      FakeUserDataAuthClient::Get()->get_last_mount_request().guest_mount());
+  CheckCryptohomeMountAssertions();
+
+  if (features::IsOobeConsolidatedConsentEnabled()) {
+    histogram_tester_.ExpectTotalCount("OOBE.StepCompletionTime.Guest-tos", 1);
+    histogram_tester_.ExpectTotalCount(
+        "OOBE.StepCompletionTimeByExitReason.Guest-tos.Accept", 1);
+    histogram_tester_.ExpectTotalCount("OOBE.StepShownStatus.Guest-tos", 1);
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(GuestLoginTest, Login) {
@@ -108,6 +120,31 @@ IN_PROC_BROWSER_TEST_F(GuestLoginTest, Login) {
 
   user_manager::UserManager* user_manager = user_manager::UserManager::Get();
   EXPECT_TRUE(user_manager->IsLoggedInAsGuest());
+}
+
+// Check that the guest button is visible on user creation screen before
+// entering and after exiting the guest session.
+IN_PROC_BROWSER_TEST_F(GuestLoginTest,
+                       PRE_PRE_UserCreationGuestButtonVisibility) {
+  base::RunLoop restart_job_waiter;
+  FakeSessionManagerClient::Get()->set_restart_job_callback(
+      restart_job_waiter.QuitClosure());
+
+  EXPECT_TRUE(LoginScreenTestApi::IsGuestButtonShown());
+  StartGuestSession();
+
+  restart_job_waiter.Run();
+}
+
+IN_PROC_BROWSER_TEST_F(GuestLoginTest, PRE_UserCreationGuestButtonVisibility) {
+  login_manager_.WaitForActiveSession();
+
+  user_manager::UserManager* user_manager = user_manager::UserManager::Get();
+  EXPECT_TRUE(user_manager->IsLoggedInAsGuest());
+}
+
+IN_PROC_BROWSER_TEST_F(GuestLoginTest, UserCreationGuestButtonVisibility) {
+  EXPECT_TRUE(LoginScreenTestApi::IsGuestButtonShown());
 }
 
 // The test verifies that clicking the Guest button multiple times doesn't
@@ -128,10 +165,7 @@ IN_PROC_BROWSER_TEST_F(GuestLoginTest, PRE_MultipleClicks) {
   // Not strictly necessary, but useful to potentially catch bugs stemming from
   // asynchronous jobs.
   base::RunLoop().RunUntilIdle();
-
-  EXPECT_EQ(FakeUserDataAuthClient::Get()->get_mount_request_count(), 1);
-  EXPECT_TRUE(
-      FakeUserDataAuthClient::Get()->get_last_mount_request().guest_mount());
+  CheckCryptohomeMountAssertions();
 }
 
 IN_PROC_BROWSER_TEST_F(GuestLoginTest, MultipleClicks) {
@@ -160,7 +194,7 @@ IN_PROC_BROWSER_TEST_F(GuestLoginTest, ExitFullscreenOnSuspend) {
       ->fullscreen_controller()
       ->ToggleBrowserFullscreenMode();
   EXPECT_TRUE(browser_window->IsFullscreen());
-  FakePowerManagerClient::Get()->SendSuspendImminent(
+  chromeos::FakePowerManagerClient::Get()->SendSuspendImminent(
       power_manager::SuspendImminent_Reason_OTHER);
   EXPECT_FALSE(browser_window->IsFullscreen());
 }
@@ -206,6 +240,10 @@ IN_PROC_BROWSER_TEST_F(GuestLoginTest, PRE_SkipGuestToS) {
 
   restart_job_waiter.Run();
   EXPECT_TRUE(FakeSessionManagerClient::Get()->restart_job_argv().has_value());
+  if (features::IsOobeConsolidatedConsentEnabled()) {
+    histogram_tester_.ExpectTotalCount("OOBE.StepCompletionTime.Guest-tos", 0);
+    histogram_tester_.ExpectTotalCount("OOBE.StepShownStatus.Guest-tos", 0);
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(GuestLoginTest, SkipGuestToS) {

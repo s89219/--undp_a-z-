@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@ class TokenHardwareChecker {
          std::string board,
          std::string model,
          std::string cpu,
-         int64_t memory);
+         uint64_t memory);
     Data(const Data& other);
     ~Data();
 
@@ -31,7 +31,7 @@ class TokenHardwareChecker {
     std::string board;
     std::string model;
     std::string cpu;
-    int64_t memory;
+    uint64_t memory;
   };
 
   // A hashing function used for creating tokens.
@@ -53,7 +53,7 @@ class TokenHardwareChecker {
   bool IsModel(const std::string& model) const;
   bool ModelIn(base::flat_set<std::string> models) const;
   bool CpuRegexMatches(const std::string& cpu_regex) const;
-  bool HasMemory(int64_t mem_bytes) const;
+  bool HasMemory(uint64_t mem_bytes) const;
 
  private:
   const Data token_hardware_;

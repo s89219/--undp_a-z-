@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,8 +44,7 @@ public class AccountSelectionCoordinator implements AccountSelectionComponent {
     private AccountSelectionMediator mMediator;
     private RecyclerView mSheetItemListView;
 
-    @Override
-    public void initialize(Context context, BottomSheetController sheetController,
+    public AccountSelectionCoordinator(Context context, BottomSheetController sheetController,
             AccountSelectionComponent.Delegate delegate) {
         mBottomSheetController = sheetController;
         mContext = context;
@@ -62,9 +61,9 @@ public class AccountSelectionCoordinator implements AccountSelectionComponent {
         mBottomSheetContent = new AccountSelectionBottomSheetContent(
                 contentView, mSheetItemListView::computeVerticalScrollOffset);
 
-        // TODO(majidvp): This is currently using the regular profile which is incorrect if the
-        // API is being used in an incognito tabs. We should instead use the profile associated
-        // with the RP's web contents. https://crbug.com/1199088
+        // TODO(crbug.com/1199088): This is currently using the regular profile which is incorrect
+        // if the API is being used in an incognito tabs. We should instead use the profile
+        // associated with the RP's web contents.
         Profile profile = Profile.getLastUsedRegularProfile();
         ImageFetcher imageFetcher = ImageFetcherFactory.createImageFetcher(
                 ImageFetcherConfig.IN_MEMORY_ONLY, profile.getProfileKey(),
@@ -128,7 +127,7 @@ public class AccountSelectionCoordinator implements AccountSelectionComponent {
     }
 
     @Override
-    public void hideBottomSheet() {
-        mMediator.hideBottomSheet();
+    public void close() {
+        mMediator.close();
     }
 }

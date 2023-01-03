@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,7 +15,6 @@
 #include "ash/components/arc/clipboard/arc_clipboard_bridge.h"
 #include "ash/components/arc/compat_mode/arc_resize_lock_manager.h"
 #include "ash/components/arc/crash_collector/arc_crash_collector_bridge.h"
-#include "ash/components/arc/dark_theme/arc_dark_theme_bridge.h"
 #include "ash/components/arc/disk_quota/arc_disk_quota_bridge.h"
 #include "ash/components/arc/ime/arc_ime_service.h"
 #include "ash/components/arc/keyboard_shortcut/arc_keyboard_shortcut_bridge.h"
@@ -37,6 +36,7 @@
 #include "ash/components/arc/session/arc_session.h"
 #include "ash/components/arc/session/arc_session_runner.h"
 #include "ash/components/arc/storage_manager/arc_storage_manager.h"
+#include "ash/components/arc/system_ui/arc_system_ui_bridge.h"
 #include "ash/components/arc/timer/arc_timer_bridge.h"
 #include "ash/components/arc/usb/usb_host_bridge.h"
 #include "ash/components/arc/volume_mounter/arc_volume_mounter_bridge.h"
@@ -46,6 +46,7 @@
 #include "base/check_op.h"
 #include "base/files/file_util.h"
 #include "chrome/browser/apps/app_service/publishers/arc_apps_factory.h"
+#include "chrome/browser/ash/app_list/arc/arc_usb_host_permission_manager.h"
 #include "chrome/browser/ash/app_restore/app_restore_arc_task_handler.h"
 #include "chrome/browser/ash/apps/apk_web_app_service.h"
 #include "chrome/browser/ash/arc/accessibility/arc_accessibility_helper_bridge.h"
@@ -59,6 +60,7 @@
 #include "chrome/browser/ash/arc/file_system_watcher/arc_file_system_watcher_service.h"
 #include "chrome/browser/ash/arc/fileapi/arc_file_system_bridge.h"
 #include "chrome/browser/ash/arc/fileapi/arc_file_system_mounter.h"
+#include "chrome/browser/ash/arc/idle_manager/arc_idle_manager.h"
 #include "chrome/browser/ash/arc/input_method_manager/arc_input_method_manager_service.h"
 #include "chrome/browser/ash/arc/input_overlay/arc_input_overlay_manager.h"
 #include "chrome/browser/ash/arc/instance_throttle/arc_instance_throttle.h"
@@ -71,6 +73,7 @@
 #include "chrome/browser/ash/arc/net/cert_manager_impl.h"
 #include "chrome/browser/ash/arc/notification/arc_boot_error_notification.h"
 #include "chrome/browser/ash/arc/notification/arc_provision_notification_service.h"
+#include "chrome/browser/ash/arc/notification/arc_vm_data_migration_notifier.h"
 #include "chrome/browser/ash/arc/oemcrypto/arc_oemcrypto_bridge.h"
 #include "chrome/browser/ash/arc/pip/arc_pip_bridge.h"
 #include "chrome/browser/ash/arc/policy/arc_policy_bridge.h"
@@ -79,6 +82,8 @@
 #include "chrome/browser/ash/arc/process/arc_process_service.h"
 #include "chrome/browser/ash/arc/screen_capture/arc_screen_capture_bridge.h"
 #include "chrome/browser/ash/arc/session/arc_demo_mode_preference_handler.h"
+#include "chrome/browser/ash/arc/session/arc_disk_space_monitor.h"
+#include "chrome/browser/ash/arc/session/arc_initial_optin_notifier.h"
 #include "chrome/browser/ash/arc/session/arc_play_store_enabled_preference_handler.h"
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/ash/arc/sharesheet/arc_sharesheet_bridge.h"
@@ -86,14 +91,12 @@
 #include "chrome/browser/ash/arc/tracing/arc_app_performance_tracing.h"
 #include "chrome/browser/ash/arc/tracing/arc_tracing_bridge.h"
 #include "chrome/browser/ash/arc/tts/arc_tts_service.h"
-#include "chrome/browser/ash/arc/usb/arc_usb_host_bridge_delegate.h"
 #include "chrome/browser/ash/arc/user_session/arc_user_session_service.h"
 #include "chrome/browser/ash/arc/video/gpu_arc_video_service_host.h"
 #include "chrome/browser/ash/arc/wallpaper/arc_wallpaper_service.h"
 #include "chrome/browser/ash/login/startup_utils.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/app_list/arc/arc_usb_host_permission_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/common/channel_info.h"
 #include "components/arc/common/intent_helper/arc_icon_cache_delegate.h"
@@ -104,7 +107,7 @@
 #if BUILDFLAG(USE_ARC_PROTECTED_MEDIA)
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
-#include "chromeos/dbus/cdm_factory_daemon/cdm_factory_daemon_client.h"
+#include "chromeos/ash/components/dbus/cdm_factory_daemon/cdm_factory_daemon_client.h"
 #include "chromeos/dbus/tpm_manager/tpm_manager_client.h"
 
 // Delay for repeatedly checking if the TPM is owned or not.
@@ -122,8 +125,7 @@ ArcServiceLauncher* g_arc_service_launcher = nullptr;
 std::unique_ptr<ArcSessionManager> CreateArcSessionManager(
     ArcBridgeService* arc_bridge_service,
     version_info::Channel channel,
-    chromeos::SchedulerConfigurationManagerBase*
-        scheduler_configuration_manager) {
+    ash::SchedulerConfigurationManagerBase* scheduler_configuration_manager) {
   auto delegate = std::make_unique<AdbSideloadingAvailabilityDelegateImpl>();
   auto runner = std::make_unique<ArcSessionRunner>(
       base::BindRepeating(ArcSession::Create, arc_bridge_service, channel,
@@ -135,8 +137,7 @@ std::unique_ptr<ArcSessionManager> CreateArcSessionManager(
 }  // namespace
 
 ArcServiceLauncher::ArcServiceLauncher(
-    chromeos::SchedulerConfigurationManagerBase*
-        scheduler_configuration_manager)
+    ash::SchedulerConfigurationManagerBase* scheduler_configuration_manager)
     : arc_service_manager_(std::make_unique<ArcServiceManager>()),
       arc_session_manager_(
           CreateArcSessionManager(arc_service_manager_->arc_bridge_service(),
@@ -150,6 +151,9 @@ ArcServiceLauncher::ArcServiceLauncher(
     arc_demo_mode_preference_handler_ =
         ArcDemoModePreferenceHandler::Create(arc_session_manager_.get());
   }
+
+  if (base::FeatureList::IsEnabled(kEnableVirtioBlkForData))
+    arc_disk_space_monitor_ = std::make_unique<ArcDiskSpaceMonitor>();
 }
 
 ArcServiceLauncher::~ArcServiceLauncher() {
@@ -167,11 +171,11 @@ void ArcServiceLauncher::Initialize() {
   // If we have ARC HWDRM then we need to wait for the CdmFactoryDaemon service
   // to advertise avalability so that arc-prepare-host-generated-dir can query
   // it via D-Bus for the CDM client information.
-  chromeos::CdmFactoryDaemonClient::Get()->WaitForServiceToBeAvailable(
+  ash::CdmFactoryDaemonClient::Get()->WaitForServiceToBeAvailable(
       base::BindOnce(&ArcServiceLauncher::OnCdmFactoryDaemonAvailable,
                      weak_factory_.GetWeakPtr(), /*from_timeout=*/false));
 
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&ArcServiceLauncher::OnCheckTpmStatus,
                      weak_factory_.GetWeakPtr()),
@@ -211,7 +215,7 @@ void ArcServiceLauncher::OnPrimaryUserProfilePrepared(Profile* profile) {
     return;
   }
 
-  const std::string& user_id_hash =
+  std::string user_id_hash =
       ash::ProfileHelper::GetUserIdHashFromProfile(profile);
 
   // Instantiate ARC related BrowserContextKeyedService classes which need
@@ -231,10 +235,9 @@ void ArcServiceLauncher::OnPrimaryUserProfilePrepared(Profile* profile) {
   ArcCameraBridge::GetForBrowserContext(profile);
   ArcClipboardBridge::GetForBrowserContext(profile);
   ArcCrashCollectorBridge::GetForBrowserContext(profile);
-  ArcDarkThemeBridge::GetForBrowserContext(profile);
   ArcDigitalGoodsBridge::GetForBrowserContext(profile);
-  ArcDiskQuotaBridge::GetForBrowserContext(profile)->SetUserInfo(
-      multi_user_util::GetAccountIdFromProfile(profile), user_id_hash);
+  ArcDiskQuotaBridge::GetForBrowserContext(profile)->SetAccountId(
+      multi_user_util::GetAccountIdFromProfile(profile));
   ArcEnterpriseReportingService::GetForBrowserContext(profile);
   ArcFileSystemBridge::GetForBrowserContext(profile);
   ArcFileSystemMounter::GetForBrowserContext(profile);
@@ -242,8 +245,7 @@ void ArcServiceLauncher::OnPrimaryUserProfilePrepared(Profile* profile) {
   ArcIioSensorBridge::GetForBrowserContext(profile);
   ArcImeService::GetForBrowserContext(profile);
   ArcInputMethodManagerService::GetForBrowserContext(profile);
-  if (ash::features::IsArcInputOverlayEnabled())
-    ArcInputOverlayManager::GetForBrowserContext(profile);
+  input_overlay::ArcInputOverlayManager::GetForBrowserContext(profile);
   ArcInstanceThrottle::GetForBrowserContext(profile);
   {
     auto* intent_helper = ArcIntentHelperBridge::GetForBrowserContext(profile);
@@ -258,10 +260,14 @@ void ArcServiceLauncher::OnPrimaryUserProfilePrepared(Profile* profile) {
   ArcKioskBridge::GetForBrowserContext(profile);
   ArcLockScreenBridge::GetForBrowserContext(profile);
   ArcMediaSessionBridge::GetForBrowserContext(profile);
-  ArcMetricsService::GetForBrowserContext(profile)->SetHistogramNamer(
-      base::BindRepeating([](const std::string& base_name) {
-        return GetHistogramNameByUserTypeForPrimaryProfile(base_name);
-      }));
+  {
+    auto* metrics_service = ArcMetricsService::GetForBrowserContext(profile);
+    metrics_service->SetHistogramNamerCallback(
+        base::BindRepeating([](const std::string& base_name) {
+          return GetHistogramNameByUserTypeForPrimaryProfile(base_name);
+        }));
+    metrics_service->set_user_id_hash(user_id_hash);
+  }
   ArcMetricsServiceProxy::GetForBrowserContext(profile);
   ArcMidisBridge::GetForBrowserContext(profile);
   ArcNearbyShareBridge::GetForBrowserContext(profile);
@@ -288,11 +294,11 @@ void ArcServiceLauncher::OnPrimaryUserProfilePrepared(Profile* profile) {
   ArcSettingsService::GetForBrowserContext(profile);
   ArcSharesheetBridge::GetForBrowserContext(profile);
   ArcSurveyService::GetForBrowserContext(profile);
+  ArcSystemUIBridge::GetForBrowserContext(profile);
   ArcTimerBridge::GetForBrowserContext(profile);
   ArcTracingBridge::GetForBrowserContext(profile);
   ArcTtsService::GetForBrowserContext(profile);
-  ArcUsbHostBridge::GetForBrowserContext(profile)->SetDelegate(
-      std::make_unique<ArcUsbHostBridgeDelegate>());
+  ArcUsbHostBridge::GetForBrowserContext(profile);
   ArcUsbHostPermissionManager::GetForBrowserContext(profile);
   ArcUserSessionService::GetForBrowserContext(profile);
   ArcVolumeMounterBridge::GetForBrowserContext(profile);
@@ -303,11 +309,18 @@ void ArcServiceLauncher::OnPrimaryUserProfilePrepared(Profile* profile) {
   apps::ArcAppsFactory::GetForProfile(profile);
   ash::ApkWebAppService::Get(profile);
   ash::app_restore::AppRestoreArcTaskHandler::GetForProfile(profile);
+  ArcInitialOptInNotifier::GetForProfile(profile);
 
   if (arc::IsArcVmEnabled()) {
     // ARCVM-only services.
-    if (base::FeatureList::IsEnabled(kVmBalloonPolicy))
-      ArcMemoryPressureBridge::GetForBrowserContext(profile);
+    ArcMemoryPressureBridge::GetForBrowserContext(profile);
+
+    if (base::FeatureList::IsEnabled(kEnableArcVmDataMigration)) {
+      arc_vm_data_migration_notifier_ =
+          std::make_unique<ArcVmDataMigrationNotifier>(profile);
+    }
+    if (base::FeatureList::IsEnabled(kEnableArcIdleManager))
+      ArcIdleManager::GetForBrowserContext(profile);
   } else {
     // ARC Container-only services.
     ArcAppfuseBridge::GetForBrowserContext(profile);
@@ -373,7 +386,7 @@ void ArcServiceLauncher::OnGetTpmStatus(
     // The TPM is owned, so we should invoke OnCdmFactoryDaemonAvailable() after
     // our timeout so that the property files get expanded even if the daemon
     // doesn't come online.
-    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&ArcServiceLauncher::OnCdmFactoryDaemonAvailable,
                        weak_factory_.GetWeakPtr(),
@@ -383,7 +396,7 @@ void ArcServiceLauncher::OnGetTpmStatus(
     return;
   }
 
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&ArcServiceLauncher::OnCheckTpmStatus,
                      weak_factory_.GetWeakPtr()),

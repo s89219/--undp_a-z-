@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <limits>
 #include <string>
 
 #include "base/bind.h"
@@ -21,12 +22,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/time/default_clock.h"
-#include "base/values.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_content_browser_client.h"
+#include "chrome/browser/policy/management_utils.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -40,6 +41,7 @@
 #include "components/google/core/common/google_util.h"
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/policy_constants.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
 #include "components/strings/grit/components_strings.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -49,8 +51,10 @@
 #include "v8/include/v8-version-string.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_switches.h"
 #include "base/i18n/time_formatting.h"
+#include "base/strings/strcat.h"
 #include "chrome/browser/ash/arc/arc_util.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash.h"
 #include "chrome/browser/ash/ownership/owner_settings_service_ash_factory.h"
@@ -59,23 +63,21 @@
 #include "chrome/browser/ash/tpm_firmware_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/webui/chromeos/image_source.h"
+#include "chrome/browser/ui/webui/ash/image_source.h"
 #include "chrome/browser/ui/webui/help/help_utils_chromeos.h"
 #include "chrome/browser/ui/webui/help/version_updater_chromeos.h"
 #include "chrome/browser/ui/webui/webui_util.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine_client.h"
+#include "chromeos/ash/components/fwupd/firmware_update_manager.h"
+#include "chromeos/ash/components/network/network_state.h"
+#include "chromeos/ash/components/network/network_state_handler.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "chromeos/dbus/power/power_manager_client.h"
-#include "chromeos/dbus/update_engine/update_engine_client.h"
-#include "chromeos/dbus/util/version_loader.h"
-#include "chromeos/network/network_state.h"
-#include "chromeos/network/network_state_handler.h"
-#include "chromeos/system/statistics_provider.h"
+#include "chromeos/version/version_loader.h"
 #include "components/user_manager/user_manager.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/chromeos/devicetype_utils.h"
 #endif
-
-using base::ListValue;
-using content::BrowserThread;
 
 namespace {
 
@@ -100,25 +102,23 @@ struct RegulatoryLabel {
 // Returns message that informs user that for update it's better to
 // connect to a network of one of the allowed types.
 std::u16string GetAllowedConnectionTypesMessage() {
-  if (help_utils_chromeos::IsUpdateOverCellularAllowed(
+  if (!help_utils_chromeos::IsUpdateOverCellularAllowed(
           /*interactive=*/true)) {
-    const bool metered = chromeos::NetworkHandler::Get()
-                             ->network_state_handler()
-                             ->default_network_is_metered();
-    return metered
-               ? l10n_util::GetStringUTF16(
-                     IDS_UPGRADE_NETWORK_LIST_CELLULAR_ALLOWED_NOT_AUTOMATIC)
-               : l10n_util::GetStringUTF16(
-                     IDS_UPGRADE_NETWORK_LIST_CELLULAR_ALLOWED);
-  } else {
     return l10n_util::GetStringUTF16(
         IDS_UPGRADE_NETWORK_LIST_CELLULAR_DISALLOWED);
   }
+
+  const bool metered = ash::NetworkHandler::Get()
+                           ->network_state_handler()
+                           ->default_network_is_metered();
+  return l10n_util::GetStringUTF16(
+      metered ? IDS_UPGRADE_NETWORK_LIST_CELLULAR_ALLOWED_NOT_AUTOMATIC
+              : IDS_UPGRADE_NETWORK_LIST_CELLULAR_ALLOWED);
 }
 
 // Returns true if current user can change channel, false otherwise.
 bool CanChangeChannel(Profile* profile) {
-  if (webui::IsEnterpriseManaged()) {
+  if (policy::IsDeviceEnterpriseManaged()) {
     bool value = false;
     // On a managed machine we delegate this setting to the affiliated users
     // only if the policy value is true.
@@ -143,7 +143,7 @@ bool CanChangeChannel(Profile* profile) {
 // Returns the relative path under the chromeos-assets dir
 // to the directory of regulatory labels for a given region, if found
 // (e.g. "regulatory_labels/us"). Must be called from the blocking pool.
-base::FilePath GetRegulatoryLabelDirForRegion(const std::string& region) {
+base::FilePath GetRegulatoryLabelDirForRegion(base::StringPiece region) {
   base::FilePath region_path(kRegulatoryLabelsDirectory);
   const std::string model_subdir =
       base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
@@ -166,13 +166,13 @@ base::FilePath GetRegulatoryLabelDirForRegion(const std::string& region) {
 // subdirectory of regulatory labels, using the VPD region code. Also
 // tries "us" as a fallback region. Must be called from the blocking pool.
 base::FilePath FindRegulatoryLabelDir() {
-  std::string region;
   base::FilePath region_path;
   // Use the VPD region code to find the label dir.
-  if (chromeos::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
-          "region", &region) &&
-      !region.empty()) {
-    region_path = GetRegulatoryLabelDirForRegion(region);
+  const absl::optional<base::StringPiece> region =
+      ash::system::StatisticsProvider::GetInstance()->GetMachineStatistic(
+          ash::system::kRegionKey);
+  if (region && !region->empty()) {
+    region_path = GetRegulatoryLabelDirForRegion(region.value());
   }
 
   // Try the fallback region code if no directory was found.
@@ -197,16 +197,13 @@ std::string ReadRegulatoryLabelText(const base::FilePath& label_dir_path) {
   return std::string();
 }
 
-std::unique_ptr<base::DictionaryValue> GetVersionInfo() {
-  std::unique_ptr<base::DictionaryValue> version_info(
-      new base::DictionaryValue);
-  version_info->SetStringKey("osVersion",
-                             chromeos::version_loader::GetVersion(
-                                 chromeos::version_loader::VERSION_FULL));
-  version_info->SetStringKey("arcVersion",
-                             chromeos::version_loader::GetARCVersion());
-  version_info->SetStringKey("osFirmware",
-                             chromeos::version_loader::GetFirmware());
+base::Value::Dict GetVersionInfo() {
+  base::Value::Dict version_info;
+  absl::optional<std::string> version = chromeos::version_loader::GetVersion(
+      chromeos::version_loader::VERSION_FULL);
+  version_info.Set("osVersion", version.value_or("0.0.0.0"));
+  version_info.Set("arcVersion", chromeos::version_loader::GetArcVersion());
+  version_info.Set("osFirmware", chromeos::version_loader::GetFirmware());
   return version_info;
 }
 
@@ -247,6 +244,9 @@ std::string UpdateStatusToString(VersionUpdater::Status status) {
     case VersionUpdater::NEED_PERMISSION_TO_UPDATE:
       status_str = "need_permission_to_update";
       break;
+    case VersionUpdater::DEFERRED:
+      status_str = "deferred";
+      break;
   }
 
   return status_str;
@@ -257,9 +257,7 @@ std::string UpdateStatusToString(VersionUpdater::Status status) {
 namespace settings {
 
 AboutHandler::AboutHandler(Profile* profile)
-    : profile_(profile),
-      apply_changes_from_upgrade_observer_(false),
-      clock_(base::DefaultClock::GetInstance()) {
+    : profile_(profile), clock_(base::DefaultClock::GetInstance()) {
   UpgradeDetector::GetInstance()->AddObserver(this);
 }
 
@@ -294,11 +292,20 @@ void AboutHandler::RegisterMessages() {
                           base::Unretained(this)));
 
   web_ui()->RegisterMessageCallback(
+      "getFirmwareUpdateCount",
+      base::BindRepeating(&AboutHandler::HandleGetFirmwareUpdateCount,
+                          base::Unretained(this)));
+
+  web_ui()->RegisterMessageCallback(
       "openOsHelpPage", base::BindRepeating(&AboutHandler::HandleOpenOsHelpPage,
                                             base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "setChannel", base::BindRepeating(&AboutHandler::HandleSetChannel,
                                         base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "applyDeferredUpdate",
+      base::BindRepeating(&AboutHandler::HandleApplyDeferredUpdate,
+                          base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "requestUpdate", base::BindRepeating(&AboutHandler::HandleRequestUpdate,
                                            base::Unretained(this)));
@@ -357,8 +364,7 @@ void AboutHandler::RegisterMessages() {
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   // Handler for the product label image, which will be shown if available.
-  content::URLDataSource::Add(profile_,
-                              std::make_unique<chromeos::ImageSource>());
+  content::URLDataSource::Add(profile_, std::make_unique<ash::ImageSource>());
 #endif
   content::URLDataSource::Add(profile_,
                               std::make_unique<ThemeSource>(profile_));
@@ -370,10 +376,12 @@ void AboutHandler::OnJavascriptAllowed() {
   policy_registrar_ = std::make_unique<policy::PolicyChangeRegistrar>(
       g_browser_process->policy_service(),
       policy::PolicyNamespace(policy::POLICY_DOMAIN_CHROME, std::string()));
+#if BUILDFLAG(IS_CHROMEOS)
   policy_registrar_->Observe(
       policy::key::kDeviceAutoUpdateDisabled,
       base::BindRepeating(&AboutHandler::OnDeviceAutoUpdatePolicyChanged,
                           base::Unretained(this)));
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
 void AboutHandler::OnJavascriptDisallowed() {
@@ -436,12 +444,22 @@ void AboutHandler::PromoteUpdater(const base::Value::List& args) {
 }
 #endif
 
-void AboutHandler::HandleOpenFeedbackDialog(const base::Value::List& args) {
-  DCHECK(args.empty());
+void AboutHandler::OpenFeedbackDialogWrapper(
+    const std::string& description_template) {
   Browser* browser =
       chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
   chrome::OpenFeedbackDialog(browser,
-                             chrome::kFeedbackSourceMdSettingsAboutPage);
+                             chrome::kFeedbackSourceMdSettingsAboutPage,
+                             description_template);
+}
+
+void AboutHandler::HandleOpenFeedbackDialog(const base::Value::List& args) {
+  if (args.empty()) {
+    OpenFeedbackDialogWrapper(/*description_template =*/std::string());
+  } else {
+    DCHECK_EQ(args.size(), 1U);
+    OpenFeedbackDialogWrapper(args.front().GetString());
+  }
 }
 
 void AboutHandler::HandleOpenHelpPage(const base::Value::List& args) {
@@ -467,10 +485,9 @@ void AboutHandler::HandleCheckInternetConnection(
   CHECK_EQ(1U, args.size());
   const std::string& callback_id = args[0].GetString();
 
-  chromeos::NetworkStateHandler* network_state_handler =
-      chromeos::NetworkHandler::Get()->network_state_handler();
-  const chromeos::NetworkState* network =
-      network_state_handler->DefaultNetwork();
+  ash::NetworkStateHandler* network_state_handler =
+      ash::NetworkHandler::Get()->network_state_handler();
+  const ash::NetworkState* network = network_state_handler->DefaultNetwork();
   ResolveJavascriptCallback(base::Value(callback_id),
                             base::Value(network && network->IsOnline()));
 }
@@ -480,8 +497,7 @@ void AboutHandler::HandleLaunchReleaseNotes(const base::Value::List& args) {
   // We can always show the release notes since the Help app caches it, or can
   // show an appropriate error state (e.g. No internet connection).
   base::RecordAction(base::UserMetricsAction("ReleaseNotes.LaunchedAboutPage"));
-  chrome::LaunchReleaseNotes(profile_,
-                             apps::mojom::LaunchSource::kFromOtherApp);
+  chrome::LaunchReleaseNotes(profile_, apps::LaunchSource::kFromOtherApp);
 }
 
 void AboutHandler::HandleOpenOsHelpPage(const base::Value::List& args) {
@@ -492,7 +508,7 @@ void AboutHandler::HandleOpenOsHelpPage(const base::Value::List& args) {
 }
 
 void AboutHandler::HandleSetChannel(const base::Value::List& args) {
-  DCHECK(args.size() == 2);
+  DCHECK_EQ(2U, args.size());
 
   if (!CanChangeChannel(profile_)) {
     LOG(WARNING) << "Non-owner tried to change release track.";
@@ -526,10 +542,19 @@ void AboutHandler::HandleGetVersionInfo(const base::Value::List& args) {
                      weak_factory_.GetWeakPtr(), callback_id));
 }
 
-void AboutHandler::OnGetVersionInfoReady(
-    std::string callback_id,
-    std::unique_ptr<base::DictionaryValue> version_info) {
-  ResolveJavascriptCallback(base::Value(callback_id), *version_info);
+void AboutHandler::OnGetVersionInfoReady(std::string callback_id,
+                                         base::Value::Dict version_info) {
+  ResolveJavascriptCallback(base::Value(callback_id), version_info);
+}
+
+void AboutHandler::HandleGetFirmwareUpdateCount(const base::Value::List& args) {
+  CHECK_EQ(1U, args.size());
+  const std::string& callback_id = args[0].GetString();
+  auto* firmware_update_manager = ash::FirmwareUpdateManager::Get();
+  size_t update_count = firmware_update_manager->GetUpdateCount();
+  DCHECK_LT(update_count, std::numeric_limits<size_t>::max());
+  ResolveJavascriptCallback(base::Value(callback_id),
+                            base::Value(static_cast<int>(update_count)));
 }
 
 void AboutHandler::HandleGetRegulatoryInfo(const base::Value::List& args) {
@@ -570,19 +595,22 @@ void AboutHandler::OnGetCurrentChannel(std::string callback_id,
 void AboutHandler::OnGetTargetChannel(std::string callback_id,
                                       const std::string& current_channel,
                                       const std::string& target_channel) {
-  std::unique_ptr<base::DictionaryValue> channel_info(
-      new base::DictionaryValue);
-  channel_info->SetStringKey("currentChannel", current_channel);
-  channel_info->SetStringKey("targetChannel", target_channel);
+  base::Value::Dict channel_info;
+  channel_info.Set("currentChannel", current_channel);
+  channel_info.Set("targetChannel", target_channel);
 
   // For the LTS pilot simply check whether the device policy is set and ignore
   // its value.
   std::string value;
   bool is_lts =
       ash::CrosSettings::Get()->GetString(ash::kReleaseLtsTag, &value);
-  channel_info->SetBoolKey("isLts", is_lts);
+  channel_info.Set("isLts", is_lts);
 
-  ResolveJavascriptCallback(base::Value(callback_id), *channel_info);
+  ResolveJavascriptCallback(base::Value(callback_id), channel_info);
+}
+
+void AboutHandler::HandleApplyDeferredUpdate(const base::Value::List& args) {
+  version_updater_->ApplyDeferredUpdate();
 }
 
 void AboutHandler::HandleRequestUpdate(const base::Value::List& args) {
@@ -619,9 +647,9 @@ void AboutHandler::HandleRefreshTPMFirmwareUpdateStatus(
 
 void AboutHandler::RefreshTPMFirmwareUpdateStatus(
     const std::set<ash::tpm_firmware_update::Mode>& modes) {
-  std::unique_ptr<base::DictionaryValue> event(new base::DictionaryValue);
-  event->SetBoolKey("updateAvailable", !modes.empty());
-  FireWebUIListener("tpm-firmware-update-status-changed", *event);
+  base::Value::Dict event;
+  event.Set("updateAvailable", !modes.empty());
+  FireWebUIListener("tpm-firmware-update-status-changed", event);
 }
 
 void AboutHandler::HandleGetEndOfLifeInfo(const base::Value::List& args) {
@@ -634,15 +662,15 @@ void AboutHandler::HandleGetEndOfLifeInfo(const base::Value::List& args) {
 
 void AboutHandler::OnGetEndOfLifeInfo(
     std::string callback_id,
-    chromeos::UpdateEngineClient::EolInfo eol_info) {
-  base::Value response(base::Value::Type::DICTIONARY);
+    ash::UpdateEngineClient::EolInfo eol_info) {
+  base::Value::Dict response;
   if (!eol_info.eol_date.is_null()) {
     bool has_eol_passed = eol_info.eol_date <= clock_->Now();
-    response.SetBoolKey("hasEndOfLife", has_eol_passed);
+    response.Set("hasEndOfLife", has_eol_passed);
     int eol_string_id =
         has_eol_passed ? IDS_SETTINGS_ABOUT_PAGE_END_OF_LIFE_MESSAGE_PAST
                        : IDS_SETTINGS_ABOUT_PAGE_END_OF_LIFE_MESSAGE_FUTURE;
-    response.SetStringKey(
+    response.Set(
         "aboutPageEndOfLifeMessage",
         l10n_util::GetStringFUTF16(
             eol_string_id,
@@ -651,8 +679,8 @@ void AboutHandler::OnGetEndOfLifeInfo(
             base::ASCIIToUTF16(has_eol_passed ? chrome::kEolNotificationURL
                                               : chrome::kAutoUpdatePolicyURL)));
   } else {
-    response.SetBoolKey("hasEndOfLife", false);
-    response.SetStringKey("aboutPageEndOfLifeMessage", "");
+    response.Set("hasEndOfLife", false);
+    response.Set("aboutPageEndOfLifeMessage", "");
   }
   ResolveJavascriptCallback(base::Value(callback_id), response);
 }
@@ -724,29 +752,29 @@ void AboutHandler::SetUpdateStatus(VersionUpdater::Status status,
   // Only UPDATING state should have progress set.
   DCHECK(status == VersionUpdater::UPDATING || progress == 0);
 
-  std::unique_ptr<base::DictionaryValue> event(new base::DictionaryValue);
-  event->SetStringKey("status", UpdateStatusToString(status));
-  event->SetStringKey("message", message);
-  event->SetIntKey("progress", progress);
-  event->SetBoolKey("rollback", rollback);
-  event->SetBoolKey("powerwash", powerwash);
-  event->SetStringKey("version", version);
-  // DictionaryValue does not support int64_t, so convert to string.
-  event->SetStringKey("size", base::NumberToString(size));
+  base::Value::Dict event;
+  event.Set("status", UpdateStatusToString(status));
+  event.Set("message", message);
+  event.Set("progress", progress);
+  event.Set("rollback", rollback);
+  event.Set("powerwash", powerwash);
+  event.Set("version", version);
+  // `base::Value::Dict` does not support int64_t, so convert to string.
+  event.Set("size", base::NumberToString(size));
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+  std::u16string types_msg;
   if (status == VersionUpdater::FAILED_OFFLINE ||
       status == VersionUpdater::FAILED_CONNECTION_TYPE_DISALLOWED) {
-    std::u16string types_msg = GetAllowedConnectionTypesMessage();
-    if (!types_msg.empty())
-      event->SetStringKey("connectionTypes", types_msg);
-    else
-      event->Set("connectionTypes", std::make_unique<base::Value>());
-  } else {
-    event->Set("connectionTypes", std::make_unique<base::Value>());
+    types_msg = GetAllowedConnectionTypesMessage();
   }
+  base::Value types_value;
+  if (!types_msg.empty()) {
+    types_value = base::Value(std::move(types_msg));
+  }
+  event.Set("connectionTypes", std::move(types_value));
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-  FireWebUIListener("update-status-changed", *event);
+  FireWebUIListener("update-status-changed", event);
 }
 
 #if BUILDFLAG(IS_MAC)
@@ -760,18 +788,18 @@ void AboutHandler::SetPromotionState(VersionUpdater::PromotionState state) {
   bool actionable = state == VersionUpdater::PROMOTE_DISABLED ||
                     state == VersionUpdater::PROMOTE_ENABLED;
 
-  std::u16string text = std::u16string();
+  std::u16string text;
   if (actionable)
     text = l10n_util::GetStringUTF16(IDS_ABOUT_CHROME_AUTOUPDATE_ALL);
   else if (state == VersionUpdater::PROMOTED)
     text = l10n_util::GetStringUTF16(IDS_ABOUT_CHROME_AUTOUPDATE_ALL_IS_ON);
 
-  base::DictionaryValue promo_state;
-  promo_state.SetBoolKey("hidden", hidden);
-  promo_state.SetBoolKey("disabled", disabled);
-  promo_state.SetBoolKey("actionable", actionable);
+  base::Value::Dict promo_state;
+  promo_state.Set("hidden", hidden);
+  promo_state.Set("disabled", disabled);
+  promo_state.Set("actionable", actionable);
   if (!text.empty())
-    promo_state.SetStringKey("text", text);
+    promo_state.Set("text", text);
 
   FireWebUIListener("promotion-state-changed", promo_state);
 }
@@ -797,19 +825,17 @@ void AboutHandler::OnRegulatoryLabelTextRead(
     std::string callback_id,
     const base::FilePath& label_dir_path,
     const std::string& text) {
-  std::unique_ptr<base::DictionaryValue> regulatory_info(
-      new base::DictionaryValue);
+  base::Value::Dict regulatory_info;
   // Remove unnecessary whitespace.
-  regulatory_info->SetStringKey("text",
-                                base::CollapseWhitespaceASCII(text, true));
+  regulatory_info.Set("text", base::CollapseWhitespaceASCII(text, true));
 
   std::string image_path =
       label_dir_path.AppendASCII(kRegulatoryLabelImageFilename).MaybeAsASCII();
   std::string url =
-      std::string("chrome://") + chrome::kChromeOSAssetHost + "/" + image_path;
-  regulatory_info->SetStringKey("url", url);
+      base::StrCat({"chrome://", chrome::kChromeOSAssetHost, "/", image_path});
+  regulatory_info.Set("url", url);
 
-  ResolveJavascriptCallback(base::Value(callback_id), *regulatory_info);
+  ResolveJavascriptCallback(base::Value(callback_id), regulatory_info);
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 

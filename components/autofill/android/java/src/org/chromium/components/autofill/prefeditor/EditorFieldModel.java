@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -110,17 +110,25 @@ public class EditorFieldModel {
     /** Indicates a credit card input. */
     public static final int INPUT_TYPE_HINT_CREDIT_CARD = 7;
 
-    private static final int INPUT_TYPE_HINT_MAX_TEXT_INPUT_EXCLUSIVE = 8;
+    /** Indicates a numeric field. */
+    public static final int INPUT_TYPE_HINT_NUMERIC = 8;
+
+    /** Indicates a password input. */
+    public static final int INPUT_TYPE_HINT_PASSWORD = 9;
+
+    /** Indicates a numeric pin input. */
+    public static final int INPUT_TYPE_HINT_NUMERIC_PIN = 10;
+
+    private static final int INPUT_TYPE_HINT_MAX_TEXT_INPUT_EXCLUSIVE = 11;
 
     /** Indicates a dropdown. */
-    public static final int INPUT_TYPE_HINT_DROPDOWN = 9;
+    public static final int INPUT_TYPE_HINT_DROPDOWN = 12;
 
     /** Indicates a list of icons. */
-    public static final int INPUT_TYPE_HINT_ICONS = 10;
+    public static final int INPUT_TYPE_HINT_ICONS = 13;
 
     /** Indicates a checkbox. */
-    public static final int INPUT_TYPE_HINT_CHECKBOX = 11;
-
+    public static final int INPUT_TYPE_HINT_CHECKBOX = 14;
     /**
      * Indicates a label, e.g., for a server credit card.
      *
@@ -134,9 +142,9 @@ public class EditorFieldModel {
      *  First Last    [VISA]
      *  Exp: 03/2021
      */
-    public static final int INPUT_TYPE_HINT_LABEL = 12;
+    public static final int INPUT_TYPE_HINT_LABEL = 15;
 
-    private static final int INPUT_TYPE_HINT_MAX_EXCLUSIVE = 13;
+    private static final int INPUT_TYPE_HINT_MAX_EXCLUSIVE = 16;
 
     /* Indicates that the length counter is disabled. */
     public static final int LENGTH_COUNTER_LIMIT_NONE = 0;

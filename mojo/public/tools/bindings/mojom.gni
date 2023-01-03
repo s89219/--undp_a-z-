@@ -1,4 +1,4 @@
-# Copyright 2014 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -20,6 +20,7 @@ import("//build/config/nacl/config.gni")
 import("//build/toolchain/kythe.gni")
 import("//components/nacl/features.gni")
 import("//third_party/jinja2/jinja2.gni")
+import("//third_party/ply/ply.gni")
 import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 declare_args() {
   # Indicates whether typemapping should be supported in this build
@@ -42,9 +43,6 @@ declare_args() {
   # where compilation is supported, any mojom target "foo" will also have a
   # corresponding "foo_js_library_for_compile" target generated.
   enable_mojom_closure_compile = enable_js_type_check && optimize_webui
-
-  # Enables generating Typescript bindings and compiling them to JS bindings.
-  enable_typescript_bindings = false
 
   # Enables generating javascript fuzzing-related code and the bindings for the
   # MojoLPM fuzzer targets. Off by default.
@@ -69,7 +67,7 @@ declare_args() {
 # lacros-chrome switches to target_os="chromeos"
 enable_scrambled_message_ids =
     enable_mojom_message_id_scrambling &&
-    (is_mac || is_win || (is_linux && !is_chromecast) ||
+    (is_mac || is_win || (is_linux && !is_castos) ||
      ((enable_nacl || is_nacl) &&
       (target_os != "chromeos" && !chromeos_is_browser_only)))
 
@@ -79,6 +77,7 @@ mojom_parser_script = "$_mojom_tools_root/mojom/mojom_parser.py"
 mojom_parser_sources = [
   "$_mojom_library_root/__init__.py",
   "$_mojom_library_root/error.py",
+  "$_mojom_library_root/fileutil.py",
   "$_mojom_library_root/generate/__init__.py",
   "$_mojom_library_root/generate/check.py",
   "$_mojom_library_root/generate/generator.py",
@@ -88,8 +87,10 @@ mojom_parser_sources = [
   "$_mojom_library_root/generate/translate.py",
   "$_mojom_library_root/parse/__init__.py",
   "$_mojom_library_root/parse/ast.py",
+  "$_mojom_library_root/parse/conditional_features.py",
   "$_mojom_library_root/parse/lexer.py",
   "$_mojom_library_root/parse/parser.py",
+  "//tools/diagnosis/crbug_1001171.py",
 ]
 
 mojom_generator_root = "$_mojom_tools_root/bindings"
@@ -98,13 +99,14 @@ mojom_generator_sources =
     mojom_parser_sources + [
       "$mojom_generator_root/checks/__init__.py",
       "$mojom_generator_root/checks/mojom_attributes_check.py",
+      "$mojom_generator_root/checks/mojom_definitions_check.py",
       "$mojom_generator_root/checks/mojom_restrictions_check.py",
       "$mojom_generator_root/generators/__init__.py",
       "$mojom_generator_root/generators/cpp_util.py",
       "$mojom_generator_root/generators/mojom_cpp_generator.py",
       "$mojom_generator_root/generators/mojom_java_generator.py",
-      "$mojom_generator_root/generators/mojom_mojolpm_generator.py",
       "$mojom_generator_root/generators/mojom_js_generator.py",
+      "$mojom_generator_root/generators/mojom_mojolpm_generator.py",
       "$mojom_generator_root/generators/mojom_ts_generator.py",
       "$mojom_generator_script",
     ]
@@ -696,9 +698,9 @@ template("mojom") {
 
     action(parser_target_name) {
       script = mojom_parser_script
-      inputs = mojom_parser_sources + [ build_metadata_filename ]
+      inputs = mojom_parser_sources + ply_sources + [ build_metadata_filename ]
       sources = sources_list
-      deps = parser_deps
+      public_deps = parser_deps
       outputs = []
       foreach(base_path, output_file_base_paths) {
         filename = get_path_info(base_path, "file")
@@ -844,7 +846,7 @@ template("mojom") {
       args = common_generator_args
       filelist = []
       foreach(source, sources_list) {
-        filelist += [ rebase_path("$source", root_build_dir) ]
+        filelist += [ rebase_path(source, root_build_dir) ]
       }
       foreach(base_path, output_file_base_paths) {
         outputs += [ "$root_gen_dir/$base_path-shared-message-ids.h" ]
@@ -886,7 +888,7 @@ template("mojom") {
       args = common_generator_args
       filelist = []
       foreach(source, sources_list) {
-        filelist += [ rebase_path("$source", root_build_dir) ]
+        filelist += [ rebase_path(source, root_build_dir) ]
       }
       foreach(base_path, output_file_base_paths) {
         outputs += [
@@ -960,9 +962,6 @@ template("mojom") {
     if (defined(shared_component_impl_macro)) {
       defines = [ shared_component_impl_macro ]
     }
-
-    # TODO(crbug.com/1292951): Remove this line.
-    configs -= [ "//build/config/compiler:prevent_unsafe_narrowing" ]
   }
 
   shared_cpp_library_target_name = "${target_name}_shared"
@@ -973,9 +972,6 @@ template("mojom") {
       }
       output_name = "$shared_component_output_name"
       public_deps = [ ":$shared_cpp_sources_target_name" ]
-
-      # TODO(crbug.com/1292951): Remove this line.
-      configs -= [ "//build/config/compiler:prevent_unsafe_narrowing" ]
     }
   } else {
     group(shared_cpp_library_target_name) {
@@ -1007,9 +1003,26 @@ template("mojom") {
       outputs = []
       args = common_generator_args
       filelist = []
-      foreach(source, invoker.sources) {
-        filelist += [ rebase_path("$source", root_build_dir) ]
+
+      # Split the input into generated and non-generated source files. They
+      # need to be processed separately.
+      gen_dir_path_wildcard = get_path_info("//", "gen_dir") + "/*"
+      non_gen_sources =
+          filter_exclude(invoker.sources, [ gen_dir_path_wildcard ])
+      gen_sources = filter_include(invoker.sources, [ gen_dir_path_wildcard ])
+
+      foreach(source, non_gen_sources) {
+        filelist += [ rebase_path(source, root_build_dir) ]
         outputs += [ "$target_gen_dir/$source.mojolpm.proto" ]
+      }
+
+      foreach(source, gen_sources) {
+        filelist += [ rebase_path(source, root_build_dir) ]
+
+        # For generated files, we assume they're in the target_gen_dir or a
+        # sub-folder of it. Rebase the path so we can get the relative location.
+        source_file = rebase_path(source, target_gen_dir)
+        outputs += [ "$target_gen_dir/$source_file.mojolpm.proto" ]
       }
 
       response_file_contents = filelist
@@ -1027,9 +1040,20 @@ template("mojom") {
       proto_library(mojolpm_proto_target_name) {
         testonly = true
         generate_python = false
+
+        # Split the input into generated and non-generated source files. They
+        # need to be processed separately.
+        gen_dir_path_wildcard = get_path_info("//", "gen_dir") + "/*"
+        non_gen_sources =
+            filter_exclude(invoker.sources, [ gen_dir_path_wildcard ])
+        gen_sources = filter_include(invoker.sources, [ gen_dir_path_wildcard ])
         sources = process_file_template(
-                invoker.sources,
+                non_gen_sources,
                 [ "{{source_gen_dir}}/{{source_file_part}}.mojolpm.proto" ])
+        sources += process_file_template(
+                gen_sources,
+                [ "{{source_dir}}/{{source_file_part}}.mojolpm.proto" ])
+
         import_dirs = [ "//" ]
         proto_in_dir = "${root_gen_dir}"
         proto_out_dir = "."
@@ -1236,7 +1260,7 @@ template("mojom") {
         args = common_generator_args + export_args
         filelist = []
         foreach(source, sources_list) {
-          filelist += [ rebase_path("$source", root_build_dir) ]
+          filelist += [ rebase_path(source, root_build_dir) ]
         }
         foreach(base_path, output_file_base_paths) {
           outputs += [
@@ -1331,11 +1355,24 @@ template("mojom") {
         check_includes = false
         testonly = true
         if (defined(invoker.sources)) {
+          # Split the input into generated and non-generated source files. They
+          # need to be processed separately.
+          gen_dir_path_wildcard = get_path_info("//", "gen_dir") + "/*"
+          non_gen_sources =
+              filter_exclude(invoker.sources, [ gen_dir_path_wildcard ])
+          gen_sources =
+              filter_include(invoker.sources, [ gen_dir_path_wildcard ])
           sources = process_file_template(
-                  invoker.sources,
+                  non_gen_sources,
                   [
                     "{{source_gen_dir}}/{{source_file_part}}-mojolpm.cc",
                     "{{source_gen_dir}}/{{source_file_part}}-mojolpm.h",
+                  ])
+          sources += process_file_template(
+                  gen_sources,
+                  [
+                    "{{source_dir}}/{{source_file_part}}-mojolpm.cc",
+                    "{{source_dir}}/{{source_file_part}}-mojolpm.h",
                   ])
           deps = []
         } else {
@@ -1370,9 +1407,6 @@ template("mojom") {
             public_deps += config.traits_public_deps
           }
         }
-
-        # TODO(crbug.com/1292951): Remove this line.
-        configs -= [ "//build/config/compiler:prevent_unsafe_narrowing" ]
       }
     }
 
@@ -1608,7 +1642,7 @@ template("mojom") {
           args = common_generator_args
           filelist = []
           foreach(source, sources_list) {
-            filelist += [ rebase_path("$source", root_build_dir) ]
+            filelist += [ rebase_path(source, root_build_dir) ]
           }
           foreach(base_path, output_file_base_paths) {
             outputs += [ "$root_gen_dir/$base_path.srcjar" ]
@@ -1661,7 +1695,6 @@ template("mojom") {
       android_library(java_target_name) {
         forward_variables_from(invoker, [ "enable_bytecode_checks" ])
         deps = [
-          "//base:base_java",
           "//mojo/public/java:bindings_java",
           "//mojo/public/java:system_java",
           "//third_party/androidx:androidx_annotation_annotation_java",
@@ -1684,8 +1717,8 @@ template("mojom") {
   }
 
   use_typescript_for_target =
-      enable_typescript_bindings && defined(invoker.use_typescript_sources) &&
-      invoker.use_typescript_sources
+      defined(invoker.use_typescript_sources) &&
+      invoker.use_typescript_sources && defined(invoker.webui_module_path)
 
   if (!use_typescript_for_target && defined(invoker.use_typescript_sources)) {
     not_needed(invoker, [ "use_typescript_sources" ])
@@ -1711,14 +1744,13 @@ template("mojom") {
         args = common_generator_args
         filelist = []
         foreach(source, sources_list) {
-          filelist += [ rebase_path("$source", root_build_dir) ]
+          filelist += [ rebase_path(source, root_build_dir) ]
         }
         foreach(base_path, output_file_base_paths) {
           outputs += [
             "$root_gen_dir/$base_path.js",
             "$root_gen_dir/$base_path.m.js",
             "$root_gen_dir/$base_path-lite.js",
-            "$root_gen_dir/$base_path.html",
             "$root_gen_dir/$base_path-lite-for-compile.js",
           ]
 
@@ -1733,7 +1765,6 @@ template("mojom") {
           "--filelist={{response_file_name}}",
           "-g",
           "javascript",
-          "--js_bindings_mode=new",
         ]
 
         if (defined(invoker.js_generate_struct_deserializers) &&
@@ -1920,39 +1951,14 @@ template("mojom") {
   }
   if ((generate_fuzzing || !defined(invoker.cpp_only) || !invoker.cpp_only) &&
       use_typescript_for_target) {
-    generator_js_target_names = []
-    source_filelist = []
-    foreach(source, sources_list) {
-      source_filelist += [ rebase_path("$source", root_build_dir) ]
-    }
-
-    dependency_types = [
-      {
-        name = "regular"
-        ts_extension = ".ts"
-        js_extension = ".js"
-      },
-      {
-        name = "es_modules"
-        ts_extension = ".m.ts"
-        js_extension = ".m.js"
-      },
-    ]
-
-    foreach(dependency_type, dependency_types) {
-      ts_outputs = []
-      js_outputs = []
-
-      foreach(base_path, output_file_base_paths) {
-        ts_outputs +=
-            [ "$root_gen_dir/$base_path-lite${dependency_type.ts_extension}" ]
-        js_outputs +=
-            [ "$root_gen_dir/$base_path-lite${dependency_type.js_extension}" ]
+    if (sources_list != []) {
+      source_filelist = []
+      foreach(source, sources_list) {
+        source_filelist += [ rebase_path(source, root_build_dir) ]
       }
 
       # Generate Typescript bindings.
-      generator_ts_target_name =
-          "${target_name}_${dependency_type.name}__ts__generator"
+      generator_ts_target_name = "${target_name}_ts__generator"
 
       action(generator_ts_target_name) {
         script = mojom_generator_script
@@ -1963,7 +1969,10 @@ template("mojom") {
           "//mojo/public/tools/bindings:precompile_templates",
         ]
 
-        outputs = ts_outputs
+        outputs = []
+        foreach(base_path, output_file_base_paths) {
+          outputs += [ "$root_gen_dir/$base_path-webui.ts" ]
+        }
         args = common_generator_args
         response_file_contents = source_filelist
 
@@ -1973,78 +1982,23 @@ template("mojom") {
           "typescript",
         ]
 
-        if (dependency_type.name == "es_modules") {
-          args += [ "--ts_use_es_modules" ]
+        if (!defined(invoker.scramble_message_ids) ||
+            invoker.scramble_message_ids) {
+          inputs += message_scrambling_inputs
+          args += message_scrambling_args
         }
 
-        # TODO(crbug.com/1007587): Support scramble_message_ids.
+        # TODO(crbug.com/1007587): Support scramble_message_ids if above is
+        # insufficient.
         # TODO(crbug.com/1007591): Support generate_fuzzing.
-      }
-
-      # Create tsconfig.json for the generated Typescript.
-      tsconfig_filename =
-          "$target_gen_dir/$target_name-${dependency_type.name}-tsconfig.json"
-      tsconfig = {
-      }
-      tsconfig.compilerOptions = {
-        composite = true
-        target = "es6"
-        module = "es6"
-        lib = [
-          "es6",
-          "esnext.bigint",
-        ]
-        strict = true
-      }
-      tsconfig.files = []
-      foreach(base_path, output_file_base_paths) {
-        tsconfig.files += [ rebase_path(
-                "$root_gen_dir/$base_path-lite${dependency_type.ts_extension}",
-                target_gen_dir,
-                root_gen_dir) ]
-      }
-      tsconfig.references = []
-
-      # Get tsconfigs for deps.
-      foreach(d, all_deps) {
-        dep_target_gen_dir = rebase_path(get_label_info(d, "target_gen_dir"))
-        dep_name = get_label_info(d, "name")
-        reference = {
-        }
-        reference.path = "$dep_target_gen_dir/$dep_name-${dependency_type.name}-tsconfig.json"
-        tsconfig.references += [ reference ]
-      }
-      write_file(tsconfig_filename, tsconfig, "json")
-
-      # Compile previously generated Typescript to Javascript.
-      generator_js_target_name =
-          "${target_name}_${dependency_type.name}__js__generator"
-      generator_js_target_names += [ generator_js_target_name ]
-
-      action(generator_js_target_name) {
-        script = "$mojom_generator_root/compile_typescript.py"
-        sources = ts_outputs
-        outputs = js_outputs
-        public_deps = [ ":$generator_ts_target_name" ]
-        foreach(d, all_deps) {
-          full_name = get_label_info(d, "label_no_toolchain")
-          public_deps +=
-              [ "${full_name}_${dependency_type.name}__js__generator" ]
-        }
-
-        absolute_tsconfig_path =
-            rebase_path(tsconfig_filename, "", target_gen_dir)
-        args = [ "--tsconfig_path=$absolute_tsconfig_path" ]
       }
     }
 
-    js_target_name = target_name + "_js"
-    group(js_target_name) {
+    ts_target_name = target_name + "_ts"
+    group(ts_target_name) {
       public_deps = []
       if (sources_list != []) {
-        foreach(generator_js_target_name, generator_js_target_names) {
-          public_deps += [ ":$generator_js_target_name" ]
-        }
+        public_deps += [ ":$generator_ts_target_name" ]
       }
 
       foreach(d, all_deps) {
@@ -2053,17 +2007,11 @@ template("mojom") {
       }
     }
 
-    group(js_data_deps_target_name) {
-      data = js_outputs
-      deps = []
-      foreach(generator_js_target_name, generator_js_target_names) {
-        deps += [ ":$generator_js_target_name" ]
-      }
-      data_deps = []
-      foreach(d, all_deps) {
-        full_name = get_label_info(d, "label_no_toolchain")
-        data_deps += [ "${full_name}_js_data_deps" ]
-      }
+    # Use |js_target_name| to track dependencies since TS targets may depend on
+    # either TS or JS targets.
+    js_target_name = target_name + "_js"
+    group(js_target_name) {
+      public_deps = [ ":$ts_target_name" ]
     }
   }
 }

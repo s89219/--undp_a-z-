@@ -1,10 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_NG_TABLE_NG_TABLE_BORDERS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_NG_TABLE_NG_TABLE_BORDERS_H_
 
+#include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/notreached.h"
@@ -69,7 +70,6 @@ class NGTableBorders : public RefCounted<NGTableBorders> {
   void ShowEdges();
   bool operator==(const NGTableBorders& other) const;
 #endif
-
 
   enum class EdgeSource { kNone, kCell, kRow, kSection, kColumn, kTable };
 
@@ -140,21 +140,7 @@ class NGTableBorders : public RefCounted<NGTableBorders> {
     return border_style;
   }
 
-  static Color BorderColor(const ComputedStyle* style, EdgeSide edge_side) {
-    switch (edge_side) {
-      case EdgeSide::kLeft:
-        return style->VisitedDependentColor(GetCSSPropertyBorderLeftColor());
-      case EdgeSide::kRight:
-        return style->VisitedDependentColor(GetCSSPropertyBorderRightColor());
-      case EdgeSide::kTop:
-        return style->VisitedDependentColor(GetCSSPropertyBorderTopColor());
-      case EdgeSide::kBottom:
-        return style->VisitedDependentColor(GetCSSPropertyBorderBottomColor());
-      case EdgeSide::kDoNotFill:
-        NOTREACHED();
-        return style->VisitedDependentColor(GetCSSPropertyBorderBottomColor());
-    }
-  }
+  static Color BorderColor(const ComputedStyle* style, EdgeSide edge_side);
 
   static bool HasBorder(const ComputedStyle* style) {
     if (!style)
@@ -191,7 +177,7 @@ class NGTableBorders : public RefCounted<NGTableBorders> {
     wtf_size_t row_count;
   };
 
-  bool IsEmpty() const { return edges_.IsEmpty(); }
+  bool IsEmpty() const { return edges_.empty(); }
 
   bool IsCollapsed() const { return is_collapsed_; }
 

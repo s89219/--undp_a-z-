@@ -1,10 +1,9 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/android_sms/android_sms_service.h"
 
-#include "ash/services/multidevice_setup/public/cpp/prefs.h"
 #include "base/time/default_clock.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/ash/android_sms/android_sms_app_setup_controller_impl.h"
@@ -14,6 +13,7 @@
 #include "chrome/browser/ash/multidevice_setup/multidevice_setup_client_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chromeos/ash/services/multidevice_setup/public/cpp/prefs.h"
 #include "components/session_manager/core/session_manager.h"
 #include "content/public/browser/storage_partition.h"
 

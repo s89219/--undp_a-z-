@@ -1,8 +1,9 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/omnibox/popup/pedal_suggestion_wrapper.h"
+#import "ios/chrome/common/ui/colors/semantic_color_names.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -20,7 +21,7 @@
 
 #pragma mark - AutocompleteSuggestion
 
-// Do not expose any pedal, pretend that this is a normal suggestion.
+/// Do not expose any pedal, pretend that this is a normal suggestion.
 - (id<OmniboxPedal>)pedal {
   return nil;
 }
@@ -41,6 +42,12 @@
 - (BOOL)isTabMatch {
   return NO;
 }
+- (NSNumber*)suggestionGroupId {
+  return nil;
+}
+- (NSNumber*)suggestionSectionId {
+  return nil;
+}
 - (BOOL)isTailSuggestion {
   return NO;
 }
@@ -52,15 +59,47 @@
 }
 
 - (NSAttributedString*)text {
-  return [[NSAttributedString alloc] initWithString:self.innerPedal.title];
+  return [[NSAttributedString alloc]
+      initWithString:self.innerPedal.title
+          attributes:@{
+            NSForegroundColorAttributeName :
+                [UIColor colorNamed:kTextPrimaryColor],
+            NSFontAttributeName :
+                [UIFont preferredFontForTextStyle:UIFontTextStyleBody],
+
+          }];
 }
 
 - (NSAttributedString*)detailText {
-  return [[NSAttributedString alloc] initWithString:self.innerPedal.subtitle];
+  return [[NSAttributedString alloc]
+      initWithString:self.innerPedal.subtitle
+          attributes:@{
+            NSForegroundColorAttributeName :
+                [UIColor colorNamed:kTextSecondaryColor],
+            NSFontAttributeName :
+                [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote]
+
+          }];
 }
 
 - (id<OmniboxIcon>)icon {
   return self.innerPedal;
+}
+
+- (UIImage*)matchTypeIcon {
+  return nil;
+}
+
+- (BOOL)isMatchTypeSearch {
+  return true;
+}
+
+- (CrURL*)destinationUrl {
+  return nil;
+}
+
+- (NSAttributedString*)omniboxPreviewText {
+  return self.text;
 }
 
 @end

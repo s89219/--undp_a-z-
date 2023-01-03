@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,6 +75,9 @@ TEST_F(MediaRouterEnabledTest, TestEnabledByPolicy) {
       ::prefs::kEnableMediaRouter, std::make_unique<base::Value>(false));
   // Runtime changes are not supported.
   EXPECT_TRUE(MediaRouterEnabled(&enabled_profile));
+  // Should remain enabled for incognito too.
+  EXPECT_TRUE(MediaRouterEnabled(
+      TestingProfile::Builder().BuildIncognito(&enabled_profile)));
 }
 
 TEST_F(MediaRouterEnabledTest, TestDisabledByPolicy) {
@@ -86,6 +89,9 @@ TEST_F(MediaRouterEnabledTest, TestDisabledByPolicy) {
       ::prefs::kEnableMediaRouter, std::make_unique<base::Value>(true));
   // Runtime changes are not supported.
   EXPECT_FALSE(MediaRouterEnabled(&disabled_profile));
+  // Should remain disabled for incognito too.
+  EXPECT_FALSE(MediaRouterEnabled(
+      TestingProfile::Builder().BuildIncognito(&disabled_profile)));
 }
 
 }  // namespace media_router

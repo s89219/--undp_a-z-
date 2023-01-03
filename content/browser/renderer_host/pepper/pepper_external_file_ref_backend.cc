@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -83,8 +83,8 @@ int32_t PepperExternalFileRefBackend::Touch(
     PP_Time last_access_time,
     PP_Time last_modified_time) {
   IPC::Message reply_msg = PpapiPluginMsg_FileRef_TouchReply();
-  base::PostTaskAndReplyWithResult(
-      task_runner_.get(), FROM_HERE,
+  task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE,
       BindOnce(&CallTouchFile, path_, last_access_time, last_modified_time),
       base::BindOnce(&PepperExternalFileRefBackend::DidFinish,
                      weak_factory_.GetWeakPtr(), reply_context, reply_msg));
@@ -106,8 +106,8 @@ int32_t PepperExternalFileRefBackend::Rename(
 
 int32_t PepperExternalFileRefBackend::Query(
     ppapi::host::ReplyMessageContext reply_context) {
-  bool ok = base::PostTaskAndReplyWithResult(
-      task_runner_.get(), FROM_HERE, base::BindOnce(&DoGetFileInfo, path_),
+  bool ok = task_runner_->PostTaskAndReplyWithResult(
+      FROM_HERE, base::BindOnce(&DoGetFileInfo, path_),
       base::BindOnce(
           &SendGetFileInfoResults,
           base::BindOnce(&PepperExternalFileRefBackend::GetMetadataComplete,

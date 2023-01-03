@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,10 +30,10 @@
 #include "ash/quick_pair/scanning/scanner_broker_impl.h"
 #include "ash/quick_pair/ui/actions.h"
 #include "ash/quick_pair/ui/ui_broker_impl.h"
-#include "ash/services/quick_pair/quick_pair_process.h"
-#include "ash/services/quick_pair/quick_pair_process_manager_impl.h"
-#include "base/threading/thread_task_runner_handle.h"
-#include "chromeos/services/bluetooth_config/fast_pair_delegate.h"
+#include "base/task/single_thread_task_runner.h"
+#include "chromeos/ash/services/bluetooth_config/fast_pair_delegate.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process_manager_impl.h"
 #include "components/prefs/pref_registry_simple.h"
 
 namespace ash {
@@ -43,7 +43,12 @@ namespace {
 
 Mediator::Factory* g_test_factory = nullptr;
 
-}
+constexpr base::TimeDelta kDismissedDiscoveryNotificationBanTime =
+    base::Seconds(2);
+constexpr base::TimeDelta kShortBanDiscoveryNotificationBanTime =
+    base::Minutes(5);
+
+}  // namespace
 
 // static
 std::unique_ptr<Mediator> Mediator::Factory::Create() {
@@ -109,13 +114,11 @@ Mediator::Mediator(
                    !has_at_least_one_discovery_session_);
   quick_pair_process::SetProcessManager(process_manager_.get());
 
-  if (ash::features::IsBluetoothRevampEnabled()) {
-    // Asynchronously bind to CrosBluetoothConfig so that we don't attempt to
-    // bind to it before it has initialized.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
-        FROM_HERE, base::BindOnce(&Mediator::BindToCrosBluetoothConfig,
-                                  weak_ptr_factory_.GetWeakPtr()));
-  }
+  // Asynchronously bind to CrosBluetoothConfig so that we don't attempt to
+  // bind to it before it has initialized.
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, base::BindOnce(&Mediator::BindToCrosBluetoothConfig,
+                                weak_ptr_factory_.GetWeakPtr()));
 }
 
 Mediator::~Mediator() {
@@ -144,7 +147,7 @@ void Mediator::BindToCrosBluetoothConfig() {
       cros_discovery_session_observer_receiver_.BindNewPipeAndPassRemote());
 }
 
-chromeos::bluetooth_config::FastPairDelegate* Mediator::GetFastPairDelegate() {
+bluetooth_config::FastPairDelegate* Mediator::GetFastPairDelegate() {
   return fast_pair_bluetooth_config_delegate_.get();
 }
 
@@ -162,22 +165,98 @@ void Mediator::OnFastPairEnabledChanged(bool is_enabled) {
   }
 }
 
+bool Mediator::IsDeviceCurrentlyShowingNotification(
+    scoped_refptr<Device> device) {
+  // BLE addresses could have rotated, causing this check to return false for
+  // the same device. Fast Pair considers a device different if they have
+  // different BLE addresses. Similarly, the this check will fail if it is the
+  // same physical device under different scenarios: for example, if a device
+  // is found via the initial scenario and via the subsequent scenario, Fast
+  // Pair does not consider them the same device.
+  return device_currently_showing_notification_ &&
+         device_currently_showing_notification_->metadata_id ==
+             device->metadata_id &&
+         device_currently_showing_notification_->ble_address ==
+             device->ble_address &&
+         device_currently_showing_notification_->protocol == device->protocol;
+}
+
+bool Mediator::IsDeviceBlockedForDiscoveryNotifications(
+    scoped_refptr<Device> device) {
+  auto it = discovery_notification_block_list_.find(
+      std::make_pair(device->metadata_id, device->protocol));
+  if (it == discovery_notification_block_list_.end())
+    return false;
+
+  DiscoveryNotificationDismissalState notification_state = it->second.first;
+
+  // We can reference |ban_expire_time|'s value' directly since we check for
+  // `kLongBan` beforehand, and |ban_expire_time| is expected to have a value in
+  // all cases except `kLongBan`.
+  absl::optional<base::Time> ban_expire_time = it->second.second;
+  return (notification_state == DiscoveryNotificationDismissalState::kLongBan ||
+          base::Time::Now() < ban_expire_time.value());
+}
+
 void Mediator::OnDeviceFound(scoped_refptr<Device> device) {
   QP_LOG(INFO) << __func__ << ": " << device;
-  // On discovery, download and decode device images.
+
+  if (IsDeviceCurrentlyShowingNotification(device)) {
+    QP_LOG(INFO) << __func__
+                 << ": Extending notification for re-discovered device="
+                 << device_currently_showing_notification_;
+    ui_broker_->ExtendNotification();
+    return;
+  } else if (device_currently_showing_notification_) {
+    QP_LOG(INFO) << __func__
+                 << ": Already showing a notification for a different device="
+                 << device_currently_showing_notification_;
+    return;
+  }
+
+  // Because we expect advertisements to be emitted 100ms for discoverable
+  // advertisements and 250ms for not discoverable advertisements according to
+  // the Fast Pair spec
+  // (https://developers.google.com/nearby/fast-pair/specifications/service/provider#advertising_interval_when_discoverable),
+  // this means we expect the Mediator’s `OnDeviceFound` event to be triggered
+  // frequently for the same device.
+  if (IsDeviceBlockedForDiscoveryNotifications(device)) {
+    QP_LOG(INFO) << __func__
+                 << ": device is currently blocked for discovery notifications";
+    return;
+  }
+
+  // Get the device name and add it to the device object, the device will only
+  // have a name in the cache if this is a subsequent pairing scenario.
+  if (device->protocol == Protocol::kFastPairSubsequent &&
+      device->account_key().has_value()) {
+    device->set_display_name(
+        fast_pair_repository_->GetDeviceDisplayNameFromCache(
+            device->account_key().value()));
+  }
+
+  // On discovery, download and decode device images. TODO (b/244472452):
+  // remove logic that is executed for every advertisement even if no
+  // notification is shown.
+  device_currently_showing_notification_ = device;
   ui_broker_->ShowDiscovery(device);
   fast_pair_repository_->FetchDeviceImages(device);
 }
 
 void Mediator::OnDeviceLost(scoped_refptr<Device> device) {
   QP_LOG(INFO) << __func__ << ": " << device;
-  ui_broker_->RemoveNotifications();
-  FastPairHandshakeLookup::GetInstance()->Erase(device);
 }
 
 void Mediator::OnRetroactivePairFound(scoped_refptr<Device> device) {
   QP_LOG(INFO) << __func__ << ": " << device;
-  ui_broker_->ShowAssociateAccount(std::move(device));
+
+  // SFUL metrics will cause a crash if Fast Pair is disabled when we
+  // retroactive pair, so prevent a notification from popping up.
+  // TODO(b/247148054): Look into moving this elsewhere.
+  if (!feature_status_tracker_->IsFastPairEnabled())
+    return;
+  device_currently_showing_notification_ = device;
+  ui_broker_->ShowAssociateAccount(device);
 }
 
 void Mediator::SetFastPairState(bool is_enabled) {
@@ -189,20 +268,23 @@ void Mediator::SetFastPairState(bool is_enabled) {
   }
 
   scanner_broker_->StopScanning(Protocol::kFastPairInitial);
-
-  // Dismiss all UI notifications.
   ui_broker_->RemoveNotifications();
+  discovery_notification_block_list_.clear();
+  device_currently_showing_notification_ = nullptr;
 }
 
 void Mediator::CancelPairing() {
   QP_LOG(INFO) << __func__ << ": Clearing handshakes and pairiers.";
-  FastPairHandshakeLookup::GetInstance()->Clear();
+  // |pairer_broker_| and its children objects depend on the handshake
+  // instance. Shut them down before destroying the handshakes.
   pairer_broker_->StopPairing();
+  FastPairHandshakeLookup::GetInstance()->Clear();
 }
 
 void Mediator::OnDevicePaired(scoped_refptr<Device> device) {
   QP_LOG(INFO) << __func__ << ": Device=" << device;
   ui_broker_->RemoveNotifications();
+  device_currently_showing_notification_ = nullptr;
   scanner_broker_->OnDevicePaired(device);
   fast_pair_repository_->PersistDeviceImages(device);
 }
@@ -210,7 +292,7 @@ void Mediator::OnDevicePaired(scoped_refptr<Device> device) {
 void Mediator::OnPairFailure(scoped_refptr<Device> device,
                              PairFailure failure) {
   QP_LOG(INFO) << __func__ << ": Device=" << device << ",Failure=" << failure;
-  ui_broker_->ShowPairingFailed(std::move(device));
+  ui_broker_->ShowPairingFailed(device);
 }
 
 void Mediator::OnAccountKeyWrite(scoped_refptr<Device> device,
@@ -224,27 +306,81 @@ void Mediator::OnAccountKeyWrite(scoped_refptr<Device> device,
                << ",Error=" << error.value();
 }
 
+void Mediator::UpdateDiscoveryBlockList(scoped_refptr<Device> device) {
+  auto it = discovery_notification_block_list_.find(
+      std::make_pair(device->metadata_id, device->protocol));
+
+  // If this is the first time we are seeing this device, create a new value in
+  // the block-list.
+  if (it == discovery_notification_block_list_.end()) {
+    discovery_notification_block_list_[std::make_pair(device->metadata_id,
+                                                      device->protocol)] =
+        std::make_pair(
+            DiscoveryNotificationDismissalState::kDismissed,
+            absl::make_optional(base::Time::Now() +
+                                kDismissedDiscoveryNotificationBanTime));
+    return;
+  }
+
+  // If the device is already in the block-list, update the state and the
+  // expire timestamp.
+  DiscoveryNotificationDismissalState dismissal_state = it->second.first;
+  switch (dismissal_state) {
+    case DiscoveryNotificationDismissalState::kDismissed:
+      it->second = std::make_pair(
+          DiscoveryNotificationDismissalState::kShortBan,
+          absl::make_optional(base::Time::Now() +
+                              kShortBanDiscoveryNotificationBanTime));
+      return;
+    case DiscoveryNotificationDismissalState::kShortBan:
+      // Since `IsDeviceBlockedForDiscoveryNotifications` has an explicit
+      // check for `kLongBan`, the timestamp is absl::nullopt. The `kLongBan`
+      // does not have an expiration timeout.
+      it->second = std::make_pair(DiscoveryNotificationDismissalState::kLongBan,
+                                  absl::nullopt);
+      return;
+    case DiscoveryNotificationDismissalState::kLongBan:
+      // If the device had the state `kLongBan`, it should have never been
+      // shown again, so we are expected to never get to this state when a
+      // `kLongBan` was shown, and then dismissed by user.
+      NOTREACHED();
+  }
+}
+
 void Mediator::OnDiscoveryAction(scoped_refptr<Device> device,
                                  DiscoveryAction action) {
   QP_LOG(INFO) << __func__ << ": Device=" << device << ", Action=" << action;
 
   switch (action) {
     case DiscoveryAction::kPairToDevice: {
-      absl::optional<std::vector<uint8_t>> additional_data =
-          device->GetAdditionalData(
-              Device::AdditionalDataType::kFastPairVersion);
-
       // Skip showing the in-progress UI for Fast Pair v1 because that pairing
       // is not handled by us E2E.
-      if (!additional_data.has_value() || additional_data->size() != 1 ||
-          (*additional_data)[0] != 1) {
+      if (device->version().value() == DeviceFastPairVersion::kHigherThanV1) {
         ui_broker_->ShowPairing(device);
       }
 
       pairer_broker_->PairDevice(device);
     } break;
+    case DiscoveryAction::kDismissedByOs:
+      break;
     case DiscoveryAction::kDismissedByUser:
-    case DiscoveryAction::kDismissed:
+      // When the user explicitly dismisses the discovery notification, update
+      // the device's block-list value accordingly.
+      UpdateDiscoveryBlockList(device);
+      [[fallthrough]];
+    case DiscoveryAction::kDismissedByTimeout:
+      // When the notification is dismissed by timeout or dismissed by user,
+      // there will be no more notifications for |device|. We reset
+      // |device_currently_showing_notification_| to enforce the first come,
+      // first serve notification strategy to allow other notifications to be
+      // shown. We do not do this for `kDismissedByOs` because this is triggered
+      // when a discovery notification is removed to be replaced by the
+      // connection notification to signify pairing is progress, and thus not
+      // in a terminal state, and we do not want to permit other notifications
+      // during this time.
+      device_currently_showing_notification_ = nullptr;
+      FastPairHandshakeLookup::GetInstance()->Erase(device);
+      break;
     case DiscoveryAction::kLearnMore:
       break;
   }
@@ -253,6 +389,7 @@ void Mediator::OnDiscoveryAction(scoped_refptr<Device> device,
 void Mediator::OnPairingFailureAction(scoped_refptr<Device> device,
                                       PairingFailedAction action) {
   QP_LOG(INFO) << __func__ << ": Device=" << device << ", Action=" << action;
+  device_currently_showing_notification_ = nullptr;
 }
 
 void Mediator::OnCompanionAppAction(scoped_refptr<Device> device,
@@ -268,18 +405,24 @@ void Mediator::OnAssociateAccountAction(scoped_refptr<Device> device,
     case AssociateAccountAction::kAssoicateAccount:
       pairer_broker_->PairDevice(device);
       ui_broker_->RemoveNotifications();
+      device_currently_showing_notification_ = nullptr;
+      break;
+    case AssociateAccountAction::kDismissedByOs:
+      break;
+    case AssociateAccountAction::kDismissedByTimeout:
+    case AssociateAccountAction::kDismissedByUser:
+      // Retroactive pairing only has the associate account notification. If the
+      // user elects to save the device or dismisses it, the lifetime of the
+      // notification is over and a new one can appear.
+      device_currently_showing_notification_ = nullptr;
       break;
     case AssociateAccountAction::kLearnMore:
-      break;
-    case AssociateAccountAction::kDismissedByUser:
-    case AssociateAccountAction::kDismissed:
       break;
   }
 }
 
 void Mediator::OnAdapterStateControllerChanged(
-    chromeos::bluetooth_config::AdapterStateController*
-        adapter_state_controller) {
+    bluetooth_config::AdapterStateController* adapter_state_controller) {
   // Always reset the observation first to handle the case where the ptr
   // became a nullptr (i.e. AdapterStateController was destroyed).
   adapter_state_controller_observation_.Reset();
@@ -288,17 +431,17 @@ void Mediator::OnAdapterStateControllerChanged(
 }
 
 void Mediator::OnAdapterStateChanged() {
-  chromeos::bluetooth_config::AdapterStateController* adapter_state_controller =
+  bluetooth_config::AdapterStateController* adapter_state_controller =
       fast_pair_bluetooth_config_delegate_->adapter_state_controller();
   DCHECK(adapter_state_controller);
-  chromeos::bluetooth_config::mojom::BluetoothSystemState adapter_state =
+  bluetooth_config::mojom::BluetoothSystemState adapter_state =
       adapter_state_controller->GetAdapterState();
 
   // The FeatureStatusTracker already observes when Bluetooth is enabled,
   // disabled, or unavailable. We observe the Bluetooth Config to additionally
   // disable Fast Pair when the adapter is disabling.
   if (adapter_state ==
-      chromeos::bluetooth_config::mojom::BluetoothSystemState::kDisabling) {
+      bluetooth_config::mojom::BluetoothSystemState::kDisabling) {
     QP_LOG(INFO) << __func__ << ": Adapter disabling, disabling Fast Pair.";
     SetFastPairState(false);
     // In addition to stopping scanning, we cancel pairing here to prevent a
@@ -306,7 +449,8 @@ void Mediator::OnAdapterStateChanged() {
     CancelPairing();
   }
 }
-
+// TODO(b/243586447): Remove this function and associated changes that were used
+// to disable FastPair while classic pair dialog was open.
 void Mediator::OnHasAtLeastOneDiscoverySessionChanged(
     bool has_at_least_one_discovery_session) {
   has_at_least_one_discovery_session_ = has_at_least_one_discovery_session;
@@ -314,19 +458,6 @@ void Mediator::OnHasAtLeastOneDiscoverySessionChanged(
                   << ": Discovery session status changed, we"
                      " have at least one discovery session: "
                   << has_at_least_one_discovery_session_;
-
-  // If we have a discovery session via the Settings pairing dialog, stop
-  // Fast Pair scanning. Else, start/stop scanning according to the feature
-  // status tracker.
-  SetFastPairState(!has_at_least_one_discovery_session_ &&
-                   feature_status_tracker_->IsFastPairEnabled());
-
-  // If we haven't begun pairing, dismiss all in-progress handshakes which
-  // will interfere with the discovery session. Note that V1 device Fast Pair
-  // via the Settings pairing dialog, so we also check for that case here.
-  if (has_at_least_one_discovery_session_ && !pairer_broker_->IsPairing()) {
-    CancelPairing();
-  }
 }
 
 }  // namespace quick_pair

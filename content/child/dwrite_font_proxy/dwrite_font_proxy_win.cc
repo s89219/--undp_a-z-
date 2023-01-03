@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -36,8 +36,9 @@ namespace {
 // TODO(https://crbug.com/1089390): Remove this feature when the experiment is
 // complete. If the experiment shows a significant input delay improvement,
 // replace with a more refined mitigation for pages that access many fonts.
-const base::Feature kLimitFontFamilyNamesPerRenderer{
-    "LimitFontFamilyNamesPerRenderer", base::FEATURE_DISABLED_BY_DEFAULT};
+BASE_FEATURE(kLimitFontFamilyNamesPerRenderer,
+             "LimitFontFamilyNamesPerRenderer",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 constexpr size_t kFamilyNamesLimit = 20;
 
 // Family names that opted-out from the limit enforced by
@@ -275,8 +276,13 @@ void DWriteFontCollectionProxy::PrewarmFamily(
     const blink::WebString& family_name) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!prewarm_task_runner_)
+  if (!prewarm_task_runner_) {
+    // |BindHostReceiverOnMainThread| requires |ChildThread::Get()|, but it may
+    // not be available in some tests. Disable the prewarmer.
+    if (UNLIKELY(!ChildThread::Get()))
+      return;
     InitializePrewarmer();
+  }
 
   DCHECK(prewarm_task_runner_);
   prewarm_task_runner_->PostTask(
@@ -455,7 +461,7 @@ HRESULT DWriteFontCollectionProxy::RuntimeClassInitialize(
   factory_ = factory;
   if (proxy)
     font_proxy_.GetOrCreateValue().Bind(std::move(proxy));
-  main_task_runner_ = base::ThreadTaskRunnerHandle::Get();
+  main_task_runner_ = base::SingleThreadTaskRunner::GetCurrentDefault();
   // |prewarm_task_runner_| needs to be initialized later because ThreadPool is
   // not setup yet when |this| is instantiated. See |InitializePrewarmer|.
 

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.LruCache;
@@ -27,17 +26,14 @@ import androidx.annotation.IntDef;
 
 import org.chromium.base.metrics.RecordHistogram;
 import org.chromium.chrome.R;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.ntp.ForeignSessionHelper.ForeignSession;
 import org.chromium.chrome.browser.ntp.ForeignSessionHelper.ForeignSessionTab;
 import org.chromium.chrome.browser.ntp.ForeignSessionHelper.ForeignSessionWindow;
 import org.chromium.chrome.browser.signin.SyncPromoView;
-import org.chromium.chrome.browser.toolbar.TabSwitcherDrawable;
 import org.chromium.chrome.browser.ui.favicon.FaviconHelper.DefaultFaviconHelper;
 import org.chromium.chrome.browser.ui.favicon.FaviconHelper.FaviconImageCallback;
 import org.chromium.chrome.browser.ui.favicon.FaviconUtils;
-import org.chromium.chrome.browser.ui.signin.SigninPromoController.SyncPromoState;
-import org.chromium.chrome.browser.ui.theme.BrandedColorScheme;
+import org.chromium.chrome.browser.ui.signin.SyncPromoController.SyncPromoState;
 import org.chromium.components.browser_ui.styles.SemanticColorUtils;
 import org.chromium.components.browser_ui.widget.RoundedIconGenerator;
 import org.chromium.components.embedder_support.util.UrlUtilities;
@@ -457,8 +453,8 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
                 int childPosition, boolean isLastChild, View convertView, ViewGroup parent) {
             if (convertView == null) {
                 LayoutInflater layoutInflater = LayoutInflater.from(parent.getContext());
-                convertView = layoutInflater.inflate(
-                        R.layout.personalized_signin_promo_view_recent_tabs, parent, false);
+                convertView =
+                        layoutInflater.inflate(R.layout.sync_promo_view_recent_tabs, parent, false);
             }
             mRecentTabsManager.setUpSyncPromoView(
                     convertView.findViewById(R.id.signin_promo_view_container));
@@ -530,6 +526,8 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
             // lead to wrong pairings of domain & title texts.
             viewHolder.domainView.setText("");
             viewHolder.domainView.setVisibility(View.GONE);
+            // Reset content description.
+            viewHolder.textView.setContentDescription(null);
             if (isHistoryLink(childPosition)) {
                 viewHolder.textView.setText(R.string.show_full_history);
                 Bitmap historyIcon = BitmapFactory.decodeResource(
@@ -552,7 +550,6 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
                             R.dimen.recent_tabs_foreign_session_group_item_height);
             RecentlyClosedEntry entry = getChild(childPosition);
             if (!(entry instanceof RecentlyClosedTab)) {
-                assert ChromeFeatureList.isEnabled(ChromeFeatureList.BULK_TAB_RESTORE);
                 int tabCount = 0;
                 if (entry instanceof RecentlyClosedGroup) {
                     RecentlyClosedGroup recentlyClosedGroup = (RecentlyClosedGroup) entry;
@@ -561,24 +558,40 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
                     String groupTitle = recentlyClosedGroup.getTitle();
                     if (TextUtils.isEmpty(groupTitle)) {
                         viewHolder.textView.setText(mActivity.getResources().getString(
-                                R.string.recent_tabs_group_closure_without_title));
+                                R.string.recent_tabs_group_closure_without_title, tabCount));
+                        String contentDescription = mActivity.getResources().getString(
+                                R.string.recent_tabs_group_closure_without_title_accessibility,
+                                tabCount);
+                        viewHolder.textView.setContentDescription(contentDescription);
                     } else {
                         viewHolder.textView.setText(mActivity.getResources().getString(
                                 R.string.recent_tabs_group_closure_with_title, groupTitle));
+                        viewHolder.textView.setContentDescription(
+                                mActivity.getResources().getString(
+                                        R.string.recent_tabs_group_closure_with_title_accessibility,
+                                        groupTitle));
                     }
                 }
                 if (entry instanceof RecentlyClosedBulkEvent) {
-                    tabCount = ((RecentlyClosedBulkEvent) entry).getTabs().size();
+                    RecentlyClosedBulkEvent recentlyClosedBulkEvent =
+                            (RecentlyClosedBulkEvent) entry;
+                    tabCount = recentlyClosedBulkEvent.getTabs().size();
 
                     viewHolder.textView.setText(mActivity.getResources().getString(
                             R.string.recent_tabs_bulk_closure, tabCount));
+                    viewHolder.textView.setContentDescription(mActivity.getResources().getString(
+                            R.string.recent_tabs_bulk_closure_accessibility, tabCount));
                 }
 
-                String dateString =
-                        DateFormat.getDateInstance(DateFormat.LONG, getPreferredLocale())
-                                .format(entry.getDate());
-                viewHolder.domainView.setText(dateString);
-                viewHolder.domainView.setVisibility(View.VISIBLE);
+                // Entries without dates have a time of 0. TabRestoreService may not save timestamps
+                // between restarts.
+                if (entry.getDate().getTime() != 0L) {
+                    String dateString =
+                            DateFormat.getDateInstance(DateFormat.LONG, getPreferredLocale())
+                                    .format(entry.getDate());
+                    viewHolder.domainView.setText(dateString);
+                    viewHolder.domainView.setVisibility(View.VISIBLE);
+                }
                 loadTabCount(viewHolder, tabCount);
             } else {
                 RecentlyClosedTab tab = (RecentlyClosedTab) entry;
@@ -622,7 +635,6 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
                         (RecentlyClosedTab) entry, WindowOpenDisposition.CURRENT_TAB);
                 return true;
             }
-            assert ChromeFeatureList.isEnabled(ChromeFeatureList.BULK_TAB_RESTORE);
             mRecentTabsManager.openRecentlyClosedEntry(entry);
             return true;
         }
@@ -765,9 +777,8 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
     }
 
     private void loadTabCount(final ViewHolder viewHolder, int tabCount) {
-        TabSwitcherDrawable image = TabSwitcherDrawable.createTabSwitcherDrawable(
-                mActivity, BrandedColorScheme.APP_DEFAULT);
-        image.updateForTabCount(tabCount, false);
+        RecentTabCountDrawable image = new RecentTabCountDrawable(mActivity);
+        image.updateTabCount(tabCount);
         viewHolder.imageView.setImageDrawable(image);
     }
 
@@ -942,8 +953,6 @@ public class RecentTabsRowAdapter extends BaseExpandableListAdapter {
      * Retrieves the user's preferred locale from the app's configurations.
      */
     private Locale getPreferredLocale() {
-        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N
-                ? mActivity.getResources().getConfiguration().getLocales().get(0)
-                : mActivity.getResources().getConfiguration().locale;
+        return mActivity.getResources().getConfiguration().getLocales().get(0);
     }
 }

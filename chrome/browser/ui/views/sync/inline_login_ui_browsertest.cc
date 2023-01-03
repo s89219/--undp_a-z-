@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -111,7 +111,8 @@ ContentInfo NavigateAndGetInfo(Browser* browser,
       ui_test_utils::BROWSER_TEST_WAIT_FOR_LOAD_STOP);
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
-  content::RenderProcessHost* process = contents->GetMainFrame()->GetProcess();
+  content::RenderProcessHost* process =
+      contents->GetPrimaryMainFrame()->GetProcess();
   return ContentInfo(contents, process->GetID(),
                      process->GetStoragePartition());
 }
@@ -273,9 +274,9 @@ void InlineLoginUIBrowserTest::EnableSigninAllowed(bool enable) {
 void InlineLoginUIBrowserTest::AddEmailToOneClickRejectedList(
     const std::string& email) {
   PrefService* pref_service = browser()->profile()->GetPrefs();
-  ListPrefUpdate updater(pref_service,
-                         prefs::kReverseAutologinRejectedEmailList);
-  if (!base::Contains(updater->GetListDeprecated(), base::Value(email))) {
+  ScopedListPrefUpdate updater(pref_service,
+                               prefs::kReverseAutologinRejectedEmailList);
+  if (!base::Contains(*updater, base::Value(email))) {
     updater->Append(email);
   }
 }
@@ -313,7 +314,7 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUIBrowserTest, MAYBE_DifferentStorageId) {
   ASSERT_EQ(1u, set.size());
   content::WebContents* webview_contents = *set.begin();
   content::RenderProcessHost* process =
-      webview_contents->GetMainFrame()->GetProcess();
+      webview_contents->GetPrimaryMainFrame()->GetProcess();
   ASSERT_NE(info.pid, process->GetID());
   ASSERT_NE(info.storage_partition, process->GetStoragePartition());
 }
@@ -523,7 +524,7 @@ class InlineLoginHelperBrowserTest : public DialogBrowserTest {
   std::unique_ptr<IdentityTestEnvironmentProfileAdaptor>
       identity_test_env_profile_adaptor_;
   base::CallbackListSubscription create_services_subscription_;
-  raw_ptr<Profile> profile_ = nullptr;
+  raw_ptr<Profile, DanglingUntriaged> profile_ = nullptr;
   signin_util::ScopedForceSigninSetterForTesting forced_signin_setter_;
 };
 

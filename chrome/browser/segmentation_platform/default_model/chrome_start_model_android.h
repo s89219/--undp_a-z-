@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,8 @@
 
 namespace segmentation_platform {
 
+struct Config;
+
 // Segmentation Chrome Start model provider. Provides a default model and
 // metadata for the chrome start optimization target.
 class ChromeStartModel : public ModelProvider {
@@ -17,13 +19,15 @@ class ChromeStartModel : public ModelProvider {
   ~ChromeStartModel() override = default;
 
   // Disallow copy/assign.
-  ChromeStartModel(ChromeStartModel&) = delete;
-  ChromeStartModel& operator=(ChromeStartModel&) = delete;
+  ChromeStartModel(const ChromeStartModel&) = delete;
+  ChromeStartModel& operator=(const ChromeStartModel&) = delete;
+
+  static std::unique_ptr<Config> GetConfig();
 
   // ModelProvider implementation.
   void InitAndFetchModel(
       const ModelUpdatedCallback& model_updated_callback) override;
-  void ExecuteModelWithInput(const std::vector<float>& inputs,
+  void ExecuteModelWithInput(const ModelProvider::Request& inputs,
                              ExecutionCallback callback) override;
   bool ModelAvailable() override;
 };

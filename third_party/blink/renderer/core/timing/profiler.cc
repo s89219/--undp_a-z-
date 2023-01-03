@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,8 +20,6 @@ Profiler* Profiler::Create(ScriptState* script_state,
                            ExceptionState& exception_state) {
   auto* execution_context = ExecutionContext::From(script_state);
   DCHECK(execution_context);
-  DCHECK(
-      RuntimeEnabledFeatures::ExperimentalJSProfilerEnabled(execution_context));
 
   Performance* performance = nullptr;
   bool can_profile = false;

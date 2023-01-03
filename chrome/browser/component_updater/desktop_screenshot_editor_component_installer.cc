@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,7 +50,7 @@ bool DesktopScreenshotEditorComponentInstallerPolicy::
 
 update_client::CrxInstaller::Result
 DesktopScreenshotEditorComponentInstallerPolicy::OnCustomInstall(
-    const base::Value& manifest,
+    const base::Value::Dict& manifest,
     const base::FilePath& install_dir) {
   return update_client::CrxInstaller::Result(0);  // Nothing custom added.
 }
@@ -60,7 +60,7 @@ void DesktopScreenshotEditorComponentInstallerPolicy::OnCustomUninstall() {}
 void DesktopScreenshotEditorComponentInstallerPolicy::ComponentReady(
     const base::Version& version,
     const base::FilePath& install_dir,
-    base::Value manifest) {
+    base::Value::Dict manifest) {
   VLOG(1) << "Component ready, version " << version.GetString() << " in "
           << install_dir.value();
   image_editor::ImageEditorComponentInfo::GetInstance()->SetInstalledPath(
@@ -69,7 +69,7 @@ void DesktopScreenshotEditorComponentInstallerPolicy::ComponentReady(
 
 // Called during startup and installation before ComponentReady().
 bool DesktopScreenshotEditorComponentInstallerPolicy::VerifyInstallation(
-    const base::Value& manifest,
+    const base::Value::Dict& manifest,
     const base::FilePath& install_dir) const {
   // The component installs as a zip of resources.
   // We check for an index.html which should always be present.

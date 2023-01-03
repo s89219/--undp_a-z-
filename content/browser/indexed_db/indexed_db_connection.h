@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,6 +16,7 @@
 #include "content/browser/indexed_db/indexed_db_bucket_state_handle.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/common/content_export.h"
+#include "mojo/public/cpp/bindings/remote_set.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-forward.h"
 
 namespace content {
@@ -26,12 +27,14 @@ class IndexedDBBucketStateHandle;
 
 class CONTENT_EXPORT IndexedDBConnection {
  public:
-  IndexedDBConnection(IndexedDBBucketStateHandle bucket_state_handle,
-                      IndexedDBClassFactory* indexed_db_class_factory,
-                      base::WeakPtr<IndexedDBDatabase> database,
-                      base::RepeatingClosure on_version_change_ignored,
-                      base::OnceCallback<void(IndexedDBConnection*)> on_close,
-                      scoped_refptr<IndexedDBDatabaseCallbacks> callbacks);
+  IndexedDBConnection(
+      IndexedDBBucketStateHandle bucket_state_handle,
+      IndexedDBClassFactory* indexed_db_class_factory,
+      base::WeakPtr<IndexedDBDatabase> database,
+      base::RepeatingClosure on_version_change_ignored,
+      base::OnceCallback<void(IndexedDBConnection*)> on_close,
+      scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
+      scoped_refptr<IndexedDBClientStateCheckerWrapper> client_state_checker);
 
   IndexedDBConnection(const IndexedDBConnection&) = delete;
   IndexedDBConnection& operator=(const IndexedDBConnection&) = delete;
@@ -79,12 +82,13 @@ class CONTENT_EXPORT IndexedDBConnection {
 
   IndexedDBTransaction* GetTransaction(int64_t id) const;
 
-  base::WeakPtr<IndexedDBTransaction> AddTransactionForTesting(
-      std::unique_ptr<IndexedDBTransaction> transaction);
-
   // We ignore calls where the id doesn't exist to facilitate the AbortAll call.
   // TODO(dmurph): Change that so this doesn't need to ignore unknown ids.
   void RemoveTransaction(int64_t id);
+
+  // Checks if the client is in inactive state and disallow it from activation
+  // if so.
+  void RequireClientToBeActive(base::OnceCallback<void(bool)> callback);
 
   const base::flat_map<int64_t, std::unique_ptr<IndexedDBTransaction>>&
   transactions() const {
@@ -92,8 +96,6 @@ class CONTENT_EXPORT IndexedDBConnection {
   }
 
  private:
-  void ClearStateAfterClose();
-
   const int32_t id_;
 
   // Keeps the factory for this bucket alive.
@@ -114,6 +116,10 @@ class CONTENT_EXPORT IndexedDBConnection {
   scoped_refptr<IndexedDBDatabaseCallbacks> callbacks_;
 
   SEQUENCE_CHECKER(sequence_checker_);
+
+  scoped_refptr<IndexedDBClientStateCheckerWrapper> client_state_checker_;
+  mojo::RemoteSet<storage::mojom::IndexedDBClientKeepActive>
+      client_keep_active_remotes_;
 
   base::WeakPtrFactory<IndexedDBConnection> weak_factory_{this};
 };

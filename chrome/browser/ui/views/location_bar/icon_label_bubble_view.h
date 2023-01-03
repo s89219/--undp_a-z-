@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/time/time.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/base/metadata/metadata_header_macros.h"
@@ -181,8 +182,11 @@ class IconLabelBubbleView : public views::InkDropObserver,
   void SetUpForAnimation();
 
   // Set up for icons that animate their labels in and then automatically out
-  // after a period of time.
-  void SetUpForInOutAnimation();
+  // after a period of time. The duration of the slide includes the just the
+  // time when the label is fully expanded, it does not include the time to
+  // animate in and out.
+  void SetUpForInOutAnimation(
+      base::TimeDelta duration = base::Milliseconds(1800));
 
   // Animates the view in and disables highlighting for hover and focus. If a
   // |string_id| is provided it also sets/changes the label to that string.
@@ -242,7 +246,7 @@ class IconLabelBubbleView : public views::InkDropObserver,
   // Sets the border padding around this view.
   void UpdateBorder();
 
-  raw_ptr<Delegate> delegate_;
+  raw_ptr<Delegate, DanglingUntriaged> delegate_;
 
   // The contents of the bubble.
   raw_ptr<SeparatorView> separator_view_;

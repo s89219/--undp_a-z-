@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -83,6 +83,29 @@ TEST_F(EventTargetTest, UseCountAbortSignal) {
       ->RunScript(GetDocument().domWindow());
   EXPECT_TRUE(
       GetDocument().IsUseCounted(WebFeature::kAddEventListenerWithAbortSignal));
+}
+
+TEST_F(EventTargetTest, UseCountScrollend) {
+  EXPECT_FALSE(GetDocument().IsUseCounted(WebFeature::kScrollend));
+  GetDocument().GetSettings()->SetScriptEnabled(true);
+  ClassicScript::CreateUnspecifiedScript(R"HTML(
+                       const element = document.createElement('div');
+                       element.addEventListener('scrollend', () => {});
+                       )HTML")
+      ->RunScript(GetDocument().domWindow());
+  EXPECT_TRUE(GetDocument().IsUseCounted(WebFeature::kScrollend));
+}
+
+// See https://crbug.com/1357453.
+// Tests that we don't crash when adding a unload event handler to a target
+// that has no ExecutionContext.
+TEST_F(EventTargetTest, UnloadWithoutExecutionContext) {
+  GetDocument().GetSettings()->SetScriptEnabled(true);
+  ClassicScript::CreateUnspecifiedScript(R"JS(
+      document.createElement("track").track.addEventListener(
+          "unload",() => {});
+                      )JS")
+      ->RunScript(GetDocument().domWindow());
 }
 
 }  // namespace blink

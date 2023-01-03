@@ -1,4 +1,4 @@
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -59,7 +59,6 @@ luci.notifier(
     name = "chromium-androidx-packager",
     on_new_status = ["FAILURE"],
     notify_emails = [
-        "clank-build-core+androidxfailures@google.com",
         "clank-library-failures+androidx@google.com",
     ],
 )
@@ -69,7 +68,6 @@ luci.notifier(
     on_new_status = ["FAILURE"],
     notify_emails = [
         "chromium-3pp-packager+failures@google.com",
-        "clank-build-core+3ppfailures@google.com",
     ],
 )
 
@@ -91,7 +89,7 @@ luci.notifier(
 
 luci.notifier(
     name = "cronet",
-    on_occurrence = ["FAILURE", "INFRA_FAILURE"],
+    on_new_status = ["FAILURE", "INFRA_FAILURE", "SUCCESS"],
     notify_emails = [
         "cronet-sheriff@grotations.appspotmail.com",
     ],
@@ -100,7 +98,10 @@ luci.notifier(
 luci.notifier(
     name = "metadata-mapping",
     on_new_status = ["FAILURE"],
-    notify_emails = ["chromium-component-mapping@google.com"],
+    notify_emails = [
+        "chromium-component-mapping@google.com",
+        "chanli@google.com",
+    ],
 )
 
 luci.notifier(
@@ -178,7 +179,7 @@ tree_closure_notifier(
     name = "gpu-tree-closer-email",
     notify_emails = ["chrome-gpu-build-failures@google.com"],
     notify_rotation_urls = [
-        "https://chrome-ops-rotation-proxy.appspot.com/current/oncallator:chrome-gpu-pixel-wrangler",
+        "https://chrome-ops-rotation-proxy.appspot.com/current/oncallator:chrome-gpu-pixel-wrangler-weekly",
     ],
 )
 
@@ -278,9 +279,9 @@ tree_closure_notifier(
 )
 
 luci.notifier(
-    name = "v8-sandbox-fyi-bots",
+    name = "cr-accessibility",
     notify_emails = [
-        "saelo+fyi-bots@chromium.org",
+        "chrome-a11y-alerts@google.com",
     ],
     on_new_status = ["FAILURE"],
 )

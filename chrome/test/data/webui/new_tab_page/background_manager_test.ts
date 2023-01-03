@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@ import {assertEquals, assertFalse, assertNotReached, assertTrue} from 'chrome://
 
 import {createBackgroundImage} from './test_support.js';
 
-class FakeIFrameElement extends HTMLIFrameElement {
+class FakeIframeElement extends HTMLIFrameElement {
   url: string|null = null;
 
   override get contentWindow() {
@@ -18,11 +18,11 @@ class FakeIFrameElement extends HTMLIFrameElement {
   }
 }
 
-customElements.define('fake-iframe', FakeIFrameElement, {extends: 'iframe'});
+customElements.define('fake-iframe', FakeIframeElement, {extends: 'iframe'});
 
 suite('NewTabPageBackgroundManagerTest', () => {
   let backgroundManager: BackgroundManager;
-  let backgroundImage: FakeIFrameElement;
+  let backgroundImage: FakeIframeElement;
 
   function wrapImageUrl(url: string): string {
     return `chrome-untrusted://new-tab-page/custom_background_image?url=${
@@ -30,9 +30,9 @@ suite('NewTabPageBackgroundManagerTest', () => {
   }
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
-    backgroundImage = new FakeIFrameElement();
+    backgroundImage = new FakeIframeElement();
     backgroundImage.id = 'backgroundImage';
     document.body.appendChild(backgroundImage);
 
@@ -90,7 +90,7 @@ suite('NewTabPageBackgroundManagerTest', () => {
       repeatY: 'repeat',
       positionX: 'left',
       positionY: 'top',
-      attributionUrl: undefined,
+      scrimDisplay: 'none',
     });
 
     // Assert.
@@ -99,7 +99,7 @@ suite('NewTabPageBackgroundManagerTest', () => {
         `url=${encodeURIComponent('https://example.com')}&` +
         `url2x=${encodeURIComponent('https://example2x.com')}&` +
         'size=cover&repeatX=no-repeat&repeatY=repeat&positionX=left&' +
-        'positionY=top';
+        'positionY=top&scrimDisplay=none';
     assertEquals(expected, backgroundImage.url);
   });
 
@@ -116,7 +116,7 @@ suite('NewTabPageBackgroundManagerTest', () => {
         messageType: 'loaded',
         url: wrapImageUrl('https://example.com'),
         time: 123,
-      }
+      },
     }));
 
     // Assert.
@@ -140,7 +140,7 @@ suite('NewTabPageBackgroundManagerTest', () => {
         messageType: 'loaded',
         url: wrapImageUrl('https://example.com'),
         time: 123,
-      }
+      },
     }));
 
     // Assert.

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,13 +34,13 @@ constexpr char kIsPublic[] = "is_public";
 
 // Added in M76.
 void MigratePrefs(PrefService* prefs, const std::string& sender_id) {
-  auto* old_prefs = prefs->GetDictionary(kTopicsToHandlerDeprecated);
-  if (old_prefs->DictEmpty()) {
+  const auto& old_prefs = prefs->GetDict(kTopicsToHandlerDeprecated);
+  if (old_prefs.empty()) {
     return;
   }
   {
-    DictionaryPrefUpdate update(prefs, kTopicsToHandler);
-    update->SetKey(sender_id, old_prefs->Clone());
+    ScopedDictPrefUpdate update(prefs, kTopicsToHandler);
+    update->Set(sender_id, old_prefs.Clone());
   }
   prefs->ClearPref(kTopicsToHandlerDeprecated);
 }
@@ -58,8 +58,9 @@ absl::optional<TopicData> FindAnyDuplicatedTopic(
 
 }  // namespace
 
-const base::Feature kRestoreInterestingTopicsFeature{
-    "InvalidatorRestoreInterestingTopics", base::FEATURE_ENABLED_BY_DEFAULT};
+BASE_FEATURE(kRestoreInterestingTopicsFeature,
+             "InvalidatorRestoreInterestingTopics",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // static
 void InvalidatorRegistrarWithMemory::RegisterProfilePrefs(
@@ -81,8 +82,8 @@ void InvalidatorRegistrarWithMemory::ClearTopicsWithObsoleteOwnerNames(
     PrefService* prefs) {
   // Go through all senders and their topics. Find topics with deprecated owner
   // name and mark them for cleanup.
-  DictionaryPrefUpdate update(prefs, kTopicsToHandler);
-  for (auto sender_to_topics : update.Get()->DictItems()) {
+  ScopedDictPrefUpdate update(prefs, kTopicsToHandler);
+  for (auto sender_to_topics : update.Get()) {
     const std::string& sender_id = sender_to_topics.first;
 
     base::flat_set<std::string> topics_to_cleanup;
@@ -107,9 +108,9 @@ void InvalidatorRegistrarWithMemory::ClearTopicsWithObsoleteOwnerNames(
         topics_to_cleanup.insert(topic_name);
       }
     }
-    base::Value* topics_data = update->FindDictKey(sender_id);
+    base::Value::Dict* topics_data = update->FindDict(sender_id);
     for (const std::string& topic_name : topics_to_cleanup) {
-      topics_data->RemoveKey(topic_name);
+      topics_data->Remove(topic_name);
     }
   }
 }
@@ -123,17 +124,17 @@ InvalidatorRegistrarWithMemory::InvalidatorRegistrarWithMemory(
   if (migrate_old_prefs) {
     MigratePrefs(prefs_, sender_id_);
   }
-  const base::Value* pref_data =
-      prefs_->Get(kTopicsToHandler)->FindDictKey(sender_id_);
+  const base::Value::Dict* pref_data =
+      prefs_->GetDict(kTopicsToHandler).FindDict(sender_id_);
   if (!pref_data) {
-    DictionaryPrefUpdate update(prefs_, kTopicsToHandler);
-    update->SetKey(sender_id_, base::Value(base::Value::Type::DICTIONARY));
+    ScopedDictPrefUpdate update(prefs_, kTopicsToHandler);
+    update->Set(sender_id_, base::Value::Dict());
     return;
   }
   // Restore |handler_name_to_subscribed_topics_map_| from prefs.
   if (!base::FeatureList::IsEnabled(kRestoreInterestingTopicsFeature))
     return;
-  for (auto it : pref_data->DictItems()) {
+  for (auto it : *pref_data) {
     const std::string& topic_name = it.first;
     if (it.second.is_dict()) {
       const std::string* handler = it.second.FindStringKey(kHandler);
@@ -206,15 +207,15 @@ bool InvalidatorRegistrarWithMemory::UpdateRegisteredTopics(
       base::STLSetDifference<std::set<TopicData>>(old_topics, topics);
   RemoveSubscribedTopics(handler, topics_to_unregister);
 
-  DictionaryPrefUpdate update(prefs_, kTopicsToHandler);
-  base::Value* pref_data = update->FindDictKey(sender_id_);
+  ScopedDictPrefUpdate update(prefs_, kTopicsToHandler);
+  base::Value::Dict* pref_data = update->FindDict(sender_id_);
   for (const auto& topic : topics) {
     handler_name_to_subscribed_topics_map_[handler->GetOwnerName()].insert(
         topic);
-    base::DictionaryValue handler_pref;
-    handler_pref.SetStringKey(kHandler, handler->GetOwnerName());
-    handler_pref.SetBoolKey(kIsPublic, topic.is_public);
-    pref_data->SetKey(topic.name, std::move(handler_pref));
+    base::Value::Dict handler_pref;
+    handler_pref.Set(kHandler, handler->GetOwnerName());
+    handler_pref.Set(kIsPublic, topic.is_public);
+    pref_data->Set(topic.name, std::move(handler_pref));
   }
   return true;
 }
@@ -301,8 +302,7 @@ InvalidatorRegistrarWithMemory::GetHandlerNameToTopicsMap() {
 }
 
 void InvalidatorRegistrarWithMemory::RequestDetailedStatus(
-    base::RepeatingCallback<void(const base::DictionaryValue&)> callback)
-    const {
+    base::RepeatingCallback<void(base::Value::Dict)> callback) const {
   callback.Run(CollectDebugData());
 }
 
@@ -326,15 +326,16 @@ bool InvalidatorRegistrarWithMemory::HasDuplicateTopicRegistration(
   return false;
 }
 
-base::DictionaryValue InvalidatorRegistrarWithMemory::CollectDebugData() const {
-  base::DictionaryValue return_value;
-  return_value.SetIntPath("InvalidatorRegistrarWithMemory.Handlers",
-                          handler_name_to_subscribed_topics_map_.size());
+base::Value::Dict InvalidatorRegistrarWithMemory::CollectDebugData() const {
+  base::Value::Dict return_value;
+  return_value.SetByDottedPath(
+      "InvalidatorRegistrarWithMemory.Handlers",
+      static_cast<int>(handler_name_to_subscribed_topics_map_.size()));
   for (const auto& handler_to_topics : handler_name_to_subscribed_topics_map_) {
     const std::string& handler = handler_to_topics.first;
     for (const auto& topic : handler_to_topics.second) {
-      return_value.SetStringPath("InvalidatorRegistrarWithMemory." + topic.name,
-                                 handler);
+      return_value.SetByDottedPath(
+          "InvalidatorRegistrarWithMemory." + topic.name, handler);
     }
   }
   return return_value;
@@ -343,11 +344,11 @@ base::DictionaryValue InvalidatorRegistrarWithMemory::CollectDebugData() const {
 void InvalidatorRegistrarWithMemory::RemoveSubscribedTopics(
     const InvalidationHandler* handler,
     const std::set<TopicData>& topics_to_unsubscribe) {
-  DictionaryPrefUpdate update(prefs_, kTopicsToHandler);
-  base::Value* pref_data = update->FindDictKey(sender_id_);
+  ScopedDictPrefUpdate update(prefs_, kTopicsToHandler);
+  base::Value::Dict* pref_data = update->FindDict(sender_id_);
   DCHECK(pref_data);
   for (const TopicData& topic : topics_to_unsubscribe) {
-    pref_data->RemoveKey(topic.name);
+    pref_data->Remove(topic.name);
     handler_name_to_subscribed_topics_map_[handler->GetOwnerName()].erase(
         topic);
   }

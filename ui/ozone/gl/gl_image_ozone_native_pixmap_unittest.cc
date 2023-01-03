@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,18 @@ class GLImageNativePixmapTestDelegate : public GLImageTestDelegateBase {
 
   ~GLImageNativePixmapTestDelegate() override = default;
 
+  bool SkipTest(GLDisplay* display) const override {
+    ui::GLOzone* gl_ozone = ui::OzonePlatform::GetInstance()
+                                ->GetSurfaceFactoryOzone()
+                                ->GetCurrentGLOzone();
+    if (!gl_ozone || !gl_ozone->CanImportNativePixmap()) {
+      LOG(WARNING) << "Skip test, ozone implementation can't import native "
+                   << "pixmaps";
+      return true;
+    }
+    return false;
+  }
+
   scoped_refptr<GLImage> CreateSolidColorImage(const gfx::Size& size,
                                                const uint8_t color[4]) const {
     ui::SurfaceFactoryOzone* surface_factory =
@@ -60,8 +72,9 @@ class GLImageNativePixmapTestDelegate : public GLImageTestDelegateBase {
       client_pixmap->Unmap();
     }
 
-    auto image = base::MakeRefCounted<gl::GLImageNativePixmap>(size, format);
-    EXPECT_TRUE(image->Initialize(pixmap.get()));
+    auto image =
+        gl::GLImageNativePixmap::Create(size, format, std::move(pixmap));
+    EXPECT_TRUE(image);
     return image;
   }
 
@@ -89,15 +102,7 @@ using GLImageScanoutType = testing::Types<
     GLImageNativePixmapTestDelegate<gfx::BufferUsage::SCANOUT,
                                     gfx::BufferFormat::BGRA_8888>>;
 
-#if BUILDFLAG(IS_CHROMEOS)
-// Disabled due to failures on ChromeOS MSan builder.
-// TODO(crbug.com/1314304) Reenable the test.
-#define MAYBE_GLImageNativePixmapScanoutBGRA \
-  DISABLED_GLImageNativePixmapScanoutBGRA
-#else
-#define MAYBE_GLImageNativePixmapScanoutBGRA GLImageNativePixmapScanoutBGRA
-#endif
-INSTANTIATE_TYPED_TEST_SUITE_P(MAYBE_GLImageNativePixmapScanoutBGRA,
+INSTANTIATE_TYPED_TEST_SUITE_P(GLImageNativePixmapScanoutBGRA,
                                GLImageTest,
                                GLImageScanoutType);
 

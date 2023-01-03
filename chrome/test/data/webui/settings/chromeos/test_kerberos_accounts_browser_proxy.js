@@ -1,9 +1,9 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {KerberosConfigErrorCode, KerberosErrorType} from 'chrome://os-settings/chromeos/os_settings.js';
-import {TestBrowserProxy} from 'chrome://test/test_browser_proxy.js';
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 // List of fake accounts.
 export const TEST_KERBEROS_ACCOUNTS = [
@@ -36,7 +36,7 @@ export const TEST_KERBEROS_ACCOUNTS = [
     passwordWasRemembered: true,
     pic: 'pic2',
     validForDuration: 'one over inf seconds',
-  }
+  },
 ];
 
 /** @implements {KerberosAccountsBrowserProxy} */
@@ -51,12 +51,12 @@ export class TestKerberosAccountsBrowserProxy extends TestBrowserProxy {
     ]);
 
     // Simulated error from an addAccount call.
-    this.addAccountError = KerberosErrorType.kNone;
+    this.addAccountError = KerberosErrorType.NONE;
 
     // Simulated error from a validateConfig call.
     this.validateConfigResult = {
-      error: KerberosErrorType.kNone,
-      errorInfo: {code: KerberosConfigErrorCode.kNone}
+      error: KerberosErrorType.NONE,
+      errorInfo: {code: KerberosConfigErrorCode.NONE},
     };
   }
 
@@ -77,7 +77,7 @@ export class TestKerberosAccountsBrowserProxy extends TestBrowserProxy {
   /** @override */
   removeAccount(account) {
     this.methodCalled('removeAccount', account);
-    return Promise.resolve(KerberosErrorType.kNone);
+    return Promise.resolve(KerberosErrorType.NONE);
   }
 
   /** @override */

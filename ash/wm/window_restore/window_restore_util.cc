@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_state.h"
+#include "base/ranges/algorithm.h"
 #include "components/app_restore/window_properties.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/screen_position_client.h"
@@ -53,7 +54,7 @@ std::unique_ptr<app_restore::WindowInfo> BuildWindowInfo(
   if (activation_index) {
     window_activation_index = *activation_index;
   } else {
-    auto it = std::find(mru_windows.begin(), mru_windows.end(), window);
+    auto it = base::ranges::find(mru_windows, window);
     if (it != mru_windows.end())
       window_activation_index = it - mru_windows.begin();
   }
@@ -79,7 +80,9 @@ std::unique_ptr<app_restore::WindowInfo> BuildWindowInfo(
     // states with restore bounds (maximized, minimized, snapped, etc), they
     // will take the current bounds as their restore bounds and have the current
     // bounds determined by the system.
-    if (window_state->HasRestoreBounds()) {
+    // Note that for floated state, the window should be restored to its current
+    // floated bounds since it's not stored in restore bounds.
+    if (window_state->HasRestoreBounds() && !window_state->IsFloated()) {
       window_info->current_bounds = window_state->GetRestoreBoundsInScreen();
     } else {
       window_info->current_bounds =
@@ -91,14 +94,15 @@ std::unique_ptr<app_restore::WindowInfo> BuildWindowInfo(
     window_info->window_state_type =
         window_state->IsFullscreen()
             ? chromeos::ToWindowStateType(
-                  window->GetProperty(aura::client::kPreFullscreenShowStateKey))
+                  window->GetProperty(aura::client::kRestoreShowStateKey))
             : window_state->GetStateType();
   }
 
-  // Populate the pre minimized show state field if the window is minimized.
+  // Populate the restore show state field that the minimize should restore back
+  // to if the window is minimized.
   if (window_state->IsMinimized()) {
     window_info->pre_minimized_show_state_type =
-        window->GetProperty(aura::client::kPreMinimizedShowStateKey);
+        window->GetProperty(aura::client::kRestoreShowStateKey);
   }
 
   if (window_state->IsSnapped()) {
@@ -120,7 +124,7 @@ std::unique_ptr<app_restore::WindowInfo> BuildWindowInfo(
   if (for_saved_desks) {
     std::string* app_id = window->GetProperty(kAppIDKey);
     window_info->app_title =
-        app_id ? base::ASCIIToUTF16(
+        app_id ? base::UTF8ToUTF16(
                      Shell::Get()->desks_templates_delegate()->GetAppShortName(
                          *app_id))
                : window->GetTitle();

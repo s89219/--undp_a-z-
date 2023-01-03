@@ -1,4 +1,4 @@
-# Copyright 2016 The Chromium Authors. All rights reserved.
+# Copyright 2016 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,12 +14,12 @@ import posixpath
 import re
 import sys
 
-from code import Code
+from code_util import Code
 import json_parse
 
 # The template for the header file of the generated FeatureProvider.
 HEADER_FILE_TEMPLATE = """
-// Copyright %(year)s The Chromium Authors. All rights reserved.
+// Copyright %(year)s The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,7 +43,7 @@ void %(method_name)s(FeatureProvider* provider);
 
 # The beginning of the .cc file for the generated FeatureProvider.
 CC_FILE_BEGIN = """
-// Copyright %(year)s The Chromium Authors. All rights reserved.
+// Copyright %(year)s The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -174,6 +174,7 @@ FEATURE_GRAMMAR = ({
                 'content_script': 'Feature::CONTENT_SCRIPT_CONTEXT',
                 'lock_screen_extension':
                 'Feature::LOCK_SCREEN_EXTENSION_CONTEXT',
+                'offscreen_extension': 'Feature::OFFSCREEN_EXTENSION_CONTEXT',
                 'web_page': 'Feature::WEB_PAGE_CONTEXT',
                 'webui': 'Feature::WEBUI_CONTEXT',
                 'webui_untrusted': 'Feature::WEBUI_UNTRUSTED_CONTEXT',
@@ -262,11 +263,11 @@ FEATURE_GRAMMAR = ({
         list: {
             'enum_map': {
                 'chromeos': 'Feature::CHROMEOS_PLATFORM',
+                'fuchsia': 'Feature::FUCHSIA_PLATFORM',
                 'lacros': 'Feature::LACROS_PLATFORM',
                 'linux': 'Feature::LINUX_PLATFORM',
                 'mac': 'Feature::MACOSX_PLATFORM',
                 'win': 'Feature::WIN_PLATFORM',
-                'fuchsia': 'Feature::FUCHSIA_PLATFORM',
             }
         }
     },
@@ -395,7 +396,6 @@ def DoesNotHaveAllowlistForHostedApps(value):
   # DO NOT ADD MORE.
   HOSTED_APP_EXCEPTIONS = [
       'B44D08FD98F1523ED5837D78D0A606EA9D6206E5',
-      '2653F6F6C39BC6EEBD36A09AFB92A19782FF7EB4',
   ]
 
   allowlist = cpp_list_to_list(value['allowlist'])
@@ -836,6 +836,13 @@ class FeatureCompiler(object):
 
     # Handle complex features, which are lists of simple features.
     if type(feature_value) is list:
+      assert len(feature_value) > 1, (
+          'Error parsing feature "%s": A complex feature ' % feature_name +
+          'definition is only needed when there are multiple objects ' +
+          'specifying different groups of properties for feature ' +
+          'availability. You can reduce it down to a single object on the ' +
+          'feature key instead of a list.')
+
       feature = ComplexFeature(feature_name)
 
       # This doesn't handle nested complex features. I think that's probably for

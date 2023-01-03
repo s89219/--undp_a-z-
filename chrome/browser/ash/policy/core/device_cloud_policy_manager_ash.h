@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
+#include "base/scoped_observation_traits.h"
 #include "chrome/browser/ash/cert_provisioning/cert_provisioning_scheduler.h"
 #include "chrome/browser/ash/policy/server_backed_state/server_backed_state_keys_broker.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
@@ -31,7 +32,8 @@ class MachineCertificateUploader;
 }  // namespace attestation
 namespace reporting {
 class LoginLogoutReporter;
-}
+class LockUnlockReporter;
+}  // namespace reporting
 class InstallAttributes;
 }  // namespace ash
 
@@ -63,13 +65,9 @@ class DeviceCloudPolicyManagerAsh : public CloudPolicyManager {
    public:
     // Invoked when the device cloud policy manager connects.
     virtual void OnDeviceCloudPolicyManagerConnected() = 0;
-    // Invoked when the device cloud policy manager disconnects.
-    virtual void OnDeviceCloudPolicyManagerDisconnected() = 0;
     // Invoked when the device cloud policy manager obtains schema registry.
     virtual void OnDeviceCloudPolicyManagerGotRegistry() = 0;
   };
-
-  using UnregisterCallback = base::OnceCallback<void(bool)>;
 
   // |task_runner| is the runner for policy refresh, heartbeat, and status
   // upload tasks.
@@ -84,6 +82,9 @@ class DeviceCloudPolicyManagerAsh : public CloudPolicyManager {
       delete;
 
   ~DeviceCloudPolicyManagerAsh() override;
+
+  // ConfigurationPolicyProvider:
+  void Init(SchemaRegistry* registry) override;
 
   // Initializes state keys.
   void Initialize(PrefService* local_state);
@@ -111,13 +112,6 @@ class DeviceCloudPolicyManagerAsh : public CloudPolicyManager {
 
   // Called when policy store is ready.
   void OnPolicyStoreReady(ash::InstallAttributes* install_attributes);
-
-  // Sends the unregister request. |callback| is invoked with a boolean
-  // parameter indicating the result when done.
-  virtual void Unregister(UnregisterCallback callback);
-
-  // Disconnects the manager.
-  virtual void Disconnect();
 
   bool IsConnected() const { return core()->service() != nullptr; }
 
@@ -173,6 +167,10 @@ class DeviceCloudPolicyManagerAsh : public CloudPolicyManager {
   std::unique_ptr<reporting::UserAddedRemovedReporter>
       user_added_removed_reporter_;
 
+  // Object that reports user lock/unlock events to the server, protected for
+  // testing.
+  std::unique_ptr<ash::reporting::LockUnlockReporter> lock_unlock_reporter_;
+
  private:
   // Saves the state keys received from |session_manager_client_|.
   void OnStateKeysUpdated();
@@ -185,7 +183,8 @@ class DeviceCloudPolicyManagerAsh : public CloudPolicyManager {
   void CreateStatusUploader(ManagedSessionService* managed_session_service);
 
   // Init |managed_session_service_| and reporting objects such as
-  // |login_logout_reporter_|, and |user_added_removed_reporter_|.
+  // |login_logout_reporter_|, |user_added_removed_reporter_| and
+  // |lock_unlock_reporter_|.
   void CreateManagedSessionServiceAndReporters();
 
   // Points to the same object as the base CloudPolicyManager::store(), but with
@@ -245,5 +244,24 @@ class DeviceCloudPolicyManagerAsh : public CloudPolicyManager {
 };
 
 }  // namespace policy
+
+namespace base {
+
+template <>
+struct ScopedObservationTraits<policy::DeviceCloudPolicyManagerAsh,
+                               policy::DeviceCloudPolicyManagerAsh::Observer> {
+  static void AddObserver(
+      policy::DeviceCloudPolicyManagerAsh* source,
+      policy::DeviceCloudPolicyManagerAsh::Observer* observer) {
+    source->AddDeviceCloudPolicyManagerObserver(observer);
+  }
+  static void RemoveObserver(
+      policy::DeviceCloudPolicyManagerAsh* source,
+      policy::DeviceCloudPolicyManagerAsh::Observer* observer) {
+    source->RemoveDeviceCloudPolicyManagerObserver(observer);
+  }
+};
+
+}  // namespace base
 
 #endif  // CHROME_BROWSER_ASH_POLICY_CORE_DEVICE_CLOUD_POLICY_MANAGER_ASH_H_

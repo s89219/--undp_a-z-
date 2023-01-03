@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@ public class EmptyTabModel implements TabModel {
      * EmptyTabModel.
      */
     @VisibleForTesting
-    protected EmptyTabModel() {}
+    public EmptyTabModel() {}
 
     // "Initialization on demand holder idiom"
     private static class LazyHolder {
@@ -131,6 +131,9 @@ public class EmptyTabModel implements TabModel {
 
     @Override
     public void cancelTabClosure(int tabId) {}
+
+    @Override
+    public void notifyAllTabsClosureUndone() {}
 
     @Override
     public boolean supportsPendingClosures() {

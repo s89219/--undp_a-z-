@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,9 @@
 
 #include <memory>
 
-#include "base/strings/strcat.h"
 #include "base/strings/string_piece.h"
-#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "chrome/browser/ui/webid/account_selection_view.h"
-#include "components/infobars/core/infobar.h"
-#include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "url/gurl.h"
 
 IdentityDialogController::IdentityDialogController() = default;
 
@@ -29,44 +24,48 @@ int IdentityDialogController::GetBrandIconIdealSize() {
 
 void IdentityDialogController::ShowAccountsDialog(
     content::WebContents* rp_web_contents,
-    const GURL& idp_url,
-    base::span<const content::IdentityRequestAccount> accounts,
-    const content::IdentityProviderMetadata& idp_metadata,
-    const content::ClientIdData& client_data,
+    const std::string& rp_for_display,
+    const std::vector<content::IdentityProviderData>& identity_provider_data,
     content::IdentityRequestAccount::SignInMode sign_in_mode,
-    AccountSelectionCallback on_selected) {
-  // IDP scheme is expected to always be `https://`.
-  CHECK(idp_url.SchemeIs(url::kHttpsScheme));
+    AccountSelectionCallback on_selected,
+    DismissCallback dismiss_callback) {
   rp_web_contents_ = rp_web_contents;
   on_account_selection_ = std::move(on_selected);
-  std::string rp_etld_plus_one =
-      net::registry_controlled_domains::GetDomainAndRegistry(
-          rp_web_contents_->GetLastCommittedURL(),
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
-  std::string idp_etld_plus_one =
-      net::registry_controlled_domains::GetDomainAndRegistry(
-          idp_url,
-          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
-
+  on_dismiss_ = std::move(dismiss_callback);
   if (!account_view_)
     account_view_ = AccountSelectionView::Create(this);
-  account_view_->Show(rp_etld_plus_one, idp_etld_plus_one, accounts,
-                      idp_metadata, client_data, sign_in_mode);
+  account_view_->Show(rp_for_display, identity_provider_data, sign_in_mode);
 }
 
-void IdentityDialogController::OnAccountSelected(const Account& account) {
+void IdentityDialogController::ShowFailureDialog(
+    content::WebContents* rp_web_contents,
+    const std::string& rp_for_display,
+    const std::string& idp_for_display,
+    DismissCallback dismiss_callback) {
+  const GURL rp_url = rp_web_contents->GetLastCommittedURL();
+  rp_web_contents_ = rp_web_contents;
+  on_dismiss_ = std::move(dismiss_callback);
+  if (!account_view_)
+    account_view_ = AccountSelectionView::Create(this);
+  account_view_->ShowFailureDialog(rp_for_display, idp_for_display);
+}
+
+void IdentityDialogController::OnAccountSelected(const GURL& idp_config_url,
+                                                 const Account& account) {
+  on_dismiss_.Reset();
   std::move(on_account_selection_)
-      .Run(account.id,
+      .Run(idp_config_url, account.id,
            account.login_state ==
-               content::IdentityRequestAccount::LoginState::kSignIn,
-           /* should_embargo=*/false);
+               content::IdentityRequestAccount::LoginState::kSignIn);
 }
 
-void IdentityDialogController::OnDismiss(bool should_embargo) {
+void IdentityDialogController::OnDismiss(DismissReason dismiss_reason) {
   // |OnDismiss| can be called after |OnAccountSelected| which sets the callback
   // to null.
-  if (on_account_selection_)
-    std::move(on_account_selection_).Run(std::string(), false, should_embargo);
+  if (on_dismiss_) {
+    on_account_selection_.Reset();
+    std::move(on_dismiss_).Run(dismiss_reason);
+  }
 }
 
 gfx::NativeView IdentityDialogController::GetNativeView() {

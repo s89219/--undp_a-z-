@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,20 +12,20 @@ function mountFileSystem(onSuccess, onError) {
     const index = mounted.length + 1;
     chrome.fileSystemProvider.mount({
       fileSystemId: 'test-fs-' + index,
-      displayName: 'Test (' + index + ')'
+      displayName: 'Test (' + index + ')',
     });
   });
 }
 
-chrome.fileSystemProvider.onGetMetadataRequested.addListener(
-    function(options, onSuccess, onError) {
-      onSuccess({
-        isDirectory: true,
-        name: '',
-        size: 0,
-        modificationTime: new Date()
-      });
-    });
+chrome.fileSystemProvider.onGetMetadataRequested.addListener(function(
+    options, onSuccess, onError) {
+  onSuccess({
+    isDirectory: true,
+    name: '',
+    size: 0,
+    modificationTime: new Date(),
+  });
+});
 
 chrome.fileSystemProvider.onReadDirectoryRequested.addListener(function(
     options, onSuccess, onError) {

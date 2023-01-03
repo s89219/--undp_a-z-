@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -150,7 +150,7 @@ class ColorPickerElementView : public views::Button {
     DCHECK_EQ(bounds.width(), bounds.height());
 
     const SkColor color =
-        GetThemeProvider()->GetColor(GetTabGroupDialogColorId(color_id_));
+        GetColorProvider()->GetColor(GetTabGroupDialogColorId(color_id_));
 
     cc::PaintFlags flags;
     flags.setStyle(cc::PaintFlags::kFill_Style);

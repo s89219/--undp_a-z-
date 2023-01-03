@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -164,6 +164,7 @@ void FakeServiceConnectionImpl::LoadTextSuggester(
 
 void FakeServiceConnectionImpl::LoadDocumentScanner(
     mojo::PendingReceiver<mojom::DocumentScanner> receiver,
+    mojom::DocumentScannerConfigPtr config,
     mojom::MachineLearningService::LoadDocumentScannerCallback callback) {
   ScheduleCall(base::BindOnce(
       &FakeServiceConnectionImpl::HandleLoadDocumentScannerCall,

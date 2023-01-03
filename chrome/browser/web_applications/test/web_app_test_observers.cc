@@ -1,10 +1,11 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/web_applications/test/web_app_test_observers.h"
 
 #include "base/run_loop.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/bind.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/web_app.h"
@@ -107,8 +108,8 @@ void WebAppInstallManagerObserverAdapter::SignalRunLoopAndStoreAppId(
   if (!optional_app_ids_.empty())
     return;
   last_app_id_ = app_id;
-  base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                   wait_loop_.QuitClosure());
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, wait_loop_.QuitClosure());
   is_listening_ = false;
 }
 
@@ -127,7 +128,7 @@ WebAppTestRegistryObserverAdapter::WebAppTestRegistryObserverAdapter(
 WebAppTestRegistryObserverAdapter::WebAppTestRegistryObserverAdapter(
     Profile* profile)
     : WebAppTestRegistryObserverAdapter(
-          &WebAppProvider::GetForTest(profile)->registrar()) {}
+          &WebAppProvider::GetForTest(profile)->registrar_unsafe()) {}
 
 WebAppTestRegistryObserverAdapter::~WebAppTestRegistryObserverAdapter() =
     default;
@@ -166,7 +167,7 @@ void WebAppTestRegistryObserverAdapter::OnWebAppProfileWillBeDeleted(
 }
 
 void WebAppTestRegistryObserverAdapter::OnWebAppLastBadgingTimeChanged(
-    const web_app::AppId& app_id,
+    const AppId& app_id,
     const base::Time& time) {
   if (app_last_badging_time_changed_delegate_)
     app_last_badging_time_changed_delegate_.Run(app_id, time);
@@ -177,6 +178,10 @@ void WebAppTestRegistryObserverAdapter::OnWebAppProtocolSettingsChanged() {
     app_protocol_settings_changed_delegate_.Run();
 }
 
+void WebAppTestRegistryObserverAdapter::OnAppRegistrarDestroyed() {
+  observation_.Reset();
+}
+
 void WebAppTestRegistryObserverAdapter::SignalRunLoopAndStoreAppId(
     const AppId& app_id) {
   if (!is_listening_)
@@ -185,8 +190,8 @@ void WebAppTestRegistryObserverAdapter::SignalRunLoopAndStoreAppId(
   if (!optional_app_ids_.empty())
     return;
   last_app_id_ = app_id;
-  base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                   wait_loop_.QuitClosure());
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, wait_loop_.QuitClosure());
   is_listening_ = false;
 }
 

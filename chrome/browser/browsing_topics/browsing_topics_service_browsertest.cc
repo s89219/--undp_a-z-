@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/values_util.h"
 #include "base/path_service.h"
+#include "base/strings/strcat.h"
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/browsing_topics/browsing_topics_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -36,6 +37,8 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browsing_topics_test_util.h"
 #include "content/public/test/fenced_frame_test_util.h"
+#include "content/public/test/prerender_test_util.h"
+#include "content/public/test/test_navigation_observer.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/request_handler_util.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
@@ -59,17 +62,11 @@ constexpr int64_t kModelVersion = 2;
 constexpr size_t kPaddedTopTopicsStartIndex = 5;
 constexpr Topic kExpectedTopic1 = Topic(1);
 constexpr Topic kExpectedTopic2 = Topic(10);
-constexpr char kExpectedResultOrder1[] =
+constexpr char kExpectedApiResult[] =
     "[{\"configVersion\":\"chrome.1\",\"modelVersion\":\"2\","
     "\"taxonomyVersion\":\"1\",\"topic\":1,\"version\":\"chrome.1:1:2\"};{"
     "\"configVersion\":\"chrome.1\",\"modelVersion\":\"2\","
     "\"taxonomyVersion\":\"1\",\"topic\":10,\"version\":\"chrome.1:1:2\"};]";
-
-constexpr char kExpectedResultOrder2[] =
-    "[{\"configVersion\":\"chrome.1\",\"modelVersion\":\"2\","
-    "\"taxonomyVersion\":\"1\",\"topic\":10,\"version\":\"chrome.1:1:2\"};{"
-    "\"configVersion\":\"chrome.1\",\"modelVersion\":\"2\","
-    "\"taxonomyVersion\":\"1\",\"topic\":1,\"version\":\"chrome.1:1:2\"};]";
 
 EpochTopics CreateTestEpochTopics(
     const std::vector<std::pair<Topic, std::set<HashedDomain>>>& topics,
@@ -86,6 +83,31 @@ EpochTopics CreateTestEpochTopics(
                      kPaddedTopTopicsStartIndex, kTaxonomySize,
                      kTaxonomyVersion, kModelVersion, calculation_time);
 }
+
+class PortalActivationWaiter : public content::WebContentsObserver {
+ public:
+  explicit PortalActivationWaiter(content::WebContents* portal_contents)
+      : content::WebContentsObserver(portal_contents) {}
+
+  void Wait() {
+    if (!web_contents()->IsPortal())
+      return;
+
+    base::RunLoop run_loop;
+    quit_closure_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+  // content::WebContentsObserver:
+  void DidActivatePortal(content::WebContents* predecessor_contents,
+                         base::TimeTicks activation_time) override {
+    if (quit_closure_)
+      std::move(quit_closure_).Run();
+  }
+
+ private:
+  base::OnceClosure quit_closure_;
+};
 
 }  // namespace
 
@@ -147,12 +169,13 @@ class BrowsingTopicsBrowserTestBase : public InProcessBrowserTest {
 
   ~BrowsingTopicsBrowserTestBase() override = default;
 
-  std::string InvokeTopicsAPI(const content::ToRenderFrameHost& adapter) {
-    return EvalJs(adapter, R"(
+  std::string InvokeTopicsAPI(const content::ToRenderFrameHost& adapter,
+                              bool skip_observation = false) {
+    return EvalJs(adapter, content::JsReplace(R"(
       if (!(document.browsingTopics instanceof Function)) {
         'not a function';
       } else {
-        document.browsingTopics()
+        document.browsingTopics({skipObservation: $1})
         .then(topics => {
           let result = "[";
           for (const topic of topics) {
@@ -163,7 +186,8 @@ class BrowsingTopicsBrowserTestBase : public InProcessBrowserTest {
         })
         .catch(error => error.message);
       }
-    )")
+    )",
+                                              skip_observation))
         .ExtractString();
   }
 
@@ -205,18 +229,23 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsDisabledBrowserTest, NoTopicsAPI) {
 
 class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
  public:
-  BrowsingTopicsBrowserTest() {
+  BrowsingTopicsBrowserTest()
+      : prerender_helper_(
+            base::BindRepeating(&BrowsingTopicsBrowserTest::web_contents,
+                                base::Unretained(this))) {
     scoped_feature_list_.InitWithFeatures(
         /*enabled_features=*/
         {blink::features::kBrowsingTopics,
          blink::features::kBrowsingTopicsBypassIPIsPubliclyRoutableCheck,
-         features::kPrivacySandboxAdsAPIsOverride},
+         features::kPrivacySandboxAdsAPIsOverride, blink::features::kPortals},
         /*disabled_features=*/{});
   }
 
   ~BrowsingTopicsBrowserTest() override = default;
 
   void SetUpOnMainThread() override {
+    prerender_helper_.SetUp(&https_server_);
+
     BrowsingTopicsBrowserTestBase::SetUpOnMainThread();
 
     for (auto& profile_and_calculation_finish_waiter :
@@ -279,6 +308,11 @@ class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
         ->GetBrowsingTopicsSiteDataManager();
   }
 
+  history::HistoryService* history_service() {
+    return HistoryServiceFactory::GetForProfile(
+        browser()->profile(), ServiceAccessType::IMPLICIT_ACCESS);
+  }
+
   TesterBrowsingTopicsService* browsing_topics_service() {
     return static_cast<TesterBrowsingTopicsService*>(
         BrowsingTopicsServiceFactory::GetForProfile(browser()->profile()));
@@ -286,6 +320,10 @@ class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
 
   const BrowsingTopicsState& browsing_topics_state() {
     return browsing_topics_service()->browsing_topics_state();
+  }
+
+  content::test::PrerenderTestHelper& prerender_helper() {
+    return prerender_helper_;
   }
 
   std::vector<optimization_guide::WeightedIdentifier> TopicsAndWeight(
@@ -329,8 +367,10 @@ class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
 
     auto page_content_annotations_service =
         std::make_unique<optimization_guide::PageContentAnnotationsService>(
-            "en-US", optimization_guide_model_providers_.at(profile).get(),
-            history_service, nullptr, base::FilePath(), nullptr);
+            nullptr, "en-US",
+            optimization_guide_model_providers_.at(profile).get(),
+            history_service, nullptr, nullptr, nullptr, base::FilePath(),
+            nullptr, nullptr);
 
     page_content_annotations_service->OverridePageContentAnnotatorForTesting(
         &test_page_content_annotator_);
@@ -345,17 +385,17 @@ class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
     // Configure the (mock) model.
     test_page_content_annotator_.UsePageTopics(
         *optimization_guide::TestModelInfoBuilder().SetVersion(1).Build(),
-        {{"foo6 com", TopicsAndWeight({1, 2, 3, 4, 5, 6}, 0.1)},
-         {"foo5 com", TopicsAndWeight({2, 3, 4, 5, 6}, 0.1)},
-         {"foo4 com", TopicsAndWeight({3, 4, 5, 6}, 0.1)},
-         {"foo3 com", TopicsAndWeight({4, 5, 6}, 0.1)},
-         {"foo2 com", TopicsAndWeight({5, 6}, 0.1)},
-         {"foo1 com", TopicsAndWeight({6}, 0.1)}});
+        {{"foo6.com", TopicsAndWeight({1, 2, 3, 4, 5, 6}, 0.1)},
+         {"foo5.com", TopicsAndWeight({2, 3, 4, 5, 6}, 0.1)},
+         {"foo4.com", TopicsAndWeight({3, 4, 5, 6}, 0.1)},
+         {"foo3.com", TopicsAndWeight({4, 5, 6}, 0.1)},
+         {"foo2.com", TopicsAndWeight({5, 6}, 0.1)},
+         {"foo1.com", TopicsAndWeight({6}, 0.1)}});
 
     // Add some initial history.
     history::HistoryAddPageArgs add_page_args;
     add_page_args.time = base::Time::Now();
-    add_page_args.context_id = reinterpret_cast<history::ContextID>(1);
+    add_page_args.context_id = 1;
     add_page_args.nav_entry_id = 1;
 
     // Note: foo6.com isn't in the initial history.
@@ -401,6 +441,7 @@ class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
 
     privacy_sandbox::PrivacySandboxSettings* privacy_sandbox_settings =
         PrivacySandboxSettingsFactory::GetForProfile(profile);
+    privacy_sandbox_settings->SetAllPrivacySandboxAllowedForTesting();
 
     history::HistoryService* history_service =
         HistoryServiceFactory::GetForProfile(
@@ -430,6 +471,8 @@ class BrowsingTopicsBrowserTest : public BrowsingTopicsBrowserTestBase {
   }
 
   content::test::FencedFrameTestHelper fenced_frame_test_helper_;
+
+  content::test::PrerenderTestHelper prerender_helper_;
 
   base::test::ScopedFeatureList scoped_feature_list_;
 
@@ -572,69 +615,35 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, ApiResultUkm) {
   InvokeTopicsAPI(web_contents());
 
   auto entries = ukm_recorder_->GetEntriesByName(
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
+      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult2::
           kEntryName);
   EXPECT_EQ(1u, entries.size());
 
   ukm_recorder_->ExpectEntrySourceHasUrl(entries.back(), main_frame_url);
 
-  const int64_t* topic0_metric = ukm_recorder_->GetEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic0Name);
-  const int64_t* topic1_metric = ukm_recorder_->GetEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic1Name);
+  std::vector<ApiResultUkmMetrics> metrics_entries =
+      ReadApiResultUkmMetrics(*ukm_recorder_);
 
-  EXPECT_TRUE(topic0_metric);
-  EXPECT_TRUE(topic1_metric);
+  EXPECT_EQ(1u, metrics_entries.size());
 
-  EXPECT_TRUE((*topic0_metric == kExpectedTopic1.value() &&
-               *topic1_metric == kExpectedTopic2.value()) ||
-              (*topic0_metric == kExpectedTopic2.value() &&
-               *topic1_metric == kExpectedTopic1.value()));
+  EXPECT_FALSE(metrics_entries[0].failure_reason);
 
-  ukm_recorder_->ExpectEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic0IsTrueTopTopicName,
-      true);
-  ukm_recorder_->ExpectEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic0ModelVersionName,
-      2);
-  ukm_recorder_->ExpectEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic0TaxonomyVersionName,
-      1);
+  EXPECT_TRUE(metrics_entries[0].topic0.IsValid());
+  EXPECT_TRUE(metrics_entries[0].topic0.is_true_topic());
+  EXPECT_FALSE(metrics_entries[0].topic0.should_be_filtered());
+  EXPECT_EQ(metrics_entries[0].topic0.taxonomy_version(), 1);
+  EXPECT_EQ(metrics_entries[0].topic0.model_version(), 2);
 
-  ukm_recorder_->ExpectEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic1IsTrueTopTopicName,
-      true);
-  ukm_recorder_->ExpectEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic1ModelVersionName,
-      2);
-  ukm_recorder_->ExpectEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic1TaxonomyVersionName,
-      1);
+  EXPECT_TRUE(metrics_entries[0].topic1.IsValid());
+  EXPECT_TRUE(metrics_entries[0].topic1.is_true_topic());
+  EXPECT_FALSE(metrics_entries[0].topic1.should_be_filtered());
+  EXPECT_EQ(metrics_entries[0].topic1.taxonomy_version(), 1);
+  EXPECT_EQ(metrics_entries[0].topic1.model_version(), 2);
 
-  EXPECT_FALSE(ukm_recorder_->GetEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kReturnedTopic2Name));
-  EXPECT_FALSE(ukm_recorder_->GetEntryMetric(
-      entries.back(),
-      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult::
-          kEmptyReasonName));
+  EXPECT_FALSE(metrics_entries[0].topic2.IsValid());
+
+  EXPECT_EQ(metrics_entries[0].topic0.topic(), kExpectedTopic1);
+  EXPECT_EQ(metrics_entries[0].topic1.topic(), kExpectedTopic2);
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, PageLoadUkm) {
@@ -664,25 +673,6 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, PageLoadUkm) {
                                    ukm::builders::BrowsingTopics_PageLoad::
                                        kTopicsRequestingContextDomainsCountName,
                                    1);
-}
-
-IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, GetTopicsForSiteForDisplay) {
-  GURL main_frame_url =
-      https_server_.GetURL("a.test", "/browsing_topics/empty_page.html");
-
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
-
-  std::vector<privacy_sandbox::CanonicalTopic> result =
-      browsing_topics_service()->GetTopicsForSiteForDisplay(
-          web_contents()->GetMainFrame()->GetLastCommittedOrigin());
-
-  // Epoch switch time has not arrived. So expect one topic from each of the
-  // first two epochs.
-  EXPECT_EQ(result.size(), 2u);
-  EXPECT_EQ(result[0].topic_id(), Topic(1));
-  EXPECT_EQ(result[0].taxonomy_version(), 1);
-  EXPECT_EQ(result[1].topic_id(), Topic(10));
-  EXPECT_EQ(result[1].taxonomy_version(), 1);
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, GetTopTopicsForDisplay) {
@@ -721,8 +711,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
 
   std::string result = InvokeTopicsAPI(web_contents());
 
-  EXPECT_TRUE(result == kExpectedResultOrder1 ||
-              result == kExpectedResultOrder2);
+  EXPECT_EQ(result, kExpectedApiResult);
 
   // Ensure access has been reported to the Page Specific Content Settings.
   auto* pscs = content_settings::PageSpecificContentSettings::GetForPage(
@@ -731,12 +720,9 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
   auto topics = pscs->GetAccessedTopics();
   ASSERT_EQ(2u, topics.size());
 
-  // No ordering is enforced by the PSCS.
-  ASSERT_NE(topics[0].topic_id(), topics[1].topic_id());
-  ASSERT_TRUE(topics[0].topic_id() == kExpectedTopic1 ||
-              topics[0].topic_id() == kExpectedTopic2);
-  ASSERT_TRUE(topics[1].topic_id() == kExpectedTopic1 ||
-              topics[1].topic_id() == kExpectedTopic2);
+  // PSCS::GetAccessedTopics() will return sorted values.
+  EXPECT_EQ(topics[0].topic_id(), kExpectedTopic1);
+  EXPECT_EQ(topics[1].topic_id(), kExpectedTopic2);
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
@@ -753,11 +739,10 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
                                            /*iframe_id=*/"frame",
                                            subframe_url));
 
-  std::string result =
-      InvokeTopicsAPI(content::ChildFrameAt(web_contents()->GetMainFrame(), 0));
+  std::string result = InvokeTopicsAPI(
+      content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0));
 
-  EXPECT_TRUE(result == kExpectedResultOrder1 ||
-              result == kExpectedResultOrder2);
+  EXPECT_EQ(result, kExpectedApiResult);
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
@@ -776,14 +761,13 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
 
   // b.test has yet to call the API so it shouldn't receive a topic.
   EXPECT_EQ("[]", InvokeTopicsAPI(content::ChildFrameAt(
-                      web_contents()->GetMainFrame(), 0)));
+                      web_contents()->GetPrimaryMainFrame(), 0)));
   auto* pscs = content_settings::PageSpecificContentSettings::GetForPage(
       web_contents()->GetPrimaryPage());
   EXPECT_FALSE(pscs->HasAccessedTopics());
 }
 
-IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
-                       TopicsAPI_ContextDomainTracked) {
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, TopicsAPI_ObserveBehavior) {
   GURL main_frame_url =
       https_server_.GetURL("a.test", "/browsing_topics/one_iframe_page.html");
 
@@ -796,19 +780,35 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
                                            /*iframe_id=*/"frame",
                                            subframe_url));
 
-  // The usage is not tracked before the API call. The returned entry was from
-  // the pre-existing storage.
+  // Invoked the API with {skipObservation: true}.
+  EXPECT_EQ("[]", InvokeTopicsAPI(content::ChildFrameAt(
+                                      web_contents()->GetPrimaryMainFrame(), 0),
+                                  /*skip_observation=*/true));
+
+  // Since {skipObservation: true} was specified, the page is not eligible for
+  // topics calculation.
+  EXPECT_FALSE(
+      BrowsingTopicsEligibleForURLVisit(history_service(), main_frame_url));
+
+  // Since {skipObservation: true} was specified, the usage is not tracked. The
+  // returned entry was from the pre-existing storage.
   std::vector<ApiUsageContext> api_usage_contexts =
       content::GetBrowsingTopicsApiUsage(browsing_topics_site_data_manager());
   EXPECT_EQ(api_usage_contexts.size(), 1u);
 
+  // Invoked the API with {skipObservation: false}.
   EXPECT_EQ("[]", InvokeTopicsAPI(content::ChildFrameAt(
-                      web_contents()->GetMainFrame(), 0)));
+                      web_contents()->GetPrimaryMainFrame(), 0)));
 
+  // Since {skipObservation: false} was specified, the page is eligible for
+  // topics calculation.
+  EXPECT_TRUE(
+      BrowsingTopicsEligibleForURLVisit(history_service(), main_frame_url));
+
+  // Since {skipObservation: false} was specified, the usage is tracked.
   api_usage_contexts =
       content::GetBrowsingTopicsApiUsage(browsing_topics_site_data_manager());
 
-  // The usage is tracked after the API call.
   EXPECT_EQ(api_usage_contexts.size(), 2u);
   EXPECT_EQ(api_usage_contexts[0].hashed_main_frame_host,
             HashMainFrameHostForStorage("foo1.com"));
@@ -829,10 +829,29 @@ IN_PROC_BROWSER_TEST_F(
 
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
 
+  base::RunLoop ukm_loop;
+  ukm_recorder_->SetOnAddEntryCallback(
+      ukm::builders::BrowsingTopics_DocumentBrowsingTopicsApiResult2::
+          kEntryName,
+      ukm_loop.QuitClosure());
+
   EXPECT_EQ(
       "The \"browsing-topics\" Permissions Policy denied the use of "
       "document.browsingTopics().",
       InvokeTopicsAPI(web_contents()));
+
+  ukm_loop.Run();
+
+  std::vector<ApiResultUkmMetrics> metrics_entries =
+      ReadApiResultUkmMetrics(*ukm_recorder_);
+
+  EXPECT_EQ(1u, metrics_entries.size());
+
+  EXPECT_EQ(metrics_entries[0].failure_reason,
+            ApiAccessFailureReason::kInvalidRequestingContext);
+  EXPECT_FALSE(metrics_entries[0].topic0.IsValid());
+  EXPECT_FALSE(metrics_entries[0].topic1.IsValid());
+  EXPECT_FALSE(metrics_entries[0].topic2.IsValid());
 }
 
 IN_PROC_BROWSER_TEST_F(
@@ -865,14 +884,13 @@ IN_PROC_BROWSER_TEST_F(
                                            subframe_url));
 
   std::string result = InvokeTopicsAPI(web_contents());
-  EXPECT_TRUE(result == kExpectedResultOrder1 ||
-              result == kExpectedResultOrder2);
+  EXPECT_EQ(result, kExpectedApiResult);
 
   EXPECT_EQ(
       "The \"browsing-topics\" Permissions Policy denied the use of "
       "document.browsingTopics().",
       InvokeTopicsAPI(
-          content::ChildFrameAt(web_contents()->GetMainFrame(), 0)));
+          content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0)));
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
@@ -890,8 +908,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
 
   std::string result = InvokeTopicsAPI(web_contents());
-  EXPECT_TRUE(result == kExpectedResultOrder1 ||
-              result == kExpectedResultOrder2);
+  EXPECT_EQ(result, kExpectedApiResult);
 
   GURL subframe_url =
       https_server_.GetURL("c.test", "/browsing_topics/empty_page.html");
@@ -900,7 +917,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
                                            /*iframe_id=*/"frame",
                                            subframe_url));
   EXPECT_EQ("[]", InvokeTopicsAPI(content::ChildFrameAt(
-                      web_contents()->GetMainFrame(), 0)));
+                      web_contents()->GetPrimaryMainFrame(), 0)));
 
   subframe_url =
       https_server_.GetURL("b.test", "/browsing_topics/empty_page.html");
@@ -913,7 +930,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
       "The \"browsing-topics\" Permissions Policy denied the use of "
       "document.browsingTopics().",
       InvokeTopicsAPI(
-          content::ChildFrameAt(web_contents()->GetMainFrame(), 0)));
+          content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0)));
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
@@ -933,7 +950,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
   // frame.
   EXPECT_EQ("not a function", InvokeTopicsAPI(web_contents()));
   EXPECT_EQ("not a function", InvokeTopicsAPI(content::ChildFrameAt(
-                                  web_contents()->GetMainFrame(), 0)));
+                                  web_contents()->GetPrimaryMainFrame(), 0)));
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
@@ -967,7 +984,7 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
   EXPECT_EQ(
       "document.browsingTopics() is not allowed in an opaque origin context.",
       InvokeTopicsAPI(
-          content::ChildFrameAt(web_contents()->GetMainFrame(), 0)));
+          content::ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0)));
 }
 
 IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
@@ -982,12 +999,138 @@ IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
 
   content::RenderFrameHostWrapper fenced_frame_rfh_wrapper(
       fenced_frame_test_helper_.CreateFencedFrame(
-          web_contents()->GetMainFrame(), fenced_frame_url));
+          web_contents()->GetPrimaryMainFrame(), fenced_frame_url));
+
+  EXPECT_EQ("document.browsingTopics() is not allowed in a fenced frame.",
+            InvokeTopicsAPI(fenced_frame_rfh_wrapper.get()));
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
+                       TopicsAPINotAllowedInPrerenderedPage) {
+  GURL main_frame_url =
+      https_server_.GetURL("a.test", "/browsing_topics/one_iframe_page.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
+
+  GURL prerender_url =
+      https_server_.GetURL("a.test", "/browsing_topics/empty_page.html");
+
+  int host_id = prerender_helper().AddPrerender(prerender_url);
+
+  content::RenderFrameHost* prerender_host =
+      prerender_helper().GetPrerenderedMainFrameHost(host_id);
+  EXPECT_EQ(
+      "document.browsingTopics() is not allowed when the page is being "
+      "prerendered.",
+      InvokeTopicsAPI(prerender_host));
+
+  // Activate the prerendered page. The API call should succeed.
+  content::test::PrerenderHostObserver prerender_observer(*web_contents(),
+                                                          prerender_url);
+  prerender_helper().NavigatePrimaryPage(prerender_url);
+  prerender_observer.WaitForActivation();
+
+  std::string result = InvokeTopicsAPI(web_contents());
+
+  EXPECT_EQ(result, kExpectedApiResult);
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, TopicsAPINotAllowedInPortal) {
+  GURL main_frame_url =
+      https_server_.GetURL("a.test", "/browsing_topics/one_iframe_page.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
+
+  GURL portal_url =
+      https_server_.GetURL("a.test", "/browsing_topics/empty_page.html");
+
+  ASSERT_EQ(true, content::EvalJs(web_contents()->GetPrimaryMainFrame(),
+                                  content::JsReplace(R"(
+                          new Promise((resolve) => {
+                            let portal = document.createElement('portal');
+                            portal.src = $1;
+                            portal.onload = () => { resolve(true); }
+                            document.body.appendChild(portal);
+                          });
+                          )",
+                                                     portal_url)));
+
+  std::vector<content::WebContents*> inner_web_contents =
+      web_contents()->GetInnerWebContents();
+  EXPECT_EQ(1u, inner_web_contents.size());
+  content::WebContents* portal_contents = inner_web_contents[0];
 
   EXPECT_EQ(
-      "document.browsingTopics() is only allowed in the primary main frame or "
-      "in its child iframes.",
-      InvokeTopicsAPI(fenced_frame_rfh_wrapper.get()));
+      "document.browsingTopics() is only allowed in the outermost page and "
+      "when the page is active.",
+      InvokeTopicsAPI(portal_contents));
+
+  // Activate the portal. The API call should succeed.
+  PortalActivationWaiter activation_waiter(portal_contents);
+  content::ExecuteScriptAsync(web_contents()->GetPrimaryMainFrame(),
+                              "document.querySelector('portal').activate();");
+  activation_waiter.Wait();
+
+  EXPECT_EQ(portal_contents, web_contents());
+
+  std::string result = InvokeTopicsAPI(web_contents());
+
+  EXPECT_EQ(result, kExpectedApiResult);
+}
+
+// Regression test for crbug/1339735.
+IN_PROC_BROWSER_TEST_F(
+    BrowsingTopicsBrowserTest,
+    TopicsAPIInvokedInMainFrameUnloadHandler_NoRendererCrash) {
+  GURL main_frame_url = https_server_.GetURL(
+      "a.test", "/browsing_topics/get_topics_during_unload.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
+
+  // A renderer crash won't always be captured if the renderer is also shutting
+  // down naturally around the same time. Thus, we create a new page in the same
+  // renderer process to keep the renderer process alive when the page navigates
+  // away later.
+  content::TestNavigationObserver popup_observer(main_frame_url);
+  popup_observer.StartWatchingNewWebContents();
+  EXPECT_TRUE(
+      ExecuteScript(web_contents()->GetPrimaryMainFrame(),
+                    content::JsReplace("window.open($1)", main_frame_url)));
+  popup_observer.Wait();
+
+  GURL new_url =
+      https_server_.GetURL("b.test", "/browsing_topics/empty_page.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), new_url));
+}
+
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest,
+                       Fetch_InsecureInitiatorContext) {
+  GURL main_frame_url = embedded_test_server()->GetURL(
+      "a.test", "/browsing_topics/empty_page.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
+
+  GURL fetch_url =
+      https_server_.GetURL("a.test", "/browsing_topics/empty_page.html");
+
+  content::EvalJsResult result = EvalJs(
+      web_contents()->GetPrimaryMainFrame(),
+      content::JsReplace("fetch($1, {browsingTopics: true})", fetch_url));
+
+  EXPECT_THAT(result.error,
+              testing::HasSubstr("browsingTopics: Topics operations are only "
+                                 "available in secure contexts."));
+}
+
+// Right now the E2E topics handling isn't implemented. This test just show the
+// distinction with other failure test case.
+IN_PROC_BROWSER_TEST_F(BrowsingTopicsBrowserTest, Fetch_Success) {
+  GURL main_frame_url =
+      https_server_.GetURL("a.test", "/browsing_topics/empty_page.html");
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), main_frame_url));
+
+  GURL fetch_url =
+      https_server_.GetURL("a.test", "/browsing_topics/empty_page.html");
+
+  EXPECT_TRUE(ExecJs(
+      web_contents()->GetPrimaryMainFrame(),
+      content::JsReplace("fetch($1, {browsingTopics: true})", fetch_url)));
 }
 
 }  // namespace browsing_topics

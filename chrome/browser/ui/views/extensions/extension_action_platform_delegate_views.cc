@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,22 +17,14 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_action_view_delegate_views.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
-#include "chrome/common/extensions/command.h"
 #include "extensions/browser/extension_action.h"
 #include "extensions/common/api/extension_action/action_info.h"
+#include "extensions/common/command.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "ui/views/view.h"
 
 using extensions::ActionInfo;
-
-namespace {
-bool IsActionRelatedCommand(const std::string& name) {
-  return name == extensions::manifest_values::kActionCommandEvent ||
-         name == extensions::manifest_values::kBrowserActionCommandEvent ||
-         name == extensions::manifest_values::kPageActionCommandEvent;
-}
-}  //  namespace
 
 // static
 std::unique_ptr<ExtensionActionPlatformDelegate>
@@ -101,7 +93,7 @@ void ExtensionActionPlatformDelegateViews::OnExtensionCommandAdded(
   if (extension_id != controller_->extension()->id())
     return;  // Not this action's extension.
 
-  if (!IsActionRelatedCommand(command.command_name()))
+  if (!extensions::Command::IsActionRelatedCommand(command.command_name()))
     return;
 
   RegisterCommand();
@@ -113,7 +105,7 @@ void ExtensionActionPlatformDelegateViews::OnExtensionCommandRemoved(
   if (extension_id != controller_->extension()->id())
     return;
 
-  if (!IsActionRelatedCommand(command.command_name()))
+  if (!extensions::Command::IsActionRelatedCommand(command.command_name()))
     return;
 
   extensions::Command extension_command;

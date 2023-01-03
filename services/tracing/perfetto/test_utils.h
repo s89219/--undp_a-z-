@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -152,8 +152,9 @@ class MockConsumer : public perfetto::Consumer {
   void OnDetach(bool success) override;
   void OnAttach(bool success, const perfetto::TraceConfig&) override;
   void OnTraceStats(bool success, const perfetto::TraceStats&) override;
-
   void OnObservableEvents(const perfetto::ObservableEvents&) override;
+  void OnSessionCloned(bool, const std::string&) override;
+
   void WaitForAllDataSourcesStarted();
   void WaitForAllDataSourcesStopped();
 

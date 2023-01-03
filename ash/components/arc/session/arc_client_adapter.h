@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/observer_list.h"
+#include "chromeos/ash/components/dbus/arc/arc.pb.h"
 #include "chromeos/dbus/common/dbus_method_call_status.h"
 
 namespace cryptohome {
@@ -48,6 +49,10 @@ class ArcClientAdapter {
 
   // Creates a default instance of ArcClientAdapter.
   static std::unique_ptr<ArcClientAdapter> Create();
+
+  // Convert StartParams to StartArcMiniInstanceRequest
+  static StartArcMiniInstanceRequest
+  ConvertStartParamsToStartArcMiniInstanceRequest(const StartParams& params);
 
   ArcClientAdapter(const ArcClientAdapter&) = delete;
   ArcClientAdapter& operator=(const ArcClientAdapter&) = delete;

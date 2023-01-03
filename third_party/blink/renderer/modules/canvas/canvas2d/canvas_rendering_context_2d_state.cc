@@ -1,11 +1,13 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/modules/canvas/canvas2d/canvas_rendering_context_2d_state.h"
 
 #include <memory>
+
 #include "base/metrics/histogram_functions.h"
+#include "base/ranges/algorithm.h"
 #include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
 #include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
 #include "third_party/blink/renderer/core/css/parser/css_tokenizer.h"
@@ -71,7 +73,7 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState()
     : stroke_style_(MakeGarbageCollected<CanvasStyle>(SK_ColorBLACK)),
       fill_style_(MakeGarbageCollected<CanvasStyle>(SK_ColorBLACK)),
       shadow_blur_(0.0),
-      shadow_color_(Color::kTransparent),
+      shadow_color_(SK_ColorTRANSPARENT),
       global_alpha_(1.0),
       line_dash_offset_(0.0),
       unparsed_font_(defaultFont),
@@ -161,6 +163,8 @@ CanvasRenderingContext2DState::CanvasRenderingContext2DState(
   if (mode == kCopyClipList) {
     clip_list_ = other.clip_list_;
   }
+  stroke_style_->MarkShared(PassKey());
+  fill_style_->MarkShared(PassKey());
   // Since FontSelector is weakly persistent with |font_|, the memory may be
   // freed even |font_| is valid.
   if (realized_font_ && font_.GetFontSelector())
@@ -225,7 +229,7 @@ void CanvasRenderingContext2DState::UpdateLineDash() const {
     stroke_flags_.setPathEffect(nullptr);
   } else {
     Vector<float> line_dash(line_dash_.size());
-    std::copy(line_dash_.begin(), line_dash_.end(), line_dash.begin());
+    base::ranges::copy(line_dash_, line_dash.begin());
     stroke_flags_.setPathEffect(SkDashPathEffect::Make(
         line_dash.data(), line_dash.size(), line_dash_offset_));
   }
@@ -233,9 +237,104 @@ void CanvasRenderingContext2DState::UpdateLineDash() const {
   line_dash_dirty_ = false;
 }
 
+void CanvasRenderingContext2DState::SetStrokeColor(RGBA32 color) {
+  if (stroke_style_->IsEquivalentRGBA(color))
+    return;
+
+  if (stroke_style_->is_shared()) {
+    SetStrokeStyle(MakeGarbageCollected<CanvasStyle>(color));
+    return;
+  }
+
+  stroke_style_dirty_ = true;
+  stroke_style_->SetColor(PassKey(), color);
+}
+
+void CanvasRenderingContext2DState::SetStrokePattern(CanvasPattern* pattern) {
+  if (stroke_style_->IsEquivalentPattern(pattern)) {
+    // Even though the pointer value hasn't changed, the contents of the pattern
+    // may have. For this reason the style is marked dirty.
+    stroke_style_dirty_ = true;
+    return;
+  }
+
+  if (stroke_style_->is_shared()) {
+    SetStrokeStyle(MakeGarbageCollected<CanvasStyle>(pattern));
+    return;
+  }
+
+  stroke_style_->SetPattern(PassKey(), pattern);
+  stroke_style_dirty_ = true;
+}
+
+void CanvasRenderingContext2DState::SetStrokeGradient(
+    CanvasGradient* gradient) {
+  if (stroke_style_->IsEquivalentGradient(gradient)) {
+    // Even though the pointer value hasn't changed, the contents of the
+    // gradient may have. For this reason the style is marked dirty.
+    stroke_style_dirty_ = true;
+    return;
+  }
+
+  if (stroke_style_->is_shared()) {
+    SetStrokeStyle(MakeGarbageCollected<CanvasStyle>(gradient));
+    return;
+  }
+
+  stroke_style_->SetGradient(PassKey(), gradient);
+  stroke_style_dirty_ = true;
+}
+
 void CanvasRenderingContext2DState::SetStrokeStyle(CanvasStyle* style) {
   stroke_style_ = style;
   stroke_style_dirty_ = true;
+}
+
+void CanvasRenderingContext2DState::SetFillColor(RGBA32 color) {
+  if (fill_style_->IsEquivalentRGBA(color))
+    return;
+
+  if (fill_style_->is_shared()) {
+    SetFillStyle(MakeGarbageCollected<CanvasStyle>(color));
+    return;
+  }
+
+  fill_style_dirty_ = true;
+  fill_style_->SetColor(PassKey(), color);
+}
+
+void CanvasRenderingContext2DState::SetFillPattern(CanvasPattern* pattern) {
+  if (fill_style_->IsEquivalentPattern(pattern)) {
+    // Even though the pointer value hasn't changed, the contents of the pattern
+    // may have. For this reason the style is marked dirty.
+    fill_style_dirty_ = true;
+    return;
+  }
+
+  if (fill_style_->is_shared()) {
+    SetFillStyle(MakeGarbageCollected<CanvasStyle>(pattern));
+    return;
+  }
+
+  fill_style_dirty_ = true;
+  fill_style_->SetPattern(PassKey(), pattern);
+}
+
+void CanvasRenderingContext2DState::SetFillGradient(CanvasGradient* gradient) {
+  if (fill_style_->IsEquivalentGradient(gradient)) {
+    // Even though the pointer value hasn't changed, the contents of the
+    // gradient may have. For this reason the style is marked dirty.
+    fill_style_dirty_ = true;
+    return;
+  }
+
+  if (fill_style_->is_shared()) {
+    SetFillStyle(MakeGarbageCollected<CanvasStyle>(gradient));
+    return;
+  }
+
+  fill_style_dirty_ = true;
+  fill_style_->SetGradient(PassKey(), gradient);
 }
 
 void CanvasRenderingContext2DState::SetFillStyle(CanvasStyle* style) {
@@ -300,7 +399,7 @@ void CanvasRenderingContext2DState::ClipPath(
     const SkPath& path,
     AntiAliasingMode anti_aliasing_mode) {
   clip_list_.ClipPath(path, anti_aliasing_mode,
-                      TransformationMatrixToSkMatrix(transform_));
+                      AffineTransformToSkMatrix(transform_));
   has_clip_ = true;
   if (!path.isRect(nullptr))
     has_complex_clip_ = true;
@@ -341,6 +440,13 @@ void CanvasRenderingContext2DState::SetFont(
   realized_font_ = true;
   if (selector)
     selector->RegisterForInvalidationCallbacks(this);
+}
+
+bool CanvasRenderingContext2DState::IsFontDirtyForFilter() const {
+  // Indicates if the font has changed since the last time the filter was set.
+  if (!HasRealizedFont())
+    return true;
+  return GetFont() != font_for_filter_;
 }
 
 const Font& CanvasRenderingContext2DState::GetFont() const {
@@ -384,15 +490,8 @@ void CanvasRenderingContext2DState::SetFontVariantCaps(
   SetFont(font_description, selector);
 }
 
-AffineTransform CanvasRenderingContext2DState::GetAffineTransform() const {
-  AffineTransform affine_transform =
-      AffineTransform(transform_.M11(), transform_.M12(), transform_.M21(),
-                      transform_.M22(), transform_.M41(), transform_.M42());
-  return affine_transform;
-}
-
 void CanvasRenderingContext2DState::SetTransform(
-    const TransformationMatrix& transform) {
+    const AffineTransform& transform) {
   is_transform_invertible_ = transform.IsInvertible();
   transform_ = transform;
 }
@@ -564,7 +663,7 @@ sk_sp<SkDrawLooper>& CanvasRenderingContext2DState::ShadowOnlyDrawLooper()
   if (!shadow_only_draw_looper_) {
     DrawLooperBuilder draw_looper_builder;
     draw_looper_builder.AddShadow(shadow_offset_, ClampTo<float>(shadow_blur_),
-                                  shadow_color_,
+                                  Color::FromSkColor(shadow_color_),
                                   DrawLooperBuilder::kShadowIgnoresTransforms,
                                   DrawLooperBuilder::kShadowRespectsAlpha);
     shadow_only_draw_looper_ = draw_looper_builder.DetachDrawLooper();
@@ -577,7 +676,7 @@ CanvasRenderingContext2DState::ShadowAndForegroundDrawLooper() const {
   if (!shadow_and_foreground_draw_looper_) {
     DrawLooperBuilder draw_looper_builder;
     draw_looper_builder.AddShadow(shadow_offset_, ClampTo<float>(shadow_blur_),
-                                  shadow_color_,
+                                  Color::FromSkColor(shadow_color_),
                                   DrawLooperBuilder::kShadowIgnoresTransforms,
                                   DrawLooperBuilder::kShadowRespectsAlpha);
     draw_looper_builder.AddUnmodifiedContent();
@@ -591,9 +690,11 @@ sk_sp<PaintFilter>& CanvasRenderingContext2DState::ShadowOnlyImageFilter()
   using ShadowMode = DropShadowPaintFilter::ShadowMode;
   if (!shadow_only_image_filter_) {
     const auto sigma = BlurRadiusToStdDev(shadow_blur_);
+    // TODO(crbug/1308932): Remove FromColor and make all SkColor4f.
     shadow_only_image_filter_ = sk_make_sp<DropShadowPaintFilter>(
-        shadow_offset_.x(), shadow_offset_.y(), sigma, sigma, shadow_color_,
-        ShadowMode::kDrawShadowOnly, nullptr);
+        shadow_offset_.x(), shadow_offset_.y(), sigma, sigma,
+        SkColor4f::FromColor(shadow_color_), ShadowMode::kDrawShadowOnly,
+        nullptr);
   }
   return shadow_only_image_filter_;
 }
@@ -603,8 +704,10 @@ CanvasRenderingContext2DState::ShadowAndForegroundImageFilter() const {
   using ShadowMode = DropShadowPaintFilter::ShadowMode;
   if (!shadow_and_foreground_image_filter_) {
     const auto sigma = BlurRadiusToStdDev(shadow_blur_);
+    // TODO(crbug/1308932): Remove FromColor and make all SkColor4f.
     shadow_and_foreground_image_filter_ = sk_make_sp<DropShadowPaintFilter>(
-        shadow_offset_.x(), shadow_offset_.y(), sigma, sigma, shadow_color_,
+        shadow_offset_.x(), shadow_offset_.y(), sigma, sigma,
+        SkColor4f::FromColor(shadow_color_),
         ShadowMode::kDrawShadowAndForeground, nullptr);
   }
   return shadow_and_foreground_image_filter_;

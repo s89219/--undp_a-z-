@@ -1,30 +1,30 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/web/public/test/web_test_with_web_state.h"
 
-#include "base/ios/ios_util.h"
-#include "base/run_loop.h"
-#include "base/strings/sys_string_conversions.h"
-#include "base/task/current_thread.h"
+#import "base/ios/ios_util.h"
+#import "base/run_loop.h"
+#import "base/strings/sys_string_conversions.h"
+#import "base/task/current_thread.h"
 #import "base/test/ios/wait_util.h"
-#include "ios/web/common/features.h"
+#import "ios/web/common/features.h"
 #import "ios/web/js_messaging/java_script_feature_manager.h"
 #import "ios/web/navigation/navigation_manager_impl.h"
 #import "ios/web/navigation/wk_navigation_util.h"
-#include "ios/web/public/deprecated/url_verification_constants.h"
+#import "ios/web/public/deprecated/url_verification_constants.h"
 #import "ios/web/public/test/js_test_util.h"
 #import "ios/web/public/test/task_observer_util.h"
 #import "ios/web/public/test/web_state_test_util.h"
 #import "ios/web/public/test/web_view_interaction_test_util.h"
 #import "ios/web/public/web_client.h"
-#include "ios/web/public/web_state_observer.h"
+#import "ios/web/public/web_state_observer.h"
 #import "ios/web/test/js_test_util_internal.h"
 #import "ios/web/web_state/ui/crw_web_controller.h"
 #import "ios/web/web_state/ui/wk_web_view_configuration_provider.h"
 #import "ios/web/web_state/web_state_impl.h"
-#include "url/url_constants.h"
+#import "url/url_constants.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -70,7 +70,7 @@ void WebTestWithWebState::AddPendingItem(const GURL& url,
       .AddPendingItem(url, Referrer(), transition,
                       web::NavigationInitiationType::BROWSER_INITIATED,
                       /*is_post_navigation=*/false,
-                      /*is_using_https_as_default_scheme=*/false);
+                      web::HttpsUpgradeType::kNone);
 }
 
 bool WebTestWithWebState::LoadHtmlWithoutSubresources(const std::string& html) {
@@ -142,17 +142,11 @@ id WebTestWithWebState::ExecuteJavaScriptForFeature(
       JavaScriptFeatureManager::FromBrowserState(GetBrowserState());
   JavaScriptContentWorld* world =
       feature_manager->GetContentWorldForFeature(feature);
-  // JS execution in particular content worlds is only available on iOS 14+.
-  DCHECK(base::ios::IsRunningOnIOS14OrLater());
 
-  if (@available(ios 14, *)) {
-    WKWebView* web_view =
-        [web::test::GetWebController(web_state()) ensureWebViewCreated];
-    return web::test::ExecuteJavaScript(web_view, world->GetWKContentWorld(),
-                                        script);
-  }
-
-  return nil;
+  WKWebView* web_view =
+      [web::test::GetWebController(web_state()) ensureWebViewCreated];
+  return web::test::ExecuteJavaScript(web_view, world->GetWKContentWorld(),
+                                      script);
 }
 
 id WebTestWithWebState::ExecuteJavaScript(NSString* script) {

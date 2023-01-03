@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,8 @@ import androidx.annotation.DrawableRes;
 interface TouchToFillResourceProvider {
     /**
      * Returns the drawable id to be displayed as a bottom sheet header image.
+     *
+     * @return A {@link DrawableRes} that is never 0.
      */
     public @DrawableRes int getHeaderImageDrawableId();
 }

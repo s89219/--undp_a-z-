@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,24 @@
  * Event 'loaded' will be fired when the page has been successfully loaded.
  */
 
-/* #js_imports_placeholder */
+import '//resources/cr_elements/cr_lottie/cr_lottie.js';
+import '//resources/polymer/v3_0/iron-icon/iron-icon.js';
+import '../components/buttons/oobe_next_button.js';
+import '../components/buttons/oobe_text_button.js';
+import '../components/common_styles/oobe_dialog_host_styles.css.js';
+import '../components/dialogs/oobe_adaptive_dialog.js';
+import './assistant_common_styles.css.js';
+import './assistant_icons.html.js';
+import './setting_zippy.js';
+
+import {afterNextRender, html, mixinBehaviors, Polymer, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {OobeDialogHostBehavior} from '../components/behaviors/oobe_dialog_host_behavior.js';
+import {OobeI18nBehavior, OobeI18nBehaviorInterface} from '../components/behaviors/oobe_i18n_behavior.js';
+
+import {BrowserProxyImpl} from './browser_proxy.js';
+import {AssistantNativeIconType, webviewStripLinksContentScript} from './utils.js';
+
 
 /**
  * Name of the screen.
@@ -22,8 +39,8 @@ const RELATED_INFO_SCREEN_ID = 'RelatedInfoScreen';
  * @constructor
  * @extends {PolymerElement}
  */
-const AssistantRelatedInfoBase = Polymer.mixinBehaviors(
-    [OobeI18nBehavior, OobeDialogHostBehavior], Polymer.Element);
+const AssistantRelatedInfoBase =
+    mixinBehaviors([OobeI18nBehavior, OobeDialogHostBehavior], PolymerElement);
 
 /**
  * @polymer
@@ -33,7 +50,9 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
     return 'assistant-related-info';
   }
 
-  /* #html_template_placeholder */
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
   static get properties() {
     return {
@@ -69,6 +88,15 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
         type: String,
         value: '',
       },
+
+      /**
+       * Whether the marketing opt-in page is being rendered in dark mode.
+       * @private {boolean}
+       */
+      isDarkModeActive_: {
+        type: Boolean,
+        value: false,
+      },
     };
   }
 
@@ -81,7 +109,7 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
      * @private {string}
      */
     this.urlTemplate_ =
-        'https://www.gstatic.com/opa-android/oobe/a02187e41eed9e42/v3_omni_$.html';
+        'https://www.gstatic.com/opa-android/oobe/a02187e41eed9e42/v5_omni_$.html';
 
     /**
      * Whether try to reload with the default url when a 404 error occurred.
@@ -139,8 +167,8 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
      */
     this.screenShown_ = false;
 
-    /** @private {?assistant.BrowserProxy} */
-    this.browserProxy_ = assistant.BrowserProxyImpl.getInstance();
+    /** @private {?BrowserProxy} */
+    this.browserProxy_ = BrowserProxyImpl.getInstance();
   }
 
   setUrlTemplateForTesting(url) {
@@ -190,6 +218,12 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
    * Handles event when animation webview cannot be loaded.
    */
   onWebViewErrorOccurred(details) {
+    if (details && details.error == 'net::ERR_ABORTED') {
+      // Retry triggers net::ERR_ABORTED, so ignore it.
+      // TODO(b/232592745): Replace with a state machine to handle aborts
+      // gracefully and avoid duplicate reloads.
+      return;
+    }
     this.dispatchEvent(
         new CustomEvent('error', {bubbles: true, composed: true}));
     this.loadingError_ = true;
@@ -216,6 +250,13 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
     if (this.consentStringLoaded_) {
       this.onPageLoaded();
     }
+
+    // The webview animation only starts playing when it is focused (in order
+    // to make sure the animation and the caption are in sync).
+    this.webview_.focus();
+    this.async(() => {
+      this.$['next-button'].focus();
+    }, 300);
   }
 
   /**
@@ -244,13 +285,22 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
   reloadContent(data) {
     this.skipActivityControl_ = !data['activityControlNeeded'];
     this.childName_ = data['childName'];
-    this.$.zippy.setAttribute(
-        'icon-src',
-        'data:text/html;charset=utf-8,' +
-            encodeURIComponent(this.$.zippy.getWrappedIcon(
-                'https://www.gstatic.com/images/icons/material/system/2x/' +
-                    'info_outline_grey600_24dp.png',
-                this.i18n('assistantScreenContextTitle'))));
+    if (!data['useNativeIcons']) {
+      const url = this.isDarkModeActive_ ? 'info_outline_gm_grey500_24dp.png' :
+                                           'info_outline_gm_grey600_24dp.png';
+      this.$.zippy.setAttribute(
+          'icon-src',
+          'data:text/html;charset=utf-8,' +
+              encodeURIComponent(this.$.zippy.getWrappedIcon(
+                  'https://www.gstatic.com/images/icons/material/system/2x/' +
+                      url,
+                  this.i18n('assistantScreenContextTitle'),
+                  getComputedStyle(document.body)
+                      .getPropertyValue('--cros-bg-color'))));
+      this.$.zippy.nativeIconType = AssistantNativeIconType.NONE;
+    } else {
+      this.$.zippy.nativeIconType = AssistantNativeIconType.INFO;
+    }
     this.equalWeightButtons_ = data['equalWeightButtons'];
 
     this.consentStringLoaded_ = true;
@@ -283,8 +333,7 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
       this.reloadPage();
       this.initialized_ = true;
     } else {
-      Polymer.RenderStatus.afterNextRender(
-          this, () => this.$['next-button'].focus());
+      afterNextRender(this, () => this.$['next-button'].focus());
       this.browserProxy_.screenShown(RELATED_INFO_SCREEN_ID);
       this.screenShown_ = true;
     }
@@ -326,6 +375,11 @@ class AssistantRelatedInfo extends AssistantRelatedInfoBase {
           this.i18n('assistantRelatedInfoTitleForChild', childName) :
           this.i18n('assistantRelatedInfoTitle');
     }
+  }
+
+  getAnimationUrl_(isDarkMode) {
+    return './assistant_optin/assistant_related_info_' +
+        (isDarkMode ? 'dm' : 'lm') + '.json';
   }
 }
 

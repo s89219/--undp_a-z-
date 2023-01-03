@@ -1,26 +1,20 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.fullscreen;
 
-// (http://crbug/642336)
-// import static org.chromium.base.test.util.Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE;
+import static org.chromium.base.test.util.Restriction.RESTRICTION_TYPE_NON_LOW_END_DEVICE;
 
 import android.graphics.Point;
-import android.graphics.Rect;
-import android.graphics.Region;
-import android.os.Build;
 import android.os.SystemClock;
 import android.support.test.InstrumentationRegistry;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 
+import androidx.test.espresso.Espresso;
 import androidx.test.filters.LargeTest;
 import androidx.test.filters.MediumTest;
 
-import org.hamcrest.Matchers;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Rule;
@@ -28,13 +22,13 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.base.task.PostTask;
+import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
-import org.chromium.base.test.util.Criteria;
 import org.chromium.base.test.util.CriteriaHelper;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.FlakyTest;
+import org.chromium.base.test.util.Restriction;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.app.ChromeActivity;
@@ -52,7 +46,8 @@ import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.util.ChromeTabUtils;
 import org.chromium.chrome.test.util.FullscreenTestUtils;
-import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
+import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.content_public.browser.GestureListenerManager;
 import org.chromium.content_public.browser.GestureStateListener;
 import org.chromium.content_public.browser.SelectionPopupController;
@@ -65,9 +60,9 @@ import org.chromium.content_public.browser.test.util.TouchCommon;
 import org.chromium.content_public.browser.test.util.UiUtils;
 import org.chromium.content_public.browser.test.util.WebContentsUtils;
 
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Test suite for verifying the behavior of various fullscreen actions.
@@ -76,6 +71,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @CommandLineFlags.Add({
         ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE,
 })
+@Batch(Batch.PER_CLASS)
 public class FullscreenManagerTest {
     @Rule
     public ChromeTabbedActivityTestRule mActivityTestRule = new ChromeTabbedActivityTestRule();
@@ -190,6 +186,31 @@ public class FullscreenManagerTest {
     @Test
     @MediumTest
     @Feature({"Fullscreen"})
+    @DisableFeatures({ChromeFeatureList.BACK_GESTURE_REFACTOR})
+    public void testBackPressExitPersistentFullscreen() {
+        testBackPressExitPersistentFullscreenInternal();
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"Fullscreen"})
+    @EnableFeatures({ChromeFeatureList.BACK_GESTURE_REFACTOR})
+    public void testBackPressExitPersistentFullscreen_backGestureRefactor() {
+        testBackPressExitPersistentFullscreenInternal();
+    }
+
+    private void testBackPressExitPersistentFullscreenInternal() {
+        launchOnFullscreenMode(LONG_HTML_TEST_PAGE);
+        Assert.assertTrue(getPersistentFullscreenMode());
+
+        Espresso.pressBack();
+
+        Assert.assertFalse(getPersistentFullscreenMode());
+    }
+
+    @Test
+    @MediumTest
+    @Feature({"Fullscreen"})
     public void testDelayedPersistentFullscreen() {
         mActivityTestRule.startMainActivityWithURL(LONG_HTML_TEST_PAGE);
 
@@ -213,18 +234,34 @@ public class FullscreenManagerTest {
     }
 
     private boolean getPersistentFullscreenMode() {
-        return TestThreadUtils.runOnUiThreadBlockingNoException(
+        boolean b1 = TestThreadUtils.runOnUiThreadBlockingNoException(
                 mActivityTestRule.getActivity()
                         .getFullscreenManager()::getPersistentFullscreenMode);
+        Boolean b2 = TestThreadUtils.runOnUiThreadBlockingNoException(
+                mActivityTestRule.getActivity()
+                        .getFullscreenManager()
+                        .getPersistentFullscreenModeSupplier()::get);
+        Assert.assertTrue("Fullscreen mode supplier is holding a different value.",
+                (b2 == null && !b1) || Objects.equals(b1, b2));
+        return b1;
+    }
+
+    private void launchOnFullscreenMode(String url) {
+        mActivityTestRule.startMainActivityWithURL(url);
+
+        Tab tab = mActivityTestRule.getActivity().getActivityTab();
+        final TabWebContentsDelegateAndroid delegate = TabTestUtils.getTabWebContentsDelegate(tab);
+
+        FullscreenTestUtils.waitForFullscreenFlag(tab, false, mActivityTestRule.getActivity());
+        FullscreenTestUtils.waitForPersistentFullscreen(delegate, false);
+        FullscreenTestUtils.togglePersistentFullscreenAndAssert(
+                tab, true, mActivityTestRule.getActivity());
     }
 
     @Test
     @LargeTest
     @Feature({"Fullscreen"})
     public void testPersistentFullscreenChangingUiFlags() throws InterruptedException {
-        // Exiting fullscreen via UI Flags is not supported in versions prior to MR2.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN_MR2) return;
-
         mActivityTestRule.startMainActivityWithURL(LONG_HTML_TEST_PAGE);
 
         final Tab tab = mActivityTestRule.getActivity().getActivityTab();
@@ -327,7 +364,6 @@ public class FullscreenManagerTest {
     @Test
     @LargeTest
     @Feature({"Fullscreen"})
-    @DisabledTest(message = "crbug.com/901280")
     public void testManualHidingShowingBrowserControls() {
         FullscreenManagerTestUtils.disableBrowserOverrides();
         mActivityTestRule.startMainActivityWithURL(LONG_HTML_TEST_PAGE);
@@ -363,7 +399,8 @@ public class FullscreenManagerTest {
         final CallbackHelper scrollStartCallback = new CallbackHelper();
         GestureStateListener scrollListener = new GestureStateListener() {
             @Override
-            public void onScrollStarted(int scrollOffsetY, int scrollExtentY) {
+            public void onScrollStarted(
+                    int scrollOffsetY, int scrollExtentY, boolean isDirectionUp) {
                 scrollStartCallback.notifyCalled();
             }
 
@@ -371,7 +408,6 @@ public class FullscreenManagerTest {
             public void onFlingEndGesture(int scrollOffsetY, int scrollExtentY) {
                 flingEndCallback.notifyCalled();
             }
-
         };
 
         Tab tab = mActivityTestRule.getActivity().getActivityTab();
@@ -424,59 +460,6 @@ public class FullscreenManagerTest {
 
     @Test
     @LargeTest
-    @Feature({"Fullscreen"})
-    @Features.DisableFeatures({ChromeFeatureList.OFFLINE_INDICATOR})
-    public void testHidingBrowserControlsRemovesSurfaceFlingerOverlay() {
-        FullscreenManagerTestUtils.disableBrowserOverrides();
-        mActivityTestRule.startMainActivityWithURL(LONG_HTML_TEST_PAGE);
-
-        final BrowserControlsManager browserControlsManager =
-                mActivityTestRule.getActivity().getBrowserControlsManager();
-
-        CriteriaHelper.pollUiThread(
-                () -> { return browserControlsManager.getTopControlOffset() == 0f; });
-
-        // Detect layouts. Note this doesn't actually need to be atomic (just final).
-        final AtomicInteger layoutCount = new AtomicInteger();
-        mActivityTestRule.getActivity()
-                .getWindow()
-                .getDecorView()
-                .getViewTreeObserver()
-                .addOnGlobalLayoutListener(new ViewTreeObserver.OnGlobalLayoutListener() {
-                    @Override
-                    public void onGlobalLayout() {
-                        layoutCount.incrementAndGet();
-                    }
-                });
-
-        // When the top-controls are removed, we need a layout to trigger the
-        // transparent region for the app to be updated.
-        FullscreenManagerTestUtils.scrollBrowserControls(mActivityTestRule, false);
-        CriteriaHelper.pollUiThread(
-                () -> Criteria.checkThat(layoutCount.get(), Matchers.greaterThan(0)));
-
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            // Check that when the browser controls are gone, the entire decorView is contained
-            // in the transparent region of the app.
-            Rect visibleDisplayFrame = new Rect();
-            Region transparentRegion = new Region();
-            ViewGroup decorView =
-                    (ViewGroup) mActivityTestRule.getActivity().getWindow().getDecorView();
-            decorView.getWindowVisibleDisplayFrame(visibleDisplayFrame);
-            decorView.gatherTransparentRegion(transparentRegion);
-            Assert.assertTrue("Transparent region " + transparentRegion.getBounds()
-                            + " should contain " + visibleDisplayFrame,
-                    transparentRegion.quickContains(visibleDisplayFrame));
-        });
-
-        // Additional manual test that this is working:
-        // - adb shell dumpsys SurfaceFlinger
-        // - Observe that there is no 'Chrome' related overlay listed, only 'Surfaceview'.
-    }
-
-    @Test
-    @LargeTest
-    @Features.DisableFeatures({ChromeFeatureList.OFFLINE_INDICATOR})
     public void testHidingBrowserControlsPreservesScrollOffset() throws TimeoutException {
         FullscreenManagerTestUtils.disableBrowserOverrides();
         mActivityTestRule.startMainActivityWithURL(SCROLL_OFFSET_TEST_PAGE);
@@ -547,6 +530,7 @@ public class FullscreenManagerTest {
     @Test
     @LargeTest
     @Feature({"Fullscreen"})
+    @Restriction(RESTRICTION_TYPE_NON_LOW_END_DEVICE)
     public void testControlsShownOnUnresponsiveRenderer() {
         FullscreenManagerTestUtils.disableBrowserOverrides();
         mActivityTestRule.startMainActivityWithURL(LONG_HTML_TEST_PAGE);
@@ -572,7 +556,7 @@ public class FullscreenManagerTest {
     @Test
     @LargeTest
     @Feature({"Fullscreen"})
-    @FlakyTest(message = "https://crbug.com/1099447")
+    @DisabledTest(message = "https://crbug.com/1099447")
     public void testControlsShownOnUnresponsiveRendererUponExitingTabSwitcherMode()
             throws Exception {
         FullscreenManagerTestUtils.disableBrowserOverrides();

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 
 #include "base/callback_forward.h"
 #include "chromeos/ash/components/dbus/cros_healthd/cros_healthd_client.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd.mojom.h"
 #include "mojo/public/cpp/bindings/remote.h"
 
 namespace ash::cros_healthd {
@@ -17,8 +17,8 @@ class COMPONENT_EXPORT(CHROMEOS_ASH_COMPONENTS_DBUS_CROS_HEALTHD)
     FakeCrosHealthdClient : public CrosHealthdClient {
  public:
   // Callback type for bootstrapping the mojo connection.
-  using BootstrapCallback = base::RepeatingCallback<
-      mojo::Remote<chromeos::cros_healthd::mojom::CrosHealthdServiceFactory>()>;
+  using BootstrapCallback =
+      base::RepeatingCallback<mojo::Remote<mojom::CrosHealthdServiceFactory>()>;
 
   FakeCrosHealthdClient();
   FakeCrosHealthdClient(const FakeCrosHealthdClient&) = delete;
@@ -36,8 +36,7 @@ class COMPONENT_EXPORT(CHROMEOS_ASH_COMPONENTS_DBUS_CROS_HEALTHD)
 
  private:
   // CrosHealthdClient overrides:
-  mojo::Remote<chromeos::cros_healthd::mojom::CrosHealthdServiceFactory>
-  BootstrapMojoConnection(
+  mojo::Remote<mojom::CrosHealthdServiceFactory> BootstrapMojoConnection(
       BootstrapMojoConnectionCallback result_callback) override;
 
   // Callback for bootstrapping the mojo connection. This will be set after the
@@ -46,10 +45,5 @@ class COMPONENT_EXPORT(CHROMEOS_ASH_COMPONENTS_DBUS_CROS_HEALTHD)
 };
 
 }  // namespace ash::cros_healthd
-
-// TODO(https://crbug.com/1164001): remove after the migration is finished.
-namespace chromeos::cros_healthd {
-using ::ash::cros_healthd::FakeCrosHealthdClient;
-}
 
 #endif  // CHROMEOS_ASH_COMPONENTS_DBUS_CROS_HEALTHD_FAKE_CROS_HEALTHD_CLIENT_H_

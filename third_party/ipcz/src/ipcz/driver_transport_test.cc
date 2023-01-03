@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,9 @@
 #include "ipcz/driver_memory.h"
 #include "ipcz/driver_memory_mapping.h"
 #include "ipcz/driver_object.h"
-#include "ipcz/node.h"
+#include "ipcz/test_messages.h"
 #include "test/mock_driver.h"
+#include "test/test_transport_listener.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/base/macros.h"
 #include "util/ref_counted.h"
@@ -24,16 +25,6 @@ namespace {
 
 using ::testing::_;
 using ::testing::Return;
-
-DriverTransport::Message MakeMessage(std::string_view s) {
-  return DriverTransport::Message(
-      absl::MakeSpan(reinterpret_cast<const uint8_t*>(s.data()), s.size()));
-}
-
-std::string_view MessageAsString(const DriverTransport::Message& message) {
-  return std::string_view(reinterpret_cast<const char*>(message.data.data()),
-                          message.data.size());
-}
 
 class DriverTransportTest : public testing::Test {
  public:
@@ -45,43 +36,14 @@ class DriverTransportTest : public testing::Test {
   std::pair<Ref<DriverTransport>, Ref<DriverTransport>> CreateTransportPair(
       IpczDriverHandle transport0,
       IpczDriverHandle transport1) {
-    return {MakeRefCounted<DriverTransport>(DriverObject(node_, transport0)),
-            MakeRefCounted<DriverTransport>(DriverObject(node_, transport1))};
+    return {MakeRefCounted<DriverTransport>(
+                DriverObject(test::kMockDriver, transport0)),
+            MakeRefCounted<DriverTransport>(
+                DriverObject(test::kMockDriver, transport1))};
   }
 
  private:
   ::testing::StrictMock<test::MockDriver> driver_;
-  Ref<Node> node_{MakeRefCounted<Node>(Node::Type::kNormal,
-                                       test::kMockDriver,
-                                       IPCZ_INVALID_DRIVER_HANDLE)};
-};
-
-class TestListener : public DriverTransport::Listener {
- public:
-  using MessageHandler =
-      std::function<IpczResult(const DriverTransport::Message&)>;
-  using ErrorHandler = std::function<void()>;
-
-  explicit TestListener(MessageHandler message_handler,
-                        ErrorHandler error_handler = nullptr)
-      : message_handler_(std::move(message_handler)),
-        error_handler_(std::move(error_handler)) {}
-  ~TestListener() override = default;
-
-  IpczResult OnTransportMessage(
-      const DriverTransport::Message& message) override {
-    return message_handler_(message);
-  }
-
-  void OnTransportError() override {
-    if (error_handler_) {
-      error_handler_();
-    }
-  }
-
- private:
-  MessageHandler message_handler_;
-  ErrorHandler error_handler_;
 };
 
 TEST_F(DriverTransportTest, Activation) {
@@ -101,24 +63,22 @@ TEST_F(DriverTransportTest, Activation) {
       })
       .RetiresOnSaturation();
 
-  // Verify that activation of a DriverTransport feeds the driver an activity
-  // handler and valid ipcz handle to use when notifying ipcz of incoming
-  // communications.
-  b->Activate();
-  EXPECT_NE(IPCZ_INVALID_HANDLE, ipcz_transport);
-  EXPECT_TRUE(activity_handler);
-
   // And verify that the activity handler actually invokes the transport's
   // Listener.
 
   const std::string kTestMessage = "hihihihi";
   bool received = false;
-  TestListener listener([&](const DriverTransport::Message& message) {
-    EXPECT_EQ(kTestMessage, MessageAsString(message));
+  test::TestTransportListener listener(b);
+  listener.OnStringMessage([&](std::string_view message) {
+    EXPECT_EQ(kTestMessage, message);
     received = true;
-    return IPCZ_RESULT_OK;
   });
-  b->set_listener(&listener);
+
+  // Verify that activation of a DriverTransport feeds the driver an activity
+  // handler and valid ipcz handle to use when notifying ipcz of incoming
+  // communications.
+  EXPECT_NE(IPCZ_INVALID_HANDLE, ipcz_transport);
+  EXPECT_TRUE(activity_handler);
 
   EXPECT_FALSE(received);
   EXPECT_EQ(
@@ -135,7 +95,6 @@ TEST_F(DriverTransportTest, Activation) {
 
   EXPECT_CALL(driver(), Close(kTransport1, _, _));
   EXPECT_CALL(driver(), Close(kTransport0, _, _));
-  b->Deactivate();
 
   // The driver must also release its handle to ipcz' DriverTransport, which it
   // does by an invocation of the activity handler like this. Without this, we'd
@@ -162,17 +121,9 @@ TEST_F(DriverTransportTest, Error) {
       })
       .RetiresOnSaturation();
 
-  b->Activate();
-
   bool observed_error = false;
-  TestListener listener(
-      [&](const DriverTransport::Message& message) {
-        ABSL_ASSERT(false);
-        return IPCZ_RESULT_INVALID_ARGUMENT;
-      },
-      [&] { observed_error = true; });
-
-  b->set_listener(&listener);
+  test::TestTransportListener listener(b);
+  listener.OnError([&] { observed_error = true; });
 
   // Verify that a driver invoking the activity handler with
   // IPCZ_TRANSPORT_ACTIVITY_ERROR results in an error notification on the
@@ -191,6 +142,7 @@ TEST_F(DriverTransportTest, Error) {
             activity_handler(ipcz_transport, nullptr, 0, nullptr, 0,
                              IPCZ_TRANSPORT_ACTIVITY_DEACTIVATED, nullptr));
 
+  EXPECT_CALL(driver(), DeactivateTransport(kTransport1, _, _));
   EXPECT_CALL(driver(), Close(kTransport1, _, _));
   EXPECT_CALL(driver(), Close(kTransport0, _, _));
 }
@@ -200,13 +152,53 @@ TEST_F(DriverTransportTest, Transmit) {
   constexpr IpczDriverHandle kTransport1 = 42;
   auto [a, b] = CreateTransportPair(kTransport0, kTransport1);
 
-  const std::string kTestMessage = "hihihihi";
-  EXPECT_CALL(driver(),
-              Transmit(kTransport0, kTestMessage.data(), kTestMessage.size(),
-                       nullptr, 0, IPCZ_NO_FLAGS, nullptr))
+  test::msg::BasicTestMessage message;
+  message.params().foo = 5;
+  message.params().bar = 7;
+
+  EXPECT_CALL(driver(), Transmit(kTransport0, message.data_view().data(),
+                                 message.data_view().size(), _, _, _, _))
       .WillOnce(Return(IPCZ_RESULT_OK));
 
-  a->TransmitMessage(MakeMessage(kTestMessage));
+  a->Transmit(message);
+
+  EXPECT_CALL(driver(), Close(kTransport1, _, _));
+  EXPECT_CALL(driver(), Close(kTransport0, _, _));
+}
+
+TEST_F(DriverTransportTest, SerializationFailure) {
+  // Verifies that if a serializable object fails to serialize, it's properly
+  // destroyed by the transport and no transmission occurs.
+  constexpr IpczDriverHandle kTransport0 = 5;
+  constexpr IpczDriverHandle kTransport1 = 42;
+  auto [a, b] = CreateTransportPair(kTransport0, kTransport1);
+
+  constexpr IpczDriverHandle kFakeObject = 12345678;
+  test::msg::MessageWithDriverObject message;
+  message.params().object =
+      message.AppendDriverObject(DriverObject(test::kMockDriver, kFakeObject));
+
+  EXPECT_CALL(driver(), Serialize(kFakeObject, kTransport0, _, _, _, _, _, _))
+      .WillRepeatedly([&](IpczDriverHandle, IpczDriverHandle, uint32_t,
+                          const void*, void* data, size_t* num_bytes,
+                          IpczDriverHandle* handles, size_t* num_handles) {
+        if (!data && !handles) {
+          // Return valid outputs when ipcz is sizing the object.
+          if (num_bytes && num_handles) {
+            *num_bytes = 1;
+            *num_handles = 1;
+          }
+          return IPCZ_RESULT_RESOURCE_EXHAUSTED;
+        }
+
+        // Return an error when serializing.
+        return IPCZ_RESULT_FAILED_PRECONDITION;
+      });
+
+  // The object handle should be closed upon transmission failure.
+  EXPECT_CALL(driver(), Close(kFakeObject, _, _)).Times(1);
+
+  a->Transmit(message);
 
   EXPECT_CALL(driver(), Close(kTransport1, _, _));
   EXPECT_CALL(driver(), Close(kTransport0, _, _));

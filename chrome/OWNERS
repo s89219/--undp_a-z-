@@ -4,6 +4,7 @@
 set noparent
 
 # Reviewers (in CET):
+alexilin@chromium.org
 blundell@chromium.org
 droger@chromium.org
 treib@chromium.org
@@ -16,7 +17,6 @@ yfriedman@chromium.org
 
 # Reviewers (in PST):
 dtrainor@chromium.org
-fgorski@chromium.org
 nyquist@chromium.org
 sky@chromium.org
 tedchoc@chromium.org

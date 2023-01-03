@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -108,6 +108,10 @@ extern const ui::ClassProperty<gfx::Rect*>* const
 COMPONENT_EXPORT(CHROMEOS_UI_BASE)
 extern const ui::ClassProperty<bool>* const kIsShowingInOverviewKey;
 
+// A property to indicate if a window should have a highlight border overlay.
+COMPONENT_EXPORT(CHROMEOS_UI_BASE)
+extern const ui::ClassProperty<bool>* const kShouldHaveHighlightBorderOverlay;
+
 // A property key to tell if the window's opacity should be managed by WM.
 COMPONENT_EXPORT(CHROMEOS_UI_BASE)
 extern const ui::ClassProperty<bool>* const kWindowManagerManagesOpacityKey;
@@ -115,10 +119,6 @@ extern const ui::ClassProperty<bool>* const kWindowManagerManagesOpacityKey;
 // A property key to indicate ash's extended window state.
 COMPONENT_EXPORT(CHROMEOS_UI_BASE)
 extern const ui::ClassProperty<WindowStateType>* const kWindowStateTypeKey;
-
-// A property key to indicate Float window state.
-COMPONENT_EXPORT(CHROMEOS_UI_BASE)
-extern const ui::ClassProperty<bool>* const kWindowFloatTypeKey;
 
 // A property key whose value is shown in alt-tab/overview mode. If non-value
 // is set, the window's title is used.

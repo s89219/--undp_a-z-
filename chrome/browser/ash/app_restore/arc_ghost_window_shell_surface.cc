@@ -1,14 +1,16 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/app_restore/arc_ghost_window_shell_surface.h"
 
 #include "ash/wm/desks/desks_util.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_utils.h"
 #include "chrome/browser/ash/app_restore/arc_ghost_window_delegate.h"
 #include "chrome/browser/ash/app_restore/arc_ghost_window_view.h"
 #include "chrome/browser/ash/app_restore/arc_window_utils.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_utils.h"
+#include "chrome/browser/ash/arc/window_predictor/window_predictor_utils.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "components/app_restore/app_restore_data.h"
 #include "components/app_restore/full_restore_utils.h"
 #include "components/app_restore/window_properties.h"
@@ -18,8 +20,9 @@
 #include "ui/display/screen.h"
 #include "ui/views/window/caption_button_types.h"
 
+namespace ash::full_restore {
+
 namespace {
-constexpr int kDiameter = 24;
 
 bool IsMaximizedState(
     const absl::optional<chromeos::WindowStateType>& window_state) {
@@ -35,9 +38,6 @@ bool IsMinimizedState(
 }
 
 }  // namespace
-
-namespace ash {
-namespace full_restore {
 
 // Explicitly identifies ARC ghost surface.
 DEFINE_UI_CLASS_PROPERTY_KEY(bool, kArcGhostSurface, false)
@@ -73,8 +73,8 @@ ArcGhostWindowShellSurface::~ArcGhostWindowShellSurface() {
 
 // static
 std::unique_ptr<ArcGhostWindowShellSurface> ArcGhostWindowShellSurface::Create(
-    ArcWindowHandler* window_handler,
     const std::string& app_id,
+    arc::GhostWindowType type,
     int window_id,
     const gfx::Rect& bounds,
     app_restore::AppRestoreData* restore_data,
@@ -109,18 +109,18 @@ std::unique_ptr<ArcGhostWindowShellSurface> ArcGhostWindowShellSurface::Create(
           : SK_ColorWHITE;
 
   // TODO(sstan): Handle the desk container from full_restore data.
-  int container = ash::desks_util::GetActiveDeskContainerId();
+  int container = desks_util::GetActiveDeskContainerId();
 
   auto surface = std::make_unique<exo::Surface>();
   std::unique_ptr<ArcGhostWindowShellSurface> shell_surface(
       new ArcGhostWindowShellSurface(std::move(surface), container,
                                      scale_factor.value(),
-                                     WindowIdToAppId(window_id)));
+                                     WrapSessionAppIdFromWindowId(window_id)));
 
   // TODO(sstan): Add set_surface_destroyed_callback.
   shell_surface->set_delegate(std::make_unique<ArcGhostWindowDelegate>(
-      shell_surface.get(), window_handler, window_id, display_id_value,
-      local_bounds));
+      shell_surface.get(), window_id, app_id, display_id_value, local_bounds,
+      window_state.value_or(chromeos::WindowStateType::kDefault)));
   shell_surface->set_close_callback(std::move(close_callback));
 
   shell_surface->SetAppId(app_id);
@@ -146,7 +146,8 @@ std::unique_ptr<ArcGhostWindowShellSurface> ArcGhostWindowShellSurface::Create(
   shell_surface->OnSetFrameColors(theme_color, theme_color);
 
   shell_surface->controller_surface()->Commit();
-  shell_surface->InitContentOverlay(app_id, theme_color);
+
+  shell_surface->InitContentOverlay(app_id, theme_color, type);
 
   // Relayout overlay.
   shell_surface->GetWidget()->LayoutRootViewIfNecessary();
@@ -181,9 +182,24 @@ exo::Surface* ArcGhostWindowShellSurface::controller_surface() {
 }
 
 void ArcGhostWindowShellSurface::InitContentOverlay(const std::string& app_id,
-                                                    uint32_t theme_color) {
-  auto view = std::make_unique<ArcGhostWindowView>(kDiameter, theme_color);
+                                                    uint32_t theme_color,
+                                                    arc::GhostWindowType type) {
+  std::string app_name;
+  // TODO(sstan): Move this part out of shell surface.
+  // In test env, ArcAppListPrefs or App maybe null.
+  auto* pref = ArcAppListPrefs::Get(ProfileManager::GetPrimaryUserProfile());
+  if (pref) {
+    auto app_info = pref->GetApp(app_id);
+    if (app_info)
+      app_name = app_info->name;
+  }
+  auto view = std::make_unique<ArcGhostWindowView>(this, app_name);
+  view_observer_ = view.get();
   view->LoadIcon(app_id);
+
+  view->SetThemeColor(theme_color);
+  view->SetGhostWindowViewType(type);
+
   exo::ShellSurfaceBase::OverlayParams overlay_params(std::move(view));
   overlay_params.translucent = true;
   overlay_params.overlaps_frame = false;
@@ -207,5 +223,10 @@ void ArcGhostWindowShellSurface::SetShellAppId(
     property_handler->ClearProperty(app_restore::kAppIdKey);
 }
 
-}  // namespace full_restore
-}  // namespace ash
+void ArcGhostWindowShellSurface::SetWindowType(
+    arc::GhostWindowType window_type) {
+  DCHECK(view_observer_);
+  view_observer_->SetGhostWindowViewType(window_type);
+}
+
+}  // namespace ash::full_restore

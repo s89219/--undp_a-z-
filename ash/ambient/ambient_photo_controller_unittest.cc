@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,12 @@
 
 #include "ash/ambient/ambient_constants.h"
 #include "ash/ambient/ambient_controller.h"
+#include "ash/ambient/ambient_weather_controller.h"
 #include "ash/ambient/model/ambient_animation_photo_config.h"
 #include "ash/ambient/model/ambient_backend_model.h"
 #include "ash/ambient/model/ambient_backend_model_observer.h"
 #include "ash/ambient/model/ambient_photo_config.h"
+#include "ash/ambient/model/ambient_weather_model.h"
 #include "ash/ambient/test/ambient_ash_test_base.h"
 #include "ash/ambient/test/ambient_test_util.h"
 #include "ash/ambient/test/ambient_topic_queue_test_delegate.h"
@@ -91,8 +93,8 @@ class AmbientPhotoControllerTest : public AmbientAshTestBase {
     return result;
   }
 
-  const ambient::PhotoCacheEntry* GetCacheEntryAtIndex(int cache_index,
-                                                       bool backup = false) {
+  const ::ambient::PhotoCacheEntry* GetCacheEntryAtIndex(int cache_index,
+                                                         bool backup = false) {
     const auto& files = backup ? GetBackupCachedFiles() : GetCachedFiles();
     auto it = files.find(cache_index);
     if (it == files.end())
@@ -107,7 +109,7 @@ class AmbientPhotoControllerTest : public AmbientAshTestBase {
                               const std::string* related_image = nullptr,
                               const std::string* related_details = nullptr,
                               bool is_portrait = false) {
-    ambient::PhotoCacheEntry cache_entry;
+    ::ambient::PhotoCacheEntry cache_entry;
     cache_entry.mutable_primary_photo()->set_image(*image);
 
     if (details)
@@ -577,7 +579,7 @@ TEST_F(AmbientPhotoControllerTest, ShouldResetTimerWhenBackupImagesFail) {
       photo_controller()->backup_photo_refresh_timer_for_testing().IsRunning());
 
   // Simulate an error in DownloadToFile.
-  ClearDownloadPhotoData();
+  SetBackupDownloadPhotoData("");
   task_environment()->FastForwardBy(kBackupPhotoRefreshDelay);
 
   EXPECT_TRUE(GetBackupCachedFiles().empty());
@@ -619,6 +621,31 @@ TEST_F(AmbientPhotoControllerTest,
   }
 }
 
+TEST_F(AmbientPhotoControllerTest, UsesBackupCacheAfterPrimaryCacheCleared) {
+  ScheduleFetchBackupImages();
+
+  photo_controller()->StartScreenUpdate(
+      std::make_unique<AmbientTopicQueueTestDelegate>());
+  task_environment()->RunUntilIdle();
+
+  photo_controller()->StopScreenUpdate();
+
+  // At this point, both the primary and backup cache should be filled with
+  // photos from the last "screen update". ClearCache() should only clear the
+  // primary cache, leaving photos in the backup cache to use.
+  ASSERT_FALSE(GetBackupCachedFiles().empty());
+  photo_controller()->ClearCache();
+  // Simulate an IMAX failure to leave the photo controller no choice but to
+  // resort to the backup cache.
+  backend_controller()->SetFetchScreenUpdateInfoResponseSize(0);
+
+  photo_controller()->StartScreenUpdate(
+      std::make_unique<AmbientTopicQueueTestDelegate>());
+  // Running until OnImagesReady() ensures the backup photos were loaded and
+  // ambient UI can successfully start.
+  RunUntilImagesReady();
+}
+
 TEST_F(AmbientPhotoControllerTest, ShouldNotLoadDuplicateImages) {
   testing::NiceMock<MockAmbientBackendModelObserver> mock_backend_observer;
   base::ScopedObservation<AmbientBackendModel, AmbientBackendModelObserver>
@@ -651,7 +678,7 @@ TEST_F(AmbientPhotoControllerTest, ShouldNotLoadDuplicateImages) {
 }
 
 TEST_F(AmbientPhotoControllerTest, ShouldStartToRefreshWeather) {
-  auto* model = photo_controller()->ambient_backend_model();
+  auto* model = weather_controller()->weather_model();
   EXPECT_FALSE(model->show_celsius());
   EXPECT_TRUE(model->weather_condition_icon().isNull());
 

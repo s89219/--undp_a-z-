@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,6 +34,15 @@ class TestPageBroadcast : public blink::mojom::PageBroadcast {
   void SetHistoryOffsetAndLength(int32_t history_offset,
                                  int32_t history_length) override;
   void SetPageBaseBackgroundColor(absl::optional<SkColor> color) override;
+  void CreateRemoteMainFrame(
+      const blink::RemoteFrameToken& token,
+      const absl::optional<blink::FrameToken>& opener_frame_token,
+      blink::mojom::FrameReplicationStatePtr replication_state,
+      bool is_loading,
+      const base::UnguessableToken& devtools_frame_token,
+      blink::mojom::RemoteFrameInterfacesFromBrowserPtr remote_frame_interfaces,
+      blink::mojom::RemoteMainFrameInterfacesPtr remote_main_frame_interfaces)
+      override;
 
   mojo::AssociatedReceiver<blink::mojom::PageBroadcast> receiver_;
 };

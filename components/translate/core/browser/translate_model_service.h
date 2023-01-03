@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,8 @@ namespace translate {
 // Service that manages models required to support translation in the browser.
 // Currently, the service should only be used in the browser as it relies on
 // the Optimization Guide.
+// TODO(crbug/1324530): TranslateModelService should own
+// LanguageDetectionModel.
 class TranslateModelService
     : public KeyedService,
       public optimization_guide::OptimizationTargetModelObserver {

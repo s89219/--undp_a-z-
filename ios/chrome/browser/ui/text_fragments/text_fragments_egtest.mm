@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -97,7 +97,8 @@ void ReshareToPasteboard(const GURL& expected) {
                     return expected == [ChromeEarlGrey pasteboardURL];
                   }];
   GREYAssert(
-      [getPastedURL waitWithTimeout:base::test::ios::kWaitForActionTimeout],
+      [getPastedURL
+          waitWithTimeout:base::test::ios::kWaitForActionTimeout.InSecondsF()],
       @"Could not get expected URL from pasteboard.");
 }
 
@@ -139,7 +140,7 @@ void ReshareToPasteboard(const GURL& expected) {
 }
 
 // Disabled test due to multiple builder failures.
-// TODO(crbug.com/1298232): re-enable the test with fix.
+// TODO(crbug.com/1296211): re-enable the test with fix.
 - (void)DISABLED_testRemove {
   [ChromeEarlGrey loadURL:self.testServer->GetURL(kURLWithFragment)];
   [ChromeEarlGrey waitForWebStateContainingText:kTestPageTextSample];
@@ -270,9 +271,10 @@ void ReshareToPasteboard(const GURL& expected) {
                     return [ChromeEarlGrey webStateLastCommittedURL].ref() ==
                            "target";
                   }];
-  GREYAssert([finishedSameDocNavigation
-                 waitWithTimeout:base::test::ios::kWaitForActionTimeout],
-             @"Did not navigate within document.");
+  GREYAssert(
+      [finishedSameDocNavigation
+          waitWithTimeout:base::test::ios::kWaitForActionTimeout.InSecondsF()],
+      @"Did not navigate within document.");
 
   // When resharing, the text fragments should persist even though we've
   // added a reference fragment.

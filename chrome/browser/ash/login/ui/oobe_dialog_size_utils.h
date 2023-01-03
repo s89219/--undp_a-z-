@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,16 +40,5 @@ void CalculateOobeDialogBounds(const gfx::Rect& host_bounds,
                                gfx::Rect* result);
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::CalculateOobeDialogSize;
-using ::ash::CalculateOobeDialogSizeForPrimaryDisplay;
-using ::ash::kMaxLandscapeDialogSize;
-using ::ash::kMaxPortraitDialogSize;
-using ::ash::kMinLandscapeDialogSize;
-using ::ash::kMinPortraitDialogSize;
-}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_UI_OOBE_DIALOG_SIZE_UTILS_H_

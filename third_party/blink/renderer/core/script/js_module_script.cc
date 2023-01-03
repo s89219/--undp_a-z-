@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -166,9 +166,9 @@ JSModuleScript::JSModuleScript(Modulator* settings_object,
                    record,
                    source_url,
                    base_url,
-                   fetch_options),
+                   fetch_options,
+                   start_position),
       source_text_length_(source_text_length),
-      start_position_(start_position),
       produce_cache_data_(produce_cache_data) {}
 
 void JSModuleScript::ProduceCache() {
@@ -183,7 +183,7 @@ void JSModuleScript::ProduceCache() {
       ExecutionContext::From(isolate->GetCurrentContext());
   V8CodeCache::ProduceCache(
       isolate, ExecutionContext::GetCodeCacheHostFromContext(execution_context),
-      produce_cache_data_, source_text_length_, SourceURL(), StartPosition());
+      produce_cache_data_, source_text_length_, SourceUrl(), StartPosition());
 
   produce_cache_data_ = nullptr;
 }

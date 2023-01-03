@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@ using WasmMV3BrowserTest = ExtensionApiTest;
 IN_PROC_BROWSER_TEST_F(WasmMV3BrowserTest, ServiceWorker) {
   ResultCatcher catcher;
 
-  ExtensionTestMessageListener listener("ready", true);
+  ExtensionTestMessageListener listener("ready", ReplyBehavior::kWillReply);
   ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("wasm_mv3")));
   ASSERT_TRUE(listener.WaitUntilSatisfied());
   listener.Reply("go");
@@ -28,9 +28,15 @@ IN_PROC_BROWSER_TEST_F(WasmMV3BrowserTest, ServiceWorker) {
   ASSERT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
+// Test web assembly usage without explicit CSP allowing it.
+IN_PROC_BROWSER_TEST_F(WasmMV3BrowserTest, ExtensionPageNoCSP) {
+  ASSERT_TRUE(RunExtensionTest("no_wasm_mv3", {.extension_url = "page.html"}))
+      << message_;
+}
+
 // Test web assembly usage in an extension page.
 IN_PROC_BROWSER_TEST_F(WasmMV3BrowserTest, ExtensionPage) {
-  ASSERT_TRUE(RunExtensionTest("wasm_mv3", {.page_url = "page.html"}))
+  ASSERT_TRUE(RunExtensionTest("wasm_mv3", {.extension_url = "page.html"}))
       << message_;
 }
 

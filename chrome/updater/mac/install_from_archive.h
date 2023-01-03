@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,6 +11,7 @@
 
 namespace base {
 class FilePath;
+class TimeDelta;
 class Version;
 }
 
@@ -58,7 +59,8 @@ int InstallFromArchive(
     const UpdaterScope& scope,
     const base::Version& pv,
     const std::string& arguments,
-    const absl::optional<base::FilePath>& installer_data_file);
+    const absl::optional<base::FilePath>& installer_data_file,
+    const base::TimeDelta& timeout);
 
 }  // namespace updater
 

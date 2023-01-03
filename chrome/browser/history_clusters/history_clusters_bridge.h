@@ -1,16 +1,20 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_HISTORY_CLUSTERS_HISTORY_CLUSTERS_BRIDGE_H_
 #define CHROME_BROWSER_HISTORY_CLUSTERS_HISTORY_CLUSTERS_BRIDGE_H_
 
+#include "base/memory/raw_ptr.h"
 #include "base/supports_user_data.h"
+#include "chrome/browser/profiles/profile.h"
 #include "components/history_clusters/core/history_clusters_service.h"
 #include "components/history_clusters/core/history_clusters_types.h"
-#include "components/history_clusters/core/query_clusters_state.h"
+#include "components/history_clusters/ui/query_clusters_state.h"
 
-#include "chrome/browser/profiles/profile.h"
+namespace image_service {
+class ImageService;
+}  // namespace image_service
 
 using base::android::JavaParamRef;
 using base::android::JavaRef;
@@ -24,7 +28,8 @@ namespace history_clusters {
 class HistoryClustersBridge : public base::SupportsUserData::Data {
  public:
   HistoryClustersBridge(JNIEnv* env,
-                        HistoryClustersService* history_clusters_service);
+                        HistoryClustersService* history_clusters_service,
+                        image_service::ImageService* image_service);
   // Start a new query for history clusters, fetching the first page of results
   // and calling back to j_callback when done.
   void QueryClusters(JNIEnv* env,
@@ -57,7 +62,8 @@ class HistoryClustersBridge : public base::SupportsUserData::Data {
                          bool is_continuation);
 
   base::android::ScopedJavaGlobalRef<jobject> java_ref_;
-  HistoryClustersService* history_clusters_service_;
+  raw_ptr<HistoryClustersService> history_clusters_service_;
+  raw_ptr<image_service::ImageService> image_service_;
   base::CancelableTaskTracker query_task_tracker_;
   std::unique_ptr<QueryClustersState> query_clusters_state_;
   base::WeakPtrFactory<HistoryClustersBridge> weak_ptr_factory_{this};

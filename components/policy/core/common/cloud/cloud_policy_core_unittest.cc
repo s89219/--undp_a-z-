@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,8 @@
 #include <memory>
 
 #include "base/base64.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
@@ -31,7 +31,7 @@ class CloudPolicyCoreTest : public testing::Test,
   CloudPolicyCoreTest() {
     core_ = std::make_unique<CloudPolicyCore>(
         dm_protocol::kChromeUserPolicyType, std::string(), &store_,
-        base::ThreadTaskRunnerHandle::Get(),
+        base::SingleThreadTaskRunner::GetCurrentDefault(),
         network::TestNetworkConnectionTracker::CreateGetter());
     prefs_.registry()->RegisterIntegerPref(
         policy_prefs::kUserPolicyRefreshRate,

@@ -1,15 +1,17 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from './assert.js';
+import {assert, assertExists} from './assert.js';
 
 /**
  * The GA library URL in trusted type.
  */
 const gaLibraryURL = (() => {
-  const staticUrlPolicy = trustedTypes.createPolicy(
-      'ga-js-static', {createScriptURL: () => '../js/lib/analytics.js'});
+  const staticUrlPolicy =
+      assertExists(window.trustedTypes).createPolicy('ga-js-static', {
+        createScriptURL: (_url: string) => '../js/lib/analytics.js',
+      });
   return staticUrlPolicy.createScriptURL('');
 })();
 

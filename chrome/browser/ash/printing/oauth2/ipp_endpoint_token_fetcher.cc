@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,7 +35,7 @@ void IppEndpointTokenFetcher::AddToWaitingList(StatusCallback callback) {
   callbacks_.push_back(std::move(callback));
 }
 
-std::vector<StatusCallback> IppEndpointTokenFetcher::MoveWaitingList() {
+std::vector<StatusCallback> IppEndpointTokenFetcher::TakeWaitingList() {
   std::vector<StatusCallback> waitlist;
   waitlist.swap(callbacks_);
   return waitlist;

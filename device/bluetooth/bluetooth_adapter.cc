@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -347,6 +347,12 @@ void BluetoothAdapter::NotifyDeviceBatteryChanged(
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS)
+void BluetoothAdapter::NotifyDeviceBondedChanged(BluetoothDevice* device,
+                                                 bool new_bonded_status) {
+  for (auto& observer : observers_)
+    observer.DeviceBondedChanged(this, device, new_bonded_status);
+}
+
 void BluetoothAdapter::NotifyDeviceIsBlockedByPolicyChanged(
     BluetoothDevice* device,
     bool new_blocked_status) {

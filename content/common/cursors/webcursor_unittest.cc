@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,7 +64,7 @@ TEST(WebCursorTest, WebCursorCursorConstructorCustom) {
   webcursor.GetNativeCursor();
   EXPECT_TRUE(webcursor.has_custom_cursor_for_test());
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
   // Test if the rotating custom cursor works correctly.
   display::Display display;
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -164,7 +164,7 @@ TEST(WebCursorTest, CursorScaleFactor) {
   display.set_device_scale_factor(kDeviceScale);
   webcursor.SetDisplayInfo(display);
 
-#if defined(USE_OZONE)
+#if BUILDFLAG(IS_OZONE)
   // In Ozone, the size of the cursor is capped at 64px unless the hardware
   // advertises support for bigger cursors.
   const gfx::Size kDefaultMaxSize = gfx::Size(64, 64);

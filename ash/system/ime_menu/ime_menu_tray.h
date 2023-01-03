@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,6 @@ class Label;
 namespace ash {
 class ImeControllerImpl;
 class ImeListView;
-class SystemShadow;
 
 // A button in the tray which displays the short name of the currently-activated
 // IME (e.g., 'GB', 'US'). Clicking this button opens the opt-in IME menu,
@@ -60,11 +59,12 @@ class ASH_EXPORT ImeMenuTray : public TrayBackgroundView,
   void HandleLocaleChange() override;
   void HideBubbleWithView(const TrayBubbleView* bubble_view) override;
   void ClickedOutsideBubble() override;
-  bool PerformAction(const ui::Event& event) override;
+  void OnTrayActivated(const ui::Event& event) override;
   void CloseBubble() override;
   void ShowBubble() override;
   TrayBubbleView* GetBubbleView() override;
   views::Widget* GetBubbleWidget() const override;
+  void AddedToWidget() override;
 
   // IMEObserver:
   void OnIMERefresh() override;
@@ -107,8 +107,6 @@ class ASH_EXPORT ImeMenuTray : public TrayBackgroundView,
   bool is_emoji_enabled_;
   bool is_handwriting_enabled_;
   bool is_voice_enabled_;
-
-  std::unique_ptr<SystemShadow> shadow_;
 
   base::WeakPtrFactory<ImeMenuTray> weak_ptr_factory_{this};
 };

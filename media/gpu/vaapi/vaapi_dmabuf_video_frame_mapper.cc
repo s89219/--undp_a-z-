@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -135,7 +135,7 @@ scoped_refptr<VideoFrame> CreateMappedVideoFrame(
       DeallocateBuffers, std::move(va_image), std::move(src_video_frame)));
   for (auto&& buffer : p016le_buffers) {
     video_frame->AddDestructionObserver(
-        base::BindOnce([](std::unique_ptr<uint16_t[]>) {}, std::move(buffer)));
+        base::DoNothingWithBoundArgs(std::move(buffer)));
   }
   return video_frame;
 }
@@ -181,8 +181,8 @@ scoped_refptr<VideoFrame> VaapiDmaBufVideoFrameMapper::Map(
     return nullptr;
   }
 
-  if (!(permissions & PROT_READ && permissions & PROT_WRITE)) {
-    LOG(ERROR) << "VAAPI DMA Buffer must be mapped read/write.";
+  if (!(permissions & PROT_READ)) {
+    LOG(ERROR) << "VAAPI DMA Buffer must be mapped with read permissions.";
     return nullptr;
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,7 +57,8 @@ class SigninViewControllerDelegateViews
       const SigninViewControllerDelegateViews&) = delete;
 
   static std::unique_ptr<views::WebView> CreateSyncConfirmationWebView(
-      Browser* browser);
+      Browser* browser,
+      bool is_signin_intercept = false);
 
   static std::unique_ptr<views::WebView> CreateSigninErrorWebView(
       Browser* browser);
@@ -66,17 +67,21 @@ class SigninViewControllerDelegateViews
   static std::unique_ptr<views::WebView> CreateReauthConfirmationWebView(
       Browser* browser,
       signin_metrics::ReauthAccessPoint);
-
-  static std::unique_ptr<views::WebView> CreateProfileCustomizationWebView(
-      Browser* browser);
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+  static std::unique_ptr<views::WebView> CreateProfileCustomizationWebView(
+      Browser* browser,
+      bool is_local_profile_creation,
+      bool show_profile_switch_iph = false);
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
     BUILDFLAG(IS_CHROMEOS_LACROS)
   static std::unique_ptr<views::WebView> CreateEnterpriseConfirmationWebView(
       Browser* browser,
       const AccountInfo& account_info,
-      bool force_new_profile,
+      bool profile_creation_required_by_policy,
       bool show_link_data_option,
       SkColor profile_color,
       signin::SigninChoiceCallback callback);
@@ -101,7 +106,7 @@ class SigninViewControllerDelegateViews
                       std::unique_ptr<content::WebContents> new_contents,
                       const GURL& target_url,
                       WindowOpenDisposition disposition,
-                      const gfx::Rect& initial_rect,
+                      const blink::mojom::WindowFeatures& window_features,
                       bool user_gesture,
                       bool* was_blocked) override;
 
@@ -143,7 +148,7 @@ class SigninViewControllerDelegateViews
   raw_ptr<views::Widget> modal_signin_widget_ = nullptr;
 
   const raw_ptr<views::WebView> content_view_;
-  raw_ptr<content::WebContents> web_contents_;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_;
   const raw_ptr<Browser> browser_;
   views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
   bool should_show_close_button_;

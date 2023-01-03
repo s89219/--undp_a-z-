@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,8 +64,6 @@ class ContextualSearchSceneLayer : public SceneLayer,
       jint progress_bar_resource_id,
       jint progress_bar_tint,
       jint search_promo_resource_id,
-      jint bar_banner_ripple_resource_id,
-      jint bar_banner_text_resource_id,
       jfloat dp_to_px,
       jfloat layout_width,
       jfloat layout_height,
@@ -77,20 +75,11 @@ class ContextualSearchSceneLayer : public SceneLayer,
       jfloat search_promo_opacity,
       jint search_promo_background_color,
       // Related Searches
-      jint related_searches_in_content_resource_id,
-      jboolean related_searches_in_content_visible,
-      jfloat related_searches_in_content_height,
       jint related_searches_in_bar_resource_id,
       jboolean related_searches_in_bar_visible,
       jfloat related_searches_in_bar_height,
       jfloat related_searches_in_bar_redundant_padding,
-      // Banner etc
-      jboolean search_bar_banner_visible,
-      jfloat search_bar_banner_height,
-      jfloat search_bar_banner_padding,
-      jfloat search_bar_banner_ripple_width,
-      jfloat search_bar_banner_ripple_opacity,
-      jfloat search_bar_banner_text_opacity,
+      // Panel position etc
       jfloat search_panel_x,
       jfloat search_panel_y,
       jfloat search_panel_width,

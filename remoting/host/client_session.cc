@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,10 @@
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/containers/cxx20_erase_map.h"
+#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "remoting/base/capabilities.h"
 #include "remoting/base/constants.h"
@@ -40,6 +40,7 @@
 #include "remoting/host/remote_open_url/url_forwarder_control_message_handler.h"
 #include "remoting/host/webauthn/remote_webauthn_constants.h"
 #include "remoting/host/webauthn/remote_webauthn_message_handler.h"
+#include "remoting/host/webauthn/remote_webauthn_state_change_notifier.h"
 #include "remoting/proto/control.pb.h"
 #include "remoting/proto/event.pb.h"
 #include "remoting/protocol/audio_stream.h"
@@ -54,10 +55,17 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capturer.h"
 
+#if defined(WEBRTC_USE_GIO)
+#include "third_party/webrtc/modules/desktop_capture/linux/wayland/xdg_desktop_portal_utils.h"
+#endif
+
 namespace {
 
 constexpr char kRtcLogTransferDataChannelPrefix[] = "rtc-log-transfer-";
 constexpr char kStreamName[] = "screen_stream";
+
+constexpr base::TimeDelta kDefaultBoostCaptureInterval = base::Milliseconds(5);
+constexpr base::TimeDelta kDefaultBoostDuration = base::Milliseconds(50);
 
 std::string StreamNameForId(webrtc::ScreenId id) {
   return std::string(kStreamName) + "_" + base::NumberToString(id);
@@ -68,14 +76,6 @@ std::string StreamNameForId(webrtc::ScreenId id) {
 namespace remoting {
 
 using protocol::ActionRequest;
-
-ClientSession::VideoStreamWithComposer::VideoStreamWithComposer() = default;
-ClientSession::VideoStreamWithComposer::~VideoStreamWithComposer() = default;
-ClientSession::VideoStreamWithComposer::VideoStreamWithComposer(
-    VideoStreamWithComposer&&) = default;
-ClientSession::VideoStreamWithComposer&
-ClientSession::VideoStreamWithComposer::operator=(VideoStreamWithComposer&&) =
-    default;
 
 ClientSession::ClientSession(
     EventHandler* event_handler,
@@ -91,7 +91,8 @@ ClientSession::ClientSession(
       input_tracker_(&host_input_filter_),
       remote_input_filter_(&input_tracker_),
       mouse_clamping_filter_(&remote_input_filter_),
-      desktop_and_cursor_composer_notifier_(&mouse_clamping_filter_, this),
+      observing_input_filter_(&mouse_clamping_filter_),
+      desktop_and_cursor_composer_notifier_(&observing_input_filter_, this),
       disable_input_filter_(&desktop_and_cursor_composer_notifier_),
       host_clipboard_filter_(clipboard_echo_filter_.host_filter()),
       client_clipboard_filter_(clipboard_echo_filter_.client_filter()),
@@ -148,8 +149,12 @@ void ClientSession::NotifyClientResolution(
 
   // Try to match the client's resolution.
   // TODO(sergeyu): Pass clients DPI to the resizer.
-  screen_controls_->SetScreenResolution(ScreenResolution(
-      client_size, webrtc::DesktopVector(kDefaultDpi, kDefaultDpi)));
+  ScreenResolution screen_resolution(
+      client_size, webrtc::DesktopVector(kDefaultDpi, kDefaultDpi));
+  absl::optional<webrtc::ScreenId> screen_id;
+  if (resolution.has_screen_id())
+    screen_id = resolution.screen_id();
+  screen_controls_->SetScreenResolution(screen_resolution, screen_id);
 }
 
 void ClientSession::ControlVideo(const protocol::VideoControl& video_control) {
@@ -162,23 +167,38 @@ void ClientSession::ControlVideo(const protocol::VideoControl& video_control) {
             << ")";
     pause_video_ = !video_control.enable();
     for (const auto& [_, video_stream] : video_streams_) {
-      video_stream.stream->Pause(pause_video_);
+      video_stream->Pause(pause_video_);
     }
   }
-  if (video_control.has_lossless_encode()) {
-    VLOG(1) << "Received VideoControl (lossless_encode="
-            << video_control.lossless_encode() << ")";
-    lossless_video_encode_ = video_control.lossless_encode();
-    for (const auto& [_, video_stream] : video_streams_) {
-      video_stream.stream->SetLosslessEncode(lossless_video_encode_);
-    }
-  }
-  if (video_control.has_lossless_color()) {
-    VLOG(1) << "Received VideoControl (lossless_color="
-            << video_control.lossless_color() << ")";
-    lossless_video_color_ = video_control.lossless_color();
-    for (const auto& [_, video_stream] : video_streams_) {
-      video_stream.stream->SetLosslessColor(lossless_video_color_);
+
+  if (video_control.has_framerate_boost()) {
+    auto framerate_boost = video_control.framerate_boost();
+    DCHECK(framerate_boost.has_enabled());
+
+    if (!framerate_boost.enabled()) {
+      LOG(INFO) << "FramerateBoost disabled.";
+      observing_input_filter_.ClearInputEventCallback();
+    } else {
+      base::TimeDelta capture_interval =
+          framerate_boost.has_capture_interval_ms()
+              ? base::clamp(
+                    base::Milliseconds(framerate_boost.capture_interval_ms()),
+                    base::Milliseconds(1), base::Milliseconds(1000))
+              : kDefaultBoostCaptureInterval;
+      base::TimeDelta boost_duration =
+          framerate_boost.has_boost_duration_ms()
+              ? base::clamp(
+                    base::Milliseconds(framerate_boost.boost_duration_ms()),
+                    base::Milliseconds(1), base::Milliseconds(1000))
+              : kDefaultBoostDuration;
+      LOG(INFO) << "FramerateBoost enabled (interval: "
+                << capture_interval.InMilliseconds()
+                << "ms, duration: " << boost_duration.InMilliseconds() << "ms)";
+
+      // Unretained is sound as this instance owns |observing_input_filter_|.
+      observing_input_filter_.SetInputEventCallback(base::BindRepeating(
+          &ClientSession::BoostFramerateOnInput, base::Unretained(this),
+          capture_interval, boost_duration, base::OwnedRef(false)));
     }
   }
 }
@@ -261,6 +281,10 @@ void ClientSession::SetCapabilities(
                             std::move(supported_actions)));
   }
 
+  // TODO(crbug.com/1326339): Remove this code when legacy VideoLayout messages
+  // are fully deprecated and no longer sent. We already start the monitor in
+  // OnConnectionChannelsConnected() so we don't need this block if the legacy
+  // message in multi-stream mode is no longer required.
   if (HasCapability(capabilities_, protocol::kMultiStreamCapability)) {
     if (desktop_display_info_.NumDisplays() != 0) {
       // If display info is already known, create the initial video streams.
@@ -268,11 +292,23 @@ void ClientSession::SetCapabilities(
       CreatePerMonitorVideoStreams();
     }
 
-    // Create a new DisplayInfoMonitor that is owned by this class (instead of
-    // being owned by the DesktopCapturerProxy for the single-stream case).
-    display_info_monitor_ = desktop_environment_->CreateDisplayInfoMonitor();
-    display_info_monitor_->Start();
+    // Query the OS for the display-info on a timer, instead of doing it after
+    // every captured frame from multiple capturers.
+    auto* monitor = desktop_environment_->GetDisplayInfoMonitor();
+    if (monitor) {
+      // In the multi-process case, |monitor| will be null and this will be
+      // handled instead by DesktopSessionAgent.
+      monitor->Start();
+    }
+
+    // Re-send the extended layout information so the client has information
+    // needed to identify each stream.
+    if (desktop_display_info_.NumDisplays() != 0) {
+      OnDesktopDisplayChanged(desktop_display_info_.GetVideoLayoutProto());
+    }
   }
+
+  data_channel_manager_.OnRegistrationComplete();
 
   VLOG(1) << "Client capabilities: " << *client_capabilities_;
 
@@ -357,7 +393,7 @@ void ClientSession::SelectDesktopDisplay(
   const DisplayGeometry* newGeo =
       desktop_display_info_.GetDisplayInfo(new_index);
 
-  auto& stream = video_streams_.begin()->second.stream;
+  auto& stream = video_streams_.begin()->second;
   if (newGeo) {
     stream->SelectSource(newGeo->id);
   } else if (new_index == webrtc::kFullDesktopScreenId) {
@@ -413,6 +449,10 @@ void ClientSession::ControlPeerConnection(
   if (parameters.request_sdp_restart()) {
     connection_->peer_connection_controls()->RequestSdpRestart();
   }
+}
+
+void ClientSession::SetVideoLayout(const protocol::VideoLayout& video_layout) {
+  screen_controls_->SetVideoLayout(video_layout);
 }
 
 void ClientSession::OnConnectionAuthenticating() {
@@ -498,26 +538,11 @@ void ClientSession::OnConnectionAuthenticated() {
 void ClientSession::CreateMediaStreams() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  // Create monitor to be used by the capturer. This is used only by
-  // DesktopCapturerProxy. With multi-process, the IpcDesktopEnvironment
-  // version of this method returns nullptr, and the monitor is created
-  // in the Desktop process instead (where DesktopCapturerProxy is used).
-  auto monitor = desktop_environment_->CreateDisplayInfoMonitor();
-
   // Create a VideoStream to pump frames from the capturer to the client.
   DCHECK(video_streams_.empty());
-  auto composer =
-      desktop_environment_->CreateComposingVideoCapturer(std::move(monitor));
-  VideoStreamWithComposer video_stream;
-  if (composer) {
-    video_stream.composer = composer->GetWeakPtr();
-    video_stream.stream =
-        connection_->StartVideoStream(kStreamName, std::move(composer));
-  } else {
-    video_stream.stream = connection_->StartVideoStream(
-        kStreamName,
-        desktop_environment_->CreateVideoCapturer(std::move(monitor)));
-  }
+
+  auto video_stream = connection_->StartVideoStream(
+      kStreamName, desktop_environment_->CreateVideoCapturer());
 
   // Create an AudioStream to pump audio from the capturer to the client.
   std::unique_ptr<protocol::AudioSource> audio_capturer =
@@ -526,18 +551,14 @@ void ClientSession::CreateMediaStreams() {
     audio_stream_ = connection_->StartAudioStream(std::move(audio_capturer));
   }
 
-  video_stream.stream->SetObserver(this);
-
-  // Apply video-control parameters to the new stream.
-  video_stream.stream->SetLosslessEncode(lossless_video_encode_);
-  video_stream.stream->SetLosslessColor(lossless_video_color_);
+  video_stream->SetObserver(this);
 
   // Pause capturing if necessary.
-  video_stream.stream->Pause(pause_video_);
+  video_stream->Pause(pause_video_);
 
-  if (event_timestamp_source_for_tests_)
-    video_stream.stream->SetEventTimestampsSource(
-        event_timestamp_source_for_tests_);
+  if (event_timestamp_source_for_tests_) {
+    video_stream->SetEventTimestampsSource(event_timestamp_source_for_tests_);
+  }
 
   // Store the single video-stream using a key that isn't a valid monitor-id.
   // If multi-stream is enabled, this entry will get removed when the new
@@ -546,8 +567,6 @@ void ClientSession::CreateMediaStreams() {
 }
 
 void ClientSession::CreatePerMonitorVideoStreams() {
-  DCHECK(desktop_display_info_.NumDisplays() > 0);
-
   // Create new streams for any monitors that don't already have streams.
   for (int i = 0; i < desktop_display_info_.NumDisplays(); i++) {
     auto id = desktop_display_info_.GetDisplayInfo(i)->id;
@@ -561,20 +580,9 @@ void ClientSession::CreatePerMonitorVideoStreams() {
 
     HOST_LOG << "Creating video stream: " << stream_name;
 
-    auto composer = desktop_environment_->CreateComposingVideoCapturer(
-        /* DesktopDisplayInfoMonitor */ nullptr);
-    VideoStreamWithComposer video_stream;
-    if (composer) {
-      video_stream.composer = composer->GetWeakPtr();
-      video_stream.stream =
-          connection_->StartVideoStream(stream_name, std::move(composer));
-    } else {
-      video_stream.stream = connection_->StartVideoStream(
-          stream_name, desktop_environment_->CreateVideoCapturer(
-                           /* DesktopDisplayInfoMonitor */ nullptr));
-    }
-
-    video_stream.stream->SelectSource(id);
+    auto video_stream = connection_->StartVideoStream(
+        stream_name, desktop_environment_->CreateVideoCapturer());
+    video_stream->SelectSource(id);
 
     // SetObserver(this) is not called on the new video-stream, because
     // per-monitor resizing should be handled by OnDesktopDisplayChanged()
@@ -583,11 +591,11 @@ void ClientSession::CreatePerMonitorVideoStreams() {
     // multi-stream is being used.
 
     // Pause capturing if necessary.
-    video_stream.stream->Pause(pause_video_);
+    video_stream->Pause(pause_video_);
 
-    if (event_timestamp_source_for_tests_)
-      video_stream.stream->SetEventTimestampsSource(
-          event_timestamp_source_for_tests_);
+    if (event_timestamp_source_for_tests_) {
+      video_stream->SetEventTimestampsSource(event_timestamp_source_for_tests_);
+    }
 
     video_streams_[id] = std::move(video_stream);
   }
@@ -640,6 +648,14 @@ void ClientSession::OnConnectionChannelsConnected() {
   if (pending_video_layout_message_) {
     connection_->client_stub()->SetVideoLayout(*pending_video_layout_message_);
     pending_video_layout_message_.reset();
+  }
+
+  // Query the OS for the display-info on a timer.
+  auto* display_info_monitor = desktop_environment_->GetDisplayInfoMonitor();
+  if (display_info_monitor) {
+    // In the multi-process case, |display_info_monitor| will be null and this
+    // will be handled instead by the DesktopSessionAgent.
+    display_info_monitor->Start();
   }
 
   // Notify the event handler that all our channels are now connected.
@@ -715,8 +731,11 @@ void ClientSession::DisconnectSession(protocol::ErrorCode error) {
 void ClientSession::OnLocalKeyPressed(uint32_t usb_keycode) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   bool is_local = remote_input_filter_.LocalKeyPressed(usb_keycode);
-  if (is_local && desktop_environment_options_.terminate_upon_input())
+  if (is_local && desktop_environment_options_.terminate_upon_input()) {
+    LOG(WARNING)
+        << "Disconnecting CRD session because local input was detected.";
     DisconnectSession(protocol::OK);
+  }
 }
 
 void ClientSession::OnLocalPointerMoved(const webrtc::DesktopVector& position,
@@ -724,10 +743,13 @@ void ClientSession::OnLocalPointerMoved(const webrtc::DesktopVector& position,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   bool is_local = remote_input_filter_.LocalPointerMoved(position, type);
   if (is_local) {
-    if (desktop_environment_options_.terminate_upon_input())
+    if (desktop_environment_options_.terminate_upon_input()) {
+      LOG(WARNING)
+          << "Disconnecting CRD session because local input was detected.";
       DisconnectSession(protocol::OK);
-    else
+    } else {
       desktop_and_cursor_composer_notifier_.OnLocalInput();
+    }
   }
 }
 
@@ -755,8 +777,7 @@ ClientSessionControl* ClientSession::session_control() {
 void ClientSession::SetComposeEnabled(bool enabled) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   for (const auto& [_, video_stream] : video_streams_) {
-    if (video_stream.composer)
-      video_stream.composer->SetComposeEnabled(enabled);
+    video_stream->SetComposeEnabled(enabled);
   }
 }
 
@@ -766,10 +787,8 @@ void ClientSession::OnMouseCursor(webrtc::MouseCursor* mouse_cursor) {
   std::unique_ptr<webrtc::MouseCursor> owned_cursor(mouse_cursor);
 
   for (const auto& [_, video_stream] : video_streams_) {
-    if (video_stream.composer) {
-      video_stream.composer->SetMouseCursor(
-          base::WrapUnique(webrtc::MouseCursor::CopyOf(*owned_cursor)));
-    }
+    video_stream->SetMouseCursor(
+        base::WrapUnique(webrtc::MouseCursor::CopyOf(*owned_cursor)));
   }
 }
 
@@ -777,8 +796,7 @@ void ClientSession::OnMouseCursorPosition(
     const webrtc::DesktopVector& position) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   for (const auto& [_, video_stream] : video_streams_) {
-    if (video_stream.composer)
-      video_stream.composer->SetMouseCursorPosition(position);
+    video_stream->SetMouseCursorPosition(position);
   }
 }
 
@@ -825,16 +843,16 @@ void ClientSession::SetEventTimestampsSourceForTests(
         event_timestamp_source) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   event_timestamp_source_for_tests_ = event_timestamp_source;
-  for (const auto& [_, video_stream] : video_streams_)
-    video_stream.stream->SetEventTimestampsSource(
-        event_timestamp_source_for_tests_);
+  for (const auto& [_, video_stream] : video_streams_) {
+    video_stream->SetEventTimestampsSource(event_timestamp_source_for_tests_);
+  }
 }
 
 std::unique_ptr<protocol::ClipboardStub> ClientSession::CreateClipboardProxy() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return std::make_unique<protocol::ClipboardThreadProxy>(
       client_clipboard_factory_.GetWeakPtr(),
-      base::ThreadTaskRunnerHandle::Get());
+      base::SingleThreadTaskRunner::GetCurrentDefault());
 }
 
 void ClientSession::SetMouseClampingFilter(const DisplaySize& size) {
@@ -1011,6 +1029,9 @@ void ClientSession::OnDesktopDisplayChanged(
   // Generate and send VideoLayout message.
   protocol::VideoLayout layout;
   layout.set_supports_full_desktop_capture(can_capture_full_desktop_);
+  if (displays->has_primary_screen_id()) {
+    layout.set_primary_screen_id(displays->primary_screen_id());
+  }
   protocol::VideoTrackLayout* video_track;
 
   // For single-stream clients, the first layout must be the current webrtc
@@ -1062,8 +1083,9 @@ void ClientSession::OnDesktopDisplayChanged(
               << display.y_dpi() << "], screen_id=" << display.screen_id();
   }
 
-  // Set the display index, if this is the first message being processed.
-  if (selected_display_index_ == webrtc::kInvalidScreenId) {
+  // Set the display index, if this is the first message being processed or if
+  // the selected display no longer exists.
+  if (!IsValidDisplayIndex(selected_display_index_)) {
     if (can_capture_full_desktop_) {
       selected_display_index_ = webrtc::kFullDesktopScreenId;
     } else {
@@ -1175,9 +1197,47 @@ void ClientSession::CreateRemoteWebAuthnMessageHandler(
   // RemoteWebAuthnMessageHandler manages its own lifetime and is tied to the
   // lifetime of |pipe|. Once |pipe| is closed, this instance will be cleaned
   // up.
-  auto* unowned_handler =
-      new RemoteWebAuthnMessageHandler(channel_name, std::move(pipe));
+  auto* unowned_handler = new RemoteWebAuthnMessageHandler(
+      channel_name, std::move(pipe),
+      desktop_environment_->CreateRemoteWebAuthnStateChangeNotifier());
   remote_webauthn_message_handler_ = unowned_handler->GetWeakPtr();
+}
+
+bool ClientSession::IsValidDisplayIndex(webrtc::ScreenId index) const {
+  return index == webrtc::kFullDesktopScreenId ||
+         desktop_display_info_.GetDisplayInfo(index) != nullptr;
+}
+
+void ClientSession::BoostFramerateOnInput(
+    base::TimeDelta capture_interval,
+    base::TimeDelta boost_duration,
+    bool& mouse_button_down,
+    protocol::ObservingInputFilter::Event event) {
+  // Boost the framerate when we see input which is likely to trigger a change
+  // on the screen. This includes key, text, and touch events as well as mouse
+  // scroll or mouse moves when a button is down.
+  auto* mouse_event_ptr =
+      absl::get_if<std::reference_wrapper<const protocol::MouseEvent>>(&event);
+  if (mouse_event_ptr) {
+    const protocol::MouseEvent& mouse_event = mouse_event_ptr->get();
+    if (!mouse_button_down && !mouse_event.has_button() &&
+        !mouse_event.has_wheel_delta_x() && !mouse_event.has_wheel_delta_y()) {
+      return;
+    }
+
+    if (mouse_event.has_button()) {
+      // The |button| field is only set when the state changes so we must store
+      // the current value so we know whether to boost the framerate when we see
+      // a mouse move event.
+      mouse_button_down = mouse_event.button_down();
+    }
+  }
+
+  for (const auto& [_, video_stream] : video_streams_) {
+    // TODO(joedow): Consider boosting the capture rate for the active desktop
+    // instead of all desktops in multi-stream mode.
+    video_stream->BoostFramerate(capture_interval, boost_duration);
+  }
 }
 
 }  // namespace remoting

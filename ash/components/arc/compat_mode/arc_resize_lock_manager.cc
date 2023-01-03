@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
+#include "base/task/sequenced_task_runner.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/wm/public/activation_client.h"
@@ -86,8 +87,8 @@ class WindowActivationObserver : public wm::ActivationChangeObserver,
       return;
     RemoveAllObservers();
     // To avoid nested-activation, here we post the task to the queue.
-    base::SequencedTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                     std::move(on_activated_));
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, std::move(on_activated_));
     delete this;
   }
 
@@ -300,8 +301,7 @@ void ArcResizeLockManager::EnableResizeLock(aura::Window* window) {
     ShowSplashScreenDialog(window, is_fully_locked);
   }
 
-  if (!is_fully_locked &&
-      base::FeatureList::IsEnabled(arc::kCompatSnapFeature)) {
+  if (!is_fully_locked) {
     window->SetProperty(ash::kUnresizableSnappedSizeKey,
                         new gfx::Size(GetPortraitPhoneSizeWidth(), 0));
   } else {

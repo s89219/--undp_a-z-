@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,7 @@
 
 #import <MaterialComponents/MaterialActivityIndicator.h>
 
-#include "base/mac/foundation_util.h"
-#import "ios/chrome/browser/ui/colors/MDCPalette+CrAdditions.h"
+#import "base/mac/foundation_util.h"
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
@@ -40,8 +39,6 @@
   // Use colors from styler if available.
   if (styler.tableViewBackgroundColor)
     header.contentView.backgroundColor = styler.tableViewBackgroundColor;
-  if (styler.headerFooterTitleColor)
-    header.titleLabel.textColor = styler.headerFooterTitleColor;
 }
 
 @end
@@ -78,7 +75,7 @@
     // Activity Indicator.
     MDCActivityIndicator* activityIndicator =
         [[MDCActivityIndicator alloc] init];
-    activityIndicator.cycleColors = @[ [[MDCPalette cr_bluePalette] tint500] ];
+    activityIndicator.cycleColors = @[ [UIColor colorNamed:kBlueColor] ];
     [activityIndicator startAnimating];
     [activityIndicator
         setContentHuggingPriority:UILayoutPriorityDefaultHigh

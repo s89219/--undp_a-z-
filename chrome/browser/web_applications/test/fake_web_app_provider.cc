@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,16 +15,17 @@
 #include "base/one_shot_event.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/externally_managed_app_manager.h"
+#include "chrome/browser/web_applications/manifest_update_manager.h"
 #include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/policy/web_app_policy_manager.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_manager.h"
-#include "chrome/browser/web_applications/system_web_apps/test/test_system_web_app_manager.h"
+#include "chrome/browser/web_applications/preinstalled_web_app_manager.h"
 #include "chrome/browser/web_applications/test/fake_externally_managed_app_manager.h"
 #include "chrome/browser/web_applications/test/fake_os_integration_manager.h"
 #include "chrome/browser/web_applications/test/fake_web_app_database_factory.h"
 #include "chrome/browser/web_applications/test/fake_web_app_ui_manager.h"
 #include "chrome/browser/web_applications/test/test_file_utils.h"
 #include "chrome/browser/web_applications/web_app_command_manager.h"
+#include "chrome/browser/web_applications/web_app_command_scheduler.h"
 #include "chrome/browser/web_applications/web_app_database_factory.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
 #include "chrome/browser/web_applications/web_app_install_finalizer.h"
@@ -38,7 +39,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/sync/test/model/mock_model_type_change_processor.h"
+#include "components/sync/test/mock_model_type_change_processor.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace web_app {
@@ -52,7 +53,9 @@ std::unique_ptr<KeyedService> FakeWebAppProvider::BuildDefault(
   // Do not call default production StartImpl if in TestingProfile.
   provider->SetRunSubsystemStartupTasks(false);
 
-  // TODO(crbug.com/973324): `SetDefaultFakeSubsystems` by default.
+  // TODO(crbug.com/973324): Consider calling `SetDefaultFakeSubsystems` in the
+  // constructor instead.
+  provider->SetDefaultFakeSubsystems();
   provider->ConnectSubsystems();
 
   return provider;
@@ -63,6 +66,7 @@ FakeWebAppProvider* FakeWebAppProvider::Get(Profile* profile) {
   CHECK(profile->AsTestingProfile());
   auto* test_provider = static_cast<FakeWebAppProvider*>(
       WebAppProvider::GetForLocalAppsUnchecked(profile));
+  CHECK(test_provider);
   CHECK(!test_provider->started_);
 
   // Disconnect so that clients are forced to call Start() before accessing any
@@ -79,7 +83,14 @@ FakeWebAppProvider::~FakeWebAppProvider() = default;
 
 void FakeWebAppProvider::SetRunSubsystemStartupTasks(
     bool run_subsystem_startup_tasks) {
+  CheckNotStarted();
   run_subsystem_startup_tasks_ = run_subsystem_startup_tasks;
+}
+
+void FakeWebAppProvider::SetSynchronizePreinstalledAppsOnStartup(
+    bool synchronize_on_startup) {
+  CheckNotStarted();
+  synchronize_preinstalled_app_on_startup_ = synchronize_on_startup;
 }
 
 void FakeWebAppProvider::SetRegistrar(
@@ -91,7 +102,7 @@ void FakeWebAppProvider::SetRegistrar(
 void FakeWebAppProvider::SetDatabaseFactory(
     std::unique_ptr<AbstractWebAppDatabaseFactory> database_factory) {
   CheckNotStarted();
-  database_factory_ = std::move(database_factory_);
+  database_factory_ = std::move(database_factory);
 }
 
 void FakeWebAppProvider::SetSyncBridge(
@@ -143,12 +154,6 @@ void FakeWebAppProvider::SetWebAppUiManager(
   ui_manager_ = std::move(ui_manager);
 }
 
-void FakeWebAppProvider::SetSystemWebAppManager(
-    std::unique_ptr<SystemWebAppManager> system_web_app_manager) {
-  CheckNotStarted();
-  system_web_app_manager_ = std::move(system_web_app_manager);
-}
-
 void FakeWebAppProvider::SetWebAppPolicyManager(
     std::unique_ptr<WebAppPolicyManager> web_app_policy_manager) {
   CheckNotStarted();
@@ -163,6 +168,12 @@ void FakeWebAppProvider::SetCommandManager(
   command_manager_ = std::move(command_manager);
 }
 
+void FakeWebAppProvider::SetPreinstalledWebAppManager(
+    std::unique_ptr<PreinstalledWebAppManager> preinstalled_web_app_manager) {
+  CheckNotStarted();
+  preinstalled_web_app_manager_ = std::move(preinstalled_web_app_manager);
+}
+
 WebAppRegistrarMutable& FakeWebAppProvider::GetRegistrarMutable() const {
   DCHECK(registrar_);
   return *static_cast<WebAppRegistrarMutable*>(registrar_.get());
@@ -173,20 +184,29 @@ WebAppIconManager& FakeWebAppProvider::GetIconManager() const {
   return *icon_manager_;
 }
 
+WebAppCommandManager& FakeWebAppProvider::GetCommandManager() const {
+  DCHECK(command_manager_);
+  return *command_manager_;
+}
+
 AbstractWebAppDatabaseFactory& FakeWebAppProvider::GetDatabaseFactory() const {
   DCHECK(database_factory_);
   return *database_factory_;
 }
 
+WebAppUiManager& FakeWebAppProvider::GetUiManager() const {
+  DCHECK(ui_manager_);
+  return *ui_manager_;
+}
+
+WebAppInstallManager& FakeWebAppProvider::GetInstallManager() const {
+  DCHECK(install_manager_);
+  return *install_manager_;
+}
+
 void FakeWebAppProvider::StartWithSubsystems() {
   CheckNotStarted();
   SetRunSubsystemStartupTasks(true);
-  // Use a TestSystemWebAppManager to skip system web apps being
-  // auto-installed on |Start|.
-  // TODO(crbug.com/973324): This is set in `SetDefaultFakeSubsystems`. Remove
-  // it from here.
-  SetSystemWebAppManager(
-      std::make_unique<web_app::TestSystemWebAppManager>(profile_));
   Start();
 }
 
@@ -221,15 +241,39 @@ void FakeWebAppProvider::SetDefaultFakeSubsystems() {
 
   SetWebAppPolicyManager(std::make_unique<WebAppPolicyManager>(profile_));
 
-  // Use a TestSystemWebAppManager to skip system web apps being
-  // auto-installed on |Start|.
-  SetSystemWebAppManager(
-      std::make_unique<web_app::TestSystemWebAppManager>(profile_));
+  SetCommandManager(std::make_unique<WebAppCommandManager>(profile_, this));
 
-  SetCommandManager(std::make_unique<WebAppCommandManager>());
+  SetPreinstalledWebAppManager(
+      std::make_unique<PreinstalledWebAppManager>(profile_));
 
   ON_CALL(processor(), IsTrackingMetadata())
       .WillByDefault(testing::Return(true));
+}
+
+void FakeWebAppProvider::ShutDownUiManagerForTesting() {
+  ui_manager_.reset();
+}
+
+void FakeWebAppProvider::Shutdown() {
+  if (command_scheduler_)
+    command_scheduler_->Shutdown();
+  if (command_manager_)
+    command_manager_->Shutdown();
+  if (ui_manager_)
+    ui_manager_->Shutdown();
+  if (externally_managed_app_manager_)
+    externally_managed_app_manager_->Shutdown();
+  if (manifest_update_manager_)
+    manifest_update_manager_->Shutdown();
+  if (install_manager_)
+    install_manager_->Shutdown();
+  if (icon_manager_)
+    icon_manager_->Shutdown();
+  if (install_finalizer_)
+    install_finalizer_->Shutdown();
+  if (registrar_)
+    registrar_->Shutdown();
+  is_registry_ready_ = false;
 }
 
 void FakeWebAppProvider::CheckNotStarted() const {
@@ -238,10 +282,14 @@ void FakeWebAppProvider::CheckNotStarted() const {
 }
 
 void FakeWebAppProvider::StartImpl() {
-  if (run_subsystem_startup_tasks_)
+  preinstalled_web_app_manager_->SetSkipStartupSynchronizeForTesting(
+      !synchronize_preinstalled_app_on_startup_);
+  if (run_subsystem_startup_tasks_) {
     WebAppProvider::StartImpl();
-  else
+  } else {
     on_registry_ready_.Signal();
+    is_registry_ready_ = true;
+  }
 }
 
 FakeWebAppProviderCreator::FakeWebAppProviderCreator(
@@ -267,6 +315,7 @@ void FakeWebAppProviderCreator::OnWillCreateBrowserContextServices(
 std::unique_ptr<KeyedService> FakeWebAppProviderCreator::CreateWebAppProvider(
     content::BrowserContext* context) {
   Profile* profile = Profile::FromBrowserContext(context);
+  DCHECK(!WebAppProviderFactory::IsServiceCreatedForProfile(profile));
   if (!AreWebAppsEnabled(profile) || !callback_)
     return nullptr;
   return callback_.Run(profile);

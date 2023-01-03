@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,11 +6,11 @@
 
 #include "base/check.h"
 #include "base/strings/string_util.h"
+#include "chrome/updater/util/win_util.h"
 #include "chrome/updater/win/ui/l10n_util.h"
 #include "chrome/updater/win/ui/resources/updater_installer_strings.h"
 #include "chrome/updater/win/ui/ui_constants.h"
 #include "chrome/updater/win/ui/ui_util.h"
-#include "chrome/updater/win/win_util.h"
 
 namespace updater {
 namespace ui {
@@ -88,7 +88,7 @@ bool CompleteWnd::MaybeCloseWindow() {
 
 void CompleteWnd::DisplayCompletionDialog(bool is_success,
                                           const std::wstring& text,
-                                          const std::u16string& help_url) {
+                                          const std::string& help_url) {
   if (!OmahaWnd::OnComplete())
     return;
 

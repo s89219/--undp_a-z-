@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -74,6 +74,9 @@ bool ProtocolHandler::IsValidDict(const base::Value::Dict& value) {
 
 bool ProtocolHandler::IsValid() const {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  // We don't want to include URL's syntax checks because there are use cases of
+  // the protocol handlers logic that require more flexibility than the one
+  // specified for the registerProtocolHandler API (eg, Predefined Handlers).
   if (!blink::IsAllowedCustomHandlerURL(url_, security_level_))
     return false;
 

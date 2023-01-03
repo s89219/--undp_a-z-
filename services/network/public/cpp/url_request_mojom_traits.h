@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,6 +64,10 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
   static bool has_user_activation(
       const network::ResourceRequest::TrustedParams& trusted_params) {
     return trusted_params.has_user_activation;
+  }
+  static bool allow_cookies_from_browser(
+      const network::ResourceRequest::TrustedParams& trusted_params) {
+    return trusted_params.allow_cookies_from_browser;
   }
   static mojo::PendingRemote<network::mojom::CookieAccessObserver>
   cookie_observer(
@@ -251,6 +255,9 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
   static bool keepalive(const network::ResourceRequest& request) {
     return request.keepalive;
   }
+  static bool browsing_topics(const network::ResourceRequest& request) {
+    return request.browsing_topics;
+  }
   static bool has_user_gesture(const network::ResourceRequest& request) {
     return request.has_user_gesture;
   }
@@ -302,18 +309,11 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
       const network::ResourceRequest& request) {
     return request.devtools_stack_id;
   }
-  static bool is_signed_exchange_prefetch_cache_enabled(
-      const network::ResourceRequest& request) {
-    return request.is_signed_exchange_prefetch_cache_enabled;
-  }
   static bool is_fetch_like_api(const network::ResourceRequest& request) {
     return request.is_fetch_like_api;
   }
   static bool is_favicon(const network::ResourceRequest& request) {
     return request.is_favicon;
-  }
-  static bool obey_origin_policy(const network::ResourceRequest& request) {
-    return request.obey_origin_policy;
   }
   static network::mojom::RequestDestination original_destination(
       const network::ResourceRequest& request) {

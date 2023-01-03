@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@ import {AddSinkResultCode, CastDiscoveryMethod} from 'chrome://access-code-cast/
 import {BrowserProxy} from 'chrome://access-code-cast/browser_proxy.js';
 import {RouteRequestResultCode} from 'chrome://access-code-cast/route_request_result_code.mojom-webui.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {waitAfterNextRender} from 'chrome://webui-test/test_util.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {createTestProxy} from './test_access_code_cast_browser_proxy.js';
 
@@ -18,15 +18,14 @@ suite('AccessCodeCastAppTest', () => {
   let app: AccessCodeCastElement;
 
   setup(async () => {
-
     const mockProxy = createTestProxy(
-      AddSinkResultCode.OK,
-      RouteRequestResultCode.OK,
-      () => {}
+        AddSinkResultCode.OK,
+        RouteRequestResultCode.OK,
+        () => {},
     );
     BrowserProxy.setInstance(mockProxy);
 
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     app = document.createElement('access-code-cast-app');
     document.body.appendChild(app);
     await waitAfterNextRender(app);
@@ -58,9 +57,9 @@ suite('AccessCodeCastAppTest', () => {
 
   test('addSinkAndCast sends correct accessCode to the handler', () => {
     const testProxy = createTestProxy(
-      AddSinkResultCode.OK,
-      RouteRequestResultCode.OK,
-      () => {}
+        AddSinkResultCode.OK,
+        RouteRequestResultCode.OK,
+        () => {},
     );
     BrowserProxy.setInstance(testProxy);
 
@@ -69,18 +68,18 @@ suite('AccessCodeCastAppTest', () => {
 
     app.addSinkAndCast();
     testProxy.handler.whenCalled('addSink').then(
-      ({accessCode, discoveryMethod}) => {
-        assertEquals(accessCode, 'qwerty');
-        assertEquals(discoveryMethod, CastDiscoveryMethod.INPUT_ACCESS_CODE);
-      }
+        ({accessCode, discoveryMethod}) => {
+          assertEquals(accessCode, 'qwerty');
+          assertEquals(discoveryMethod, CastDiscoveryMethod.INPUT_ACCESS_CODE);
+        },
     );
   });
 
   test('addSinkAndCast sends correct discoveryMethod to the handler', () => {
     const testProxy = createTestProxy(
-      AddSinkResultCode.OK,
-      RouteRequestResultCode.OK,
-      () => {}
+        AddSinkResultCode.OK,
+        RouteRequestResultCode.OK,
+        () => {},
     );
     BrowserProxy.setInstance(testProxy);
 
@@ -89,10 +88,10 @@ suite('AccessCodeCastAppTest', () => {
 
     app.addSinkAndCast();
     testProxy.handler.whenCalled('addSink').then(
-      ({accessCode, discoveryMethod}) => {
-        assertEquals(accessCode, '123456');
-        assertEquals(discoveryMethod, CastDiscoveryMethod.QR_CODE);
-      }
+        ({accessCode, discoveryMethod}) => {
+          assertEquals(accessCode, '123456');
+          assertEquals(discoveryMethod, CastDiscoveryMethod.QR_CODE);
+        },
     );
   });
 
@@ -103,9 +102,9 @@ suite('AccessCodeCastAppTest', () => {
       visited = true;
     };
     const testProxy = createTestProxy(
-      AddSinkResultCode.OK,
-      RouteRequestResultCode.OK,
-      visitedCallback
+        AddSinkResultCode.OK,
+        RouteRequestResultCode.OK,
+        visitedCallback,
     );
     BrowserProxy.setInstance(testProxy);
 
@@ -114,24 +113,25 @@ suite('AccessCodeCastAppTest', () => {
     assertTrue(visited);
   });
 
-  test('addSinkAndCast does not call castToSink if add is not successful',
-    async () => {
-      let visited = false;
-      app.setAccessCodeForTest('qwerty');
-      const visitedCallback = () => {
-        visited = true;
-      };
-      const testProxy = createTestProxy(
-        AddSinkResultCode.UNKNOWN_ERROR,
-        RouteRequestResultCode.OK,
-        visitedCallback
-      );
-      BrowserProxy.setInstance(testProxy);
+  test(
+      'addSinkAndCast does not call castToSink if add is not successful',
+      async () => {
+        let visited = false;
+        app.setAccessCodeForTest('qwerty');
+        const visitedCallback = () => {
+          visited = true;
+        };
+        const testProxy = createTestProxy(
+            AddSinkResultCode.UNKNOWN_ERROR,
+            RouteRequestResultCode.OK,
+            visitedCallback,
+        );
+        BrowserProxy.setInstance(testProxy);
 
-      assertFalse(visited);
-      await app.addSinkAndCast();
-      assertFalse(visited);
-    }
+        assertFalse(visited);
+        await app.addSinkAndCast();
+        assertFalse(visited);
+      },
   );
 
   test(
@@ -259,5 +259,39 @@ suite('AccessCodeCastAppTest', () => {
 
     await app.addSinkAndCast();
     assertTrue(app.$.codeInput.focused);
+  });
+
+  // Split up footnote tests to limit number of await statements used in a
+  // single test, since this contributes to test flakiness.
+  test('managed footnote is correctly created for short times', async () => {
+    assertEquals(app.getManagedFootnoteForTest(), undefined);
+
+    await app.createManagedFootnote(3600 /* One hour */);
+    assertTrue(app.getManagedFootnoteForTest().includes('1 hour '));
+
+    await app.createManagedFootnote(7200 /* Two hours */);
+    assertTrue(app.getManagedFootnoteForTest().includes('2 hours '));
+
+    await app.createManagedFootnote(86400 /* 1 day */);
+    assertTrue(app.getManagedFootnoteForTest().includes('1 day '));
+
+    await app.createManagedFootnote(172800 /* 2 days */);
+    assertTrue(app.getManagedFootnoteForTest().includes('2 days '));
+  });
+
+  test('managed footnote is correctly created for long times', async () => {
+    assertEquals(app.getManagedFootnoteForTest(), undefined);
+
+    await app.createManagedFootnote(2764800 /* 32 days */);
+    assertTrue(app.getManagedFootnoteForTest().includes('1 month '));
+
+    await app.createManagedFootnote(5529600 /* 64 days */);
+    assertTrue(app.getManagedFootnoteForTest().includes('2 months '));
+
+    await app.createManagedFootnote(31540000 /* 1 year */);
+    assertTrue(app.getManagedFootnoteForTest().includes('1 year '));
+
+    await app.createManagedFootnote(63080000 /* 2 years */);
+    assertTrue(app.getManagedFootnoteForTest().includes('2 years '));
   });
 });

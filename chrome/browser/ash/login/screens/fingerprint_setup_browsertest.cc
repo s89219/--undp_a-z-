@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "chrome/browser/ash/login/test/oobe_screen_exit_waiter.h"
 #include "chrome/browser/ash/login/test/oobe_screen_waiter.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
-#include "chrome/browser/ui/webui/chromeos/login/fingerprint_setup_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/fingerprint_setup_screen_handler.h"
 #include "chromeos/ash/components/dbus/biod/fake_biod_client.h"
 #include "content/public/test/browser_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -39,7 +39,7 @@ const test::UIPath kAddAnotherFingerButton = {"fingerprint-setup",
 constexpr char kTestFingerprintDataString[] = "testFinger";
 constexpr char kAnimationUrlAttribute[] = "animationUrl";
 constexpr char kCheckmarkAnimationUrl[] =
-    "chrome://theme/IDR_FINGERPRINT_COMPLETE_TICK";
+    "chrome://theme/IDR_FINGERPRINT_COMPLETE_CHECK_LIGHT";
 
 int kMaxAllowedFingerprints = 3;
 

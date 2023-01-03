@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -85,7 +85,7 @@ class SessionStorageImplTest : public testing::Test {
       remote_session_storage_.reset();
       session_storage_ = std::make_unique<SessionStorageImpl>(
           temp_path(), blocking_task_runner_,
-          base::SequencedTaskRunnerHandle::Get(), backing_mode_,
+          base::SequencedTaskRunner::GetCurrentDefault(), backing_mode_,
           kSessionStorageDirectory,
           remote_session_storage_.BindNewPipeAndPassReceiver());
     }
@@ -182,7 +182,7 @@ TEST_F(SessionStorageImplTest, MigrationV0ToV1) {
       temp_path().AppendASCII(kSessionStorageDirectory);
   {
     auto db = base::MakeRefCounted<TestingLegacySessionStorageDatabase>(
-        old_db_path, base::ThreadTaskRunnerHandle::Get().get());
+        old_db_path, base::SingleThreadTaskRunner::GetCurrentDefault().get());
     LegacyDomStorageValuesMap data;
     data[key] = value;
     data[key2] = value;

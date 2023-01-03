@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,14 +9,20 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/ash/login/screens/base_screen.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chrome/browser/ui/webui/chromeos/login/multidevice_setup_screen_handler.h"
+#include "chromeos/ash/services/device_sync/group_private_key_and_better_together_metadata_status.h"
 
 namespace ash {
 
+class MultiDeviceSetupScreenView;
+
 namespace multidevice_setup {
 class MultiDeviceSetupClient;
+}
+
+namespace device_sync {
+class DeviceSyncClient;
 }
 
 class MultiDeviceSetupScreen : public BaseScreen {
@@ -26,7 +32,7 @@ class MultiDeviceSetupScreen : public BaseScreen {
   static std::string GetResultString(Result result);
 
   using ScreenExitCallback = base::RepeatingCallback<void(Result result)>;
-  MultiDeviceSetupScreen(MultiDeviceSetupScreenView* view,
+  MultiDeviceSetupScreen(base::WeakPtr<MultiDeviceSetupScreenView> view,
                          const ScreenExitCallback& exit_callback);
 
   MultiDeviceSetupScreen(const MultiDeviceSetupScreen&) = delete;
@@ -49,12 +55,17 @@ class MultiDeviceSetupScreen : public BaseScreen {
     setup_client_ = client;
   }
 
+  void set_device_sync_client_for_testing(
+      device_sync::DeviceSyncClient* client) {
+    device_sync_client_ = client;
+  }
+
  protected:
   // BaseScreen:
-  bool MaybeSkip(WizardContext* context) override;
+  bool MaybeSkip(WizardContext& context) override;
   void ShowImpl() override;
   void HideImpl() override;
-  void OnUserActionDeprecated(const std::string& action_id) override;
+  void OnUserAction(const base::Value::List& args) override;
 
  private:
   friend class MultiDeviceSetupScreenTest;
@@ -69,24 +80,56 @@ class MultiDeviceSetupScreen : public BaseScreen {
     kMaxValue = kDeclined
   };
 
+  // This enum is tied directly to the OobeMultideviceScreenSkippedReason UMA
+  // enum defined in //tools/metrics/histograms/enums.xml, and should always
+  // reflect it (do not change one without changing the other).  Entries should
+  // be never modified or deleted.  Only additions possible.
+  enum class OobeMultideviceScreenSkippedReason {
+    kPublicSessionOrEphemeralLogin = 0,
+    kHostPhoneAlreadySet = 1,
+    kDeviceSyncFinishedAndNoEligibleHostPhone = 2,
+    kSetupClientNotInitialized = 3,
+    kDeviceSyncNotInitializedDuringBetterTogetherMetadataStatusFetch = 4,
+    kDeviceSyncNotInitializedDuringGroupPrivateKeyStatusFetch = 5,
+    kEncryptedMetadataEmpty = 6,
+    kWaitingForGroupPrivateKey = 7,
+    kNoEncryptedGroupPrivateKeyReceived = 8,
+    kEncryptedGroupPrivateKeyEmpty = 9,
+    kLocalDeviceSyncBetterTogetherKeyMissing = 10,
+    kGroupPrivateKeyDecryptionFailed = 11,
+    kDestroyedBeforeReasonCouldBeDetermined = 12,
+    kUnknown = 13,
+    kMaxValue = kUnknown
+  };
+
   // Inits `setup_client_` if it was not initialized before.
   void TryInitSetupClient();
+
+  void GetBetterTogetherMetadataStatus();
+
+  void OnGetBetterTogetherMetadataStatus(
+      device_sync::BetterTogetherMetadataStatus status);
+
+  void GetGroupPrivateKeyStatus();
+
+  void OnGetGroupPrivateKeyStatus(device_sync::GroupPrivateKeyStatus status);
+
+  void RecordOobeMultideviceScreenSkippedReasonHistogram(
+      OobeMultideviceScreenSkippedReason reason);
 
   static void RecordMultiDeviceSetupOOBEUserChoiceHistogram(
       MultiDeviceSetupOOBEUserChoice value);
 
   multidevice_setup::MultiDeviceSetupClient* setup_client_ = nullptr;
+  device_sync::DeviceSyncClient* device_sync_client_ = nullptr;
+  bool skipped_ = false;
+  bool skipped_reason_determined_ = false;
 
-  MultiDeviceSetupScreenView* view_;
+  base::WeakPtr<MultiDeviceSetupScreenView> view_;
   ScreenExitCallback exit_callback_;
+  base::WeakPtrFactory<MultiDeviceSetupScreen> weak_factory_{this};
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::MultiDeviceSetupScreen;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_SCREENS_MULTIDEVICE_SETUP_SCREEN_H_

@@ -23,6 +23,7 @@
 
 #include "third_party/blink/renderer/core/html/html_script_element.h"
 
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/script/script_type.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_htmlscriptelement_svgscriptelement.h"
 #include "third_party/blink/renderer/core/dom/attribute.h"
@@ -31,7 +32,9 @@
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/dom/text.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
+#include "third_party/blink/renderer/core/frame/attribution_src_loader.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/loader/render_blocking_resource_manager.h"
@@ -108,9 +111,14 @@ void HTMLScriptElement::ParseAttribute(
                                                  params.new_value);
     blocking_attribute_->CountTokenUsage();
     if (GetDocument().GetRenderBlockingResourceManager() &&
-        !blocking_attribute_->IsExplicitlyRenderBlocking()) {
+        !IsPotentiallyRenderBlocking()) {
       GetDocument().GetRenderBlockingResourceManager()->RemovePendingScript(
           *this);
+    }
+  } else if (params.name == html_names::kAttributionsrcAttr) {
+    if (!params.new_value.empty() && GetDocument().GetFrame()) {
+      GetDocument().GetFrame()->GetAttributionSrcLoader()->Register(
+          GetDocument().CompleteURL(params.new_value), this);
     }
   } else {
     HTMLElement::ParseAttribute(params);
@@ -120,9 +128,8 @@ void HTMLScriptElement::ParseAttribute(
 Node::InsertionNotificationRequest HTMLScriptElement::InsertedInto(
     ContainerNode& insertion_point) {
   if (insertion_point.isConnected() && HasSourceAttribute() &&
-      ScriptLoader::GetScriptTypeAtPrepare(
-          TypeAttributeValue(), LanguageAttributeValue(),
-          ScriptLoader::kDisallowLegacyTypeInTypeAttribute) ==
+      ScriptLoader::GetScriptTypeAtPrepare(TypeAttributeValue(),
+                                           LanguageAttributeValue()) ==
           ScriptLoader::ScriptTypeAtPrepare::kInvalid) {
     UseCounter::Count(GetDocument(),
                       WebFeature::kScriptElementWithInvalidTypeHasSrc);
@@ -158,11 +165,11 @@ void HTMLScriptElement::setInnerTextForBinding(
       string_or_trusted_script, GetExecutionContext(), exception_state);
   if (exception_state.HadException())
     return;
-  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#setting-slot-values
-  // On setting, the innerText [...] perform the regular steps, and then set
-  // content object's [[ScriptText]] internal slot value [...].
-  HTMLElement::setInnerText(value, exception_state);
+  // https://w3c.github.io/trusted-types/dist/spec/#setting-slot-values
+  // "On setting the innerText [...]: Set [[ScriptText]] internal slot value to
+  // the stringified attribute value. Perform the usual attribute setter steps."
   script_text_internal_slot_ = ParkableString(value.Impl());
+  HTMLElement::setInnerText(value);
 }
 
 void HTMLScriptElement::setTextContentForBinding(
@@ -172,19 +179,15 @@ void HTMLScriptElement::setTextContentForBinding(
       TrustedTypesCheckForScript(value, GetExecutionContext(), exception_state);
   if (exception_state.HadException())
     return;
-  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#setting-slot-values
-  // On setting, [..] textContent [..] perform the regular steps, and then set
-  // content object's [[ScriptText]] internal slot value [...].
-  Node::setTextContent(string);
-  script_text_internal_slot_ = ParkableString(string.Impl());
+  setTextContent(string);
 }
 
 void HTMLScriptElement::setTextContent(const String& string) {
-  // https://w3c.github.io/webappsec-trusted-types/dist/spec/#setting-slot-values
-  // On setting, [..] textContent [..] perform the regular steps, and then set
-  // content object's [[ScriptText]] internal slot value [...].
-  Node::setTextContent(string);
+  // https://w3c.github.io/trusted-types/dist/spec/#setting-slot-values
+  // "On setting [.. textContent ..]: Set [[ScriptText]] internal slot value to
+  // the stringified attribute value. Perform the usual attribute setter steps."
   script_text_internal_slot_ = ParkableString(string.Impl());
+  Node::setTextContent(string);
 }
 
 void HTMLScriptElement::setAsync(bool async) {
@@ -207,7 +210,7 @@ void HTMLScriptElement::FinishParsingChildren() {
 }
 
 bool HTMLScriptElement::async() const {
-  return FastHasAttribute(html_names::kAsyncAttr) || loader_->IsNonBlocking();
+  return FastHasAttribute(html_names::kAsyncAttr) || loader_->IsForceAsync();
 }
 
 String HTMLScriptElement::SourceAttributeValue() const {
@@ -274,6 +277,10 @@ bool HTMLScriptElement::HasSourceAttribute() const {
   return FastHasAttribute(html_names::kSrcAttr);
 }
 
+bool HTMLScriptElement::HasAttributionsrcAttribute() const {
+  return FastHasAttribute(html_names::kAttributionsrcAttr);
+}
+
 bool HTMLScriptElement::IsConnected() const {
   return Node::isConnected();
 }
@@ -291,10 +298,19 @@ bool HTMLScriptElement::AllowInlineScriptForCSP(
     const AtomicString& nonce,
     const WTF::OrdinalNumber& context_line,
     const String& script_content) {
+  // Support 'inline-speculation-rules' source.
+  // https://github.com/WICG/nav-speculation/blob/main/triggers.md#content-security-policy
+  // TODO(http://crbug.com/1382361): Standardize it officially.
+  DCHECK(loader_);
+  ContentSecurityPolicy::InlineType inline_type =
+      loader_->GetScriptType() ==
+              ScriptLoader::ScriptTypeAtPrepare::kSpeculationRules
+          ? ContentSecurityPolicy::InlineType::kScriptSpeculationRules
+          : ContentSecurityPolicy::InlineType::kScript;
   return GetExecutionContext()
       ->GetContentSecurityPolicyForCurrentWorld()
-      ->AllowInline(ContentSecurityPolicy::InlineType::kScript, this,
-                    script_content, nonce, GetDocument().Url(), context_line);
+      ->AllowInline(inline_type, this, script_content, nonce,
+                    GetDocument().Url(), context_line);
 }
 
 Document& HTMLScriptElement::GetDocument() const {
@@ -335,6 +351,25 @@ Element& HTMLScriptElement::CloneWithoutAttributesAndChildren(
   return *factory.CreateElement(TagQName(), flags, IsValue());
 }
 
+bool HTMLScriptElement::IsPotentiallyRenderBlocking() const {
+  if (blocking_attribute_->HasRenderToken())
+    return true;
+
+  if (loader_->IsParserInserted() &&
+      loader_->GetScriptType() == ScriptLoader::ScriptTypeAtPrepare::kClassic) {
+    // If ForceInOrderScript is enabled, treat the script having src attribute
+    // as non-render blocking even if it has neither async nor defer attribute.
+    // Because the script is force-in-order'ed, which behaves like the scripts
+    // categorized ScriptSchedulingType::kInOrder. Those're not render blocking.
+    if (base::FeatureList::IsEnabled(features::kForceInOrderScript) &&
+        HasSourceAttribute())
+      return false;
+    return !AsyncAttributeValue() && !DeferAttributeValue();
+  }
+
+  return false;
+}
+
 // static
 bool HTMLScriptElement::supports(ScriptState* script_state,
                                  const AtomicString& type) {
@@ -350,10 +385,8 @@ bool HTMLScriptElement::supports(ScriptState* script_state,
       RuntimeEnabledFeatures::SpeculationRulesEnabled(execution_context)) {
     return true;
   }
-  if ((type == script_type_names::kWebbundle) &&
-      RuntimeEnabledFeatures::SubresourceWebBundlesEnabled(execution_context)) {
+  if (type == script_type_names::kWebbundle)
     return true;
-  }
 
   return false;
 }

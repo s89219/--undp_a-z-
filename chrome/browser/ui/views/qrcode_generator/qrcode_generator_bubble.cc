@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -127,15 +127,10 @@ void QRCodeGeneratorBubble::OnThemeChanged() {
 }
 
 void QRCodeGeneratorBubble::UpdateQRContent() {
-  if (textfield_url_->GetText().empty()) {
-    DisplayPlaceholderImage();
-    return;
-  }
-
   mojom::GenerateQRCodeRequestPtr request = mojom::GenerateQRCodeRequest::New();
-  request->data = base::UTF16ToASCII(textfield_url_->GetText());
+  request->data = url_.spec();
   request->should_render = true;
-  request->render_dino = true;
+  request->center_image = mojom::CenterImage::CHROME_DINO;
   request->render_module_style = mojom::ModuleStyle::CIRCLES;
   request->render_locator_style = mojom::LocatorStyle::ROUNDED;
 
@@ -154,9 +149,7 @@ void QRCodeGeneratorBubble::OnCodeGeneratorResponse(
     return;
   }
 
-  ShrinkAndHideDisplay(center_error_label_);
-  bottom_error_label_->SetVisible(false);
-  download_button_->SetEnabled(true);
+  HideErrors(true);
   UpdateQRImage(AddQRCodeQuietZone(
       gfx::ImageSkia::CreateFrom1xBitmap(response->bitmap), response->data_size,
       GetColorProvider()->GetColor(kColorQrCodeBackground)));
@@ -188,6 +181,12 @@ void QRCodeGeneratorBubble::DisplayError(mojom::QRCodeGeneratorError error) {
   bottom_error_label_->SetVisible(false);
   center_error_label_->SetPreferredSize(GetQRCodeImageSize());
   center_error_label_->SetVisible(true);
+}
+
+void QRCodeGeneratorBubble::HideErrors(bool enable_download_button) {
+  ShrinkAndHideDisplay(center_error_label_);
+  bottom_error_label_->SetVisible(false);
+  download_button_->SetEnabled(enable_download_button);
 }
 
 void QRCodeGeneratorBubble::ShrinkAndHideDisplay(views::View* view) {
@@ -298,8 +297,7 @@ void QRCodeGeneratorBubble::Init() {
       l10n_util::GetStringUTF16(IDS_BROWSER_SHARING_QR_CODE_DIALOG_TOOLTIP));
   tooltip_icon->set_bubble_width(ChromeLayoutProvider::Get()->GetDistanceMetric(
       views::DISTANCE_BUBBLE_PREFERRED_WIDTH));
-  tooltip_icon->set_anchor_point_arrow(
-      views::BubbleBorder::Arrow::BOTTOM_RIGHT);
+  tooltip_icon->set_anchor_point_arrow(views::BubbleBorder::Arrow::TOP_LEFT);
   tooltip_icon->SetProperty(
       views::kMarginsKey,
       gfx::Insets::TLBR(0, 0, 0, kPaddingTooltipDownloadButtonPx));
@@ -340,7 +338,14 @@ void QRCodeGeneratorBubble::ContentsChanged(
     const std::u16string& new_contents) {
   DCHECK_EQ(sender, textfield_url_);
   if (sender == textfield_url_) {
-    url_ = GURL(base::UTF16ToUTF8(new_contents));
+    if (bottom_error_label_->GetVisible())
+      HideErrors(false);
+    GURL new_url(new_contents);
+    if (!new_url.is_valid()) {
+      textfield_url_->SetText(base::UTF8ToUTF16(url_.spec()));
+      return;
+    }
+    url_ = new_url;
     UpdateQRContent();
 
     static bool first_edit = true;

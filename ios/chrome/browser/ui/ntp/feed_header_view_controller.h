@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,15 +10,13 @@
 #import "ios/chrome/browser/discover_feed/feed_constants.h"
 
 @protocol FeedControlDelegate;
+@class FeedMetricsRecorder;
 @protocol NewTabPageDelegate;
 
 @interface FeedHeaderViewController : UIViewController
 
 // Button for opening top-level feed menu.
 @property(nonatomic, readonly, strong) UIButton* menuButton;
-
-// The base title string of the feed header, excluding modifiers.
-@property(nonatomic, copy) NSString* titleText;
 
 // Delegate for controlling the presented feed.
 @property(nonatomic, weak) id<FeedControlDelegate> feedControlDelegate;
@@ -28,6 +26,9 @@
 
 // The currently selected sorting for the Following feed.
 @property(nonatomic, assign) FollowingFeedSortType followingFeedSortType;
+
+// Feed metrics recorder.
+@property(nonatomic, weak) FeedMetricsRecorder* feedMetricsRecorder;
 
 // Initializes the header with the currently selected feed and the Following
 // feed's sort type.
@@ -42,7 +43,7 @@
 - (instancetype)initWithCoder:(NSCoder*)aDecoder NS_UNAVAILABLE;
 
 // Toggles the feed header's background blur. Animates the transition if
-// |animated| is YES.
+// `animated` is YES.
 - (void)toggleBackgroundBlur:(BOOL)blurred animated:(BOOL)animated;
 
 // Returns the height of the feed header.
@@ -60,6 +61,15 @@
 // Updates the header view and re-applies constraints in response to the default
 // search engine changing.
 - (void)updateForDefaultSearchEngineChanged;
+
+// Updates the header for when the user turns the feed off from the header menu.
+- (void)updateForFeedVisibilityChanged;
+
+// Updates the header for when the Following Feed visibility has changed.
+- (void)updateForFollowingFeedVisibilityChanged;
+
+// Updates the segmented control and sort button for the current feed type.
+- (void)updateForSelectedFeed;
 
 @end
 

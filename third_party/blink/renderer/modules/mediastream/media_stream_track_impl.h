@@ -28,11 +28,11 @@
 
 #include <memory>
 
-#include "build/build_config.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_capture_handle.h"
 #include "third_party/blink/renderer/modules/event_target_modules.h"
+#include "third_party/blink/renderer/modules/mediastream/media_constraints.h"
 #include "third_party/blink/renderer/modules/mediastream/media_stream_track.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
@@ -61,8 +61,7 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   // surface type.
   static MediaStreamTrack* Create(ExecutionContext* context,
                                   MediaStreamComponent* component,
-                                  base::OnceClosure callback,
-                                  const String& descriptor_id);
+                                  base::OnceClosure callback);
 
   MediaStreamTrackImpl(ExecutionContext*, MediaStreamComponent*);
   MediaStreamTrackImpl(ExecutionContext*,
@@ -84,7 +83,7 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   String ContentHint() const override;
   void SetContentHint(const String&) override;
   String readyState() const override;
-  MediaStreamTrack* clone(ScriptState*) override;
+  MediaStreamTrack* clone(ExecutionContext*) override;
   void stopTrack(ExecutionContext*) override;
   MediaTrackCapabilities* getCapabilities() const override;
   MediaTrackConstraints* getConstraints() const override;
@@ -93,9 +92,13 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   ScriptPromise applyConstraints(ScriptState*,
                                  const MediaTrackConstraints*) override;
 
-  // This function is called when constrains have been successfully applied.
+  // These two functions are called when constraints have been successfully
+  // applied.
   // Called from UserMediaRequest when it succeeds. It is not IDL-exposed.
-  void SetConstraints(const MediaConstraints&) override;
+  // SetInitialConstraints() is expected to be called once when capture starts.
+  // SetConstraints() is called later, when changing the set of constraints.
+  void SetInitialConstraints(const MediaConstraints& constraints) override;
+  void SetConstraints(const MediaConstraints& constraints) override;
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(mute, kMute)
   DEFINE_ATTRIBUTE_EVENT_LISTENER(unmute, kUnmute)
@@ -127,17 +130,9 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
 
   ImageCapture* GetImageCapture() override { return image_capture_; }
 
-  absl::optional<base::UnguessableToken> serializable_session_id()
-      const override;
+  absl::optional<const MediaStreamDevice> device() const override;
 
-#if !BUILDFLAG(IS_ANDROID)
-  // Only relevant for focusable streams (FocusableMediaStreamTrack).
-  // When called on one of these, it signals that Conditional Focus
-  // no longer applies - the browser will now decide whether
-  // the captured display surface should be captured. Later calls to
-  // FocusableMediaStreamTrack.focus() will now raise an exception.
-  void CloseFocusWindowOfOpportunity() override;
-#endif
+  void BeingTransferred(const base::UnguessableToken& transfer_id) override;
 
   void AddObserver(MediaStreamTrack::Observer*) override;
 
@@ -150,12 +145,18 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   // this class as well as of their own class.
   void CloneInternal(MediaStreamTrackImpl*);
 
+  std::unique_ptr<MediaStreamTrackPlatform> ClonePlatformTrack();
+
  private:
   friend class CanvasCaptureMediaStreamTrack;
 
+  // MediaStreamTrack
+  void applyConstraints(ScriptPromiseResolver*,
+                        const MediaTrackConstraints*) override;
+
   // MediaStreamSource::Observer
   void SourceChangedState() override;
-  void SourceChangedCaptureHandle(media::mojom::CaptureHandlePtr) override;
+  void SourceChangedCaptureHandle() override;
 
   void PropagateTrackEnded();
   void applyConstraintsImageCapture(ScriptPromiseResolver*,
@@ -165,6 +166,9 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
 
   // Ensures that |feature_handle_for_scheduler_| is initialized.
   void EnsureFeatureHandleForScheduler();
+
+  void SetConstraintsInternal(const MediaConstraints& constraints,
+                              bool initial_values);
 
   void setReadyState(MediaStreamSource::ReadyState ready_state);
 
@@ -181,6 +185,9 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   Member<ImageCapture> image_capture_;
   WeakMember<ExecutionContext> execution_context_;
   HeapHashSet<WeakMember<MediaStreamTrack::Observer>> observers_;
+  bool muted_ = false;
+  MediaConstraints constraints_;
+  absl::optional<bool> suppress_local_audio_playback_setting_;
 };
 
 }  // namespace blink

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,10 +8,8 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/feature_list.h"
 #include "base/memory/singleton.h"
-#include "base/metrics/histogram_macros.h"
-#include "base/time/time.h"
+#include "base/metrics/histogram_functions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
@@ -24,7 +22,6 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/password_manager/account_password_store_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -48,17 +45,14 @@
 #include "chrome/common/buildflags.h"
 #include "chrome/common/channel_info.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
-#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/network_time/network_time_tracker.h"
 #include "components/sync/base/command_line_switches.h"
 #include "components/sync/driver/sync_service_impl.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/network_service_instance.h"
 #include "content/public/browser/storage_partition.h"
 #include "extensions/buildflags/buildflags.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "url/gurl.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
 #include "extensions/browser/api/storage/storage_frontend.h"
@@ -72,15 +66,19 @@
 #endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "ash/constants/ash_features.h"
+#include "chrome/browser/ash/printing/oauth2/authorization_zones_manager_factory.h"
 #include "chrome/browser/ash/printing/synced_printers_manager_factory.h"
+#include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/sync/desk_sync_service_factory.h"
 #include "chrome/browser/sync/wifi_configuration_sync_service_factory.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-#include "components/signin/public/base/signin_switches.h"
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+    BUILDFLAG(IS_WIN)
+#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_service_factory.h"
+#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
+        // BUILDFLAG(IS_WIN)
+
 namespace {
 
 std::unique_ptr<KeyedService> BuildSyncService(
@@ -88,6 +86,19 @@ std::unique_ptr<KeyedService> BuildSyncService(
   syncer::SyncServiceImpl::InitParams init_params;
 
   Profile* profile = Profile::FromBrowserContext(context);
+
+  DCHECK(!profile->IsOffTheRecord());
+  // Incognito, guest, or system profiles aren't relevant for Sync, and
+  // eventually no SyncService should even be created for those types of
+  // profiles. For now, they're just excluded from some startup metrics.
+  init_params.is_regular_profile_for_uma = profile->IsRegularProfile();
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  // On Ash, there are additional non-interesting profile types (sign-in
+  // profile and lockscreen profile).
+  init_params.is_regular_profile_for_uma =
+      init_params.is_regular_profile_for_uma &&
+      ash::ProfileHelper::IsUserProfile(profile);
+#endif
 
   init_params.sync_client =
       std::make_unique<browser_sync::ChromeSyncClient>(profile);
@@ -98,21 +109,21 @@ std::unique_ptr<KeyedService> BuildSyncService(
   init_params.channel = chrome::GetChannel();
   init_params.debug_identifier = profile->GetDebugName();
 
-  init_params.policy_service =
-      profile->GetProfilePolicyConnector()->policy_service();
   bool local_sync_backend_enabled = false;
-
 // Only check the local sync backend pref on the supported platforms of
 // Windows, Mac and Linux.
 // TODO(crbug.com/1052397): Reassess whether the following block needs to be
-// included
-// in lacros-chrome once build flag switch of lacros-chrome is
+// included in lacros-chrome once build flag switch of lacros-chrome is
 // complete.
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || \
     (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS))
   syncer::SyncPrefs prefs(profile->GetPrefs());
   local_sync_backend_enabled = prefs.IsLocalSyncEnabled();
-  UMA_HISTOGRAM_BOOLEAN("Sync.Local.Enabled", local_sync_backend_enabled);
+  base::UmaHistogramBoolean("Sync.Local.Enabled", local_sync_backend_enabled);
+  if (init_params.is_regular_profile_for_uma) {
+    base::UmaHistogramBoolean("Sync.Local.Enabled2",
+                              local_sync_backend_enabled);
+  }
 
   if (local_sync_backend_enabled) {
     base::FilePath local_sync_backend_folder =
@@ -120,10 +131,15 @@ std::unique_ptr<KeyedService> BuildSyncService(
 
     // If the user has not specified a folder and we can't get the default
     // roaming profile location the sync service will not be created.
-    UMA_HISTOGRAM_BOOLEAN("Sync.Local.RoamingProfileUnavailable",
-                          local_sync_backend_folder.empty());
-    if (local_sync_backend_folder.empty())
+    base::UmaHistogramBoolean("Sync.Local.RoamingProfileUnavailable",
+                              local_sync_backend_folder.empty());
+    if (init_params.is_regular_profile_for_uma) {
+      base::UmaHistogramBoolean("Sync.Local.RoamingProfileUnavailable2",
+                                local_sync_backend_folder.empty());
+    }
+    if (local_sync_backend_folder.empty()) {
       return nullptr;
+    }
 
     init_params.start_behavior = syncer::SyncServiceImpl::AUTO_START;
   }
@@ -150,12 +166,6 @@ std::unique_ptr<KeyedService> BuildSyncService(
     // need to take care that SyncServiceImpl doesn't get tripped up between
     // those two cases. Bug 88109.
     bool is_auto_start = browser_defaults::kSyncAutoStarts;
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-    if (profile->IsMainProfile() &&
-        !base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles)) {
-      is_auto_start = true;
-    }
-#endif
     init_params.start_behavior = is_auto_start
                                      ? syncer::SyncServiceImpl::AUTO_START
                                      : syncer::SyncServiceImpl::MANUAL_START;
@@ -200,15 +210,13 @@ syncer::SyncService* SyncServiceFactory::GetForProfile(Profile* profile) {
 }
 
 // static
-syncer::SyncServiceImpl* SyncServiceFactory::GetAsSyncServiceImplForProfile(
-    Profile* profile) {
+syncer::SyncServiceImpl*
+SyncServiceFactory::GetAsSyncServiceImplForProfileForTesting(Profile* profile) {
   return static_cast<syncer::SyncServiceImpl*>(GetForProfile(profile));
 }
 
 SyncServiceFactory::SyncServiceFactory()
-    : BrowserContextKeyedServiceFactory(
-          "SyncService",
-          BrowserContextDependencyManager::GetInstance()) {
+    : ProfileKeyedServiceFactory("SyncService") {
   // The SyncServiceImpl depends on various SyncableServices being around
   // when it is shut down.  Specify those dependencies here to build the proper
   // destruction order. Note that some of the dependencies are listed here but
@@ -242,6 +250,11 @@ SyncServiceFactory::SyncServiceFactory()
 #if !BUILDFLAG(IS_ANDROID)
   DependsOn(ThemeServiceFactory::GetInstance());
 #endif  // !BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+    BUILDFLAG(IS_WIN)
+  DependsOn(SavedTabGroupServiceFactory::GetInstance());
+#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
+        // BUILDFLAG(IS_WIN)
   DependsOn(WebDataServiceFactory::GetInstance());
 #if BUILDFLAG(ENABLE_EXTENSIONS)
   DependsOn(
@@ -251,6 +264,8 @@ SyncServiceFactory::SyncServiceFactory()
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   DependsOn(ash::SyncedPrintersManagerFactory::GetInstance());
+  DependsOn(
+      ash::printing::oauth2::AuthorizationZonesManagerFactory::GetInstance());
   DependsOn(DeskSyncServiceFactory::GetInstance());
   DependsOn(WifiConfigurationSyncServiceFactory::GetInstance());
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
@@ -286,7 +301,7 @@ bool SyncServiceFactory::IsSyncAllowed(Profile* profile) {
   // infer the accessible state by looking at prefs/command line flags.
   syncer::SyncPrefs prefs(profile->GetPrefs());
   return syncer::IsSyncAllowedByFlag() &&
-         (!prefs.IsManaged() || prefs.IsLocalSyncEnabled());
+         (!prefs.IsSyncClientDisabledByPolicy() || prefs.IsLocalSyncEnabled());
 }
 
 // static

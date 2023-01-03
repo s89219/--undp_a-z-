@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -89,7 +89,8 @@ class AutofillPopupBaseView::Widget : public views::Widget {
   }
 
  private:
-  const raw_ptr<AutofillPopupBaseView> autofill_popup_base_view_;
+  const raw_ptr<AutofillPopupBaseView, DanglingUntriaged>
+      autofill_popup_base_view_;
 };
 
 // static
@@ -129,8 +130,8 @@ SkColor AutofillPopupBaseView::GetFooterBackgroundColor() const {
   return GetColorProvider()->GetColor(ui::kColorBubbleFooterBackground);
 }
 
-SkColor AutofillPopupBaseView::GetSeparatorColor() const {
-  return GetColorProvider()->GetColor(ui::kColorMenuSeparator);
+ui::ColorId AutofillPopupBaseView::GetSeparatorColorId() const {
+  return ui::kColorMenuSeparator;
 }
 
 SkColor AutofillPopupBaseView::GetWarningColor() const {
@@ -189,6 +190,27 @@ bool AutofillPopupBaseView::DoShow() {
 }
 
 void AutofillPopupBaseView::DoHide() {
+  if (is_ax_menu_start_event_fired_) {
+    // Fire menu end event.
+    // The menu start event is delayed until the user
+    // navigates into the menu, otherwise some screen readers will ignore
+    // any focus events outside of the menu, including a focus event on
+    // the form control itself.
+    NotifyAccessibilityEvent(ax::mojom::Event::kMenuPopupEnd, true);
+    NotifyAccessibilityEvent(ax::mojom::Event::kMenuEnd, true);
+    GetViewAccessibility().EndPopupFocusOverride();
+
+    // Also fire an accessible focus event on what currently has focus,
+    // typically the widget associated with this popup.
+    if (parent_widget_) {
+      if (views::FocusManager* focus_manager =
+              parent_widget_->GetFocusManager()) {
+        if (View* focused_view = focus_manager->GetFocusedView())
+          focused_view->GetViewAccessibility().FireFocusAfterMenuClose();
+      }
+    }
+  }
+
   // The controller is no longer valid after it hides us.
   delegate_ = nullptr;
 
@@ -205,32 +227,6 @@ void AutofillPopupBaseView::DoHide() {
   }
 }
 
-void AutofillPopupBaseView::VisibilityChanged(View* starting_from,
-                                              bool is_visible) {
-  if (!is_visible) {
-    if (is_ax_menu_start_event_fired_) {
-      // Fire menu end event.
-      // The menu start event is delayed until the user
-      // navigates into the menu, otherwise some screen readers will ignore
-      // any focus events outside of the menu, including a focus event on
-      // the form control itself.
-      NotifyAccessibilityEvent(ax::mojom::Event::kMenuEnd, true);
-      GetViewAccessibility().EndPopupFocusOverride();
-
-      // Also fire an accessible focus event on what currently has focus,
-      // typically the widget associated with this popup.
-      if (parent_widget_) {
-        if (views::FocusManager* focus_manager =
-                parent_widget_->GetFocusManager()) {
-          if (View* focused_view = focus_manager->GetFocusedView())
-            focused_view->GetViewAccessibility().FireFocusAfterMenuClose();
-        }
-      }
-    }
-    is_ax_menu_start_event_fired_ = false;
-  }
-}
-
 void AutofillPopupBaseView::NotifyAXSelection(View* selected_view) {
   DCHECK(selected_view);
   if (!is_ax_menu_start_event_fired_) {
@@ -240,6 +236,8 @@ void AutofillPopupBaseView::NotifyAXSelection(View* selected_view) {
     // reader will restore the focus back to the appropriate textfield when the
     // menu closes.
     NotifyAccessibilityEvent(ax::mojom::Event::kMenuStart, true);
+    NotifyAccessibilityEvent(ax::mojom::Event::kMenuPopupStart, true);
+
     is_ax_menu_start_event_fired_ = true;
   }
   selected_view->GetViewAccessibility().SetPopupFocusOverride();
@@ -341,6 +339,11 @@ gfx::Rect AutofillPopupBaseView::GetOptionalPositionAndPlaceArrowOnPopup(
 
   gfx::Rect popup_bounds;
 
+  int maximum_pixel_offset_to_center =
+      base::FeatureList::IsEnabled(features::kAutofillMoreProminentPopup)
+          ? features::kAutofillMoreProminentPopupMaxOffsetToCenterParam.Get()
+          : kMaximumPixelsToMoveSuggstionToCenter;
+
   // Deduce the arrow and the position.
   views::BubbleBorder::Arrow arrow = GetOptimalPopupPlacement(
       /*content_area_bounds=*/max_bounds_for_popup,
@@ -349,11 +352,9 @@ gfx::Rect AutofillPopupBaseView::GetOptionalPositionAndPlaceArrowOnPopup(
       /*right_to_left=*/delegate_->IsRTL(),
       /*scrollbar_width=*/gfx::scrollbar_size(),
       /*maximum_pixel_offset_to_center=*/
-      autofill::features::kAutofillMaximumPixelsToMoveSuggestionopupToCenter
-          .Get(),
+      maximum_pixel_offset_to_center,
       /*maximum_width_percentage_to_center=*/
-      autofill::features::
-          kAutofillMaxiumWidthPercentageToMoveSuggestionPopupToCenter.Get(),
+      kMaximumWidthPercentageToMoveTheSuggestionToCenter,
       /*popup_bounds=*/popup_bounds);
 
   // Those values are not supported for adding an arrow.
@@ -363,8 +364,8 @@ gfx::Rect AutofillPopupBaseView::GetOptionalPositionAndPlaceArrowOnPopup(
 
   // Set the arrow position to the border.
   border->set_arrow(arrow);
-  border->AddArrowToBubbleCornerAndPointTowardsAnchor(
-      element_bounds, /*move_bubble_to_add_arrow=*/true, popup_bounds);
+  border->AddArrowToBubbleCornerAndPointTowardsAnchor(element_bounds,
+                                                      popup_bounds);
 
   return popup_bounds;
 }
@@ -404,14 +405,13 @@ bool AutofillPopupBaseView::DoUpdateBoundsAndRedrawPopup() {
     return false;
   }
 
-  gfx::Rect popup_bounds =
-      base::FeatureList::IsEnabled(
-          autofill::features::kAutofillCenterAlignedSuggestions)
-          ? GetOptionalPositionAndPlaceArrowOnPopup(
-                element_bounds, max_bounds_for_popup, preferred_size)
-          : CalculatePopupBounds(preferred_size, max_bounds_for_popup,
-                                 element_bounds, delegate_->IsRTL(),
-                                 /*horizontally_centered=*/false);
+  gfx::Rect popup_bounds = GetOptionalPositionAndPlaceArrowOnPopup(
+      element_bounds, max_bounds_for_popup, preferred_size);
+
+  if (BoundsOverlapWithPictureInPictureWindow(popup_bounds)) {
+    HideController(PopupHidingReason::kOverlappingWithPictureInPictureWindow);
+    return false;
+  }
 
   // Account for the scroll view's border so that the content has enough space.
   popup_bounds.Inset(-GetWidget()->GetRootView()->GetInsets());
@@ -428,9 +428,12 @@ std::unique_ptr<views::Border> AutofillPopupBaseView::CreateBorder() {
       views::BubbleBorder::NONE, views::BubbleBorder::STANDARD_SHADOW,
       ui::kColorDropdownBackground);
   border->SetCornerRadius(GetCornerRadius());
+  views::Emphasis emphasis =
+      base::FeatureList::IsEnabled(features::kAutofillMoreProminentPopup)
+          ? views::Emphasis::kMaximum
+          : views::Emphasis::kMedium;
   border->set_md_shadow_elevation(
-      ChromeLayoutProvider::Get()->GetShadowElevationMetric(
-          views::Emphasis::kMedium));
+      ChromeLayoutProvider::Get()->GetShadowElevationMetric(emphasis));
   return border;
 }
 
@@ -446,7 +449,7 @@ void AutofillPopupBaseView::GetAccessibleNodeData(ui::AXNodeData* node_data) {
   // consider returning to using kMenu, so that users are notified that a
   // menu popup has been shown.
   node_data->role = ax::mojom::Role::kPane;
-  node_data->SetName(
+  node_data->SetNameChecked(
       l10n_util::GetStringUTF16(IDS_AUTOFILL_POPUP_ACCESSIBLE_NODE_DATA));
 }
 
@@ -480,7 +483,7 @@ ADD_READONLY_PROPERTY_METADATA(SkColor, ForegroundColor)
 ADD_READONLY_PROPERTY_METADATA(SkColor, SelectedBackgroundColor)
 ADD_READONLY_PROPERTY_METADATA(SkColor, SelectedForegroundColor)
 ADD_READONLY_PROPERTY_METADATA(SkColor, FooterBackgroundColor)
-ADD_READONLY_PROPERTY_METADATA(SkColor, SeparatorColor)
+ADD_READONLY_PROPERTY_METADATA(ui::ColorId, SeparatorColorId)
 ADD_READONLY_PROPERTY_METADATA(SkColor, WarningColor)
 ADD_READONLY_PROPERTY_METADATA(gfx::Rect, ContentAreaBounds)
 END_METADATA

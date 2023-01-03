@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/components/settings/cros_settings_names.h"
 #include "base/callback.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
@@ -21,8 +20,10 @@
 #include "chrome/browser/ash/policy/off_hours/off_hours_proto_parser.h"
 #include "chrome/browser/ash/tpm_firmware_update.h"
 #include "chrome/browser/policy/chrome_browser_policy_connector.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/update_engine/update_engine_client.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine_client.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "components/policy/core/browser/policy_error_map.h"
 #include "components/policy/core/common/chrome_schema.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/external_data_manager.h"
@@ -152,14 +153,6 @@ std::unique_ptr<base::Value> DecodeConnectionType(int value) {
   if (iter == kConnectionTypes.end())
     return nullptr;
   return std::make_unique<base::Value>(iter->second);
-}
-
-void AddDeprecationWarning(const std::string& old_name,
-                           const std::string& new_name,
-                           PolicyMap* policies) {
-  policies->AddMessage(old_name, PolicyMap::MessageType::kError,
-                       IDS_POLICY_MIGRATED_OLD_POLICY,
-                       {base::UTF8ToUTF16(new_name)});
 }
 
 void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
@@ -368,6 +361,17 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
     }
   }
 
+  if (policy.has_saml_username()) {
+    const em::SAMLUsernameProto& container(policy.saml_username());
+    if (container.has_url_parameter_to_autofill_saml_username()) {
+      policies->Set(
+          key::kDeviceAutofillSAMLUsername, POLICY_LEVEL_MANDATORY,
+          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          base::Value(container.url_parameter_to_autofill_saml_username()),
+          nullptr);
+    }
+  }
+
   if (policy.has_login_authentication_behavior()) {
     const em::LoginAuthenticationBehaviorProto& container(
         policy.login_authentication_behavior());
@@ -413,6 +417,16 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
     policies->Set(key::kDeviceLoginScreenExtensions, POLICY_LEVEL_MANDATORY,
                   POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD, std::move(apps),
                   nullptr);
+  }
+
+  if (policy.has_login_screen_extension_manifest_v2_availability()) {
+    const em::LoginScreenExtensionManifestV2AvailabilityProto& proto(
+        policy.login_screen_extension_manifest_v2_availability());
+    policies->Set(
+        key::kDeviceLoginScreenExtensionManifestV2Availability,
+        POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+        base::Value(proto.login_screen_extension_manifest_v2_availability()),
+        nullptr);
   }
 
   if (policy.has_login_screen_power_management()) {
@@ -508,17 +522,6 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
     }
   }
 
-  if (policy.has_saml_login_authentication_type()) {
-    const em::SamlLoginAuthenticationTypeProto& container(
-        policy.saml_login_authentication_type());
-    if (container.has_saml_login_authentication_type()) {
-      policies->Set(
-          key::kDeviceSamlLoginAuthenticationType, POLICY_LEVEL_MANDATORY,
-          POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-          base::Value(container.saml_login_authentication_type()), nullptr);
-    }
-  }
-
   if (policy.has_device_reboot_on_user_signout()) {
     const em::DeviceRebootOnUserSignoutProto& container(
         policy.device_reboot_on_user_signout());
@@ -547,14 +550,32 @@ void DecodeLoginPolicies(const em::ChromeDeviceSettingsProto& policy,
     if (GetPolicyLevel(container.has_policy_options(),
                        container.policy_options(), &level)) {
       base::Value urls(base::Value::Type::LIST);
-      for (const std::string& entry : container.value().entries()) {
-        urls.Append(entry);
+
+      if (container.has_value()) {
+        for (const std::string& entry : container.value().entries()) {
+          urls.Append(entry);
+        }
       }
 
       policies->Set(key::kDeviceWebBasedAttestationAllowedUrls, level,
                     POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD, std::move(urls),
                     nullptr);
     }
+  }
+
+  if (policy.has_device_login_screen_context_aware_access_signals_allowlist()) {
+    const em::StringListPolicyProto& container(
+        policy.device_login_screen_context_aware_access_signals_allowlist());
+    base::Value allowlist(base::Value::Type::LIST);
+    if (container.has_value()) {
+      for (const std::string& entry : container.value().entries()) {
+        allowlist.Append(entry);
+      }
+    }
+
+    policies->Set(key::kDeviceLoginScreenContextAwareAccessSignalsAllowlist,
+                  POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                  POLICY_SOURCE_CLOUD, std::move(allowlist), nullptr);
   }
 
   if (policy.has_required_client_certificate_for_device()) {
@@ -706,12 +727,6 @@ void DecodeReportingPolicies(const em::ChromeDeviceSettingsProto& policy,
                              PolicyMap* policies) {
   if (policy.has_device_reporting()) {
     const em::DeviceReportingProto& container(policy.device_reporting());
-    if (container.has_enable_granular_reporting()) {
-      policies->Set(key::kEnableDeviceGranularReporting, POLICY_LEVEL_MANDATORY,
-                    POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                    base::Value(container.enable_granular_reporting()),
-                    nullptr);
-    }
     if (container.has_report_version_info()) {
       policies->Set(key::kReportDeviceVersionInfo, POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
@@ -737,34 +752,23 @@ void DecodeReportingPolicies(const em::ChromeDeviceSettingsProto& policy,
                     POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
                     base::Value(container.report_location()), nullptr);
     }
-    if (container.has_report_network_interfaces()) {
-      policies->Set(key::kReportDeviceNetworkInterfaces, POLICY_LEVEL_MANDATORY,
-                    POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                    base::Value(container.report_network_interfaces()),
-                    nullptr);
-    }
     if (container.has_report_network_configuration()) {
       policies->Set(key::kReportDeviceNetworkConfiguration,
                     POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
                     POLICY_SOURCE_CLOUD,
-                    base::Value(container.has_report_network_configuration()),
+                    base::Value(container.report_network_configuration()),
                     nullptr);
     }
     if (container.has_report_network_status()) {
       policies->Set(key::kReportDeviceNetworkStatus, POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                    base::Value(container.has_report_network_status()),
+                    base::Value(container.report_network_status()),
                     nullptr);
     }
     if (container.has_report_users()) {
       policies->Set(key::kReportDeviceUsers, POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
                     base::Value(container.report_users()), nullptr);
-    }
-    if (container.has_report_hardware_status()) {
-      policies->Set(key::kReportDeviceHardwareStatus, POLICY_LEVEL_MANDATORY,
-                    POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                    base::Value(container.report_hardware_status()), nullptr);
     }
     if (container.has_report_session_status()) {
       policies->Set(key::kReportDeviceSessionStatus, POLICY_LEVEL_MANDATORY,
@@ -889,6 +893,18 @@ void DecodeReportingPolicies(const em::ChromeDeviceSettingsProto& policy,
       DecodeIntegerReportingPolicy(
           policies, key::kReportDeviceAudioStatusCheckingRateMs,
           container.report_device_audio_status_checking_rate_ms());
+    }
+    if (container.has_report_signal_strength_event_driven_telemetry()) {
+      base::Value::List signal_strength_telemetry_list;
+      for (const std::string& telemetry_entry :
+           container.report_signal_strength_event_driven_telemetry()
+               .entries()) {
+        signal_strength_telemetry_list.Append(telemetry_entry);
+      }
+      policies->Set(
+          key::kReportDeviceSignalStrengthEventDrivenTelemetry,
+          POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+          base::Value(std::move(signal_strength_telemetry_list)), nullptr);
     }
   }
 
@@ -1415,6 +1431,32 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
     }
   }
 
+  if (policy.has_keyboard_backlight_color()) {
+    const em::KeyboardBacklightColorProto& container(
+        policy.keyboard_backlight_color());
+    if (container.has_color()) {
+      // This policy is interpreted as "Recommended".
+      // See the comment at the definition of the
+      // ash::prefs::kPersonalizationKeyboardBacklightColor pref (to which this
+      // policy will be mapped) for more details.
+      policies->Set(key::kDeviceKeyboardBacklightColor,
+                    POLICY_LEVEL_RECOMMENDED, POLICY_SCOPE_MACHINE,
+                    POLICY_SOURCE_CLOUD, base::Value(container.color()),
+                    nullptr);
+    }
+  }
+
+  if (policy.has_device_hindi_inscript_layout_enabled()) {
+    const em::DeviceHindiInscriptLayoutEnabledProto& container(
+        policy.device_hindi_inscript_layout_enabled());
+    if (container.has_enabled()) {
+      policies->Set(key::kDeviceHindiInscriptLayoutEnabled,
+                    POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                    POLICY_SOURCE_CLOUD, base::Value(container.enabled()),
+                    nullptr);
+    }
+  }
+
   if (policy.has_allow_redeem_offers()) {
     const em::AllowRedeemChromeOsRegistrationOffersProto& container(
         policy.allow_redeem_offers());
@@ -1557,7 +1599,7 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
     if (off_hours_policy)
       policies->Set(key::kDeviceOffHours, POLICY_LEVEL_MANDATORY,
                     POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                    std::move(*off_hours_policy), nullptr);
+                    base::Value(std::move(*off_hours_policy)), nullptr);
   }
 
   if (policy.has_cast_receiver_name()) {
@@ -1621,8 +1663,8 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
   if (policy.has_tpm_firmware_update_settings()) {
     policies->Set(key::kTPMFirmwareUpdateSettings, POLICY_LEVEL_MANDATORY,
                   POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                  std::move(*(ash::tpm_firmware_update::DecodeSettingsProto(
-                      policy.tpm_firmware_update_settings()))),
+                  ash::tpm_firmware_update::DecodeSettingsProto(
+                      policy.tpm_firmware_update_settings()),
                   nullptr);
   }
 
@@ -1957,14 +1999,6 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
     }
   }
 
-  if (policy.has_device_borealis_allowed() &&
-      policy.device_borealis_allowed().has_allowed()) {
-    policies->Set(key::kDeviceBorealisAllowed, POLICY_LEVEL_MANDATORY,
-                  POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
-                  base::Value(policy.device_borealis_allowed().allowed()),
-                  nullptr);
-  }
-
   if (policy.has_device_allowed_bluetooth_services()) {
     const em::DeviceAllowedBluetoothServicesProto& container(
         policy.device_allowed_bluetooth_services());
@@ -2039,6 +2073,27 @@ void DecodeGenericPolicies(const em::ChromeDeviceSettingsProto& policy,
                     nullptr);
     }
   }
+
+  if (policy.has_device_printing_client_name_template()) {
+    const em::StringPolicyProto& container(
+        policy.device_printing_client_name_template());
+    if (container.has_value() && !container.value().empty()) {
+      policies->Set(key::kDevicePrintingClientNameTemplate,
+                    POLICY_LEVEL_MANDATORY, POLICY_SCOPE_MACHINE,
+                    POLICY_SOURCE_CLOUD, base::Value(container.value()),
+                    nullptr);
+    }
+  }
+
+  if (policy.has_device_report_xdr_events()) {
+    const em::DeviceReportXDREventsProto& container(
+        policy.device_report_xdr_events());
+    if (container.has_enabled()) {
+      policies->Set(policy::key::kDeviceReportXDREvents, POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_MACHINE, POLICY_SOURCE_CLOUD,
+                    base::Value(container.enabled()), nullptr);
+    }
+  }
 }
 
 }  // namespace
@@ -2047,33 +2102,38 @@ absl::optional<base::Value> DecodeJsonStringAndNormalize(
     const std::string& json_string,
     const std::string& policy_name,
     std::string* error) {
-  base::JSONReader::ValueWithError value_with_error =
-      base::JSONReader::ReadAndReturnValueWithError(
-          json_string, base::JSON_ALLOW_TRAILING_COMMAS);
-  if (!value_with_error.value) {
-    *error = "Invalid JSON string: " + value_with_error.error_message;
+  auto value_with_error = base::JSONReader::ReadAndReturnValueWithError(
+      json_string, base::JSON_ALLOW_TRAILING_COMMAS);
+  if (!value_with_error.has_value()) {
+    *error = "Invalid JSON string: " + value_with_error.error().message;
     return absl::nullopt;
   }
-  base::Value root = std::move(value_with_error.value.value());
+  base::Value root = std::move(*value_with_error);
 
   const Schema& schema = GetChromeSchema().GetKnownProperty(policy_name);
   CHECK(schema.valid());
 
   std::string schema_error;
-  std::string error_path;
+  PolicyErrorPath error_path;
   bool changed = false;
   if (!schema.Normalize(&root, SCHEMA_ALLOW_UNKNOWN, &error_path, &schema_error,
                         &changed)) {
     std::ostringstream msg;
     msg << "Invalid policy value: " << schema_error << " (at "
-        << (error_path.empty() ? "toplevel" : error_path) << ")";
+        << (error_path.empty()
+                ? policy_name
+                : policy::ErrorPathToString(policy_name, error_path))
+        << ")";
     *error = msg.str();
     return absl::nullopt;
   }
   if (changed) {
     std::ostringstream msg;
     msg << "Dropped unknown properties: " << schema_error << " (at "
-        << (error_path.empty() ? "toplevel" : error_path) << ")";
+        << (error_path.empty()
+                ? policy_name
+                : policy::ErrorPathToString(policy_name, error_path))
+        << ")";
     *error = msg.str();
   }
 

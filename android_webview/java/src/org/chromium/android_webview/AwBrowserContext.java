@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package org.chromium.android_webview;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.text.TextUtils;
 
 import androidx.annotation.VisibleForTesting;
 
@@ -17,7 +16,10 @@ import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNINamespace;
 import org.chromium.base.annotations.NativeMethods;
 import org.chromium.base.memory.MemoryPressureMonitor;
+import org.chromium.content_public.browser.BrowserContextHandle;
 import org.chromium.content_public.browser.ContentViewStatics;
+
+import java.util.Set;
 
 /**
  * Java side of the Browser Context: contains all the java side objects needed to host one
@@ -28,7 +30,7 @@ import org.chromium.content_public.browser.ContentViewStatics;
  * AwBrowserContext instance, so at this point the class mostly exists for conceptual clarity.
  */
 @JNINamespace("android_webview")
-public class AwBrowserContext {
+public class AwBrowserContext implements BrowserContextHandle {
     private static final String CHROMIUM_PREFS_NAME = "WebViewProfilePrefsDefault";
 
     private static final String TAG = "AwBrowserContext";
@@ -120,6 +122,17 @@ public class AwBrowserContext {
     }
 
     /**
+     * Used by {@link AwServiceWorkerSettings#setRequestedWithHeaderOriginAllowList(Set)}
+     */
+    Set<String> updateServiceWorkerXRequestedWithAllowListOriginMatcher(
+            Set<String> allowedOriginRules) {
+        String[] badRules =
+                AwBrowserContextJni.get().updateServiceWorkerXRequestedWithAllowListOriginMatcher(
+                        mNativeAwBrowserContext, allowedOriginRules.toArray(new String[0]));
+        return Set.of(badRules);
+    }
+
+    /**
      * @see android.webkit.WebView#pauseTimers()
      */
     public void pauseTimers() {
@@ -133,7 +146,8 @@ public class AwBrowserContext {
         ContentViewStatics.setWebKitSharedTimersSuspended(false);
     }
 
-    public long getNativePointer() {
+    @Override
+    public long getNativeBrowserContextPointer() {
         return mNativeAwBrowserContext;
     }
 
@@ -154,6 +168,12 @@ public class AwBrowserContext {
         AwBrowserContextJni.get().setWebLayerRunningInSameProcess(mNativeAwBrowserContext);
     }
 
+    @VisibleForTesting
+    public void clearPersistentOriginTrialStorageForTesting() {
+        AwBrowserContextJni.get().clearPersistentOriginTrialStorageForTesting(
+                mNativeAwBrowserContext);
+    }
+
     @CalledByNative
     public static AwBrowserContext create(long nativeAwBrowserContext, boolean isDefault) {
         SharedPreferences sharedPreferences;
@@ -166,18 +186,13 @@ public class AwBrowserContext {
         return new AwBrowserContext(sharedPreferences, nativeAwBrowserContext, isDefault);
     }
 
-    @CalledByNative
-    public static boolean shouldSendVariationsHeaders() {
-        String packageId = PlatformServiceBridge.getInstance()
-                                   .getFirstPartyVariationsHeadersEnabledPackageId();
-        return !TextUtils.isEmpty(packageId)
-                && packageId.equals(ContextUtils.getApplicationContext().getPackageName());
-    }
-
     @NativeMethods
     interface Natives {
         AwBrowserContext getDefaultJava();
         long getQuotaManagerBridge(long nativeAwBrowserContext);
         void setWebLayerRunningInSameProcess(long nativeAwBrowserContext);
+        String[] updateServiceWorkerXRequestedWithAllowListOriginMatcher(
+                long nativeAwBrowserContext, String[] rules);
+        void clearPersistentOriginTrialStorageForTesting(long nativeAwBrowserContext);
     }
 }

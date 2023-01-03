@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 
 #include <cstdint>
 
+#include "base/containers/cxx20_erase.h"
+#include "components/segmentation_platform/internal/constants.h"
 #include "components/segmentation_platform/internal/signals/ukm_config.h"
 #include "components/segmentation_platform/internal/ukm_data_manager_impl.h"
 #include "components/segmentation_platform/public/local_state_helper.h"
@@ -14,11 +16,9 @@
 
 namespace segmentation_platform {
 
-UkmObserver::UkmObserver(ukm::UkmRecorderImpl* ukm_recorder,
-                         bool is_ukm_allowed)
+UkmObserver::UkmObserver(ukm::UkmRecorderImpl* ukm_recorder)
     : ukm_recorder_(ukm_recorder), ukm_data_manager_(nullptr) {
   // Listen to |OnUkmAllowedStateChanged| event.
-  OnUkmAllowedStateChanged(is_ukm_allowed);
   ukm_recorder_->AddUkmRecorderObserver(base::flat_set<uint64_t>(), this);
 }
 
@@ -58,12 +58,11 @@ void UkmObserver::OnEntryAdded(ukm::mojom::UkmEntryPtr entry) {
           UkmEventHash::FromUnsafeValue(entry->event_hash));
   if (!metrics_for_event)
     return;
-  for (const auto& metric_and_value : entry->metrics) {
-    if (!metrics_for_event->count(
-            UkmMetricHash::FromUnsafeValue(metric_and_value.first))) {
-      entry->metrics.erase(metric_and_value);
-    }
-  }
+
+  base::EraseIf(entry->metrics, [&metrics_for_event](const auto& it) {
+    return !metrics_for_event->count(UkmMetricHash::FromUnsafeValue(it.first));
+  });
+
   ukm_data_manager_->OnEntryAdded(std::move(entry));
 }
 
@@ -81,21 +80,21 @@ void UkmObserver::PauseOrResumeObservation(bool pause) {
   paused_ = pause;
 }
 
-void UkmObserver::OnUkmAllowedStateChanged(bool allowed) {
-  base::Time most_recent_allowed =
-      LocalStateHelper::GetInstance().GetUkmMostRecentAllowedTime();
-  if (!allowed) {
+void UkmObserver::OnUkmAllowedStateChanged(ukm::UkmConsentState state) {
+  base::Time most_recent_allowed = LocalStateHelper::GetInstance().GetPrefTime(
+      kSegmentationUkmMostRecentAllowedTimeKey);
+  if (!state.Has(ukm::MSBB)) {
     if (most_recent_allowed != base::Time::Max()) {
-      LocalStateHelper::GetInstance().SetUkmMostRecentAllowedTime(
-          base::Time::Max());
+      LocalStateHelper::GetInstance().SetPrefTime(
+          kSegmentationUkmMostRecentAllowedTimeKey, base::Time::Max());
     }
     return;
   }
   // Update the most recent allowed time if needed.
   if (most_recent_allowed.is_null() ||
       most_recent_allowed == base::Time::Max()) {
-    LocalStateHelper::GetInstance().SetUkmMostRecentAllowedTime(
-        base::Time::Now());
+    LocalStateHelper::GetInstance().SetPrefTime(
+        kSegmentationUkmMostRecentAllowedTimeKey, base::Time::Now());
   }
 }
 

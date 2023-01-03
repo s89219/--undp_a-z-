@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,8 @@
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -79,16 +79,9 @@ struct CrossThreadCopier<net::NetworkTrafficAnnotationTag>
 };
 
 template <>
-struct CrossThreadCopier<blink::WebVector<blink::WebString>> {
+struct CrossThreadCopier<blink::WebVector<blink::WebString>>
+    : public CrossThreadCopierPassThrough<blink::WebVector<blink::WebString>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = blink::WebVector<blink::WebString>;
-  static Type Copy(const Type& value) {
-    Type result;
-    result.reserve(value.size());
-    for (const auto& element : value)
-      result.emplace_back(element.IsolatedCopy());
-    return result;
-  }
 };
 
 }  // namespace WTF
@@ -97,6 +90,7 @@ namespace blink {
 
 namespace {
 
+#if BUILDFLAG(IS_WIN)
 // Converts |time| from a remote to local TimeTicks, overwriting the original
 // value.
 void RemoteToLocalTimeTicks(const InterProcessTimeTicksConverter& converter,
@@ -104,6 +98,7 @@ void RemoteToLocalTimeTicks(const InterProcessTimeTicksConverter& converter,
   RemoteTimeTicks remote_time = RemoteTimeTicks::FromTimeTicks(*time);
   *time = converter.ToLocalTimeTicks(remote_time).ToTimeTicks();
 }
+#endif
 
 void CheckSchemeForReferrerPolicy(const network::ResourceRequest& request) {
   if ((request.referrer_policy ==
@@ -249,6 +244,20 @@ int WebResourceRequestSender::SendAsync(
         resource_load_info_notifier_wrapper,
     WebBackForwardCacheLoaderHelper back_forward_cache_loader_helper) {
   CheckSchemeForReferrerPolicy(*request);
+
+#if BUILDFLAG(IS_ANDROID)
+  // TODO(crbug.com/1286053): This used to be a DCHECK asserting "Main frame
+  // shouldn't come here", but after removing and re-landing the DCHECK later it
+  // started tripping in some teses. Was the DCHECK invalid or is there a bug
+  // somewhere?
+  if (!(request->is_outermost_main_frame &&
+        IsRequestDestinationFrame(request->destination))) {
+    if (request->has_user_gesture) {
+      resource_load_info_notifier_wrapper
+          ->NotifyUpdateUserGestureCarryoverInfo();
+    }
+  }
+#endif
 
   // Compute a unique request_id for this renderer process.
   int request_id = MakeRequestID();
@@ -413,7 +422,8 @@ void WebResourceRequestSender::OnUploadProgress(int64_t position,
 }
 
 void WebResourceRequestSender::OnReceivedResponse(
-    network::mojom::URLResponseHeadPtr response_head) {
+    network::mojom::URLResponseHeadPtr response_head,
+    base::TimeTicks response_arrival) {
   TRACE_EVENT0("loading", "WebResourceRequestSender::OnReceivedResponse");
   if (!request_info_)
     return;
@@ -439,7 +449,8 @@ void WebResourceRequestSender::OnReceivedResponse(
     request_info_->peer = std::move(new_peer);
   }
 
-  request_info_->peer->OnReceivedResponse(response_head.Clone());
+  request_info_->peer->OnReceivedResponse(response_head.Clone(),
+                                          response_arrival);
   if (!request_info_)
     return;
 
@@ -469,7 +480,7 @@ void WebResourceRequestSender::OnReceivedRedirect(
     // constructed, due to a URLLoaderThrottle that changed the starting
     // URL. Handle this in a posted task, as we don't have the loader
     // pointer yet.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&WebResourceRequestSender::OnReceivedRedirect,
                                   weak_factory_.GetWeakPtr(), redirect_info,
                                   std::move(response_head), task_runner));
@@ -599,6 +610,11 @@ base::TimeTicks WebResourceRequestSender::ToLocalURLResponseHead(
       response_head.load_timing.request_start.is_null()) {
     return remote_response_start;
   }
+
+#if BUILDFLAG(IS_WIN)
+  // This code below can only be reached on Windows as the
+  // base::TimeTicks::IsConsistentAcrossProcesses() above always returns true
+  // except on Windows platform.
   InterProcessTimeTicksConverter converter(
       LocalTimeTicks::FromTimeTicks(request_info.local_request_start),
       LocalTimeTicks::FromTimeTicks(request_info.local_response_start),
@@ -609,8 +625,10 @@ base::TimeTicks WebResourceRequestSender::ToLocalURLResponseHead(
   RemoteToLocalTimeTicks(converter, &load_timing->request_start);
   RemoteToLocalTimeTicks(converter, &load_timing->proxy_resolve_start);
   RemoteToLocalTimeTicks(converter, &load_timing->proxy_resolve_end);
-  RemoteToLocalTimeTicks(converter, &load_timing->connect_timing.dns_start);
-  RemoteToLocalTimeTicks(converter, &load_timing->connect_timing.dns_end);
+  RemoteToLocalTimeTicks(converter,
+                         &load_timing->connect_timing.domain_lookup_start);
+  RemoteToLocalTimeTicks(converter,
+                         &load_timing->connect_timing.domain_lookup_end);
   RemoteToLocalTimeTicks(converter, &load_timing->connect_timing.connect_start);
   RemoteToLocalTimeTicks(converter, &load_timing->connect_timing.connect_end);
   RemoteToLocalTimeTicks(converter, &load_timing->connect_timing.ssl_start);
@@ -627,6 +645,7 @@ base::TimeTicks WebResourceRequestSender::ToLocalURLResponseHead(
   RemoteToLocalTimeTicks(converter,
                          &load_timing->service_worker_respond_with_settled);
   RemoteToLocalTimeTicks(converter, &remote_response_start);
+#endif
   return remote_response_start;
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,8 @@
 #include <memory>
 
 #include "ash/accessibility/accessibility_controller_impl.h"
+#include "ash/constants/ash_features.h"
+#include "ash/constants/tray_background_view_catalog.h"
 #include "ash/drag_drop/scoped_drag_drop_observer.h"
 #include "ash/public/cpp/holding_space/holding_space_client.h"
 #include "ash/public/cpp/holding_space/holding_space_constants.h"
@@ -19,6 +21,7 @@
 #include "ash/shelf/shelf.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
+#include "ash/style/ash_color_id.h"
 #include "ash/system/holding_space/holding_space_animation_registry.h"
 #include "ash/system/holding_space/holding_space_progress_indicator_util.h"
 #include "ash/system/holding_space/holding_space_tray_bubble.h"
@@ -34,7 +37,10 @@
 #include "base/containers/contains.h"
 #include "base/containers/cxx20_erase.h"
 #include "base/pickle.h"
+#include "base/ranges/algorithm.h"
+#include "base/task/sequenced_task_runner.h"
 #include "components/prefs/pref_change_registrar.h"
+#include "ui/aura/client/drag_drop_client.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
@@ -162,13 +168,11 @@ bool IsPreviewsEnabled() {
   return prefs && holding_space_prefs::IsPreviewsEnabled(prefs);
 }
 
-// Returns whether the holding space model contains any initialized items.
-bool ModelContainsInitializedItems(HoldingSpaceModel* model) {
-  for (const auto& item : model->items()) {
-    if (item->IsInitialized())
-      return true;
-  }
-  return false;
+// Returns whether a preview of `item` should be shown in the shelf. Beyond
+// being initialized, what makes an `item` previewable is having been created by
+// a user action.
+bool IsPreviewable(const std::unique_ptr<HoldingSpaceItem>& item) {
+  return item->IsInitialized() && !HoldingSpaceItem::IsSuggestion(item->type());
 }
 
 // Creates the default tray icon.
@@ -178,6 +182,10 @@ std::unique_ptr<views::ImageView> CreateDefaultTrayIcon() {
   icon->SetPreferredSize(gfx::Size(kTrayItemSize, kTrayItemSize));
   icon->SetPaintToLayer();
   icon->layer()->SetFillsBoundsOpaquely(false);
+  icon->SetImage(ui::ImageModel::FromVectorIcon(
+      features::IsHoldingSpaceRefreshEnabled() ? kHoldingSpaceRefreshIcon
+                                               : kHoldingSpaceIcon,
+      kColorAshIconColorPrimary, kHoldingSpaceTrayIconSize));
   return icon;
 }
 
@@ -192,6 +200,8 @@ std::unique_ptr<views::ImageView> CreateDropTargetIcon() {
       gfx::Size(kHoldingSpaceIconSize, kHoldingSpaceIconSize));
   icon->SetPaintToLayer();
   icon->layer()->SetFillsBoundsOpaquely(false);
+  icon->SetImage(gfx::CreateVectorIcon(
+      views::kUnpinIcon, kColorAshIconColorPrimary, kHoldingSpaceIconSize));
   return icon;
 }
 
@@ -225,7 +235,8 @@ aura::client::DragDropClient* GetDragDropClient(views::Widget* widget) {
 
 // HoldingSpaceTray ------------------------------------------------------------
 
-HoldingSpaceTray::HoldingSpaceTray(Shelf* shelf) : TrayBackgroundView(shelf) {
+HoldingSpaceTray::HoldingSpaceTray(Shelf* shelf)
+    : TrayBackgroundView(shelf, TrayBackgroundViewCatalogName::kHoldingSpace) {
   // Ensure the existence of the singleton animation registry.
   HoldingSpaceAnimationRegistry::GetInstance();
 
@@ -299,7 +310,11 @@ void HoldingSpaceTray::ClickedOutsideBubble() {
 }
 
 std::u16string HoldingSpaceTray::GetAccessibleNameForTray() {
-  return l10n_util::GetStringUTF16(IDS_ASH_HOLDING_SPACE_A11Y_NAME);
+  return l10n_util::GetStringFUTF16(
+      IDS_ASH_HOLDING_SPACE_A11Y_NAME,
+      features::IsHoldingSpaceRefreshEnabled()
+          ? l10n_util::GetStringUTF16(IDS_ASH_HOLDING_SPACE_TITLE_REFRESH)
+          : l10n_util::GetStringUTF16(IDS_ASH_HOLDING_SPACE_TITLE));
 }
 
 views::View* HoldingSpaceTray::GetTooltipHandlerForPoint(
@@ -309,14 +324,19 @@ views::View* HoldingSpaceTray::GetTooltipHandlerForPoint(
 }
 
 std::u16string HoldingSpaceTray::GetTooltipText(const gfx::Point& point) const {
-  return l10n_util::GetStringUTF16(IDS_ASH_HOLDING_SPACE_TITLE);
+  return features::IsHoldingSpaceRefreshEnabled()
+             ? l10n_util::GetStringUTF16(IDS_ASH_HOLDING_SPACE_TITLE_REFRESH)
+             : l10n_util::GetStringUTF16(IDS_ASH_HOLDING_SPACE_TITLE);
 }
 
 void HoldingSpaceTray::HandleLocaleChange() {
   TooltipTextChanged();
 }
 
-void HoldingSpaceTray::HideBubbleWithView(const TrayBubbleView* bubble_view) {}
+void HoldingSpaceTray::HideBubbleWithView(const TrayBubbleView* bubble_view) {
+  if (bubble_->GetBubbleView() == bubble_view)
+    CloseBubble();
+}
 
 void HoldingSpaceTray::AnchorUpdated() {
   if (bubble_)
@@ -351,10 +371,8 @@ void HoldingSpaceTray::ShowBubble() {
 
   bubble_ = std::make_unique<HoldingSpaceTrayBubble>(this);
 
-  // Observe the bubble widget so that we can do proper clean up when it is
-  // being destroyed. If destruction is due to a call to `CloseBubble()` we will
-  // have already cleaned up state but there are cases where the bubble widget
-  // is destroyed independent of a call to `CloseBubble()`, e.g. ESC key press.
+  // Observe the bubble widget so that we can close the bubble when a holding
+  // space item is being dragged.
   widget_observer_.Observe(bubble_->GetBubbleWidget());
 
   SetIsActive(true);
@@ -476,17 +494,6 @@ void HoldingSpaceTray::VisibilityChanged(views::View* starting_from,
 void HoldingSpaceTray::OnThemeChanged() {
   TrayBackgroundView::OnThemeChanged();
 
-  const SkColor color = AshColorProvider::Get()->GetContentLayerColor(
-      AshColorProvider::ContentLayerType::kIconColorPrimary);
-
-  // Default tray icon.
-  default_tray_icon_->SetImage(gfx::CreateVectorIcon(
-      kHoldingSpaceIcon, kHoldingSpaceTrayIconSize, color));
-
-  // Drop target icon.
-  drop_target_icon_->SetImage(
-      gfx::CreateVectorIcon(views::kUnpinIcon, kHoldingSpaceIconSize, color));
-
   // Progress indicator.
   progress_indicator_->InvalidateLayer();
 }
@@ -500,13 +507,23 @@ void HoldingSpaceTray::UpdateVisibility() {
     return;
   }
 
-  // The holding space tray should always be shown if the `model` contains fully
-  // initialized items. Otherwise, it should only be visible if the pinned files
-  // section is going to show a placeholder.
+  // If the predictability flag is enabled, always show the holding space tray.
+  if (features::IsHoldingSpacePredictabilityEnabled()) {
+    SetVisiblePreferred(true);
+    return;
+  }
+
+  // The holding space tray should always be shown if the `model` contains items
+  // that are previewable, or if the predictability feature flag is enabled.
+  // Otherwise, it should only be visible if the time of first add has been
+  // marked, but a file has never been pinned, and the Files app chip has never
+  // been pressed.
   auto* prefs = Shell::Get()->session_controller()->GetActivePrefService();
   SetVisiblePreferred(
-      ModelContainsInitializedItems(model) ||
-      (prefs && PinnedFilesSection::ShouldShowPlaceholder(prefs)));
+      base::ranges::any_of(model->items(), IsPreviewable) ||
+      (prefs && holding_space_prefs::GetTimeOfFirstAdd(prefs) &&
+       !holding_space_prefs::GetTimeOfFirstPin(prefs) &&
+       !holding_space_prefs::GetTimeOfFirstFilesAppChipPress(prefs)));
 }
 
 void HoldingSpaceTray::FirePreviewsUpdateTimerIfRunningForTesting() {
@@ -585,8 +602,8 @@ void HoldingSpaceTray::OnHoldingSpaceItemsAdded(
   // holding space tray should bounce in (if it isn't already visible) and
   // previews should be animated.
   if (!Shell::Get()->session_controller()->IsUserSessionBlocked()) {
-    const bool has_initialized_item = std::any_of(
-        items.begin(), items.end(),
+    const bool has_initialized_item = base::ranges::any_of(
+        items,
         [](const HoldingSpaceItem* item) { return item->IsInitialized(); });
     if (has_initialized_item)
       SetShouldAnimate(true);
@@ -601,8 +618,8 @@ void HoldingSpaceTray::OnHoldingSpaceItemsRemoved(
   // If an initialized holding space item is removed from the model mid-session,
   // the holding space tray should animate updates.
   if (!Shell::Get()->session_controller()->IsUserSessionBlocked()) {
-    const bool has_initialized_item = std::any_of(
-        items.begin(), items.end(),
+    const bool has_initialized_item = base::ranges::any_of(
+        items,
         [](const HoldingSpaceItem* item) { return item->IsInitialized(); });
     if (has_initialized_item)
       SetShouldAnimate(true);
@@ -647,13 +664,9 @@ void HoldingSpaceTray::OnWidgetDragWillStart(views::Widget* widget) {
   // items so as not to obstruct drop targets. Post the task to close the bubble
   // so that we don't attempt to destroy the bubble widget before the associated
   // drag event has been fully initialized.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&HoldingSpaceTray::CloseBubble,
                                 weak_factory_.GetWeakPtr()));
-}
-
-void HoldingSpaceTray::OnWidgetDestroying(views::Widget* widget) {
-  CloseBubble();
 }
 
 void HoldingSpaceTray::OnActiveUserPrefServiceChanged(PrefService* prefs) {
@@ -690,10 +703,8 @@ void HoldingSpaceTray::UpdatePreviewsState() {
   UpdatePreviewsVisibility();
   SchedulePreviewsIconUpdate();
 
-  if (PreviewsShown() ||
-      !features::IsHoldingSpaceInProgressAnimationV2DelayEnabled()) {
+  if (PreviewsShown())
     return;
-  }
 
   // When previews are shown, progress icon animations are started on completion
   // of preview animations. When previews are *not* shown, there is nothing to
@@ -709,9 +720,10 @@ void HoldingSpaceTray::UpdatePreviewsState() {
 }
 
 void HoldingSpaceTray::UpdatePreviewsVisibility() {
+  HoldingSpaceModel* const model = HoldingSpaceController::Get()->model();
   const bool show_previews =
-      IsPreviewsEnabled() && HoldingSpaceController::Get()->model() &&
-      ModelContainsInitializedItems(HoldingSpaceController::Get()->model());
+      IsPreviewsEnabled() && model &&
+      base::ranges::any_of(model->items(), IsPreviewable);
 
   if (PreviewsShown() == show_previews)
     return;
@@ -750,7 +762,7 @@ void HoldingSpaceTray::UpdatePreviewsIcon() {
   std::set<base::FilePath> paths_with_previews;
   for (const auto& item :
        base::Reversed(HoldingSpaceController::Get()->model()->items())) {
-    if (!item->IsInitialized())
+    if (!IsPreviewable(item))
       continue;
     if (base::Contains(paths_with_previews, item->file_path()))
       continue;
@@ -765,11 +777,6 @@ bool HoldingSpaceTray::PreviewsShown() const {
 }
 
 void HoldingSpaceTray::UpdateDefaultTrayIcon() {
-  // Overlap between the `default_tray_icon_` and the `progress_indicator_` is
-  // only a concern if v2 animations are enabled.
-  if (!features::IsHoldingSpaceInProgressAnimationV2Enabled())
-    return;
-
   const absl::optional<float>& progress = progress_indicator_->progress();
 
   // If `progress` is not `complete`, there is potential for overlap between the

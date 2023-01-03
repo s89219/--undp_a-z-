@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,14 +7,10 @@
  * chrome.bluetoothPrivate, and chrome.brailleDisplayPrivate for a UI component
  * to interact with a bluetooth braille display.
  */
-
-goog.provide('BluetoothBrailleDisplayManager');
-goog.provide('BluetoothBrailleDisplayListener');
+import {LocalStorage} from '../../common/local_storage.js';
 
 /** @interface */
-BluetoothBrailleDisplayListener = class {
-  constructor() {}
-
+export class BluetoothBrailleDisplayListener {
   /**
    * @param {!Array<chrome.bluetooth.Device>} displays
    */
@@ -26,7 +22,7 @@ BluetoothBrailleDisplayListener = class {
    * @param {!chrome.bluetooth.Device} display
    */
   onPincodeRequested(display) {}
-};
+}
 
 
 /**
@@ -42,7 +38,7 @@ BluetoothBrailleDisplayListener = class {
  *                          // listenerObject, this is how a caller can respond.
  * manager.stop(); // Stops discovery, but persists connections.
  */
-BluetoothBrailleDisplayManager = class {
+export class BluetoothBrailleDisplayManager {
   constructor() {
     /** @private {!Array<BluetoothBrailleDisplayListener>} */
     this.listeners_ = [];
@@ -97,7 +93,7 @@ BluetoothBrailleDisplayManager = class {
       'SuperVario',
       'TSM',
       'VarioConnect',
-      'VarioUltra'
+      'VarioUltra',
     ];
 
     /**
@@ -106,7 +102,7 @@ BluetoothBrailleDisplayManager = class {
      * @private {string?}
      */
     this.preferredDisplayAddress_ =
-        localStorage['preferredBrailleDisplayAddress'];
+        LocalStorage.get('preferredBrailleDisplayAddress');
 
     /**
      * Tracks whether the preferred display is connected.
@@ -172,9 +168,9 @@ BluetoothBrailleDisplayManager = class {
    */
   connectInternal(display) {
     this.preferredDisplayAddress_ = display.address;
-    localStorage['preferredBrailleDisplayAddress'] = display.address;
+    LocalStorage.set('preferredBrailleDisplayAddress', display.address);
     if (!display.connected) {
-      chrome.bluetoothPrivate.connect(display.address, (result) => {
+      chrome.bluetoothPrivate.connect(display.address, result => {
         if (!display.paired) {
           chrome.bluetoothPrivate.pair(display.address);
         }
@@ -221,27 +217,26 @@ BluetoothBrailleDisplayManager = class {
    * @protected
    */
   handleDevicesChanged(opt_device) {
-    chrome.bluetooth.getDevices((devices) => {
-      const displayList = devices.filter((device) => {
-        return this.displayNamePrefixes_.some((name) => {
+    chrome.bluetooth.getDevices(devices => {
+      const displayList = devices.filter(device => {
+        return this.displayNamePrefixes_.some(name => {
           return device.name && device.name.search(name) === 0;
         });
       });
       if (displayList.length === 0) {
         return;
       }
-      if (opt_device && !displayList.find((i) => i.name === opt_device.name)) {
+      if (opt_device && !displayList.find(i => i.name === opt_device.name)) {
         return;
       }
 
-      displayList.forEach((display) => {
+      displayList.forEach(display => {
         if (this.preferredDisplayAddress_ === display.address) {
           this.handlePreferredDisplayConnectionStateChanged(display);
         }
       });
-      this.listeners_.forEach((listener) => {
-        listener.onDisplayListChanged(displayList);
-      });
+      this.listeners_.forEach(
+          listener => listener.onDisplayListChanged(displayList));
     });
   }
 
@@ -253,7 +248,7 @@ BluetoothBrailleDisplayManager = class {
     if (pairingEvent.pairing ===
         chrome.bluetoothPrivate.PairingEventType.REQUEST_PINCODE) {
       this.listeners_.forEach(
-          (listener) => listener.onPincodeRequested(pairingEvent.device));
+          listener => listener.onPincodeRequested(pairingEvent.device));
     }
   }
 
@@ -276,4 +271,4 @@ BluetoothBrailleDisplayManager = class {
           display.address);
     }
   }
-};
+}

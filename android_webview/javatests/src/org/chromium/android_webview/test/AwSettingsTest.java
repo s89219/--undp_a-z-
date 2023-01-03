@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,6 +30,7 @@ import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwFeatureList;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.AwSettings.LayoutAlgorithm;
+import org.chromium.android_webview.ManifestMetadataUtil;
 import org.chromium.android_webview.common.AwFeatures;
 import org.chromium.android_webview.test.AwActivityTestRule.TestDependencyFactory;
 import org.chromium.android_webview.test.TestAwContentsClient.DoUpdateVisitedHistoryHelper;
@@ -50,7 +51,6 @@ import org.chromium.base.test.util.UrlUtils;
 import org.chromium.components.embedder_support.util.WebResourceResponseInfo;
 import org.chromium.content_public.browser.WebContents;
 import org.chromium.content_public.browser.WebContentsObserver;
-import org.chromium.content_public.browser.test.util.DOMUtils;
 import org.chromium.content_public.browser.test.util.HistoryUtils;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.content_public.common.ContentSwitches;
@@ -64,6 +64,8 @@ import org.chromium.ui.display.DisplayUtil;
 import java.io.File;
 import java.io.FileInputStream;
 import java.net.URLEncoder;
+import java.util.Collections;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -2595,7 +2597,7 @@ public class AwSettingsTest {
             int count = callback.getCallCount();
             mActivityTestRule.loadDataSync(awContents, contentClient.getOnPageFinishedHelper(),
                     pageHtml, "text/html", false);
-            DOMUtils.clickNode(testContainer.getWebContents(), "play");
+            JSUtils.clickNodeWithUserGesture(testContainer.getWebContents(), "play");
             callback.waitForCallback(count, 1);
             Assert.assertEquals(0, webServer.getRequestCount(httpPath));
 
@@ -3557,6 +3559,43 @@ public class AwSettingsTest {
     @Feature({"AndroidWebView", "Selection"})
     public void testUpdateSelectionOnMutatingSelectionRange() throws Throwable {
         selectionUpdateOnMutatingSelectionRangeTest(false);
+    }
+
+    @Test
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    public void testGetUpdatedXRWAllowList() throws Throwable {
+        TestAwContentsClient contentClient = new TestAwContentsClient();
+        AwTestContainerView testContainerView =
+                mActivityTestRule.createAwTestContainerViewOnMainSync(contentClient);
+        AwContents awContents = testContainerView.getAwContents();
+        AwSettings awSettings = mActivityTestRule.getAwSettingsOnUiThread(awContents);
+
+        final Set<String> allowList = Set.of("https://*.example.com", "https://*.google.com");
+
+        Assert.assertEquals(
+                Collections.emptySet(), awSettings.getRequestedWithHeaderOriginAllowList());
+
+        awSettings.setRequestedWithHeaderOriginAllowList(allowList);
+
+        Assert.assertEquals(allowList, awSettings.getRequestedWithHeaderOriginAllowList());
+    }
+
+    @Test
+    @SmallTest
+    @Feature({"AndroidWebView", "Preferences"})
+    @CommandLineFlags.Add({"enable-features=WebViewXRequestedWithHeaderManifestAllowList"})
+    public void testXRequestedWithAllowListSetByManifest() throws Throwable {
+        final Set<String> allowList = Set.of("https://*.example.com", "https://*.google.com");
+        try (var a = ManifestMetadataUtil.setXRequestedWithAllowListScopedForTesting(allowList)) {
+            TestAwContentsClient contentClient = new TestAwContentsClient();
+            AwTestContainerView testContainerView =
+                    mActivityTestRule.createAwTestContainerViewOnMainSync(contentClient);
+            AwContents awContents = testContainerView.getAwContents();
+            AwSettings awSettings = mActivityTestRule.getAwSettingsOnUiThread(awContents);
+            Set<String> changedList = awSettings.getRequestedWithHeaderOriginAllowList();
+            Assert.assertEquals(allowList, changedList);
+        }
     }
 
     static class ViewPair {

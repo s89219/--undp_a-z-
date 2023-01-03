@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/scoped_disable_client_side_decorations_for_test.h"
-#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/page_action/page_action_icon_type.h"
@@ -23,15 +22,18 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/content/browser/content_autofill_driver.h"
+#include "components/autofill/content/browser/test_autofill_manager_injector.h"
 #include "components/autofill/core/browser/form_data_importer.h"
 #include "components/autofill/core/browser/payments/credit_card_save_manager.h"
+#include "components/autofill/core/browser/test_autofill_manager_waiter.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/theme_change_waiter.h"
 #include "third_party/blink/public/mojom/frame/fullscreen.mojom.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
-#include "ui/base/theme_provider.h"
+#include "ui/color/color_id.h"
+#include "ui/color/color_provider.h"
 
 class BrowserNonClientFrameViewBrowserTest
     : public extensions::ExtensionBrowserTest {
@@ -91,9 +93,9 @@ class BrowserNonClientFrameViewBrowserTest
 
  protected:
   SkColor app_theme_color_ = SK_ColorBLUE;
-  raw_ptr<Browser> app_browser_ = nullptr;
-  raw_ptr<BrowserView> app_browser_view_ = nullptr;
-  raw_ptr<content::WebContents> web_contents_ = nullptr;
+  raw_ptr<Browser, DanglingUntriaged> app_browser_ = nullptr;
+  raw_ptr<BrowserView, DanglingUntriaged> app_browser_view_ = nullptr;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_ = nullptr;
 
  private:
   GURL GetAppURL() { return embedded_test_server()->GetURL("/empty.html"); }
@@ -107,11 +109,11 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewBrowserTest,
   BrowserView* browser_view = BrowserView::GetBrowserViewForBrowser(browser());
   const BrowserNonClientFrameView* frame_view =
       browser_view->frame()->GetFrameView();
-  const ui::ThemeProvider* theme_provider = frame_view->GetThemeProvider();
+  const ui::ColorProvider* color_provider = frame_view->GetColorProvider();
   const SkColor expected_active_color =
-      theme_provider->GetColor(ThemeProperties::COLOR_FRAME_ACTIVE);
+      color_provider->GetColor(ui::kColorFrameActive);
   const SkColor expected_inactive_color =
-      theme_provider->GetColor(ThemeProperties::COLOR_FRAME_INACTIVE);
+      color_provider->GetColor(ui::kColorFrameInactive);
 
   EXPECT_EQ(expected_active_color,
             frame_view->GetFrameColor(BrowserFrameActiveState::kActive));
@@ -177,10 +179,9 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewBrowserTest,
   // color to the system color (not the app theme color); otherwise the title
   // and border would clash horribly with the GTK title bar.
   // (https://crbug.com/878636)
-  const ui::ThemeProvider* theme_provider =
-      GetAppFrameView()->GetThemeProvider();
-  const SkColor frame_color =
-      theme_provider->GetColor(ThemeProperties::COLOR_FRAME_ACTIVE);
+  const ui::ColorProvider* color_provider =
+      GetAppFrameView()->GetColorProvider();
+  const SkColor frame_color = color_provider->GetColor(ui::kColorFrameActive);
   EXPECT_EQ(frame_color,
             GetAppFrameView()->GetFrameColor(BrowserFrameActiveState::kActive));
 #else
@@ -197,21 +198,29 @@ IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewBrowserTest,
   EXPECT_GT(GetAppFrameView()->GetTopInset(false), 0);
 
   static_cast<content::WebContentsDelegate*>(app_browser_)
-      ->EnterFullscreenModeForTab(web_contents_->GetMainFrame(), {});
+      ->EnterFullscreenModeForTab(web_contents_->GetPrimaryMainFrame(), {});
 
   EXPECT_EQ(GetAppFrameView()->GetTopInset(false), 0);
 }
 
 // Tests that the custom tab bar is visible in fullscreen mode.
+// TODO(crbug.com/1349592): Flaky on linux-wayland-rel and linux-lacros-rel
+#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_LINUX)
+#define MAYBE_CustomTabBarIsVisibleInFullscreen \
+  DISABLED_CustomTabBarIsVisibleInFullscreen
+#else
+#define MAYBE_CustomTabBarIsVisibleInFullscreen \
+  CustomTabBarIsVisibleInFullscreen
+#endif
 IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewBrowserTest,
-                       CustomTabBarIsVisibleInFullscreen) {
+                       MAYBE_CustomTabBarIsVisibleInFullscreen) {
   InstallAndLaunchBookmarkApp();
 
   ASSERT_TRUE(
       ui_test_utils::NavigateToURL(app_browser_, GURL("http://example.com")));
 
   static_cast<content::WebContentsDelegate*>(app_browser_)
-      ->EnterFullscreenModeForTab(web_contents_->GetMainFrame(), {});
+      ->EnterFullscreenModeForTab(web_contents_->GetPrimaryMainFrame(), {});
 
   EXPECT_TRUE(app_browser_view_->toolbar()->custom_tab_bar()->IsDrawn());
 }
@@ -322,7 +331,7 @@ class SaveCardOfferObserver
  public:
   explicit SaveCardOfferObserver(content::WebContents* web_contents) {
     manager_ = autofill::ContentAutofillDriver::GetForRenderFrameHost(
-                   web_contents->GetMainFrame())
+                   web_contents->GetPrimaryMainFrame())
                    ->autofill_manager()
                    ->client()
                    ->GetFormDataImporter()
@@ -344,10 +353,45 @@ class SaveCardOfferObserver
   base::RunLoop run_loop_;
 };
 
+namespace {
+
+class TestAutofillManager : public autofill::BrowserAutofillManager {
+ public:
+  TestAutofillManager(autofill::ContentAutofillDriver* driver,
+                      autofill::AutofillClient* client)
+      : BrowserAutofillManager(driver,
+                               client,
+                               "en-US",
+                               EnableDownloadManager(false)) {}
+
+  [[nodiscard]] testing::AssertionResult WaitForFormsSeen(
+      int min_num_awaited_calls) {
+    return forms_seen_waiter_.Wait(min_num_awaited_calls);
+  }
+
+ private:
+  autofill::TestAutofillManagerWaiter forms_seen_waiter_{
+      *this,
+      {&AutofillManager::Observer::OnAfterFormsSeen}};
+};
+
+}  // namespace
+
+// TODO(crbug.com/1366531): Fails on Mac 12.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_SaveCardIcon DISABLED_SaveCardIcon
+#else
+#define MAYBE_SaveCardIcon SaveCardIcon
+#endif
 // Tests that hosted app frames reflect the theme color set by HTML meta tags.
-IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewBrowserTest, SaveCardIcon) {
+IN_PROC_BROWSER_TEST_F(BrowserNonClientFrameViewBrowserTest, MAYBE_SaveCardIcon) {
+  autofill::TestAutofillManagerFutureInjectors<TestAutofillManager>
+      autofill_manager_injectors;
   InstallAndLaunchBookmarkApp(embedded_test_server()->GetURL(
       "/autofill/credit_card_upload_form_address_and_cc.html"));
+  ASSERT_TRUE(
+      autofill_manager_injectors[0].GetForPrimaryMainFrame()->WaitForFormsSeen(
+          1));
   ASSERT_TRUE(content::ExecJs(web_contents_.get(), "fill_form.click();"));
 
   content::TestNavigationObserver nav_observer(web_contents_);

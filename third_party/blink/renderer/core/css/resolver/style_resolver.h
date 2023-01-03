@@ -50,7 +50,6 @@ class Element;
 class Interpolation;
 class MatchResult;
 class PropertyHandle;
-class RuleSet;
 class StyleCascade;
 class StyleRecalcContext;
 class StyleRuleUsageTracker;
@@ -76,11 +75,15 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
 
   // Create a new ComputedStyle copy based on the initial style singleton.
   scoped_refptr<ComputedStyle> CreateComputedStyle() const;
+  ComputedStyleBuilder CreateComputedStyleBuilder() const;
 
   // Create a ComputedStyle for initial styles to be used as the basis for the
   // root element style. In addition to initial values things like zoom, font,
   // forced color mode etc. is set.
-  scoped_refptr<ComputedStyle> InitialStyleForElement() const;
+  ComputedStyleBuilder InitialStyleBuilderForElement() const;
+  scoped_refptr<ComputedStyle> InitialStyleForElement() const {
+    return InitialStyleBuilderForElement().TakeStyle();
+  }
   float InitialZoom() const;
 
   static CompositorKeyframeValue* CreateCompositorKeyframeValueSnapshot(
@@ -96,27 +99,40 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
       const AtomicString& page_name);
   scoped_refptr<const ComputedStyle> StyleForText(Text*);
   scoped_refptr<ComputedStyle> StyleForViewport();
-  scoped_refptr<const ComputedStyle> StyleForCanvasFormattedText(
+  scoped_refptr<const ComputedStyle> StyleForFormattedText(
       bool is_text_run,
       const ComputedStyle& parent_style,
       const CSSPropertyValueSet* css_property_value_set);
-  scoped_refptr<const ComputedStyle> StyleForCanvasFormattedText(
+  scoped_refptr<const ComputedStyle> StyleForFormattedText(
       bool is_text_run,
       const FontDescription& default_font,
       const CSSPropertyValueSet* css_property_value_set);
+  // Returns `ComputedStyle` for rendering initial letter text.
+  // `initial_letter_box_style` should have non-normal `initial-letter`
+  // property.
+  scoped_refptr<const ComputedStyle> StyleForInitialLetterText(
+      const ComputedStyle& initial_letter_box_style,
+      const ComputedStyle& paragraph_style);
 
   // Propagate computed values from the root or body element to the viewport
   // when specified to do so.
   void PropagateStyleToViewport();
 
   // Create ComputedStyle for anonymous boxes.
-  scoped_refptr<ComputedStyle> CreateAnonymousStyleWithDisplay(
+  ComputedStyleBuilder CreateAnonymousStyleBuilderWithDisplay(
       const ComputedStyle& parent_style,
       EDisplay);
+  scoped_refptr<const ComputedStyle> CreateAnonymousStyleWithDisplay(
+      const ComputedStyle& parent_style,
+      EDisplay display) {
+    return CreateAnonymousStyleBuilderWithDisplay(parent_style, display)
+        .TakeStyle();
+  }
 
   // Create ComputedStyle for anonymous wrappers between text boxes and
   // display:contents elements.
-  scoped_refptr<ComputedStyle> CreateInheritedDisplayContentsStyleIfNeeded(
+  scoped_refptr<const ComputedStyle>
+  CreateInheritedDisplayContentsStyleIfNeeded(
       const ComputedStyle& parent_style,
       const ComputedStyle& layout_parent_style);
 
@@ -134,22 +150,18 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
     kUACSSRules = 1 << 1,
     kUserCSSRules = 1 << 2,
     kAuthorCSSRules = 1 << 3,
-    kEmptyCSSRules = 1 << 4,
-    kCrossOriginCSSRules = 1 << 5,
+    kCrossOriginCSSRules = 1 << 4,
     kUAAndUserCSSRules = kUACSSRules | kUserCSSRules,
-    kAllButEmptyCSSRules =
-        kUAAndUserCSSRules | kAuthorCSSRules | kCrossOriginCSSRules,
-    kAllButUACSSRules =
-        kUserCSSRules | kAuthorCSSRules | kEmptyCSSRules | kCrossOriginCSSRules,
-    kAllCSSRules = kAllButEmptyCSSRules | kEmptyCSSRules,
+    kAllButUACSSRules = kUserCSSRules | kAuthorCSSRules | kCrossOriginCSSRules,
+    kAllCSSRules = kUAAndUserCSSRules | kAuthorCSSRules | kCrossOriginCSSRules,
   };
-  RuleIndexList* CssRulesForElement(
-      Element*,
-      unsigned rules_to_include = kAllButEmptyCSSRules);
+  RuleIndexList* CssRulesForElement(Element*,
+                                    unsigned rules_to_include = kAllCSSRules);
   RuleIndexList* PseudoCSSRulesForElement(
       Element*,
       PseudoId,
-      unsigned rules_to_include = kAllButEmptyCSSRules);
+      const AtomicString& view_transition_name,
+      unsigned rules_to_include = kAllCSSRules);
   StyleRuleList* StyleRulesForElement(Element*, unsigned rules_to_include);
   HeapHashMap<CSSPropertyName, Member<const CSSValue>> CascadedValuesForElement(
       Element*,
@@ -197,6 +209,10 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
       const ComputedStyle& base_style,
       ActiveInterpolationsMap& transition_interpolations);
 
+  scoped_refptr<const ComputedStyle> ResolvePositionFallbackStyle(
+      Element&,
+      unsigned index);
+
   // Check if the BODY or HTML element's display or containment stops
   // propagation of BODY style to HTML and viewport.
   bool ShouldStopBodyPropagation(const Element& body_or_html);
@@ -225,16 +241,14 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
                            StyleCascade& cascade,
                            ActiveInterpolationsMap& interpolations);
 
-  // FIXME: This should probably go away, folded into FontBuilder.
-  void UpdateFont(StyleResolverState&);
-
   void AddMatchedRulesToTracker(const ElementRuleCollector&);
 
   void CollectPseudoRulesForElement(const Element&,
                                     ElementRuleCollector&,
                                     PseudoId,
+                                    const AtomicString& view_transition_name,
                                     unsigned rules_to_include);
-  void MatchRuleSet(ElementRuleCollector&, RuleSet*);
+  void MatchRuleSets(ElementRuleCollector&, const MatchRequest&);
   void MatchUARules(const Element&, ElementRuleCollector&);
   void MatchUserRules(ElementRuleCollector&);
   void MatchPresentationalHints(StyleResolverState&, ElementRuleCollector&);
@@ -280,10 +294,10 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
       is_inherited_cache_hit = false;
       is_non_inherited_cache_hit = false;
     }
-    bool EffectiveZoomChanged(const ComputedStyle&) const;
-    bool FontChanged(const ComputedStyle&) const;
-    bool InheritedVariablesChanged(const ComputedStyle&) const;
-    bool IsUsableAfterApplyInheritedOnly(const ComputedStyle&) const;
+    bool EffectiveZoomChanged(const ComputedStyleBuilder&) const;
+    bool FontChanged(const ComputedStyleBuilder&) const;
+    bool InheritedVariablesChanged(const ComputedStyleBuilder&) const;
+    bool IsUsableAfterApplyInheritedOnly(const ComputedStyleBuilder&) const;
   };
 
   CacheSuccess ApplyMatchedCache(StyleResolverState&, const MatchResult&);
@@ -308,15 +322,16 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
                                 Functor& func) const;
 
   MatchedPropertiesCache matched_properties_cache_;
-  Member<Document> document_;
   scoped_refptr<const ComputedStyle> initial_style_;
+  scoped_refptr<const ComputedStyle> initial_style_for_img_;
   SelectorFilter selector_filter_;
 
+  Member<Document> document_;
   Member<StyleRuleUsageTracker> tracker_;
 
-  // This is a dummy/disconnected element that we use for CanvasFormattedText
-  // style computations; see `EnsureElementForCanvasFormattedText`.
-  Member<Element> canvas_formatted_text_element_;
+  // This is a dummy/disconnected element that we use for FormattedText
+  // style computations; see `EnsureElementForFormattedText`.
+  Member<Element> formatted_text_element_;
 
   bool print_media_type_ = false;
   bool was_viewport_resized_ = false;
@@ -325,8 +340,8 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
   friend class StyleResolverTest;
   FRIEND_TEST_ALL_PREFIXES(StyleResolverTest, TreeScopedReferences);
 
-  Element& EnsureElementForCanvasFormattedText();
-  scoped_refptr<const ComputedStyle> StyleForCanvasFormattedText(
+  Element& EnsureElementForFormattedText();
+  scoped_refptr<const ComputedStyle> StyleForFormattedText(
       bool is_text_run,
       const FontDescription* default_font,
       const ComputedStyle* parent_style,

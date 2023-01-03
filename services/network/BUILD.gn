@@ -1,4 +1,4 @@
-# Copyright 2017 The Chromium Authors. All rights reserved.
+# Copyright 2017 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,6 +12,8 @@ component("network_service") {
   sources = [
     "brokered_client_socket_factory.cc",
     "brokered_client_socket_factory.h",
+    "cache_transparency_settings.cc",
+    "cache_transparency_settings.h",
     "chunked_data_pipe_upload_data_stream.cc",
     "chunked_data_pipe_upload_data_stream.h",
     "conditional_cache_deletion_helper.cc",
@@ -77,21 +79,18 @@ component("network_service") {
     "network_quality_estimator_manager.h",
     "network_service.cc",
     "network_service.h",
+    "network_service_memory_cache.cc",
+    "network_service_memory_cache.h",
+    "network_service_memory_cache_url_loader.cc",
+    "network_service_memory_cache_url_loader.h",
+    "network_service_memory_cache_writer.cc",
+    "network_service_memory_cache_writer.h",
     "network_service_network_delegate.cc",
     "network_service_network_delegate.h",
     "network_service_proxy_delegate.cc",
     "network_service_proxy_delegate.h",
-    "origin_policy/origin_policy_constants.h",
-    "origin_policy/origin_policy_fetcher.cc",
-    "origin_policy/origin_policy_fetcher.h",
-    "origin_policy/origin_policy_header_values.cc",
-    "origin_policy/origin_policy_header_values.h",
-    "origin_policy/origin_policy_manager.cc",
-    "origin_policy/origin_policy_manager.h",
-    "origin_policy/origin_policy_parsed_header.cc",
-    "origin_policy/origin_policy_parsed_header.h",
-    "origin_policy/origin_policy_parser.cc",
-    "origin_policy/origin_policy_parser.h",
+    "oblivious_http_request_handler.cc",
+    "oblivious_http_request_handler.h",
     "pending_callback_chain.cc",
     "pending_callback_chain.h",
     "private_network_access_checker.cc",
@@ -239,6 +238,8 @@ component("network_service") {
 
   if (is_win) {
     sources += [
+      "broker_helper_win.cc",
+      "broker_helper_win.h",
       "windows_system_proxy_resolver_mojo.cc",
       "windows_system_proxy_resolver_mojo.h",
     ]
@@ -277,7 +278,10 @@ component("network_service") {
   ]
 
   if (is_linux || is_chromeos) {
-    deps += [ ":network_sandbox_hook" ]
+    deps += [
+      ":network_sandbox_hook",
+      "//sandbox/linux:sandbox_services",  # TODO(crbug.com/1312224): remove.
+    ]
   }
 
   public_deps = [ "//services/network/public/cpp:buildflags" ]
@@ -286,8 +290,6 @@ component("network_service") {
     sources += [
       "ct_log_list_distributor.cc",
       "ct_log_list_distributor.h",
-      "expect_ct_reporter.cc",
-      "expect_ct_reporter.h",
       "sct_auditing/sct_auditing_cache.cc",
       "sct_auditing/sct_auditing_cache.h",
       "sct_auditing/sct_auditing_handler.cc",
@@ -343,10 +345,12 @@ source_set("tests") {
 
   sources = [
     "chunked_data_pipe_upload_data_stream_unittest.cc",
+    "cookie_access_delegate_impl_unittest.cc",
     "cookie_manager_unittest.cc",
     "cookie_settings_unittest.cc",
     "cors/cors_url_loader_factory_unittest.cc",
     "cors/cors_url_loader_private_network_access_unittest.cc",
+    "cors/cors_url_loader_tao_unittest.cc",
     "cors/cors_url_loader_test_util.cc",
     "cors/cors_url_loader_test_util.h",
     "cors/cors_url_loader_unittest.cc",
@@ -367,11 +371,10 @@ source_set("tests") {
     "network_context_unittest.cc",
     "network_qualities_pref_delegate_unittest.cc",
     "network_quality_estimator_manager_unittest.cc",
+    "network_service_memory_cache_unittest.cc",
     "network_service_proxy_delegate_unittest.cc",
     "network_service_unittest.cc",
-    "origin_policy/origin_policy_manager_unittest.cc",
-    "origin_policy/origin_policy_parsed_header_unittest.cc",
-    "origin_policy/origin_policy_parser_unittest.cc",
+    "oblivious_http_request_handler_unittest.cc",
     "pending_callback_chain_unittest.cc",
     "private_network_access_checker_unittest.cc",
     "proxy_auto_config_library_unittest.cc",
@@ -442,7 +445,10 @@ source_set("tests") {
   }
 
   if (is_win) {
-    sources += [ "windows_system_proxy_resolver_mojo_unittest.cc" ]
+    sources += [
+      "broker_helper_win_unittest.cc",
+      "windows_system_proxy_resolver_mojo_unittest.cc",
+    ]
   }
 
   deps = [
@@ -482,7 +488,6 @@ source_set("tests") {
   if (is_ct_supported) {
     sources += [
       "ct_log_list_distributor_unittest.cc",
-      "expect_ct_reporter_unittest.cc",
       "sct_auditing/sct_auditing_cache_unittest.cc",
       "sct_auditing/sct_auditing_handler_unittest.cc",
       "sct_auditing/sct_auditing_reporter_unittest.cc",
@@ -523,6 +528,8 @@ source_set("test_support") {
     "test/test_resource_scheduler.h",
     "test/test_shared_url_loader_factory.cc",
     "test/test_shared_url_loader_factory.h",
+    "test/test_socket_broker_impl.cc",
+    "test/test_socket_broker_impl.h",
     "test/test_udp_socket.cc",
     "test/test_udp_socket.h",
     "test/test_url_loader_client.cc",
@@ -583,17 +590,4 @@ fuzzer_test("network_content_security_policy_fuzzer") {
   ]
   dict = "//testing/libfuzzer/fuzzers/dicts/content_security_policy.dict"
   seed_corpus = "//testing/libfuzzer/fuzzers/content_security_policy_corpus"
-}
-
-fuzzer_test("origin_policy_parser_fuzzer") {
-  sources = [ "origin_policy/origin_policy_parser_fuzzer.cc" ]
-  deps = [
-    "//base",
-    "//net",
-    "//services/network:network_service",
-    "//services/network/public/cpp",
-    "//services/network/public/mojom",
-  ]
-  dict = "origin_policy/origin_policy_parser_fuzzer.dict"
-  seed_corpus = "origin_policy/origin_policy_parser_fuzzer_corpus"
 }

@@ -1,4 +1,4 @@
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -69,6 +69,7 @@ generate_stubs("gtk_stubs") {
 }
 
 component("gtk") {
+  visibility = [ "//ui/linux:linux_ui_factory" ]
   public = [ "gtk_ui_factory.h" ]
 
   sources = [
@@ -115,6 +116,7 @@ component("gtk") {
   deps = [
     ":gtk_stubs",
     "//base",
+    "//printing/buildflags",
     "//skia",
 
     # GTK pulls pangoft2, which requires HarfBuzz symbols. When linking
@@ -124,7 +126,6 @@ component("gtk") {
     "//ui/aura",
     "//ui/base",
     "//ui/base:buildflags",
-    "//ui/base/cursor:theme_manager",
     "//ui/base/ime",
     "//ui/base/ime/linux",
     "//ui/color",
@@ -136,15 +137,15 @@ component("gtk") {
     "//ui/gfx",
     "//ui/gfx:native_widget_types",
     "//ui/gfx/geometry",
+    "//ui/linux:linux_ui",
     "//ui/native_theme",
-    "//ui/shell_dialogs",
     "//ui/shell_dialogs",
     "//ui/strings",
     "//ui/views",
     "//url",
   ]
 
-  if (enable_basic_printing) {
+  if (enable_printing) {
     deps += [ "//printing" ]
   }
 

@@ -1,11 +1,10 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/api/identity/gaia_remote_consent_flow.h"
 
 #include "base/bind.h"
-#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/escape.h"
 #include "build/chromeos_buildflags.h"
@@ -16,7 +15,6 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/signin/core/browser/account_reconcilor.h"
 #include "components/signin/public/base/multilogin_parameters.h"
-#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/set_accounts_in_cookie_result.h"
 #include "content/public/browser/storage_partition.h"
@@ -71,8 +69,7 @@ void GaiaRemoteConsentFlow::Start() {
         WebAuthFlow::GET_AUTH_TOKEN);
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
     // `profile_` may be nullptr in tests.
-    if (profile_ &&
-        base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles)) {
+    if (profile_) {
       AccountReconcilorFactory::GetForProfile(profile_)
           ->GetConsistencyCookieManager()
           ->AddExtraCookieManager(GetCookieManagerForPartition());
@@ -150,6 +147,9 @@ void GaiaRemoteConsentFlow::OnAuthFlowFailure(WebAuthFlow::Failure failure) {
     case WebAuthFlow::WINDOW_CLOSED:
       gaia_failure = GaiaRemoteConsentFlow::WINDOW_CLOSED;
       break;
+    case WebAuthFlow::USER_NAVIGATED_AWAY:
+      gaia_failure = GaiaRemoteConsentFlow::USER_NAVIGATED_AWAY;
+      break;
     case WebAuthFlow::LOAD_FAILED:
       gaia_failure = GaiaRemoteConsentFlow::LOAD_FAILED;
       break;
@@ -162,18 +162,30 @@ void GaiaRemoteConsentFlow::OnAuthFlowFailure(WebAuthFlow::Failure failure) {
   GaiaRemoteConsentFlowFailed(gaia_failure);
 }
 
+content::StoragePartition* GaiaRemoteConsentFlow::GetStoragePartition() {
+  content::StoragePartition* storage_partition = web_flow_->GetGuestPartition();
+  if (!storage_partition) {
+    // `web_flow_` doesn't have a guest partition only when the Auth Through
+    // Browser Tab flow is used.
+    DCHECK(base::FeatureList::IsEnabled(kWebAuthFlowInBrowserTab));
+    storage_partition = profile_->GetDefaultStoragePartition();
+  }
+
+  return storage_partition;
+}
+
 std::unique_ptr<GaiaAuthFetcher>
 GaiaRemoteConsentFlow::CreateGaiaAuthFetcherForPartition(
     GaiaAuthConsumer* consumer,
     const gaia::GaiaSource& source) {
   return std::make_unique<GaiaAuthFetcher>(
       consumer, source,
-      web_flow_->GetGuestPartition()->GetURLLoaderFactoryForBrowserProcess());
+      GetStoragePartition()->GetURLLoaderFactoryForBrowserProcess());
 }
 
 network::mojom::CookieManager*
 GaiaRemoteConsentFlow::GetCookieManagerForPartition() {
-  return web_flow_->GetGuestPartition()->GetCookieManagerForBrowserProcess();
+  return GetStoragePartition()->GetCookieManagerForBrowserProcess();
 }
 
 void GaiaRemoteConsentFlow::OnEndBatchOfRefreshTokenStateChanges() {
@@ -198,13 +210,16 @@ void GaiaRemoteConsentFlow::SetWebAuthFlowForTesting(
   web_flow_ = std::move(web_auth_flow);
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   // `profile_` may be nullptr in tests.
-  if (profile_ &&
-      base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles)) {
+  if (profile_) {
     AccountReconcilorFactory::GetForProfile(profile_)
         ->GetConsistencyCookieManager()
         ->AddExtraCookieManager(GetCookieManagerForPartition());
   }
 #endif
+}
+
+WebAuthFlow* GaiaRemoteConsentFlow::GetWebAuthFlowForTesting() const {
+  return web_flow_.get();
 }
 
 void GaiaRemoteConsentFlow::SetAccountsInCookie() {
@@ -260,8 +275,7 @@ void GaiaRemoteConsentFlow::DetachWebAuthFlow() {
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   // `profile_` may be nullptr in tests.
-  if (profile_ &&
-      base::FeatureList::IsEnabled(switches::kLacrosNonSyncingProfiles)) {
+  if (profile_) {
     AccountReconcilorFactory::GetForProfile(profile_)
         ->GetConsistencyCookieManager()
         ->RemoveExtraCookieManager(GetCookieManagerForPartition());

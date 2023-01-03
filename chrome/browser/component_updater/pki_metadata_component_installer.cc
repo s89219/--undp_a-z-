@@ -1,10 +1,11 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/component_updater/pki_metadata_component_installer.h"
 
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "base/barrier_closure.h"
@@ -13,15 +14,18 @@
 #include "base/callback.h"
 #include "base/check.h"
 #include "base/containers/flat_map.h"
+#include "base/containers/span.h"
 #include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/no_destructor.h"
+#include "base/sequence_checker.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
+#include "base/values.h"
 #include "chrome/browser/browser_features.h"
 #include "chrome/browser/net/key_pinning.pb.h"
 #include "content/public/browser/network_service_instance.h"
@@ -38,6 +42,7 @@
 #endif
 
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+#include "chrome/browser/net/cert_verifier_configuration.h"
 #include "mojo/public/cpp/base/big_buffer.h"
 #include "net/base/features.h"
 #include "services/cert_verifier/public/mojom/cert_verifier_service_factory.mojom.h"
@@ -96,19 +101,6 @@ std::string LoadBinaryProtoFromDisk(const base::FilePath& pb_path) {
   return result;
 }
 
-#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
-void UpdateChromeRootStoreOnUI(const std::string& chrome_root_store_bytes) {
-  cert_verifier::mojom::CertVerifierServiceFactory*
-      cert_verifier_service_factory = content::GetCertVerifierServiceFactory();
-
-  cert_verifier::mojom::ChromeRootStorePtr root_store_ptr =
-      cert_verifier::mojom::ChromeRootStore::New(
-          base::as_bytes(base::make_span(chrome_root_store_bytes)));
-  cert_verifier_service_factory->UpdateChromeRootStore(
-      std::move(root_store_ptr));
-}
-#endif
-
 }  // namespace
 
 namespace component_updater {
@@ -132,9 +124,38 @@ void PKIMetadataComponentInstallerService::ConfigureChromeRootStore() {
       FROM_HERE, {base::TaskPriority::BEST_EFFORT, base::MayBlock()},
       base::BindOnce(&LoadBinaryProtoFromDisk,
                      install_dir_.Append(kCRSProtoFileName)),
-      base::BindOnce(&UpdateChromeRootStoreOnUI));
+      base::BindOnce(
+          &PKIMetadataComponentInstallerService::UpdateChromeRootStoreOnUI,
+          weak_factory_.GetWeakPtr()));
 #endif
 }
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+void PKIMetadataComponentInstallerService::UpdateChromeRootStoreOnUI(
+    const std::string& chrome_root_store_bytes) {
+  cert_verifier::mojom::ChromeRootStorePtr root_store_ptr =
+      cert_verifier::mojom::ChromeRootStore::New(
+          base::as_bytes(base::make_span(chrome_root_store_bytes)));
+  content::GetCertVerifierServiceFactory()->UpdateChromeRootStore(
+      std::move(root_store_ptr));
+  NotifyChromeRootStoreConfigured();
+}
+
+void PKIMetadataComponentInstallerService::NotifyChromeRootStoreConfigured() {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  for (Observer& observer : observers_) {
+    observer.OnChromeRootStoreConfigured();
+  }
+}
+
+bool PKIMetadataComponentInstallerService::WriteCRSDataForTesting(
+    const base::FilePath& path,
+    const std::string& contents) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  install_dir_ = path;
+  return base::WriteFile(path.Append(kCRSProtoFileName), contents);
+}
+#endif
 
 void PKIMetadataComponentInstallerService::ReconfigureAfterNetworkRestart() {
   // Runs on UI thread.
@@ -172,12 +193,12 @@ void PKIMetadataComponentInstallerService::OnComponentReady(
   ConfigureChromeRootStore();
 }
 
-void PKIMetadataComponentInstallerService::WriteComponentForTesting(
+bool PKIMetadataComponentInstallerService::WriteCTDataForTesting(
     const base::FilePath& path,
-    std::string contents) {
+    const std::string& contents) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  CHECK(base::WriteFile(path.Append(kCTConfigProtoFileName), contents));
   install_dir_ = path;
+  return base::WriteFile(path.Append(kCTConfigProtoFileName), contents);
 }
 
 void PKIMetadataComponentInstallerService::AddObserver(Observer* observer) {
@@ -398,7 +419,7 @@ bool PKIMetadataComponentInstallerPolicy::RequiresNetworkEncryption() const {
 
 update_client::CrxInstaller::Result
 PKIMetadataComponentInstallerPolicy::OnCustomInstall(
-    const base::Value& /* manifest */,
+    const base::Value::Dict& /* manifest */,
     const base::FilePath& /* install_dir */) {
   return update_client::CrxInstaller::Result(0);  // Nothing custom here.
 }
@@ -408,14 +429,14 @@ void PKIMetadataComponentInstallerPolicy::OnCustomUninstall() {}
 void PKIMetadataComponentInstallerPolicy::ComponentReady(
     const base::Version& version,
     const base::FilePath& install_dir,
-    base::Value /* manifest */) {
+    base::Value::Dict /* manifest */) {
   PKIMetadataComponentInstallerService::GetInstance()->OnComponentReady(
       install_dir);
 }
 
 // Called during startup and installation before ComponentReady().
 bool PKIMetadataComponentInstallerPolicy::VerifyInstallation(
-    const base::Value& /* manifest */,
+    const base::Value::Dict& /* manifest */,
     const base::FilePath& install_dir) const {
   if (!base::PathExists(install_dir)) {
     return false;
@@ -455,8 +476,8 @@ void MaybeRegisterPKIMetadataComponent(ComponentUpdateService* cus) {
 #endif  // BUILDFLAG(IS_CT_SUPPORTED)
 
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
-  should_install |=
-      base::FeatureList::IsEnabled(net::features::kChromeRootStoreUsed);
+  should_install |= GetChromeCertVerifierServiceParams(/*local_state=*/nullptr)
+                        ->use_chrome_root_store;
 
 // Even if we aren't using Chrome Root Store for cert verification, we may be
 // trialing it. Check if the trial is enabled.

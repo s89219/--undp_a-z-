@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,16 +53,8 @@ apps::mojom::RunOnOsLoginPtr ConvertRunOnOsLoginToMojomRunOnOsLogin(
     const RunOnOsLogin& run_on_os_login);
 
 COMPONENT_EXPORT(LOGIN_MODE)
-RunOnOsLoginPtr ConvertMojomRunOnOsLoginToRunOnOsLogin(
-    const apps::mojom::RunOnOsLoginPtr& run_on_os_login);
-
-COMPONENT_EXPORT(LOGIN_MODE)
 apps::mojom::RunOnOsLoginMode ConvertRunOnOsLoginModeToMojomRunOnOsLoginMode(
     RunOnOsLoginMode login_mode);
-
-COMPONENT_EXPORT(LOGIN_MODE)
-RunOnOsLoginMode ConvertMojomRunOnOsLoginModeToRunOnOsLoginMode(
-    apps::mojom::RunOnOsLoginMode login_mode);
 
 }  // namespace apps
 

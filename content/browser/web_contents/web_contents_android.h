@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,7 +43,7 @@ class CONTENT_EXPORT WebContentsAndroid {
 
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 
-  // Ensure that the render frame host etc are ready to handle JS eval
+  // Ensure that the RenderFrameHost etc are ready to handle JS eval
   // (e.g. recover from a crashed state).
   bool InitializeRenderFrameForJavaScript();
 
@@ -67,6 +67,7 @@ class CONTENT_EXPORT WebContentsAndroid {
       JNIEnv* env) const;
   base::android::ScopedJavaLocalRef<jstring> GetTitle(JNIEnv* env) const;
   base::android::ScopedJavaLocalRef<jobject> GetVisibleURL(JNIEnv* env) const;
+  jint GetVirtualKeyboardMode(JNIEnv* env) const;
 
   bool IsLoading(JNIEnv* env) const;
   bool ShouldShowLoadingUI(JNIEnv* env) const;
@@ -121,7 +122,7 @@ class CONTENT_EXPORT WebContentsAndroid {
 
   void PostMessageToMainFrame(
       JNIEnv* env,
-      const base::android::JavaParamRef<jstring>& jmessage,
+      const base::android::JavaParamRef<jobject>& jmessage,
       const base::android::JavaParamRef<jstring>& jsource_origin,
       const base::android::JavaParamRef<jstring>& jtarget_origin,
       const base::android::JavaParamRef<jobjectArray>& jports);
@@ -154,6 +155,8 @@ class CONTENT_EXPORT WebContentsAndroid {
       const base::android::JavaParamRef<jobject>& overscroll_refresh_handler);
 
   void SetSpatialNavigationDisabled(JNIEnv* env, bool disabled);
+
+  void SetStylusHandwritingEnabled(JNIEnv* env, bool enabled);
 
   int DownloadImage(JNIEnv* env,
                     const base::android::JavaParamRef<jobject>& url,

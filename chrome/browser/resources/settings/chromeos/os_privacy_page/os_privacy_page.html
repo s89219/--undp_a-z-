@@ -10,12 +10,8 @@
     outline: none;
   }
 
-  .peripheral-data-access-protection {
-    /* Remove the unecessary spacing infront of the learn-more link. */
-    --cr-subsequent-anchors-of-span-margin: 0px;
-  }
 </style>
-<settings-animated-pages id="pages" section="osPrivacy"
+<os-settings-animated-pages id="pages" section="osPrivacy"
     focus-config="[[focusConfig_]]">
 
   <div route-path="default">
@@ -44,17 +40,14 @@
     </template>
 
 <if expr="_google_chrome">
-    <settings-toggle-button
-        id="enable-logging"
-        pref="[[metricsConsentPref_]]"
-        label="$i18n{enableLogging}"
-        sub-label="[[metricsConsentDesc_]]"
-        deep-link-focus-id$="[[Setting.kUsageStatsAndCrashReports]]"
-        disabled$="[[!isMetricsConsentConfigurable_]]"
-        on-settings-boolean-control-change="onMetricsConsentChange_"
-        no-set-pref>
-    </settings-toggle-button>
-    <div class="hr"></div>
+    <template is="dom-if" if="[[!showPrivacyHubPage_]]" restamp>
+      <settings-metrics-consent-toggle-button
+          id="metricsConsentToggle"
+          deep-link-focus-id$="[[Setting.kUsageStatsAndCrashReports]]"
+          prefs="{{prefs}}">
+      </settings-metrics-consent-toggle-button>
+      <div class="hr"></div>
+    </template>
     <template is="dom-if" if="[[isRevenBranding_]]">
       <settings-toggle-button
           id="enable-hw-data-usage"
@@ -65,14 +58,16 @@
       <div class="hr"></div>
     </template>
 </if>
-    <settings-toggle-button
-        id="suggested-content"
-        pref="{{prefs.settings.suggested_content_enabled}}"
-        label="$i18n{enableSuggestedContent}"
-        sub-label="$i18n{enableSuggestedContentDesc}"
-        learn-more-url="$i18n{suggestedContentLearnMoreURL}">
-    </settings-toggle-button>
-    <div class="hr"></div>
+    <template is="dom-if" if="[[!showPrivacyHubPage_]]" restamp>
+      <settings-toggle-button
+          id="suggested-content"
+          pref="{{prefs.settings.suggested_content_enabled}}"
+          label="$i18n{enableSuggestedContent}"
+          sub-label="$i18n{enableSuggestedContentDesc}"
+          learn-more-url="$i18n{suggestedContentLearnMoreURL}">
+      </settings-toggle-button>
+      <div class="hr"></div>
+    </template>
     <settings-toggle-button
         id="enableVerifiedAccess"
         pref="{{
@@ -80,6 +75,15 @@
         label="$i18n{enableContentProtectionAttestation}"
         deep-link-focus-id$="[[Setting.kVerifiedAccess]]">
     </settings-toggle-button>
+    <template is="dom-if" if="[[showPrivacyHubPage_]]" restamp>
+      <div class="hr"></div>
+      <cr-link-row id="privacyHubSubpageTrigger"
+          on-click="onPrivacyHubClick_"
+          label="$i18n{privacyHubTitle}"
+          sub-label="$i18n{privacyHubSubtext}"
+          role-description="$i18n{subpageArrowRoleDescription}">
+      </cr-link-row>
+    </template>
     <template is="dom-if" if="[[isThunderboltSupported_]]">
       <div class="hr"></div>
       <!-- This toggle is always disabled. The underlying pref state is
@@ -124,45 +128,50 @@
       </div>
     </template>
     <template is="dom-if" if="[[showSecureDnsSetting_]]">
-      <div class="hr"></div>
       <settings-secure-dns prefs="{{prefs}}"></settings-secure-dns>
     </template>
   </div>
 
   <template is="dom-if" if="[[!isGuestMode_]]" restamp>
     <template is="dom-if" route-path="/osPrivacy/lockScreen">
-      <settings-subpage page-title="[[selectLockScreenTitleString_(hasPinLogin)]]">
+      <os-settings-subpage page-title="[[selectLockScreenTitleString_(hasPinLogin)]]">
         <settings-lock-screen id="lockScreen" set-modes="[[setModes_]]"
             prefs="{{prefs}}" auth-token="[[authToken_]]"
             on-invalidate-auth-token-requested="onInvalidateTokenRequested_"
             on-password-requested="onPasswordRequested_">
         </settings-lock-screen>
-      </settings-subpage>
+      </os-settings-subpage>
     </template>
     <template is="dom-if" route-path="/osPrivacy/lockScreen/fingerprint">
-      <settings-subpage page-title="$i18n{lockScreenFingerprintTitle}">
+      <os-settings-subpage page-title="$i18n{lockScreenFingerprintTitle}">
         <settings-fingerprint-list id="fingerprint-list"
             auth-token="[[authToken_.token]]"
             set-modes="[[setModes_]]"
             on-password-requested="onPasswordRequested_">
         </settings-fingerprint-list>
-      </settings-subpage>
+      </os-settings-subpage>
     </template>
     <template is="dom-if" route-path="/osPrivacy/accounts">
-      <settings-subpage page-title="$i18n{manageOtherPeople}">
+      <os-settings-subpage page-title="$i18n{manageOtherPeople}">
         <settings-users-page prefs="{{prefs}}">
         </settings-users-page>
-      </settings-subpage>
+      </os-settings-subpage>
     </template>
     <template is="dom-if" route-path="/osPrivacy/smartPrivacy">
-      <settings-subpage page-title="$i18n{smartPrivacyTitle}">
+      <os-settings-subpage page-title="$i18n{smartPrivacyTitle}">
         <settings-smart-privacy-page prefs="{{prefs}}">
         </settings-smart-privacy-page>
-      </settings-subpage>
+      </os-settings-subpage>
+    </template>
+    <template is="dom-if" route-path="/osPrivacy/privacyHub">
+      <os-settings-subpage page-title="$i18n{privacyHubTitle}">
+        <settings-privacy-hub-page prefs="{{prefs}}">
+        </settings-privacy-hub-page>
+      </os-settings-subpage>
     </template>
   </template>
 
-</settings-animated-pages>
+</os-settings-animated-pages>
 
 <template is="dom-if" if="[[showPasswordPromptDialog_]]" restamp>
   <settings-lock-screen-password-prompt-dialog

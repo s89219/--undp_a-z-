@@ -1,11 +1,14 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/policy/core/device_policy_decoder.h"
 
+#include <memory>
+
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/values.h"
 #include "components/policy/core/common/policy_bundle.h"
 #include "components/policy/policy_constants.h"
 #include "components/policy/proto/chrome_device_policy.pb.h"
@@ -64,8 +67,8 @@ class DevicePolicyDecoderTest : public testing::Test {
   ~DevicePolicyDecoderTest() override = default;
 
  protected:
-  std::unique_ptr<base::Value> GetWallpaperDict() const;
-  std::unique_ptr<base::Value> GetBluetoothServiceAllowedList() const;
+  base::Value GetWallpaperDict() const;
+  base::Value GetBluetoothServiceAllowedList() const;
   void DecodeDevicePolicyTestHelper(
       const em::ChromeDeviceSettingsProto& device_policy,
       const std::string& policy_path,
@@ -75,22 +78,19 @@ class DevicePolicyDecoderTest : public testing::Test {
       const std::string& policy_path) const;
 };
 
-std::unique_ptr<base::Value> DevicePolicyDecoderTest::GetWallpaperDict() const {
-  auto dict = std::make_unique<base::DictionaryValue>();
-  dict->SetKey(kWallpaperUrlPropertyName,
-               base::Value(kWallpaperUrlPropertyValue));
-  dict->SetKey(kWallpaperHashPropertyName,
-               base::Value(kWallpaperHashPropertyValue));
-  return dict;
+base::Value DevicePolicyDecoderTest::GetWallpaperDict() const {
+  base::Value::Dict dict;
+  dict.Set(kWallpaperUrlPropertyName, kWallpaperUrlPropertyValue);
+  dict.Set(kWallpaperHashPropertyName, kWallpaperHashPropertyValue);
+  return base::Value(std::move(dict));
 }
 
-std::unique_ptr<base::Value>
-DevicePolicyDecoderTest::GetBluetoothServiceAllowedList() const {
-  auto list = std::make_unique<base::ListValue>();
-  list->Append(base::Value(kValidBluetoothServiceUUID4));
-  list->Append(base::Value(kValidBluetoothServiceUUID8));
-  list->Append(base::Value(kValidBluetoothServiceUUID32));
-  return list;
+base::Value DevicePolicyDecoderTest::GetBluetoothServiceAllowedList() const {
+  base::Value::List list;
+  list.Append(kValidBluetoothServiceUUID4);
+  list.Append(kValidBluetoothServiceUUID8);
+  list.Append(kValidBluetoothServiceUUID32);
+  return base::Value(std::move(list));
 }
 
 void DevicePolicyDecoderTest::DecodeDevicePolicyTestHelper(
@@ -155,8 +155,9 @@ TEST_F(DevicePolicyDecoderTest, DecodeJsonStringAndNormalizeInvalidValue) {
   std::string localized_error = l10n_util::GetStringFUTF8(
       IDS_POLICY_PROTO_PARSING_ERROR, base::UTF8ToUTF16(error));
   EXPECT_EQ(
-      "Policy parsing error: Invalid policy value: The value type doesn't "
-      "match the schema type. (at url)",
+      "Policy parsing error: Invalid policy value: Policy type mismatch: "
+      "expected: \"string\", actual: \"integer\". (at "
+      "DeviceWallpaperImage.url)",
       localized_error);
 }
 
@@ -166,10 +167,10 @@ TEST_F(DevicePolicyDecoderTest, DecodeJsonStringAndNormalizeUnknownProperty) {
       kWallpaperJsonUnknownProperty, key::kDeviceWallpaperImage, &error);
   std::string localized_error = l10n_util::GetStringFUTF8(
       IDS_POLICY_PROTO_PARSING_ERROR, base::UTF8ToUTF16(error));
-  EXPECT_EQ(*GetWallpaperDict(), decoded_json.value());
+  EXPECT_EQ(GetWallpaperDict(), decoded_json.value());
   EXPECT_EQ(
       "Policy parsing error: Dropped unknown properties: Unknown property: "
-      "unknown-field (at toplevel)",
+      "unknown-field (at DeviceWallpaperImage)",
       localized_error);
 }
 
@@ -177,7 +178,7 @@ TEST_F(DevicePolicyDecoderTest, DecodeJsonStringAndNormalizeSuccess) {
   std::string error;
   absl::optional<base::Value> decoded_json = DecodeJsonStringAndNormalize(
       kWallpaperJson, key::kDeviceWallpaperImage, &error);
-  EXPECT_EQ(*GetWallpaperDict(), decoded_json.value());
+  EXPECT_EQ(GetWallpaperDict(), decoded_json.value());
   EXPECT_TRUE(error.empty());
 }
 
@@ -270,21 +271,6 @@ TEST_F(DevicePolicyDecoderTest, ReportDevicePeripherals) {
                                std::move(report_peripherals_value));
 }
 
-TEST_F(DevicePolicyDecoderTest, EnableDeviceGranularReporting) {
-  em::ChromeDeviceSettingsProto device_policy;
-
-  DecodeUnsetDevicePolicyTestHelper(device_policy,
-                                    key::kEnableDeviceGranularReporting);
-
-  base::Value enable_granular_reporting_value(true);
-  device_policy.mutable_device_reporting()->set_enable_granular_reporting(
-      enable_granular_reporting_value.GetBool());
-
-  DecodeDevicePolicyTestHelper(device_policy,
-                               key::kEnableDeviceGranularReporting,
-                               std::move(enable_granular_reporting_value));
-}
-
 TEST_F(DevicePolicyDecoderTest, ReportDeviceAudioStatus) {
   em::ChromeDeviceSettingsProto device_policy;
 
@@ -356,12 +342,34 @@ TEST_F(DevicePolicyDecoderTest, kReportDeviceOsUpdateStatus) {
                                std::move(report_os_update_status_value));
 }
 
+TEST_F(DevicePolicyDecoderTest,
+       ReportDeviceSignalStrengthEventDrivenTelemetry) {
+  em::ChromeDeviceSettingsProto device_policy;
+
+  DecodeUnsetDevicePolicyTestHelper(
+      device_policy, key::kReportDeviceSignalStrengthEventDrivenTelemetry);
+
+  base::Value::List signal_strength_telemetry_list;
+  signal_strength_telemetry_list.Append("network_telemetry");
+  signal_strength_telemetry_list.Append("https_latency");
+  device_policy.mutable_device_reporting()
+      ->mutable_report_signal_strength_event_driven_telemetry()
+      ->add_entries("network_telemetry");
+  device_policy.mutable_device_reporting()
+      ->mutable_report_signal_strength_event_driven_telemetry()
+      ->add_entries("https_latency");
+
+  DecodeDevicePolicyTestHelper(
+      device_policy, key::kReportDeviceSignalStrengthEventDrivenTelemetry,
+      base::Value(std::move(signal_strength_telemetry_list)));
+}
+
 TEST_F(DevicePolicyDecoderTest, DecodeServiceUUIDListSuccess) {
   std::string error;
   absl::optional<base::Value> decoded_json = DecodeJsonStringAndNormalize(
       kValidBluetoothServiceUUIDList, key::kDeviceAllowedBluetoothServices,
       &error);
-  EXPECT_EQ(*GetBluetoothServiceAllowedList(), decoded_json.value());
+  EXPECT_EQ(GetBluetoothServiceAllowedList(), decoded_json.value());
   EXPECT_TRUE(error.empty());
 }
 
@@ -371,8 +379,10 @@ TEST_F(DevicePolicyDecoderTest, DecodeServiceUUIDListError) {
       kInvalidBluetoothServiceUUIDList, key::kDeviceAllowedBluetoothServices,
       &error);
   EXPECT_FALSE(decoded_json.has_value());
-  EXPECT_EQ("Invalid policy value: Invalid value for string (at items[0])",
-            error);
+  EXPECT_EQ(
+      "Invalid policy value: Invalid value for string (at "
+      "DeviceAllowedBluetoothServices[0])",
+      error);
 }
 
 TEST_F(DevicePolicyDecoderTest,
@@ -406,6 +416,49 @@ TEST_F(DevicePolicyDecoderTest, DecodeDeviceEncryptedReportingPipelineEnabled) {
   DecodeDevicePolicyTestHelper(device_policy,
                                key::kDeviceEncryptedReportingPipelineEnabled,
                                std::move(prompt_value));
+}
+
+TEST_F(DevicePolicyDecoderTest, DecodeDeviceAutofillSAMLUsername) {
+  em::ChromeDeviceSettingsProto device_policy;
+
+  DecodeUnsetDevicePolicyTestHelper(device_policy,
+                                    key::kDeviceAutofillSAMLUsername);
+
+  base::Value autofill_saml_username_value("login_hint");
+  device_policy.mutable_saml_username()
+      ->set_url_parameter_to_autofill_saml_username(
+          autofill_saml_username_value.GetString());
+
+  DecodeDevicePolicyTestHelper(device_policy, key::kDeviceAutofillSAMLUsername,
+                               std::move(autofill_saml_username_value));
+}
+
+TEST_F(DevicePolicyDecoderTest, DeviceReportXDREvents) {
+  em::ChromeDeviceSettingsProto device_policy;
+
+  DecodeUnsetDevicePolicyTestHelper(device_policy, key::kDeviceReportXDREvents);
+
+  base::Value device_report_xdr_events_value(true);
+  device_policy.mutable_device_report_xdr_events()->set_enabled(
+      device_report_xdr_events_value.GetBool());
+
+  DecodeDevicePolicyTestHelper(device_policy, key::kDeviceReportXDREvents,
+                               std::move(device_report_xdr_events_value));
+}
+
+TEST_F(DevicePolicyDecoderTest, DeviceHindiInscriptLayoutEnabled) {
+  em::ChromeDeviceSettingsProto device_policy;
+
+  DecodeUnsetDevicePolicyTestHelper(device_policy,
+                                    key::kDeviceHindiInscriptLayoutEnabled);
+
+  base::Value device_hindi_inscript_layout_enabled_value(true);
+  device_policy.mutable_device_hindi_inscript_layout_enabled()->set_enabled(
+      device_hindi_inscript_layout_enabled_value.GetBool());
+
+  DecodeDevicePolicyTestHelper(
+      device_policy, key::kDeviceHindiInscriptLayoutEnabled,
+      std::move(device_hindi_inscript_layout_enabled_value));
 }
 
 }  // namespace policy

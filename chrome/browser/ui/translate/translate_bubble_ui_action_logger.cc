@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,10 @@
 
 namespace translate {
 
-void ReportUiAction(translate::TranslateBubbleUiEvent action) {
-  UMA_HISTOGRAM_ENUMERATION("Translate.BubbleUiEvent", action,
-                            translate::TRANSLATE_BUBBLE_UI_EVENT_MAX);
+void ReportTranslateBubbleUiAction(translate::TranslateBubbleUiEvent action) {
+  UMA_HISTOGRAM_ENUMERATION(
+      kTranslateBubbleUiEventHistogramName, action,
+      translate::TranslateBubbleUiEvent::TRANSLATE_BUBBLE_UI_EVENT_MAX);
 }
 
 }  // namespace translate

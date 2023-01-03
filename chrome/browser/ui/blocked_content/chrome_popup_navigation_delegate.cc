@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,7 +56,7 @@ ChromePopupNavigationDelegate::NavigateWithGesture(
   if (params_.navigated_or_inserted_contents &&
       params_.disposition == WindowOpenDisposition::NEW_POPUP) {
     content::RenderFrameHost* host =
-        params_.navigated_or_inserted_contents->GetMainFrame();
+        params_.navigated_or_inserted_contents->GetPrimaryMainFrame();
     DCHECK(host);
     mojo::AssociatedRemote<chrome::mojom::ChromeRenderFrame> client;
     host->GetRemoteAssociatedInterfaces()->GetInterface(&client);

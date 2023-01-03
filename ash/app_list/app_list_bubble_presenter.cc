@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "ash/app_list/views/app_list_bubble_apps_page.h"
 #include "ash/app_list/views/app_list_bubble_view.h"
 #include "ash/app_list/views/app_list_drag_and_drop_host.h"
-#include "ash/constants/ash_features.h"
 #include "ash/public/cpp/app_list/app_list_client.h"
 #include "ash/public/cpp/app_list/app_list_features.h"
 #include "ash/public/cpp/app_list/app_list_types.h"
@@ -29,12 +28,12 @@
 #include "base/bind.h"
 #include "base/check.h"
 #include "base/check_op.h"
+#include "base/cxx17_backports.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/time/time.h"
-#include "chromeos/services/assistant/public/cpp/assistant_enums.h"
-#include "ui/aura/client/focus_client.h"
+#include "chromeos/ash/services/assistant/public/cpp/assistant_enums.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
@@ -43,11 +42,12 @@
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/coordinate_conversion.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
 namespace {
 
-using chromeos::assistant::AssistantExitPoint;
+using assistant::AssistantExitPoint;
 
 // Maximum amount of time to spend refreshing zero state search results before
 // opening the launcher.
@@ -75,6 +75,12 @@ gfx::Rect GetWorkAreaForBubble(aura::Window* root_window) {
   return gfx::ToRoundedRect(work_area);
 }
 
+int GetBubbleWidth(gfx::Rect work_area, aura::Window* root_window) {
+  // As of August 2021 the assistant cards require a minimum width of 640. If
+  // the cards become narrower then this could be reduced.
+  return work_area.width() < 1200 ? 544 : 640;
+}
+
 // Returns the preferred size of the bubble widget in DIPs.
 gfx::Size ComputeBubbleSize(aura::Window* root_window,
                             AppListBubbleView* bubble_view) {
@@ -83,12 +89,7 @@ gfx::Size ComputeBubbleSize(aura::Window* root_window,
   const gfx::Rect work_area = GetWorkAreaForBubble(root_window);
   int height = default_height;
 
-  // As of August 2021 the assistant cards require a minimum width of 640. If
-  // the cards become narrower then this could be reduced.
-  const int width = app_list_features::IsCompactBubbleLauncherEnabled() &&
-                            work_area.width() < 1200
-                        ? 544
-                        : 640;
+  const int width = GetBubbleWidth(work_area, root_window);
   // If the work area height is too small to fit the default size bubble, then
   // calculate a smaller height to fit in the work area. Otherwise, if the work
   // area height is tall enough to fit at least two default sized bubbles, then
@@ -182,7 +183,6 @@ void AppListBubblePresenter::Shutdown() {
 
 void AppListBubblePresenter::Show(int64_t display_id) {
   DVLOG(1) << __PRETTY_FUNCTION__;
-  DCHECK(features::IsProductivityLauncherEnabled());
   if (is_target_visibility_show_)
     return;
 
@@ -191,6 +191,8 @@ void AppListBubblePresenter::Show(int64_t display_id) {
 
   is_target_visibility_show_ = true;
   target_page_ = AppListBubblePage::kApps;
+
+  controller_->OnVisibilityWillChange(/*visible=*/true, display_id);
 
   // Refresh the continue tasks before opening the launcher. If a file doesn't
   // exist on disk anymore then the launcher should not create or animate the
@@ -228,11 +230,15 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
         std::make_unique<AppListEventTargeter>(controller_));
     bubble_view_ = bubble_widget_->SetContentsView(
         std::make_unique<AppListBubbleView>(controller_, drag_and_drop_host));
+    // Some of Assistant UIs have to be initialized explicitly. See details in
+    // the comment of AppListBubbleView::InitializeUIForBubbleView.
+    bubble_view_->InitializeUIForBubbleView();
     // Arrow left/right and up/down triggers the same focus movement as
     // tab/shift+tab.
     bubble_widget_->widget_delegate()->SetEnableArrowKeyTraversal(true);
 
     bubble_widget_->AddObserver(this);
+    Shell::Get()->activation_client()->AddObserver(this);
     // Set up event filter to close the bubble for clicks outside the bubble
     // that don't cause window activation changes (e.g. clicks on wallpaper or
     // blank areas of shelf).
@@ -251,10 +257,8 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
     // Refresh suggestions now that zero-state search data is updated.
     bubble_view_->UpdateSuggestions();
     bubble_event_filter_->SetButton(home_button);
-    // The observer for the correct display will be added below.
-    aura::client::GetFocusClient(bubble_widget_->GetNativeWindow())
-        ->RemoveObserver(this);
   }
+
   // The widget bounds sometimes depend on the height of the apps grid, so set
   // the bounds after creating and setting the contents. This may cause the
   // bubble to change displays.
@@ -264,11 +268,9 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
   // we are coming out of tablet mode.
   controller_->SetKeyboardTraversalMode(true);
 
-  // The focus client is tied to the root window, so update the observer every
-  // time the bubble is shown to make sure it tracks the right display.
-  aura::client::GetFocusClient(bubble_widget_->GetNativeWindow())
-      ->AddObserver(this);
-  controller_->OnVisibilityWillChange(/*visible=*/true, display_id);
+  shelf_observer_.Reset();
+  shelf_observer_.Observe(shelf);
+
   bubble_widget_->Show();
   // The page must be set before triggering the show animation so the correct
   // animations are triggered.
@@ -280,7 +282,6 @@ void AppListBubblePresenter::OnZeroStateSearchDone(int64_t display_id) {
 
 ShelfAction AppListBubblePresenter::Toggle(int64_t display_id) {
   DVLOG(1) << __PRETTY_FUNCTION__;
-  DCHECK(features::IsProductivityLauncherEnabled());
   if (is_target_visibility_show_) {
     Dismiss();
     return SHELF_ACTION_APP_LIST_DISMISSED;
@@ -291,7 +292,6 @@ ShelfAction AppListBubblePresenter::Toggle(int64_t display_id) {
 
 void AppListBubblePresenter::Dismiss() {
   DVLOG(1) << __PRETTY_FUNCTION__;
-  DCHECK(features::IsProductivityLauncherEnabled());
   if (!is_target_visibility_show_)
     return;
 
@@ -325,6 +325,10 @@ void AppListBubblePresenter::Dismiss() {
 
   // Clean up assistant if it is showing.
   controller_->ScheduleCloseAssistant();
+
+  shelf_observer_.Reset();
+  if (bubble_view_)
+    bubble_view_->SetDragAndDropHostOfCurrentAppList(nullptr);
 }
 
 aura::Window* AppListBubblePresenter::GetWindow() const {
@@ -340,7 +344,13 @@ bool AppListBubblePresenter::IsShowing() const {
 bool AppListBubblePresenter::IsShowingEmbeddedAssistantUI() const {
   if (!is_target_visibility_show_)
     return false;
-  DCHECK(bubble_widget_);
+
+  // Bubble view is null while the bubble widget is being initialized for show.
+  // In this case, return true iff the app list will show the assistant page
+  // when initialized.
+  if (!bubble_view_)
+    return target_page_ == AppListBubblePage::kAssistant;
+
   return bubble_view_->IsShowingEmbeddedAssistantUI();
 }
 
@@ -383,30 +393,47 @@ void AppListBubblePresenter::OnWidgetDestroying(views::Widget* widget) {
   // called on monitor disconnect. Clean up state.
   // `bubble_event_filter_` holds a pointer to the widget.
   bubble_event_filter_.reset();
-  aura::client::GetFocusClient(bubble_widget_->GetNativeView())
-      ->RemoveObserver(this);
+  Shell::Get()->activation_client()->RemoveObserver(this);
   bubble_widget_->RemoveObserver(this);
   bubble_widget_ = nullptr;
   bubble_view_ = nullptr;
 }
 
-void AppListBubblePresenter::OnWindowFocused(aura::Window* gained_focus,
-                                             aura::Window* lost_focus) {
+void AppListBubblePresenter::OnWindowActivated(ActivationReason reason,
+                                               aura::Window* gained_active,
+                                               aura::Window* lost_active) {
   if (!is_target_visibility_show_)
+    return;
+
+  if (gained_active) {
+    if (auto* container = GetContainerForWindow(gained_active)) {
+      const int container_id = container->GetId();
+      // If the bubble or one of its children (e.g. an uninstall dialog) gained
+      // activation, the bubble should stay open. Likewise, allow focus to move
+      // to the shelf (e.g. by pressing Alt-Shift-L).
+      if (container_id == kShellWindowId_AppListContainer ||
+          container_id == kShellWindowId_ShelfContainer) {
+        return;
+      }
+    }
+  }
+
+  // Closing the bubble for "press" type events is handled by
+  // `bubble_event_filter_`. Activation can change when a user merely moves the
+  // cursor outside the app list bounds, so losing activation should not close
+  // the bubble.
+  if (reason == wm::ActivationChangeObserver::ActivationReason::INPUT_EVENT)
     return;
 
   aura::Window* app_list_container =
       bubble_widget_->GetNativeWindow()->parent();
 
-  // If the bubble or one of its children (e.g. an uninstall dialog) gained
-  // focus, the bubble should stay open.
-  if (gained_focus && app_list_container->Contains(gained_focus))
-    return;
-
-  // Otherwise, if the bubble or one of its children lost focus, the bubble
-  // should close.
-  if (lost_focus && app_list_container->Contains(lost_focus))
+  // Otherwise, if the bubble or one of its children lost activation or if
+  // something other than the bubble gains activation, the bubble should close.
+  if ((lost_active && app_list_container->Contains(lost_active)) ||
+      (gained_active && !app_list_container->Contains(gained_active))) {
     Dismiss();
+  }
 }
 
 void AppListBubblePresenter::OnDisplayMetricsChanged(
@@ -420,6 +447,12 @@ void AppListBubblePresenter::OnDisplayMetricsChanged(
   aura::Window* root_window =
       bubble_widget_->GetNativeWindow()->GetRootWindow();
   bubble_widget_->SetBounds(ComputeBubbleBounds(root_window, bubble_view_));
+}
+
+void AppListBubblePresenter::OnShelfShuttingDown() {
+  shelf_observer_.Reset();
+  if (bubble_view_)
+    bubble_view_->SetDragAndDropHostOfCurrentAppList(nullptr);
 }
 
 void AppListBubblePresenter::OnPressOutsideBubble() {
@@ -452,6 +485,11 @@ void AppListBubblePresenter::OnHideAnimationEnded() {
   bubble_widget_->Hide();
 
   controller_->MaybeCloseAssistant();
+}
+
+int AppListBubblePresenter::GetPreferredBubbleWidth(
+    aura::Window* root_window) const {
+  return GetBubbleWidth(GetWorkAreaForBubble(root_window), root_window);
 }
 
 }  // namespace ash

@@ -1,12 +1,12 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/memory/raw_ptr.h"
 #include "ui/message_center/views/notification_view.h"
 
 #include <memory>
 
+#include "base/memory/raw_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -20,6 +20,7 @@
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/test/event_generator.h"
+#include "ui/events/test/test_event.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/message_center/message_center.h"
@@ -38,6 +39,10 @@
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget_utils.h"
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/constants/notifier_catalogs.h"
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 namespace message_center {
 
@@ -150,12 +155,6 @@ class NotificationTestDelegate : public NotificationDelegate {
   bool expecting_reply_submission_ = false;
 };
 
-class DummyEvent : public ui::Event {
- public:
-  DummyEvent() : Event(ui::ET_UNKNOWN, base::TimeTicks(), 0) {}
-  ~DummyEvent() override = default;
-};
-
 }  // namespace
 
 class NotificationViewBaseTest : public views::ViewsTestBase,
@@ -221,8 +220,8 @@ std::unique_ptr<Notification>
 NotificationViewBaseTest::CreateSimpleNotificationWithRichData(
     const RichNotificationData& data) const {
   std::unique_ptr<Notification> notification = std::make_unique<Notification>(
-      NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
-      u"title", u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
+      NOTIFICATION_TYPE_SIMPLE, std::string(kDefaultNotificationId), u"title",
+      u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
       u"display source", GURL(),
       NotifierId(NotifierType::APPLICATION, "extension_id"), data, delegate_);
   notification->set_small_image(CreateTestImage(16, 16));
@@ -504,7 +503,7 @@ TEST_F(NotificationViewBaseTest, TestActionButtonClick) {
 }
 
 // TODO(crbug.com/1232197): Test failing on linux-lacros-tester-rel and ozone.
-#if BUILDFLAG(IS_CHROMEOS_LACROS) || defined(USE_OZONE)
+#if BUILDFLAG(IS_CHROMEOS_LACROS) || BUILDFLAG(IS_OZONE)
 #define MAYBE_TestInlineReply DISABLED_TestInlineReply
 #else
 #define MAYBE_TestInlineReply TestInlineReply
@@ -823,6 +822,9 @@ TEST_F(NotificationViewBaseTest, FixedViewMode) {
 }
 
 TEST_F(NotificationViewBaseTest, SnoozeButton) {
+  MessageCenter::Get()->RemoveAllNotifications(/*by_user=*/false,
+                                               MessageCenter::RemoveType::ALL);
+
   // Create notification to replace the current one with itself.
   message_center::RichNotificationData rich_data;
   rich_data.settings_button_handler = SettingsButtonHandler::INLINE;
@@ -1037,7 +1039,7 @@ TEST_F(NotificationViewBaseTest, TestDeleteOnToggleExpanded) {
   // The view can be deleted by PreferredSizeChanged(). https://crbug.com/918933
   set_delete_on_preferred_size_changed(true);
   views::test::ButtonTestApi(notification_view()->header_row_)
-      .NotifyClick(DummyEvent());
+      .NotifyClick(ui::test::TestEvent());
 }
 
 TEST_F(NotificationViewBaseTest, TestLongTitleAndMessage) {
@@ -1075,14 +1077,23 @@ TEST_F(NotificationViewBaseTest, AppNameExtension) {
 }
 
 TEST_F(NotificationViewBaseTest, AppNameSystemNotification) {
+  MessageCenter::Get()->RemoveAllNotifications(/*by_user=*/false,
+                                               MessageCenter::RemoveType::ALL);
+
   std::u16string app_name = u"system notification";
-  message_center::MessageCenter::Get()->SetSystemNotificationAppName(app_name);
+  MessageCenter::Get()->SetSystemNotificationAppName(app_name);
   RichNotificationData data;
   data.settings_button_handler = SettingsButtonHandler::INLINE;
   auto notification = std::make_unique<Notification>(
-      NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
-      u"title", u"message", ui::ImageModel(), std::u16string(), GURL(),
-      NotifierId(NotifierType::SYSTEM_COMPONENT, "system"), data, nullptr);
+      NOTIFICATION_TYPE_SIMPLE, std::string(kDefaultNotificationId), u"title",
+      u"message", ui::ImageModel(), std::u16string(), GURL(),
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+      NotifierId(NotifierType::SYSTEM_COMPONENT, "system",
+                 ash::NotificationCatalogName::kTestCatalogName),
+#else
+      NotifierId(NotifierType::SYSTEM_COMPONENT, "system"),
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+      data, nullptr);
 
   UpdateNotificationViews(*notification);
 
@@ -1100,6 +1111,9 @@ TEST_F(NotificationViewBaseTest, AppNameWebNotification) {
 }
 
 TEST_F(NotificationViewBaseTest, AppNameWebAppNotification) {
+  MessageCenter::Get()->RemoveAllNotifications(/*by_user=*/false,
+                                               MessageCenter::RemoveType::ALL);
+
   const GURL web_app_url("http://example.com");
 
   NotifierId notifier_id(web_app_url, /*title=*/u"web app title");
@@ -1112,8 +1126,8 @@ TEST_F(NotificationViewBaseTest, AppNameWebAppNotification) {
   data.settings_button_handler = SettingsButtonHandler::INLINE;
 
   std::unique_ptr<Notification> notification = std::make_unique<Notification>(
-      NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
-      u"title", u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
+      NOTIFICATION_TYPE_SIMPLE, std::string(kDefaultNotificationId), u"title",
+      u"message", ui::ImageModel::FromImage(CreateTestImage(80, 80)),
       u"display source", GURL(), notifier_id, data, delegate_);
   notification->set_small_image(gfx::Image::CreateFrom1xBitmap(small_bitmap));
   notification->set_image(CreateTestImage(320, 240));

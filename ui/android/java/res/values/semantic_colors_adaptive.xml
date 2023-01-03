@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2013 The Chromium Authors. All rights reserved.
-
-     Use of this source code is governed by a BSD-style license that can be
-     found in the LICENSE file.
+<!--
+Copyright 2013 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- TODO(huayinz): remove tools:ignore once these colors are used in ui/android -->
@@ -104,9 +104,9 @@
     <color name="divider_line_bg_color_baseline" tools:ignore="UnusedResources">@color/divider_line_bg_color_dark</color>
     <color name="drag_handlebar_color_baseline">@color/divider_line_bg_color_baseline</color>
     <color name="omnibox_bg_color" tools:ignore="UnusedResources">@color/omnibox_bg_color_light</color>
-    <color name="feed_header_active_tab_bg_color_baseline">@color/default_bg_color_baseline</color>
-    <color name="feed_header_section_bg_color_baseline">@color/default_bg_color_light_elev_2_baseline</color>
-    <color name="feed_header_section_bg_color_disabled_baseline">@color/default_bg_color_elev_1_baseline</color>
+    <color name="section_header_active_tab_bg_color_baseline">@color/default_bg_color_baseline</color>
+    <color name="section_header_bg_color_baseline">@color/default_bg_color_light_elev_2_baseline</color>
+    <color name="section_header_bg_color_disabled_baseline">@color/default_bg_color_elev_1_baseline</color>
     <color name="image_loading_color" tools:ignore="UnusedResources">@color/image_loading_color_dark</color>
     <color name="promo_illustration_bg_color" tools:ignore="UnusedResources">@color/promo_illustration_bg_color_light</color>
     <color name="preference_highlighted_bg_color">@color/preference_highlighted_bg_color_dark</color>

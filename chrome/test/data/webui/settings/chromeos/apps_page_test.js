@@ -1,17 +1,21 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://os-settings/chromeos/os_settings.js';
 
-import {AndroidAppsBrowserProxyImpl, createBoolPermission, Router, routes, setAppNotificationProviderForTesting} from 'chrome://os-settings/chromeos/os_settings.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
-import {PromiseResolver} from 'chrome://resources/js/promise_resolver.m.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {AndroidAppsBrowserProxyImpl, appNotificationHandlerMojomWebui, createBoolPermission, Router, routes, routesMojomWebui, setAppNotificationProviderForTesting} from 'chrome://os-settings/chromeos/os_settings.js';
+import {Permission} from 'chrome://resources/cr_components/app_management/app_management.mojom-webui.js';
+import {loadTimeData} from 'chrome://resources/ash/common/load_time_data.m.js';
+import {PromiseResolver} from 'chrome://resources/js/promise_resolver.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {flushTasks, waitAfterNextRender} from 'chrome://test/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {TestAndroidAppsBrowserProxy} from './test_android_apps_browser_proxy.js';
+
+const {App, AppNotificationsObserverRemote, Readiness} =
+    appNotificationHandlerMojomWebui;
 
 /** @type {?OsSettingsAppsPageElement} */
 let appsPage = null;
@@ -26,15 +30,15 @@ function getFakePrefs() {
         key: 'arc.enabledd',
         type: chrome.settingsPrivate.PrefType.BOOLEAN,
         value: false,
-      }
+      },
     },
     settings: {
       restore_apps_and_pages: {
         key: 'settings.restore_apps_and_pages',
         type: chrome.settingsPrivate.PrefType.NUMBER,
         value: 2,
-      }
-    }
+      },
+    },
   };
 }
 
@@ -45,15 +49,15 @@ function setPrefs(restoreOption) {
         key: 'arc.enabledd',
         type: chrome.settingsPrivate.PrefType.BOOLEAN,
         value: false,
-      }
+      },
     },
     settings: {
       restore_apps_and_pages: {
         key: 'settings.restore_apps_and_pages',
         type: chrome.settingsPrivate.PrefType.NUMBER,
         value: restoreOption,
-      }
-    }
+      },
+    },
   };
 }
 
@@ -63,14 +67,12 @@ class FakeAppNotificationHandler {
     this.resolverMap_ = new Map();
 
     /**
-     * @private
-     *     {?chromeos.settings.appNotification.mojom.
-     *      AppNotificationObserverRemote}
+     * @private {?AppNotificationsObserverRemote}
      */
-    this.appNotificationObserverRemote_;
+    this.appNotificationsObserverRemote_;
 
     /**
-     * @private {!Array<!chromeos.settings.appNotification.mojom.App>}
+     * @private {!Array<!App>}
      */
     this.apps_ = [];
 
@@ -81,8 +83,8 @@ class FakeAppNotificationHandler {
   }
 
   resetForTest() {
-    if (this.appNotificationObserverRemote_) {
-      this.appNotificationObserverRemote_ = null;
+    if (this.appNotificationsObserverRemote_) {
+      this.appNotificationsObserverRemote_ = null;
     }
 
     this.resolverMap_.set('addObserver', new PromiseResolver());
@@ -123,25 +125,21 @@ class FakeAppNotificationHandler {
   }
 
   /**
-   * @return
-   *      {chromeos.settings.appNotification.mojom.
-   *        AppNotificationObserverRemote}
+   * @return {AppNotificationsObserverRemote}
    */
   getObserverRemote() {
-    return this.appNotificationObserverRemote_;
+    return this.appNotificationsObserverRemote_;
   }
 
   // appNotificationHandler methods
 
   /**
-   * @param {!chromeos.settings.appNotification.mojom.
-   *        AppNotificationObserverRemote}
-   *      remote
+   * @param {!AppNotificationsObserverRemote} remote
    * @return {!Promise}
    */
   addObserver(remote) {
     return new Promise(resolve => {
-      this.appNotificationObserverRemote_ = remote;
+      this.appNotificationsObserverRemote_ = remote;
       this.methodCalled('addObserver');
       resolve();
     });
@@ -165,7 +163,7 @@ class FakeAppNotificationHandler {
 
   /**
    * @param {string} id
-   * @param {!appManagement.mojom.Permission} permission
+   * @param {!Permission} permission
    */
   setNotificationPermission(id, permission) {
     return new Promise(resolve => {
@@ -175,7 +173,7 @@ class FakeAppNotificationHandler {
   }
 
   /**
-   * @return {!Promise<!Array<!chromeos.settings.appNotification.mojom.App>>}
+   * @return {!Promise<!Array<!App>>}
    */
   getApps() {
     return new Promise(resolve => {
@@ -188,7 +186,7 @@ class FakeAppNotificationHandler {
 suite('AppsPageTests', function() {
   /**
    * @type {
-   *    ?chromeos.settings.appNotification.mojom.AppNotificationHandlerRemote
+   *    ?AppNotificationHandlerRemote
    *  }
    */
   let mojoApi_;
@@ -196,18 +194,16 @@ suite('AppsPageTests', function() {
   /**
    * @param {string} id
    * @param {string} title
-   * @param {!appManagement.mojom.Permission} permission
-   * @param {?chromeos.settings.appNotification.mojom.Readiness} readiness
-   * @return {!chromeos.settings.appNotification.mojom.App}
+   * @param {!Permission} permission
+   * @param {?Readiness} readiness
+   * @return {!App}
    */
-  function createApp(
-      id, title, permission,
-      readiness = chromeos.settings.appNotification.mojom.Readiness.kReady) {
+  function createApp(id, title, permission, readiness = Readiness.kReady) {
     return {
       id: id,
       title: title,
       notificationPermission: permission,
-      readiness: readiness
+      readiness: readiness,
     };
   }
 
@@ -218,7 +214,7 @@ suite('AppsPageTests', function() {
     return mojoApi_.whenCalled('addObserver');
   }
 
-  /** @param {!Array<!chromeos.settings.appNotification.mojom.App>} */
+  /** @param {!Array<!App>} */
   function simulateNotificationAppChanged(app) {
     mojoApi_.getObserverRemote().onNotificationAppChanged(app);
   }
@@ -226,7 +222,7 @@ suite('AppsPageTests', function() {
   setup(async () => {
     loadTimeData.overrideValues({showOsSettingsAppNotificationsRow: true});
     androidAppsBrowserProxy = new TestAndroidAppsBrowserProxy();
-    AndroidAppsBrowserProxyImpl.instance_ = androidAppsBrowserProxy;
+    AndroidAppsBrowserProxyImpl.setInstanceForTesting(androidAppsBrowserProxy);
     PolymerTest.clearBody();
     mojoApi_ = new FakeAppNotificationHandler();
     setAppNotificationProviderForTesting(mojoApi_);
@@ -249,9 +245,12 @@ suite('AppsPageTests', function() {
       appsPage.prefs = getFakePrefs();
     });
 
-    const AndroidAppsShown = () => !!appsPage.$$('#android-apps');
-    const AppManagementShown = () => !!appsPage.$$('#appManagement');
-    const RestoreAppsOnStartupShown = () => !!appsPage.$$('#onStartupDropdown');
+    const AndroidAppsShown = () =>
+        !!appsPage.shadowRoot.querySelector('#android-apps');
+    const AppManagementShown = () =>
+        !!appsPage.shadowRoot.querySelector('#appManagement');
+    const RestoreAppsOnStartupShown = () =>
+        !!appsPage.shadowRoot.querySelector('#onStartupDropdown');
 
     test('Only App Management Shown', function() {
       appsPage.showAndroidApps = false;
@@ -289,7 +288,7 @@ suite('AppsPageTests', function() {
       appsPage.showStartup = true;
       flush();
 
-      const rowLink = appsPage.$$('#appNotifications');
+      const rowLink = appsPage.shadowRoot.querySelector('#appNotifications');
       assertTrue(!!rowLink);
       // Test default is to have 0 apps.
       assertEquals('0 apps', rowLink.subLabel);
@@ -310,9 +309,8 @@ suite('AppsPageTests', function() {
       assertEquals('2 apps', rowLink.subLabel);
 
       // Simulate an uninstalled app.
-      const app3 = createApp(
-          '2', 'App2', permission2,
-          chromeos.settings.appNotification.mojom.Readiness.kUninstalledByUser);
+      const app3 =
+          createApp('2', 'App2', permission2, Readiness.kUninstalledByUser);
       simulateNotificationAppChanged(app3);
       await flushTasks();
       assertEquals('1 apps', rowLink.subLabel);
@@ -333,9 +331,9 @@ suite('AppsPageTests', function() {
     });
 
     test('Clicking enable button enables ARC', function() {
-      const button = appsPage.$$('#enable');
+      const button = appsPage.shadowRoot.querySelector('#enable');
       assertTrue(!!button);
-      assertFalse(!!appsPage.$$('.subpage-arrow'));
+      assertFalse(!!appsPage.shadowRoot.querySelector('.subpage-arrow'));
 
       button.click();
       flush();
@@ -346,21 +344,27 @@ suite('AppsPageTests', function() {
         settingsAppAvailable: false,
       };
       flush();
-      assertTrue(!!appsPage.$$('.subpage-arrow'));
+      assertTrue(!!appsPage.shadowRoot.querySelector('.subpage-arrow'));
     });
 
     test('On startup dropdown menu', async () => {
       appsPage.prefs = setPrefs(1);
       flush();
-      assertEquals(1, appsPage.$$('#onStartupDropdown').pref.value);
+      assertEquals(
+          1,
+          appsPage.shadowRoot.querySelector('#onStartupDropdown').pref.value);
 
       appsPage.prefs = setPrefs(2);
       flush();
-      assertEquals(2, appsPage.$$('#onStartupDropdown').pref.value);
+      assertEquals(
+          2,
+          appsPage.shadowRoot.querySelector('#onStartupDropdown').pref.value);
 
       appsPage.prefs = setPrefs(3);
       flush();
-      assertEquals(3, appsPage.$$('#onStartupDropdown').pref.value);
+      assertEquals(
+          3,
+          appsPage.shadowRoot.querySelector('#onStartupDropdown').pref.value);
     });
 
     test('Deep link to On startup dropdown menu', async () => {
@@ -370,8 +374,9 @@ suite('AppsPageTests', function() {
       params.append('settingId', '703');
       Router.getInstance().navigateTo(routes.APPS, params);
 
-      const deepLinkElement = appsPage.$$('#onStartupDropdown')
-                                  .shadowRoot.querySelector('#dropdownMenu');
+      const deepLinkElement =
+          appsPage.shadowRoot.querySelector('#onStartupDropdown')
+              .shadowRoot.querySelector('#dropdownMenu');
       await waitAfterNextRender(deepLinkElement);
       assertEquals(
           deepLinkElement, getDeepActiveElement(),
@@ -386,8 +391,8 @@ suite('AppsPageTests', function() {
       params.append('settingId', '700');
       Router.getInstance().navigateTo(routes.APPS, params);
 
-      const deepLinkElement =
-          appsPage.$$('#manageApps').shadowRoot.querySelector('cr-icon-button');
+      const deepLinkElement = appsPage.shadowRoot.querySelector('#manageApps')
+                                  .shadowRoot.querySelector('cr-icon-button');
       await waitAfterNextRender(deepLinkElement);
       assertEquals(
           deepLinkElement, getDeepActiveElement(),
@@ -399,7 +404,7 @@ suite('AppsPageTests', function() {
       params.append('settingId', '702');
       Router.getInstance().navigateTo(routes.APPS, params);
 
-      const deepLinkElement = appsPage.$$('#enable');
+      const deepLinkElement = appsPage.shadowRoot.querySelector('#enable');
       await waitAfterNextRender(deepLinkElement);
       assertEquals(
           deepLinkElement, getDeepActiveElement(),
@@ -415,7 +420,8 @@ suite('AppsPageTests', function() {
 
     setup(function() {
       androidAppsBrowserProxy = new TestAndroidAppsBrowserProxy();
-      AndroidAppsBrowserProxyImpl.instance_ = androidAppsBrowserProxy;
+      AndroidAppsBrowserProxyImpl.setInstanceForTesting(
+          androidAppsBrowserProxy);
       PolymerTest.clearBody();
       subpage = document.createElement('settings-android-apps-subpage');
       document.body.appendChild(subpage);
@@ -425,7 +431,7 @@ suite('AppsPageTests', function() {
       // this route doesn't exist for tests. Add it in for testing.
       if (!routes.ANDROID_APPS_DETAILS) {
         routes.ANDROID_APPS_DETAILS = routes.APPS.createChild(
-            '/' + chromeos.settings.mojom.GOOGLE_PLAY_STORE_SUBPAGE_PATH);
+            '/' + routesMojomWebui.GOOGLE_PLAY_STORE_SUBPAGE_PATH);
       }
 
       subpage.prefs = {arc: {enabled: {value: true}}};
@@ -442,25 +448,25 @@ suite('AppsPageTests', function() {
     });
 
     test('Sanity', function() {
-      assertTrue(!!subpage.$$('#remove'));
-      assertTrue(!subpage.$$('#manageApps'));
+      assertTrue(!!subpage.shadowRoot.querySelector('#remove'));
+      assertTrue(!subpage.shadowRoot.querySelector('#manageApps'));
     });
 
     test('ManageAppsUpdate', function() {
-      assertTrue(!subpage.$$('#manageApps'));
+      assertTrue(!subpage.shadowRoot.querySelector('#manageApps'));
       subpage.androidAppsInfo = {
         playStoreEnabled: true,
         settingsAppAvailable: true,
       };
       flush();
-      assertTrue(!!subpage.$$('#manageApps'));
+      assertTrue(!!subpage.shadowRoot.querySelector('#manageApps'));
 
       subpage.androidAppsInfo = {
         playStoreEnabled: true,
         settingsAppAvailable: false,
       };
       flush();
-      assertTrue(!subpage.$$('#manageApps'));
+      assertTrue(!subpage.shadowRoot.querySelector('#manageApps'));
     });
 
     test('ManageAppsOpenRequest', function() {
@@ -469,7 +475,7 @@ suite('AppsPageTests', function() {
         settingsAppAvailable: true,
       };
       flush();
-      const button = subpage.$$('#manageApps');
+      const button = subpage.shadowRoot.querySelector('#manageApps');
       assertTrue(!!button);
       const promise =
           androidAppsBrowserProxy.whenCalled('showAndroidAppsSettings');
@@ -479,11 +485,11 @@ suite('AppsPageTests', function() {
     });
 
     test('Disable', function() {
-      const dialog = subpage.$$('#confirmDisableDialog');
+      const dialog = subpage.shadowRoot.querySelector('#confirmDisableDialog');
       assertTrue(!!dialog);
       assertFalse(dialog.open);
 
-      const remove = subpage.$$('#remove');
+      const remove = subpage.shadowRoot.querySelector('#remove');
       assertTrue(!!remove);
 
       subpage.onRemoveTap_();
@@ -497,9 +503,9 @@ suite('AppsPageTests', function() {
         arc: {
           enabled: {
             value: true,
-            enforcement: chrome.settingsPrivate.Enforcement.ENFORCED
-          }
-        }
+            enforcement: chrome.settingsPrivate.Enforcement.ENFORCED,
+          },
+        },
       };
       subpage.androidAppsInfo = {
         playStoreEnabled: true,
@@ -507,8 +513,8 @@ suite('AppsPageTests', function() {
       };
       flush();
 
-      assertFalse(!!subpage.$$('#remove'));
-      assertTrue(!!subpage.$$('#manageApps'));
+      assertFalse(!!subpage.shadowRoot.querySelector('#remove'));
+      assertTrue(!!subpage.shadowRoot.querySelector('#manageApps'));
     });
 
     test('Can open app settings without Play Store', function() {
@@ -519,7 +525,7 @@ suite('AppsPageTests', function() {
       };
       flush();
 
-      const button = subpage.$$('#manageApps');
+      const button = subpage.shadowRoot.querySelector('#manageApps');
       assertTrue(!!button);
       const promise =
           androidAppsBrowserProxy.whenCalled('showAndroidAppsSettings');
@@ -539,8 +545,8 @@ suite('AppsPageTests', function() {
       params.append('settingId', '700');
       Router.getInstance().navigateTo(routes.ANDROID_APPS_DETAILS, params);
 
-      const deepLinkElement =
-          subpage.$$('#manageApps').shadowRoot.querySelector('cr-icon-button');
+      const deepLinkElement = subpage.shadowRoot.querySelector('#manageApps')
+                                  .shadowRoot.querySelector('cr-icon-button');
       await waitAfterNextRender(deepLinkElement);
       assertEquals(
           deepLinkElement, getDeepActiveElement(),
@@ -552,7 +558,8 @@ suite('AppsPageTests', function() {
       params.append('settingId', '701');
       Router.getInstance().navigateTo(routes.ANDROID_APPS_DETAILS, params);
 
-      const deepLinkElement = subpage.$$('#remove cr-button');
+      const deepLinkElement =
+          subpage.shadowRoot.querySelector('#remove cr-button');
       await waitAfterNextRender(deepLinkElement);
       assertEquals(
           deepLinkElement, getDeepActiveElement(),
@@ -563,12 +570,14 @@ suite('AppsPageTests', function() {
       // ARCVM is not enabled
       subpage.showArcvmManageUsb = false;
       flush();
-      assertFalse(!!subpage.$$('#manageArcvmShareUsbDevices'));
+      assertFalse(
+          !!subpage.shadowRoot.querySelector('#manageArcvmShareUsbDevices'));
 
       // ARCMV is enabled
       subpage.showArcvmManageUsb = true;
       flush();
-      assertTrue(!!subpage.$$('#manageArcvmShareUsbDevices'));
+      assertTrue(
+          !!subpage.shadowRoot.querySelector('#manageArcvmShareUsbDevices'));
     });
   });
 });

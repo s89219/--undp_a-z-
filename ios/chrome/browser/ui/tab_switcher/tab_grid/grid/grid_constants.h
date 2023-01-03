@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #import <UIKit/UIKit.h>
 
 // Accessibility identifier prefix of a grid cell. To reference a specific cell,
-// concatenate |kGridCellIdentifierPrefix| with the index of the cell. For
+// concatenate `kGridCellIdentifierPrefix` with the index of the cell. For
 // example, [NSString stringWithFormat:@"%@%d", kGridCellIdentifierPrefix,
 // index].
 extern NSString* const kGridCellIdentifierPrefix;
@@ -75,23 +75,12 @@ extern const int kGridHeaderValueColor;
 // The space between different labels inside the GridHeader.
 extern const CGFloat kGridHeaderContentSpacing;
 
-// GridCell styling.
-// All kxxxColor constants after this are RGB values stored in a Hex integer.
-// These will be converted into UIColors using the UIColorFromRGB() function,
-// from uikit_ui_util.h.
-// TODO(crbug.com/981889): remove with iOS 12.
-// Extra dark theme colors until iOS 12 gets removed.
-extern const int kGridDarkThemeCellTitleColor;
-extern const int kGridDarkThemeCellDetailColor;
-extern const CGFloat kGridDarkThemeCellDetailAlpha;
-extern const int kGridDarkThemeCellTintColor;
-extern const int kGridDarkThemeCellSolidButtonTextColor;
-
 // GridCell dimensions.
 extern const CGSize kGridCellSizeSmall;
 extern const CGSize kGridCellSizeMedium;
 extern const CGSize kGridCellSizeLarge;
 extern const CGSize kGridCellSizeAccessibility;
+extern const CGFloat kLegacyGridCellCornerRadius;
 extern const CGFloat kGridCellCornerRadius;
 extern const CGFloat kGridCellIconCornerRadius;
 // The cell header contains the icon, title, and close button.
@@ -100,9 +89,11 @@ extern const CGFloat kGridCellHeaderAccessibilityHeight;
 extern const CGFloat kGridCellHeaderLeadingInset;
 extern const CGFloat kGridCellCloseTapTargetWidthHeight;
 extern const CGFloat kGridCellCloseButtonContentInset;
+extern const CGFloat kGridCellCloseButtonTopSpacing;
 extern const CGFloat kGridCellTitleLabelContentInset;
 extern const CGFloat kGridCellIconDiameter;
 extern const CGFloat kGridCellSelectIconContentInset;
+extern const CGFloat kGridCellSelectIconTopSpacing;
 extern const CGFloat kGridCellSelectIconSize;
 extern const CGFloat kGridCellSelectionRingGapWidth;
 extern const CGFloat kGridCellSelectionRingTintWidth;
@@ -125,5 +116,8 @@ extern const CGFloat kPlusSignButtonWidth;
 // Expected collection view top content inset. If mismatch, the extra space
 // is communicated to the plus sign button to align + sign correctly.
 extern const CGFloat kGridExpectedTopContentInset;
+// Height of the view that is revealed. The thumb strip has a height equal to a
+// small grid cell + edge insets (top and bottom) from thumb strip layout.
+extern const CGFloat kThumbStripHeight;
 
 #endif  // IOS_CHROME_BROWSER_UI_TAB_SWITCHER_TAB_GRID_GRID_GRID_CONSTANTS_H_

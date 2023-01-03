@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,7 @@
 #include "base/files/file_path_watcher.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
 #include "base/strings/stringprintf.h"
@@ -108,10 +109,9 @@ base::FilePath CreateTextFile(
 void WaitForItemAddition(
     base::RepeatingCallback<bool(const HoldingSpaceItem*)> predicate) {
   auto* model = ash::HoldingSpaceController::Get()->model();
-  if (std::any_of(model->items().begin(), model->items().end(),
-                  [&predicate](const auto& item) {
-                    return predicate.Run(item.get());
-                  })) {
+  if (base::ranges::any_of(model->items(), [&predicate](const auto& item) {
+        return predicate.Run(item.get());
+      })) {
     return;
   }
 
@@ -139,10 +139,9 @@ void WaitForItemAddition(
 void WaitForItemRemoval(
     base::RepeatingCallback<bool(const HoldingSpaceItem*)> predicate) {
   auto* model = ash::HoldingSpaceController::Get()->model();
-  if (std::none_of(model->items().begin(), model->items().end(),
-                   [&predicate](const auto& item) {
-                     return predicate.Run(item.get());
-                   })) {
+  if (base::ranges::none_of(model->items(), [&predicate](const auto& item) {
+        return predicate.Run(item.get());
+      })) {
     return;
   }
 
@@ -182,8 +181,8 @@ void WaitForItemInitialization(
   WaitForItemAddition(predicate);
 
   auto* model = ash::HoldingSpaceController::Get()->model();
-  auto item_it = std::find_if(
-      model->items().begin(), model->items().end(),
+  auto item_it = base::ranges::find_if(
+      model->items(),
       [&predicate](const auto& item) { return predicate.Run(item.get()); });
 
   DCHECK(item_it != model->items().end());
@@ -784,8 +783,8 @@ class HoldingSpaceKeyedServiceLacrosBrowserTest
  public:
   HoldingSpaceKeyedServiceLacrosBrowserTest()
       : HoldingSpaceKeyedServiceBrowserTest(std::get<0>(GetParam())) {
-    std::vector<base::Feature> enabled_features;
-    std::vector<base::Feature> disabled_features;
+    std::vector<base::test::FeatureRef> enabled_features;
+    std::vector<base::test::FeatureRef> disabled_features;
 
     scoped_feature_list.InitWithFeatures(enabled_features, disabled_features);
   }
@@ -831,12 +830,12 @@ IN_PROC_BROWSER_TEST_P(HoldingSpaceKeyedServiceLacrosBrowserTest,
   download->is_from_incognito_profile = FromIncognitoProfile();
 
   // Lacros clients which are eligible for in-progress downloads integration
-  // have `has_is_mixed_content` present. This field was the last field to be
+  // have `has_is_insecure` present. This field was the last field to be
   // implemented in Lacros. Its presence indicates that other required metadata
   // and APIs (e.g. pause, resume, cancel, etc.) are also implemented and is
   // therefore used to gate eligibility.
   if (InProgressDownloadsEligibleClient())
-    download->has_is_mixed_content = true;
+    download->has_is_insecure = true;
 
   // Notify observers of `download` creation.
   download->state = crosapi::mojom::DownloadState::kInProgress;

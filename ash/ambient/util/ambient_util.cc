@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "ash/public/cpp/ambient/ambient_backend_controller.h"
 #include "ash/public/cpp/ambient/ambient_client.h"
 #include "ash/public/cpp/ambient/proto/photo_cache_entry.pb.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "ash/utility/lottie_util.h"
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
@@ -30,8 +30,9 @@ bool IsShowing(LockScreen::ScreenType type) {
 
 SkColor GetContentLayerColor(
     AshColorProvider::ContentLayerType content_layer_type) {
-  return GetContentLayerColor(content_layer_type,
-                              AshColorProvider::Get()->IsDarkModeEnabled());
+  return GetContentLayerColor(
+      content_layer_type,
+      DarkLightModeControllerImpl::Get()->IsDarkModeEnabled());
 }
 
 SkColor GetContentLayerColor(
@@ -79,20 +80,19 @@ gfx::ShadowValues GetTextShadowValues(const ui::ColorProvider* color_provider,
 bool IsAmbientModeTopicTypeAllowed(::ambient::TopicType topic_type) {
   switch (topic_type) {
     case ::ambient::TopicType::kCurated:
-      return chromeos::features::kAmbientModeDefaultFeedEnabled.Get();
+      return features::kAmbientModeDefaultFeedEnabled.Get();
     case ::ambient::TopicType::kCapturedOnPixel:
-      return chromeos::features::kAmbientModeCapturedOnPixelPhotosEnabled.Get();
+      return features::kAmbientModeCapturedOnPixelPhotosEnabled.Get();
     case ::ambient::TopicType::kCulturalInstitute:
-      return chromeos::features::kAmbientModeCulturalInstitutePhotosEnabled
-          .Get();
+      return features::kAmbientModeCulturalInstitutePhotosEnabled.Get();
     case ::ambient::TopicType::kFeatured:
-      return chromeos::features::kAmbientModeFeaturedPhotosEnabled.Get();
+      return features::kAmbientModeFeaturedPhotosEnabled.Get();
     case ::ambient::TopicType::kGeo:
-      return chromeos::features::kAmbientModeGeoPhotosEnabled.Get();
+      return features::kAmbientModeGeoPhotosEnabled.Get();
     case ::ambient::TopicType::kPersonal:
-      return chromeos::features::kAmbientModePersonalPhotosEnabled.Get();
+      return features::kAmbientModePersonalPhotosEnabled.Get();
     case ::ambient::TopicType::kRss:
-      return chromeos::features::kAmbientModeRssPhotosEnabled.Get();
+      return features::kAmbientModeRssPhotosEnabled.Get();
     case ::ambient::TopicType::kOther:
       return false;
   }

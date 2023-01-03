@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include "chrome/browser/nearby_sharing/logging/logging.h"
 #include "chrome/browser/nearby_sharing/nearby_share_metrics_logger.h"
-#include "chromeos/network/network_configuration_handler.h"
+#include "chromeos/ash/components/network/network_configuration_handler.h"
 #include "chromeos/services/network_config/in_process_instance.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
 
@@ -44,7 +44,7 @@ void WifiNetworkConfigurationHandler::ConfigureWifiNetwork(
       wifi_credentials_attachment.security_type());
   wifi->ssid = wifi_credentials_attachment.ssid();
   wifi->hidden_ssid =
-      chromeos::network_config::mojom::HiddenSsidMode::kAutomatic;
+      chromeos::network_config::mojom::HiddenSsidMode::kDisabled;
 
   auto config = chromeos::network_config::mojom::ConfigProperties::New();
   config->type_config =

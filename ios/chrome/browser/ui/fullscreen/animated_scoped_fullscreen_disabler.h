@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,7 +45,7 @@ class AnimatedScopedFullscreenDisabler : public FullscreenControllerObserver {
   // A container object for the list of observers.
   __strong AnimatedScopedFullscreenDisablerObserverListContainer*
       observer_list_container_ = nil;
-  // Whether this disabler is contributing to |controller_|'s disabled counter.
+  // Whether this disabler is contributing to `controller_`'s disabled counter.
   bool disabling_ = false;
   // Used to implement animation blocks safely.
   base::WeakPtrFactory<AnimatedScopedFullscreenDisabler> weak_factory_{this};

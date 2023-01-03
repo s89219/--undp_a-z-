@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/trace_event/trace_event.h"
@@ -41,7 +42,7 @@ ProtobufModelScorer::ProtobufModelScorer() = default;
 ProtobufModelScorer::~ProtobufModelScorer() = default;
 
 /* static */
-ProtobufModelScorer* ProtobufModelScorer::Create(
+std::unique_ptr<ProtobufModelScorer> ProtobufModelScorer::Create(
     const base::StringPiece& model_str,
     base::File visual_tflite_model) {
   std::unique_ptr<ProtobufModelScorer> scorer(new ProtobufModelScorer());
@@ -86,7 +87,7 @@ ProtobufModelScorer* ProtobufModelScorer::Create(
   }
 
   RecordScorerCreationStatus(SCORER_SUCCESS);
-  return scorer.release();
+  return scorer;
 }
 
 double ProtobufModelScorer::ComputeScore(const FeatureMap& features) const {
@@ -100,32 +101,35 @@ double ProtobufModelScorer::ComputeScore(const FeatureMap& features) const {
 #if BUILDFLAG(BUILD_WITH_TFLITE_LIB)
 void ProtobufModelScorer::ApplyVisualTfLiteModel(
     const SkBitmap& bitmap,
-    base::OnceCallback<void(base::flat_map<std::string, double>)> callback)
-    const {
+    base::OnceCallback<void(std::vector<double>)> callback) const {
   DCHECK(content::RenderThread::IsMainThread());
   if (visual_tflite_model_.IsValid()) {
     base::Time start_post_task_time = base::Time::Now();
     base::ThreadPool::PostTask(
         FROM_HERE, {base::TaskPriority::BEST_EFFORT},
-        base::BindOnce(
-            &ApplyVisualTfLiteModelHelper, bitmap,
-            model_.tflite_metadata().input_width(),
-            model_.tflite_metadata().input_height(),
-            std::string(
-                reinterpret_cast<const char*>(visual_tflite_model_.data()),
-                visual_tflite_model_.length()),
-            base::SequencedTaskRunnerHandle::Get(), std::move(callback)));
+        base::BindOnce(&ApplyVisualTfLiteModelHelper, bitmap,
+                       model_.tflite_metadata().input_width(),
+                       model_.tflite_metadata().input_height(),
+                       std::string(reinterpret_cast<const char*>(
+                                       visual_tflite_model_.data()),
+                                   visual_tflite_model_.length()),
+                       base::SequencedTaskRunner::GetCurrentDefault(),
+                       std::move(callback)));
     base::UmaHistogramTimes(
         "SBClientPhishing.TfLiteModelLoadTime.ProtobufScorer",
         base::Time::Now() - start_post_task_time);
   } else {
-    std::move(callback).Run(base::flat_map<std::string, double>());
+    std::move(callback).Run(std::vector<double>());
   }
 }
 #endif
 
 int ProtobufModelScorer::model_version() const {
   return model_.version();
+}
+
+int ProtobufModelScorer::dom_model_version() const {
+  return model_.dom_model_version();
 }
 
 bool Scorer::HasVisualTfLiteModel() const {

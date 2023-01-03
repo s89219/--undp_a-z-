@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/color/color_id.h"
 #include "ui/color/color_provider.h"
 #include "ui/compositor/layer.h"
@@ -27,6 +28,7 @@
 #include "ui/views/animation/ink_drop.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/label_button_border.h"
+#include "ui/views/controls/highlight_path_generator.h"
 #include "ui/views/painter.h"
 #include "ui/views/style/platform_style.h"
 #include "ui/views/view_class_properties.h"
@@ -118,6 +120,21 @@ void LabelButton::SetTextColor(ButtonState for_state, SkColor color) {
   explicitly_set_colors_[for_state] = true;
 }
 
+float LabelButton::GetFocusRingCornerRadius() const {
+  return focus_ring_corner_radius_;
+}
+
+void LabelButton::SetFocusRingCornerRadius(float radius) {
+  if (focus_ring_corner_radius_ == radius)
+    return;
+  focus_ring_corner_radius_ = radius;
+  InkDrop::Get(this)->SetSmallCornerRadius(focus_ring_corner_radius_);
+  InkDrop::Get(this)->SetLargeCornerRadius(focus_ring_corner_radius_);
+  views::InstallRoundRectHighlightPathGenerator(this, gfx::Insets(),
+                                                focus_ring_corner_radius_);
+  OnPropertyChanged(&focus_ring_corner_radius_, kPropertyEffectsPaint);
+}
+
 void LabelButton::SetEnabledTextColors(absl::optional<SkColor> color) {
   ButtonState states[] = {STATE_NORMAL, STATE_HOVERED, STATE_PRESSED};
   if (color.has_value()) {
@@ -128,6 +145,10 @@ void LabelButton::SetEnabledTextColors(absl::optional<SkColor> color) {
   for (auto state : states)
     explicitly_set_colors_[state] = false;
   ResetColorsFromNativeTheme();
+}
+
+void LabelButton::SetEnabledTextColorReadabilityAdjustment(bool enabled) {
+  label_->SetAutoColorReadabilityEnabled(enabled);
 }
 
 SkColor LabelButton::GetCurrentTextColor() const {
@@ -232,13 +253,18 @@ std::unique_ptr<LabelButtonBorder> LabelButton::CreateDefaultBorder() const {
 }
 
 void LabelButton::SetBorder(std::unique_ptr<Border> border) {
-  border_is_themed_border_ = false;
+  explicitly_set_border_ = true;
   View::SetBorder(std::move(border));
 }
 
 void LabelButton::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   ClearTextIfShrunkDown();
   Button::OnBoundsChanged(previous_bounds);
+
+  if (features::IsChromeRefresh2023()) {
+    SetFocusRingCornerRadius(LayoutProvider::Get()->GetCornerRadiusMetric(
+        Emphasis::kMaximum, size()));
+  }
 }
 
 gfx::Size LabelButton::CalculatePreferredSize() const {
@@ -247,8 +273,12 @@ gfx::Size LabelButton::CalculatePreferredSize() const {
   // Account for the label only when the button is not shrinking down to hide
   // the label entirely.
   if (!shrinking_down_label_) {
-    if (!label_->GetMultiLine() && max_size_.width() > 0)
-      label_->SetMaximumWidthSingleLine(max_size_.width() - size.width());
+    if (max_size_.width() > 0) {
+      if (label_->GetMultiLine())
+        label_->SetMaximumWidth(max_size_.width() - size.width());
+      else
+        label_->SetMaximumWidthSingleLine(max_size_.width() - size.width());
+    }
 
     const gfx::Size preferred_label_size = label_->GetPreferredSize();
     size.Enlarge(preferred_label_size.width(), 0);
@@ -500,8 +530,8 @@ void LabelButton::OnThemeChanged() {
   Button::OnThemeChanged();
   ResetColorsFromNativeTheme();
   UpdateImage();
-  if (border_is_themed_border_)
-    View::SetBorder(PlatformStyle::CreateThemedLabelButtonBorder(this));
+  if (!explicitly_set_border_)
+    View::SetBorder(CreateDefaultBorder());
   ResetLabelEnabledColor();
   // The entire button has to be repainted here, since the native theme can
   // define the tint for the entire background/border/focus ring.
@@ -630,6 +660,7 @@ ADD_PROPERTY_METADATA(gfx::Size, MaxSize)
 ADD_PROPERTY_METADATA(bool, IsDefault)
 ADD_PROPERTY_METADATA(int, ImageLabelSpacing)
 ADD_PROPERTY_METADATA(bool, ImageCentered)
+ADD_PROPERTY_METADATA(float, FocusRingCornerRadius)
 END_METADATA
 
 }  // namespace views

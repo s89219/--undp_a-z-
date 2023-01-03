@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/ui/native_window_tracker.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -35,6 +34,7 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/box_layout.h"
+#include "ui/views/native_window_tracker.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
@@ -66,7 +66,7 @@ WebAppUninstallDialogDelegateView::WebAppUninstallDialogDelegateView(
   auto* provider = web_app::WebAppProvider::GetForWebApps(profile_);
   DCHECK(provider);
 
-  app_start_url_ = provider->registrar().GetAppStartUrl(app_id_);
+  app_start_url_ = provider->registrar_unsafe().GetAppStartUrl(app_id_);
   DCHECK(!app_start_url_.is_empty());
   DCHECK(app_start_url_.is_valid());
 
@@ -84,7 +84,8 @@ WebAppUninstallDialogDelegateView::WebAppUninstallDialogDelegateView(
   SetShowIcon(true);
   SetTitle(l10n_util::GetStringFUTF16(
       IDS_EXTENSION_PROMPT_UNINSTALL_TITLE,
-      base::UTF8ToUTF16(provider->registrar().GetAppShortName(app_id_))));
+      base::UTF8ToUTF16(
+          provider->registrar_unsafe().GetAppShortName(app_id_))));
 
   SetButtonLabel(
       ui::DIALOG_BUTTON_OK,
@@ -109,14 +110,18 @@ WebAppUninstallDialogDelegateView::WebAppUninstallDialogDelegateView(
   set_margins(insets +
               gfx::Insets::TLBR(0, insets.left() + kIconSizeInDip, 0, 0));
 
-  std::u16string checkbox_label = l10n_util::GetStringFUTF16(
-      IDS_EXTENSION_UNINSTALL_PROMPT_REMOVE_DATA_CHECKBOX,
-      url_formatter::FormatUrlForSecurityDisplay(
-          app_start_url_, url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC));
+  // For IWAs checkbox will not be displayed, removal of
+  // storage is automatically enforced.
+  if (!provider->registrar_unsafe().IsIsolated(app_id_)) {
+    std::u16string checkbox_label = l10n_util::GetStringFUTF16(
+        IDS_EXTENSION_UNINSTALL_PROMPT_REMOVE_DATA_CHECKBOX,
+        url_formatter::FormatUrlForSecurityDisplay(
+            app_start_url_, url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC));
 
-  auto checkbox = std::make_unique<views::Checkbox>(checkbox_label);
-  checkbox->SetMultiLine(true);
-  checkbox_ = AddChildView(std::move(checkbox));
+    auto checkbox = std::make_unique<views::Checkbox>(checkbox_label);
+    checkbox->SetMultiLine(true);
+    checkbox_ = AddChildView(std::move(checkbox));
+  }
 
   uninstall_source_ = uninstall_source;
 }
@@ -130,23 +135,27 @@ void WebAppUninstallDialogDelegateView::OnDialogAccepted() {
   if (!dialog_)
     return;
 
+  auto* provider = web_app::WebAppProvider::GetForWebApps(profile_);
+  DCHECK(provider);
+  bool is_isolated_web_app = provider->registrar_unsafe().IsIsolated(app_id_);
+
   HistogramCloseAction action =
-      checkbox_->GetChecked()
+      is_isolated_web_app || (checkbox_ && checkbox_->GetChecked())
           ? HistogramCloseAction::kUninstallAndCheckboxChecked
           : HistogramCloseAction::kUninstall;
   UMA_HISTOGRAM_ENUMERATION("Webapp.UninstallDialogAction", action);
 
   Uninstall();
-  if (checkbox_->GetChecked())
+
+  if (is_isolated_web_app || (checkbox_ && checkbox_->GetChecked())) {
     ClearWebAppSiteData();
+  }
 }
 
 void WebAppUninstallDialogDelegateView::OnDialogCanceled() {
   UMA_HISTOGRAM_ENUMERATION("Webapp.UninstallDialogAction",
                             HistogramCloseAction::kCancelled);
-
-  if (dialog_)
-    std::exchange(dialog_, nullptr)->UninstallCancelled();
+  // `dialog_->UninstallCancelled()` is handled in the destructor.
 }
 
 ui::ImageModel WebAppUninstallDialogDelegateView::GetWindowIcon() {
@@ -183,8 +192,10 @@ void WebAppUninstallDialogDelegateView::ClearWebAppSiteData() {
                          url::Origin::Create(app_start_url_),
                          /*clear_cookies=*/true,
                          /*clear_storage=*/true, /*clear_cache=*/true,
+                         /*storage_buckets_to_remove=*/{},
                          /*avoid_closing_connections=*/false,
-                         net::CookiePartitionKey::Todo(), base::DoNothing());
+                         /*cookie_partition_key=*/absl::nullopt,
+                         /*storage_key=*/absl::nullopt, base::DoNothing());
 }
 
 void WebAppUninstallDialogDelegateView::ProcessAutoConfirmValue() {
@@ -212,7 +223,7 @@ WebAppUninstallDialogViews::WebAppUninstallDialogViews(Profile* profile,
                                                        gfx::NativeWindow parent)
     : parent_(parent), profile_(profile) {
   if (parent)
-    parent_window_tracker_ = NativeWindowTracker::Create(parent);
+    parent_window_tracker_ = views::NativeWindowTracker::Create(parent);
 }
 
 WebAppUninstallDialogViews::~WebAppUninstallDialogViews() {
@@ -229,7 +240,7 @@ void WebAppUninstallDialogViews::ConfirmUninstall(
   app_id_ = app_id;
   closed_callback_ = std::move(closed_callback);
 
-  if (parent_ && parent_window_tracker_->WasNativeWindowClosed()) {
+  if (parent_ && parent_window_tracker_->WasNativeWindowDestroyed()) {
     UninstallCancelled();
     return;
   }
@@ -241,7 +252,7 @@ void WebAppUninstallDialogViews::ConfirmUninstall(
 
   provider->icon_manager().ReadIcons(
       app_id, IconPurpose::ANY,
-      provider->registrar().GetAppDownloadedIconSizesAny(app_id),
+      provider->registrar_unsafe().GetAppDownloadedIconSizesAny(app_id),
       base::BindOnce(&WebAppUninstallDialogViews::OnIconsRead,
                      weak_ptr_factory_.GetWeakPtr(), uninstall_source));
 }
@@ -256,7 +267,7 @@ void WebAppUninstallDialogViews::OnIconsRead(
     std::map<SquareSizePx, SkBitmap> icon_bitmaps) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
-  if (parent_ && parent_window_tracker_->WasNativeWindowClosed()) {
+  if (parent_ && parent_window_tracker_->WasNativeWindowDestroyed()) {
     UninstallCancelled();
     return;
   }
@@ -297,16 +308,14 @@ WebAppUninstallDialogViews::UninstallStarted() {
   view_ = nullptr;
   return base::BindOnce(
       [](OnWebAppUninstallDialogClosed callback,
-         webapps::UninstallResultCode code) {
-        std::move(callback).Run(code == webapps::UninstallResultCode::kSuccess);
-      },
+         webapps::UninstallResultCode code) { std::move(callback).Run(code); },
       std::move(closed_callback_));
 }
 
 void WebAppUninstallDialogViews::UninstallCancelled() {
   DCHECK(closed_callback_);
   view_ = nullptr;
-  std::move(closed_callback_).Run(/*uninstalled=*/false);
+  std::move(closed_callback_).Run(webapps::UninstallResultCode::kCancelled);
 }
 
 // static

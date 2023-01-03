@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,7 @@
 #include "content/browser/indexed_db/indexed_db_compaction_task.h"
 #include "content/browser/indexed_db/indexed_db_connection.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
-#include "content/browser/indexed_db/indexed_db_factory_impl.h"
+#include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_operations.h"
 #include "content/browser/indexed_db/indexed_db_pre_close_task_queue.h"
@@ -105,8 +105,9 @@ base::Time GenerateNextGlobalCompactionTime(base::Time now) {
 
 }  // namespace
 
-const base::Feature kCompactIDBOnClose{"CompactIndexedDBOnClose",
-                                       base::FEATURE_ENABLED_BY_DEFAULT};
+BASE_FEATURE(kCompactIDBOnClose,
+             "CompactIndexedDBOnClose",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 constexpr const base::TimeDelta
     IndexedDBBucketState::kMaxEarliestGlobalSweepFromNow;
@@ -125,7 +126,7 @@ IndexedDBBucketState::IndexedDBBucketState(
     TransactionalLevelDBFactory* transactional_leveldb_factory,
     base::Time* earliest_global_sweep_time,
     base::Time* earliest_global_compaction_time,
-    std::unique_ptr<DisjointRangeLockManager> lock_manager,
+    std::unique_ptr<PartitionedLockManager> lock_manager,
     TasksAvailableCallback notify_tasks_callback,
     TearDownCallback tear_down_callback,
     std::unique_ptr<IndexedDBBackingStore> backing_store)
@@ -161,51 +162,6 @@ IndexedDBBucketState::~IndexedDBBucketState() {
       &leveldb_destruct_event);
   backing_store_.reset();
   leveldb_destruct_event.Wait();
-}
-
-void IndexedDBBucketState::AbortAllTransactions(bool compact) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-
-  // Because finishing all transactions could cause a database to be destructed
-  // (which would mutate the database_ map), save the keys beforehand and use
-  // those.
-  std::vector<std::u16string> database_names;
-  database_names.reserve(databases_.size());
-  for (const auto& pair : databases_) {
-    database_names.push_back(pair.first);
-  }
-
-  base::WeakPtr<IndexedDBBucketState> weak_ptr = AsWeakPtr();
-  for (const std::u16string& database_name : database_names) {
-    auto it = databases_.find(database_name);
-    if (it == databases_.end())
-      continue;
-
-    // Calling FinishAllTransactions can destruct the IndexedDBConnection &
-    // modify the IndexedDBDatabase::connection() list. To prevent UAFs, start
-    // by taking a WeakPtr of all connections, and then iterate that list.
-    std::vector<base::WeakPtr<IndexedDBConnection>> weak_connections;
-    weak_connections.reserve(it->second->connections().size());
-    for (IndexedDBConnection* connection : it->second->connections())
-      weak_connections.push_back(connection->GetWeakPtr());
-
-    for (base::WeakPtr<IndexedDBConnection> connection : weak_connections) {
-      if (connection) {
-        leveldb::Status status =
-            connection->AbortAllTransactions(IndexedDBDatabaseError(
-                blink::mojom::IDBException::kUnknownError,
-                "Aborting all transactions for the origin."));
-        if (!status.ok()) {
-          // This call should delete this object.
-          tear_down_callback().Run(status);
-          return;
-        }
-      }
-    }
-  }
-
-  if (compact)
-    backing_store_->Compact();
 }
 
 void IndexedDBBucketState::ForceClose() {

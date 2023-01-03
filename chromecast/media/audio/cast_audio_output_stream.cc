@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -149,7 +149,7 @@ CastAudioOutputStream::MixerServiceWrapper::MixerServiceWrapper(
 
   base::Thread::Options options;
   options.message_pump_type = base::MessagePumpType::IO;
-  options.priority = base::ThreadPriority::REALTIME_AUDIO;
+  options.thread_type = base::ThreadType::kRealtimeAudio;
   CHECK(io_thread_.StartWithOptions(std::move(options)));
   io_task_runner_ = io_thread_.task_runner();
   DCHECK(io_task_runner_);
@@ -292,7 +292,7 @@ void CastAudioOutputStream::MixerServiceWrapper::FillNextBuffer(
       base::TimeTicks() + base::Microseconds(playout_timestamp);
 
   int frames_filled = source_callback_->OnMoreData(
-      reported_delay, reported_delay_timestamp, 0, audio_bus_.get());
+      reported_delay, reported_delay_timestamp, {}, audio_bus_.get());
   DCHECK_EQ(frames_filled, frames);
   mixer_connection_->SendNextBuffer(frames);
 }

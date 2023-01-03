@@ -1,9 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/apps/icon_standardizer.h"
 
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkMaskFilter.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/image/image_skia_rep.h"
@@ -16,7 +18,7 @@ constexpr float kCircleOutlineStrokeWidthRatio = 0.1f;
 
 constexpr int kMinimumVisibleAlpha = 40;
 
-constexpr float kCircleShapePixelDifferenceThreshold = 0.01f;
+constexpr float kCircleShapePixelDifferenceThreshold = 0.02f;
 
 constexpr float kIconScaleToFit = 0.85f;
 

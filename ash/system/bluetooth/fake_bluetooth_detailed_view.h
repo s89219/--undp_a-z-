@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,6 @@ class View;
 namespace ash {
 
 class BluetoothDeviceListItemView;
-class TriView;
 
 // Fake BluetoothDetailedView implementation.
 class ASH_EXPORT FakeBluetoothDetailedView : public BluetoothDetailedView,
@@ -51,8 +50,8 @@ class ASH_EXPORT FakeBluetoothDetailedView : public BluetoothDetailedView,
   views::View* GetAsView() override;
   void UpdateBluetoothEnabledState(bool enabled) override;
   BluetoothDeviceListItemView* AddDeviceListItem() override;
-  ash::TriView* AddDeviceListSubHeader(const gfx::VectorIcon& /*icon*/,
-                                       int text_id) override;
+  views::View* AddDeviceListSubHeader(const gfx::VectorIcon& /*icon*/,
+                                      int text_id) override;
   void NotifyDeviceListChanged() override;
   views::View* device_list() override;
 

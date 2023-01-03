@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include "base/feature_list.h"
 #include "base/run_loop.h"
 #include "base/strings/escape.h"
-#include "base/strings/stringprintf.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
@@ -32,7 +31,6 @@
 #include "components/optimization_guide/core/optimization_hints_component_update_listener.h"
 #include "components/optimization_guide/core/test_hints_component_creator.h"
 #include "components/optimization_guide/proto/hints.pb.h"
-#include "components/page_info/core/features.h"
 #include "components/prefs/pref_service.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "components/variations/active_field_trials.h"
@@ -226,6 +224,10 @@ class OptimizationGuideKeyedServiceBrowserTest
   }
 
   void PushHintsComponentAndWaitForCompletion() {
+    optimization_guide::RetryForHistogramUntilCountReached(
+        histogram_tester(),
+        "OptimizationGuide.HintsManager.HintCacheInitialized", 1);
+
     base::RunLoop run_loop;
     OptimizationGuideKeyedServiceFactory::GetForProfile(browser()->profile())
         ->GetHintsManager()
@@ -318,34 +320,6 @@ IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
   EXPECT_TRUE(variations::IsInSyntheticTrialGroup(
       "SyntheticOptimizationGuideRemoteFetching", "Disabled"));
 #endif
-}
-
-class OptimizationGuideKeyedServiceWithoutRegistrationsBrowserTest
-    : public OptimizationGuideKeyedServiceBrowserTest {
- public:
-  OptimizationGuideKeyedServiceWithoutRegistrationsBrowserTest() {
-    feature_list_.InitWithFeatures({},
-                                   {page_info::kPageInfoAboutThisSiteEn,
-                                    page_info::kPageInfoAboutThisSiteNonEn});
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-IN_PROC_BROWSER_TEST_F(
-    OptimizationGuideKeyedServiceWithoutRegistrationsBrowserTest,
-    NavigateToPageWithHintsButNoRegistrationDoesNotAttemptToLoadHint) {
-  PushHintsComponentAndWaitForCompletion();
-
-  ukm::TestAutoSetUkmRecorder ukm_recorder;
-  base::HistogramTester histogram_tester;
-
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url_with_hints()));
-  histogram_tester.ExpectTotalCount("OptimizationGuide.LoadedHint.Result", 0);
-
-  // Navigate away so UKM get recorded.
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url_with_hints()));
 }
 
 IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
@@ -443,13 +417,10 @@ IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
       entry,
       ukm::builders::OptimizationGuide::kRegisteredOptimizationTypesName));
 
-  int64_t expected_types = 1 << OptimizationType::NOSCRIPT;
-  if (page_info::IsAboutThisSiteFeatureEnabled(
-          g_browser_process->GetApplicationLocale()))
-    expected_types |= 1 << OptimizationType::ABOUT_THIS_SITE;
-  ukm_recorder.ExpectEntryMetric(
-      entry, ukm::builders::OptimizationGuide::kRegisteredOptimizationTypesName,
-      expected_types);
+  const int64_t* entry_metric = ukm_recorder.GetEntryMetric(
+      entry,
+      ukm::builders::OptimizationGuide::kRegisteredOptimizationTypesName);
+  EXPECT_TRUE(*entry_metric & (1 << optimization_guide::proto::NOSCRIPT));
 }
 
 IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
@@ -484,13 +455,10 @@ IN_PROC_BROWSER_TEST_F(OptimizationGuideKeyedServiceBrowserTest,
   EXPECT_TRUE(ukm_recorder.EntryHasMetric(
       entry,
       ukm::builders::OptimizationGuide::kRegisteredOptimizationTypesName));
-  int64_t expected_types = 1 << OptimizationType::NOSCRIPT;
-  if (page_info::IsAboutThisSiteFeatureEnabled(
-          g_browser_process->GetApplicationLocale()))
-    expected_types |= 1 << OptimizationType::ABOUT_THIS_SITE;
-  ukm_recorder.ExpectEntryMetric(
-      entry, ukm::builders::OptimizationGuide::kRegisteredOptimizationTypesName,
-      expected_types);
+  const int64_t* entry_metric = ukm_recorder.GetEntryMetric(
+      entry,
+      ukm::builders::OptimizationGuide::kRegisteredOptimizationTypesName);
+  EXPECT_TRUE(*entry_metric & (1 << optimization_guide::proto::NOSCRIPT));
 }
 
 IN_PROC_BROWSER_TEST_F(

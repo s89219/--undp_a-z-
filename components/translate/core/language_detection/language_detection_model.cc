@@ -1,13 +1,15 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "components/translate/core/language_detection/language_detection_model.h"
 
+#include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/histogram_macros_local.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/language/core/common/language_util.h"
+#include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/translate/core/common/translate_constants.h"
 #include "components/translate/core/common/translate_util.h"
 #include "components/translate/core/language_detection/language_detection_resolver.h"
@@ -61,7 +63,11 @@ class ScopedLanguageDetectionModelStateRecorder {
 
 namespace translate {
 
-LanguageDetectionModel::LanguageDetectionModel() = default;
+LanguageDetectionModel::LanguageDetectionModel()
+    : num_threads_(
+          optimization_guide::features::OverrideNumThreadsForOptTarget(
+              optimization_guide::proto::OPTIMIZATION_TARGET_LANGUAGE_DETECTION)
+              .value_or(-1)) {}
 
 LanguageDetectionModel::~LanguageDetectionModel() = default;
 
@@ -80,15 +86,32 @@ void LanguageDetectionModel::UpdateWithFile(base::File model_file) {
   options.set_output_score_tensor_index(0);
   options.set_output_label_tensor_index(2);
 
-  std::string file_content(model_file.GetLength(), '\0');
-  int bytes_read =
-      model_file.Read(0, std::data(file_content), model_file.GetLength());
-  if (bytes_read != model_file.GetLength()) {
-    return;
+  options.mutable_base_options()
+      ->mutable_compute_settings()
+      ->mutable_tflite_settings()
+      ->mutable_cpu_settings()
+      ->set_num_threads(num_threads_);
+
+// Windows doesn't support using mmap for the language detection model.
+#if !BUILDFLAG(IS_WIN)
+  if (base::FeatureList::IsEnabled(kMmapLanguageDetectionModel)) {
+    options.mutable_base_options()
+        ->mutable_model_file()
+        ->mutable_file_descriptor_meta()
+        ->set_fd(model_file.GetPlatformFile());
+  } else
+#endif
+  {
+    std::string file_content(model_file.GetLength(), '\0');
+    int bytes_read =
+        model_file.Read(0, std::data(file_content), model_file.GetLength());
+    if (bytes_read != model_file.GetLength()) {
+      return;
+    }
+    *options.mutable_base_options()
+         ->mutable_model_file()
+         ->mutable_file_content() = std::move(file_content);
   }
-  *options.mutable_base_options()
-       ->mutable_model_file()
-       ->mutable_file_content() = std::move(file_content);
 
   auto statusor_classifier =
       tflite::task::text::nlclassifier::NLClassifier::CreateFromOptions(

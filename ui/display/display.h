@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -87,14 +87,6 @@ class DISPLAY_EXPORT Display final {
   // command line via "--force-device-scale-factor".
   static bool HasForceDeviceScaleFactor();
 
-  // Returns the forced display color profile, which is given by
-  // "--force-color-profile".
-  static gfx::ColorSpace GetForcedDisplayColorProfile();
-
-  // Indicates if a display color profile is being explicitly enforced from the
-  // command line via "--force-color-profile".
-  static bool HasForceDisplayColorProfile();
-
   // Returns the forced raster color profile, which is given by
   // "--force-raster-color-profile".
   static gfx::ColorSpace GetForcedRasterColorProfile();
@@ -180,10 +172,15 @@ class DISPLAY_EXPORT Display final {
   gfx::Insets GetWorkAreaInsets() const;
 
   // Sets the device scale factor and display bounds in pixel. This
-  // updates the work are using the same insets between old bounds and
+  // updates the work area using the same insets between old bounds and
   // work area.
   void SetScaleAndBounds(float device_scale_factor,
                          const gfx::Rect& bounds_in_pixel);
+
+  // Sets the device scale factor while respecting forced scale factor and other
+  // constraints. Use this over set_device_scale_factor() unless you need to
+  // forcefully overwrite the scale.
+  void SetScale(float device_scale_factor);
 
   // Sets the display's size. This updates the work area using the same insets
   // between old bounds and work area.
@@ -217,10 +214,9 @@ class DISPLAY_EXPORT Display final {
   }
 
   // The color spaces used by the display.
+  // TODO(b/226163383): Rename to SetColorSpaces
   const gfx::DisplayColorSpaces& color_spaces() const { return color_spaces_; }
-  void set_color_spaces(const gfx::DisplayColorSpaces& color_spaces) {
-    color_spaces_ = color_spaces;
-  }
+  void set_color_spaces(const gfx::DisplayColorSpaces& color_spaces);
 
   // Return true if the display orientation is landscape.
   bool is_landscape() const { return bounds_.width() >= bounds_.height(); }
@@ -258,8 +254,26 @@ class DISPLAY_EXPORT Display final {
     display_frequency_ = display_frequency;
   }
 
+  uint32_t audio_formats() const { return audio_formats_; }
+  void set_audio_formats(uint32_t audio_formats) {
+    audio_formats_ = audio_formats;
+  }
+
+  // A user-friendly label, determined by the platform.
+  const std::string& label() const { return label_; }
+  void set_label(const std::string& label) { label_ = label; }
+
   bool operator==(const Display& rhs) const;
   bool operator!=(const Display& rhs) const { return !(*this == rhs); }
+
+  const DrmFormatsAndModifiers& GetDRMFormatsAndModifiers() const {
+    return drm_formats_and_modifiers_;
+  }
+
+  void SetDRMFormatsAndModifiers(
+      const DrmFormatsAndModifiers& drm_formats_and_modifiers) {
+    drm_formats_and_modifiers_ = drm_formats_and_modifiers;
+  }
 
  private:
   friend struct mojo::StructTraits<mojom::DisplayDataView, Display>;
@@ -281,6 +295,9 @@ class DISPLAY_EXPORT Display final {
   int depth_per_component_;
   bool is_monochrome_ = false;
   int display_frequency_ = 0;
+  std::string label_;
+  uint32_t audio_formats_ = 0;
+  DrmFormatsAndModifiers drm_formats_and_modifiers_;
 };
 
 }  // namespace display

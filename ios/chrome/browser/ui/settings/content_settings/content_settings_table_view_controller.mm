@@ -1,24 +1,24 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/settings/content_settings/content_settings_table_view_controller.h"
 
-#include "base/check_op.h"
-#include "base/feature_list.h"
+#import "base/check_op.h"
+#import "base/feature_list.h"
 #import "base/mac/foundation_util.h"
-#include "base/metrics/user_metrics.h"
-#include "base/metrics/user_metrics_action.h"
-#include "components/content_settings/core/browser/host_content_settings_map.h"
-#include "components/content_settings/core/common/content_settings.h"
-#include "components/content_settings/core/common/content_settings_types.h"
-#include "components/strings/grit/components_strings.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/content_settings/host_content_settings_map_factory.h"
+#import "base/metrics/user_metrics.h"
+#import "base/metrics/user_metrics_action.h"
+#import "components/content_settings/core/browser/host_content_settings_map.h"
+#import "components/content_settings/core/common/content_settings.h"
+#import "components/content_settings/core/common/content_settings_types.h"
+#import "components/strings/grit/components_strings.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/content_settings/host_content_settings_map_factory.h"
 #import "ios/chrome/browser/mailto_handler/mailto_handler_service.h"
 #import "ios/chrome/browser/mailto_handler/mailto_handler_service_factory.h"
 #import "ios/chrome/browser/main/browser.h"
-#include "ios/chrome/browser/pref_names.h"
+#import "ios/chrome/browser/prefs/pref_names.h"
 #import "ios/chrome/browser/ui/ntp/new_tab_page_feature.h"
 #import "ios/chrome/browser/ui/settings/content_settings/block_popups_table_view_controller.h"
 #import "ios/chrome/browser/ui/settings/content_settings/default_page_mode_coordinator.h"
@@ -31,11 +31,11 @@
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_cell.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_switch_item.h"
 #import "ios/chrome/browser/ui/table_view/table_view_utils.h"
-#include "ios/chrome/browser/ui/ui_feature_flags.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ios/web/common/features.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/l10n/l10n_util_mac.h"
+#import "ios/chrome/browser/ui/ui_feature_flags.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ios/web/common/features.h"
+#import "ui/base/l10n/l10n_util.h"
+#import "ui/base/l10n/l10n_util_mac.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -162,6 +162,9 @@ typedef NS_ENUM(NSInteger, ItemType) {
 - (void)loadModel {
   [super loadModel];
 
+  if (!_browser)
+    return;
+
   TableViewModel* model = self.tableViewModel;
   [model addSectionWithIdentifier:SectionIdentifierSettings];
   [model addItem:[self blockPopupsItem]
@@ -183,18 +186,14 @@ typedef NS_ENUM(NSInteger, ItemType) {
     }
   }
 
-  if (IsDiscoverFeedPreviewEnabled() ||
-      base::FeatureList::IsEnabled(
-          web::features::kWebViewNativeContextMenuPhase2)) {
+  if (IsDiscoverFeedPreviewEnabled()) {
     [model addItem:[self linkPreviewItem]
         toSectionWithIdentifier:SectionIdentifierSettings];
   }
 
-  if (base::FeatureList::IsEnabled(kAddSettingForDefaultPageMode)) {
-    self.defaultModeItem = [self defaultSiteMode];
-    [model addItem:self.defaultModeItem
-        toSectionWithIdentifier:SectionIdentifierSettings];
-  }
+  self.defaultModeItem = [self defaultSiteMode];
+  [model addItem:self.defaultModeItem
+      toSectionWithIdentifier:SectionIdentifierSettings];
 }
 
 #pragma mark - SettingsControllerProtocol
@@ -236,6 +235,9 @@ typedef NS_ENUM(NSInteger, ItemType) {
 }
 
 - (TableViewItem*)composeEmailItem {
+  if (!_browser)
+    return nil;
+
   _composeEmailDetailItem = [[TableViewDetailIconItem alloc]
       initWithType:ItemTypeSettingsComposeEmail];
   // Use the handler's preferred title string for the compose email item.
@@ -254,6 +256,9 @@ typedef NS_ENUM(NSInteger, ItemType) {
 }
 
 - (TableViewItem*)openedInAnotherWindowItem {
+  if (!_browser)
+    return nil;
+
   _openedInAnotherWindowItem = [[TableViewMultiDetailTextItem alloc]
       initWithType:ItemTypeSettingsComposeEmail];
   // Use the handler's preferred title string for the compose email item.
@@ -309,6 +314,8 @@ typedef NS_ENUM(NSInteger, ItemType) {
 - (void)tableView:(UITableView*)tableView
     didSelectRowAtIndexPath:(NSIndexPath*)indexPath {
   [super tableView:tableView didSelectRowAtIndexPath:indexPath];
+  if (!_browser)
+    return;
 
   NSInteger itemType = [self.tableViewModel itemTypeForIndexPath:indexPath];
   switch (itemType) {
@@ -387,8 +394,11 @@ typedef NS_ENUM(NSInteger, ItemType) {
 }
 
 // Verifies using the navigation stack if this is a return from mailTo settings
-// and this instance should reset |openedMailTo|.
+// and this instance should reset `openedMailTo`.
 - (void)checkMailToOwnership {
+  if (!_browser)
+    return;
+
   // Since this doesn't know or have access to the mailTo controller code,
   // it detects if the flow is coming back from it, based on the navigation
   // bar stack items.
@@ -409,6 +419,13 @@ typedef NS_ENUM(NSInteger, ItemType) {
   return self.requestDesktopSetting.value
              ? l10n_util::GetNSString(IDS_IOS_DEFAULT_PAGE_MODE_DESKTOP)
              : l10n_util::GetNSString(IDS_IOS_DEFAULT_PAGE_MODE_MOBILE);
+}
+
+- (void)settingsWillBeDismissed {
+  [_disablePopupsSetting stop];
+  [_requestDesktopSetting stop];
+  [_linkPreviewEnabled stop];
+  _browser = nullptr;
 }
 
 @end

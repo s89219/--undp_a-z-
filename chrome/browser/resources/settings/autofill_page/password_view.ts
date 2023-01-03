@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,59 +7,101 @@
  * password such as the URL, the username, the password and the note.
  */
 
-import 'chrome://resources/cr_elements/cr_button/cr_button.m.js';
-import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.m.js';
-import '../controls/settings_textarea.js';
+import 'chrome://resources/cr_elements/cr_button/cr_button.js';
+import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import 'chrome://resources/cr_elements/cr_toast/cr_toast.js';
 import '../i18n_setup.js';
-// <if expr="chromeos_ash or chromeos_lacros">
+// <if expr="is_chromeos">
 import '../controls/password_prompt_dialog.js';
 // </if>
-import '../settings_shared_css.js';
+import '../settings_shared.css.js';
 import './password_edit_dialog.js';
 import './password_remove_dialog.js';
-import './passwords_shared_css.js';
+import './passwords_shared.css.js';
 
+import {CrToastElement} from 'chrome://resources/cr_elements/cr_toast/cr_toast.js';
+import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
 import {assert} from 'chrome://resources/js/assert_ts.js';
-import {focusWithoutInk} from 'chrome://resources/js/cr/ui/focus_without_ink.m.js';
-import {I18nMixin, I18nMixinInterface} from 'chrome://resources/js/i18n_mixin.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {FocusOutlineManager} from 'chrome://resources/js/focus_outline_manager.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import {loadTimeData} from '../i18n_setup.js';
 import {routes} from '../route.js';
-import {Route, RouteObserverMixin, RouteObserverMixinInterface, Router} from '../router.js';
+import {Route, RouteObserverMixin, Router} from '../router.js';
 
-// <if expr="chromeos_ash or chromeos_lacros">
-import {BlockingRequestManager} from './blocking_request_manager.js';
-// </if>
-import {MergePasswordsStoreCopiesMixin, MergePasswordsStoreCopiesMixinInterface} from './merge_passwords_store_copies_mixin.js';
-import {MultiStorePasswordUiEntry} from './multi_store_password_ui_entry.js';
 import {SavedPasswordEditedEvent} from './password_edit_dialog.js';
-import {PasswordRemovalMixin, PasswordRemovalMixinInterface} from './password_removal_mixin.js';
+import {PasswordListItemElement} from './password_list_item.js';
+import {PasswordManagerImpl} from './password_manager_proxy.js';
+import {PasswordRemovalMixin} from './password_removal_mixin.js';
 import {PasswordRemoveDialogPasswordsRemovedEvent} from './password_remove_dialog.js';
-import {PasswordRequestorMixin, PasswordRequestorMixinInterface} from './password_requestor_mixin.js';
+import {PasswordRequestorMixin} from './password_requestor_mixin.js';
 import {getTemplate} from './password_view.html.js';
 
-const PasswordViewElementBase =
-    PasswordRemovalMixin(PasswordRequestorMixin(MergePasswordsStoreCopiesMixin(
-        RouteObserverMixin(I18nMixin(PolymerElement))))) as {
-      new (): PolymerElement & I18nMixinInterface &
-          RouteObserverMixinInterface &
-          MergePasswordsStoreCopiesMixinInterface &
-          PasswordRequestorMixinInterface & PasswordRemovalMixinInterface,
-    };
+declare global {
+  interface HTMLElementEventMap {
+    [PASSWORD_VIEW_PAGE_REQUESTED_EVENT_NAME]: PasswordViewPageRequestedEvent;
+  }
+}
+
+export type PasswordViewPageRequestedEvent =
+    CustomEvent<PasswordListItemElement>;
+
+export const PASSWORD_VIEW_PAGE_REQUESTED_EVENT_NAME =
+    'password-view-page-requested';
+
+export interface PasswordViewElement {
+  $: {
+    toast: CrToastElement,
+  };
+}
+
+const PasswordViewElementBase = PasswordRemovalMixin(
+    PasswordRequestorMixin(RouteObserverMixin(I18nMixin(PolymerElement))));
 
 export enum PasswordRemovalUrlParams {
-  REMOVED_FROM_ACCOUNT = 'removedFromAccount',
-  REMOVED_FROM_DEVICE = 'removedFromDevice',
+  REMOVED_FROM_STORES = 'removedFromStores',
 }
 
 export enum PasswordViewPageUrlParams {
-  SITE = 'site',
-  USERNAME = 'username',
+  ID = 'id',
+}
+
+export const PASSWORD_MANAGER_AUTH_TIMEOUT_PARAM = 'authTimeout';
+
+export function recordPasswordViewInteraction(
+    interaction: PasswordViewPageInteractions) {
+  chrome.metricsPrivate.recordEnumerationValue(
+      'PasswordManager.PasswordViewPage.UserActions', interaction,
+      PasswordViewPageInteractions.COUNT);
+}
+
+/**
+ * Should be kept in sync with
+ * |password_manager::metrics_util::PasswordViewPageInteractions|.
+ * These values are persisted to logs. Entries should not be renumbered and
+ * numeric values should never be reused.
+ */
+export enum PasswordViewPageInteractions {
+  CREDENTIAL_ROW_CLICKED = 0,
+  CREDENTIAL_FOUND = 1,
+  CREDENTIAL_NOT_FOUND = 2,
+  USERNAME_COPY_BUTTON_CLICKED = 3,
+  PASSWORD_COPY_BUTTON_CLICKED = 4,
+  PASSWORD_SHOW_BUTTON_CLICKED = 5,
+  PASSWORD_EDIT_BUTTON_CLICKED = 6,
+  PASSWORD_DELETE_BUTTON_CLICKED = 7,
+  CREDENTIAL_EDITED = 8,
+  TIMED_OUT_IN_EDIT_DIALOG = 9,
+  TIMED_OUT_IN_VIEW_PAGE = 10,
+  CREDENTIAL_REQUESTED_BY_URL = 11,
+  // Must be last.
+  COUNT = 12,
 }
 
 export class PasswordViewElement extends PasswordViewElementBase {
+  // TODO(crbug/1345899): Reroute to password list when the credential is
+  // deleted or update the page when credential is updated from other sources
+  // (e.g: sync).
   static get is() {
     return 'password-view';
   }
@@ -70,9 +112,9 @@ export class PasswordViewElement extends PasswordViewElementBase {
 
   static get properties() {
     return {
-      activeDialogAnchorStack_: {
-        type: Array,
-        value: () => [],
+      toastText_: {
+        type: String,
+        value: '',
       },
 
       credential: {
@@ -81,93 +123,135 @@ export class PasswordViewElement extends PasswordViewElementBase {
         notify: true,
       },
 
+      isPasswordNotesEnabled_: {
+        type: Boolean,
+        value() {
+          return loadTimeData.getBoolean('enablePasswordNotes');
+        },
+      },
+
       isPasswordVisible_: {
         type: Boolean,
         value: false,
       },
 
-      password_: {
-        type: String,
-        value: '',
-      },
-
-      // <if expr="chromeos_ash or chromeos_lacros">
-      showPasswordPromptDialog_: Boolean,
-      // </if>
-
-      site: {
-        type: String,
-        value: '',
-      },
-
-      username: {
-        type: String,
-        value: '',
+      showEditDialog_: {
+        type: Boolean,
+        value: false,
       },
     };
   }
 
-  static get observers() {
-    return ['savedPasswordsChanged_(savedPasswords.splices, site, username)'];
-  }
-
-  private activeDialogAnchorStack_: Array<HTMLElement>;
-  credential: MultiStorePasswordUiEntry|null;
+  private toastText_: string;
+  credential: chrome.passwordsPrivate.PasswordUiEntry|null;
+  private isPasswordNotesEnabled_: boolean;
   private isPasswordVisible_: boolean;
-  private password_: string;
-  // <if expr="chromeos_ash or chromeos_lacros">
-  private isTokenObtained_: boolean = false;
-  private showPasswordPromptDialog_: boolean;
-  // </if>
   private showEditDialog_: boolean;
-  site: string;
-  username: string;
+  private visibilityChangedListener_: () => void;
+  private passwordManagerAuthTimeoutListener_: () => void;
 
-  // <if expr="chromeos_ash or chromeos_lacros">
   override connectedCallback() {
     super.connectedCallback();
 
-    // If the user's account supports the password check, an auth token will be
-    // required in order for them to view or export passwords. Otherwise there
-    // is no additional security so |tokenRequestManager| will immediately
-    // resolve requests.
-    if (loadTimeData.getBoolean('userCannotManuallyEnterPassword')) {
-      this.tokenRequestManager = new BlockingRequestManager();
-    } else {
-      this.tokenRequestManager =
-          new BlockingRequestManager(() => this.openPasswordPromptDialog_());
-    }
+    this.passwordManagerAuthTimeoutListener_ = () => {
+      if (Router.getInstance().getCurrentRoute() !== routes.PASSWORD_VIEW) {
+        return;
+      }
+      recordPasswordViewInteraction(
+          this.showEditDialog_ ?
+              PasswordViewPageInteractions.TIMED_OUT_IN_EDIT_DIALOG :
+              PasswordViewPageInteractions.TIMED_OUT_IN_VIEW_PAGE);
+
+      const params = new URLSearchParams();
+      params.set(PASSWORD_MANAGER_AUTH_TIMEOUT_PARAM, 'true');
+      Router.getInstance().navigateTo(routes.PASSWORDS, params);
+    };
+
+    PasswordManagerImpl.getInstance().addPasswordManagerAuthTimeoutListener(
+        this.passwordManagerAuthTimeoutListener_);
+
+    FocusOutlineManager.forDocument(document);
   }
-  // </if>
+
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    PasswordManagerImpl.getInstance().removePasswordManagerAuthTimeoutListener(
+        this.passwordManagerAuthTimeoutListener_);
+  }
 
   override currentRouteChanged(route: Route): void {
     if (route !== routes.PASSWORD_VIEW) {
-      this.site = '';
-      this.username = '';
-      this.password_ = '';
+      this.hideToast_();
       this.credential = null;
-      return;
-    }
-    const queryParameters = Router.getInstance().getQueryParameters();
-
-    const site = queryParameters.get(PasswordViewPageUrlParams.SITE);
-    if (!site) {
+      this.isPasswordVisible_ = false;
+      this.showEditDialog_ = false;
       return;
     }
 
-    const username = queryParameters.get(PasswordViewPageUrlParams.USERNAME);
-    if (!username) {
-      return;
+    if (!this.credential) {
+      this.requestCredential_();
     }
-    this.site = site;
-    this.username = username;
   }
+
+  override ready() {
+    super.ready();
+
+    if (document.visibilityState !== 'visible') {
+      this.visibilityChangedListener_ = () => {
+        if (document.visibilityState === 'visible' &&
+            Router.getInstance().getCurrentRoute() === routes.PASSWORD_VIEW &&
+            !this.credential) {
+          this.requestCredential_();
+          document.removeEventListener(
+              'visibilitychange', this.visibilityChangedListener_);
+        }
+      };
+      document.addEventListener(
+          'visibilitychange', this.visibilityChangedListener_);
+    }
+  }
+
 
   override onPasswordRemoveDialogPasswordsRemoved(
       event: PasswordRemoveDialogPasswordsRemovedEvent) {
     super.onPasswordRemoveDialogPasswordsRemoved(event);
-    this.rerouteAndShowRemovalNotification_(
-        event.detail.removedFromAccount, event.detail.removedFromDevice);
+    this.rerouteAndShowRemovalNotification_(event.detail.removedFromStores);
+  }
+
+  private getId_() {
+    const idInput = Router.getInstance().getQueryParameters().get(
+        PasswordViewPageUrlParams.ID);
+
+    if (!idInput || Number.isNaN(Number(idInput))) {
+      return null;
+    }
+    return Number(idInput);
+  }
+
+  // This method is responsible for requesting the credential details (password,
+  // note). If the user does not authenticate, the page will be redirected to
+  // the passwords main page.
+  // The method also is disabled when the tab is not visible to the user (e.g: a
+  // background tab) so that the native authentication dialog will not be shown.
+  private requestCredential_() {
+    const credentialId = this.getId_();
+    if (credentialId === null || document.visibilityState !== 'visible') {
+      return;
+    }
+
+    // wrap the id in a PasswordListItemElement:
+    const eventDetail = {entry: {id: credentialId}} as unknown as
+        PasswordListItemElement;
+
+    this.dispatchEvent(
+        new CustomEvent(PASSWORD_VIEW_PAGE_REQUESTED_EVENT_NAME, {
+          bubbles: true,
+          composed: true,
+          detail: eventDetail,
+        }));
+
+    recordPasswordViewInteraction(
+        PasswordViewPageInteractions.CREDENTIAL_REQUESTED_BY_URL);
   }
 
   /** Gets the title text for the show/hide icon. */
@@ -180,6 +264,24 @@ export class PasswordViewElement extends PasswordViewElementBase {
   private getIconClass_(): string {
     assert(!this.isFederated_());
     return this.isPasswordVisible_ ? 'icon-visibility-off' : 'icon-visibility';
+  }
+
+  private getNoteClass_(): string {
+    return this.credential!.note ? '' : 'empty-note';
+  }
+
+  private getNoteValue_(): string {
+    return this.credential!.note || this.i18n('passwordNoNoteAdded');
+  }
+
+  /**
+   * Show the password or a placeholder with 10 characters when password is not
+   * set. If the credential is a federated credential, it shows the federation
+   * text.
+   */
+  private getPasswordOrFederationText_(): string {
+    return this.credential?.password || this.credential?.federationText ||
+        ' '.repeat(10);
   }
 
   /**
@@ -195,38 +297,51 @@ export class PasswordViewElement extends PasswordViewElementBase {
     return !!this.credential && !!this.credential.federationText;
   }
 
+  private isNoteEnabled_(): boolean {
+    return !this.isFederated_() && this.isPasswordNotesEnabled_;
+  }
+
   /** Handler to copy the password from the password field. */
   private onCopyPasswordButtonClick_() {
     assert(!this.isFederated_());
-    navigator.clipboard.writeText(this.password_);
+    recordPasswordViewInteraction(
+        PasswordViewPageInteractions.PASSWORD_COPY_BUTTON_CLICKED);
+    this.requestPlaintextPassword(
+            this.credential!.id, chrome.passwordsPrivate.PlaintextReason.COPY)
+        .then(() => {
+          this.toastText_ = this.i18n('passwordCopiedToClipboard');
+          this.showToast_();
+        })
+        .catch(() => {});
   }
 
   /** Handler to copy the username from the username field. */
   private onCopyUsernameButtonClick_() {
-    navigator.clipboard.writeText(this.credential!.username);
+    navigator.clipboard.writeText(this.credential!.username).then(() => {
+      this.toastText_ = this.i18n('passwordUsernameCopiedToClipboard');
+      this.showToast_();
+    });
+    recordPasswordViewInteraction(
+        PasswordViewPageInteractions.USERNAME_COPY_BUTTON_CLICKED);
   }
 
   /** Handler for the remove button. */
   private onDeleteButtonClick_() {
     assert(this.credential);
+    recordPasswordViewInteraction(
+        PasswordViewPageInteractions.PASSWORD_DELETE_BUTTON_CLICKED);
     if (!this.removePassword(this.credential)) {
       return;
     }
-    this.rerouteAndShowRemovalNotification_(
-        this.credential.isPresentInAccount(),
-        this.credential.isPresentOnDevice());
+    this.rerouteAndShowRemovalNotification_(this.credential.storedIn);
   }
 
   /** Handler to open edit dialog for the password. */
   private onEditButtonClick_() {
     assert(!this.isFederated_());
-    this.requestPlaintextPassword(
-            this.credential!.getAnyId(),
-            chrome.passwordsPrivate.PlaintextReason.EDIT)
-        .then(password => {
-          this.credential!.password = password;
-          this.showEditDialog_ = true;
-        });
+    recordPasswordViewInteraction(
+        PasswordViewPageInteractions.PASSWORD_EDIT_BUTTON_CLICKED);
+    this.showEditDialog_ = true;
   }
 
   private onEditDialogClosed_() {
@@ -234,117 +349,43 @@ export class PasswordViewElement extends PasswordViewElementBase {
   }
 
   private onSavedPasswordEdited_(event: SavedPasswordEditedEvent) {
-    const newUsername = event.detail.username;
-    if (this.credential!.username === newUsername) {
-      return;
-    }
-    // The dialog is recently closed. If the username has changed, reroute the
-    // page to the new credential.
+    // The dialog is recently closed. Use the new IDs to update the URL.
     const newParams = Router.getInstance().getQueryParameters();
-    newParams.set(PasswordViewPageUrlParams.USERNAME, newUsername);
+    this.credential = event.detail;
+    newParams.set(PasswordViewPageUrlParams.ID, String(event.detail.id));
     Router.getInstance().updateRouteParams(newParams);
   }
-
-  // <if expr="chromeos_ash or chromeos_lacros">
-  /**
-   * When this event fired, it means that the password-prompt-dialog succeeded
-   * in creating a fresh token in the quickUnlockPrivate API. Because new tokens
-   * can only ever be created immediately following a GAIA password check, the
-   * passwordsPrivate API can now safely grant requests for secure data (i.e.
-   * saved passwords) for a limited time. This observer resolves the request,
-   * triggering a callback that requires a fresh auth token to succeed and that
-   * was provided to the BlockingRequestManager by another DOM element seeking
-   * secure data.
-   *
-   * @param e Contains newly created auth token
-   *     chrome.quickUnlockPrivate.TokenInfo. Note that its precise value is not
-   *     relevant here, only the facts that it's created.
-   */
-  private onTokenObtained_(
-      e: CustomEvent<chrome.quickUnlockPrivate.TokenInfo>) {
-    assert(e.detail);
-    this.isTokenObtained_ = true;
-    this.tokenRequestManager.resolve();
-  }
-
-  private onPasswordPromptClose_() {
-    this.showPasswordPromptDialog_ = false;
-    const toFocus = this.activeDialogAnchorStack_.pop();
-    if (!this.isTokenObtained_ && (!toFocus || toFocus.id !== 'editButton')) {
-      // User dismissed the password prompt by clicking cancel. Reroute back if
-      // prompt was not requested within the page.
-      Router.getInstance().navigateTo(routes.PASSWORDS);
-      return;
-    }
-    assert(toFocus);
-    focusWithoutInk(toFocus);
-    this.isTokenObtained_ = false;
-  }
-
-  private openPasswordPromptDialog_() {
-    this.activeDialogAnchorStack_.push(getDeepActiveElement() as HTMLElement);
-    this.showPasswordPromptDialog_ = true;
-    this.isTokenObtained_ = false;
-  }
-  // </if>
 
   /** Handler for tapping the show/hide button. */
   private onShowPasswordButtonClick_() {
     assert(!this.isFederated_());
-    this.isPasswordVisible_ = !this.isPasswordVisible_;
+    if (this.isPasswordVisible_) {
+      this.isPasswordVisible_ = false;
+      return;
+    }
+    recordPasswordViewInteraction(
+        PasswordViewPageInteractions.PASSWORD_SHOW_BUTTON_CLICKED);
+    this.isPasswordVisible_ = true;
   }
 
   /** Reroutes to PASSWORDS page and shows the removal notification */
   private rerouteAndShowRemovalNotification_(
-      removedFromAccount: boolean, removedFromDevice: boolean): void {
+      removedFromStores: chrome.passwordsPrivate.PasswordStoreSet): void {
     // TODO(https://crbug.com/1298027): find a way to reroute to
     // DEVICE_PASSWORDS if view is opened from there.
     const params = new URLSearchParams();
     params.set(
-        PasswordRemovalUrlParams.REMOVED_FROM_ACCOUNT,
-        removedFromAccount.toString());
-    params.set(
-        PasswordRemovalUrlParams.REMOVED_FROM_DEVICE,
-        removedFromDevice.toString());
+        PasswordRemovalUrlParams.REMOVED_FROM_STORES,
+        removedFromStores.toString());
     Router.getInstance().navigateTo(routes.PASSWORDS, params);
   }
 
-  private savedPasswordsChanged_() {
-    this.credential = null;
-    this.password_ = '';
-    if (!this.savedPasswords.length || !this.site || !this.username) {
-      return;
-    }
+  private hideToast_() {
+    this.$.toast.hide();
+  }
 
-    const item =
-        this.savedPasswords.find((savedPassword: MultiStorePasswordUiEntry) => {
-          return savedPassword.urls.shown === this.site &&
-              savedPassword.username === this.username;
-        });
-    if (!item) {
-      if (!this.showEditDialog_) {
-        // Rerouting might have happened due to the edited username. Do not
-        // reroute back.
-        Router.getInstance().navigateTo(routes.PASSWORDS);
-      }
-      return;
-    }
-
-    if (item.federationText) {
-      this.credential = item;
-      this.password_ = item.federationText!;
-    } else {
-      this.requestPlaintextPassword(
-              item.getAnyId(), chrome.passwordsPrivate.PlaintextReason.VIEW)
-          .then(password => {
-            this.password_ = password;
-            this.credential = item;
-          })
-          .catch(_error => {
-            Router.getInstance().navigateTo(routes.PASSWORDS);
-          });
-    }
-    this.showEditDialog_ = false;
+  private showToast_() {
+    this.$.toast.show();
   }
 }
 

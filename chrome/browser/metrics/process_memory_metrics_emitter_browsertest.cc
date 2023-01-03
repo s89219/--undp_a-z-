@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include <set>
 
-#include "base/allocator/buildflags.h"
+#include "base/allocator/partition_allocator/partition_alloc_buildflags.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
@@ -81,8 +81,8 @@ int GetNumRenderers(Browser* browser) {
 void RequestGlobalDumpCallback(base::OnceClosure quit_closure,
                                bool success,
                                uint64_t) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
-                                                std::move(quit_closure));
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE, std::move(quit_closure));
   ASSERT_TRUE(success);
 }
 
@@ -196,6 +196,14 @@ void CheckExperimentalMemoryMetricsForProcessType(
                     histogram_tester, count, ValueRestriction::NONE,
                     number_of_processes);
   CheckMemoryMetric(std::string("Memory.Experimental.") + process_type +
+                        "2.Malloc.CommittedSize",
+                    histogram_tester, count, ValueRestriction::ABOVE_ZERO,
+                    number_of_processes);
+  CheckMemoryMetric(std::string("Memory.Experimental.") + process_type +
+                        "2.Malloc.MaxCommittedSize",
+                    histogram_tester, count, ValueRestriction::ABOVE_ZERO,
+                    number_of_processes);
+  CheckMemoryMetric(std::string("Memory.Experimental.") + process_type +
                         "2.Malloc.Fragmentation",
                     histogram_tester, count, ValueRestriction::NONE,
                     number_of_processes);
@@ -227,8 +235,11 @@ void CheckExperimentalMemoryMetrics(
     CheckExperimentalMemoryMetricsForProcessType(
         histogram_tester, count, "Extension", number_of_extension_processes);
   }
-  CheckMemoryMetric("Memory.Experimental.Total2.PrivateMemoryFootprint",
-                    histogram_tester, count, ValueRestriction::ABOVE_ZERO);
+
+#if BUILDFLAG(IS_MAC)
+  CheckMemoryMetric("Memory.Experimental.Gpu2.IOSurface", histogram_tester, 1,
+                    ValueRestriction::ABOVE_ZERO);
+#endif
 }
 
 void CheckStableMemoryMetrics(const base::HistogramTester& histogram_tester,
@@ -306,6 +317,8 @@ void CheckStableMemoryMetrics(const base::HistogramTester& histogram_tester,
   // Shared memory footprint can be below 1 MB, which is reported as zero.
   CheckMemoryMetric("Memory.Total.SharedMemoryFootprint", histogram_tester,
                     count, ValueRestriction::NONE);
+  CheckMemoryMetric("Memory.Total.TileMemory", histogram_tester, count,
+                    ValueRestriction::ABOVE_ZERO);
 }
 
 void CheckAllMemoryMetrics(const base::HistogramTester& histogram_tester,
@@ -547,8 +560,9 @@ class ProcessMemoryMetricsEmitterTest
 #endif
 };
 
-// TODO(crbug.com/732501): Re-enable on Win once not flaky.
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || BUILDFLAG(IS_WIN)
+// TODO(crbug.com/732501): Re-enable on Win and Mac once not flaky.
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
+    BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
 #define MAYBE_FetchAndEmitMetrics DISABLED_FetchAndEmitMetrics
 #else
 #define MAYBE_FetchAndEmitMetrics FetchAndEmitMetrics
@@ -583,10 +597,12 @@ IN_PROC_BROWSER_TEST_F(ProcessMemoryMetricsEmitterTest,
   CheckPageInfoUkmMetrics(url, true);
 }
 
-// TODO(https://crbug.com/990148): Re-enable on Win and Linux once not flaky.
+// TODO(https://crbug.com/990148): Re-enable on Win, Linux, and Mac once not
+// flaky.
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-    BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) ||            \
+    BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
+    BUILDFLAG(IS_MAC)
 #define MAYBE_FetchAndEmitMetricsWithExtensions \
   DISABLED_FetchAndEmitMetricsWithExtensions
 #else

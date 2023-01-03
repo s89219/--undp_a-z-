@@ -1,10 +1,11 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef UI_EVENTS_OZONE_EVDEV_INPUT_DEVICE_OPENER_H_
 #define UI_EVENTS_OZONE_EVDEV_INPUT_DEVICE_OPENER_H_
 
+#include "base/memory/raw_ptr.h"
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
 #include "ui/events/ozone/evdev/touch_filter/shared_palm_detection_filter_state.h"
 
@@ -25,14 +26,14 @@ struct OpenInputDeviceParams {
   base::FilePath path;
 
   // Dispatcher for events.
-  DeviceEventDispatcherEvdev* dispatcher;
+  raw_ptr<DeviceEventDispatcherEvdev> dispatcher;
 
   // State shared between devices.
-  CursorDelegateEvdev* cursor;
+  raw_ptr<CursorDelegateEvdev> cursor;
 #if defined(USE_EVDEV_GESTURES)
   GesturePropertyProvider* gesture_property_provider;
 #endif
-  SharedPalmDetectionFilterState* shared_palm_state;
+  raw_ptr<SharedPalmDetectionFilterState> shared_palm_state;
 };
 
 class COMPONENT_EXPORT(EVDEV) InputDeviceOpener {

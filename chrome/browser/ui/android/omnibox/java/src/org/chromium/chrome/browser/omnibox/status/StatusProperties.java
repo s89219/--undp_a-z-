@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -201,6 +201,9 @@ public class StatusProperties {
         }
     }
 
+    /** Alpha of the entire StatusView container. */
+    static final WritableFloatPropertyKey ALPHA = new WritableFloatPropertyKey();
+
     /** Whether animations are turned on. */
     static final WritableBooleanPropertyKey ANIMATIONS_ENABLED = new WritableBooleanPropertyKey();
 
@@ -213,6 +216,10 @@ public class StatusProperties {
 
     /** Whether the icon is shown. */
     static final WritableBooleanPropertyKey SHOW_STATUS_ICON = new WritableBooleanPropertyKey();
+
+    /** Whether the icon background is shown. */
+    static final WritableBooleanPropertyKey SHOW_STATUS_ICON_BACKGROUND =
+            new WritableBooleanPropertyKey();
 
     /** The handler of status click events. */
     static final WritableObjectPropertyKey<View.OnClickListener> STATUS_CLICK_LISTENER =
@@ -252,10 +259,12 @@ public class StatusProperties {
 
     @VisibleForTesting(otherwise = VisibleForTesting.PACKAGE_PRIVATE)
     public static final PropertyKey[] ALL_KEYS = new PropertyKey[] {
+            ALPHA,
             ANIMATIONS_ENABLED,
             INCOGNITO_BADGE_VISIBLE,
             SEPARATOR_COLOR,
             SHOW_STATUS_ICON,
+            SHOW_STATUS_ICON_BACKGROUND,
             STATUS_CLICK_LISTENER,
             STATUS_ACCESSIBILITY_TOAST_RES,
             STATUS_ACCESSIBILITY_DOUBLE_TAP_DESCRIPTION_RES,

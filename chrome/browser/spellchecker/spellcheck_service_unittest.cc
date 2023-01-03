@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -162,12 +162,12 @@ INSTANTIATE_TEST_SUITE_P(
 TEST_P(SpellcheckServiceUnitTest, GetDictionaries) {
   prefs()->SetString(language::prefs::kAcceptLanguages,
                      GetParam().accept_languages);
-  base::ListValue spellcheck_dictionaries;
+  base::Value::List spellcheck_dictionaries;
   for (const std::string& dictionary : GetParam().spellcheck_dictionaries) {
     spellcheck_dictionaries.Append(dictionary);
   }
-  prefs()->Set(spellcheck::prefs::kSpellCheckDictionaries,
-               spellcheck_dictionaries);
+  prefs()->SetList(spellcheck::prefs::kSpellCheckDictionaries,
+                   std::move(spellcheck_dictionaries));
 
   std::vector<SpellcheckService::Dictionary> dictionaries;
   SpellcheckService::GetDictionaries(browser_context(), &dictionaries);
@@ -230,16 +230,13 @@ void SpellcheckServiceHybridUnitTestBase::RunGetDictionariesTest(
     const std::string accept_languages,
     const std::vector<std::string> spellcheck_dictionaries,
     const std::vector<SpellcheckService::Dictionary> expected_dictionaries) {
-  if (!spellcheck::WindowsVersionSupportsSpellchecker())
-    return;
-
   prefs()->SetString(language::prefs::kAcceptLanguages, accept_languages);
-  base::ListValue spellcheck_dictionaries_list;
+  base::Value::List spellcheck_dictionaries_list;
   for (std::string dict : spellcheck_dictionaries) {
     spellcheck_dictionaries_list.Append(dict);
   }
-  prefs()->Set(spellcheck::prefs::kSpellCheckDictionaries,
-               spellcheck_dictionaries_list);
+  prefs()->SetList(spellcheck::prefs::kSpellCheckDictionaries,
+                   std::move(spellcheck_dictionaries_list));
 
   // Simulate first-run scenario (method is normally called during browser
   // start-up). If the primary accept language has no dictionary support, it is
@@ -260,9 +257,6 @@ void SpellcheckServiceHybridUnitTestBase::RunDictionaryMappingTest(
     const std::string expected_tag_passed_to_spellcheck,
     const std::string expected_accept_language_generic,
     const std::string expected_tag_passed_to_spellcheck_generic) {
-  if (!spellcheck::WindowsVersionSupportsSpellchecker())
-    return;
-
   InitializeSpellcheckService({full_tag});
 
   std::string supported_dictionary;
@@ -341,9 +335,18 @@ const std::vector<std::string> SpellcheckServiceHybridUnitTestBase::
                              // dictionaries.
 };
 
-class SpellcheckServiceHybridUnitTest
+class GetDictionariesHybridUnitTestNoDelayInit
     : public SpellcheckServiceHybridUnitTestBase,
-      public testing::WithParamInterface<TestCase> {};
+      public testing::WithParamInterface<TestCase> {
+ protected:
+  void InitFeatures() override {
+    // Disable kWinDelaySpellcheckServiceInit, as the case where it's enabled
+    // is tested in SpellcheckServiceWindowsDictionaryMappingUnitTestDelayInit.
+    feature_list_.InitWithFeatures(
+        /*enabled_features=*/{spellcheck::kWinUseBrowserSpellChecker},
+        /*disabled_features=*/{spellcheck::kWinDelaySpellcheckServiceInit});
+  }
+};
 
 static const TestCase kHybridGetDictionariesParams[] = {
     // Galician (gl) has only Windows support, no Hunspell dictionary. Croatian
@@ -398,10 +401,10 @@ static const TestCase kHybridGetDictionariesParams[] = {
 };
 
 INSTANTIATE_TEST_SUITE_P(TestCases,
-                         SpellcheckServiceHybridUnitTest,
+                         GetDictionariesHybridUnitTestNoDelayInit,
                          testing::ValuesIn(kHybridGetDictionariesParams));
 
-TEST_P(SpellcheckServiceHybridUnitTest, GetDictionaries) {
+TEST_P(GetDictionariesHybridUnitTestNoDelayInit, GetDictionaries) {
   RunGetDictionariesTest(GetParam().accept_languages,
                          GetParam().spellcheck_dictionaries,
                          GetParam().expected_dictionaries);
@@ -431,7 +434,16 @@ std::ostream& operator<<(std::ostream& out,
 
 class SpellcheckServiceWindowsDictionaryMappingUnitTest
     : public SpellcheckServiceHybridUnitTestBase,
-      public testing::WithParamInterface<DictionaryMappingTestCase> {};
+      public testing::WithParamInterface<DictionaryMappingTestCase> {
+ protected:
+  void InitFeatures() override {
+    // Disable kWinDelaySpellcheckServiceInit, as the case where it's enabled
+    // is tested in SpellcheckServiceWindowsDictionaryMappingUnitTestDelayInit.
+    feature_list_.InitWithFeatures(
+        /*enabled_features=*/{spellcheck::kWinUseBrowserSpellChecker},
+        /*disabled_features=*/{spellcheck::kWinDelaySpellcheckServiceInit});
+  }
+};
 
 static const DictionaryMappingTestCase kHybridDictionaryMappingsParams[] = {
     DictionaryMappingTestCase({"en-CA", "en-CA", "en-CA", "en", "en"}),

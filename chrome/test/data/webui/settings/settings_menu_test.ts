@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,10 +15,11 @@ suite('SettingsMenu', function() {
   let settingsMenu: SettingsMenuElement;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     settingsMenu = document.createElement('settings-menu');
     settingsMenu.pageVisibility = pageVisibility;
     document.body.appendChild(settingsMenu);
+    flush();
   });
 
   teardown(function() {
@@ -30,8 +31,7 @@ suite('SettingsMenu', function() {
   test('clearsUrlSearchParam', function() {
     // As of iron-selector 2.x, need to force iron-selector to update before
     // clicking items on it, or wait for 'iron-items-changed'
-    const ironSelector =
-        settingsMenu.shadowRoot!.querySelector('iron-selector')!;
+    const ironSelector = settingsMenu.$.menu;
     ironSelector.forceSynchronousItemUpdate();
 
     const urlParams = new URLSearchParams('search=foo');
@@ -42,13 +42,19 @@ suite('SettingsMenu', function() {
     settingsMenu.$.people.click();
     assertEquals('', Router.getInstance().getQueryParameters().toString());
   });
+
+  test('performanceFeatureNotAvailableTest', function() {
+    assertFalse(
+        !!settingsMenu.shadowRoot!.querySelector<HTMLElement>('#performance'),
+        'performance menu item should not exist when features are unavailable');
+  });
 });
 
 suite('SettingsMenuReset', function() {
   let settingsMenu: SettingsMenuElement;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     Router.getInstance().navigateTo(routes.RESET, undefined);
     settingsMenu = document.createElement('settings-menu');
     document.body.appendChild(settingsMenu);
@@ -91,26 +97,23 @@ suite('SettingsMenuReset', function() {
 
   test('pageVisibility', function() {
     function assertPagesHidden(expectedHidden: boolean) {
-      assertEquals(expectedHidden, settingsMenu.$.people.hidden);
-      assertEquals(
-          expectedHidden,
-          settingsMenu.shadowRoot!.querySelector<HTMLElement>(
-                                      '#appearance')!.hidden);
-      assertEquals(
-          expectedHidden,
-          settingsMenu.shadowRoot!.querySelector<HTMLElement>(
-                                      '#onStartup')!.hidden);
-      assertEquals(
-          expectedHidden,
-          settingsMenu.shadowRoot!.querySelector<HTMLElement>(
-                                      '#reset')!.hidden);
+      const ids = [
+        'accessibility', 'appearance',
+        // <if expr="not is_chromeos">
+        'defaultBrowser',
+        // </if>
+        'downloads', 'languages', 'onStartup', 'people', 'reset',
+        // <if expr="not chromeos_ash">
+        'system',
+        // </if>
+      ];
 
-      // <if expr="not chromeos_ash and not chromeos_lacros">
-      assertEquals(
-          expectedHidden,
-          settingsMenu.shadowRoot!
-              .querySelector<HTMLElement>('#defaultBrowser')!.hidden);
-      // </if>
+      for (const id of ids) {
+        assertEquals(
+            expectedHidden,
+            settingsMenu.shadowRoot!.querySelector<HTMLElement>(
+                                        `#${id}`)!.hidden);
+      }
     }
 
     // The default pageVisibility should not cause menu items to be hidden.
@@ -118,14 +121,18 @@ suite('SettingsMenuReset', function() {
 
     // Set the visibility of the pages under test to "false".
     settingsMenu.pageVisibility = Object.assign(pageVisibility || {}, {
+      a11y: false,
       advancedSettings: false,
       appearance: false,
       defaultBrowser: false,
+      downloads: false,
+      languages: false,
       multidevice: false,
       onStartup: false,
       people: false,
       reset: false,
       safetyCheck: false,
+      system: false,
     });
     flush();
 

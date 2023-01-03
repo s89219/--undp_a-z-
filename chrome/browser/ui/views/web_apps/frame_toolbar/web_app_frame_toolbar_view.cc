@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,6 +17,7 @@
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_content_settings_container.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_menu_button.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_navigation_button_container.h"
+#include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_origin_text.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/web_app_toolbar_button_container.h"
 #include "chrome/browser/ui/views/web_apps/frame_toolbar/window_controls_overlay_toggle_button.h"
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
@@ -85,6 +86,8 @@ WebAppFrameToolbarView::WebAppFrameToolbarView(views::Widget* widget,
 
   if (browser_view_->IsWindowControlsOverlayEnabled())
     OnWindowControlsOverlayEnabledChanged();
+  if (browser_view_->AppUsesBorderlessMode())
+    UpdateBorderlessModeEnabled();
 }
 
 WebAppFrameToolbarView::~WebAppFrameToolbarView() = default;
@@ -257,6 +260,10 @@ IntentChipButton* WebAppFrameToolbarView::GetIntentChipButton() {
   return nullptr;
 }
 
+DownloadToolbarButtonView* WebAppFrameToolbarView::GetDownloadButton() {
+  return right_container_ ? right_container_->download_button() : nullptr;
+}
+
 bool WebAppFrameToolbarView::DoesIntersectRect(const View* target,
                                                const gfx::Rect& rect) const {
   DCHECK_EQ(target, this);
@@ -293,6 +300,20 @@ void WebAppFrameToolbarView::OnWindowControlsOverlayEnabledChanged() {
     DestroyLayer();
     views::SetHitTestComponent(this, static_cast<int>(HTNOWHERE));
   }
+  right_container_->extensions_container()->WindowControlsOverlayEnabledChanged(
+      browser_view_->IsWindowControlsOverlayEnabled());
+}
+
+void WebAppFrameToolbarView::UpdateBorderlessModeEnabled() {
+  bool is_borderless_mode_enabled = browser_view_->IsBorderlessModeEnabled();
+
+  // The toolbar and menu button are hidden and not set to nullptrs,
+  // because there are many features that depend on the toolbar and would not
+  // work without it. For example all the shortcut commands (e.g. Ctrl+F, zoom)
+  // rely on the menu button and toolbar so when these are hidden, the shortcuts
+  // will still work.
+  SetVisible(!is_borderless_mode_enabled);
+  GetAppMenuButton()->SetVisible(!is_borderless_mode_enabled);
 }
 
 void WebAppFrameToolbarView::SetWindowControlsOverlayToggleVisible(

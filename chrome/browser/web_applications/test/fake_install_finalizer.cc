@@ -1,17 +1,18 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include <utility>
 
+#include "base/containers/flat_set.h"
 #include "chrome/browser/web_applications/test/fake_install_finalizer.h"
 
 #include "base/callback.h"
 #include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/notreached.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
@@ -53,7 +54,7 @@ void FakeInstallFinalizer::UninstallExternalWebApp(
     webapps::WebappUninstallSource uninstall_surface,
     UninstallWebAppCallback callback) {
   user_uninstalled_external_apps_.erase(app_id);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback),
                                 webapps::UninstallResultCode::kSuccess));
 }
@@ -66,7 +67,7 @@ void FakeInstallFinalizer::UninstallExternalWebAppByUrl(
   DCHECK(base::Contains(next_uninstall_external_web_app_results_, app_url));
   uninstall_external_web_app_urls_.push_back(app_url);
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindLambdaForTesting(
                      [this, app_url, callback = std::move(callback)]() mutable {
                        webapps::UninstallResultCode result =
@@ -74,12 +75,6 @@ void FakeInstallFinalizer::UninstallExternalWebAppByUrl(
                        next_uninstall_external_web_app_results_.erase(app_url);
                        std::move(callback).Run(result);
                      }));
-}
-
-void FakeInstallFinalizer::UninstallWithoutRegistryUpdateFromSync(
-    const std::vector<AppId>& web_apps,
-    RepeatingUninstallCallback callback) {
-  NOTREACHED();
 }
 
 bool FakeInstallFinalizer::CanUserUninstallWebApp(const AppId& app_id) const {
@@ -94,16 +89,6 @@ void FakeInstallFinalizer::UninstallWebApp(
   NOTIMPLEMENTED();
 }
 
-void FakeInstallFinalizer::RetryIncompleteUninstalls(
-    const std::vector<AppId>& apps_to_uninstall) {
-  NOTREACHED();
-}
-
-bool FakeInstallFinalizer::WasPreinstalledWebAppUninstalled(
-    const AppId& app_id) const {
-  return base::Contains(user_uninstalled_external_apps_, app_id);
-}
-
 bool FakeInstallFinalizer::CanReparentTab(const AppId& app_id,
                                           bool shortcut_created) const {
   return true;
@@ -114,7 +99,7 @@ void FakeInstallFinalizer::ReparentTab(const AppId& app_id,
                                        content::WebContents* web_contents) {
   ++num_reparent_tab_calls_;
 }
-void FakeInstallFinalizer::SetRemoveSourceCallbackForTesting(
+void FakeInstallFinalizer::SetRemoveManagementTypeCallbackForTesting(
     base::RepeatingCallback<void(const AppId&)>) {
   NOTIMPLEMENTED();
 }
@@ -139,6 +124,11 @@ void FakeInstallFinalizer::SimulateExternalAppUninstalledByUser(
   user_uninstalled_external_apps_.insert(app_id);
 }
 
+bool FakeInstallFinalizer::WasPreinstalledWebAppUninstalled(
+    const AppId& app_id) {
+  return base::Contains(user_uninstalled_external_apps_, app_id);
+}
+
 void FakeInstallFinalizer::Finalize(const WebAppInstallInfo& web_app_info,
                                     webapps::InstallResultCode code,
                                     InstallFinalizedCallback callback) {
@@ -156,9 +146,10 @@ void FakeInstallFinalizer::Finalize(const WebAppInstallInfo& web_app_info,
   OsHooksErrors os_hooks_errors;
 
   // Store input data copies for inspecting in tests.
-  web_app_info_copy_ = std::make_unique<WebAppInstallInfo>(web_app_info);
+  web_app_info_copy_ =
+      std::make_unique<WebAppInstallInfo>(web_app_info.Clone());
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), app_id, code, os_hooks_errors));
 }

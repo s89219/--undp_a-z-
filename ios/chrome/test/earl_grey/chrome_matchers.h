@@ -1,11 +1,11 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef IOS_CHROME_TEST_EARL_GREY_CHROME_MATCHERS_H_
 #define IOS_CHROME_TEST_EARL_GREY_CHROME_MATCHERS_H_
 
-#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 
 #include <string>
 
@@ -32,53 +32,53 @@ id<GREYMatcher> MatchInBlockerWindowWithNumber(int window_number,
                                                id<GREYMatcher> matcher);
 
 // Returns a matcher for element with accessibility label corresponding to
-// |message_id| and accessibility trait UIAccessibilityTraitButton.
+// `message_id` and accessibility trait UIAccessibilityTraitButton.
 id<GREYMatcher> ButtonWithAccessibilityLabelId(int message_id);
 
 // Returns a matcher for element with accessibility label corresponding to
-// |label| and accessibility trait UIAccessibilityTraitButton.
+// `label` and accessibility trait UIAccessibilityTraitButton.
 id<GREYMatcher> ButtonWithAccessibilityLabel(NSString* label);
 
-// Returns a matcher for element with an image corresponding to |image_id|.
-id<GREYMatcher> ImageViewWithImage(int image_id);
+// Returns a matcher for element with an image corresponding to `image_id`.
+id<GREYMatcher> ImageViewWithImage(UIImage* image);
 
 // Returns a matcher for element with an image defined by its name in the main
 // bundle.
 id<GREYMatcher> ImageViewWithImageNamed(NSString* imageName);
 
-// Returns a matcher for element with an image corresponding to |image_id| and
+// Returns a matcher for element with an image corresponding to `image_id` and
 // accessibility trait UIAccessibilityTraitButton.
 id<GREYMatcher> ButtonWithImage(int image_id);
 
 // Returns a matcher for element with accessibility label corresponding to
-// |message_id| and accessibility trait UIAccessibilityTraitStaticText.
+// `message_id` and accessibility trait UIAccessibilityTraitStaticText.
 id<GREYMatcher> StaticTextWithAccessibilityLabelId(int message_id);
 
 // Returns a matcher for element with accessibility label corresponding to
-// |label| and accessibility trait UIAccessibilityTraitStaticText.
+// `label` and accessibility trait UIAccessibilityTraitStaticText.
 id<GREYMatcher> StaticTextWithAccessibilityLabel(NSString* label);
 
 // Returns a matcher for a text element (label, field, etc) whose text contains
-// |text| as a substring. (contrast with grey_text() which tests for a complete
+// `text` as a substring. (contrast with grey_text() which tests for a complete
 // string match).
 id<GREYMatcher> ContainsPartialText(NSString* text);
 
 // Returns a matcher for element with accessibility label corresponding to
-// |message_id| and accessibility trait UIAccessibilityTraitHeader.
+// `message_id` and accessibility trait UIAccessibilityTraitHeader.
 id<GREYMatcher> HeaderWithAccessibilityLabelId(int message_id);
 
 // Returns a matcher for element with accessibility label corresponding to
-// |label| and accessibility trait UIAccessibilityTraitHeader.
+// `label` and accessibility trait UIAccessibilityTraitHeader.
 id<GREYMatcher> HeaderWithAccessibilityLabel(NSString* label);
 
 // Returns a matcher for navigation bar title element with accessibility label
-// corresponding to |label_id|.
+// corresponding to `label_id`.
 id<GREYMatcher> NavigationBarTitleWithAccessibilityLabelId(int label_id);
 
-// Returns a matcher for text field of a cell with |message_id|.
+// Returns a matcher for text field of a cell with `message_id`.
 id<GREYMatcher> TextFieldForCellWithLabelId(int message_id);
 
-// Returns a matcher for icon view of a cell with |message_id|.
+// Returns a matcher for icon view of a cell with `message_id`.
 id<GREYMatcher> IconViewForCellWithLabelId(int message_id, NSString* icon_type);
 
 // Returns a matcher for the primary toolbar.
@@ -125,14 +125,14 @@ id<GREYMatcher> PageSecurityInfoButton();
 // Returns a matcher for the page security info indicator.
 id<GREYMatcher> PageSecurityInfoIndicator();
 
-// Returns a matcher for omnibox containing |text|. Performs an exact match of
+// Returns a matcher for omnibox containing `text`. Performs an exact match of
 // the omnibox contents.
 id<GREYMatcher> OmniboxText(const std::string& text);
 
-// Returns a matcher for |text| being a substring of the text in the omnibox.
+// Returns a matcher for `text` being a substring of the text in the omnibox.
 id<GREYMatcher> OmniboxContainingText(const std::string& text);
 
-// Returns a matcher for |text| being a substring of the text in the location
+// Returns a matcher for `text` being a substring of the text in the location
 // view.
 id<GREYMatcher> LocationViewContainingText(const std::string& text);
 
@@ -151,6 +151,8 @@ id<GREYMatcher> ShareButton();
 id<GREYMatcher> TabShareButton();
 
 // Returns a matcher for show tabs button.
+// DO NOT use this matcher to open the tab grid. Instead use one of the helpers:
+// `[ChromeEarlGrey  showTabSwitcher]` or `[ChromeEarlGreyUI openTabGrid]`.
 id<GREYMatcher> ShowTabsButton();
 
 // Returns a matcher for Add to reading list button.
@@ -212,9 +214,6 @@ id<GREYMatcher> ClearBrowsingDataView();
 // Returns a matcher for the clear browsing data action sheet item.
 id<GREYMatcher> ConfirmClearBrowsingDataButton();
 
-// Returns a matcher for the settings button in the tools menu.
-id<GREYMatcher> SettingsMenuButton();
-
 // Returns a matcher for the "Done" button in the settings' navigation bar.
 id<GREYMatcher> SettingsDoneButton();
 
@@ -236,10 +235,6 @@ id<GREYMatcher> LanguagesButton();
 
 // Returns a matcher for the "Add Credit Card" view in the Settings menu.
 id<GREYMatcher> AddCreditCardView();
-
-// Returns a matcher for the "Add Payment Method" button in the Settings Payment
-// Methods view.
-id<GREYMatcher> AddPaymentMethodButton();
 
 // Returns a matcher for the "Add" credit card button in the Payment
 // Methods add credit card view.
@@ -282,8 +277,20 @@ id<GREYMatcher> SettingsImportDataKeepSeparateButton();
 // view.
 id<GREYMatcher> SettingsImportDataContinueButton();
 
+// Returns a matcher for the safety check table view.
+id<GREYMatcher> SettingsSafetyCheckTableView();
+
 // Returns a matcher for the privacy settings table view.
 id<GREYMatcher> SettingsPrivacyTableView();
+
+// Returns a matcher for the privacy safe browsing settings table view.
+id<GREYMatcher> SettingsPrivacySafeBrowsingTableView();
+
+// Returns a matcher for the notifications settings table view.
+id<GREYMatcher> SettingsPriceNotificationsTableView();
+
+// Returns a matcher for the tracking price settings table view.
+id<GREYMatcher> SettingsTrackingPriceTableView();
 
 // Returns a matcher for the Content Settings button on the main Settings
 // screen.
@@ -313,6 +320,10 @@ id<GREYMatcher> SettingsMenuPrivacyButton();
 // Returns a matcher for the Save passwords cell on the main Settings screen.
 id<GREYMatcher> SettingsMenuPasswordsButton();
 
+// Returns a matcher for the Price Notifications cell on the main Settings
+// screen.
+id<GREYMatcher> SettingsMenuPriceNotificationsButton();
+
 // Returns a matcher for the payment request collection view.
 id<GREYMatcher> PaymentRequestView();
 
@@ -331,6 +342,9 @@ id<GREYMatcher> SettingsCollectionView();
 // Returns a matcher for the clear browsing history cell on the clear browsing
 // data panel.
 id<GREYMatcher> ClearBrowsingHistoryButton();
+
+// Returns a matcher for the History table view.
+id<GREYMatcher> HistoryTableView();
 
 // Returns a matcher for the clear cookies cell on the clear browsing data
 // panel.
@@ -373,15 +387,6 @@ id<GREYMatcher> PaymentRequestPickerSearchBar();
 
 // Returns a matcher for the New Window button on the Tools menu.
 id<GREYMatcher> OpenNewWindowMenuButton();
-
-// Returns a matcher for the reading list on the Tools menu.
-id<GREYMatcher> ReadingListMenuButton();
-
-// Returns a matcher for the bookmarks button on the Tools menu.
-id<GREYMatcher> BookmarksMenuButton();
-
-// Returns a matcher for the recent tabs button on the Tools menu.
-id<GREYMatcher> RecentTabsMenuButton();
 
 // Returns a matcher for the system selection callout.
 id<GREYMatcher> SystemSelectionCallout();
@@ -444,7 +449,7 @@ id<GREYMatcher> WebViewMatcher();
 id<GREYMatcher> WebStateScrollViewMatcher();
 
 // Returns a matcher for the current WebState's scroll view in the given
-// |window_number|.
+// `window_number`.
 id<GREYMatcher> WebStateScrollViewMatcherInWindowWithNumber(int window_number);
 
 // Returns a matcher for the Clear Browsing Data button in the History UI.
@@ -453,7 +458,7 @@ id<GREYMatcher> HistoryClearBrowsingDataButton();
 // Returns a matcher for "Open In..." button.
 id<GREYMatcher> OpenInButton();
 
-// Returns a matcher for the cell at |index| in the tab grid.
+// Returns a matcher for the cell at `index` in the tab grid.
 id<GREYMatcher> TabGridCellAtIndex(unsigned int index);
 
 // Returns a matcher for the button that closes the tab grid.
@@ -507,7 +512,7 @@ id<GREYMatcher> RegularTabGrid();
 // Returns a matcher for the incognito tab grid.
 id<GREYMatcher> IncognitoTabGrid();
 
-// Returns a matcher for the button to close the cell at |index| in the
+// Returns a matcher for the button to close the cell at `index` in the
 // tab grid.
 id<GREYMatcher> TabGridCloseButtonForCellAtIndex(unsigned int index);
 
@@ -537,11 +542,42 @@ id<GREYMatcher> AutofillSuggestionViewMatcher();
 // smaller than the scroll view bounds.
 id<GREYMatcher> ContentViewSmallerThanScrollView();
 
-// Returns a matcher for a history entry with |url| and |title|.
+// Returns a matcher for a history entry with `url` and `title`.
 id<GREYMatcher> HistoryEntry(const std::string& url, const std::string& title);
 
 // Returns a matcher to the add button in the toolbar in the settings view.
 id<GREYMatcher> SettingsToolbarAddButton();
+
+// Returns a matcher matching cells that can be swiped-to-dismiss.
+id<GREYMatcher> CellCanBeSwipedToDismissed();
+
+#pragma mark - Promo style view controller
+
+// Returns matcher for the primary action button.
+id<GREYMatcher> PromoStylePrimaryActionButtonMatcher();
+
+// Returns matcher for the secondary action button.
+id<GREYMatcher> PromoStyleSecondaryActionButtonMatcher();
+
+#pragma mark - Incognito Interstitial
+
+// Returns a matcher for the Incognito Interstitial view controller.
+id<GREYMatcher> IncognitoInterstitialMatcher();
+
+// Returns a matcher for the subtitle of the Incognito Interstitial,
+// as it should appear when `URL` was given to the Interstitial.
+id<GREYMatcher> IncognitoInterstitialLabelForURL(const std::string& url);
+
+// Returns a matcher for the primary action button in the Incognito
+// Interstitial.
+id<GREYMatcher> IncognitoInterstitialOpenInChromeIncognitoButton();
+
+// Returns a matcher for the secondary action button in the Incognito
+// Interstitial.
+id<GREYMatcher> IncognitoInterstitialOpenInChromeButton();
+
+// Returns a matcher for the Cancel button in the Incognito Interstitial.
+id<GREYMatcher> IncognitoInterstitialCancelButton();
 
 #pragma mark - Manual Fallback
 
@@ -617,6 +653,39 @@ id<GREYMatcher> ManualFallbackSuggestPasswordMatcher();
 
 // Returns a matcher for the button to accept the generated password.
 id<GREYMatcher> UseSuggestedPasswordMatcher();
+
+#pragma mark - Overflow Menu Destinations
+
+// Returns a matcher for the bookmarks destination button in the overflow menu.
+id<GREYMatcher> BookmarksDestinationButton();
+
+// Returns a matcher for the history destination button in the overflow menu.
+id<GREYMatcher> HistoryDestinationButton();
+
+// Returns a matcher for the reading list destination button in the overflow
+// menu.
+id<GREYMatcher> ReadingListDestinationButton();
+
+// Returns a matcher for the passwords destination button in the overflow menu.
+id<GREYMatcher> PasswordsDestinationButton();
+
+// Returns a matcher for the downloads destination button in the overflow menu.
+id<GREYMatcher> DownloadsDestinationButton();
+
+// Returns a matcher for the recent tabs destination button in the overflow
+// menu.
+id<GREYMatcher> RecentTabsDestinationButton();
+
+// Returns a matcher for the site info destination button in the overflow menu.
+id<GREYMatcher> SiteInfoDestinationButton();
+
+// Returns a matcher for the settings destination button in the overflow menu.
+id<GREYMatcher> SettingsDestinationButton();
+
+#pragma mark - Overflow Menu Actions
+
+// Returns a matcher for the settings action button in the overflow menu.
+id<GREYMatcher> SettingsActionButton();
 
 #pragma mark - Tab Grid Edit Mode
 

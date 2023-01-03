@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -434,7 +434,7 @@ void ShareOperation::Run(blink::mojom::ShareService::ShareCallback callback) {
   // with the WebContents.
   HWND hwnd = nullptr;
   content::RenderWidgetHostView* host_view =
-      web_contents_->GetRenderWidgetHostView();
+      web_contents_->GetTopLevelRenderWidgetHostView();
   if (host_view) {
     ui::AXPlatformNode* platform_node =
         ui::AXPlatformNode::FromNativeViewAccessible(

@@ -1,19 +1,25 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/system/network/network_detailed_view.h"
 
+#include <memory>
+#include <utility>
+
 #include "ash/public/cpp/system_tray_client.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
+#include "ash/system/machine_learning/user_settings_event_logger.h"
 #include "ash/system/model/system_tray_model.h"
+#include "ash/system/network/network_list_item_view.h"
 #include "ash/system/network/tray_network_state_model.h"
 #include "ash/system/tray/detailed_view_delegate.h"
 #include "ash/system/tray/tri_view.h"
 #include "base/check.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/user_metrics.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
 #include "ui/views/controls/button/button.h"
@@ -41,21 +47,11 @@ NetworkDetailedView::NetworkDetailedView(
 
 NetworkDetailedView::~NetworkDetailedView() = default;
 
-void NetworkDetailedView::NotifyNetworkListChanged() {
-  scroll_content()->InvalidateLayout();
-  Layout();
-}
-
 void NetworkDetailedView::HandleViewClicked(views::View* view) {
   if (login_ == LoginStatus::LOCKED)
     return;
-  // TODO(b/207089013): Call OnNetworkListItemSelected() on delegate() and pass
-  // in a cast of either NetworkListNetworkItemView or NetworkListVPNItemView
-  // when available, also add test for this.
-}
-
-views::View* NetworkDetailedView::network_list() {
-  return scroll_content();
+  delegate()->OnNetworkListItemSelected(
+      static_cast<NetworkListItemView*>(view)->network_properties());
 }
 
 void NetworkDetailedView::CreateTitleRowButtons() {
@@ -67,8 +63,7 @@ void NetworkDetailedView::CreateTitleRowButtons() {
                                            weak_ptr_factory_.GetWeakPtr()),
                        IDS_ASH_STATUS_TRAY_NETWORK_INFO));
   info->SetID(static_cast<int>(NetworkDetailedViewChildId::kInfoButton));
-  info_button_ = info.get();
-  tri_view()->AddView(TriView::Container::END, info.release());
+  info_button_ = tri_view()->AddView(TriView::Container::END, std::move(info));
 
   DCHECK(!settings_button_);
 
@@ -79,8 +74,8 @@ void NetworkDetailedView::CreateTitleRowButtons() {
           IDS_ASH_STATUS_TRAY_NETWORK_SETTINGS));
   settings->SetID(
       static_cast<int>(NetworkDetailedViewChildId::kSettingsButton));
-  settings_button_ = settings.get();
-  tri_view()->AddView(TriView::Container::END, settings.release());
+  settings_button_ =
+      tri_view()->AddView(TriView::Container::END, std::move(settings));
 }
 
 bool NetworkDetailedView::ShouldIncludeDeviceAddresses() {
@@ -114,7 +109,13 @@ bool NetworkDetailedView::CloseInfoBubble() {
 }
 
 void NetworkDetailedView::OnSettingsClicked() {
-  // TODO(b/207089013): Record user action metrics here
+  base::RecordAction(
+      list_type_ == LIST_TYPE_VPN
+          ? base::UserMetricsAction("StatusArea_VPN_Settings")
+          : base::UserMetricsAction("StatusArea_Network_Settings"));
+
+  base::RecordAction(base::UserMetricsAction(
+      "ChromeOS.SystemTray.Network.SettingsButtonPressed"));
 
   const std::string guid = model_->default_network()
                                ? model_->default_network()->guid

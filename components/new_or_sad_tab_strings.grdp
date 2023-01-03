@@ -61,22 +61,22 @@
           Open page in a new Incognito tab
         </message>
       </if>
-      <if expr="is_macosx or chromeos_ash or chromeos_lacros">
+      <if expr="is_macosx or is_chromeos">
         <message name="IDS_SAD_TAB_RELOAD_CLOSE_TABS" desc="One of the bullet points displayed on the web page if a reload failed to fix the issue, advising the user to close other Chrome tabs or apps running on their computer (Mac, ChromeOS).">
           Close other tabs or apps
         </message>
       </if>
-      <if expr="is_linux and not chromeos_ash and not chromeos_lacros">
+      <if expr="is_linux">
         <message name="IDS_SAD_TAB_RELOAD_CLOSE_TABS" desc="One of the bullet points displayed on the web page if a reload failed to fix the issue, advising the user to close other Chrome tabs or programs running on their computer.">
           Close other tabs or programs
         </message>
       </if>
-      <if expr="is_macosx or chromeos_ash or chromeos_lacros or is_ios">
+      <if expr="is_macosx or is_chromeos or is_ios">
         <message name="IDS_SAD_TAB_RELOAD_CLOSE_NOTABS" desc="One of the bullet points displayed on the web page if a reload failed to fix the issue, advising the user to close other apps running on their computer or device.">
           Close other apps
         </message>
       </if>
-      <if expr="is_linux and not chromeos_ash and not chromeos_lacros">
+      <if expr="is_linux">
         <message name="IDS_SAD_TAB_RELOAD_CLOSE_NOTABS" desc="One of the bullet points displayed on the web page if a reload failed to fix the issue, advising the user to close other programs running on their computer (Linux).">
           Close other programs
         </message>
@@ -118,6 +118,10 @@
       <message name="IDS_NEW_INCOGNITO_TAB_TITLE"
                desc="Title of the new incognito tab page, not to be confused with the action of opening a new incognito tab.">
         New Incognito Tab
+      </message>
+      <message name="IDS_INCOGNITO_TAB_LEARN_MORE_ACCESSIBILITY_LABEL"
+          desc="Accessibility label for a link labeled 'Learn more' that links to a help article about Incognito mode.">
+        Learn more about Incognito
       </message>
       <if expr="not is_android">
         <message name="IDS_NEW_TAB_OTR_HEADING"

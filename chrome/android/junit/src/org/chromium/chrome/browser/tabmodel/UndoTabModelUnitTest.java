@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -76,6 +76,11 @@ public class UndoTabModelUnitTest {
     @Mock
     private TabModelSelector mTabModelSelector;
 
+    @Mock
+    private TabModelFilterProvider mTabModelFilterProvider;
+    @Mock
+    private TabModelFilter mTabModelFilter;
+
     private int mNextTabId;
 
     @Before
@@ -89,6 +94,12 @@ public class UndoTabModelUnitTest {
         when(mTabModelJniBridge.init(any(), any(), anyInt())).thenReturn(FAKE_NATIVE_ADDRESS);
 
         when(mTabModelDelegate.isReparentingInProgress()).thenReturn(false);
+
+        when(mTabModelSelector.getTabModelFilterProvider()).thenReturn(mTabModelFilterProvider);
+        when(mTabModelFilterProvider.getTabModelFilter(false)).thenReturn(mTabModelFilter);
+        when(mTabModelFilterProvider.getTabModelFilter(true)).thenReturn(mTabModelFilter);
+        when(mTabModelFilter.getValidPosition(any(), anyInt()))
+                .thenAnswer(i -> i.getArguments()[1]);
 
         mNextTabId = 0;
     }
@@ -270,6 +281,7 @@ public class UndoTabModelUnitTest {
     private void cancelAllTabClosures(final TabModel model, final Tab[] expectedToClose)
             throws TimeoutException {
         final CallbackHelper tabClosureUndoneHelper = new CallbackHelper();
+        final CallbackHelper allTabClosureCancellationCompletedHelper = new CallbackHelper();
 
         for (int i = 0; i < expectedToClose.length; i++) {
             Tab tab = expectedToClose[i];
@@ -284,6 +296,11 @@ public class UndoTabModelUnitTest {
                 public void tabClosureUndone(Tab currentTab) {
                     tabClosureUndoneHelper.notifyCalled();
                 }
+
+                @Override
+                public void allTabsClosureUndone() {
+                    allTabClosureCancellationCompletedHelper.notifyCalled();
+                }
             });
         }
 
@@ -291,8 +308,10 @@ public class UndoTabModelUnitTest {
             Tab tab = expectedToClose[i];
             model.cancelTabClosure(tab.getId());
         }
+        model.notifyAllTabsClosureUndone();
 
         tabClosureUndoneHelper.waitForCallback(0, expectedToClose.length);
+        allTabClosureCancellationCompletedHelper.waitForCallback(0, 1);
 
         for (int i = 0; i < expectedToClose.length; i++) {
             final Tab tab = expectedToClose[i];
@@ -1371,7 +1390,7 @@ public class UndoTabModelUnitTest {
 
     /**
      * Test a {@link TabModel} where undo is not supported and
-     * {@link TabModelObserver#didCloseTabs()} is called.
+     * {@link TabModelObserver#onFinishingMultipleTabClosure()} is called.
      *     Action                     Model List         Close List        Comprehensive List
      * 1.  Initial State              [ 0 1 2 3 4s ]     -                 [ 0 1 2 3 4s ]
      * 2.  CloseTab(1)                [ 0 2 3 4s ]       -                 [ 0 2 3 4s ]
@@ -1380,7 +1399,7 @@ public class UndoTabModelUnitTest {
      */
     @Test
     @SmallTest
-    public void testUndoNotSupportedDidCloseTabs() throws TimeoutException {
+    public void testUndoNotSupportedOnFinishingMultipleTabClosure() throws TimeoutException {
         final boolean isIncognito = true;
         final TabModel model = createTabModel(isIncognito);
         createTab(model, isIncognito);
@@ -1404,7 +1423,7 @@ public class UndoTabModelUnitTest {
         final ArrayList<Tab> lastClosedTabs = new ArrayList<Tab>();
         model.addObserver(new TabModelObserver() {
             @Override
-            public void didCloseTabs(List<Tab> tabs) {
+            public void onFinishingMultipleTabClosure(List<Tab> tabs) {
                 lastClosedTabs.clear();
                 lastClosedTabs.addAll(tabs);
             }

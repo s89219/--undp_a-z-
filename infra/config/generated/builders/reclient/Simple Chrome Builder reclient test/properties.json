@@ -28,7 +28,6 @@
               "legacy_gclient_config": {
                 "apply_configs": [
                   "chromeos",
-                  "enable_reclient",
                   "reclient_test"
                 ],
                 "config": "chromium"
@@ -47,7 +46,13 @@
     }
   },
   "$build/reclient": {
-    "instance": "goma-foundry-experiments",
+    "bootstrap_env": {
+      "GOMA_COMPILER_PROXY_ENABLE_CRASH_DUMP": "false",
+      "RBE_deps_cache_mode": "reproxy",
+      "RBE_experimental_goma_deps_cache": "True",
+      "RBE_ip_reset_min_delay": "-1s"
+    },
+    "instance": "rbe-chromium-trusted-test",
     "metrics_project": "chromium-reclient-metrics"
   },
   "$recipe_engine/resultdb/test_presentation": {

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -92,8 +92,8 @@ public class AccessibilityTabModelWrapper extends LinearLayout {
                 SemanticColorUtils.getDefaultControlColorActive(getContext()));
         mTabIconLightColor =
                 AppCompatResources.getColorStateList(getContext(), R.color.white_alpha_70);
-        mTabIconSelectedLightColor =
-                AppCompatResources.getColorStateList(getContext(), R.color.white_mode_tint);
+        mTabIconSelectedLightColor = AppCompatResources.getColorStateList(
+                getContext(), R.color.default_icon_color_white_tint_list);
         // Setting scaleY here to make sure the icons are not flipped due to the scaleY of its
         // container layout.
         mStandardButtonIcon = new ChromeImageView(getContext());

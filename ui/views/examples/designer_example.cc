@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,7 +41,6 @@
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/box_layout_view.h"
 #include "ui/views/metadata/view_factory.h"
-#include "ui/views/native_cursor.h"
 #include "ui/views/vector_icons.h"
 #include "ui/views/view.h"
 #include "ui/views/view_targeter.h"
@@ -161,9 +160,9 @@ class ClassRegistration<Combobox> : public BaseClassRegistration,
   }
 
   // ui::ComboboxModel
-  int GetItemCount() const override { return 1; }
-  std::u16string GetItemAt(int index) const override { return u"<empty>"; }
-  int GetDefaultIndex() const override { return 0; }
+  size_t GetItemCount() const override { return 1; }
+  std::u16string GetItemAt(size_t index) const override { return u"<empty>"; }
+  absl::optional<size_t> GetDefaultIndex() const override { return 0; }
 };
 
 template <>
@@ -301,25 +300,24 @@ void DesignerExample::GrabHandle::UpdatePosition(bool reorder) {
   if (GetVisible() && attached_view_) {
     PositionOnView();
     if (reorder)
-      parent()->ReorderChildView(this, -1);
+      parent()->ReorderChildView(this, parent()->children().size());
   }
 }
 
-gfx::NativeCursor DesignerExample::GrabHandle::GetCursor(
-    const ui::MouseEvent& event) {
+ui::Cursor DesignerExample::GrabHandle::GetCursor(const ui::MouseEvent& event) {
   switch (position_) {
     case GrabHandlePosition::kTop:
     case GrabHandlePosition::kBottom:
-      return views::GetNativeNorthSouthResizeCursor();
+      return ui::mojom::CursorType::kNorthSouthResize;
     case GrabHandlePosition::kLeft:
     case GrabHandlePosition::kRight:
-      return views::GetNativeEastWestResizeCursor();
+      return ui::mojom::CursorType::kEastWestResize;
     case GrabHandlePosition::kTopLeft:
     case GrabHandlePosition::kBottomRight:
-      return views::GetNativeNorthWestSouthEastResizeCursor();
+      return ui::mojom::CursorType::kNorthWestSouthEastResize;
     case GrabHandlePosition::kTopRight:
     case GrabHandlePosition::kBottomLeft:
-      return views::GetNativeNorthEastSouthWestResizeCursor();
+      return ui::mojom::CursorType::kNorthEastSouthWestResize;
   }
 }
 
@@ -459,7 +457,10 @@ bool DesignerExample::GrabHandles::IsGrabHandle(View* view) {
 
 DesignerExample::DesignerExample() : ExampleBase("Designer") {}
 
-DesignerExample::~DesignerExample() = default;
+DesignerExample::~DesignerExample() {
+  if (tracker_.view())
+    inspector_->SetModel(nullptr);
+}
 
 void DesignerExample::CreateExampleView(View* container) {
   Builder<View>(container)
@@ -495,27 +496,23 @@ void DesignerExample::CreateExampleView(View* container) {
                                   &DesignerExample::CreateView,
                                   base::Unretained(this)))
                               .SetText(u"Add"),
-                          Builder<ScrollView>()
-                              .CustomConfigure(base::BindOnce(
-                                  [](DesignerExample* designer_example,
-                                     ScrollView* scroll_view) {
-                                    std::vector<ui::TableColumn> columns = {
-                                        MakeColumn(0, u"Name", true),
-                                        MakeColumn(1, u"Value", false)};
-                                    auto inspector =
-                                        std::make_unique<TableView>(
-                                            designer_example, columns,
-                                            views::TEXT_ONLY, true);
-                                    designer_example->inspector_ =
-                                        scroll_view->SetContents(
-                                            std::move(inspector));
-                                  },
-                                  base::Unretained(this)))
+                          TableView::CreateScrollViewBuilderWithTable(
+                              Builder<TableView>()
+                                  .CopyAddressTo(&inspector_)
+                                  .SetColumns({MakeColumn(0, u"Name", true),
+                                               MakeColumn(1, u"Value", false)})
+                                  .SetModel(this)
+                                  .SetTableType(views::TEXT_ONLY)
+                                  .SetSingleSelection(true))
                               .SetPreferredSize(gfx::Size(250, 400)))))
       .BuildChildren();
   grab_handles_.Initialize(designer_panel_);
   designer_container_->SetFlexForView(designer_panel_, 75);
   class_registrations_ = GetClassRegistrations();
+
+  // TODO(crbug.com/1392538): Refactor such that the TableModel is not
+  // responsible for managing the lifetimes of views
+  tracker_.SetView(inspector_);
 }
 
 void DesignerExample::OnEvent(ui::Event* event) {
@@ -606,7 +603,7 @@ gfx::Vector2d DesignerExample::SnapToGrid(const gfx::Vector2d& distance) {
 
 void DesignerExample::CreateView(const ui::Event& event) {
   std::unique_ptr<View> new_view =
-      class_registrations_[view_type_->GetSelectedRow()]->CreateView();
+      class_registrations_[view_type_->GetSelectedRow().value()]->CreateView();
   new_view->SizeToPreferredSize();
   gfx::Rect child_rect = designer_panel_->GetContentsBounds();
   child_rect.ClampToCenteredSize(new_view->size());
@@ -616,11 +613,11 @@ void DesignerExample::CreateView(const ui::Event& event) {
   designer_panel_->AddChildView(std::move(new_view));
 }
 
-int DesignerExample::RowCount() {
+size_t DesignerExample::RowCount() {
   return selected_ ? selected_members_.size() : 0;
 }
 
-std::u16string DesignerExample::GetText(int row, int column_id) {
+std::u16string DesignerExample::GetText(size_t row, int column_id) {
   if (selected_) {
     ui::metadata::MemberMetaDataBase* member = selected_members_[row];
     if (column_id == 0)
@@ -634,15 +631,15 @@ void DesignerExample::SetObserver(ui::TableModelObserver* observer) {
   model_observer_ = observer;
 }
 
-int DesignerExample::GetItemCount() const {
+size_t DesignerExample::GetItemCount() const {
   return class_registrations_.size();
 }
 
-std::u16string DesignerExample::GetItemAt(int index) const {
+std::u16string DesignerExample::GetItemAt(size_t index) const {
   return class_registrations_[index]->GetViewClassName();
 }
 
-int DesignerExample::GetDefaultIndex() const {
+absl::optional<size_t> DesignerExample::GetDefaultIndex() const {
   return 0;
 }
 

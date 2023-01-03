@@ -1,24 +1,25 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/reading_list/reading_list_web_state_observer.h"
+#import "ios/chrome/browser/reading_list/reading_list_web_state_observer.h"
 
-#include <memory>
+#import <memory>
 
-#include "base/time/default_clock.h"
-#include "components/reading_list/core/reading_list_model_impl.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
-#include "ios/chrome/browser/reading_list/offline_url_utils.h"
-#include "ios/chrome/browser/reading_list/reading_list_model_factory.h"
+#import "base/time/default_clock.h"
+#import "components/reading_list/core/reading_list_model.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "ios/chrome/browser/reading_list/offline_url_utils.h"
+#import "ios/chrome/browser/reading_list/reading_list_model_factory.h"
+#import "ios/chrome/browser/reading_list/reading_list_test_utils.h"
 #import "ios/web/public/navigation/navigation_item.h"
-#include "ios/web/public/navigation/reload_type.h"
+#import "ios/web/public/navigation/reload_type.h"
 #import "ios/web/public/test/fakes/fake_navigation_manager.h"
 #import "ios/web/public/test/fakes/fake_web_state.h"
-#include "ios/web/public/test/web_task_environment.h"
-#include "net/base/network_change_notifier.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "testing/platform_test.h"
+#import "ios/web/public/test/web_task_environment.h"
+#import "net/base/network_change_notifier.h"
+#import "testing/gtest/include/gtest/gtest.h"
+#import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -70,20 +71,14 @@ class ReadingListWebStateObserverTest : public PlatformTest {
   void SetUp() override {
     PlatformTest::SetUp();
 
+    std::vector<ReadingListEntry> initial_entries;
+    initial_entries.emplace_back(GURL(kTestURL), kTestTitle, base::Time::Now());
+
     TestChromeBrowserState::Builder builder;
     builder.AddTestingFactory(
         ReadingListModelFactory::GetInstance(),
-        base::BindRepeating(
-            [](web::BrowserState*) -> std::unique_ptr<KeyedService> {
-              auto model = std::make_unique<ReadingListModelImpl>(
-                  /* storage_layer */ nullptr, /* pref_service */ nullptr,
-                  base::DefaultClock::GetInstance());
-
-              model->AddEntry(GURL(kTestURL), kTestTitle,
-                              reading_list::ADDED_VIA_CURRENT_APP);
-
-              return model;
-            }));
+        base::BindRepeating(&BuildReadingListModelWithFakeStorage,
+                            std::move(initial_entries)));
     browser_state_ = builder.Build();
 
     test_web_state_.SetBrowserState(browser_state_.get());
@@ -129,7 +124,7 @@ TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListFailure) {
 
   EXPECT_FALSE(fake_navigation_manager->ReloadCalled());
   EXPECT_EQ(fake_navigation_manager->GoToIndexCalled(), -1);
-  // Check that |GetLastCommittedItem()| has not been altered.
+  // Check that `GetLastCommittedItem()` has not been altered.
   EXPECT_EQ(fake_navigation_manager->GetLastCommittedItem()->GetVirtualURL(),
             GURL());
   EXPECT_EQ(fake_navigation_manager->GetLastCommittedItem()->GetURL(), GURL());
@@ -141,7 +136,7 @@ TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListFailure) {
 TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListOnline) {
   GURL url(kTestURL);
   std::string distilled_path = kTestDistilledPath;
-  reading_list_model()->SetEntryDistilledInfo(
+  reading_list_model()->SetEntryDistilledInfoIfExists(
       url, base::FilePath(distilled_path), GURL(kTestDistilledURL), 50,
       base::Time::FromTimeT(100));
   const ReadingListEntry* entry = reading_list_model()->GetEntryByURL(url);
@@ -157,7 +152,7 @@ TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListOnline) {
 
   EXPECT_FALSE(fake_navigation_manager->ReloadCalled());
   EXPECT_EQ(fake_navigation_manager->GoToIndexCalled(), -1);
-  // Check that |GetLastCommittedItem()| has not been altered.
+  // Check that `GetLastCommittedItem()` has not been altered.
   EXPECT_EQ(fake_navigation_manager->GetLastCommittedItem()->GetVirtualURL(),
             GURL());
   EXPECT_EQ(fake_navigation_manager->GetLastCommittedItem()->GetURL(), GURL());
@@ -169,12 +164,11 @@ TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListOnline) {
 TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListDistilledCommitted) {
   GURL url(kTestURL);
   std::string distilled_path = kTestDistilledPath;
-  reading_list_model()->SetEntryDistilledInfo(
+  reading_list_model()->SetEntryDistilledInfoIfExists(
       url, base::FilePath(distilled_path), GURL(kTestDistilledURL), 50,
       base::Time::FromTimeT(100));
   const ReadingListEntry* entry = reading_list_model()->GetEntryByURL(url);
-  GURL distilled_url = reading_list::OfflineURLForPath(
-      entry->DistilledPath(), entry->URL(), entry->DistilledURL());
+  GURL distilled_url = reading_list::OfflineURLForURL(entry->URL());
 
   FakeNavigationManager* fake_navigation_manager =
       static_cast<FakeNavigationManager*>(
@@ -203,12 +197,11 @@ TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListDistilledCommitted) {
 TEST_F(ReadingListWebStateObserverTest, TestLoadReadingListDistilledPending) {
   GURL url(kTestURL);
   std::string distilled_path = kTestDistilledPath;
-  reading_list_model()->SetEntryDistilledInfo(
+  reading_list_model()->SetEntryDistilledInfoIfExists(
       url, base::FilePath(distilled_path), GURL(kTestDistilledURL), 50,
       base::Time::FromTimeT(100));
   const ReadingListEntry* entry = reading_list_model()->GetEntryByURL(url);
-  GURL distilled_url = reading_list::OfflineURLForPath(
-      entry->DistilledPath(), entry->URL(), entry->DistilledURL());
+  GURL distilled_url = reading_list::OfflineURLForURL(entry->URL());
 
   FakeNavigationManager* fake_navigation_manager =
       static_cast<FakeNavigationManager*>(

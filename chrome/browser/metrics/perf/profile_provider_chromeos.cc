@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "chrome/browser/metrics/perf/metric_provider.h"
 #include "chrome/browser/metrics/perf/perf_events_collector.h"
 #include "chrome/browser/metrics/perf/windowed_incognito_observer.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "components/services/heap_profiling/public/cpp/settings.h"
 #include "content/public/common/content_switches.h"
 #include "third_party/metrics_proto/sampled_profile.pb.h"
@@ -38,7 +38,7 @@ enum class JankinessTriggerStatus {
 // Returns true if a normal user is logged in. Returns false otherwise (e.g. if
 // logged in as a guest or as a kiosk app).
 bool IsNormalUserLoggedIn() {
-  return chromeos::LoginState::Get()->IsUserAuthenticated();
+  return ash::LoginState::Get()->IsUserAuthenticated();
 }
 
 }  // namespace
@@ -54,7 +54,7 @@ ProfileProvider::ProfileProvider()
 }
 
 ProfileProvider::~ProfileProvider() {
-  chromeos::LoginState::Get()->RemoveObserver(this);
+  ash::LoginState::Get()->RemoveObserver(this);
   chromeos::PowerManagerClient::Get()->RemoveObserver(this);
   if (jank_monitor_) {
     jank_monitor_->RemoveObserver(this);
@@ -68,7 +68,7 @@ void ProfileProvider::Init() {
   }
 
   // Register as an observer of login state changes.
-  chromeos::LoginState::Get()->AddObserver(this);
+  ash::LoginState::Get()->AddObserver(this);
 
   // Register as an observer of power manager events.
   chromeos::PowerManagerClient::Get()->AddObserver(this);

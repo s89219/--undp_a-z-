@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,13 +22,11 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/layout_constants.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
-#include "chrome/common/chrome_features.h"
 #include "components/services/app_service/public/cpp/app_types.h"
 #include "components/services/app_service/public/cpp/icon_types.h"
 #include "content/public/browser/navigation_handle.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/models/image_model.h"
-#include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
 #include "url/origin.h"
 
@@ -62,7 +60,7 @@ web_app::WebAppRegistrar* MaybeGetWebAppRegistrar(
   // Profile for web contents might not contain a web app provider. eg. kiosk
   // profile in Chrome OS.
   auto* provider = web_app::WebAppProvider::GetForWebContents(web_contents);
-  return provider ? &provider->registrar() : nullptr;
+  return provider ? &provider->registrar_unsafe() : nullptr;
 }
 
 web_app::WebAppInstallManager* MaybeGetWebAppInstallManager(
@@ -78,18 +76,18 @@ void LoadSingleAppIcon(Profile* profile,
                        const std::string& app_id,
                        int size_in_dip,
                        base::OnceCallback<void(apps::IconValuePtr)> callback) {
-  constexpr bool allow_placeholder_icon = false;
-  if (base::FeatureList::IsEnabled(features::kAppServiceLoadIconWithoutMojom)) {
-    apps::AppServiceProxyFactory::GetForProfile(profile)->LoadIcon(
-        apps::ConvertMojomAppTypToAppType(app_type), app_id,
-        apps::IconType::kStandard, size_in_dip, allow_placeholder_icon,
-        std::move(callback));
-  } else {
-    apps::AppServiceProxyFactory::GetForProfile(profile)->LoadIcon(
-        app_type, app_id, apps::mojom::IconType::kStandard, size_in_dip,
-        allow_placeholder_icon,
-        apps::MojomIconValueToIconValueCallback(std::move(callback)));
-  }
+  apps::AppServiceProxyFactory::GetForProfile(profile)->LoadIcon(
+      apps::ConvertMojomAppTypToAppType(app_type), app_id,
+      apps::IconType::kStandard, size_in_dip, /*allow_placeholder_icon=*/false,
+      std::move(callback));
+}
+
+bool IsNavigatingToNewSite(content::NavigationHandle* navigation_handle) {
+  return navigation_handle->IsInPrimaryMainFrame() &&
+         navigation_handle->HasCommitted() &&
+         (!navigation_handle->IsSameDocument() ||
+          navigation_handle->GetURL() !=
+              navigation_handle->GetPreviousPrimaryMainFrameURL());
 }
 
 }  // namespace
@@ -104,9 +102,10 @@ void IntentPickerTabHelper::ShowOrHideIcon(content::WebContents* web_contents,
     return;
 
   if (apps::features::LinkCapturingUiUpdateEnabled()) {
-    tab_helper->app_icon_ = ui::ImageModel();
-    tab_helper->should_show_collapsed_chip_ = false;
-    tab_helper->last_shown_app_id_ = std::string();
+    tab_helper->current_app_icon_ = ui::ImageModel();
+    tab_helper->show_expanded_chip_from_usage_ = false;
+    tab_helper->current_app_id_ = std::string();
+    tab_helper->current_app_is_preferred_ = false;
     tab_helper->last_shown_origin_ = url::Origin();
   }
 
@@ -116,7 +115,6 @@ void IntentPickerTabHelper::ShowOrHideIcon(content::WebContents* web_contents,
 void IntentPickerTabHelper::ShowIconForApps(
     const std::vector<apps::IntentPickerAppInfo>& apps) {
 #if BUILDFLAG(IS_CHROMEOS)
-
   // We enter this block when we have apps available and there weren't any
   // previously.
   if (!should_show_icon_ && !apps.empty()) {
@@ -130,23 +128,33 @@ void IntentPickerTabHelper::ShowIconForApps(
   }
 #endif
 
-  if (apps::features::AppIconInIntentChipEnabled()) {
-    if (apps.size() == 1 && apps[0].launch_name != last_shown_app_id_) {
-      const std::string& app_id = apps[0].launch_name;
-      auto app_type = GetAppType(apps[0].type);
+  if (apps::features::LinkCapturingUiUpdateEnabled()) {
+    if (apps.size() == 1 && apps[0].launch_name != current_app_id_) {
+      current_app_id_ = apps[0].launch_name;
 
       Profile* profile =
           Profile::FromBrowserContext(web_contents()->GetBrowserContext());
 
-      last_shown_app_id_ = app_id;
-      LoadSingleAppIcon(
-          profile, app_type, app_id, GetLayoutConstant(LOCATION_BAR_ICON_SIZE),
-          base::BindOnce(&IntentPickerTabHelper::OnAppIconLoadedForChip,
-                         weak_factory_.GetWeakPtr(), app_id));
-      return;
+      // If this app is the preferred app to handle this URL, the icon will
+      // always be shown as expanded, regardless of the usage-based decision
+      // calculated in UpdateExpandedState().
+      current_app_is_preferred_ =
+          apps::AppServiceProxyFactory::GetForProfile(profile)
+              ->PreferredAppsList()
+              .IsPreferredAppForSupportedLinks(current_app_id_);
+
+      if (apps::features::AppIconInIntentChipEnabled()) {
+        LoadSingleAppIcon(
+            profile, GetAppType(apps[0].type), current_app_id_,
+            GetLayoutConstant(LOCATION_BAR_ICON_SIZE),
+            base::BindOnce(&IntentPickerTabHelper::OnAppIconLoadedForChip,
+                           weak_factory_.GetWeakPtr(), current_app_id_));
+        return;
+      }
     } else if (apps.size() != 1) {
-      app_icon_ = ui::ImageModel();
-      last_shown_app_id_ = std::string();
+      current_app_icon_ = ui::ImageModel();
+      current_app_id_ = std::string();
+      current_app_is_preferred_ = false;
     }
   }
 
@@ -176,7 +184,12 @@ void IntentPickerTabHelper::LoadAppIcons(
 }
 
 void IntentPickerTabHelper::SetIconUpdateCallbackForTesting(
-    base::OnceClosure callback) {
+    base::OnceClosure callback,
+    bool include_latest_navigation) {
+  if (icon_resolved_after_last_navigation_ && include_latest_navigation) {
+    std::move(callback).Run();
+    return;
+  }
   icon_update_closure_ = std::move(callback);
 }
 
@@ -212,17 +225,18 @@ void IntentPickerTabHelper::LoadAppIcon(
   Profile* profile =
       Profile::FromBrowserContext(web_contents()->GetBrowserContext());
 
-  LoadSingleAppIcon(profile, app_type, app_id, gfx::kFaviconSize,
+  LoadSingleAppIcon(profile, app_type, app_id,
+                    apps::GetIntentPickerBubbleIconSize(),
                     base::BindOnce(&IntentPickerTabHelper::OnAppIconLoaded,
                                    weak_factory_.GetWeakPtr(), std::move(apps),
                                    std::move(callback), index));
 }
 
-void IntentPickerTabHelper::UpdateCollapsedState(bool should_show_icon) {
+void IntentPickerTabHelper::UpdateExpandedState(bool should_show_icon) {
   GURL url = web_contents()->GetLastCommittedURL();
 
   if (!should_show_icon || url.is_empty()) {
-    should_show_collapsed_chip_ = false;
+    show_expanded_chip_from_usage_ = false;
     last_shown_origin_ = url::Origin();
     return;
   }
@@ -238,21 +252,22 @@ void IntentPickerTabHelper::UpdateCollapsedState(bool should_show_icon) {
     auto chip_state =
         IntentPickerAutoDisplayPrefs ::GetChipStateAndIncrementCounter(profile,
                                                                        url);
-    should_show_collapsed_chip_ =
-        chip_state == IntentPickerAutoDisplayPrefs::ChipState::kCollapsed;
+    show_expanded_chip_from_usage_ =
+        chip_state == IntentPickerAutoDisplayPrefs::ChipState::kExpanded;
   }
 }
 
 void IntentPickerTabHelper::OnAppIconLoadedForChip(const std::string& app_id,
                                                    apps::IconValuePtr icon) {
-  if (app_id != last_shown_app_id_)
+  if (app_id != current_app_id_)
     return;
 
   if (icon && icon->icon_type == apps::IconType::kStandard) {
-    app_icon_ = ui::ImageModel::FromImage(gfx::Image(icon->uncompressed));
+    current_app_icon_ =
+        ui::ImageModel::FromImage(gfx::Image(icon->uncompressed));
   } else {
-    last_shown_app_id_ = std::string();
-    app_icon_ = ui::ImageModel();
+    current_app_id_ = std::string();
+    current_app_icon_ = ui::ImageModel();
   }
 
   ShowIconForLinkIntent(true);
@@ -260,7 +275,7 @@ void IntentPickerTabHelper::OnAppIconLoadedForChip(const std::string& app_id,
 
 void IntentPickerTabHelper::ShowIconForLinkIntent(bool should_show_icon) {
   if (apps::features::LinkCapturingUiUpdateEnabled()) {
-    UpdateCollapsedState(should_show_icon);
+    UpdateExpandedState(should_show_icon);
   }
 
   ShowOrHideIconInternal(should_show_icon);
@@ -274,8 +289,16 @@ void IntentPickerTabHelper::ShowOrHideIconInternal(bool should_show_icon) {
     return;
   browser->window()->UpdatePageActionIcon(PageActionIconType::kIntentPicker);
 
+  icon_resolved_after_last_navigation_ = true;
   if (icon_update_closure_)
     std::move(icon_update_closure_).Run();
+}
+
+void IntentPickerTabHelper::DidStartNavigation(
+    content::NavigationHandle* navigation_handle) {
+  if (IsNavigatingToNewSite(navigation_handle)) {
+    icon_resolved_after_last_navigation_ = false;
+  }
 }
 
 void IntentPickerTabHelper::DidFinishNavigation(
@@ -288,11 +311,10 @@ void IntentPickerTabHelper::DidFinishNavigation(
   if (!web_contents()) {
     return;
   }
-  if (navigation_handle->IsInPrimaryMainFrame() &&
-      navigation_handle->HasCommitted() &&
-      (!navigation_handle->IsSameDocument() ||
-       navigation_handle->GetURL() !=
-           navigation_handle->GetPreviousMainFrameURL())) {
+
+  if (IsNavigatingToNewSite(navigation_handle)) {
+    ++commit_count_;
+
     bool is_valid_page = navigation_handle->GetURL().SchemeIsHTTPOrHTTPS() &&
                          !navigation_handle->IsErrorPage();
     if (is_valid_page) {

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 #include "base/metrics/histogram_functions.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
-#include "chrome/browser/ui/views/chrome_typography.h"
 #include "chrome/browser/ui/views/payments/payment_request_views_util.h"
 #include "chrome/browser/ui/views/payments/secure_payment_confirmation_views_util.h"
 #include "components/constrained_window/constrained_window_views.h"
@@ -21,10 +20,13 @@
 #include "ui/views/border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/controls/link.h"
 #include "ui/views/controls/progress_bar.h"
+#include "ui/views/controls/styled_label.h"
 #include "ui/views/layout/box_layout_view.h"
 #include "ui/views/layout/layout_provider.h"
 #include "ui/views/layout/table_layout.h"
+#include "ui/views/style/typography.h"
 
 namespace payments {
 namespace {
@@ -83,7 +85,8 @@ void SecurePaymentConfirmationDialogView::ShowDialog(
     content::WebContents* web_contents,
     base::WeakPtr<SecurePaymentConfirmationModel> model,
     VerifyCallback verify_callback,
-    CancelCallback cancel_callback) {
+    CancelCallback cancel_callback,
+    OptOutCallback opt_out_callback) {
   DCHECK(model);
   model_ = model;
 
@@ -96,6 +99,7 @@ void SecurePaymentConfirmationDialogView::ShowDialog(
 
   verify_callback_ = std::move(verify_callback);
   cancel_callback_ = std::move(cancel_callback);
+  opt_out_callback_ = std::move(opt_out_callback);
 
   SetAcceptCallback(
       base::BindOnce(&SecurePaymentConfirmationDialogView::OnDialogAccepted,
@@ -143,13 +147,29 @@ void SecurePaymentConfirmationDialogView::OnDialogCancelled() {
 }
 
 void SecurePaymentConfirmationDialogView::OnDialogClosed() {
-  std::move(cancel_callback_).Run();
-  RecordAuthenticationDialogResult(
-      SecurePaymentConfirmationAuthenticationDialogResult::kClosed);
+  // We can reach OnDialogClosed either when the user cancels out of the
+  // WebAuthn dialog after clicking 'Verify', or when the user chooses to
+  // opt-out. We should only run the cancellation callback in the former case;
+  // in the latter the opt-out callback will trigger from OnOptOutClicked.
+  if (!model_->opt_out_clicked()) {
+    std::move(cancel_callback_).Run();
+    RecordAuthenticationDialogResult(
+        SecurePaymentConfirmationAuthenticationDialogResult::kClosed);
+  }
 
   if (observer_for_test_) {
     observer_for_test_->OnDialogClosed();
   }
+}
+
+void SecurePaymentConfirmationDialogView::OnOptOutClicked() {
+  if (observer_for_test_) {
+    observer_for_test_->OnOptOutClicked();
+  }
+
+  std::move(opt_out_callback_).Run();
+  RecordAuthenticationDialogResult(
+      SecurePaymentConfirmationAuthenticationDialogResult::kOptOut);
 }
 
 void SecurePaymentConfirmationDialogView::OnModelUpdated() {
@@ -173,24 +193,32 @@ void SecurePaymentConfirmationDialogView::OnModelUpdated() {
   UpdateLabelView(DialogViewID::INSTRUMENT_VALUE, model_->instrument_value());
 
   // Update the instrument icon only if it's changed
-  if (model_->instrument_icon() &&
-      (model_->instrument_icon() != instrument_icon_ ||
-       model_->instrument_icon()->getGenerationID() !=
-           instrument_icon_generation_id_)) {
-    instrument_icon_generation_id_ =
-        model_->instrument_icon()->getGenerationID();
-    gfx::ImageSkia image =
-        gfx::ImageSkia::CreateFrom1xBitmap(*model_->instrument_icon())
-            .DeepCopy();
-
-    static_cast<views::ImageView*>(
-        GetViewByID(static_cast<int>(DialogViewID::INSTRUMENT_ICON)))
-        ->SetImage(image);
+  if (model_->instrument_icon()) {
+    auto* image_view = static_cast<views::ImageView*>(
+        GetViewByID(static_cast<int>(DialogViewID::INSTRUMENT_ICON)));
+    if (model_->instrument_icon() != instrument_icon_ ||
+        model_->instrument_icon()->getGenerationID() !=
+            instrument_icon_generation_id_) {
+      instrument_icon_generation_id_ =
+          model_->instrument_icon()->getGenerationID();
+      gfx::ImageSkia image =
+          gfx::ImageSkia::CreateFrom1xBitmap(*model_->instrument_icon())
+              .DeepCopy();
+      image_view->SetImage(image);
+    }
+    if (model_->instrument_icon()->drawsNothing()) {
+      image_view->SetImage(ui::ImageModel::FromVectorIcon(
+          kCreditCardIcon, ui::kColorDialogForeground,
+          kSecurePaymentConfirmationInstrumentIconDefaultWidthPx));
+    }
   }
+
   instrument_icon_ = model_->instrument_icon();
 
   UpdateLabelView(DialogViewID::TOTAL_LABEL, model_->total_label());
   UpdateLabelView(DialogViewID::TOTAL_VALUE, model_->total_value());
+
+  opt_out_view_->SetVisible(model_->opt_out_visible());
 }
 
 void SecurePaymentConfirmationDialogView::UpdateLabelView(
@@ -204,12 +232,30 @@ void SecurePaymentConfirmationDialogView::HideDialog() {
     GetWidget()->Close();
 }
 
+bool SecurePaymentConfirmationDialogView::ClickOptOutForTesting() {
+  if (!model_->opt_out_visible())
+    return false;
+  OnOptOutClicked();
+  return true;
+}
+
 bool SecurePaymentConfirmationDialogView::ShouldShowCloseButton() const {
   return false;
 }
 
 bool SecurePaymentConfirmationDialogView::Accept() {
   views::DialogDelegateView::Accept();
+
+  // Disable the opt-out link to avoid the user clicking on it whilst the
+  // WebAuthn dialog is showing over the SPC one. If opt-out support wasn't
+  // requested by the SPC caller, it won't be visible and doesn't need disabled.
+  //
+  // TODO(crbug.com/1325854): Even disabled this link still looks clickable
+  // (underline disappears, but color doesn't change). Force style the color?
+  if (opt_out_view_->GetVisible()) {
+    opt_out_view_->SetEnabled(false);
+  }
+
   // Returning "false" to keep the dialog open after "Confirm" button is
   // pressed, so the dialog can show a progress bar and wait for the user to use
   // their authenticator device.
@@ -232,6 +278,15 @@ void SecurePaymentConfirmationDialogView::InitChildViews() {
       static_cast<int>(DialogViewID::HEADER_ICON)));
 
   AddChildView(CreateBodyView());
+
+  // We always create the view for the Opt Out link, but show or hide it
+  // depending on whether it was requested. The visibility status is set in
+  // OnModelUpdated.
+  opt_out_view_ = SetFootnoteView(CreateSecurePaymentConfirmationOptOutView(
+      model_->relying_party_id(), model_->opt_out_label(),
+      model_->opt_out_link_label(),
+      base::BindRepeating(&SecurePaymentConfirmationDialogView::OnOptOutClicked,
+                          weak_ptr_factory_.GetWeakPtr())));
 
   InvalidateLayout();
 }
@@ -327,7 +382,7 @@ std::unique_ptr<views::View> SecurePaymentConfirmationDialogView::CreateRowView(
 
   std::unique_ptr<views::Label> label_text = std::make_unique<views::Label>(
       label, views::style::CONTEXT_DIALOG_BODY_TEXT,
-      ChromeTextStyle::STYLE_EMPHASIZED_SECONDARY);
+      views::style::STYLE_EMPHASIZED_SECONDARY);
   label_text->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
   label_text->SetLineHeight(kDescriptionLineHeight);
   label_text->SetID(static_cast<int>(label_id));
@@ -367,21 +422,6 @@ std::unique_ptr<views::View> SecurePaymentConfirmationDialogView::CreateRowView(
   row->AddChildView(std::move(value_text));
 
   return row;
-}
-
-void SecurePaymentConfirmationDialogView::OnThemeChanged() {
-  View::OnThemeChanged();
-  // If we're using the default credit card icon, it is able to respond
-  // to theme changes (e.g., dark mode). Caller-provided icons are not
-  // responsive.
-  if (instrument_icon_ && instrument_icon_->drawsNothing()) {
-    static_cast<views::ImageView*>(
-        GetViewByID(static_cast<int>(DialogViewID::INSTRUMENT_ICON)))
-        ->SetImage(gfx::CreateVectorIcon(
-            kCreditCardIcon,
-            kSecurePaymentConfirmationInstrumentIconDefaultWidthPx,
-            GetColorProvider()->GetColor(ui::kColorDialogForeground)));
-  }
 }
 
 BEGIN_METADATA(SecurePaymentConfirmationDialogView, views::DialogDelegateView)

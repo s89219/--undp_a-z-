@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@ import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min
 function setupRouter() {
   const testRoutes = {
     BASIC: new Route('/'),
+    ABOUT: new Route('/about'),
     ADVANCED: new Route('/advanced'),
   };
   testRoutes.BLUETOOTH =
@@ -53,7 +54,8 @@ suite('OSSettingsMenu', function() {
   test('tapAdvanced', function() {
     assertFalse(settingsMenu.advancedOpened);
 
-    const advancedToggle = settingsMenu.$$('#advancedButton');
+    const advancedToggle =
+        settingsMenu.shadowRoot.querySelector('#advancedButton');
     assertTrue(!!advancedToggle);
 
     advancedToggle.click();
@@ -68,7 +70,8 @@ suite('OSSettingsMenu', function() {
   test('upAndDownIcons', function() {
     // There should be different icons for a top level menu being open
     // vs. being closed. E.g. arrow-drop-up and arrow-drop-down.
-    const ironIconElement = settingsMenu.$$('#advancedButton iron-icon');
+    const ironIconElement =
+        settingsMenu.shadowRoot.querySelector('#advancedButton iron-icon');
     assertTrue(!!ironIconElement);
 
     settingsMenu.advancedOpened = true;

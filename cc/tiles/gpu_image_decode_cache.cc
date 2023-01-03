@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,10 +23,12 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_math.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/stringprintf.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "cc/base/devtools_instrumentation.h"
+#include "cc/base/features.h"
 #include "cc/base/histograms.h"
 #include "cc/base/switches.h"
 #include "cc/paint/paint_flags.h"
@@ -320,12 +322,6 @@ bool DrawAndScaleImage(
   const SkSamplingOptions sampling(
       PaintFlags::FilterQualityToSkSamplingOptions(filter_quality));
 
-  bool decode_to_f16_using_n32_intermediate =
-      decode_info.colorType() == kRGBA_F16_SkColorType &&
-      !ImageDecodeCacheUtils::CanResizeF16Image(filter_quality);
-  if (decode_to_f16_using_n32_intermediate)
-    decode_info = decode_info.makeColorType(kN32_SkColorType);
-
   SkBitmap decode_bitmap;
   if (!decode_bitmap.tryAllocPixels(decode_info))
     return false;
@@ -346,10 +342,6 @@ bool DrawAndScaleImage(
   if (initial_decode_failed)
     return false;
 
-  if (decode_to_f16_using_n32_intermediate) {
-    return ImageDecodeCacheUtils::ScaleToHalfFloatPixmapUsingN32Intermediate(
-        decode_pixmap, &pixmap, filter_quality);
-  }
   if (do_yuv_decode) {
     const SkImageInfo y_info_scaled = info.makeColorType(yuva_color_type);
 
@@ -466,6 +458,44 @@ sk_sp<SkImage> MakeTextureImage(viz::RasterContextProvider* context,
   return uploaded_image;
 }
 
+// We use this below, instead of just a std::unique_ptr, so that we can run
+// a Finch experiment to check the impact of not using discardable memory on the
+// GPU decode path.
+class HeapDiscardableMemory : public base::DiscardableMemory {
+ public:
+  explicit HeapDiscardableMemory(size_t size)
+      : memory_(new char[size]), size_(size) {}
+  ~HeapDiscardableMemory() override = default;
+  [[nodiscard]] bool Lock() override {
+    // Locking only succeeds when we have not yet discarded the memory (i.e. if
+    // we have never called |Unlock()|.)
+    return memory_ != nullptr;
+  }
+  void Unlock() override { Discard(); }
+  void* data() const override {
+    DCHECK(memory_);
+    return static_cast<void*>(memory_.get());
+  }
+  void DiscardForTesting() override { Discard(); }
+  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
+      const char* name,
+      base::trace_event::ProcessMemoryDump* pmd) const override {
+    auto* dump = pmd->CreateAllocatorDump(name);
+    dump->AddScalar(base::trace_event::MemoryAllocatorDump::kNameSize,
+                    base::trace_event::MemoryAllocatorDump::kUnitsBytes, size_);
+    return dump;
+  }
+
+ private:
+  void Discard() {
+    memory_.reset();
+    size_ = 0;
+  }
+
+  std::unique_ptr<char[]> memory_;
+  size_t size_;
+};
+
 }  // namespace
 
 // Extract the information to uniquely identify a DrawImage for the purposes of
@@ -513,7 +543,10 @@ class GpuImageDecodeTaskImpl : public TileTask {
                          const ImageDecodeCache::TracingInfo& tracing_info,
                          GpuImageDecodeCache::DecodeTaskType task_type)
       : TileTask(TileTask::SupportsConcurrentExecution::kYes,
-                 TileTask::SupportsBackgroundThreadPriority::kYes),
+                 (base::FeatureList::IsEnabled(
+                      features::kNormalPriorityImageDecoding)
+                      ? TileTask::SupportsBackgroundThreadPriority::kNo
+                      : TileTask::SupportsBackgroundThreadPriority::kYes)),
         cache_(cache),
         image_(draw_image),
         tracing_info_(tracing_info),
@@ -544,6 +577,13 @@ class GpuImageDecodeTaskImpl : public TileTask {
   // Overridden from TileTask:
   void OnTaskCompleted() override {
     cache_->OnImageDecodeTaskCompleted(image_, task_type_);
+  }
+
+  // Overridden from TileTask:
+  bool TaskContainsLCPCandidateImages() const override {
+    if (!HasCompleted() && image_.paint_image().may_be_lcp_candidate())
+      return true;
+    return TileTask::TaskContainsLCPCandidateImages();
   }
 
  protected:
@@ -601,7 +641,7 @@ class ImageUploadTaskImpl : public TileTask {
   ~ImageUploadTaskImpl() override = default;
 
  private:
-  raw_ptr<GpuImageDecodeCache> cache_;
+  raw_ptr<GpuImageDecodeCache, DanglingUntriaged> cache_;
   DrawImage image_;
   const ImageDecodeCache::TracingInfo tracing_info_;
 };
@@ -939,13 +979,12 @@ GpuImageDecodeCache::GpuImageDecodeCache(
     SkColorType color_type,
     size_t max_working_set_bytes,
     int max_texture_size,
-    PaintImage::GeneratorClientId generator_client_id,
     RasterDarkModeFilter* const dark_mode_filter)
     : color_type_(color_type),
       use_transfer_cache_(use_transfer_cache),
       context_(context),
       max_texture_size_(max_texture_size),
-      generator_client_id_(generator_client_id),
+      generator_client_id_(PaintImage::GetNextGeneratorClientId()),
       enable_clipped_image_scaling_(
           base::CommandLine::ForCurrentProcess()->HasSwitch(
               switches::kEnableClippedImageScaling)),
@@ -953,6 +992,7 @@ GpuImageDecodeCache::GpuImageDecodeCache(
       max_working_set_bytes_(max_working_set_bytes),
       max_working_set_items_(kMaxItemsInWorkingSet),
       dark_mode_filter_(dark_mode_filter) {
+  DCHECK_NE(generator_client_id_, PaintImage::kDefaultGeneratorClientId);
   // Note that to compute |allow_accelerated_jpeg_decodes_| and
   // |allow_accelerated_webp_decodes_|, the last thing we check is the feature
   // flag. That's because we want to ensure that we're in OOP-R mode and the
@@ -989,9 +1029,10 @@ GpuImageDecodeCache::GpuImageDecodeCache(
 
   // In certain cases, ThreadTaskRunnerHandle isn't set (Android Webview).
   // Don't register a dump provider in these cases.
-  if (base::ThreadTaskRunnerHandle::IsSet()) {
+  if (base::SingleThreadTaskRunner::HasCurrentDefault()) {
     base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
-        this, "cc::GpuImageDecodeCache", base::ThreadTaskRunnerHandle::Get());
+        this, "cc::GpuImageDecodeCache",
+        base::SingleThreadTaskRunner::GetCurrentDefault());
   }
   memory_pressure_listener_ = std::make_unique<base::MemoryPressureListener>(
       FROM_HERE, base::BindRepeating(&GpuImageDecodeCache::OnMemoryPressure,
@@ -1008,7 +1049,7 @@ GpuImageDecodeCache::~GpuImageDecodeCache() {
 
   // SetShouldAggressivelyFreeResources will zero our limits and free all
   // outstanding image memory.
-  SetShouldAggressivelyFreeResources(true);
+  SetShouldAggressivelyFreeResources(true, /*context_lock_acquired=*/false);
 
   // It is safe to unregister, even if we didn't register in the constructor.
   base::trace_event::MemoryDumpManager::GetInstance()->UnregisterDumpProvider(
@@ -1016,27 +1057,34 @@ GpuImageDecodeCache::~GpuImageDecodeCache() {
 }
 
 ImageDecodeCache::TaskResult GpuImageDecodeCache::GetTaskForImageAndRef(
+    ClientId client_id,
     const DrawImage& draw_image,
     const TracingInfo& tracing_info) {
   DCHECK_EQ(tracing_info.task_type, TaskType::kInRaster);
-  return GetTaskForImageAndRefInternal(draw_image, tracing_info,
+  return GetTaskForImageAndRefInternal(client_id, draw_image, tracing_info,
                                        DecodeTaskType::kPartOfUploadTask);
 }
 
 ImageDecodeCache::TaskResult
 GpuImageDecodeCache::GetOutOfRasterDecodeTaskForImageAndRef(
+    ClientId client_id,
     const DrawImage& draw_image) {
   return GetTaskForImageAndRefInternal(
-      draw_image, TracingInfo(0, TilePriority::NOW, TaskType::kOutOfRaster),
+      client_id, draw_image,
+      TracingInfo(0, TilePriority::NOW, TaskType::kOutOfRaster),
       DecodeTaskType::kStandAloneDecodeTask);
 }
 
 ImageDecodeCache::TaskResult GpuImageDecodeCache::GetTaskForImageAndRefInternal(
+    ClientId client_id,
     const DrawImage& draw_image,
     const TracingInfo& tracing_info,
     DecodeTaskType task_type) {
-  TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-               "GpuImageDecodeCache::GetTaskForImageAndRef");
+  DCHECK_GE(client_id, kDefaultClientId);
+
+  TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+               "GpuImageDecodeCache::GetTaskForImageAndRef", "client_id",
+               client_id);
 
   if (SkipImage(draw_image)) {
     return TaskResult(false /* need_unref */, false /* is_at_raster_decode */,
@@ -1062,20 +1110,71 @@ ImageDecodeCache::TaskResult GpuImageDecodeCache::GetTaskForImageAndRefInternal(
     return TaskResult(false /* need_unref */, false /* is_at_raster_decode */,
                       image_data->decode.can_do_hardware_accelerated_decode());
   } else if (task_type == DecodeTaskType::kPartOfUploadTask &&
-             image_data->upload.task) {
+             !image_data->upload.task_map.empty() &&
+             !image_data->HasUploadedData()) {
+    // If there are pending upload tasks and we haven't had data uploaded yet,
+    // another task can be created.
+
     // We had an existing upload task, ref the image and return the task.
     image_data->ValidateBudgeted();
     RefImage(draw_image, cache_key);
-    return TaskResult(image_data->upload.task,
+
+    // If we had a task for the same image and the |client_id|, refptr will be
+    // returned. Otherwise, create a new task for a new client and the same
+    // image and return it.
+    scoped_refptr<TileTask> task =
+        GetTaskFromMapForClientId(client_id, image_data->upload.task_map);
+    if (!task) {
+      // Given it's a new task for this |client_id|, the image must be reffed
+      // before creating a task - this ref is owned by the caller, and it is
+      // their responsibility to release it by calling UnrefImage.
+      RefImage(draw_image, cache_key);
+
+      task = base::MakeRefCounted<ImageUploadTaskImpl>(
+          this, draw_image,
+          GetImageDecodeTaskAndRef(client_id, draw_image, tracing_info,
+                                   task_type),
+          tracing_info);
+      image_data->upload.task_map[client_id] = task;
+    }
+    DCHECK(task);
+    return TaskResult(task,
                       image_data->decode.can_do_hardware_accelerated_decode());
   } else if (task_type == DecodeTaskType::kStandAloneDecodeTask &&
-             image_data->decode.stand_alone_task) {
+             !image_data->decode.stand_alone_task_map.empty() &&
+             !image_data->HasUploadedData()) {
+    // If there are pending decode tasks and we haven't had decoded data yet,
+    // another task can be created.
+
     // We had an existing out of raster task, ref the image and return the task.
     image_data->ValidateBudgeted();
     RefImage(draw_image, cache_key);
+
+    // If we had a task for the same image and the |client_id|, refptr will be
+    // returned. Otherwise, create a new task for a new client and the same
+    // image and return it.
+    scoped_refptr<TileTask> task = GetTaskFromMapForClientId(
+        client_id, image_data->decode.stand_alone_task_map);
+    if (!task) {
+      // Even though it's a new task for this client, we don't need to have
+      // additional reference here (which the caller is responsible for) as
+      // GetImageDecodeTaskAndRef does that for us.
+
+      task = GetImageDecodeTaskAndRef(client_id, draw_image, tracing_info,
+                                      task_type);
+#if DCHECK_IS_ON()
+      scoped_refptr<TileTask> found_task = GetTaskFromMapForClientId(
+          client_id, image_data->decode.stand_alone_task_map);
+      CHECK_EQ(task, found_task);
+#endif
+    }
     DCHECK(!image_data->decode.can_do_hardware_accelerated_decode());
-    return TaskResult(image_data->decode.stand_alone_task,
-                      false /* can_do_hardware_accelerated_decode */);
+
+    // This will be null if the image was already decoded.
+    if (task)
+      return TaskResult(task, /*can_do_hardware_accelerated_decode=*/false);
+    return TaskResult(/*need_unref=*/true, /*is_at_raster_decode=*/false,
+                      /*can_do_hardware_accelerated_decode=*/false);
   }
 
   // Ensure that the image we're about to decode/upload will fit in memory, if
@@ -1111,11 +1210,13 @@ ImageDecodeCache::TaskResult GpuImageDecodeCache::GetTaskForImageAndRefInternal(
     RefImage(draw_image, cache_key);
     task = base::MakeRefCounted<ImageUploadTaskImpl>(
         this, draw_image,
-        GetImageDecodeTaskAndRef(draw_image, tracing_info, task_type),
+        GetImageDecodeTaskAndRef(client_id, draw_image, tracing_info,
+                                 task_type),
         tracing_info);
-    image_data->upload.task = task;
+    image_data->upload.task_map[client_id] = task;
   } else {
-    task = GetImageDecodeTaskAndRef(draw_image, tracing_info, task_type);
+    task = GetImageDecodeTaskAndRef(client_id, draw_image, tracing_info,
+                                    task_type);
   }
 
   if (task) {
@@ -1266,15 +1367,22 @@ void GpuImageDecodeCache::ReduceCacheUsage() NO_THREAD_SAFETY_ANALYSIS {
 }
 
 void GpuImageDecodeCache::SetShouldAggressivelyFreeResources(
-    bool aggressively_free_resources) {
+    bool aggressively_free_resources,
+    bool context_lock_acquired) {
   TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
                "GpuImageDecodeCache::SetShouldAggressivelyFreeResources",
                "agressive_free_resources", aggressively_free_resources);
   if (aggressively_free_resources) {
     absl::optional<viz::RasterContextProvider::ScopedRasterContextLock>
         context_lock;
-    if (context_->GetLock())
-      context_lock.emplace(context_);
+    if (auto* lock = context_->GetLock()) {
+      // There are callers that might have already acquired the lock. Thus,
+      // check if that's the case.
+      if (context_lock_acquired)
+        lock->AssertAcquired();
+      else
+        context_lock.emplace(context_);
+    }
 
     base::AutoLock lock(lock_);
     aggressively_freeing_resources_ = aggressively_free_resources;
@@ -1543,13 +1651,13 @@ void GpuImageDecodeCache::OnImageDecodeTaskCompleted(
   // Decode task is complete, remove our reference to it.
   ImageData* image_data = GetImageDataForDrawImage(draw_image, cache_key);
   DCHECK(image_data);
+  UMA_HISTOGRAM_BOOLEAN("Compositing.DecodeLCPCandidateImage.Hardware",
+                        draw_image.paint_image().may_be_lcp_candidate());
   if (task_type == DecodeTaskType::kPartOfUploadTask) {
-    DCHECK(image_data->decode.task);
-    image_data->decode.task = nullptr;
+    image_data->decode.task_map.clear();
   } else {
     DCHECK(task_type == DecodeTaskType::kStandAloneDecodeTask);
-    DCHECK(image_data->decode.stand_alone_task);
-    image_data->decode.stand_alone_task = nullptr;
+    image_data->decode.stand_alone_task_map.clear();
   }
 
   // While the decode task is active, we keep a ref on the decoded data.
@@ -1566,8 +1674,7 @@ void GpuImageDecodeCache::OnImageUploadTaskCompleted(
   InUseCacheKey cache_key = InUseCacheKeyFromDrawImage(draw_image);
   ImageData* image_data = GetImageDataForDrawImage(draw_image, cache_key);
   DCHECK(image_data);
-  DCHECK(image_data->upload.task);
-  image_data->upload.task = nullptr;
+  image_data->upload.task_map.clear();
 
   // While the upload task is active, we keep a ref on both the image it will be
   // populating, as well as the decode it needs to populate it. Release these
@@ -1609,6 +1716,7 @@ GpuImageDecodeCache::InUseCacheKeyFromDrawImage(
 
 // Checks if an image decode needs a decode task and returns it.
 scoped_refptr<TileTask> GpuImageDecodeCache::GetImageDecodeTaskAndRef(
+    ClientId client_id,
     const DrawImage& draw_image,
     const TracingInfo& tracing_info,
     DecodeTaskType task_type) {
@@ -1638,16 +1746,19 @@ scoped_refptr<TileTask> GpuImageDecodeCache::GetImageDecodeTaskAndRef(
   }
 
   // We didn't have an existing locked image, create a task to lock or decode.
-  scoped_refptr<TileTask>& existing_task =
-      (task_type == DecodeTaskType::kPartOfUploadTask)
-          ? image_data->decode.task
-          : image_data->decode.stand_alone_task;
+  ImageTaskMap* task_map = &image_data->decode.stand_alone_task_map;
+  if (task_type == DecodeTaskType::kPartOfUploadTask)
+    task_map = &image_data->decode.task_map;
+
+  scoped_refptr<TileTask> existing_task =
+      GetTaskFromMapForClientId(client_id, *task_map);
   if (!existing_task) {
     // Ref image decode and create a decode task. This ref will be released in
     // DecodeTaskCompleted.
     RefImageDecode(draw_image, cache_key);
     existing_task = base::MakeRefCounted<GpuImageDecodeTaskImpl>(
         this, draw_image, tracing_info, task_type);
+    (*task_map)[client_id] = existing_task;
   }
   return existing_task;
 }
@@ -1986,10 +2097,17 @@ void GpuImageDecodeCache::DecodeImageIfNecessary(
   sk_sp<SkImage> image_v;
   {
     base::AutoUnlock unlock(lock_);
-    auto* allocator = base::DiscardableMemoryAllocator::GetInstance();
-    backing_memory = allocator->AllocateLockedDiscardableMemoryWithRetryOrDie(
-        image_data->size, base::BindOnce(&GpuImageDecodeCache::ClearCache,
-                                         base::Unretained(this)));
+    if (base::FeatureList::IsEnabled(
+            features::kNoDiscardableMemoryForGpuDecodePath)) {
+      backing_memory =
+          std::make_unique<HeapDiscardableMemory>(image_data->size);
+    } else {
+      auto* allocator = base::DiscardableMemoryAllocator::GetInstance();
+      backing_memory = allocator->AllocateLockedDiscardableMemoryWithRetryOrDie(
+          image_data->size, base::BindOnce(&GpuImageDecodeCache::ClearCache,
+                                           base::Unretained(this)));
+    }
+
     sk_sp<SkColorSpace> color_space =
         ColorSpaceForImageDecode(draw_image, image_data->mode);
     auto release_proc = [](const void*, void*) {};
@@ -2136,7 +2254,7 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
   sk_sp<SkColorSpace> decoded_target_colorspace =
       ColorSpaceForImageDecode(draw_image, image_data->mode);
   if (target_color_space && decoded_target_colorspace) {
-    if (!gfx::ColorSpace(*decoded_target_colorspace).IsPQOrHLG() &&
+    if (!gfx::ColorSpace(*decoded_target_colorspace).IsToneMappedByDefault() &&
         SkColorSpace::Equals(target_color_space.get(),
                              decoded_target_colorspace.get())) {
       target_color_space = nullptr;
@@ -2147,6 +2265,10 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
   if (target_color_space) {
     target_color_params = draw_image.target_color_params();
     target_color_params->color_space = gfx::ColorSpace(*target_color_space);
+    if (const auto* image_metadata =
+            draw_image.paint_image().GetImageHeaderMetadata()) {
+      target_color_params->hdr_metadata = image_metadata->hdr_metadata;
+    }
   }
 
   if (image_data->mode == DecodedDataMode::kTransferCache) {
@@ -2157,7 +2279,7 @@ void GpuImageDecodeCache::UploadImageIfNecessary(const DrawImage& draw_image,
     } else if (image_data->yuva_pixmap_info.has_value()) {
       const bool needs_tone_mapping =
           decoded_target_colorspace &&
-          gfx::ColorSpace(*decoded_target_colorspace).IsPQOrHLG();
+          gfx::ColorSpace(*decoded_target_colorspace).IsToneMappedByDefault();
       UploadImageIfNecessary_TransferCache_SoftwareDecode_YUVA(
           draw_image, image_data, decoded_target_colorspace,
           needs_tone_mapping ? target_color_params : absl::nullopt);
@@ -2729,15 +2851,25 @@ SkImageInfo GpuImageDecodeCache::CreateImageInfoForDrawImage(
   gfx::Size mip_size =
       CalculateSizeForMipLevel(draw_image, upload_scale_mip_level);
 
-  // Decode HDR images to half float when targeting HDR.
-  //
-  // TODO(crbug.com/1076568): Once we have access to the display's buffer format
-  // via gfx::DisplayColorSpaces, we should also do this for HBD images.
-  auto color_type = color_type_;
-  if (draw_image.paint_image().GetContentColorUsage() ==
-          gfx::ContentColorUsage::kHDR &&
-      draw_image.target_color_space().IsHDR()) {
-    color_type = kRGBA_F16_SkColorType;
+  // Decide the SkColorType for the buffer for the PaintImage to draw or
+  // decode into. Default to using the cache's color type.
+  SkColorType color_type = color_type_;
+
+  // The PaintImage will identify that its content is high bit depth by setting
+  // its SkColorType to kRGBA_F16_SkColorType. Only set the target SkColorType
+  // to this value if the PaintImage itself reports it. Otherwise, the content
+  // may not appear, see https://crbug.com/1266456.
+  const auto image_color_type = draw_image.paint_image().GetColorType();
+  if (image_color_type == kRGBA_F16_SkColorType) {
+    // Only set the target SkColorType to kRGBA_F16_SkColorType if the content
+    // is HDR and the target display is HDR capable. This is done to preserve
+    // existing behavior while fixing the above mentioned bug. See related
+    // discussions in https://crbug.com/1076568.
+    if (draw_image.paint_image().GetContentColorUsage() ==
+            gfx::ContentColorUsage::kHDR &&
+        draw_image.target_color_space().IsHDR()) {
+      color_type = kRGBA_F16_SkColorType;
+    }
   }
 
   return SkImageInfo::Make(mip_size.width(), mip_size.height(), color_type,
@@ -2861,8 +2993,17 @@ bool GpuImageDecodeCache::IsCompatible(const ImageData* image_data,
                              image_data->upload_scale_mip_level;
   bool quality_is_compatible =
       CalculateDesiredFilterQuality(draw_image) <= image_data->quality;
-  bool color_is_compatible =
-      image_data->target_color_params == draw_image.target_color_params();
+  sk_sp<SkColorSpace> decoded_target_colorspace =
+      ColorSpaceForImageDecode(draw_image, image_data->mode);
+  bool color_is_compatible = false;
+  if (!decoded_target_colorspace ||
+      !gfx::ColorSpace(*decoded_target_colorspace).IsToneMappedByDefault()) {
+    color_is_compatible = image_data->target_color_params.color_space ==
+                          draw_image.target_color_space();
+  } else {
+    color_is_compatible =
+        image_data->target_color_params == draw_image.target_color_params();
+  }
   if (!color_is_compatible)
     return false;
   if (is_scaled && (!scale_is_compatible || !quality_is_compatible))
@@ -2960,16 +3101,12 @@ bool GpuImageDecodeCache::NeedsDarkModeFilterForTesting(
 
 void GpuImageDecodeCache::OnMemoryPressure(
     base::MemoryPressureListener::MemoryPressureLevel level) {
+  if (!ImageDecodeCacheUtils::ShouldEvictCaches(level))
+    return;
+
   base::AutoLock lock(lock_);
-  switch (level) {
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_NONE:
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_MODERATE:
-      break;
-    case base::MemoryPressureListener::MEMORY_PRESSURE_LEVEL_CRITICAL:
-      base::AutoReset<bool> reset(&aggressively_freeing_resources_, true);
-      EnsureCapacity(0);
-      break;
-  }
+  base::AutoReset<bool> reset(&aggressively_freeing_resources_, true);
+  EnsureCapacity(0);
 }
 
 bool GpuImageDecodeCache::SupportsColorSpaceConversion() const {
@@ -3190,6 +3327,21 @@ void GpuImageDecodeCache::UpdateMipsIfNeeded(const DrawImage& draw_image,
   image_data->upload.SetImage(std::move(image_with_mips_owned));
   context_->RasterInterface()->InitializeDiscardableTextureCHROMIUM(
       image_data->upload.gl_id());
+}
+
+// static
+scoped_refptr<TileTask> GpuImageDecodeCache::GetTaskFromMapForClientId(
+    const ClientId client_id,
+    const ImageTaskMap& task_map) {
+  auto task_it = base::ranges::find_if(
+      task_map,
+      [client_id](
+          const std::pair<ClientId, scoped_refptr<TileTask>> task_item) {
+        return client_id == task_item.first;
+      });
+  if (task_it != task_map.end())
+    return task_it->second;
+  return nullptr;
 }
 
 }  // namespace cc

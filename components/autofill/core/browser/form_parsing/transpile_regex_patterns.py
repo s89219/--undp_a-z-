@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright 2020 The Chromium Authors. All rights reserved.
+# Copyright 2020 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,6 +8,7 @@ import argparse
 from collections import defaultdict
 import io
 import json
+import re
 import sys
 
 # Generates a set of C++ constexpr constants to facilitate lookup of a set of
@@ -31,16 +32,13 @@ import sys
 # - kPatternMap is a fixed flat map from (pattern name, language code) tuples
 #   to arrays of spans of MatchPatternRefs; the indices of the array correspond
 #   to the pattern sources.
+# - kLanguages is a fixed flat set of language codes across all pattern source
+#   ids and all pattern names.
 #
 # This representation has larger binary size on Android than using nested
 # lookup pattern name -> language code -> span of MatchPatternRefs, but it's
 # significantly simpler.
 def generate_cpp_constants(id_to_name_to_lang_to_patterns):
-  # The enum constant of the MatchAttribute::kName.
-  kName = 1
-  yield f'static_assert(MatchAttribute::kName == To<MatchAttribute,{kName}>());'
-  yield ''
-
   # Stores a `key` in `dictionary` and assigns it a natural number.
   #
   # For example, after memoize("foo", d) and memoize("bar", d),
@@ -64,17 +62,32 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
   def json_to_cpp_u16string_literal(json_string_literal):
     return 'u'+ json.dumps(json_string_literal or '')
 
-  # Maps a list of natural numbers to a DenseSet<MatchAttribute> expression.
-  def json_to_cpp_match_field_attributes(enum_values):
-    return f'DenseSet<MatchAttribute>{{' \
-           f"{','.join(f'To<MatchAttribute,{i}>()' for i in enum_values)}" \
-           f'}}'
+  # Maps a list of strings to a DenseSet containing these values.
+  # The strings represents constants in the format FOO_BAR.
+  # They're translated to the C++ constant kFooBar.
+  def json_to_cpp_dense_set(json_enum_values, cpp_enum_type):
+    # Converts FOO_BAR into kFooBar.
+    def json_to_cpp_constant_symbol(json):
+      assert json.isupper()
+      return f'{cpp_enum_type}::k' + re.sub(
+          r'(^|_)([a-z])', lambda matched: matched.group(2).upper(),
+          json.lower())
+    cpp_enum_values = [json_to_cpp_constant_symbol(c) for c in json_enum_values]
+    return (f'DenseSet<{cpp_enum_type}, '\
+            f'/*kMaxValue=*/{cpp_enum_type}::kMaxValue, '\
+            f'/*packed=*/true>{{' + ','.join(cpp_enum_values) + f'}}')
 
-  # Maps a list of natural numbers to a DenseSet<MatchFieldType> expression.
+  # Maps a list of strings to a DenseSet<MatchAttribute> expression.
+  # The strings must be the names of MatchAttribute constants, e.g., NAME.
+  # They're mapped to C++ constants, e.g., kName.
+  def json_to_cpp_match_field_attributes(enum_values):
+    return json_to_cpp_dense_set(enum_values, 'MatchAttribute')
+
+  # Maps a list of strings to a DenseSet<MatchFieldType> expression.
+  # The strings must be the names of MatchFieldType constants, e.g., TEXT_AREA.
+  # They're mapped to C++ constants, e.g., kTextArea.
   def json_to_cpp_match_field_input_types(enum_values):
-    return f'DenseSet<MatchFieldType>{{' \
-           f"{','.join(f'To<MatchFieldType,{i}>()' for i in enum_values)}" \
-           f'}}'
+    return json_to_cpp_dense_set(enum_values, 'MatchFieldType')
 
   # Maps a JSON object representing a pattern to a C++ MatchingPattern
   # expression.
@@ -99,7 +112,11 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
     return (f"kPatterns__{id}__{name}__{lang.replace('-', '_')}"
             if lang else f'kPatterns__{id}__{name}')
 
+  # Preprocess the patterns.
   for id, name_to_lang_to_patterns in id_to_name_to_lang_to_patterns.items():
+    if "__comment__" in name_to_lang_to_patterns:
+      del name_to_lang_to_patterns["__comment__"]
+
     # Validate the JSON input.
     for name, lang_to_patterns in name_to_lang_to_patterns.items():
       if '' in lang_to_patterns:
@@ -132,7 +149,7 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
       if 'en' not in lang_to_patterns:
         continue
       def make_supplementary_pattern(p):
-        assert kName in p['match_field_attributes']
+        assert "NAME" in p['match_field_attributes']
         p = p.copy()
         p['supplementary'] = True
         return p
@@ -141,7 +158,7 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
         patterns.extend(
             make_supplementary_pattern(p)
             for p in lang_to_patterns['en']
-            if kName in p['match_field_attributes'])
+            if "NAME" in p['match_field_attributes'])
 
   # Populate the two maps:
   # - a map from C++ MatchingPattern expressions to their index.
@@ -164,7 +181,11 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
 
   # Generate the C++ constants.
   yield '// The patterns. Referred to by their index in MatchPatternRef.'
-  yield 'constexpr std::array kPatterns{'
+  yield '//'
+  yield '// We use C-style arrays rather than std::array because the template'
+  yield '// parameter inference may exceed the default bracket depth limit'
+  yield '// on some (?) clang versions. See crbug.com/1319987.'
+  yield 'constexpr MatchingPattern kPatterns[] {'
   for cpp_expr, index in sorted(
       pattern_to_index.items(), key=lambda item: item[1]):
     yield f'/*[{index}]=*/{cpp_expr},'
@@ -192,7 +213,7 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
           yield (f'constexpr auto {kPatterns(id, name, lang)} = '
                  f'base::make_span({kPatterns(other_id, name, lang)});')
         else:
-          yield (f'constexpr std::array {kPatterns(id, name, lang)}{{' +
+          yield (f'constexpr MatchPatternRef {kPatterns(id, name, lang)}[] {{' +
                  f', '.join(
                      f'MakeMatchPatternRef('+
                      f'{python_bool_to_cpp(is_supplementary)}, {index})'
@@ -229,9 +250,20 @@ def generate_cpp_constants(id_to_name_to_lang_to_patterns):
       ]
       yield f'  {{{{"{name}", "{lang}"}}, {{{", ".join(pattern_array)}}}}},'
   yield '}, NameAndLanguageComparator());'
+  yield ''
+
+  language_array = sorted(
+      set(f'"{lang}"' for lang_to_id_to_patternrefs in
+          name_to_lang_to_id_to_patternrefs.values()
+          for lang in lang_to_id_to_patternrefs.keys() if lang != ''))
+  yield '// The set of language codes across all language source ids and'
+  yield '// pattern names.'
+  yield 'constexpr auto kLanguages = base::MakeFixedFlatSet<const char*>({'
+  yield f'  {", ".join(language_array)}'
+  yield '}, LanguageComparator());'
 
 def generate_cpp_lines(id_to_name_to_lang_to_patterns):
-  yield """// Copyright 2022 The Chromium Authors. All rights reserved.
+  yield """// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -241,6 +273,7 @@ def generate_cpp_lines(id_to_name_to_lang_to_patterns):
 #include <array>
 
 #include "base/containers/fixed_flat_map.h"
+#include "base/containers/fixed_flat_set.h"
 #include "base/containers/span.h"
 #include "base/strings/string_piece.h"
 
@@ -256,14 +289,6 @@ constexpr MatchPatternRef MakeMatchPatternRef(
     bool is_supplementary,
     MatchPatternRef::UnderlyingType index) {
   return MatchPatternRef(is_supplementary, index);
-}
-
-// Converts an integer to the associated enum class constant.
-template<typename Enum, int i>
-constexpr Enum To() {
-  static_assert(0 <= i);
-  static_assert(static_cast<Enum>(i) <= Enum::kMaxValue);
-  return static_cast<Enum>(i);
 }
 
 // A pair of const char* used as keys in the `kPatternMap`.
@@ -301,6 +326,21 @@ struct NameAndLanguageComparator {
       NameAndLanguage::StringPiecePair b) const {
     int cmp = a.first.compare(b.first);
     return cmp < 0 || (cmp == 0 && a.second.compare(b.second) < 0);
+  }
+};
+
+// A less-than relation on const char* and base::StringPiece, in particular for
+// language codes.
+struct LanguageComparator {
+  using is_transparent = void;
+
+  // This function also accepts const char* by implicit conversion to
+  // base::StringPiece.
+  //
+  // This comparator facilitates constexpr comparison among const char*
+  // similarly to the above NameAndLanguageComparator.
+  constexpr bool operator()(base::StringPiece a, base::StringPiece b) const {
+    return a.compare(b) < 0;
   }
 };
 """

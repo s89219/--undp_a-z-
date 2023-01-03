@@ -15,7 +15,7 @@
 
   #illustration {
     background-image:
-        url(chrome://os-settings/images/notification_access_connecting.svg);
+        url(chrome://os-settings/images/multidevice_permission_setup_connecting.svg);
     background-position: center center;
     background-repeat: no-repeat;
     background-size: contain;
@@ -28,7 +28,7 @@
   @media(prefers-color-scheme: dark) {
     #illustration {
       background-image: url(
-        chrome://os-settings/images/notification_access_connecting_dark.svg);
+        chrome://os-settings/images/multidevice_permission_setup_connecting_dark.svg);
     }
   }
 
@@ -82,29 +82,11 @@
           selected="{{selectedUnlockType}}"
           deep-link-focus-id$="[[Setting.kChangeAuthPinV2]]">
         <cr-radio-button id="passwordRadioButton" name="password"
-            label=$i18n{lockScreenPasswordOnly}>
+            label="$i18n{lockScreenPasswordOnly}">
         </cr-radio-button>
         <cr-radio-button id="pinRadioButton" name="pin+password"
-            label=$i18n{lockScreenPinOrPassword}>
+            label="$i18n{lockScreenPinOrPassword}">
         </cr-radio-button>
-        <div id="subtext">
-          $i18n{multideviceNotificationAccessSetupScreenLockInstruction}
-        </div>
-        <template is="dom-if"
-            if="[[showConfigurePinButton_(selectedUnlockType)]]">
-          <div class="list-item-end">
-            <div id="pinPasswordSecondaryActionDiv"
-                class="secondary-action">
-              <!-- Use stop-keyboard-event-propagation to prevent
-                    triggering this when focused after closing the
-                    dialog. -->
-              <cr-button id="setupPinButton" on-click="onConfigurePin_"
-                  stop-keyboard-event-propagation>
-                [[getSetupPinText_(hasPin)]]
-              </cr-button>
-            </div>
-          </div>
-        </template>
       </cr-radio-group>
     </template>
   </div>
@@ -115,7 +97,7 @@
       on-auth-token-obtained="onAuthTokenObtained_">
   </settings-lock-screen-password-prompt-dialog>
 </template>
-<template is="dom-if" if="[[showSetupPinDialog_]]" restamp>
+<template is="dom-if" if="[[showSetupPinDialog]]" restamp>
   <settings-setup-pin-dialog id="setupPin"
       set-modes="[[setModes_]]"
       on-close="onSetupPinDialogClose_">

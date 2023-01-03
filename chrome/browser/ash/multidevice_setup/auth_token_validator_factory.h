@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_ASH_MULTIDEVICE_SETUP_AUTH_TOKEN_VALIDATOR_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "chrome/browser/profiles/profile_keyed_service_factory.h"
 
 class KeyedService;
 class Profile;
@@ -17,7 +17,7 @@ namespace multidevice_setup {
 class AuthTokenValidator;
 
 // Owns AuthTokenValidator instances and associates them with Profiles.
-class AuthTokenValidatorFactory : public BrowserContextKeyedServiceFactory {
+class AuthTokenValidatorFactory : public ProfileKeyedServiceFactory {
  public:
   static AuthTokenValidator* GetForProfile(Profile* profile);
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,16 +9,21 @@ import {
 } from '../../assert.js';
 import * as dom from '../../dom.js';
 import {reportError} from '../../error.js';
+import * as expert from '../../expert.js';
+import {Flag} from '../../flag.js';
 import * as h264 from '../../h264.js';
 import {I18nString} from '../../i18n_string.js';
+import {LowStorageActionType, sendLowStorageEvent} from '../../metrics.js';
 import {Filenamer} from '../../models/file_namer.js';
 import * as loadTimeData from '../../models/load_time_data.js';
 import {
   GifSaver,
   VideoSaver,
 } from '../../models/video_saver.js';
+import {ChromeHelper} from '../../mojo/chrome_helper.js';
 import {DeviceOperator} from '../../mojo/device_operator.js';
 import {CrosImageCapture} from '../../mojo/image_capture.js';
+import {StorageMonitorStatus} from '../../mojo/type.js';
 import * as sound from '../../sound.js';
 import * as state from '../../state.js';
 import * as toast from '../../toast.js';
@@ -28,8 +33,10 @@ import {
   ErrorType,
   Facing,
   getVideoTrackSettings,
+  LowStorageError,
   Metadata,
   NoChunkError,
+  NoFrameError,
   PreviewVideo,
   Resolution,
   VideoType,
@@ -46,6 +53,7 @@ import {GifRecordTime, RecordTime} from './record_time.js';
  * Maps from board name to its default encoding profile and bitrate multiplier.
  */
 const encoderPreference = new Map([
+  ['corsola', {profile: h264.Profile.HIGH, multiplier: 6}],
   ['strongbad', {profile: h264.Profile.HIGH, multiplier: 6}],
   ['trogdor', {profile: h264.Profile.HIGH, multiplier: 6}],
   ['dedede', {profile: h264.Profile.HIGH, multiplier: 8}],
@@ -106,6 +114,7 @@ function beforeUnloadListener(event: BeforeUnloadEvent) {
 }
 
 export interface VideoResult {
+  autoStopped: boolean;
   resolution: Resolution;
   duration: number;
   videoSaver: VideoSaver;
@@ -204,6 +213,16 @@ export class Video extends ModeBase {
    */
   private everPaused = false;
 
+  /**
+   * Whether the current recording is auto stopped due to low storage.
+   */
+  private autoStopped = false;
+
+  /**
+   * HTMLElement displaying warning about low storage.
+   */
+  private lowStorageWarningNudge = dom.get('#nudge', HTMLDivElement);
+
   constructor(
       video: PreviewVideo,
       private readonly captureConstraints: StreamConstraints|null,
@@ -250,7 +269,7 @@ export class Video extends ModeBase {
    * @return Returns whether taking video sanpshot via Blob stream is enabled.
    */
   async isBlobVideoSnapshotEnabled(): Promise<boolean> {
-    const deviceOperator = await DeviceOperator.getInstance();
+    const deviceOperator = DeviceOperator.getInstance();
     const {deviceId} = this.video.getVideoSettings();
     return deviceOperator !== null &&
         (await deviceOperator.isBlobVideoSnapshotEnabled(deviceId));
@@ -301,6 +320,47 @@ export class Video extends ModeBase {
     return this.snapshotting;
   }
 
+  private toggleLowStorageWarning(show: boolean): void {
+    if (show) {
+      sendLowStorageEvent(LowStorageActionType.SHOW_WARNING_MSG);
+    }
+    this.lowStorageWarningNudge.hidden = !show;
+  }
+
+  /**
+   * Start monitor storage status and return initial status.
+   *
+   * @return Promise resolved to boolean indicating whether users can
+   * start/resume the recording.
+   */
+  private async startMonitorStorage(): Promise<boolean> {
+    // If the monitoring is not enabled, skip setting callback and return true
+    // to always allow users to start/resume recording.
+    if (!loadTimeData.getChromeFlag(Flag.LOW_STORAGE_WARNING)) {
+      return true;
+    }
+    const onChange = (newState: StorageMonitorStatus) => {
+      if (newState === StorageMonitorStatus.NORMAL) {
+        this.toggleLowStorageWarning(false);
+      } else if (newState === StorageMonitorStatus.LOW) {
+        this.toggleLowStorageWarning(true);
+      } else if (newState === StorageMonitorStatus.CRITICALLY_LOW) {
+        if (!state.get(state.State.RECORDING_PAUSED)) {
+          this.autoStopped = true;
+          this.stop();
+        } else {
+          this.toggleLowStorageWarning(true);
+        }
+      }
+    };
+    const initialState =
+        await ChromeHelper.getInstance().startMonitorStorage(onChange);
+    if (initialState === StorageMonitorStatus.LOW) {
+      this.toggleLowStorageWarning(true);
+    }
+    return initialState !== StorageMonitorStatus.CRITICALLY_LOW;
+  }
+
   /**
    * Toggles pause/resume state of video recording.
    *
@@ -321,6 +381,16 @@ export class Video extends ModeBase {
     assert(this.mediaRecorder.state !== 'inactive');
     const toBePaused = this.mediaRecorder.state !== 'paused';
     const toggledEvent = toBePaused ? 'pause' : 'resume';
+
+    if (!toBePaused) {
+      const canResume = await this.startMonitorStorage();
+      if (!canResume) {
+        this.autoStopped = true;
+        this.stop();
+        return;
+      }
+    }
+
     const onToggled = () => {
       assert(this.mediaRecorder !== null);
       this.mediaRecorder.removeEventListener(toggledEvent, onToggled);
@@ -390,6 +460,15 @@ export class Video extends ModeBase {
     assert(this.snapshotting === null);
     this.togglePausedInternal = null;
     this.everPaused = false;
+    this.autoStopped = false;
+
+    if (this.recordingType === RecordType.NORMAL) {
+      const canStart = await this.startMonitorStorage();
+      if (!canStart) {
+        ChromeHelper.getInstance().stopMonitorStorage();
+        throw new LowStorageError();
+      }
+    }
 
     const isSoundEnded =
         await sound.play(dom.get('#sound-rec-start', HTMLAudioElement));
@@ -430,15 +509,24 @@ export class Video extends ModeBase {
         state.State.ENABLE_GIF_RECORDING,
         this.recordingType === RecordType.GIF);
     if (this.recordingType === RecordType.GIF) {
-      const gifName = (new Filenamer()).newVideoName(VideoType.GIF);
       state.set(state.State.RECORDING, true);
       this.gifRecordTime.start({resume: false});
 
-      const gifSaver = await this.captureGif();
+      let gifSaver = null;
+      try {
+        gifSaver = await this.captureGif();
+      } catch (e) {
+        if (e instanceof NoFrameError) {
+          toast.show(I18nString.ERROR_MSG_VIDEO_TOO_SHORT);
+          return [Promise.resolve()];
+        }
+        throw e;
+      } finally {
+        state.set(state.State.RECORDING, false);
+        this.gifRecordTime.stop({pause: false});
+      }
 
-      state.set(state.State.RECORDING, false);
-      this.gifRecordTime.stop({pause: false});
-
+      const gifName = (new Filenamer()).newVideoName(VideoType.GIF);
       // TODO(b/191950622): Close capture stream before onGifCaptureDone()
       // opening preview page when multi-stream recording enabled.
       return [this.handler.onGifCaptureDone({
@@ -481,6 +569,7 @@ export class Video extends ModeBase {
       return [(async () => {
         assert(videoSaver !== null);
         await this.handler.onVideoCaptureDone({
+          autoStopped: this.autoStopped,
           resolution: this.captureResolution,
           duration: this.recordTime.inMilliseconds(),
           videoSaver,
@@ -492,6 +581,13 @@ export class Video extends ModeBase {
   }
 
   override stop(): void {
+    if (loadTimeData.getChromeFlag(Flag.LOW_STORAGE_WARNING)) {
+      ChromeHelper.getInstance().stopMonitorStorage();
+    }
+    this.toggleLowStorageWarning(false);
+    if (!state.get(state.State.RECORDING)) {
+      return;
+    }
     if (this.recordingType === RecordType.GIF) {
       state.set(state.State.RECORDING, false);
     } else {
@@ -516,6 +612,7 @@ export class Video extends ModeBase {
     // TODO(b/191950622): Grab frames from capture stream when multistream
     // enabled.
     const video = this.video.video;
+    const videoTrack = this.getVideoTrack();
     let {videoWidth: width, videoHeight: height} = video;
     if (width > GIF_MAX_SIDE || height > GIF_MAX_SIDE) {
       const ratio = GIF_MAX_SIDE / Math.max(width, height);
@@ -526,27 +623,37 @@ export class Video extends ModeBase {
     const canvas = new OffscreenCanvas(width, height);
     const context = assertInstanceof(
         canvas.getContext('2d'), OffscreenCanvasRenderingContext2D);
-
-    await new Promise<void>((resolve) => {
+    if (videoTrack.readyState === 'ended') {
+      throw new NoFrameError();
+    }
+    const frames = await new Promise<number>((resolve) => {
       let encodedFrames = 0;
-      let start = 0.0;
-      function updateCanvas(now: number) {
-        if (start === 0.0) {
-          start = now;
-        }
+      let writtenFrames = 0;
+      let handle = 0;
+      function stopRecording() {
+        video.cancelVideoFrameCallback(handle);
+        videoTrack.removeEventListener('ended', stopRecording);
+        resolve(writtenFrames);
+      }
+      function updateCanvas() {
         if (!state.get(state.State.RECORDING)) {
-          resolve();
+          stopRecording();
           return;
         }
         encodedFrames++;
         if (encodedFrames % GRAB_GIF_FRAME_RATIO === 0) {
+          writtenFrames++;
           context.drawImage(video, 0, 0, width, height);
           gifSaver.write(context.getImageData(0, 0, width, height).data);
         }
-        video.requestVideoFrameCallback(updateCanvas);
+        handle = video.requestVideoFrameCallback(updateCanvas);
       }
-      video.requestVideoFrameCallback(updateCanvas);
+      videoTrack.addEventListener('ended', stopRecording);
+      handle = video.requestVideoFrameCallback(updateCanvas);
     });
+    if (frames === 0) {
+      throw new NoFrameError();
+    }
     return gifSaver;
   }
 
@@ -584,7 +691,6 @@ export class Video extends ModeBase {
           if (noChunk) {
             reject(new NoChunkError());
           } else {
-            // TODO(yuli): Handle insufficient storage.
             resolve(saver);
           }
         };
@@ -634,7 +740,7 @@ export class VideoFactory extends ModeFactory {
 
   produce(): ModeBase {
     let captureConstraints = null;
-    if (state.get(state.State.ENABLE_MULTISTREAM_RECORDING)) {
+    if (expert.isEnabled(expert.ExpertOption.ENABLE_MULTISTREAM_RECORDING)) {
       const {width, height} = assertExists(this.captureResolution);
       captureConstraints = {
         deviceId: this.constraints.deviceId,

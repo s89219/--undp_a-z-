@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,7 +30,6 @@
 #include "chrome/browser/ash/policy/login/wildcard_login_checker.h"
 #include "chrome/browser/ash/policy/remote_commands/user_commands_factory_ash.h"
 #include "chrome/browser/ash/policy/reporting/arc_app_install_event_log_uploader.h"
-#include "chrome/browser/ash/policy/reporting/extension_install_event_log_uploader.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/reporting/report_scheduler_desktop.h"
 #include "chrome/browser/enterprise/reporting/reporting_delegate_factory_desktop.h"
@@ -275,8 +274,6 @@ void UserCloudPolicyManagerAsh::Connect(
 
   app_install_event_log_uploader_ =
       std::make_unique<ArcAppInstallEventLogUploader>(client(), profile_);
-  extension_install_event_log_uploader_ =
-      ExtensionInstallEventLogUploader::Create(profile_);
 }
 
 void UserCloudPolicyManagerAsh::OnAccessTokenAvailable(
@@ -343,15 +340,9 @@ UserCloudPolicyManagerAsh::GetAppInstallEventLogUploader() {
   return app_install_event_log_uploader_.get();
 }
 
-ExtensionInstallEventLogUploader*
-UserCloudPolicyManagerAsh::GetExtensionInstallEventLogUploader() {
-  return extension_install_event_log_uploader_.get();
-}
-
 void UserCloudPolicyManagerAsh::Shutdown() {
   observed_profile_manager_.Reset();
   app_install_event_log_uploader_.reset();
-  extension_install_event_log_uploader_.reset();
   report_scheduler_.reset();
   if (client())
     client()->RemoveObserver(this);
@@ -469,9 +460,9 @@ void UserCloudPolicyManagerAsh::OnClientError(
   DCHECK_EQ(client(), cloud_policy_client);
   if (waiting_for_policy_fetch_) {
     base::UmaHistogramSparse(kUMAInitialFetchClientError,
-                             cloud_policy_client->status());
+                             cloud_policy_client->last_dm_status());
   }
-  switch (client()->status()) {
+  switch (client()->last_dm_status()) {
     case DM_STATUS_SERVICE_MANAGEMENT_NOT_SUPPORTED:
       // If management is not supported for this user, then a registration
       // error is to be expected - treat as a policy fetch success. Also
@@ -484,9 +475,9 @@ void UserCloudPolicyManagerAsh::OnClientError(
       break;
     default:
       // Unexpected error fetching policy.
-      CancelWaitForPolicyFetch(false,
-                               "cloud policy client status: " +
-                                   base::NumberToString(client()->status()));
+      CancelWaitForPolicyFetch(
+          false, "cloud policy client status: " +
+                     base::NumberToString(client()->last_dm_status()));
       break;
   }
   // If we are in re-registration state and re-registration fails, we mark the
@@ -690,7 +681,7 @@ void UserCloudPolicyManagerAsh::OnInitialPolicyFetchComplete(bool success) {
       success,
       "policy fetch complete"
       ", policy client status: " +
-          base::NumberToString(client()->status()) +
+          base::NumberToString(client()->last_dm_status()) +
           ", store status: " + base::NumberToString(store()->status()));
 }
 
@@ -811,6 +802,12 @@ void UserCloudPolicyManagerAsh::OnProfileAdded(Profile* profile) {
 
   observed_profile_manager_.Reset();
 
+  // Activate user remote commands only for unicorn accounts.
+  // The server side only supports user-scoped remote commands for unicorn
+  // accounts at the moment. See b/193450869 for more detail.
+  if (!IsChildUser(account_id_))
+    return;
+
   invalidation::ProfileInvalidationProvider* const invalidation_provider =
       invalidation::ProfileInvalidationProviderFactory::GetForProfile(profile_);
 
@@ -831,12 +828,12 @@ void UserCloudPolicyManagerAsh::OnProfileAdded(Profile* profile) {
   shutdown_subscription_ =
       UserCloudPolicyManagerAshNotifierFactory::GetInstance()
           ->Get(profile_)
-          ->Subscribe(
-              base::BindRepeating(&UserCloudPolicyManagerAsh::ProfileShutdown,
-                                  base::Unretained(this)));
+          ->Subscribe(base::BindRepeating(
+              &UserCloudPolicyManagerAsh::ShutdownRemoteCommands,
+              base::Unretained(this)));
 }
 
-void UserCloudPolicyManagerAsh::ProfileShutdown() {
+void UserCloudPolicyManagerAsh::ShutdownRemoteCommands() {
   // Unregister the RemoteCommandsInvalidatorImpl from the InvalidatorRegistrar.
   invalidator_->Shutdown();
   invalidator_.reset();

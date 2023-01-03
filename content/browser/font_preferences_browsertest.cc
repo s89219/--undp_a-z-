@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,32 +27,29 @@ class FontPreferencesBrowserTest : public DevToolsProtocolTest {
 
  protected:
   std::string GetFirstPlatformFontForBody() {
-    std::unique_ptr<base::DictionaryValue> params =
-        std::make_unique<base::DictionaryValue>();
-    params->SetInteger("depth", 0);
-    base::Value* result = SendCommand("DOM.getDocument", std::move(params));
-    DCHECK(result->is_dict());
+    base::Value::Dict params1;
+    params1.Set("depth", 0);
+    const base::Value::Dict* result =
+        SendCommand("DOM.getDocument", std::move(params1));
 
     absl::optional<int> body_node_id =
-        result->GetDict().FindIntByDottedPath("root.nodeId");
+        result->FindIntByDottedPath("root.nodeId");
     DCHECK(body_node_id);
 
-    params = std::make_unique<base::DictionaryValue>();
-    params->SetInteger("nodeId", *body_node_id);
-    params->SetString("selector", "body");
-    result = SendCommand("DOM.querySelector", std::move(params));
+    base::Value::Dict params2;
+    params2.Set("nodeId", *body_node_id);
+    params2.Set("selector", "body");
+    result = SendCommand("DOM.querySelector", std::move(params2));
     DCHECK(result);
-    DCHECK(result->is_dict());
-    body_node_id = result->GetDict().FindInt("nodeId");
+    body_node_id = result->FindInt("nodeId");
     DCHECK(body_node_id);
 
-    params = std::make_unique<base::DictionaryValue>();
-    params->SetInteger("nodeId", *body_node_id);
-    const base::Value* font_info =
-        SendCommand("CSS.getPlatformFontsForNode", std::move(params));
+    base::Value::Dict params3;
+    params3.Set("nodeId", *body_node_id);
+    const base::Value::Dict* font_info =
+        SendCommand("CSS.getPlatformFontsForNode", std::move(params3));
     DCHECK(font_info);
-    DCHECK(font_info->is_dict());
-    const base::Value::List* font_list = font_info->GetDict().FindList("fonts");
+    const base::Value::List* font_list = font_info->FindList("fonts");
     DCHECK(font_list);
     DCHECK(font_list->size() > 0);
     const base::Value& first_font_info = font_list->front();
@@ -123,8 +120,8 @@ IN_PROC_BROWSER_TEST_F(FontPreferencesBrowserTest, GenericFamilies) {
   EXPECT_TRUE(NavigateToURL(shell(), GURL("data:text/html,BODY_TEXT")));
   Attach();
 
-  ASSERT_TRUE(SendCommand("DOM.enable", nullptr, true));
-  ASSERT_TRUE(SendCommand("CSS.enable", nullptr, true));
+  ASSERT_TRUE(SendCommand("DOM.enable", base::Value::Dict(), true));
+  ASSERT_TRUE(SendCommand("CSS.enable", base::Value::Dict(), true));
 
   blink::web_pref::WebPreferences default_preferences =
       shell()->web_contents()->GetOrCreateWebPreferences();

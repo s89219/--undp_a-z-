@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
 #include "ios/chrome/browser/browser_state/chrome_browser_state.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
 #include "ios/chrome/browser/omaha/omaha_service.h"
+#include "ios/chrome/browser/url/chrome_url_constants.h"
 #include "ios/chrome/grit/ios_resources.h"
 #include "ios/web/public/webui/web_ui_ios.h"
 #include "ios/web/public/webui/web_ui_ios_data_source.h"
@@ -51,7 +51,7 @@ class OmahaDOMHandler : public WebUIIOSMessageHandler {
   void HandleRequestDebugInformation(const base::Value::List& args);
 
   // Called when the debug information have been computed.
-  void OnDebugInformationAvailable(base::DictionaryValue* debug_information);
+  void OnDebugInformationAvailable(base::Value::Dict debug_information);
 
   // WeakPtr factory needed because this object might be deleted before
   // receiving the callbacks from the OmahaService.
@@ -77,8 +77,8 @@ void OmahaDOMHandler::HandleRequestDebugInformation(
 }
 
 void OmahaDOMHandler::OnDebugInformationAvailable(
-    base::DictionaryValue* debug_information) {
-  std::vector<const base::Value*> args{debug_information};
+    base::Value::Dict debug_information) {
+  base::ValueView args[] = {debug_information};
   web_ui()->CallJavascriptFunction("updateOmahaDebugInformation", args);
 }
 

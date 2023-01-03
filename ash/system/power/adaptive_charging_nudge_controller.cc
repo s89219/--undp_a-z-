@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,6 +51,12 @@ void AdaptiveChargingNudgeController::ShowNudge() {
       base::BindOnce(&AdaptiveChargingNudgeController::ShowNudge,
                      weak_ptr_factory_.GetWeakPtr()));
 }
+
+#if DCHECK_IS_ON()
+void AdaptiveChargingNudgeController::ShowNudgeForTesting() {
+  SystemNudgeController::ShowNudge();
+}
+#endif  // DCHECK_IS_ON()
 
 std::unique_ptr<SystemNudge>
 AdaptiveChargingNudgeController::CreateSystemNudge() {

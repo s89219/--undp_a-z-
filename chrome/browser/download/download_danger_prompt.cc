@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/safe_browsing/chrome_user_population_helper.h"
+#include "chrome/browser/download/download_item_warning_data.h"
 #include "chrome/browser/safe_browsing/download_protection/download_protection_service.h"
 #include "chrome/browser/safe_browsing/download_protection/download_protection_util.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
@@ -30,44 +30,17 @@ const char kDownloadDangerPromptPrefix[] = "Download.DownloadDangerPrompt";
 void DownloadDangerPrompt::SendSafeBrowsingDownloadReport(
     ClientSafeBrowsingReportRequest::ReportType report_type,
     bool did_proceed,
-    const download::DownloadItem& download) {
-  safe_browsing::SafeBrowsingService* sb_service =
-      g_browser_process->safe_browsing_service();
-  Profile* profile = Profile::FromBrowserContext(
-      content::DownloadItemUtils::GetBrowserContext(&download));
-  auto report = std::make_unique<ClientSafeBrowsingReportRequest>();
-  report->set_type(report_type);
+    download::DownloadItem* download) {
   ClientDownloadResponse::Verdict download_verdict =
-      safe_browsing::DownloadDangerTypeToDownloadResponseVerdict(
-          download.GetDangerType());
+      safe_browsing::DownloadProtectionService::GetDownloadProtectionVerdict(
+          download);
   if (download_verdict == ClientDownloadResponse::SAFE) {
     // Don't send report if the verdict is SAFE.
     return;
   }
-  report->set_download_verdict(download_verdict);
-  report->set_url(download.GetURL().spec());
-  report->set_did_proceed(did_proceed);
-  *report->mutable_population() =
-      safe_browsing::GetUserPopulationForProfile(profile);
-  std::string token =
-      safe_browsing::DownloadProtectionService::GetDownloadPingToken(&download);
-  if (!token.empty())
-    report->set_token(token);
-  std::string serialized_report;
-  if (report->SerializeToString(&serialized_report)) {
-    sb_service->SendSerializedDownloadReport(profile, serialized_report);
-
-    // The following is to log this ClientSafeBrowsingReportRequest on any open
-    // chrome://safe-browsing pages.
-    content::GetUIThreadTaskRunner({})->PostTask(
-        FROM_HERE,
-        base::BindOnce(
-            &safe_browsing::WebUIInfoSingleton::AddToCSBRRsSent,
-            base::Unretained(safe_browsing::WebUIInfoSingleton::GetInstance()),
-            std::move(report)));
-  } else {
-    DLOG(ERROR) << "Unable to serialize the threat report.";
-  }
+  g_browser_process->safe_browsing_service()->SendDownloadReport(
+      download, report_type, did_proceed,
+      /*show_download_in_folder=*/absl::nullopt);
 }
 
 void DownloadDangerPrompt::RecordDownloadDangerPrompt(
@@ -88,4 +61,24 @@ void DownloadDangerPrompt::RecordDownloadDangerPrompt(
                            download::GetDownloadDangerTypeString(danger_type)),
         file_type_uma_value);
   }
+}
+
+void DownloadDangerPrompt::RecordDownloadWarningEvent(
+    Action action,
+    download::DownloadItem* download) {
+  DownloadItemWarningData::WarningAction warning_action;
+  switch (action) {
+    case Action::ACCEPT:
+      warning_action = DownloadItemWarningData::WarningAction::PROCEED;
+      break;
+    case Action::CANCEL:
+      warning_action = DownloadItemWarningData::WarningAction::CANCEL;
+      break;
+    case Action::DISMISS:
+      warning_action = DownloadItemWarningData::WarningAction::CLOSE;
+      break;
+  }
+  DownloadItemWarningData::AddWarningActionEvent(
+      download, DownloadItemWarningData::WarningSurface::DOWNLOAD_PROMPT,
+      warning_action);
 }

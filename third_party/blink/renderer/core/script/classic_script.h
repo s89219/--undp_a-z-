@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,16 +31,13 @@ class CORE_EXPORT ClassicScript final : public Script {
       const ScriptFetchOptions&,
       ScriptSourceLocationType = ScriptSourceLocationType::kUnknown,
       SanitizeScriptErrors = SanitizeScriptErrors::kSanitize,
-      SingleCachedMetadataHandler* = nullptr,
+      CachedMetadataHandler* = nullptr,
       const TextPosition& start_position = TextPosition::MinimumPosition(),
       ScriptStreamer::NotStreamingReason =
-          ScriptStreamer::NotStreamingReason::kInlineScript);
+          ScriptStreamer::NotStreamingReason::kInlineScript,
+      InlineScriptStreamer* = nullptr);
   static ClassicScript* CreateFromResource(ScriptResource*,
-                                           const KURL& base_url,
-                                           const ScriptFetchOptions&,
-                                           ScriptStreamer*,
-                                           ScriptStreamer::NotStreamingReason,
-                                           ScriptCacheConsumer*);
+                                           const ScriptFetchOptions&);
 
   // For scripts not specified in the HTML spec.
   //
@@ -65,7 +62,7 @@ class CORE_EXPORT ClassicScript final : public Script {
       const ScriptFetchOptions&,
       ScriptSourceLocationType,
       SanitizeScriptErrors,
-      SingleCachedMetadataHandler* = nullptr,
+      CachedMetadataHandler* = nullptr,
       const TextPosition& start_position = TextPosition::MinimumPosition(),
       ScriptStreamer* = nullptr,
       ScriptStreamer::NotStreamingReason =
@@ -76,7 +73,6 @@ class CORE_EXPORT ClassicScript final : public Script {
   void Trace(Visitor*) const override;
 
   const ParkableString& SourceText() const { return source_text_; }
-  const KURL& SourceUrl() const { return source_url_; }
 
   ScriptSourceLocationType SourceLocationType() const {
     return source_location_type_;
@@ -86,8 +82,7 @@ class CORE_EXPORT ClassicScript final : public Script {
     return sanitize_script_errors_;
   }
 
-  SingleCachedMetadataHandler* CacheHandler() const { return cache_handler_; }
-  const TextPosition& StartPosition() const { return start_position_; }
+  CachedMetadataHandler* CacheHandler() const { return cache_handler_; }
 
   ScriptStreamer* Streamer() const { return streamer_; }
   ScriptStreamer::NotStreamingReason NotStreamingReason() const {
@@ -98,10 +93,8 @@ class CORE_EXPORT ClassicScript final : public Script {
 
   const String& SourceMapUrl() const { return source_map_url_; }
 
-  bool RunScriptOnWorkerOrWorklet(WorkerOrWorkletGlobalScope&) override;
-
-  // Unlike RunScript() and RunScriptOnWorkerOrWorklet(), callers of the
-  // following methods must enter a v8::HandleScope before calling.
+  // Unlike RunScript(), callers of the following methods must enter a
+  // v8::HandleScope before calling.
   [[nodiscard]] ScriptEvaluationResult RunScriptOnScriptStateAndReturnValue(
       ScriptState*,
       ExecuteScriptPolicy =
@@ -112,39 +105,22 @@ class CORE_EXPORT ClassicScript final : public Script {
       LocalDOMWindow*,
       int32_t world_id);
 
+  v8::ScriptOrigin CreateScriptOrigin(v8::Isolate* isolate) const;
+
  private:
   mojom::blink::ScriptType GetScriptType() const override {
     return mojom::blink::ScriptType::kClassic;
   }
 
-  const ParkableString source_text_;
+  v8::Local<v8::Data> CreateHostDefinedOptions(v8::Isolate* isolate) const;
 
-  // The URL of the script, which is primarily intended for DevTools
-  // javascript debugger, and can be observed as:
-  // 1) The 'source-file' in CSP violations reports.
-  // 2) The URL(s) in javascript stack traces.
-  // 3) How relative source map are resolved.
-  //
-  // The fragment is stripped due to https://crbug.com/306239 (except for worker
-  // top-level scripts), at the callers of Create(), or inside
-  // CreateFromResource() and CreateUnspecifiedScript().
-  //
-  // It is important to keep the url fragment for worker top-level scripts so
-  // that errors in worker scripts can include the fragment when reporting the
-  // location of the failure. This is enforced by several tests in
-  // external/wpt/workers/interfaces/WorkerGlobalScope/onerror/.
-  //
-  // Note that this can be different from the script's base URL
-  // (`Script::BaseURL()`, #concept-script-base-url).
-  const KURL source_url_;
+  const ParkableString source_text_;
 
   const ScriptSourceLocationType source_location_type_;
 
   const SanitizeScriptErrors sanitize_script_errors_;
 
-  const Member<SingleCachedMetadataHandler> cache_handler_;
-
-  const TextPosition start_position_;
+  const Member<CachedMetadataHandler> cache_handler_;
 
   const Member<ScriptStreamer> streamer_;
   const ScriptStreamer::NotStreamingReason not_streaming_reason_;

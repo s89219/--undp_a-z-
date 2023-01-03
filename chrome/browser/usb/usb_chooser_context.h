@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,6 +45,10 @@ class UsbChooserContext : public permissions::ObjectPermissionContextBase,
     virtual void OnDeviceAdded(const device::mojom::UsbDeviceInfo&);
     virtual void OnDeviceRemoved(const device::mojom::UsbDeviceInfo&);
     virtual void OnDeviceManagerConnectionError();
+
+    // Called when the BrowserContext is shutting down. Observers must remove
+    // themselves before returning.
+    virtual void OnBrowserContextShutdown() = 0;
   };
 
   static base::Value DeviceInfoToValue(

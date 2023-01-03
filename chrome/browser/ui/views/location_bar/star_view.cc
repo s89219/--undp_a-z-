@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,7 +24,6 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view.h"
-#include "chrome/browser/ui/views/chrome_view_class_properties.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/bookmarks/common/bookmark_pref_names.h"
 #include "components/feature_engagement/public/event_constants.h"
@@ -32,6 +31,7 @@
 #include "components/feature_engagement/public/tracker.h"
 #include "components/omnibox/browser/vector_icons.h"
 #include "components/strings/grit/components_strings.h"
+#include "components/user_education/common/user_education_class_properties.h"
 #include "components/variations/variations_associated_data.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -49,7 +49,9 @@ StarView::StarView(CommandUpdater* command_updater,
     : PageActionIconView(command_updater,
                          IDC_BOOKMARK_THIS_TAB,
                          icon_label_bubble_delegate,
-                         page_action_icon_delegate),
+                         page_action_icon_delegate,
+                         "BookmarksStar",
+                         false),
       browser_(browser) {
   DCHECK(browser_);
 
@@ -66,9 +68,10 @@ StarView::~StarView() = default;
 
 void StarView::AfterPropertyChange(const void* key, int64_t old_value) {
   View::AfterPropertyChange(key, old_value);
-  if (key == kHasInProductHelpPromoKey) {
+  if (key == user_education::kHasInProductHelpPromoKey) {
     views::InkDropState next_state;
-    if (GetProperty(kHasInProductHelpPromoKey) || GetVisible()) {
+    if (GetProperty(user_education::kHasInProductHelpPromoKey) ||
+        GetVisible()) {
       next_state = views::InkDropState::ACTIVATED;
     } else {
       next_state = views::InkDropState::DEACTIVATED;
@@ -83,20 +86,19 @@ void StarView::UpdateImpl() {
 }
 
 void StarView::OnExecuting(PageActionIconView::ExecuteSource execute_source) {
-  BookmarkEntryPoint entry_point = BOOKMARK_ENTRY_POINT_STAR_MOUSE;
+  BookmarkEntryPoint entry_point = BookmarkEntryPoint::kStarMouse;
   switch (execute_source) {
     case EXECUTE_SOURCE_MOUSE:
-      entry_point = BOOKMARK_ENTRY_POINT_STAR_MOUSE;
+      entry_point = BookmarkEntryPoint::kStarMouse;
       break;
     case EXECUTE_SOURCE_KEYBOARD:
-      entry_point = BOOKMARK_ENTRY_POINT_STAR_KEY;
+      entry_point = BookmarkEntryPoint::kStarKey;
       break;
     case EXECUTE_SOURCE_GESTURE:
-      entry_point = BOOKMARK_ENTRY_POINT_STAR_GESTURE;
+      entry_point = BookmarkEntryPoint::kStarGesture;
       break;
   }
-  UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint", entry_point,
-                            BOOKMARK_ENTRY_POINT_LIMIT);
+  UMA_HISTOGRAM_ENUMERATION("Bookmarks.EntryPoint", entry_point);
 }
 
 void StarView::ExecuteCommand(ExecuteSource source) {

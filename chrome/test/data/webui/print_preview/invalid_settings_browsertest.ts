@@ -1,13 +1,13 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {CrButtonElement, Destination, MeasurementSystemUnitType, NativeInitialSettings, NativeLayerImpl, PluginProxyImpl, PrintPreviewAppElement, State, whenReady} from 'chrome://print/print_preview.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
+import {assert} from 'chrome://resources/js/assert_ts.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
-import {waitBeforeNextRender} from 'chrome://webui-test/test_util.js';
+import {waitBeforeNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
-// <if expr="chromeos_ash or chromeos_lacros">
+// <if expr="is_chromeos">
 import {setNativeLayerCrosInstance} from './native_layer_cros_stub.js';
 // </if>
 import {NativeLayerStub} from './native_layer_stub.js';
@@ -45,16 +45,16 @@ suite(invalid_settings_browsertest.suiteName, function() {
     printerName: 'FooDevice',
     pdfPrinterDisabled: false,
     serializedAppStateStr: null,
-    serializedDefaultDestinationSelectionRulesStr: null
+    serializedDefaultDestinationSelectionRulesStr: null,
   };
 
   setup(function() {
     nativeLayer = new NativeLayerStub();
     NativeLayerImpl.setInstance(nativeLayer);
-    // <if expr="chromeos_ash or chromeos_lacros">
+    // <if expr="is_chromeos">
     setNativeLayerCrosInstance();
     // </if>
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
   });
 
   /**
@@ -81,8 +81,7 @@ suite(invalid_settings_browsertest.suiteName, function() {
   // is disabled. Verifies that the user can recover from this error by
   // selecting a different, valid printer.
   test(
-      assert(invalid_settings_browsertest.TestNames.InvalidSettingsError),
-      function() {
+      invalid_settings_browsertest.TestNames.InvalidSettingsError, function() {
         createPage();
         const barDevice = getCddTemplate('BarDevice');
         nativeLayer.setLocalDestinationCapabilities(barDevice);
@@ -128,7 +127,7 @@ suite(invalid_settings_browsertest.suiteName, function() {
               // Wait for the preview request.
               return Promise.all([
                 nativeLayer.whenCalled('getPrinterCapabilities'),
-                nativeLayer.whenCalled('getPreview')
+                nativeLayer.whenCalled('getPreview'),
               ]);
             })
             .then(function() {
@@ -153,8 +152,9 @@ suite(invalid_settings_browsertest.suiteName, function() {
                   destinationSettings.getDestinationStoreForTest()
                       .destinations()
                       .find((d: Destination) => d.id === 'BarDevice');
+              assert(barDestination);
               destinationSettings.getDestinationStoreForTest()
-                  .selectDestination(assert(barDestination!));
+                  .selectDestination(barDestination);
 
               // Wait for the preview to be updated.
               return nativeLayer.whenCalled('getPreview');

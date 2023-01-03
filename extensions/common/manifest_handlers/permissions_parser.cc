@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -220,11 +220,9 @@ bool ParseHelper(Extension* extension,
 
   std::vector<std::string> host_data;
   if (!APIPermissionSet::ParseFromJSON(
-          permissions,
-          APIPermissionSet::kDisallowInternalPermissions,
-          api_permissions,
-          error,
-          &host_data)) {
+          permissions->GetList(),
+          APIPermissionSet::kDisallowInternalPermissions, api_permissions,
+          error, &host_data)) {
     return false;
   }
 

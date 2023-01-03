@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,9 @@
 
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/html/fenced_frame/fenced_frame_config.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
+#include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 
 namespace blink {
 
@@ -29,6 +31,13 @@ class CORE_EXPORT Fence final : public ScriptWrappable,
   void reportEvent(ScriptState* script_state,
                    const FenceEvent* event,
                    ExceptionState& exception_state);
+
+  // Returns a list of nested inner configurations for the fenced frame, if any
+  // exist. This will return configs only when called from the DOM window that
+  // is the main frame of a fenced frame. This will return a non-empty array if
+  // the fenced frame was created through some API that uses configurations.
+  HeapVector<Member<FencedFrameConfig>> getNestedConfigs(
+      ExceptionState& exception_state);
 
   void Trace(Visitor*) const override;
 

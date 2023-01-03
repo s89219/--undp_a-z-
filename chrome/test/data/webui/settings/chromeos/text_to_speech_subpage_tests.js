@@ -1,15 +1,16 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://os-settings/chromeos/lazy_load.js';
 
-import {TtsSubpageBrowserProxyImpl, Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {flush} from'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {assertEquals} from '../../chai_assert.js';
-import {waitAfterNextRender} from 'chrome://test/test_util.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
-import {TestBrowserProxy} from '../../test_browser_proxy.js';
+import {Router, routes, TtsSubpageBrowserProxyImpl} from 'chrome://os-settings/chromeos/os_settings.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
+import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
+
+import {assertEquals} from 'chrome://webui-test/chai_assert.js';
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 /**
  * @implements {TtsSubpageBrowserProxy}
@@ -21,6 +22,7 @@ class TestTtsSubpageBrowserProxy extends TestBrowserProxy {
       'getTtsExtensions',
       'previewTtsVoice',
       'wakeTtsEngine',
+      'refreshTtsVoices',
     ]);
   }
 
@@ -42,6 +44,11 @@ class TestTtsSubpageBrowserProxy extends TestBrowserProxy {
   /** @override */
   wakeTtsEngine() {
     this.methodCalled('wakeTtsEngine');
+  }
+
+  /** @override */
+  refreshTtsVoices() {
+    this.methodCalled('refreshTtsVoices');
   }
 }
 
@@ -75,7 +82,7 @@ suite('TextToSpeechSubpageTests', function() {
 
   setup(function() {
     browserProxy = new TestTtsSubpageBrowserProxy();
-    TtsSubpageBrowserProxyImpl.instance_ = browserProxy;
+    TtsSubpageBrowserProxyImpl.setInstanceForTesting(browserProxy);
 
     PolymerTest.clearBody();
     ttsPage = document.createElement('settings-tts-subpage');
@@ -98,7 +105,8 @@ suite('TextToSpeechSubpageTests', function() {
     flush();
 
     const deepLinkElement =
-        ttsPage.$$('#textToSpeechRate').shadowRoot.querySelector('cr-slider');
+        ttsPage.shadowRoot.querySelector('#textToSpeechRate')
+            .shadowRoot.querySelector('cr-slider');
     await waitAfterNextRender(deepLinkElement);
     assertEquals(
         deepLinkElement, getDeepActiveElement(),
@@ -109,7 +117,7 @@ suite('TextToSpeechSubpageTests', function() {
     ttsPage.extensions = [{
       name: 'extension1',
       extensionId: 'extension1_id',
-      optionsPage: 'extension1_page'
+      optionsPage: 'extension1_page',
     }];
     flush();
 
@@ -118,7 +126,8 @@ suite('TextToSpeechSubpageTests', function() {
     Router.getInstance().navigateTo(
         routes.MANAGE_TTS_SETTINGS, params);
 
-    const deepLinkElement = ttsPage.$$('#extensionOptionsButton_0');
+    const deepLinkElement =
+        ttsPage.shadowRoot.querySelector('#extensionOptionsButton_0');
     await waitAfterNextRender(deepLinkElement);
     assertEquals(
         deepLinkElement, getDeepActiveElement(),

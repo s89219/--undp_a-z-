@@ -1,21 +1,22 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_pedal_annotator.h"
 
-#include "base/strings/sys_string_conversions.h"
-#include "components/omnibox/browser/actions/omnibox_action.h"
-#include "components/omnibox/browser/actions/omnibox_pedal.h"
-#include "components/omnibox/browser/actions/omnibox_pedal_concepts.h"
-#include "components/omnibox/browser/autocomplete_match.h"
-#include "ios/chrome/browser/chrome_url_constants.h"
+#import "base/strings/sys_string_conversions.h"
+#import "components/omnibox/browser/actions/omnibox_action.h"
+#import "components/omnibox/browser/actions/omnibox_pedal.h"
+#import "components/omnibox/browser/actions/omnibox_pedal_concepts.h"
+#import "components/omnibox/browser/autocomplete_match.h"
+#import "ios/chrome/browser/default_browser/promo_source.h"
 #import "ios/chrome/browser/ui/commands/application_commands.h"
 #import "ios/chrome/browser/ui/commands/omnibox_commands.h"
 #import "ios/chrome/browser/ui/commands/open_new_tab_command.h"
 #import "ios/chrome/browser/ui/omnibox/popup/popup_swift.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/browser/url/chrome_url_constants.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -23,8 +24,8 @@
 
 namespace {
 
-// Hard-coded here to avoid dependency on //content. This needs to be kept in
-// sync with kChromeUIScheme in `content/public/common/url_constants.h`.
+/// Hard-coded here to avoid dependency on //content. This needs to be kept in
+/// sync with kChromeUIScheme in `content/public/common/url_constants.h`.
 const char kChromeUIScheme[] = "chrome";
 
 }
@@ -82,6 +83,14 @@ const char kChromeUIScheme[] = "chrome";
                      }];
     }
     case OmniboxPedalId::SET_CHROME_AS_DEFAULT_BROWSER: {
+      ProceduralBlock action = ^{
+        [omniboxCommandHandler cancelOmniboxEdit];
+        [pedalsEndpoint
+            showDefaultBrowserSettingsFromViewController:nil
+                                            sourceForUMA:
+                                                DefaultBrowserPromoSource::
+                                                    kOmnibox];
+      };
       return [[OmniboxPedalData alloc]
               initWithTitle:hint
                    subtitle:l10n_util::GetNSString(
@@ -90,11 +99,7 @@ const char kChromeUIScheme[] = "chrome";
                   imageName:@"pedal_default_browser"
                        type:pedalType
                   incognito:incognito
-                     action:^{
-                       [omniboxCommandHandler cancelOmniboxEdit];
-                       [pedalsEndpoint
-                           showDefaultBrowserSettingsFromViewController:nil];
-                     }];
+                     action:action];
     }
     case OmniboxPedalId::MANAGE_PASSWORDS: {
       return [[OmniboxPedalData alloc]

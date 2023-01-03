@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -353,9 +353,9 @@ void PerUserStateManagerChromeOS::ActiveUserChanged(user_manager::User* user) {
   state_ = State::USER_LOGIN;
 
   current_user_ = user;
-  user->AddProfileCreatedObserver(base::BindOnce(
-      &PerUserStateManagerChromeOS::InitializeProfileMetricsState,
-      weak_ptr_factory_.GetWeakPtr()));
+  user->AddProfileCreatedObserver(
+      base::BindOnce(&PerUserStateManagerChromeOS::WaitForOwnershipStatus,
+                     weak_ptr_factory_.GetWeakPtr()));
 }
 
 void PerUserStateManagerChromeOS::OnUserToBeRemoved(
@@ -375,7 +375,19 @@ void PerUserStateManagerChromeOS::OnSessionWillBeTerminated() {
   task_runner_->PostTask(FROM_HERE, base::BindOnce(RemoveGlobalMetricsConsent));
 }
 
-void PerUserStateManagerChromeOS::InitializeProfileMetricsState() {
+void PerUserStateManagerChromeOS::WaitForOwnershipStatus() {
+  DCHECK_EQ(state_, State::USER_LOGIN);
+
+  // Device ownership determination happens asynchronously in parallel with
+  // profile loading, so there is a chance that status is not known yet.
+  ash::DeviceSettingsService::Get()->GetOwnershipStatusAsync(base::BindOnce(
+      &PerUserStateManagerChromeOS::InitializeProfileMetricsState,
+      weak_ptr_factory_.GetWeakPtr()));
+}
+
+void PerUserStateManagerChromeOS::InitializeProfileMetricsState(
+    ash::DeviceSettingsService::OwnershipStatus status) {
+  DCHECK_NE(status, ash::DeviceSettingsService::OWNERSHIP_UNKNOWN);
   DCHECK_EQ(state_, State::USER_LOGIN);
 
   state_ = State::USER_PROFILE_READY;
@@ -496,7 +508,10 @@ void PerUserStateManagerChromeOS::AssignUserLogStore() {
       prefs::kMetricsUserMetricLogs, prefs::kMetricsUserMetricLogsMetadata,
       storage_limits_.min_ongoing_log_queue_count,
       storage_limits_.min_ongoing_log_queue_size,
-      storage_limits_.max_ongoing_log_size, signing_key_));
+      storage_limits_.max_ongoing_log_size, signing_key_,
+      // |logs_event_manager| will be set by the metrics service directly in
+      // MetricsLogStore::SetAlternateOngoingLogStore().
+      /*logs_event_manager=*/nullptr));
 }
 
 void PerUserStateManagerChromeOS::NotifyObservers(bool metrics_consent) {

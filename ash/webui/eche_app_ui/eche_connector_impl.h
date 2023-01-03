@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,11 +7,11 @@
 
 #include "ash/webui/eche_app_ui/eche_connector.h"
 
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "ash/services/secure_channel/public/cpp/client/connection_manager.h"
+#include "ash/webui/eche_app_ui/eche_connection_scheduler.h"
 #include "ash/webui/eche_app_ui/eche_feature_status_provider.h"
 #include "ash/webui/eche_app_ui/feature_status_provider.h"
 #include "base/containers/queue.h"
+#include "chromeos/ash/services/secure_channel/public/cpp/client/connection_manager.h"
 
 namespace ash {
 namespace eche_app {
@@ -24,7 +24,8 @@ class EcheConnectorImpl : public EcheConnector,
                           public secure_channel::ConnectionManager::Observer {
  public:
   EcheConnectorImpl(FeatureStatusProvider* eche_feature_status_provider,
-                    secure_channel::ConnectionManager* connection_manager);
+                    secure_channel::ConnectionManager* connection_manager,
+                    EcheConnectionScheduler* connection_scheduler);
   ~EcheConnectorImpl() override;
 
   void SendMessage(const proto::ExoMessage message) override;
@@ -49,6 +50,7 @@ class EcheConnectorImpl : public EcheConnector,
 
   FeatureStatusProvider* eche_feature_status_provider_;
   secure_channel::ConnectionManager* connection_manager_;
+  EcheConnectionScheduler* connection_scheduler_;
   base::queue<proto::ExoMessage> message_queue_;
 };
 

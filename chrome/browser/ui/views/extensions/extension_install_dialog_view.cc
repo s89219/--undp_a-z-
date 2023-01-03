@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,6 +13,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_prompt_show_params.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -62,6 +63,23 @@ namespace {
 // Time delay before the install button is enabled after initial display.
 int g_install_delay_in_ms = 500;
 
+// The name of the histogram that records decision made by user on the cloud
+// extension request dialog.
+constexpr char kCloudExtensionRequestMetricsName[] =
+    "Enterprise.CloudExtensionRequestDialogAction";
+
+// These values are logged to UMA. Entries should not be renumbered and numeric
+// values should never be reused. Please keep in sync with "BooleanSent" in
+// src/tools/metrics/histograms/enums.xml.
+enum class CloudExtensionRequestMetricEvent {
+  // A request was not sent because the prompt dialog is aborted.
+  kNotSent = 0,
+  // A request was sent because the send button on the prompt dialog is
+  // selected.
+  kSent = 1,
+  kMaxValue = kSent
+};
+
 // A custom view to contain the ratings information (stars, ratings count, etc).
 // With screen readers, this will handle conveying the information properly
 // (i.e., "Rated 4.2 stars by 379 reviews" rather than "image image...379").
@@ -90,7 +108,7 @@ class RatingsView : public views::View {
               IDS_EXTENSION_PROMPT_RATING_ACCESSIBLE_TEXT),
           rating_, rating_count_);
     }
-    node_data->SetName(accessible_text);
+    node_data->SetNameChecked(accessible_text);
   }
 
  private:
@@ -306,7 +324,7 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
       title_(prompt_->GetDialogTitle()),
       scroll_view_(nullptr),
       install_button_enabled_(false),
-      withhold_permissions_checkbox_(nullptr) {
+      grant_permissions_checkbox_(nullptr) {
   DCHECK(prompt_->extension());
 
   extensions::ExtensionRegistry* extension_registry =
@@ -348,10 +366,10 @@ ExtensionInstallDialogView::ExtensionInstallDialogView(
     store_link->SetCallback(base::BindRepeating(
         &ExtensionInstallDialogView::LinkClicked, base::Unretained(this)));
     SetExtraView(std::move(store_link));
-  } else if (prompt_->ShouldDisplayWithholdingUI()) {
-    withhold_permissions_checkbox_ =
-        SetExtraView(std::make_unique<views::Checkbox>(
-            l10n_util::GetStringUTF16(IDS_EXTENSION_WITHHOLD_PERMISSIONS)));
+  } else if (prompt_->ShouldWithheldPermissionsOnDialogAccept()) {
+    grant_permissions_checkbox_ = SetExtraView(
+        std::make_unique<views::Checkbox>(l10n_util::GetStringUTF16(
+            IDS_EXTENSION_PROMPT_GRANT_PERMISSIONS_CHECKBOX)));
   }
 
   SetButtonLabel(ui::DIALOG_BUTTON_OK, prompt_->GetAcceptButtonLabel());
@@ -500,6 +518,7 @@ void ExtensionInstallDialogView::OnDialogCanceled() {
   extension_registry_observation_.Reset();
 
   UpdateInstallResultHistogram(false);
+  UpdateEnterpriseCloudExtensionRequestDialogActionHistogram(false);
   prompt_->OnDialogCanceled();
   std::move(done_callback_)
       .Run(ExtensionInstallPrompt::DoneCallbackPayload(
@@ -521,13 +540,16 @@ void ExtensionInstallDialogView::OnDialogAccepted() {
   DCHECK(expect_justification == !!justification_view_);
 
   UpdateInstallResultHistogram(true);
+  UpdateEnterpriseCloudExtensionRequestDialogActionHistogram(true);
   prompt_->OnDialogAccepted();
-  // If the prompt had a checkbox element and it was checked we send that along
-  // as the result, otherwise we just send a normal accepted result.
+
+  // Permissions are withheld at installation when the prompt specifies it and
+  // `grant_permissions_checkbox_` wasn't selected.
   auto result =
-      withhold_permissions_checkbox_ &&
-              withhold_permissions_checkbox_->GetChecked()
-          ? ExtensionInstallPrompt::Result::ACCEPTED_AND_OPTION_CHECKED
+      (prompt_->ShouldWithheldPermissionsOnDialogAccept() &&
+       grant_permissions_checkbox_ &&
+       !grant_permissions_checkbox_->GetChecked())
+          ? ExtensionInstallPrompt::Result::ACCEPTED_WITH_WITHHELD_PERMISSIONS
           : ExtensionInstallPrompt::Result::ACCEPTED;
 
   std::move(done_callback_)
@@ -638,9 +660,8 @@ void ExtensionInstallDialogView::CreateContents() {
     for (size_t i = 0; i < prompt_->GetRetainedFileCount(); ++i) {
       details.push_back(prompt_->GetRetainedFile(i));
     }
-    sections.push_back(
-        {prompt_->GetRetainedFilesHeading(),
-         std::make_unique<ExpandableContainerView>(details, content_width)});
+    sections.push_back({prompt_->GetRetainedFilesHeading(),
+                        std::make_unique<ExpandableContainerView>(details)});
   }
 
   if (prompt_->GetRetainedDeviceCount()) {
@@ -648,9 +669,8 @@ void ExtensionInstallDialogView::CreateContents() {
     for (size_t i = 0; i < prompt_->GetRetainedDeviceCount(); ++i) {
       details.push_back(prompt_->GetRetainedDeviceMessageString(i));
     }
-    sections.push_back(
-        {prompt_->GetRetainedDevicesHeading(),
-         std::make_unique<ExpandableContainerView>(details, content_width)});
+    sections.push_back({prompt_->GetRetainedDevicesHeading(),
+                        std::make_unique<ExpandableContainerView>(details)});
   }
 
   const bool is_justification_field_enabled =
@@ -737,6 +757,20 @@ void ExtensionInstallDialogView::UpdateInstallResultHistogram(bool accepted)
     } else {
       UmaHistogramMediumTimes("Extensions.InstallPrompt.TimeToCancel",
                               install_result_timer_->Elapsed());
+    }
+  }
+}
+
+void ExtensionInstallDialogView::
+    UpdateEnterpriseCloudExtensionRequestDialogActionHistogram(
+        bool accepted) const {
+  if (prompt_->type() == ExtensionInstallPrompt::EXTENSION_REQUEST_PROMPT) {
+    if (accepted) {
+      base::UmaHistogramEnumeration(kCloudExtensionRequestMetricsName,
+                                    CloudExtensionRequestMetricEvent::kSent);
+    } else {
+      base::UmaHistogramEnumeration(kCloudExtensionRequestMetricsName,
+                                    CloudExtensionRequestMetricEvent::kNotSent);
     }
   }
 }

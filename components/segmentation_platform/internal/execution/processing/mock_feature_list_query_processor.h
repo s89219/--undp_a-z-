@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,9 @@ class MockFeatureListQueryProcessor : public FeatureListQueryProcessor {
   MOCK_METHOD(void,
               ProcessFeatureList,
               (const proto::SegmentationModelMetadata&,
-               optimization_guide::proto::OptimizationTarget,
+               scoped_refptr<InputContext> input_context,
+               proto::SegmentId,
+               base::Time,
                base::Time,
                FeatureListQueryProcessor::ProcessOption,
                FeatureProcessorCallback),

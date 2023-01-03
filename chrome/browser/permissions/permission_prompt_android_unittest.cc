@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -50,8 +50,8 @@ TEST_F(PermissionPromptAndroidTest, TabCloseMiniInfoBarClosesCleanly) {
   // Create a notification request. This causes an infobar to appear.
   permissions::MockPermissionRequest request(
       permissions::RequestType::kNotifications);
-  permission_request_manager()->AddRequest(web_contents()->GetMainFrame(),
-                                           &request);
+  permission_request_manager()->AddRequest(
+      web_contents()->GetPrimaryMainFrame(), &request);
 
   base::RunLoop().RunUntilIdle();
 
@@ -73,8 +73,8 @@ TEST_F(PermissionPromptAndroidTest, RemoveAllInfoBarsWithOtherObservers) {
   // Create a notification request. This causes an infobar to appear.
   permissions::MockPermissionRequest request(
       permissions::RequestType::kNotifications);
-  permission_request_manager()->AddRequest(web_contents()->GetMainFrame(),
-                                           &request);
+  permission_request_manager()->AddRequest(
+      web_contents()->GetPrimaryMainFrame(), &request);
 
   base::RunLoop().RunUntilIdle();
 

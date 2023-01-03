@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@ class ASH_EXPORT DragDropCaptureDelegate {
   DragDropCaptureDelegate(const DragDropCaptureDelegate&) = delete;
   DragDropCaptureDelegate& operator=(const DragDropCaptureDelegate&) = delete;
 
-  ~DragDropCaptureDelegate();
+  virtual ~DragDropCaptureDelegate();
 
   // Conditionally takes capture of top level touch events, returning whether
   // this was successful.

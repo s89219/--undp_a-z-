@@ -1,4 +1,4 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,6 +31,10 @@
 
 #if BUILDFLAG(IS_MAC)
 #include "base/mac/mac_util.h"
+#endif
+
+#if BUILDFLAG(IS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 using testing::ElementsAre;
@@ -1870,6 +1874,12 @@ TEST_F(HarfBuzzShaperTest, EmojiPercentage) {
 #if BUILDFLAG(IS_MAC)
   if (base::mac::IsAtLeastOS11())
     GTEST_SKIP() << "Broken on macOS >= 11: https://crbug.com/1194323";
+#endif
+#if BUILDFLAG(IS_WIN)
+  if (base::win::OSInfo::GetInstance()->version() >=
+      base::win::Version::WIN11) {
+    GTEST_SKIP() << "Broken on WIN11 and greater: https://crbug.com/1286133";
+  }
 #endif
   // This test relies on Noto Color Emoji from the third_party directory to not
   // contain sequences and single codepoint emoji from Unicode 13 and 13.1 such

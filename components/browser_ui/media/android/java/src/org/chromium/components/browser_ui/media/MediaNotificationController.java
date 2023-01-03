@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
@@ -81,11 +80,6 @@ public class MediaNotificationController {
     public static final int MEDIA_ACTION_NEXT_TRACK = 21;
     public static final int MEDIA_ACTION_SEEK_FORWARD = 22;
     public static final int MEDIA_ACTION_SEEK_BACKWARD = 23;
-
-    // Overrides N detection. The production code will use |null|, which uses the Android version
-    // code. Otherwise, |isRunningAtLeastN()| will return whatever value is set.
-    @VisibleForTesting
-    public static Boolean sOverrideIsRunningNForTesting;
 
     // ListenerService running for the notification. Only non-null when showing.
     @VisibleForTesting
@@ -272,12 +266,6 @@ public class MediaNotificationController {
                         | IntentUtils.getPendingIntentMutabilityFlag(false));
     }
 
-    private static boolean isRunningAtLeastN() {
-        return (sOverrideIsRunningNForTesting != null)
-                ? sOverrideIsRunningNForTesting
-                : Build.VERSION.SDK_INT >= Build.VERSION_CODES.N;
-    }
-
     /**
      * The class containing all the information for adding a button in the notification for an
      * action.
@@ -331,28 +319,28 @@ public class MediaNotificationController {
         mActionToButtonInfo = new SparseArray<>();
 
         mActionToButtonInfo.put(MediaSessionAction.PLAY,
-                new MediaButtonInfo(R.drawable.ic_play_arrow_white_36dp,
+                new MediaButtonInfo(R.drawable.ic_play_arrow_white_24dp,
                         R.string.accessibility_play, ACTION_PLAY, MEDIA_ACTION_PLAY));
         mActionToButtonInfo.put(MediaSessionAction.PAUSE,
-                new MediaButtonInfo(R.drawable.ic_pause_white_36dp, R.string.accessibility_pause,
+                new MediaButtonInfo(R.drawable.ic_pause_white_24dp, R.string.accessibility_pause,
                         ACTION_PAUSE, MEDIA_ACTION_PAUSE));
         mActionToButtonInfo.put(MediaSessionAction.STOP,
-                new MediaButtonInfo(R.drawable.ic_stop_white_36dp, R.string.accessibility_stop,
+                new MediaButtonInfo(R.drawable.ic_stop_white_24dp, R.string.accessibility_stop,
                         ACTION_STOP, MEDIA_ACTION_STOP));
         mActionToButtonInfo.put(MediaSessionAction.PREVIOUS_TRACK,
-                new MediaButtonInfo(R.drawable.ic_skip_previous_white_36dp,
+                new MediaButtonInfo(R.drawable.ic_skip_previous_white_24dp,
                         R.string.accessibility_previous_track, ACTION_PREVIOUS_TRACK,
                         MEDIA_ACTION_PREVIOUS_TRACK));
         mActionToButtonInfo.put(MediaSessionAction.NEXT_TRACK,
-                new MediaButtonInfo(R.drawable.ic_skip_next_white_36dp,
+                new MediaButtonInfo(R.drawable.ic_skip_next_white_24dp,
                         R.string.accessibility_next_track, ACTION_NEXT_TRACK,
                         MEDIA_ACTION_NEXT_TRACK));
         mActionToButtonInfo.put(MediaSessionAction.SEEK_FORWARD,
-                new MediaButtonInfo(R.drawable.ic_fast_forward_white_36dp,
+                new MediaButtonInfo(R.drawable.ic_fast_forward_white_24dp,
                         R.string.accessibility_seek_forward, ACTION_SEEK_FORWARD,
                         MEDIA_ACTION_SEEK_FORWARD));
         mActionToButtonInfo.put(MediaSessionAction.SEEK_BACKWARD,
-                new MediaButtonInfo(R.drawable.ic_fast_rewind_white_36dp,
+                new MediaButtonInfo(R.drawable.ic_fast_rewind_white_24dp,
                         R.string.accessibility_seek_backward, ACTION_SEEK_BACKWARD,
                         MEDIA_ACTION_SEEK_BACKWARD));
 
@@ -755,17 +743,7 @@ public class MediaNotificationController {
         } else if (mMediaNotificationInfo.notificationLargeIcon != null
                 && !mMediaNotificationInfo.isPrivate) {
             builder.setLargeIcon(mMediaNotificationInfo.notificationLargeIcon);
-        } else if (!isRunningAtLeastN()) {
-            if (mDefaultNotificationLargeIcon == null
-                    && mMediaNotificationInfo.defaultNotificationLargeIcon != 0) {
-                mDefaultNotificationLargeIcon =
-                        MediaNotificationImageUtils.downscaleIconToIdealSize(
-                                BitmapFactory.decodeResource(getContext().getResources(),
-                                        mMediaNotificationInfo.defaultNotificationLargeIcon));
-            }
-            builder.setLargeIcon(mDefaultNotificationLargeIcon);
         }
-
         addNotificationButtons(builder);
     }
 
@@ -812,30 +790,17 @@ public class MediaNotificationController {
         if (mMediaNotificationInfo.isPrivate) {
             // Notifications in incognito shouldn't show what is playing to avoid leaking
             // information.
-            if (isRunningAtLeastN()) {
-                builder.setContentTitle(getContext().getResources().getString(
-                        R.string.media_notification_incognito));
-                builder.setSubText(
-                        getContext().getResources().getString(R.string.notification_incognito_tab));
-            } else {
-                // App name is automatically added to the title from Android N,
-                // but needs to be added explicitly for prior versions.
-                builder.setContentTitle(mDelegate.getAppName())
-                        .setContentText(getContext().getResources().getString(
-                                R.string.media_notification_incognito));
-            }
+            builder.setContentTitle(
+                    getContext().getResources().getString(R.string.media_notification_incognito));
+            builder.setSubText(
+                    getContext().getResources().getString(R.string.notification_incognito_tab));
             return;
         }
 
         builder.setContentTitle(mMediaNotificationInfo.metadata.getTitle());
         String artistAndAlbumText = getArtistAndAlbumText(mMediaNotificationInfo.metadata);
-        if (isRunningAtLeastN() || !artistAndAlbumText.isEmpty()) {
-            builder.setContentText(artistAndAlbumText);
-            builder.setSubText(mMediaNotificationInfo.origin);
-        } else {
-            // Leaving ContentText empty looks bad, so move origin up to the ContentText.
-            builder.setContentText(mMediaNotificationInfo.origin);
-        }
+        builder.setContentText(artistAndAlbumText);
+        builder.setSubText(mMediaNotificationInfo.origin);
     }
 
     private static String getArtistAndAlbumText(MediaMetadata metadata) {

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,7 +39,7 @@ class LocationIconViewBrowserTest : public InProcessBrowserTest {
   LocationIconView* icon_view() const { return icon_view_.get(); }
 
  private:
-  raw_ptr<LocationBarView> location_bar_;
+  raw_ptr<LocationBarView, DanglingUntriaged> location_bar_;
 
   std::unique_ptr<LocationIconView> icon_view_;
 };

@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright 2019 The Chromium Authors. All rights reserved.
-     Use of this source code is governed by a BSD-style license that can be
-     found in the LICENSE file. -->
+<!--
+Copyright 2019 The Chromium Authors
+Use of this source code is governed by a BSD-style license that can be
+found in the LICENSE file.
+-->
 
 <resources>
     <!-- Account Signin Colors -->
@@ -18,4 +20,10 @@
 
     <!-- Explore Sites colors -->
     <color name="explore_sites_dense_tile_background_color">@color/default_bg_color_secondary</color>
+
+    <!-- Model selector button TSR colors -->
+    <color name="model_selector_button_icon_color">@android:color/black</color>
+
+    <!-- Model selector button background TSR colors -->
+    <color name="model_selector_button_bg_color">@android:color/white</color>
 </resources>

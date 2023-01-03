@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -156,7 +156,7 @@ public class MaterialProgressBar extends View implements AnimatorUpdateListener 
 
     private void initialize(Context context, AttributeSet attrs, int defStyle) {
         Resources resources = context.getResources();
-        int backgroundColor = context.getColor(R.color.progress_bar_bg_color);
+        int backgroundColor = context.getColor(R.color.progress_bar_bg_color_list);
         int progressColor = SemanticColorUtils.getProgressBarForeground(context);
         int secondaryProgressColor = context.getColor(R.color.progress_bar_secondary);
 

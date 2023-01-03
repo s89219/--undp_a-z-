@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,6 +25,9 @@
 #include "components/app_restore/app_launch_info.h"
 #include "components/app_restore/features.h"
 #include "components/app_restore/full_restore_utils.h"
+#include "components/services/app_service/public/cpp/app_launch_util.h"
+#include "components/services/app_service/public/cpp/features.h"
+#include "components/services/app_service/public/cpp/intent.h"
 #include "components/services/app_service/public/mojom/types.mojom.h"
 
 namespace apps {
@@ -55,12 +58,13 @@ StandaloneBrowserExtensionApps::StandaloneBrowserExtensionApps(
     AppType app_type)
     : apps::AppPublisher(proxy), app_type_(app_type) {
   mojo::Remote<apps::mojom::AppService>& app_service = proxy->AppService();
-  if (!app_service.is_bound()) {
+  if (!base::FeatureList::IsEnabled(kStopMojomAppService) &&
+      !app_service.is_bound()) {
     return;
   }
   PublisherBase::Initialize(app_service,
                             apps::ConvertAppTypeToMojomAppType(app_type_));
-  login_observation_.Observe(chromeos::LoginState::Get());
+  login_observation_.Observe(ash::LoginState::Get());
   // Check now in case login has already happened.
   LoggedInStateChanged();
 }
@@ -123,6 +127,114 @@ void StandaloneBrowserExtensionApps::LoadIcon(const std::string& app_id,
                      std::move(callback)));
 }
 
+void StandaloneBrowserExtensionApps::GetCompressedIconData(
+    const std::string& app_id,
+    int32_t size_in_dip,
+    ui::ResourceScaleFactor scale_factor,
+    LoadIconCallback callback) {
+  // It is possible that Lacros is briefly unavailable, for example if it shuts
+  // down for an update.
+  if (!controller_.is_bound()) {
+    std::move(callback).Run(std::make_unique<IconValue>());
+    return;
+  }
+
+  controller_->GetCompressedIcon(app_id, size_in_dip, scale_factor,
+                                 std::move(callback));
+}
+
+void StandaloneBrowserExtensionApps::Launch(const std::string& app_id,
+                                            int32_t event_flags,
+                                            LaunchSource launch_source,
+                                            WindowInfoPtr window_info) {
+  // It is possible that Lacros is briefly unavailable, for example if it shuts
+  // down for an update.
+  if (!controller_.is_bound())
+    return;
+
+  // The following code assumes |app_type_| must be
+  // AppType::kStandaloneBrowserChromeApp. Therefore, the app must be either
+  // platform app or hosted app.
+  // In the future, this class is possible to be instantiated with other
+  // AppType, please make sure to modify the logic if necessary.
+  controller_->Launch(
+      CreateCrosapiLaunchParamsWithEventFlags(
+          proxy(), app_id, event_flags, launch_source,
+          window_info ? window_info->display_id : display::kInvalidDisplayId),
+      /*callback=*/base::DoNothing());
+
+  if (ShouldSaveToFullRestore(proxy(), app_id)) {
+    auto launch_info = std::make_unique<app_restore::AppLaunchInfo>(
+        app_id, apps::LaunchContainer::kLaunchContainerNone,
+        WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
+        std::vector<base::FilePath>{}, nullptr);
+    full_restore::SaveAppLaunchInfo(proxy()->profile()->GetPath(),
+                                    std::move(launch_info));
+  }
+}
+
+void StandaloneBrowserExtensionApps::LaunchAppWithFiles(
+    const std::string& app_id,
+    int32_t event_flags,
+    LaunchSource launch_source,
+    std::vector<base::FilePath> file_paths) {
+  // It is possible that Lacros is briefly unavailable, for example if it shuts
+  // down for an update.
+  if (!controller_.is_bound())
+    return;
+
+  std::vector<base::FilePath> file_paths_for_restore = file_paths;
+  auto launch_params = crosapi::mojom::LaunchParams::New();
+  launch_params->app_id = app_id;
+  launch_params->launch_source = launch_source;
+  launch_params->intent =
+      apps_util::CreateCrosapiIntentForViewFiles(std::move(file_paths));
+  controller_->Launch(std::move(launch_params),
+                      /*callback=*/base::DoNothing());
+
+  if (ShouldSaveToFullRestore(proxy(), app_id)) {
+    auto launch_info = std::make_unique<app_restore::AppLaunchInfo>(
+        app_id, apps::LaunchContainer::kLaunchContainerNone,
+        WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
+        std::move(file_paths_for_restore), nullptr);
+    full_restore::SaveAppLaunchInfo(proxy()->profile()->GetPath(),
+                                    std::move(launch_info));
+  }
+}
+
+void StandaloneBrowserExtensionApps::LaunchAppWithIntent(
+    const std::string& app_id,
+    int32_t event_flags,
+    IntentPtr intent,
+    LaunchSource launch_source,
+    WindowInfoPtr window_info,
+    LaunchCallback callback) {
+  // It is possible that Lacros is briefly unavailable, for example if it shuts
+  // down for an update.
+  if (!controller_.is_bound()) {
+    std::move(callback).Run(LaunchResult(State::FAILED));
+    return;
+  }
+
+  auto launch_params = crosapi::mojom::LaunchParams::New();
+  launch_params->app_id = app_id;
+  launch_params->launch_source = launch_source;
+  launch_params->intent = apps_util::ConvertAppServiceToCrosapiIntent(
+      intent, ProfileManager::GetPrimaryUserProfile());
+  controller_->Launch(std::move(launch_params),
+                      /*callback=*/base::DoNothing());
+  std::move(callback).Run(LaunchResult(State::SUCCESS));
+
+  if (ShouldSaveToFullRestore(proxy(), app_id)) {
+    auto launch_info = std::make_unique<app_restore::AppLaunchInfo>(
+        app_id, apps::LaunchContainer::kLaunchContainerNone,
+        WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
+        std::vector<base::FilePath>{}, std::move(intent));
+    full_restore::SaveAppLaunchInfo(proxy()->profile()->GetPath(),
+                                    std::move(launch_info));
+  }
+}
+
 void StandaloneBrowserExtensionApps::LaunchAppWithParams(
     AppLaunchParams&& params,
     LaunchCallback callback) {
@@ -145,140 +257,24 @@ void StandaloneBrowserExtensionApps::LaunchAppWithParams(
   }
 }
 
-void StandaloneBrowserExtensionApps::Connect(
-    mojo::PendingRemote<apps::mojom::Subscriber> subscriber_remote,
-    apps::mojom::ConnectOptionsPtr opts) {
-  mojo::Remote<apps::mojom::Subscriber> subscriber(
-      std::move(subscriber_remote));
-
-  mojo::RemoteSetElementId id = subscribers_.Add(std::move(subscriber));
-
-  std::vector<apps::mojom::AppPtr> apps;
-  for (auto& it : app_mojom_cache_) {
-    apps.push_back(it.second.Clone());
-  }
-
-  subscribers_.Get(id)->OnApps(std::move(apps),
-                               apps::ConvertAppTypeToMojomAppType(app_type_),
-                               true /* should_notify_initialized */);
-}
-
-void StandaloneBrowserExtensionApps::LoadIcon(const std::string& app_id,
-                                              apps::mojom::IconKeyPtr icon_key,
-                                              apps::mojom::IconType icon_type,
-                                              int32_t size_hint_in_dip,
-                                              bool allow_placeholder_icon,
-                                              LoadIconCallback callback) {
-  // It is possible that Lacros is briefly unavailable, for example if it shuts
-  // down for an update.
-  if (!controller_.is_bound()) {
-    std::move(callback).Run(apps::mojom::IconValue::New());
-    return;
-  }
-
-  controller_->LoadIcon(app_id, ConvertMojomIconKeyToIconKey(icon_key),
-                        ConvertMojomIconTypeToIconType(icon_type),
-                        size_hint_in_dip,
-                        IconValueToMojomIconValueCallback(std::move(callback)));
-}
-
-void StandaloneBrowserExtensionApps::Launch(
-    const std::string& app_id,
-    int32_t event_flags,
-    apps::mojom::LaunchSource launch_source,
-    apps::mojom::WindowInfoPtr window_info) {
+void StandaloneBrowserExtensionApps::Uninstall(const std::string& app_id,
+                                               UninstallSource uninstall_source,
+                                               bool clear_site_data,
+                                               bool report_abuse) {
   // It is possible that Lacros is briefly unavailable, for example if it shuts
   // down for an update.
   if (!controller_.is_bound())
     return;
 
-  // The following code assumes |app_type_| must be
-  // AppType::kStandaloneBrowserChromeApp. Therefore, the app must be either
-  // platform app or hosted app.
-  // In the future, this class is possible to be instantiated with other
-  // AppType, please make sure to modify the logic if necessary.
-  controller_->Launch(
-      CreateCrosapiLaunchParamsWithEventFlags(
-          proxy(), app_id, event_flags, launch_source,
-          window_info ? window_info->display_id : display::kInvalidDisplayId),
-      /*callback=*/base::DoNothing());
-
-  if (ShouldSaveToFullRestore(proxy(), app_id)) {
-    auto launch_info = std::make_unique<app_restore::AppLaunchInfo>(
-        app_id, apps::mojom::LaunchContainer::kLaunchContainerNone,
-        WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
-        std::vector<base::FilePath>{}, nullptr);
-    full_restore::SaveAppLaunchInfo(proxy()->profile()->GetPath(),
-                                    std::move(launch_info));
-  }
-}
-
-void StandaloneBrowserExtensionApps::LaunchAppWithIntent(
-    const std::string& app_id,
-    int32_t event_flags,
-    apps::mojom::IntentPtr intent,
-    apps::mojom::LaunchSource launch_source,
-    apps::mojom::WindowInfoPtr window_info,
-    LaunchAppWithIntentCallback callback) {
-  // It is possible that Lacros is briefly unavailable, for example if it shuts
-  // down for an update.
-  if (!controller_.is_bound()) {
-    std::move(callback).Run(/*success=*/false);
-    return;
-  }
-
-  auto launch_params = crosapi::mojom::LaunchParams::New();
-  launch_params->app_id = app_id;
-  launch_params->launch_source = launch_source;
-  launch_params->intent = apps_util::ConvertAppServiceToCrosapiIntent(
-      intent, ProfileManager::GetPrimaryUserProfile());
-  controller_->Launch(std::move(launch_params),
-                      /*callback=*/base::DoNothing());
-  std::move(callback).Run(/*success=*/true);
-
-  if (ShouldSaveToFullRestore(proxy(), app_id)) {
-    auto launch_info = std::make_unique<app_restore::AppLaunchInfo>(
-        app_id, apps::mojom::LaunchContainer::kLaunchContainerNone,
-        WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
-        std::vector<base::FilePath>{}, std::move(intent));
-    full_restore::SaveAppLaunchInfo(proxy()->profile()->GetPath(),
-                                    std::move(launch_info));
-  }
-}
-
-void StandaloneBrowserExtensionApps::LaunchAppWithFiles(
-    const std::string& app_id,
-    int32_t event_flags,
-    apps::mojom::LaunchSource launch_source,
-    apps::mojom::FilePathsPtr file_paths) {
-  // It is possible that Lacros is briefly unavailable, for example if it shuts
-  // down for an update.
-  if (!controller_.is_bound())
-    return;
-
-  auto launch_params = crosapi::mojom::LaunchParams::New();
-  launch_params->app_id = app_id;
-  launch_params->launch_source = launch_source;
-  launch_params->intent =
-      apps_util::CreateCrosapiIntentForViewFiles(file_paths);
-  controller_->Launch(std::move(launch_params),
-                      /*callback=*/base::DoNothing());
-
-  if (ShouldSaveToFullRestore(proxy(), app_id)) {
-    auto launch_info = std::make_unique<app_restore::AppLaunchInfo>(
-        app_id, apps::mojom::LaunchContainer::kLaunchContainerNone,
-        WindowOpenDisposition::UNKNOWN, display::kInvalidDisplayId,
-        std::move(file_paths->file_paths), nullptr);
-    full_restore::SaveAppLaunchInfo(proxy()->profile()->GetPath(),
-                                    std::move(launch_info));
-  }
+  controller_->Uninstall(app_id, uninstall_source, clear_site_data,
+                         report_abuse);
 }
 
 void StandaloneBrowserExtensionApps::GetMenuModel(
     const std::string& app_id,
-    apps::mojom::MenuType menu_type,
+    MenuType menu_type,
     int64_t display_id,
-    GetMenuModelCallback callback) {
+    base::OnceCallback<void(MenuItems)> callback) {
   bool is_platform_app = true;
   bool can_use_uninstall = false;
   bool show_app_info = false;
@@ -297,31 +293,56 @@ void StandaloneBrowserExtensionApps::GetMenuModel(
   // by StandaloneBrowserExtensionAppContextMenu.
   DCHECK(!is_platform_app);
 
-  apps::mojom::MenuItemsPtr menu_items = apps::mojom::MenuItems::New();
-  apps::CreateOpenNewSubmenu(menu_type,
-                             display_mode == WindowMode::kWindow
-                                 ? IDS_APP_LIST_CONTEXT_MENU_NEW_WINDOW
-                                 : IDS_APP_LIST_CONTEXT_MENU_NEW_TAB,
-                             &menu_items);
+  MenuItems menu_items;
+  CreateOpenNewSubmenu(display_mode == WindowMode::kWindow
+                           ? IDS_APP_LIST_CONTEXT_MENU_NEW_WINDOW
+                           : IDS_APP_LIST_CONTEXT_MENU_NEW_TAB,
+                       menu_items);
 
-  if (menu_type == apps::mojom::MenuType::kShelf) {
+  if (menu_type == MenuType::kShelf) {
     if (proxy()->BrowserAppInstanceRegistry()->IsAppRunning(app_id)) {
-      apps::AddCommandItem(ash::MENU_CLOSE, IDS_SHELF_CONTEXT_MENU_CLOSE,
-                           &menu_items);
+      AddCommandItem(ash::MENU_CLOSE, IDS_SHELF_CONTEXT_MENU_CLOSE, menu_items);
     }
   }
 
   if (can_use_uninstall) {
-    apps::AddCommandItem(ash::UNINSTALL, IDS_APP_LIST_UNINSTALL_ITEM,
-                         &menu_items);
+    AddCommandItem(ash::UNINSTALL, IDS_APP_LIST_UNINSTALL_ITEM, menu_items);
   }
 
   if (show_app_info) {
-    apps::AddCommandItem(ash::SHOW_APP_INFO, IDS_APP_CONTEXT_MENU_SHOW_INFO,
-                         &menu_items);
+    AddCommandItem(ash::SHOW_APP_INFO, IDS_APP_CONTEXT_MENU_SHOW_INFO,
+                   menu_items);
   }
 
   std::move(callback).Run(std::move(menu_items));
+}
+
+void StandaloneBrowserExtensionApps::SetWindowMode(const std::string& app_id,
+                                                   WindowMode window_mode) {
+  // It is possible that Lacros is briefly unavailable, for example if it shuts
+  // down for an update.
+  if (!controller_.is_bound())
+    return;
+
+  controller_->SetWindowMode(app_id, window_mode);
+}
+
+void StandaloneBrowserExtensionApps::Connect(
+    mojo::PendingRemote<apps::mojom::Subscriber> subscriber_remote,
+    apps::mojom::ConnectOptionsPtr opts) {
+  mojo::Remote<apps::mojom::Subscriber> subscriber(
+      std::move(subscriber_remote));
+
+  mojo::RemoteSetElementId id = subscribers_.Add(std::move(subscriber));
+
+  std::vector<apps::mojom::AppPtr> apps;
+  for (auto& it : app_mojom_cache_) {
+    apps.push_back(it.second.Clone());
+  }
+
+  subscribers_.Get(id)->OnApps(std::move(apps),
+                               apps::ConvertAppTypeToMojomAppType(app_type_),
+                               true /* should_notify_initialized */);
 }
 
 void StandaloneBrowserExtensionApps::StopApp(const std::string& app_id) {
@@ -332,30 +353,15 @@ void StandaloneBrowserExtensionApps::StopApp(const std::string& app_id) {
 
   controller_->StopApp(app_id);
 }
-void StandaloneBrowserExtensionApps::Uninstall(
-    const std::string& app_id,
-    apps::mojom::UninstallSource uninstall_source,
-    bool clear_site_data,
-    bool report_abuse) {
+
+void StandaloneBrowserExtensionApps::OpenNativeSettings(
+    const std::string& app_id) {
   // It is possible that Lacros is briefly unavailable, for example if it shuts
   // down for an update.
   if (!controller_.is_bound())
     return;
 
-  controller_->Uninstall(app_id, uninstall_source, clear_site_data,
-                         report_abuse);
-}
-
-void StandaloneBrowserExtensionApps::SetWindowMode(
-    const std::string& app_id,
-    apps::mojom::WindowMode window_mode) {
-  // It is possible that Lacros is briefly unavailable, for example if it shuts
-  // down for an update.
-  if (!controller_.is_bound())
-    return;
-
-  controller_->SetWindowMode(app_id,
-                             ConvertMojomWindowModeToWindowMode(window_mode));
+  controller_->OpenNativeSettings(app_id);
 }
 
 void StandaloneBrowserExtensionApps::OnApps(std::vector<AppPtr> deltas) {
@@ -412,13 +418,12 @@ void StandaloneBrowserExtensionApps::RegisterAppController(
 }
 
 void StandaloneBrowserExtensionApps::OnCapabilityAccesses(
-    std::vector<apps::mojom::CapabilityAccessPtr> deltas) {
-  // TODO(https://crbug.com/1225848): Implement.
-  NOTIMPLEMENTED();
+    std::vector<CapabilityAccessPtr> deltas) {
+  proxy()->OnCapabilityAccesses(std::move(deltas));
 }
 
 void StandaloneBrowserExtensionApps::LoggedInStateChanged() {
-  if (chromeos::LoginState::Get()->IsUserLoggedIn()) {
+  if (ash::LoginState::Get()->IsUserLoggedIn()) {
     if (!keep_alive_) {
       if (app_type_ == AppType::kStandaloneBrowserChromeApp) {
         keep_alive_ = crosapi::BrowserManager::Get()->KeepAlive(

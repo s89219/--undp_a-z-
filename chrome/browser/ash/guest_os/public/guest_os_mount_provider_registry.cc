@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,7 @@
 #include <memory>
 #include <vector>
 #include "base/observer_list.h"
-#include "base/observer_list_types.h"
 #include "chrome/browser/ash/guest_os/public/guest_os_mount_provider.h"
-#include "components/keyed_service/core/keyed_service.h"
 
 namespace guest_os {
 
@@ -43,7 +41,7 @@ GuestOsMountProviderRegistry::Id GuestOsMountProviderRegistry::Register(
   Id id = next_id_++;
   providers_[id] = std::move(provider);
   for (auto& observer : observers_) {
-    observer.OnRegistered(id, provider.get());
+    observer.OnRegistered(id, providers_[id].get());
   }
   return id;
 }

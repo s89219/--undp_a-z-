@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,6 +19,11 @@ extension Color {
   /// The tertiary background color
   public static var tertiaryBackground: Color {
     return Color(kTertiaryBackgroundColor)
+  }
+
+  /// The updated tertiary background color
+  public static var updatedTertiaryBackground: Color {
+    return Color(kUpdatedTertiaryBackgroundColor)
   }
 
   /// The primary grouped background color.
@@ -66,9 +71,19 @@ extension Color {
     return Color(kBlueColor)
   }
 
+  /// The blue halo color.
+  public static var blueHalo: Color {
+    return Color(kBlueHaloColor)
+  }
+
   /// The blue500 color.
   public static var blue500: Color {
     return Color(kBlue500Color)
+  }
+
+  /// The blue600 color.
+  public static var blue600: Color {
+    return Color(kBlue600Color)
   }
 
   /// The table row view highlight color.
@@ -76,8 +91,13 @@ extension Color {
     return Color(kTableViewRowHighlightColor)
   }
 
-  /// The table view sseparator color.
+  /// The table view separator color.
   public static var separator: Color {
     return Color(kSeparatorColor)
+  }
+
+  /// The toolbar shadow color.
+  public static var toolbarShadow: Color {
+    return Color(kToolbarShadowColor)
   }
 }

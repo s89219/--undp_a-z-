@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,8 @@
 #include <stdint.h>
 
 #include "base/component_export.h"
+#include "build/build_config.h"
+#include "printing/buildflags/buildflags.h"
 
 namespace printing {
 
@@ -58,6 +60,14 @@ COMPONENT_EXPORT(PRINTING_BASE)
 extern const char kSettingMediaSizeHeightMicrons[];
 COMPONENT_EXPORT(PRINTING_BASE)
 extern const char kSettingMediaSizeWidthMicrons[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingsImageableAreaLeftMicrons[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingsImageableAreaBottomMicrons[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingsImageableAreaRightMicrons[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingsImageableAreaTopMicrons[];
 COMPONENT_EXPORT(PRINTING_BASE)
 extern const char kSettingMediaSizeVendorId[];
 COMPONENT_EXPORT(PRINTING_BASE)
@@ -143,7 +153,7 @@ COMPONENT_EXPORT(PRINTING_BASE)
 extern const uint32_t kInvalidPageIndex;
 COMPONENT_EXPORT(PRINTING_BASE) extern const uint32_t kMaxPageCount;
 
-#if defined(USE_CUPS)
+#if BUILDFLAG(USE_CUPS)
 // Printer color models
 COMPONENT_EXPORT(PRINTING_BASE) extern const char kBlack[];
 COMPONENT_EXPORT(PRINTING_BASE) extern const char kCMYK[];
@@ -169,6 +179,24 @@ COMPONENT_EXPORT(PRINTING_BASE) extern const char kSharpCMBW[];
 COMPONENT_EXPORT(PRINTING_BASE) extern const char kXeroxAutomatic[];
 COMPONENT_EXPORT(PRINTING_BASE) extern const char kXeroxBW[];
 #endif
+
+#if BUILDFLAG(IS_CHROMEOS)
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingChromeOSAccessOAuthToken[];
+
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingIppClientInfo[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingIppClientName[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingIppClientPatches[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingIppClientStringVersion[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingIppClientType[];
+COMPONENT_EXPORT(PRINTING_BASE)
+extern const char kSettingIppClientVersion[];
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 // Specifies the horizontal alignment of the headers and footers.
 enum HorizontalHeaderFooterPosition { LEFT, CENTER, RIGHT };

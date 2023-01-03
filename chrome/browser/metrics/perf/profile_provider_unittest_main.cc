@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@
 #include "chrome/browser/metrics/perf/metric_provider.h"
 #include "chrome/browser/metrics/perf/perf_events_collector.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/metrics_proto/sampled_profile.pb.h"
@@ -140,11 +140,11 @@ class ProfileProviderRealCollectionTest : public testing::Test {
       const ProfileProviderRealCollectionTest&) = delete;
 
   void SetUp() override {
-    chromeos::DBusThreadManager::Initialize();
-    // ProfileProvider requires chromeos::LoginState and
+    ash::DBusThreadManager::Initialize();
+    // ProfileProvider requires ash::LoginState and
     // chromeos::PowerManagerClient to be initialized.
     chromeos::PowerManagerClient::InitializeFake();
-    chromeos::LoginState::Initialize();
+    ash::LoginState::Initialize();
 
     // The constructor of ProfileProvider uses g_browser_process thus requiring
     // it to be not null, so initialize it here.
@@ -153,10 +153,9 @@ class ProfileProviderRealCollectionTest : public testing::Test {
     std::map<std::string, std::string> field_trial_params;
     // Only "cycles" event is supported.
     field_trial_params.insert(std::make_pair(
-        "PerfCommand::default::0", "50 perf record -a -e cycles -c 1000003"));
-    field_trial_params.insert(
-        std::make_pair("PerfCommand::default::1",
-                       "50 perf record -a -e cycles -g -c 4000037"));
+        "PerfCommand::default::0", "50 -- record -a -e cycles -c 1000003"));
+    field_trial_params.insert(std::make_pair(
+        "PerfCommand::default::1", "50 -- record -a -e cycles -g -c 4000037"));
     ASSERT_TRUE(variations::AssociateVariationParams(
         "ChromeOSWideProfilingCollection", "group_name", field_trial_params));
     field_trial_ = base::FieldTrialList::CreateFieldTrial(
@@ -170,9 +169,9 @@ class ProfileProviderRealCollectionTest : public testing::Test {
 
     // Set user state as logged in. This activates periodic collection, but
     // other triggers like SUSPEND_DONE take precedence.
-    chromeos::LoginState::Get()->SetLoggedInState(
-        chromeos::LoginState::LOGGED_IN_ACTIVE,
-        chromeos::LoginState::LOGGED_IN_USER_REGULAR);
+    ash::LoginState::Get()->SetLoggedInState(
+        ash::LoginState::LOGGED_IN_ACTIVE,
+        ash::LoginState::LOGGED_IN_USER_REGULAR);
 
     // Finishes Init() on the dedicated sequence.
     task_environment_.RunUntilIdle();
@@ -185,9 +184,9 @@ class ProfileProviderRealCollectionTest : public testing::Test {
 
     profile_provider_.reset();
     TestingBrowserProcess::DeleteInstance();
-    chromeos::LoginState::Shutdown();
+    ash::LoginState::Shutdown();
     chromeos::PowerManagerClient::Shutdown();
-    chromeos::DBusThreadManager::Shutdown();
+    ash::DBusThreadManager::Shutdown();
     variations::testing::ClearAllVariationParams();
   }
 

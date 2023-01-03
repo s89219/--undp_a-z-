@@ -1,11 +1,10 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.init;
 
 import android.app.Activity;
-import android.os.Build;
 import android.os.Process;
 import android.os.StrictMode;
 
@@ -36,6 +35,7 @@ import org.chromium.chrome.browser.crash.LogcatExtractionRunnable;
 import org.chromium.chrome.browser.download.DownloadManagerService;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.language.GlobalAppLocaleController;
+import org.chromium.chrome.browser.metrics.UmaUtils;
 import org.chromium.chrome.browser.signin.SigninCheckerProvider;
 import org.chromium.chrome.browser.webapps.ChromeWebApkHost;
 import org.chromium.components.background_task_scheduler.BackgroundTaskSchedulerFactory;
@@ -43,6 +43,7 @@ import org.chromium.components.crash.browser.ChildProcessCrashObserver;
 import org.chromium.components.minidump_uploader.CrashFileManager;
 import org.chromium.components.module_installer.util.ModuleUtil;
 import org.chromium.components.policy.CombinedPolicyProvider;
+import org.chromium.components.safe_browsing.SafeBrowsingApiBridge;
 import org.chromium.content_public.browser.BrowserStartupController;
 import org.chromium.content_public.browser.DeviceUtils;
 import org.chromium.content_public.browser.SpeechRecognition;
@@ -197,20 +198,17 @@ public class ChromeBrowserInitializer {
      * Running in an AsyncTask as pre-loading itself may cause I/O.
      */
     private void warmUpSharedPrefs() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            PostTask.postTask(TaskTraits.BEST_EFFORT_MAY_BLOCK, () -> {
-                DownloadManagerService.warmUpSharedPrefs();
-                BackgroundTaskSchedulerFactory.warmUpSharedPrefs();
-            });
-        } else {
+        PostTask.postTask(TaskTraits.BEST_EFFORT_MAY_BLOCK, () -> {
             DownloadManagerService.warmUpSharedPrefs();
             BackgroundTaskSchedulerFactory.warmUpSharedPrefs();
-        }
+        });
     }
 
     private void preInflationStartup() {
         ThreadUtils.assertOnUiThread();
         if (mPreInflationStartupComplete) return;
+
+        new Thread(SafeBrowsingApiBridge::ensureInitialized).start();
 
         // Ensure critical files are available, so they aren't blocked on the file-system
         // behind long-running accesses in next phase.
@@ -249,15 +247,15 @@ public class ChromeBrowserInitializer {
         // launch its required components.
         if (!delegate.startMinimalBrowser()
                 && !ProcessInitializationHandler.getInstance().postNativeInitializationComplete()) {
-            tasks.add(UiThreadTaskTraits.BOOTSTRAP,
+            tasks.add(UiThreadTaskTraits.DEFAULT,
                     () -> ProcessInitializationHandler.getInstance().initializePostNative());
         }
 
         if (!mNetworkChangeNotifierInitializationComplete) {
-            tasks.add(UiThreadTaskTraits.BOOTSTRAP, this::initNetworkChangeNotifier);
+            tasks.add(UiThreadTaskTraits.DEFAULT, this::initNetworkChangeNotifier);
         }
 
-        tasks.add(UiThreadTaskTraits.BOOTSTRAP, () -> {
+        tasks.add(UiThreadTaskTraits.DEFAULT, () -> {
             // This is not broken down as a separate task, since this:
             // 1. Should happen as early as possible
             // 2. Only submits asynchronous work
@@ -270,17 +268,17 @@ public class ChromeBrowserInitializer {
             onStartNativeInitialization();
         });
 
-        tasks.add(UiThreadTaskTraits.BOOTSTRAP, () -> {
+        tasks.add(UiThreadTaskTraits.DEFAULT, () -> {
             if (delegate.isActivityFinishingOrDestroyed()) return;
             delegate.initializeCompositor();
         });
 
-        tasks.add(UiThreadTaskTraits.BOOTSTRAP, () -> {
+        tasks.add(UiThreadTaskTraits.DEFAULT, () -> {
             if (delegate.isActivityFinishingOrDestroyed()) return;
             delegate.initializeState();
         });
 
-        tasks.add(UiThreadTaskTraits.BOOTSTRAP, () -> {
+        tasks.add(UiThreadTaskTraits.DEFAULT, () -> {
             if (delegate.isActivityFinishingOrDestroyed()) return;
             // Some tasks posted by this are on the critical path.
             delegate.startNativeInitialization();
@@ -317,7 +315,7 @@ public class ChromeBrowserInitializer {
                         }
                     });
         } else {
-            startChromeBrowserProcessesSync();
+            startChromeBrowserProcessesSync(delegate.shouldStartGpuProcess());
             tasks.start(true);
         }
     }
@@ -349,7 +347,7 @@ public class ChromeBrowserInitializer {
         }
     }
 
-    private void startChromeBrowserProcessesSync() {
+    private void startChromeBrowserProcessesSync(boolean startGpuProcess) {
         try {
             TraceEvent.begin("ChromeBrowserInitializer.startChromeBrowserProcessesSync");
             ThreadUtils.assertOnUiThread();
@@ -358,7 +356,8 @@ public class ChromeBrowserInitializer {
             StrictMode.setThreadPolicy(oldPolicy);
             LibraryPrefetcher.asyncPrefetchLibrariesToMemory();
             getBrowserStartupController().startBrowserProcessesSync(
-                    LibraryProcessType.PROCESS_BROWSER, /*singleProcess=*/false);
+                    LibraryProcessType.PROCESS_BROWSER, /*singleProcess=*/false,
+                    /*startGpuProcess=*/startGpuProcess);
             SigninCheckerProvider.get();
         } finally {
             TraceEvent.end("ChromeBrowserInitializer.startChromeBrowserProcessesSync");
@@ -431,6 +430,7 @@ public class ChromeBrowserInitializer {
                 });
 
         MemoryPressureUma.initializeForBrowser();
+        UmaUtils.recordBackgroundRestrictions();
 
         // Needed for field trial metrics to be properly collected in minimal browser mode.
         ChromeCachedFlags.getInstance().cacheMinimalBrowserFlags();

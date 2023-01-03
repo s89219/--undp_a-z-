@@ -1,14 +1,11 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 package org.chromium.chrome.browser.crash;
 
 import android.content.Context;
 import android.net.ConnectivityManager;
-import android.os.Build;
 import android.os.PersistableBundle;
-
-import androidx.annotation.RequiresApi;
 
 import org.chromium.chrome.browser.privacy.settings.PrivacyPreferencesManagerImpl;
 import org.chromium.components.minidump_uploader.MinidumpUploaderDelegate;
@@ -20,7 +17,6 @@ import java.io.File;
 /**
  * Chrome-specific implementations for minidump uploading logic.
  */
-@RequiresApi(Build.VERSION_CODES.M)
 public class ChromeMinidumpUploaderDelegate implements MinidumpUploaderDelegate {
     // PersistableBundle keys:
     static final String IS_CLIENT_IN_METRICS_SAMPLE = "isClientInMetricsSample";

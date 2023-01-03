@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,8 +10,6 @@
 #include <memory>
 #include <utility>
 
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/settings/timezone_settings.h"
 #include "ash/constants/ash_features.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -23,9 +21,12 @@
 #include "base/values.h"
 #include "chrome/browser/ash/policy/scheduled_task_handler/scheduled_task_util.h"
 #include "chrome/browser/ash/policy/scheduled_task_handler/scoped_wake_lock.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/settings/timezone_settings.h"
 #include "chromeos/dbus/power/power_manager_client.h"
 #include "components/user_manager/user_manager.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/cros_system_api/dbus/power_manager/dbus-constants.h"
 
 namespace policy {
 
@@ -60,11 +61,14 @@ DeviceScheduledRebootHandler::DeviceScheduledRebootHandler(
       scheduled_task_executor_(std::move(scheduled_task_executor)),
       notifications_scheduler_(std::move(notifications_scheduler)) {
   ash::system::TimezoneSettings::GetInstance()->AddObserver(this);
-  // Check if policy already exists.
-  OnScheduledRebootDataChanged();
+  auto* power_manager_client = chromeos::PowerManagerClient::Get();
+  if (power_manager_client) {
+    observation_.Observe(power_manager_client);
+  }
 }
 
 DeviceScheduledRebootHandler::~DeviceScheduledRebootHandler() {
+  observation_.Reset();
   ash::system::TimezoneSettings::GetInstance()->RemoveObserver(this);
 }
 
@@ -78,9 +82,29 @@ void DeviceScheduledRebootHandler::TimezoneChanged(
   OnScheduledRebootDataChanged();
 }
 
+void DeviceScheduledRebootHandler::PowerManagerBecameAvailable(bool available) {
+  if (!available) {
+    LOG(ERROR) << "Power manager service is not available. Not possible to "
+                  "schedule reboot.";
+    ResetState();
+    return;
+  }
+  // Check if policy already exists.
+  OnScheduledRebootDataChanged();
+}
+
 void DeviceScheduledRebootHandler::SetRebootDelayForTest(
     const base::TimeDelta& reboot_delay) {
   reboot_delay_for_testing_ = reboot_delay;
+}
+
+absl::optional<ScheduledTaskExecutor::ScheduledTaskData>
+DeviceScheduledRebootHandler::GetScheduledRebootDataForTest() const {
+  return scheduled_reboot_data_;
+}
+
+bool DeviceScheduledRebootHandler::IsRebootSkippedForTest() const {
+  return skip_reboot_;
 }
 
 void DeviceScheduledRebootHandler::OnRebootTimerExpired() {
@@ -166,7 +190,21 @@ void DeviceScheduledRebootHandler::StartRebootTimer() {
       base::BindOnce(&DeviceScheduledRebootHandler::OnRebootTimerExpired,
                      base::Unretained(this)),
       GetExternalDelay());
+}
 
+void DeviceScheduledRebootHandler::OnRebootTimerStartResult(
+    ScopedWakeLock scoped_wake_lock,
+    bool result) {
+  // If reboot timer failed to start, reset notifications if scheduled and
+  // |scheduled_reboot_data_|. The reboot will be scheduled again when the new
+  // policy comes or Chrome is restarted.
+  if (!result) {
+    LOG(ERROR) << "Failed to start reboot timer";
+    notifications_scheduler_->ResetState();
+    skip_reboot_ = false;
+    scheduled_reboot_data_ = absl::nullopt;
+    return;
+  }
   // Set |skip_reboot_| flag if the grace time should be applied.
   skip_reboot_ = notifications_scheduler_->ShouldApplyGraceTime(
       scheduled_task_executor_->GetScheduledTaskTime());
@@ -180,17 +218,6 @@ void DeviceScheduledRebootHandler::StartRebootTimer() {
                          base::Unretained(this)),
           scheduled_task_executor_->GetScheduledTaskTime());
     }
-  }
-}
-
-void DeviceScheduledRebootHandler::OnRebootTimerStartResult(
-    ScopedWakeLock scoped_wake_lock,
-    bool result) {
-  // If reboot timer failed to start, reset state. The reboot will be scheduled
-  // again when the new policy comes or Chrome is restarted.
-  if (!result) {
-    LOG(ERROR) << "Failed to start reboot timer";
-    ResetState();
   }
 }
 
@@ -210,8 +237,9 @@ const base::TimeDelta DeviceScheduledRebootHandler::GetExternalDelay() const {
 
 void DeviceScheduledRebootHandler::RebootDevice(
     const std::string& reboot_description) const {
-  ash::PowerManagerClient::Get()->RequestRestart(
-      power_manager::REQUEST_RESTART_OTHER, reboot_description);
+  chromeos::PowerManagerClient::Get()->RequestRestart(
+      power_manager::REQUEST_RESTART_SCHEDULED_REBOOT_POLICY,
+      reboot_description);
 }
 
 }  // namespace policy

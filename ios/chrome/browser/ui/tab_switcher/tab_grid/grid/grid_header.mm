@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,8 +8,8 @@
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
 #import "ios/chrome/common/ui/util/constraints_ui_util.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 #import "ui/gfx/ios/uikit_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -53,7 +53,6 @@
     UIStackView* containerView = [[UIStackView alloc]
         initWithArrangedSubviews:@[ _titleLabel, _valueLabel ]];
     containerView.axis = UILayoutConstraintAxisHorizontal;
-    containerView.alignment = UIStackViewAlignmentCenter;
     containerView.translatesAutoresizingMaskIntoConstraints = NO;
     containerView.spacing = kGridHeaderContentSpacing;
     containerView.layoutMarginsRelativeArrangement = YES;
@@ -68,6 +67,10 @@
       [containerView.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
       [containerView.trailingAnchor
           constraintEqualToAnchor:self.trailingAnchor],
+      [valueLabel.heightAnchor
+          constraintEqualToAnchor:containerView.heightAnchor],
+      [titleLabel.heightAnchor
+          constraintEqualToAnchor:containerView.heightAnchor],
     ]];
     [NSLayoutConstraint activateConstraints:constraints];
   }
@@ -142,7 +145,8 @@
   } else {
     contentInsets = kGridLayoutInsetsRegularRegular;
   }
-  self.containerView.layoutMargins = contentInsets;
+  self.containerView.layoutMargins =
+      UIEdgeInsetsMake(0, contentInsets.left, 0, contentInsets.right);
   [self layoutIfNeeded];
 }
 

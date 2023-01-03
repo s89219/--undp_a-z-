@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,6 +57,7 @@ ClientTagBasedRemoteUpdateHandler::ProcessIncrementalUpdate(
       // 2. Reflection, thus should be ignored.
       // 3. Update without a client tag hash (including permanent nodes, which
       // have server tags instead).
+      // 4. Remote creation containing invalid data according to the bridge.
       continue;
     }
 
@@ -149,7 +150,7 @@ ProcessorEntity* ClientTagBasedRemoteUpdateHandler::ProcessUpdate(
     return nullptr;
   }
 
-  if (entity && entity->UpdateIsReflection(update.response_version)) {
+  if (entity && entity->IsVersionAlreadyKnown(update.response_version)) {
     // Seen this update before; just ignore it.
     return nullptr;
   }
@@ -162,6 +163,13 @@ ProcessorEntity* ClientTagBasedRemoteUpdateHandler::ProcessUpdate(
     // Remote creation.
     DCHECK(!data.is_deleted());
     entity = CreateEntity(update);
+    // |entity| is null in case remote creation is invalid.
+    if (!entity) {
+      DLOG(WARNING) << "Received invalid remote creation."
+                    << " client_tag_hash: " << client_tag_hash << " for "
+                    << ModelTypeToDebugString(type_);
+      return nullptr;
+    }
     entity_changes->push_back(EntityChange::CreateAdd(
         entity->storage_key(), std::move(update.entity)));
   } else if (entity->IsUnsynced()) {
@@ -176,8 +184,9 @@ ProcessorEntity* ClientTagBasedRemoteUpdateHandler::ProcessUpdate(
     entity_changes->push_back(
         EntityChange::CreateDelete(entity->storage_key()));
   } else if (entity->MatchesData(data)) {
-    // Remote update that is a no-op and can be ignored.
-    entity->RecordIgnoredRemoteUpdate(update);
+    // Remote update that is a no-op, metadata should still be updated.
+    entity->RecordAcceptedRemoteUpdate(
+        update, bridge_->TrimRemoteSpecificsForCaching(data.specifics));
   } else {
     // Remote update.
     entity->RecordAcceptedRemoteUpdate(
@@ -236,10 +245,16 @@ void ClientTagBasedRemoteUpdateHandler::ResolveConflict(
   // Apply the resolution.
   switch (resolution_type) {
     case ConflictResolution::kChangesMatch:
-      // Record the update and squash the pending commit.
+      // Record the update and squash the pending commit. Trimming should not be
+      // called for matching deleted entities to avoid failing its requirement
+      // to have a `password` field present.
+      // TODO(crbug.com/1296159): Consider introducing a dedicated function for
+      // recording exact matching updates.
       entity->RecordForcedRemoteUpdate(
-          update,
-          bridge_->TrimRemoteSpecificsForCaching(update.entity.specifics));
+          update, update.entity.is_deleted()
+                      ? sync_pb::EntitySpecifics()
+                      : bridge_->TrimRemoteSpecificsForCaching(
+                            update.entity.specifics));
       break;
     case ConflictResolution::kUseLocal:
     case ConflictResolution::kIgnoreRemoteEncryption:
@@ -293,7 +308,9 @@ ProcessorEntity* ClientTagBasedRemoteUpdateHandler::CreateEntity(
   std::string storage_key;
   if (bridge_->SupportsGetStorageKey()) {
     storage_key = bridge_->GetStorageKey(update.entity);
-    DCHECK(!storage_key.empty());
+    if (storage_key.empty()) {
+      return nullptr;
+    }
   }
   return entity_tracker_->AddRemote(
       storage_key, update,

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -220,10 +220,11 @@ void NotificationInputContainer::UpdateButtonImage() {
   auto icon_color_id = textfield_->GetText().empty()
                            ? ui::kColorNotificationInputPlaceholderForeground
                            : ui::kColorNotificationInputForeground;
-  button_->SetImage(
+  button_->SetImageModel(
       views::Button::STATE_NORMAL,
-      gfx::CreateVectorIcon(kNotificationInlineReplyIcon, kInputReplyButtonSize,
-                            GetColorProvider()->GetColor(icon_color_id)));
+      ui::ImageModel::FromVectorIcon(
+          kNotificationInlineReplyIcon,
+          GetColorProvider()->GetColor(icon_color_id), kInputReplyButtonSize));
 }
 
 }  // namespace message_center

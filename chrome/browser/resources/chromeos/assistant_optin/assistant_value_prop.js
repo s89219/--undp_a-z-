@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,25 @@
  * Event 'loaded' will be fired when the page has been successfully loaded.
  */
 
-/* #js_imports_placeholder */
+import '//resources/cr_elements/cr_dialog/cr_dialog.js';
+import '//resources/polymer/v3_0/iron-icon/iron-icon.js';
+import '../components/dialogs/oobe_adaptive_dialog.js';
+import '../components/buttons/oobe_next_button.js';
+import '../components/buttons/oobe_text_button.js';
+import '../components/common_styles/oobe_dialog_host_styles.css.js';
+import './assistant_common_styles.css.js';
+import './assistant_icons.html.js';
+import './setting_zippy.js';
+
+import {loadTimeData} from '//resources/ash/common/load_time_data.m.js';
+import {afterNextRender, html, mixinBehaviors, Polymer, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {OobeDialogHostBehavior} from '../components/behaviors/oobe_dialog_host_behavior.js';
+import {OobeI18nBehavior, OobeI18nBehaviorInterface} from '../components/behaviors/oobe_i18n_behavior.js';
+
+import {BrowserProxyImpl} from './browser_proxy.js';
+import {AssistantNativeIconType, HtmlSanitizer, webviewStripLinksContentScript} from './utils.js';
+
 
 /**
  * Name of the screen.
@@ -23,8 +41,8 @@ const VALUE_PROP_SCREEN_ID = 'ValuePropScreen';
  * @constructor
  * @extends {PolymerElement}
  */
-const AssistantValuePropBase = Polymer.mixinBehaviors(
-    [OobeI18nBehavior, OobeDialogHostBehavior], Polymer.Element);
+const AssistantValuePropBase =
+    mixinBehaviors([OobeI18nBehavior, OobeDialogHostBehavior], PolymerElement);
 
 /**
  * @polymer
@@ -34,7 +52,9 @@ class AssistantValueProp extends AssistantValuePropBase {
     return `assistant-value-prop`;
   }
 
-  /* #html_template_placeholder */
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
   static get properties() {
     return {
@@ -53,7 +73,7 @@ class AssistantValueProp extends AssistantValuePropBase {
        */
       urlTemplate_: {
         value:
-            'https://www.gstatic.com/opa-android/oobe/a02187e41eed9e42/v4_omni_$.html',
+            'https://www.gstatic.com/opa-android/oobe/a02187e41eed9e42/v5_omni_$.html',
       },
 
       /**
@@ -63,7 +83,7 @@ class AssistantValueProp extends AssistantValuePropBase {
         type: String,
         value: function() {
           return this.urlTemplate_.replace('$', 'en_us');
-        }
+        },
       },
 
       /**
@@ -165,8 +185,8 @@ class AssistantValueProp extends AssistantValuePropBase {
      */
     this.sanitizer_ = new HtmlSanitizer();
 
-    /** @private {?assistant.BrowserProxy} */
-    this.browserProxy_ = assistant.BrowserProxyImpl.getInstance();
+    /** @private {?BrowserProxy} */
+    this.browserProxy_ = BrowserProxyImpl.getInstance();
   }
 
   setUrlTemplateForTesting(url) {
@@ -264,6 +284,12 @@ class AssistantValueProp extends AssistantValuePropBase {
    * Handles event when value prop webview cannot be loaded.
    */
   onWebViewErrorOccurred(details) {
+    if (details && details.error == 'net::ERR_ABORTED') {
+      // Retry triggers net::ERR_ABORTED, so ignore it.
+      // TODO(b/232592745): Replace with a state machine to handle aborts
+      // gracefully and avoid duplicate reloads.
+      return;
+    }
     this.dispatchEvent(
         new CustomEvent('error', {bubbles: true, composed: true}));
     this.loadingError_ = true;
@@ -361,19 +387,25 @@ class AssistantValueProp extends AssistantValuePropBase {
       for (const j in zippy_data[i]) {
         const data = zippy_data[i][j];
         const zippy = document.createElement('setting-zippy');
-        // TODO(crbug.com/1313994) - Remove hard coded colors in OOBE
-        const background =
-            this.isMinorMode_ ? '#e8f0fe' /* gblue50 */ : 'white';
-        zippy.setAttribute(
-            'icon-src',
-            'data:text/html;charset=utf-8,' +
-                encodeURIComponent(zippy.getWrappedIcon(
-                    data['iconUri'], data['title'], background)));
-        zippy.setAttribute('step', i);
-        if (this.isMinorMode_) {
-          zippy.setAttribute('hide-line', true);
-          zippy.setAttribute('card-style', true);
+        if (data['useNativeIcons']) {
+          zippy.nativeIconType = data['nativeIconType'];
+          zippy.setAttribute('nativeIconLabel', data['title']);
+        } else {
+          // TODO(crbug.com/1313994) - Remove hard coded colors in OOBE
+          const background = this.isMinorMode_ ?
+              getComputedStyle(document.body)
+                  .getPropertyValue('--cros-highlight-color' /* gblue50 */) :
+              getComputedStyle(document.body)
+                  .getPropertyValue('--cros-bg-color');
+          zippy.setAttribute(
+              'icon-src',
+              'data:text/html;charset=utf-8,' +
+                  encodeURIComponent(zippy.getWrappedIcon(
+                      data['iconUri'], data['title'], background)));
         }
+        zippy.setAttribute('step', i);
+        zippy.hideLine = this.isMinorMode_;
+        zippy.cardStyle = this.isMinorMode_;
 
         const title = document.createElement('div');
         title.slot = 'title';
@@ -475,8 +507,7 @@ class AssistantValueProp extends AssistantValuePropBase {
     this.$['overlay-close-button'].addEventListener(
         'click', () => this.hideOverlay());
 
-    Polymer.RenderStatus.afterNextRender(
-        this, () => this.$['next-button'].focus());
+    afterNextRender(this, () => this.$['next-button'].focus());
 
     if (!this.initialized_) {
       this.valuePropView_ = this.$['value-prop-view'];

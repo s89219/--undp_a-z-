@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -185,21 +185,21 @@ void HandleParsedThumbnailResponse(
     const std::string& request_id,
     ThumbnailDataCallback callback,
     data_decoder::DataDecoder::ValueOrError result) {
-  if (!result.value) {
-    VLOG(2) << "Failed to parse request response " << *result.error;
+  if (!result.has_value()) {
+    VLOG(2) << "Failed to parse request response " << result.error();
     std::move(callback).Run("");
     return;
   }
 
-  if (!result.value->is_dict()) {
+  if (!result->is_dict()) {
     VLOG(2) << "Invalid response format";
     std::move(callback).Run("");
     return;
   }
 
   const std::string* received_request_id =
-      result.value->GetDict().FindString("taskId");
-  const std::string* data = result.value->GetDict().FindString("data");
+      result->GetDict().FindString("taskId");
+  const std::string* data = result->GetDict().FindString("data");
 
   if (!data || !received_request_id || *received_request_id != request_id) {
     std::move(callback).Run("");
@@ -262,7 +262,7 @@ class ThumbnailLoaderNativeMessageHost : public extensions::NativeMessageHost {
   bool response_received_ = false;
 
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner_ =
-      base::ThreadTaskRunnerHandle::Get();
+      base::SingleThreadTaskRunner::GetCurrentDefault();
 };
 
 }  // namespace
@@ -403,8 +403,7 @@ void ThumbnailLoader::LoadForFileWithMetadata(
 
   // Generate an image loader request. The request type is defined in
   // ui/file_manager/image_loader/load_image_request.js.
-  base::Value request_value(base::Value::Type::DICTIONARY);
-  base::Value::Dict& request_dict = request_value.GetDict();
+  base::Value::Dict request_dict;
   request_dict.Set("taskId", base::Value(request_id.ToString()));
   request_dict.Set("url", base::Value(thumbnail_url.spec()));
   request_dict.Set("timestamp", base::TimeToValue(file_info.last_modified));
@@ -416,7 +415,7 @@ void ThumbnailLoader::LoadForFileWithMetadata(
   request_dict.Set("height", base::Value(size));
 
   std::string request_message;
-  base::JSONWriter::Write(request_value, &request_message);
+  base::JSONWriter::Write(request_dict, &request_message);
 
   // Open a channel to the image loader extension using a message host that send
   // the image loader request.

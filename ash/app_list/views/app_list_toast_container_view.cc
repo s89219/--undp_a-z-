@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,10 @@
 #include <memory>
 
 #include "ash/app_list/app_list_model_provider.h"
+#include "ash/app_list/app_list_util.h"
 #include "ash/app_list/app_list_view_delegate.h"
 #include "ash/app_list/views/app_list_a11y_announcer.h"
+#include "ash/app_list/views/app_list_keyboard_controller.h"
 #include "ash/app_list/views/app_list_nudge_controller.h"
 #include "ash/app_list/views/app_list_toast_view.h"
 #include "ash/app_list/views/apps_grid_context_menu.h"
@@ -40,6 +42,7 @@ const gfx::VectorIcon* GetToastIconForOrder(AppListSortOrder order) {
     case AppListSortOrder::kColor:
       return &kSortColorIcon;
     case AppListSortOrder::kCustom:
+    case AppListSortOrder::kAlphabeticalEphemeralAppFirst:
       NOTREACHED();
       return nullptr;
   }
@@ -51,15 +54,20 @@ constexpr auto kReorderUndoInteriorMargin = gfx::Insets::TLBR(8, 16, 8, 8);
 
 AppListToastContainerView::AppListToastContainerView(
     AppListNudgeController* nudge_controller,
+    AppListKeyboardController* keyboard_controller,
     AppListA11yAnnouncer* a11y_announcer,
+    AppListViewDelegate* view_delegate,
     Delegate* delegate,
     bool tablet_mode)
     : a11y_announcer_(a11y_announcer),
       tablet_mode_(tablet_mode),
+      view_delegate_(view_delegate),
       delegate_(delegate),
       nudge_controller_(nudge_controller),
+      keyboard_controller_(keyboard_controller),
       current_toast_(AppListToastType::kNone) {
   DCHECK(a11y_announcer_);
+  DCHECK(keyboard_controller_);
   SetLayoutManager(std::make_unique<views::FlexLayout>())
       ->SetMainAxisAlignment(views::LayoutAlignment::kCenter)
       .SetCrossAxisAlignment(views::LayoutAlignment::kCenter)
@@ -86,10 +94,10 @@ bool AppListToastContainerView::OnKeyPressed(const ui::KeyEvent& event) {
     return false;
 
   if (event.key_code() == ui::VKEY_UP)
-    return delegate_->MoveFocusUpFromToast(focused_app_column_);
+    return keyboard_controller_->MoveFocusUpFromToast(focused_app_column_);
 
   if (event.key_code() == ui::VKEY_DOWN)
-    return delegate_->MoveFocusDownFromToast(focused_app_column_);
+    return keyboard_controller_->MoveFocusDownFromToast(focused_app_column_);
 
   return false;
 }
@@ -111,6 +119,17 @@ bool AppListToastContainerView::HandleFocus(int column) {
   }
 
   return false;
+}
+
+void AppListToastContainerView::DisableFocusForShowingActiveFolder(
+    bool disabled) {
+  if (auto* toast_button = GetToastButton())
+    toast_button->SetEnabled(!disabled);
+  if (auto* close_button = GetCloseButton())
+    close_button->SetEnabled(!disabled);
+
+  // Prevent items from being accessed by ChromeVox.
+  SetViewIgnoredForAccessibility(this, disabled);
 }
 
 void AppListToastContainerView::MaybeUpdateReorderNudgeView() {
@@ -146,8 +165,13 @@ void AppListToastContainerView::CreateReorderNudgeView() {
                             base::Unretained(this)));
   }
 
-  FeatureDiscoveryDurationReporter::GetInstance()->MaybeActivateObservation(
+  FeatureDiscoveryDurationReporter* reporter =
+      FeatureDiscoveryDurationReporter::GetInstance();
+  reporter->MaybeActivateObservation(
       feature_discovery::TrackableFeature::kAppListReorderAfterEducationNudge);
+  reporter->MaybeActivateObservation(
+      feature_discovery::TrackableFeature::
+          kAppListReorderAfterEducationNudgePerTabletMode);
 
   toast_view_ = AddChildView(
       toast_view_builder.SetStyleForTabletMode(tablet_mode_)
@@ -220,7 +244,13 @@ void AppListToastContainerView::OnTemporarySortOrderChanged(
     const absl::optional<AppListSortOrder>& new_order) {
   // Remove `toast_view_` when the temporary sorting order is cleared.
   if (!GetVisibilityForSortOrder(new_order)) {
-    RemoveCurrentView();
+    if (committing_sort_order_) {
+      // When the toast view is closed due to committing the sort  order via the
+      // close button , the toast view should be faded out with animation.
+      FadeOutToastView();
+    } else {
+      RemoveCurrentView();
+    }
     return;
   }
 
@@ -246,7 +276,8 @@ void AppListToastContainerView::OnTemporarySortOrderChanged(
 
   if (features::IsLauncherDismissButtonsOnSortNudgeAndToastEnabled()) {
     toast_view_builder.SetCloseButton(base::BindRepeating(
-        &AppListToastContainerView::FadeOutToastView, base::Unretained(this)));
+        &AppListToastContainerView::OnReorderCloseButtonClicked,
+        base::Unretained(this)));
   }
 
   toast_view_ = AddChildView(
@@ -257,6 +288,7 @@ void AppListToastContainerView::OnTemporarySortOrderChanged(
                      base::BindRepeating(
                          &AppListToastContainerView::OnReorderUndoButtonClicked,
                          base::Unretained(this)))
+          .SetViewDelegate(view_delegate_)
           .Build());
   toast_view_->toast_button()->GetViewAccessibility().OverrideName(
       a11y_text_on_undo_button);
@@ -267,7 +299,8 @@ void AppListToastContainerView::OnTemporarySortOrderChanged(
 
 bool AppListToastContainerView::GetVisibilityForSortOrder(
     const absl::optional<AppListSortOrder>& new_order) const {
-  return new_order && *new_order != AppListSortOrder::kCustom;
+  return new_order && *new_order != AppListSortOrder::kCustom &&
+         *new_order != AppListSortOrder::kAlphabeticalEphemeralAppFirst;
 }
 
 void AppListToastContainerView::AnnounceSortOrder(AppListSortOrder new_order) {
@@ -295,6 +328,16 @@ views::Button* AppListToastContainerView::GetCloseButton() {
 
 void AppListToastContainerView::OnReorderUndoButtonClicked() {
   AppListModelProvider::Get()->model()->delegate()->RequestAppListSortRevert();
+}
+
+void AppListToastContainerView::OnReorderCloseButtonClicked() {
+  base::AutoReset auto_reset(&committing_sort_order_, true);
+  view_delegate_->CommitTemporarySortOrder();
+}
+
+bool AppListToastContainerView::IsToastVisible() const {
+  return toast_view_ && !(toast_view_->layer() &&
+                          toast_view_->layer()->GetTargetOpacity() == 0.0f);
 }
 
 void AppListToastContainerView::FadeOutToastView() {
@@ -335,6 +378,7 @@ std::u16string AppListToastContainerView::CalculateToastTextFromOrder(
       return l10n_util::GetStringUTF16(
           IDS_ASH_LAUNCHER_UNDO_SORT_TOAST_FOR_COLOR_SORT);
     case AppListSortOrder::kCustom:
+    case AppListSortOrder::kAlphabeticalEphemeralAppFirst:
       NOTREACHED();
       return u"";
   }
@@ -351,6 +395,7 @@ std::u16string AppListToastContainerView::GetA11yTextOnUndoButtonFromOrder(
       return l10n_util::GetStringUTF16(
           IDS_ASH_LAUNCHER_UNDO_COLOR_SORT_TOAST_SPOKEN_TEXT);
     case AppListSortOrder::kCustom:
+    case AppListSortOrder::kAlphabeticalEphemeralAppFirst:
       NOTREACHED();
       return u"";
   }

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@
 #include "chrome/browser/ash/arc/session/arc_session_manager.h"
 #include "chrome/browser/ash/arc/test/test_arc_session_manager.h"
 #include "chrome/test/base/testing_profile.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
+#include "chromeos/ash/components/dbus/concierge/concierge_client.h"
 #include "components/arc/test/fake_intent_helper_host.h"
 #include "components/arc/test/fake_intent_helper_instance.h"
 #include "components/prefs/testing_pref_service.h"
@@ -45,7 +45,7 @@ class WorkingSetTrimmerPolicyArcVmTest : public testing::Test {
         {"", "--enable-arcvm"});
     arc::prefs::RegisterLocalStatePrefs(local_state_.registry());
     arc::StabilityMetricsManager::Initialize(&local_state_);
-    chromeos::ConciergeClient::InitializeFake(/*fake_cicerone_client=*/nullptr);
+    ash::ConciergeClient::InitializeFake(/*fake_cicerone_client=*/nullptr);
 
     arc_service_manager_ = std::make_unique<arc::ArcServiceManager>();
 
@@ -83,7 +83,7 @@ class WorkingSetTrimmerPolicyArcVmTest : public testing::Test {
     arc_service_manager_.reset();
 
     // All other object must be destroyed before shutting down ConciergeClient.
-    chromeos::ConciergeClient::Shutdown();
+    ash::ConciergeClient::Shutdown();
     arc::StabilityMetricsManager::Shutdown();
   }
 

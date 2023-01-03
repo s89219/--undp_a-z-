@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,10 +35,8 @@ import org.junit.runner.RunWith;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.FlakyTest;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.autofill.PersonalDataManager;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.settings.SettingsActivity;
 import org.chromium.chrome.browser.settings.SettingsActivityTestRule;
@@ -49,10 +47,9 @@ import org.chromium.chrome.browser.sync.ui.PassphraseTypeDialogFragment;
 import org.chromium.chrome.test.ChromeJUnit4ClassRunner;
 import org.chromium.chrome.test.util.ActivityTestUtils;
 import org.chromium.chrome.test.util.ChromeRenderTestRule;
-import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.chrome.test.util.browser.sync.SyncTestUtil;
 import org.chromium.components.browser_ui.settings.ChromeSwitchPreference;
-import org.chromium.components.sync.ModelType;
+import org.chromium.components.sync.UserSelectableType;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 
 import java.io.IOException;
@@ -71,20 +68,22 @@ import java.util.Set;
 public class ManageSyncSettingsTest {
     private static final String TAG = "ManageSyncSettingsTest";
 
-    private static final int RENDER_TEST_REVISION = 4;
+    private static final int RENDER_TEST_REVISION = 5;
 
     /**
-     * Maps ModelTypes to their UI element IDs.
+     * Maps selected types to their UI element IDs.
      */
     private static final Map<Integer, String> UI_DATATYPES = new HashMap<>();
 
     static {
-        UI_DATATYPES.put(ModelType.AUTOFILL, ManageSyncSettings.PREF_SYNC_AUTOFILL);
-        UI_DATATYPES.put(ModelType.BOOKMARKS, ManageSyncSettings.PREF_SYNC_BOOKMARKS);
-        UI_DATATYPES.put(ModelType.TYPED_URLS, ManageSyncSettings.PREF_SYNC_HISTORY);
-        UI_DATATYPES.put(ModelType.PASSWORDS, ManageSyncSettings.PREF_SYNC_PASSWORDS);
-        UI_DATATYPES.put(ModelType.PROXY_TABS, ManageSyncSettings.PREF_SYNC_RECENT_TABS);
-        UI_DATATYPES.put(ModelType.PREFERENCES, ManageSyncSettings.PREF_SYNC_SETTINGS);
+        UI_DATATYPES.put(UserSelectableType.AUTOFILL, ManageSyncSettings.PREF_SYNC_AUTOFILL);
+        UI_DATATYPES.put(UserSelectableType.BOOKMARKS, ManageSyncSettings.PREF_SYNC_BOOKMARKS);
+        UI_DATATYPES.put(UserSelectableType.HISTORY, ManageSyncSettings.PREF_SYNC_HISTORY);
+        UI_DATATYPES.put(UserSelectableType.PASSWORDS, ManageSyncSettings.PREF_SYNC_PASSWORDS);
+        UI_DATATYPES.put(
+                UserSelectableType.READING_LIST, ManageSyncSettings.PREF_SYNC_READING_LIST);
+        UI_DATATYPES.put(UserSelectableType.TABS, ManageSyncSettings.PREF_SYNC_RECENT_TABS);
+        UI_DATATYPES.put(UserSelectableType.PREFERENCES, ManageSyncSettings.PREF_SYNC_SETTINGS);
     }
 
     private SettingsActivity mSettingsActivity;
@@ -147,20 +146,24 @@ public class ManageSyncSettingsTest {
         }
 
         Set<Integer> expectedTypes = new HashSet<>(dataTypes.keySet());
-        assertChosenDataTypesAre(expectedTypes);
-        mSyncTestRule.togglePreference(dataTypes.get(ModelType.AUTOFILL));
-        mSyncTestRule.togglePreference(dataTypes.get(ModelType.PASSWORDS));
-        expectedTypes.remove(ModelType.AUTOFILL);
-        expectedTypes.remove(ModelType.PASSWORDS);
+        assertSelectedTypesAre(expectedTypes);
+        mSyncTestRule.togglePreference(dataTypes.get(UserSelectableType.AUTOFILL));
+        mSyncTestRule.togglePreference(dataTypes.get(UserSelectableType.PASSWORDS));
+        expectedTypes.remove(UserSelectableType.AUTOFILL);
+        expectedTypes.remove(UserSelectableType.PASSWORDS);
 
         closeFragment(fragment);
-        assertChosenDataTypesAre(expectedTypes);
+        assertSelectedTypesAre(expectedTypes);
     }
 
     @Test
     @SmallTest
     @Feature({"Sync"})
-    public void testUnsettingAllDataTypesStopsSync() {
+    public void testUnsettingAllDataTypesDoesNotStopSync() {
+        // See crbug.com/1291946: The original MICE implementation stopped sync
+        // (by setting SyncRequested to false) when the user disabled all data
+        // types, for migration / backwards compatibility reasons. As of M104,
+        // that's no longer the case.
         mSyncTestRule.setUpAccountAndEnableSyncForTesting();
 
         ManageSyncSettings fragment = startManageSyncPreferences();
@@ -170,38 +173,9 @@ public class ManageSyncSettingsTest {
         for (CheckBoxPreference dataType : getDataTypes(fragment).values()) {
             mSyncTestRule.togglePreference(dataType);
         }
-        // All data types have been unchecked. Sync should stop.
-        Assert.assertFalse(SyncTestUtil.isSyncRequested());
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"Sync"})
-    public void testSettingAnyDataTypeStartsSync() {
-        mSyncTestRule.setUpAccountAndEnableSyncForTesting();
-        mSyncTestRule.setChosenDataTypes(false, new HashSet<>());
-        mSyncTestRule.stopSync();
-        ManageSyncSettings fragment = startManageSyncPreferences();
-
-        CheckBoxPreference syncAutofill =
-                (CheckBoxPreference) fragment.findPreference(ManageSyncSettings.PREF_SYNC_AUTOFILL);
-        mSyncTestRule.togglePreference(syncAutofill);
-        // Sync should start after any data type is checked.
-        Assert.assertTrue(SyncTestUtil.isSyncRequested());
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"Sync"})
-    public void testTogglingSyncEverythingStartsSync() {
-        mSyncTestRule.setUpAccountAndEnableSyncForTesting();
-        mSyncTestRule.setChosenDataTypes(false, new HashSet<>());
-        mSyncTestRule.stopSync();
-        ManageSyncSettings fragment = startManageSyncPreferences();
-
-        mSyncTestRule.togglePreference(getSyncEverything(fragment));
-        // Sync should start after setting sync everything toggle.
-        Assert.assertTrue(SyncTestUtil.isSyncRequested());
+        // All data types have been unchecked, but Sync itself should still be
+        // enabled.
+        Assert.assertTrue(SyncTestUtil.isSyncFeatureEnabled());
     }
 
     @Test
@@ -209,14 +183,14 @@ public class ManageSyncSettingsTest {
     @Feature({"Sync"})
     public void testTogglingSyncEverythingDoesNotStopSync() {
         mSyncTestRule.setUpAccountAndEnableSyncForTesting();
-        mSyncTestRule.setChosenDataTypes(false, new HashSet<>());
+        mSyncTestRule.setSelectedTypes(false, new HashSet<>());
         mSyncTestRule.startSync();
         ManageSyncSettings fragment = startManageSyncPreferences();
 
-        // Sync is requested to start. Toggling SyncEverything will call setChosenDataTypes with
+        // Sync is requested to start. Toggling SyncEverything will call setSelectedTypes with
         // empty set in the backend. But sync stop request should not be called.
         mSyncTestRule.togglePreference(getSyncEverything(fragment));
-        Assert.assertTrue(SyncTestUtil.isSyncRequested());
+        Assert.assertTrue(SyncTestUtil.isSyncFeatureEnabled());
     }
 
     @Test
@@ -233,27 +207,14 @@ public class ManageSyncSettingsTest {
         TestThreadUtils.runOnUiThreadBlocking(
                 fragment.findPreference(ManageSyncSettings.PREF_TURN_OFF_SYNC)::performClick);
         InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-        onView(withText(R.string.signout_title)).inRoot(isDialog()).check(matches(isDisplayed()));
+        onView(withText(R.string.turn_off_sync_and_signout_title))
+                .inRoot(isDialog())
+                .check(matches(isDisplayed()));
     }
 
     @Test
     @SmallTest
     @Feature({"Sync"})
-    public void testSignOutAndTurnOffSyncDisabledForChildUser() {
-        mSyncTestRule.setUpChildAccountAndEnableSyncForTesting();
-        ManageSyncSettings fragment = startManageSyncPreferences();
-
-        assertSyncOnState(fragment);
-        Preference turnOffSyncPreference =
-                fragment.findPreference(ManageSyncSettings.PREF_TURN_OFF_SYNC);
-        Assert.assertFalse("Sign out and turn off sync button should not be shown",
-                turnOffSyncPreference.isVisible());
-    }
-
-    @Test
-    @SmallTest
-    @Feature({"Sync"})
-    @EnableFeatures({ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS})
     public void testPressingTurnOffSyncForChildUser() {
         mSyncTestRule.setUpChildAccountAndEnableSyncForTesting();
         ManageSyncSettings fragment = startManageSyncPreferences();
@@ -295,7 +256,7 @@ public class ManageSyncSettingsTest {
         mSyncTestRule.setUpAccountAndEnableSyncForTesting();
         mSyncTestRule.setPaymentsIntegrationEnabled(false);
 
-        mSyncTestRule.setChosenDataTypes(false, UI_DATATYPES.keySet());
+        mSyncTestRule.setSelectedTypes(false, UI_DATATYPES.keySet());
         ManageSyncSettings fragment = startManageSyncPreferences();
 
         CheckBoxPreference paymentsIntegration = (CheckBoxPreference) fragment.findPreference(
@@ -328,13 +289,13 @@ public class ManageSyncSettingsTest {
 
     @Test
     @SmallTest
-    @FlakyTest(message = "crbug.com/988622")
+    @DisabledTest(message = "crbug.com/988622")
     @Feature({"Sync"})
     public void testPaymentsIntegrationCheckboxEnablesPaymentsIntegration() {
         mSyncTestRule.setUpAccountAndEnableSyncForTesting();
         mSyncTestRule.setPaymentsIntegrationEnabled(false);
 
-        mSyncTestRule.setChosenDataTypes(false, UI_DATATYPES.keySet());
+        mSyncTestRule.setSelectedTypes(false, UI_DATATYPES.keySet());
         ManageSyncSettings fragment = startManageSyncPreferences();
 
         CheckBoxPreference paymentsIntegration = (CheckBoxPreference) fragment.findPreference(
@@ -406,7 +367,7 @@ public class ManageSyncSettingsTest {
     public void testPaymentsIntegrationEnabledBySyncEverything() {
         mSyncTestRule.setUpAccountAndEnableSyncForTesting();
         mSyncTestRule.setPaymentsIntegrationEnabled(false);
-        mSyncTestRule.disableDataType(ModelType.AUTOFILL);
+        mSyncTestRule.disableDataType(UserSelectableType.AUTOFILL);
 
         // Get the UI elements.
         ManageSyncSettings fragment = startManageSyncPreferences();
@@ -474,7 +435,7 @@ public class ManageSyncSettingsTest {
     @Test
     @SmallTest
     @Feature({"Sync"})
-    @FlakyTest(message = "https://crbug.com/1188548")
+    @DisabledTest(message = "https://crbug.com/1188548")
     public void testPassphraseCreation() {
         mSyncTestRule.setUpAccountAndEnableSyncForTesting();
         final ManageSyncSettings fragment = startManageSyncPreferences();
@@ -576,7 +537,6 @@ public class ManageSyncSettingsTest {
     @Test
     @LargeTest
     @Feature({"Sync"})
-    @EnableFeatures(ChromeFeatureList.SYNC_TRUSTED_VAULT_PASSPHRASE_RECOVERY)
     public void testTrustedVaultRecoverabilityFix() {
         final byte[] trustedVaultKey = new byte[] {1, 2, 3, 4};
 
@@ -675,7 +635,6 @@ public class ManageSyncSettingsTest {
     @Test
     @LargeTest
     @Feature({"Sync", "RenderTest"})
-    @EnableFeatures({ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS})
     public void testAdvancedSyncFlowTopViewForChildUser() throws Exception {
         mSyncTestRule.setUpChildAccountAndEnableSyncForTesting();
         final ManageSyncSettings fragment = startManageSyncPreferences();
@@ -685,7 +644,6 @@ public class ManageSyncSettingsTest {
     @Test
     @LargeTest
     @Feature({"Sync", "RenderTest"})
-    @EnableFeatures({ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS})
     public void testAdvancedSyncFlowBottomViewForChildUser() throws Exception {
         mSyncTestRule.setUpChildAccountAndEnableSyncForTesting();
         final ManageSyncSettings fragment = startManageSyncPreferences();
@@ -702,7 +660,6 @@ public class ManageSyncSettingsTest {
     @Test
     @LargeTest
     @Feature({"Sync", "RenderTest"})
-    @EnableFeatures({ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS})
     public void testAdvancedSyncFlowFromSyncConsentTopViewForChildUser() throws Exception {
         mSyncTestRule.setUpChildAccountAndEnableSyncForTesting();
         final ManageSyncSettings fragment = startManageSyncPreferencesFromSyncConsentFlow();
@@ -712,7 +669,6 @@ public class ManageSyncSettingsTest {
     @Test
     @LargeTest
     @Feature({"Sync", "RenderTest"})
-    @EnableFeatures({ChromeFeatureList.ALLOW_SYNC_OFF_FOR_CHILD_ACCOUNTS})
     public void testAdvancedSyncFlowFromSyncConsentBottomViewForChildUser() throws Exception {
         mSyncTestRule.setUpChildAccountAndEnableSyncForTesting();
         final ManageSyncSettings fragment = startManageSyncPreferencesFromSyncConsentFlow();
@@ -753,9 +709,9 @@ public class ManageSyncSettingsTest {
     private Map<Integer, CheckBoxPreference> getDataTypes(ManageSyncSettings fragment) {
         Map<Integer, CheckBoxPreference> dataTypes = new HashMap<>();
         for (Map.Entry<Integer, String> uiDataType : UI_DATATYPES.entrySet()) {
-            Integer modelType = uiDataType.getKey();
+            Integer selectedType = uiDataType.getKey();
             String prefId = uiDataType.getValue();
-            dataTypes.put(modelType, (CheckBoxPreference) fragment.findPreference(prefId));
+            dataTypes.put(selectedType, (CheckBoxPreference) fragment.findPreference(prefId));
         }
         return dataTypes;
     }
@@ -805,11 +761,11 @@ public class ManageSyncSettingsTest {
                 getReviewData(fragment).isEnabled());
     }
 
-    private void assertChosenDataTypesAre(final Set<Integer> enabledDataTypes) {
+    private void assertSelectedTypesAre(final Set<Integer> enabledDataTypes) {
         final Set<Integer> disabledDataTypes = new HashSet<>(UI_DATATYPES.keySet());
         disabledDataTypes.removeAll(enabledDataTypes);
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            Set<Integer> actualDataTypes = mSyncTestRule.getSyncService().getChosenDataTypes();
+            Set<Integer> actualDataTypes = mSyncTestRule.getSyncService().getSelectedTypes();
             Assert.assertTrue(actualDataTypes.containsAll(enabledDataTypes));
             Assert.assertTrue(Collections.disjoint(disabledDataTypes, actualDataTypes));
         });

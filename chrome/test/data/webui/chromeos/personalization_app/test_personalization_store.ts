@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,9 @@
  * and manipulate state.
  */
 
-import {emptyState, PersonalizationStore, reduce} from 'chrome://personalization/trusted/personalization_app.js';
-import {Action} from 'chrome://resources/js/cr/ui/store.js';
-import {TestStore} from 'chrome://webui-test/test_store.js';
+import {emptyState, PersonalizationStore, reduce} from 'chrome://personalization/js/personalization_app.js';
+import {Action} from 'chrome://resources/ash/common/store/store.js';
+import {TestStore} from 'chrome://webui-test/chromeos/test_store.js';
 
 export class TestPersonalizationStore extends TestStore {
   // received actions and states.

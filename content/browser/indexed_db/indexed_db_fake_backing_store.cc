@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,7 @@
 
 #include "base/files/file_path.h"
 #include "base/no_destructor.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 #include "components/services/storage/indexed_db/transactional_leveldb/transactional_leveldb_database.h"
 #include "components/services/storage/indexed_db/transactional_leveldb/transactional_leveldb_factory.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
@@ -49,7 +49,7 @@ IndexedDBFakeBackingStore::IndexedDBFakeBackingStore()
                                 base::FilePath()),
                             BlobFilesCleanedCallback(),
                             ReportOutstandingBlobsCallback(),
-                            base::SequencedTaskRunnerHandle::Get()) {}
+                            base::SequencedTaskRunner::GetCurrentDefault()) {}
 IndexedDBFakeBackingStore::IndexedDBFakeBackingStore(
     BlobFilesCleanedCallback blob_files_cleaned,
     ReportOutstandingBlobsCallback report_outstanding_blobs,
@@ -200,7 +200,7 @@ IndexedDBFakeBackingStore::FakeTransaction::FakeTransaction(
           mode),
       result_(result) {}
 void IndexedDBFakeBackingStore::FakeTransaction::Begin(
-    std::vector<LeveledLock> locks) {}
+    std::vector<PartitionedLock> locks) {}
 leveldb::Status IndexedDBFakeBackingStore::FakeTransaction::CommitPhaseOne(
     BlobWriteCallback callback) {
   return std::move(callback).Run(

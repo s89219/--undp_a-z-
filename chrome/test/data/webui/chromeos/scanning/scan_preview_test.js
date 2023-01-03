@@ -1,18 +1,21 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import './scanning_mojom_imports.js';
 import 'chrome://scanning/scan_preview.js';
 
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/ash/common/load_time_data.m.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 import {setAccessibilityFeaturesForTesting} from 'chrome://scanning/mojo_interface_provider.js';
 import {AppState} from 'chrome://scanning/scanning_app_types.js';
 import {ScanningBrowserProxyImpl} from 'chrome://scanning/scanning_browser_proxy.js';
+import {assertEquals, assertFalse, assertNotEquals, assertTrue} from 'chrome://webui-test/chromeos/chai_assert.js';
+import {MockController} from 'chrome://webui-test/chromeos/mock_controller.m.js';
+import {isVisible} from 'chrome://webui-test/chromeos/test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
-import {assertEquals, assertFalse, assertNotEquals, assertTrue} from '../../chai_assert.js';
-import {flushTasks, isVisible, waitAfterNextRender} from '../../test_util.js';
-
+import {FakeMediaQueryList} from './scanning_app_test_utils.js';
 import {TestScanningBrowserProxy} from './test_scanning_browser_proxy.js';
 
 /** @implements {ash.common.mojom.AccessibilityFeaturesInterface} */
@@ -44,7 +47,7 @@ class FakeAccessibilityFeatures {
   }
 }
 
-export function scanPreviewTest() {
+suite('scanPreviewTest', function() {
   /** @type {?ScanPreviewElement} */
   let scanPreview = null;
 
@@ -62,13 +65,21 @@ export function scanPreviewTest() {
   /** @type {!HTMLElement} */
   let cancelingProgress;
 
+  /** @type {{createFunctionMock: Function, reset: Function}} */
+  let mockController;
+
+  /** @type {?FakeMediaQueryList} */
+  let fakePrefersColorSchemeDarkMediaQuery;
+
   /**
-   * @suppress {visibility}
    * @param {boolean} enabled
+   * @return {!Promise}
    */
-  function setIsDarkModeEnabled_(enabled) {
+  function setFakePrefersColorSchemeDark(enabled) {
     assertTrue(!!scanPreview);
-    scanPreview.isDarkModeEnabled_ = enabled;
+    fakePrefersColorSchemeDarkMediaQuery.matches = enabled;
+
+    return flushTasks();
   }
 
   setup(() => {
@@ -78,6 +89,15 @@ export function scanPreviewTest() {
         document.createElement('scan-preview'));
     assertTrue(!!scanPreview);
     ScanningBrowserProxyImpl.instance_ = new TestScanningBrowserProxy();
+
+    // Setup mock for matchMedia.
+    mockController = new MockController();
+    const mockMatchMedia =
+        mockController.createFunctionMock(window, 'matchMedia');
+    fakePrefersColorSchemeDarkMediaQuery =
+        new FakeMediaQueryList('(prefers-color-scheme: dark)');
+    mockMatchMedia.returnValue = fakePrefersColorSchemeDarkMediaQuery;
+
     document.body.appendChild(scanPreview);
 
     helpOrProgress =
@@ -96,6 +116,7 @@ export function scanPreviewTest() {
     if (scanPreview) {
       scanPreview.remove();
     }
+    mockController.reset();
     scanPreview = null;
   });
 
@@ -429,11 +450,13 @@ export function scanPreviewTest() {
     const darkModeSvg = `${srcBase}svg/ready_to_scan_dark.svg`;
     const getReadyToScanSvg = () =>
         (/** @type {!HTMLImageElement} */ (scanPreview.$$('#readyToScanImg')));
+
+    // Mock media query state for light mode.
+    await setFakePrefersColorSchemeDark(false);
     assertEquals(getReadyToScanSvg().src, lightModeSvg);
 
     // Mock media query state for dark mode.
-    setIsDarkModeEnabled_(true);
-    await flushTasks();
+    await setFakePrefersColorSchemeDark(true);
     assertEquals(getReadyToScanSvg().src, darkModeSvg);
   });
-}
+});

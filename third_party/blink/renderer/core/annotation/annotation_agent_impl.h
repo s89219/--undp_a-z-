@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -75,7 +75,10 @@ class CORE_EXPORT AnnotationAgentImpl final
   // TODO(bokan): This is synchronous for the TextFragmentAnchor use case but
   // we'll likely want an async version for typical usage and/or eventually
   // convert TextFragmentAnchor to use an async search.
-  void Attach(Document& document);
+  void Attach();
+
+  // Returns whether Attach() has been called at least once.
+  bool DidTryAttach() const { return did_try_attach_; }
 
   // Returns true if the agent has performed attachment and resulted in a valid
   // DOM Range. Note that Range is relocated, meaning that it will update in
@@ -91,7 +94,19 @@ class CORE_EXPORT AnnotationAgentImpl final
   void Remove();
 
   // mojom::blink::AnnotationAgent
-  void ScrollIntoView() override;
+  void ScrollIntoView() override {
+    const_cast<const AnnotationAgentImpl*>(this)->ScrollIntoView();
+  }
+  void ScrollIntoView() const;
+
+  const RangeInFlatTree& GetAttachedRange() const {
+    DCHECK(attached_range_.Get());
+    return *attached_range_.Get();
+  }
+
+  const AnnotationSelector* GetSelector() const { return selector_.Get(); }
+
+  mojom::blink::AnnotationType GetType() const { return type_; }
 
  private:
   friend AnnotationAgentImplTest;
@@ -120,7 +135,9 @@ class CORE_EXPORT AnnotationAgentImpl final
 
   // TODO(bokan): Once we have more of this implemented we'll use the type to
   // determine styling and context menu behavior.
-  [[maybe_unused]] mojom::blink::AnnotationType type_;
+  mojom::blink::AnnotationType type_;
+
+  bool did_try_attach_ = false;
 };
 
 }  // namespace blink

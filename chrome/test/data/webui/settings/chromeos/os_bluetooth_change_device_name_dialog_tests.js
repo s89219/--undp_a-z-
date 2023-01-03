@@ -1,17 +1,17 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://os-settings/chromeos/os_settings.js';
 import 'chrome://os-settings/strings.m.js';
 
-import {getDeviceName} from 'chrome://resources/cr_components/chromeos/bluetooth/bluetooth_utils.js';
-import {setBluetoothConfigForTesting} from 'chrome://resources/cr_components/chromeos/bluetooth/cros_bluetooth_config.js';
-import {DeviceConnectionState} from 'chrome://resources/mojo/chromeos/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
+import {getDeviceName} from 'chrome://resources/ash/common/bluetooth/bluetooth_utils.js';
+import {setBluetoothConfigForTesting} from 'chrome://resources/ash/common/bluetooth/cros_bluetooth_config.js';
+import {DeviceConnectionState} from 'chrome://resources/mojo/chromeos/ash/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {createDefaultBluetoothDevice, FakeBluetoothConfig} from 'chrome://test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
+import {createDefaultBluetoothDevice, FakeBluetoothConfig} from 'chrome://webui-test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('OsBluetoothChangeDeviceNameDialogTest', function() {
   /** @type {!SettingsBluetoothChangeDeviceNameDialogElement|undefined} */
@@ -41,8 +41,10 @@ suite('OsBluetoothChangeDeviceNameDialogTest', function() {
    *     format, with 2 digits
    */
   function assertInput(value, invalid, valueLength) {
-    const input = bluetoothDeviceChangeNameDialog.$$('#changeNameInput');
-    const inputCount = bluetoothDeviceChangeNameDialog.$$('#inputCount');
+    const input = bluetoothDeviceChangeNameDialog.shadowRoot.querySelector(
+        '#changeNameInput');
+    const inputCount =
+        bluetoothDeviceChangeNameDialog.shadowRoot.querySelector('#inputCount');
     assertTrue(!!input);
     assertTrue(!!inputCount);
 
@@ -69,7 +71,8 @@ suite('OsBluetoothChangeDeviceNameDialogTest', function() {
     await flushAsync();
 
     await flushAsync();
-    const input = bluetoothDeviceChangeNameDialog.$$('#changeNameInput');
+    const input = bluetoothDeviceChangeNameDialog.shadowRoot.querySelector(
+        '#changeNameInput');
     assertTrue(!!input);
     assertEquals('device1', input.value);
 
@@ -109,7 +112,8 @@ suite('OsBluetoothChangeDeviceNameDialogTest', function() {
   test('Device name is changed', async function() {
     const id = '12//345&6789';
     const nickname = 'Nickname';
-    const getDoneBtn = () => bluetoothDeviceChangeNameDialog.$$('#done');
+    const getDoneBtn = () =>
+        bluetoothDeviceChangeNameDialog.shadowRoot.querySelector('#done');
     const device = createDefaultBluetoothDevice(
         id,
         /*publicName=*/ 'BeatsX',
@@ -121,7 +125,8 @@ suite('OsBluetoothChangeDeviceNameDialogTest', function() {
     bluetoothConfig.appendToPairedDeviceList([device]);
     await flushAsync();
 
-    const input = bluetoothDeviceChangeNameDialog.$$('#changeNameInput');
+    const input = bluetoothDeviceChangeNameDialog.shadowRoot.querySelector(
+        '#changeNameInput');
     assertTrue(!!input);
     assertEquals('device1', input.value);
     assertTrue(getDoneBtn().disabled);

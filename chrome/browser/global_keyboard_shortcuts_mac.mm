@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/accelerators/platform_accelerator_cocoa.h"
+#import "ui/base/cocoa/nsmenu_additions.h"
 #import "ui/base/cocoa/nsmenuitem_additions.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/event_constants.h"
@@ -41,60 +42,28 @@ ui::Accelerator AcceleratorFromShortcut(const KeyboardShortcutData& shortcut) {
                          modifiers);
 }
 
-// Returns the menu item associated with |key| in |menu|, or nil if not found.
-NSMenuItem* FindMenuItem(NSEvent* key, NSMenu* menu) {
-  NSMenuItem* result = nil;
-
-  for (NSMenuItem* item in [menu itemArray]) {
-    NSMenu* submenu = [item submenu];
-    if (submenu) {
-      if (submenu != [NSApp servicesMenu])
-        result = FindMenuItem(key, submenu);
-    } else if ([item cr_firesForKeyEvent:key]) {
-      result = item;
-    }
-
-    if (result)
-      break;
-  }
-
-  return result;
-}
-
 int MenuCommandForKeyEvent(NSEvent* event) {
-  if ([event type] != NSKeyDown)
-    return -1;
-
-  // We avoid calling -[NSMenuDelegate menuNeedsUpdate:] on each submenu's
-  // delegate as that can be slow. Instead, we update the relevant NSMenuItems
-  // if [NSApp delegate] is an instance of AppController. See
-  // https://crbug.com/851260#c4.
-  [base::mac::ObjCCast<AppController>([NSApp delegate])
-      updateMenuItemKeyEquivalents];
-
-  // Then call -[NSMenu update], which will validate every user interface item.
-  [[NSApp mainMenu] update];
-
-  NSMenuItem* item = FindMenuItem(event, [NSApp mainMenu]);
+  NSMenuItem* item = [[NSApp mainMenu] cr_menuItemForKeyEquivalentEvent:event];
 
   if (!item)
-    return -1;
+    return NO_COMMAND;
 
   if ([item action] == @selector(commandDispatch:) && [item tag] > 0)
     return [item tag];
 
-  // "Close window" doesn't use the |commandDispatch:| mechanism. Menu items
-  // that do not correspond to IDC_ constants need no special treatment however,
-  // as they can't be reserved in
+  // "Close window", "Quit", and other commands don't use the `commandDispatch:`
+  // mechanism. Menu items that do not correspond to IDC_ constants need no
+  // special treatment however, as they can't be reserved in
   // |BrowserCommandController::IsReservedCommandOrKey()| anyhow.
-  if ([item action] == @selector(performClose:))
+  SEL itemAction = [item action];
+
+  if (itemAction == @selector(performClose:))
     return IDC_CLOSE_WINDOW;
 
-  // "Exit" doesn't use the |commandDispatch:| mechanism either.
-  if ([item action] == @selector(terminate:))
+  if (itemAction == @selector(terminate:))
     return IDC_EXIT;
 
-  return -1;
+  return NO_COMMAND;
 }
 
 bool MatchesEventForKeyboardShortcut(const KeyboardShortcutData& shortcut,
@@ -122,7 +91,7 @@ GetDelayedShortcutsNotPresentInMainMenu() {
 }
 
 CommandForKeyEventResult NoCommand() {
-  return {-1, /*from_main_menu=*/false};
+  return {NO_COMMAND, /*from_main_menu=*/false};
 }
 
 CommandForKeyEventResult MainMenuCommand(int cmd) {
@@ -223,17 +192,17 @@ const std::vector<NSMenuItem*>& GetMenuItemsNotPresentInMainMenu() {
 
 CommandForKeyEventResult CommandForKeyEvent(NSEvent* event) {
   DCHECK(event);
-  if ([event type] != NSKeyDown)
+  if ([event type] != NSEventTypeKeyDown)
     return NoCommand();
 
   int cmdNum = MenuCommandForKeyEvent(event);
-  if (cmdNum != -1)
+  if (cmdNum != NO_COMMAND)
     return MainMenuCommand(cmdNum);
 
   // Scan through keycodes and see if it corresponds to one of the non-menu
   // shortcuts.
   for (NSMenuItem* menu_item : GetMenuItemsNotPresentInMainMenu()) {
-    if ([menu_item cr_firesForKeyEvent:event])
+    if ([menu_item cr_firesForKeyEquivalentEvent:event])
       return ShortcutCommand(menu_item.tag);
   }
 
@@ -242,15 +211,15 @@ CommandForKeyEventResult CommandForKeyEvent(NSEvent* event) {
 
 int DelayedWebContentsCommandForKeyEvent(NSEvent* event) {
   DCHECK(event);
-  if ([event type] != NSKeyDown)
-    return -1;
+  if ([event type] != NSEventTypeKeyDown)
+    return NO_COMMAND;
 
   // Look in secondary keyboard shortcuts.
   NSUInteger modifiers = [event modifierFlags];
-  const bool cmdKey = (modifiers & NSCommandKeyMask) != 0;
-  const bool shiftKey = (modifiers & NSShiftKeyMask) != 0;
-  const bool cntrlKey = (modifiers & NSControlKeyMask) != 0;
-  const bool optKey = (modifiers & NSAlternateKeyMask) != 0;
+  const bool cmdKey = (modifiers & NSEventModifierFlagCommand) != 0;
+  const bool shiftKey = (modifiers & NSEventModifierFlagShift) != 0;
+  const bool cntrlKey = (modifiers & NSEventModifierFlagControl) != 0;
+  const bool optKey = (modifiers & NSEventModifierFlagOption) != 0;
   const int keyCode = [event keyCode];
 
   // Scan through keycodes and see if it corresponds to one of the non-menu
@@ -262,20 +231,16 @@ int DelayedWebContentsCommandForKeyEvent(NSEvent* event) {
     }
   }
 
-  return -1;
+  return NO_COMMAND;
 }
 
 // AppKit sends an event via performKeyEquivalent: if it has at least one of the
-// command or control modifiers, and is an NSKeyDown event. CommandDispatcher
-// supplements this by also sending event with the option modifier to
-// performKeyEquivalent:.
+// command or control modifiers, and is an NSEventTypeKeyDown event.
+// CommandDispatcher supplements this by also sending event with the option
+// modifier to performKeyEquivalent:.
 bool EventUsesPerformKeyEquivalent(NSEvent* event) {
-  NSUInteger modifiers = [event modifierFlags];
-  if ((modifiers & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
-                    NSEventModifierFlagOption)) == 0) {
-    return false;
-  }
-  return [event type] == NSKeyDown;
+  return ([event modifierFlags] & ui::cocoa::ModifierMaskForKeyEvent(event)) !=
+         0;
 }
 
 bool GetDefaultMacAcceleratorForCommandId(int command_id,

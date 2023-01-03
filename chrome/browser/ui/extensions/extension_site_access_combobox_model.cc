@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/ranges/algorithm.h"
 #include "chrome/browser/extensions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/site_permissions_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -27,12 +28,12 @@ ExtensionSiteAccessComboboxModel::ExtensionSiteAccessComboboxModel(
 
 ExtensionSiteAccessComboboxModel::~ExtensionSiteAccessComboboxModel() = default;
 
-void ExtensionSiteAccessComboboxModel::HandleSelection(int new_index) {
+void ExtensionSiteAccessComboboxModel::HandleSelection(size_t new_index) {
   content::WebContents* web_contents =
       browser_->tab_strip_model()->GetActiveWebContents();
   if (!web_contents || !ExtensionIsValid())
     return;
-  DCHECK_LT(static_cast<size_t>(new_index), items_.size());
+  DCHECK_LT(new_index, items_.size());
 
   LogSiteAccessAction(items_[new_index]);
 
@@ -40,7 +41,7 @@ void ExtensionSiteAccessComboboxModel::HandleSelection(int new_index) {
       .UpdateSiteAccess(*extension_, web_contents, items_[new_index]);
 }
 
-int ExtensionSiteAccessComboboxModel::GetCurrentSiteAccessIndex() const {
+size_t ExtensionSiteAccessComboboxModel::GetCurrentSiteAccessIndex() const {
   DCHECK(ExtensionIsValid());
 
   content::WebContents* web_contents =
@@ -50,17 +51,17 @@ int ExtensionSiteAccessComboboxModel::GetCurrentSiteAccessIndex() const {
   extensions::SitePermissionsHelper::SiteAccess current_access =
       extensions::SitePermissionsHelper(browser_->profile())
           .GetSiteAccess(*extension_, web_contents->GetLastCommittedURL());
-  auto item_it = std::find(items_.begin(), items_.end(), current_access);
+  auto item_it = base::ranges::find(items_, current_access);
   DCHECK(item_it != items_.end());
 
-  return item_it - items_.begin();
+  return static_cast<size_t>(item_it - items_.begin());
 }
 
-int ExtensionSiteAccessComboboxModel::GetItemCount() const {
+size_t ExtensionSiteAccessComboboxModel::GetItemCount() const {
   return items_.size();
 }
 
-std::u16string ExtensionSiteAccessComboboxModel::GetItemAt(int index) const {
+std::u16string ExtensionSiteAccessComboboxModel::GetItemAt(size_t index) const {
   int label_id = 0;
   switch (items_[index]) {
     case extensions::SitePermissionsHelper::SiteAccess::kOnClick:
@@ -76,11 +77,12 @@ std::u16string ExtensionSiteAccessComboboxModel::GetItemAt(int index) const {
   return l10n_util::GetStringUTF16(label_id);
 }
 
-int ExtensionSiteAccessComboboxModel::GetDefaultIndex() const {
+absl::optional<size_t> ExtensionSiteAccessComboboxModel::GetDefaultIndex()
+    const {
   return GetCurrentSiteAccessIndex();
 }
 
-bool ExtensionSiteAccessComboboxModel::IsItemEnabledAt(int index) const {
+bool ExtensionSiteAccessComboboxModel::IsItemEnabledAt(size_t index) const {
   content::WebContents* web_contents =
       browser_->tab_strip_model()->GetActiveWebContents();
   if (!web_contents || !ExtensionIsValid())

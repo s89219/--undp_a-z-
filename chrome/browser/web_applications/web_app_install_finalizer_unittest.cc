@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,10 +17,12 @@
 #include "base/traits_bag.h"
 #include "build/build_config.h"
 #include "build/buildflag.h"
+#include "chrome/browser/web_applications/isolation_data.h"
 #include "chrome/browser/web_applications/test/fake_os_integration_manager.h"
 #include "chrome/browser/web_applications/test/fake_web_app_provider.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/test/web_app_test.h"
+#include "chrome/browser/web_applications/test/web_app_test_utils.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
@@ -29,6 +31,7 @@
 #include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_registrar.h"
+#include "chrome/common/chrome_features.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/services/app_service/public/cpp/file_handler.h"
 #include "components/webapps/browser/install_result_code.h"
@@ -69,16 +72,25 @@ class TestInstallManagerObserver : public WebAppInstallManagerObserver {
 
  private:
   bool web_app_manifest_updated_called_ = false;
-  base::ScopedObservation<web_app::WebAppInstallManager,
-                          web_app::WebAppInstallManagerObserver>
+  base::ScopedObservation<WebAppInstallManager, WebAppInstallManagerObserver>
       install_manager_observation_{this};
 };
 
-class WebAppInstallFinalizerUnitTest : public WebAppTest {
+class WebAppInstallFinalizerUnitTest
+    : public WebAppTest,
+      public ::testing::WithParamInterface<OsIntegrationSubManagersState> {
  public:
   WebAppInstallFinalizerUnitTest() {
-    scoped_feature_list_.InitWithFeatures({blink::features::kFileHandlingAPI},
-                                          {});
+    if (GetParam() == OsIntegrationSubManagersState::kSaveStateToDB) {
+      scoped_feature_list_.InitWithFeaturesAndParameters(
+          {{blink::features::kFileHandlingAPI, {}},
+           {features::kOsIntegrationSubManagers, {{"stage", "write_config"}}}},
+          /*disabled_features=*/{});
+    } else {
+      scoped_feature_list_.InitWithFeatures(
+          {blink::features::kFileHandlingAPI},
+          {features::kOsIntegrationSubManagers});
+    }
   }
   WebAppInstallFinalizerUnitTest(const WebAppInstallFinalizerUnitTest&) =
       delete;
@@ -90,7 +102,6 @@ class WebAppInstallFinalizerUnitTest : public WebAppTest {
     WebAppTest::SetUp();
 
     FakeWebAppProvider* provider = FakeWebAppProvider::Get(profile());
-    provider->SetDefaultFakeSubsystems();
     auto install_manager = std::make_unique<WebAppInstallManager>(profile());
     install_manager_observer_ =
         std::make_unique<TestInstallManagerObserver>(install_manager.get());
@@ -137,7 +148,7 @@ class WebAppInstallFinalizerUnitTest : public WebAppTest {
 
   WebAppProvider& provider() { return *WebAppProvider::GetForTest(profile()); }
   WebAppInstallFinalizer& finalizer() { return provider().install_finalizer(); }
-  WebAppRegistrar& registrar() { return provider().registrar(); }
+  WebAppRegistrar& registrar() { return provider().registrar_unsafe(); }
   WebAppInstallManager& install_manager() {
     return provider().install_manager();
   }
@@ -153,7 +164,7 @@ class WebAppInstallFinalizerUnitTest : public WebAppTest {
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-TEST_F(WebAppInstallFinalizerUnitTest, BasicInstallSucceeds) {
+TEST_P(WebAppInstallFinalizerUnitTest, BasicInstallSucceeds) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -168,7 +179,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, BasicInstallSucceeds) {
   EXPECT_EQ(0u, os_integration_manager().num_register_run_on_os_login_calls());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, ConcurrentInstallSucceeds) {
+TEST_P(WebAppInstallFinalizerUnitTest, ConcurrentInstallSucceeds) {
   auto info1 = std::make_unique<WebAppInstallInfo>();
   info1->start_url = GURL("https://foo1.example");
   info1->title = u"Foo1 Title";
@@ -226,7 +237,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, ConcurrentInstallSucceeds) {
   EXPECT_TRUE(callback2_called);
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, InstallStoresLatestWebAppInstallSource) {
+TEST_P(WebAppInstallFinalizerUnitTest, InstallStoresLatestWebAppInstallSource) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -240,7 +251,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallStoresLatestWebAppInstallSource) {
       *registrar().GetAppInstallSourceForMetrics(result.installed_app_id));
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, OnWebAppManifestUpdatedTriggered) {
+TEST_P(WebAppInstallFinalizerUnitTest, OnWebAppManifestUpdatedTriggered) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -250,15 +261,14 @@ TEST_F(WebAppInstallFinalizerUnitTest, OnWebAppManifestUpdatedTriggered) {
   FinalizeInstallResult result = AwaitFinalizeInstall(*info, options);
   base::RunLoop runloop;
   finalizer().FinalizeUpdate(
-      *info,
-      base::BindLambdaForTesting(
-          [&](const web_app::AppId& app_id, webapps::InstallResultCode code,
-              web_app::OsHooksErrors os_hooks_errors) { runloop.Quit(); }));
+      *info, base::BindLambdaForTesting(
+                 [&](const AppId& app_id, webapps::InstallResultCode code,
+                     OsHooksErrors os_hooks_errors) { runloop.Quit(); }));
   runloop.Run();
   EXPECT_TRUE(install_manager_observer_->web_app_manifest_updated_called());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, InstallNoDesktopShortcut) {
+TEST_P(WebAppInstallFinalizerUnitTest, InstallNoDesktopShortcut) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -278,7 +288,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallNoDesktopShortcut) {
             os_integration_manager().num_add_app_to_quick_launch_bar_calls());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, InstallNoQuickLaunchBarShortcut) {
+TEST_P(WebAppInstallFinalizerUnitTest, InstallNoQuickLaunchBarShortcut) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -298,7 +308,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallNoQuickLaunchBarShortcut) {
             os_integration_manager().num_add_app_to_quick_launch_bar_calls());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest,
+TEST_P(WebAppInstallFinalizerUnitTest,
        InstallNoDesktopShortcutAndNoQuickLaunchBarShortcut) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
@@ -320,7 +330,7 @@ TEST_F(WebAppInstallFinalizerUnitTest,
             os_integration_manager().num_add_app_to_quick_launch_bar_calls());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, InstallNoCreateOsShorcuts) {
+TEST_P(WebAppInstallFinalizerUnitTest, InstallNoCreateOsShorcuts) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -340,7 +350,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallNoCreateOsShorcuts) {
   EXPECT_EQ(0u, os_integration_manager().num_create_shortcuts_calls());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest,
+TEST_P(WebAppInstallFinalizerUnitTest,
        InstallOsHooksEnabledForUserInstalledApps) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
@@ -357,7 +367,7 @@ TEST_F(WebAppInstallFinalizerUnitTest,
   EXPECT_EQ(1u, os_integration_manager().num_create_file_handlers_calls());
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, InstallOsHooksDisabledForDefaultApps) {
+TEST_P(WebAppInstallFinalizerUnitTest, InstallOsHooksDisabledForDefaultApps) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -385,10 +395,9 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallOsHooksDisabledForDefaultApps) {
 
   base::RunLoop runloop;
   finalizer().FinalizeUpdate(
-      *info,
-      base::BindLambdaForTesting([&](const web_app::AppId& app_id,
-                                     webapps::InstallResultCode code,
-                                     web_app::OsHooksErrors os_hooks_errors) {
+      *info, base::BindLambdaForTesting([&](const AppId& app_id,
+                                            webapps::InstallResultCode code,
+                                            OsHooksErrors os_hooks_errors) {
         EXPECT_EQ(webapps::InstallResultCode::kSuccessAlreadyInstalled, code);
         EXPECT_TRUE(os_hooks_errors.none());
         runloop.Quit();
@@ -403,7 +412,7 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallOsHooksDisabledForDefaultApps) {
 #endif  // BUILDFLAG(IS_CHROMEOS)
 }
 
-TEST_F(WebAppInstallFinalizerUnitTest, InstallUrlSetInWebAppDB) {
+TEST_P(WebAppInstallFinalizerUnitTest, InstallUrlSetInWebAppDB) {
   auto info = std::make_unique<WebAppInstallInfo>();
   info->start_url = GURL("https://foo.example");
   info->title = u"Foo Title";
@@ -418,13 +427,41 @@ TEST_F(WebAppInstallFinalizerUnitTest, InstallUrlSetInWebAppDB) {
             GenerateAppId(/*manifest_id=*/absl::nullopt, info->start_url));
 
   const WebApp* installed_app = registrar().GetAppById(result.installed_app_id);
-  EXPECT_EQ(1u, installed_app->management_to_external_config_map()
-                    .at(WebAppManagement::Type::kPolicy)
-                    .install_urls.size());
+  const WebApp::ExternalConfigMap& config_map =
+      installed_app->management_to_external_config_map();
+  auto it = config_map.find(WebAppManagement::kPolicy);
+  EXPECT_NE(it, config_map.end());
+  EXPECT_EQ(1u, it->second.install_urls.size());
   EXPECT_EQ(GURL("https://foo.example/installer"),
-            *installed_app->management_to_external_config_map()
-                 .at(WebAppManagement::Type::kPolicy)
-                 .install_urls.begin());
+            *it->second.install_urls.begin());
 }
+
+TEST_P(WebAppInstallFinalizerUnitTest, IsolationDataSetInWebAppDB) {
+  WebAppInstallInfo info;
+  info.start_url = GURL("https://foo.example");
+  info.title = u"Foo Title";
+
+  const IsolationData isolation_data{IsolationData::DevModeBundle{
+      .path = base::FilePath(FILE_PATH_LITERAL("p"))}};
+  WebAppInstallFinalizer::FinalizeOptions options(
+      webapps::WebappInstallSource::EXTERNAL_POLICY);
+  options.isolation_data = isolation_data;
+
+  FinalizeInstallResult result = AwaitFinalizeInstall(info, options);
+
+  EXPECT_EQ(webapps::InstallResultCode::kSuccessNewInstall, result.code);
+  EXPECT_EQ(result.installed_app_id,
+            GenerateAppId(/*manifest_id=*/absl::nullopt, info.start_url));
+
+  const WebApp* installed_app = registrar().GetAppById(result.installed_app_id);
+  EXPECT_EQ(isolation_data, installed_app->isolation_data());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    WebAppInstallFinalizerUnitTest,
+    ::testing::Values(OsIntegrationSubManagersState::kSaveStateToDB,
+                      OsIntegrationSubManagersState::kDisabled),
+    test::GetOsIntegrationSubManagersTestName);
 
 }  // namespace web_app

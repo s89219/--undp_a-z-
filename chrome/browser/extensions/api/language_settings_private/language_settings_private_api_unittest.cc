@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "base/containers/contains.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -72,8 +71,8 @@ MockLanguageSettingsPrivateDelegate::GetHunspellDictionaryStatuses() {
   DictionaryStatus status;
   status.language_code = "fr";
   status.is_ready = false;
-  status.is_downloading = std::make_unique<bool>(true);
-  status.download_failed = std::make_unique<bool>(false);
+  status.is_downloading = true;
+  status.download_failed = false;
   statuses.push_back(std::move(status));
   return statuses;
 }
@@ -115,9 +114,6 @@ class LanguageSettingsPrivateApiTest : public ExtensionServiceTestBase {
     // Force Windows hybrid spellcheck to be enabled.
     feature_list_.InitAndEnableFeature(spellcheck::kWinUseBrowserSpellChecker);
 #endif  // BUILDFLAG(IS_WIN)
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    feature_list_.InitAndEnableFeature(ash::features::kLanguageSettingsUpdate2);
-#endif
   }
 
 #if BUILDFLAG(IS_WIN)
@@ -179,10 +175,10 @@ TEST_F(LanguageSettingsPrivateApiTest, GetSpellcheckDictionaryStatusesTest) {
   auto function = base::MakeRefCounted<
       LanguageSettingsPrivateGetSpellcheckDictionaryStatusesFunction>();
 
-  std::unique_ptr<base::Value> actual =
+  absl::optional<base::Value> actual =
       api_test_utils::RunFunctionAndReturnSingleResult(function.get(), "[]",
                                                        profile());
-  EXPECT_TRUE(actual) << function->GetError();
+  ASSERT_TRUE(actual) << function->GetError();
 
   base::Value::List expected;
   base::Value::Dict expected_status;
@@ -230,18 +226,16 @@ TEST_F(LanguageSettingsPrivateApiTest, GetAlwaysTranslateLanguagesListTest) {
   auto function = base::MakeRefCounted<
       LanguageSettingsPrivateGetAlwaysTranslateLanguagesFunction>();
 
-  std::unique_ptr<base::Value> result =
+  absl::optional<base::Value> result =
       api_test_utils::RunFunctionAndReturnSingleResult(function.get(), "[]",
                                                        profile());
 
-  ASSERT_NE(nullptr, result) << function->GetError();
-  EXPECT_TRUE(result->is_list());
+  ASSERT_TRUE(result) << function->GetError();
+  ASSERT_TRUE(result->is_list());
 
-  ASSERT_EQ(result->GetListDeprecated().size(),
-            always_translate_languages.size());
-  for (size_t i = 0; i < result->GetListDeprecated().size(); i++) {
-    EXPECT_EQ(result->GetListDeprecated()[i].GetString(),
-              always_translate_languages[i]);
+  ASSERT_EQ(result->GetList().size(), always_translate_languages.size());
+  for (size_t i = 0; i < result->GetList().size(); i++) {
+    EXPECT_EQ(result->GetList()[i].GetString(), always_translate_languages[i]);
   }
 }
 
@@ -264,15 +258,10 @@ TEST_F(LanguageSettingsPrivateApiTest, SetTranslateTargetLanguageTest) {
   auto function = base::MakeRefCounted<
       LanguageSettingsPrivateSetTranslateTargetLanguageFunction>();
 
-  std::unique_ptr<base::Value> result =
+  absl::optional<base::Value> result =
       api_test_utils::RunFunctionAndReturnSingleResult(function.get(),
                                                        "[\"af\"]", profile());
   ASSERT_EQ(translate_prefs_->GetRecentTargetLanguage(), "af");
-
-  std::vector<std::string> content_languages_after;
-  translate_prefs_->GetLanguageList(&content_languages_after);
-  ASSERT_EQ(std::vector<std::string>({"en-US", "en", "af"}),
-            content_languages_after);
 }
 
 TEST_F(LanguageSettingsPrivateApiTest, GetNeverTranslateLanguagesListTest) {
@@ -291,22 +280,39 @@ TEST_F(LanguageSettingsPrivateApiTest, GetNeverTranslateLanguagesListTest) {
   auto function = base::MakeRefCounted<
       LanguageSettingsPrivateGetNeverTranslateLanguagesFunction>();
 
-  std::unique_ptr<base::Value> result =
+  absl::optional<base::Value> result =
       api_test_utils::RunFunctionAndReturnSingleResult(function.get(), "[]",
                                                        profile());
 
-  ASSERT_NE(nullptr, result) << function->GetError();
-  EXPECT_TRUE(result->is_list());
+  ASSERT_TRUE(result) << function->GetError();
+  ASSERT_TRUE(result->is_list());
 
-  ASSERT_EQ(result->GetListDeprecated().size(),
-            never_translate_languages.size());
-  for (size_t i = 0; i < result->GetListDeprecated().size(); i++) {
-    EXPECT_EQ(result->GetListDeprecated()[i].GetString(),
-              never_translate_languages[i]);
+  ASSERT_EQ(result->GetList().size(), never_translate_languages.size());
+  for (size_t i = 0; i < result->GetList().size(); i++) {
+    EXPECT_EQ(result->GetList()[i].GetString(), never_translate_languages[i]);
   }
 }
 
-TEST_F(LanguageSettingsPrivateApiTest, GetLanguageListTest) {
+class LanguageSettingsPrivateApiGetLanguageListTest
+    : public LanguageSettingsPrivateApiTest {
+ public:
+  LanguageSettingsPrivateApiGetLanguageListTest() = default;
+  ~LanguageSettingsPrivateApiGetLanguageListTest() override = default;
+
+ protected:
+  void InitFeatures() override {
+#if BUILDFLAG(IS_WIN)
+    // Force Windows hybrid spellcheck to be enabled, and disable the delayed
+    // init feature since that case is tested in
+    // LanguageSettingsPrivateApiTestDelayInit below.
+    feature_list_.InitWithFeatures(
+        /*enabled_features=*/{spellcheck::kWinUseBrowserSpellChecker},
+        /*disabled_features=*/{spellcheck::kWinDelaySpellcheckServiceInit});
+#endif  // BUILDFLAG(IS_WIN)
+  }
+};
+
+TEST_F(LanguageSettingsPrivateApiGetLanguageListTest, GetLanguageList) {
   translate::TranslateDownloadManager::GetInstance()->ResetForTesting();
   RunGetLanguageListTest();
 }
@@ -342,13 +348,8 @@ void LanguageSettingsPrivateApiTest::RunGetLanguageListTest() {
   // only reports spellchecking is supported for these languages if the language
   // pack is installed.
 #if BUILDFLAG(IS_WIN)
-  if (spellcheck::WindowsVersionSupportsSpellchecker()) {
-    languages_to_test.push_back({"ar", "ar-SA", true, true});
-    languages_to_test.push_back({"bn", "bn-IN", false, true});
-  } else {
-    languages_to_test.push_back({"ar", "ar-SA", true, false});
-    languages_to_test.push_back({"bn", "bn-IN", false, false});
-  }
+  languages_to_test.push_back({"ar", "ar-SA", true, true});
+  languages_to_test.push_back({"bn", "bn-IN", false, true});
 #else
   languages_to_test.push_back({"ar", "ar-SA", true, false});
   languages_to_test.push_back({"bn", "bn-IN", false, false});
@@ -386,15 +387,15 @@ void LanguageSettingsPrivateApiTest::RunGetLanguageListTest() {
   auto function =
       base::MakeRefCounted<LanguageSettingsPrivateGetLanguageListFunction>();
 
-  std::unique_ptr<base::Value> result =
+  absl::optional<base::Value> result =
       api_test_utils::RunFunctionAndReturnSingleResult(function.get(), "[]",
                                                        profile());
 
-  ASSERT_NE(nullptr, result) << function->GetError();
-  EXPECT_TRUE(result->is_list());
+  ASSERT_TRUE(result) << function->GetError();
+  ASSERT_TRUE(result->is_list());
 
   size_t languages_to_test_found_count = 0;
-  for (auto& language_val : result->GetListDeprecated()) {
+  for (auto& language_val : result->GetList()) {
     EXPECT_TRUE(language_val.is_dict());
     std::string* language_code_ptr = language_val.FindStringKey("code");
     ASSERT_NE(nullptr, language_code_ptr);
@@ -540,36 +541,34 @@ TEST_F(LanguageSettingsPrivateApiTest, GetInputMethodListsTest) {
 
   auto function = base::MakeRefCounted<
       LanguageSettingsPrivateGetInputMethodListsFunction>();
-  std::unique_ptr<base::Value> result =
+  absl::optional<base::Value> result =
       api_test_utils::RunFunctionAndReturnSingleResult(function.get(), "[]",
                                                        profile());
 
-  ASSERT_NE(nullptr, result) << function->GetError();
-  EXPECT_TRUE(result->is_dict());
+  ASSERT_TRUE(result) << function->GetError();
+  ASSERT_TRUE(result->is_dict());
 
   base::Value* input_methods = result->FindListKey("thirdPartyExtensionImes");
   ASSERT_NE(input_methods, nullptr);
-  EXPECT_EQ(3u, input_methods->GetListDeprecated().size());
+  EXPECT_EQ(3u, input_methods->GetList().size());
 
-  for (auto& input_method : input_methods->GetListDeprecated()) {
+  for (auto& input_method : input_methods->GetList()) {
     base::Value* ime_tags_ptr = input_method.FindListKey("tags");
     ASSERT_NE(nullptr, ime_tags_ptr);
 
     // Check tags contain input method's display name
     base::Value* ime_name_ptr = input_method.FindKey("displayName");
-    EXPECT_TRUE(
-        base::Contains(ime_tags_ptr->GetListDeprecated(), *ime_name_ptr));
+    EXPECT_TRUE(base::Contains(ime_tags_ptr->GetList(), *ime_name_ptr));
 
     // Check tags contain input method's language codes' display names
     base::Value* ime_language_codes_ptr =
         input_method.FindListKey("languageCodes");
     ASSERT_NE(nullptr, ime_language_codes_ptr);
-    for (auto& language_code : ime_language_codes_ptr->GetListDeprecated()) {
-      std::string language_display_name =
-          base::UTF16ToUTF8(l10n_util::GetDisplayNameForLocale(
-              language_code.GetString(), "en", true));
+    for (auto& language_code : ime_language_codes_ptr->GetList()) {
+      std::u16string language_display_name = l10n_util::GetDisplayNameForLocale(
+          language_code.GetString(), "en", true);
       if (!language_display_name.empty())
-        EXPECT_TRUE(base::Contains(ime_tags_ptr->GetListDeprecated(),
+        EXPECT_TRUE(base::Contains(ime_tags_ptr->GetList(),
                                    base::Value(language_display_name)));
     }
   }

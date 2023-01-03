@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,11 +46,13 @@ class IntentPickerTabHelper
 
   bool should_show_icon() const { return should_show_icon_; }
 
-  bool should_show_collapsed_chip() const {
-    return should_show_collapsed_chip_;
+  // Returns true if the icon should be shown using an expanded chip-style
+  // button.
+  bool ShouldShowExpandedChip() const {
+    return show_expanded_chip_from_usage_ || current_app_is_preferred_;
   }
 
-  const ui::ImageModel& app_icon() const { return app_icon_; }
+  const ui::ImageModel& app_icon() const { return current_app_icon_; }
 
   using IntentPickerIconLoaderCallback =
       base::OnceCallback<void(std::vector<apps::IntentPickerAppInfo> apps)>;
@@ -60,9 +62,13 @@ class IntentPickerTabHelper
                            std::vector<apps::IntentPickerAppInfo> apps,
                            IntentPickerIconLoaderCallback callback);
 
+  int commit_count() { return commit_count_; }
+
   // Sets a OnceClosure callback which will be called next time the icon is
-  // updated.
-  void SetIconUpdateCallbackForTesting(base::OnceClosure callback);
+  // updated. If include_latest_navigation is true, and the latest navigation
+  // was finished, the callback is called immediately.
+  void SetIconUpdateCallbackForTesting(base::OnceClosure callback,
+                                       bool include_latest_navigation = false);
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 
@@ -79,7 +85,7 @@ class IntentPickerTabHelper
                    IntentPickerIconLoaderCallback callback,
                    size_t index);
 
-  void UpdateCollapsedState(bool should_show_icon);
+  void UpdateExpandedState(bool should_show_icon);
   void OnAppIconLoadedForChip(const std::string& app_id,
                               apps::IconValuePtr icon);
   // Shows or hides the intent icon, with customizations specific to link intent
@@ -88,6 +94,8 @@ class IntentPickerTabHelper
   void ShowOrHideIconInternal(bool should_show_icon);
 
   // content::WebContentsObserver:
+  void DidStartNavigation(
+      content::NavigationHandle* navigation_handle) override;
   void DidFinishNavigation(
       content::NavigationHandle* navigation_handle) override;
 
@@ -99,11 +107,25 @@ class IntentPickerTabHelper
   const raw_ptr<web_app::WebAppInstallManager> install_manager_;
 
   bool should_show_icon_ = false;
+  bool icon_resolved_after_last_navigation_ = false;
   url::Origin last_shown_origin_;
-  bool should_show_collapsed_chip_ = false;
+  // True if the icon should be shown as in an expanded chip style due to usage
+  // on this origin.
+  bool show_expanded_chip_from_usage_ = false;
 
-  std::string last_shown_app_id_;
-  ui::ImageModel app_icon_;
+  // Tracks the number of commits on this page, to allow for checking to make
+  // sure that asynchronous invocations do not cause a stale intent picker.
+  int commit_count_ = 0;
+
+  // Contains the app ID of an app which can be opened through the intent
+  // picker. This is only set when ShowIconForApps() is called with a single
+  // app. Will be set to the empty string in all other cases (e.g. when there
+  // are multiple apps available, or when the icon is not visible).
+  std::string current_app_id_;
+  // True if |current_app_id_| is set as the preferred app for its http/https
+  // links.
+  bool current_app_is_preferred_ = false;
+  ui::ImageModel current_app_icon_;
 
   base::OnceClosure icon_update_closure_;
 

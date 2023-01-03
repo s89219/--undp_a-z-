@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -128,7 +128,8 @@ public class QrCodeDialog extends DialogFragment {
 
         QrCodeShareCoordinator shareCoordinator = new QrCodeShareCoordinator(
                 context, this::dismiss, getArguments().getString(URL_KEY), mWindowAndroid);
-        QrCodeScanCoordinator scanCoordinator = new QrCodeScanCoordinator(context, this::dismiss);
+        QrCodeScanCoordinator scanCoordinator =
+                new QrCodeScanCoordinator(context, this::dismiss, mWindowAndroid);
 
         mTabs = new ArrayList<>();
         mTabs.add(shareCoordinator);

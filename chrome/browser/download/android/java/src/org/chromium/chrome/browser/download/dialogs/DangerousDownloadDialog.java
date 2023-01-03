@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -54,7 +54,7 @@ public class DangerousDownloadDialog {
      *         false otherwise.
      */
     public void show(Context context, ModalDialogManager modalDialogManager, String fileName,
-            long totalBytes, int iconId, boolean isOffTheRecord, Callback<Boolean> callback) {
+            long totalBytes, int iconId, Callback<Boolean> callback) {
         String message = totalBytes > 0
                 ? context.getResources().getString(
                         R.string.dangerous_download_dialog_text, fileName)
@@ -115,11 +115,6 @@ public class DangerousDownloadDialog {
                         .with(ModalDialogProperties.BUTTON_STYLES,
                                 ModalDialogProperties.ButtonStyles.PRIMARY_OUTLINE_NEGATIVE_OUTLINE)
                         .build();
-
-        if (DownloadDialogUtils.shouldShowIncognitoWarning(isOffTheRecord)) {
-            propertyModel.set(ModalDialogProperties.MESSAGE_PARAGRAPH_2,
-                    context.getResources().getString(R.string.download_location_incognito_warning));
-        }
 
         modalDialogManager.showDialog(propertyModel, ModalDialogManager.ModalDialogType.TAB);
         recordDangerousDownloadDialogEvent(

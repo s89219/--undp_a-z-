@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,8 +34,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace media {
-namespace cast {
+namespace media::cast {
 
 namespace {
 static const uint8_t kPixelValue = 123;
@@ -126,8 +125,11 @@ class PeerVideoSender : public VideoSender {
                     base::BindRepeating(&PeerVideoSender::ProcessFeedback,
                                         base::Unretained(this))) {}
 
-  using VideoSender::OnReceivedCastFeedback;
-  using VideoSender::OnReceivedPli;
+  void OnReceivedCastFeedback(const RtcpCastMessage& cast_feedback) {
+    frame_sender_for_testing()->OnReceivedCastFeedback(cast_feedback);
+  }
+
+  void OnReceivedPli() { frame_sender_for_testing()->OnReceivedPli(); }
 
   void ProcessFeedback(const media::VideoCaptureFeedback& feedback) {
     feedback_ = feedback;
@@ -191,7 +193,7 @@ class VideoSenderTest : public ::testing::Test {
   // |expect_init_success| is true if initialization is expected to succeed.
   void InitEncoder(bool external, bool expect_init_success) {
     FrameSenderConfig video_config = GetDefaultVideoSenderConfig();
-    video_config.use_external_encoder = external;
+    video_config.use_hardware_encoder = external;
 
     ASSERT_EQ(operational_status_, STATUS_UNINITIALIZED);
 
@@ -640,5 +642,4 @@ TEST_F(VideoSenderTest, CancelSendingOnReceivingPli) {
   EXPECT_EQ(2, transport_->number_of_rtp_packets());
 }
 
-}  // namespace cast
-}  // namespace media
+}  // namespace media::cast

@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,8 +14,8 @@
 #include "chrome/browser/ash/crosapi/web_app_service_ash.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/externally_installed_web_app_prefs.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
-#include "chrome/browser/web_applications/web_app_install_manager.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/web_app_command_scheduler.h"
 #include "chrome/browser/web_applications/web_app_install_utils.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "chrome/browser/web_applications/web_app_utils.h"
@@ -107,7 +107,7 @@ void ApkWebAppInstaller::Start(arc::mojom::WebAppInfoPtr web_app_info,
   }
   web_app_install_info_->display_mode = blink::mojom::DisplayMode::kStandalone;
   web_app_install_info_->user_display_mode =
-      web_app::UserDisplayMode::kStandalone;
+      web_app::mojom::UserDisplayMode::kStandalone;
 
   is_web_only_twa_ = web_app_info->is_web_only_twa;
   sha256_fingerprint_ = web_app_info->certificate_sha256_fingerprint;
@@ -196,8 +196,6 @@ void ApkWebAppInstaller::DoInstall() {
             ->web_app_service_ash()
             ->GetWebAppProviderBridge();
     if (!web_app_provider_bridge) {
-      // TODO(crbug.com/1311501): make installation idempotent: by handle
-      // WebAppProviderBridge reconnect events.
       CompleteInstallation(web_app::AppId(),
                            webapps::InstallResultCode::kWebAppProviderNotReady);
       return;
@@ -207,15 +205,15 @@ void ApkWebAppInstaller::DoInstall() {
         base::BindOnce(&ApkWebAppInstaller::OnWebAppCreated,
                        base::Unretained(this), std::move(start_url)));
   } else {
-    auto* provider = web_app::WebAppProvider::GetDeprecated(profile_);
+    auto* provider = web_app::WebAppProvider::GetForWebApps(profile_);
     DCHECK(provider);
     // Doesn't overwrite already existing web app with manifest fields from the
     // apk.
     GURL start_url = web_app_install_info_->start_url;
-    provider->install_manager().InstallWebAppFromInfo(
+    provider->scheduler().InstallFromInfo(
         std::move(web_app_install_info_),
         /*overwrite_existing_manifest_fields=*/false,
-        web_app::ForInstallableSite::kYes, webapps::WebappInstallSource::ARC,
+        webapps::WebappInstallSource::ARC,
         base::BindOnce(&ApkWebAppInstaller::OnWebAppCreated,
                        base::Unretained(this), std::move(start_url)));
   }

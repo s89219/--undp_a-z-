@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -110,7 +110,8 @@ class OmniboxSuggestionButtonRowBrowserTest : public DialogBrowserTest {
     matches.push_back(switch_to_tab_match);
     matches.push_back(action_match);
     matches.push_back(multiple_actions_match);
-    results.AppendMatches(autocomplete_controller->input_, matches);
+    results.AppendMatches(matches);
+    autocomplete_controller->NotifyChanged();
 
     // The omnibox popup should open with suggestions displayed.
     omnibox_view->model()->OnPopupResultChanged();

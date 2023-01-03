@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,13 +13,16 @@
 #include "ash/constants/ash_pref_names.h"
 #include "base/callback.h"
 #include "base/check.h"
+#include "base/containers/contains.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/notreached.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
+#include "chrome/browser/apps/app_service/policy_util.h"
 #include "chrome/browser/ash/accessibility/magnifier_type.h"
 #include "chrome/browser/ui/ash/shelf/chrome_shelf_prefs.h"
 #include "chrome/common/pref_names.h"
@@ -30,9 +33,9 @@
 #include "components/crx_file/id_util.h"
 #include "components/onc/onc_constants.h"
 #include "components/onc/onc_pref_names.h"
+#include "components/policy/core/browser/configuration_policy_handler.h"
 #include "components/policy/core/browser/policy_error_map.h"
 #include "components/policy/core/common/external_data_fetcher.h"
-#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/schema.h"
 #include "components/policy/policy_constants.h"
 #include "components/prefs/pref_value_map.h"
@@ -47,24 +50,32 @@ namespace {
 
 using ::ash::MagnifierType;
 
-const char kSubkeyURL[] = "url";
-const char kSubkeyHash[] = "hash";
+constexpr char kPolicyEntryPolicyIdKey[] = "policy_id";
+constexpr char kPolicyEntryFileExtensionsKey[] = "file_extensions";
+
+constexpr char kSubkeyURL[] = "url";
+constexpr char kSubkeyHash[] = "hash";
 
 absl::optional<std::string> GetSubkeyString(const base::Value& dict,
                                             PolicyErrorMap* errors,
                                             const std::string& policy,
                                             const std::string& subkey) {
   const base::Value* policy_value = dict.FindKey(subkey);
+
   if (!policy_value) {
-    errors->AddError(policy, subkey, IDS_POLICY_NOT_SPECIFIED_ERROR);
+    errors->AddError(policy, IDS_POLICY_NOT_SPECIFIED_ERROR,
+                     PolicyErrorPath{subkey});
     return absl::nullopt;
   }
   if (!policy_value->is_string()) {
-    errors->AddError(policy, subkey, IDS_POLICY_TYPE_ERROR, "string");
+    errors->AddError(policy, IDS_POLICY_TYPE_ERROR,
+                     base::Value::GetTypeName(base::Value::Type::STRING),
+                     PolicyErrorPath{subkey});
     return absl::nullopt;
   }
   if (policy_value->GetString().empty()) {
-    errors->AddError(policy, subkey, IDS_POLICY_NOT_SPECIFIED_ERROR);
+    errors->AddError(policy, IDS_POLICY_NOT_SPECIFIED_ERROR,
+                     PolicyErrorPath{subkey});
     return absl::nullopt;
   }
   return policy_value->GetString();
@@ -137,19 +148,28 @@ base::Value CalculateIdleActionValue(const base::Value* idle_action_value,
 }  // namespace
 
 ExternalDataPolicyHandler::ExternalDataPolicyHandler(const char* policy_name)
-    : TypeCheckingPolicyHandler(policy_name, base::Value::Type::DICTIONARY) {}
+    : TypeCheckingPolicyHandler(policy_name, base::Value::Type::DICT) {}
 
 ExternalDataPolicyHandler::~ExternalDataPolicyHandler() {}
 
 bool ExternalDataPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
                                                     PolicyErrorMap* errors) {
-  if (!TypeCheckingPolicyHandler::CheckPolicySettings(policies, errors))
-    return false;
-
   const std::string policy = policy_name();
   if (!policies.IsPolicySet(policy))
     return true;
-  const base::Value* value = policies.GetValue(policy, base::Value::Type::DICT);
+
+  return CheckPolicySettings(policy.c_str(), policies.Get(policy), errors);
+}
+
+bool ExternalDataPolicyHandler::CheckPolicySettings(
+    const char* policy,
+    const PolicyMap::Entry* entry,
+    PolicyErrorMap* errors) {
+  if (!TypeCheckingPolicyHandler::CheckPolicySettings(
+          policy, base::Value::Type::DICT, entry, errors))
+    return false;
+
+  const base::Value* value = entry->value(base::Value::Type::DICT);
   DCHECK(value);
   absl::optional<std::string> url_string =
       GetSubkeyString(*value, errors, policy, kSubkeyURL);
@@ -160,14 +180,16 @@ bool ExternalDataPolicyHandler::CheckPolicySettings(const PolicyMap& policies,
 
   const GURL url(url_string.value());
   if (!url.is_valid()) {
-    errors->AddError(policy, kSubkeyURL, IDS_POLICY_VALUE_FORMAT_ERROR);
+    errors->AddError(policy, IDS_POLICY_INVALID_URL_ERROR,
+                     PolicyErrorPath{kSubkeyURL});
     return false;
   }
 
   std::vector<uint8_t> hash;
   if (!base::HexStringToBytes(hash_string.value(), &hash) ||
       hash.size() != crypto::kSHA256Length) {
-    errors->AddError(policy, kSubkeyHash, IDS_POLICY_VALUE_FORMAT_ERROR);
+    errors->AddError(policy, IDS_POLICY_INVALID_HASH_ERROR,
+                     PolicyErrorPath{kSubkeyHash});
     return false;
   }
 
@@ -209,7 +231,6 @@ bool NetworkConfigurationPolicyHandler::CheckPolicySettings(
       chromeos::onc::ReadDictionaryFromJson(value->GetString());
   if (!root_dict.is_dict()) {
     errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_PARSE_FAILED);
-    errors->SetDebugInfo(policy_name(), "ERROR: JSON parse error");
     return false;
   }
 
@@ -244,12 +265,8 @@ bool NetworkConfigurationPolicyHandler::CheckPolicySettings(
     errors->AddError(policy_name(), IDS_POLICY_NETWORK_CONFIG_IMPORT_FAILED,
                      debug_info);
 
-  if (!validator.validation_issues().empty())
-    errors->SetDebugInfo(policy_name(), debug_info);
-
   // In any case, don't reject the policy as some networks or certificates could
   // still be applied.
-
   return true;
 }
 
@@ -263,16 +280,16 @@ void NetworkConfigurationPolicyHandler::ApplyPolicySettings(
 
   const std::string& onc_blob = value->GetString();
 
-  base::ListValue network_configs;
-  base::ListValue certificates;
-  base::DictionaryValue global_network_config;
+  base::Value::List network_configs;
+  base::Value::List certificates;
+  base::Value::Dict global_network_config;
   chromeos::onc::ParseAndValidateOncForImport(
       onc_blob, onc_source_, "", &network_configs, &global_network_config,
       &certificates);
 
   // Currently, only the per-network configuration is stored in a pref. Ignore
   // |global_network_config| and |certificates|.
-  prefs->SetValue(pref_path_, std::move(network_configs));
+  prefs->SetValue(pref_path_, base::Value(std::move(network_configs)));
 }
 
 void NetworkConfigurationPolicyHandler::PrepareForDisplaying(
@@ -326,29 +343,114 @@ NetworkConfigurationPolicyHandler::SanitizeNetworkConfig(
 PinnedLauncherAppsPolicyHandler::PinnedLauncherAppsPolicyHandler()
     : ListPolicyHandler(key::kPinnedLauncherApps, base::Value::Type::STRING) {}
 
-PinnedLauncherAppsPolicyHandler::~PinnedLauncherAppsPolicyHandler() {}
+PinnedLauncherAppsPolicyHandler::~PinnedLauncherAppsPolicyHandler() = default;
 
 bool PinnedLauncherAppsPolicyHandler::CheckListEntry(const base::Value& value) {
-  // Assume it's an Android app if it contains a dot.
-  const std::string& str = value.GetString();
-  if (str.find(".") != std::string::npos)
-    return true;
-
-  // Otherwise, check if it's an extension id.
-  return crx_file::id_util::IdIsValid(str);
+  const std::string policy_id = value.GetString();
+  return apps_util::IsSupportedAppTypePolicyId(policy_id);
 }
 
 void PinnedLauncherAppsPolicyHandler::ApplyList(base::Value filtered_list,
                                                 PrefValueMap* prefs) {
   DCHECK(filtered_list.is_list());
-  std::vector<base::Value> pinned_apps_list;
-  for (const base::Value& entry : filtered_list.GetListDeprecated()) {
-    base::Value app_dict(base::Value::Type::DICTIONARY);
-    app_dict.SetKey(ChromeShelfPrefs::kPinnedAppsPrefAppIDKey, entry.Clone());
-    pinned_apps_list.push_back(std::move(app_dict));
+  base::Value::List pinned_apps_list;
+  for (base::Value& entry : filtered_list.GetList()) {
+    base::Value::Dict app_dict;
+    app_dict.Set(ChromeShelfPrefs::kPinnedAppsPrefAppIDKey, std::move(entry));
+    pinned_apps_list.Append(std::move(app_dict));
   }
   prefs->SetValue(prefs::kPolicyPinnedLauncherApps,
                   base::Value(std::move(pinned_apps_list)));
+}
+
+DefaultHandlersForFileExtensionsPolicyHandler::
+    DefaultHandlersForFileExtensionsPolicyHandler(
+        const policy::Schema& chrome_schema)
+    : SchemaValidatingPolicyHandler(
+          key::kDefaultHandlersForFileExtensions,
+          chrome_schema.GetKnownProperty(
+              key::kDefaultHandlersForFileExtensions),
+          policy::SCHEMA_ALLOW_UNKNOWN_AND_INVALID_LIST_ENTRY) {}
+
+// Verifies that each file extension is handler by no more that one app.
+bool DefaultHandlersForFileExtensionsPolicyHandler::CheckPolicySettings(
+    const PolicyMap& policies,
+    PolicyErrorMap* errors) {
+  std::unique_ptr<base::Value> policy_value;
+  if (!CheckAndGetValue(policies, errors, &policy_value) || !policy_value) {
+    return false;
+  }
+
+  base::flat_map<std::string, std::string> file_extension_to_policy_id;
+
+  const auto& list = policy_value->GetList();
+  for (uint32_t index = 0; index < list.size(); index++) {
+    const auto& policy_entry_dict = list[index].GetDict();
+
+    const std::string* policy_id =
+        policy_entry_dict.FindString(kPolicyEntryPolicyIdKey);
+    DCHECK(policy_id);
+
+    if (!apps_util::IsSupportedAppTypePolicyId(*policy_id)) {
+      errors->AddError(policy_name(), IDS_POLICY_VALUE_FORMAT_ERROR,
+                       PolicyErrorPath{index, kPolicyEntryPolicyIdKey});
+      continue;
+    }
+
+    const auto* file_extensions =
+        policy_entry_dict.FindList(kPolicyEntryFileExtensionsKey);
+    DCHECK(file_extensions);
+
+    for (const auto& file_extension_entry : *file_extensions) {
+      const std::string& file_extension = file_extension_entry.GetString();
+
+      if (auto it = file_extension_to_policy_id.find(file_extension);
+          it != file_extension_to_policy_id.end()) {
+        errors->AddError(
+            policy_name(), IDS_POLICY_DUPLICATE_FILE_EXTENSION_ERROR,
+            /*replacement_a=*/file_extension,
+            /*replacement_b=*/base::JoinString({*policy_id, it->second}, ", "),
+            /*error_path=*/{},
+            /*error_level=*/PolicyMap::MessageType::kWarning);
+        continue;
+      }
+
+      file_extension_to_policy_id[file_extension] = *policy_id;
+    }
+  }
+
+  return true;
+}
+
+// Applies an inverse mapping to `prefs::kDefaultHandlersForFileExtensions`:
+// file_extension -> id.
+void DefaultHandlersForFileExtensionsPolicyHandler::ApplyPolicySettings(
+    const PolicyMap& policies,
+    PrefValueMap* prefs) {
+  std::unique_ptr<base::Value> policy_value;
+  CheckAndGetValue(policies, nullptr, &policy_value);
+
+  base::Value::Dict pref_mapping;
+  for (const auto& policy_entry : policy_value->GetList()) {
+    const auto& policy_entry_dict = policy_entry.GetDict();
+
+    const std::string* policy_id =
+        policy_entry_dict.FindString(kPolicyEntryPolicyIdKey);
+    if (!apps_util::IsSupportedAppTypePolicyId(*policy_id)) {
+      continue;
+    }
+
+    const auto* file_extensions =
+        policy_entry_dict.FindList(kPolicyEntryFileExtensionsKey);
+
+    for (const auto& file_extension_entry : *file_extensions) {
+      pref_mapping.Set(base::StrCat({".", file_extension_entry.GetString()}),
+                       *policy_id);
+    }
+  }
+
+  prefs->SetValue(prefs::kDefaultHandlersForFileExtensions,
+                  base::Value(std::move(pref_mapping)));
 }
 
 ScreenMagnifierPolicyHandler::ScreenMagnifierPolicyHandler()

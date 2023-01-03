@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,8 +17,7 @@ import android.os.Build;
 import android.os.ParcelUuid;
 import android.util.SparseArray;
 
-import androidx.annotation.RequiresApi;
-
+import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.annotations.CalledByNative;
 import org.chromium.base.annotations.JNIAdditionalImport;
@@ -38,7 +37,6 @@ import java.util.Map;
  */
 @JNINamespace("device")
 @JNIAdditionalImport(Wrappers.class)
-@RequiresApi(Build.VERSION_CODES.M)
 final class ChromeBluetoothAdapter extends BroadcastReceiver {
     private static final String TAG = "Bluetooth";
 
@@ -244,8 +242,8 @@ final class ChromeBluetoothAdapter extends BroadcastReceiver {
 
     private void registerBroadcastReceiver() {
         if (mAdapter != null) {
-            mAdapter.getContext().registerReceiver(
-                    this, new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
+            ContextUtils.registerProtectedBroadcastReceiver(mAdapter.getContext(), this,
+                    new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED));
         }
     }
 

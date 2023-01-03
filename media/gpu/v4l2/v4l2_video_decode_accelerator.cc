@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,16 +19,15 @@
 #include "base/command_line.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "media/base/media_switches.h"
 #include "media/base/scopedfd_helper.h"
-#include "media/base/unaligned_shared_memory.h"
 #include "media/base/video_frame_layout.h"
 #include "media/base/video_types.h"
 #include "media/gpu/chromeos/fourcc.h"
@@ -40,7 +39,10 @@
 #include "media/gpu/v4l2/v4l2_vda_helpers.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_pixmap_handle.h"
+#include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
+#include "ui/gl/gl_display.h"
+#include "ui/gl/gl_surface_egl.h"
 #include "ui/gl/scoped_binders.h"
 
 #define NOTIFY_ERROR(x)                      \
@@ -147,7 +149,7 @@ V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
     const MakeGLContextCurrentCallback& make_context_current_cb,
     scoped_refptr<V4L2Device> device)
     : can_use_decoder_(num_instances_.Increment() < kMaxNumOfInstances),
-      child_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      child_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
       decoder_thread_("V4L2DecoderThread"),
       decoder_state_(kUninitialized),
       output_mode_(Config::OutputMode::ALLOCATE),
@@ -229,7 +231,8 @@ bool V4L2VideoDecodeAccelerator::Initialize(const Config& config,
 
 // TODO(posciak): https://crbug.com/450898.
 #if defined(ARCH_CPU_ARMEL)
-    if (!gl::g_driver_egl.ext.b_EGL_KHR_fence_sync) {
+    gl::GLDisplayEGL* display = gl::GLDisplayEGL::GetDisplayForCurrentContext();
+    if (!display || !display->ext->b_EGL_KHR_fence_sync) {
       VLOGF(1) << "context does not have EGL_KHR_fence_sync";
       return false;
     }
@@ -414,7 +417,8 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffersTask(
   else
     memory = V4L2_MEMORY_MMAP;
 
-  if (output_queue_->AllocateBuffers(buffers.size(), memory) == 0) {
+  if (output_queue_->AllocateBuffers(buffers.size(), memory,
+                                     /*incoherent=*/false) == 0) {
     LOG(ERROR) << "Failed to request buffers!";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return;
@@ -629,11 +633,8 @@ void V4L2VideoDecodeAccelerator::ImportBufferForPictureTask(
   if (IsDestroyPending())
     return;
 
-  const auto iter =
-      std::find_if(output_buffer_map_.begin(), output_buffer_map_.end(),
-                   [picture_buffer_id](const OutputRecord& output_record) {
-                     return output_record.picture_id == picture_buffer_id;
-                   });
+  const auto iter = base::ranges::find(output_buffer_map_, picture_buffer_id,
+                                       &OutputRecord::picture_id);
   if (iter == output_buffer_map_.end()) {
     // It's possible that we've already posted a DismissPictureBuffer for this
     // picture, but it has not yet executed when this ImportBufferForPicture was
@@ -1350,7 +1351,7 @@ void V4L2VideoDecodeAccelerator::Enqueue() {
         // (2) If input stream is off, we will never get the output buffer
         // with V4L2_BUF_FLAG_LAST.
         VLOGF(2) << "Nothing to flush. Notify flush done directly.";
-        NofityFlushDone();
+        NotifyFlushDone();
         flush_handled = true;
       } else if (decoder_cmd_supported_) {
         if (!SendDecoderCmdStop())
@@ -1701,12 +1702,12 @@ void V4L2VideoDecodeAccelerator::NotifyFlushDoneIfNeeded() {
   if (!StartDevicePoll())
     return;
 
-  NofityFlushDone();
+  NotifyFlushDone();
   // While we were flushing, we early-outed DecodeBufferTask()s.
   ScheduleDecodeBufferTaskIfNeeded();
 }
 
-void V4L2VideoDecodeAccelerator::NofityFlushDone() {
+void V4L2VideoDecodeAccelerator::NotifyFlushDone() {
   TRACE_EVENT_NESTABLE_ASYNC_END0("media,gpu", "V4L2VDA::FlushTask",
                                   TRACE_ID_LOCAL(this));
   decoder_delay_bitstream_buffer_id_ = -1;
@@ -2223,7 +2224,8 @@ bool V4L2VideoDecodeAccelerator::CreateInputBuffers() {
   DCHECK_EQ(decoder_state_, kInitialized);
   DCHECK(input_queue_);
 
-  if (input_queue_->AllocateBuffers(kInputBufferCount, V4L2_MEMORY_MMAP) == 0) {
+  if (input_queue_->AllocateBuffers(kInputBufferCount, V4L2_MEMORY_MMAP,
+                                    /*incoherent=*/false) == 0) {
     LOG(ERROR) << "Failed allocating input buffers";
     NOTIFY_ERROR(PLATFORM_FAILURE);
     return false;
@@ -2497,7 +2499,10 @@ void V4L2VideoDecodeAccelerator::DestroyInputBuffers() {
   if (!input_queue_)
     return;
 
-  input_queue_->DeallocateBuffers();
+  if (!input_queue_->DeallocateBuffers()) {
+    VLOGF(1) << "Failed deallocating V4L2 input buffers";
+    NOTIFY_ERROR(PLATFORM_FAILURE);
+  }
 }
 
 bool V4L2VideoDecodeAccelerator::DestroyOutputBuffers() {

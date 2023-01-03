@@ -1,12 +1,12 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://crostini-installer/app.js';
 
 import {BrowserProxy} from 'chrome://crostini-installer/browser_proxy.js';
-import {TestBrowserProxy} from 'chrome://test/test_browser_proxy.js';
-import {flushTasks} from 'chrome://test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 const InstallerState = crostini.mojom.InstallerState;
 const InstallerError = crostini.mojom.InstallerError;
@@ -14,8 +14,11 @@ const InstallerError = crostini.mojom.InstallerError;
 class FakePageHandler extends TestBrowserProxy {
   constructor() {
     super([
-      'install', 'cancel', 'cancelBeforeStart', 'onPageClosed',
-      'requestAmountOfFreeDiskSpace'
+      'install',
+      'cancel',
+      'cancelBeforeStart',
+      'onPageClosed',
+      'requestAmountOfFreeDiskSpace',
     ]);
 
     this.requestAmountOfFreeDiskSpaceResult_ = new Promise((resolve) => {
@@ -63,8 +66,7 @@ class FakePageHandler extends TestBrowserProxy {
 class FakeBrowserProxy {
   constructor() {
     this.handler = new FakePageHandler();
-    this.callbackRouter =
-        new chromeos.crostiniInstaller.mojom.PageCallbackRouter();
+    this.callbackRouter = new ash.crostiniInstaller.mojom.PageCallbackRouter();
     /** @type {appManagement.mojom.PageRemote} */
     this.page = this.callbackRouter.$.bindNewPipeAndPassRemote();
   }
@@ -133,7 +135,7 @@ suite('<crostini-installer-app>', () => {
 
   const diskTicks = [
     {value: 1000, ariaValue: '1', label: '1'},
-    {value: 2000, ariaValue: '2', label: '2'}
+    {value: 2000, ariaValue: '2', label: '2'},
   ];
 
   test('installFlow', async () => {
@@ -156,11 +158,9 @@ suite('<crostini-installer-app>', () => {
     await flushTasks();
     assertFalse(app.$$('#configure-message').hidden);
     await clickInstall();
-    await fakeBrowserProxy.handler.whenCalled('install').then(
-        ([diskSize, username]) => {
-          assertEquals(
-              username, loadTimeData.getString('defaultContainerUsername'));
-        });
+    const [diskSize, username] =
+        await fakeBrowserProxy.handler.whenCalled('install');
+    assertEquals(username, loadTimeData.getString('defaultContainerUsername'));
     assertFalse(app.$$('#installing-message').hidden);
     assertEquals(fakeBrowserProxy.handler.getCallCount('install'), 1);
     assertTrue(getInstallButton().hidden);
@@ -252,10 +252,9 @@ suite('<crostini-installer-app>', () => {
       assertTrue(isHidden(app.$$('#diskSlider')));
 
       await clickInstall();
-      await fakeBrowserProxy.handler.whenCalled('install').then(
-          ([diskSize, username]) => {
-            assertEquals(Number(diskSize), diskTicks[defaultIndex].value);
-          });
+      const [diskSize, username] =
+          await fakeBrowserProxy.handler.whenCalled('install');
+      assertEquals(Number(diskSize), diskTicks[defaultIndex].value);
       assertEquals(fakeBrowserProxy.handler.getCallCount('install'), 1);
     });
   });
@@ -278,10 +277,9 @@ suite('<crostini-installer-app>', () => {
     app.$$('#diskSlider').value = 1;
 
     await clickInstall();
-    await fakeBrowserProxy.handler.whenCalled('install').then(
-        ([diskSize, username]) => {
-          assertEquals(Number(diskSize), diskTicks[1].value);
-        });
+    const [diskSize, username] =
+        await fakeBrowserProxy.handler.whenCalled('install');
+    assertEquals(Number(diskSize), diskTicks[1].value);
     assertEquals(fakeBrowserProxy.handler.getCallCount('install'), 1);
   });
 
@@ -296,9 +294,19 @@ suite('<crostini-installer-app>', () => {
 
     // Test invalid usernames
     const invalidUsernames = [
-      'root',   // Unavailable.
-      '0abcd',  // Invalid first character.
-      'aBcd',   // Invalid (uppercase) character.
+      '0abcd',            // Invalid (number) starting character.
+      'aBcd',             // Invalid (uppercase) character.
+      'spa ce',           // Invalid (space) character.
+      '-dash',            // Invalid (dash) starting character.
+      'name\\backslash',  // Invalid (backslash) character.
+      'name@mpersand',    // Invalid (ampersand) character.
+      // Reserved users
+      'root', 'daemon', 'bin', 'sys', 'sync', 'games', 'man', 'lp', 'mail',
+      'news', 'uucp', 'proxy', 'www-data', 'backup', 'list', 'irc', 'gnats',
+      'nobody', '_apt', 'systemd-timesync', 'systemd-network',
+      'systemd-resolve', 'systemd-bus-proxy', 'messagebus', 'sshd', 'rtkit',
+      'pulse', 'android-root', 'chronos-access', 'android-everybody',
+      // End reserved users
     ];
 
     for (const username of invalidUsernames) {
@@ -324,10 +332,9 @@ suite('<crostini-installer-app>', () => {
     await flushTasks();
     assertFalse(app.$.username.invalid);
     clickInstall();
-    await fakeBrowserProxy.handler.whenCalled('install').then(
-        ([diskSize, username]) => {
-          assertEquals(username, validUsername);
-        });
+    const [diskSize, username] =
+        await fakeBrowserProxy.handler.whenCalled('install');
+    assertEquals(username, validUsername);
     assertEquals(fakeBrowserProxy.handler.getCallCount('install'), 1);
   });
 

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,6 +33,8 @@ bool IsPasswordSyncEnabled(const syncer::SyncService* sync_service) {
       return true;
   }
 }
+
+}  // namespace
 
 // PasswordStoreFetcher ----------------------------------
 
@@ -167,8 +169,6 @@ void PasswordStoreFetcher::CancelAllRequests() {
   cancelable_task_tracker()->TryCancelAll();
   weak_ptr_factory_.InvalidateWeakPtrs();
 }
-
-}  // namespace
 
 // PasswordsCounter::PasswordsResult ----------------------------------
 PasswordsCounter::PasswordsResult::PasswordsResult(

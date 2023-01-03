@@ -1,25 +1,27 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/settings/privacy/safe_browsing/safe_browsing_enhanced_protection_mediator.h"
 
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/list_model/list_model.h"
 #import "ios/chrome/browser/ui/settings/cells/settings_image_detail_text_item.h"
 #import "ios/chrome/browser/ui/settings/privacy/safe_browsing/safe_browsing_constants.h"
 #import "ios/chrome/browser/ui/settings/privacy/safe_browsing/safe_browsing_enhanced_protection_consumer.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
-#include "ios/chrome/grit/ios_google_chrome_strings.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_google_chrome_strings.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
 
-typedef NSArray<TableViewItem*>* ItemArray;
+using ItemArray = NSArray<TableViewItem*>*;
 
 namespace {
+
 // List of item types.
 typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypeShieldIcon = kItemTypeEnumZero,
@@ -28,6 +30,10 @@ typedef NS_ENUM(NSInteger, ItemType) {
   ItemTypeKeyIcon,
   ItemTypeMetricIcon,
 };
+
+// The size of the symbols.
+const CGFloat kSymbolSize = 20;
+
 }  // namespace
 
 @interface SafeBrowsingEnhancedProtectionMediator ()
@@ -48,53 +54,88 @@ typedef NS_ENUM(NSInteger, ItemType) {
 - (ItemArray)safeBrowsingEnhancedProtectionItems {
   if (!_safeBrowsingEnhancedProtectionItems) {
     NSMutableArray* items = [NSMutableArray array];
+    UIImage* shieldIcon;
+    if (UseSymbols()) {
+      shieldIcon = CustomSymbolWithPointSize(kPrivacySymbol, kSymbolSize);
+    } else {
+      shieldIcon = [[UIImage imageNamed:@"shield"]
+          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
     SettingsImageDetailTextItem* shieldIconItem = [self
              detailItemWithType:ItemTypeShieldIcon
                      detailText:
                          IDS_IOS_SAFE_BROWSING_ENHANCED_PROTECTION_BULLET_ONE
-                          image:[[UIImage imageNamed:@"shield"]
-                                    imageWithRenderingMode:
-                                        UIImageRenderingModeAlwaysTemplate]
+                          image:shieldIcon
         accessibilityIdentifier:kSafeBrowsingEnhancedProtectionShieldCellId];
     [items addObject:shieldIconItem];
 
+    UIImage* gIcon;
+    if (UseSymbols()) {
+#if BUILDFLAG(IOS_USE_BRANDED_SYMBOLS)
+      gIcon = CustomSymbolWithPointSize(kGoogleShieldSymbol, kSymbolSize);
+#else
+      gIcon = DefaultSymbolWithPointSize(kInfoCircleSymbol, kSymbolSize);
+#endif
+    } else {
+      gIcon = [[UIImage imageNamed:@"g_icon"]
+          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
     SettingsImageDetailTextItem* gIconItem = [self
              detailItemWithType:ItemTypeGIcon
                      detailText:
                          IDS_IOS_SAFE_BROWSING_ENHANCED_PROTECTION_BULLET_TWO
-                          image:[[UIImage imageNamed:@"g_icon"]
-                                    imageWithRenderingMode:
-                                        UIImageRenderingModeAlwaysTemplate]
+                          image:gIcon
         accessibilityIdentifier:kSafeBrowsingEnhancedProtectionGIconCellId];
     [items addObject:gIconItem];
 
+    UIImage* globeIcon;
+    if (UseSymbols()) {
+      if (@available(iOS 15, *)) {
+        globeIcon =
+            DefaultSymbolWithPointSize(kGlobeAmericasSymbol, kSymbolSize);
+      } else {
+        globeIcon = DefaultSymbolWithPointSize(kGlobeSymbol, kSymbolSize);
+      }
+    } else {
+      globeIcon = [[UIImage imageNamed:@"globe"]
+          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
     SettingsImageDetailTextItem* globeIconItem = [self
              detailItemWithType:ItemTypeGlobeIcon
                      detailText:
                          IDS_IOS_SAFE_BROWSING_ENHANCED_PROTECTION_BULLET_THREE
-                          image:[[UIImage imageNamed:@"globe"]
-                                    imageWithRenderingMode:
-                                        UIImageRenderingModeAlwaysTemplate]
+                          image:globeIcon
         accessibilityIdentifier:kSafeBrowsingEnhancedProtectionGlobeCellId];
     [items addObject:globeIconItem];
 
+    UIImage* keyIcon;
+    if (UseSymbols()) {
+      keyIcon = CustomSymbolWithPointSize(kPasswordSymbol, kSymbolSize);
+    } else {
+      keyIcon = [[UIImage imageNamed:@"key"]
+          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
     SettingsImageDetailTextItem* keyIconItem = [self
              detailItemWithType:ItemTypeKeyIcon
                      detailText:
                          IDS_IOS_SAFE_BROWSING_ENHANCED_PROTECTION_BULLET_FOUR
-                          image:[[UIImage imageNamed:@"key"]
-                                    imageWithRenderingMode:
-                                        UIImageRenderingModeAlwaysTemplate]
+                          image:keyIcon
         accessibilityIdentifier:kSafeBrowsingEnhancedProtectionKeyCellId];
     [items addObject:keyIconItem];
 
+    UIImage* metricIcon;
+    if (UseSymbols()) {
+      metricIcon =
+          DefaultSymbolWithPointSize(kCheckmarkCircleSymbol, kSymbolSize);
+    } else {
+      metricIcon = [[UIImage imageNamed:@"bar_chart"]
+          imageWithRenderingMode:UIImageRenderingModeAlwaysTemplate];
+    }
     SettingsImageDetailTextItem* metricIconItem = [self
              detailItemWithType:ItemTypeMetricIcon
                      detailText:
                          IDS_IOS_SAFE_BROWSING_ENHANCED_PROTECTION_BULLET_FIVE
-                          image:[[UIImage imageNamed:@"bar_chart"]
-                                    imageWithRenderingMode:
-                                        UIImageRenderingModeAlwaysTemplate]
+                          image:metricIcon
         accessibilityIdentifier:kSafeBrowsingEnhancedProtectionMetricCellId];
     [items addObject:metricIconItem];
 

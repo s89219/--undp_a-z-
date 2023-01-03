@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -112,8 +112,9 @@ class MEDIA_EXPORT MediaCodecBridgeImpl : public MediaCodecBridge {
   MediaCodecStatus GetOutputSamplingRate(int* sampling_rate) override;
   MediaCodecStatus GetOutputChannelCount(int* channel_count) override;
   MediaCodecStatus GetOutputColorSpace(gfx::ColorSpace* color_space) override;
-  MediaCodecStatus GetInputFormatStride(int* stride) override;
-  MediaCodecStatus GetInputFormatYPlaneHeight(int* height) override;
+  MediaCodecStatus GetInputFormat(int* stride,
+                                  int* slice_height,
+                                  gfx::Size* encoded_size) override;
   MediaCodecStatus QueueInputBuffer(int index,
                                     const uint8_t* data,
                                     size_t data_size,

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -90,6 +90,10 @@ struct CONTENT_EXPORT OpenURLParams {
 
   // The origin of the initiator of the navigation.
   absl::optional<url::Origin> initiator_origin;
+
+  // The base url of the initiator of the navigation. This will be non-null only
+  // if the navigation is about:blank or about:srcdoc.
+  absl::optional<GURL> initiator_base_url;
 
   // SiteInstance of the frame that initiated the navigation or null if we
   // don't know it.

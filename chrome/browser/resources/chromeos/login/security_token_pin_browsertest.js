@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,9 +10,10 @@ GEN_INCLUDE([
   '//chrome/test/data/webui/polymer_browser_test_base.js',
 ]);
 
+GEN('#include "ash/constants/ash_features.h"');
 GEN('#include "content/public/test/browser_test.h"');
 
-var PolymerSecurityTokenPinTest = class extends Polymer2DeprecatedTest {
+var PolymerSecurityTokenPinTest = class extends PolymerTest {
   /** @override */
   get browsePreload() {
     return 'chrome://oobe/login';
@@ -28,22 +29,21 @@ var PolymerSecurityTokenPinTest = class extends Polymer2DeprecatedTest {
   }
 
   get extraLibraries() {
-    return super.extraLibraries.concat(['components/oobe_types.js']);
+    return [
+      '//third_party/mocha/mocha.js',
+      '//chrome/test/data/webui/mocha_adapter.js',
+      'components/oobe_types.js',
+    ];
   }
 };
 
-// This times out regularly on debug builds, see https://crbug.com/1304295
-GEN('#if !defined(NDEBUG)');
-GEN('#define MAYBE_All DISABLED_All');
-GEN('#else');
-GEN('#define MAYBE_All All');
-GEN('#endif');
-TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
+// TODO(crbug.com/1347183): Port this test to work with Polymer3.
+TEST_F('PolymerSecurityTokenPinTest', 'DISABLED_All', function() {
   const DEFAULT_PARAMETERS = {
     enableUserInput: true,
     hasError: false,
     formattedError: '',
-    formattedAttemptsLeft: ''
+    formattedAttemptsLeft: '',
   };
 
   let securityTokenPin;
@@ -116,7 +116,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
 
     // The user enters some value. No new 'completed' event is triggered so far.
@@ -182,7 +182,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertFalse(inputField.disabled);
 
@@ -194,7 +194,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: false,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertTrue(inputField.disabled);
   });
@@ -212,7 +212,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertEquals(pinInput.value, '');
     assertEquals(inputField.value, '');
@@ -234,7 +234,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: false,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertEquals(pinInput.value, '');
     assertEquals(inputField.value, '');
@@ -319,7 +319,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertEquals(getErrorContainerVisibility(), 'visible');
     assertTrue(pinInput.hasAttribute('invalid'));
@@ -336,7 +336,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: 'Invalid PIN.',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertEquals(errorElement.textContent, 'Invalid PIN.');
   });
@@ -347,7 +347,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: false,
       hasError: true,
       formattedError: 'Maximum allowed attempts exceeded.',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     assertEquals(
         errorElement.textContent, 'Maximum allowed attempts exceeded.');
@@ -359,7 +359,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: false,
       formattedError: '',
-      formattedAttemptsLeft: '3 attempts left'
+      formattedAttemptsLeft: '3 attempts left',
     };
     assertEquals(errorElement.textContent, '3 attempts left');
   });
@@ -407,7 +407,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     // The PIN keyboard is shown again, replacing the animation UI.
     assertFalse(pinKeyboardContainer.hidden);
@@ -436,7 +436,7 @@ TEST_F('PolymerSecurityTokenPinTest', 'MAYBE_All', function() {
       enableUserInput: true,
       hasError: true,
       formattedError: '',
-      formattedAttemptsLeft: ''
+      formattedAttemptsLeft: '',
     };
     // The PIN keyboard is shown again, replacing the animation UI.
     assertFalse(pinKeyboardContainer.hidden);

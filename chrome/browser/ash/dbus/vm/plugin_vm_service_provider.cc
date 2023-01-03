@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,7 +20,7 @@
 #include "chrome/browser/ui/webui/settings/ash/app_management/app_management_uma.h"
 #include "chrome/browser/ui/webui/settings/chromeos/constants/routes.mojom.h"
 #include "chrome/common/webui_url_constants.h"
-#include "chromeos/dbus/plugin_vm_service/plugin_vm_service.pb.h"
+#include "chromeos/ash/components/dbus/plugin_vm_service/plugin_vm_service.pb.h"
 #include "components/prefs/pref_service.h"
 #include "dbus/message.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"

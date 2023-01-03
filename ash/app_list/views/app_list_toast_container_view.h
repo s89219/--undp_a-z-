@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,9 +20,11 @@ class LabelButton;
 namespace ash {
 
 class AppListA11yAnnouncer;
+class AppListKeyboardController;
 class AppListNudgeController;
 class AppListToastView;
 class AppsGridContextMenu;
+class AppListViewDelegate;
 enum class AppListSortOrder;
 enum class AppListToastType;
 
@@ -45,24 +47,14 @@ class AppListToastContainerView : public views::View {
    public:
     virtual ~Delegate() = default;
 
-    // Requests that focus move up and out (usually to the recent apps).
-    // `column` is the column of the item (could be from the recent apps or apps
-    // grid) that was focused before moving focus on this toast container. The
-    // delegate should choose an appropriate item to focus.
-    virtual bool MoveFocusUpFromToast(int column) = 0;
-
-    // Requests that focus move down and out (usually to the apps grid).
-    // `column` is the column of the item (could be from the recent apps or apps
-    // grid) that was focused before moving focus on this toast container. The
-    // delegate should choose an appropriate item to focus.
-    virtual bool MoveFocusDownFromToast(int column) = 0;
-
     // Called when the nudge gets removed by the close or dismiss buttons.
     virtual void OnNudgeRemoved() = 0;
   };
 
-  AppListToastContainerView(AppListNudgeController* nudge_controller_,
+  AppListToastContainerView(AppListNudgeController* nudge_controller,
+                            AppListKeyboardController* keyboard_controller,
                             AppListA11yAnnouncer* a11y_announcer,
+                            AppListViewDelegate* view_delegate,
                             Delegate* delegate,
                             bool tablet_mode);
   AppListToastContainerView(const AppListToastContainerView&) = delete;
@@ -76,6 +68,9 @@ class AppListToastContainerView : public views::View {
   // Handle focus passed from the app on column `column` in AppsGridView or
   // RecentAppsView.
   bool HandleFocus(int column);
+
+  // Disables focus when a folder is open.
+  void DisableFocusForShowingActiveFolder(bool disabled);
 
   // Updates the toast container to show/hide the reorder nudge if needed.
   void MaybeUpdateReorderNudgeView();
@@ -115,14 +110,19 @@ class AppListToastContainerView : public views::View {
   views::Button* GetCloseButton();
 
   AppListToastView* toast_view() { return toast_view_; }
-  bool is_toast_visible() const { return toast_view_; }
   AppListToastType current_toast() const { return current_toast_; }
+
+  // Whether toast view exists and is not being hidden.
+  bool IsToastVisible() const;
 
   AppListA11yAnnouncer* a11y_announcer_for_test() { return a11y_announcer_; }
 
  private:
-  // Called when the `toast_view_`'s dismiss button is clicked.
+  // Called when the `toast_view_`'s reorder undo button is clicked.
   void OnReorderUndoButtonClicked();
+
+  // Called when the `toast_view_`'s close button is clicked.
+  void OnReorderCloseButtonClicked();
 
   // Calculates the toast text based on the temporary sorting order.
   [[nodiscard]] std::u16string CalculateToastTextFromOrder(
@@ -148,8 +148,10 @@ class AppListToastContainerView : public views::View {
 
   AppListToastView* toast_view_ = nullptr;
 
+  AppListViewDelegate* const view_delegate_;
   Delegate* const delegate_;
   AppListNudgeController* const nudge_controller_;
+  AppListKeyboardController* const keyboard_controller_;
 
   // Caches the current toast type.
   AppListToastType current_toast_;
@@ -161,6 +163,9 @@ class AppListToastContainerView : public views::View {
   // Caches the column of previously focused app. Used when passing focus
   // between apps grid view and recent apps.
   int focused_app_column_ = 0;
+
+  // True if committing the sort order via the close button is in progress.
+  bool committing_sort_order_ = false;
 
   base::WeakPtrFactory<AppListToastContainerView> weak_factory_{this};
 };

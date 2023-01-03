@@ -1,6 +1,10 @@
 Tests name sources in images and figures.
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 84
+    }
     domNode : figure#figure1
     ignored : false
     name : {
@@ -32,6 +36,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 84
+    }
     domNode : figure#figure2
     ignored : false
     name : {
@@ -46,6 +54,10 @@ Tests name sources in images and figures.
             }
             [2] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : figure2-title
+                }
                 type : attribute
                 value : {
                     type : computedString
@@ -67,6 +79,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 84
+    }
     domNode : figure#figure3
     ignored : false
     name : {
@@ -81,6 +97,10 @@ Tests name sources in images and figures.
             }
             [2] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : figure3-title
+                }
                 type : attribute
                 value : {
                     type : computedString
@@ -114,6 +134,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 84
+    }
     description : {
         type : computedString
         value : figure4-title
@@ -140,6 +164,10 @@ Tests name sources in images and figures.
             }
             [2] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : figure4-title
+                }
                 superseded : true
                 type : attribute
                 value : {
@@ -174,6 +202,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 84
+    }
     description : {
         type : computedString
         value : figure5-title
@@ -216,6 +248,10 @@ Tests name sources in images and figures.
             }
             [2] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : figure5-title
+                }
                 superseded : true
                 type : attribute
                 value : {
@@ -263,6 +299,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 99
+    }
     domNode : img#img1
     ignored : false
     name : {
@@ -298,6 +338,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 99
+    }
     domNode : img#img2
     ignored : false
     name : {
@@ -316,6 +360,10 @@ Tests name sources in images and figures.
             }
             [3] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : img2-title
+                }
                 type : attribute
                 value : {
                     type : computedString
@@ -337,6 +385,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 99
+    }
     description : {
         type : computedString
         value : img3-title
@@ -367,6 +419,10 @@ Tests name sources in images and figures.
             }
             [3] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : img3-title
+                }
                 superseded : true
                 type : attribute
                 value : {
@@ -389,6 +445,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 99
+    }
     description : {
         type : computedString
         value : img4-title
@@ -428,6 +488,10 @@ Tests name sources in images and figures.
             }
             [3] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : img4-title
+                }
                 superseded : true
                 type : attribute
                 value : {
@@ -450,6 +514,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 99
+    }
     description : {
         type : computedString
         value : img5-title
@@ -505,6 +573,10 @@ Tests name sources in images and figures.
             }
             [3] : {
                 attribute : title
+                attributeValue : {
+                    type : string
+                    value : img5-title
+                }
                 superseded : true
                 type : attribute
                 value : {
@@ -540,6 +612,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 110
+    }
     domNode : div#link1
     ignored : false
     name : {
@@ -586,6 +662,10 @@ Tests name sources in images and figures.
 }
 {
     childIds : <object>
+    chromeRole : {
+        type : internalRole
+        value : 99
+    }
     domNode : svg#svg1
     ignored : false
     name : {

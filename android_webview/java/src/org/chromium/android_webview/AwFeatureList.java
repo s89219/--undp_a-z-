@@ -1,16 +1,14 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview;
 
-import android.content.pm.PackageInfo;
-import android.content.pm.PackageManager;
-
 import org.chromium.base.ContextUtils;
+import org.chromium.base.PackageUtils;
 import org.chromium.base.annotations.JNINamespace;
-import org.chromium.base.annotations.MainDex;
 import org.chromium.base.annotations.NativeMethods;
+import org.chromium.build.annotations.MainDex;
 
 /**
  * Java accessor for base/feature_list.h state.
@@ -27,14 +25,8 @@ public final class AwFeatureList {
 
     private static boolean computePageStartedOnCommitForBrowserNavigations() {
         if (GMS_PACKAGE.equals(ContextUtils.getApplicationContext().getPackageName())) {
-            try {
-                PackageInfo gmsPackage =
-                        ContextUtils.getApplicationContext().getPackageManager().getPackageInfo(
-                                GMS_PACKAGE, 0);
-                return gmsPackage.versionCode >= 15000000;
-            } catch (PackageManager.NameNotFoundException e) {
-            }
-            return false;
+            int gmsPackageVersion = PackageUtils.getPackageVersion(GMS_PACKAGE);
+            return gmsPackageVersion >= 15000000;
         }
         return true;
     }

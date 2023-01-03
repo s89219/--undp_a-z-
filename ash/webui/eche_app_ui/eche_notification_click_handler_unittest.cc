@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,14 @@
 
 #include <string>
 
-#include "ash/components/phonehub/fake_phone_hub_manager.h"
 #include "ash/constants/ash_features.h"
 #include "ash/webui/eche_app_ui/fake_feature_status_provider.h"
 #include "ash/webui/eche_app_ui/fake_launch_app_helper.h"
 #include "ash/webui/eche_app_ui/launch_app_helper.h"
 #include "base/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "chromeos/ash/components/phonehub/fake_phone_hub_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -44,10 +45,10 @@ class EcheNotificationClickHandlerTest : public testing::Test {
             &EcheNotificationClickHandlerTest::FakeLaunchEcheAppFunction,
             base::Unretained(this)),
         base::BindRepeating(
-            &EcheNotificationClickHandlerTest::FakeCloseEcheAppFunction,
+            &EcheNotificationClickHandlerTest::FakeLaunchNotificationFunction,
             base::Unretained(this)),
         base::BindRepeating(
-            &EcheNotificationClickHandlerTest::FakeLaunchNotificationFunction,
+            &EcheNotificationClickHandlerTest::FakeCloseNotificationFunction,
             base::Unretained(this)));
     handler_ = std::make_unique<EcheNotificationClickHandler>(
         &fake_phone_hub_manager_, &fake_feature_status_provider_,
@@ -63,7 +64,8 @@ class EcheNotificationClickHandlerTest : public testing::Test {
                                  const std::string& package_name,
                                  const std::u16string& visible_name,
                                  const absl::optional<int64_t>& user_id,
-                                 const gfx::Image& icon) {
+                                 const gfx::Image& icon,
+                                 const std::u16string& phone_name) {
     num_app_launch_++;
   }
 
@@ -74,7 +76,9 @@ class EcheNotificationClickHandlerTest : public testing::Test {
     num_notifications_shown_++;
   }
 
-  void FakeCloseEcheAppFunction() { close_eche_is_called_ = true; }
+  void FakeCloseNotificationFunction(const std::string& notification_id) {
+    // Do nothing.
+  }
 
   void SetStatus(FeatureStatus status) {
     fake_feature_status_provider_.SetStatus(status);
@@ -96,14 +100,11 @@ class EcheNotificationClickHandlerTest : public testing::Test {
         ->notification_click_handler_count();
   }
 
-  bool close_eche_is_called() { return close_eche_is_called_; }
-
   size_t num_notifications_shown() { return num_notifications_shown_; }
 
   size_t num_app_launch() { return num_app_launch_; }
 
   void reset() {
-    close_eche_is_called_ = false;
     num_notifications_shown_ = 0;
     num_app_launch_ = 0;
   }
@@ -115,7 +116,6 @@ class EcheNotificationClickHandlerTest : public testing::Test {
   base::test::ScopedFeatureList scoped_feature_list_;
   FakeFeatureStatusProvider fake_feature_status_provider_;
   std::unique_ptr<FakeLaunchAppHelper> launch_app_helper_;
-  bool close_eche_is_called_;
   size_t num_notifications_shown_ = 0;
   size_t num_app_launch_ = 0;
 };
@@ -146,33 +146,12 @@ TEST_F(EcheNotificationClickHandlerTest, StatusChangeTransitions) {
   EXPECT_EQ(0u, GetNumberOfClickHandlers());
 }
 
-TEST_F(EcheNotificationClickHandlerTest,
-       StatusChangeTransitionsAndCloseEcheWindow) {
-  SetStatus(FeatureStatus::kDisconnected);
-  SetStatus(FeatureStatus::kIneligible);
-  EXPECT_EQ(true, close_eche_is_called());
-
-  reset();
-  SetStatus(FeatureStatus::kDisconnected);
-  SetStatus(FeatureStatus::kDisabled);
-  EXPECT_EQ(true, close_eche_is_called());
-
-  reset();
-  SetStatus(FeatureStatus::kDisconnected);
-  SetStatus(FeatureStatus::kDependentFeature);
-  EXPECT_EQ(true, close_eche_is_called());
-
-  reset();
-  SetStatus(FeatureStatus::kDisconnected);
-  SetStatus(FeatureStatus::kDependentFeaturePending);
-  EXPECT_EQ(false, close_eche_is_called());
-}
-
 TEST_F(EcheNotificationClickHandlerTest, HandleNotificationClick) {
   const int64_t notification_id = 0;
   const char16_t app_name[] = u"Test App";
   const char package_name[] = "com.google.testapp";
   const int64_t user_id = 0;
+  base::HistogramTester histogram_tester;
   phonehub::Notification::AppMetadata app_meta_data =
       phonehub::Notification::AppMetadata(app_name, package_name,
                                           /*icon=*/gfx::Image(),
@@ -188,6 +167,9 @@ TEST_F(EcheNotificationClickHandlerTest, HandleNotificationClick) {
   HandleNotificationClick(notification_id, app_meta_data);
   EXPECT_EQ(num_app_launch(), 0u);
   EXPECT_EQ(num_notifications_shown(), 1u);
+  histogram_tester.ExpectUniqueSample(
+      "Eche.AppStream.LaunchAttempt",
+      mojom::AppStreamLaunchEntryPoint::NOTIFICATION, 1);
 }
 
 }  // namespace eche_app

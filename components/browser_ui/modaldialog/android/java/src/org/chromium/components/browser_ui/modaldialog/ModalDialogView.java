@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,6 @@ package org.chromium.components.browser_ui.modaldialog;
 
 import android.content.Context;
 import android.graphics.drawable.Drawable;
-import android.os.Build;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.util.AttributeSet;
@@ -60,6 +59,7 @@ public class ModalDialogView extends BoundedLinearLayout implements View.OnClick
     private TextView mMessageParagraph1;
     private TextView mMessageParagraph2;
     private ViewGroup mCustomViewContainer;
+    private ViewGroup mCustomButtonBarViewContainer;
     private View mButtonBar;
     private Button mPositiveButton;
     private Button mNegativeButton;
@@ -89,6 +89,7 @@ public class ModalDialogView extends BoundedLinearLayout implements View.OnClick
         mMessageParagraph1 = findViewById(R.id.message_paragraph_1);
         mMessageParagraph2 = findViewById(R.id.message_paragraph_2);
         mCustomViewContainer = findViewById(R.id.custom);
+        mCustomButtonBarViewContainer = findViewById(R.id.custom_button_bar);
         mButtonBar = findViewById(R.id.button_bar);
         mPositiveButton = findViewById(R.id.positive_button);
         mNegativeButton = findViewById(R.id.negative_button);
@@ -224,10 +225,6 @@ public class ModalDialogView extends BoundedLinearLayout implements View.OnClick
         Button positiveButton = getButton(ModalDialogProperties.ButtonType.POSITIVE);
         Button negativeButton = getButton(ModalDialogProperties.ButtonType.NEGATIVE);
         View.OnTouchListener onTouchListener = (View v, MotionEvent ev) -> {
-            // Filter touch events based MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED which is
-            // introduced on M+.
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return false;
-
             boolean shouldBlockTouchEvent = false;
 
             try {
@@ -292,6 +289,25 @@ public class ModalDialogView extends BoundedLinearLayout implements View.OnClick
         } else {
             mCustomViewContainer.setVisibility(View.GONE);
         }
+    }
+
+    /** @param view The customized button bar for the dialog. */
+    void setCustomButtonBar(View view) {
+        if (mCustomButtonBarViewContainer.getChildCount() > 0) {
+            mCustomButtonBarViewContainer.removeAllViews();
+        }
+
+        if (view != null) {
+            UiUtils.removeViewFromParent(view);
+            mCustomButtonBarViewContainer.addView(view);
+            mCustomButtonBarViewContainer.setVisibility(View.VISIBLE);
+            assert mCustomButtonBarViewContainer.getChildCount() > 0
+                : "The CustomButtonBar cannot be empty.";
+
+        } else {
+            mCustomButtonBarViewContainer.setVisibility(View.GONE);
+        }
+        updateButtonVisibility();
     }
 
     /**
@@ -380,10 +396,13 @@ public class ModalDialogView extends BoundedLinearLayout implements View.OnClick
     private void updateButtonVisibility() {
         boolean positiveButtonVisible = !TextUtils.isEmpty(mPositiveButton.getText());
         boolean negativeButtonVisible = !TextUtils.isEmpty(mNegativeButton.getText());
-        boolean buttonBarVisible = positiveButtonVisible || negativeButtonVisible;
+        boolean customButtonBarViewVisible =
+                mCustomButtonBarViewContainer.getVisibility() == View.VISIBLE;
+        boolean defaultButtonBarVisible =
+                (positiveButtonVisible || negativeButtonVisible) && !customButtonBarViewVisible;
 
         mPositiveButton.setVisibility(positiveButtonVisible ? View.VISIBLE : View.GONE);
         mNegativeButton.setVisibility(negativeButtonVisible ? View.VISIBLE : View.GONE);
-        mButtonBar.setVisibility(buttonBarVisible ? View.VISIBLE : View.GONE);
+        mButtonBar.setVisibility(defaultButtonBarVisible ? View.VISIBLE : View.GONE);
     }
 }

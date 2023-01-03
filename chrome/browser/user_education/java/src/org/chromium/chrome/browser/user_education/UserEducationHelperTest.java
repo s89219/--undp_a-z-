@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -113,6 +113,7 @@ public final class UserEducationHelperTest {
         mTestValues.addFeatureFlagOverride(ChromeFeatureList.SNOOZABLE_IPH, true);
         mTestValues.addFeatureFlagOverride(ChromeFeatureList.ENABLE_AUTOMATIC_SNOOZE, false);
         mTestValues.addFeatureFlagOverride(ChromeFeatureList.ENABLE_IPH, true);
+        mTestValues.addFeatureFlagOverride(ChromeFeatureList.ANDROID_SCROLL_OPTIMIZATIONS, false);
         FeatureList.setTestValues(mTestValues);
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             when(mTracker.shouldTriggerHelpUIWithSnooze(FeatureConstants.DOWNLOAD_HOME_FEATURE))

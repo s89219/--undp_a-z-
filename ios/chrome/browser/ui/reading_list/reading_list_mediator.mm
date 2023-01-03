@@ -1,19 +1,19 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/reading_list/reading_list_mediator.h"
 
-#include <algorithm>
+#import <algorithm>
 
 #import "base/mac/foundation_util.h"
-#include "base/metrics/histogram_macros.h"
-#include "base/strings/sys_string_conversions.h"
-#include "components/reading_list/core/reading_list_model.h"
+#import "base/metrics/histogram_macros.h"
+#import "base/strings/sys_string_conversions.h"
+#import "components/reading_list/core/reading_list_model.h"
 #import "components/reading_list/ios/reading_list_model_bridge_observer.h"
-#include "components/url_formatter/url_formatter.h"
+#import "components/url_formatter/url_formatter.h"
 #import "ios/chrome/browser/favicon/favicon_loader.h"
-#include "ios/chrome/browser/favicon/ios_chrome_favicon_loader_factory.h"
+#import "ios/chrome/browser/favicon/ios_chrome_favicon_loader_factory.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_data_sink.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_list_item.h"
 #import "ios/chrome/browser/ui/reading_list/reading_list_list_item_factory.h"
@@ -85,7 +85,7 @@ bool EntrySorter(const ReadingListEntry* rhs, const ReadingListEntry* lhs) {
 }
 
 - (void)markEntryRead:(const GURL&)URL {
-  self.model->SetReadStatus(URL, true);
+  self.model->SetReadStatusIfExists(URL, true);
 }
 
 #pragma mark - ReadingListDataSource
@@ -108,7 +108,7 @@ bool EntrySorter(const ReadingListEntry* rhs, const ReadingListEntry* lhs) {
 }
 
 - (void)setReadStatus:(BOOL)read forItem:(id<ReadingListListItem>)item {
-  self.model->SetReadStatus(item.entryURL, read);
+  self.model->SetReadStatusIfExists(item.entryURL, read);
 }
 
 - (const ReadingListEntry*)entryWithURL:(const GURL&)URL {
@@ -125,7 +125,7 @@ bool EntrySorter(const ReadingListEntry* rhs, const ReadingListEntry* lhs) {
   std::vector<const ReadingListEntry*> readEntries;
   std::vector<const ReadingListEntry*> unreadEntries;
 
-  for (const auto& url : self.model->Keys()) {
+  for (const auto& url : self.model->GetKeys()) {
     const ReadingListEntry* entry = self.model->GetEntryByURL(url);
     DCHECK(entry);
     if (entry->IsRead()) {
@@ -147,7 +147,8 @@ bool EntrySorter(const ReadingListEntry* rhs, const ReadingListEntry* lhs) {
         addObject:[self.itemFactory cellItemForReadingListEntry:entry]];
   }
 
-  DCHECK(self.model->Keys().size() == [readArray count] + [unreadArray count]);
+  DCHECK(self.model->GetKeys().size() ==
+         [readArray count] + [unreadArray count]);
 }
 
 - (void)fetchFaviconForItem:(id<ReadingListListItem>)item {
@@ -247,9 +248,9 @@ bool EntrySorter(const ReadingListEntry* rhs, const ReadingListEntry* lhs) {
 }
 
 // Returns whether there is a difference between the elements contained in the
-// |sectionIdentifier| and those in the |array|. The comparison is done with the
-// URL of the elements. If an element exist in both, the one in |currentSection|
-// will be overwriten with the informations contained in the one from|array|.
+// `sectionIdentifier` and those in the `array`. The comparison is done with the
+// URL of the elements. If an element exist in both, the one in `currentSection`
+// will be overwriten with the informations contained in the one from `array`.
 - (BOOL)currentSection:(NSArray<id<ReadingListListItem>>*)currentSection
     isDifferentOfArray:(NSArray<id<ReadingListListItem>>*)array {
   if (currentSection.count != array.count)
@@ -284,7 +285,7 @@ bool EntrySorter(const ReadingListEntry* rhs, const ReadingListEntry* lhs) {
   return NO;
 }
 
-// Logs the deletions histograms for the entry associated with |item|.
+// Logs the deletions histograms for the entry associated with `item`.
 - (void)logDeletionOfItem:(id<ReadingListListItem>)item {
   const ReadingListEntry* entry = [self entryFromItem:item];
 

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/chrome_typography.h"
-#include "chrome/browser/ui/views/page_info/page_info_hover_button.h"
+#include "chrome/browser/ui/views/controls/rich_hover_button.h"
 #include "chrome/browser/ui/views/page_info/page_info_view_factory.h"
 #include "components/page_info/core/features.h"
 #include "components/strings/grit/components_strings.h"
@@ -41,10 +41,6 @@ PageInfoAboutThisSiteContentView::PageInfoAboutThisSiteContentView(
   info_container->AddChildView(CreateDescriptionLabel(info_));
   info_container->AddChildView(CreateSourceLabel(info_));
 
-  if (base::FeatureList::IsEnabled(page_info::kPageInfoAboutThisSiteMoreInfo) &&
-      info_.has_more_about()) {
-    more_about_button_ = AddChildView(CreateMoreAboutButton(info_));
-  }
   presenter_->InitializeUiState(this, base::DoNothing());
 }
 
@@ -84,31 +80,10 @@ PageInfoAboutThisSiteContentView::CreateSourceLabel(
   return source_label;
 }
 
-std::unique_ptr<PageInfoHoverButton>
-PageInfoAboutThisSiteContentView::CreateMoreAboutButton(
-    const page_info::proto::SiteInfo& info) {
-  return std::make_unique<PageInfoHoverButton>(
-      base::BindRepeating(
-          &PageInfoAboutThisSiteContentView::MoreAboutButtonClicked,
-          base::Unretained(this)),
-      PageInfoViewFactory::GetAboutThisSiteIcon(),
-      IDS_PAGE_INFO_MORE_ABOUT_THIS_PAGE, std::u16string(),
-      PageInfoViewFactory::VIEW_ID_PAGE_INFO_MORE_ABOUT_THIS_PAGE_BUTTON,
-      l10n_util::GetStringUTF16(IDS_PAGE_INFO_MORE_ABOUT_THIS_PAGE_TOOLTIP),
-      std::u16string(), PageInfoViewFactory::GetLaunchIcon());
-}
-
 void PageInfoAboutThisSiteContentView::SourceLinkClicked(
     const ui::Event& event) {
   presenter_->RecordPageInfoAction(
       PageInfo::PageInfoAction::PAGE_INFO_ABOUT_THIS_SITE_SOURCE_LINK_CLICKED);
   ui_delegate_->AboutThisSiteSourceClicked(
       GURL(info_.description().source().url()), event);
-}
-
-void PageInfoAboutThisSiteContentView::MoreAboutButtonClicked(
-    const ui::Event& event) {
-  presenter_->RecordPageInfoAction(
-      PageInfo::PageInfoAction::PAGE_INFO_ABOUT_THIS_SITE_MORE_ABOUT_CLICKED);
-  ui_delegate_->OpenMoreAboutThisPageUrl(GURL(info_.more_about().url()), event);
 }

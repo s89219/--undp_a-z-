@@ -1,16 +1,15 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ui/display/manager/content_protection_manager.h"
 
-#include <algorithm>
 #include <utility>
 
 #include "base/check.h"
 #include "base/containers/cxx20_erase.h"
 #include "base/observer_list.h"
-#include "ui/display/display_features.h"
+#include "base/ranges/algorithm.h"
 #include "ui/display/manager/apply_content_protection_task.h"
 #include "ui/display/manager/display_layout_manager.h"
 #include "ui/display/manager/query_content_protection_task.h"
@@ -107,18 +106,12 @@ void ContentProtectionManager::ApplyContentProtection(
 
   protections->insert_or_assign(display_id, protection_mask);
 
-  // If the device requires a provisioned HDCP key, we need to get the key and
-  // inject it into the kernel, then apply content protection when all is ready.
-  bool should_get_provisioned_key = features::IsHdcpKeyProvisioningRequired() &&
-                                    cached_hdcp_provisioned_key_.empty() &&
-                                    ShouldPollDisplaySecurity() &&
-                                    !hdcp_key_request_.is_null();
-
-  if (should_get_provisioned_key) {
-    DVLOG(1) << "Device requires provisioned HDCP key";
-    hdcp_key_request_.Run(base::BindOnce(
-        &ContentProtectionManager::OnGetHdcpKey, weak_ptr_factory_.GetWeakPtr(),
-        std::move(callback), client_id));
+  if (HasExternalDisplaysWithContentProtection()) {
+    hdcp_key_manager_.SetKeyIfRequired(
+        layout_manager_->GetDisplayStates(), native_display_delegate_,
+        base::BindOnce(&ContentProtectionManager::QueueContentProtectionTask,
+                       weak_ptr_factory_.GetWeakPtr(), std::move(callback),
+                       client_id));
   } else {
     QueueContentProtectionTask(std::move(callback), client_id);
   }
@@ -134,20 +127,6 @@ void ContentProtectionManager::QueueContentProtectionTask(
                      client_id)));
 
   ToggleDisplaySecurityPolling();
-}
-
-void ContentProtectionManager::OnGetHdcpKey(
-    ApplyContentProtectionCallback callback,
-    ClientId client_id,
-    const std::string& key) {
-  // Cache the key to avoid making calls every time the HDCP state changes.
-  cached_hdcp_provisioned_key_ = key;
-  if (key.empty()) {
-    LOG(ERROR) << "OnGetHdcpKey: Failed to get HDCP key - Empty String";
-  }
-
-  // TODO(b/112172923): Pass the key to the kernel to enable HDCP.
-  QueueContentProtectionTask(std::move(callback), client_id);
 }
 
 const DisplaySnapshot* ContentProtectionManager::GetDisplay(
@@ -259,24 +238,23 @@ void ContentProtectionManager::OnDisplayModeChangeFailed(
   KillTasks();
 }
 
-bool ContentProtectionManager::ShouldPollDisplaySecurity() const {
+bool ContentProtectionManager::HasExternalDisplaysWithContentProtection()
+    const {
   const auto displays = layout_manager_->GetDisplayStates();
-  if (std::all_of(displays.begin(), displays.end(),
-                  [](const DisplaySnapshot* display) {
-                    return display->type() == DISPLAY_CONNECTION_TYPE_INTERNAL;
-                  })) {
+  if (base::ranges::all_of(displays, [](const DisplaySnapshot* display) {
+        return display->type() == DISPLAY_CONNECTION_TYPE_INTERNAL;
+      })) {
     return false;
   }
 
   const auto protections = AggregateContentProtections();
-  return std::any_of(protections.begin(), protections.end(),
-                     [](const auto& pair) {
-                       return pair.second != CONTENT_PROTECTION_METHOD_NONE;
-                     });
+  return base::ranges::any_of(protections, [](const auto& pair) {
+    return pair.second != CONTENT_PROTECTION_METHOD_NONE;
+  });
 }
 
 void ContentProtectionManager::ToggleDisplaySecurityPolling() {
-  if (ShouldPollDisplaySecurity()) {
+  if (HasExternalDisplaysWithContentProtection()) {
     if (!security_timer_.IsRunning()) {
       security_timer_.Start(
           FROM_HERE, kDisplaySecurityPollingPeriod,

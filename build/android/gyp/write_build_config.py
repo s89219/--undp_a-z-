@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# Copyright 2014 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -57,7 +57,7 @@ following required keys:
 
     * [java_binary](#target_java_binary)
     * [java_annotation_processor](#target_java_annotation_processor)
-    * [junit_binary](#target_junit_binary)
+    * [robolectric_binary](#target_robolectric_binary)
     * [java_library](#target_java_library)
     * [android_assets](#target_android_assets)
     * [android_resources](#target_android_resources)
@@ -190,15 +190,6 @@ Path to the `.srcjar` file that contains the auto-generated `R.java` source
 file corresponding to the content of `deps_info['r_text_path']`. This is
 *always* generated from the content of `deps_info['r_text_path']` by the
 `build/android/gyp/process_resources.py` script.
-
-* `deps_info['static_library_dependent_classpath_configs']`:
-Sub dictionary mapping .build_config paths to lists of jar files. For static
-library APKs, this defines which input jars belong to each
-static_library_dependent_target.
-
-* `deps_info['static_library_proguard_mapping_output_paths']`:
-Additional paths to copy the ProGuard mapping file to for static library
-APKs.
 
 ## <a name="target_android_assets">Target type `android_assets`</a>:
 
@@ -339,7 +330,7 @@ collection of all `deps_info['device_jar_path']` entries for the target and all
 its dependencies.
 
 
-## <a name="target_junit_binary">Target type `junit_binary`</a>:
+## <a name="target_robolectric_binary">Target type `robolectric_binary`</a>:
 
 A target type for JUnit-specific binaries. Identical to
 [`java_binary`](#target_java_binary) in the context of `.build_config` files,
@@ -396,10 +387,6 @@ suffix (as expected by `System.loadLibrary()`).
 List of native libraries for the secondary ABI to be embedded in this APK.
 Empty if only a single ABI is supported.
 
-* `native['uncompress_shared_libraries']`
-A boolean indicating whether native libraries are stored uncompressed in the
-APK.
-
 * `native['loadable_modules']`
 A list of native libraries to store within the APK, in addition to those from
 `native['libraries']`. These correspond to things like the Chromium linker
@@ -410,9 +397,6 @@ Secondary ABI version of loadable_modules
 
 * `native['library_always_compress']`
 A list of library files that we always compress.
-
-* `native['library_renames']`
-A list of library files that we prepend "crazy." to their file names.
 
 * `assets`
 A list of assets stored compressed in the APK. Each entry has the format
@@ -578,7 +562,7 @@ from util import resource_utils
 
 # Types that should never be used as a dependency of another build config.
 _ROOT_TYPES = ('android_apk', 'java_binary', 'java_annotation_processor',
-               'junit_binary', 'android_app_bundle')
+               'robolectric_binary', 'android_app_bundle')
 # Types that should not allow code deps to pass through.
 _RESOURCE_TYPES = ('android_assets', 'android_resources', 'system_java_library')
 
@@ -1057,6 +1041,11 @@ def main(argv):
       action='store_true',
       help='True if a java library is not chromium code, used for lint.')
 
+  # robolectric_library options
+  parser.add_option('--is-robolectric',
+                    action='store_true',
+                    help='Whether this is a host side android test library.')
+
   # android library options
   parser.add_option('--dex-path', help='Path to target\'s dex output.')
 
@@ -1096,10 +1085,6 @@ def main(argv):
   parser.add_option(
       '--library-always-compress',
       help='The list of library files that we always compress.')
-  parser.add_option(
-      '--library-renames',
-      default=[],
-      help='The list of library files that we prepend crazy. to their names.')
 
   # apk options
   parser.add_option('--apk-path', help='Path to the target\'s apk output.')
@@ -1167,16 +1152,8 @@ def main(argv):
       'for modules that are part of the bundle.')
 
   parser.add_option(
-      '--add-view-trace-events',
-      action='store_true',
-      help=
-      'Specifies that trace events will be added with an additional bytecode '
-      'rewriting step.')
-  parser.add_option(
-      '--base-module-gen-dir',
-      help=
-      'Path to base module\'s target_gen_dir. Needed for bundles and modules '
-      'when --add-view-trace-events is set.')
+      '--trace-events-jar-dir',
+      help='Directory of rewritten .jar files for trace event rewriting.')
 
   parser.add_option('--version-name', help='Version name for this APK.')
   parser.add_option('--version-code', help='Version code for this APK.')
@@ -1210,7 +1187,7 @@ def main(argv):
       'java_annotation_processor': ['build_config', 'main_class'],
       'java_binary': ['build_config'],
       'java_library': ['build_config', 'host_jar_path'] + lib_options,
-      'junit_binary': ['build_config'],
+      'robolectric_binary': ['build_config'],
       'system_java_library': ['build_config', 'unprocessed_jar_path'],
       'android_app_bundle': ['build_config', 'module_build_configs'],
   }
@@ -1238,18 +1215,10 @@ def main(argv):
       'android_app_bundle_module')
 
   if not is_apk_or_module_target:
-    if options.uncompress_shared_libraries:
-      raise Exception('--uncompressed-shared-libraries can only be used '
-                      'with --type=android_apk or '
-                      '--type=android_app_bundle_module')
     if options.library_always_compress:
       raise Exception(
           '--library-always-compress can only be used with --type=android_apk '
           'or --type=android_app_bundle_module')
-    if options.library_renames:
-      raise Exception(
-          '--library-renames can only be used with --type=android_apk or '
-          '--type=android_app_bundle_module')
 
   if options.device_jar_path and not options.dex_path:
     raise Exception('java_library that supports Android requires a dex path.')
@@ -1262,23 +1231,11 @@ def main(argv):
     raise Exception(
         '--supports-android is required when using --requires-android')
 
-  is_java_target = options.type in (
-      'java_binary', 'junit_binary', 'java_annotation_processor',
-      'java_library', 'android_apk', 'dist_aar', 'dist_jar',
-      'system_java_library', 'android_app_bundle_module')
-
-  is_static_library_dex_provider_target = (
-      options.static_library_dependent_configs and options.proguard_enabled)
-  if is_static_library_dex_provider_target:
-    if options.type != 'android_apk':
-      raise Exception(
-          '--static-library-dependent-configs only supports --type=android_apk')
-  options.static_library_dependent_configs = build_utils.ParseGnList(
-      options.static_library_dependent_configs)
-  static_library_dependent_configs_by_path = {
-      p: GetDepConfig(p)
-      for p in options.static_library_dependent_configs
-  }
+  is_java_target = options.type in ('java_binary', 'robolectric_binary',
+                                    'java_annotation_processor', 'java_library',
+                                    'android_apk', 'dist_aar', 'dist_jar',
+                                    'system_java_library',
+                                    'android_app_bundle_module')
 
   deps_configs_paths = build_utils.ParseGnList(options.deps_configs)
   public_deps_configs_paths = build_utils.ParseGnList(
@@ -1292,8 +1249,7 @@ def main(argv):
       build_utils.ParseGnList(options.annotation_processor_configs or ''),
       options.type, filter_root_targets=False)
 
-  all_inputs = (deps.AllConfigPaths() + processor_deps.AllConfigPaths() +
-                list(static_library_dependent_configs_by_path))
+  all_inputs = (deps.AllConfigPaths() + processor_deps.AllConfigPaths())
 
   if options.recursive_resource_deps:
     # Include java_library targets since changes to these targets can remove
@@ -1324,18 +1280,6 @@ def main(argv):
     # for these libraries will get pulled in along with the resources.
     android_resources_library_deps = _DepsFromPathsWithFilters(
         deps_configs_paths, allowlist=['java_library']).All('java_library')
-  if is_apk_or_module_target:
-    # android_resources deps which had recursive_resource_deps set should not
-    # have the manifests from the recursively collected deps added to this
-    # module. This keeps the manifest declarations in the child DFMs, since they
-    # will have the Java implementations.
-    def ExcludeRecursiveResourcesDeps(config):
-      return not config.get('includes_recursive_resources', False)
-
-    extra_manifest_deps = [
-        GetDepConfig(p) for p in GetAllDepsConfigsInOrder(
-            deps_configs_paths, filter_func=ExcludeRecursiveResourcesDeps)
-    ]
 
   base_module_build_config = None
   if options.base_module_build_config:
@@ -1429,7 +1373,8 @@ def main(argv):
   # once we can generate the JNI registration based on APK / module targets as
   # opposed to groups and libraries.
   if is_apk_or_module_target or options.type in ('group', 'java_library',
-                                                 'junit_binary', 'dist_aar'):
+                                                 'robolectric_binary',
+                                                 'dist_aar'):
     deps_info['jni'] = {}
     all_java_sources = [c['java_sources_file'] for c in all_library_deps
                         if 'java_sources_file' in c]
@@ -1437,7 +1382,7 @@ def main(argv):
       all_java_sources.append(options.java_sources_file)
 
   if is_apk_or_module_target or options.type in ('group', 'java_library',
-                                                 'junit_binary'):
+                                                 'robolectric_binary'):
     if options.apk_proto_resources:
       deps_info['proto_resources_path'] = options.apk_proto_resources
 
@@ -1462,7 +1407,10 @@ def main(argv):
     deps_info['requires_android'] = bool(options.requires_android)
     deps_info['supports_android'] = bool(options.supports_android)
 
-    if not options.bypass_platform_checks:
+    # robolectric is special in that its an android target that runs on host.
+    # You are allowed to depend on both android |deps_require_android| and
+    # non-android |deps_not_support_android| targets.
+    if not options.bypass_platform_checks and not options.is_robolectric:
       deps_require_android = (all_resources_deps +
           [d['name'] for d in all_library_deps if d['requires_android']])
       deps_not_support_android = (
@@ -1537,11 +1485,12 @@ def main(argv):
     if options.res_sources_path:
       deps_info['res_sources_path'] = options.res_sources_path
 
-  if options.requires_android and options.type == 'java_library':
+  if (options.requires_android
+      and options.type == 'java_library') or options.is_robolectric:
     if options.package_name:
       deps_info['package_name'] = options.package_name
 
-  if options.type in ('android_resources', 'android_apk', 'junit_binary',
+  if options.type in ('android_resources', 'android_apk', 'robolectric_binary',
                       'dist_aar', 'android_app_bundle_module', 'java_library'):
     dependency_zips = []
     dependency_zip_overlays = []
@@ -1559,6 +1508,8 @@ def main(argv):
       extra_package_names = [
           c['package_name'] for c in all_resources_deps if 'package_name' in c
       ]
+      if options.package_name:
+        extra_package_names += [options.package_name]
 
       # android_resources targets which specified recursive_resource_deps may
       # have extra_package_names.
@@ -1696,7 +1647,7 @@ def main(argv):
         device_classpath.extend(c for c in d.get('device_classpath', [])
                                 if c not in device_classpath)
 
-  if options.type in ('dist_jar', 'java_binary', 'junit_binary'):
+  if options.type in ('dist_jar', 'java_binary', 'robolectric_binary'):
     # The classpath to use to run this target.
     host_classpath = []
     if options.host_jar_path:
@@ -1771,6 +1722,7 @@ def main(argv):
       if c['is_base_module']:
         assert 'base_module_config' not in deps_info, (
             'Must have exactly 1 base module!')
+        deps_info['package_name'] = c['package_name']
         deps_info['base_module_config'] = c['path']
         # Use the base module's android manifest for linting.
         deps_info['lint_android_manifest'] = c['android_manifest']
@@ -1791,58 +1743,9 @@ def main(argv):
     deps_info['lint_extra_android_manifests'] = sorted(
         lint_extra_android_manifests)
 
-  # Map configs to classpath entries that should be included in their final dex.
-  classpath_entries_by_owning_config = collections.defaultdict(list)
-  extra_main_r_text_files = []
-  if is_static_library_dex_provider_target:
-    # Map classpath entries to configs that include them in their classpath.
-    configs_by_classpath_entry = collections.defaultdict(list)
-    for config_path, dep_config in (sorted(
-        static_library_dependent_configs_by_path.items())):
-      # For bundles, only the jar path and jni sources of the base module
-      # are relevant for proguard. Should be updated when bundle feature
-      # modules support JNI.
-      base_config = dep_config
-      if dep_config['type'] == 'android_app_bundle':
-        base_config = GetDepConfig(dep_config['base_module_config'])
-      extra_main_r_text_files.append(base_config['r_text_path'])
-      proguard_configs.extend(dep_config['proguard_all_configs'])
-      extra_proguard_classpath_jars.extend(
-          dep_config['proguard_classpath_jars'])
-      all_java_sources.extend(base_config['jni']['all_source'])
-
-      # The srcjars containing the generated R.java files are excluded for APK
-      # targets the use static libraries, so we add them here to ensure the
-      # union of resource IDs are available in the static library APK.
-      for package in base_config['extra_package_names']:
-        if package not in extra_package_names:
-          extra_package_names.append(package)
-      for cp_entry in dep_config['device_classpath']:
-        configs_by_classpath_entry[cp_entry].append(config_path)
-
-    for cp_entry in device_classpath:
-      configs_by_classpath_entry[cp_entry].append(options.build_config)
-
-    for cp_entry, candidate_configs in configs_by_classpath_entry.items():
-      config_path = (candidate_configs[0]
-                     if len(candidate_configs) == 1 else options.build_config)
-      classpath_entries_by_owning_config[config_path].append(cp_entry)
-      device_classpath.append(cp_entry)
-
-    device_classpath = sorted(set(device_classpath))
-
-  deps_info['static_library_proguard_mapping_output_paths'] = sorted([
-      d['proguard_mapping_path']
-      for d in static_library_dependent_configs_by_path.values()
-  ])
-  deps_info['static_library_dependent_classpath_configs'] = {
-      path: sorted(set(classpath))
-      for path, classpath in classpath_entries_by_owning_config.items()
-  }
-  deps_info['extra_main_r_text_files'] = sorted(extra_main_r_text_files)
-
   if is_apk_or_module_target or options.type in ('group', 'java_library',
-                                                 'junit_binary', 'dist_aar'):
+                                                 'robolectric_binary',
+                                                 'dist_aar'):
     deps_info['jni']['all_source'] = sorted(set(all_java_sources))
 
   system_jars = [c['unprocessed_jar_path'] for c in system_library_deps]
@@ -1993,14 +1896,14 @@ def main(argv):
   if options.type in ('android_apk', 'android_app_bundle',
                       'android_app_bundle_module', 'dist_aar', 'dist_jar'):
     deps_info['device_classpath'] = device_classpath
-    if options.add_view_trace_events:
+    if options.trace_events_jar_dir:
       trace_event_rewritten_device_classpath = []
       for jar_path in device_classpath:
         file_path = jar_path.replace('../', '')
         file_path = file_path.replace('obj/', '')
         file_path = file_path.replace('gen/', '')
         file_path = file_path.replace('.jar', '.tracing_rewritten.jar')
-        rewritten_jar_path = os.path.join(options.base_module_gen_dir,
+        rewritten_jar_path = os.path.join(options.trace_events_jar_dir,
                                           file_path)
         trace_event_rewritten_device_classpath.append(rewritten_jar_path)
 
@@ -2040,6 +1943,18 @@ def main(argv):
       secondary_abi_library_paths = _ExtractSharedLibsFromRuntimeDeps(
           options.secondary_abi_shared_libraries_runtime_deps)
       secondary_abi_library_paths.sort()
+      paths_without_parent_dirs = [
+          p for p in secondary_abi_library_paths if os.path.sep not in p
+      ]
+      if paths_without_parent_dirs:
+        sys.stderr.write('Found secondary native libraries from primary '
+                         'toolchain directory. This is a bug!\n')
+        sys.stderr.write('\n'.join(paths_without_parent_dirs))
+        sys.stderr.write('\n\nIt may be helpful to run: \n')
+        sys.stderr.write('    gn path out/Default //chrome/android:'
+                         'monochrome_secondary_abi_lib //base:base\n')
+        sys.exit(1)
+
       all_inputs.append(options.secondary_abi_shared_libraries_runtime_deps)
 
     native_library_placeholder_paths = build_utils.ParseGnList(
@@ -2067,27 +1982,13 @@ def main(argv):
         secondary_native_library_placeholder_paths,
         'java_libraries_list':
         java_libraries_list,
-        'uncompress_shared_libraries':
-        options.uncompress_shared_libraries,
         'library_always_compress':
         options.library_always_compress,
-        'library_renames':
-        options.library_renames,
         'loadable_modules':
         loadable_modules,
         'secondary_abi_loadable_modules':
         secondary_abi_loadable_modules,
     }
-    config['assets'], config['uncompressed_assets'], locale_paks = (
-        _MergeAssets(deps.All('android_assets')))
-
-    deps_info['locales_java_list'] = _CreateJavaLocaleListFromAssets(
-        config['uncompressed_assets'], locale_paks)
-
-    config['extra_android_manifests'] = []
-    for c in extra_manifest_deps:
-      config['extra_android_manifests'].extend(
-          c.get('mergeable_android_manifests', []))
 
     # Collect java resources
     java_resources_jars = [d['java_resources_jar'] for d in all_library_deps
@@ -2100,6 +2001,28 @@ def main(argv):
                              if jar not in tested_apk_resource_jars]
     java_resources_jars.sort()
     config['java_resources_jars'] = java_resources_jars
+
+  if is_apk_or_module_target or options.type == 'robolectric_binary':
+    # android_resources deps which had recursive_resource_deps set should not
+    # have the manifests from the recursively collected deps added to this
+    # module. This keeps the manifest declarations in the child DFMs, since they
+    # will have the Java implementations.
+    def ExcludeRecursiveResourcesDeps(config):
+      return not config.get('includes_recursive_resources', False)
+
+    extra_manifest_deps = [
+        GetDepConfig(p) for p in GetAllDepsConfigsInOrder(
+            deps_configs_paths, filter_func=ExcludeRecursiveResourcesDeps)
+    ]
+    config['extra_android_manifests'] = []
+    for c in extra_manifest_deps:
+      config['extra_android_manifests'].extend(
+          c.get('mergeable_android_manifests', []))
+
+    config['assets'], config['uncompressed_assets'], locale_paks = (
+        _MergeAssets(deps.All('android_assets')))
+    deps_info['locales_java_list'] = _CreateJavaLocaleListFromAssets(
+        config['uncompressed_assets'], locale_paks)
 
   if options.java_resources_jar_path:
     deps_info['java_resources_jar'] = options.java_resources_jar_path
@@ -2118,7 +2041,7 @@ def main(argv):
     RemoveObjDups(config, base, 'deps_info', 'jni', 'all_source')
     RemoveObjDups(config, base, 'final_dex', 'all_dex_files')
     RemoveObjDups(config, base, 'extra_android_manifests')
-    if options.add_view_trace_events:
+    if options.trace_events_jar_dir:
       RemoveObjDups(config, base, 'deps_info',
                     'trace_event_rewritten_device_classpath')
 

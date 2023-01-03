@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,6 +15,7 @@ import org.chromium.ui.modelutil.PropertyKey;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.modelutil.PropertyModel.ReadableObjectPropertyKey;
 import org.chromium.ui.modelutil.PropertyModel.WritableObjectPropertyKey;
+import org.chromium.url.GURL;
 
 /**
  * Properties defined here reflect the state of the AccountSelection-components.
@@ -59,17 +60,17 @@ class AccountSelectionProperties {
         public enum HeaderType { AUTO_SIGN_IN, SIGN_IN, VERIFY }
         static final ReadableObjectPropertyKey<Runnable> CLOSE_ON_CLICK_LISTENER =
                 new ReadableObjectPropertyKey<>("close_on_click_listener");
-        static final ReadableObjectPropertyKey<String> FORMATTED_IDP_ETLD_PLUS_ONE =
-                new ReadableObjectPropertyKey<>("formatted_idp_etld_plus_one");
-        static final ReadableObjectPropertyKey<String> FORMATTED_RP_ETLD_PLUS_ONE =
-                new ReadableObjectPropertyKey<>("formatted_rp_etld_plus_one");
+        static final ReadableObjectPropertyKey<String> IDP_FOR_DISPLAY =
+                new ReadableObjectPropertyKey<>("idp_for_display");
+        static final ReadableObjectPropertyKey<String> RP_FOR_DISPLAY =
+                new ReadableObjectPropertyKey<>("rp_for_display");
         static final ReadableObjectPropertyKey<Bitmap> IDP_BRAND_ICON =
                 new ReadableObjectPropertyKey<>("brand_icon");
         static final ReadableObjectPropertyKey<HeaderType> TYPE =
                 new ReadableObjectPropertyKey<>("type");
 
-        static final PropertyKey[] ALL_KEYS = {CLOSE_ON_CLICK_LISTENER, FORMATTED_IDP_ETLD_PLUS_ONE,
-                FORMATTED_RP_ETLD_PLUS_ONE, IDP_BRAND_ICON, TYPE};
+        static final PropertyKey[] ALL_KEYS = {
+                CLOSE_ON_CLICK_LISTENER, IDP_FOR_DISPLAY, RP_FOR_DISPLAY, IDP_BRAND_ICON, TYPE};
 
         private HeaderProperties() {}
     }
@@ -80,9 +81,11 @@ class AccountSelectionProperties {
      */
     static class DataSharingConsentProperties {
         static class Properties {
-            public String mFormattedIdpEtldPlusOne;
-            public String mTermsOfServiceUrl;
-            public String mPrivacyPolicyUrl;
+            public String mIdpForDisplay;
+            public GURL mTermsOfServiceUrl;
+            public GURL mPrivacyPolicyUrl;
+            public Runnable mTermsOfServiceClickRunnable;
+            public Runnable mPrivacyPolicyClickRunnable;
         }
 
         static final ReadableObjectPropertyKey<Properties> PROPERTIES =

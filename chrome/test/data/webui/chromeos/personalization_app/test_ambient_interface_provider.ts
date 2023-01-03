@@ -1,8 +1,8 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {AmbientModeAlbum, AmbientObserverInterface, AmbientObserverRemote, AmbientProviderInterface, AnimationTheme, TemperatureUnit, TopicSource} from 'chrome://personalization/trusted/personalization_app.js';
+import {AmbientModeAlbum, AmbientObserverInterface, AmbientObserverRemote, AmbientProviderInterface, AnimationTheme, TemperatureUnit, TopicSource} from 'chrome://personalization/js/personalization_app.js';
 import {Url} from 'chrome://resources/mojo/url/mojom/url.mojom-webui.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
@@ -16,7 +16,7 @@ export class TestAmbientProvider extends TestBrowserProxy implements
       description: '0',
       numberOfPhotos: 0,
       topicSource: TopicSource.kArtGallery,
-      url: {url: 'http://test_url0'}
+      url: {url: 'http://test_url0'},
     },
     {
       id: '1',
@@ -25,7 +25,7 @@ export class TestAmbientProvider extends TestBrowserProxy implements
       description: '1',
       numberOfPhotos: 0,
       topicSource: TopicSource.kArtGallery,
-      url: {url: 'http://test_url1'}
+      url: {url: 'http://test_url1'},
     },
     {
       id: '2',
@@ -34,7 +34,7 @@ export class TestAmbientProvider extends TestBrowserProxy implements
       description: '2',
       numberOfPhotos: 0,
       topicSource: TopicSource.kArtGallery,
-      url: {url: 'http://test_url2'}
+      url: {url: 'http://test_url2'},
     },
     {
       id: '3',
@@ -43,8 +43,8 @@ export class TestAmbientProvider extends TestBrowserProxy implements
       description: '3',
       numberOfPhotos: 1,
       topicSource: TopicSource.kGooglePhotos,
-      url: {url: 'http://test_url3'}
-    }
+      url: {url: 'http://test_url3'},
+    },
   ];
 
   public googlePhotosAlbumsPreviews: Url[] = [
@@ -64,6 +64,8 @@ export class TestAmbientProvider extends TestBrowserProxy implements
       'setTopicSource',
       'setTemperatureUnit',
       'setAlbumSelected',
+      'startScreenSaverPreview',
+      'fetchSettingsAndAlbums',
     ]);
   }
 
@@ -102,19 +104,27 @@ export class TestAmbientProvider extends TestBrowserProxy implements
     this.methodCalled('setAnimationTheme', animationTheme);
   }
 
-  setTopicSource(topic_source: TopicSource) {
-    this.methodCalled('setTopicSource', topic_source);
+  setTopicSource(topicSource: TopicSource) {
+    this.methodCalled('setTopicSource', topicSource);
   }
 
-  setTemperatureUnit(temperature_unit: TemperatureUnit) {
-    this.methodCalled('setTemperatureUnit', temperature_unit);
+  setTemperatureUnit(temperatureUnit: TemperatureUnit) {
+    this.methodCalled('setTemperatureUnit', temperatureUnit);
   }
 
-  setAlbumSelected(id: string, topic_source: TopicSource, selected: boolean) {
-    this.methodCalled('setAlbumSelected', id, topic_source, selected);
+  setAlbumSelected(id: string, topicSource: TopicSource, selected: boolean) {
+    this.methodCalled('setAlbumSelected', id, topicSource, selected);
   }
 
   setPageViewed() {
     this.methodCalled('setPageViewed');
+  }
+
+  startScreenSaverPreview() {
+    this.methodCalled('startScreenSaverPreview');
+  }
+
+  fetchSettingsAndAlbums() {
+    this.methodCalled('fetchSettingsAndAlbums');
   }
 }

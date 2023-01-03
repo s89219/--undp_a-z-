@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,15 +7,18 @@
 
 #include <ostream>
 
-#include "ash/components/phonehub/multidevice_feature_access_manager.h"
 #include "ash/webui/eche_app_ui/apps_access_setup_operation.h"
 #include "base/containers/flat_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
+#include "chromeos/ash/components/phonehub/multidevice_feature_access_manager.h"
 
 namespace ash {
 namespace eche_app {
+
+// Histogram for tracking Phone Hub Apps setup requests.
+constexpr char kEcheOnboardingHistogramName[] = "Eche.Onboarding.UserAction";
 
 using AccessStatus =
     ash::phonehub::MultideviceFeatureAccessManager::AccessStatus;
@@ -23,6 +26,44 @@ using AccessStatus =
 // their phones.
 class AppsAccessManager {
  public:
+  // Note: Numerical values should not be changed, they are persisted to logs
+  // and should not be renumbered or re-used. See
+  // tools/metrics/histograms/enums.xml.
+  enum class OnboardingUserActionMetric {
+    // Initial state.
+    kUserActionUnknown = 0,
+
+    // Onboarding is started by user action.
+    kUserActionStartClicked = 1,
+
+    // The permission is granted by user action.
+    kUserActionPermissionGranted = 2,
+
+    // Users explicitly decline the permission request.
+    kUserActionPermissionRejected = 3,
+
+    // The permission request time out after 20 seconds.
+    kUserActionTimeout = 4,
+
+    // The permission request is canceled from the remote device, e.g. device
+    // screen off.
+    kUserActionRemoteInterrupt = 5,
+
+    // System exceptions thrown out.
+    kSystemError = 6,
+
+    // The permission request is canceled from the onboarding UI.
+    kUserActionCanceled = 7,
+
+    // The permission request is canceled when the device is disconnected.
+    kFailedConnection = 8,
+
+    // The permission request is delivered to phone's Exo package.
+    kAckByExo = 9,
+
+    kMaxValue = kAckByExo
+  };
+
   class Observer : public base::CheckedObserver {
    public:
     ~Observer() override = default;
@@ -37,6 +78,7 @@ class AppsAccessManager {
   virtual ~AppsAccessManager();
 
   virtual AccessStatus GetAccessStatus() const = 0;
+  virtual void NotifyAppsAccessCanceled() = 0;
 
   // Starts an attempt to enable the apps access.
   std::unique_ptr<AppsAccessSetupOperation> AttemptAppsAccessSetup(

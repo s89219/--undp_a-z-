@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,18 +16,20 @@
 #include "base/containers/contains.h"
 #include "base/containers/queue.h"
 #include "base/containers/span.h"
+#include "base/files/file.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
+#include "base/memory/raw_ref.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
+#include "components/file_access/file_access_copy_or_move_delegate_factory.h"
 #include "components/services/filesystem/public/mojom/types.mojom.h"
 #include "storage/browser/file_system/copy_or_move_file_validator.h"
 #include "storage/browser/file_system/copy_or_move_hook_delegate.h"
@@ -42,6 +44,7 @@
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/file_system_test_file_set.h"
+#include "storage/browser/test/mock_copy_or_move_hook_delegate.h"
 #include "storage/browser/test/mock_quota_manager.h"
 #include "storage/browser/test/mock_quota_manager_proxy.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
@@ -102,7 +105,7 @@ class TestValidatorFactory : public CopyOrMoveFileValidatorFactory {
 
     void StartPreWriteValidation(ResultCallback result_callback) override {
       // Post the result since a real validator must do work asynchronously.
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(result_callback), result_));
     }
 
@@ -114,7 +117,7 @@ class TestValidatorFactory : public CopyOrMoveFileValidatorFactory {
         result = base::File::FILE_ERROR_SECURITY;
       }
       // Post the result since a real validator must do work asynchronously.
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(result_callback), result));
     }
 
@@ -225,12 +228,12 @@ class CopyOrMoveRecordAndSecurityDelegate : public CopyOrMoveHookDelegate {
     record.dest_url = dest_url;
     record.size = size;
     record.error = error;
-    records_.push_back(record);
+    records_->push_back(record);
   }
 
   // Raw ptr safe here, because the records will be destructed at end of test,
   // i.e., after the CopyOrMove operation has finished.
-  std::vector<ProgressRecord>& records_;
+  const raw_ref<std::vector<ProgressRecord>> records_;
 
   ShouldBlockCallback should_block_callback_;
 };
@@ -303,10 +306,12 @@ class CopyOrMoveOperationTestHelper {
     ASSERT_TRUE(base_.CreateUniqueTempDir());
     base::FilePath base_dir = base_.GetPath();
     quota_manager_ = base::MakeRefCounted<MockQuotaManager>(
-        false /* is_incognito */, base_dir, base::ThreadTaskRunnerHandle::Get(),
+        false /* is_incognito */, base_dir,
+        base::SingleThreadTaskRunner::GetCurrentDefault(),
         special_storage_policy_);
     quota_manager_proxy_ = base::MakeRefCounted<MockQuotaManagerProxy>(
-        quota_manager_.get(), base::ThreadTaskRunnerHandle::Get());
+        quota_manager_.get(),
+        base::SingleThreadTaskRunner::GetCurrentDefault());
     file_system_context_ =
         CreateFileSystemContextForTesting(quota_manager_proxy_, base_dir);
 
@@ -629,8 +634,9 @@ class CopyOrMoveOperationTestHelper {
  private:
   void GetUsageAndQuota(FileSystemType type, int64_t* usage, int64_t* quota) {
     blink::mojom::QuotaStatusCode status =
-        AsyncFileTestHelper::GetUsageAndQuota(quota_manager_.get(), origin_,
-                                              type, usage, quota);
+        AsyncFileTestHelper::GetUsageAndQuota(quota_manager_->proxy(),
+                                              blink::StorageKey(origin_), type,
+                                              usage, quota);
     ASSERT_EQ(blink::mojom::QuotaStatusCode::kOk, status);
   }
 
@@ -684,7 +690,6 @@ TEST_P(LocalFileSystemCopyOrMoveOperationTest, SingleFile) {
   FileSystemURL src = helper.SourceURL("a");
   FileSystemURL dest = helper.DestURL("b");
   int64_t src_initial_usage = helper.GetSourceUsage();
-  int64_t dest_initial_usage = helper.GetDestUsage();
 
   // Set up a source file.
   ASSERT_EQ(base::File::FILE_OK, helper.CreateFile(src, 10));
@@ -716,20 +721,11 @@ TEST_P(LocalFileSystemCopyOrMoveOperationTest, SingleFile) {
   ASSERT_EQ(src_should_exist, helper.FileExists(src, 10));
   ASSERT_EQ(dest_should_exist, helper.FileExists(dest, 10));
 
-  if (IsLocal()) {
-    int64_t src_new_usage = helper.GetSourceUsage();
-    if (IsMove() || BlockingEnabled()) {
-      EXPECT_EQ(src_new_usage, src_initial_usage + src_increase);
-    } else {
-      EXPECT_EQ(src_new_usage, src_initial_usage + 2 * src_increase);
-    }
+  int64_t src_new_usage = helper.GetSourceUsage();
+  if (IsMove() || BlockingEnabled()) {
+    EXPECT_EQ(src_new_usage, src_initial_usage + src_increase);
   } else {
-    int64_t src_new_usage = helper.GetSourceUsage();
-    ASSERT_EQ(src_new_usage,
-              src_initial_usage + (src_should_exist ? src_increase : 0));
-    int64_t dest_new_usage = helper.GetDestUsage();
-    ASSERT_EQ(dest_new_usage,
-              dest_initial_usage + (dest_should_exist ? src_increase : 0));
+    EXPECT_EQ(src_new_usage, src_initial_usage + 2 * src_increase);
   }
 }
 
@@ -742,7 +738,6 @@ TEST_P(LocalFileSystemCopyOrMoveOperationTest, EmptyDirectory) {
   FileSystemURL src = helper.SourceURL("a");
   FileSystemURL dest = helper.DestURL("b");
   int64_t src_initial_usage = helper.GetSourceUsage();
-  int64_t dest_initial_usage = helper.GetDestUsage();
 
   // Set up a source directory.
   ASSERT_EQ(base::File::FILE_OK, helper.CreateDirectory(src));
@@ -774,20 +769,11 @@ TEST_P(LocalFileSystemCopyOrMoveOperationTest, EmptyDirectory) {
   ASSERT_EQ(src_should_exist, helper.DirectoryExists(src));
   ASSERT_EQ(dest_should_exist, helper.DirectoryExists(dest));
 
-  if (IsLocal()) {
-    int64_t src_new_usage = helper.GetSourceUsage();
-    if (IsMove() || BlockingEnabled()) {
-      EXPECT_EQ(src_new_usage, src_initial_usage + src_increase);
-    } else {
-      EXPECT_EQ(src_new_usage, src_initial_usage + 2 * src_increase);
-    }
+  int64_t src_new_usage = helper.GetSourceUsage();
+  if (IsMove() || BlockingEnabled()) {
+    EXPECT_EQ(src_new_usage, src_initial_usage + src_increase);
   } else {
-    int64_t src_new_usage = helper.GetSourceUsage();
-    int64_t dest_new_usage = helper.GetDestUsage();
-    ASSERT_EQ(src_new_usage,
-              src_initial_usage + (src_should_exist ? src_increase : 0));
-    ASSERT_EQ(dest_new_usage,
-              dest_initial_usage + (dest_should_exist ? src_increase : 0));
+    EXPECT_EQ(src_new_usage, src_initial_usage + 2 * src_increase);
   }
 }
 
@@ -800,7 +786,6 @@ TEST_P(LocalFileSystemCopyOrMoveOperationTest, FilesAndDirectories) {
   FileSystemURL src = helper.SourceURL("a");
   FileSystemURL dest = helper.DestURL("b");
   int64_t src_initial_usage = helper.GetSourceUsage();
-  int64_t dest_initial_usage = helper.GetDestUsage();
 
   // Set up a source directory.
   ASSERT_EQ(base::File::FILE_OK, helper.CreateDirectory(src));
@@ -873,37 +858,15 @@ TEST_P(LocalFileSystemCopyOrMoveOperationTest, FilesAndDirectories) {
         CopyOrMoveOperationTestHelper::VerifyDirectoryState::ALL_FILES_EXIST);
   }
 
-  if (IsLocal()) {
-    // For local operations we can only check the size if there is no blocking
-    // involved.
-    if (!BlockingEnabled()) {
-      int64_t src_new_usage = helper.GetSourceUsage();
-      if (IsMove()) {
-        ASSERT_EQ(src_initial_usage + src_increase, src_new_usage);
-      } else {
-        // Copies duplicate used size on common file system.
-        ASSERT_EQ(src_initial_usage + 2 * src_increase, src_new_usage);
-      }
-    }
-  } else {
+  // For local operations we can only check the size if there is no blocking
+  // involved.
+  if (!BlockingEnabled()) {
     int64_t src_new_usage = helper.GetSourceUsage();
-    if (!IsMove()) {
-      // For copies, all source files should remain.
+    if (IsMove()) {
       ASSERT_EQ(src_initial_usage + src_increase, src_new_usage);
-    } else if (!BlockingEnabled()) {
-      // For moves without blocking, additional source size should be zero.
-      ASSERT_EQ(src_initial_usage, src_new_usage);
     } else {
-      // For moves with blocking, some files should be blocked and remain on the
-      // source file system.
-      ASSERT_LT(src_initial_usage, src_new_usage);
-    }
-
-    int64_t dest_increase = helper.GetDestUsage() - dest_initial_usage;
-    if (!BlockingEnabled()) {
-      ASSERT_EQ(src_increase, dest_increase);
-    } else {
-      ASSERT_GT(src_increase, dest_increase);
+      // Copies duplicate used size on common file system.
+      ASSERT_EQ(src_initial_usage + 2 * src_increase, src_new_usage);
     }
   }
 }
@@ -1309,7 +1272,7 @@ TEST(LocalFileSystemCopyOrMoveOperationTest, StreamCopyHelper_Cancel) {
       base::TimeDelta());  // For testing, we need all the progress.
 
   // Call Cancel() later.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&CopyOrMoveOperationDelegate::StreamCopyHelper::Cancel,
                      base::Unretained(&helper)));
@@ -1348,8 +1311,16 @@ class CopyOrMoveOperationDelegateTestHelper {
   void SetUp() {
     ASSERT_TRUE(base_.CreateUniqueTempDir());
     base::FilePath base_dir = base_.GetPath();
-    file_system_context_ =
-        storage::CreateFileSystemContextForTesting(nullptr, base_dir);
+    quota_manager_ = base::MakeRefCounted<storage::MockQuotaManager>(
+        /*is_incognito=*/false, base_dir,
+        base::SingleThreadTaskRunner::GetCurrentDefault(),
+        base::MakeRefCounted<storage::MockSpecialStoragePolicy>());
+    quota_manager_proxy_ = base::MakeRefCounted<storage::MockQuotaManagerProxy>(
+        quota_manager_.get(),
+        base::SingleThreadTaskRunner::GetCurrentDefault());
+    // Prepare file system.
+    file_system_context_ = storage::CreateFileSystemContextForTesting(
+        quota_manager_proxy_.get(), base_dir);
 
     // Prepare the origin's root directory.
     FileSystemBackend* backend =
@@ -1452,6 +1423,8 @@ class CopyOrMoveOperationDelegateTestHelper {
   FileSystemURL error_url_;
 
   base::test::TaskEnvironment task_environment_;
+  scoped_refptr<storage::MockQuotaManager> quota_manager_;
+  scoped_refptr<storage::MockQuotaManagerProxy> quota_manager_proxy_;
   scoped_refptr<FileSystemContext> file_system_context_;
 };
 
@@ -1575,6 +1548,61 @@ TEST(CopyOrMoveOperationDelegateTest,
   EXPECT_TRUE(helper.FileExists(src_file_1, kDefaultFileSize));
   EXPECT_FALSE(
       helper.FileExists(dest_file_1, AsyncFileTestHelper::kDontCheckSize));
+}
+
+class MockFileAccessCopyOrMoveDelegateFactory
+    : public file_access::FileAccessCopyOrMoveDelegateFactory {
+ public:
+  MOCK_METHOD(std::unique_ptr<storage::CopyOrMoveHookDelegate>,
+              MakeHook,
+              (),
+              (override));
+};
+
+TEST(CopyOrMoveOperationDelegateTest, InjectHook) {
+  FileSystemOperation::CopyOrMoveOptionSet options;
+  CopyOrMoveOperationDelegateTestHelper helper(
+      "http://foo", kFileSystemTypePersistent, kFileSystemTypePersistent,
+      options);
+  helper.SetUp();
+
+  MockFileAccessCopyOrMoveDelegateFactory factory;
+  std::unique_ptr<MockCopyOrMoveHookDelegate> hook_delegate =
+      std::make_unique<MockCopyOrMoveHookDelegate>();
+  ON_CALL(*hook_delegate.get(), OnBeginProcessFile)
+      .WillByDefault([](const FileSystemURL&, const FileSystemURL&,
+                        base::OnceCallback<void(base::File::Error)> cb) {
+        std::move(cb).Run(base::File::FILE_OK);
+      });
+  EXPECT_CALL(*hook_delegate.get(), OnBeginProcessFile).Times(3);
+  EXPECT_CALL(*hook_delegate.get(), OnEndCopy).Times(3);
+  EXPECT_CALL(factory, MakeHook).WillOnce([&hook_delegate] {
+    return std::move(hook_delegate);
+  });
+
+  FileSystemURL src = helper.GenerateSourceUrlFromPath("a");
+  FileSystemURL src_file_1 = helper.GenerateSourceUrlFromPath("a/file 1");
+  FileSystemURL src_file_2 = helper.GenerateSourceUrlFromPath("a/file 2");
+  FileSystemURL dest = helper.GenerateDestinationUrlFromPath("b");
+  FileSystemURL dest_file_1 = helper.GenerateDestinationUrlFromPath("b/file 1");
+  FileSystemURL dest_file_2 = helper.GenerateDestinationUrlFromPath("b/file 2");
+
+  ASSERT_EQ(base::File::FILE_OK, helper.CreateDirectory(src));
+  ASSERT_EQ(base::File::FILE_OK,
+            helper.CreateFile(src_file_1, kDefaultFileSize));
+  ASSERT_EQ(base::File::FILE_OK,
+            helper.CreateFile(src_file_2, kDefaultFileSize));
+
+  ASSERT_EQ(base::File::FILE_OK, helper.Copy(src, dest));
+
+  EXPECT_TRUE(helper.DirectoryExists(src));
+  EXPECT_TRUE(helper.DirectoryExists(dest));
+  // Check: file 2 is properly copied.
+  EXPECT_TRUE(helper.FileExists(src_file_2, kDefaultFileSize));
+  EXPECT_TRUE(helper.FileExists(dest_file_2, kDefaultFileSize));
+  // Check: file 1 is properly copied.
+  EXPECT_TRUE(helper.FileExists(src_file_1, kDefaultFileSize));
+  EXPECT_TRUE(helper.FileExists(dest_file_1, kDefaultFileSize));
 }
 
 }  // namespace storage

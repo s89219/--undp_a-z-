@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "android_webview/browser/metrics/aw_metrics_service_client.h"
-#include "android_webview/common/aw_features.h"
 #include "android_webview/common/metrics/app_package_name_logging_rule.h"
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
@@ -22,7 +21,6 @@
 #include "base/sequence_checker.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -51,11 +49,11 @@ double MillisFromUnixEpoch(const base::Time& time) {
   return (time - base::Time::UnixEpoch()).InMillisecondsF();
 }
 
-std::unique_ptr<base::Value> BuildTestManifest() {
-  auto manifest = std::make_unique<base::Value>(base::Value::Type::DICTIONARY);
-  manifest->SetKey(kBloomFilterNumHashKey, base::Value(kNumHash));
-  manifest->SetKey(kBloomFilterNumBitsKey, base::Value(3 * kNumBitsPerEntry));
-  manifest->SetKey(
+base::Value::Dict BuildTestManifest() {
+  base::Value::Dict manifest;
+  manifest.Set(kBloomFilterNumHashKey, base::Value(kNumHash));
+  manifest.Set(kBloomFilterNumBitsKey, base::Value(3 * kNumBitsPerEntry));
+  manifest.Set(
       kExpiryDateKey,
       base::Value(MillisFromUnixEpoch(base::Time::Now() + base::Days(1))));
 
@@ -119,9 +117,9 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
   WritePackageNamesAllowListToFile();
   base::flat_map<std::string, base::ScopedFD> fd_map;
   fd_map[kAllowlistBloomFilterFileName] = OpenAndGetAllowlistFd();
-  std::unique_ptr<base::Value> manifest = BuildTestManifest();
+  base::Value::Dict manifest = BuildTestManifest();
   base::Time one_day_from_now = base::Time::Now() + base::Days(1);
-  manifest->SetDoubleKey(kExpiryDateKey, MillisFromUnixEpoch(one_day_from_now));
+  manifest.Set(kExpiryDateKey, MillisFromUnixEpoch(one_day_from_now));
   base::Version new_version(kTestAllowlistVersion);
 
   auto policy =
@@ -133,8 +131,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                              LookupConfirmationCallback,
                          base::Unretained(this)));
 
-  policy->ComponentLoaded(new_version, fd_map,
-                          base::DictionaryValue::From(std::move(manifest)));
+  policy->ComponentLoaded(new_version, fd_map, std::move(manifest));
 
   lookup_run_loop_.Run();
   ASSERT_TRUE(allowlist_lookup_result_.has_value());
@@ -150,7 +147,6 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
 TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
        TestSameVersionAsCache) {
   base::flat_map<std::string, base::ScopedFD> fd_map;
-  std::unique_ptr<base::Value> manifest = BuildTestManifest();
   base::Time one_day_from_now = base::Time::Now() + base::Days(1);
   base::Version version(kTestAllowlistVersion);
 
@@ -162,8 +158,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                              LookupConfirmationCallback,
                          base::Unretained(this)));
 
-  policy->ComponentLoaded(version, fd_map,
-                          base::DictionaryValue::From(std::move(manifest)));
+  policy->ComponentLoaded(version, fd_map, BuildTestManifest());
 
   lookup_run_loop_.Run();
   ASSERT_TRUE(allowlist_lookup_result_.has_value());
@@ -189,8 +184,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                              LookupConfirmationCallback,
                          base::Unretained(this)));
 
-  policy->ComponentLoaded(new_version, fd_map,
-                          base::DictionaryValue::From(BuildTestManifest()));
+  policy->ComponentLoaded(new_version, fd_map, BuildTestManifest());
 
   lookup_run_loop_.Run();
   ASSERT_TRUE(allowlist_lookup_result_.has_value());
@@ -215,7 +209,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                          base::Unretained(this)));
 
   policy->ComponentLoaded(base::Version(kTestAllowlistVersion), fd_map,
-                          base::DictionaryValue::From(BuildTestManifest()));
+                          BuildTestManifest());
 
   lookup_run_loop_.Run();
   EXPECT_FALSE(allowlist_lookup_result_.has_value());
@@ -240,7 +234,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                          base::Unretained(this)));
 
   policy->ComponentLoaded(base::Version(kTestAllowlistVersion), fd_map,
-                          std::make_unique<base::DictionaryValue>());
+                          /*manifest=*/base::Value::Dict());
 
   lookup_run_loop_.Run();
   EXPECT_FALSE(allowlist_lookup_result_.has_value());
@@ -264,7 +258,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                          base::Unretained(this)));
 
   policy->ComponentLoaded(base::Version(kTestAllowlistVersion), fd_map,
-                          base::DictionaryValue::From(BuildTestManifest()));
+                          BuildTestManifest());
 
   lookup_run_loop_.Run();
   EXPECT_FALSE(allowlist_lookup_result_.has_value());
@@ -289,7 +283,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                          base::Unretained(this)));
 
   policy->ComponentLoaded(base::Version(kTestAllowlistVersion), fd_map,
-                          base::DictionaryValue::From(BuildTestManifest()));
+                          BuildTestManifest());
 
   lookup_run_loop_.Run();
   EXPECT_FALSE(allowlist_lookup_result_.has_value());
@@ -305,8 +299,8 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
   WritePackageNamesAllowListToFile();
   base::flat_map<std::string, base::ScopedFD> fd_map;
   fd_map[kAllowlistBloomFilterFileName] = OpenAndGetAllowlistFd();
-  std::unique_ptr<base::Value> manifest = BuildTestManifest();
-  manifest->SetKey(
+  base::Value::Dict manifest = BuildTestManifest();
+  manifest.Set(
       kExpiryDateKey,
       base::Value(MillisFromUnixEpoch(base::Time::Now() - base::Days(1))));
 
@@ -318,7 +312,7 @@ TEST_F(AwAppsPackageNamesAllowlistComponentLoaderPolicyTest,
                          base::Unretained(this)));
 
   policy->ComponentLoaded(base::Version(kTestAllowlistVersion), fd_map,
-                          base::DictionaryValue::From(std::move(manifest)));
+                          std::move(manifest));
 
   lookup_run_loop_.Run();
   EXPECT_FALSE(allowlist_lookup_result_.has_value());
@@ -354,10 +348,6 @@ void TestThrottling(base::Time time,
 
 void TestThrottlingAllowlist(absl::optional<AppPackageNameLoggingRule> rule,
                              bool expect_throttling) {
-  base::test::ScopedFeatureList scoped_list;
-  scoped_list.InitAndEnableFeature(
-      android_webview::features::kWebViewAppsPackageNamesAllowlist);
-
   TestingPrefServiceSimple prefs;
   AwMetricsServiceClient::RegisterMetricsPrefs(prefs.registry());
   AwMetricsServiceClient client(
@@ -369,23 +359,20 @@ void TestThrottlingAllowlist(absl::optional<AppPackageNameLoggingRule> rule,
   TestThrottling(base::Time(), &client, /*expect_throttling=*/false);
 
   // last_update record > max_throttle_time : should never throttle.
-  TestThrottling(base::Time::Now() -
-                     features::kWebViewAppsMaxAllowlistThrottleTimeDelta.Get() -
+  TestThrottling(base::Time::Now() - kWebViewAppsMaxAllowlistThrottleTimeDelta -
                      base::Days(1),
                  &client,
                  /*expect_throttling=*/false);
 
   // min_throttle_time < last_update record < max_throttle_time : maybe
   // throttle.
-  TestThrottling(base::Time::Now() -
-                     features::kWebViewAppsMaxAllowlistThrottleTimeDelta.Get() +
-                     features::kWebViewAppsMinAllowlistThrottleTimeDelta.Get(),
+  TestThrottling(base::Time::Now() - kWebViewAppsMaxAllowlistThrottleTimeDelta +
+                     kWebViewAppsMinAllowlistThrottleTimeDelta,
                  &client,
                  /*expect_throttling=*/expect_throttling);
 
   // last_update record < min_throttle_time : should always throttle.
-  TestThrottling(base::Time::Now() -
-                     features::kWebViewAppsMinAllowlistThrottleTimeDelta.Get() +
+  TestThrottling(base::Time::Now() - kWebViewAppsMinAllowlistThrottleTimeDelta +
                      base::Minutes(30),
                  &client,
                  /*expect_throttling=*/true);

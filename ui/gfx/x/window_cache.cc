@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "base/notreached.h"
 #include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "ui/gfx/geometry/insets.h"
 #include "ui/gfx/geometry/rect.h"
@@ -47,12 +47,12 @@ ScopedShapeEventSelector::ScopedShapeEventSelector(Connection* connection,
                                                    Window window)
     : connection_(connection), window_(window) {
   connection_->shape().SelectInput(
-      {.destination_window = window_, .enable = true});
+      {.destination_window = window_, .enable = true}).IgnoreError();
 }
 
 ScopedShapeEventSelector::~ScopedShapeEventSelector() {
   connection_->shape().SelectInput(
-      {.destination_window = window_, .enable = false});
+      {.destination_window = window_, .enable = false}).IgnoreError();
 }
 
 WindowCache::WindowInfo::WindowInfo() = default;
@@ -109,7 +109,7 @@ void WindowCache::WaitUntilReady() {
 void WindowCache::BeginDestroyTimer(std::unique_ptr<WindowCache> self) {
   DCHECK_EQ(this, self.get());
   delete_when_destroy_timer_fires_ = false;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&WindowCache::OnDestroyTimerExpired,
                      base::Unretained(this), std::move(self)),
@@ -187,8 +187,8 @@ void WindowCache::OnEvent(const Event& event) {
       if (auto* siblings = GetChildren(info->parent)) {
         Window window = configure->window;
         Window above = configure->above_sibling;
-        auto src = std::find(siblings->begin(), siblings->end(), window);
-        auto dst = std::find(siblings->begin(), siblings->end(), above);
+        auto src = base::ranges::find(*siblings, window);
+        auto dst = base::ranges::find(*siblings, above);
         auto end = siblings->end();
         if (src != end && (dst != end || above == Window::None)) {
           dst = above == Window::None ? siblings->begin() : ++dst;

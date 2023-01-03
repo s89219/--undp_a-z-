@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,15 +24,20 @@ class TouchToFillViewImpl : public TouchToFillView {
   ~TouchToFillViewImpl() override;
 
   // TouchToFillView:
-  void Show(const GURL& url,
-            IsOriginSecure is_origin_secure,
-            base::span<const password_manager::UiCredential> credentials,
-            bool trigger_submission) override;
+  void Show(
+      const GURL& url,
+      IsOriginSecure is_origin_secure,
+      base::span<const password_manager::UiCredential> credentials,
+      base::span<const TouchToFillWebAuthnCredential> webauthn_credentials,
+      bool trigger_submission) override;
   void OnCredentialSelected(
       const password_manager::UiCredential& credential) override;
   void OnDismiss() override;
 
   void OnCredentialSelected(
+      JNIEnv* env,
+      const base::android::JavaParamRef<jobject>& credential);
+  void OnWebAuthnCredentialSelected(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& credential);
   void OnManagePasswordsSelected(JNIEnv* env);

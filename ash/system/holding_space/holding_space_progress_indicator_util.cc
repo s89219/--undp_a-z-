@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,7 +98,7 @@ class HoldingSpaceControllerProgressIndicator
 
   void OnHoldingSpaceItemUpdated(const HoldingSpaceItem* item,
                                  uint32_t updated_fields) override {
-    if (item->IsInitialized())
+    if (item->IsInitialized() && (updated_fields & UpdatedField::kProgress))
       InvalidateLayer();
   }
 
@@ -148,7 +148,7 @@ class HoldingSpaceItemProgressIndicator : public ProgressIndicator,
   // HoldingSpaceModelObserver:
   void OnHoldingSpaceItemUpdated(const HoldingSpaceItem* item,
                                  uint32_t updated_fields) override {
-    if (item_ == item)
+    if (item_ == item && (updated_fields & UpdatedField::kProgress))
       InvalidateLayer();
   }
 

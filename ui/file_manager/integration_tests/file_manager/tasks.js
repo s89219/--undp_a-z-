@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@ import {FILE_MANAGER_EXTENSIONS_ID} from './test_data.js';
 /**
  * Fake task.
  */
-class FakeTask {
+export class FakeTask {
   /**
    * @param {boolean} isDefault Whether the task is default or not.
    * @param {!chrome.fileManagerPrivate.FileTaskDescriptor} descriptor Task
@@ -45,7 +45,7 @@ export const DOWNLOADS_FAKE_TASKS = [
   new FakeTask(
       false,
       {appId: 'dummytaskid-2', taskType: 'fake-type', actionId: 'open-with'},
-      'DummyTask2')
+      'DummyTask2'),
 ];
 
 /**
@@ -58,7 +58,7 @@ const DOWNLOADS_FAKE_TEXT = [
   new FakeTask(true, {
     appId: FILE_MANAGER_EXTENSIONS_ID,
     taskType: 'file',
-    actionId: 'view-in-browser'
+    actionId: 'view-in-browser',
   }),
 ];
 
@@ -72,7 +72,7 @@ const DOWNLOADS_FAKE_PDF = [
   new FakeTask(true, {
     appId: FILE_MANAGER_EXTENSIONS_ID,
     taskType: 'file',
-    actionId: 'view-as-pdf'
+    actionId: 'view-as-pdf',
   }),
 ];
 
@@ -88,7 +88,7 @@ const DRIVE_FAKE_TASKS = [
       'DummyTask1'),
   new FakeTask(
       false, {appId: 'dummytaskid-2', taskType: 'drive', actionId: 'open-with'},
-      'DummyTask2')
+      'DummyTask2'),
 ];
 
 /**
@@ -112,8 +112,7 @@ async function setupTaskTest(rootPath, fakeTasks) {
  */
 async function executeDefaultTask(appId, descriptor) {
   // Select file.
-  chrome.test.assertTrue(
-      await remoteCall.callRemoteTestUtil('selectFile', appId, ['hello.txt']));
+  await remoteCall.waitUntilSelected(appId, 'hello.txt');
 
   // Double-click the file.
   chrome.test.assertTrue(!!await remoteCall.callRemoteTestUtil(
@@ -121,7 +120,7 @@ async function executeDefaultTask(appId, descriptor) {
       ['#file-list li.table-row[selected] .filename-label span']));
 
   // Wait until the task is executed.
-  await remoteCall.waitUntilTaskExecutes(appId, descriptor);
+  await remoteCall.waitUntilTaskExecutes(appId, descriptor, ['hello.txt']);
 }
 
 /**
@@ -141,7 +140,7 @@ async function defaultTaskDialog(appId, descriptor) {
   ];
 
   // Select file.
-  await remoteCall.callRemoteTestUtil('selectFile', appId, ['hello.txt']);
+  await remoteCall.waitUntilSelected(appId, 'hello.txt');
 
   // Click the change default menu.
   await remoteCall.waitForElement(appId, '#tasks[multiple]');
@@ -173,12 +172,14 @@ async function defaultTaskDialog(appId, descriptor) {
   chrome.test.assertTrue(
       await remoteCall.callRemoteTestUtil('fakeEvent', appId, [
         '#default-task-dialog #default-tasks-list li:nth-of-type(2)',
-        'mousedown', {bubbles: true, button: 0}
+        'mousedown',
+        {bubbles: true, button: 0},
       ]));
   chrome.test.assertTrue(
       await remoteCall.callRemoteTestUtil('fakeEvent', appId, [
-        '#default-task-dialog #default-tasks-list li:nth-of-type(2)', 'click',
-        {bubbles: true}
+        '#default-task-dialog #default-tasks-list li:nth-of-type(2)',
+        'click',
+        {bubbles: true},
       ]));
 
   // Wait for the dialog hidden, and the task is executed.
@@ -201,7 +202,7 @@ async function defaultTaskDialog(appId, descriptor) {
       !!await remoteCall.waitForElement(appId, '#tasks-menu[hidden]'));
 
   // Check the executed tasks.
-  await remoteCall.waitUntilTaskExecutes(appId, descriptor);
+  await remoteCall.waitUntilTaskExecutes(appId, descriptor, ['hello.txt']);
 }
 
 testcase.executeDefaultTaskDrive = async () => {
@@ -274,7 +275,7 @@ testcase.changeDefaultDialogScrollList = async () => {
   const appId = await setupTaskTest(RootPath.DOWNLOADS, tasks);
 
   // Select file.
-  await remoteCall.callRemoteTestUtil('selectFile', appId, ['hello.txt']);
+  await remoteCall.waitUntilSelected(appId, 'hello.txt');
 
   // Click the change default task menu.
   await remoteCall.waitForElement(appId, '#tasks[multiple]');
@@ -314,7 +315,7 @@ testcase.genericTaskIsNotExecuted = async () => {
   await executeDefaultTask(appId, {
     appId: FILE_MANAGER_EXTENSIONS_ID,
     taskType: 'file',
-    actionId: 'view-in-browser'
+    actionId: 'view-in-browser',
   });
 };
 
@@ -331,7 +332,7 @@ testcase.genericTaskAndNonGenericTask = async () => {
     new FakeTask(
         false,
         {appId: 'dummytaskid-3', taskType: 'fake-type', actionId: 'open-with'},
-        'DummyTask3', true /* isGenericFileHandler */)
+        'DummyTask3', true /* isGenericFileHandler */),
   ];
 
   const appId = await setupTaskTest(RootPath.DOWNLOADS, tasks);
@@ -348,14 +349,44 @@ testcase.noActionBarOpenForDirectories = async () => {
   const appId = await setupTaskTest(RootPath.DOWNLOADS, tasks);
 
   // Select file and ensure action bar open is shown.
-  await remoteCall.callRemoteTestUtil('selectFile', appId, ['hello.txt']);
+  await remoteCall.waitUntilSelected(appId, 'hello.txt');
   await remoteCall.waitForElement(appId, '#tasks:not([hidden])');
 
   // Select dir and ensure action bar open is hidden, but context menu is shown.
-  await remoteCall.callRemoteTestUtil('selectFile', appId, ['photos']);
+  await remoteCall.waitUntilSelected(appId, 'photos');
   await remoteCall.waitForElement(appId, '#tasks[hidden]');
   chrome.test.assertTrue(!!await remoteCall.callRemoteTestUtil(
       'fakeMouseRightClick', appId, ['#file-list .table-row[selected]']));
   await remoteCall.waitForElement(
       appId, '#default-task-menu-item:not([hidden])');
+};
+
+testcase.executeViaDblClick = async () => {
+  const appId = await setupAndWaitUntilReady(RootPath.DOWNLOADS);
+  await remoteCall.callRemoteTestUtil(
+      'overrideTasks', appId, [DOWNLOADS_FAKE_TASKS]);
+  //  Double-click the file.
+  chrome.test.assertTrue(!!await remoteCall.callRemoteTestUtil(
+      'fakeMouseDoubleClick', appId,
+      ['#file-list li[file-name="hello.txt"] .filename-label span']));
+
+  // Wait until the task is executed.
+  const descriptor = DOWNLOADS_FAKE_TASKS[0].descriptor;
+  await remoteCall.waitUntilTaskExecutes(appId, descriptor, ['hello.txt']);
+
+  // Reset the overridden tasks.
+  await remoteCall.callRemoteTestUtil(
+      'overrideTasks', appId, [DOWNLOADS_FAKE_TASKS]);
+
+  // Click on the currently selected tree item to reset the file list selection.
+  await remoteCall.waitAndClickElement(
+      appId, '#directory-tree .tree-item[selected]');
+
+  // Double click on a different file.
+  chrome.test.assertTrue(!!await remoteCall.callRemoteTestUtil(
+      'fakeMouseDoubleClick', appId,
+      ['#file-list li[file-name="world.ogv"] .filename-label span']));
+
+  // Check the tasks again.
+  await remoteCall.waitUntilTaskExecutes(appId, descriptor, ['world.ogv']);
 };

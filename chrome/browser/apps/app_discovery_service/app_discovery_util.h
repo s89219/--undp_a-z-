@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,10 @@
 #include "base/callback.h"
 #include "base/callback_list.h"
 #include "chrome/browser/apps/app_discovery_service/result.h"
+
+namespace gfx {
+class ImageSkia;
+}  // namespace gfx
 
 namespace apps {
 
@@ -25,10 +29,13 @@ enum class AppSource {
   kGames,
 };
 
+// These values persist to logs. Entries should not be renumbered and numeric
+// values should never be reused.
 enum class DiscoveryError {
   kSuccess,             // Successfully got app data to return.
   kErrorRequestFailed,  // Failed to get requested data.
-  kErrorMalformedData   // Failed to parse received data.
+  kErrorMalformedData,  // Failed to parse received data.
+  kMaxValue = kErrorMalformedData,
 };
 
 using ResultCallback =
@@ -40,6 +47,9 @@ using RepeatingResultCallback =
 
 using ResultCallbackList =
     base::RepeatingCallbackList<void(const std::vector<Result>& results)>;
+
+using GetIconCallback =
+    base::OnceCallback<void(const gfx::ImageSkia& image, DiscoveryError error)>;
 
 }  // namespace apps
 

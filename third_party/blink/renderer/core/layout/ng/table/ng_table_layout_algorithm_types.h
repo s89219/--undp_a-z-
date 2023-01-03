@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -211,7 +211,7 @@ class CORE_EXPORT NGTableTypes {
 
   static CellInlineConstraint CreateCellInlineConstraint(
       const NGBlockNode&,
-      WritingMode table_writing_mode,
+      WritingDirectionMode table_writing_direction,
       bool is_fixed_layout,
       const NGBoxStrut& cell_border,
       const NGBoxStrut& cell_padding);

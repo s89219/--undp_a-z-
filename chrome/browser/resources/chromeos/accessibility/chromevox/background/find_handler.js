@@ -1,14 +1,20 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview Handles output for Chrome's built-in find.
  */
+import {CursorRange} from '../../common/cursors/range.js';
+
+import {ChromeVoxState} from './chromevox_state.js';
+import {Output} from './output/output.js';
+import {OutputCustomEvent} from './output/output_types.js';
 
 const TreeChangeObserverFilter = chrome.automation.TreeChangeObserverFilter;
 
 export class FindHandler {
+  /** @private */
   constructor() {
     /**
      * The last time a find marker was received.
@@ -17,7 +23,7 @@ export class FindHandler {
     this.lastFindMarkerReceived = new Date();
 
     /** @private {function(chrome.automation.TreeChange)} */
-    this.treeChangeObserver_ = (change) => this.onTextMatch_(change);
+    this.treeChangeObserver_ = change => this.onTextMatch_(change);
 
     chrome.automation.addTreeChangeObserver(
         TreeChangeObserverFilter.TEXT_MARKER_CHANGES, this.treeChangeObserver_);
@@ -25,6 +31,9 @@ export class FindHandler {
 
   /** Initializes this module. */
   static init() {
+    if (FindHandler.instance) {
+      throw 'Error: Trying to create two instances of singleton FindHandler';
+    }
     FindHandler.instance = new FindHandler();
   }
 
@@ -41,9 +50,8 @@ export class FindHandler {
    * @private
    */
   onTextMatch_(evt) {
-    if (!evt.target.markers.some(function(marker) {
-          return marker.flags[chrome.automation.MarkerType.TEXT_MATCH];
-        })) {
+    if (!evt.target.markers.some(
+            marker => marker.flags[chrome.automation.MarkerType.TEXT_MATCH])) {
       return;
     }
 
@@ -56,10 +64,10 @@ export class FindHandler {
       return;
     }
 
-    const range = cursors.Range.fromNode(evt.target);
+    const range = CursorRange.fromNode(evt.target);
     ChromeVoxState.instance.setCurrentRange(range);
     new Output()
-        .withRichSpeechAndBraille(range, null, OutputEventType.NAVIGATE)
+        .withRichSpeechAndBraille(range, null, OutputCustomEvent.NAVIGATE)
         .go();
   }
 }
@@ -70,3 +78,6 @@ export class FindHandler {
  * @const {number}
  */
 FindHandler.DROP_MATCH_WITHIN_TIME_MS = 50;
+
+/** @type {FindHandler} */
+FindHandler.instance;

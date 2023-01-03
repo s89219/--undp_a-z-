@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,7 @@ base::RepeatingClosure* GetDragEnteredCallback() {
 }  // namespace
 
 DropHelper::DropHelper(View* root_view)
-    : root_view_(root_view), target_view_(nullptr), deepest_view_(nullptr) {}
+    : root_view_(root_view), target_view_(nullptr) {}
 
 DropHelper::~DropHelper() = default;
 

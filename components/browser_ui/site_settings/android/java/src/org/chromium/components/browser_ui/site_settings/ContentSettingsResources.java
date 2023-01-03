@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,6 +24,7 @@ import org.chromium.base.FeatureList;
 import org.chromium.components.browser_ui.settings.SettingsUtils;
 import org.chromium.components.content_settings.ContentSettingValues;
 import org.chromium.components.content_settings.ContentSettingsType;
+import org.chromium.components.content_settings.CookieControlsMode;
 import org.chromium.device.DeviceFeatureList;
 
 /**
@@ -87,8 +88,10 @@ public class ContentSettingsResources {
 
     /**
      * Returns the ResourceItem for a ContentSettingsType.
+     * @param delegate A site settings delegate to check feature states. Only needs to be passed
+     *                 to access Cookie icon, title or summary.
      */
-    private static ResourceItem getResourceItem(int contentType) {
+    private static ResourceItem getResourceItem(int contentType, SiteSettingsDelegate delegate) {
         switch (contentType) {
             case ContentSettingsType.ADS:
                 return new ResourceItem(R.drawable.web_asset, R.string.ads_permission_title,
@@ -145,9 +148,22 @@ public class ContentSettingsResources {
                         R.string.website_settings_category_clipboard_blocked);
 
             case ContentSettingsType.COOKIES:
-                return new ResourceItem(R.drawable.permission_cookie, R.string.cookies_title,
+                if (delegate == null) {
+                    return new ResourceItem(
+                            0, 0, ContentSettingValues.ALLOW, ContentSettingValues.BLOCK, 0, 0);
+                }
+                return new ResourceItem(delegate.isPrivacySandboxSettings4Enabled()
+                                ? R.drawable.gm_database_24
+                                : R.drawable.permission_cookie,
+                        delegate.isPrivacySandboxSettings4Enabled() ? R.string.site_data_page_title
+                                                                    : R.string.cookies_title,
                         ContentSettingValues.ALLOW, ContentSettingValues.BLOCK,
-                        R.string.website_settings_category_cookie_allowed, 0);
+                        delegate.isPrivacySandboxSettings4Enabled()
+                                ? R.string.website_settings_site_data_page_toggle_sub_label_allow
+                                : R.string.website_settings_category_cookie_allowed,
+                        delegate.isPrivacySandboxSettings4Enabled()
+                                ? R.string.website_settings_site_data_page_toggle_sub_label_block
+                                : 0);
 
             case ContentSettingsType.REQUEST_DESKTOP_SITE:
                 return new ResourceItem(R.drawable.ic_desktop_windows, R.string.desktop_site_title,
@@ -277,8 +293,8 @@ public class ContentSettingsResources {
     /**
      * Returns the resource id of the 24dp icon for a content type.
      */
-    public static int getIcon(int contentType) {
-        return getResourceItem(contentType).getIcon();
+    public static int getIcon(int contentType, SiteSettingsDelegate delegate) {
+        return getResourceItem(contentType, delegate).getIcon();
     }
 
     /**
@@ -293,8 +309,9 @@ public class ContentSettingsResources {
      */
     public static Drawable getContentSettingsIcon(Context context,
             @ContentSettingsType int contentSettingsType,
-            @ContentSettingValues @Nullable Integer value) {
-        Drawable icon = SettingsUtils.getTintedIcon(context, getIcon(contentSettingsType));
+            @ContentSettingValues @Nullable Integer value, SiteSettingsDelegate delegate) {
+        Drawable icon =
+                SettingsUtils.getTintedIcon(context, getIcon(contentSettingsType, delegate));
         if (value != null && value == ContentSettingValues.BLOCK) {
             return getBlockedSquareIcon(context.getResources(), icon);
         }
@@ -317,7 +334,8 @@ public class ContentSettingsResources {
             @ContentSettingValues @Nullable Integer value, boolean isIncognito) {
         int color = isIncognito ? R.color.default_icon_color_blue_light
                                 : R.color.default_icon_color_accent1_tint_list;
-        Drawable icon = SettingsUtils.getTintedIcon(context, getIcon(contentSettingsType), color);
+        Drawable icon =
+                SettingsUtils.getTintedIcon(context, getIcon(contentSettingsType, null), color);
         if (value != null && value == ContentSettingValues.BLOCK) {
             return getBlockedSquareIcon(context.getResources(), icon);
         }
@@ -379,12 +397,24 @@ public class ContentSettingsResources {
 
     /**
      * Returns the resource id of the title (short version), shown on the Site Settings page
-     * and in the global toggle at the top of a Website Settings page for a content type.
+     * and in the global toggle at the top of a Website Settings page for a category.
      */
-    public static int getTitle(int contentType) {
-        return getResourceItem(contentType).getTitle();
+    public static int getTitleForCategory(
+            @SiteSettingsCategory.Type int type, SiteSettingsDelegate delegate) {
+        if (type == SiteSettingsCategory.Type.THIRD_PARTY_COOKIES) {
+            return R.string.third_party_cookies_page_title;
+        }
+        return getTitle(SiteSettingsCategory.contentSettingsType(type), delegate);
     }
 
+    /**
+     * Returns the resource id of the title (short version), shown on the Site Settings page
+     * and in the global toggle at the top of a Website Settings page for a content type.
+     */
+    public static int getTitle(
+            @ContentSettingsType int contentType, SiteSettingsDelegate delegate) {
+        return getResourceItem(contentType, delegate).getTitle();
+    }
 
     /**
      * Returns which ContentSetting the global default is set to, when enabled.
@@ -392,7 +422,7 @@ public class ContentSettingsResources {
      * that appears on the Site Settings page and has a global toggle.
      */
     public static @ContentSettingValues @Nullable Integer getDefaultEnabledValue(int contentType) {
-        return getResourceItem(contentType).getDefaultEnabledValue();
+        return getResourceItem(contentType, null).getDefaultEnabledValue();
     }
 
     /**
@@ -401,7 +431,7 @@ public class ContentSettingsResources {
      * that appears on the Site Settings page and has a global toggle.
      */
     public static @ContentSettingValues @Nullable Integer getDefaultDisabledValue(int contentType) {
-        return getResourceItem(contentType).getDefaultDisabledValue();
+        return getResourceItem(contentType, null).getDefaultDisabledValue();
     }
 
     /**
@@ -434,13 +464,19 @@ public class ContentSettingsResources {
      * Returns the string resource id for a given ContentSetting to show
      * with a particular website.
      * @param value The ContentSetting for which we want the resource.
+     * @param contentSettingsType The ContentSettingsType for this string resource id.
      */
-    public static int getSiteSummary(@ContentSettingValues @Nullable Integer value) {
+    public static int getSiteSummary(@ContentSettingValues @Nullable Integer value,
+            @ContentSettingsType int contentSettingsType) {
         switch (value) {
             case ContentSettingValues.ALLOW:
-                return R.string.website_settings_permissions_allow;
+                return contentSettingsType == ContentSettingsType.REQUEST_DESKTOP_SITE
+                        ? R.string.website_settings_desktop_site_allow
+                        : R.string.website_settings_permissions_allow;
             case ContentSettingValues.BLOCK:
-                return R.string.website_settings_permissions_block;
+                return contentSettingsType == ContentSettingsType.REQUEST_DESKTOP_SITE
+                        ? R.string.website_settings_desktop_site_block
+                        : R.string.website_settings_permissions_block;
             default:
                 return 0; // We never show Ask as an option on individual permissions.
         }
@@ -449,15 +485,15 @@ public class ContentSettingsResources {
     /**
      * Returns the summary (resource id) to show when the content type is enabled.
      */
-    public static int getEnabledSummary(int contentType) {
-        return getResourceItem(contentType).getEnabledSummary();
+    public static int getEnabledSummary(int contentType, SiteSettingsDelegate delegate) {
+        return getResourceItem(contentType, delegate).getEnabledSummary();
     }
 
     /**
      * Returns the summary (resource id) to show when the content type is disabled.
      */
-    public static int getDisabledSummary(int contentType) {
-        return getResourceItem(contentType).getDisabledSummary();
+    public static int getDisabledSummary(int contentType, SiteSettingsDelegate delegate) {
+        return getResourceItem(contentType, delegate).getDisabledSummary();
     }
 
     /**
@@ -514,6 +550,32 @@ public class ContentSettingsResources {
      */
     public static int getAutoDarkWebContentListSummary(boolean enabled) {
         return enabled ? R.string.text_on : R.string.text_off;
+    }
+
+    /**
+     * Returns the summary for the site data content setting which should be used for display in the
+     * site settings list only.
+     */
+    public static int getSiteDataListSummary(boolean enabled) {
+        return enabled ? R.string.site_settings_page_site_data_allowed_sub_label
+                       : R.string.site_settings_page_site_data_blocked_sub_label;
+    }
+
+    /**
+     * Returns the summary for the third-party cookie content setting which should be used for
+     * display in the site settings list only.
+     */
+    public static int getThirdPartyCookieListSummary(@CookieControlsMode int cookieControlsMode) {
+        switch (cookieControlsMode) {
+            case CookieControlsMode.BLOCK_THIRD_PARTY:
+                return R.string.third_party_cookies_link_row_sub_label_disabled;
+            case CookieControlsMode.INCOGNITO_ONLY:
+                return R.string.third_party_cookies_link_row_sub_label_disabled_incognito;
+            case CookieControlsMode.OFF:
+                return R.string.third_party_cookies_link_row_sub_label_enabled;
+        }
+        assert false;
+        return 0;
     }
 
     /**

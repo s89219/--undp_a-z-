@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,7 +38,8 @@ function registerTest(testName, module, caseName) {
   this[className] = class extends NearbyBrowserTest {
     /** @override */
     get browsePreload() {
-      return `chrome://nearby/test_loader.html?module=nearby_share/${module}`;
+      return `chrome://nearby/test_loader.html?module=nearby_share/${
+          module}&host=test`;
     }
   };
 

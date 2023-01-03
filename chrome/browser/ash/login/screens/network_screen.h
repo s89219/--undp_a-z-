@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,15 +11,19 @@
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/timer/timer.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chrome/browser/ash/login/helper.h"
 #include "chrome/browser/ash/login/screens/base_screen.h"
-#include "chromeos/network/network_state_handler_observer.h"
-// TODO(https://crbug.com/1164001): move to forward declaration.
-#include "chrome/browser/ui/webui/chromeos/login/network_screen_handler.h"
+#include "chromeos/ash/components/network/network_state_handler_observer.h"
 
 namespace ash {
+
+class NetworkScreenView;
+class NetworkStateHandler;
+
+namespace login {
+class NetworkStateHelper;
+}
 
 // Controls network selection screen shown during OOBE.
 class NetworkScreen : public BaseScreen, public NetworkStateHandlerObserver {
@@ -27,33 +31,22 @@ class NetworkScreen : public BaseScreen, public NetworkStateHandlerObserver {
   using TView = NetworkScreenView;
 
   enum class Result {
-    CONNECTED_REGULAR,
-    CONNECTED_DEMO,
-    CONNECTED_REGULAR_CONSOLIDATED_CONSENT,
-    CONNECTED_DEMO_CONSOLIDATED_CONSENT,
-    OFFLINE_DEMO,
-    BACK_REGULAR,
-    BACK_DEMO,
-    BACK_OS_INSTALL,
+    CONNECTED,
+    BACK,
     NOT_APPLICABLE,
-    NOT_APPLICABLE_CONSOLIDATED_CONSENT
   };
 
   static std::string GetResultString(Result result);
 
   using ScreenExitCallback = base::RepeatingCallback<void(Result result)>;
 
-  NetworkScreen(NetworkScreenView* view,
+  NetworkScreen(base::WeakPtr<NetworkScreenView> view,
                 const ScreenExitCallback& exit_callback);
 
   NetworkScreen(const NetworkScreen&) = delete;
   NetworkScreen& operator=(const NetworkScreen&) = delete;
 
   ~NetworkScreen() override;
-
-  // Called when `view` has been destroyed. If this instance is destroyed before
-  // the `view` it should call view->Unbind().
-  void OnViewDestroyed(NetworkScreenView* view);
 
   void set_exit_callback_for_testing(const ScreenExitCallback& exit_callback) {
     exit_callback_ = exit_callback;
@@ -77,10 +70,10 @@ class NetworkScreen : public BaseScreen, public NetworkStateHandlerObserver {
   FRIEND_TEST_ALL_PREFIXES(NetworkScreenUnitTest, ContinuesOnlyOnce);
 
   // BaseScreen:
-  bool MaybeSkip(WizardContext* context) override;
+  bool MaybeSkip(WizardContext& context) override;
   void ShowImpl() override;
   void HideImpl() override;
-  void OnUserActionDeprecated(const std::string& action_id) override;
+  void OnUserAction(const base::Value::List& args) override;
   bool HandleAccelerator(LoginAcceleratorAction action) override;
 
   // NetworkStateHandlerObserver:
@@ -149,25 +142,16 @@ class NetworkScreen : public BaseScreen, public NetworkStateHandlerObserver {
   // Timer for connection timeout.
   base::OneShotTimer connection_timer_;
 
-  NetworkScreenView* view_ = nullptr;
+  base::WeakPtr<NetworkScreenView> view_;
   ScreenExitCallback exit_callback_;
   std::unique_ptr<login::NetworkStateHelper> network_state_helper_;
+
+  base::ScopedObservation<NetworkStateHandler, NetworkStateHandlerObserver>
+      network_state_handler_observer_{this};
 
   base::WeakPtrFactory<NetworkScreen> weak_ptr_factory_{this};
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace chromeos {
-using ::ash::NetworkScreen;
-}
-
-// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
-// source migration is finished.
-namespace ash {
-using ::chromeos::NetworkScreen;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_SCREENS_NETWORK_SCREEN_H_

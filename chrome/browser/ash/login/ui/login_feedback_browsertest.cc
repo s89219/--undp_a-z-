@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,7 +38,7 @@ void EnsureFeedbackAppUIShown(FeedbackDialog* feedback_dialog,
   if (widget->IsActive()) {
     std::move(callback).Run();
   } else {
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&EnsureFeedbackAppUIShown, feedback_dialog,
                        std::move(callback)),

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -134,8 +134,9 @@ void AnimatedAuthFactorsLabelWrapper::SetLabelTextAndAccessibleName(
   // If |previous_text_| is empty, then this is the first time the text is
   // being set. Avoid animating because it looks janky to have an animation in
   // progress when the lock screen first becomes visible.
-  if (!animate || previous_text.empty())
+  if (!animate || previous_text.empty()) {
     return;
+  }
 
   // Set the text/transform/opacity of the previous label to match the
   // appearance of the current label before the animation.

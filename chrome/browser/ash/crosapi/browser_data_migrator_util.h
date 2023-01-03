@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -134,6 +134,7 @@ constexpr const char* const kRemainInAshDataPaths[] = {
     "structured_metrics",
     "Sync Data",
     "Trusted Vault",
+    "trusted_vault.pb",
     "WebRTC Logs",
     "webrtc_event_logs",
     "zero_state_group_ranker.pb",
@@ -173,23 +174,26 @@ constexpr const char* const kLacrosDataPaths[]{
     "Service Worker",
     "Session Storage",
     "Sessions",
+    "SharedStorage",
     "Shortcuts",
+    "Storage",
     "Sync App Settings",
     "Sync Extension Settings",
     "Top Sites",
     "Visited Links",
     "Web Applications",
-    "Web Data"};
+    "Web Data",
+    "WebStorage"};
 
 // The base names of files/dirs that are required by both ash and lacros and
 // thus should be copied to lacros while keeping the original files/dirs in ash
 // data dir.
 constexpr const char* const kNeedCopyForMoveDataPaths[]{
-    "DNR Extension Rules", "Extension Cookies", "Policy", "shared_proto_db"};
+    "DNR Extension Rules", "Extension Cookies", "shared_proto_db"};
 
 // The same as `kNeedCopyDataPathsForMove` + "Preferences".
 constexpr const char* const kNeedCopyForCopyDataPaths[]{
-    "DNR Extension Rules", "Extension Cookies", "Policy", "Preferences",
+    "DNR Extension Rules", "Extension Cookies", "Preferences",
     "shared_proto_db"};
 
 // List of extension ids to be kept in Ash.
@@ -231,6 +235,7 @@ constexpr char kLocalStorageLeveldbName[] = "leveldb";
 // `Sync Data` path.
 constexpr char kSyncDataFilePath[] = "Sync Data";
 constexpr char kSyncDataLeveldbName[] = "LevelDB";
+constexpr char kSyncDataNigoriFileName[] = "Nigori.bin";
 
 // State Store paths.
 constexpr const char* const kStateStorePaths[] = {
@@ -238,6 +243,14 @@ constexpr const char* const kStateStorePaths[] = {
     "Extension Scripts",
     "Extension State",
 };
+
+// `Storage` path.
+constexpr char kStorageFilePath[] = "Storage";
+constexpr char kStorageExtFilePath[] = "ext";
+
+// Values used for the kBrowserDataMigrationMode flag.
+constexpr char kCopySwitchValue[] = "copy";  // Corresponds to kCopy.
+constexpr char kMoveSwitchValue[] = "move";  // Corresponds to KMove.
 
 // The type of LevelDB schema.
 enum class LevelDBType {
@@ -289,13 +302,19 @@ constexpr const char* kLacrosOnlyPreferencesKeys[] = {
     "sync.cache_guid",
 };
 
-// List of data types in Sync Data that have to be migrated to Lacros.
-// TODO(andreaorru): fill this in with the complete list.
-static_assert(38 == syncer::GetNumModelTypes(),
-              "If adding a new sync data type, update the list below below if"
-              " you want to migrate the new data type to Lacros.");
-constexpr syncer::ModelType kLacrosSyncDataTypes[] = {
-    syncer::ModelType::WEB_APPS,
+// List of data types in Sync Data that have to stay in Ash and Ash only.
+static_assert(45 == syncer::GetNumModelTypes(),
+              "If adding a new sync data type, update the lists below if"
+              " you want to keep the new data type in Ash only.");
+constexpr syncer::ModelType kAshOnlySyncDataTypes[] = {
+    syncer::ModelType::APP_LIST,
+    syncer::ModelType::ARC_PACKAGE,
+    syncer::ModelType::OS_PREFERENCES,
+    syncer::ModelType::OS_PRIORITY_PREFERENCES,
+    syncer::ModelType::PRINTERS,
+    syncer::ModelType::PRINTERS_AUTHORIZATION_SERVERS,
+    syncer::ModelType::WIFI_CONFIGURATIONS,
+    syncer::ModelType::WORKSPACE_DESK,
 };
 
 constexpr char kTotalSize[] = "Ash.UserDataStatsRecorder.DataSize.TotalSize";
@@ -463,6 +482,10 @@ int64_t ComputeDirectorySizeWithoutLinks(const base::FilePath& dir_path);
 // Record the total size of the user's profile data directory in MB.
 void RecordTotalSize(int64_t size);
 
+// Given a key in Sync Data's leveldb, returns true if (based on its prefix) its
+// data type has to stay in Ash and Ash only, false otherwise.
+bool IsAshOnlySyncDataType(base::StringPiece key);
+
 // Given an extension id, return the paths of the associated blob
 // and leveldb directories inside IndexedDB.
 IndexedDBPaths GetIndexedDBPaths(const base::FilePath& profile_path,
@@ -478,9 +501,9 @@ bool MigrateLevelDB(const base::FilePath& original_path,
 // Migrate Sync Data's LevelDB instance at `original_path` to Ash and Lacros.
 // For Ash, filter out the data types that are not meant to be ported to Lacros.
 // For Lacros, filter out the data types that are meant to stay in Ash.
-bool MigrateSyncData(const base::FilePath& original_path,
-                     const base::FilePath& ash_target_path,
-                     const base::FilePath& lacros_target_path);
+bool MigrateSyncDataLevelDB(const base::FilePath& original_path,
+                            const base::FilePath& ash_target_path,
+                            const base::FilePath& lacros_target_path);
 
 // Manipulates the given representation of Preferences (`root_dict`)
 // so that the given key only contains values relevant to Ash or

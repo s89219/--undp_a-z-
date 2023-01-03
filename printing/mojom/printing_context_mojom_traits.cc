@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -117,6 +117,9 @@ bool StructTraits<
     return false;
   out->set_requested_media(requested_media);
 
+  // Must set orientation before page setup, otherwise it can introduce an extra
+  // flipping of landscape page size dimensions.
+  out->SetOrientation(data.landscape());
   printing::PageSetup page_setup;
   if (!data.ReadPageSetupDeviceUnits(&page_setup))
     return false;
@@ -130,7 +133,6 @@ bool StructTraits<
   out->set_scale_factor(data.scale_factor());
   out->set_rasterize_pdf(data.rasterize_pdf());
 
-  out->SetOrientation(data.landscape());
   out->set_supports_alpha_blend(data.supports_alpha_blend());
 #if BUILDFLAG(IS_WIN)
   out->set_printer_language_type(data.printer_language_type());

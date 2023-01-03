@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,8 +13,8 @@
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chromeos/services/cros_healthd/public/cpp/fake_cros_healthd.h"
-#include "chromeos/services/cros_healthd/public/mojom/cros_healthd_diagnostics.mojom.h"
+#include "chromeos/ash/services/cros_healthd/public/cpp/fake_cros_healthd.h"
+#include "chromeos/ash/services/cros_healthd/public/mojom/cros_healthd_diagnostics.mojom.h"
 #include "components/policy/proto/device_management_backend.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -59,7 +59,7 @@ class DeviceCommandGetAvailableRoutinesJobTest : public testing::Test {
                      bool terminate_upon_input);
 
   std::string CreateSuccessPayload(
-      const std::vector<chromeos::cros_healthd::mojom::DiagnosticRoutineEnum>&
+      const std::vector<ash::cros_healthd::mojom::DiagnosticRoutineEnum>&
           available_routines);
 
   base::test::TaskEnvironment task_environment_{
@@ -96,24 +96,23 @@ void DeviceCommandGetAvailableRoutinesJobTest::InitializeJob(
 }
 
 std::string DeviceCommandGetAvailableRoutinesJobTest::CreateSuccessPayload(
-    const std::vector<chromeos::cros_healthd::mojom::DiagnosticRoutineEnum>&
+    const std::vector<ash::cros_healthd::mojom::DiagnosticRoutineEnum>&
         available_routines) {
   std::string payload;
-  base::Value root_dict(base::Value::Type::DICTIONARY);
-  base::Value routine_list(base::Value::Type::LIST);
+  base::Value::Dict root_dict;
+  base::Value::List routine_list;
   for (const auto& routine : available_routines)
     routine_list.Append(static_cast<int>(routine));
-  root_dict.SetPath(kRoutinesFieldName, std::move(routine_list));
+  root_dict.Set(kRoutinesFieldName, std::move(routine_list));
   base::JSONWriter::Write(root_dict, &payload);
   return payload;
 }
 
 TEST_F(DeviceCommandGetAvailableRoutinesJobTest, Success) {
-  const std::vector<chromeos::cros_healthd::mojom::DiagnosticRoutineEnum>
+  const std::vector<ash::cros_healthd::mojom::DiagnosticRoutineEnum>
       kAvailableRoutines = {
-          chromeos::cros_healthd::mojom::DiagnosticRoutineEnum::kUrandom,
-          chromeos::cros_healthd::mojom::DiagnosticRoutineEnum::
-              kBatteryCapacity};
+          ash::cros_healthd::mojom::DiagnosticRoutineEnum::kUrandom,
+          ash::cros_healthd::mojom::DiagnosticRoutineEnum::kBatteryCapacity};
   ash::cros_healthd::FakeCrosHealthd::Get()->SetAvailableRoutinesForTesting(
       kAvailableRoutines);
   std::unique_ptr<RemoteCommandJob> job =

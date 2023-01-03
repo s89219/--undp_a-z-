@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,11 +16,15 @@
 #include "base/scoped_observation.h"
 #include "base/strings/string_piece_forward.h"
 #include "chrome/browser/web_applications/app_registrar_observer.h"
+#include "chrome/browser/web_applications/os_integration/os_integration_sub_manager.h"
 #include "chrome/browser/web_applications/os_integration/url_handler_manager.h"
 #include "chrome/browser/web_applications/os_integration/web_app_file_handler_manager.h"
 #include "chrome/browser/web_applications/os_integration/web_app_protocol_handler_manager.h"
 #include "chrome/browser/web_applications/os_integration/web_app_run_on_os_login.h"
+#include "chrome/browser/web_applications/os_integration/web_app_shortcut.h"
 #include "chrome/browser/web_applications/os_integration/web_app_shortcut_manager.h"
+#include "chrome/browser/web_applications/proto/web_app_os_integration_state.pb.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_constants.h"
 #include "chrome/browser/web_applications/web_app_id.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
@@ -37,6 +41,16 @@ class WebAppIconManager;
 class WebAppRegistrar;
 class WebAppSyncBridge;
 class WebAppUiManager;
+
+// Returns if the sub-manager architecture is enabled. This means that they are
+// writing the expected os integration state to disk. See
+// `AreSubManagersExecuteEnabled` to check if they are also executing.
+bool AreOsIntegrationSubManagersEnabled();
+
+// Returns if the sub-manager architecture is enabled AND the "execute"
+// architecture is enabled. This causes os integration execution to happen from
+// the sub-managers and not the OsIntegrationManager.
+bool AreSubManagersExecuteEnabled();
 
 // OsHooksErrors contains the result of all Os hook deployments.
 // If a bit is set to `true`, then an error did occur.
@@ -56,8 +70,10 @@ struct InstallOsHooksOptions {
   OsHooksOptions os_hooks;
   bool add_to_desktop = false;
   bool add_to_quick_launch_bar = false;
+  ShortcutCreationReason reason = SHORTCUT_CREATION_BY_USER;
 };
 
+// Retire these 3 once the sub-manager project is done.
 // Callback made after InstallOsHooks is finished.
 using InstallOsHooksCallback =
     base::OnceCallback<void(OsHooksErrors os_hooks_errors)>;
@@ -97,12 +113,28 @@ class OsIntegrationManager : public AppRegistrarObserver {
       std::unique_ptr<UrlHandlerManager> url_handler_manager);
   ~OsIntegrationManager() override;
 
-  void SetSubsystems(WebAppSyncBridge* sync_bridge,
-                     WebAppRegistrar* registrar,
-                     WebAppUiManager* ui_manager,
-                     WebAppIconManager* icon_manager);
+  using AnyOsHooksErrorCallback =
+      base::OnceCallback<void(OsHooksErrors os_hooks_errors)>;
+  static base::RepeatingCallback<void(OsHooksErrors)> GetBarrierForSynchronize(
+      AnyOsHooksErrorCallback errors_callback);
 
-  void Start();
+  virtual void SetSubsystems(WebAppSyncBridge* sync_bridge,
+                             WebAppRegistrar* registrar,
+                             WebAppUiManager* ui_manager,
+                             WebAppIconManager* icon_manager);
+
+  virtual void Start();
+
+  // Start OS Integration synchronization from external callsites. This should
+  // be the only point of call into OsIntegrationManager from external places
+  // after the OS integration sub managers have been implemented.
+  // TODO(crbug.com/1401125): Remove all install, uninstall and update functions
+  // from this file once all OS Integration sub managers have been implemented,
+  // connected to the web_app system and tested.
+  virtual void Synchronize(
+      const AppId& app_id,
+      base::OnceClosure callback,
+      absl::optional<SynchronizeOsOptions> options = absl::nullopt);
 
   // Install all needed OS hooks for the web app.
   // If provided |web_app_info| is a nullptr, it will read icons data from disk,
@@ -155,8 +187,6 @@ class OsIntegrationManager : public AppRegistrarObserver {
   // Proxy calls for WebAppProtocolHandlerManager.
   virtual absl::optional<GURL> TranslateProtocolUrl(const AppId& app_id,
                                                     const GURL& protocol_url);
-  virtual std::vector<custom_handlers::ProtocolHandler> GetHandlersForProtocol(
-      const std::string& protocol);
   virtual std::vector<custom_handlers::ProtocolHandler> GetAppProtocolHandlers(
       const AppId& app_id);
   virtual std::vector<custom_handlers::ProtocolHandler>
@@ -167,6 +197,8 @@ class OsIntegrationManager : public AppRegistrarObserver {
   WebAppFileHandlerManager& file_handler_manager() {
     return *file_handler_manager_;
   }
+
+  WebAppShortcutManager& shortcut_manager_for_testing();
 
   UrlHandlerManager& url_handler_manager_for_testing();
 
@@ -197,10 +229,11 @@ class OsIntegrationManager : public AppRegistrarObserver {
 
   virtual void UpdateShortcuts(const AppId& app_id,
                                base::StringPiece old_name,
-                               base::OnceClosure callback);
+                               ResultCallback callback);
 
   // AppRegistrarObserver:
   void OnWebAppProfileWillBeDeleted(const AppId& app_id) override;
+  void OnAppRegistrarDestroyed() override;
 
  protected:
   WebAppShortcutManager* shortcut_manager() { return shortcut_manager_.get(); }
@@ -226,6 +259,7 @@ class OsIntegrationManager : public AppRegistrarObserver {
 
   virtual void CreateShortcuts(const AppId& app_id,
                                bool add_to_desktop,
+                               ShortcutCreationReason reason,
                                CreateShortcutsCallback callback);
 
   // Installation:
@@ -251,10 +285,9 @@ class OsIntegrationManager : public AppRegistrarObserver {
                                               const std::string& name);
 
   // Uninstallation:
-  virtual bool UnregisterShortcutsMenu(const AppId& app_id);
+  virtual bool UnregisterShortcutsMenu(const AppId& app_id,
+                                       ResultCallback callback);
   virtual void UnregisterRunOnOsLogin(const AppId& app_id,
-                                      const base::FilePath& profile_path,
-                                      const std::u16string& shortcut_title,
                                       ResultCallback callback);
   virtual void DeleteShortcuts(const AppId& app_id,
                                const base::FilePath& shortcuts_data_dir,
@@ -269,13 +302,25 @@ class OsIntegrationManager : public AppRegistrarObserver {
 
   // Update:
   virtual void UpdateShortcutsMenu(const AppId& app_id,
-                                   const WebAppInstallInfo& web_app_info);
+                                   const WebAppInstallInfo& web_app_info,
+                                   ResultCallback callback);
 
   // Utility methods:
   virtual std::unique_ptr<ShortcutInfo> BuildShortcutInfo(const AppId& app_id);
 
  private:
   class OsHooksBarrier;
+
+  virtual void ExecuteAllSubManagerConfigurations(
+      const AppId& app_id,
+      absl::optional<SynchronizeOsOptions> options,
+      std::unique_ptr<proto::WebAppOsIntegrationState> desired_states,
+      base::OnceClosure callback);
+
+  virtual void WriteStateToDB(
+      const AppId& app_id,
+      std::unique_ptr<proto::WebAppOsIntegrationState> desired_states,
+      base::OnceClosure callback);
 
   void OnShortcutsCreated(const AppId& app_id,
                           std::unique_ptr<WebAppInstallInfo> web_app_info,
@@ -308,6 +353,8 @@ class OsIntegrationManager : public AppRegistrarObserver {
   std::unique_ptr<WebAppFileHandlerManager> file_handler_manager_;
   std::unique_ptr<WebAppProtocolHandlerManager> protocol_handler_manager_;
   std::unique_ptr<UrlHandlerManager> url_handler_manager_;
+
+  std::vector<std::unique_ptr<OsIntegrationSubManager>> sub_managers_;
 
   base::ScopedObservation<WebAppRegistrar, AppRegistrarObserver>
       registrar_observation_{this};

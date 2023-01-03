@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@ SwitchAccessBasicNodeTest = class extends SwitchAccessE2ETest {
   }
 };
 
-TEST_F('SwitchAccessBasicNodeTest', 'AsRootNode', async function() {
+AX_TEST_F('SwitchAccessBasicNodeTest', 'AsRootNode', async function() {
   const website = `<div aria-label="outer">
                      <div aria-label="inner">
                        <input type="range">
@@ -55,7 +55,7 @@ TEST_F('SwitchAccessBasicNodeTest', 'AsRootNode', async function() {
 });
 
 TEST_F('SwitchAccessBasicNodeTest', 'Equals', function() {
-  this.runWithLoadedDesktop((desktop) => {
+  this.runWithLoadedDesktop(desktop => {
     const desktopNode = DesktopNode.build(desktop);
 
     let childGroup = desktopNode.firstChild;
@@ -124,7 +124,7 @@ TEST_F('SwitchAccessBasicNodeTest', 'Equals', function() {
   });
 });
 
-TEST_F('SwitchAccessBasicNodeTest', 'Actions', async function() {
+AX_TEST_F('SwitchAccessBasicNodeTest', 'Actions', async function() {
   const website = `<input type="text">
                    <button></button>
                    <input type="range" min=1 max=5 value=3>`;

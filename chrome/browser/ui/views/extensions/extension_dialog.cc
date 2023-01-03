@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/bind.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_view_host.h"
@@ -32,6 +33,7 @@
 #include "ash/public/cpp/tablet_mode.h"
 #include "chromeos/ui/base/window_properties.h"
 #include "ui/aura/window.h"
+#include "ui/color/color_provider.h"
 #endif
 
 ExtensionDialog::InitParams::InitParams(gfx::Size size)
@@ -86,6 +88,12 @@ void ExtensionDialog::OnWindowClosing() {
     observer_->ExtensionDialogClosing(this);
 }
 
+void ExtensionDialog::HandleCloseExtensionHost(
+    extensions::ExtensionHost* host) {
+  DCHECK_EQ(host, host_.get());
+  GetWidget()->Close();
+}
+
 void ExtensionDialog::OnExtensionHostDidStopFirstLoad(
     const extensions::ExtensionHost* host) {
   DCHECK_EQ(host, host_.get());
@@ -95,12 +103,6 @@ void ExtensionDialog::OnExtensionHostDidStopFirstLoad(
   // The render view is created during the LoadURL(), so we should
   // set the focus to the view if nobody else takes the focus.
   MaybeFocusRenderer();
-}
-
-void ExtensionDialog::OnExtensionHostShouldClose(
-    extensions::ExtensionHost* host) {
-  DCHECK_EQ(host, host_.get());
-  GetWidget()->Close();
 }
 
 void ExtensionDialog::OnExtensionProcessTerminated(
@@ -139,6 +141,11 @@ ExtensionDialog::ExtensionDialog(
   SetModalType(ui::MODAL_TYPE_WINDOW);
   SetShowTitle(!init_params.title.empty());
   SetTitle(init_params.title);
+
+  // The base::Unretained() below is safe because this object owns `host_`, so
+  // the callback will never fire if `this` is deleted.
+  host_->SetCloseHandler(base::BindOnce(
+      &ExtensionDialog::HandleCloseExtensionHost, base::Unretained(this)));
 
   extension_view_ =
       SetContentsView(std::make_unique<ExtensionViewViews>(host_.get()));
@@ -203,13 +210,15 @@ ExtensionDialog::ExtensionDialog(
 
   if (init_params.title_color) {
     // Frame active color changes the title color when dialog is active.
-    native_view->SetProperty(chromeos::kFrameActiveColorKey,
-                             init_params.title_color.value());
+    native_view->SetProperty(
+        chromeos::kFrameActiveColorKey,
+        window->GetColorProvider()->GetColor(init_params.title_color.value()));
   }
   if (init_params.title_inactive_color) {
     // Frame inactive color changes the title color when dialog is inactive.
     native_view->SetProperty(chromeos::kFrameInactiveColorKey,
-                             init_params.title_inactive_color.value());
+                             window->GetColorProvider()->GetColor(
+                                 init_params.title_inactive_color.value()));
   }
 #endif
 

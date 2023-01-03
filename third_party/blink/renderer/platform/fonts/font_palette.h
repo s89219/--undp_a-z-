@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,8 +17,7 @@ namespace blink {
  * FontDescription. It's used for representing the computed style
  * information which can contain either light, dark or custom palette
  * information according to the font-palette property. */
-class PLATFORM_EXPORT FontPalette
-    : public RefCountedWillBeThreadSafeForParallelTextShaping<FontPalette> {
+class PLATFORM_EXPORT FontPalette : public RefCounted<FontPalette> {
  public:
   enum KeywordPaletteName {
     kNormalPalette = 0,

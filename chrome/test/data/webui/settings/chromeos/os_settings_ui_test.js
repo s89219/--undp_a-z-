@@ -1,13 +1,14 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {CrSettingsPrefs} from 'chrome://os-settings/chromeos/os_settings.js';
-import {assert} from 'chrome://resources/js/assert.m.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {eventToPromise, flushTasks} from 'chrome://test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 /** @fileoverview Suite of tests for the OS Settings ui and main page. */
 
@@ -23,21 +24,21 @@ suite('OSSettingsUi', function() {
     flush();
 
     await CrSettingsPrefs.initialized;
-    settingsMain =
-        document.querySelector('os-settings-ui').$$('os-settings-main');
+    settingsMain = document.querySelector('os-settings-ui')
+                       .shadowRoot.querySelector('os-settings-main');
 
-    settingsMain =
-        document.querySelector('os-settings-ui').$$('os-settings-main');
+    settingsMain = document.querySelector('os-settings-ui')
+                       .shadowRoot.querySelector('os-settings-main');
     assert(!!settingsMain);
 
-    settingsPage = settingsMain.$$('os-settings-page');
+    settingsPage = settingsMain.shadowRoot.querySelector('os-settings-page');
     assertTrue(!!settingsPage);
 
     // Simulate Kerberos enabled.
     settingsPage.showKerberosSection = true;
 
-    const idleRender =
-        settingsMain.$$('os-settings-page').$$('settings-idle-load');
+    const idleRender = settingsMain.shadowRoot.querySelector('os-settings-page')
+                           .shadowRoot.querySelector('settings-idle-load');
     assert(!!idleRender);
     await idleRender.get();
     flush();
@@ -52,7 +53,7 @@ suite('OSSettingsUi', function() {
     // Check if there are any sub-pages to verify, being careful to filter out
     // any dom-if and template noise when we search.
     const pages = section.querySelector(`:not(dom-if, template)`)
-                      .shadowRoot.querySelector('settings-animated-pages');
+                      .shadowRoot.querySelector('os-settings-animated-pages');
     if (!pages) {
       return;
     }
@@ -87,13 +88,20 @@ suite('OSSettingsUi', function() {
 
   test('Basic sections', function() {
     const sectionNames = [
-      'internet', 'bluetooth', 'multidevice', 'osPeople', 'kerberos', 'device',
-      'personalization', 'osSearch', 'apps'
+      'internet',
+      'bluetooth',
+      'multidevice',
+      'osPeople',
+      'kerberos',
+      'device',
+      'personalization',
+      'osSearch',
+      'apps',
     ];
 
     for (const name of sectionNames) {
       const section = settingsPage.shadowRoot.querySelector(
-          `settings-section[section=${name}]`);
+          `os-settings-section[section=${name}]`);
       assertTrue(!!section, 'Did not find ' + name);
       verifySubpagesHidden(section);
     }
@@ -106,13 +114,17 @@ suite('OSSettingsUi', function() {
     await flushTasks();
 
     const sectionNames = [
-      'osPrivacy', 'osLanguages', 'files', 'osReset', 'dateTime',
-      'osAccessibility'
+      'osPrivacy',
+      'osLanguages',
+      'files',
+      'osReset',
+      'dateTime',
+      'osAccessibility',
     ];
 
     for (const name of sectionNames) {
       const section = settingsPage.shadowRoot.querySelector(
-          `settings-section[section=${name}]`);
+          `os-settings-section[section=${name}]`);
       assertTrue(!!section, 'Did not find ' + name);
       verifySubpagesHidden(section);
     }
@@ -130,18 +142,27 @@ suite('OSSettingsUi', function() {
     const hiddenSections = ['multidevice', 'osPeople', 'personalization'];
     for (const name of hiddenSections) {
       const section = settingsPage.shadowRoot.querySelector(
-          `settings-section[section=${name}]`);
+          `os-settings-section[section=${name}]`);
       assertFalse(!!section, 'Found unexpected section ' + name);
     }
 
     const visibleSections = [
-      'internet', 'bluetooth', 'kerberos', 'device', 'osSearch', 'apps',
-      'osPrivacy', 'osLanguages', 'files', 'osReset', 'dateTime',
-      'osAccessibility'
+      'internet',
+      'bluetooth',
+      'kerberos',
+      'device',
+      'osSearch',
+      'apps',
+      'osPrivacy',
+      'osLanguages',
+      'files',
+      'osReset',
+      'dateTime',
+      'osAccessibility',
     ];
     for (const name of visibleSections) {
       const section = settingsPage.shadowRoot.querySelector(
-          `settings-section[section=${name}]`);
+          `os-settings-section[section=${name}]`);
       assertTrue(!!section, 'Expected section ' + name);
     }
   });
@@ -149,20 +170,24 @@ suite('OSSettingsUi', function() {
   test('Update required end of life banner visibility', function() {
     flush();
     assertFalse(settingsPage.showUpdateRequiredEolBanner_);
-    assertFalse(!!settingsPage.$$('#updateRequiredEolBanner'));
+    assertFalse(
+        !!settingsPage.shadowRoot.querySelector('#updateRequiredEolBanner'));
 
     settingsPage.showUpdateRequiredEolBanner_ = true;
     flush();
-    assertTrue(!!settingsPage.$$('#updateRequiredEolBanner'));
+    assertTrue(
+        !!settingsPage.shadowRoot.querySelector('#updateRequiredEolBanner'));
   });
 
   test('Update required end of life banner close button click', function() {
     settingsPage.showUpdateRequiredEolBanner_ = true;
     flush();
-    const banner = settingsPage.$$('#updateRequiredEolBanner');
+    const banner =
+        settingsPage.shadowRoot.querySelector('#updateRequiredEolBanner');
     assertTrue(!!banner);
 
-    const closeButton = assert(settingsPage.$$('#closeUpdateRequiredEol'));
+    const closeButton = assert(
+        settingsPage.shadowRoot.querySelector('#closeUpdateRequiredEol'));
     closeButton.click();
     flush();
     assertFalse(settingsPage.showUpdateRequiredEolBanner_);

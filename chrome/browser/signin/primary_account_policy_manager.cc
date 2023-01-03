@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/delete_profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -23,7 +24,7 @@
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#if defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -35,7 +36,7 @@
 #include "chrome/browser/ui/webui/profile_helper.h"
 #endif
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#if defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)
 // Manager that presents the profile will be deleted dialog on the first active
 // browser window.
 class PrimaryAccountPolicyManager::DeleteProfileDialogManager
@@ -58,7 +59,7 @@ class PrimaryAccountPolicyManager::DeleteProfileDialogManager
     profile_path_ = profile->GetPath();
 
     if (auto_confirm_profile_deletion_for_testing) {
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(&DeleteProfileDialogManager::
                              HandleUserConfirmedProfileDeletionAndDie,
@@ -92,7 +93,7 @@ class PrimaryAccountPolicyManager::DeleteProfileDialogManager
     // synchronously, it will create a nested run loop that will not return
     // from OnBrowserSetLastActive() until the dialog is dismissed. But the user
     // cannot dismiss the dialog because the browser is not even shown!
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&DeleteProfileDialogManager::ShowDeleteProfileDialog,
                        weak_factory_.GetWeakPtr(), browser));
@@ -138,7 +139,7 @@ class PrimaryAccountPolicyManager::DeleteProfileDialogManager
         // the dialog by clicking on the close "X" button, then re-present the
         // dialog (the user should not be able to interact with the browser
         // window as the profile must be deleted).
-        base::ThreadTaskRunnerHandle::Get()->PostTask(
+        base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
             FROM_HERE,
             base::BindOnce(&DeleteProfileDialogManager::ShowDeleteProfileDialog,
                            weak_factory_.GetWeakPtr(), browser));
@@ -165,7 +166,7 @@ class PrimaryAccountPolicyManager::DeleteProfileDialogManager
   raw_ptr<Browser> active_browser_;
   base::WeakPtrFactory<DeleteProfileDialogManager> weak_factory_{this};
 };
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#endif  // defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)
 
 PrimaryAccountPolicyManager::PrimaryAccountPolicyManager(Profile* profile)
     : profile_(profile) {
@@ -234,29 +235,23 @@ void PrimaryAccountPolicyManager::EnsurePrimaryAccountAllowedForProfile(
       << "Disabling signin in chrome and 'RestrictSigninToPattern' policy "
          "are not supported on Lacros.";
 #else
-  switch (signin_util::UserSignoutSetting::GetForProfile(profile)
-              ->signout_allowed()) {
-    case signin::Tribool::kUnknown:
-      NOTREACHED();
-      break;
-    case signin::Tribool::kTrue: {
-      // Force clear the primary account if it is no longer allowed and if sign
-      // out is allowed.
-      auto* primary_account_mutator =
-          identity_manager->GetPrimaryAccountMutator();
-      primary_account_mutator->ClearPrimaryAccount(
-          clear_primary_account_source,
-          signin_metrics::SignoutDelete::kIgnoreMetric);
-      break;
-    }
-    case signin::Tribool::kFalse:
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+  if (signin_util::UserSignoutSetting::GetForProfile(profile)
+          ->IsClearPrimaryAccountAllowed()) {
+    // Force clear the primary account if it is no longer allowed and if sign
+    // out is allowed.
+    auto* primary_account_mutator =
+        identity_manager->GetPrimaryAccountMutator();
+    primary_account_mutator->ClearPrimaryAccount(
+        clear_primary_account_source,
+        signin_metrics::SignoutDelete::kIgnoreMetric);
+  } else {
+#if defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)
       // Force remove the profile if sign out is not allowed and if the
       // primary account is no longer allowed.
       // This may be called while the profile is initializing, so it must be
       // scheduled for later to allow the profile initialization to complete.
       CHECK(profiles::IsMultipleProfilesEnabled());
-      base::ThreadTaskRunnerHandle::Get()->PostTask(
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE,
           base::BindOnce(&PrimaryAccountPolicyManager::ShowDeleteProfileDialog,
                          weak_pointer_factory_.GetWeakPtr(), profile,
@@ -274,14 +269,13 @@ void PrimaryAccountPolicyManager::EnsurePrimaryAccountAllowedForProfile(
                       "allowed, sign out is not allowed. Do nothing.";
 #else
       CHECK(false) << "Deleting profiles is not supported.";
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
-      break;
+#endif  // defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)
   }
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#if defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)
 // Shows the delete profile dialog on the first browser active window.
 void PrimaryAccountPolicyManager::ShowDeleteProfileDialog(
     Profile* profile,
@@ -303,10 +297,13 @@ void PrimaryAccountPolicyManager::OnUserConfirmedProfileDeletion(
 
   DCHECK(profiles::IsMultipleProfilesEnabled());
 
-  g_browser_process->profile_manager()->MaybeScheduleProfileForDeletion(
-      profile_path,
-      hide_ui_for_testing_ ? base::DoNothing()
-                           : base::BindOnce(&webui::OpenNewWindowForProfile),
-      ProfileMetrics::DELETE_PROFILE_PRIMARY_ACCOUNT_NOT_ALLOWED);
+  g_browser_process->profile_manager()
+      ->GetDeleteProfileHelper()
+      .MaybeScheduleProfileForDeletion(
+          profile_path,
+          hide_ui_for_testing_
+              ? base::DoNothing()
+              : base::BindOnce(&webui::OpenNewWindowForProfile),
+          ProfileMetrics::DELETE_PROFILE_PRIMARY_ACCOUNT_NOT_ALLOWED);
 }
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
+#endif  // defined(TOOLKIT_VIEWS) && !BUILDFLAG(IS_CHROMEOS)

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,8 @@
 
 #include "ash/ash_export.h"
 #include "ash/public/cpp/shelf_types.h"
-#include "ash/shelf/shelf_bubble.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/views/bubble/bubble_dialog_delegate_view.h"
 
 namespace views {
 class Label;
@@ -19,11 +19,10 @@ namespace ash {
 
 // A shelf bubble instructing kiosk users to interact with the kiosk app menu
 // button.
-class ASH_EXPORT KioskAppInstructionBubble : public ShelfBubble {
+class ASH_EXPORT KioskAppInstructionBubble
+    : public views::BubbleDialogDelegateView {
  public:
-  KioskAppInstructionBubble(views::View* anchor,
-                            ShelfAlignment alignment,
-                            SkColor background_color);
+  KioskAppInstructionBubble(views::View* anchor, ShelfAlignment alignment);
 
   KioskAppInstructionBubble(const KioskAppInstructionBubble&) = delete;
   KioskAppInstructionBubble& operator=(const KioskAppInstructionBubble&) =
@@ -35,10 +34,6 @@ class ASH_EXPORT KioskAppInstructionBubble : public ShelfBubble {
   void OnThemeChanged() override;
   gfx::Size CalculatePreferredSize() const override;
   void GetAccessibleNodeData(ui::AXNodeData* node_data) override;
-
-  // ShelfBubble:
-  bool ShouldCloseOnPressDown() override;
-  bool ShouldCloseOnMouseExit() override;
 
   views::Label* title_ = nullptr;
 };

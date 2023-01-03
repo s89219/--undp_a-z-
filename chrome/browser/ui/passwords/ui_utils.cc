@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/grit/chromium_strings.h"
 #include "chrome/grit/generated_resources.h"
-#include "components/password_manager/core/browser/android_affiliation/affiliation_utils.h"
+#include "components/password_manager/core/browser/affiliation/affiliation_utils.h"
 #include "components/password_manager/core/browser/leak_detection_dialog_utils.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_manager_client.h"
@@ -34,6 +34,7 @@
 #include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_user_settings.h"
 #include "components/url_formatter/elide_url.h"
+#include "components/vector_icons/vector_icons.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/base/url_util.h"
@@ -170,6 +171,13 @@ std::u16string GetDisplayFederation(
       form.federation_origin, url_formatter::SchemeDisplay::OMIT_CRYPTOGRAPHIC);
 }
 
+std::u16string GetDisplayPassword(const password_manager::PasswordForm& form) {
+  return form.federation_origin.opaque()
+             ? form.password_value
+             : l10n_util::GetStringFUTF16(IDS_PASSWORDS_VIA_FEDERATION,
+                                          GetDisplayFederation(form));
+}
+
 bool IsSyncingAutosignSetting(Profile* profile) {
   const syncer::SyncService* sync_service =
       SyncServiceFactory::GetForProfile(profile);
@@ -207,10 +215,13 @@ GURL GetGooglePasswordManagerURL(ManagePasswordsReferrer referrer) {
         return "save_update_password_bubble";
       case ManagePasswordsReferrer::kPasswordGenerationPrompt:
         return "password_generation_prompt_in_autofill_dropdown";
+      case ManagePasswordsReferrer::kPasswordsGoogleWebsite:
+        return "passwords_google";
       case ManagePasswordsReferrer::kPasswordsAccessorySheet:
       case ManagePasswordsReferrer::kTouchToFill:
       case ManagePasswordsReferrer::kPasswordBreachDialog:
       case ManagePasswordsReferrer::kSafetyCheck:
+      case ManagePasswordsReferrer::kBiometricAuthenticationBeforeFillingDialog:
         NOTREACHED();
     }
 
@@ -248,7 +259,7 @@ void NavigateToPasswordCheckupPage(Profile* profile) {
 
 mojo::Remote<network::mojom::URLLoaderFactory> GetURLLoaderForMainFrame(
     content::WebContents* web_contents) {
-  content::RenderFrameHost* frame = web_contents->GetMainFrame();
+  content::RenderFrameHost* frame = web_contents->GetPrimaryMainFrame();
   mojo::Remote<network::mojom::URLLoaderFactory> url_loader_factory;
   frame->CreateNetworkServiceDefaultFactory(
       url_loader_factory.BindNewPipeAndPassReceiver());
@@ -257,7 +268,7 @@ mojo::Remote<network::mojom::URLLoaderFactory> GetURLLoaderForMainFrame(
 
 const gfx::VectorIcon& GooglePasswordManagerVectorIcon() {
 #if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-  return kGooglePasswordManagerIcon;
+  return vector_icons::kGooglePasswordManagerIcon;
 #else
   return kKeyIcon;
 #endif

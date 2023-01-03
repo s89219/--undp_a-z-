@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/process/process.h"
 #include "chrome/browser/web_applications/os_integration/web_app_shortcut.h"
 
@@ -129,8 +130,23 @@ void LaunchShim(LaunchShimUpdateBehavior update_behavior,
                 ShimTerminatedCallback terminated_callback,
                 std::unique_ptr<ShortcutInfo> shortcut_info);
 
-std::unique_ptr<ShortcutInfo> RecordAppShimErrorAndBuildShortcutInfo(
-    const base::FilePath& bundle_path);
+// Launch the shim specified by `shim_path` as if the user launched it directly,
+// except making sure that it connects to the currently running chrome or
+// browser_test instance.
+// If `urls` is not empty, the app is launched to handle those urls.
+// Return in `launched_callback` the pid that was launched (or an invalid pid
+// if none was launched). If `launched_callback` returns a valid pid, then
+// `terminated_callback` will be called when that process terminates.
+void LaunchShimForTesting(const base::FilePath& shim_path,
+                          const std::vector<GURL>& urls,
+                          ShimLaunchedCallback launched_callback,
+                          ShimTerminatedCallback terminated_callback);
+
+// Waits for the shim with the given `app_id` and `shim_path` to terminate. If
+// there is no running application matching `app_id` and `shim_path` returns
+// immediately.
+void WaitForShimToQuitForTesting(const base::FilePath& shim_path,
+                                 const std::string& app_id);
 
 // Return true if launching and updating app shims will fail because of the
 // testing environment.
@@ -261,7 +277,7 @@ class WebAppShortcutCreator {
   const base::FilePath app_data_dir_;
 
   // Information about the app. Owned by the caller of the constructor.
-  const ShortcutInfo* const info_;
+  const raw_ptr<const ShortcutInfo> info_;
 };
 
 }  // namespace web_app

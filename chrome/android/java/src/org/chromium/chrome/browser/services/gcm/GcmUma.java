@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,13 +17,6 @@ import java.lang.annotation.RetentionPolicy;
  * Helper Class for GCM UMA Collection.
  */
 public class GcmUma {
-    // Values for the "Invalidations.GCMUpstreamRequest" UMA histogram. The list is append-only.
-    public static final int UMA_UPSTREAM_SUCCESS = 0;
-    public static final int UMA_UPSTREAM_SIZE_LIMIT_EXCEEDED = 1;
-    public static final int UMA_UPSTREAM_TOKEN_REQUEST_FAILED = 2;
-    public static final int UMA_UPSTREAM_SEND_FAILED = 3;
-    public static final int UMA_UPSTREAM_COUNT = 4;
-
     // Keep in sync with the WebPushDeviceState enum in enums.xml.
     @IntDef({WebPushDeviceState.NOT_IDLE_NOT_HIGH_PRIORITY,
             WebPushDeviceState.NOT_IDLE_HIGH_PRIORITY, WebPushDeviceState.IDLE_NOT_HIGH_PRIORITY,
@@ -46,11 +39,6 @@ public class GcmUma {
         RecordHistogram.recordCount1MHistogram("GCM.DataMessageReceived", 1);
         RecordHistogram.recordBooleanHistogram(
                 "GCM.DataMessageReceivedHasCollapseKey", hasCollapseKey);
-    }
-
-    public static void recordGcmUpstreamHistogram(Context context, final int value) {
-        RecordHistogram.recordEnumeratedHistogram(
-                "Invalidations.GCMUpstreamRequest", value, UMA_UPSTREAM_COUNT);
     }
 
     public static void recordDeletedMessages(Context context) {

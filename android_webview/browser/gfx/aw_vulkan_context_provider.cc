@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/native_library.h"
+#include "base/ranges/algorithm.h"
 #include "gpu/config/skia_limits.h"
 #include "gpu/vulkan/init/gr_vk_memory_allocator_impl.h"
 #include "gpu/vulkan/init/vulkan_factory.h"
@@ -203,8 +204,7 @@ void AwVulkanContextProvider::EnqueueSecondaryCBSemaphores(
     std::vector<VkSemaphore> semaphores) {
   post_submit_semaphores_.reserve(post_submit_semaphores_.size() +
                                   semaphores.size());
-  std::copy(semaphores.begin(), semaphores.end(),
-            std::back_inserter(post_submit_semaphores_));
+  base::ranges::copy(semaphores, std::back_inserter(post_submit_semaphores_));
 }
 
 void AwVulkanContextProvider::EnqueueSecondaryCBPostSubmitTask(

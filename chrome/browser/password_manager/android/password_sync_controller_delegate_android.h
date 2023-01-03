@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,10 +9,13 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/functional/callback_forward.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observation.h"
 #include "base/types/strong_alias.h"
 #include "chrome/browser/password_manager/android/password_sync_controller_delegate_bridge.h"
 #include "components/password_manager/core/browser/password_store_backend.h"
+#include "components/sync/driver/sync_service.h"
 #include "components/sync/driver/sync_service_observer.h"
 #include "components/sync/model/model_type_controller_delegate.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -28,9 +31,9 @@ class PasswordSyncControllerDelegateAndroid
       public syncer::SyncServiceObserver,
       public PasswordSyncControllerDelegateBridge::Consumer {
  public:
-  PasswordSyncControllerDelegateAndroid(
+  explicit PasswordSyncControllerDelegateAndroid(
       std::unique_ptr<PasswordSyncControllerDelegateBridge> bridge,
-      PasswordStoreBackend::SyncDelegate* sync_delegate);
+      base::OnceClosure on_sync_shutdown);
   PasswordSyncControllerDelegateAndroid(
       const PasswordSyncControllerDelegateAndroid&) = delete;
   PasswordSyncControllerDelegateAndroid(
@@ -53,6 +56,7 @@ class PasswordSyncControllerDelegateAndroid
 
   // syncer::SyncServiceObserver implementation.
   void OnStateChanged(syncer::SyncService* sync) override;
+  void OnSyncShutdown(syncer::SyncService* sync) override;
 
   // PasswordStoreAndroidBackendBridge::Consumer implementation.
   void OnCredentialManagerNotified() override;
@@ -62,30 +66,30 @@ class PasswordSyncControllerDelegateAndroid
   std::unique_ptr<syncer::ProxyModelTypeControllerDelegate>
   CreateProxyModelControllerDelegate();
 
+  // Updates |is_sync_enabled| to hold the initial sync setting.
+  void OnSyncServiceInitialized(syncer::SyncService* sync_service);
+
  private:
   using IsSyncEnabled = base::StrongAlias<struct IsSyncEnabledTag, bool>;
-
-  // Updates |is_sync_enabled| and |syncing_account| to hold the actual syncing
-  // status and syncing account. Must be called only after sync service was
-  // instantiated.
-  void UpdateSyncStatusOnStartUp();
 
   base::WeakPtr<syncer::ModelTypeControllerDelegate> GetWeakPtrToBaseClass();
 
   const std::unique_ptr<PasswordSyncControllerDelegateBridge> bridge_;
 
-  raw_ptr<PasswordStoreBackend::SyncDelegate> sync_delegate_;
+  raw_ptr<const syncer::SyncService> sync_service_ = nullptr;
 
-  // Current sync status, absl::nullopt until UpdateSyncStatusOnStartUp() is
+  // Current sync status, absl::nullopt until OnSyncServiceInitialized() is
   // called. This value is used to distinguish between sync setup on startup and
   // when user turns on sync manually.
   absl::optional<IsSyncEnabled> is_sync_enabled_;
 
-  // Current syncing account if one exist.
-  absl::optional<std::string> syncing_account_;
-
   // Last sync status set in CredentialManager.
   absl::optional<IsSyncEnabled> credential_manager_sync_setting_;
+
+  base::OnceClosure on_sync_shutdown_;
+
+  base::ScopedObservation<syncer::SyncService, syncer::SyncServiceObserver>
+      sync_observation_{this};
 
   base::WeakPtrFactory<PasswordSyncControllerDelegateAndroid> weak_ptr_factory_{
       this};

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,6 +43,9 @@ class COMPONENT_EXPORT(TYPECD) TypecdClient {
 
   // Returns the global instance which may be null if not initialized.
   static TypecdClient* Get();
+
+  // Calls `typecd` to set whether peripheral data access is perimitted.
+  virtual void SetPeripheralDataAccessPermissionState(bool permitted) = 0;
 
  protected:
   // Initialize/Shutdown should be used instead.

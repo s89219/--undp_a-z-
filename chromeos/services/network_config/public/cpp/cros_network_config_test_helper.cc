@@ -1,17 +1,22 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chromeos/services/network_config/public/cpp/cros_network_config_test_helper.h"
 
-#include "chromeos/network/cellular_inhibitor.h"
-#include "chromeos/network/network_device_handler.h"
-#include "chromeos/network/network_handler.h"
+#include "chromeos/ash/components/network/cellular_inhibitor.h"
+#include "chromeos/ash/components/network/network_device_handler.h"
+#include "chromeos/ash/components/network/network_handler.h"
 #include "chromeos/services/network_config/cros_network_config.h"
 #include "chromeos/services/network_config/in_process_instance.h"
 
 namespace chromeos {
 namespace network_config {
+
+// TODO(https://crbug.com/1164001): remove after migrating to ash.
+using ::ash::CellularInhibitor;
+using ::ash::ManagedNetworkConfigurationHandler;
+using ::ash::NetworkHandler;
 
 CrosNetworkConfigTestHelper::CrosNetworkConfigTestHelper()
     : CrosNetworkConfigTestHelper(true) {}
@@ -30,6 +35,7 @@ void CrosNetworkConfigTestHelper::Shutdown() {
   cros_network_config_impl_.reset();
 }
 
+// static
 network_config::mojom::NetworkStatePropertiesPtr
 CrosNetworkConfigTestHelper::CreateStandaloneNetworkProperties(
     const std::string& id,
@@ -56,8 +62,12 @@ CrosNetworkConfigTestHelper::CreateStandaloneNetworkProperties(
           NetworkTypeStateProperties::NewCellular(std::move(cellular));
       break;
     }
-    case NetworkType::kEthernet:
+    case NetworkType::kEthernet: {
+      auto ethernet = mojom::EthernetStateProperties::New();
+      network->type_state =
+          mojom::NetworkTypeStateProperties::NewEthernet(std::move(ethernet));
       break;
+    }
     case NetworkType::kTether: {
       auto tether = mojom::TetherStateProperties::New();
       tether->signal_strength = signal_strength;
@@ -65,8 +75,11 @@ CrosNetworkConfigTestHelper::CreateStandaloneNetworkProperties(
           NetworkTypeStateProperties::NewTether(std::move(tether));
       break;
     }
-    case NetworkType::kVPN:
+    case NetworkType::kVPN: {
+      auto vpn = mojom::VPNStateProperties::New();
+      network->type_state = NetworkTypeStateProperties::NewVpn(std::move(vpn));
       break;
+    }
     case NetworkType::kWiFi: {
       auto wifi = mojom::WiFiStateProperties::New();
       wifi->signal_strength = signal_strength;

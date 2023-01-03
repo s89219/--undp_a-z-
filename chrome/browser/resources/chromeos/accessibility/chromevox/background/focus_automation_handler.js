@@ -1,12 +1,20 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
  * @fileoverview Handles automation events on the currently focused node.
  */
-import {BaseAutomationHandler} from '/chromevox/background/base_automation_handler.js';
-import {ChromeVoxEvent} from '/chromevox/common/custom_automation_event.js';
+import {AutomationPredicate} from '../../common/automation_predicate.js';
+import {constants} from '../../common/constants.js';
+import {CursorRange} from '../../common/cursors/range.js';
+import {ChromeVoxEvent} from '../common/custom_automation_event.js';
+import {QueueMode, TtsSpeechProperties} from '../common/tts_types.js';
+
+import {BaseAutomationHandler} from './base_automation_handler.js';
+import {ChromeVoxState} from './chromevox_state.js';
+import {Output} from './output/output.js';
+import {OutputCustomEvent} from './output/output_types.js';
 
 const AutomationEvent = chrome.automation.AutomationEvent;
 const AutomationNode = chrome.automation.AutomationNode;
@@ -16,15 +24,23 @@ const RoleType = chrome.automation.RoleType;
 const StateType = chrome.automation.StateType;
 
 export class FocusAutomationHandler extends BaseAutomationHandler {
+  /** @private */
   constructor() {
     super(null);
 
     /** @private {AutomationNode|undefined} */
     this.previousActiveDescendant_;
 
-    chrome.automation.getDesktop((desktop) => {
+    chrome.automation.getDesktop(desktop => {
       desktop.addEventListener(EventType.FOCUS, this.onFocus.bind(this), false);
     });
+  }
+
+  static init() {
+    if (FocusAutomationHandler.instance) {
+      throw 'Error: Trying to create two instances of singleton FocusAutomationHandler';
+    }
+    FocusAutomationHandler.instance = new FocusAutomationHandler();
   }
 
   /**
@@ -45,8 +61,7 @@ export class FocusAutomationHandler extends BaseAutomationHandler {
     this.addListener_(
         EventType.ACTIVE_DESCENDANT_CHANGED, this.onActiveDescendantChanged);
     this.addListener_(EventType.DETAILS_CHANGED, this.onDetailsChanged);
-    this.addListener_(
-        EventType.MENU_LIST_ITEM_SELECTED, this.onEventIfSelected);
+    this.addListener_(EventType.MENU_ITEM_SELECTED, this.onEventIfSelected);
     this.addListener_(
         EventType.SELECTED_VALUE_CHANGED, this.onSelectedValueChanged_);
   }
@@ -62,7 +77,7 @@ export class FocusAutomationHandler extends BaseAutomationHandler {
 
     let skipFocusCheck = false;
     chrome.automation.getFocus(focus => {
-      if (focus.role === RoleType.POP_UP_BUTTON) {
+      if (AutomationPredicate.popUpButton(focus)) {
         skipFocusCheck = true;
       }
     });
@@ -76,13 +91,13 @@ export class FocusAutomationHandler extends BaseAutomationHandler {
     Output.forceModeForNextSpeechUtterance(QueueMode.CATEGORY_FLUSH);
 
     const prev = this.previousActiveDescendant_ ?
-        cursors.Range.fromNode(this.previousActiveDescendant_) :
+        CursorRange.fromNode(this.previousActiveDescendant_) :
         ChromeVoxState.instance.currentRange;
     new Output()
         .withoutHints()
         .withRichSpeechAndBraille(
-            cursors.Range.fromNode(evt.target.activeDescendant), prev,
-            OutputEventType.NAVIGATE)
+            CursorRange.fromNode(evt.target.activeDescendant), prev,
+            OutputCustomEvent.NAVIGATE)
         .go();
     this.previousActiveDescendant_ = evt.target.activeDescendant;
   }
@@ -106,7 +121,8 @@ export class FocusAutomationHandler extends BaseAutomationHandler {
     // allow interruption of this announcement which can occur in a slew of
     // events (e.g. typing).
     new Output()
-        .withInitialSpeechProperties({doNotInterrupt: true})
+        .withInitialSpeechProperties(
+            new TtsSpeechProperties({doNotInterrupt: true}))
         .formatForSpeech('@hint_details')
         .go();
   }
@@ -124,7 +140,7 @@ export class FocusAutomationHandler extends BaseAutomationHandler {
    * @param {!ChromeVoxEvent} evt
    */
   onSelectedValueChanged_(evt) {
-    if (evt.target.role !== RoleType.POP_UP_BUTTON ||
+    if (!AutomationPredicate.popUpButton(evt.target) ||
         evt.target.state.editable) {
       return;
     }
@@ -147,3 +163,6 @@ export class FocusAutomationHandler extends BaseAutomationHandler {
     }
   }
 }
+
+/** @type {FocusAutomationHandler} */
+FocusAutomationHandler.instance;

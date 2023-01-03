@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,8 +20,8 @@
 #include "ash/shell.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/command_line.h"
-#include "chromeos/services/assistant/public/cpp/features.h"
-#include "chromeos/services/assistant/public/cpp/switches.h"
+#include "chromeos/ash/services/assistant/public/cpp/features.h"
+#include "chromeos/ash/services/assistant/public/cpp/switches.h"
 
 namespace ash {
 
@@ -120,7 +120,7 @@ void AssistantViewDelegateImpl::OnSuggestionPressed(
 bool AssistantViewDelegateImpl::ShouldShowOnboarding() const {
   // UI developers need to be able to force the onboarding flow.
   if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          chromeos::assistant::switches::kForceAssistantOnboarding)) {
+          assistant::switches::kForceAssistantOnboarding)) {
     return true;
   }
 

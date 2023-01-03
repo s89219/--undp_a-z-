@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -141,7 +141,8 @@ class AutofillUiTest : public InProcessBrowserTest,
   void RenderFrameHostChanged(content::RenderFrameHost* old_host,
                               content::RenderFrameHost* new_host) override;
 
-  raw_ptr<content::RenderFrameHost> current_main_rfh_ = nullptr;
+  raw_ptr<content::RenderFrameHost, DanglingUntriaged> current_main_rfh_ =
+      nullptr;
   BrowserAutofillManagerTestDelegateImpl test_delegate_;
 
   // KeyPressEventCallback that serves as a sink to ensure that every key press

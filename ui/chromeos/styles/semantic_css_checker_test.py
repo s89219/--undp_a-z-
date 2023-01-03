@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright 2021 The Chromium Authors. All rights reserved.
+# Copyright 2021 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -12,7 +12,7 @@ from semantic_css_checker import SemanticCssChecker
 # Update system path to src/ so we can access src/PRESUBMIT_test_mocks.py.
 sys.path.append(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..',
-                                 '..', '..'))
+                                 '..'))
 
 from PRESUBMIT_test_mocks import (MockInputApi, MockOutputApi, MockFile,
                                   MockChange, MockAffectedFile)

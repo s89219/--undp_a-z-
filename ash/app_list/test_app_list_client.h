@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,9 +41,6 @@ class TestAppListClient : public AppListClient {
                         bool launch_as_default) override;
   void InvokeSearchResultAction(const std::string& result_id,
                                 SearchResultActionType action) override;
-  void GetSearchResultContextMenuModel(
-      const std::string& result_id,
-      GetContextMenuModelCallback callback) override;
   void ViewClosing() override {}
   void ViewShown(int64_t display_id) override {}
   void ActivateItem(int profile_id,
@@ -61,13 +58,10 @@ class TestAppListClient : public AppListClient {
   void OnQuickSettingsChanged(
       const std::string& setting_name,
       const std::map<std::string, int>& values) override {}
-  void NotifySearchResultsForLogging(
-      const std::u16string& trimmed_query,
-      const SearchResultIdWithPositionIndices& results,
-      int position_index) override {}
   AppListNotifier* GetNotifier() override;
   void LoadIcon(int profile_id, const std::string& app_id) override {}
   ash::AppListSortOrder GetPermanentSortingOrder() const override;
+  void CommitTemporarySortOrder() override;
 
   int start_zero_state_search_count() const {
     return start_zero_state_search_count_;
@@ -78,7 +72,6 @@ class TestAppListClient : public AppListClient {
   int zero_state_search_done_count() const {
     return zero_state_search_done_count_;
   }
-  std::u16string last_search_query() const { return last_search_query_; }
 
   // Returns the number of AppItems that have been activated. These items could
   // live in search, RecentAppsView, or ScrollableAppsGridView.
@@ -93,7 +86,19 @@ class TestAppListClient : public AppListClient {
   }
 
   using SearchResultActionId = std::pair<std::string, int>;
-  std::vector<SearchResultActionId> GetAndClearInvokedResultActions();
+  std::vector<SearchResultActionId> GetAndResetInvokedResultActions();
+
+  // Returns the list of search queries that were requested.
+  // This clears the list of tracked queries - if the method gets called
+  // consecutively, the second call will not return queries returned returned by
+  // the first call.
+  std::vector<std::u16string> GetAndResetPastSearchQueries();
+
+  using SearchCallback =
+      base::RepeatingCallback<void(const std::u16string& query)>;
+  void set_search_callback(SearchCallback callback) {
+    search_callback_ = std::move(callback);
+  }
 
  private:
   // Called in response to StartZeroStateSearch() when
@@ -104,11 +109,16 @@ class TestAppListClient : public AppListClient {
   int start_zero_state_search_count_ = 0;
   bool run_zero_state_callback_immediately_ = true;
   int zero_state_search_done_count_ = 0;
-  std::u16string last_search_query_;
+  std::vector<std::u16string> search_queries_;
   std::vector<SearchResultActionId> invoked_result_actions_;
   int activate_item_count_ = 0;
   std::string activate_item_last_id_;
   std::string last_opened_search_result_;
+
+  // If not null, callback that will be run on each search request. It can be
+  // used by tests to inject results to search model in response to search
+  // queries.
+  SearchCallback search_callback_;
 
   base::WeakPtrFactory<TestAppListClient> weak_factory_{this};
 };

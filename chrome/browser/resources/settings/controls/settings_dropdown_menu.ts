@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,10 +11,10 @@
  *   <settings-dropdown-menu pref="{{prefs.foo}}">
  *   </settings-dropdown-menu>
  */
-import '//resources/cr_elements/md_select_css.m.js';
-import '//resources/cr_elements/policy/cr_policy_pref_indicator.m.js';
-import '../settings_shared_css.js';
-import '../settings_vars_css.js';
+import '//resources/cr_elements/md_select.css.js';
+import '//resources/cr_elements/policy/cr_policy_pref_indicator.js';
+import '../settings_shared.css.js';
+import '../settings_vars.css.js';
 
 import {assert} from '//resources/js/assert_ts.js';
 import {microTask, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
@@ -29,12 +29,12 @@ import {getTemplate} from './settings_dropdown_menu.html.js';
  * The |name| is shown in the gui.  The |value| us use to set or compare with
  * the preference value.
  */
-type DropdownMenuOption = {
-  name: string,
-  value: number|string,
-};
+interface DropdownMenuOption {
+  name: string;
+  value: number|string;
+}
 
-export type DropdownMenuOptionList = Array<DropdownMenuOption>;
+export type DropdownMenuOptionList = DropdownMenuOption[];
 
 export interface SettingsDropdownMenuElement {
   $: {

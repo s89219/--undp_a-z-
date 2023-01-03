@@ -1,18 +1,8 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 /**
- * @fileoverview Description of this file.
+ * @fileoverview This file is empty, but the closure compiler requires an entry
+ * point. As such this file is that entry point.
  */
-
-goog.require('BackgroundBridge');
-goog.require('BrailleKeyCommand');
-goog.require('BrailleKeyEvent');
-goog.require('ChromeVox');
-goog.require('ChromeVoxState');
-goog.require('KeySequence');
-goog.require('LibLouis');
-goog.require('Msgs');
-goog.require('NavBraille');
-goog.require('Spannable');

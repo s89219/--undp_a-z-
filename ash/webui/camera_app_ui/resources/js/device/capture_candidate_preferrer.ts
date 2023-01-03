@@ -1,14 +1,14 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {assert, assertNotReached} from '../assert.js';
+import * as expert from '../expert.js';
 import * as localStorage from '../models/local_storage.js';
-import * as state from '../state.js';
 import {
   AspectRatioSet,
+  LocalStorageKey,
   Mode,
-  NON_CROP_ASPECT_RATIO_SETS,
   PhotoResolutionLevel,
   Resolution,
   VideoResolutionLevel,
@@ -36,11 +36,6 @@ import {
   VideoResolutionOption,
   VideoResolutionOptionListener,
 } from './type.js';
-
-const PREF_DEVICE_PHOTO_RESOLUTION_LEVEL_KEY = 'devicePhotoResolutionLevel';
-const PREF_DEVICE_PHOTO_ASPECT_RATIO_SET_KEY = 'devicePhotoAspectRatioSet';
-const PREF_DEVICE_VIDEO_RESOLUTION_LEVEL_KEY = 'deviceVideoResolutionLevel';
-const PREF_DEVICE_VIDEO_RESOLUTION_FPS_KEY = 'deviceVideoResolutionFps';
 
 interface VideoLevelResolution {
   level: VideoResolutionLevel;
@@ -84,28 +79,49 @@ export class CaptureCandidatePreferrer {
    */
   private prefVideoFpsesMap:
       Record<string, Record<VideoResolutionLevel, number>> =
-          localStorage.getObject(PREF_DEVICE_VIDEO_RESOLUTION_FPS_KEY);
+          localStorage.getObject(
+              LocalStorageKey.PREF_DEVICE_VIDEO_RESOLUTION_FPS);
 
   /**
    * Map saving preference that each of its key as device id and value to be
    * preferred photo resolution level.
    */
   private prefPhotoResolutionLevelMap: Record<string, PhotoResolutionLevel> =
-      localStorage.getObject(PREF_DEVICE_PHOTO_RESOLUTION_LEVEL_KEY);
+      localStorage.getObject(
+          LocalStorageKey.PREF_DEVICE_PHOTO_RESOLUTION_LEVEL);
 
   /**
    * Map saving preference that each of its key as device id and
    * value to be preferred photo aspect ratio set.
    */
   private prefPhotoAspectRatioSetMap: Record<string, AspectRatioSet> =
-      localStorage.getObject(PREF_DEVICE_PHOTO_ASPECT_RATIO_SET_KEY);
+      localStorage.getObject(
+          LocalStorageKey.PREF_DEVICE_PHOTO_ASPECT_RATIO_SET);
 
   /**
    * Map saving preference that each of its key as device id and value to be
    * preferred video resolution level.
    */
   private prefVideoResolutionLevelMap: Record<string, VideoResolutionLevel> =
-      localStorage.getObject(PREF_DEVICE_VIDEO_RESOLUTION_LEVEL_KEY);
+      localStorage.getObject(
+          LocalStorageKey.PREF_DEVICE_VIDEO_RESOLUTION_LEVEL);
+
+  /**
+   * Map saving preference that each of its key as device id and value to be
+   * preferred photo resolution. It is used when showing all resolutions is on.
+   */
+  private prefPhotoResolutionMap:
+      Record<string, Record<AspectRatioSet, Resolution>> =
+          localStorage.getObject(
+              LocalStorageKey.PREF_DEVICE_PHOTO_RESOLUTION_EXPERT);
+
+  /**
+   * Map saving preference that each of its key as device id and value to be
+   * preferred video resolution. It is used when showing all resolutions is on.
+   */
+  private prefVideoResolutionMap: Record<string, Resolution> =
+      localStorage.getObject(
+          LocalStorageKey.PREF_DEVICE_VIDEO_RESOLUTION_EXPERT);
 
   private readonly photoResolutionOptionListeners:
       PhotoResolutionOptionListener[] = [];
@@ -115,6 +131,8 @@ export class CaptureCandidatePreferrer {
 
   private readonly videoResolutionOptionListeners:
       VideoResolutionOptionListener[] = [];
+
+  private preferPhotoAspectRatioOrder: AspectRatioSet[] = [];
 
   /**
    * Adds listener for photo resolution options.
@@ -163,13 +181,14 @@ export class CaptureCandidatePreferrer {
   /**
    * Gets all the capture candidates sorted based on users preference.
    */
-  getSortedCandidates(infos: Camera3DeviceInfo[], deviceId: string, mode: Mode):
-      CaptureCandidate[] {
+  getSortedCandidates(
+      infos: Camera3DeviceInfo[], deviceId: string, mode: Mode,
+      hasAudio: boolean): CaptureCandidate[] {
     if (this.cameraInfos === null) {
       this.updateCapability(infos);
     }
     if (mode === Mode.VIDEO) {
-      return this.getVideoCandidates(deviceId);
+      return this.getVideoCandidates(deviceId, hasAudio);
     } else {
       const candidates = this.getPhotoCandidates(deviceId);
       if (mode === Mode.SCAN) {
@@ -187,7 +206,7 @@ export class CaptureCandidatePreferrer {
       deviceId: string, resolutionLevel: PhotoResolutionLevel): void {
     this.prefPhotoResolutionLevelMap[deviceId] = resolutionLevel;
     localStorage.set(
-        PREF_DEVICE_PHOTO_RESOLUTION_LEVEL_KEY,
+        LocalStorageKey.PREF_DEVICE_PHOTO_RESOLUTION_LEVEL,
         this.prefPhotoResolutionLevelMap);
 
     // For opening camera, it will be notified after the reconfigure.
@@ -203,7 +222,7 @@ export class CaptureCandidatePreferrer {
       void {
     this.prefPhotoAspectRatioSetMap[deviceId] = aspectRatioSet;
     localStorage.set(
-        PREF_DEVICE_PHOTO_ASPECT_RATIO_SET_KEY,
+        LocalStorageKey.PREF_DEVICE_PHOTO_ASPECT_RATIO_SET,
         this.prefPhotoAspectRatioSetMap);
 
     // For opening camera, it will be notified after the reconfigure.
@@ -219,7 +238,7 @@ export class CaptureCandidatePreferrer {
       deviceId: string, resolutionLevel: VideoResolutionLevel): void {
     this.prefVideoResolutionLevelMap[deviceId] = resolutionLevel;
     localStorage.set(
-        PREF_DEVICE_VIDEO_RESOLUTION_LEVEL_KEY,
+        LocalStorageKey.PREF_DEVICE_VIDEO_RESOLUTION_LEVEL,
         this.prefVideoResolutionLevelMap);
 
     // For opening camera, it will be notified after the reconfigure.
@@ -237,7 +256,8 @@ export class CaptureCandidatePreferrer {
     this.prefVideoFpsesMap[deviceId] =
         {...this.prefVideoFpsesMap[deviceId], [resolutionLevel]: prefFps};
     localStorage.set(
-        PREF_DEVICE_VIDEO_RESOLUTION_FPS_KEY, this.prefVideoFpsesMap);
+        LocalStorageKey.PREF_DEVICE_VIDEO_RESOLUTION_FPS,
+        this.prefVideoFpsesMap);
 
     // For opening camera, it will be notified after the reconfigure.
     if (!shouldReconfigure) {
@@ -246,9 +266,42 @@ export class CaptureCandidatePreferrer {
   }
 
   /**
+   * Used when showing all resolutions.
+   */
+  setPrefPhotoResolution(deviceId: string, resolution: Resolution): void {
+    const aspectRatioSet = this.preferSquarePhoto(deviceId) ?
+        AspectRatioSet.RATIO_SQUARE :
+        toAspectRatioSet(resolution);
+    this.setPreferPhotoResolution(deviceId, aspectRatioSet, resolution);
+    localStorage.set(
+        LocalStorageKey.PREF_DEVICE_PHOTO_RESOLUTION_EXPERT,
+        this.prefPhotoResolutionMap);
+
+    // For opening camera, it will be notified after the reconfigure.
+    if (deviceId !== this.cameraConfig?.deviceId) {
+      this.notifyListeners();
+    }
+  }
+
+  /**
+   * Used when showing all resolutions.
+   */
+  setPrefVideoResolution(deviceId: string, resolution: Resolution): void {
+    this.prefVideoResolutionMap[deviceId] = resolution;
+    localStorage.set(
+        LocalStorageKey.PREF_DEVICE_VIDEO_RESOLUTION_EXPERT,
+        this.prefVideoResolutionMap);
+
+    // For opening camera, it will be notified after the reconfigure.
+    if (deviceId !== this.cameraConfig?.deviceId) {
+      this.notifyListeners();
+    }
+  }
+
+  /**
    * Builds the photo and video options according to the camera info.
    */
-  private buildOptions(): void {
+  buildOptions(): void {
     function extractCaptureResolutions(pairs: CapturePreviewPairs) {
       const resolutions = [];
       for (const pair of pairs) {
@@ -334,11 +387,16 @@ export class CaptureCandidatePreferrer {
     assert(cameraInfo !== undefined);
 
     const candidates = [];
+
     const prefLevel = this.prefPhotoResolutionLevelMap[deviceId];
+    const showAllResolutions =
+        expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS);
     const prefAspectRatioSet = this.prefPhotoAspectRatioSetMap[deviceId];
     const aspectRatioOptions = this.photoOptions.get(deviceId);
     assert(aspectRatioOptions !== undefined);
     for (const [aspectRatioSet, options] of aspectRatioOptions.entries()) {
+      const prefResolution =
+          this.getPreferPhotoResolution(deviceId, aspectRatioSet);
       const candidatesByAspectRatio = [];
       const photoPreviewPair = cameraInfo.photoPreviewPairs.find(
           (pair) => pair.captureResolutions[0].aspectRatioEquals(
@@ -349,7 +407,11 @@ export class CaptureCandidatePreferrer {
             (r) => new PhotoCaptureCandidate(
                 deviceId, r, photoPreviewPair.previewResolutions,
                 cameraInfo.supportPTZ));
-        if (option.resolutionLevel === prefLevel) {
+        if (showAllResolutions &&
+            option.resolutions[0].equals(prefResolution)) {
+          candidatesByAspectRatio.unshift(...candidatesByLevel);
+        } else if (
+            !showAllResolutions && option.resolutionLevel === prefLevel) {
           candidatesByAspectRatio.unshift(...candidatesByLevel);
         } else {
           candidatesByAspectRatio.push(...candidatesByLevel);
@@ -364,19 +426,24 @@ export class CaptureCandidatePreferrer {
     return candidates;
   }
 
-  private getVideoCandidates(deviceId: string): CaptureCandidate[] {
+  private getVideoCandidates(deviceId: string, hasAudio: boolean):
+      CaptureCandidate[] {
     const cameraInfo = this.cameraInfos.get(deviceId);
     assert(cameraInfo !== undefined);
     const enableMultiStreamRecording =
-        state.get(state.State.ENABLE_MULTISTREAM_RECORDING);
+        expert.isEnabled(expert.ExpertOption.ENABLE_MULTISTREAM_RECORDING);
 
     const candidates = [];
     const prefLevel = this.prefVideoResolutionLevelMap[deviceId];
+    const prefResolution = this.prefVideoResolutionMap[deviceId] ?? null;
     const options = this.videoOptions.get(deviceId);
+    const showAllResolutions =
+        expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS);
     assert(options !== undefined);
     for (const option of options) {
       const prefFps = this.getFallbackFPS(deviceId, option.resolutionLevel);
-      const tmpCandidates = [];
+      const targetFpsCandidates = [];
+      const otherFpsCandidates = [];
       const videoPreviewPair = cameraInfo.videoPreviewPairs.find(
           (pair) => pair.captureResolutions[0].aspectRatioEquals(
               option.fpsOptions[0].resolutions[0]));
@@ -387,22 +454,29 @@ export class CaptureCandidatePreferrer {
           let candidate;
           if (enableMultiStreamRecording) {
             candidate = new MultiStreamVideoCaptureCandidate(
-                deviceId, resolution, previewResolutions, constFps);
+                deviceId, resolution, previewResolutions, constFps, hasAudio);
           } else {
             candidate = new VideoCaptureCandidate(
-                deviceId, resolution, previewResolutions, constFps);
+                deviceId, resolution, previewResolutions, constFps, hasAudio);
           }
           if (prefFps === constFps) {
-            tmpCandidates.unshift(candidate);
+            targetFpsCandidates.push(candidate);
           } else {
-            tmpCandidates.push(candidate);
+            otherFpsCandidates.push(candidate);
           }
         }
       }
-      if (option.resolutionLevel === prefLevel) {
-        candidates.unshift(...tmpCandidates);
+      if (showAllResolutions &&
+          option.fpsOptions.some(
+              (fpsOption) => fpsOption.resolutions[0].equals(prefResolution))) {
+        candidates.unshift(...otherFpsCandidates);
+        candidates.unshift(...targetFpsCandidates);
+      } else if (!showAllResolutions && option.resolutionLevel === prefLevel) {
+        candidates.unshift(...otherFpsCandidates);
+        candidates.unshift(...targetFpsCandidates);
       } else {
-        candidates.push(...tmpCandidates);
+        candidates.push(...targetFpsCandidates);
+        candidates.push(...otherFpsCandidates);
       }
     }
     return candidates;
@@ -421,36 +495,67 @@ export class CaptureCandidatePreferrer {
     resolutions.sort((r1, r2) => r2.area - r1.area);
     const threshold = resolutions[0].area * 0.6;
     const splitIndex = resolutions.findIndex((r) => r.area < threshold);
+    const options = [];
     if (splitIndex === -1) {
-      return [{
+      options.push({
         resolutionLevel: PhotoResolutionLevel.FULL,
         resolutions,
         checked: false,
-      }];
+      });
+    } else {
+      options.push(
+          {
+            resolutionLevel: PhotoResolutionLevel.FULL,
+            resolutions: resolutions.slice(0, splitIndex),
+            checked: false,
+          },
+          {
+            resolutionLevel: PhotoResolutionLevel.MEDIUM,
+            resolutions: resolutions.slice(splitIndex),
+            checked: false,
+          },
+      );
     }
-    return [
-      {
-        resolutionLevel: PhotoResolutionLevel.FULL,
-        resolutions: resolutions.slice(0, splitIndex),
-        checked: false,
-      },
-      {
-        resolutionLevel: PhotoResolutionLevel.MEDIUM,
-        resolutions: resolutions.slice(splitIndex),
-        checked: false,
-      },
-    ];
+    if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+      return options.flatMap(
+          (option) =>
+              option.resolutions.map((r) => ({
+                                       resolutionLevel: option.resolutionLevel,
+                                       resolutions: [r],
+                                       checked: false,
+                                     })));
+    }
+    return options;
   }
 
   private buildPhotoOptions(deviceId: string, resolutions: Resolution[]): void {
+    const defaultPreferOrder = [
+      AspectRatioSet.RATIO_4_3,
+      AspectRatioSet.RATIO_16_9,
+      AspectRatioSet.RATIO_OTHER,
+    ];
+    // Making sure that the prefer aspect ratio has resolution which is equal to
+    // or larger than 720p.
+    const prioritizedAspectRatioSet =
+        defaultPreferOrder.find(
+            (ratio) => resolutions.some(
+                (r) => toAspectRatioSet(r) === ratio && r.height >= 720)) ??
+        defaultPreferOrder[0];
+    this.preferPhotoAspectRatioOrder = [
+      prioritizedAspectRatioSet,
+      ...defaultPreferOrder.filter(
+          (ratio) => ratio !== prioritizedAspectRatioSet),
+    ];
+
     /**
      * Categorizes the photo resolutions according to their aspect ratio and
      * sorts them.
      */
-    function groupResolutions(resolutions: Resolution[]):
+    function groupResolutions(
+        resolutions: Resolution[], preferAspectRatioSetOrder: AspectRatioSet[]):
         Map<AspectRatioSet, Resolution[]> {
       const resolutionGroups = new Map<AspectRatioSet, Resolution[]>();
-      for (const aspectRatioSet of NON_CROP_ASPECT_RATIO_SETS) {
+      for (const aspectRatioSet of preferAspectRatioSetOrder) {
         resolutionGroups.set(aspectRatioSet, []);
       }
 
@@ -461,14 +566,20 @@ export class CaptureCandidatePreferrer {
       return resolutionGroups;
     }
 
-    const resolutionGroups = groupResolutions(resolutions);
+    const resolutionGroups =
+        groupResolutions(resolutions, this.preferPhotoAspectRatioOrder);
     const options = new Map<AspectRatioSet, PhotoResolutionOption[]>();
-    for (const aspectRatio of NON_CROP_ASPECT_RATIO_SETS) {
-      const resolutionGroup = resolutionGroups.get(aspectRatio);
+    for (const aspectRatioSet of this.preferPhotoAspectRatioOrder) {
+      const resolutionGroup = resolutionGroups.get(aspectRatioSet);
       assert(resolutionGroup !== undefined);
       if (resolutionGroup.length > 0) {
         options.set(
-            aspectRatio, this.createPhotoResolutionOptions(resolutionGroup));
+            aspectRatioSet, this.createPhotoResolutionOptions(resolutionGroup));
+      }
+      if (this.getPreferPhotoResolution(deviceId, aspectRatioSet) === null) {
+        const maxResolution = resolutionGroup.reduce(
+            (max, r) => r.mp > max.mp ? r : max, new Resolution());
+        this.setPreferPhotoResolution(deviceId, aspectRatioSet, maxResolution);
       }
     }
     this.photoOptions.set(deviceId, options);
@@ -476,6 +587,13 @@ export class CaptureCandidatePreferrer {
 
   private buildPhotoOptionsForCrop(deviceId: string, resolutions: Resolution[]):
       void {
+    if (this.getPreferPhotoResolution(deviceId, AspectRatioSet.RATIO_SQUARE) ===
+        null) {
+      const maxResolution = resolutions.reduce(
+          (max, r) => r.mp > max.mp ? r : max, new Resolution());
+      this.setPreferPhotoResolution(
+          deviceId, AspectRatioSet.RATIO_SQUARE, maxResolution);
+    }
     this.photoOptionsForCrop.set(
         deviceId, this.createPhotoResolutionOptions(resolutions));
   }
@@ -538,18 +656,24 @@ export class CaptureCandidatePreferrer {
         level: VideoResolutionLevel.HD,
         resolution: new Resolution(1280, 720),
       },
+      {
+        level: VideoResolutionLevel.THREE_SIXTY_P,
+        resolution: new Resolution(640, 360),
+      },
     ];
-    const matches: VideoLevelResolution[] = [];
-    for (const resolution of resolutions) {
-      const option = COMMON_VIDEO_OPTIONS.find(
-          (option) => option.resolution.equals(resolution));
-      if (option === undefined) {
-        continue;
+    let matches: VideoLevelResolution[] = [];
+    if (!expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+      for (const resolution of resolutions) {
+        const option = COMMON_VIDEO_OPTIONS.find(
+            (option) => option.resolution.equals(resolution));
+        if (option === undefined) {
+          continue;
+        }
+        matches.push({
+          level: option.level,
+          resolutions: [option.resolution],
+        });
       }
-      matches.push({
-        level: option.level,
-        resolutions: [option.resolution],
-      });
     }
     if (matches.length === 0) {
       resolutions.sort((r1, r2) => r2.area - r1.area);
@@ -571,7 +695,21 @@ export class CaptureCandidatePreferrer {
         });
       }
     }
+
+    if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+      matches =
+          matches.flatMap((match) => match.resolutions.map((r) => ({
+                                                             level: match.level,
+                                                             resolutions: [r],
+                                                           })));
+    }
     this.videoOptions.set(deviceId, toVideoOptions(matches));
+
+    if (this.prefVideoResolutionMap[deviceId] === undefined) {
+      const maxResolution = resolutions.reduce(
+          (max, r) => r.mp > max.mp ? r : max, new Resolution());
+      this.prefVideoResolutionMap[deviceId] = maxResolution;
+    }
   }
 
   private getChosenAspectRatio(
@@ -588,7 +726,8 @@ export class CaptureCandidatePreferrer {
       return toAspectRatioSet(this.cameraConfig.captureCandidate.resolution);
     } else {
       return prefAspectRatioSet ??
-          getFallbackAspectRatioSet(aspectRatioOptionsMap);
+          getFallbackAspectRatioSet(
+                 aspectRatioOptionsMap, this.preferPhotoAspectRatioOrder);
     }
   }
 
@@ -604,6 +743,8 @@ export class CaptureCandidatePreferrer {
     assert(options !== undefined);
     const prefResolutionLevel =
         this.prefPhotoResolutionLevelMap[deviceId] ?? PhotoResolutionLevel.FULL;
+    const prefResolution =
+        this.getPreferPhotoResolution(deviceId, chosenAspectRatioSet);
     for (const option of options) {
       // Select the level corresponding to current resolution for opening
       // camera. Otherwise, select according to the use user preference.
@@ -615,7 +756,11 @@ export class CaptureCandidatePreferrer {
         option.checked =
             option.resolutions.some((r) => r.equals(currentResolution));
       } else {
-        option.checked = option.resolutionLevel === prefResolutionLevel;
+        if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+          option.checked = option.resolutions[0].equals(prefResolution);
+        } else {
+          option.checked = option.resolutionLevel === prefResolutionLevel;
+        }
       }
     }
     return {deviceId, facing, options};
@@ -631,8 +776,14 @@ export class CaptureCandidatePreferrer {
 
     const prefResolutionLevel =
         this.prefPhotoResolutionLevelMap[deviceId] ?? PhotoResolutionLevel.FULL;
+    const prefResolution =
+        this.getPreferPhotoResolution(deviceId, AspectRatioSet.RATIO_SQUARE);
     for (const option of options) {
-      option.checked = option.resolutionLevel === prefResolutionLevel;
+      if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+        option.checked = option.resolutions[0].equals(prefResolution);
+      } else {
+        option.checked = option.resolutionLevel === prefResolutionLevel;
+      }
     }
     return {deviceId, facing, options};
   }
@@ -696,6 +847,7 @@ export class CaptureCandidatePreferrer {
 
       const prefLevel = this.prefVideoResolutionLevelMap[deviceId] ??
           getFallbackVideoResolutionLevel(options);
+      const prefResolution = this.prefVideoResolutionMap[deviceId] ?? null;
       for (const option of options) {
         if (this.cameraConfig === null) {
           continue;
@@ -714,7 +866,12 @@ export class CaptureCandidatePreferrer {
             this.cameraConfig?.mode === Mode.VIDEO) {
           option.checked = isRunningCameraOption;
         } else {
-          option.checked = option.resolutionLevel === prefLevel;
+          if (expert.isEnabled(expert.ExpertOption.SHOW_ALL_RESOLUTIONS)) {
+            option.checked = option.fpsOptions.some(
+                (fpsOption) => fpsOption.resolutions[0].equals(prefResolution));
+          } else {
+            option.checked = option.resolutionLevel === prefLevel;
+          }
         }
         for (const fpsOption of option.fpsOptions) {
           if (isRunningCameraOption) {
@@ -736,17 +893,33 @@ export class CaptureCandidatePreferrer {
       number {
     return (this.prefVideoFpsesMap[deviceId] ?? {})[level] ?? 30;
   }
+
+  private getPreferPhotoResolution(
+      deviceId: string, aspectRatioSet: AspectRatioSet): Resolution|null {
+    const map = this.prefPhotoResolutionMap[deviceId];
+    if (map === undefined) {
+      return null;
+    }
+
+    const entry = map[aspectRatioSet];
+    return entry !== undefined ? new Resolution(entry.width, entry.height) :
+                                 null;
+  }
+
+  private setPreferPhotoResolution(
+      deviceId: string, aspectRatioSet: AspectRatioSet,
+      resolution: Resolution): void {
+    this.prefPhotoResolutionMap[deviceId] = {
+      ...this.prefPhotoResolutionMap[deviceId],
+      [aspectRatioSet]: resolution,
+    };
+  }
 }
 
 function getFallbackAspectRatioSet(
-    aspectRatioOptionsMap: Map<AspectRatioSet, PhotoResolutionOption[]>):
-    AspectRatioSet {
-  const preferenceOrder = [
-    AspectRatioSet.RATIO_4_3,
-    AspectRatioSet.RATIO_16_9,
-    AspectRatioSet.RATIO_OTHER,
-  ];
-  for (const aspectRatioSet of preferenceOrder) {
+    aspectRatioOptionsMap: Map<AspectRatioSet, PhotoResolutionOption[]>,
+    preferAspectRatioSetOrder: AspectRatioSet[]): AspectRatioSet {
+  for (const aspectRatioSet of preferAspectRatioSetOrder) {
     if (aspectRatioOptionsMap.has(aspectRatioSet)) {
       return aspectRatioSet;
     }
@@ -761,6 +934,7 @@ function getFallbackVideoResolutionLevel(options: VideoResolutionOption[]):
     VideoResolutionLevel.QUAD_HD,
     VideoResolutionLevel.FULL_HD,
     VideoResolutionLevel.HD,
+    VideoResolutionLevel.THREE_SIXTY_P,
     VideoResolutionLevel.FULL,
     VideoResolutionLevel.MEDIUM,
   ];

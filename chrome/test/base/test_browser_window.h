@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_helpers.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/download/test_download_shelf.h"
@@ -17,6 +18,7 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/location_bar/location_bar.h"
+#include "chrome/browser/ui/translate/partial_translate_bubble_model.h"
 #include "chrome/common/buildflags.h"
 #include "ui/base/interaction/element_identifier.h"
 
@@ -24,7 +26,6 @@
 #include "chrome/browser/apps/intent_helper/apps_navigation_types.h"
 #endif  //  !BUILDFLAG(IS_ANDROID)
 
-class FeaturePromoController;
 class LocationBarTesting;
 class OmniboxView;
 
@@ -39,6 +40,10 @@ class SendTabToSelfBubbleView;
 namespace sharing_hub {
 class SharingHubBubbleView;
 }  // namespace sharing_hub
+
+namespace user_education {
+class FeaturePromoController;
+}  // namespace user_education
 
 // An implementation of BrowserWindow used for testing. TestBrowserWindow only
 // contains a valid LocationBar, all other getters return NULL.
@@ -82,7 +87,7 @@ class TestBrowserWindow : public BrowserWindow {
   void BookmarkBarStateChanged(
       BookmarkBar::AnimateChangeType change_type) override {}
   void UpdateDevTools() override {}
-  void UpdateLoadingAnimations(bool should_animate) override {}
+  void UpdateLoadingAnimations(bool is_visible) override {}
   void SetStarredState(bool is_starred) override {}
   void SetTranslateIconToggled(bool is_lit) override {}
   void OnActiveTabChanged(content::WebContents* old_contents,
@@ -139,6 +144,7 @@ class TestBrowserWindow : public BrowserWindow {
   bool IsToolbarVisible() const override;
   bool IsLocationBarVisible() const override;
   bool IsToolbarShowing() const override;
+  bool IsBorderlessModeEnabled() const override;
   SharingDialog* ShowSharingDialog(content::WebContents* contents,
                                    SharingDialogData data) override;
   void ShowUpdateChromeDialog() override {}
@@ -159,26 +165,30 @@ class TestBrowserWindow : public BrowserWindow {
       const absl::optional<url::Origin>& initiating_origin,
       IntentPickerResponse callback) override {}
 #endif  //  !define(OS_ANDROID)
-  send_tab_to_self::SendTabToSelfBubbleView* ShowSendTabToSelfBubble(
-      content::WebContents* contents) override;
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+  send_tab_to_self::SendTabToSelfBubbleView*
+  ShowSendTabToSelfDevicePickerBubble(content::WebContents* contents) override;
+  send_tab_to_self::SendTabToSelfBubbleView* ShowSendTabToSelfPromoBubble(
+      content::WebContents* contents,
+      bool show_signin_button) override;
+#if BUILDFLAG(IS_CHROMEOS)
   views::Button* GetSharingHubIconButton() override;
 #else
   sharing_hub::SharingHubBubbleView* ShowSharingHubBubble(
-      content::WebContents* contents) override;
-#endif
+      share::ShareAttempt attempt) override;
+#endif  // BUILDFLAG(IS_CHROMEOS)
   ShowTranslateBubbleResult ShowTranslateBubble(
       content::WebContents* contents,
       translate::TranslateStep step,
       const std::string& source_language,
       const std::string& target_language,
-      translate::TranslateErrors::Type error_type,
+      translate::TranslateErrors error_type,
       bool is_user_gesture) override;
-#if BUILDFLAG(ENABLE_ONE_CLICK_SIGNIN)
+  void StartPartialTranslate(const std::string& source_language,
+                             const std::string& target_language,
+                             const std::u16string& text_selection) override;
   void ShowOneClickSigninConfirmation(
       const std::u16string& email,
       base::OnceCallback<void(bool)> confirmed_callback) override {}
-#endif
   bool IsDownloadShelfVisible() const override;
   DownloadShelf* GetDownloadShelf() override;
   DownloadBubbleUIController* GetDownloadBubbleUIController() override;
@@ -191,10 +201,7 @@ class TestBrowserWindow : public BrowserWindow {
   std::unique_ptr<FindBar> CreateFindBar() override;
   web_modal::WebContentsModalDialogHost* GetWebContentsModalDialogHost()
       override;
-  void ShowAvatarBubbleFromAvatarButton(
-      AvatarBubbleMode mode,
-      signin_metrics::AccessPoint access_point,
-      bool is_source_keyboard) override {}
+  void ShowAvatarBubbleFromAvatarButton(bool is_source_keyboard) override {}
   void MaybeShowProfileSwitchIPH() override {}
 
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || \
@@ -226,30 +233,32 @@ class TestBrowserWindow : public BrowserWindow {
   void CreateTabSearchBubble() override {}
   void CloseTabSearchBubble() override {}
 
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
-  bool IsSideSearchPanelVisible() const override;
-  void MaybeRestoreSideSearchStatePerWindow(
-      const std::map<std::string, std::string>& extra_data) override;
-#endif
-
-  FeaturePromoController* GetFeaturePromoController() override;
-  bool IsFeaturePromoActive(
-      const base::Feature& iph_feature,
-      bool include_continued_promos = false) const override;
+  user_education::FeaturePromoController* GetFeaturePromoController() override;
+  bool IsFeaturePromoActive(const base::Feature& iph_feature) const override;
   bool MaybeShowFeaturePromo(
       const base::Feature& iph_feature,
-      FeaturePromoSpecification::StringReplacements body_text_replacements = {},
-      FeaturePromoController::BubbleCloseCallback close_callback =
-          base::DoNothing()) override;
+      user_education::FeaturePromoSpecification::StringReplacements
+          body_text_replacements = {},
+      user_education::FeaturePromoController::BubbleCloseCallback
+          close_callback = base::DoNothing()) override;
+  bool MaybeShowStartupFeaturePromo(
+      const base::Feature& iph_feature,
+      user_education::FeaturePromoSpecification::StringReplacements
+          body_text_replacements = {},
+      user_education::FeaturePromoController::StartupPromoCallback
+          promo_callback = base::DoNothing(),
+      user_education::FeaturePromoController::BubbleCloseCallback
+          close_callback = base::DoNothing()) override;
   bool CloseFeaturePromo(const base::Feature& iph_feature) override;
-  FeaturePromoController::PromoHandle CloseFeaturePromoAndContinue(
+  user_education::FeaturePromoHandle CloseFeaturePromoAndContinue(
       const base::Feature& iph_feature) override;
   void NotifyFeatureEngagementEvent(const char* event_name) override;
 
   // Sets the controller returned by GetFeaturePromoController().
   // Deletes the existing one, if any.
-  FeaturePromoController* SetFeaturePromoController(
-      std::unique_ptr<FeaturePromoController> feature_promo_controller);
+  user_education::FeaturePromoController* SetFeaturePromoController(
+      std::unique_ptr<user_education::FeaturePromoController>
+          feature_promo_controller);
 
   void set_workspace(std::string workspace) { workspace_ = workspace; }
   void set_visible_on_all_workspaces(bool visible_on_all_workspaces) {
@@ -257,6 +266,10 @@ class TestBrowserWindow : public BrowserWindow {
   }
   void set_is_active(bool active) { is_active_ = active; }
   void set_is_minimized(bool minimized) { is_minimized_ = minimized; }
+
+  void set_element_context(ui::ElementContext element_context) {
+    element_context_ = element_context;
+  }
 
  protected:
   void DestroyBrowser() override {}
@@ -298,8 +311,10 @@ class TestBrowserWindow : public BrowserWindow {
   bool is_active_ = false;
   bool is_tab_strip_editable_ = true;
 
-  std::unique_ptr<FeaturePromoController> feature_promo_controller_;
+  std::unique_ptr<user_education::FeaturePromoController>
+      feature_promo_controller_;
 
+  ui::ElementContext element_context_;
   base::OnceClosure close_callback_;
 };
 

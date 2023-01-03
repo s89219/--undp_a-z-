@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -53,8 +53,8 @@ class DiscoverFeedService : public KeyedService {
   virtual UIViewController* NewFollowingFeedViewControllerWithConfiguration(
       DiscoverFeedViewControllerConfiguration* configuration) = 0;
 
-  // Removes the Discover |feed_view_controller|. It should be called whenever
-  // |feed_view_controller| will no longer be used.
+  // Removes the Discover `feed_view_controller`. It should be called whenever
+  // `feed_view_controller` will no longer be used.
   virtual void RemoveFeedViewController(
       UIViewController* feed_view_controller) = 0;
 
@@ -69,11 +69,27 @@ class DiscoverFeedService : public KeyedService {
   // update all ViewControllers returned by NewFeedViewController.
   virtual void RefreshFeed() = 0;
 
+  // Performs a background refresh for the feed. `completion` is called
+  // after success, failure, or timeout. The BOOL argument indicates whether the
+  // refresh was successful or a failure.
+  virtual void PerformBackgroundRefreshes(void (^completion)(BOOL)) = 0;
+
+  // Stops the background refresh task and cleans up any temporary objects. This
+  // is called by the OS when the task is taking too long.
+  virtual void HandleBackgroundRefreshTaskExpiration() = 0;
+
+  // The earliest datetime at which the next background refresh should be
+  // scheduled.
+  virtual NSDate* GetEarliestBackgroundRefreshBeginDate() = 0;
+
   // Returns whether the Following feed model has unseen content.
   virtual BOOL GetFollowingFeedHasUnseenContent() = 0;
 
   // Informs the service that the Following content has been seen.
   virtual void SetFollowingFeedContentSeen() = 0;
+
+  // Informs the service that Browsing History data was cleread by the user.
+  virtual void BrowsingHistoryCleared();
 
   // Methods to register or remove observers.
   void AddObserver(DiscoverFeedObserver* observer);

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,11 @@
 #include <memory>
 #include <string>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_manager_observer.h"
 #include "components/policy/core/browser/cloud/user_policy_signin_service_base.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -42,9 +44,12 @@ class ProfileManagerObserverBridge : public ProfileManagerObserver {
 
   // ProfileManagerObserver implementation:
   void OnProfileAdded(Profile* profile) override;
+  void OnProfileManagerDestroying() override;
 
  private:
-  UserPolicySigninService* user_policy_signin_service_;
+  base::ScopedObservation<ProfileManager, ProfileManagerObserver>
+      profile_manager_observation_{this};
+  raw_ptr<UserPolicySigninService> user_policy_signin_service_;
 };
 
 // A specialization of the UserPolicySigninServiceBase for the desktop
@@ -75,11 +80,15 @@ class UserPolicySigninService : public UserPolicySigninServiceBase,
   // UserPolicySigninServiceBase implementation:
   void ShutdownUserCloudPolicyManager() override;
 
+  // ProfileAttributesStorage::Observer implementation:
   void OnProfileUserManagementAcceptanceChanged(
       const base::FilePath& profile_path) override;
 
   // Handler for when the profile is ready.
   void OnProfileReady(Profile* profile);
+
+  // Called when the ProfileAttributesStorage is being destroyed.
+  void OnProfileAttributesStorageDestroying();
 
   void set_profile_can_be_managed_for_testing(bool can_be_managed) {
     profile_can_be_managed_for_testing_ = can_be_managed;
@@ -101,10 +110,6 @@ class UserPolicySigninService : public UserPolicySigninServiceBase,
   // |policy_manager| is not-nul. Expects that there is a refresh token for
   // the primary account.
   void TryInitializeForSignedInUser();
-
-  // Invoked when a policy registration request is complete.
-  void CallPolicyRegistrationCallback(std::unique_ptr<CloudPolicyClient> client,
-                                      PolicyRegistrationCallback callback);
 
   // Initializes the UserPolicySigninService once its owning Profile becomes
   // ready. If the Profile has a signed-in account associated with it at startup

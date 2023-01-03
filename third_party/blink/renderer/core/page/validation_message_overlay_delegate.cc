@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/memory/ptr_util.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/resources/grit/blink_resources.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
@@ -85,6 +86,8 @@ ValidationMessageOverlayDelegate::~ValidationMessageOverlayDelegate() {
     EventDispatchForbiddenScope::AllowUserAgentEvents allow_events;
     page_->WillBeDestroyed();
   }
+  if (destroyed_ptr_)
+    *destroyed_ptr_ = true;
 }
 
 LocalFrameView& ValidationMessageOverlayDelegate::FrameView() const {
@@ -153,7 +156,8 @@ void ValidationMessageOverlayDelegate::CreatePage(const FrameOverlay& overlay) {
       nullptr, FrameInsertType::kInsertInConstructor, LocalFrameToken(),
       nullptr, nullptr);
   frame->SetView(MakeGarbageCollected<LocalFrameView>(*frame, view_size));
-  frame->Init(/*opener=*/nullptr, /*policy_container=*/nullptr);
+  frame->Init(/*opener=*/nullptr, DocumentToken(), /*policy_container=*/nullptr,
+              StorageKey(), /*document_ukm_source_id=*/ukm::kInvalidSourceId);
   frame->View()->SetCanHaveScrollbars(false);
   frame->View()->SetBaseBackgroundColor(Color::kTransparent);
   page_->GetVisualViewport().SetSize(view_size);
@@ -175,7 +179,18 @@ void ValidationMessageOverlayDelegate::CreatePage(const FrameOverlay& overlay) {
   WriteDocument(data.get());
   float zoom_factor = anchor_->GetDocument().GetFrame()->PageZoomFactor();
   frame->SetPageZoomFactor(zoom_factor);
+
+  // ForceSynchronousDocumentInstall can cause another call to
+  // ValidationMessageClientImpl::ShowValidationMessage, which will hide this
+  // validation message and may even delete this. In order to avoid continuing
+  // when this is destroyed, |destroyed| will be set to true in the destructor.
+  bool destroyed = false;
+  DCHECK(!destroyed_ptr_);
+  destroyed_ptr_ = &destroyed;
   frame->ForceSynchronousDocumentInstall("text/html", data);
+  if (destroyed)
+    return;
+  destroyed_ptr_ = nullptr;
 
   Element& main_message = GetElementById("main-message");
   main_message.setTextContent(message_);
@@ -193,7 +208,7 @@ void ValidationMessageOverlayDelegate::CreatePage(const FrameOverlay& overlay) {
   // Get the size to decide position later.
   // TODO(schenney): This says get size, so we only need to update to layout.
   FrameView().UpdateAllLifecyclePhases(DocumentUpdateReason::kOverlay);
-  bubble_size_ = container.VisibleBoundsInVisualViewport().size();
+  bubble_size_ = container.VisibleBoundsInLocalRoot().size();
   // Add one because the content sometimes exceeds the exact width due to
   // rounding errors.
   bubble_size_.Enlarge(1, 0);
@@ -254,7 +269,26 @@ void ValidationMessageOverlayDelegate::AdjustBubblePosition(
   if (IsHiding())
     return;
   float zoom_factor = To<LocalFrame>(page_->MainFrame())->PageZoomFactor();
-  gfx::Rect anchor_rect = anchor_->VisibleBoundsInVisualViewport();
+  gfx::Rect anchor_rect = anchor_->VisibleBoundsInLocalRoot();
+
+  Page* anchor_page = anchor_->GetDocument().GetPage();
+  // If the main frame is local the overlay is attached to it so we have to
+  // account for the anchor's position relative to the visual viewport. If the
+  // main frame is remote the overlay will be attached to the local root so the
+  // visual viewport transform will already be applied to the overlay.
+  if (auto* overlay_frame = DynamicTo<LocalFrame>(anchor_page->MainFrame())) {
+    PhysicalRect rect(anchor_rect);
+    anchor_->GetDocument()
+        .GetFrame()
+        ->LocalFrameRoot()
+        .ContentLayoutObject()
+        ->MapToVisualRectInAncestorSpace(nullptr, rect);
+    anchor_rect = ToPixelSnappedRect(rect);
+    anchor_rect =
+        anchor_page->GetVisualViewport().RootFrameToViewport(anchor_rect);
+    anchor_rect.Intersect(gfx::Rect(anchor_page->GetVisualViewport().Size()));
+  }
+
   bool show_bottom_arrow = false;
   double bubble_y = anchor_rect.bottom();
   if (view_rect.bottom() - anchor_rect.bottom() < bubble_size_.height()) {

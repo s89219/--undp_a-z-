@@ -1,11 +1,11 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.firstrun;
 
 import android.app.Activity;
-import android.os.Build;
+import android.content.res.Configuration;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.view.View;
@@ -21,10 +21,8 @@ import androidx.viewpager2.widget.ViewPager2;
 import org.chromium.base.ActivityState;
 import org.chromium.base.ApplicationStatus;
 import org.chromium.base.ApplicationStatus.ActivityStateListener;
+import org.chromium.base.Promise;
 import org.chromium.base.metrics.RecordHistogram;
-import org.chromium.base.supplier.BooleanSupplier;
-import org.chromium.base.supplier.OneshotSupplier;
-import org.chromium.base.supplier.OneshotSupplierImpl;
 import org.chromium.base.supplier.Supplier;
 import org.chromium.chrome.R;
 import org.chromium.chrome.browser.BackPressHelper;
@@ -32,9 +30,11 @@ import org.chromium.chrome.browser.customtabs.CustomTabActivity;
 import org.chromium.chrome.browser.fonts.FontPreloader;
 import org.chromium.chrome.browser.metrics.UmaUtils;
 import org.chromium.chrome.browser.search_engines.TemplateUrlServiceFactory;
+import org.chromium.chrome.browser.signin.SigninCheckerProvider;
 import org.chromium.chrome.browser.signin.SigninFirstRunFragment;
 import org.chromium.chrome.browser.signin.services.FREMobileIdentityConsistencyFieldTrial;
 import org.chromium.components.browser_ui.modaldialog.AppModalPresenter;
+import org.chromium.components.metrics.LowEntropySource;
 import org.chromium.ui.base.LocalizationUtils;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modaldialog.ModalDialogManager.ModalDialogType;
@@ -42,6 +42,7 @@ import org.chromium.ui.modaldialog.ModalDialogManager.ModalDialogType;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 /**
  * Handles the First Run Experience sequences shown to the user launching Chrome for the first time.
@@ -98,11 +99,8 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     private static FirstRunActivityObserver sObserver;
 
     private boolean mPostNativeAndPolicyPagesCreated;
-    // Use hasValue() to simplify access. Will be null before initialized.
-    private final OneshotSupplierImpl<Boolean> mNativeSideIsInitializedSupplier =
-            new OneshotSupplierImpl<>();
-    private final OneshotSupplierImpl<Boolean> mChildAccountStatusSupplier =
-            new OneshotSupplierImpl<>();
+    /** Use {@link Promise#isFulfilled()} to verify whether the native has been initialized. */
+    private final Promise<Void> mNativeInitializationPromise = new Promise<>();
 
     private FirstRunFlowSequencer mFirstRunFlowSequencer;
 
@@ -184,6 +182,13 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     private void createPostNativeAndPoliciesPageSequence() {
         assert !mPostNativeAndPolicyPagesCreated;
         assert areNativeAndPoliciesInitialized();
+
+        // Initialize SigninChecker, to kick off sign-in for child accounts as early as possible.
+        //
+        // TODO(b/245912657): explicitly sign in supervised users in {@link
+        // SigninFirstRunMediator#handleContinueWithNative} rather than relying on SigninChecker.
+        SigninCheckerProvider.get();
+
         mFirstRunFlowSequencer.updateFirstRunProperties(mFreProperties);
 
         BooleanSupplier showSearchEnginePromo =
@@ -250,6 +255,8 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
         // needs to register the synthetic trial group. See https://crbug.com/1295692 for details.
         FREMobileIdentityConsistencyFieldTrial.createFirstRunTrial();
 
+        super.triggerLayoutInflation();
+
         initializeStateFromLaunchData();
         RecordHistogram.recordTimesHistogram("MobileFre.FromLaunch.TriggerLayoutInflation",
                 SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
@@ -266,13 +273,13 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
                     findViewById(android.R.id.content), () -> mPages.size() > 0);
         }
 
-        mFirstRunFlowSequencer = new FirstRunFlowSequencer(this) {
+        mFirstRunFlowSequencer = new FirstRunFlowSequencer(this, getChildAccountStatusSupplier()) {
             @Override
             public void onFlowIsKnown(Bundle freProperties) {
                 assert freProperties != null;
                 mFreProperties = freProperties;
-                mChildAccountStatusSupplier.set(
-                        mFreProperties.getBoolean(SyncConsentFirstRunFragment.IS_CHILD_ACCOUNT));
+                RecordHistogram.recordTimesHistogram("MobileFre.FromLaunch.ChildStatusAvailable",
+                        SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
 
                 onInternalStateChanged();
 
@@ -311,6 +318,13 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     }
 
     @Override
+    protected void onFirstDrawComplete() {
+        super.onFirstDrawComplete();
+
+        FontPreloader.getInstance().onFirstDrawFre();
+    }
+
+    @Override
     public void finishNativeInitialization() {
         super.finishNativeInitialization();
 
@@ -326,7 +340,7 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     }
 
     private void onNativeDependenciesFullyInitialized() {
-        mNativeSideIsInitializedSupplier.set(true);
+        mNativeInitializationPromise.fulfill(null);
 
         onInternalStateChanged();
     }
@@ -334,6 +348,8 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     @Override
     protected void onPolicyLoadListenerAvailable(boolean onDevicePolicyFound) {
         super.onPolicyLoadListenerAvailable(onDevicePolicyFound);
+        RecordHistogram.recordTimesHistogram("MobileFre.FromLaunch.PoliciesLoaded",
+                SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
 
         onInternalStateChanged();
     }
@@ -357,7 +373,7 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     }
 
     private boolean areNativeAndPoliciesInitialized() {
-        return mNativeSideIsInitializedSupplier.hasValue() && isFlowKnown()
+        return mNativeInitializationPromise.isFulfilled() && isFlowKnown()
                 && this.getPolicyLoadListener().get() != null;
     }
 
@@ -369,13 +385,13 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
 
         FirstRunFragment page = (FirstRunFragment) fragment;
         // Delay notifying the child page until native and the TemplateUrlService are initialized.
-        // Tracked by mNativeSideIsInitializedSupplier is ready. Otherwise if the next page handles
+        // Tracked by mNativeSideIsInitialized is ready. Otherwise if the next page handles
         // the default search engine, it will be missing dependencies. See https://crbug.com/1275950
         // for when this didn't work.
-        if (mNativeSideIsInitializedSupplier.hasValue()) {
+        if (mNativeInitializationPromise.isFulfilled()) {
             page.onNativeInitialized();
         } else {
-            mNativeSideIsInitializedSupplier.onAvailable((ignored) -> page.onNativeInitialized());
+            mNativeInitializationPromise.then((ignored) -> { page.onNativeInitialized(); });
         }
     }
 
@@ -406,13 +422,6 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
                     activity.finish();
                 } else {
                     activity.finishAndRemoveTask();
-                    if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.LOLLIPOP_MR1) {
-                        // On L ApiCompatibilityUtils.finishAndRemoveTask() sometimes fails. Try one
-                        // last time, see crbug.com/781396 for origin of this approach.
-                        if (!activity.isFinishing()) {
-                            activity.finish();
-                        }
-                    }
                 }
             }
         }
@@ -474,6 +483,9 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
 
         FirstRunFlowSequencer.markFlowAsCompleted();
 
+        // LowEntropySource can't be used after the FRE has been completed.
+        LowEntropySource.markFirstRunComplete();
+
         if (sObserver != null) sObserver.onUpdateCachedEngineName(this);
 
         launchPendingIntentAndFinish();
@@ -524,14 +536,14 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     }
 
     @Override
-    public void acceptTermsOfService(boolean allowCrashUpload) {
-        assert mNativeSideIsInitializedSupplier.hasValue();
+    public void acceptTermsOfService(boolean allowMetricsAndCrashUploading) {
+        assert mNativeInitializationPromise.isFulfilled();
 
         // If default is true then it corresponds to opt-out and false corresponds to opt-in.
         UmaUtils.recordMetricsReportingDefaultOptIn(!DEFAULT_METRICS_AND_CRASH_REPORTING);
         RecordHistogram.recordMediumTimesHistogram("MobileFre.FromLaunch.TosAccepted",
                 SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
-        FirstRunUtils.acceptTermsOfService(allowCrashUpload);
+        FirstRunUtils.acceptTermsOfService(allowMetricsAndCrashUploading);
         FirstRunStatus.setSkipWelcomePage(true);
         flushPersistentData();
 
@@ -596,14 +608,16 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
     }
 
     @Override
-    public void recordNativeAndPoliciesLoadedHistogram() {
-        RecordHistogram.recordTimesHistogram("MobileFre.FromLaunch.NativeAndPoliciesLoaded",
+    public void recordNativePolicyAndChildStatusLoadedHistogram() {
+        RecordHistogram.recordTimesHistogram(
+                "MobileFre.FromLaunch.NativePolicyAndChildStatusLoaded",
                 SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
     }
 
     @Override
-    public OneshotSupplier<Boolean> getChildAccountStatusListener() {
-        return mChildAccountStatusSupplier;
+    public void recordNativeInitializedHistogram() {
+        RecordHistogram.recordTimesHistogram("MobileFre.FromLaunch.NativeInitialized",
+                SystemClock.elapsedRealtime() - mIntentCreationElapsedRealtimeMs);
     }
 
     @Override
@@ -612,14 +626,20 @@ public class FirstRunActivity extends FirstRunActivityBase implements FirstRunPa
                 this, LocalizationUtils.substituteLocalePlaceholder(getString(url)));
     }
 
-    @VisibleForTesting
-    boolean hasPages() {
-        return mPagerAdapter != null && mPagerAdapter.getItemCount() > 0;
+    @Override
+    public Promise<Void> getNativeInitializationPromise() {
+        return mNativeInitializationPromise;
+    }
+
+    @Override
+    public boolean canUseLandscapeLayout() {
+        return !getResources().getConfiguration().isLayoutSizeAtLeast(
+                Configuration.SCREENLAYOUT_SIZE_LARGE);
     }
 
     @VisibleForTesting
-    public boolean isNativeSideIsInitializedForTest() {
-        return mNativeSideIsInitializedSupplier.hasValue();
+    boolean hasPages() {
+        return mPagerAdapter != null && mPagerAdapter.getItemCount() > 0;
     }
 
     @VisibleForTesting

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list_types.h"
 #include "components/keyed_service/core/refcounted_keyed_service.h"
@@ -63,7 +64,9 @@ class PasswordStoreInterface : public RefcountedKeyedService {
   virtual bool IsAbleToSavePasswords() const = 0;
 
   // Adds the given PasswordForm to the secure password store asynchronously.
-  virtual void AddLogin(const PasswordForm& form) = 0;
+  // `completion` will be run after the form is added.
+  virtual void AddLogin(const PasswordForm& form,
+                        base::OnceClosure completion = base::DoNothing()) = 0;
 
   // Updates the matching PasswordForm in the secure password store (async).
   // If any of the primary key fields (signon_realm, url, username_element,
@@ -163,6 +166,10 @@ class PasswordStoreInterface : public RefcountedKeyedService {
   // dependency during PasswordStore creation. |sync_service| may not
   // have started yet but its preferences can already be queried.
   virtual void OnSyncServiceInitialized(syncer::SyncService* sync_service) = 0;
+
+  // The passed callback will be invoked whenever sync is enabled/disabled.
+  virtual base::CallbackListSubscription AddSyncEnabledOrDisabledCallback(
+      base::RepeatingClosure sync_enabled_or_disabled_cb) = 0;
 
   // Tests only can retrieve the backend.
   virtual PasswordStoreBackend* GetBackendForTesting() = 0;

@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,6 +21,7 @@ import org.chromium.chrome.R;
 import org.chromium.chrome.browser.AppHooks;
 import org.chromium.chrome.browser.SwipeRefreshHandler;
 import org.chromium.chrome.browser.app.bluetooth.BluetoothNotificationService;
+import org.chromium.chrome.browser.app.usb.UsbNotificationService;
 import org.chromium.chrome.browser.bluetooth.BluetoothNotificationManager;
 import org.chromium.chrome.browser.display_cutout.DisplayCutoutTabHelper;
 import org.chromium.chrome.browser.feedback.HelpAndFeedbackLauncherImpl;
@@ -28,13 +29,14 @@ import org.chromium.chrome.browser.media.MediaCaptureNotificationServiceImpl;
 import org.chromium.chrome.browser.policy.PolicyAuditor;
 import org.chromium.chrome.browser.policy.PolicyAuditor.AuditEvent;
 import org.chromium.chrome.browser.profiles.Profile;
+import org.chromium.chrome.browser.usb.UsbNotificationManager;
 import org.chromium.content_public.browser.GlobalRenderFrameHostId;
 import org.chromium.content_public.browser.LifecycleState;
 import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.WebContents;
-import org.chromium.content_public.browser.WebContentsAccessibility;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.net.NetError;
+import org.chromium.ui.mojom.VirtualKeyboardMode;
 import org.chromium.url.GURL;
 
 /**
@@ -102,14 +104,6 @@ public class TabWebContentsObserver extends TabWebContentsUserData {
     @Override
     public void initWebContents(WebContents webContents) {
         mObserver = new Observer(webContents);
-
-        // For browser tabs, we want to set accessibility focus to the page when it loads. This
-        // is not the default behavior for embedded web views.
-        WebContentsAccessibility.fromWebContents(webContents).setShouldFocusOnPageLoad(true);
-
-        // Enable image descriptions feature normally, but not for Chrome Custom Tabs.
-        WebContentsAccessibility.fromWebContents(webContents)
-                .setAllowImageDescriptions(!mTab.isCustomTab());
 
         for (Callback<WebContents> callback : mInitObservers) callback.onResult(webContents);
     }
@@ -190,18 +184,22 @@ public class TabWebContentsObserver extends TabWebContentsUserData {
         }
 
         @Override
-        public void didFinishLoad(GlobalRenderFrameHostId frameId, GURL url, boolean isKnownValid,
-                boolean isInPrimaryMainFrame, @LifecycleState int frameLifecycleState) {
+        public void didFinishLoadInPrimaryMainFrame(GlobalRenderFrameHostId frameId, GURL url,
+                boolean isKnownValid, @LifecycleState int frameLifecycleState) {
             assert isKnownValid;
             if (frameLifecycleState == LifecycleState.ACTIVE) {
                 if (mTab.getNativePage() != null) {
                     mTab.pushNativePageStateToNavigationEntry();
                 }
-                if (isInPrimaryMainFrame) mTab.didFinishPageLoad(url);
+                mTab.didFinishPageLoad(url);
             }
-            PolicyAuditor auditor = AppHooks.get().getPolicyAuditor();
-            auditor.notifyAuditEvent(ContextUtils.getApplicationContext(),
-                    AuditEvent.OPEN_URL_SUCCESS, url.getSpec(), "");
+        }
+
+        @Override
+        public void didFinishLoadNoop(GlobalRenderFrameHostId frameId, GURL url,
+                boolean isKnownValid, boolean isInPrimaryMainFrame,
+                @LifecycleState int frameLifecycleState) {
+            if (!isInPrimaryMainFrame) return;
         }
 
         @Override
@@ -219,11 +217,13 @@ public class TabWebContentsObserver extends TabWebContentsUserData {
             assert description != null;
 
             PolicyAuditor auditor = AppHooks.get().getPolicyAuditor();
-            auditor.notifyAuditEvent(ContextUtils.getApplicationContext(),
-                    AuditEvent.OPEN_URL_FAILURE, failingUrl, description);
-            if (errorCode == BLOCKED_BY_ADMINISTRATOR) {
+            if (auditor != null) {
                 auditor.notifyAuditEvent(ContextUtils.getApplicationContext(),
-                        AuditEvent.OPEN_URL_BLOCKED, failingUrl, "");
+                        AuditEvent.OPEN_URL_FAILURE, failingUrl, description);
+                if (errorCode == BLOCKED_BY_ADMINISTRATOR) {
+                    auditor.notifyAuditEvent(ContextUtils.getApplicationContext(),
+                            AuditEvent.OPEN_URL_BLOCKED, failingUrl, "");
+                }
             }
         }
 
@@ -233,14 +233,22 @@ public class TabWebContentsObserver extends TabWebContentsUserData {
         }
 
         @Override
-        public void didStartNavigation(NavigationHandle navigation) {
-            if (navigation.isInPrimaryMainFrame() && !navigation.isSameDocument()) {
+        public void didStartNavigationInPrimaryMainFrame(NavigationHandle navigation) {
+            if (!navigation.isSameDocument()) {
                 mTab.didStartPageLoad(navigation.getUrl());
             }
 
             RewindableIterator<TabObserver> observers = mTab.getTabObservers();
             while (observers.hasNext()) {
-                observers.next().onDidStartNavigation(mTab, navigation);
+                observers.next().onDidStartNavigationInPrimaryMainFrame(mTab, navigation);
+            }
+        }
+
+        @Override
+        public void didStartNavigationNoop(NavigationHandle navigation) {
+            RewindableIterator<TabObserver> observers = mTab.getTabObservers();
+            while (observers.hasNext()) {
+                observers.next().onDidStartNavigationNoop(mTab, navigation);
             }
         }
 
@@ -253,41 +261,46 @@ public class TabWebContentsObserver extends TabWebContentsUserData {
         }
 
         @Override
-        public void didFinishNavigation(NavigationHandle navigation) {
+        public void didFinishNavigationInPrimaryMainFrame(NavigationHandle navigation) {
             RewindableIterator<TabObserver> observers = mTab.getTabObservers();
             while (observers.hasNext()) {
-                observers.next().onDidFinishNavigation(mTab, navigation);
+                observers.next().onDidFinishNavigationInPrimaryMainFrame(mTab, navigation);
             }
 
             if (navigation.errorCode() != NetError.OK) {
-                if (navigation.isInPrimaryMainFrame()) mTab.didFailPageLoad(navigation.errorCode());
-
-                recordErrorInPolicyAuditor(navigation.getUrl().getSpec(),
-                        navigation.errorDescription(), navigation.errorCode());
+                mTab.didFailPageLoad(navigation.errorCode());
             }
             mLastUrl = navigation.getUrl();
 
             if (!navigation.hasCommitted()) return;
 
-            if (navigation.isInPrimaryMainFrame()) {
-                if (!mTab.isDestroyed()) {
-                    TabStateAttributes.from(mTab).setIsTabStateDirty(true);
-                }
-                mTab.updateTitle();
-                mTab.handleDidFinishNavigation(navigation.getUrl(), navigation.pageTransition());
-                mTab.setIsShowingErrorPage(navigation.isErrorPage());
+            if (!mTab.isDestroyed()) {
+                TabStateAttributes.from(mTab).setIsTabStateDirty(true);
+            }
+            mTab.updateTitle();
+            mTab.handleDidFinishNavigation(navigation.getUrl(), navigation.pageTransition());
+            mTab.setIsShowingErrorPage(navigation.isErrorPage());
 
-                observers.rewind();
-                while (observers.hasNext()) {
-                    observers.next().onUrlUpdated(mTab);
-                }
+            observers.rewind();
+            while (observers.hasNext()) {
+                observers.next().onUrlUpdated(mTab);
             }
 
-            if (navigation.isInPrimaryMainFrame()) {
-                // Stop swipe-to-refresh animation.
-                SwipeRefreshHandler handler = SwipeRefreshHandler.get(mTab);
-                if (handler != null) handler.didStopRefreshing();
+            // Stop swipe-to-refresh animation.
+            SwipeRefreshHandler handler = SwipeRefreshHandler.get(mTab);
+            if (handler != null) handler.didStopRefreshing();
+        }
+
+        @Override
+        public void didFinishNavigationNoop(NavigationHandle navigation) {
+            RewindableIterator<TabObserver> observers = mTab.getTabObservers();
+            while (observers.hasNext()) {
+                observers.next().onDidFinishNavigationNoop(mTab, navigation);
             }
+
+            // In case something goes wrong, we can enable NotifyJavaSpuriouslyToMeasurePerf so
+            // didFinishNavigation has the same behavior as before.
+            mLastUrl = navigation.getUrl();
         }
 
         @Override
@@ -327,12 +340,22 @@ public class TabWebContentsObserver extends TabWebContentsUserData {
         }
 
         @Override
+        public void virtualKeyboardModeChanged(@VirtualKeyboardMode.EnumType int mode) {
+            RewindableIterator<TabObserver> observers = mTab.getTabObservers();
+            while (observers.hasNext()) {
+                observers.next().onVirtualKeyboardModeChanged(mTab, mode);
+            }
+        }
+
+        @Override
         public void destroy() {
             MediaCaptureNotificationServiceImpl.updateMediaNotificationForTab(
                     ContextUtils.getApplicationContext(), mTab.getId(), null, mLastUrl);
             BluetoothNotificationManager.updateBluetoothNotificationForTab(
                     ContextUtils.getApplicationContext(), BluetoothNotificationService.class,
                     mTab.getId(), null, mLastUrl, mTab.isIncognito());
+            UsbNotificationManager.updateUsbNotificationForTab(ContextUtils.getApplicationContext(),
+                    UsbNotificationService.class, mTab.getId(), null, mLastUrl, mTab.isIncognito());
             super.destroy();
         }
     }

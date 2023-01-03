@@ -1,12 +1,16 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/quick_pair/repository/fake_fast_pair_repository.h"
 
+#include "ash/quick_pair/common/logging.h"
 #include "ash/quick_pair/proto/fastpair.pb.h"
+#include "base/base64.h"
+#include "base/containers/contains.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
-#include "chromeos/services/bluetooth_config/public/cpp/device_image_info.h"
+#include "chromeos/ash/services/bluetooth_config/public/cpp/device_image_info.h"
 #include "device/bluetooth/bluetooth_device.h"
 
 namespace ash {
@@ -70,14 +74,26 @@ void FakeFastPairRepository::AssociateAccountKey(
   saved_account_keys_[device->ble_address] = account_key;
 }
 
-bool FakeFastPairRepository::DeleteAssociatedDevice(
-    const device::BluetoothDevice* device) {
-  return saved_account_keys_.erase(device->GetAddress()) == 1;
+bool FakeFastPairRepository::AssociateAccountKeyLocally(
+    scoped_refptr<Device> device) {
+  std::vector<uint8_t> fake_account_key;
+  saved_account_keys_[device->ble_address] = fake_account_key;
+  return true;
+}
+
+void FakeFastPairRepository::DeleteAssociatedDevice(
+    const std::string& mac_address,
+    DeleteAssociatedDeviceCallback callback) {
+  std::move(callback).Run(saved_account_keys_.erase(mac_address) == 1);
 }
 
 void FakeFastPairRepository::SetOptInStatus(
     nearby::fastpair::OptInStatus status) {
   status_ = status;
+}
+
+nearby::fastpair::OptInStatus FakeFastPairRepository::GetOptInStatus() {
+  return status_;
 }
 
 // Unimplemented.
@@ -86,19 +102,39 @@ void FakeFastPairRepository::CheckOptInStatus(
   std::move(callback).Run(status_);
 }
 
-// Unimplemented.
 void FakeFastPairRepository::DeleteAssociatedDeviceByAccountKey(
     const std::vector<uint8_t>& account_key,
-    DeleteAssociatedDeviceByAccountKeyCallback callback) {}
+    DeleteAssociatedDeviceByAccountKeyCallback callback) {
+  for (auto it = devices_.begin(); it != devices_.end(); it++) {
+    if (it->has_account_key() &&
+        base::HexEncode(std::vector<uint8_t>(it->account_key().begin(),
+                                             it->account_key().end())) ==
+            base::HexEncode(account_key)) {
+      devices_.erase(it);
+      std::move(callback).Run(/*success=*/true);
+      return;
+    }
+  }
+  std::move(callback).Run(/*success=*/false);
+}
 
-// Unimplemented.
 void FakeFastPairRepository::UpdateOptInStatus(
     nearby::fastpair::OptInStatus opt_in_status,
-    UpdateOptInStatusCallback callback) {}
+    UpdateOptInStatusCallback callback) {
+  status_ = opt_in_status;
+  std::move(callback).Run(/*success=*/true);
+}
 
 // Unimplemented.
 void FakeFastPairRepository::FetchDeviceImages(scoped_refptr<Device> device) {
   return;
+}
+
+// Unimplemented.
+absl::optional<std::string>
+FakeFastPairRepository::GetDeviceDisplayNameFromCache(
+    std::vector<uint8_t> account_key) {
+  return nullptr;
 }
 
 bool FakeFastPairRepository::IsAccountKeyPairedLocally(
@@ -118,14 +154,45 @@ bool FakeFastPairRepository::EvictDeviceImages(
 }
 
 // Unimplemented.
-absl::optional<chromeos::bluetooth_config::DeviceImageInfo>
+absl::optional<bluetooth_config::DeviceImageInfo>
 FakeFastPairRepository::GetImagesForDevice(const std::string& device_id) {
   return absl::nullopt;
 }
 
-// Unimplemented.
-void FakeFastPairRepository::GetSavedDevices(GetSavedDevicesCallback callback) {
+void FakeFastPairRepository::SetSavedDevices(
+    nearby::fastpair::OptInStatus status,
+    std::vector<nearby::fastpair::FastPairDevice> devices) {
+  status_ = status;
+  devices_ = std::move(devices);
+}
 
+void FakeFastPairRepository::GetSavedDevices(GetSavedDevicesCallback callback) {
+  std::move(callback).Run(status_, devices_);
+}
+
+void FakeFastPairRepository::SaveMacAddressToAccount(
+    const std::string& mac_address) {
+  saved_mac_addresses_.insert(mac_address);
+}
+
+void FakeFastPairRepository::IsDeviceSavedToAccount(
+    const std::string& mac_address,
+    IsDeviceSavedToAccountCallback callback) {
+  if (saved_to_account_callback_is_delayed_) {
+    saved_to_account_callback_ = std::move(callback);
+    return;
+  }
+
+  if (base::Contains(saved_mac_addresses_, mac_address)) {
+    std::move(callback).Run(true);
+    return;
+  }
+
+  std::move(callback).Run(false);
+}
+
+void FakeFastPairRepository::TriggerIsDeviceSavedToAccountCallback() {
+  std::move(saved_to_account_callback_).Run(false);
 }
 
 }  // namespace quick_pair

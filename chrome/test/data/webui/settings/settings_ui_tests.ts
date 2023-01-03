@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@ suite('SettingsUIToolbarAndDrawer', function() {
   let drawer: CrDrawerElement;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     ui = document.createElement('settings-ui');
     document.body.appendChild(ui);
     return CrSettingsPrefs.initialized.then(() => {
@@ -78,7 +78,7 @@ suite('SettingsUISearch', function() {
   let searchField: CrToolbarSearchFieldElement;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     ui = document.createElement('settings-ui');
     document.body.appendChild(ui);
     return CrSettingsPrefs.initialized.then(() => {

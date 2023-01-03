@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,6 +64,17 @@ enum class FineTunePosition {
   kBottomLeft,
   kLeftCenter,
 };
+
+// Defines the supported recording formats.
+enum class RecordingType {
+  kWebM,
+  kGif,
+};
+
+// Converts the enum class `RecordingType` to its integer value.
+constexpr int ToInt(RecordingType type) {
+  return static_cast<int>(type);
+}
 
 }  // namespace ash
 

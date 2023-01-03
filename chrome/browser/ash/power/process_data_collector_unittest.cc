@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -483,8 +483,8 @@ void ProcessDataCollectorTest::CheckProcessUsages(
   for (const auto& process : process_list) {
     pid_t pid = process.process_data.pid;
 
-    EXPECT_DOUBLE_EQ(process.power_usage_fraction,
-                     timestep_info.expected_averages.at(pid))
+    EXPECT_NEAR(process.power_usage_fraction,
+                timestep_info.expected_averages.at(pid), 0.000000001)
         << "For PID " << pid
         << " the expected and calculated average CPU "
            "usages didn't match.";

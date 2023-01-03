@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -144,9 +144,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, MissingUrls) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0]\": Missing or invalid required "
-      u"property: urls";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0]: Schema validation error: "
+      u"Missing or invalid required property: urls";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -182,9 +183,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, MissingDevices) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0]\": Missing or invalid required "
-      u"property: devices";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0]: Schema validation error: "
+      u"Missing or invalid required property: devices";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -218,10 +220,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, DevicesMustBeList) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].devices\": The value type "
-      u"doesn't "
-      u"match the schema type.";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].devices: Schema validation "
+      u"error: Policy type mismatch: expected: \"list\", actual: \"integer\".";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -261,9 +263,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, UrlsMustBeList) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].urls\": The value type doesn't "
-      u"match the schema type.";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].urls: Schema validation "
+      u"error: Policy type mismatch: expected: \"list\", actual: \"integer\".";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -297,9 +300,11 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, VendorIdMustBeInt) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].devices.items[0].vendor_id\": "
-      u"The value type doesn't match the schema type.";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].devices[0].vendor_id: Schema "
+      u"validation error: Policy type mismatch: expected: \"integer\", actual: "
+      u"\"string\".";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -333,9 +338,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, VendorIdOutOfRange) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].devices.items[0].vendor_id\": "
-      u"Invalid value for integer";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].devices[0].vendor_id: Schema "
+      u"validation error: Invalid value for integer";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -370,9 +376,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest,
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].devices.items[0]\": Missing or "
-      u"invalid required property: vendor_id";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].devices[0]: Schema validation "
+      u"error: Missing or invalid required property: vendor_id";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -411,9 +418,11 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, ProductIdMustBeInt) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].devices.items[0].product_id\": "
-      u"The value type doesn't match the schema type.";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].devices[0].product_id: Schema "
+      u"validation error: Policy type mismatch: expected: \"integer\", actual: "
+      u"\"string\".";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(
@@ -452,9 +461,10 @@ TEST_F(SerialAllowUsbDevicesForUrlsPolicyHandlerTest, ProductIdOutOfRange) {
   EXPECT_EQ(1ul, errors.size());
 
   constexpr char16_t kExpected[] =
-      u"Schema validation error at \"items[0].devices.items[0].product_id\": "
-      u"Invalid value for integer";
-  EXPECT_EQ(kExpected, errors.GetErrors(key::kSerialAllowUsbDevicesForUrls));
+      u"Error at SerialAllowUsbDevicesForUrls[0].devices[0].product_id: Schema "
+      u"validation error: Invalid value for integer";
+  EXPECT_EQ(kExpected,
+            errors.GetErrorMessages(key::kSerialAllowUsbDevicesForUrls));
 
   // Now try to apply the policy, it should have no effect.
   EXPECT_FALSE(

@@ -1,9 +1,10 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/test/base/in_process_browser_test.h"
 
+#include <map>
 #include <utility>
 
 #include "base/auto_reset.h"
@@ -16,12 +17,12 @@
 #include "base/location.h"
 #include "base/no_destructor.h"
 #include "base/path_service.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/test_file_util.h"
 #include "base/test/test_switches.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/after_startup_task_utils.h"
@@ -33,6 +34,7 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/lifetime/termination_notification.h"
 #include "chrome/browser/navigation_predictor/search_engine_preconnector.h"
 #include "chrome/browser/net/chrome_network_delegate.h"
@@ -44,6 +46,7 @@
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profile_test_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -105,19 +108,24 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "ash/components/cryptohome/cryptohome_parameters.h"
 #include "ash/constants/ash_switches.h"
 #include "ash/public/cpp/test/shell_test_api.h"
-#include "ash/services/device_sync/device_sync_impl.h"
-#include "ash/services/device_sync/fake_device_sync.h"
 #include "ash/shell.h"
 #include "base/system/sys_info.h"
 #include "chrome/browser/ash/app_restore/full_restore_app_launch_handler.h"
 #include "chrome/browser/ash/input_method/input_method_configuration.h"
+#include "chromeos/ash/components/browser_context_helper/browser_context_helper.h"
+#include "chromeos/ash/components/cryptohome/cryptohome_parameters.h"
+#include "chromeos/ash/services/device_sync/device_sync_impl.h"
+#include "chromeos/ash/services/device_sync/fake_device_sync.h"
 #include "components/user_manager/user_names.h"
 #include "ui/display/display_switches.h"
 #include "ui/events/test/event_generator.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+#if BUILDFLAG(IS_OZONE)
+#include "ui/views/test/test_desktop_screen_ozone.h"
+#endif
 
 #if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -133,6 +141,7 @@
 #include "components/account_manager_core/chromeos/account_manager.h"
 #include "components/account_manager_core/chromeos/account_manager_facade_factory.h"  // nogncheck
 #include "components/account_manager_core/chromeos/fake_account_manager_ui.h"  // nogncheck
+#include "content/public/test/network_connection_change_simulator.h"
 #include "ui/aura/test/ui_controls_factory_aura.h"
 #include "ui/base/test/ui_controls.h"
 #endif
@@ -167,17 +176,6 @@ FakeDeviceSyncImplFactory* GetFakeDeviceSyncImplFactory() {
   return factory.get();
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
-
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
-// An observer that returns back to test code after a new profile is
-// initialized.
-void UnblockOnProfileCreation(base::RunLoop* run_loop,
-                              Profile* profile,
-                              Profile::CreateStatus status) {
-  if (status == Profile::CREATE_STATUS_INITIALIZED)
-    run_loop->Quit();
-}
-#endif
 
 #if BUILDFLAG(IS_MAC)
 class ChromeBrowserMainExtraPartsBrowserProcessInjection
@@ -310,7 +308,7 @@ void InProcessBrowserTest::Initialize() {
   bundle_swizzler_ = std::make_unique<ScopedBundleSwizzlerMac>();
 #endif
 
-  std::vector<base::Feature> disabled_features;
+  std::vector<base::test::FeatureRef> disabled_features;
 
   // Preconnecting can cause non-deterministic test behavior especially with
   // various test fixtures that mock servers.
@@ -323,9 +321,7 @@ void InProcessBrowserTest::Initialize() {
 
   // In-product help can conflict with tests' expected window activation and
   // focus. Individual tests can re-enable IPH.
-  for (const base::Feature* feature : feature_engagement::GetAllFeatures()) {
-    disabled_features.push_back(*feature);
-  }
+  block_all_iph_feature_list_.InitWithNoFeaturesAllowed();
 
   scoped_feature_list_.InitWithFeatures({}, disabled_features);
 
@@ -400,8 +396,9 @@ void InProcessBrowserTest::SetUp() {
         ash::switches::kLoginUser,
         cryptohome::Identification(user_manager::StubAccountId()).id());
     if (!command_line->HasSwitch(ash::switches::kLoginProfile)) {
-      command_line->AppendSwitchASCII(ash::switches::kLoginProfile,
-                                      chrome::kTestUserProfileDir);
+      command_line->AppendSwitchASCII(
+          ash::switches::kLoginProfile,
+          ash::BrowserContextHelper::kTestUserBrowserContextDirName);
     }
   }
 #endif
@@ -444,10 +441,6 @@ void InProcessBrowserTest::SetUp() {
   // Disable the notification delay timer used to prevent non system
   // notifications from showing up right after login.
   ash::ShellTestApi::SetUseLoginNotificationDelayForTest(false);
-
-  // Don't show the new shortcuts notification at startup.
-  ash::ShellTestApi::SetShouldShowShortcutNotificationForTest(false);
-
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
   // Redirect the default download directory to a temporary directory.
@@ -466,10 +459,10 @@ void InProcessBrowserTest::SetUp() {
   // What's New for tests that simulate first run, is unexpected by most tests.
   whats_new::DisableRemoteContentForTests();
 
-  // The Privacy Sandbox service may attempt to show a modal dialog to the
+  // The Privacy Sandbox service may attempt to show a modal prompt to the
   // profile on browser start, which is unexpected by mosts tests. Tests which
-  // expect this can allow the dialog as desired.
-  PrivacySandboxService::SetDialogDisabledForTests(true);
+  // expect this can allow the prompt as desired.
+  PrivacySandboxService::SetPromptDisabledForTests(true);
 
   BrowserTestBase::SetUp();
 }
@@ -483,6 +476,10 @@ void InProcessBrowserTest::SetUpDefaultCommandLine(
   // TODO(pkotwicz): Investigate if we can remove this switch.
   if (exit_when_last_browser_closes_)
     command_line->AppendSwitch(switches::kDisableZeroBrowsersOpenForTests);
+#if BUILDFLAG(IS_CHROMEOS)
+  // Do not automaximize in browser tests.
+  command_line->AppendSwitch(switches::kDisableAutoMaximizeForTests);
+#endif
 }
 
 void InProcessBrowserTest::TearDown() {
@@ -531,6 +528,23 @@ void InProcessBrowserTest::SelectFirstBrowser() {
   const BrowserList* browser_list = BrowserList::GetInstance();
   if (!browser_list->empty())
     browser_ = browser_list->get(0);
+}
+
+void InProcessBrowserTest::RecordPropertyFromMap(
+    const std::map<std::string, std::string>& tags) {
+  std::string result = "";
+  for (auto const& tag_pair : tags) {
+    // Make sure the key value pair does not contain  ; and = characters.
+    DCHECK(tag_pair.first.find(";") == std::string::npos &&
+           tag_pair.first.find("=") == std::string::npos);
+    DCHECK(tag_pair.second.find(";") == std::string::npos &&
+           tag_pair.second.find("=") == std::string::npos);
+    if (!result.empty())
+      result = base::StrCat({result, ";"});
+    result = base::StrCat({result, tag_pair.first, "=", tag_pair.second});
+  }
+  if (!result.empty())
+    RecordProperty("gtest_tag", result);
 }
 
 void InProcessBrowserTest::CloseBrowserSynchronously(Browser* browser) {
@@ -595,6 +609,22 @@ bool InProcessBrowserTest::SetUpUserDataDirectory() {
   return true;
 }
 
+void InProcessBrowserTest::SetScreenInstance() {
+  // TODO(crbug.com/1317416): On wayland platform, we need to check if the
+  // wayland-ozone platform is initialized at this point due to the async
+  // initialization of the display. Investigate if we can eliminate
+  // IsOzoneInitialized.
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_LACROS)
+  if (!display::Screen::HasScreen() &&
+      views::test::TestDesktopScreenOzone::IsOzoneInitialized()) {
+    // This is necessary for interactive UI tests.
+    // It is enabled in interactive_ui_tests_main.cc
+    // (or through GPUMain)
+    screen_ = views::test::TestDesktopScreenOzone::Create();
+  }
+#endif
+}
+
 #if !BUILDFLAG(IS_MAC)
 void InProcessBrowserTest::OpenDevToolsWindow(
     content::WebContents* web_contents) {
@@ -655,16 +685,14 @@ Browser* InProcessBrowserTest::CreateGuestBrowser() {
   ProfileManager* profile_manager = g_browser_process->profile_manager();
   base::FilePath guest_path = profile_manager->GetGuestProfilePath();
 
-  base::RunLoop run_loop;
-  profile_manager->CreateProfileAsync(
-      guest_path, base::BindRepeating(&UnblockOnProfileCreation, &run_loop));
-  run_loop.Run();
-
-  Profile* profile = profile_manager->GetProfileByPath(guest_path)
-                         ->GetPrimaryOTRProfile(/*create_if_needed=*/true);
+  Profile* guest_profile =
+      profiles::testing::CreateProfileSync(profile_manager, guest_path);
+  Profile* guest_profile_otr =
+      guest_profile->GetPrimaryOTRProfile(/*create_if_needed=*/true);
 
   // Create browser and add tab.
-  Browser* browser = Browser::Create(Browser::CreateParams(profile, true));
+  Browser* browser =
+      Browser::Create(Browser::CreateParams(guest_profile_otr, true));
   AddBlankTabAndShow(browser);
   return browser;
 }
@@ -707,6 +735,11 @@ base::FilePath InProcessBrowserTest::GetChromeTestDataDir() const {
 }
 
 void InProcessBrowserTest::PreRunTestOnMainThread() {
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  content::NetworkConnectionChangeSimulator network_change_simulator;
+  network_change_simulator.InitializeChromeosConnectionType();
+#endif
+
   AfterStartupTaskUtils::SetBrowserStartupIsCompleteForTesting();
 
   // Take the ChromeBrowserMainParts' RunLoop to run ourself, when we
@@ -718,11 +751,6 @@ void InProcessBrowserTest::PreRunTestOnMainThread() {
 
   SelectFirstBrowser();
   if (browser_) {
-#if BUILDFLAG(IS_CHROMEOS)
-    // There are cases where windows get created maximized by default.
-    if (browser_->window()->IsMaximized())
-      browser_->window()->Restore();
-#endif
     auto* tab = browser_->tab_strip_model()->GetActiveWebContents();
     content::WaitForLoadStop(tab);
     SetInitialWebContents(tab);
@@ -780,7 +808,7 @@ void InProcessBrowserTest::QuitBrowsers() {
 
     // Post OnAppExiting call as a task because the code path CHECKs a RunLoop
     // runs at the current thread.
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(&chrome::OnAppExiting));
     // Spin the message loop to ensure OnAppExitting finishes so that proper
     // clean up happens before returning.
@@ -791,7 +819,7 @@ void InProcessBrowserTest::QuitBrowsers() {
   // Invoke AttemptExit on a running message loop.
   // AttemptExit exits the message loop after everything has been
   // shut down properly.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&chrome::AttemptExit));
   RunUntilBrowserProcessQuits();
 
@@ -807,6 +835,6 @@ void InProcessBrowserTest::QuitBrowsers() {
   // get deleted.
   content::RunAllPendingInMessageLoop();
   delete autorelease_pool_;
-  autorelease_pool_ = NULL;
+  autorelease_pool_ = nullptr;
 #endif
 }

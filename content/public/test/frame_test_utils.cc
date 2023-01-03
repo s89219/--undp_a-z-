@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,7 @@ void ArrangeFramesAndNavigate(WebContents* web_contents,
 RenderFrameHostImpl* SelectDescendentFrame(WebContents* web_contents,
                                            const std::vector<int>& indices) {
   RenderFrameHostImpl* selected_frame =
-      static_cast<RenderFrameHostImpl*>(web_contents->GetMainFrame());
+      static_cast<RenderFrameHostImpl*>(web_contents->GetPrimaryMainFrame());
   for (int index : indices) {
     selected_frame = selected_frame->child_at(index)->current_frame_host();
   }

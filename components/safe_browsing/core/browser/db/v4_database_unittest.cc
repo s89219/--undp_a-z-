@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,14 +25,15 @@ class FakeV4Store : public V4Store {
               const bool hash_prefix_matches)
       : V4Store(
             task_runner,
-            base::FilePath(store_path.value() + FILE_PATH_LITERAL(".store"))),
+            base::FilePath(store_path.value() + FILE_PATH_LITERAL(".store")),
+            std::make_unique<InMemoryHashPrefixMap>()),
         hash_prefix_should_match_(hash_prefix_matches) {}
 
-  HashPrefix GetMatchingHashPrefix(const FullHash& full_hash) override {
-    return hash_prefix_should_match_ ? full_hash : HashPrefix();
+  HashPrefixStr GetMatchingHashPrefix(const FullHashStr& full_hash) override {
+    return hash_prefix_should_match_ ? full_hash : HashPrefixStr();
   }
 
-  bool HasValidData() const override { return true; }
+  bool HasValidData() override { return true; }
 
   void set_hash_prefix_matches(bool hash_prefix_matches) {
     hash_prefix_should_match_ = hash_prefix_matches;

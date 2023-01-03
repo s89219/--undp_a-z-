@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,7 +49,8 @@ LacrosAvailabilityPolicyHandler::GetValue(const PolicyMap& policies,
   auto parsed =
       crosapi::browser_util::ParseLacrosAvailability(value->GetString());
   if (!parsed.has_value() && errors)
-    errors->AddError(policy_name(), IDS_POLICY_VALUE_FORMAT_ERROR);
+    errors->AddError(policy_name(), IDS_POLICY_INVALID_SELECTION_ERROR,
+                     "LacrosAvailabilty value");
   return parsed;
 }
 

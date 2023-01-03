@@ -1,15 +1,16 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {CupsPrintersBrowserProxyImpl, PrinterType} from 'chrome://os-settings/chromeos/lazy_load.js';
 import {Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {OncMojo} from 'chrome://resources/cr_components/chromeos/network/onc_mojo.m.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {OncMojo} from 'chrome://resources/ash/common/network/onc_mojo.js';
+import {webUIListenerCallback} from 'chrome://resources/ash/common/cr.m.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
+import {NetworkStateProperties} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/cros_network_config.mojom-webui.js';
+import {ConnectionStateType, NetworkType} from 'chrome://resources/mojo/chromeos/services/network_config/public/mojom/network_types.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {waitAfterNextRender} from 'chrome://test/test_util.js';
-
-import {flushTasks} from '../../test_util.js';
+import {flushTasks, waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
 import {createCupsPrinterInfo, createPrinterListEntry, getPrinterEntries} from './cups_printer_test_utils.js';
 import {TestCupsPrintersBrowserProxy} from './test_cups_printers_browser_proxy.js';
@@ -44,7 +45,7 @@ function clickButton(button) {
  * @private
  */
 function initializeEditDialog(page) {
-  const editDialog = page.$$('#editPrinterDialog');
+  const editDialog = page.shadowRoot.querySelector('#editPrinterDialog');
   assertTrue(!!editDialog);
 
   // Edit dialog will reset |ppdModel| when |ppdManufacturer| is set. Must
@@ -74,7 +75,6 @@ function verifyErrorToastMessage(expectedMessage, toast) {
  * Helper function that verifies that |printerList| matches the printers in
  * |entryList|.
  * @param {!HTMLElement} entryList
- * @param {!Array<!CupsPrinterInfo>} printerList
  * @private
  */
 function verifyPrintersList(entryList, printerList) {
@@ -116,7 +116,7 @@ function verifyFilteredPrinters(printerEntryListTestElement, searchTerm) {
  * Helper function to verify that the actual visible printers match the
  * expected printer list.
  * @param {!Element} printerEntryListTestElement
- * @param {!Array<!PrinterListEntry>} expectedVisiblePrinters
+
  */
 function verifyVisiblePrinters(
     printerEntryListTestElement, expectedVisiblePrinters) {
@@ -140,26 +140,29 @@ function verifyVisiblePrinters(
  * match the search query. Also checks if the no search results section is shown
  * when appropriate.
  * @param {!Element} printersElement
- * @param {!Array<!PrinterListEntry>} expectedVisiblePrinters
+
  * @param {string} searchTerm
  */
 function verifySearchQueryResults(
     printersElement, expectedVisiblePrinters, searchTerm) {
-  const printerEntryListTestElement = printersElement.$$('#printerEntryList');
+  const printerEntryListTestElement =
+      printersElement.shadowRoot.querySelector('#printerEntryList');
 
   verifyVisiblePrinters(printerEntryListTestElement, expectedVisiblePrinters);
   verifyFilteredPrinters(printerEntryListTestElement, searchTerm);
 
   if (expectedVisiblePrinters.length) {
-    assertTrue(printersElement.$$('#no-search-results').hidden);
+    assertTrue(
+        printersElement.shadowRoot.querySelector('#no-search-results').hidden);
   } else {
-    assertFalse(printersElement.$$('#no-search-results').hidden);
+    assertFalse(
+        printersElement.shadowRoot.querySelector('#no-search-results').hidden);
   }
 }
 
 /**
  * Removes a saved printer located at |index|.
- * @param {!TestCupsPrintersBrowserProxy} cupsPrintersBrowserProxy
+
  * @param {!HTMLElement} savedPrintersElement
  * @param {number} index
  * @return {!Promise}
@@ -168,8 +171,9 @@ function removePrinter(cupsPrintersBrowserProxy, savedPrintersElement, index) {
   const printerList = cupsPrintersBrowserProxy.printerList.printerList;
   const savedPrinterEntries = getPrinterEntries(savedPrintersElement);
 
-  clickButton(savedPrinterEntries[index].$$('.icon-more-vert'));
-  clickButton(savedPrintersElement.$$('#removeButton'));
+  clickButton(
+      savedPrinterEntries[index].shadowRoot.querySelector('.icon-more-vert'));
+  clickButton(savedPrintersElement.shadowRoot.querySelector('#removeButton'));
 
   return cupsPrintersBrowserProxy.whenCalled('removeCupsPrinter')
       .then(function() {
@@ -177,7 +181,7 @@ function removePrinter(cupsPrintersBrowserProxy, savedPrintersElement, index) {
         printerList.splice(index, 1);
 
         // Simuluate saved printer changes.
-        cr.webUIListenerCallback(
+        webUIListenerCallback(
             'on-saved-printers-changed', cupsPrintersBrowserProxy.printerList);
         flush();
       });
@@ -185,7 +189,7 @@ function removePrinter(cupsPrintersBrowserProxy, savedPrintersElement, index) {
 
 /**
  * Removes all saved printers through recursion.
- * @param {!TestCupsPrintersBrowserProxy} cupsPrintersBrowserProxy
+
  * @param {!HTMLElement} savedPrintersElement
  * @return {!Promise}
  */
@@ -229,13 +233,14 @@ suite('CupsSavedPrintersTests', function() {
     page = null;
   });
 
-  /** @param {!Array<!CupsPrinterInfo>} printerList */
+
   function createCupsPrinterPage(printers) {
     printerList = printers;
     // |cupsPrinterBrowserProxy| needs to have a list of saved printers before
     // initializing the landing page.
     cupsPrintersBrowserProxy.printerList = {printerList: printerList};
-    CupsPrintersBrowserProxyImpl.instance_ = cupsPrintersBrowserProxy;
+    CupsPrintersBrowserProxyImpl.setInstanceForTesting(
+        cupsPrintersBrowserProxy);
 
     page = document.createElement('settings-cups-printers');
     document.body.appendChild(page);
@@ -244,7 +249,7 @@ suite('CupsSavedPrintersTests', function() {
     flush();
   }
 
-  /** @param {!CupsPrinterInfo} printer*/
+
   function addNewSavedPrinter(printer) {
     printerList.push(printer);
     updateSavedPrinters();
@@ -259,7 +264,7 @@ suite('CupsSavedPrintersTests', function() {
 
   function updateSavedPrinters() {
     cupsPrintersBrowserProxy.printerList = {printerList: printerList};
-    cr.webUIListenerCallback(
+    webUIListenerCallback(
         'on-saved-printers-changed', cupsPrintersBrowserProxy.printerList);
     flush();
   }
@@ -275,12 +280,14 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           // List component contained by CupsSavedPrinters.
           const savedPrintersList =
-              savedPrintersElement.$$('settings-cups-printers-entry-list');
+              savedPrintersElement.shadowRoot.querySelector(
+                  'settings-cups-printers-entry-list');
 
           const printerListEntries = getPrinterEntries(savedPrintersElement);
 
@@ -301,7 +308,8 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           return removeAllPrinters(
@@ -328,22 +336,23 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
-          savedPrintersList =
-              savedPrintersElement.$$('settings-cups-printers-entry-list');
+          savedPrintersList = savedPrintersElement.shadowRoot.querySelector(
+              'settings-cups-printers-entry-list');
           savedPrinterEntries = getPrinterEntries(savedPrintersElement);
 
           verifyPrintersList(savedPrinterEntries, printerList);
 
-          assertTrue(!!page.$$('#savedPrinters'));
+          assertTrue(!!page.shadowRoot.querySelector('#savedPrinters'));
 
           return removeAllPrinters(
               cupsPrintersBrowserProxy, savedPrintersElement);
         })
         .then(() => {
-          assertFalse(!!page.$$('#savedPrinters'));
+          assertFalse(!!page.shadowRoot.querySelector('#savedPrinters'));
         });
   });
 
@@ -363,28 +372,33 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           savedPrinterEntries = getPrinterEntries(savedPrintersElement);
 
           // Update the printer name of the first entry.
-          clickButton(savedPrinterEntries[0].$$('.icon-more-vert'));
-          clickButton(savedPrintersElement.$$('#editButton'));
+          clickButton(savedPrinterEntries[0].shadowRoot.querySelector(
+              '.icon-more-vert'));
+          clickButton(
+              savedPrintersElement.shadowRoot.querySelector('#editButton'));
 
           flush();
 
           editDialog = initializeEditDialog(page);
 
           // Change name of printer and save the change.
-          const nameField = editDialog.$$('.printer-name-input');
+          const nameField =
+              editDialog.shadowRoot.querySelector('.printer-name-input');
           assertTrue(!!nameField);
           nameField.value = expectedName;
-          nameField.fire('input');
+          nameField.dispatchEvent(
+              new CustomEvent('input', {bubbles: true, composed: true}));
 
           flush();
 
-          clickButton(editDialog.$$('.action-button'));
+          clickButton(editDialog.shadowRoot.querySelector('.action-button'));
 
           return cupsPrintersBrowserProxy.whenCalled('updateCupsPrinter');
         })
@@ -415,35 +429,44 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           savedPrinterEntries = getPrinterEntries(savedPrintersElement);
 
           // Edit the first entry.
-          clickButton(savedPrinterEntries[0].$$('.icon-more-vert'));
-          clickButton(savedPrintersElement.$$('#editButton'));
+          clickButton(savedPrinterEntries[0].shadowRoot.querySelector(
+              '.icon-more-vert'));
+          clickButton(
+              savedPrintersElement.shadowRoot.querySelector('#editButton'));
 
           flush();
 
           editDialog = initializeEditDialog(page);
 
-          const nameField = editDialog.$$('.printer-name-input');
+          const nameField =
+              editDialog.shadowRoot.querySelector('.printer-name-input');
           assertTrue(!!nameField);
           nameField.value = expectedName;
-          nameField.fire('input');
+          nameField.dispatchEvent(
+              new CustomEvent('input', {bubbles: true, composed: true}));
 
-          const addressField = editDialog.$$('#printerAddress');
+          const addressField =
+              editDialog.shadowRoot.querySelector('#printerAddress');
           assertTrue(!!addressField);
           addressField.value = expectedAddress;
-          addressField.fire('input');
+          addressField.dispatchEvent(
+              new CustomEvent('input', {bubbles: true, composed: true}));
 
-          assertFalse(editDialog.$$('.cancel-button').hidden);
-          assertFalse(editDialog.$$('.action-button').hidden);
+          assertFalse(
+              editDialog.shadowRoot.querySelector('.cancel-button').hidden);
+          assertFalse(
+              editDialog.shadowRoot.querySelector('.action-button').hidden);
 
           flush();
 
-          clickButton(editDialog.$$('.action-button'));
+          clickButton(editDialog.shadowRoot.querySelector('.action-button'));
 
           return cupsPrintersBrowserProxy.whenCalled('reconfigureCupsPrinter');
         })
@@ -471,7 +494,8 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerListEntries = getPrinterEntries(savedPrintersElement);
@@ -513,7 +537,7 @@ suite('CupsSavedPrintersTests', function() {
               [
                 createPrinterListEntry('test3', '3', 'id3', PrinterType.SAVED),
                 createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
-                createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+                createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
               ],
               searchTerm);
         });
@@ -530,7 +554,8 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerListEntries = getPrinterEntries(savedPrintersElement);
@@ -577,9 +602,12 @@ suite('CupsSavedPrintersTests', function() {
         .then(async () => {
           // Wait for saved printers to populate.
           flush();
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
-          const printerEntryList = savedPrintersElement.$$('#printerEntryList');
+          const printerEntryList =
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
           const printerListEntries = getPrinterEntries(savedPrintersElement);
           printerEntryList.focus();
           printerEntryList.dispatchEvent(arrowDownEvent);
@@ -613,13 +641,16 @@ suite('CupsSavedPrintersTests', function() {
 
     flush();
 
-    const savedPrinters = page.$$('settings-cups-saved-printers');
-    const printerEntry =
-        savedPrinters && savedPrinters.$$('settings-cups-printers-entry');
-    const deepLinkElement = printerEntry && printerEntry.$$('#moreActions');
+    const savedPrinters =
+        page.shadowRoot.querySelector('settings-cups-saved-printers');
+    const printerEntry = savedPrinters &&
+        savedPrinters.shadowRoot.querySelector('settings-cups-printers-entry');
+    const deepLinkElement =
+        printerEntry && printerEntry.shadowRoot.querySelector('#moreActions');
     await waitAfterNextRender(deepLinkElement);
+    const activeDeepLink = getDeepActiveElement();
     assertEquals(
-        deepLinkElement, getDeepActiveElement(),
+        deepLinkElement, activeDeepLink,
         'First saved printer menu button should be focused for settingId=1401.');
   });
 
@@ -634,20 +665,23 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerEntryListTestElement =
-              savedPrintersElement.$$('#printerEntryList');
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google', '4', 'id4', PrinterType.SAVED),
             createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
-            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
           ]);
           // Assert that the Show more button is hidden because printer list
           // length is <= 3.
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Newly added printers will always be visible and inserted to the
           // top of the list.
@@ -656,13 +690,14 @@ suite('CupsSavedPrintersTests', function() {
             createPrinterListEntry('test3', '3', 'id3', PrinterType.SAVED),
             createPrinterListEntry('google', '4', 'id4', PrinterType.SAVED),
             createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
-            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
           ];
           verifyVisiblePrinters(
               printerEntryListTestElement, expectedVisiblePrinters);
           // Assert that the Show more button is still hidden because all newly
           // added printers are visible.
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
         });
   });
 
@@ -678,11 +713,13 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerEntryListTestElement =
-              savedPrintersElement.$$('#printerEntryList');
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           // There are 4 total printers but only 3 printers are visible and 1 is
           // hidden underneath the Show more section.
@@ -693,17 +730,20 @@ suite('CupsSavedPrintersTests', function() {
           ]);
           // Assert that the Show more button is shown since printer list length
           // is > 3.
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Click on the Show more button.
-          clickButton(savedPrintersElement.$$('#show-more-icon'));
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          clickButton(
+              savedPrintersElement.shadowRoot.querySelector('#show-more-icon'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
           // Clicking on the Show more button reveals all hidden printers.
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google', '4', 'id4', PrinterType.SAVED),
             createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
             createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
-            createPrinterListEntry('test3', '3', 'id3', PrinterType.SAVED)
+            createPrinterListEntry('test3', '3', 'id3', PrinterType.SAVED),
           ]);
         });
   });
@@ -720,11 +760,13 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerEntryListTestElement =
-              savedPrintersElement.$$('#printerEntryList');
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           // There are 4 total printers but only 3 printers are visible and 1 is
           // hidden underneath the Show more section.
@@ -735,7 +777,8 @@ suite('CupsSavedPrintersTests', function() {
           ]);
           // Assert that the Show more button is shown since printer list length
           // is > 3.
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Newly added printers will always be visible.
           addNewSavedPrinter(createCupsPrinterInfo('test5', '5', 'id5'));
@@ -743,10 +786,11 @@ suite('CupsSavedPrintersTests', function() {
             createPrinterListEntry('test5', '5', 'id5', PrinterType.SAVED),
             createPrinterListEntry('google', '4', 'id4', PrinterType.SAVED),
             createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
-            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
           ]);
           // Assert that the Show more button is still shown.
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
         });
   });
 
@@ -763,22 +807,25 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerEntryListTestElement =
-              savedPrintersElement.$$('#printerEntryList');
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           // There are 5 total printers but only 3 printers are visible and 2
           // are hidden underneath the Show more section.
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
             createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
-            createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED)
+            createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED),
           ]);
           // Assert that the Show more button is shown since printer list length
           // is > 3.
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Simulate removing 'google' printer.
           removeSavedPrinter('id3');
@@ -789,9 +836,10 @@ suite('CupsSavedPrintersTests', function() {
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
             createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED),
-            createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED)
+            createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
           ]);
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Simulate removing 'google2' printer.
           removeSavedPrinter('id4');
@@ -800,9 +848,10 @@ suite('CupsSavedPrintersTests', function() {
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED),
             createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
-            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
           ]);
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
         });
   });
 
@@ -820,22 +869,25 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerEntryListTestElement =
-              savedPrintersElement.$$('#printerEntryList');
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           // There are 6 total printers but only 3 printers are visible and 3
           // are hidden underneath the Show more section.
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
             createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
-            createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED)
+            createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED),
           ]);
           // Assert that the Show more button is shown since printer list length
           // is > 3.
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Set search term to 'google' and expect 4 visible printers.
           let searchTerm = 'google';
@@ -849,11 +901,13 @@ suite('CupsSavedPrintersTests', function() {
                     'google2', '4', 'id4', PrinterType.SAVED),
                 createPrinterListEntry(
                     'google3', '5', 'id5', PrinterType.SAVED),
-                createPrinterListEntry('google4', '6', 'id6', PrinterType.SAVED)
+                createPrinterListEntry(
+                    'google4', '6', 'id6', PrinterType.SAVED),
               ],
               searchTerm);
           // Having a search term should hide the Show more button.
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Search for a term with no matching printers. Expect Show more
           // button to still be hidden.
@@ -862,7 +916,8 @@ suite('CupsSavedPrintersTests', function() {
           flush();
           verifySearchQueryResults(savedPrintersElement, [], searchTerm);
 
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Change search term and expect new set of visible printers.
           searchTerm = 'test';
@@ -872,10 +927,11 @@ suite('CupsSavedPrintersTests', function() {
               savedPrintersElement,
               [
                 createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
-                createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+                createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
               ],
               searchTerm);
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Remove the search term and expect the collapsed list to appear
           // again.
@@ -885,13 +941,14 @@ suite('CupsSavedPrintersTests', function() {
           const expectedVisiblePrinters = [
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
             createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
-            createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED)
+            createPrinterListEntry('google3', '5', 'id5', PrinterType.SAVED),
           ];
           verifySearchQueryResults(
               savedPrintersElement, expectedVisiblePrinters, searchTerm);
           verifyVisiblePrinters(
               printerEntryListTestElement, expectedVisiblePrinters);
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
         });
   });
 
@@ -907,22 +964,25 @@ suite('CupsSavedPrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          savedPrintersElement = page.$$('settings-cups-saved-printers');
+          savedPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-saved-printers');
           assertTrue(!!savedPrintersElement);
 
           const printerEntryListTestElement =
-              savedPrintersElement.$$('#printerEntryList');
+              savedPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           // There are 4 total printers but only 3 printers are visible and 1 is
           // hidden underneath the Show more section.
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
             createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
-            createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED)
+            createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
           ]);
           // Assert that the Show more button is shown since printer list length
           // is > 3.
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Add a new printer and expect it to be at the top of the list.
           addNewSavedPrinter(createCupsPrinterInfo('newPrinter', '5', 'id5'));
@@ -930,9 +990,10 @@ suite('CupsSavedPrintersTests', function() {
             createPrinterListEntry('newPrinter', '5', 'id5', PrinterType.SAVED),
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
             createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
-            createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED)
+            createPrinterListEntry('test1', '1', 'id1', PrinterType.SAVED),
           ]);
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Now simulate removing printer 'test1'.
           removeSavedPrinter('id1');
@@ -943,9 +1004,10 @@ suite('CupsSavedPrintersTests', function() {
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('newPrinter', '5', 'id5', PrinterType.SAVED),
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
-            createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED)
+            createPrinterListEntry('google2', '4', 'id4', PrinterType.SAVED),
           ]);
-          assertTrue(!!savedPrintersElement.$$('#show-more-container'));
+          assertTrue(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Remove another printer and assert that we still have 3 visible
           // printers but now 'test2' is our third visible printer.
@@ -953,10 +1015,11 @@ suite('CupsSavedPrintersTests', function() {
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('newPrinter', '5', 'id5', PrinterType.SAVED),
             createPrinterListEntry('google', '3', 'id3', PrinterType.SAVED),
-            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED)
+            createPrinterListEntry('test2', '2', 'id2', PrinterType.SAVED),
           ]);
           // Printer list length is <= 3, Show more button should be hidden.
-          assertFalse(!!savedPrintersElement.$$('#show-more-container'));
+          assertFalse(!!savedPrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
         });
   });
 });
@@ -971,19 +1034,19 @@ suite('CupsNearbyPrintersTests', function() {
   /** @type{!HtmlElement} */
   let printerEntryListTestElement = null;
 
-  /** @type {!chromeos.networkConfig.mojom.NetworkStateProperties|undefined} */
+  /** @type {!NetworkStateProperties|undefined} */
   let wifi1;
 
 
   setup(function() {
-    const mojom = chromeos.networkConfig.mojom;
     cupsPrintersBrowserProxy = new TestCupsPrintersBrowserProxy();
 
-    CupsPrintersBrowserProxyImpl.instance_ = cupsPrintersBrowserProxy;
+    CupsPrintersBrowserProxyImpl.setInstanceForTesting(
+        cupsPrintersBrowserProxy);
 
     // Simulate internet connection.
-    wifi1 = OncMojo.getDefaultNetworkState(mojom.NetworkType.kWiFi, 'wifi1');
-    wifi1.connectionState = mojom.ConnectionStateType.kOnline;
+    wifi1 = OncMojo.getDefaultNetworkState(NetworkType.kWiFi, 'wifi1');
+    wifi1.connectionState = ConnectionStateType.kOnline;
 
     PolymerTest.clearBody();
     Router.getInstance().navigateTo(routes.CUPS_PRINTERS);
@@ -1014,7 +1077,8 @@ suite('CupsNearbyPrintersTests', function() {
     ];
 
     return flushTasks().then(() => {
-      nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+      nearbyPrintersElement =
+          page.shadowRoot.querySelector('settings-cups-nearby-printers');
       assertTrue(!!nearbyPrintersElement);
 
       // Assert that no printers have been detected.
@@ -1022,7 +1086,7 @@ suite('CupsNearbyPrintersTests', function() {
       assertEquals(0, nearbyPrinterEntries.length);
 
       // Simuluate finding nearby printers.
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'on-nearby-printers-changed', automaticPrinterList,
           discoveredPrinterList);
 
@@ -1058,16 +1122,21 @@ suite('CupsNearbyPrintersTests', function() {
     // Expected sort order is to sort automatic printers first then
     // sort discovered printers
     const expectedPrinterList = [
-      autoPrinterD, autoPrinterE, autoPrinterF, discoveredPrinterA,
-      discoveredPrinterB, discoveredPrinterC
+      autoPrinterD,
+      autoPrinterE,
+      autoPrinterF,
+      discoveredPrinterA,
+      discoveredPrinterB,
+      discoveredPrinterC,
     ];
 
     return flushTasks().then(() => {
-      nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+      nearbyPrintersElement =
+          page.shadowRoot.querySelector('settings-cups-nearby-printers');
       assertTrue(!!nearbyPrintersElement);
 
       // Simuluate finding nearby printers.
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'on-nearby-printers-changed', automaticPrinterList,
           discoveredPrinterList);
 
@@ -1087,11 +1156,12 @@ suite('CupsNearbyPrintersTests', function() {
 
     return flushTasks()
         .then(() => {
-          nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+          nearbyPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-nearby-printers');
           assertTrue(!!nearbyPrintersElement);
 
           // Simuluate finding nearby printers.
-          cr.webUIListenerCallback(
+          webUIListenerCallback(
               'on-nearby-printers-changed', automaticPrinterList,
               discoveredPrinterList);
 
@@ -1101,11 +1171,13 @@ suite('CupsNearbyPrintersTests', function() {
           // printer has the correct button.
           const nearbyPrinterEntries = getPrinterEntries(nearbyPrintersElement);
           assertEquals(1, nearbyPrinterEntries.length);
-          assertTrue(!!nearbyPrinterEntries[0].$$('.save-printer-button'));
+          assertTrue(!!nearbyPrinterEntries[0].shadowRoot.querySelector(
+              '.save-printer-button'));
 
           // Add an automatic printer and assert that that the toast
           // notification is shown.
-          addButton = nearbyPrinterEntries[0].$$('.save-printer-button');
+          addButton = nearbyPrinterEntries[0].shadowRoot.querySelector(
+              '.save-printer-button');
           clickButton(addButton);
           // Add button should be disabled during setup.
           assertTrue(addButton.disabled);
@@ -1116,7 +1188,9 @@ suite('CupsNearbyPrintersTests', function() {
           assertFalse(addButton.disabled);
           const expectedToastMessage =
               'Added ' + automaticPrinterList[0].printerName;
-          verifyErrorToastMessage(expectedToastMessage, page.$$('#errorToast'));
+          verifyErrorToastMessage(
+              expectedToastMessage,
+              page.shadowRoot.querySelector('#errorToast'));
         });
   });
 
@@ -1127,14 +1201,15 @@ suite('CupsNearbyPrintersTests', function() {
       createCupsPrinterInfo('third', '2', 'id5'),
     ];
     return flushTasks().then(async () => {
-      nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+      nearbyPrintersElement =
+          page.shadowRoot.querySelector('settings-cups-nearby-printers');
 
       // Block so that FocusRowBehavior.attached can run.
       await waitAfterNextRender(nearbyPrintersElement);
 
       assertTrue(!!nearbyPrintersElement);
       // Simuluate finding nearby printers.
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'on-nearby-printers-changed', [], discoveredPrinterList);
       flush();
 
@@ -1142,33 +1217,41 @@ suite('CupsNearbyPrintersTests', function() {
       // executed.
       await waitAfterNextRender(nearbyPrintersElement);
       const nearbyPrinterEntries = getPrinterEntries(nearbyPrintersElement);
-      const printerEntryList = nearbyPrintersElement.$$('#printerEntryList');
+      const printerEntryList =
+          nearbyPrintersElement.shadowRoot.querySelector('#printerEntryList');
 
-      nearbyPrinterEntries[0].$$('#entry').focus();
+      nearbyPrinterEntries[0].shadowRoot.querySelector('#entry').focus();
       assertEquals(
-          nearbyPrinterEntries[0].$$('#entry'), getDeepActiveElement());
+          nearbyPrinterEntries[0].shadowRoot.querySelector('#entry'),
+          getDeepActiveElement());
       // Ensure that we can navigate through items in a row
       getDeepActiveElement().dispatchEvent(arrowRightEvent);
       assertEquals(
-          nearbyPrinterEntries[0].$$('#setupPrinterButton'),
+          nearbyPrinterEntries[0].shadowRoot.querySelector(
+              '#setupPrinterButton'),
           getDeepActiveElement());
       getDeepActiveElement().dispatchEvent(arrowLeftEvent);
       assertEquals(
-          nearbyPrinterEntries[0].$$('#entry'), getDeepActiveElement());
+          nearbyPrinterEntries[0].shadowRoot.querySelector('#entry'),
+          getDeepActiveElement());
 
       // Ensure that we can navigate through printer rows
       printerEntryList.dispatchEvent(arrowDownEvent);
       assertEquals(
-          nearbyPrinterEntries[1].$$('#entry'), getDeepActiveElement());
+          nearbyPrinterEntries[1].shadowRoot.querySelector('#entry'),
+          getDeepActiveElement());
       printerEntryList.dispatchEvent(arrowDownEvent);
       assertEquals(
-          nearbyPrinterEntries[2].$$('#entry'), getDeepActiveElement());
+          nearbyPrinterEntries[2].shadowRoot.querySelector('#entry'),
+          getDeepActiveElement());
       printerEntryList.dispatchEvent(arrowUpEvent);
       assertEquals(
-          nearbyPrinterEntries[1].$$('#entry'), getDeepActiveElement());
+          nearbyPrinterEntries[1].shadowRoot.querySelector('#entry'),
+          getDeepActiveElement());
       printerEntryList.dispatchEvent(arrowUpEvent);
       assertEquals(
-          nearbyPrinterEntries[0].$$('#entry'), getDeepActiveElement());
+          nearbyPrinterEntries[0].shadowRoot.querySelector('#entry'),
+          getDeepActiveElement());
     });
   });
 
@@ -1181,11 +1264,12 @@ suite('CupsNearbyPrintersTests', function() {
 
     return flushTasks()
         .then(() => {
-          nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+          nearbyPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-nearby-printers');
           assertTrue(!!nearbyPrintersElement);
 
           // Simuluate finding nearby printers.
-          cr.webUIListenerCallback(
+          webUIListenerCallback(
               'on-nearby-printers-changed', automaticPrinterList,
               discoveredPrinterList);
 
@@ -1195,7 +1279,8 @@ suite('CupsNearbyPrintersTests', function() {
           // the correct icon button.
           const nearbyPrinterEntries = getPrinterEntries(nearbyPrintersElement);
           assertEquals(1, nearbyPrinterEntries.length);
-          assertTrue(!!nearbyPrinterEntries[0].$$('#setupPrinterButton'));
+          assertTrue(!!nearbyPrinterEntries[0].shadowRoot.querySelector(
+              '#setupPrinterButton'));
 
           // Force a failure with adding a discovered printer.
           cupsPrintersBrowserProxy.setAddDiscoveredPrinterFailure(
@@ -1203,7 +1288,8 @@ suite('CupsNearbyPrintersTests', function() {
 
           // Assert that clicking on the setup button shows the advanced
           // configuration dialog.
-          setupButton = nearbyPrinterEntries[0].$$('#setupPrinterButton');
+          setupButton = nearbyPrinterEntries[0].shadowRoot.querySelector(
+              '#setupPrinterButton');
           clickButton(setupButton);
           // Setup button should be disabled during setup.
           assertTrue(setupButton.disabled);
@@ -1214,22 +1300,25 @@ suite('CupsNearbyPrintersTests', function() {
           assertFalse(setupButton.disabled);
 
           flush();
-          const addDialog = page.$$('#addPrinterDialog');
-          manufacturerDialog =
-              addDialog.$$('add-printer-manufacturer-model-dialog');
+          const addDialog = page.shadowRoot.querySelector('#addPrinterDialog');
+          manufacturerDialog = addDialog.shadowRoot.querySelector(
+              'add-printer-manufacturer-model-dialog');
           assertTrue(!!manufacturerDialog);
 
           return cupsPrintersBrowserProxy.whenCalled(
               'getCupsPrinterManufacturersList');
         })
         .then(() => {
-          const addButton = manufacturerDialog.$$('#addPrinterButton');
+          const addButton =
+              manufacturerDialog.shadowRoot.querySelector('#addPrinterButton');
           assertTrue(addButton.disabled);
 
           // Populate the manufacturer and model fields to enable the Add
           // button.
-          manufacturerDialog.$$('#manufacturerDropdown').value = 'make';
-          const modelDropdown = manufacturerDialog.$$('#modelDropdown');
+          manufacturerDialog.shadowRoot.querySelector('#manufacturerDropdown')
+              .value = 'make';
+          const modelDropdown =
+              manufacturerDialog.shadowRoot.querySelector('#modelDropdown');
           modelDropdown.value = 'model';
 
           clickButton(addButton);
@@ -1240,14 +1329,15 @@ suite('CupsNearbyPrintersTests', function() {
           // message when adding a discovered printer.
           const expectedToastMessage =
               'Added ' + discoveredPrinterList[0].printerName;
-          verifyErrorToastMessage(expectedToastMessage, page.$$('#errorToast'));
+          verifyErrorToastMessage(
+              expectedToastMessage,
+              page.shadowRoot.querySelector('#errorToast'));
         });
   });
 
   test('NetworkConnectedButNoInternet', function() {
     // Simulate connecting to a network with no internet connection.
-    wifi1.connectionState =
-        chromeos.networkConfig.mojom.ConnectionStateType.kConnected;
+    wifi1.connectionState = ConnectionStateType.kConnected;
     page.onActiveNetworksChanged([wifi1]);
     flush();
 
@@ -1255,16 +1345,16 @@ suite('CupsNearbyPrintersTests', function() {
       // We require internet to be able to add a new printer. Connecting to
       // a network without connectivity should be equivalent to not being
       // connected to a network.
-      assertTrue(!!page.$$('#cloudOffIcon'));
-      assertTrue(!!page.$$('#connectionMessage'));
-      assertTrue(!!page.$$('#addManualPrinterIcon').disabled);
+      assertTrue(!!page.shadowRoot.querySelector('#cloudOffIcon'));
+      assertTrue(!!page.shadowRoot.querySelector('#connectionMessage'));
+      assertTrue(
+          !!page.shadowRoot.querySelector('#addManualPrinterIcon').disabled);
     });
   });
 
   test('checkNetworkConnection', function() {
     // Simulate disconnecting from a network.
-    wifi1.connectionState =
-        chromeos.networkConfig.mojom.ConnectionStateType.kNotConnected;
+    wifi1.connectionState = ConnectionStateType.kNotConnected;
     page.onActiveNetworksChanged([wifi1]);
     flush();
 
@@ -1272,13 +1362,13 @@ suite('CupsNearbyPrintersTests', function() {
         .then(() => {
           // Expect offline text to show up when no internet is
           // connected.
-          assertTrue(!!page.$$('#cloudOffIcon'));
-          assertTrue(!!page.$$('#connectionMessage'));
-          assertTrue(!!page.$$('#addManualPrinterIcon').disabled);
+          assertTrue(!!page.shadowRoot.querySelector('#cloudOffIcon'));
+          assertTrue(!!page.shadowRoot.querySelector('#connectionMessage'));
+          assertTrue(!!page.shadowRoot.querySelector('#addManualPrinterIcon')
+                           .disabled);
 
           // Simulate connecting to a network with connectivity.
-          wifi1.connectionState =
-              chromeos.networkConfig.mojom.ConnectionStateType.kOnline;
+          wifi1.connectionState = ConnectionStateType.kOnline;
           page.onActiveNetworksChanged([wifi1]);
           flush();
 
@@ -1295,17 +1385,19 @@ suite('CupsNearbyPrintersTests', function() {
           ];
 
           // Simuluate finding nearby printers.
-          cr.webUIListenerCallback(
+          webUIListenerCallback(
               'on-nearby-printers-changed', automaticPrinterList,
               discoveredPrinterList);
 
           flush();
 
-          nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+          nearbyPrintersElement =
+              page.shadowRoot.querySelector('settings-cups-nearby-printers');
           assertTrue(!!nearbyPrintersElement);
 
           printerEntryListTestElement =
-              nearbyPrintersElement.$$('#printerEntryList');
+              nearbyPrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
           assertTrue(!!printerEntryListTestElement);
 
           const nearbyPrinterEntries = getPrinterEntries(nearbyPrintersElement);
@@ -1324,15 +1416,16 @@ suite('CupsNearbyPrintersTests', function() {
     ];
 
     return flushTasks().then(() => {
-      nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+      nearbyPrintersElement =
+          page.shadowRoot.querySelector('settings-cups-nearby-printers');
       assertTrue(!!nearbyPrintersElement);
 
       printerEntryListTestElement =
-          nearbyPrintersElement.$$('#printerEntryList');
+          nearbyPrintersElement.shadowRoot.querySelector('#printerEntryList');
       assertTrue(!!printerEntryListTestElement);
 
       // Simuluate finding nearby printers.
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'on-nearby-printers-changed', [], discoveredPrinterList);
 
       flush();
@@ -1343,7 +1436,7 @@ suite('CupsNearbyPrintersTests', function() {
         createPrinterListEntry(
             'test1', 'printerAddress1', 'printerId1', PrinterType.DISCOVERD),
         createPrinterListEntry(
-            'test2', 'printerAddress2', 'printerId2', PrinterType.DISCOVERD)
+            'test2', 'printerAddress2', 'printerId2', PrinterType.DISCOVERD),
       ]);
 
       let searchTerm = 'google';
@@ -1371,7 +1464,8 @@ suite('CupsNearbyPrintersTests', function() {
                 'test1', 'printerAddress1', 'printerId1',
                 PrinterType.DISCOVERD),
             createPrinterListEntry(
-                'test2', 'printerAddress2', 'printerId2', PrinterType.DISCOVERD)
+                'test2', 'printerAddress2', 'printerId2',
+                PrinterType.DISCOVERD),
           ],
           searchTerm);
 
@@ -1382,7 +1476,7 @@ suite('CupsNearbyPrintersTests', function() {
           createCupsPrinterInfo('google2', 'printerAddress5', 'printerId5'));
 
       // Simuluate finding nearby printers.
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'on-nearby-printers-changed', [], discoveredPrinterList);
 
       flush();
@@ -1397,7 +1491,8 @@ suite('CupsNearbyPrintersTests', function() {
                 'test2', 'printerAddress2', 'printerId2',
                 PrinterType.DISCOVERD),
             createPrinterListEntry(
-                'test3', 'printerAddress4', 'printerId4', PrinterType.DISCOVERD)
+                'test3', 'printerAddress4', 'printerId4',
+                PrinterType.DISCOVERD),
           ],
           searchTerm);
     });
@@ -1406,19 +1501,20 @@ suite('CupsNearbyPrintersTests', function() {
   test('NearbyPrintersNoSearchFound', function() {
     const discoveredPrinterList = [
       createCupsPrinterInfo('test1', 'printerAddress1', 'printerId1'),
-      createCupsPrinterInfo('google', 'printerAddress2', 'printerId2')
+      createCupsPrinterInfo('google', 'printerAddress2', 'printerId2'),
     ];
 
     return flushTasks().then(() => {
-      nearbyPrintersElement = page.$$('settings-cups-nearby-printers');
+      nearbyPrintersElement =
+          page.shadowRoot.querySelector('settings-cups-nearby-printers');
       assertTrue(!!nearbyPrintersElement);
 
       printerEntryListTestElement =
-          nearbyPrintersElement.$$('#printerEntryList');
+          nearbyPrintersElement.shadowRoot.querySelector('#printerEntryList');
       assertTrue(!!printerEntryListTestElement);
 
       // Simuluate finding nearby printers.
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'on-nearby-printers-changed', [], discoveredPrinterList);
 
       flush();
@@ -1485,13 +1581,14 @@ suite('CupsEnterprisePrintersTests', function() {
     page = null;
   });
 
-  /** @param {!Array<!CupsPrinterInfo>} printerList */
+
   function createCupsPrinterPage(printers) {
     printerList = printers;
     // |cupsPrinterBrowserProxy| needs to have a list of printers before
     // initializing the landing page.
     cupsPrintersBrowserProxy.printerList = {printerList: printerList};
-    CupsPrintersBrowserProxyImpl.instance_ = cupsPrintersBrowserProxy;
+    CupsPrintersBrowserProxyImpl.setInstanceForTesting(
+        cupsPrintersBrowserProxy);
 
     page = document.createElement('settings-cups-printers');
     document.body.appendChild(page);
@@ -1512,10 +1609,11 @@ suite('CupsEnterprisePrintersTests', function() {
           // Wait for saved printers to populate.
           flush();
 
-          enterprisePrintersElement =
-              page.$$('settings-cups-enterprise-printers');
+          enterprisePrintersElement = page.shadowRoot.querySelector(
+              'settings-cups-enterprise-printers');
           printerEntryListTestElement =
-              enterprisePrintersElement.$$('#printerEntryList');
+              enterprisePrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('test1', '1', 'id1', PrinterType.ENTERPRISE),
             createPrinterListEntry('test2', '2', 'id2', PrinterType.ENTERPRISE),
@@ -1536,43 +1634,57 @@ suite('CupsEnterprisePrintersTests', function() {
           // Wait for enterprise printers to populate.
           flush();
 
-          enterprisePrintersElement =
-              page.$$('settings-cups-enterprise-printers');
+          enterprisePrintersElement = page.shadowRoot.querySelector(
+              'settings-cups-enterprise-printers');
           assertTrue(!!enterprisePrintersElement);
 
           const enterprisePrinterEntries =
               getPrinterEntries(enterprisePrintersElement);
 
           // Users are not allowed to remove enterprise printers.
-          const removeButton = enterprisePrintersElement.$$('#removeButton');
+          const removeButton =
+              enterprisePrintersElement.shadowRoot.querySelector(
+                  '#removeButton');
           assertTrue(removeButton.disabled);
 
-          clickButton(enterprisePrinterEntries[0].$$('.icon-more-vert'));
-          clickButton(enterprisePrintersElement.$$('#viewButton'));
+          clickButton(enterprisePrinterEntries[0].shadowRoot.querySelector(
+              '.icon-more-vert'));
+          clickButton(enterprisePrintersElement.shadowRoot.querySelector(
+              '#viewButton'));
 
           flush();
 
           editDialog = initializeEditDialog(page);
 
-          const nameField = editDialog.$$('.printer-name-input');
+          const nameField =
+              editDialog.shadowRoot.querySelector('.printer-name-input');
           assertTrue(!!nameField);
           assertEquals('test1', nameField.value);
           assertTrue(nameField.readonly);
 
-          assertTrue(editDialog.$$('#printerAddress').readonly);
-          assertTrue(editDialog.$$('.md-select').disabled);
-          assertTrue(editDialog.$$('#printerQueue').readonly);
-          assertTrue(editDialog.$$('#printerPPDManufacturer').readonly);
+          assertTrue(
+              editDialog.shadowRoot.querySelector('#printerAddress').readonly);
+          assertTrue(
+              editDialog.shadowRoot.querySelector('.md-select').disabled);
+          assertTrue(
+              editDialog.shadowRoot.querySelector('#printerQueue').readonly);
+          assertTrue(
+              editDialog.shadowRoot.querySelector('#printerPPDManufacturer')
+                  .readonly);
 
           // The "specify PDD" section should be hidden.
-          assertTrue(editDialog.$$('.browse-button').parentElement.hidden);
-          assertTrue(editDialog.$$('#ppdLabel').hidden);
+          assertTrue(editDialog.shadowRoot.querySelector('.browse-button')
+                         .parentElement.hidden);
+          assertTrue(editDialog.shadowRoot.querySelector('#ppdLabel').hidden);
 
           // Save and Cancel buttons should be hidden. Close button should be
           // visible.
-          assertTrue(editDialog.$$('.cancel-button').hidden);
-          assertTrue(editDialog.$$('.action-button').hidden);
-          assertFalse(editDialog.$$('.close-button').hidden);
+          assertTrue(
+              editDialog.shadowRoot.querySelector('.cancel-button').hidden);
+          assertTrue(
+              editDialog.shadowRoot.querySelector('.action-button').hidden);
+          assertFalse(
+              editDialog.shadowRoot.querySelector('.close-button').hidden);
         });
   });
 
@@ -1588,12 +1700,13 @@ suite('CupsEnterprisePrintersTests', function() {
           // Wait for enterprise printers to populate.
           flush();
 
-          enterprisePrintersElement =
-              page.$$('settings-cups-enterprise-printers');
+          enterprisePrintersElement = page.shadowRoot.querySelector(
+              'settings-cups-enterprise-printers');
           assertTrue(!!enterprisePrintersElement);
 
           const printerEntryListTestElement =
-              enterprisePrintersElement.$$('#printerEntryList');
+              enterprisePrintersElement.shadowRoot.querySelector(
+                  '#printerEntryList');
 
           // There are 4 total printers but only 3 printers are visible and 1 is
           // hidden underneath the Show more section.
@@ -1604,11 +1717,14 @@ suite('CupsEnterprisePrintersTests', function() {
           ]);
           // Assert that the Show more button is shown since printer list length
           // is > 3.
-          assertTrue(!!enterprisePrintersElement.$$('#show-more-container'));
+          assertTrue(!!enterprisePrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
 
           // Click on the Show more button.
-          clickButton(enterprisePrintersElement.$$('#show-more-icon'));
-          assertFalse(!!enterprisePrintersElement.$$('#show-more-container'));
+          clickButton(enterprisePrintersElement.shadowRoot.querySelector(
+              '#show-more-icon'));
+          assertFalse(!!enterprisePrintersElement.shadowRoot.querySelector(
+              '#show-more-container'));
           // Clicking on the Show more button reveals all hidden printers.
           verifyVisiblePrinters(printerEntryListTestElement, [
             createPrinterListEntry('test1', '1', 'id1', PrinterType.ENTERPRISE),

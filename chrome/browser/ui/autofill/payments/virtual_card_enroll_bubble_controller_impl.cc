@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,15 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if BUILDFLAG(IS_ANDROID)
+#include "chrome/android/chrome_jni_headers/VirtualCardEnrollmentDelegate_jni.h"
+
 #include "components/autofill/core/browser/payments/autofill_virtual_card_enrollment_infobar_delegate_mobile.h"
 #include "components/autofill/core/browser/payments/autofill_virtual_card_enrollment_infobar_mobile.h"
 #include "components/infobars/content/content_infobar_manager.h"
 #include "components/infobars/core/infobar.h"
+#include "components/messages/android/messages_feature.h"
+#include "ui/android/view_android.h"
+#include "ui/android/window_android.h"
 #else
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -31,7 +36,16 @@ VirtualCardEnrollBubbleControllerImpl::VirtualCardEnrollBubbleControllerImpl(
           *web_contents) {}
 
 VirtualCardEnrollBubbleControllerImpl::
-    ~VirtualCardEnrollBubbleControllerImpl() = default;
+    ~VirtualCardEnrollBubbleControllerImpl() {
+#if BUILDFLAG(IS_ANDROID)
+  HideBubble();
+  // Reset the controller reference in the Java delegate.
+  if (java_delegate_) {
+    Java_VirtualCardEnrollmentDelegate_onNativeDestroyed(
+        base::android::AttachCurrentThread(), java_delegate_);
+  }
+#endif
+}
 
 // static
 VirtualCardEnrollBubbleController*
@@ -144,12 +158,18 @@ void VirtualCardEnrollBubbleControllerImpl::OnDeclineButton() {
 void VirtualCardEnrollBubbleControllerImpl::OnLinkClicked(
     VirtualCardEnrollmentLinkType link_type,
     const GURL& url) {
+  reprompt_required_ = true;
+
   LogVirtualCardEnrollmentLinkClickedMetric(
       link_type, GetVirtualCardEnrollmentBubbleSource());
 
   web_contents()->OpenURL(content::OpenURLParams(
       url, content::Referrer(), WindowOpenDisposition::NEW_FOREGROUND_TAB,
       ui::PAGE_TRANSITION_LINK, false));
+
+#if !BUILDFLAG(IS_ANDROID)
+  bubble_state_ = BubbleState::kShowingIconAndBubble;
+#endif
 }
 
 void VirtualCardEnrollBubbleControllerImpl::OnBubbleClosed(
@@ -185,10 +205,37 @@ void VirtualCardEnrollBubbleControllerImpl::OnBubbleClosed(
           VIRTUAL_CARD_ENROLLMENT_BUBBLE_RESULT_UNKNOWN;
   }
 
-  LogVirtualCardEnrollmentBubbleResultMetric(
-      result, GetVirtualCardEnrollmentBubbleSource(), is_user_gesture_,
-      virtual_card_enrollment_fields_.previously_declined);
+  // If the dialog is to be shown again because user clicked on links, do not
+  // log metrics.
+  if (!reprompt_required_) {
+    LogVirtualCardEnrollmentBubbleResultMetric(
+        result, GetVirtualCardEnrollmentBubbleSource(), is_user_gesture_,
+        virtual_card_enrollment_fields_.previously_declined);
+  }
 }
+
+#if BUILDFLAG(IS_ANDROID)
+void VirtualCardEnrollBubbleControllerImpl::OnAccepted(JNIEnv* env) {
+  OnAcceptButton();
+  OnBubbleClosed(PaymentsBubbleClosedReason::kAccepted);
+}
+
+void VirtualCardEnrollBubbleControllerImpl::OnDeclined(JNIEnv* env) {
+  OnDeclineButton();
+  OnBubbleClosed(PaymentsBubbleClosedReason::kCancelled);
+}
+
+void VirtualCardEnrollBubbleControllerImpl::OnDismissed(JNIEnv* env) {
+  OnBubbleClosed(PaymentsBubbleClosedReason::kNotInteracted);
+}
+
+void VirtualCardEnrollBubbleControllerImpl::OnLinkClicked(JNIEnv* env,
+                                                          jstring url,
+                                                          jint link_type) {
+  OnLinkClicked(static_cast<autofill::VirtualCardEnrollmentLinkType>(link_type),
+                GURL(base::android::ConvertJavaStringToUTF16(env, url)));
+}
+#endif
 
 bool VirtualCardEnrollBubbleControllerImpl::IsIconVisible() const {
 #if BUILDFLAG(IS_ANDROID)
@@ -201,7 +248,12 @@ bool VirtualCardEnrollBubbleControllerImpl::IsIconVisible() const {
 void VirtualCardEnrollBubbleControllerImpl::OnVisibilityChanged(
     content::Visibility visibility) {
 #if BUILDFLAG(IS_ANDROID)
-  AutofillBubbleControllerBase::OnVisibilityChanged(visibility);
+  if (visibility == content::Visibility::VISIBLE && !bubble_view() &&
+      reprompt_required_ && messages::IsSaveCardMessagesUiEnabled()) {
+    Show();
+  } else if (visibility == content::Visibility::HIDDEN) {
+    HideBubble();
+  }
 #else
   if (visibility == content::Visibility::VISIBLE && !bubble_view() &&
       bubble_state_ == BubbleState::kShowingIconAndBubble) {
@@ -221,13 +273,25 @@ VirtualCardEnrollBubbleControllerImpl::GetPageActionIconType() {
 
 void VirtualCardEnrollBubbleControllerImpl::DoShowBubble() {
 #if BUILDFLAG(IS_ANDROID)
-  infobars::ContentInfoBarManager* infobar_manager =
-      infobars::ContentInfoBarManager::FromWebContents(web_contents());
-  DCHECK(infobar_manager);
-  infobar_manager->RemoveAllInfoBars(true);
-  infobar_manager->AddInfoBar(CreateVirtualCardEnrollmentInfoBarMobile(
-      std::make_unique<AutofillVirtualCardEnrollmentInfoBarDelegateMobile>(
-          this)));
+  if (messages::IsSaveCardMessagesUiEnabled() &&
+      GetVirtualCardEnrollmentBubbleSource() ==
+          VirtualCardEnrollmentBubbleSource::
+              VIRTUAL_CARD_ENROLLMENT_UPSTREAM_SOURCE) {
+    DCHECK(!bubble_view());
+
+    set_bubble_view(
+        VirtualCardEnrollmentViewAndroid::CreateAndShow(web_contents(), this));
+
+    DCHECK(bubble_view());
+  } else {
+    infobars::ContentInfoBarManager* infobar_manager =
+        infobars::ContentInfoBarManager::FromWebContents(web_contents());
+    DCHECK(infobar_manager);
+    infobar_manager->RemoveAllInfoBars(true);
+    infobar_manager->AddInfoBar(CreateVirtualCardEnrollmentInfoBarMobile(
+        std::make_unique<AutofillVirtualCardEnrollmentInfoBarDelegateMobile>(
+            this)));
+  }
 #else
   // If bubble is already showing for another card, close it.
   if (bubble_view())
@@ -238,10 +302,12 @@ void VirtualCardEnrollBubbleControllerImpl::DoShowBubble() {
     return;
 
   Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
+  // For reprompts after link clicks, |is_user_gesture| is set to false.
+  bool user_gesture_reprompt = reprompt_required_ ? false : is_user_gesture_;
   set_bubble_view(browser->window()
                       ->GetAutofillBubbleHandler()
                       ->ShowVirtualCardEnrollBubble(web_contents(), this,
-                                                    is_user_gesture_));
+                                                    user_gesture_reprompt));
   DCHECK(bubble_view());
   // Update |bubble_state_| after bubble is shown once. In OnVisibilityChanged()
   // we display the bubble if the the state is kShowingIconAndBubble. Once we
@@ -249,11 +315,17 @@ void VirtualCardEnrollBubbleControllerImpl::DoShowBubble() {
   // sure further OnVisibilityChanged() don't trigger opening the bubble because
   // we don't want to re-show it every time the web contents become visible.
   bubble_state_ = BubbleState::kShowingIcon;
-
 #endif  // BUILDFLAG(IS_ANDROID)
 
-  LogVirtualCardEnrollmentBubbleShownMetric(
-      GetVirtualCardEnrollmentBubbleSource(), is_user_gesture_);
+  // If the dialog is to be shown again because user clicked on links, do not
+  // log metrics.
+  if (!reprompt_required_) {
+    LogVirtualCardEnrollmentBubbleShownMetric(
+        GetVirtualCardEnrollmentBubbleSource(), is_user_gesture_);
+  }
+
+  // Reset value for the next time tab is switched.
+  reprompt_required_ = false;
 
   if (bubble_shown_closure_for_testing_)
     bubble_shown_closure_for_testing_.Run();
@@ -286,6 +358,17 @@ bool VirtualCardEnrollBubbleControllerImpl::IsWebContentsActive() {
 
   return active_browser->tab_strip_model()->GetActiveWebContents() ==
          web_contents();
+}
+#endif
+
+#if BUILDFLAG(IS_ANDROID)
+base::android::ScopedJavaGlobalRef<jobject>
+VirtualCardEnrollBubbleControllerImpl::GetOrCreateJavaDelegate() {
+  if (java_delegate_)
+    return java_delegate_;
+  return java_delegate_ = Java_VirtualCardEnrollmentDelegate_create(
+             base::android::AttachCurrentThread(),
+             reinterpret_cast<intptr_t>(this));
 }
 #endif
 

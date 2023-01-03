@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,8 @@
 #include "base/command_line.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/time/time.h"
+#include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "ui/display/display.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/test/display_manager_test_api.h"
@@ -18,14 +20,14 @@ namespace ash {
 namespace {
 
 // A simple observer that lists its last observation.
-class TestObserver : public HpsOrientationController::Observer {
+class TestObserver : public HumanPresenceOrientationController::Observer {
  public:
   TestObserver() = default;
   TestObserver(const TestObserver&) = delete;
   TestObserver& operator=(const TestObserver&) = delete;
   ~TestObserver() override = default;
 
-  // HpsOrientationController::Observer::
+  // HumanPresenceOrientationController::Observer::
   void OnOrientationChanged(bool suitable_for_hps) override {
     ++observation_count_;
     last_observation_ = suitable_for_hps;
@@ -40,24 +42,28 @@ class TestObserver : public HpsOrientationController::Observer {
   bool last_observation_ = false;
 };
 
-class HpsOrientationControllerTest : public AshTestBase {
+class HumanPresenceOrientationControllerTest : public AshTestBase {
  public:
-  HpsOrientationControllerTest() = default;
-  HpsOrientationControllerTest(const HpsOrientationControllerTest&) = delete;
-  HpsOrientationControllerTest& operator=(const HpsOrientationControllerTest&) =
-      delete;
-  ~HpsOrientationControllerTest() override = default;
+  HumanPresenceOrientationControllerTest() = default;
+  HumanPresenceOrientationControllerTest(
+      const HumanPresenceOrientationControllerTest&) = delete;
+  HumanPresenceOrientationControllerTest& operator=(
+      const HumanPresenceOrientationControllerTest&) = delete;
+  ~HumanPresenceOrientationControllerTest() override = default;
 
   void SetUp() override {
     scoped_feature_list_.InitWithFeatures({ash::features::kSnoopingProtection},
                                           {ash::features::kQuickDim});
     base::CommandLine::ForCurrentProcess()->AppendSwitch(switches::kHasHps);
 
+    chromeos::PowerManagerClient::InitializeFake();
     AshTestBase::SetUp();
 
-    orientation_controller_ = Shell::Get()->hps_orientation_controller();
+    orientation_controller_ =
+        Shell::Get()->human_presence_orientation_controller();
     tablet_mode_controller_ = Shell::Get()->tablet_mode_controller();
     display_manager_ = Shell::Get()->display_manager();
+    power_manager_client_ = AshTestBase::power_manager_client();
 
     // Two displays: the first internal and the second external.
     UpdateDisplay("800x600,1024x768");
@@ -73,16 +79,17 @@ class HpsOrientationControllerTest : public AshTestBase {
         display::Display::RotationSource::ACTIVE);
   }
 
-  HpsOrientationController* orientation_controller_ = nullptr;
+  HumanPresenceOrientationController* orientation_controller_ = nullptr;
   TabletModeController* tablet_mode_controller_ = nullptr;
   display::DisplayManager* display_manager_ = nullptr;
+  chromeos::FakePowerManagerClient* power_manager_client_ = nullptr;
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
   base::test::ScopedCommandLine scoped_command_line_;
 };
 
-TEST_F(HpsOrientationControllerTest, TabletMode) {
+TEST_F(HumanPresenceOrientationControllerTest, TabletMode) {
   ASSERT_TRUE(orientation_controller_->IsOrientationSuitable());
 
   tablet_mode_controller_->SetEnabledForTest(true);
@@ -91,7 +98,7 @@ TEST_F(HpsOrientationControllerTest, TabletMode) {
   EXPECT_TRUE(orientation_controller_->IsOrientationSuitable());
 }
 
-TEST_F(HpsOrientationControllerTest, DisplayOrientation) {
+TEST_F(HumanPresenceOrientationControllerTest, DisplayOrientation) {
   ASSERT_TRUE(orientation_controller_->IsOrientationSuitable());
 
   // Rotating the external display has no effect on our sensor.
@@ -109,7 +116,17 @@ TEST_F(HpsOrientationControllerTest, DisplayOrientation) {
   EXPECT_TRUE(orientation_controller_->IsOrientationSuitable());
 }
 
-TEST_F(HpsOrientationControllerTest, Observer) {
+TEST_F(HumanPresenceOrientationControllerTest, LidState) {
+  ASSERT_TRUE(orientation_controller_->IsOrientationSuitable());
+  power_manager_client_->SetLidState(
+      chromeos::PowerManagerClient::LidState::CLOSED, base::TimeTicks());
+  ASSERT_FALSE(orientation_controller_->IsOrientationSuitable());
+  power_manager_client_->SetLidState(
+      chromeos::PowerManagerClient::LidState::OPEN, base::TimeTicks());
+  ASSERT_TRUE(orientation_controller_->IsOrientationSuitable());
+}
+
+TEST_F(HumanPresenceOrientationControllerTest, Observer) {
   TestObserver observer;
   orientation_controller_->AddObserver(&observer);
 
@@ -136,6 +153,17 @@ TEST_F(HpsOrientationControllerTest, Observer) {
   RotateDisplay(/*display_index=*/0, /*degrees=*/0);
   EXPECT_EQ(observer.observation_count(), 2);
   EXPECT_EQ(observer.last_observation(), /*suitable_for_hps=*/true);
+
+  // Closing the device lid makes the device unsuitable.
+  power_manager_client_->SetLidState(
+      chromeos::PowerManagerClient::LidState::CLOSED, base::TimeTicks());
+  EXPECT_EQ(observer.observation_count(), 3);
+  ASSERT_FALSE(observer.last_observation());
+  // Opening the device lid makes the device suitable.
+  power_manager_client_->SetLidState(
+      chromeos::PowerManagerClient::LidState::OPEN, base::TimeTicks());
+  EXPECT_EQ(observer.observation_count(), 4);
+  EXPECT_TRUE(observer.last_observation());
 
   orientation_controller_->RemoveObserver(&observer);
 }

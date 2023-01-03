@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -146,13 +146,13 @@ void InjectScript(content::WebContents* contents) {
   // Any frame in the active page might have a password field, so inject scripts
   // into all of them to ensure that notifications from all of them have been
   // sent.
-  contents->GetMainFrame()->ForEachRenderFrameHost(
-      base::BindRepeating([](content::RenderFrameHost* frame) {
+  contents->GetPrimaryMainFrame()->ForEachRenderFrameHost(
+      [](content::RenderFrameHost* frame) {
         bool js_result = false;
         EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
             frame, "window.domAutomationController.send(true);", &js_result));
         EXPECT_TRUE(js_result);
-      }));
+      });
 }
 
 // A WebContentsObserver useful for testing the DidChangeVisibleSecurityState()
@@ -1211,7 +1211,7 @@ IN_PROC_BROWSER_TEST_F(SecurityStateTabHelperTest, AddedTab) {
 
   content::WebContents* raw_new_contents = new_contents.get();
   browser()->tab_strip_model()->InsertWebContentsAt(0, std::move(new_contents),
-                                                    TabStripModel::ADD_NONE);
+                                                    AddTabTypes::ADD_NONE);
   CheckSecurityInfoForSecure(raw_new_contents, security_state::SECURE, false,
                              false, false,
                              false /* expect cert status error */);
@@ -1437,10 +1437,7 @@ IN_PROC_BROWSER_TEST_F(SecurityStateTabHelperTest,
       false /* expect cert status error */);
 }
 
-class SignedExchangeSecurityStateTest
-    : public CertVerifierBrowserTest,
-      public testing::WithParamInterface<
-          bool /* sxg_subresource_prefetch_enabled */> {
+class SignedExchangeSecurityStateTest : public CertVerifierBrowserTest {
  public:
   SignedExchangeSecurityStateTest() = default;
   ~SignedExchangeSecurityStateTest() override = default;
@@ -1459,16 +1456,6 @@ class SignedExchangeSecurityStateTest
 
  private:
   void SetUp() override {
-    const bool sxg_subresource_prefetch_enabled = GetParam();
-    std::vector<base::Feature> enabled_features;
-    std::vector<base::Feature> disabled_features;
-    if (sxg_subresource_prefetch_enabled) {
-      enabled_features.push_back(features::kSignedExchangeSubresourcePrefetch);
-    } else {
-      disabled_features.push_back(features::kSignedExchangeSubresourcePrefetch);
-    }
-    feature_list_.InitWithFeatures(enabled_features, disabled_features);
-
     sxg_test_helper_.SetUp();
 
     CertVerifierBrowserTest::SetUp();
@@ -1480,10 +1467,9 @@ class SignedExchangeSecurityStateTest
   }
 
   content::SignedExchangeBrowserTestHelper sxg_test_helper_;
-  base::test::ScopedFeatureList feature_list_;
 };
 
-IN_PROC_BROWSER_TEST_P(SignedExchangeSecurityStateTest, SecurityLevelIsSecure) {
+IN_PROC_BROWSER_TEST_F(SignedExchangeSecurityStateTest, SecurityLevelIsSecure) {
   embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
   ASSERT_TRUE(embedded_test_server()->Start());
 
@@ -1508,7 +1494,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeSecurityStateTest, SecurityLevelIsSecure) {
       false /* expect_ran_mixed_content */, false /* expect_cert_error */);
 }
 
-IN_PROC_BROWSER_TEST_P(SignedExchangeSecurityStateTest,
+IN_PROC_BROWSER_TEST_F(SignedExchangeSecurityStateTest,
                        SecurityLevelIsSecureAfterPrefetch) {
   embedded_test_server()->ServeFilesFromSourceDirectory("content/test/data");
   ASSERT_TRUE(embedded_test_server()->Start());
@@ -1521,9 +1507,7 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeSecurityStateTest,
       embedded_test_server()->GetURL("/sxg/test.example.org_test.sxg");
 
   // prefetch.html prefetches the signed exchange. And the signed exchange will
-  // be served from HTTPCache (when SignedExchangePrefetchCacheForNavigations is
-  // not enabled), or from PrefetchedSignedExchangeCache (when
-  // SignedExchangePrefetchCacheForNavigations is enabled).
+  // be served from PrefetchedSignedExchangeCache.
   const GURL prefetch_html_url = embedded_test_server()->GetURL(
       std::string("/sxg/prefetch.html#") + sxg_url.spec());
   {
@@ -1553,8 +1537,6 @@ IN_PROC_BROWSER_TEST_P(SignedExchangeSecurityStateTest,
       false /* expect_displayed_mixed_content */,
       false /* expect_ran_mixed_content */, false /* expect_cert_error */);
 }
-
-INSTANTIATE_TEST_SUITE_P(, SignedExchangeSecurityStateTest, testing::Bool());
 
 class SecurityStateTabHelperPrerenderTest : public SecurityStateTabHelperTest {
  public:
@@ -1599,7 +1581,7 @@ class SecurityStateTabHelperPrerenderTest : public SecurityStateTabHelperTest {
   content::WebContents* web_contents() { return web_contents_; }
 
  protected:
-  raw_ptr<content::WebContents> web_contents_ = nullptr;
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_ = nullptr;
   content::test::PrerenderTestHelper prerender_helper_;
   base::test::ScopedFeatureList scoped_feature_list_;
 };
@@ -1777,7 +1759,7 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperFencedFrameTest,
       https_server_.GetURL("/ssl/page_displays_insecure_content.html");
   content::RenderFrameHost* fenced_frame_host =
       fenced_frame_test_helper().CreateFencedFrame(
-          web_contents()->GetMainFrame(), fenced_frame_url);
+          web_contents()->GetPrimaryMainFrame(), fenced_frame_url);
   EXPECT_NE(nullptr, fenced_frame_host);
 
   if (IsAutoupgradeEnabled()) {
@@ -1814,7 +1796,7 @@ IN_PROC_BROWSER_TEST_P(SecurityStateTabHelperFencedFrameTest,
 
   content::RenderFrameHost* fenced_frame_host =
       fenced_frame_test_helper().CreateFencedFrame(
-          web_contents()->GetMainFrame(), fenced_frame_url);
+          web_contents()->GetPrimaryMainFrame(), fenced_frame_url);
   EXPECT_NE(nullptr, fenced_frame_host);
   // Check that nothing has been loaded in the fenced frame.
   EXPECT_EQ(

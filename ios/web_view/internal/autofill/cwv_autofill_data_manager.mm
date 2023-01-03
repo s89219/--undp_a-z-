@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -402,6 +402,12 @@ class WebViewPasswordStoreObserver
     [creditCards addObject:creditCard];
   }
   return [creditCards copy];
+}
+
+- (void)shutDown {
+  _personalDataManager->RemoveObserver(
+      _personalDataManagerObserverBridge.get());
+  _passwordStore->RemoveObserver(_passwordStoreObserver.get());
 }
 
 @end

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,16 +8,13 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "chrome/browser/share/share_attempt.h"
 #include "chrome/browser/ui/sharing_hub/sharing_hub_bubble_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_bubble_delegate_view.h"
 
 namespace gfx {
 class Canvas;
 }  // namespace gfx
-
-namespace content {
-class WebContents;
-}  // namespace content
 
 namespace sharing_hub {
 
@@ -33,7 +30,8 @@ class SharingHubBubbleViewImpl : public SharingHubBubbleView,
  public:
   // Bubble will be anchored to |anchor_view|.
   SharingHubBubbleViewImpl(views::View* anchor_view,
-                           content::WebContents* web_contents);
+                           share::ShareAttempt attempt,
+                           SharingHubBubbleController* controller);
 
   SharingHubBubbleViewImpl(const SharingHubBubbleViewImpl&) = delete;
   SharingHubBubbleViewImpl& operator=(const SharingHubBubbleViewImpl&) = delete;
@@ -93,6 +91,9 @@ class SharingHubBubbleViewImpl : public SharingHubBubbleView,
   // sharing hub is painted to avoid repeatedly collecting the metric it is used
   // for.
   absl::optional<base::Time> show_time_;
+
+  // The share attempt this bubble was opened for.
+  share::ShareAttempt attempt_;
 
   base::WeakPtrFactory<SharingHubBubbleViewImpl> weak_factory_{this};
 };

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -185,6 +185,8 @@ std::map<uint32_t, Thread> ProcessTypeCollector::ParseThreadTypes(
       thread = Thread::COMPOSITOR_THREAD;
     } else if (comm_cmd.starts_with("ThreadPool")) {
       thread = Thread::THREAD_POOL_THREAD;
+    } else if (comm_cmd.starts_with("DrmThread")) {
+      thread = Thread::DRM_THREAD;
     } else if (comm_cmd.starts_with("GpuMemory")) {
       thread = Thread::GPU_MEMORY_THREAD;
     } else if (comm_cmd.starts_with("MemoryInfra")) {
@@ -197,6 +199,12 @@ std::map<uint32_t, Thread> ProcessTypeCollector::ParseThreadTypes(
       thread = Thread::SERVICE_WORKER_THREAD;
     } else if (comm_cmd.starts_with("WebRTC")) {
       thread = Thread::WEBRTC_THREAD;
+    } else if (comm_cmd.starts_with("dav1d-worker")) {
+      thread = Thread::DAV1D_WORKER_THREAD;
+    } else if (comm_cmd.starts_with("AudioThread")) {
+      thread = Thread::AUDIO_THREAD;
+    } else if (comm_cmd.starts_with("AudioOutputDevi")) {
+      thread = Thread::AUDIO_DEVICE_THREAD;
     }
 
     thread_types.emplace(tid, thread);

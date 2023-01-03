@@ -1,4 +1,4 @@
-// Copyright (c) 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,7 @@
 #include "components/history/core/browser/history_types.h"
 #include "components/omnibox/browser/autocomplete_input.h"
 #include "components/omnibox/browser/autocomplete_match.h"
+#include "components/omnibox/browser/autocomplete_result.h"
 #include "components/omnibox/browser/history_provider.h"
 
 // This namespace encapsulates the implementation details of fuzzy matching and
@@ -25,51 +26,56 @@
 // below.
 namespace fuzzy {
 
-// Corrections are linked lists of character substitutions required to change
-// an input string that escapes the trie into a string that is contained by it.
-// These lists are expected to be extremely short, usually a single node with
-// null `next`, so dynamic allocations are minimal but allowed for the sake
-// of algorithm robustness.
-// If the `replacement` character is 0, it is interpreted as deletion.
-struct Correction {
+// An `Edit` represents a single character change to a string.
+struct Edit {
   // The kind of change to apply to text. Note, KEEP essentially means
-  // no edit, and will never be applied or kept as part of a correction chain.
+  // no edit, and will never be applied or kept as part of a `Correction`.
   enum class Kind {
     KEEP,
     DELETE,
     INSERT,
     REPLACE,
+    TRANSPOSE,
   };
 
-  Correction(const Correction&);
-  Correction(Correction&&);
-  Correction& operator=(Correction&&) = default;
-  Correction(Kind kind, size_t at, char16_t new_char);
-  Correction(Kind kind,
-             size_t at,
-             char16_t new_char,
-             std::unique_ptr<Correction> next);
-  ~Correction();
+  Edit(Kind kind, size_t at, char16_t new_char);
 
-  // Applies this correction to given text, mutating it in place.
+  // Applies this edit to given text, mutating it in place.
   void ApplyTo(std::u16string& text) const;
 
-  // This is a utility method to eliminate the need for allocation of
-  // non-applicable corrections. It returns a copy of this, or `next` if
-  // this `kind` is KEEP.
-  std::unique_ptr<Correction> GetApplicableCorrection();
-
-  // This correction's edit operation.
+  // The edit operation, the kind of change to make to text.
   Kind kind;
 
-  // Text index at which to apply correction.
-  size_t at;
-
-  // Character data; relevant only for REPLACE and INSERT.
+  // Character data; relevant for REPLACE and INSERT, and also for
+  // TRANSPOSE (as a minor optimization, first char is stored here).
   char16_t new_char;
 
-  // A short chain of additional related corrections to apply with this one.
-  std::unique_ptr<Correction> next;
+  // Text index at which to apply change.
+  size_t at;
+};
+
+// A `Correction` is a short list of `Edit`s required to change
+// an input string that escapes the trie into a string that is contained by it.
+struct Correction {
+  // Tolerance schedules must use a `limit` of no more than `kMaxEdits`.
+  const static int kMaxEdits = 3;
+
+  // Creates a new correction including this one plus a given `Edit`.
+  Correction WithEdit(Edit edit) const;
+
+  // Applies this edit to given text, mutating it in place.
+  void ApplyTo(std::u16string& text) const;
+
+  // Number of edits to apply for the full correction.
+  size_t edit_count = 0;
+
+  // The actual edits to apply; only the first `edit_count` elements are valid.
+  // This is a fixed-size in-struct array instead of a vector because
+  // finding and building corrections is performance critical and keeping this
+  // struct simple on the stack is much faster than pounding on the allocator.
+  Edit edits[kMaxEdits] = {{Edit::Kind::KEEP, 0, '_'},
+                           {Edit::Kind::KEEP, 0, '_'},
+                           {Edit::Kind::KEEP, 0, '_'}};
 };
 
 // This utility struct defines how tolerance changes across the length
@@ -97,6 +103,7 @@ struct ToleranceSchedule {
   int step_length = 0;
 
   // Regardless of index, tolerance will not exceed this limit.
+  // Note, `limit` must not exceed `Correction::kMaxEdits`.
   int limit = 0;
 };
 
@@ -108,9 +115,15 @@ struct Node {
   ~Node();
 
   // Walk the trie, injecting nodes as necessary to build the given `text`
-  // starting at index `from`. The `from` parameter advances as an index into
-  // `text` and ensures recursion is bounded.
-  void Insert(const std::u16string& text, size_t from);
+  // starting at `text_index`. The `text_index` parameter advances as an index
+  // into `text` and ensures recursion is bounded.
+  void Insert(const std::u16string& text, size_t text_index);
+
+  // Delete nodes as necessary to remove given `text` from the trie.
+  void Delete(const std::u16string& text, size_t text_index);
+
+  // Delete all nodes to clear the trie.
+  void Clear();
 
   // Produce corrections necessary to get `text` back on trie. Each correction
   // will be of size bounded by `tolerance_schedule`, and none will have smaller
@@ -126,13 +139,21 @@ struct Node {
                        ToleranceSchedule tolerance_schedule,
                        std::vector<Correction>& corrections) const;
 
-  // TODO(orinj): Remove this. It's a development-only debugging utility.
-  void Log(std::u16string built) const;
+  // Estimates dynamic memory usage.
+  // See base/trace_event/memory_usage_estimator.h for more info.
+  size_t EstimateMemoryUsage() const;
+
+  // Returns number of terminals contained within this trie (may include self).
+  int TerminalCount() const;
 
   // This is used to distinguish terminal nodes in the trie (nonzero values).
-  // TODO(orinj): Consider removing this if we only correct inputs and leave
-  //  scoring to other autocomplete machinery.
   int relevance = 0;
+
+  // This maintains the sum of `relevance` plus all `relevance_total` values
+  // contained within `next`. As long as `relevance` values are 0 or 1, this can
+  // be used as a count of contained terminals. When it drops to zero, the
+  // node may be deleted from the trie.
+  int relevance_total = 0;
 
   // Note: Some C++ implementations of unordered_map support using the
   // containing struct (Node) as the element type, but some do not. To avoid
@@ -165,6 +186,10 @@ struct Node {
 class HistoryFuzzyProvider : public HistoryProvider,
                              public history::HistoryServiceObserver {
  public:
+  // Records fuzzy matching related metrics when user opens a match.
+  static void RecordOpenMatchMetrics(const AutocompleteResult& result,
+                                     const AutocompleteMatch& match_opened);
+
   explicit HistoryFuzzyProvider(AutocompleteProviderClient* client);
   HistoryFuzzyProvider(const HistoryFuzzyProvider&) = delete;
   HistoryFuzzyProvider& operator=(const HistoryFuzzyProvider&) = delete;
@@ -184,8 +209,11 @@ class HistoryFuzzyProvider : public HistoryProvider,
   // Performs the autocomplete matching and scoring.
   void DoAutocomplete();
 
-  // Adds one match for the given corrected `text`.
-  void AddMatchForText(std::u16string text);
+  // Add the best matches, converting them to fuzzy suggestions in the process.
+  // The given `penalty` is a percentage relevance penalty that will
+  // deduct from the relevance of each match.
+  // Returns the number of matches actually added.
+  int AddConvertedMatches(const ACMatches& matches, int penalty);
 
   // Main thread callback to receive trie of URLs loaded from database.
   void OnUrlsLoaded(fuzzy::Node node);
@@ -193,21 +221,19 @@ class HistoryFuzzyProvider : public HistoryProvider,
   // history::HistoryServiceObserver:
   // Adds visited URL host to trie.
   void OnURLVisited(history::HistoryService* history_service,
-                    ui::PageTransition transition,
-                    const history::URLRow& row,
-                    const history::RedirectList& redirects,
-                    base::Time visit_time) override;
+                    const history::URLRow& url_row,
+                    const history::VisitRow& new_visit) override;
+
+  // Removes deleted (or all) URLs from trie.
+  void OnURLsDeleted(history::HistoryService* history_service,
+                     const history::DeletionInfo& deletion_info) override;
+
+  // Record UMA histogram data for measuring usefulness of sub-providers.
+  void RecordMatchConversion(const char* name, int count);
 
   AutocompleteInput autocomplete_input_;
 
-  // TODO(orinj): For now this is memory resident for proof of concept, but
-  //  most likely the full implementation will store the tree in a SQL table
-  //  for persistence and to minimize RAM usage. Queries can be minimized by
-  //  making the algorithm stateful and incremental. As the user types, only
-  //  the last character is needed to take another step along the trie. Total
-  //  input changes are the rarer, more expensive case, and we might even
-  //  consider skipping them since fuzzy matching somewhat assumes human errors
-  //  generated while typing, not copy/pasting, etc.
+  // This is the trie facilitating search for input alternatives.
   fuzzy::Node root_;
 
   // This provides a thread-safe way to check that loading has completed.
@@ -223,6 +249,16 @@ class HistoryFuzzyProvider : public HistoryProvider,
   base::ScopedObservation<history::HistoryService,
                           history::HistoryServiceObserver>
       history_service_observation_{this};
+
+  // This threshold determines the input length at which fuzzy suggestions
+  // will start being searched and generated. Shorter inputs won't be checked.
+  size_t min_input_length_;
+
+  // These are tunable parameters that affect the fuzzy suggestion
+  // relevance penalty.
+  int penalty_low_;
+  int penalty_high_;
+  size_t penalty_taper_length_;
 
   // Weak pointer factory for callback binding safety.
   base::WeakPtrFactory<HistoryFuzzyProvider> weak_ptr_factory_{this};

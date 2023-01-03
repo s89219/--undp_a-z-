@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,6 +73,12 @@ class TestPerUserStateManager : public PerUserStateManagerChromeOS {
   bool HasUserLogStore() const override { return is_log_store_set_; }
 
   bool IsDeviceOwned() const override { return is_device_owned_; }
+
+  void WaitForOwnershipStatus() override {
+    InitializeProfileMetricsState(
+        is_device_owned_ ? ash::DeviceSettingsService::OWNERSHIP_TAKEN
+                         : ash::DeviceSettingsService::OWNERSHIP_NONE);
+  }
 
  private:
   bool is_log_store_set_ = false;

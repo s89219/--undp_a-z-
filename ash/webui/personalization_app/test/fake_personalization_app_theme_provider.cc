@@ -1,11 +1,12 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/webui/personalization_app/test/fake_personalization_app_theme_provider.h"
+#include "fake_personalization_app_theme_provider.h"
+#include "third_party/skia/include/core/SkColor.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 FakePersonalizationAppThemeProvider::FakePersonalizationAppThemeProvider(
     content::WebUI* web_ui) {}
@@ -44,5 +45,23 @@ void FakePersonalizationAppThemeProvider::IsColorModeAutoScheduleEnabled(
   std::move(callback).Run(/*enabled=*/false);
 }
 
-}  // namespace personalization_app
-}  // namespace ash
+void FakePersonalizationAppThemeProvider::SetColorScheme(
+    ash::ColorScheme color_scheme) {
+  return;
+}
+
+void FakePersonalizationAppThemeProvider::SetStaticColor(
+    ::SkColor static_color) {
+  return;
+}
+
+void FakePersonalizationAppThemeProvider::GetColorScheme(
+    GetColorSchemeCallback callback) {
+  std::move(callback).Run(ash::ColorScheme::kTonalSpot);
+}
+
+void FakePersonalizationAppThemeProvider::GetStaticColor(
+    GetStaticColorCallback callback) {
+  std::move(callback).Run(SK_ColorBLUE);
+}
+}  // namespace ash::personalization_app

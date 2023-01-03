@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,14 @@
 #include <memory>
 
 #include "chrome/browser/ash/guest_os/public/guest_os_service_factory.h"
+#include "chrome/browser/ash/guest_os/public/guest_os_terminal_provider_registry.h"
 #include "chrome/browser/ash/guest_os/public/guest_os_wayland_server.h"
 
 namespace guest_os {
 
 GuestOsService::GuestOsService(Profile* profile)
-    : wayland_server_(std::make_unique<GuestOsWaylandServer>(profile)) {}
+    : terminal_provider_registry_(profile),
+      wayland_server_(std::make_unique<GuestOsWaylandServer>(profile)) {}
 
 GuestOsService::~GuestOsService() = default;
 
@@ -22,6 +24,10 @@ GuestOsService* GuestOsService::GetForProfile(Profile* profile) {
 
 GuestOsMountProviderRegistry* GuestOsService::MountProviderRegistry() {
   return &mount_provider_registry_;
+}
+
+GuestOsTerminalProviderRegistry* GuestOsService::TerminalProviderRegistry() {
+  return &terminal_provider_registry_;
 }
 
 GuestOsWaylandServer* GuestOsService::WaylandServer() {

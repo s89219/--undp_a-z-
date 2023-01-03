@@ -1,16 +1,16 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import 'chrome://os-settings/strings.m.js';
 
 import {Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {AudioOutputCapability, DeviceConnectionState, DeviceType} from 'chrome://resources/mojo/chromeos/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
+import {AudioOutputCapability, DeviceConnectionState, DeviceType} from 'chrome://resources/mojo/chromeos/ash/services/bluetooth_config/public/mojom/cros_bluetooth_config.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {createDefaultBluetoothDevice} from 'chrome://test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
-import {eventToPromise} from 'chrome://test/test_util.js';
+import {createDefaultBluetoothDevice} from 'chrome://webui-test/cr_components/chromeos/bluetooth/fake_bluetooth_config.js';
+import {eventToPromise} from 'chrome://webui-test/test_util.js';
 
-import {assertEquals, assertTrue} from '../../../chai_assert.js';
+import {assertEquals, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 suite('OsPairedBluetoothListItemTest', function() {
   /** @type {!SettingsPairedBluetoothListItemElement|undefined} */
@@ -33,7 +33,7 @@ suite('OsPairedBluetoothListItemTest', function() {
    */
   async function setBatteryPercentage(batteryPercentage) {
     pairedBluetoothListItem.device.deviceProperties.batteryInfo = {
-      defaultProperties: {batteryPercentage: batteryPercentage}
+      defaultProperties: {batteryPercentage: batteryPercentage},
     };
     pairedBluetoothListItem.device = {...pairedBluetoothListItem.device};
     return flushAsync();
@@ -124,7 +124,7 @@ suite('OsPairedBluetoothListItemTest', function() {
         device.deviceProperties.deviceType = DeviceType.kComputer;
         const batteryPercentage = 60;
         device.deviceProperties.batteryInfo = {
-          defaultProperties: {batteryPercentage: batteryPercentage}
+          defaultProperties: {batteryPercentage: batteryPercentage},
         };
         pairedBluetoothListItem.device = {...device};
         await flushAsync();
@@ -158,13 +158,13 @@ suite('OsPairedBluetoothListItemTest', function() {
         const caseBatteryPercentage = 29;
         const rightBudBatteryPercentage = 39;
         device.deviceProperties.batteryInfo.leftBudInfo = {
-          batteryPercentage: leftBudBatteryPercentage
+          batteryPercentage: leftBudBatteryPercentage,
         };
         device.deviceProperties.batteryInfo.caseInfo = {
-          batteryPercentage: caseBatteryPercentage
+          batteryPercentage: caseBatteryPercentage,
         };
         device.deviceProperties.batteryInfo.rightBudInfo = {
-          batteryPercentage: rightBudBatteryPercentage
+          batteryPercentage: rightBudBatteryPercentage,
         };
         pairedBluetoothListItem.device = {...device};
         await flushAsync();
@@ -251,7 +251,7 @@ suite('OsPairedBluetoothListItemTest', function() {
 
   test('Enterprise-managed icon UI state', async function() {
     const getManagedIcon = () => {
-      return pairedBluetoothListItem.$$('#managedIcon');
+      return pairedBluetoothListItem.shadowRoot.querySelector('#managedIcon');
     };
     assertFalse(!!getManagedIcon());
 

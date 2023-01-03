@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,13 @@
 
 #include "ash/quick_pair/scanning/fast_pair/fast_pair_discoverable_scanner.h"
 #include "ash/quick_pair/scanning/fast_pair/fast_pair_scanner.h"
-#include "ash/services/quick_pair/quick_pair_process_manager.h"
 #include "base/callback_forward.h"
 #include "base/containers/flat_map.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
-#include "chromeos/network/network_state_handler_observer.h"
+#include "chromeos/ash/components/network/network_state_handler_observer.h"
+#include "chromeos/ash/services/quick_pair/quick_pair_process_manager.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace device {
@@ -29,10 +29,9 @@ namespace quick_pair {
 class DeviceMetadata;
 enum class PairFailure;
 
-class FastPairDiscoverableScannerImpl
-    : public FastPairDiscoverableScanner,
-      public FastPairScanner::Observer,
-      public chromeos::NetworkStateHandlerObserver {
+class FastPairDiscoverableScannerImpl : public FastPairDiscoverableScanner,
+                                        public FastPairScanner::Observer,
+                                        public NetworkStateHandlerObserver {
  public:
   class Factory {
    public:
@@ -71,8 +70,8 @@ class FastPairDiscoverableScannerImpl
   void OnDeviceFound(device::BluetoothDevice* device) override;
   void OnDeviceLost(device::BluetoothDevice* device) override;
 
-  // chromeos::NetworkStateHandlerObserver:
-  void DefaultNetworkChanged(const chromeos::NetworkState* network) override;
+  // NetworkStateHandlerObserver:
+  void DefaultNetworkChanged(const NetworkState* network) override;
 
  private:
   void OnModelIdRetrieved(const std::string& address,
@@ -81,8 +80,6 @@ class FastPairDiscoverableScannerImpl
                                  const std::string model_id,
                                  DeviceMetadata* device_metadata,
                                  bool has_retryable_error);
-  void OnHandshakeComplete(scoped_refptr<Device> device,
-                           absl::optional<PairFailure> failure);
   void NotifyDeviceFound(scoped_refptr<Device> device);
   void OnUtilityProcessStopped(
       const std::string& address,

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -222,8 +222,7 @@ public class SpeechRecognitionImpl {
 
             // No need to verify package version if packageMinVersion != -1.
             if (packageMinVersion != -1) {
-                if (PackageUtils.getPackageVersion(context, service.packageName)
-                        < packageMinVersion) {
+                if (PackageUtils.getPackageVersion(service.packageName) < packageMinVersion) {
                     continue;
                 }
             }

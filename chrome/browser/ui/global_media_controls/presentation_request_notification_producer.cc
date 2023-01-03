@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -209,9 +209,9 @@ void PresentationRequestNotificationProducer::AfterMediaDialogClosed() {
   presentation_manager_ = nullptr;
 }
 
-void PresentationRequestNotificationProducer::OnMediaRoutesChanged(
-    const std::vector<media_router::MediaRoute>& routes) {
-  if (!routes.empty()) {
+void PresentationRequestNotificationProducer::OnPresentationsChanged(
+    bool has_presentation) {
+  if (has_presentation) {
     item_manager_->HideDialog();
     if (item_) {
       item_->Dismiss();

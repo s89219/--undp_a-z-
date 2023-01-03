@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,14 @@
 
 #include <memory>
 
-#include "ash/components/cryptohome/system_salt_getter.h"
-#include "ash/components/tpm/stub_install_attributes.h"
+#include "ash/constants/ash_switches.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
+#include "base/test/scoped_command_line.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "chrome/browser/ash/login/demo_mode/demo_session.h"
 #include "chrome/browser/ash/login/demo_mode/demo_setup_test_utils.h"
@@ -23,9 +24,12 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/session_manager/session_manager_client.h"
-#include "chromeos/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/cryptohome/system_salt_getter.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/session_manager/session_manager_client.h"
+#include "chromeos/ash/components/install_attributes/stub_install_attributes.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
+#include "chromeos/constants/chromeos_features.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -37,7 +41,6 @@ namespace {
 using test::DemoModeSetupResult;
 using test::SetupDummyOfflinePolicyDir;
 using test::SetupMockDemoModeNoEnrollmentHelper;
-using test::SetupMockDemoModeOfflineEnrollmentHelper;
 using test::SetupMockDemoModeOnlineEnrollmentHelper;
 using ::testing::_;
 
@@ -139,6 +142,7 @@ class DemoSetupControllerTest : public testing::Test {
 
   std::unique_ptr<DemoSetupControllerTestHelper> helper_;
   std::unique_ptr<DemoSetupController> tested_controller_;
+  base::test::ScopedFeatureList feature_list_;
 
  private:
   base::test::TaskEnvironment task_environment_;
@@ -320,6 +324,97 @@ TEST_F(DemoSetupControllerTest, GetSubOrganizationEmailWithLowercase) {
   g_browser_process->local_state()->SetString(prefs::kDemoModeCountry, "kr");
   email = DemoSetupController::GetSubOrganizationEmail();
   EXPECT_EQ(email, "");
+}
+
+TEST_F(DemoSetupControllerTest, GetSubOrganizationEmailForBlazeyDevice) {
+  feature_list_.InitAndEnableFeature(chromeos::features::kCloudGamingDevice);
+
+  std::string email;
+
+  // Test other supported countries.
+  const std::string testing_supported_countries[] = {
+      "US", "AT", "AU", "BE", "BR", "CA", "DE", "DK", "ES",
+      "FI", "FR", "GB", "IE", "IN", "IT", "JP", "LU", "MX",
+      "NL", "NO", "NZ", "PL", "PT", "SE", "ZA"};
+
+  for (auto country : testing_supported_countries) {
+    g_browser_process->local_state()->SetString(prefs::kDemoModeCountry,
+                                                country);
+    email = DemoSetupController::GetSubOrganizationEmail();
+
+    std::string country_lowercase = base::ToLowerASCII(country);
+    EXPECT_EQ(email, "admin-" + country_lowercase + "-blazey@" +
+                         policy::kDemoModeDomain);
+  }
+
+  // Test unsupported country string.
+  g_browser_process->local_state()->SetString(prefs::kDemoModeCountry, "KR");
+  email = DemoSetupController::GetSubOrganizationEmail();
+  EXPECT_EQ(email, "");
+
+  // Test unsupported region string.
+  g_browser_process->local_state()->SetString(prefs::kDemoModeCountry,
+                                              "NORDIC");
+  email = DemoSetupController::GetSubOrganizationEmail();
+  EXPECT_EQ(email, "");
+
+  // Test random string.
+  g_browser_process->local_state()->SetString(prefs::kDemoModeCountry, "foo");
+  email = DemoSetupController::GetSubOrganizationEmail();
+  EXPECT_EQ(email, "");
+}
+
+TEST_F(DemoSetupControllerTest, GetSubOrganizationEmailForCustomOU) {
+  base::test::ScopedCommandLine command_line;
+  command_line.GetProcessCommandLine()->AppendSwitchASCII(
+      switches::kDemoModeEnrollingUsername, "test-user-name");
+
+  std::string email = DemoSetupController::GetSubOrganizationEmail();
+  EXPECT_EQ(email, "test-user-name@cros-demo-mode.com");
+}
+
+TEST_F(DemoSetupControllerTest, OnlineSuccessWithValidRetailerAndStoreId) {
+  SetupMockDemoModeOnlineEnrollmentHelper(DemoModeSetupResult::SUCCESS);
+
+  tested_controller_->set_demo_config(DemoSession::DemoModeConfig::kOnline);
+  tested_controller_->set_retailer_store_id_input("ABC-1234");
+  tested_controller_->Enroll(
+      base::BindOnce(&DemoSetupControllerTestHelper::OnSetupSuccess,
+                     base::Unretained(helper_.get())),
+      base::BindOnce(&DemoSetupControllerTestHelper::OnSetupError,
+                     base::Unretained(helper_.get())),
+      base::BindRepeating(&DemoSetupControllerTestHelper::SetCurrentSetupStep,
+                          base::Unretained(helper_.get())));
+
+  EXPECT_TRUE(
+      helper_->WaitResult(true, DemoSetupController::DemoSetupStep::kComplete));
+  EXPECT_EQ("", GetDeviceRequisition());
+  EXPECT_EQ("ABC", g_browser_process->local_state()->GetString(
+                       prefs::kDemoModeRetailerId));
+  EXPECT_EQ("1234", g_browser_process->local_state()->GetString(
+                        prefs::kDemoModeStoreId));
+}
+
+TEST_F(DemoSetupControllerTest, OnlineSuccessWithInvalidRetailerAndStoreId) {
+  SetupMockDemoModeOnlineEnrollmentHelper(DemoModeSetupResult::SUCCESS);
+  tested_controller_->set_retailer_store_id_input("ABC");
+
+  tested_controller_->set_demo_config(DemoSession::DemoModeConfig::kOnline);
+  tested_controller_->Enroll(
+      base::BindOnce(&DemoSetupControllerTestHelper::OnSetupSuccess,
+                     base::Unretained(helper_.get())),
+      base::BindOnce(&DemoSetupControllerTestHelper::OnSetupError,
+                     base::Unretained(helper_.get())),
+      base::BindRepeating(&DemoSetupControllerTestHelper::SetCurrentSetupStep,
+                          base::Unretained(helper_.get())));
+
+  EXPECT_TRUE(
+      helper_->WaitResult(true, DemoSetupController::DemoSetupStep::kComplete));
+  EXPECT_EQ("", GetDeviceRequisition());
+  EXPECT_EQ("", g_browser_process->local_state()->GetString(
+                    prefs::kDemoModeRetailerId));
+  EXPECT_EQ(
+      "", g_browser_process->local_state()->GetString(prefs::kDemoModeStoreId));
 }
 
 }  // namespace

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -201,7 +201,8 @@ class CloudPolicyInvalidator : public invalidation::InvalidationHandler,
   raw_ptr<base::Clock> clock_;
 
   // The invalidation service.
-  raw_ptr<invalidation::InvalidationService> invalidation_service_;
+  raw_ptr<invalidation::InvalidationService, DanglingUntriaged>
+      invalidation_service_;
 
   // Whether the invalidator currently has the ability to receive invalidations.
   // This is true if the invalidation service is enabled and the invalidator

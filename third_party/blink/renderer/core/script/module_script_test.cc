@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,7 +57,7 @@ class MockCachedMetadataSender : public CachedMetadataSender {
 };
 
 ClassicScript* CreateClassicScript(const String& source_text,
-                                   SingleCachedMetadataHandler* cache_handler) {
+                                   CachedMetadataHandler* cache_handler) {
   return ClassicScript::Create(source_text, KURL(), KURL(),
                                ScriptFetchOptions(),
                                ScriptSourceLocationType::kInternal,
@@ -86,12 +86,11 @@ class ModuleScriptTest : public ::testing::Test, public ModuleTestBase {
   static JSModuleScript* CreateJSModuleScript(
       Modulator* modulator,
       const String& source_text,
-      SingleCachedMetadataHandler* cache_handler) {
+      CachedMetadataHandler* cache_handler) {
     ModuleScriptCreationParams params(
         KURL("https://fox.url/script.js"), KURL("https://fox.url/"),
         ScriptSourceLocationType::kInline, ModuleType::kJavaScript,
-        ParkableString(source_text.IsolatedCopy().ReleaseImpl()),
-        cache_handler);
+        ParkableString(source_text.Impl()->IsolatedCopy()), cache_handler);
     return JSModuleScript::Create(params, modulator, ScriptFetchOptions());
   }
 
@@ -125,7 +124,7 @@ class ModuleScriptTest : public ::testing::Test, public ModuleTestBase {
   }
 
   static bool HandlerCachedMetadataWasDiscarded(
-      SingleCachedMetadataHandler* cache_handler) {
+      CachedMetadataHandler* cache_handler) {
     auto* handler = static_cast<ScriptCachedMetadataHandler*>(cache_handler);
     if (!handler)
       return false;
@@ -157,7 +156,7 @@ TEST_F(ModuleScriptTest, V8CodeCacheWithoutDiscarding) {
 
   auto sender = std::make_unique<MockCachedMetadataSender>();
   MockCachedMetadataSender* sender_ptr = sender.get();
-  SingleCachedMetadataHandler* cache_handler =
+  CachedMetadataHandler* cache_handler =
       MakeGarbageCollected<ScriptCachedMetadataHandler>(UTF8Encoding(),
                                                         std::move(sender));
   const uint32_t kTimeStampTag = V8CodeCache::TagForTimeStamp(cache_handler);
@@ -173,7 +172,7 @@ TEST_F(ModuleScriptTest, V8CodeCacheWithoutDiscarding) {
     // Check that the module script is instantiated/evaluated correctly.
     ASSERT_TRUE(ModuleRecord::Instantiate(scope.GetScriptState(),
                                           module_script->V8Module(),
-                                          module_script->SourceURL())
+                                          module_script->SourceUrl())
                     .IsEmpty());
     ASSERT_EQ(module_script
                   ->RunScriptOnScriptStateAndReturnValue(scope.GetScriptState())
@@ -277,7 +276,7 @@ TEST_F(ModuleScriptTest, V8CodeCacheWithDiscarding) {
 
   auto sender = std::make_unique<MockCachedMetadataSender>();
   MockCachedMetadataSender* sender_ptr = sender.get();
-  SingleCachedMetadataHandler* cache_handler =
+  CachedMetadataHandler* cache_handler =
       MakeGarbageCollected<ScriptCachedMetadataHandler>(UTF8Encoding(),
                                                         std::move(sender));
   const uint32_t kTimeStampTag = V8CodeCache::TagForTimeStamp(cache_handler);
@@ -293,7 +292,7 @@ TEST_F(ModuleScriptTest, V8CodeCacheWithDiscarding) {
     // Check that the module script is instantiated/evaluated correctly.
     ASSERT_TRUE(ModuleRecord::Instantiate(scope.GetScriptState(),
                                           module_script->V8Module(),
-                                          module_script->SourceURL())
+                                          module_script->SourceUrl())
                     .IsEmpty());
     ASSERT_EQ(module_script
                   ->RunScriptOnScriptStateAndReturnValue(scope.GetScriptState())
@@ -464,7 +463,7 @@ TEST_F(ModuleScriptTest, V8CodeCacheWithHashChecking) {
     // Check that the module script is instantiated/evaluated correctly.
     ASSERT_TRUE(ModuleRecord::Instantiate(scope.GetScriptState(),
                                           module_script->V8Module(),
-                                          module_script->SourceURL())
+                                          module_script->SourceUrl())
                     .IsEmpty());
     ASSERT_EQ(module_script
                   ->RunScriptOnScriptStateAndReturnValue(scope.GetScriptState())

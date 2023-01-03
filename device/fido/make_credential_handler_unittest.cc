@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/task_environment.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/cbor/reader.h"
@@ -143,7 +143,7 @@ class FidoMakeCredentialHandlerTest : public ::testing::Test {
   TestMakeCredentialRequestCallback cb_;
   base::flat_set<FidoTransportProtocol> supported_transports_ = {
       FidoTransportProtocol::kUsbHumanInterfaceDevice,
-      FidoTransportProtocol::kCloudAssistedBluetoothLowEnergy,
+      FidoTransportProtocol::kHybrid,
       FidoTransportProtocol::kNearFieldCommunication,
       FidoTransportProtocol::kInternal,
   };
@@ -261,7 +261,8 @@ TEST_F(FidoMakeCredentialHandlerTest, CrossPlatformAttachment) {
                                      ResidentKeyRequirement::kDiscouraged,
                                      UserVerificationRequirement::kPreferred));
 
-  // kCloudAssistedBluetoothLowEnergy not yet supported for MakeCredential.
+  // kHybrid is not enabled by default as it needs special setup in the
+  // discovery factory.
   ExpectAllowedTransportsForRequestAre(request_handler.get(), {
     FidoTransportProtocol::kNearFieldCommunication,
 #if BUILDFLAG(IS_CHROMEOS)
@@ -391,7 +392,7 @@ MATCHER_P(IsUvRequest, is_uv, "") {
 }
 
 ACTION_P(Reply, reply) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(
           [](base::OnceCallback<void(absl::optional<std::vector<uint8_t>>)>
@@ -447,7 +448,7 @@ TEST_F(FidoMakeCredentialHandlerTest, ResidentKeyCancel) {
           UserVerificationRequirement::kRequired));
 
   auto delete_request_handler = [&request_handler]() {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(
             [](std::unique_ptr<MakeCredentialRequestHandler>* unique_ptr) {
@@ -758,7 +759,7 @@ TEST_F(FidoMakeCredentialHandlerTest, DeviceFailsImmediately) {
               ::testing::Invoke([this](FidoDevice::DeviceCallback& callback) {
                 std::vector<uint8_t> response = {static_cast<uint8_t>(
                     CtapDeviceResponseCode::kCtap2ErrInvalidCBOR)};
-                base::ThreadTaskRunnerHandle::Get()->PostTask(
+                base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
                     FROM_HERE,
                     base::BindOnce(std::move(callback), std::move(response)));
 

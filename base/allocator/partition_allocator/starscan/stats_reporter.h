@@ -1,12 +1,12 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_STARSCAN_STATS_REPORTER_H_
 #define BASE_ALLOCATOR_PARTITION_ALLOCATOR_STARSCAN_STATS_REPORTER_H_
 
+#include "base/allocator/partition_allocator/partition_alloc_base/threading/platform_thread.h"
 #include "base/allocator/partition_allocator/starscan/stats_collector.h"
-#include "base/threading/platform_thread.h"
 
 namespace partition_alloc {
 
@@ -16,11 +16,11 @@ namespace partition_alloc {
 class StatsReporter {
  public:
   virtual void ReportTraceEvent(internal::StatsCollector::ScannerId id,
-                                const base::PlatformThreadId tid,
+                                internal::base::PlatformThreadId tid,
                                 int64_t start_time_ticks_internal_value,
                                 int64_t end_time_ticks_internal_value) {}
   virtual void ReportTraceEvent(internal::StatsCollector::MutatorId id,
-                                const base::PlatformThreadId tid,
+                                internal::base::PlatformThreadId tid,
                                 int64_t start_time_ticks_internal_value,
                                 int64_t end_time_ticks_internal_value) {}
 

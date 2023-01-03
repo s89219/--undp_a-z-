@@ -1,12 +1,18 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/enterprise/connectors/device_trust/attestation/common/attestation_utils.h"
 
+#include <memory>
+#include <string>
+
 #include "base/base64.h"
 #include "base/json/json_writer.h"
 #include "base/values.h"
+#include "chrome/browser/enterprise/connectors/device_trust/attestation/common/signals_type.h"
+#include "components/device_signals/core/common/signals_constants.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace enterprise_connectors {
 

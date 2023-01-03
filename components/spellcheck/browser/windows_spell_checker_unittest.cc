@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/logging.h"
+#include "base/ranges/algorithm.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -130,8 +131,7 @@ class WindowsSpellCheckerTest : public testing::Test {
 
 void WindowsSpellCheckerTest::RunRequestTextCheckTest(
     const RequestTextCheckTestCase& test_case) {
-  ASSERT_EQ(set_language_result_,
-            spellcheck::WindowsVersionSupportsSpellchecker());
+  ASSERT_TRUE(set_language_result_);
 
   const std::u16string word(base::ASCIIToUTF16(test_case.text_to_check));
 
@@ -141,13 +141,6 @@ void WindowsSpellCheckerTest::RunRequestTextCheckTest(
       base::BindOnce(&WindowsSpellCheckerTest::TextCheckCompletionCallback,
                      base::Unretained(this)));
   RunUntilResultReceived();
-
-  if (!spellcheck::WindowsVersionSupportsSpellchecker()) {
-    // On Windows versions that don't support platform spellchecking, the
-    // returned vector of results should be empty.
-    ASSERT_TRUE(spell_check_results_.empty());
-    return;
-  }
 
   ASSERT_EQ(1u, spell_check_results_.size())
       << "RequestTextCheck: Wrong number of results";
@@ -162,14 +155,10 @@ void WindowsSpellCheckerTest::RunRequestTextCheckTest(
   } else {
     const std::u16string suggested_word(
         base::ASCIIToUTF16(test_case.expected_suggestion));
-    auto position =
-        std::find_if(suggestions.begin(), suggestions.end(),
-                     [&](const std::u16string& suggestion) {
-                       return suggestion.compare(suggested_word) == 0;
-                     });
-
-    ASSERT_FALSE(position == suggestions.end())
-        << "RequestTextCheck: Expected suggestion not found";
+    ASSERT_TRUE(base::ranges::any_of(suggestions, [&](const std::u16string&
+                                                          suggestion) {
+      return suggestion.compare(suggested_word) == 0;
+    })) << "RequestTextCheck: Expected suggestion not found";
   }
 }
 
@@ -227,13 +216,6 @@ TEST_F(WindowsSpellCheckerTest, RetrieveSpellcheckLanguages) {
 
   RunUntilResultReceived();
 
-  if (!spellcheck::WindowsVersionSupportsSpellchecker()) {
-    // On Windows versions that don't support platform spellchecking, the
-    // returned vector of results should be empty.
-    ASSERT_TRUE(spellcheck_languages_.empty());
-    return;
-  }
-
   ASSERT_LE(1u, spellcheck_languages_.size());
   ASSERT_TRUE(base::Contains(spellcheck_languages_, "en-US"));
 }
@@ -261,8 +243,7 @@ TEST_F(WindowsSpellCheckerTest, RetrieveSpellcheckLanguagesFakeDictionaries) {
 }
 
 TEST_F(WindowsSpellCheckerTest, GetPerLanguageSuggestions) {
-  ASSERT_EQ(set_language_result_,
-            spellcheck::WindowsVersionSupportsSpellchecker());
+  ASSERT_TRUE(set_language_result_);
 
   win_spell_checker_->GetPerLanguageSuggestions(
       u"tihs",
@@ -270,13 +251,6 @@ TEST_F(WindowsSpellCheckerTest, GetPerLanguageSuggestions) {
           &WindowsSpellCheckerTest::PerLanguageSuggestionsCompletionCallback,
           base::Unretained(this)));
   RunUntilResultReceived();
-
-  if (!spellcheck::WindowsVersionSupportsSpellchecker()) {
-    // On Windows versions that don't support platform spellchecking, the
-    // returned vector of results should be empty.
-    ASSERT_TRUE(per_language_suggestions_.empty());
-    return;
-  }
 
   ASSERT_EQ(per_language_suggestions_.size(), 1u);
   ASSERT_GT(per_language_suggestions_[0].size(), 0u);

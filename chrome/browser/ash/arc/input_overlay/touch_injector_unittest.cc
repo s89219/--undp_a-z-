@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,8 +7,11 @@
 #include "ash/constants/app_types.h"
 #include "ash/public/cpp/window_properties.h"
 #include "base/json/json_reader.h"
+#include "base/test/bind.h"
 #include "chrome/browser/ash/arc/input_overlay/actions/action_move.h"
+#include "chrome/browser/ash/arc/input_overlay/db/proto/app_data.pb.h"
 #include "chrome/browser/ash/arc/input_overlay/test/event_capturer.h"
+#include "chrome/browser/ash/arc/input_overlay/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/test/aura_test_base.h"
@@ -17,15 +20,18 @@
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/events/test/event_generator.h"
+#include "ui/gfx/geometry/test/geometry_util.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
-namespace arc {
-namespace input_overlay {
+namespace arc::input_overlay {
 namespace {
 
 // TODO(cuicuiruan): Create test for other device scale.
+
+// Consider two points are at the same position within kTolerance.
+constexpr const float kTolerance = 0.999f;
 
 constexpr const char kValidJsonActionTapKey[] =
     R"json({
@@ -211,6 +217,20 @@ constexpr const char kValidJsonActionMoveMouse[] =
         }
       ]
     })json";
+
+void TouchInjectorResetAndAddTwoActions(TouchInjector* touch_injector) {
+  DCHECK(touch_injector);
+  touch_injector->OnBindingRestore();
+  touch_injector->OnBindingSave();
+  EXPECT_EQ(2u, touch_injector->actions().size());
+  EXPECT_FALSE(touch_injector->actions()[0]->deleted());
+  EXPECT_FALSE(touch_injector->actions()[1]->deleted());
+  touch_injector->AddNewAction(ActionType::MOVE);
+  touch_injector->AddNewAction(ActionType::TAP);
+  touch_injector->OnBindingSave();
+  EXPECT_EQ(4u, touch_injector->actions().size());
+}
+
 }  // namespace
 
 class TouchInjectorTest : public views::ViewsTestBase {
@@ -218,33 +238,6 @@ class TouchInjectorTest : public views::ViewsTestBase {
   TouchInjectorTest()
       : views::ViewsTestBase(
             base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
-
-  std::unique_ptr<views::Widget> CreateArcWindow() {
-    views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
-    params.bounds = gfx::Rect(200, 100, 200, 400);
-    params.context = root_window();
-    params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    auto widget = std::make_unique<views::Widget>();
-    widget->Init(std::move(params));
-    widget->widget_delegate()->SetCanResize(true);
-    widget->SetBounds(gfx::Rect(200, 100, 200, 400));
-    auto app_id = absl::optional<std::string>("app_id");
-    widget->GetNativeWindow()->SetProperty(ash::kAppIDKey, *app_id);
-    widget->GetNativeWindow()->SetProperty(
-        aura::client::kAppType, static_cast<int>(ash::AppType::ARC_APP));
-    widget->Show();
-    widget->Activate();
-
-    return widget;
-  }
-
-  bool IsPointsEqual(gfx::PointF& point_a, const gfx::PointF& point_b) {
-    if (std::abs(point_a.x() - point_b.x()) < 1 &&
-        std::abs(point_a.y() - point_b.y()) < 1) {
-      return true;
-    }
-    return false;
-  }
 
   int GetRewrittenTouchIdForTesting(ui::PointerId original_id) {
     return injector_->GetRewrittenTouchIdForTesting(original_id);
@@ -258,13 +251,59 @@ class TouchInjectorTest : public views::ViewsTestBase {
     return injector_->GetRewrittenTouchInfoSizeForTesting();
   }
 
+  std::unique_ptr<AppDataProto> ConvertToProto() {
+    return injector_->ConvertToProto();
+  }
+
+  const std::vector<std::unique_ptr<Action>>& GetPendingAddUserActions() const {
+    return injector_->pending_add_user_actions_;
+  }
+
+  const std::vector<std::unique_ptr<Action>>& GetPendingDeleteUserActions()
+      const {
+    return injector_->pending_delete_user_actions_;
+  }
+
+  const std::vector<Action*> GetPendingAddDefaultActions() const {
+    return injector_->pending_add_default_actions_;
+  }
+
+  const std::vector<Action*> GetPendingDeleteDefaultActions() const {
+    return injector_->pending_delete_default_actions_;
+  }
+
+  void ExpectActionSizes(unsigned int size_pending_add_user_actions,
+                         unsigned int size_pending_delete_user_actions,
+                         unsigned int size_pending_add_default_actions,
+                         unsigned int size_pending_delete_default_actions,
+                         unsigned int size_actions) {
+    EXPECT_EQ(size_pending_add_user_actions, GetPendingAddUserActions().size());
+    EXPECT_EQ(size_pending_delete_user_actions,
+              GetPendingDeleteUserActions().size());
+    EXPECT_EQ(size_pending_add_default_actions,
+              GetPendingAddDefaultActions().size());
+    EXPECT_EQ(size_pending_delete_default_actions,
+              GetPendingDeleteDefaultActions().size());
+    EXPECT_EQ(size_actions, injector_->actions().size());
+  }
+
+  void AddMenuEntryToProtoIfCustomized(AppDataProto& temp_proto) {
+    injector_->AddMenuEntryToProtoIfCustomized(temp_proto);
+  }
+
+  void LoadMenuEntryFromProto(AppDataProto& temp_proto) {
+    injector_->LoadMenuEntryFromProto(temp_proto);
+  }
+
+  int GetNextActionID() { return injector_->next_action_id_; }
+
   aura::TestScreen* test_screen() {
     return aura::test::AuraTestHelper::GetInstance()->GetTestScreen();
   }
 
   aura::Window* root_window() { return GetContext(); }
 
-  input_overlay::test::EventCapturer event_capturer_;
+  test::EventCapturer event_capturer_;
   std::unique_ptr<ui::test::EventGenerator> event_generator_;
 
   std::unique_ptr<views::Widget> widget_;
@@ -280,12 +319,16 @@ class TouchInjectorTest : public views::ViewsTestBase {
     root_window()->SetBounds(gfx::Rect(800, 600));
     root_window()->AddPostTargetHandler(&event_capturer_);
 
-    widget_ = CreateArcWindow();
+    widget_ = CreateArcWindow(root_window(), gfx::Rect(200, 100, 200, 400));
     caption_height_ = -widget_->non_client_view()
                            ->frame_view()
                            ->GetWindowBoundsForClientBounds(gfx::Rect())
                            .y();
-    injector_ = std::make_unique<TouchInjector>(widget_->GetNativeWindow());
+    injector_ = std::make_unique<TouchInjector>(
+        widget_->GetNativeWindow(),
+        *widget_->GetNativeWindow()->GetProperty(ash::kArcPackageNameKey),
+        base::BindLambdaForTesting(
+            [&](std::unique_ptr<AppDataProto>, std::string) {}));
   }
 
   void TearDown() override {
@@ -302,9 +345,9 @@ class TouchInjectorTest : public views::ViewsTestBase {
 };
 
 TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
-  base::JSONReader::ValueWithError json_value =
+  auto json_value =
       base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionTapKey);
-  injector_->ParseActions(json_value.value.value());
+  injector_->ParseActions(*json_value);
   // Extra Action with the same ID is removed.
   EXPECT_EQ(2, (int)injector_->actions().size());
   auto* actionA = injector_->actions()[0].get();
@@ -318,21 +361,21 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(1, (int)event_capturer_.touch_events().size());
   auto* event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  gfx::PointF expectA1 =
+  auto expectA1 =
       gfx::PointF(300, 100 + (400 - caption_height_) * 0.5 + caption_height_);
-  EXPECT_TRUE(IsPointsEqual(expectA1, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA1, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
 
-  event_generator_->ReleaseKey(ui::VKEY_A, ui::EF_NONE, 1);
+  event_generator_->ReleaseKey(ui::VKEY_A, ui::EF_NONE, kTolerance);
   EXPECT_FALSE(actionA->touch_id());
   EXPECT_TRUE(event_capturer_.key_events().empty());
   EXPECT_EQ(2, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectA1, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA1, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
   // Next touch position.
-  EXPECT_EQ(1, actionA->current_position_index());
+  EXPECT_EQ(1, actionA->current_position_idx());
   // Unregister the event rewriter to see if extra events are sent.
   injector_->UnRegisterEventRewriter();
 
@@ -355,9 +398,9 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(1, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  gfx::PointF expectB =
+  auto expectB =
       gfx::PointF(360, 100 + (400 - caption_height_) * 0.8 + caption_height_);
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
 
   event_generator_->PressKey(ui::VKEY_A, ui::EF_NONE, 1);
@@ -365,9 +408,9 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(2, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  gfx::PointF expectA2 =
+  auto expectA2 =
       gfx::PointF(260, 100 + (400 - caption_height_) * 0.3 + caption_height_);
-  EXPECT_TRUE(IsPointsEqual(expectA2, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA2, event->root_location_f(), kTolerance);
   EXPECT_EQ(1, event->pointer_details().id);
 
   event_generator_->ReleaseKey(ui::VKEY_A, ui::EF_NONE, 1);
@@ -375,15 +418,15 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(3, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[2].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectA2, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA2, event->root_location_f(), kTolerance);
   EXPECT_EQ(1, event->pointer_details().id);
 
-  event_generator_->ReleaseKey(ui::VKEY_B, ui::EF_NONE, 1);
+  event_generator_->ReleaseKey(ui::VKEY_B, ui::EF_NONE, kTolerance);
   EXPECT_TRUE(event_capturer_.key_events().empty());
   EXPECT_EQ(4, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[3].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
   event_capturer_.Clear();
 
@@ -393,7 +436,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(1, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
 
   event_generator_->PressKey(ui::VKEY_A, ui::EF_NONE, 1);
@@ -401,7 +444,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(2, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectA1, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA1, event->root_location_f(), kTolerance);
   EXPECT_EQ(1, event->pointer_details().id);
 
   event_generator_->ReleaseKey(ui::VKEY_B, ui::EF_NONE, 1);
@@ -409,7 +452,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(3, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[2].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
 
   event_generator_->ReleaseKey(ui::VKEY_A, ui::EF_NONE, 1);
@@ -417,7 +460,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(4, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[3].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectA1, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA1, event->root_location_f(), kTolerance);
   EXPECT_EQ(1, event->pointer_details().id);
   event_capturer_.Clear();
 
@@ -426,7 +469,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   event_generator_->PressKey(ui::VKEY_B, ui::EF_IS_REPEAT, 1);
   EXPECT_EQ(1, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[0].get();
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   event_generator_->ReleaseKey(ui::VKEY_B, ui::EF_NONE, 1);
   event_capturer_.Clear();
 
@@ -438,7 +481,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(2, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events().back().get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_CANCELLED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
   event_capturer_.Clear();
   // Register the event-rewriter and press key again.
@@ -448,7 +491,7 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
   EXPECT_EQ(1, (int)event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectB, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectB, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
   event_generator_->ReleaseKey(ui::VKEY_B, ui::EF_NONE, 1);
   event_capturer_.Clear();
@@ -456,22 +499,22 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapKey) {
 
 TEST_F(TouchInjectorTest, TestEventRewriterActionTapMouse) {
   injector_->set_enable_mouse_lock(true);
-  base::JSONReader::ValueWithError json_value =
+  auto json_value =
       base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionTapMouse);
-  EXPECT_FALSE(!json_value.value || !json_value.value->is_dict());
-  injector_->ParseActions(json_value.value.value());
+  EXPECT_TRUE(json_value.has_value() && json_value->is_dict());
+  injector_->ParseActions(*json_value);
   EXPECT_EQ(2u, injector_->actions().size());
   injector_->RegisterEventRewriter();
 
   auto* primary_action = injector_->actions()[0].get();
-  auto* primary_binding = primary_action->current_binding();
-  EXPECT_EQ(primary_binding->mouse_action(), "primary_click");
+  auto* primary_binding = primary_action->current_input();
+  EXPECT_EQ(primary_binding->mouse_action(), MouseAction::PRIMARY_CLICK);
   EXPECT_TRUE(primary_binding->mouse_types().contains(ui::ET_MOUSE_PRESSED));
   EXPECT_TRUE(primary_binding->mouse_types().contains(ui::ET_MOUSE_RELEASED));
   EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, primary_binding->mouse_flags());
   auto* secondary_action = injector_->actions()[1].get();
-  auto* secondary_binding = secondary_action->current_binding();
-  EXPECT_EQ(secondary_binding->mouse_action(), "secondary_click");
+  auto* secondary_binding = secondary_action->current_input();
+  EXPECT_EQ(secondary_binding->mouse_action(), MouseAction::SECONDARY_CLICK);
   EXPECT_TRUE(secondary_binding->mouse_types().contains(ui::ET_MOUSE_PRESSED));
   EXPECT_TRUE(secondary_binding->mouse_types().contains(ui::ET_MOUSE_RELEASED));
   EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON, secondary_binding->mouse_flags());
@@ -490,124 +533,124 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionTapMouse) {
   auto* event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
   EXPECT_EQ(0, event->pointer_details().id);
-  gfx::PointF expect_primary =
+  auto expect_primary =
       gfx::PointF(300, 100 + (400 - caption_height_) * 0.5 + caption_height_);
-  EXPECT_TRUE(IsPointsEqual(expect_primary, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect_primary, event->root_location_f(), kTolerance);
   // Mouse secondary button click.
   event_generator_->PressRightButton();
   EXPECT_EQ(2u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
   EXPECT_EQ(1, event->pointer_details().id);
-  gfx::PointF expect_secondary = gfx::PointF(
+  auto expect_secondary = gfx::PointF(
       200 + 200 * 0.8, 100 + (400 - caption_height_) * 0.8 + caption_height_);
-  EXPECT_TRUE(IsPointsEqual(expect_secondary, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect_secondary, event->root_location_f(), kTolerance);
 
   event_generator_->ReleaseRightButton();
   EXPECT_EQ(3u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[2].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
   EXPECT_EQ(1, event->pointer_details().id);
-  EXPECT_TRUE(IsPointsEqual(expect_secondary, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect_secondary, event->root_location_f(), kTolerance);
 
   event_generator_->ReleaseLeftButton();
   EXPECT_EQ(4u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[3].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
   EXPECT_EQ(0, event->pointer_details().id);
-  EXPECT_TRUE(IsPointsEqual(expect_primary, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect_primary, event->root_location_f(), kTolerance);
 }
 
 TEST_F(TouchInjectorTest, TestEventRewriterActionMoveKey) {
-  base::JSONReader::ValueWithError json_value =
+  auto json_value =
       base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionMoveKey);
-  injector_->ParseActions(json_value.value.value());
+  injector_->ParseActions(*json_value);
   EXPECT_EQ(1u, injector_->actions().size());
   auto* action = injector_->actions()[0].get();
   injector_->RegisterEventRewriter();
 
   // Press key A and generate touch down and move left event.
   event_generator_->PressKey(ui::VKEY_A, ui::EF_NONE, 1 /* keyboard id */);
-  EXPECT_TRUE(*(action->touch_id()) == 0);
+  EXPECT_EQ(0, *(action->touch_id()));
   EXPECT_TRUE(event_capturer_.key_events().empty());
   // Wait for touch move event.
   task_environment()->FastForwardBy(kSendTouchMoveDelay);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 2);
+  EXPECT_EQ(2u, event_capturer_.touch_events().size());
   // Generate touch down event.
   auto* event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  gfx::PointF expect =
+  auto expect =
       gfx::PointF(300, 100 + (400 - caption_height_) * 0.5 + caption_height_);
-  EXPECT_TRUE(IsPointsEqual(expect, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect, event->root_location_f(), kTolerance);
   // Generate touch move left event.
-  gfx::PointF expectA = gfx::PointF(expect);
+  auto expectA = gfx::PointF(expect);
   auto* action_move = static_cast<ActionMove*>(action);
   int move_distance = action_move->move_distance();
   expectA.Offset(-move_distance, 0);
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectA, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
 
   // Press key W (move left + up) and generate touch move (up and left) event.
   event_generator_->PressKey(ui::VKEY_W, ui::EF_NONE, 1);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 3);
+  EXPECT_EQ(3u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[2].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
   auto expectW = gfx::PointF(expectA);
   expectW.Offset(0, -move_distance);
-  EXPECT_TRUE(IsPointsEqual(expectW, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectW, event->root_location_f(), kTolerance);
 
   // Release key A and generate touch move up event (Key W is still pressed).
   event_generator_->ReleaseKey(ui::VKEY_A, ui::EF_NONE, 1);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 4);
+  EXPECT_EQ(4u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[3].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
   expectW = gfx::PointF(expect);
   expectW.Offset(0, -move_distance);
-  EXPECT_TRUE(IsPointsEqual(expectW, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectW, event->root_location_f(), kTolerance);
 
   // Press key D and generate touch move (up and right) event.
   event_generator_->PressKey(ui::VKEY_D, ui::EF_NONE, 1);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 5);
+  EXPECT_EQ(5u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[4].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
   auto expectD = gfx::PointF(expectW);
   expectD.Offset(move_distance, 0);
-  EXPECT_TRUE(IsPointsEqual(expectD, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectD, event->root_location_f(), kTolerance);
 
   // Release key W and generate touch move (right) event (Key D is still
   // pressed).
   event_generator_->ReleaseKey(ui::VKEY_W, ui::EF_NONE, 1);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 6);
+  EXPECT_EQ(6u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[5].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
   expectD = gfx::PointF(expect);
   expectD.Offset(move_distance, 0);
-  EXPECT_TRUE(IsPointsEqual(expectD, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectD, event->root_location_f(), kTolerance);
 
   // Release key D and generate touch release event.
   event_generator_->ReleaseKey(ui::VKEY_D, ui::EF_NONE, 1);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 7);
+  EXPECT_EQ(7u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[6].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_RELEASED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectD, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectD, event->root_location_f(), kTolerance);
   event_capturer_.Clear();
 
   // Press A again, it should repeat the same as previous result.
   event_generator_->PressKey(ui::VKEY_A, ui::EF_NONE, 1 /* keyboard id */);
-  EXPECT_TRUE(*(action->touch_id()) == 0);
+  EXPECT_EQ(0, *(action->touch_id()));
   EXPECT_TRUE(event_capturer_.key_events().empty());
-  task_environment()->FastForwardBy(input_overlay::kSendTouchMoveDelay);
-  EXPECT_TRUE((int)event_capturer_.touch_events().size() == 2);
+  task_environment()->FastForwardBy(kSendTouchMoveDelay);
+  EXPECT_EQ(2u, event_capturer_.touch_events().size());
   // Generate touch down event.
   event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expect, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect, event->root_location_f(), kTolerance);
   // Generate touch move left event.
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
-  EXPECT_TRUE(IsPointsEqual(expectA, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expectA, event->root_location_f(), kTolerance);
   EXPECT_EQ(0, event->pointer_details().id);
   event_generator_->ReleaseKey(ui::VKEY_A, ui::EF_NONE, 1);
   event_capturer_.Clear();
@@ -615,24 +658,23 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionMoveKey) {
 
 TEST_F(TouchInjectorTest, TestEventRewriterActionMoveMouse) {
   injector_->set_enable_mouse_lock(true);
-  base::JSONReader::ValueWithError json_value =
+  auto json_value =
       base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionMoveMouse);
-  EXPECT_FALSE(!json_value.value || !json_value.value->is_dict());
-  injector_->ParseActions(json_value.value.value());
+  EXPECT_TRUE(json_value.has_value() && json_value->is_dict());
+  injector_->ParseActions(*json_value);
   EXPECT_EQ(2u, injector_->actions().size());
   injector_->RegisterEventRewriter();
   auto* hover_action = static_cast<ActionMove*>(injector_->actions()[0].get());
-  auto* hover_binding = hover_action->current_binding();
-  EXPECT_EQ(hover_binding->mouse_action(), "hover_move");
+  auto* hover_binding = hover_action->current_input();
+  EXPECT_EQ(hover_binding->mouse_action(), MouseAction::HOVER_MOVE);
   EXPECT_TRUE(hover_binding->mouse_types().contains(ui::ET_MOUSE_ENTERED));
   EXPECT_TRUE(hover_binding->mouse_types().contains(ui::ET_MOUSE_MOVED));
   EXPECT_TRUE(hover_binding->mouse_types().contains(ui::ET_MOUSE_EXITED));
   EXPECT_EQ(0, hover_binding->mouse_flags());
 
-  auto* right_action =
-      static_cast<input_overlay::ActionMove*>(injector_->actions()[1].get());
-  auto* right_binding = right_action->current_binding();
-  EXPECT_EQ(right_binding->mouse_action(), "secondary_drag_move");
+  auto* right_action = static_cast<ActionMove*>(injector_->actions()[1].get());
+  auto* right_binding = right_action->current_input();
+  EXPECT_EQ(right_binding->mouse_action(), MouseAction::SECONDARY_DRAG_MOVE);
   EXPECT_TRUE(right_binding->mouse_types().contains(ui::ET_MOUSE_PRESSED));
   EXPECT_TRUE(right_binding->mouse_types().contains(ui::ET_MOUSE_DRAGGED));
   EXPECT_TRUE(right_binding->mouse_types().contains(ui::ET_MOUSE_RELEASED));
@@ -661,13 +703,13 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionMoveMouse) {
   auto* event = event_capturer_.touch_events()[0].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_PRESSED, event->type());
   auto expect = gfx::PointF(350, 200);
-  EXPECT_TRUE(IsPointsEqual(expect, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect, event->root_location_f(), kTolerance);
   event_generator_->MoveMouseTo(gfx::Point(350, 250), 1);
   EXPECT_EQ(2u, event_capturer_.touch_events().size());
   event = event_capturer_.touch_events()[1].get();
   EXPECT_EQ(ui::EventType::ET_TOUCH_MOVED, event->type());
   expect = gfx::PointF(375, 250);
-  EXPECT_TRUE(IsPointsEqual(expect, event->root_location_f()));
+  EXPECT_POINTF_NEAR(expect, event->root_location_f(), kTolerance);
   // Send mouse hover move outside of window content bounds when mouse is
   // locked. The mouse event will be discarded.
   event_generator_->MoveMouseTo(gfx::Point(500, 200), 1);
@@ -696,9 +738,9 @@ TEST_F(TouchInjectorTest, TestEventRewriterActionMoveMouse) {
 
 TEST_F(TouchInjectorTest, TestEventRewriterTouchToTouch) {
   // Setup.
-  base::JSONReader::ValueWithError json_value =
+  auto json_value =
       base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionTapKey);
-  injector_->ParseActions(json_value.value.value());
+  injector_->ParseActions(*json_value);
   injector_->RegisterEventRewriter();
 
   // Verify initial states.
@@ -821,5 +863,259 @@ TEST_F(TouchInjectorTest, TestEventRewriterTouchToTouch) {
   EXPECT_EQ(0, GetRewrittenTouchInfoSizeForTesting());
 }
 
-}  // namespace input_overlay
-}  // namespace arc
+TEST_F(TouchInjectorTest, TestProtoConversion) {
+  // Check whether AppDataProto is serialized correctly.
+  auto json_value =
+      base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionTapKey);
+  injector_->set_allow_reposition(true);
+  injector_->ParseActions(*json_value);
+  // Simulate a menu entry position change.
+  auto menu_entry_location_point = gfx::Point(5, 5);
+  injector_->SaveMenuEntryLocation(menu_entry_location_point);
+  auto expected_menu_entry_location = injector_->menu_entry_location();
+  // Change input binding on actions[1].
+  auto new_input = InputElement::CreateActionTapKeyElement(ui::DomCode::US_C);
+  auto* expected_input = new_input.get();
+  injector_->OnInputBindingChange(&*injector_->actions()[1],
+                                  std::move(new_input));
+  injector_->OnApplyPendingBinding();
+  // Change position binding on actions[0].
+  auto new_pos = std::make_unique<Position>(PositionType::kDefault);
+  new_pos->Normalize(gfx::Point(20, 20), gfx::RectF(100, 100));
+  auto expected_pos = *new_pos;
+  injector_->actions()[0]->PrepareToBindPosition(std::move(new_pos));
+  injector_->OnApplyPendingBinding();
+  auto proto = ConvertToProto();
+  // Check that the menu entry position is serialized correctly.
+  EXPECT_TRUE(proto->has_menu_entry_position());
+  auto serialized_position = proto->menu_entry_position().anchor_to_target();
+  EXPECT_EQ(expected_menu_entry_location->x(), serialized_position[0]);
+  EXPECT_EQ(expected_menu_entry_location->y(), serialized_position[1]);
+  // Check whether the actions[1] with new input binding is converted to proto
+  // correctly.
+  auto action_proto = proto->actions()[1];
+  EXPECT_TRUE(action_proto.has_input_element());
+  auto input_element =
+      InputElement::ConvertFromProto(action_proto.input_element());
+  EXPECT_EQ(*input_element, *expected_input);
+  // Check whether the actions[0] with new position is converted to proto
+  // correctly.
+  action_proto = proto->actions()[0];
+  EXPECT_FALSE(action_proto.positions().empty());
+  auto position = Position::ConvertFromProto(action_proto.positions()[0]);
+  EXPECT_EQ(*position, expected_pos);
+
+  // Check whether AppDataProto is deserialized correctly.
+  auto injector = std::make_unique<TouchInjector>(
+      widget_->GetNativeWindow(),
+      *widget_->GetNativeWindow()->GetProperty(ash::kArcPackageNameKey),
+      base::BindLambdaForTesting(
+          [&](std::unique_ptr<AppDataProto>, std::string) {}));
+  injector->set_allow_reposition(true);
+  injector->ParseActions(*json_value);
+  injector->OnProtoDataAvailable(*proto);
+  EXPECT_EQ(injector_->actions().size(), injector->actions().size());
+  for (size_t i = 0; i < injector_->actions().size(); i++) {
+    const auto* action_a = injector_->actions()[i].get();
+    const auto* action_b = injector->actions()[i].get();
+    EXPECT_EQ(*action_a->current_input(), *action_b->current_input());
+    EXPECT_EQ(action_a->current_positions(), action_b->current_positions());
+  }
+  auto deserialized_menu_entry_location = injector->menu_entry_location();
+  EXPECT_TRUE(deserialized_menu_entry_location);
+  EXPECT_EQ(*deserialized_menu_entry_location, *expected_menu_entry_location);
+}
+
+TEST_F(TouchInjectorTest, TestAddAction) {
+  auto json_value =
+      base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionTapKey);
+  injector_->set_beta(true);
+  injector_->ParseActions(*json_value);
+  EXPECT_EQ(2u, injector_->actions().size());
+
+  // Add->Save.
+  injector_->AddNewAction(ActionType::MOVE);
+  EXPECT_EQ(1u, GetPendingAddUserActions().size());
+  injector_->OnBindingSave();
+  EXPECT_EQ(3u, injector_->actions().size());
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1, injector_->actions().back()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 2, GetNextActionID());
+
+  // Add->Save->Restore->Save. Final result only has default actions.
+  injector_->AddNewAction(ActionType::TAP);
+  injector_->AddNewAction(ActionType::MOVE);
+  EXPECT_EQ(2u, GetPendingAddUserActions().size());
+  injector_->OnBindingSave();
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  EXPECT_EQ(5u, injector_->actions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 2,
+            (injector_->actions().rbegin() + 1)->get()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 3, injector_->actions().back()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 4, GetNextActionID());
+  injector_->OnBindingRestore();
+  EXPECT_EQ(2u, injector_->actions().size());
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1, GetNextActionID());
+  injector_->OnBindingSave();
+  EXPECT_EQ(2u, injector_->actions().size());
+
+  // Add->Cancel. Nothing is added.
+  injector_->AddNewAction(ActionType::TAP);
+  injector_->AddNewAction(ActionType::MOVE);
+  EXPECT_EQ(2u, GetPendingAddUserActions().size());
+  injector_->OnBindingCancel();
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  EXPECT_EQ(2u, injector_->actions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1, GetNextActionID());
+
+  // Add->Cancel->Add->Save. Second "add" is saved.
+  injector_->AddNewAction(ActionType::MOVE);
+  injector_->AddNewAction(ActionType::TAP);
+  EXPECT_EQ(kMaxDefaultActionID + 1,
+            (GetPendingAddUserActions().rbegin() + 1)->get()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 2, GetPendingAddUserActions().back()->id());
+  EXPECT_EQ(2u, GetPendingAddUserActions().size());
+  injector_->OnBindingCancel();
+  EXPECT_EQ(kMaxDefaultActionID + 1, GetNextActionID());
+  EXPECT_EQ(2u, injector_->actions().size());
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  injector_->AddNewAction(ActionType::MOVE);
+  EXPECT_EQ(1u, GetPendingAddUserActions().size());
+  injector_->OnBindingSave();
+  EXPECT_EQ(3u, injector_->actions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1, injector_->actions().back()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 2, GetNextActionID());
+  // Reset.
+  injector_->OnBindingRestore();
+  injector_->OnBindingSave();
+
+  // Add->Save->Restore->Cancel. "Restore" is not applied at the end.
+  injector_->AddNewAction(ActionType::MOVE);
+  injector_->AddNewAction(ActionType::TAP);
+  injector_->OnBindingSave();
+  EXPECT_EQ(4u, injector_->actions().size());
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1,
+            (injector_->actions().rbegin() + 1)->get()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 2, injector_->actions().back()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 3, GetNextActionID());
+  injector_->OnBindingRestore();
+  EXPECT_EQ(2u, injector_->actions().size());
+  EXPECT_EQ(2u, GetPendingDeleteUserActions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1, GetNextActionID());
+  injector_->OnBindingCancel();
+  EXPECT_EQ(4u, injector_->actions().size());
+  EXPECT_EQ(0u, GetPendingAddUserActions().size());
+  EXPECT_EQ(0u, GetPendingDeleteUserActions().size());
+  EXPECT_EQ(kMaxDefaultActionID + 1,
+            (injector_->actions().rbegin() + 1)->get()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 2, injector_->actions().back()->id());
+  EXPECT_EQ(kMaxDefaultActionID + 3, GetNextActionID());
+}
+
+TEST_F(TouchInjectorTest, TestDeleteAction) {
+  auto json_value =
+      base::JSONReader::ReadAndReturnValueWithError(kValidJsonActionTapKey);
+  injector_->set_beta(true);
+  injector_->ParseActions(*json_value);
+  TouchInjectorResetAndAddTwoActions(injector_.get());
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/4u);
+
+  // Delete->Save->Restore->Save.
+  // Delete a default action.
+  injector_->RemoveAction(injector_->actions()[1].get());
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/1u,
+                    /*size_actions=*/4u);
+  injector_->OnBindingSave();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/4u);
+  EXPECT_TRUE(injector_->actions()[1]->deleted());
+  // Delete a user-added action.
+  injector_->RemoveAction(injector_->actions()[2].get());
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/1u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/3u);
+  injector_->OnBindingSave();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/3u);
+
+  // Delete->Cancel->Delete->Save.
+  TouchInjectorResetAndAddTwoActions(injector_.get());
+  injector_->RemoveAction(injector_->actions()[1].get());
+  injector_->RemoveAction(injector_->actions()[2].get());
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/1u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/1u,
+                    /*size_actions=*/3u);
+  injector_->OnBindingCancel();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/4u);
+  injector_->RemoveAction(injector_->actions()[1].get());
+  injector_->RemoveAction(injector_->actions()[2].get());
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/1u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/1u,
+                    /*size_actions=*/3u);
+  injector_->OnBindingSave();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/3u);
+  EXPECT_FALSE(injector_->actions()[0]->deleted());
+  EXPECT_TRUE(injector_->actions()[1]->deleted());
+
+  // Delete->Save->Restore->Cancel.
+  TouchInjectorResetAndAddTwoActions(injector_.get());
+  injector_->RemoveAction(injector_->actions()[1].get());
+  injector_->RemoveAction(injector_->actions()[2].get());
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/1u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/1u,
+                    /*size_actions=*/3u);
+  injector_->OnBindingSave();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/3u);
+  EXPECT_TRUE(injector_->actions()[1]->deleted());
+  injector_->OnBindingRestore();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/1u,
+                    /*size_pending_add_default_actions=*/1u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/2u);
+  EXPECT_FALSE(injector_->actions()[1]->deleted());
+  injector_->OnBindingCancel();
+  ExpectActionSizes(/*size_pending_add_user_actions=*/0u,
+                    /*size_pending_delete_user_actions=*/0u,
+                    /*size_pending_add_default_actions=*/0u,
+                    /*size_pending_delete_default_actions=*/0u,
+                    /*size_actions=*/3u);
+  EXPECT_TRUE(injector_->actions()[1]->deleted());
+}
+
+}  // namespace arc::input_overlay

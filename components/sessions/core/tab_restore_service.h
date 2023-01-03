@@ -1,4 +1,4 @@
-// Copyright 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/memory/ref_counted.h"
 #include "base/time/time.h"
 #include "base/token.h"
 #include "components/keyed_service/core/keyed_service.h"
@@ -145,6 +144,9 @@ class SESSIONS_EXPORT TabRestoreService : public KeyedService {
 
     // Entry:
     size_t EstimateMemoryUsage() const override;
+
+    // Type of window.
+    SessionWindow::WindowType type;
 
     // The tabs that comprised the window, in order.
     std::vector<std::unique_ptr<Tab>> tabs;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/task/sequenced_task_runner_helpers.h"
@@ -27,7 +27,6 @@
 #include "remoting/host/desktop_and_cursor_composer_notifier.h"
 #include "remoting/host/desktop_and_cursor_conditional_composer.h"
 #include "remoting/host/desktop_display_info.h"
-#include "remoting/host/desktop_display_info_monitor.h"
 #include "remoting/host/host_experiment_session_plugin.h"
 #include "remoting/host/host_extension_session_manager.h"
 #include "remoting/host/mojom/chromoting_host_services.mojom.h"
@@ -45,8 +44,10 @@
 #include "remoting/protocol/input_filter.h"
 #include "remoting/protocol/input_stub.h"
 #include "remoting/protocol/mouse_input_filter.h"
+#include "remoting/protocol/observing_input_filter.h"
 #include "remoting/protocol/pairing_registry.h"
 #include "remoting/protocol/video_stream.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_capture_metadata.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capture_types.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
 #include "third_party/webrtc/modules/desktop_capture/mouse_cursor.h"
@@ -144,6 +145,7 @@ class ClientSession : public protocol::HostStub,
       const protocol::SelectDesktopDisplayRequest& select_display) override;
   void ControlPeerConnection(
       const protocol::PeerConnectionParameters& parameters) override;
+  void SetVideoLayout(const protocol::VideoLayout& video_layout) override;
 
   // protocol::ConnectionToClient::EventHandler interface.
   void OnConnectionAuthenticating() override;
@@ -215,18 +217,6 @@ class ClientSession : public protocol::HostStub,
   void UpdateMouseClampingFilterOffset();
 
  private:
-  // Struct for associating an optional DesktopAndCursorConditionalComposer
-  // with each VideoStream.
-  struct VideoStreamWithComposer {
-    VideoStreamWithComposer();
-    VideoStreamWithComposer(VideoStreamWithComposer&&);
-    VideoStreamWithComposer& operator=(VideoStreamWithComposer&&);
-    ~VideoStreamWithComposer();
-
-    std::unique_ptr<protocol::VideoStream> stream;
-    base::WeakPtr<DesktopAndCursorConditionalComposer> composer;
-  };
-
   // Creates a proxy for sending clipboard events to the client.
   std::unique_ptr<protocol::ClipboardStub> CreateClipboardProxy();
 
@@ -264,6 +254,17 @@ class ClientSession : public protocol::HostStub,
 
   void CreatePerMonitorVideoStreams();
 
+  // True if |index| corresponds with an existing display (or the combined
+  // display).
+  bool IsValidDisplayIndex(webrtc::ScreenId index) const;
+
+  // Boosts the framerate using |capture_interval| for |boost_duration| based on
+  // the type of input |event| received.
+  void BoostFramerateOnInput(base::TimeDelta capture_interval,
+                             base::TimeDelta boost_duration,
+                             bool& mouse_button_down,
+                             protocol::ObservingInputFilter::Event event);
+
   raw_ptr<EventHandler> event_handler_;
 
   // Used to create a DesktopEnvironment instance for this session.
@@ -286,6 +287,9 @@ class ClientSession : public protocol::HostStub,
 
   // Filter used to clamp mouse events to the current display dimensions.
   protocol::MouseInputFilter mouse_clamping_filter_;
+
+  // Filter used to notify listeners when remote input events are received.
+  protocol::ObservingInputFilter observing_input_filter_;
 
   // Filter used to detect transitions into and out of client-side pointer lock,
   // and to monitor local input to determine whether or not to include the mouse
@@ -318,7 +322,8 @@ class ClientSession : public protocol::HostStub,
   base::OneShotTimer max_duration_timer_;
 
   // Objects responsible for sending video, audio.
-  std::map<webrtc::ScreenId, VideoStreamWithComposer> video_streams_;
+  std::map<webrtc::ScreenId, std::unique_ptr<protocol::VideoStream>>
+      video_streams_;
   std::unique_ptr<protocol::AudioStream> audio_stream_;
 
   // The set of all capabilities supported by the client.
@@ -338,8 +343,6 @@ class ClientSession : public protocol::HostStub,
 
   // Contains the most recently gathered info about the desktop displays;
   DesktopDisplayInfo desktop_display_info_;
-
-  std::unique_ptr<DesktopDisplayInfoMonitor> display_info_monitor_;
 
   // Default DPI values to use if a display reports 0 for DPI.
   int default_x_dpi_;
@@ -379,10 +382,8 @@ class ClientSession : public protocol::HostStub,
   // Set to true after all data channels have been connected.
   bool channels_connected_ = false;
 
-  // Used to store video channel pause & lossless parameters.
+  // Used to store video channel pause parameter.
   bool pause_video_ = false;
-  bool lossless_video_encode_ = false;
-  bool lossless_video_color_ = false;
 
   // VideoLayout is sent only after the control channel is connected. Until
   // then it's stored in |pending_video_layout_message_|.

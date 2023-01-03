@@ -1,10 +1,12 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "content/public/test/test_aggregation_service.h"
 
 #include <memory>
+#include <string>
+#include <utility>
 
 #include "base/memory/scoped_refptr.h"
 #include "content/test/test_aggregation_service_impl.h"
@@ -20,17 +22,21 @@ TestAggregationService::AssembleRequest::AssembleRequest(
     int value,
     AggregationMode aggregation_mode,
     url::Origin reporting_origin,
-    std::string privacy_budget_key,
     std::vector<GURL> processing_urls,
-    bool is_debug_mode_enabled)
+    bool is_debug_mode_enabled,
+    base::Value::Dict additional_fields,
+    std::string api_version,
+    std::string api_identifier)
     : operation(operation),
       bucket(bucket),
       value(value),
       aggregation_mode(aggregation_mode),
       reporting_origin(std::move(reporting_origin)),
-      privacy_budget_key(std::move(privacy_budget_key)),
       processing_urls(std::move(processing_urls)),
-      is_debug_mode_enabled(is_debug_mode_enabled) {}
+      is_debug_mode_enabled(is_debug_mode_enabled),
+      additional_fields(std::move(additional_fields)),
+      api_version(std::move(api_version)),
+      api_identifier(std::move(api_identifier)) {}
 
 TestAggregationService::AssembleRequest::AssembleRequest(
     AssembleRequest&& other) = default;

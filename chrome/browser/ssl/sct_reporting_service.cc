@@ -1,10 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ssl/sct_reporting_service.h"
 
 #include "base/feature_list.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/no_destructor.h"
 #include "base/strings/escape.h"
 #include "chrome/browser/browser_process.h"
@@ -20,6 +21,7 @@
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
+#include "third_party/abseil-cpp/absl/utility/utility.h"
 
 constexpr net::NetworkTrafficAnnotationTag kSCTAuditReportTrafficAnnotation =
     net::DefineNetworkTrafficAnnotation("sct_auditing", R"(
@@ -103,6 +105,9 @@ constexpr char kHashdanceLookupQueryURL[] =
 // The maximum number of reports currently allowed to be sent by hashdance
 // clients, browser-wide. When this limit is reached, no more auditing reports
 // will be sent by the client.
+// NOTE: If this is changed, then the histogram "Security.SCTAuditing.OptOut.
+// ReportCount" that is logged in CanSendSCTAuditingReport() will also need to
+// be changed, as it sets its max bucket to `kSCTAuditingHashdanceMaxReports+1`.
 constexpr int kSCTAuditingHashdanceMaxReports = 3;
 
 // static
@@ -121,7 +126,7 @@ GURL& SCTReportingService::GetHashdanceLookupQueryURLInstance() {
 
 // static
 void SCTReportingService::ReconfigureAfterNetworkRestart() {
-  network::mojom::SCTAuditingConfigurationPtr configuration(base::in_place);
+  network::mojom::SCTAuditingConfigurationPtr configuration(absl::in_place);
   configuration->sampling_rate = features::kSCTAuditingSamplingRate.Get();
   configuration->log_expected_ingestion_delay =
       features::kSCTLogExpectedIngestionDelay.Get();
@@ -146,6 +151,13 @@ bool SCTReportingService::CanSendSCTAuditingReport() {
   }
   int report_count =
       local_state->GetInteger(prefs::kSCTAuditingHashdanceReportCount);
+  // Log a histogram for the report count. This uses an "exact linear" bucketing
+  // scheme so it captures precise counts, and a max of one more than the
+  // max-reports limit so that only cases where the client has exceeded the
+  // limit are logged into the overflow bucket.
+  base::UmaHistogramExactLinear("Security.SCTAuditing.OptOut.ReportCount",
+                                report_count,
+                                kSCTAuditingHashdanceMaxReports + 1);
   return report_count < kSCTAuditingHashdanceMaxReports;
 }
 
@@ -203,8 +215,8 @@ network::mojom::SCTAuditingMode SCTReportingService::GetReportingMode() {
       !base::FeatureList::IsEnabled(features::kSCTAuditing)) {
     return network::mojom::SCTAuditingMode::kDisabled;
   }
-  if (safe_browsing::IsSafeBrowsingEnabled(pref_service_)) {
-    if (safe_browsing::IsExtendedReportingEnabled(pref_service_)) {
+  if (safe_browsing::IsSafeBrowsingEnabled(*pref_service_)) {
+    if (safe_browsing::IsExtendedReportingEnabled(*pref_service_)) {
       return network::mojom::SCTAuditingMode::kEnhancedSafeBrowsingReporting;
     }
     if (base::FeatureList::IsEnabled(features::kSCTAuditingHashdance)) {

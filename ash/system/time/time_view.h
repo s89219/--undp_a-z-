@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -47,6 +47,8 @@ class VerticalDateView : public views::View {
   void UpdateText();
 
  private:
+  friend class TimeViewTest;
+
   views::ImageView* icon_ = nullptr;
   views::Label* text_label_ = nullptr;
 };
@@ -74,7 +76,11 @@ class ASH_EXPORT TimeView : public ActionableView, public ClockObserver {
   // Updates clock layout.
   void UpdateClockLayout(ClockLayout clock_layout);
 
-  // Updates the time text color.
+  // Updates the time text color id.
+  void SetTextColorId(ui::ColorId color_id,
+                      bool auto_color_readability_enabled = false);
+
+  // Updates the text color.
   void SetTextColor(SkColor color, bool auto_color_readability_enabled = false);
 
   // Updates the time text fontlist.

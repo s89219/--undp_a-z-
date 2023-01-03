@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,11 +16,9 @@
 #include "chrome/browser/ui/web_applications/app_browser_controller.h"
 #include "chrome/browser/ui/web_applications/test/web_app_browsertest_util.h"
 #include "chrome/browser/ui/web_applications/test/web_app_navigation_browsertest.h"
-#include "chrome/browser/web_applications/manifest_update_manager.h"
-#include "chrome/browser/web_applications/manifest_update_task.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/os_integration/os_integration_manager.h"
 #include "chrome/browser/web_applications/test/web_app_test_observers.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_info.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
@@ -36,7 +34,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/public/test/url_loader_interceptor.h"
 #include "third_party/blink/public/common/features.h"
-#include "third_party/blink/public/mojom/web_feature/web_feature.mojom.h"
+#include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom.h"
 
 using content::RenderFrameHost;
 using content::WebContents;
@@ -47,7 +45,7 @@ using ui_test_utils::BrowserChangeObserver;
 
 namespace web_app {
 
-using RouteTo = LaunchHandler::RouteTo;
+using ClientMode = LaunchHandler::ClientMode;
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 
@@ -74,19 +72,7 @@ class WebAppLinkCapturingBrowserTest : public WebAppNavigationBrowserTest {
     in_scope_2_ = start_url_.Resolve("page2.html");
     scope_ = start_url_.GetWithoutFilename();
 
-    // Create new tab to navigate, install, automatically pop out and then
-    // close. This sequence avoids altering the browser window state we started
-    // with.
-    AddTab(browser(), about_blank_);
-
-    BrowserChangeObserver observer(nullptr,
-                                   BrowserChangeObserver::ChangeType::kAdded);
-    app_id_ = web_app::InstallWebAppFromPage(browser(), start_url_);
-
-    Browser* app_browser = observer.Wait();
-    EXPECT_NE(app_browser, browser());
-    EXPECT_TRUE(AppBrowserController::IsForWebApp(app_browser, app_id_));
-    chrome::CloseWindow(app_browser);
+    app_id_ = InstallWebAppFromPageAndCloseAppBrowser(browser(), start_url_);
   }
 
   WebAppProvider& provider() {
@@ -163,11 +149,10 @@ class WebAppLinkCapturingBrowserTest : public WebAppNavigationBrowserTest {
   void TurnOnLinkCapturing() {
     auto* proxy = apps::AppServiceProxyFactory::GetForProfile(profile());
     proxy->SetSupportedLinksPreference(app_id_);
-    proxy->FlushMojoCallsForTesting();
   }
 
   absl::optional<LaunchHandler> GetLaunchHandler(const AppId& app_id) {
-    return provider().registrar().GetAppById(app_id)->launch_handler();
+    return provider().registrar_unsafe().GetAppById(app_id)->launch_handler();
   }
 
  protected:
@@ -187,12 +172,12 @@ class WebAppLinkCapturingBrowserTest : public WebAppNavigationBrowserTest {
 // Link capturing with navigate_existing_client: always should navigate existing
 // app windows.
 IN_PROC_BROWSER_TEST_F(WebAppLinkCapturingBrowserTest,
-                       RouteToExistingClientFromBrowser) {
+                       NavigateExistingClientFromBrowser) {
   InstallTestApp(
       "/web_apps/get_manifest.html?"
-      "route_to_deprecated_existing_client_navigate_empty.json");
+      "launch_handler_client_mode_navigate_existing.json");
   EXPECT_EQ(GetLaunchHandler(app_id_),
-            (LaunchHandler{RouteTo::kExistingClientNavigate}));
+            (LaunchHandler{ClientMode::kNavigateExisting}));
 
   TurnOnLinkCapturing();
 
@@ -273,8 +258,8 @@ class WebAppTabStripLinkCapturingBrowserTest
 
   void InstallTestTabbedApp() {
     WebAppLinkCapturingBrowserTest::InstallTestApp("/web_apps/basic.html");
-    provider().sync_bridge().SetAppUserDisplayMode(
-        app_id_, UserDisplayMode::kTabbed, /*is_user_action=*/false);
+    provider().sync_bridge_unsafe().SetAppUserDisplayMode(
+        app_id_, mojom::UserDisplayMode::kTabbed, /*is_user_action=*/false);
   }
 
  private:

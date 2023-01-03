@@ -1,11 +1,11 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {assert} from 'chrome://resources/js/assert.m.js';
-import {ConfirmDialog} from 'chrome://resources/js/cr/ui/dialogs.m.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
 
 import {getFile} from '../../common/js/api.js';
+import {getKeyModifiers} from '../../common/js/dom_utils.js';
 import {strf, UserCanceledError, util} from '../../common/js/util.js';
 import {VolumeInfo} from '../../externs/volume_info.js';
 
@@ -13,6 +13,7 @@ import {FileFilter} from './directory_contents.js';
 import {DirectoryModel} from './directory_model.js';
 import {renameEntry, validateEntryName, validateFileName} from './file_rename.js';
 import {FileSelectionHandler} from './file_selection.js';
+import {ConfirmDialog} from './ui/dialogs.js';
 import {FilesAlertDialog} from './ui/files_alert_dialog.js';
 import {ListContainer} from './ui/list_container.js';
 
@@ -232,7 +233,7 @@ export class NamingController {
       event.stopPropagation();
     }
 
-    switch (util.getKeyModifiers(event) + event.key) {
+    switch (getKeyModifiers(event) + event.key) {
       case 'Escape':
         this.cancelRename_();
         event.preventDefault();

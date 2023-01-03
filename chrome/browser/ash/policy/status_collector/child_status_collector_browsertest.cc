@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,17 +10,15 @@
 #include <utility>
 #include <vector>
 
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/settings/timezone_settings.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/environment.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_path_override.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "base/values.h"
@@ -30,6 +28,7 @@
 #include "chrome/browser/ash/child_accounts/time_limits/app_time_controller.h"
 #include "chrome/browser/ash/child_accounts/time_limits/app_time_limits_policy_builder.h"
 #include "chrome/browser/ash/child_accounts/time_limits/app_types.h"
+#include "chrome/browser/ash/login/demo_mode/demo_setup_controller.h"
 #include "chrome/browser/ash/login/users/mock_user_manager.h"
 #include "chrome/browser/ash/ownership/fake_owner_settings_service.h"
 #include "chrome/browser/ash/policy/status_collector/child_status_collector.h"
@@ -43,15 +42,17 @@
 #include "chrome/test/base/chrome_unit_test_suite.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "chromeos/ash/components/dbus/cicerone/cicerone_client.h"
+#include "chromeos/ash/components/dbus/concierge/concierge_client.h"
 #include "chromeos/ash/components/dbus/seneschal/seneschal_client.h"
-#include "chromeos/dbus/cicerone/cicerone_client.h"
-#include "chromeos/dbus/concierge/concierge_client.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/update_engine/fake_update_engine_client.h"
+#include "chromeos/ash/components/dbus/update_engine/update_engine_client.h"
+#include "chromeos/ash/components/login/login_state/login_state.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/settings/timezone_settings.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
 #include "chromeos/dbus/power_manager/idle.pb.h"
-#include "chromeos/dbus/update_engine/fake_update_engine_client.h"
-#include "chromeos/login/login_state/login_state.h"
-#include "chromeos/system/fake_statistics_provider.h"
 #include "components/account_id/account_id.h"
 #include "components/policy/proto/device_management_backend.pb.h"
 #include "components/prefs/pref_service.h"
@@ -74,6 +75,8 @@ namespace {
 namespace em = ::enterprise_management;
 
 using ::base::Time;
+using ::testing::IsEmpty;
+using ::testing::Not;
 using ::testing::Return;
 
 // Time delta representing midnight 00:00.
@@ -111,7 +114,7 @@ class TestingChildStatusCollector : public ChildStatusCollector {
   TestingChildStatusCollector(
       PrefService* pref_service,
       Profile* profile,
-      chromeos::system::StatisticsProvider* provider,
+      ash::system::StatisticsProvider* provider,
       const StatusCollector::AndroidStatusFetcher& android_status_fetcher,
       base::TimeDelta activity_day_start)
       : ChildStatusCollector(pref_service,
@@ -147,7 +150,7 @@ void CallAndroidStatusReceiver(
 
 bool GetEmptyAndroidStatus(StatusCollector::AndroidStatusReceiver receiver) {
   // Post it to the thread because this call is expected to be asynchronous.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(&CallAndroidStatusReceiver, std::move(receiver), "", ""));
   return true;
@@ -157,7 +160,7 @@ bool GetFakeAndroidStatus(const std::string& status,
                           const std::string& droid_guard_info,
                           StatusCollector::AndroidStatusReceiver receiver) {
   // Post it to the thread because this call is expected to be asynchronous.
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&CallAndroidStatusReceiver, std::move(receiver),
                                 status, droid_guard_info));
   return true;
@@ -173,8 +176,7 @@ class ChildStatusCollectorTest : public testing::Test {
   ChildStatusCollectorTest()
       : user_manager_(new ash::MockUserManager()),
         user_manager_enabler_(base::WrapUnique(user_manager_)),
-        user_data_dir_override_(chrome::DIR_USER_DATA),
-        update_engine_client_(new chromeos::FakeUpdateEngineClient) {
+        user_data_dir_override_(chrome::DIR_USER_DATA) {
     scoped_stub_install_attributes_.Get()->SetCloudManaged("managed.com",
                                                            "device_id");
     EXPECT_CALL(*user_manager_, Shutdown()).Times(1);
@@ -197,30 +199,35 @@ class ChildStatusCollectorTest : public testing::Test {
     std::unique_ptr<base::Environment> env(base::Environment::Create());
     env->SetVar("TZ", "UTC");
 
+    // This pref registration is temporarily added because crrev/c/4076557 makes
+    // SystemWebAppManager (which is instantiated during creation of a
+    // TestProfile) dependent on the kDemoModeConfig pref.
+    // TODO(b/260117078): Delete this line after the DemoModeConfig pref is
+    // deprecated.
+    ash::DemoSetupController::RegisterLocalStatePrefs(local_state_.registry());
+
     TestingBrowserProcess::GetGlobal()->SetLocalState(&local_state_);
 
     // Use FakeUpdateEngineClient.
-    chromeos::DBusThreadManager::Initialize();
-    chromeos::DBusThreadManager::GetSetterForTesting()->SetUpdateEngineClient(
-        base::WrapUnique<chromeos::UpdateEngineClient>(update_engine_client_));
-
-    chromeos::CiceroneClient::InitializeFake();
-    chromeos::ConciergeClient::InitializeFake();
+    ash::UpdateEngineClient::InitializeFakeForTest();
+    ash::CiceroneClient::InitializeFake();
+    ash::ConciergeClient::InitializeFake();
     ash::SeneschalClient::InitializeFake();
     chromeos::PowerManagerClient::InitializeFake();
-    chromeos::LoginState::Initialize();
+    ash::LoginState::Initialize();
 
     MockChildUser(AccountId::FromUserEmail("user0@gmail.com"));
   }
 
   ~ChildStatusCollectorTest() override {
-    chromeos::LoginState::Shutdown();
+    ash::LoginState::Shutdown();
     chromeos::PowerManagerClient::Shutdown();
     ash::SeneschalClient::Shutdown();
     // |testing_profile_| must be destructed while ConciergeClient is alive.
     testing_profile_.reset();
-    chromeos::ConciergeClient::Shutdown();
-    chromeos::CiceroneClient::Shutdown();
+    ash::ConciergeClient::Shutdown();
+    ash::CiceroneClient::Shutdown();
+    ash::UpdateEngineClient::Shutdown();
     TestingBrowserProcess::GetGlobal()->SetLocalState(nullptr);
 
     // Finish pending tasks.
@@ -421,7 +428,7 @@ class ChildStatusCollectorTest : public testing::Test {
 
   ChromeContentClient content_client_;
   ChromeContentBrowserClient browser_content_client_;
-  chromeos::system::ScopedFakeStatisticsProvider fake_statistics_provider_;
+  ash::system::ScopedFakeStatisticsProvider fake_statistics_provider_;
   ash::ScopedStubInstallAttributes scoped_stub_install_attributes_;
   ash::ScopedTestingCrosSettings scoped_testing_cros_settings_;
   ash::FakeOwnerSettingsService owner_settings_service_{
@@ -434,7 +441,6 @@ class ChildStatusCollectorTest : public testing::Test {
   em::ChildStatusReportRequest child_status_;
   std::unique_ptr<TestingChildStatusCollector> status_collector_;
   base::ScopedPathOverride user_data_dir_override_;
-  chromeos::FakeUpdateEngineClient* const update_engine_client_;
   std::unique_ptr<base::RunLoop> run_loop_;
 
   // This property is required to instantiate the session manager, a singleton
@@ -444,8 +450,7 @@ class ChildStatusCollectorTest : public testing::Test {
 
 TEST_F(ChildStatusCollectorTest, ReportingBootMode) {
   fake_statistics_provider_.SetMachineStatistic(
-      chromeos::system::kDevSwitchBootKey,
-      chromeos::system::kDevSwitchBootValueVerified);
+      ash::system::kDevSwitchBootKey, ash::system::kDevSwitchBootValueVerified);
 
   GetStatus();
 
@@ -549,8 +554,7 @@ TEST_F(ChildStatusCollectorTest, ReportingActivityTimesIdleTransitions) {
 }
 
 TEST_F(ChildStatusCollectorTest, ActivityKeptInPref) {
-  EXPECT_TRUE(
-      pref_service()->GetDictionary(prefs::kUserActivityTimes)->DictEmpty());
+  EXPECT_THAT(pref_service()->GetDict(prefs::kUserActivityTimes), IsEmpty());
   task_environment_.AdvanceClock(kHour);
 
   DeviceStateTransitions test_states[] = {
@@ -566,8 +570,8 @@ TEST_F(ChildStatusCollectorTest, ActivityKeptInPref) {
       DeviceStateTransitions::kLeaveSessionActive};
   SimulateStateChanges(test_states,
                        sizeof(test_states) / sizeof(DeviceStateTransitions));
-  EXPECT_FALSE(
-      pref_service()->GetDictionary(prefs::kUserActivityTimes)->DictEmpty());
+  EXPECT_THAT(pref_service()->GetDict(prefs::kUserActivityTimes),
+              Not(IsEmpty()));
 
   // Process the list a second time after restarting the collector. It should be
   // able to count the active periods found by the original collector, because
@@ -617,8 +621,7 @@ TEST_F(ChildStatusCollectorTest, BeforeDayStart) {
   Time initial_time =
       Time::Now().LocalMidnight() + base::Days(1) + base::Hours(4);
   FastForwardTo(initial_time);
-  EXPECT_TRUE(
-      pref_service()->GetDictionary(prefs::kUserActivityTimes)->DictEmpty());
+  EXPECT_THAT(pref_service()->GetDict(prefs::kUserActivityTimes), IsEmpty());
 
   DeviceStateTransitions test_states[] = {
       DeviceStateTransitions::kEnterSessionActive,
@@ -772,10 +775,8 @@ TEST_F(ChildStatusCollectorTest, ReportingAppActivityNoReport) {
   {
     ash::app_time::AppTimeLimitsPolicyBuilder builder;
     builder.SetAppActivityReportingEnabled(/* enabled */ false);
-    DictionaryPrefUpdate update(testing_profile()->GetPrefs(),
-                                prefs::kPerAppTimeLimitsPolicy);
-    base::Value* value = update.Get();
-    *value = builder.value().Clone();
+    testing_profile()->GetPrefs()->SetDict(prefs::kPerAppTimeLimitsPolicy,
+                                           builder.value().GetDict().Clone());
   }
 
   SimulateAppActivity(app1, app1_interval);

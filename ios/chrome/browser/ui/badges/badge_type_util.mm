@@ -1,11 +1,11 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/chrome/browser/ui/badges/badge_type_util.h"
+#import "ios/chrome/browser/ui/badges/badge_type_util.h"
 
-#include <ostream>
-#include "base/notreached.h"
+#import <ostream>
+#import "base/notreached.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -23,8 +23,6 @@ BadgeType BadgeTypeForInfobarType(InfobarType infobar_type) {
       return kBadgeTypeSaveCard;
     case InfobarType::kInfobarTypeTranslate:
       return kBadgeTypeTranslate;
-    case InfobarType::kInfobarTypeAddToReadingList:
-      return kBadgeTypeAddToReadingList;
     case InfobarType::kInfobarTypePermissions:
       // Default value; actual value would depend on the value of
       // GetStatesForAllPermissions() of the currently active WebState, and be
@@ -47,8 +45,6 @@ InfobarType InfobarTypeForBadgeType(BadgeType badge_type) {
       return InfobarType::kInfobarTypeSaveCard;
     case kBadgeTypeTranslate:
       return InfobarType::kInfobarTypeTranslate;
-    case kBadgeTypeAddToReadingList:
-      return InfobarType::kInfobarTypeAddToReadingList;
     case kBadgeTypePermissionsCamera:
       // Falls through.
     case kBadgeTypePermissionsMicrophone:

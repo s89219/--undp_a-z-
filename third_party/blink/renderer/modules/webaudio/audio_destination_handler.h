@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -61,7 +61,7 @@ class AudioDestinationHandler : public AudioHandler {
   std::atomic_size_t current_sample_frame_{0};
 
   // True if the execution context is being destroyed.  If this is true, the
-  // destination ndoe must avoid checking for or accessing the execution
+  // destination node must avoid checking for or accessing the execution
   // context.
   bool is_execution_context_destroyed_ = false;
 };

@@ -1,7 +1,8 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/memory/raw_ptr.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/browser_management/management_service_factory.h"
@@ -77,7 +78,7 @@ class ManagementServiceBrowserTest : public InProcessBrowserTest {
 
  protected:
   base::HistogramTester histogram_tester_;
-  TestPlatformManagementStatusProvider* platform_status_provider_;
+  raw_ptr<TestPlatformManagementStatusProvider> platform_status_provider_;
 };
 
 IN_PROC_BROWSER_TEST_F(ManagementServiceBrowserTest,

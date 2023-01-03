@@ -1,28 +1,22 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.safety_check;
 
-import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.lifecycle.DefaultLifecycleObserver;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.lifecycle.Observer;
 
 import org.chromium.base.supplier.ObservableSupplier;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
-import org.chromium.chrome.browser.password_check.PasswordCheckFactory;
-import org.chromium.chrome.browser.password_manager.PasswordCheckupClientHelper;
 import org.chromium.chrome.browser.ui.signin.SyncConsentActivityLauncher;
 import org.chromium.components.browser_ui.settings.SettingsLauncher;
 import org.chromium.ui.modaldialog.ModalDialogManager;
 import org.chromium.ui.modelutil.PropertyModel;
 import org.chromium.ui.modelutil.PropertyModelChangeProcessor;
 
-/**
- * Coordinator for the Safety check settings page.
- */
+/** Coordinator for the Safety check settings page. */
 public class SafetyCheckCoordinator implements DefaultLifecycleObserver {
     private SafetyCheckSettingsFragment mSettingsFragment;
     private SafetyCheckUpdatesDelegate mUpdatesClient;
@@ -33,6 +27,7 @@ public class SafetyCheckCoordinator implements DefaultLifecycleObserver {
      * Creates a new instance given a settings fragment, an updates client, and a settings launcher.
      * There is no need to hold on to a reference since the settings fragment's lifecycle is
      * observed and a reference is retained there.
+     *
      * @param settingsFragment An instance of {SafetyCheckSettingsFragment} to observe.
      * @param updatesClient An instance implementing the {@SafetyCheckUpdatesDelegate} interface.
      * @param settingsLauncher An instance implementing the {@SettingsLauncher} interface.
@@ -42,23 +37,14 @@ public class SafetyCheckCoordinator implements DefaultLifecycleObserver {
     public static void create(SafetyCheckSettingsFragment settingsFragment,
             SafetyCheckUpdatesDelegate updatesClient, SettingsLauncher settingsLauncher,
             SyncConsentActivityLauncher signinLauncher,
-            @Nullable PasswordCheckupClientHelper passwordCheckupHelper,
             ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier) {
         new SafetyCheckCoordinator(settingsFragment, updatesClient, settingsLauncher,
-                signinLauncher, passwordCheckupHelper, modalDialogManagerSupplier);
-        if (passwordCheckupHelper == null
-                && (ChromeFeatureList.isEnabled(ChromeFeatureList.PASSWORD_SCRIPTS_FETCHING)
-                        || ChromeFeatureList.isEnabled(
-                                ChromeFeatureList.PASSWORD_DOMAIN_CAPABILITIES_FETCHING))) {
-            // Triggers pre-fetching the list of password change scripts.
-            PasswordCheckFactory.getOrCreate(settingsLauncher).fetchScripts();
-        }
+                signinLauncher, modalDialogManagerSupplier);
     }
 
     private SafetyCheckCoordinator(SafetyCheckSettingsFragment settingsFragment,
             SafetyCheckUpdatesDelegate updatesClient, SettingsLauncher settingsLauncher,
             SyncConsentActivityLauncher signinLauncher,
-            PasswordCheckupClientHelper passwordCheckupHelper,
             ObservableSupplier<ModalDialogManager> modalDialogManagerSupplier) {
         mSettingsFragment = settingsFragment;
         mUpdatesClient = updatesClient;
@@ -83,8 +69,7 @@ public class SafetyCheckCoordinator implements DefaultLifecycleObserver {
                             // Mediator.
                             PropertyModel model = createModelAndMcp(mSettingsFragment);
                             mMediator = new SafetyCheckMediator(model, mUpdatesClient,
-                                    settingsLauncher, signinLauncher, passwordCheckupHelper,
-                                    modalDialogManagerSupplier);
+                                    settingsLauncher, signinLauncher, modalDialogManagerSupplier);
                         }
                     }
                 });

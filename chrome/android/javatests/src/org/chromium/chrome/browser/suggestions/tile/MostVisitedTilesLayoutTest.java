@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,6 @@ import static junit.framework.Assert.assertNotNull;
 import static junit.framework.Assert.assertTrue;
 
 import static org.hamcrest.CoreMatchers.is;
-import static org.hamcrest.MatcherAssert.assertThat;
-import static org.hamcrest.Matchers.greaterThan;
 
 import static org.chromium.chrome.test.util.browser.suggestions.mostvisited.FakeMostVisitedSites.createSiteSuggestion;
 
@@ -41,6 +39,7 @@ import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.params.ParameterAnnotations;
 import org.chromium.base.test.params.ParameterSet;
 import org.chromium.base.test.params.ParameterizedRunner;
+import org.chromium.base.test.util.Batch;
 import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Criteria;
@@ -90,6 +89,7 @@ import java.util.concurrent.TimeoutException;
 @RunWith(ParameterizedRunner.class)
 @ParameterAnnotations.UseRunnerDelegate(ChromeJUnit4RunnerDelegate.class)
 @CommandLineFlags.Add(ChromeSwitches.DISABLE_FIRST_RUN_EXPERIENCE)
+@Batch(Batch.PER_CLASS)
 public class MostVisitedTilesLayoutTest {
     @ParameterAnnotations.ClassParameter
     private static List<ParameterSet> sClassParams =
@@ -97,7 +97,6 @@ public class MostVisitedTilesLayoutTest {
                     new ParameterSet().value(false).name("DisableScrollableMVTOnNTP"));
 
     public final int TILE_GRID_ROWS = 2;
-    public final int TILE_GRID_COLUMNS = 4;
 
     @Rule
     public ChromeTabbedActivityTestRule mActivityTestRule = new ChromeTabbedActivityTestRule();
@@ -173,8 +172,7 @@ public class MostVisitedTilesLayoutTest {
     @MediumTest
     @Feature({"NewTabPage", "RenderTest"})
     @ParameterAnnotations.UseMethodParameter(NightModeTestUtils.NightModeParams.class)
-    // TODO(https://crbug.com/906151): Add new goldens and enable ExploreSites.
-    @DisableFeatures({ChromeFeatureList.EXPLORE_SITES, ChromeFeatureList.QUERY_TILES})
+    @DisableFeatures({ChromeFeatureList.QUERY_TILES})
     public void testTilesLayoutAppearance(boolean nightModeEnabled) throws Exception {
         NewTabPage ntp = setUpFakeDataToShowOnNtp(FAKE_MOST_VISITED_URLS.length);
         mRenderTestRule.render(getTilesLayout(ntp),
@@ -205,13 +203,6 @@ public class MostVisitedTilesLayoutTest {
         mRenderTestRule.render(tilesLayout,
                 mEnableScrollableMVT ? "modern_full_carousel_landscape"
                                      : "modern_full_grid_landscape");
-
-        // In landscape, modern tiles should use all available space.
-        int tileGridMaxWidthPx = tilesLayout.getResources().getDimensionPixelSize(
-                R.dimen.tile_grid_layout_max_width);
-        if (((FrameLayout) tilesLayout.getParent()).getMeasuredWidth() > tileGridMaxWidthPx) {
-            assertThat(tilesLayout.getMeasuredWidth(), greaterThan(tileGridMaxWidthPx));
-        }
 
         // Reset device orientation.
         ActivityTestUtils.clearActivityOrientation(activity);
@@ -249,8 +240,6 @@ public class MostVisitedTilesLayoutTest {
     @Test
     @MediumTest
     @Feature({"NewTabPage", "RenderTest"})
-    // TODO(https://crbug.com/906151): Add new goldens and enable ExploreSites.
-    @DisableFeatures(ChromeFeatureList.EXPLORE_SITES)
     @ParameterAnnotations.UseMethodParameter(NightModeTestUtils.NightModeParams.class)
     public void testTileAppearanceModern(boolean nightModeEnabled)
             throws IOException, InterruptedException, TimeoutException {
@@ -376,7 +365,7 @@ public class MostVisitedTilesLayoutTest {
 
         MostVisitedTilesCoordinator coordinator = new MostVisitedTilesCoordinator(activity,
                 mActivityLifecycleDispatcher, containerLayout, mWindowAndroid, false,
-                mEnableScrollableMVT, TILE_GRID_ROWS, TILE_GRID_COLUMNS, null, null);
+                mEnableScrollableMVT, TILE_GRID_ROWS, null, null);
         coordinator.initWithNative(uiDelegate, delegate, mTouchEnabledDelegate);
     }
 }

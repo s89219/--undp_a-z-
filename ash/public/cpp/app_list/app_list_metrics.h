@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -26,6 +26,43 @@ ASH_PUBLIC_EXPORT extern const char
 // The UMA histogram that records the time duration between the app list sort
 // education nudge show and the first sort usage.
 ASH_PUBLIC_EXPORT extern const char kAppListSortDiscoveryDurationAfterNudge[];
+
+// Similar to `kAppListSortDiscoveryDurationAfterNudge`. The only difference is
+// that the metric data is separated by the tablet mode state under which the
+// reorder education nudge shows.
+ASH_PUBLIC_EXPORT extern const char
+    kAppListSortDiscoveryDurationAfterNudgeClamshell[];
+ASH_PUBLIC_EXPORT extern const char
+    kAppListSortDiscoveryDurationAfterNudgeTablet[];
+
+// The UMA histogram that records the time duration between the earliest user
+// session activation with the app list sort enabled and the first sort usage.
+ASH_PUBLIC_EXPORT extern const char
+    kAppListSortDiscoveryDurationAfterActivation[];
+
+// The different ways the app list can be shown. These values are written to
+// logs.  New enum values can be added, but existing enums must never be
+// renumbered or deleted and reused.
+enum class AppListShowSource {
+  kSearchKey = 0,
+  kShelfButton = 1,
+  kSwipeFromShelf = 2,
+  kTabletMode = 3,
+  kSearchKeyFullscreen_DEPRECATED = 4,    // Migrated to kSearchKey.
+  kShelfButtonFullscreen_DEPRECATED = 5,  // Obsolete on bubble launcher.
+  kAssistantEntryPoint = 6,
+  kScrollFromShelf = 7,
+  kBrowser = 8,
+  kMaxValue = kBrowser,
+};
+
+// Tracks the result of each search session starting from the search box.
+enum class SearchSessionResult {
+  kLaunch = 0,
+  kAnswerCardImpression = 1,
+  kQuit = 2,
+  kMaxValue = kQuit,
+};
 
 // The type of the ChromeSearchResult. This is used for logging so do not
 // change the order of this enum. If you add to this enum update
@@ -139,6 +176,8 @@ enum SearchResultType {
   GAME_SEARCH,
   // A search result for OS personalization options.
   PERSONALIZATION,
+  // A Bruschetta App Result.
+  BRUSCHETTA_APP,
   // Boundary is always last.
   SEARCH_RESULT_TYPE_BOUNDARY
 };

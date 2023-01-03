@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -141,7 +141,8 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
 
   // Now dynamically try to load `included_script.js` in the primary frame.
   // Ensure it is not filtered.
-  EXPECT_TRUE(IsDynamicScriptElementLoaded(web_contents()->GetMainFrame()));
+  EXPECT_TRUE(
+      IsDynamicScriptElementLoaded(web_contents()->GetPrimaryMainFrame()));
 }
 
 // Test that we don't start filtering an unactivated prerendering page when the
@@ -237,7 +238,8 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
 
     // But ensure we haven't shown the notification UI yet since the page is
     // still prerendering.
-    EXPECT_FALSE(AdsBlockedInContentSettings(web_contents()->GetMainFrame()));
+    EXPECT_FALSE(
+        AdsBlockedInContentSettings(web_contents()->GetPrimaryMainFrame()));
     EXPECT_FALSE(AdsBlockedInContentSettings(prerender_rfh));
   }
 
@@ -248,7 +250,7 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
     EXPECT_CALL(observer, OnPageActivationComputed(_, _)).Times(0);
     prerender_helper_.NavigatePrimaryPage(kPrerenderingUrl);
 
-    ASSERT_EQ(web_contents()->GetMainFrame(), prerender_rfh);
+    ASSERT_TRUE(prerender_rfh->IsInPrimaryMainFrame());
     EXPECT_TRUE(AdsBlockedInContentSettings(prerender_rfh));
   }
 }
@@ -270,7 +272,7 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
   console_activation_observer.SetPattern(kActivationConsoleMessage);
   WebContentsConsoleObserver console_blocked_observer(web_contents());
   console_blocked_observer.SetPattern(
-      base::StringPrintf(kDisallowSubframeConsoleMessageFormat, "*"));
+      base::StringPrintf(kDisallowChildFrameConsoleMessageFormat, "*"));
 
   // Configure filtering of `included_script.js` only on the prerendering URL.
   {
@@ -364,7 +366,8 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
   // filtered.
   {
     prerender_helper_.NavigatePrimaryPage(kPrerenderingUrl);
-    EXPECT_FALSE(IsDynamicScriptElementLoaded(web_contents()->GetMainFrame()));
+    EXPECT_FALSE(
+        IsDynamicScriptElementLoaded(web_contents()->GetPrimaryMainFrame()));
   }
 }
 
@@ -413,7 +416,8 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
   {
     prerender_helper_.NavigatePrimaryPage(kPrerenderingUrl);
     ASSERT_EQ(kPrerenderingUrl, web_contents()->GetLastCommittedURL());
-    EXPECT_TRUE(IsDynamicScriptElementLoaded(web_contents()->GetMainFrame()));
+    EXPECT_TRUE(
+        IsDynamicScriptElementLoaded(web_contents()->GetPrimaryMainFrame()));
   }
 }
 
@@ -449,7 +453,7 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
   {
     ad_rfh = CreateSrcFrameFromAdScript(prerender_rfh, kAdUrl);
     ASSERT_NE(ad_rfh, nullptr);
-    EXPECT_TRUE(observer.GetIsAdSubframe(ad_rfh->GetFrameTreeNodeId()));
+    EXPECT_TRUE(observer.GetIsAdFrame(ad_rfh->GetFrameTreeNodeId()));
     EXPECT_TRUE(EvidenceForFrameComprises(
         ad_rfh, /*parent_is_ad=*/false,
         blink::mojom::FilterListResult::kMatchedNoRules,
@@ -462,7 +466,7 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
   {
     prerender_helper_.NavigatePrimaryPage(kPrerenderingUrl);
     ASSERT_EQ(kPrerenderingUrl, web_contents()->GetLastCommittedURL());
-    EXPECT_TRUE(observer.GetIsAdSubframe(ad_rfh->GetFrameTreeNodeId()));
+    EXPECT_TRUE(observer.GetIsAdFrame(ad_rfh->GetFrameTreeNodeId()));
     EXPECT_TRUE(EvidenceForFrameComprises(
         ad_rfh, /*parent_is_ad=*/false,
         blink::mojom::FilterListResult::kMatchedNoRules,
@@ -488,7 +492,7 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
     console_observer.SetPattern(kActivationWarningConsoleMessage);
     // Initial page loading adds a console message.
     ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), url));
-    console_observer.Wait();
+    ASSERT_TRUE(console_observer.Wait());
     ASSERT_EQ(1u, console_observer.messages().size());
     EXPECT_EQ(kActivationWarningConsoleMessage,
               console_observer.GetMessageAt(0u));
@@ -501,7 +505,7 @@ IN_PROC_BROWSER_TEST_F(SubresourceFilterPrerenderingBrowserTest,
     console_observer.SetPattern(kActivationWarningConsoleMessage);
     // Trigger a prerender.
     const int host_id = prerender_helper_.AddPrerender(prerender_url);
-    console_observer.Wait();
+    ASSERT_TRUE(console_observer.Wait());
     RenderFrameHost* prerender_rfh =
         prerender_helper_.GetPrerenderedMainFrameHost(host_id);
     // The prerendering adds a console message.

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -57,8 +57,8 @@ class TabIterator {
 
   const sessions::TabRestoreService::Entries& entries_;
   sessions::TabRestoreService::Entries::const_iterator current_entry_;
-  const std::vector<std::unique_ptr<sessions::TabRestoreService::Tab>>* tabs_ =
-      nullptr;
+  raw_ptr<const std::vector<std::unique_ptr<sessions::TabRestoreService::Tab>>>
+      tabs_ = nullptr;
   absl::optional<std::vector<std::unique_ptr<
       sessions::TabRestoreService::Tab>>::const_reverse_iterator>
       current_tab_ = absl::nullopt;
@@ -75,10 +75,6 @@ class RecentlyClosedTabsBridge : public sessions::TabRestoreServiceObserver {
 
   void Destroy(JNIEnv* env);
 
-  jboolean GetRecentlyClosedTabs(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& jtabs,
-      jint max_tab_count);
   jboolean GetRecentlyClosedEntries(
       JNIEnv* env,
       const base::android::JavaParamRef<jobject>& jentries,

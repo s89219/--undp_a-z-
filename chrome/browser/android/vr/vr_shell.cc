@@ -1,10 +1,8 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/android/vr/vr_shell.h"
-
-#include <android/native_window_jni.h>
 
 #include <algorithm>
 #include <string>
@@ -15,13 +13,13 @@
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
-#include "chrome/android/features/vr/jni_headers/VrShell_jni.h"
+#include "chrome/android/features/vr/split_jni_headers/VrShell_jni.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/android/vr/android_ui_gesture_target.h"
 #include "chrome/browser/android/vr/autocomplete_controller.h"
@@ -75,6 +73,7 @@
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gl/android/scoped_java_surface.h"
 #include "ui/gl/android/surface_texture.h"
 #include "url/gurl.h"
 
@@ -142,7 +141,8 @@ VrShell::VrShell(JNIEnv* env,
                  bool pause_content,
                  bool low_density)
     : delegate_provider_(delegate),
-      main_thread_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      main_thread_task_runner_(
+          base::SingleThreadTaskRunner::GetCurrentDefault()),
       reprojected_rendering_(reprojected_rendering),
       display_size_meters_(display_width_meters, display_height_meters),
       display_size_pixels_(display_width_pixels, display_height_pixels),
@@ -429,9 +429,8 @@ void VrShell::SetSurface(JNIEnv* env,
                          const JavaParamRef<jobject>& surface) {
   DCHECK(!reprojected_rendering_);
   DCHECK(!surface.is_null());
-  gfx::AcceleratedWidget window =
-      ANativeWindow_fromSurface(base::android::AttachCurrentThread(), surface);
-  surface_window_ = window;
+  surface_window_ = gl::ScopedANativeWindow(
+      gl::ScopedJavaSurface(surface, /*auto_release=*/false));
   gl_surface_created_event_.Signal();
 }
 
@@ -585,12 +584,11 @@ void VrShell::CancelToast(JNIEnv* env,
 }
 
 void VrShell::ConnectPresentingService(
-    device::mojom::VRDisplayInfoPtr display_info,
     device::mojom::XRRuntimeSessionOptionsPtr options) {
-  PostToGlThread(FROM_HERE,
-                 base::BindOnce(&BrowserRenderer::ConnectPresentingService,
-                                gl_thread_->GetBrowserRenderer(),
-                                std::move(display_info), std::move(options)));
+  PostToGlThread(
+      FROM_HERE,
+      base::BindOnce(&BrowserRenderer::ConnectPresentingService,
+                     gl_thread_->GetBrowserRenderer(), std::move(options)));
 }
 
 void VrShell::SetHistoryButtonsEnabled(JNIEnv* env,
@@ -1177,7 +1175,7 @@ std::unique_ptr<PageInfo> VrShell::CreatePageInfo() {
 }
 
 gfx::AcceleratedWidget VrShell::GetRenderSurface() {
-  return surface_window_;
+  return surface_window_.a_native_window();
 }
 
 // ----------------------------------------------------------------------------

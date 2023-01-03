@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,6 @@
 #include "ash/app_list/model/app_icon_load_helper.h"
 #include "ash/app_list/model/app_list_item_observer.h"
 #include "ash/ash_export.h"
-#include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -41,6 +40,7 @@ class AppListConfig;
 class AppListItem;
 class AppListMenuModelAdapter;
 class AppListViewDelegate;
+class DotIndicator;
 
 namespace test {
 class AppsGridViewTest;
@@ -227,6 +227,7 @@ class ASH_EXPORT AppListItemView : public views::Button,
 
   bool IsNotificationIndicatorShownForTest() const;
   GridDelegate* grid_delegate_for_test() { return grid_delegate_; }
+  const gfx::ImageSkia& icon_image_for_test() const { return icon_image_; }
 
   AppListMenuModelAdapter* item_menu_model_adapter() const {
     return item_menu_model_adapter_.get();
@@ -248,6 +249,8 @@ class ASH_EXPORT AppListItemView : public views::Button,
   // rows.
   void SetMostRecentGridIndex(GridIndex new_grid_index, int columns);
 
+  GridIndex most_recent_grid_index() { return most_recent_grid_index_; }
+
   bool has_pending_row_change() { return has_pending_row_change_; }
   void reset_has_pending_row_change() { has_pending_row_change_ = false; }
 
@@ -257,7 +260,6 @@ class ASH_EXPORT AppListItemView : public views::Button,
   friend class test::AppsGridViewTest;
 
   class IconImageView;
-  class AppNotificationIndicatorView;
 
   enum UIState {
     UI_STATE_NORMAL,              // Normal UI (icon + label)
@@ -374,9 +376,6 @@ class ASH_EXPORT AppListItemView : public views::Button,
   // Creates dragged view hover animation if it does not exist.
   void CreateDraggedViewHoverAnimation();
 
-  // Modifies AppListItemView bounds to match the selected highlight bounds.
-  void AdaptBoundsForSelectionHighlight(gfx::Rect* rect);
-
   // Calculates the transform between the icon scaled by |icon_scale| and the
   // normal size icon.
   gfx::Transform GetScaleTransform(float icon_scale);
@@ -404,8 +403,7 @@ class ASH_EXPORT AppListItemView : public views::Button,
   IconImageView* icon_ = nullptr;  // Strongly typed child view.
   views::Label* title_ = nullptr;  // Strongly typed child view.
 
-  // Draws a dot next to the title for newly installed apps. Only exists when
-  // ProductivityLauncher is enabled.
+  // Draws a dot next to the title for newly installed apps.
   views::View* new_install_dot_ = nullptr;
 
   // The context menu model adapter used for app item view.
@@ -460,7 +458,7 @@ class ASH_EXPORT AppListItemView : public views::Button,
 
   // Draws an indicator in the top right corner of the image to represent an
   // active notification.
-  AppNotificationIndicatorView* notification_indicator_ = nullptr;
+  DotIndicator* notification_indicator_ = nullptr;
 
   // Indicates the context in which this view is shown.
   const Context context_;
@@ -477,6 +475,10 @@ class ASH_EXPORT AppListItemView : public views::Button,
   // Whether the last grid index update was a change in position between rows.
   // Used to determine whether the animation between rows should be used.
   bool has_pending_row_change_ = false;
+
+  // Whether the context menu removed focus on a view when opening. Used to
+  // determine if the focus should be restored on context menu close.
+  bool focus_removed_by_context_menu_ = false;
 
   base::WeakPtrFactory<AppListItemView> weak_ptr_factory_{this};
 };

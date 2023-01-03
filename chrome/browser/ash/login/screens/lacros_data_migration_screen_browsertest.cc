@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,7 +18,8 @@
 #include "chrome/browser/ash/login/ui/login_display_host_mojo.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/ui/webui/chromeos/login/lacros_data_migration_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/gaia_screen_handler.h"
+#include "chrome/browser/ui/webui/ash/login/lacros_data_migration_screen_handler.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/mixin_based_in_process_browser_test.h"
 #include "chromeos/dbus/power/fake_power_manager_client.h"
@@ -43,7 +44,8 @@ const test::UIPath kGotoFilesButton = {kLacrosDataMigrationId,
 class FakeMigrator : public BrowserDataMigrator {
  public:
   // BrowserDataMigrator overrides.
-  void Migrate(MigrateCallback callback) override {
+  void Migrate(crosapi::browser_util::MigrationMode mode,
+               MigrateCallback callback) override {
     callback_ = std::move(callback);
   }
   void Cancel() override { cancel_called_ = true; }
@@ -96,12 +98,20 @@ class LacrosDataMigrationScreenTest : public OobeBaseTest {
     OobeBaseTest::SetUpOnMainThread();
   }
 
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    OobeBaseTest::SetUpCommandLine(command_line);
+
+    command_line->AppendSwitchASCII(switches::kBrowserDataMigrationMode,
+                                    "copy");
+  }
+
   bool is_attempt_restart_called() const { return is_attempt_restart_called_; }
 
  protected:
   FakeMigrator* fake_migrator() { return fake_migrator_; }
-  FakePowerManagerClient* power_manager_client() {
-    return static_cast<FakePowerManagerClient*>(PowerManagerClient::Get());
+  chromeos::FakePowerManagerClient* power_manager_client() {
+    return static_cast<chromeos::FakePowerManagerClient*>(
+        chromeos::PowerManagerClient::Get());
   }
   void OnAttemptRestartCalled() { is_attempt_restart_called_ = true; }
 

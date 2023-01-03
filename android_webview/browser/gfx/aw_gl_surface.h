@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,8 +17,8 @@ namespace android_webview {
 // GLSurface.
 class AwGLSurface : public gl::GLSurfaceEGL {
  public:
-  explicit AwGLSurface(bool is_angle);
-  explicit AwGLSurface(scoped_refptr<gl::GLSurface> surface);
+  AwGLSurface(gl::GLDisplayEGL* display, bool is_angle);
+  AwGLSurface(gl::GLDisplayEGL* display, scoped_refptr<gl::GLSurface> surface);
 
   AwGLSurface(const AwGLSurface&) = delete;
   AwGLSurface& operator=(const AwGLSurface&) = delete;
@@ -28,7 +28,8 @@ class AwGLSurface : public gl::GLSurfaceEGL {
   void Destroy() override;
   bool IsOffscreen() override;
   unsigned int GetBackingFramebufferObject() override;
-  gfx::SwapResult SwapBuffers(PresentationCallback callback) override;
+  gfx::SwapResult SwapBuffers(PresentationCallback callback,
+                              gfx::FrameData data) override;
   bool OnMakeCurrent(gl::GLContext* context) override;
   gfx::Size GetSize() override;
   void* GetHandle() override;

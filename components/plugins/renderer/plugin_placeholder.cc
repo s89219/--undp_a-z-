@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -132,7 +132,7 @@ void PluginPlaceholderBase::NotifyPlaceholderReadyForTestingCallback() {
       blink::WebSerializedScriptValue::Serialize(
           blink::MainThreadIsolate(),
           content::V8ValueConverter::Create()->ToV8Value(
-              &value,
+              value,
               element.GetDocument().GetFrame()->MainWorldScriptContext()));
   blink::WebDOMMessageEvent msg_event(message_data);
 

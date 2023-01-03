@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "chrome/browser/ash/arc/fileapi/arc_content_file_system_url_util.h"
 #include "chrome/browser/ash/arc/fileapi/arc_file_system_operation_runner.h"
-#include "chrome/browser/chromeos/fileapi/external_file_url_util.h"
+#include "chrome/browser/ash/fileapi/external_file_url_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 #include "content/public/test/browser_task_environment.h"
@@ -88,7 +88,7 @@ class ArcContentFileSystemAsyncFileUtilTest : public testing::Test {
   storage::FileSystemURL ExternalFileURLToFileSystemURL(const GURL& url) {
     base::FilePath mount_point_virtual_path =
         base::FilePath::FromASCII(kContentFileSystemMountPointName);
-    base::FilePath virtual_path = chromeos::ExternalFileURLToVirtualPath(url);
+    base::FilePath virtual_path = ash::ExternalFileURLToVirtualPath(url);
     base::FilePath path(kContentFileSystemMountPointPath);
     EXPECT_TRUE(
         mount_point_virtual_path.AppendRelativePath(virtual_path, &path));
@@ -135,7 +135,7 @@ TEST_F(ArcContentFileSystemAsyncFileUtilTest, Truncate) {
       ash::switches::kEnableArcVm);
 
   GURL externalfile_url = ArcUrlToExternalFileUrl(GURL(kArcUrl));
-  const int64_t kLength = strlen(kData) / 2;
+  const uint64_t kLength = strlen(kData) / 2;
 
   base::RunLoop run_loop;
   async_file_util_->Truncate(

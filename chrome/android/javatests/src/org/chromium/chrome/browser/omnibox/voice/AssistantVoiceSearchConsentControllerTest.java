@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -111,29 +111,11 @@ public class AssistantVoiceSearchConsentControllerTest {
 
     @Test
     @MediumTest
-    @DisableFeatures(ChromeFeatureList.ASSISTANT_CONSENT_MODAL)
     public void testNoBottomSheetControllerAvailable() {
         ChromeTabbedActivity cta = mActivityTestRule.getActivity();
         TestThreadUtils.runOnUiThreadBlocking(() -> {
-            AssistantVoiceSearchConsentController.show(cta.getWindowAndroid(),
-                    mSharedPreferencesManager,
-                    () -> {}, null, cta.getWindowAndroid().getModalDialogManager(), mCallback);
-        });
-        Mockito.verify(mCallback, Mockito.timeout(1000)).onResult(false);
-    }
-
-    @Test
-    @MediumTest
-    @EnableFeatures(ChromeFeatureList.ASSISTANT_CONSENT_MODAL)
-    public void testNoModalDialogManagerAvailable() {
-        ChromeTabbedActivity cta = mActivityTestRule.getActivity();
-        TestThreadUtils.runOnUiThreadBlocking(() -> {
-            AssistantVoiceSearchConsentController.show(cta.getWindowAndroid(),
-                    mSharedPreferencesManager,
-                    ()
-                            -> {},
-                    cta.getRootUiCoordinatorForTesting().getBottomSheetController(), null,
-                    mCallback);
+            AssistantVoiceSearchConsentController.show(
+                    cta.getWindowAndroid(), mSharedPreferencesManager, () -> {}, null, mCallback);
         });
         Mockito.verify(mCallback, Mockito.timeout(1000)).onResult(false);
     }

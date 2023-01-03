@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,18 +27,23 @@ constexpr int kAlertIconSizeDp = 20;
 LoginErrorBubble::LoginErrorBubble()
     : LoginErrorBubble(nullptr /*anchor_view*/) {}
 
-LoginErrorBubble::LoginErrorBubble(views::View* anchor_view)
-    : LoginBaseBubbleView(anchor_view) {
+LoginErrorBubble::LoginErrorBubble(base::WeakPtr<views::View> anchor_view)
+    : LoginBaseBubbleView(std::move(anchor_view)) {
   alert_icon_ = AddChildView(std::make_unique<views::ImageView>());
   alert_icon_->SetPreferredSize(gfx::Size(kAlertIconSizeDp, kAlertIconSizeDp));
 }
 
 LoginErrorBubble::~LoginErrorBubble() = default;
 
-void LoginErrorBubble::SetContent(views::View* content) {
-  if (content_)
-    delete content_;
-  content_ = AddChildView(content);
+void LoginErrorBubble::SetContent(std::unique_ptr<views::View> content) {
+  if (content_) {
+    RemoveChildViewT(content_);
+  }
+  content_ = AddChildView(std::move(content));
+}
+
+views::View* LoginErrorBubble::GetContent() {
+  return content_;
 }
 
 void LoginErrorBubble::SetTextContent(const std::u16string& message) {
@@ -64,8 +69,9 @@ void LoginErrorBubble::OnThemeChanged() {
   // It is assumed that we will not have an external call to SetTextContent
   // followed by a call to SetContent (in such a case, the content would be
   // erased on theme changed and replaced with the prior message).
-  if (!message_.empty())
+  if (!message_.empty()) {
     SetTextContent(message_);
+  }
 }
 
 }  // namespace ash

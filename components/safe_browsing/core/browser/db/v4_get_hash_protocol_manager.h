@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,7 +44,7 @@ class V4GetHashProtocolManagerFuzzer;
 
 // The matching hash prefixes and corresponding stores, for each full hash
 // generated for a given URL.
-typedef std::unordered_map<FullHash, StoreAndHashPrefixes>
+typedef std::unordered_map<FullHashStr, StoreAndHashPrefixes>
     FullHashToStoreAndHashPrefixesMap;
 
 // ----------------------------------------------------------------
@@ -53,7 +53,7 @@ typedef std::unordered_map<FullHash, StoreAndHashPrefixes>
 // which it is valid, and metadata associated with that store.
 struct FullHashInfo {
  public:
-  FullHash full_hash;
+  FullHashStr full_hash;
 
   // The list for which this full hash is applicable.
   ListIdentifier list_id;
@@ -64,7 +64,7 @@ struct FullHashInfo {
   // Any metadata for this full hash for a particular store.
   ThreatMetadata metadata;
 
-  FullHashInfo(const FullHash& full_hash,
+  FullHashInfo(const FullHashStr& full_hash,
                const ListIdentifier& list_id,
                const base::Time& positive_expiry);
   FullHashInfo(const FullHashInfo& other);
@@ -95,7 +95,7 @@ struct CachedHashPrefixInfo {
 
 // Cached full hashes received from the server for the corresponding hash
 // prefixes.
-typedef std::unordered_map<HashPrefix, CachedHashPrefixInfo> FullHashCache;
+typedef std::unordered_map<HashPrefixStr, CachedHashPrefixInfo> FullHashCache;
 
 // FullHashCallback is invoked when GetFullHashes completes. The parameter is
 // the vector of full hash results. If empty, indicates that there were no
@@ -108,7 +108,7 @@ using FullHashCallback =
 struct FullHashCallbackInfo {
   FullHashCallbackInfo();
   FullHashCallbackInfo(const std::vector<FullHashInfo>& cached_full_hash_infos,
-                       const std::vector<HashPrefix>& prefixes_requested,
+                       const std::vector<HashPrefixStr>& prefixes_requested,
                        std::unique_ptr<network::SimpleURLLoader> loader,
                        const FullHashToStoreAndHashPrefixesMap&
                            full_hash_to_store_and_hash_prefixes,
@@ -137,7 +137,7 @@ struct FullHashCallbackInfo {
   base::Time network_start_time;
 
   // The prefixes that were requested from the server.
-  std::vector<HashPrefix> prefixes_requested;
+  std::vector<HashPrefixStr> prefixes_requested;
 };
 
 // ----------------------------------------------------------------
@@ -167,9 +167,6 @@ class V4GetHashProtocolManager {
   // a V4GetHashProtocolManager. Useful for tests.
   static void RegisterFactory(
       std::unique_ptr<V4GetHashProtocolManagerFactory> factory);
-
-  // Empties the cache.
-  void ClearCache();
 
   // Retrieve the full hash for a set of prefixes, and invoke the callback
   // argument when the results are retrieved. The callback may be invoked
@@ -229,6 +226,8 @@ class V4GetHashProtocolManager {
                            TestGetHashErrorHandlingParallelRequests);
   FRIEND_TEST_ALL_PREFIXES(V4GetHashProtocolManagerTest, GetCachedResults);
   FRIEND_TEST_ALL_PREFIXES(V4GetHashProtocolManagerTest, TestUpdatesAreMerged);
+  FRIEND_TEST_ALL_PREFIXES(V4GetHashProtocolManagerTest,
+                           TestBackoffErrorHistogramCount);
   friend class V4GetHashProtocolManagerTest;
   friend class V4GetHashProtocolManagerFuzzer;
   friend class V4GetHashProtocolManagerFactoryImpl;
@@ -250,7 +249,7 @@ class V4GetHashProtocolManager {
       const FullHashToStoreAndHashPrefixesMap&
           full_hash_to_store_and_hash_prefixes,
       const base::Time& now,
-      std::vector<HashPrefix>* prefixes_to_request,
+      std::vector<HashPrefixStr>* prefixes_to_request,
       std::vector<FullHashInfo>* cached_full_hash_infos);
 
   // Fills a FindFullHashesRequest protocol buffer for a request.
@@ -258,7 +257,7 @@ class V4GetHashProtocolManager {
   // |prefixes_to_request| is the list of hash prefixes to get full hashes for.
   // |list_client_states| is the client_state of each of the lists being synced.
   std::string GetHashRequest(
-      const std::vector<HashPrefix>& prefixes_to_request,
+      const std::vector<HashPrefixStr>& prefixes_to_request,
       const std::vector<std::string>& list_client_states);
 
   void GetHashUrlAndHeaders(const std::string& request_base64,
@@ -282,7 +281,7 @@ class V4GetHashProtocolManager {
   // permission API metadata for full hashes in those |full_hash_infos| that
   // have a full hash in |full_hashes|.
   void OnFullHashForApi(ThreatMetadataForApiCallback api_callback,
-                        const std::vector<FullHash>& full_hashes,
+                        const std::vector<FullHashStr>& full_hashes,
                         const std::vector<FullHashInfo>& full_hash_infos);
 
   // Parses a FindFullHashesResponse protocol buffer and fills the results in
@@ -307,7 +306,7 @@ class V4GetHashProtocolManager {
 
   // Updates the state of the full hash cache upon receiving a valid response
   // from the server.
-  void UpdateCache(const std::vector<HashPrefix>& prefixes_requested,
+  void UpdateCache(const std::vector<HashPrefixStr>& prefixes_requested,
                    const std::vector<FullHashInfo>& full_hash_infos,
                    const base::Time& negative_cache_expire);
 
@@ -328,6 +327,9 @@ class V4GetHashProtocolManager {
   // The number of HTTP response errors since the the last successful HTTP
   // response, used for request backoff timing.
   size_t gethash_error_count_;
+
+  // The number of backoff errors since the last successful HTTP response.
+  size_t backoff_error_count_ = 0;
 
   // Multiplier for the backoff error after the second.
   size_t gethash_back_off_mult_;

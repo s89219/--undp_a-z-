@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -38,7 +38,7 @@ class TestTranslateDriverBindingContentBrowserClient
     // Override binding for translate::mojom::ContentTranslateDriver.
     map->Add<translate::mojom::ContentTranslateDriver>(base::BindRepeating(
         &TestTranslateDriverBindingContentBrowserClient::BindTest,
-        base::Unretained(this)));
+        weak_factory_.GetWeakPtr()));
   }
 
   void BindTest(content::RenderFrameHost* render_frame_host,
@@ -76,6 +76,8 @@ class TestTranslateDriverBindingContentBrowserClient
  private:
   base::OnceClosure quit_on_binding_;
   std::map<content::RenderFrameHost*, bool> render_frame_binding_map_;
+  base::WeakPtrFactory<TestTranslateDriverBindingContentBrowserClient>
+      weak_factory_{this};
 };
 
 }  // namespace
@@ -174,14 +176,8 @@ class TranslateFrameBinderFencedFrameBrowserTest
   content::test::FencedFrameTestHelper fenced_frame_helper_;
 };
 
-// TODO(crbug.com/1312008): Re-enable this test
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-#define MAYBE_NotBindingInFencedFrame DISABLED_NotBindingInFencedFrame
-#else
-#define MAYBE_NotBindingInFencedFrame NotBindingInFencedFrame
-#endif
 IN_PROC_BROWSER_TEST_F(TranslateFrameBinderFencedFrameBrowserTest,
-                       MAYBE_NotBindingInFencedFrame) {
+                       NotBindingInFencedFrame) {
   TestTranslateDriverBindingContentBrowserClient test_browser_client;
   auto* old_browser_client = SetBrowserClientForTesting(&test_browser_client);
 
@@ -194,7 +190,7 @@ IN_PROC_BROWSER_TEST_F(TranslateFrameBinderFencedFrameBrowserTest,
       embedded_test_server()->GetURL("/fenced_frames/title1.html");
   content::RenderFrameHost* fenced_frame_host =
       fenced_frame_test_helper().CreateFencedFrame(
-          web_contents()->GetMainFrame(), fenced_frame_url);
+          web_contents()->GetPrimaryMainFrame(), fenced_frame_url);
   base::RunLoop run_loop;
   if (test_browser_client.WaitForBinding(fenced_frame_host,
                                          run_loop.QuitClosure())) {

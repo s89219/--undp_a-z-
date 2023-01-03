@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,8 +19,7 @@
 
 using base::ASCIIToUTF16;
 
-namespace views {
-namespace examples {
+namespace views::examples {
 
 namespace {
 
@@ -148,5 +147,4 @@ void BubbleExample::ShowBubble(Button** button,
       "[Alt] for set_arrow(FLOAT), or [Shift] to reverse the arrow iteration.");
 }
 
-}  // namespace examples
-}  // namespace views
+}  // namespace views::examples

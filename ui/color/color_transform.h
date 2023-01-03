@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,11 +27,11 @@ using Callback =
 class COMPONENT_EXPORT(COLOR) ColorTransform {
  public:
   // Allows simple conversion from a Callback to a ColorTransform.
-  ColorTransform(Callback callback);
+  ColorTransform(Callback callback);  // NOLINT
   // Creates a transform that returns the supplied |color|.
-  ColorTransform(SkColor color);
+  ColorTransform(SkColor color);  // NOLINT
   // Creates a transform that returns the result color for the supplied |id|.
-  ColorTransform(ColorId id);
+  ColorTransform(ColorId id);  // NOLINT
   ColorTransform(const ColorTransform&);
   ColorTransform& operator=(const ColorTransform&);
   ~ColorTransform();
@@ -94,6 +94,11 @@ COMPONENT_EXPORT(COLOR) ColorTransform FromTransformInput();
 // |transform|.
 COMPONENT_EXPORT(COLOR)
 ColorTransform GetColorWithMaxContrast(ColorTransform transform);
+
+// A transform which returns the end point color with min contrast against the
+// result of |transform|.
+COMPONENT_EXPORT(COLOR)
+ColorTransform GetEndpointColorWithMinContrast(ColorTransform transform);
 
 // A transform which returns the resulting paint color of the result of
 // |foreground_transform| over the result of |background_transform|.

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,6 +44,12 @@ namespace base {
 class SequencedTaskRunner;
 }
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+namespace extensions {
+class VolumeListProviderLacros;
+}  // namespace extensions
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
 namespace policy {
 class AsyncPolicyProvider;
 class ConfigurationPolicyProvider;
@@ -86,18 +92,21 @@ class ProfileImpl : public Profile {
       override;
   content::BackgroundFetchDelegate* GetBackgroundFetchDelegate() override;
   content::BackgroundSyncController* GetBackgroundSyncController() override;
+  content::ReduceAcceptLanguageControllerDelegate*
+  GetReduceAcceptLanguageControllerDelegate() override;
   std::string GetMediaDeviceIDSalt() override;
-  download::InProgressDownloadManager* RetriveInProgressDownloadManager()
-      override;
+  std::unique_ptr<download::InProgressDownloadManager>
+  RetrieveInProgressDownloadManager() override;
   content::FileSystemAccessPermissionContext*
   GetFileSystemAccessPermissionContext() override;
   content::ContentIndexProvider* GetContentIndexProvider() override;
   content::FederatedIdentityApiPermissionContextDelegate*
   GetFederatedIdentityApiPermissionContext() override;
-  content::FederatedIdentityActiveSessionPermissionContextDelegate*
-  GetFederatedIdentityActiveSessionPermissionContext() override;
-  content::FederatedIdentitySharingPermissionContextDelegate*
-  GetFederatedIdentitySharingPermissionContext() override;
+  content::FederatedIdentityPermissionContextDelegate*
+  GetFederatedIdentityPermissionContext() override;
+  content::KAnonymityServiceDelegate* GetKAnonymityServiceDelegate() override;
+  content::OriginTrialsControllerDelegate* GetOriginTrialsControllerDelegate()
+      override;
 
   // Profile implementation:
   scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() override;
@@ -259,6 +268,8 @@ class ProfileImpl : public Profile {
 #endif
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   std::unique_ptr<policy::AsyncPolicyProvider> user_policy_provider_;
+  // Provider (monitor and dispatcher) of volume list updates.
+  std::unique_ptr<extensions::VolumeListProviderLacros> volume_list_provider_;
 #endif
 
   std::unique_ptr<policy::ProfilePolicyConnector> profile_policy_connector_;

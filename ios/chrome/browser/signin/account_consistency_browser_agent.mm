@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,18 +21,6 @@
 #endif
 
 BROWSER_USER_DATA_KEY_IMPL(AccountConsistencyBrowserAgent)
-
-void AccountConsistencyBrowserAgent::CreateForBrowser(
-    Browser* browser,
-    UIViewController* base_view_controller,
-    id<ApplicationCommands> handler) {
-  DCHECK(browser);
-  if (!FromBrowser(browser)) {
-    browser->SetUserData(UserDataKey(),
-                         base::WrapUnique(new AccountConsistencyBrowserAgent(
-                             browser, base_view_controller, handler)));
-  }
-}
 
 AccountConsistencyBrowserAgent::AccountConsistencyBrowserAgent(
     Browser* browser,
@@ -94,14 +82,14 @@ void AccountConsistencyBrowserAgent::OnShowConsistencyPromo(
   web::WebState* current_web_state =
       browser_->GetWebStateList()->GetActiveWebState();
   if (current_web_state == web_state) {
-    [handler_ showConsistencyPromoFromViewController:base_view_controller_
-                                                 URL:url];
+    [handler_ showWebSigninPromoFromViewController:base_view_controller_
+                                               URL:url];
   }
 }
 
 void AccountConsistencyBrowserAgent::OnAddAccount() {
   ShowSigninCommand* command = [[ShowSigninCommand alloc]
-      initWithOperation:AUTHENTICATION_OPERATION_ADD_ACCOUNT
+      initWithOperation:AuthenticationOperationAddAccount
             accessPoint:signin_metrics::AccessPoint::ACCESS_POINT_UNKNOWN];
   [handler_ showSignin:command baseViewController:base_view_controller_];
 }

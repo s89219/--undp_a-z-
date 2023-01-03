@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -96,9 +96,7 @@ bool BubbleContentsWrapper::HandleContextMenu(
   return true;
 }
 
-void BubbleContentsWrapper::RenderViewHostChanged(
-    content::RenderViewHost* old_host,
-    content::RenderViewHost* new_host) {
+void BubbleContentsWrapper::PrimaryPageChanged(content::Page& page) {
   content::RenderWidgetHostView* render_widget_host_view =
       web_contents_->GetRenderWidgetHostView();
   if (!webui_resizes_host_ || !render_widget_host_view)

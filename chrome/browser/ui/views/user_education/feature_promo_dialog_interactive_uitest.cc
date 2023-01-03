@@ -1,14 +1,16 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <algorithm>
 #include <string>
 #include <vector>
 
+#include "base/auto_reset.h"
 #include "base/bind.h"
 #include "base/feature_list.h"
+#include "base/ranges/algorithm.h"
 #include "base/test/scoped_feature_list.h"
+#include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/browser/apps/intent_helper/intent_picker_features.h"
 #include "chrome/browser/banners/test_app_banner_manager_desktop.h"
@@ -23,8 +25,13 @@
 #include "chrome/browser/ui/views/page_action/page_action_icon_controller.h"
 #include "chrome/browser/ui/views/page_action/page_action_icon_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
+#include "chrome/browser/web_applications/test/app_registry_cache_waiter.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/web_app_callback_app_identity.h"
+#include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registrar.h"
+#include "chrome/browser/web_applications/web_app_ui_manager.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -34,9 +41,11 @@
 #include "components/feature_engagement/test/mock_tracker.h"
 #include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/live_caption/caption_util.h"
+#include "components/user_education/common/feature_promo_controller.h"
 #include "content/public/test/browser_test.h"
 #include "media/base/media_switches.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 #if BUILDFLAG(ENABLE_WEBUI_TAB_STRIP)
 #include "ui/base/pointer/touch_ui_controller.h"
@@ -52,10 +61,14 @@ namespace {
 
 // Returns an appropriate set of string replacements; passing the wrong number
 // of replacements for the body text of the IPH will cause a DCHECK.
-FeaturePromoSpecification::StringReplacements GetReplacementsForFeature(
-    const base::Feature& feature) {
+user_education::FeaturePromoSpecification::StringReplacements
+GetReplacementsForFeature(const base::Feature& feature) {
   if (&feature == &feature_engagement::kIPHDesktopPwaInstallFeature)
     return {u"Placeholder Text"};
+#if BUILDFLAG(IS_CHROMEOS)
+  if (&feature == &feature_engagement::kIPHIntentChipFeature)
+    return {u"Chrome device"};
+#endif
   return {};
 }
 
@@ -63,7 +76,9 @@ FeaturePromoSpecification::StringReplacements GetReplacementsForFeature(
 
 class FeaturePromoDialogTest : public DialogBrowserTest {
  public:
-  FeaturePromoDialogTest() {
+  FeaturePromoDialogTest()
+      : update_dialog_scope_(web_app::SetIdentityUpdateDialogActionForTesting(
+            web_app::AppIdentityUpdate::kSkipped)) {
     scoped_feature_list_.InitWithFeatures(
         {}, {media::kLiveCaption, feature_engagement::kIPHLiveCaptionFeature});
 
@@ -73,12 +88,27 @@ class FeaturePromoDialogTest : public DialogBrowserTest {
   }
   void SetUp() override {
     webapps::TestAppBannerManagerDesktop::SetUp();
+
     DialogBrowserTest::SetUp();
   }
   void SetUpOnMainThread() override {
     DialogBrowserTest::SetUpOnMainThread();
     browser()->window()->Activate();
     ui_test_utils::BrowserActivationWaiter(browser()).WaitForActivation();
+  }
+
+  void TearDownOnMainThread() override {
+    Profile* const profile = browser()->profile();
+    web_app::WebAppRegistrar& registrar =
+        web_app::WebAppProvider::GetForTest(profile)->registrar_unsafe();
+    for (const auto& app_id : registrar.GetAppIds()) {
+      web_app::AppReadinessWaiter app_readiness_waiter(
+          profile, app_id, apps::Readiness::kUninstalledByUser);
+      web_app::test::UninstallWebApp(profile, app_id);
+      app_readiness_waiter.Await();
+    }
+
+    DialogBrowserTest::TearDownOnMainThread();
   }
 
   ~FeaturePromoDialogTest() override = default;
@@ -99,10 +129,15 @@ class FeaturePromoDialogTest : public DialogBrowserTest {
     std::vector<const base::Feature*> iph_features =
         feature_engagement::GetAllFeatures();
     auto feature_it =
-        std::find_if(iph_features.begin(), iph_features.end(),
-                     [&](const base::Feature* f) { return f->name == name; });
+        base::ranges::find(iph_features, name, &base::Feature::name);
     ASSERT_NE(feature_it, iph_features.end());
     const base::Feature& feature = **feature_it;
+
+    // The browser may have already queued a promo for startup. Since the test
+    // uses a mock, cancel that and just show it directly.
+    const auto status = promo_controller->GetPromoStatus(feature);
+    if (status == user_education::FeaturePromoStatus::kQueuedForStartup)
+      promo_controller->EndPromo(feature);
 
     // Set up mock tracker to allow the IPH, then attempt to show it.
     EXPECT_CALL(*mock_tracker, ShouldTriggerHelpUI(Ref(feature)))
@@ -114,6 +149,8 @@ class FeaturePromoDialogTest : public DialogBrowserTest {
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
+  base::AutoReset<absl::optional<web_app::AppIdentityUpdate>>
+      update_dialog_scope_;
 
   static void RegisterMockTracker(content::BrowserContext* context) {
     feature_engagement::TrackerFactory::GetInstance()->SetTestingFactory(
@@ -185,7 +222,7 @@ IN_PROC_BROWSER_TEST_F(FeaturePromoDialogTest, InvokeUi_IPH_DesktopPwaInstall) {
 
 IN_PROC_BROWSER_TEST_F(FeaturePromoDialogTest,
                        InvokeUi_IPH_DesktopTabGroupsNewGroup) {
-  set_baseline("2936082");
+  set_baseline("4067389");
   ShowAndVerifyUi();
 }
 
@@ -205,7 +242,7 @@ IN_PROC_BROWSER_TEST_F(FeaturePromoDialogTest, InvokeUi_IPH_LiveCaption) {
 
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
 IN_PROC_BROWSER_TEST_F(FeaturePromoDialogTest, InvokeUi_IPH_ProfileSwitch) {
-  set_baseline("2936082");
+  set_baseline("3710120");
   ShowAndVerifyUi();
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
@@ -215,12 +252,14 @@ IN_PROC_BROWSER_TEST_F(FeaturePromoDialogTest, InvokeUi_IPH_ReopenTab) {
   ShowAndVerifyUi();
 }
 
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
 // Need a separate fixture to override the feature flag.
 class FeaturePromoDialogSideSearchTest : public FeaturePromoDialogTest {
  public:
   FeaturePromoDialogSideSearchTest() {
-    feature_list_.InitAndEnableFeature(features::kSideSearch);
+    // Currently the IPH is only supported for the Google ChromeOS
+    // configuration.
+    feature_list_.InitWithFeatures({features::kSideSearch},
+                                   {features::kSideSearchDSESupport});
   }
 
   void SetUpOnMainThread() override {
@@ -244,7 +283,6 @@ IN_PROC_BROWSER_TEST_F(FeaturePromoDialogSideSearchTest,
   set_baseline("3187662");
   ShowAndVerifyUi();
 }
-#endif
 
 IN_PROC_BROWSER_TEST_F(FeaturePromoDialogTest, InvokeUi_IPH_TabSearch) {
   set_baseline("2991858");
@@ -297,9 +335,11 @@ class FeaturePromoDialogIntentChipTest : public FeaturePromoDialogTest {
     web_app_info->title = base::UTF8ToUTF16(app_name);
     web_app_info->start_url = url;
     web_app_info->scope = url;
-    web_app_info->user_display_mode = web_app::UserDisplayMode::kStandalone;
+    web_app_info->user_display_mode =
+        web_app::mojom::UserDisplayMode::kStandalone;
     auto app_id = web_app::test::InstallWebApp(browser()->profile(),
                                                std::move(web_app_info));
+    web_app::AppReadinessWaiter(browser()->profile(), app_id).Await();
     return app_id;
   }
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,9 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/clock.h"
+#include "components/segmentation_platform/internal/execution/execution_request.h"
 #include "components/segmentation_platform/internal/execution/model_executor.h"
+#include "components/segmentation_platform/public/model_provider.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace segmentation_platform {
@@ -34,14 +36,11 @@ class ModelExecutorImpl : public ModelExecutor {
       processing::FeatureListQueryProcessor* feature_list_query_processor);
   ~ModelExecutorImpl() override;
 
-  ModelExecutorImpl(ModelExecutorImpl&) = delete;
-  ModelExecutorImpl& operator=(ModelExecutorImpl&) = delete;
+  ModelExecutorImpl(const ModelExecutorImpl&) = delete;
+  ModelExecutorImpl& operator=(const ModelExecutorImpl&) = delete;
 
   // ModelExecutionManager impl:.
-  void ExecuteModel(const proto::SegmentInfo& segment_info,
-                    ModelProvider* model_provider,
-                    bool record_metrics_for_default,
-                    ModelExecutionCallback callback) override;
+  void ExecuteModel(std::unique_ptr<ExecutionRequest> request) override;
 
  private:
   struct ExecutionState;
@@ -50,10 +49,11 @@ class ModelExecutorImpl : public ModelExecutor {
   // Callback method for when the processing of the model metadata's feature
   // list has completed, which either result in an error or a valid input tensor
   // for executing the model.
-  void OnProcessingFeatureListComplete(std::unique_ptr<ExecutionState> state,
-                                       bool error,
-                                       const std::vector<float>& input_tensor,
-                                       const std::vector<float>& output_tensor);
+  void OnProcessingFeatureListComplete(
+      std::unique_ptr<ExecutionState> state,
+      bool error,
+      const ModelProvider::Request& input_tensor,
+      const ModelProvider::Response& output_tensor);
 
   // ExecuteModel takes the current input tensor and passes it to the ML
   // model for execution.
@@ -62,14 +62,17 @@ class ModelExecutorImpl : public ModelExecutor {
   // Callback method for when the model execution has completed which gives
   // the end result to the initial ModelExecutionCallback passed to
   // ExecuteModel(...).
-  void OnModelExecutionComplete(std::unique_ptr<ExecutionState> state,
-                                const absl::optional<float>& result);
+  void OnModelExecutionComplete(
+      std::unique_ptr<ExecutionState> state,
+      const absl::optional<ModelProvider::Response>& result);
 
   // Helper function for synchronously invoking the callback with the given
-  // result and status.
-  void RunModelExecutionCallback(std::unique_ptr<ExecutionState> state,
-                                 float result,
-                                 ModelExecutionStatus status);
+  // result and status. Before invoking this, it is required to move the
+  // ExecutionState::callback out as a separate parameter, e.g.:
+  // `RunModelExecutionCallback(*state, std::move(state->callback), ...)`.
+  void RunModelExecutionCallback(const ExecutionState& state,
+                                 ModelExecutionCallback callback,
+                                 std::unique_ptr<ModelExecutionResult> result);
 
   const raw_ptr<base::Clock> clock_;
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/color/color_provider.h"
 #include "ui/compositor/canvas_painter.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/base_event_utils.h"
@@ -36,6 +37,7 @@
 #include "ui/views/border.h"
 #include "ui/views/controls/base_control_test_widget.h"
 #include "ui/views/controls/link.h"
+#include "ui/views/layout/layout_types.h"
 #include "ui/views/style/typography.h"
 #include "ui/views/test/ax_event_counter.h"
 #include "ui/views/test/focus_manager_test.h"
@@ -107,9 +109,9 @@ std::u16string ToRTL(const char* ascii) {
   std::u16string rtl;
   for (const char* c = ascii; *c; ++c) {
     if (*c >= '0' && *c <= '6')
-      rtl += L'\x5d0' + (*c - '0');
+      rtl += static_cast<char16_t>(u'א' + (*c - '0'));
     else
-      rtl += static_cast<std::u16string::value_type>(*c);
+      rtl += static_cast<char16_t>(*c);
   }
   return rtl;
 }
@@ -287,6 +289,21 @@ TEST_F(LabelTest, ColorProperty) {
   label()->SetAutoColorReadabilityEnabled(false);
   label()->SetEnabledColor(color);
   EXPECT_EQ(color, label()->GetEnabledColor());
+}
+
+TEST_F(LabelTest, ColorPropertyOnEnabledColorIdChange) {
+  const auto color = label()->GetWidget()->GetColorProvider()->GetColor(
+      ui::kColorPrimaryForeground);
+  label()->SetAutoColorReadabilityEnabled(false);
+  label()->SetEnabledColorId(ui::kColorPrimaryForeground);
+  EXPECT_EQ(color, label()->GetEnabledColor());
+
+  // Update the enabled id and verify the actual enabled color is updated to
+  // reflect the color id change. Regression test case for: b/262402965.
+  label()->SetEnabledColorId(ui::kColorAccent);
+  EXPECT_EQ(
+      label()->GetWidget()->GetColorProvider()->GetColor(ui::kColorAccent),
+      label()->GetEnabledColor());
 }
 
 TEST_F(LabelTest, AlignmentProperty) {
@@ -474,8 +491,8 @@ TEST_F(LabelTest, ObscuredSurrogatePair) {
 // this behavior, therefore this behavior will have to be kept until the code
 // with this assumption is fixed. See http://crbug.com/468494 and
 // http://crbug.com/467526.
-// TODO(mukai): fix the code assuming this behavior and then fix Label
-// implementation, and remove this test case.
+// TODO(crbug.com/1346889): convert all callsites of GetPreferredSize() to
+// call GetPreferredSize(SizeBounds) instead.
 TEST_F(LabelTest, MultilinePreferredSizeTest) {
   label()->SetText(u"This is an example.");
 
@@ -490,6 +507,37 @@ TEST_F(LabelTest, MultilinePreferredSizeTest) {
   gfx::Size new_size = label()->GetPreferredSize();
   EXPECT_GT(multi_line_size.width(), new_size.width());
   EXPECT_LT(multi_line_size.height(), new_size.height());
+}
+
+TEST_F(LabelTest, MultilinePreferredSizeWithConstraintTest) {
+  label()->SetText(u"This is an example.");
+
+  const gfx::Size single_line_size =
+      label()->GetPreferredSize({/* Unbounded */});
+
+  // Test the preferred size when the label is not yet laid out.
+  label()->SetMultiLine(true);
+  const gfx::Size multi_line_size_unbounded =
+      label()->GetPreferredSize({/* Unbounded */});
+  EXPECT_EQ(single_line_size, multi_line_size_unbounded);
+
+  const gfx::Size multi_line_size_bounded = label()->GetPreferredSize(
+      {single_line_size.width() / 2, {/* Unbounded */}});
+  EXPECT_GT(multi_line_size_unbounded.width(), multi_line_size_bounded.width());
+  EXPECT_LT(multi_line_size_unbounded.height(),
+            multi_line_size_bounded.height());
+
+  // Test the preferred size after the label is laid out.
+  // GetPreferredSize(SizeBounds) should ignore the existing bounds.
+  const int layout_width = multi_line_size_unbounded.width() / 3;
+  label()->SetBounds(0, 0, layout_width,
+                     label()->GetHeightForWidth(layout_width));
+  const gfx::Size multi_line_size_unbounded2 =
+      label()->GetPreferredSize({/* Unbounded */});
+  const gfx::Size multi_line_size_bounded2 = label()->GetPreferredSize(
+      {single_line_size.width() / 2, {/* Unbounded */}});
+  EXPECT_EQ(multi_line_size_unbounded, multi_line_size_unbounded2);
+  EXPECT_EQ(multi_line_size_bounded, multi_line_size_bounded2);
 }
 
 TEST_F(LabelTest, SingleLineGetHeightForWidth) {

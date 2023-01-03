@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,6 +45,8 @@ DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(gfx::Rect,
 
 DEFINE_UI_CLASS_PROPERTY_KEY(bool, kIsShowingInOverviewKey, false)
 
+DEFINE_UI_CLASS_PROPERTY_KEY(bool, kShouldHaveHighlightBorderOverlay, false)
+
 DEFINE_UI_CLASS_PROPERTY_KEY(bool, kWindowManagerManagesOpacityKey, false)
 
 DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::u16string,
@@ -54,7 +56,5 @@ DEFINE_OWNED_UI_CLASS_PROPERTY_KEY(std::u16string,
 DEFINE_UI_CLASS_PROPERTY_KEY(WindowStateType,
                              kWindowStateTypeKey,
                              WindowStateType::kDefault)
-
-DEFINE_UI_CLASS_PROPERTY_KEY(bool, kWindowFloatTypeKey, false)
 
 }  // namespace chromeos

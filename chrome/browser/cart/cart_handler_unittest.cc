@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,17 +7,19 @@
 #include "base/memory/raw_ptr.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "build/build_config.h"
-#include "chrome/browser/cart/cart_db_content.pb.h"
 #include "chrome/browser/cart/cart_service.h"
 #include "chrome/browser/cart/cart_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/persisted_state_db/profile_proto_db.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/commerce/core/commerce_feature_list.h"
+#include "components/commerce/core/commerce_heuristics_data.h"
+#include "components/commerce/core/proto/cart_db_content.pb.h"
 #include "components/prefs/pref_service.h"
 #include "components/search/ntp_features.h"
+#include "components/session_proto_db/session_proto_db.h"
 #include "content/public/test/browser_task_environment.h"
+#include "content/public/test/test_web_contents_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -78,15 +80,13 @@ const cart_db::ChromeCartContentProto kFakeProto =
     BuildProto(kFakeMerchantKey, kFakeMerchant, kFakeMerchantURL);
 const cart_db::ChromeCartContentProto kMockProtoB =
     BuildProto(kMockMerchantBKey, kMockMerchantB, kMockMerchantURLB);
-const std::vector<ProfileProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
+const std::vector<SessionProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
     kExpectedFake = {{kFakeMerchant, kFakeProto}};
-const std::vector<ProfileProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
+const std::vector<SessionProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
     kExpectedAllData = {
         {kFakeMerchant, kFakeProto},
         {kMockMerchantB, kMockProtoB},
 };
-const std::vector<ProfileProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
-    kEmptyExpected = {};
 }  // namespace
 
 class CartHandlerTest : public testing::Test {
@@ -106,10 +106,11 @@ class CartHandlerTest : public testing::Test {
         HistoryServiceFactory::GetInstance(),
         HistoryServiceFactory::GetDefaultFactory());
     profile_ = profile_builder.Build();
+    web_contents_ = web_contents_factory_.CreateWebContents(profile_.get());
 
     handler_ = std::make_unique<CartHandler>(
         mojo::PendingReceiver<chrome_cart::mojom::CartHandler>(),
-        profile_.get());
+        profile_.get(), web_contents_);
     service_ = CartServiceFactory::GetForProfile(profile_.get());
   }
 
@@ -124,7 +125,7 @@ class CartHandlerTest : public testing::Test {
       base::OnceClosure closure,
       bool isHidden,
       bool result,
-      std::vector<ProfileProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
+      std::vector<SessionProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
           found) {
     EXPECT_EQ(1U, found.size());
     EXPECT_EQ(isHidden, found[0].second.is_hidden());
@@ -135,7 +136,7 @@ class CartHandlerTest : public testing::Test {
       base::OnceClosure closure,
       bool isRemoved,
       bool result,
-      std::vector<ProfileProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
+      std::vector<SessionProtoDB<cart_db::ChromeCartContentProto>::KeyAndValue>
           found) {
     EXPECT_EQ(1U, found.size());
     EXPECT_EQ(isRemoved, found[0].second.is_removed());
@@ -149,7 +150,11 @@ class CartHandlerTest : public testing::Test {
     std::move(closure).Run();
   }
 
-  void TearDown() override {}
+  void TearDown() override {
+    testing::Test::TearDown();
+    auto& data = commerce_heuristics::CommerceHeuristicsData::GetInstance();
+    data.PopulateDataFromComponent("{}", "{}", "", "");
+  }
 
  protected:
   // This needs to be declared before |task_environment_|, so that it will be
@@ -159,6 +164,8 @@ class CartHandlerTest : public testing::Test {
   // Required to run tests from UI thread.
   content::BrowserTaskEnvironment task_environment_;
   std::unique_ptr<TestingProfile> profile_;
+  content::TestWebContentsFactory web_contents_factory_;
+  raw_ptr<content::WebContents> web_contents_;  // Weak. Owned by factory_.
   std::unique_ptr<CartHandler> handler_;
   raw_ptr<CartService> service_;
   base::HistogramTester histogram_tester_;
@@ -428,13 +435,20 @@ class CartHandlerNtpModuleDiscountTest : public CartHandlerTest {
     feature_list_.InitAndEnableFeatureWithParameters(
         ntp_features::kNtpChromeCartModule,
         {{"NtpChromeCartModuleAbandonedCartDiscountParam", "true"},
-         {"partner-merchant-pattern", "(foo.com)"},
          {ntp_features::kNtpChromeCartModuleAbandonedCartDiscountUseUtmParam,
           "false"}});
   }
 
   void SetUp() override {
     CartHandlerTest::SetUp();
+
+    auto& data = commerce_heuristics::CommerceHeuristicsData::GetInstance();
+    ASSERT_TRUE(data.PopulateDataFromComponent("{}", R"###(
+        {
+          "rule_discount_partner_merchant_regex": "(foo.com)"
+        }
+    )###",
+                                               "", ""));
 
     // Mock that welcome surface has already finished showing.
     for (int i = 0; i < CartService::kWelcomSurfaceShowLimit; i++) {
@@ -632,9 +646,19 @@ class CartHandlerCartURLUTMTest : public CartHandlerTest {
     feature_list_.InitAndEnableFeatureWithParameters(
         ntp_features::kNtpChromeCartModule,
         {{"NtpChromeCartModuleAbandonedCartDiscountParam", "true"},
-         {"partner-merchant-pattern", "(foo.com)"},
          {ntp_features::kNtpChromeCartModuleAbandonedCartDiscountUseUtmParam,
           "true"}});
+  }
+
+  void SetUp() override {
+    CartHandlerTest::SetUp();
+    auto& data = commerce_heuristics::CommerceHeuristicsData::GetInstance();
+    ASSERT_TRUE(data.PopulateDataFromComponent("{}", R"###(
+        {
+          "rule_discount_partner_merchant_regex": "(foo.com)"
+        }
+    )###",
+                                               "", ""));
   }
 
  private:
@@ -656,7 +680,7 @@ TEST_F(CartHandlerCartURLUTMTest, TestAppendUTMToPartnerMerchant) {
   run_loop[0].Run();
 
   // Verifies UTM tags for when discount is enabled.
-  handler_->SetDiscountEnabled(true);
+  profile_->GetPrefs()->SetBoolean(prefs::kCartDiscountEnabled, true);
   ASSERT_TRUE(service_->IsCartDiscountEnabled());
   handler_->GetMerchantCarts(base::BindOnce(
       &GetEvaluationMerchantCartWithUtmSource, run_loop[1].QuitClosure(), true,
@@ -689,11 +713,9 @@ TEST_F(CartHandlerCartURLUTMTest, TestAppendUTMToNonPartnerMerchant) {
 class CartHandlerNtpModuleDiscountConsentV2Test : public CartHandlerTest {
  public:
   CartHandlerNtpModuleDiscountConsentV2Test() {
-    std::vector<base::test::ScopedFeatureList::FeatureAndParams>
-        enabled_features;
+    std::vector<base::test::FeatureRefAndParams> enabled_features;
     base::FieldTrialParams consent_v2_params, cart_params;
     cart_params["NtpChromeCartModuleAbandonedCartDiscountParam"] = "true";
-    cart_params["partner-merchant-pattern"] = "(foo.com)";
     enabled_features.emplace_back(ntp_features::kNtpChromeCartModule,
                                   cart_params);
     consent_v2_params["discount-consent-ntp-reshow-time"] = "1m";
@@ -706,6 +728,13 @@ class CartHandlerNtpModuleDiscountConsentV2Test : public CartHandlerTest {
 
   void SetUp() override {
     CartHandlerTest::SetUp();
+    auto& data = commerce_heuristics::CommerceHeuristicsData::GetInstance();
+    ASSERT_TRUE(data.PopulateDataFromComponent("{}", R"###(
+        {
+          "rule_discount_partner_merchant_regex": "(foo.com)"
+        }
+    )###",
+                                               "", ""));
     // Simulate that the welcome surface has been shown.
     profile_->GetPrefs()->SetInteger(prefs::kCartModuleWelcomeSurfaceShownTimes,
                                      CartService::kWelcomSurfaceShowLimit);

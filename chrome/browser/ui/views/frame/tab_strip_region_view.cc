@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/views/chrome_layout_provider.h"
 #include "chrome/browser/ui/views/tabs/new_tab_button.h"
+#include "chrome/browser/ui/views/tabs/tab_drag_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_search_button.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_scroll_container.h"
@@ -22,6 +23,7 @@
 #include "chrome/browser/ui/views/user_education/tip_marquee_view.h"
 #include "chrome/grit/generated_resources.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/base/clipboard/clipboard_constants.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -35,6 +37,7 @@
 #include "ui/views/style/typography.h"
 #include "ui/views/view.h"
 #include "ui/views/view_class_properties.h"
+#include "ui/views/view_utils.h"
 
 namespace {
 
@@ -55,17 +58,19 @@ END_METADATA
 }  // namespace
 
 TabStripRegionView::TabStripRegionView(std::unique_ptr<TabStrip> tab_strip) {
-  views::SetCascadingThemeProviderColor(
+  views::SetCascadingColorProviderColor(
       this, views::kCascadingBackgroundColor,
-      ThemeProperties::COLOR_TAB_BACKGROUND_INACTIVE_FRAME_INACTIVE);
+      kColorTabBackgroundInactiveFrameInactive);
 
   layout_manager_ = SetLayoutManager(std::make_unique<views::FlexLayout>());
   layout_manager_->SetOrientation(views::LayoutOrientation::kHorizontal);
 
   tab_strip_ = tab_strip.get();
   if (base::FeatureList::IsEnabled(features::kScrollableTabStrip)) {
-    tab_strip_container_ = AddChildView(
-        std::make_unique<TabStripScrollContainer>(std::move(tab_strip)));
+    std::unique_ptr<TabStripScrollContainer> scroll_container =
+        std::make_unique<TabStripScrollContainer>(std::move(tab_strip));
+    tab_strip_scroll_container_ = scroll_container.get();
+    tab_strip_container_ = AddChildView(std::move(scroll_container));
     // Allow the |tab_strip_container_| to grow into the free space available in
     // the TabStripRegionView.
     const views::FlexSpecification tab_strip_container_flex_spec =
@@ -114,8 +119,7 @@ TabStripRegionView::TabStripRegionView(std::unique_ptr<TabStrip> tab_strip) {
   const auto control_padding = gfx::Insets::TLBR(
       0, 0, 0, GetLayoutConstant(TABSTRIP_REGION_VIEW_CONTROL_PADDING));
 
-  tip_marquee_view_ = AddChildView(
-      std::make_unique<TipMarqueeView>(views::style::CONTEXT_LABEL));
+  tip_marquee_view_ = AddChildView(std::make_unique<TipMarqueeView>());
   tip_marquee_view_->SetProperty(
       views::kFlexBehaviorKey,
       views::FlexSpecification(
@@ -163,13 +167,26 @@ bool TabStripRegionView::IsRectInWindowCaption(const gfx::Rect& rect) {
 
   // Perform a hit test against the |tab_strip_container_| to ensure that the
   // rect is within the visible portion of the |tab_strip_| before calling the
-  // tab strip's |IsRectInWindowCaption()|.
+  // tab strip's |IsRectInWindowCaption()| for scrolling disabled. Defer to
+  // scroll container if scrolling is enabled.
   // TODO(tluk): Address edge case where |rect| might partially intersect with
   // the |tab_strip_container_| and the |tab_strip_| but not over the same
   // pixels. This could lead to this returning false when it should be returning
   // true.
-  if (tab_strip_container_->HitTestRect(get_target_rect(tab_strip_container_)))
-    return tab_strip_->IsRectInWindowCaption(get_target_rect(tab_strip_));
+
+  if (tab_strip_container_->HitTestRect(
+          get_target_rect(tab_strip_container_))) {
+    if (base::FeatureList::IsEnabled(features::kScrollableTabStrip)) {
+      TabStripScrollContainer* scroll_container =
+          views::AsViewClass<TabStripScrollContainer>(tab_strip_container_);
+
+      return scroll_container->IsRectInWindowCaption(
+          get_target_rect(scroll_container));
+
+    } else {
+      return tab_strip_->IsRectInWindowCaption(get_target_rect(tab_strip_));
+    }
+  }
 
   // The child could have a non-rectangular shape, so if the rect is not in the
   // visual portions of the child view we treat it as a click to the caption.
@@ -187,46 +204,34 @@ bool TabStripRegionView::IsPositionInWindowCaption(const gfx::Point& point) {
   return IsRectInWindowCaption(gfx::Rect(point, gfx::Size(1, 1)));
 }
 
-void TabStripRegionView::FrameColorsChanged() {
-  new_tab_button_->FrameColorsChanged();
-  if (tab_search_button_)
-    tab_search_button_->FrameColorsChanged();
-  tab_strip_->FrameColorsChanged();
-  SchedulePaint();
-}
-
 bool TabStripRegionView::CanDrop(const OSExchangeData& data) {
-  return tab_strip_->CanDrop(data);
+  return TabDragController::IsSystemDragAndDropSessionRunning() &&
+         data.HasCustomFormat(
+             ui::ClipboardFormatType::GetType(ui::kMimeTypeWindowDrag));
 }
 
 bool TabStripRegionView::GetDropFormats(
     int* formats,
     std::set<ui::ClipboardFormatType>* format_types) {
-  if (!tab_strip_->WantsToReceiveAllDragEvents())
-    return false;
-
-  return tab_strip_->GetDropFormats(formats, format_types);
+  format_types->insert(
+      ui::ClipboardFormatType::GetType(ui::kMimeTypeWindowDrag));
+  return true;
 }
 
 void TabStripRegionView::OnDragEntered(const ui::DropTargetEvent& event) {
-  DCHECK(tab_strip_->WantsToReceiveAllDragEvents());
-  tab_strip_->OnDragEntered(event);
+  DCHECK(TabDragController::IsSystemDragAndDropSessionRunning());
+  TabDragController::OnSystemDragAndDropUpdated(event);
 }
 
 int TabStripRegionView::OnDragUpdated(const ui::DropTargetEvent& event) {
-  DCHECK(tab_strip_->WantsToReceiveAllDragEvents());
-  return tab_strip_->OnDragUpdated(event);
+  DCHECK(TabDragController::IsSystemDragAndDropSessionRunning());
+  TabDragController::OnSystemDragAndDropUpdated(event);
+  return ui::DragDropTypes::DRAG_MOVE;
 }
 
 void TabStripRegionView::OnDragExited() {
-  DCHECK(tab_strip_->WantsToReceiveAllDragEvents());
-  tab_strip_->OnDragExited();
-}
-
-views::View::DropCallback TabStripRegionView::GetDropCallback(
-    const ui::DropTargetEvent& event) {
-  DCHECK(tab_strip_->WantsToReceiveAllDragEvents());
-  return tab_strip_->GetDropCallback(event);
+  DCHECK(TabDragController::IsSystemDragAndDropSessionRunning());
+  TabDragController::OnSystemDragAndDropExited();
 }
 
 void TabStripRegionView::ChildPreferredSizeChanged(views::View* child) {
@@ -241,11 +246,6 @@ gfx::Size TabStripRegionView::GetMinimumSize() const {
   tab_strip_min_size.set_width(
       std::min(max_min_width, tab_strip_min_size.width()));
   return tab_strip_min_size;
-}
-
-void TabStripRegionView::OnThemeChanged() {
-  View::OnThemeChanged();
-  FrameColorsChanged();
 }
 
 views::View* TabStripRegionView::GetDefaultFocusableChild() {

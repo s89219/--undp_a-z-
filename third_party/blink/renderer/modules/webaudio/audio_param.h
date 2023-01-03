@@ -30,6 +30,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_WEBAUDIO_AUDIO_PARAM_H_
 
 #include <sys/types.h>
+
 #include <atomic>
 
 #include "base/memory/scoped_refptr.h"
@@ -75,9 +76,9 @@ class AudioParam final : public ScriptWrappable, public InspectorHelperMixin {
   ~AudioParam() override;
 
   void Trace(Visitor*) const override;
-  // |handler| always returns a valid object.
+  // `Handler()` always returns a valid object.
   AudioParamHandler& Handler() const { return *handler_; }
-  // |context| always returns a valid object.
+  // `Context()` always returns a valid object.
   BaseAudioContext* Context() const { return context_; }
 
   AudioParamHandler::AudioParamType GetParamType() const {
@@ -127,8 +128,6 @@ class AudioParam final : public ScriptWrappable, public InspectorHelperMixin {
 
   scoped_refptr<AudioParamHandler> handler_;
   Member<BaseAudioContext> context_;
-
-  // Needed in the destructor, where |context_| is not guaranteed to be alive.
   scoped_refptr<DeferredTaskHandler> deferred_task_handler_;
 };
 

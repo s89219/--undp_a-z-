@@ -1,18 +1,17 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef ASH_PUBLIC_CPP_LOGIN_TYPES_H_
 #define ASH_PUBLIC_CPP_LOGIN_TYPES_H_
 
-#include "ash/components/proximity_auth/public/mojom/auth_type.mojom-forward.h"
-#include "ash/components/security_token_pin/constants.h"
 #include "ash/public/cpp/ash_public_export.h"
 #include "ash/public/cpp/session/user_info.h"
 #include "ash/public/cpp/smartlock_state.h"
 #include "base/callback.h"
 #include "base/time/time.h"
-#include "base/token.h"
+#include "chromeos/ash/components/proximity_auth/public/mojom/auth_type.mojom-forward.h"
+#include "chromeos/components/security_token_pin/constants.h"
 #include "components/account_id/account_id.h"
 
 namespace ash {
@@ -35,7 +34,7 @@ enum class OobeDialogState {
   WRONG_HWID_WARNING = 3,
 
   // Showing supervised user creation screen.
-  SUPERVISED_USER_CREATION_FLOW = 4,
+  DEPRECATED_SUPERVISED_USER_CREATION_FLOW = 4,
 
   // Showing SAML password confirmation screen.
   SAML_PASSWORD_CONFIRM = 5,
@@ -44,7 +43,7 @@ enum class OobeDialogState {
   PASSWORD_CHANGED = 6,
 
   // Showing device enrollment screen.
-  ENROLLMENT = 7,
+  ENROLLMENT_CANCEL_DISABLED = 7,
 
   // Showing error screen.
   ERROR = 8,
@@ -76,11 +75,16 @@ enum class OobeDialogState {
 
   // Showing enrollment success step.
   ENROLLMENT_SUCCESS = 17,
+
   // Showing theme selection screen.
   THEME_SELECTION = 18,
 
   // Showing marketing opt-in screen.
   MARKETING_OPT_IN = 19,
+
+  // Closing the login screen extension UI created by a Chrome extension using
+  // chrome.loginScreenUi API.
+  EXTENSION_LOGIN_CLOSED = 20,
 };
 
 // Modes of the managed device, which is used to update the visibility of
@@ -390,16 +394,16 @@ struct ASH_PUBLIC_EXPORT SecurityTokenPinRequest {
   AccountId account_id;
 
   // Type of the code requested from the user.
-  ash::security_token_pin::CodeType code_type =
-      ash::security_token_pin::CodeType::kPin;
+  chromeos::security_token_pin::CodeType code_type =
+      chromeos::security_token_pin::CodeType::kPin;
 
   // Whether the UI controls that allow user to enter the value should be
   // enabled. MUST be |false| when |attempts_left| is zero.
   bool enable_user_input = true;
 
   // An optional error to be displayed to the user.
-  ash::security_token_pin::ErrorLabel error_label =
-      ash::security_token_pin::ErrorLabel::kNone;
+  chromeos::security_token_pin::ErrorLabel error_label =
+      chromeos::security_token_pin::ErrorLabel::kNone;
 
   // When non-negative, the UI should indicate this number to the user;
   // otherwise must be equal to -1.

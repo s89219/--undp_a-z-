@@ -10,6 +10,7 @@
 
   cr-button {
     border: 0;
+    margin-top: auto;
   }
 
   .sku-warning {
@@ -24,6 +25,7 @@
 
   cr-input {
     --cr-input-error-display: none;
+    --cr-form-field-label-color: var(--shimless-hint-text-color);
     margin-inline-end: 20px;
   }
 
@@ -64,7 +66,7 @@
 
 <base-page>
   <div slot="left-pane">
-    <h1>[[i18n('confirmDeviceInfoTitle')]]</h1>
+    <h1 tabindex="-1">[[i18n('confirmDeviceInfoTitle')]]</h1>
     <div class="instructions">
       [[i18n('confirmDeviceInfoInstructions')]]
     </div>
@@ -72,37 +74,29 @@
   <div slot="right-pane">
     <div class="input-wrapper">
       <div class="input-row">
-        <label id="serialNumberLabel" class="cr-form-field-label">
-          [[i18n('confirmDeviceInfoSerialNumberLabel')]]
-        </label>
         <div class="input-holder">
-          <cr-input id="serialNumber" placeholder="Enter Serial Number"
-              value="{{serialNumber_}}" aria-labelledby="serialNumberLabel"
+          <cr-input id="serialNumber" value="{{serialNumber_}}" 
+              label="[[i18n('confirmDeviceInfoSerialNumberLabel')]]"
               disabled="[[allButtonsDisabled]]">
           </cr-input>
           <cr-button id="resetSerialNumber"
               on-click="onResetSerialNumberButtonClicked_"
-              disabled="[[disableResetSerialNumber_]]">
+              disabled="[[disableResetSerialNumber_]]"
+              aria-description="[[i18n('confirmDeviceInfoSerialNumberLabel')]]">
             [[i18n('confirmDeviceInfoResetButtonLabel')]]
           </cr-button>
         </div>
       </div>
       <div class="input-row">
-        <label id="dramPartNumberLabel" class="cr-form-field-label">
-          [[i18n('confirmDeviceInfoDramPartNumberLabel')]]
-        </label>
         <div class="input-holder">
-          <cr-input
-              id="dramPartNumber"
-              placeholder=
-                  "[[i18n('confirmDeviceInfoDramPartNumberPlaceholderLabel')]]"
-              value="{{dramPartNumber_}}"
-              aria-labelledby="dramPartNumberLabel"
+          <cr-input id="dramPartNumber" value="{{dramPartNumber_}}"
+              label="[[i18n('confirmDeviceInfoDramPartNumberLabel')]]"
               disabled="[[allButtonsDisabled]]">
           </cr-input>
           <cr-button id="resetDramPartNumber"
               on-click="onResetDramPartNumberButtonClicked_"
-              disabled="[[disableResetDramPartNumber_]]">
+              disabled="[[disableResetDramPartNumber_]]"
+              aria-description="[[i18n('confirmDeviceInfoDramPartNumberLabel')]]">
             [[i18n('confirmDeviceInfoResetButtonLabel')]]
           </cr-button>
         </div>
@@ -122,7 +116,8 @@
             </template>
           </select>
           <cr-button id="resetRegion" on-click="onResetRegionButtonClicked_"
-              disabled="[[disableResetRegion_]]">
+              disabled="[[disableResetRegion_]]"
+              aria-describedby="regionLabel">
             [[i18n('confirmDeviceInfoResetButtonLabel')]]
           </cr-button>
         </div>
@@ -134,15 +129,18 @@
         <div class="input-holder">
           <select id="whiteLabelSelect" class="md-select"
               on-change="onSelectedWhiteLabelChange_"
-              aria-labelledby="whiteLabelLabel" disabled="[[allButtonsDisabled]]">
+              aria-labelledby="whiteLabelLabel"
+              disabled="[[allButtonsDisabled]]">
             <template is="dom-repeat" items="[[whiteLabels_]]" as="whiteLabel">
               <option value="[[whiteLabel]]">
                 [[whiteLabel]]
               </option>
             </template>
           </select>
-          <cr-button id="resetWhiteLabel" on-click="onResetWhiteLabelButtonClicked_"
-              disabled="[[disableResetWhiteLabel_]]">
+          <cr-button id="resetWhiteLabel"
+              on-click="onResetWhiteLabelButtonClicked_"
+              disabled="[[disableResetWhiteLabel_]]"
+              aria-describedby="whiteLabelLabel">
             [[i18n('confirmDeviceInfoResetButtonLabel')]]
           </cr-button>
         </div>
@@ -154,8 +152,8 @@
         <iron-icon icon="shimless-icon:info" id="infoIcon"
             class="cr-form-field-label">
         </iron-icon>
-        <paper-tooltip for="infoIcon">
-          <div id="tooltipContent">[[i18n('confirmDeviceInfoSkuWarning')]]</div> 
+        <paper-tooltip for="infoIcon" aria-hidden="true">
+          <div id="tooltipContent">[[i18n('confirmDeviceInfoSkuWarning')]]</div>
         </paper-tooltip>
       </div>
       <div class="input-holder">
@@ -169,7 +167,8 @@
           </template>
         </select>
         <cr-button id="resetSku" on-click="onResetSkuButtonClicked_"
-            disabled="[[disableResetSku_]]">
+            disabled="[[disableResetSku_]]"
+            aria-describedby="skuLabel">
           [[i18n('confirmDeviceInfoResetButtonLabel')]]
         </cr-button>
       </div>

@@ -1,10 +1,8 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "ash/wallpaper/online_wallpaper_variant_info_fetcher.h"
-
-#include <algorithm>
 
 #include "ash/public/cpp/wallpaper/online_wallpaper_params.h"
 #include "ash/public/cpp/wallpaper/online_wallpaper_variant.h"
@@ -14,8 +12,9 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
+#include "base/ranges/algorithm.h"
 #include "base/strings/string_piece.h"
-#include "base/threading/sequenced_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
 
 namespace ash {
 namespace {
@@ -43,8 +42,8 @@ bool IsSuitableOnlineWallpaperVariant(const OnlineWallpaperVariant& variant,
 const OnlineWallpaperVariant* FirstValidVariant(
     const std::vector<OnlineWallpaperVariant>& variants,
     ColorMode mode) {
-  const auto iter = std::find_if(
-      variants.begin(), variants.end(), [mode](const auto& variant) {
+  const auto iter =
+      base::ranges::find_if(variants, [mode](const auto& variant) {
         return IsSuitableOnlineWallpaperVariant(variant, mode);
       });
   if (iter != variants.end())
@@ -71,10 +70,8 @@ class VariantMatches {
       ColorMode mode,
       const std::vector<backdrop::Image>& images) {
     // Find the exact image in the |images| collection.
-    auto image_iter = std::find_if(images.begin(), images.end(),
-                                   [asset_id](const backdrop::Image& image) {
-                                     return asset_id == image.asset_id();
-                                   });
+    auto image_iter =
+        base::ranges::find(images, asset_id, &backdrop::Image::asset_id);
 
     if (image_iter == images.end())
       return absl::nullopt;
@@ -117,7 +114,7 @@ class VariantMatches {
       : unit_id(unit_id_in),
         variants(variants_in),
         first_match(first_match_in) {
-    DCHECK_EQ(std::count(variants.begin(), variants.end(), first_match), 1);
+    DCHECK_EQ(base::ranges::count(variants, first_match), 1);
   }
 };
 
@@ -170,12 +167,12 @@ void OnlineWallpaperVariantInfoFetcher::FetchOnlineWallpaper(
       NOTREACHED() << "No suitable wallpaper for "
                    << (mode == ColorMode::kDarkMode ? "dark" : "lite")
                    << " mode in collection";
-      base::SequencedTaskRunnerHandle::Get()->PostTask(
+      base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
           FROM_HERE, base::BindOnce(std::move(callback), absl::nullopt));
       return;
     }
 
-    base::SequencedTaskRunnerHandle::Get()->PostTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(
             std::move(callback),
@@ -183,7 +180,7 @@ void OnlineWallpaperVariantInfoFetcher::FetchOnlineWallpaper(
                                   GURL(variant->raw_url), info.collection_id,
                                   info.layout, /*preview_mode=*/false,
                                   /*from_user=*/false, IsDaily(info),
-                                  info.unit_id, info.variants}));
+                                  info.unit_id.value(), info.variants}));
     return;
   }
 
@@ -194,8 +191,9 @@ void OnlineWallpaperVariantInfoFetcher::FetchOnlineWallpaper(
   auto request = std::make_unique<OnlineWallpaperRequest>(
       account_id, info.collection_id, info.layout, daily, mode);
 
+  auto collection_id = request->collection_id;
   wallpaper_controller_client_->FetchImagesForCollection(
-      request->collection_id,
+      collection_id,
       base::BindOnce(
           &OnlineWallpaperVariantInfoFetcher::FindAndSetOnlineWallpaperVariants,
           weak_factory_.GetWeakPtr(), std::move(request), *info.asset_id,
@@ -238,8 +236,9 @@ void OnlineWallpaperVariantInfoFetcher::OnSingleFetch(
   if (!wallpaper_controller_client_)
     return;
 
+  auto collection_id = request->collection_id;
   wallpaper_controller_client_->FetchImagesForCollection(
-      request->collection_id,
+      collection_id,
       base::BindOnce(
           &OnlineWallpaperVariantInfoFetcher::FindAndSetOnlineWallpaperVariants,
           weak_factory_.GetWeakPtr(), std::move(request), image.asset_id(),

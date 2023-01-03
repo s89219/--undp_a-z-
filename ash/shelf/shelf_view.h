@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,11 +24,13 @@
 #include "ash/shelf/shelf_tooltip_delegate.h"
 #include "ash/shell_observer.h"
 #include "base/cancelable_callback.h"
+#include "base/containers/flat_map.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/compositor/throughput_tracker.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/accessible_pane_view.h"
@@ -57,6 +59,7 @@ class Separator;
 
 namespace ash {
 class GhostImageView;
+class PartyingShelfItem;
 class ShelfAppButton;
 class ShelfButton;
 class ShelfModel;
@@ -85,6 +88,7 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
                              public ShelfTooltipDelegate,
                              public TabletModeObserver {
  public:
+  METADATA_HEADER(ShelfView);
   // Used to communicate with the container class ScrollableShelfView.
   class Delegate {
    public:
@@ -121,15 +125,10 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
 
   // Returns the size occupied by |count| app buttons. |button_size| indicates
   // the size of each app button.
-  static int GetSizeOfAppButtons(int count, int button_size);
+  int GetSizeOfAppButtons(int count, int button_size);
 
   // Initializes shelf view elements.
-  void Init();
-
-  // Returns the ideal bounds of the specified item, or an empty rect if id
-  // isn't know. If the item is in an overflow shelf, the overflow icon location
-  // will be returned.
-  gfx::Rect GetIdealBoundsOfItemIcon(const ShelfID& id);
+  void Init(views::FocusSearch* focus_search);
 
   // Returns true if we're showing a menu. Note the menu could be either the
   // context menu or the application select menu.
@@ -162,12 +161,11 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
 
   // views::View:
   gfx::Size CalculatePreferredSize() const override;
+  void OnThemeChanged() override;
   void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
   FocusTraversable* GetPaneFocusTraversable() override;
   bool OnKeyPressed(const ui::KeyEvent& event) override;
   void OnMouseEvent(ui::MouseEvent* event) override;
-  const char* GetClassName() const override;
-  void OnThemeChanged() override;
   void ViewHierarchyChanged(
       const views::ViewHierarchyChangedDetails& details) override;
 
@@ -305,10 +303,12 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
 
   ShelfAppButton* drag_view() { return drag_view_; }
 
-  const std::vector<int>& visible_views_indices() const {
+  const std::vector<size_t>& visible_views_indices() const {
     return visible_views_indices_;
   }
-  int number_of_visible_apps() const { return visible_views_indices_.size(); }
+  size_t number_of_visible_apps() const {
+    return visible_views_indices_.size();
+  }
   ShelfWidget* shelf_widget() const { return shelf_->shelf_widget(); }
   const views::ViewModel* view_model() const { return view_model_.get(); }
   ShelfID drag_and_drop_shelf_id() const { return drag_and_drop_shelf_id_; }
@@ -322,7 +322,12 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
     return shelf_menu_model_adapter_.get();
   }
 
-  int current_ghost_view_index() const { return current_ghost_view_index_; }
+  absl::optional<size_t> current_ghost_view_index() const {
+    return current_ghost_view_index_;
+  }
+
+  void AddAnimationObserver(views::BoundsAnimatorObserver* observer);
+  void RemoveAnimationObserver(views::BoundsAnimatorObserver* observer);
 
  private:
   friend class ShelfViewTestAPI;
@@ -369,14 +374,16 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   // Sets the bounds of each view to its ideal bounds.
   void LayoutToIdealBounds();
 
-  void LayoutBackAndHomeButtons();
-
   // Returns the index of the last view whose max primary axis coordinate is
   // less than |max_value|. Returns -1 if nothing fits, or there are no views.
   int IndexOfLastItemThatFitsSize(int max_value) const;
 
   // Animates the bounds of each view to its ideal bounds.
   void AnimateToIdealBounds();
+
+  // Animates the separator to its ideal bounds if `animate` is true, or sets
+  // the bounds directly otherwise.
+  void UpdateSeparatorBounds(bool animate);
 
   // Fades |view| from an opacity of 0 to 1. This is when adding a new item.
   void FadeIn(views::View* view);
@@ -421,20 +428,20 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
 
   // Returns the range (in the model) the item at the specified index can be
   // dragged to.
-  std::pair<int, int> GetDragRange(int index);
+  std::pair<size_t, size_t> GetDragRange(size_t index);
 
-  // Checks if the item at |dragged_item_index| should be pinned or unpinned on
-  // pointer release.
-  bool ShouldUpdateDraggedViewPinStatus(int dragged_item_index);
+  // Checks if the item at |dragged_item_index| should be pinned on pointer
+  // release.
+  bool ShouldUpdateDraggedViewPinStatus(size_t dragged_item_index);
 
   // Checks if |dragged_view| is allowed to be dragged across the separator to
-  // perform pinning and unpinning. Note that this function doesn't check if the
-  // separator exists.
+  // perform pinning. Note that this function doesn't check if the separator
+  // exists.
   bool CanDragAcrossSeparator(views::View* dragged_view) const;
 
   // If there is a drag operation in progress it's canceled. If |modified_index|
   // is valid, the new position of the corresponding item is returned.
-  int CancelDrag(int modified_index);
+  absl::optional<size_t> CancelDrag(absl::optional<size_t> modified_index);
 
   // Returns rectangle bounds used for drag insertion.
   gfx::Rect GetBoundsForDragInsertInScreen();
@@ -552,8 +559,22 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   // this function causes the items that were partying to reappear on the shelf.
   void HandleShelfParty();
 
+  // Updates the visibility, position, and transform of
+  // `all_pinned_items_are_partying_label_`.
+  void UpdateAllPinnedItemsArePartyingLabel();
+
+  // Returns true if `all_pinned_items_are_partying_label_` should be visible.
+  bool ShouldShowAllPinnedItemsArePartyingLabel() const;
+
+  // Returns the space occupied by `all_pinned_items_are_partying_label_`,
+  // including the gap between that label and the first item, in DIPs.
+  int AllPinnedItemsArePartyingLabelSpace() const;
+
   // Removes and reset |current_ghost_view| and |last_ghost_view|.
   void RemoveGhostView();
+
+  // Resets the data members related to the app item context menu model request.
+  void ResetActiveMenuModelRequest();
 
   // The model; owned by Launcher.
   ShelfModel* const model_;
@@ -566,7 +587,7 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   std::unique_ptr<views::ViewModel> view_model_;
 
   // The indices of the views in |view_model_| that are visible.
-  std::vector<int> visible_views_indices_;
+  std::vector<size_t> visible_views_indices_;
 
   std::unique_ptr<views::BoundsAnimator> bounds_animator_;
 
@@ -586,8 +607,8 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   // items.
   views::Separator* separator_ = nullptr;
 
-  // Index of |separator_|. It is set to -1 if it is invisible.
-  int separator_index_ = -1;
+  // Index of |separator_|. It is set to nullopt if it is invisible.
+  absl::optional<size_t> separator_index_ = absl::nullopt;
 
   // Used in |drag_view_relative_to_ideal_bounds_| to represent the relative
   // position between |drag_view_| and its ideal bounds in shelf.
@@ -609,12 +630,10 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   gfx::Point drag_origin_;
 
   // Index |drag_view_| was initially at.
-  int start_drag_index_ = -1;
+  absl::optional<size_t> start_drag_index_ = absl::nullopt;
 
   // Used for the context menu of a particular item.
   ShelfID context_menu_id_;
-
-  std::unique_ptr<views::FocusSearch> focus_search_;
 
   // Responsible for building and running all menus.
   std::unique_ptr<ShelfMenuModelAdapter> shelf_menu_model_adapter_;
@@ -668,7 +687,7 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   // Record the index for the last pressed shelf item. This variable is used to
   // check if a repost event occurs on the same shelf item as previous one. If
   // so, the repost event should be ignored.
-  int last_pressed_index_ = -1;
+  absl::optional<size_t> last_pressed_index_ = absl::nullopt;
 
   // Tracks UMA metrics based on shelf button press actions.
   ShelfButtonPressedMetricTracker shelf_button_pressed_metric_tracker_;
@@ -680,6 +699,10 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   // A view used to make accessibility announcements (changes in the shelf's
   // alignment or auto-hide state).
   views::View* announcement_view_ = nullptr;  // Owned by ShelfView
+
+  // A view used to indicate that all pinned items are partying.
+  views::View* all_pinned_items_are_partying_label_ =
+      nullptr;  // Owned by ShelfView
 
   // For dragging: -1 if scrolling back, 1 if scrolling forward, 0 if neither.
   int drag_scroll_dir_ = 0;
@@ -717,11 +740,14 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
   GhostImageView* last_ghost_view_ = nullptr;
 
   // The index in the shelf app icons where the |current_ghost_view_| will show.
-  int current_ghost_view_index_ = -1;
+  absl::optional<size_t> current_ghost_view_index_ = absl::nullopt;
 
   // When the scrollable shelf is enabled, |shelf_button_delegate_| should
   // be ScrollableShelfView.
   ShelfButtonDelegate* shelf_button_delegate_ = nullptr;
+
+  // Owned by ScrollableShelfView.
+  views::FocusSearch* focus_search_ = nullptr;
 
   std::unique_ptr<FadeInAnimationDelegate> fade_in_animation_delegate_;
 
@@ -733,6 +759,9 @@ class ASH_EXPORT ShelfView : public views::AccessiblePaneView,
 
   // Called when showing shelf context menu.
   base::RepeatingClosure context_menu_shown_callback_;
+
+  // The shelf party animations.
+  base::flat_map<ShelfID, std::unique_ptr<PartyingShelfItem>> party_;
 
   base::WeakPtrFactory<ShelfView> weak_factory_{this};
 };

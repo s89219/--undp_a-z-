@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,12 @@
 
 #include <utility>
 
-#include "ash/components/settings/cros_settings_names.h"
-#include "ash/components/tpm/stub_install_attributes.h"
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/timer/mock_timer.h"
+#include "base/values.h"
 #include "chrome/browser/ash/login/users/fake_chrome_user_manager.h"
 #include "chrome/browser/ash/settings/scoped_testing_cros_settings.h"
 #include "chrome/browser/ash/tpm_firmware_update.h"
@@ -20,8 +19,10 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/ash/components/dbus/dbus_thread_manager.h"
+#include "chromeos/ash/components/dbus/session_manager/fake_session_manager_client.h"
+#include "chromeos/ash/components/install_attributes/stub_install_attributes.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
 #include "components/account_id/account_id.h"
 #include "components/prefs/pref_service.h"
 #include "components/prefs/testing_pref_service.h"
@@ -43,19 +44,19 @@ class TPMAutoUpdateModePolicyHandlerTest : public testing::Test {
       : local_state_(TestingBrowserProcess::GetGlobal()),
         user_manager_(new ash::FakeChromeUserManager()),
         user_manager_enabler_(base::WrapUnique(user_manager_)) {
-    chromeos::SessionManagerClient::InitializeFakeInMemory();
+    ash::SessionManagerClient::InitializeFakeInMemory();
   }
 
   ~TPMAutoUpdateModePolicyHandlerTest() override {
-    chromeos::SessionManagerClient::Shutdown();
+    ash::SessionManagerClient::Shutdown();
   }
 
   void SetAutoUpdateMode(AutoUpdateMode auto_update_mode) {
-    base::DictionaryValue dict;
-    dict.SetKey(ash::tpm_firmware_update::kSettingsKeyAutoUpdateMode,
-                base::Value(static_cast<int>(auto_update_mode)));
+    base::Value::Dict dict;
+    dict.Set(ash::tpm_firmware_update::kSettingsKeyAutoUpdateMode,
+             static_cast<int>(auto_update_mode));
     scoped_testing_cros_settings_.device_settings()->Set(
-        ash::kTPMFirmwareUpdateSettings, dict);
+        ash::kTPMFirmwareUpdateSettings, base::Value(std::move(dict)));
     base::RunLoop().RunUntilIdle();
   }
 
@@ -96,7 +97,7 @@ TEST_F(TPMAutoUpdateModePolicyHandlerTest, PolicyUpdatesTriggered) {
 
   update_available_ = true;
 
-  auto* fake_session_manager_client = chromeos::FakeSessionManagerClient::Get();
+  auto* fake_session_manager_client = ash::FakeSessionManagerClient::Get();
 
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(
@@ -136,7 +137,7 @@ TEST_F(TPMAutoUpdateModePolicyHandlerTest, NoUpdatesAvailable) {
 
   SetAutoUpdateMode(AutoUpdateMode::kWithoutAcknowledgment);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(0, chromeos::FakeSessionManagerClient::Get()
+  EXPECT_EQ(0, ash::FakeSessionManagerClient::Get()
                    ->start_tpm_firmware_update_call_count());
 }
 
@@ -166,7 +167,7 @@ TEST_F(TPMAutoUpdateModePolicyHandlerTest, ShowPlannedUpdateNotification) {
   base::RunLoop().RunUntilIdle();
 
   // TPM update is not triggered.
-  EXPECT_EQ(0, chromeos::FakeSessionManagerClient::Get()
+  EXPECT_EQ(0, ash::FakeSessionManagerClient::Get()
                    ->start_tpm_firmware_update_call_count());
 
   EXPECT_EQ(last_shown_notification_,
@@ -203,7 +204,7 @@ TEST_F(TPMAutoUpdateModePolicyHandlerTest,
   base::RunLoop().RunUntilIdle();
 
   // TPM update is not triggered.
-  EXPECT_EQ(0, chromeos::FakeSessionManagerClient::Get()
+  EXPECT_EQ(0, ash::FakeSessionManagerClient::Get()
                    ->start_tpm_firmware_update_call_count());
 
   // Show planned update notification.
@@ -239,7 +240,7 @@ TEST_F(TPMAutoUpdateModePolicyHandlerTest,
 
   SetAutoUpdateMode(AutoUpdateMode::kUserAcknowledgment);
   base::RunLoop().RunUntilIdle();
-  EXPECT_EQ(0, chromeos::FakeSessionManagerClient::Get()
+  EXPECT_EQ(0, ash::FakeSessionManagerClient::Get()
                    ->start_tpm_firmware_update_call_count());
 
   // Show planned update notification.
@@ -273,7 +274,7 @@ TEST_F(TPMAutoUpdateModePolicyHandlerTest, UpdateWithUserAcknowlegment) {
   base::RunLoop().RunUntilIdle();
 
   // Update is triggered.
-  EXPECT_EQ(1, chromeos::FakeSessionManagerClient::Get()
+  EXPECT_EQ(1, ash::FakeSessionManagerClient::Get()
                    ->start_tpm_firmware_update_call_count());
 }
 

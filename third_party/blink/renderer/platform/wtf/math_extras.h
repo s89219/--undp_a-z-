@@ -30,6 +30,7 @@
 #include <cstddef>
 #include <limits>
 
+#include "base/check_op.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 
@@ -308,12 +309,24 @@ constexpr T DefaultMinimumForClamp() {
 
 // And, finally, the actual function for people to call.
 template <typename LimitType, typename ValueType>
-inline LimitType ClampTo(ValueType value,
-                         LimitType min = DefaultMinimumForClamp<LimitType>(),
-                         LimitType max = DefaultMaximumForClamp<LimitType>()) {
+constexpr LimitType ClampTo(
+    ValueType value,
+    LimitType min = DefaultMinimumForClamp<LimitType>(),
+    LimitType max = DefaultMaximumForClamp<LimitType>()) {
   DCHECK(!std::isnan(static_cast<double>(value)));
   DCHECK_LE(min, max);  // This also ensures |min| and |max| aren't NaN.
   return ClampToHelper<LimitType, ValueType>::ClampTo(value, min, max);
+}
+
+template <typename LimitType, typename ValueType>
+constexpr LimitType ClampToWithNaNTo0(
+    ValueType value,
+    LimitType min = DefaultMinimumForClamp<LimitType>(),
+    LimitType max = DefaultMaximumForClamp<LimitType>()) {
+  static_assert(std::numeric_limits<ValueType>::has_quiet_NaN);
+  if (UNLIKELY(std::isnan(value)))
+    return 0;
+  return ClampTo<LimitType, ValueType>(value);
 }
 
 constexpr bool IsWithinIntRange(float x) {

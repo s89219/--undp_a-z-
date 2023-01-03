@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,7 +10,7 @@
 #include "ash/components/arc/mojom/compatibility_mode.mojom.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
-#include "chrome/browser/ui/app_list/arc/arc_app_list_prefs.h"
+#include "chrome/browser/ash/app_list/arc/arc_app_list_prefs.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -29,7 +29,7 @@ ArcAppListPrefs::AppInfo CreateAppInfoForPackage(
       true /* resize_lock_needs_confirmation */,
       ArcAppListPrefs::WindowLayout(), true /* ready */, true /* suspended */,
       true /* show_in_launcher */, true /* shortcut */, true /* launchable */,
-      absl::nullopt /* app_size_in_bytes */,
+      false /* need_fixup */, absl::nullopt /* app_size_in_bytes */,
       absl::nullopt /* data_size_in_bytes */);
 }
 

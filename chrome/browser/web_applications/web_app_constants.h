@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,11 @@
 #include <stddef.h>
 
 #include <iosfwd>
-#include <vector>
+#include <string>
 
-#include "chrome/browser/web_applications/user_display_mode.h"
-#include "components/services/app_service/public/mojom/types.mojom-forward.h"
+#include "components/webapps/browser/installable/installable_metrics.h"
 #include "third_party/blink/public/common/manifest/manifest.h"
-#include "third_party/blink/public/mojom/manifest/display_mode.mojom.h"
+#include "third_party/blink/public/mojom/manifest/display_mode.mojom-forward.h"
 
 namespace web_app {
 
@@ -34,13 +33,18 @@ namespace WebAppManagement {
 enum Type {
   kMinValue = 0,
   kSystem = kMinValue,
+  // Installed by Kiosk on Chrome OS.
+  kKiosk,
   kPolicy,
+  kOem,
   kSubApp,
   kWebAppStore,
+  kOneDriveIntegration,
   // User-installed web apps are managed by the sync system.or
   // user-installed apps without overlaps this is the only source that will be
   // set.
   kSync,
+  kCommandLine,
   // This value is used by both the PreinstalledWebAppManager AND the
   // AndroidSmsAppSetupControllerImpl, which is a potential conflict in the
   // future.
@@ -51,9 +55,9 @@ enum Type {
   kDefault,
   kMaxValue = kDefault,
 };
-}  // namespace WebAppManagement
 
 std::ostream& operator<<(std::ostream& os, WebAppManagement::Type type);
+}  // namespace WebAppManagement
 
 // Type of OS hook.
 //
@@ -129,7 +133,7 @@ enum class ExternalInstallSource {
   // Installed as a Chrome component, such as a help app, or a settings app.
   // The corresponding ExternallyManagedAppManager::SynchronizeInstalledApps
   // call site is
-  // in SystemWebAppManager::RefreshPolicyInstalledApps.
+  // in ash::SystemWebAppManager::RefreshPolicyInstalledApps.
   kSystemInstalled = 3,
 
   // Installed from ARC.
@@ -137,6 +141,23 @@ enum class ExternalInstallSource {
   // are not installed via ExternallyManagedAppManager. This is used in
   // ExternallyInstalledWebAppPrefs to track navigation url to app_id entries.
   kArc = 4,
+
+  // Installed by Kiosk. There is no call to SynchronizeInstalledApps for this
+  // type because Kiosk apps are bound to their profiles. They will never be
+  // uninstalled in Kiosk sessions.
+  kKiosk = 5,
+
+  // Installed into a special lock screen app profile when the user selects a
+  // lock-screen-capable app to be used on the lock screen.
+  // The corresponding ExternallyManagedAppManager::SynchronizeInstalledApps
+  // call site is in ash::AppManagerImpl::AddAppToLockScreenProfile.
+  kExternalLockScreen = 6,
+
+  // Installed through the user-initiated Microsoft 365 setup dialog. There is
+  // no call to SynchronizeInstalledApps for this type as these apps are
+  // directly installed/uninstalled by the user, rather than being sync'd from
+  // somewhere else.
+  kInternalMicrosoft365Setup = 7,
 };
 
 // Icon size in pixels.
@@ -147,24 +168,6 @@ constexpr int kWebAppIconSmall = 32;
 constexpr size_t kMaxApplicationDockMenuItems = 10;
 
 using DisplayMode = blink::mojom::DisplayMode;
-
-// When user_display_mode indicates a user preference for opening in
-// a browser tab, we open in a browser tab. If the developer has specified
-// the app should utilize more advanced display modes and/or fallback chain,
-// attempt honor those preferences. Otherwise, we open in a standalone
-// window (for app_display_mode 'standalone' or 'fullscreen'), or a minimal-ui
-// window (for app_display_mode 'browser' or 'minimal-ui').
-//
-// |is_isolated| overrides browser display mode for isolated apps because they
-// can't be open as a tab.
-DisplayMode ResolveEffectiveDisplayMode(
-    DisplayMode app_display_mode,
-    const std::vector<DisplayMode>& app_display_mode_overrides,
-    UserDisplayMode user_display_mode,
-    bool is_isolated);
-
-apps::mojom::LaunchContainer ConvertDisplayModeToAppLaunchContainer(
-    DisplayMode display_mode);
 
 // The operation mode for Run on OS Login.
 enum class RunOnOsLoginMode {
@@ -194,8 +197,6 @@ enum class RunOnOsLoginPolicy {
   // window.
   kRunWindowed = 2,
 };
-
-std::string RunOnOsLoginModeToString(RunOnOsLoginMode mode);
 
 // Number of times IPH can be ignored for this app before it's muted.
 constexpr int kIphMuteAfterConsecutiveAppSpecificIgnores = 3;
@@ -228,6 +229,8 @@ enum class ApiApprovalState {
   kDisallowed = 2,
 };
 
+std::ostream& operator<<(std::ostream& os, ApiApprovalState state);
+
 // State concerning whether a particular feature has been enabled at the OS
 // level. For example, with File Handling, this indicates whether an app should
 // be/has been registered with the OS to handle opening certain file types.
@@ -237,6 +240,7 @@ enum class OsIntegrationState {
 };
 
 using LaunchHandler = blink::Manifest::LaunchHandler;
+using TabStrip = blink::Manifest::TabStrip;
 
 // A result how `WebAppIconDownloader` processed the list of icon urls.
 //
@@ -259,8 +263,6 @@ enum class IconsDownloadedResult {
   kMaxValue = kAbortedDueToFailure,
 };
 
-const char* IconsDownloadedResultToString(IconsDownloadedResult result);
-
 // Generic result enumeration to be used for operations that can fail. If more
 // information is needed in a return value, we can move to something similar to
 // `base::FileErrorOr` in the future.
@@ -272,6 +274,10 @@ enum class Result {
 };
 
 using ResultCallback = base::OnceCallback<void(Result)>;
+
+// Convert the uninstall source to string for easy printing.
+std::string ConvertUninstallSourceToStringType(
+    const webapps::WebappUninstallSource& uninstall_source);
 
 }  // namespace web_app
 

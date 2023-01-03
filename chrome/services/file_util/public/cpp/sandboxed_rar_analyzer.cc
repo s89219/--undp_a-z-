@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -49,8 +49,6 @@ SandboxedRarAnalyzer::~SandboxedRarAnalyzer() = default;
 void SandboxedRarAnalyzer::AnalyzeFile(base::File file, base::File temp_file) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(!file_path_.value().empty());
-  base::UmaHistogramBoolean("SBClientDownload.RarAnalysisRemoteValid",
-                            remote_analyzer_.is_bound());
   if (remote_analyzer_) {
     remote_analyzer_->AnalyzeRarFile(
         std::move(file), std::move(temp_file),

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,7 +13,7 @@
 #include "ash/capture_mode/capture_mode_session.h"
 #include "ash/capture_mode/capture_mode_util.h"
 #include "ash/constants/ash_features.h"
-#include "ash/display/window_tree_host_manager.h"
+#include "ash/constants/notifier_catalogs.h"
 #include "ash/projector/projector_controller_impl.h"
 #include "ash/public/cpp/capture_mode/recording_overlay_view.h"
 #include "ash/public/cpp/holding_space/holding_space_client.h"
@@ -25,7 +25,6 @@
 #include "ash/shell.h"
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/system/message_center/message_view_factory.h"
-#include "ash/system/status_area_widget.h"
 #include "ash/wm/tablet_mode/tablet_mode_controller.h"
 #include "base/auto_reset.h"
 #include "base/bind.h"
@@ -37,14 +36,11 @@
 #include "base/location.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/metrics/histogram_functions.h"
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
-#include "base/task/bind_post_task.h"
 #include "base/task/current_thread.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
@@ -74,7 +70,6 @@ CaptureModeController* g_instance = nullptr;
 // consecutive.
 constexpr base::TimeDelta kConsecutiveScreenshotThreshold = base::Seconds(5);
 
-constexpr char kScreenCaptureNotificationId[] = "capture_mode_notification";
 constexpr char kScreenCaptureStoppedNotificationId[] =
     "capture_mode_stopped_notification";
 constexpr char kScreenCaptureNotifierId[] = "ash.capture_mode_controller";
@@ -103,13 +98,6 @@ constexpr char kCustomCapturePathPrefName[] =
 // is currently selected even if a custom capture path is set.
 constexpr char kUsesDefaultCapturePathPrefName[] =
     "ash.capture_mode.uses_default_capture_path";
-
-// The name of a boolean pref that determines whether we can show the folder
-// selection user nudge. When this pref is false, it means that we showed the
-// nudge at some point and the user interacted with the capture mode session UI
-// in such a way that the nudge no longer needs to be displayed again.
-constexpr char kCanShowFolderSelectionNudge[] =
-    "ash.capture_mode.can_show_folder_selection_nudge";
 
 // The name of a boolean pref that determines whether we can show the selfie
 // camera user nudge. When this pref is false, it means that we showed the
@@ -229,14 +217,15 @@ void ShowNotification(
                         ? message_center::NOTIFICATION_TYPE_SIMPLE
                         : message_center::NOTIFICATION_TYPE_CUSTOM;
   std::unique_ptr<message_center::Notification> notification =
-      CreateSystemNotification(
+      CreateSystemNotificationPtr(
           type, notification_id, l10n_util::GetStringUTF16(title_id),
           l10n_util::GetStringUTF16(message_id),
           l10n_util::GetStringUTF16(IDS_ASH_SCREEN_CAPTURE_DISPLAY_SOURCE),
           GURL(),
           message_center::NotifierId(
               message_center::NotifierType::SYSTEM_COMPONENT,
-              kScreenCaptureNotifierId),
+              kScreenCaptureNotifierId,
+              NotificationCatalogName::kScreenCapture),
           optional_fields, delegate, notification_icon, warning_level);
   if (type == message_center::NOTIFICATION_TYPE_CUSTOM) {
     notification->set_custom_view_type(for_video_thumbnail
@@ -284,7 +273,7 @@ int GetDisabledNotificationMessageId(CaptureAllowance allowance,
 void ShowDisabledNotification(CaptureAllowance allowance) {
   DCHECK(allowance != CaptureAllowance::kAllowed);
   ShowNotification(
-      kScreenCaptureNotificationId,
+      capture_mode_util::kScreenCaptureNotificationId,
       GetDisabledNotificationMessageId(allowance, /*for_title=*/true),
       GetDisabledNotificationMessageId(allowance, /*for_title=*/false),
       /*optional_fields=*/{}, /*delegate=*/nullptr,
@@ -371,19 +360,13 @@ base::FilePath GetTempDir() {
   return temp_dir;
 }
 
-std::unique_ptr<CaptureModeCameraController> MaybeCreateCameraController(
-    CaptureModeDelegate* delegate) {
-  if (!features::IsCaptureModeSelfieCameraEnabled())
-    return nullptr;
-  return std::make_unique<CaptureModeCameraController>(delegate);
-}
-
 }  // namespace
 
 CaptureModeController::CaptureModeController(
     std::unique_ptr<CaptureModeDelegate> delegate)
     : delegate_(std::move(delegate)),
-      camera_controller_(MaybeCreateCameraController(delegate_.get())),
+      camera_controller_(
+          std::make_unique<CaptureModeCameraController>(delegate_.get())),
       blocking_task_runner_(base::ThreadPool::CreateSequencedTaskRunner(
           // A task priority of BEST_EFFORT is good enough for this runner,
           // since it's used for blocking file IO such as saving the screenshots
@@ -439,6 +422,13 @@ CaptureModeController::CaptureModeController(
 }
 
 CaptureModeController::~CaptureModeController() {
+  if (IsActive()) {
+    // If for some reason a session was started after `OnChromeTerminating()`
+    // was called (see https://crbug.com/1350711), we must explicitly shut it
+    // down, so that it can stop observing the things it observes.
+    Stop();
+  }
+
   chromeos::PowerManagerClient::Get()->RemoveObserver(this);
   Shell::Get()->session_controller()->RemoveObserver(this);
   // Remove the custom notification view factories.
@@ -463,14 +453,19 @@ void CaptureModeController::RegisterProfilePrefs(PrefRegistrySimple* registry) {
                                  /*default_value=*/base::FilePath());
   registry->RegisterBooleanPref(kUsesDefaultCapturePathPrefName,
                                 /*default_value=*/false);
-  const auto* pref_name = features::IsCaptureModeSelfieCameraEnabled()
-                              ? kCanShowCameraNudge
-                              : kCanShowFolderSelectionNudge;
-  registry->RegisterBooleanPref(pref_name, /*default_value=*/true);
+  registry->RegisterBooleanPref(kCanShowCameraNudge, /*default_value=*/true);
 }
 
 bool CaptureModeController::IsActive() const {
   return capture_mode_session_ && !capture_mode_session_->is_shutting_down();
+}
+
+bool CaptureModeController::GetAudioRecordingEnabled() const {
+  return enable_audio_recording_ && !IsAudioCaptureDisabledByPolicy();
+}
+
+bool CaptureModeController::IsAudioCaptureDisabledByPolicy() const {
+  return delegate_->IsAudioCaptureDisabledByPolicy();
 }
 
 void CaptureModeController::SetSource(CaptureModeSource source) {
@@ -497,11 +492,13 @@ void CaptureModeController::SetType(CaptureModeType type) {
     capture_mode_session_->OnCaptureTypeChanged(type_);
 }
 
-void CaptureModeController::EnableAudioRecording(bool enable_audio_recording) {
-  if (enable_audio_recording_ == enable_audio_recording)
+void CaptureModeController::SetRecordingType(RecordingType recording_type) {
+  if (recording_type == recording_type_)
     return;
 
-  enable_audio_recording_ = enable_audio_recording;
+  recording_type_ = recording_type;
+  if (capture_mode_session_)
+    capture_mode_session_->OnRecordingTypeChanged();
 }
 
 void CaptureModeController::Start(CaptureModeEntryType entry_type) {
@@ -534,10 +531,8 @@ void CaptureModeController::SetUserCaptureRegion(const gfx::Rect& region,
   if (!user_capture_region_.IsEmpty() && by_user)
     last_capture_region_update_time_ = base::TimeTicks::Now();
 
-  if (camera_controller_ && !is_recording_in_progress() &&
-      source_ == CaptureModeSource::kRegion) {
+  if (!is_recording_in_progress() && source_ == CaptureModeSource::kRegion)
     camera_controller_->MaybeReparentPreviewWidget();
-  }
 }
 
 bool CaptureModeController::CanShowUserNudge() const {
@@ -566,17 +561,11 @@ bool CaptureModeController::CanShowUserNudge() const {
 
   auto* pref_service = session_controller->GetActivePrefService();
   DCHECK(pref_service);
-  const auto* pref_name = features::IsCaptureModeSelfieCameraEnabled()
-                              ? kCanShowCameraNudge
-                              : kCanShowFolderSelectionNudge;
-  return pref_service->GetBoolean(pref_name);
+  return pref_service->GetBoolean(kCanShowCameraNudge);
 }
 
 void CaptureModeController::DisableUserNudgeForever() {
-  const auto* pref_name = features::IsCaptureModeSelfieCameraEnabled()
-                              ? kCanShowCameraNudge
-                              : kCanShowFolderSelectionNudge;
-  GetActiveUserPrefService()->SetBoolean(pref_name, false);
+  GetActiveUserPrefService()->SetBoolean(kCanShowCameraNudge, false);
 }
 
 void CaptureModeController::SetUsesDefaultCaptureFolder(bool value) {
@@ -738,31 +727,32 @@ bool CaptureModeController::IsLinuxFilesPath(const base::FilePath& path) const {
   return path == delegate_->GetLinuxFilesPath();
 }
 
-aura::Window* CaptureModeController::GetCameraPreviewParentWindow() const {
+aura::Window* CaptureModeController::GetOnCaptureSurfaceWidgetParentWindow()
+    const {
   // Trying to get camera preview's parent from `video_recording_watcher_` first
   // if a video recording is in progress. As a capture session can be started
   // with `kImage` type while recording, and we should get the parent of the
   // camera preview with the settings inside VideoRecordingWatcher in this case,
   // e.g, CaptureModeSource for taking the video.
   if (is_recording_in_progress())
-    return video_recording_watcher_->GetCameraPreviewParentWindow();
+    return video_recording_watcher_->GetOnCaptureSurfaceWidgetParentWindow();
 
   if (IsActive())
-    return capture_mode_session_->GetCameraPreviewParentWindow();
+    return capture_mode_session_->GetOnCaptureSurfaceWidgetParentWindow();
 
   return nullptr;
 }
 
-gfx::Rect CaptureModeController::GetCameraPreviewConfineBounds() const {
+gfx::Rect CaptureModeController::GetCaptureSurfaceConfineBounds() const {
   // Getting the bounds from `video_recording_watcher_` first if a video
   // recording is in progress. As a capture session can be started with `kImage`
   // type while recording, and we should get the bounds with the settings inside
   // VideoRecordingWatcher in this case, e.g, user-selected region.
   if (is_recording_in_progress())
-    return video_recording_watcher_->GetCameraPreviewConfineBounds();
+    return video_recording_watcher_->GetCaptureSurfaceConfineBounds();
 
   if (IsActive())
-    return capture_mode_session_->GetCameraPreviewConfineBounds();
+    return capture_mode_session_->GetCaptureSurfaceConfineBounds();
 
   return gfx::Rect();
 }
@@ -787,10 +777,13 @@ void CaptureModeController::OnActiveUserSessionChanged(
     const AccountId& account_id) {
   EndSessionOrRecording(EndRecordingReason::kActiveUserChange);
 
+  camera_controller_->OnActiveUserSessionChanged();
+
   // Remove the previous notification when switching to another user.
   auto* message_center = message_center::MessageCenter::Get();
-  message_center->RemoveNotification(kScreenCaptureNotificationId,
-                                     /*by_user=*/false);
+  message_center->RemoveNotificationsForNotifierId(message_center::NotifierId(
+      message_center::NotifierType::SYSTEM_COMPONENT, kScreenCaptureNotifierId,
+      NotificationCatalogName::kScreenCapture));
 }
 
 void CaptureModeController::OnSessionStateChanged(
@@ -800,12 +793,11 @@ void CaptureModeController::OnSessionStateChanged(
 }
 
 void CaptureModeController::OnChromeTerminating() {
-  // Order here matters. We end the recording first before we inform the camera
-  // controller, so that ending the recording will destroy any camera previews
-  // first.
+  // Order here matters. We may shutdown while a session with a camera is active
+  // before recording starts, we need to inform the camera controller first to
+  // destroy the camera preview first.
+  camera_controller_->OnShuttingDown();
   EndSessionOrRecording(EndRecordingReason::kShuttingDown);
-  if (camera_controller_)
-    camera_controller_->OnShuttingDown();
 }
 
 void CaptureModeController::SuspendImminent(
@@ -817,6 +809,16 @@ void CaptureModeController::StartVideoRecordingImmediatelyForTesting() {
   DCHECK(IsActive());
   DCHECK_EQ(type_, CaptureModeType::kVideo);
   OnVideoRecordCountDownFinished();
+}
+
+void CaptureModeController::MaybeRestoreCachedCaptureConfigurations() {
+  if (!cached_normal_session_configs_)
+    return;
+
+  type_ = cached_normal_session_configs_->type;
+  source_ = cached_normal_session_configs_->source;
+  enable_audio_recording_ = cached_normal_session_configs_->audio_on;
+  cached_normal_session_configs_.reset();
 }
 
 void CaptureModeController::PushNewRootSizeToRecordingService(
@@ -988,9 +990,10 @@ void CaptureModeController::LaunchRecordingServiceAndStartRecording(
   // is ok since the |audio_stream_factory| parameter in the recording service
   // APIs is optional, and can be not bound.
   mojo::PendingRemote<media::mojom::AudioStreamFactory> audio_stream_factory;
-  if (enable_audio_recording_) {
+  if (GetAudioRecordingEnabled()) {
     delegate_->BindAudioStreamFactory(
         audio_stream_factory.InitWithNewPipeAndPassReceiver());
+    capture_mode_util::MaybeUpdateMicrophonePrivacyIndicator(/*mic_on=*/true);
   }
 
   // Only act as a `DriveFsQuotaDelegate` for the recording service if the video
@@ -1077,6 +1080,7 @@ void CaptureModeController::FinalizeRecording(bool success,
   const bool was_in_projector_mode =
       video_recording_watcher_->is_in_projector_mode();
   video_recording_watcher_.reset();
+  capture_mode_util::MaybeUpdateMicrophonePrivacyIndicator(/*mic_on=*/false);
 
   delegate_->StopObservingRestrictedContent(
       base::BindOnce(&CaptureModeController::OnDlpRestrictionCheckedAtVideoEnd,
@@ -1094,6 +1098,12 @@ void CaptureModeController::TerminateRecordingUiElements() {
 
   capture_mode_util::TriggerAccessibilityAlert(
       IDS_ASH_SCREEN_CAPTURE_ALERT_RECORDING_STOPPED);
+
+  // Reset the camera selection if it was auto-selected in the
+  // projector-initiated capture mode session after video recording is completed
+  // to avoid the camera selection settings of the normal capture mode session
+  // being overridden by the projector-initiated capture mode session.
+  camera_controller_->MaybeRevertAutoCameraSelection();
 
   video_recording_watcher_->ShutDown();
 }
@@ -1254,7 +1264,9 @@ void CaptureModeController::ShowPreviewNotification(
   optional_fields.image = preview_image;
 
   ShowNotification(
-      kScreenCaptureNotificationId, title_id, message_id, optional_fields,
+      capture_mode_util::GetScreenCaptureNotificationIdForPath(
+          screen_capture_path),
+      title_id, message_id, optional_fields,
       base::MakeRefCounted<message_center::HandleNotificationClickDelegate>(
           base::BindRepeating(&CaptureModeController::HandleNotificationClicked,
                               weak_ptr_factory_.GetWeakPtr(),
@@ -1303,7 +1315,9 @@ void CaptureModeController::HandleNotificationClicked(
   // to this function. The callback's state owns any passed-by-ref arguments,
   // such as |screen_capture_path| which we use in this function.
   message_center::MessageCenter::Get()->RemoveNotification(
-      kScreenCaptureNotificationId, /*by_user=*/false);
+      capture_mode_util::GetScreenCaptureNotificationIdForPath(
+          screen_capture_path),
+      /*by_user=*/false);
 }
 
 base::FilePath CaptureModeController::BuildImagePath() const {
@@ -1362,6 +1376,11 @@ void CaptureModeController::RecordAndResetConsecutiveScreenshots() {
 }
 
 void CaptureModeController::OnVideoRecordCountDownFinished() {
+  // Ensure `on_countdown_finished_callback_for_test_` is run after this
+  // function.
+  base::ScopedClosureRunner scoped_closure(
+      std::move(on_countdown_finished_callback_for_test_));
+
   // If this event is dispatched after the capture session was cancelled or
   // destroyed, this should be a no-op.
   if (!IsActive())
@@ -1389,7 +1408,12 @@ void CaptureModeController::OnVideoRecordCountDownFinished() {
 void CaptureModeController::OnProjectorContainerFolderCreated(
     const CaptureParams& capture_params,
     const base::FilePath& file_path_no_extension) {
-  DCHECK(IsActive());
+  if (!IsActive()) {
+    // This function gets called asynchronously, and until it gets called, the
+    // session could end due e.g. locking the screen, suspending, or switching
+    // users.
+    return;
+  }
 
   // An empty path is sent to indicate an error.
   if (file_path_no_extension.empty()) {
@@ -1405,11 +1429,16 @@ void CaptureModeController::BeginVideoRecording(
     const CaptureParams& capture_params,
     bool for_projector,
     const base::FilePath& video_file_path) {
-  DCHECK(IsActive());
   DCHECK_EQ(capture_mode_session_->is_in_projector_mode(), for_projector);
-  DCHECK(GetCaptureParams());
   DCHECK(!video_file_path.empty());
   DCHECK(video_file_path.MatchesExtension(".webm"));
+
+  if (!IsActive()) {
+    // This function gets called asynchronously, and until it gets called, the
+    // session could end due to e.g. locking the screen, suspending, or
+    // switching users.
+    return;
+  }
 
   base::AutoReset<bool> initializing_resetter(&is_initializing_recording_,
                                               true);
@@ -1451,6 +1480,11 @@ void CaptureModeController::BeginVideoRecording(
   LaunchRecordingServiceAndStartRecording(capture_params,
                                           std::move(cursor_overlay_receiver));
 
+  // Restore the capture mode configurations that include the `type_`, `source_`
+  // and `enable_audio_recording_` after projector-inititated recording starts
+  // if any of them was overridden in projector-initiated capture mode session.
+  MaybeRestoreCachedCaptureConfigurations();
+
   capture_mode_util::SetStopRecordingButtonVisibility(
       capture_params.window->GetRootWindow(), true);
 
@@ -1466,9 +1500,14 @@ void CaptureModeController::InterruptVideoRecording() {
 
 void CaptureModeController::OnDlpRestrictionCheckedAtPerformingCapture(
     bool proceed) {
-  DCHECK(IsActive());
-
   pending_dlp_check_ = false;
+
+  if (!IsActive()) {
+    // This function gets called asynchronously, and until it gets called, the
+    // session could end due to e.g. locking the screen, suspending, or
+    // switching users.
+    return;
+  }
 
   // We don't need to bring capture mode UIs back if `proceed` is false or if
   // `type_` is `CaptureModeType::kImage`, since the session is about to
@@ -1508,9 +1547,14 @@ void CaptureModeController::OnDlpRestrictionCheckedAtPerformingCapture(
 
 void CaptureModeController::OnDlpRestrictionCheckedAtCountDownFinished(
     bool proceed) {
-  DCHECK(IsActive());
-
   pending_dlp_check_ = false;
+
+  if (!IsActive()) {
+    // This function gets called asynchronously, and until it gets called, the
+    // session could end due to e.g. locking the screen, suspending, or
+    // switching users.
+    return;
+  }
 
   // We don't need to bring back capture mode UIs on 3-second count down
   // finished, since the session is about to shutdown anyways for starting the
@@ -1549,6 +1593,18 @@ void CaptureModeController::OnDlpRestrictionCheckedAtCountDownFinished(
   capture_mode_session_->set_can_exit_on_escape(false);
 
   if (capture_mode_session_->is_in_projector_mode()) {
+    // Before creating the DriveFS folder for the screencast, check if audio
+    // recording cannot be done due to admin policy. In this case we just abort
+    // the recording by stopping the capture mode session without starting any
+    // recording. This will eventually call
+    // `ProjectorControllerImpl::OnRecordingStartAborted()` which should take
+    // care of cleaning up the Projector state, and updating the preconditions
+    // for the "New screencast" button.
+    if (!GetAudioRecordingEnabled()) {
+      Stop();
+      return;
+    }
+
     ProjectorControllerImpl::Get()->CreateScreencastContainerFolder(
         base::BindOnce(
             &CaptureModeController::OnProjectorContainerFolderCreated,
@@ -1603,11 +1659,20 @@ void CaptureModeController::OnDlpRestrictionCheckedAtSessionInit(
     SetType(CaptureModeType::kImage);
   } else if (entry_type == CaptureModeEntryType::kProjector) {
     DCHECK(features::IsProjectorEnabled());
+    DCHECK(!delegate_->IsAudioCaptureDisabledByPolicy())
+        << "A projector session should not be allowed to begin if audio "
+           "capture is disabled by policy.";
+
     for_projector = true;
-    // TODO(afakhry): Discuss with PM whether we want this to affect the audio
-    // settings of future generic capture mode sessions.
+
+    // Cache the normal capture mode configurations that will be used for
+    // restoration when switching to the normal capture mode session if needed.
+    cached_normal_session_configs_ =
+        CaptureSessionConfigs{type_, source_, enable_audio_recording_};
+
     enable_audio_recording_ = true;
     SetType(CaptureModeType::kVideo);
+    SetSource(CaptureModeSource::kFullscreen);
   }
 
   RecordCaptureModeEntryType(entry_type);
@@ -1625,6 +1690,8 @@ void CaptureModeController::OnDlpRestrictionCheckedAtSessionInit(
   capture_mode_session_ =
       std::make_unique<CaptureModeSession>(this, for_projector);
   capture_mode_session_->Initialize();
+
+  camera_controller_->OnCaptureSessionStarted();
 }
 
 void CaptureModeController::OnDlpRestrictionCheckedAtVideoEnd(

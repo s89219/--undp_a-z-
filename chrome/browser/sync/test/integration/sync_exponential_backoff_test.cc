@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/updated_progress_marker_checker.h"
 #include "components/sync/driver/sync_service_impl.h"
-#include "components/sync/test/fake_server/fake_server_http_post_provider.h"
+#include "components/sync/test/fake_server_http_post_provider.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/network_connection_change_simulator.h"
 #include "net/base/network_change_notifier.h"
@@ -28,7 +28,7 @@ class SyncExponentialBackoffTest : public SyncTest {
   SyncExponentialBackoffTest& operator=(const SyncExponentialBackoffTest&) =
       delete;
 
-  ~SyncExponentialBackoffTest() override {}
+  ~SyncExponentialBackoffTest() override = default;
 
   void SetUp() override {
     // This is needed to avoid spurious notifications initiated by the platform.
@@ -37,8 +37,8 @@ class SyncExponentialBackoffTest : public SyncTest {
   }
 };
 
-// Flaky on ChromeOS, crbug.com/1170609
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+// TODO(crbug.com/1346194): Test fails on Lacros.
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
 #define MAYBE_OfflineToOnline DISABLED_OfflineToOnline
 #else
 #define MAYBE_OfflineToOnline OfflineToOnline
@@ -53,8 +53,7 @@ IN_PROC_BROWSER_TEST_F(SyncExponentialBackoffTest, MAYBE_OfflineToOnline) {
   ASSERT_TRUE(AddFolder(0, 0, kFolderTitle1));
   std::vector<ServerBookmarksEqualityChecker::ExpectedBookmark>
       expected_bookmarks = {{kFolderTitle1, GURL()}};
-  ASSERT_TRUE(ServerBookmarksEqualityChecker(GetSyncService(0), GetFakeServer(),
-                                             expected_bookmarks,
+  ASSERT_TRUE(ServerBookmarksEqualityChecker(expected_bookmarks,
                                              /*cryptographer=*/nullptr)
                   .Wait());
 
@@ -83,8 +82,7 @@ IN_PROC_BROWSER_TEST_F(SyncExponentialBackoffTest, MAYBE_OfflineToOnline) {
 
   // Verify that sync was able to recover.
   expected_bookmarks.push_back({kFolderTitle2, GURL()});
-  EXPECT_TRUE(ServerBookmarksEqualityChecker(GetSyncService(0), GetFakeServer(),
-                                             expected_bookmarks,
+  EXPECT_TRUE(ServerBookmarksEqualityChecker(expected_bookmarks,
                                              /*cryptographer=*/nullptr)
                   .Wait());
 

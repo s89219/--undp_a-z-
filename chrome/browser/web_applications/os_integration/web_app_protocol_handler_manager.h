@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,10 +39,6 @@ class WebAppProtocolHandlerManager {
   // If no matching handler is installed, no URL is returned.
   absl::optional<GURL> TranslateProtocolUrl(const AppId& app_id,
                                             const GURL& protocol_url) const;
-
-  // Gets the list of handlers for a given protocol.
-  std::vector<custom_handlers::ProtocolHandler> GetHandlersFor(
-      const std::string& protocol) const;
 
   // Gets the list of handlers with launch permissions for a given protocol.
   std::vector<custom_handlers::ProtocolHandler> GetAllowedHandlersForProtocol(

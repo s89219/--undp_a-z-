@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,16 +11,17 @@
 #include "ash/assistant/test/assistant_ash_test_base.h"
 #include "ash/assistant/test/test_assistant_service.h"
 #include "ash/assistant/util/deep_link_util.h"
+#include "ash/constants/ash_features.h"
 #include "ash/constants/ash_pref_names.h"
 #include "ash/public/cpp/assistant/controller/assistant_controller_observer.h"
 #include "ash/public/cpp/test/test_new_window_delegate.h"
 #include "ash/session/session_controller_impl.h"
 #include "ash/shell.h"
-#include "ash/style/ash_color_provider.h"
+#include "ash/style/dark_light_mode_controller_impl.h"
 #include "base/scoped_observation.h"
 #include "base/test/scoped_feature_list.h"
+#include "chromeos/ash/services/assistant/public/cpp/assistant_service.h"
 #include "chromeos/constants/chromeos_features.h"
-#include "chromeos/services/assistant/public/cpp/assistant_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 namespace ash {
@@ -77,7 +78,10 @@ class MockAssistantUiModelObserver : public AssistantUiModelObserver {
 class MockNewWindowDelegate : public testing::NiceMock<TestNewWindowDelegate> {
  public:
   // TestNewWindowDelegate:
-  MOCK_METHOD(void, OpenUrl, (const GURL& url, OpenUrlFrom from), (override));
+  MOCK_METHOD(void,
+              OpenUrl,
+              (const GURL& url, OpenUrlFrom from, Disposition disposition),
+              (override));
 
   MOCK_METHOD(void,
               OpenFeedbackPage,
@@ -163,7 +167,8 @@ TEST_F(AssistantControllerImplTest, NotifiesOpeningUrlAndUrlOpened) {
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(GURL("https://g.co/"),
-                      NewWindowDelegate::OpenUrlFrom::kUserInteraction));
+                      NewWindowDelegate::OpenUrlFrom::kUserInteraction,
+                      NewWindowDelegate::Disposition::kNewForegroundTab));
 
   EXPECT_CALL(controller_observer_mock, OnUrlOpened)
       .WillOnce(testing::Invoke([](const GURL& url, bool from_server) {
@@ -249,20 +254,18 @@ TEST_F(AssistantControllerImplTest, ClosesAssistantUiForFeedbackDeeplink) {
   ui_model()->RemoveObserver(&ui_model_observer_mock);
 }
 
-// Make sure that AssistantControllerImpl sets dark mode = false even if the
-// flag is off. SettingsController won't set options if dark mode bit is not
-// set.
+// Dark mode is set to true if the DarkLightMode flag is off. This is determined
+// in DarkLightModeControllerImpl::IsDarkModeEnabled().
 TEST_F(AssistantControllerImplTest, ColorModeIsSetWhenAssistantIsReadyFlagOff) {
-  ASSERT_FALSE(chromeos::features::IsDarkLightModeEnabled());
-
-  // ProductivityLauncher uses DarkLightMode colors.
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitAndDisableFeature(features::kProductivityLauncher);
+  scoped_feature_list.InitWithFeatures(
+      /*enabled_features=*/{}, /*disabled_features=*/{
+          chromeos::features::kDarkLightMode, features::kNotificationsRefresh});
 
   controller()->SetAssistant(test_assistant_service());
 
   ASSERT_TRUE(test_assistant_service()->dark_mode_enabled().has_value());
-  EXPECT_FALSE(test_assistant_service()->dark_mode_enabled().value());
+  EXPECT_TRUE(test_assistant_service()->dark_mode_enabled().value());
 }
 
 TEST_F(AssistantControllerImplTest, ColorModeIsUpdated) {
@@ -271,21 +274,22 @@ TEST_F(AssistantControllerImplTest, ColorModeIsUpdated) {
 
   ASSERT_TRUE(chromeos::features::IsDarkLightModeEnabled());
 
-  auto* color_provider = AshColorProvider::Get();
-  // AshColorProvider::IsDarkModeEnabled reports it's in dark mode if active
-  // pref service is not set.
-  ASSERT_TRUE(color_provider->IsDarkModeEnabled());
+  auto* active_user_pref_service =
+      Shell::Get()->session_controller()->GetPrimaryUserPrefService();
+  ASSERT_TRUE(active_user_pref_service);
 
-  color_provider->OnActiveUserPrefServiceChanged(
-      Shell::Get()->session_controller()->GetPrimaryUserPrefService());
+  auto* dark_light_mode_controller = DarkLightModeControllerImpl::Get();
+  dark_light_mode_controller->OnActiveUserPrefServiceChanged(
+      active_user_pref_service);
   controller()->SetAssistant(test_assistant_service());
-  const bool initial_dark_mode_status = color_provider->IsDarkModeEnabled();
+  const bool initial_dark_mode_status =
+      dark_light_mode_controller->IsDarkModeEnabled();
   ASSERT_TRUE(test_assistant_service()->dark_mode_enabled().has_value());
   EXPECT_EQ(initial_dark_mode_status,
             test_assistant_service()->dark_mode_enabled().value());
 
   // Switch the color mode.
-  color_provider->ToggleColorMode();
+  dark_light_mode_controller->ToggleColorMode();
   ASSERT_TRUE(test_assistant_service()->dark_mode_enabled().has_value());
   EXPECT_NE(initial_dark_mode_status,
             test_assistant_service()->dark_mode_enabled().value());

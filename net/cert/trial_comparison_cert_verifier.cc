@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -30,9 +30,9 @@ namespace net {
 namespace {
 
 base::Value JobResultParams(bool trial_success) {
-  base::Value results(base::Value::Type::DICTIONARY);
-  results.SetBoolKey("trial_success", trial_success);
-  return results;
+  base::Value::Dict results;
+  results.Set("trial_success", trial_success);
+  return base::Value(std::move(results));
 }
 
 }  // namespace

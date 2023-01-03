@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "ash/components/arc/mojom/intent_helper.mojom.h"
+#include "ui/base/resource/resource_scale_factor.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 namespace arc {
@@ -86,7 +87,7 @@ class AppIconLoader : public base::RefCounted<AppIconLoader> {
 
   void LoadWebAppIcon(const std::string& web_app_id,
                       const GURL& launch_url,
-                      const web_app::WebAppIconManager& icon_manager,
+                      web_app::WebAppIconManager& icon_manager,
                       Profile* profile);
 
   void LoadExtensionIcon(const extensions::Extension* extension,
@@ -113,6 +114,20 @@ class AppIconLoader : public base::RefCounted<AppIconLoader> {
       const std::vector<arc::mojom::ActivityIconPtr>& icons);
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
+#if BUILDFLAG(IS_CHROMEOS)
+  // Requests a compressed icon data with `scale_factor` for an web app
+  // identified by `web_app_id`.
+  void GetWebAppCompressedIconData(const std::string& web_app_id,
+                                   ui::ResourceScaleFactor scale_factor,
+                                   web_app::WebAppIconManager& icon_manager);
+
+  // Requests a compressed icon data with `scale_factor` for a chrome app
+  // identified by `extension`.
+  void GetChromeAppCompressedIconData(const extensions::Extension* extension,
+                                      content::BrowserContext* context,
+                                      ui::ResourceScaleFactor scale_factor);
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
  private:
   friend class base::RefCounted<AppIconLoader>;
 
@@ -134,7 +149,7 @@ class AppIconLoader : public base::RefCounted<AppIconLoader> {
 
   void MaybeApplyEffectsAndComplete(const gfx::ImageSkia image);
 
-  void CompleteWithCompressed(std::vector<uint8_t> data);
+  void CompleteWithCompressed(bool is_maskable_icon, std::vector<uint8_t> data);
 
   void CompleteWithUncompressed(IconValuePtr iv);
 
@@ -142,15 +157,20 @@ class AppIconLoader : public base::RefCounted<AppIconLoader> {
 
   void OnReadWebAppIcon(std::map<int, SkBitmap> icon_bitmaps);
 
+  void OnReadWebAppForCompressedIconData(bool is_maskable_icon,
+                                         std::map<int, SkBitmap> icon_bitmaps);
+
+  void OnReadChromeAppForCompressedIconData(gfx::ImageSkia image);
+
   void MaybeLoadFallbackOrCompleteEmpty();
 
   const IconType icon_type_ = IconType::kUnknown;
 
   const int size_hint_in_dip_ = 0;
-  const int icon_size_in_px_ = 0;
+  int icon_size_in_px_ = 0;
   // The scale factor the icon is intended for. See gfx::ImageSkiaRep::scale
   // comments.
-  const float icon_scale_ = 0.0f;
+  float icon_scale_ = 0.0f;
   // A scale factor to take as input for the IconType::kCompressed response. See
   // gfx::ImageSkia::GetRepresentation() comments.
   float icon_scale_for_compressed_response_ = 1.0f;

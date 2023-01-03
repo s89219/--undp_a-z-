@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,8 @@
 #include "ash/strings/grit/ash_strings.h"
 #include "ash/style/ash_color_provider.h"
 #include "ash/system/message_center/message_center_constants.h"
+#include "ui/chromeos/styles/cros_tokens_color_mappings.h"
+#include "ui/color/color_id.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/rrect_f.h"
 #include "ui/gfx/paint_vector_icon.h"
@@ -83,9 +85,7 @@ void AshNotificationInputContainer::StyleTextfield() {
   views::FocusRing::Install(textfield());
   views::InstallRoundRectHighlightPathGenerator(
       textfield(), gfx::Insets(), kTextfieldBackgroundCornerRadius);
-  views::FocusRing::Get(textfield())
-      ->SetColor(color_provider->GetControlsLayerColor(
-          AshColorProvider::ControlsLayerType::kFocusRingColor));
+  views::FocusRing::Get(textfield())->SetColorId(ui::kColorAshFocusRing);
 }
 
 gfx::Insets AshNotificationInputContainer::GetSendButtonPadding() const {
@@ -96,21 +96,29 @@ void AshNotificationInputContainer::SetSendButtonHighlightPath() {
   views::FocusRing::Install(textfield());
   views::InstallRoundRectHighlightPathGenerator(button(), gfx::Insets(),
                                                 kInputReplyHighlightRadius);
-  views::FocusRing::Get(button())->SetColor(
-      AshColorProvider::Get()->GetControlsLayerColor(
-          AshColorProvider::ControlsLayerType::kFocusRingColor));
+  views::FocusRing::Get(button())->SetColorId(ui::kColorAshFocusRing);
 }
 
 void AshNotificationInputContainer::UpdateButtonImage() {
   if (!GetWidget())
     return;
-
-  button()->SetImage(
+  UpdateButtonState();
+  button()->SetImageModel(
       views::Button::STATE_NORMAL,
-      gfx::CreateVectorIcon(kSendIcon, kInputReplyButtonSize,
-                            ash::AshColorProvider::Get()->GetControlsLayerColor(
-                                ash::AshColorProvider::ControlsLayerType::
-                                    kControlBackgroundColorActive)));
+      ui::ImageModel::FromVectorIcon(kSendIcon, cros_tokens::kColorProminent,
+                                     kInputReplyButtonSize));
+  button()->SetImageModel(
+      views::Button::STATE_DISABLED,
+      ui::ImageModel::FromVectorIcon(kSendIcon, cros_tokens::kColorDisabled,
+                                     kInputReplyButtonSize));
+}
+
+void AshNotificationInputContainer::UpdateButtonState() {
+  button()->SetEnabled(!IsInputEmpty());
+}
+
+bool AshNotificationInputContainer::IsInputEmpty() {
+  return textfield()->GetText().empty();
 }
 
 void AshNotificationInputContainer::OnThemeChanged() {

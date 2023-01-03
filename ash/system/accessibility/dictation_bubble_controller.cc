@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,10 +7,10 @@
 #include "ash/display/window_tree_host_manager.h"
 #include "ash/public/cpp/accessibility_controller_enums.h"
 #include "ash/shell.h"
-#include "ash/style/ash_color_provider.h"
 #include "ash/system/accessibility/dictation_bubble_view.h"
 #include "ash/wm/collision_detection/collision_detection_utils.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
@@ -20,8 +20,6 @@ DictationBubbleController::DictationBubbleController() {
       Shell::Get()->window_tree_host_manager()->input_method();
   if (!input_method_observer_.IsObservingSource(input_method))
     input_method_observer_.Observe(input_method);
-  if (!color_mode_observer_.IsObservingSource(AshColorProvider::Get()))
-    color_mode_observer_.Observe(AshColorProvider::Get());
 }
 
 DictationBubbleController::~DictationBubbleController() {
@@ -55,11 +53,12 @@ void DictationBubbleController::OnCaretBoundsChanged(
   dictation_bubble_view_->SetAnchorRect(new_caret_bounds);
 }
 
-void DictationBubbleController::OnColorModeChanged(bool dark_mode_enabled) {
-  if (!dictation_bubble_view_)
+void DictationBubbleController::OnViewIsDeleting(views::View* observed_view) {
+  if (observed_view != dictation_bubble_view_)
     return;
-
-  dictation_bubble_view_->OnColorModeChanged(dark_mode_enabled);
+  dictation_bubble_view_->views::View::RemoveObserver(this);
+  dictation_bubble_view_ = nullptr;
+  widget_ = nullptr;
 }
 
 void DictationBubbleController::MaybeInitialize() {
@@ -67,6 +66,8 @@ void DictationBubbleController::MaybeInitialize() {
     return;
 
   dictation_bubble_view_ = new DictationBubbleView();
+  dictation_bubble_view_->views::View::AddObserver(this);
+
   widget_ =
       views::BubbleDialogDelegateView::CreateBubble(dictation_bubble_view_);
   widget_->SetZOrderLevel(ui::ZOrderLevel::kFloatingUIElement);

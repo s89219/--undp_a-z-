@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,9 +15,11 @@
 #include "base/time/time.h"
 #include "base/types/strong_alias.h"
 #include "base/values.h"
+#include "components/aggregation_service/aggregation_service.mojom.h"
 #include "content/browser/aggregation_service/aggregatable_report.h"
 #include "content/browser/attribution_reporting/aggregatable_histogram_contribution.h"
 #include "content/browser/attribution_reporting/attribution_info.h"
+#include "content/browser/attribution_reporting/attribution_reporting.mojom.h"
 #include "content/common/content_export.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
@@ -30,15 +32,9 @@ namespace content {
 // report. This class can represent multiple different types of reports.
 class CONTENT_EXPORT AttributionReport {
  public:
-  enum class ReportType {
-    kEventLevel = 0,
-    kAggregatableAttribution = 1,
-    kMinValue = kEventLevel,
-    kMaxValue = kAggregatableAttribution,
-  };
+  using Type = ::attribution_reporting::mojom::ReportType;
 
-  using ReportTypes =
-      base::EnumSet<ReportType, ReportType::kMinValue, ReportType::kMaxValue>;
+  using Types = base::EnumSet<Type, Type::kMinValue, Type::kMaxValue>;
 
   // Struct that contains the data specific to the event-level report.
   struct CONTENT_EXPORT EventLevelData {
@@ -48,10 +44,10 @@ class CONTENT_EXPORT AttributionReport {
                    int64_t priority,
                    double randomized_trigger_rate,
                    Id id);
-    EventLevelData(const EventLevelData& other);
-    EventLevelData& operator=(const EventLevelData& other);
-    EventLevelData(EventLevelData&& other);
-    EventLevelData& operator=(EventLevelData&& other);
+    EventLevelData(const EventLevelData&);
+    EventLevelData& operator=(const EventLevelData&);
+    EventLevelData(EventLevelData&&);
+    EventLevelData& operator=(EventLevelData&&);
     ~EventLevelData();
 
     // Data provided at trigger time by the attribution destination. Depending
@@ -80,7 +76,9 @@ class CONTENT_EXPORT AttributionReport {
     AggregatableAttributionData(
         std::vector<AggregatableHistogramContribution> contributions,
         Id id,
-        base::Time initial_report_time);
+        base::Time initial_report_time,
+        ::aggregation_service::mojom::AggregationCoordinator
+            aggregation_coordinator);
     AggregatableAttributionData(const AggregatableAttributionData&);
     AggregatableAttributionData& operator=(const AggregatableAttributionData&);
     AggregatableAttributionData(AggregatableAttributionData&&);
@@ -89,6 +87,13 @@ class CONTENT_EXPORT AttributionReport {
 
     // Returns the sum of the contributions (values) across all buckets.
     base::CheckedNumeric<int64_t> BudgetRequired() const;
+
+    // When updating the string, update the goldens and version history too, see
+    // //content/test/data/attribution_reporting/aggregatable_report_goldens/README.md
+    static constexpr char kVersion[] = "0.1";
+
+    // Enum string identifying this API for use in reports.
+    static constexpr char kApiIdentifier[] = "attribution-reporting";
 
     // The historgram contributions.
     std::vector<AggregatableHistogramContribution> contributions;
@@ -103,14 +108,17 @@ class CONTENT_EXPORT AttributionReport {
     // The initial report time scheduled by the browser.
     base::Time initial_report_time;
 
+    ::aggregation_service::mojom::AggregationCoordinator
+        aggregation_coordinator;
+
     // When adding new members, the corresponding `operator==()` definition in
     // `attribution_test_utils.h` should also be updated.
   };
 
   using Id = absl::variant<EventLevelData::Id, AggregatableAttributionData::Id>;
 
-  static ReportType GetReportType(Id report_id) {
-    return static_cast<ReportType>(report_id.index());
+  static Type GetReportType(Id report_id) {
+    return static_cast<Type>(report_id.index());
   }
 
   // Returns the minimum non-null time of `a` and `b`, or `absl::nullopt` if
@@ -122,11 +130,12 @@ class CONTENT_EXPORT AttributionReport {
       AttributionInfo attribution_info,
       base::Time report_time,
       base::GUID external_report_id,
+      int failed_send_attempts,
       absl::variant<EventLevelData, AggregatableAttributionData> data);
-  AttributionReport(const AttributionReport& other);
-  AttributionReport& operator=(const AttributionReport& other);
-  AttributionReport(AttributionReport&& other);
-  AttributionReport& operator=(AttributionReport&& other);
+  AttributionReport(const AttributionReport&);
+  AttributionReport& operator=(const AttributionReport&);
+  AttributionReport(AttributionReport&&);
+  AttributionReport& operator=(AttributionReport&&);
   ~AttributionReport();
 
   // Returns the URL to which the report will be sent.
@@ -135,11 +144,6 @@ class CONTENT_EXPORT AttributionReport {
   base::Value::Dict ReportBody() const;
 
   Id ReportId() const;
-
-  // This will be included in aggregatable report to allow aggregation service
-  // to do privacy budgeting. Note that this will DCHECK that the underlying
-  // data is `AggregatableAttributionData`.
-  std::string PrivacyBudgetKey() const;
 
   const AttributionInfo& attribution_info() const { return attribution_info_; }
 
@@ -158,13 +162,9 @@ class CONTENT_EXPORT AttributionReport {
     return data_;
   }
 
-  ReportType GetReportType() const {
-    return static_cast<ReportType>(data_.index());
-  }
+  Type GetReportType() const { return static_cast<Type>(data_.index()); }
 
   void set_report_time(base::Time report_time);
-
-  void set_failed_send_attempts(int failed_send_attempts);
 
   void SetExternalReportIdForTesting(base::GUID external_report_id);
 
@@ -180,7 +180,7 @@ class CONTENT_EXPORT AttributionReport {
   base::GUID external_report_id_;
 
   // Number of times the browser has tried and failed to send this report.
-  int failed_send_attempts_ = 0;
+  int failed_send_attempts_;
 
   // Only one type of data may be stored at once.
   absl::variant<EventLevelData, AggregatableAttributionData> data_;

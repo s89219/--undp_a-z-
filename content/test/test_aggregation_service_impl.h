@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/memory/raw_ref.h"
 #include "base/threading/sequence_bound.h"
-#include "content/browser/aggregation_service/aggregation_service_key_storage.h"
 #include "content/browser/aggregation_service/aggregation_service_storage_context.h"
 #include "content/public/test/test_aggregation_service.h"
 
@@ -22,6 +22,7 @@ namespace content {
 
 class AggregatableReportSender;
 class AggregatableReportAssembler;
+class AggregationServiceStorage;
 
 struct PublicKey;
 
@@ -39,8 +40,7 @@ class TestAggregationServiceImpl : public AggregationServiceStorageContext,
   ~TestAggregationServiceImpl() override;
 
   // AggregationServiceStorageContext:
-  const base::SequenceBound<AggregationServiceKeyStorage>& GetKeyStorage()
-      override;
+  const base::SequenceBound<AggregationServiceStorage>& GetStorage() override;
 
   // TestAggregationService:
   void SetDisablePayloadEncryption(bool should_disable) override;
@@ -59,9 +59,9 @@ class TestAggregationServiceImpl : public AggregationServiceStorageContext,
       base::OnceCallback<void(std::vector<PublicKey>)> callback) const;
 
  private:
-  const base::Clock& clock_;
+  const raw_ref<const base::Clock> clock_;
 
-  base::SequenceBound<AggregationServiceKeyStorage> storage_;
+  base::SequenceBound<AggregationServiceStorage> storage_;
   std::unique_ptr<AggregatableReportSender> sender_;
   std::unique_ptr<AggregatableReportAssembler> assembler_;
 };

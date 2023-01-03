@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,6 @@ import androidx.annotation.NonNull;
 
 import org.chromium.base.Callback;
 import org.chromium.base.ThreadUtils;
-import org.chromium.content_public.browser.trusttokens.TrustTokenFulfillerManager;
 
 /**
  * This class manages platform-specific services. (i.e. Google Services) The platform
@@ -108,16 +107,10 @@ public abstract class PlatformServiceBridge {
         return 0;
     }
 
-    // Returns a TrustTokenFulfillerManager.Factory if appropriate, else returns null.
-    public TrustTokenFulfillerManager.Factory getLocalTrustTokenFulfillerFactory() {
-        return null;
-    }
-
     /**
-     * Returns a first party package ID that will send variations headers if the feature is
-     * enabled.
+     * Checks if app recovery mitigations are currently required and initializes SafeMode if needed.
+     * This should only be called from the ":webview_service" process. All other processes should
+     * query SafeModeController to receive mitigation steps.
      */
-    public String getFirstPartyVariationsHeadersEnabledPackageId() {
-        return "";
-    }
+    public void checkForAppRecovery() {}
 }

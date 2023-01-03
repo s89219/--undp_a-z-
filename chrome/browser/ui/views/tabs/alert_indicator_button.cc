@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -386,13 +386,15 @@ gfx::Image GetTabAlertIndicatorAffordanceImage(TabAlertState alert_state,
 
 void AlertIndicatorButton::ResetImages(TabAlertState state) {
   SkColor color = parent_tab_->GetAlertIndicatorColor(state);
-  gfx::ImageSkia indicator_image =
-      GetTabAlertIndicatorImage(state, color).AsImageSkia();
-  SetImage(views::Button::STATE_NORMAL, &indicator_image);
-  SetImage(views::Button::STATE_DISABLED, &indicator_image);
-  gfx::ImageSkia affordance_image =
-      GetTabAlertIndicatorAffordanceImage(state, color).AsImageSkia();
-  SetImage(views::Button::STATE_PRESSED, &affordance_image);
+  gfx::Image indicator_image = GetTabAlertIndicatorImage(state, color);
+  SetImageModel(views::Button::STATE_NORMAL,
+                ui::ImageModel::FromImage(indicator_image));
+  SetImageModel(views::Button::STATE_DISABLED,
+                ui::ImageModel::FromImage(indicator_image));
+  gfx::Image affordance_image =
+      GetTabAlertIndicatorAffordanceImage(state, color);
+  SetImageModel(views::Button::STATE_PRESSED,
+                ui::ImageModel::FromImage(affordance_image));
 }
 
 BEGIN_METADATA(AlertIndicatorButton, views::ImageButton)

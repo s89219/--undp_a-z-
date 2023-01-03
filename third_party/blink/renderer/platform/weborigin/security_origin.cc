@@ -112,7 +112,7 @@ static bool ShouldTreatAsOpaqueOrigin(const KURL& url) {
   // host.
   DCHECK(!((relevant_url.ProtocolIsInHTTPFamily() ||
             relevant_url.ProtocolIs("ftp")) &&
-           relevant_url.Host().IsEmpty()));
+           relevant_url.Host().empty()));
 
   if (base::Contains(url::GetNoAccessSchemes(),
                      relevant_url.Protocol().Ascii()))
@@ -170,9 +170,9 @@ SecurityOrigin::SecurityOrigin(NewUniqueOpaque, const SecurityOrigin* precursor)
 
 SecurityOrigin::SecurityOrigin(const SecurityOrigin* other,
                                ConstructIsolatedCopy)
-    : protocol_(other->protocol_.IsolatedCopy()),
-      host_(other->host_.IsolatedCopy()),
-      domain_(other->domain_.IsolatedCopy()),
+    : protocol_(other->protocol_),
+      host_(other->host_),
+      domain_(other->domain_),
       port_(other->port_),
       nonce_if_opaque_(other->nonce_if_opaque_),
       universal_access_(other->universal_access_),
@@ -311,7 +311,7 @@ String SecurityOrigin::RegistrableDomain() const {
   OriginAccessEntry entry(
       *this, network::mojom::CorsDomainMatchMode::kAllowRegistrableDomains);
   String domain = entry.registrable_domain();
-  return domain.IsEmpty() ? String() : domain;
+  return domain.empty() ? String() : domain;
 }
 
 const base::UnguessableToken* SecurityOrigin::GetNonceForSerialization() const {

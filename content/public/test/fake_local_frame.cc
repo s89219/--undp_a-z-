@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -188,8 +188,21 @@ void FakeLocalFrame::HandleRendererDebugURL(const GURL& url) {}
 void FakeLocalFrame::GetCanonicalUrlForSharing(
     base::OnceCallback<void(const absl::optional<GURL>&)> callback) {}
 
+void FakeLocalFrame::GetOpenGraphMetadata(
+    base::OnceCallback<void(blink::mojom::OpenGraphMetadataPtr)>) {}
+
 void FakeLocalFrame::SetNavigationApiHistoryEntriesForRestore(
     blink::mojom::NavigationApiHistoryEntryArraysPtr entry_arrays) {}
+
+void FakeLocalFrame::NotifyNavigationApiOfDisposedEntries(
+    const std::vector<std::string>& keys) {}
+
+void FakeLocalFrame::TraverseCancelled(
+    const std::string& navigation_api_key,
+    blink::mojom::TraverseCancelledReason reason) {}
+
+void FakeLocalFrame::SnapshotDocumentForViewTransition(
+    SnapshotDocumentForViewTransitionCallback callback) {}
 
 void FakeLocalFrame::BindFrameHostReceiver(
     mojo::ScopedInterfaceEndpointHandle handle) {

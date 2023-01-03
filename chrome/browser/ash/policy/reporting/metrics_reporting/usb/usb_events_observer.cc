@@ -1,18 +1,18 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/policy/reporting/metrics_reporting/usb/usb_events_observer.h"
-#include "chromeos/services/cros_healthd/public/cpp/service_connection.h"
+#include "chromeos/ash/services/cros_healthd/public/cpp/service_connection.h"
 #include "components/reporting/proto/synced/metric_data.pb.h"
-
-using UsbEventInfoPtr = chromeos::cros_healthd::mojom::UsbEventInfoPtr;
 
 namespace reporting {
 
+using ::ash::cros_healthd::mojom::UsbEventInfoPtr;
+
 UsbEventsObserver::UsbEventsObserver()
-    : CrosHealthdEventsObserverBase<
-          chromeos::cros_healthd::mojom::CrosHealthdUsbObserver>(this) {}
+    : MojoServiceEventsObserverBase<
+          ash::cros_healthd::mojom::CrosHealthdUsbObserver>(this) {}
 
 UsbEventsObserver::~UsbEventsObserver() = default;
 void UsbEventsObserver::OnAdd(UsbEventInfoPtr info) {
@@ -36,8 +36,9 @@ void UsbEventsObserver::OnRemove(UsbEventInfoPtr info) {
 }
 
 void UsbEventsObserver::AddObserver() {
-  chromeos::cros_healthd::ServiceConnection::GetInstance()->AddUsbObserver(
-      BindNewPipeAndPassRemote());
+  ash::cros_healthd::ServiceConnection::GetInstance()
+      ->GetEventService()
+      ->AddUsbObserver(BindNewPipeAndPassRemote());
 }
 
 void UsbEventsObserver::FillUsbTelemetry(UsbTelemetry* data,
@@ -51,4 +52,5 @@ void UsbEventsObserver::FillUsbTelemetry(UsbTelemetry* data,
     data->add_categories(category);
   }
 }
+
 }  // namespace reporting

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,6 +64,18 @@ internal::PageLoadTimingStatus IsValidPageLoadTiming(
   }
 
   // Verify proper ordering between the various timings.
+
+  // Note for activation_start
+  //
+  // PaintTiming is composed in MetricsRenderFrameObserver::GetTiming,
+  // which also clamps wall clocks as navigation_start origin.
+  // Majority of wall clocks are taken in render side, but
+  // activation_start is taken in browser side
+  // PageImpl::ActivateForPrerendering. Besides, there is no control
+  // of these events. Therefore, we don't have any order relations
+  // between activation_start and others except for navigation_start.
+  // (Always 0 = navigation_start <= activation_start for main frames as
+  // navigation_start origin TimeDelta.)
 
   if (!EventsInOrder(timing.response_start, timing.parse_timing->parse_start)) {
     // We sometimes get a zero response_start with a non-zero parse start. See
@@ -426,7 +438,6 @@ PageLoadMetricsUpdateDispatcher::PageLoadMetricsUpdateDispatcher(
       main_frame_metadata_(mojom::FrameMetadata::New()),
       subframe_metadata_(mojom::FrameMetadata::New()),
       page_input_timing_(mojom::InputTiming::New()),
-      mobile_friendliness_(blink::MobileFriendliness()),
       is_prerendered_page_load_(navigation_handle->IsInPrerenderedMainFrame()) {
 }
 
@@ -456,7 +467,8 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
     mojom::FrameRenderDataUpdatePtr render_data,
     mojom::CpuTimingPtr new_cpu_timing,
     mojom::InputTimingPtr input_timing_delta,
-    const absl::optional<blink::MobileFriendliness>& mobile_friendliness) {
+    mojom::SubresourceLoadMetricsPtr subresource_load_metrics,
+    uint32_t soft_navigation_count) {
   if (embedder_interface_->IsExtensionUrl(
           render_frame_host->GetLastCommittedURL())) {
     // Extensions can inject child frames into a page. We don't want to track
@@ -477,18 +489,18 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
     UpdateMainFrameMetadata(render_frame_host, std::move(new_metadata));
     UpdateMainFrameTiming(std::move(new_timing));
     UpdateMainFrameRenderData(*render_data);
-    if (mobile_friendliness.has_value())
-      UpdateMainFrameMobileFriendliness(*mobile_friendliness);
+    if (subresource_load_metrics) {
+      UpdateMainFrameSubresourceLoadMetrics(*subresource_load_metrics);
+    }
+    UpdateSoftNavigationCount(soft_navigation_count);
   } else {
     UpdateSubFrameMetadata(render_frame_host, std::move(new_metadata));
     UpdateSubFrameTiming(render_frame_host, std::move(new_timing));
     // This path is just for the AMP metrics.
     UpdateSubFrameInputTiming(render_frame_host, *input_timing_delta);
-    if (mobile_friendliness.has_value())
-      UpdateSubFrameMobileFriendliness(*mobile_friendliness);
   }
   UpdatePageInputTiming(*input_timing_delta);
-  UpdatePageRenderData(*render_data);
+  UpdatePageRenderData(*render_data, is_main_frame);
   if (!is_main_frame) {
     // This path is just for the AMP metrics.
     OnSubFrameRenderDataChanged(render_frame_host, *render_data);
@@ -605,6 +617,12 @@ void PageLoadMetricsUpdateDispatcher::UpdateFrameCpuTiming(
 void PageLoadMetricsUpdateDispatcher::UpdateSubFrameMetadata(
     content::RenderFrameHost* render_frame_host,
     mojom::FrameMetadataPtr subframe_metadata) {
+  if (subframe_metadata->main_frame_viewport_rect) {
+    mojo::ReportBadMessage(
+        "Unexpected main_frame_viewport_rect set for a subframe.");
+    return;
+  }
+
   // Merge the subframe loading behavior flags with any we've already observed,
   // possibly from other subframes.
   subframe_metadata_->behavior_flags |= subframe_metadata->behavior_flags;
@@ -613,16 +631,15 @@ void PageLoadMetricsUpdateDispatcher::UpdateSubFrameMetadata(
   MaybeUpdateMainFrameIntersectionRect(render_frame_host, subframe_metadata);
 }
 
-void PageLoadMetricsUpdateDispatcher::UpdateMainFrameMobileFriendliness(
-    const blink::MobileFriendliness& mobile_friendliness) {
-  mobile_friendliness_ = mobile_friendliness;
+void PageLoadMetricsUpdateDispatcher::UpdateMainFrameSubresourceLoadMetrics(
+    const mojom::SubresourceLoadMetrics& subresource_load_metrics) {
+  subresource_load_metrics_ = subresource_load_metrics;
 }
 
-void PageLoadMetricsUpdateDispatcher::UpdateSubFrameMobileFriendliness(
-    const blink::MobileFriendliness& mobile_friendliness) {
-  client_->OnSubFrameMobileFriendlinessChanged(mobile_friendliness);
+void PageLoadMetricsUpdateDispatcher::UpdateSoftNavigationCount(
+    uint32_t soft_navigation_count) {
+  client_->OnSoftNavigationCountChanged(soft_navigation_count);
 }
-
 void PageLoadMetricsUpdateDispatcher::MaybeUpdateMainFrameIntersectionRect(
     content::RenderFrameHost* render_frame_host,
     const mojom::FrameMetadataPtr& frame_metadata) {
@@ -655,6 +672,19 @@ void PageLoadMetricsUpdateDispatcher::MaybeUpdateMainFrameIntersectionRect(
         *frame_metadata->main_frame_intersection_rect;
     client_->OnMainFrameIntersectionRectChanged(
         render_frame_host, *frame_metadata->main_frame_intersection_rect);
+  }
+}
+
+void PageLoadMetricsUpdateDispatcher::MaybeUpdateMainFrameViewportRect(
+    const mojom::FrameMetadataPtr& frame_metadata) {
+  // Handle viewport updates if included in the metadata.
+  if (!frame_metadata->main_frame_viewport_rect)
+    return;
+
+  if (!main_frame_viewport_rect_ ||
+      *frame_metadata->main_frame_viewport_rect != *main_frame_viewport_rect_) {
+    main_frame_viewport_rect_ = *frame_metadata->main_frame_viewport_rect;
+    client_->OnMainFrameViewportRectChanged(*main_frame_viewport_rect_);
   }
 }
 
@@ -718,9 +748,14 @@ void PageLoadMetricsUpdateDispatcher::UpdateMainFrameMetadata(
   main_frame_metadata_ = std::move(new_metadata);
   client_->OnMainFrameMetadataChanged();
 
-  if (!main_frame_metadata_.is_null())
+  if (!main_frame_metadata_.is_null()) {
     MaybeUpdateMainFrameIntersectionRect(render_frame_host,
                                          main_frame_metadata_);
+    MaybeUpdateMainFrameViewportRect(main_frame_metadata_);
+
+    client_->OnMainFrameImageAdRectsChanged(
+        main_frame_metadata_->main_frame_image_ad_rects);
+  }
 }
 
 void PageLoadMetricsUpdateDispatcher::UpdatePageInputTiming(
@@ -740,10 +775,16 @@ void PageLoadMetricsUpdateDispatcher::UpdatePageInputTiming(
         input_timing_delta.num_interactions,
         *(input_timing_delta.max_event_durations));
   }
+  if (input_timing_delta.num_interactions ||
+      page_input_timing_->num_input_events) {
+    client_->OnPageInputTimingChanged(input_timing_delta.num_interactions,
+                                      page_input_timing_->num_input_events);
+  }
 }
 
 void PageLoadMetricsUpdateDispatcher::UpdatePageRenderData(
-    const mojom::FrameRenderDataUpdate& render_data) {
+    const mojom::FrameRenderDataUpdate& render_data,
+    bool is_main_frame) {
   page_render_data_.layout_shift_score += render_data.layout_shift_delta;
   layout_shift_normalization_.AddNewLayoutShifts(
       render_data.new_layout_shifts, base::TimeTicks::Now(),
@@ -762,14 +803,7 @@ void PageLoadMetricsUpdateDispatcher::UpdatePageRenderData(
         render_data.layout_shift_delta_before_input_or_scroll;
   }
 
-  page_render_data_.all_layout_block_count +=
-      render_data.all_layout_block_count_delta;
-  page_render_data_.ng_layout_block_count +=
-      render_data.ng_layout_block_count_delta;
-  page_render_data_.all_layout_call_count +=
-      render_data.all_layout_call_count_delta;
-  page_render_data_.ng_layout_call_count +=
-      render_data.ng_layout_call_count_delta;
+  client_->OnPageRenderDataChanged(render_data, is_main_frame);
 }
 
 void PageLoadMetricsUpdateDispatcher::UpdateMainFrameRenderData(
@@ -781,13 +815,6 @@ void PageLoadMetricsUpdateDispatcher::UpdateMainFrameRenderData(
   // should not check has_seen_input_or_scroll_ (but see crbug.com/1136207).
   main_frame_render_data_.layout_shift_score_before_input_or_scroll +=
       render_data.layout_shift_delta_before_input_or_scroll;
-
-  main_frame_render_data_.all_layout_block_count +=
-      render_data.all_layout_block_count_delta;
-  main_frame_render_data_.ng_layout_block_count +=
-      render_data.ng_layout_block_count_delta;
-  main_frame_render_data_.all_layout_call_count +=
-      render_data.all_layout_call_count_delta;
 }
 
 void PageLoadMetricsUpdateDispatcher::OnSubFrameRenderDataChanged(

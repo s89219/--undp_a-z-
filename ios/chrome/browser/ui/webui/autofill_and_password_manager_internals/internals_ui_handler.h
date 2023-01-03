@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,7 +46,7 @@ class InternalsUIHandler : public web::WebUIIOSMessageHandler,
   void RegisterMessages() override;
 
   // LogReceiver implementation.
-  void LogEntry(const base::Value& entry) override;
+  void LogEntry(const base::Value::Dict& entry) override;
 
   void StartSubscription();
   void EndSubscription();
@@ -59,7 +59,7 @@ class InternalsUIHandler : public web::WebUIIOSMessageHandler,
   std::string call_on_load_;
   GetLogRouterFunction get_log_router_function_;
 
-  // Whether |this| is registered as a log receiver with the LogRouter.
+  // Whether `this` is registered as a log receiver with the LogRouter.
   bool registered_with_log_router_ = false;
 };
 

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
  * @fileoverview Interface to prevent circular dependencies between
  * CommandHandler and GestureCommandHandler.
  */
-import {GestureGranularity} from '/chromevox/common/gesture_command_data.js';
+import {GestureGranularity} from '../common/gesture_command_data.js';
 
 export const GestureInterface = {};
 

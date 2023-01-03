@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,7 @@ class BLINK_PLATFORM_EXPORT WebCodeCacheLoader {
 
   static std::unique_ptr<WebCodeCacheLoader> Create(
       CodeCacheHost* code_cache_host);
-  virtual void FetchFromCodeCache(blink::mojom::CodeCacheType cache_type,
+  virtual void FetchFromCodeCache(mojom::CodeCacheType cache_type,
                                   const WebURL& url,
                                   FetchCodeCacheCallback) = 0;
 

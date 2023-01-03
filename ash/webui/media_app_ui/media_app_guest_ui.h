@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -48,8 +48,19 @@ class MediaAppGuestUI : public ui::UntrustedWebUIController,
   // The background task runner on which file I/O is performed.
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
+  // Whether ReadyToCommitNavigation has occurred for the main `app.html`.
+  bool app_navigation_committed_ = false;
+
   base::WeakPtrFactory<MediaAppGuestUI> weak_factory_{this};
 };
+
+struct MediaAppUserActions {
+  bool clicked_edit_image_in_photos;
+  bool clicked_edit_video_in_photos;
+};
+// Returns a snapshot of the user actions that are tracked whilst any MediaApp
+// instance is running, in order to populate product-specific survey data.
+MediaAppUserActions GetMediaAppUserActionsForHappinessTracking();
 
 }  // namespace ash
 

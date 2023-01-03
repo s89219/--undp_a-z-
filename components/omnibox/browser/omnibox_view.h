@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,6 @@
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/range/range.h"
 
-class AutocompleteInput;
 class GURL;
 class OmniboxEditController;
 class OmniboxViewMacTest;
@@ -44,8 +43,8 @@ class OmniboxView {
   // state changes.  See OmniboxEditModel::OnAfterPossibleChange().
   struct StateChanges {
     // |old_text| and |new_text| are not owned.
-    const std::u16string* old_text;
-    const std::u16string* new_text;
+    raw_ptr<const std::u16string> old_text;
+    raw_ptr<const std::u16string> new_text;
     size_t new_sel_start;
     size_t new_sel_end;
     bool selection_differs;
@@ -93,9 +92,17 @@ class OmniboxView {
   bool IsEditingOrEmpty() const;
 
   // Returns the icon to display as the location icon. If a favicon is
-  // available, |on_icon_fetched| may be called later asynchronously.
+  // available, `on_icon_fetched` may be called later asynchronously.
+  // `color_current_page_icon` is used for the page icon (i.e. when the popup is
+  // closed, there is no input in progress, and there's a URL displayed) (e.g.
+  // the secure page lock). `color_vectors` is used for vector icons e.g. the
+  // history clock or bookmark star. `color_bright_vectors` is used for special
+  // vector icons e.g. the history cluster squiggle. Favicons aren't
+  // custom-colored.
   ui::ImageModel GetIcon(int dip_size,
-                         SkColor color,
+                         SkColor color_current_page_icon,
+                         SkColor color_vectors,
+                         SkColor color_bright_vectors,
                          IconFetchedCallback on_icon_fetched) const;
 
   // The user text is the text the user has manually keyed in.  When present,
@@ -152,10 +159,6 @@ class OmniboxView {
   // conflicts with the OSX class override as that has a base class that also
   // defines a method with that name.
   virtual void CloseOmniboxPopup();
-
-  // Starts an autocomplete prefetch query so those providers that benefit from
-  // it could perform a prefetch request and populate their caches.
-  virtual void StartPrefetch(const AutocompleteInput& input);
 
   // Sets the focus to the omnibox. |is_user_initiated| is true when the user
   // explicitly focused the omnibox, and false when the omnibox was
@@ -286,8 +289,7 @@ class OmniboxView {
   void GetState(State* state);
 
   // Returns the delta between |before| and |after|.
-  StateChanges GetStateChanges(const State& before,
-                                          const State& after);
+  StateChanges GetStateChanges(const State& before, const State& after);
 
   // Internally invoked whenever the text changes in some way.
   virtual void TextChanged();

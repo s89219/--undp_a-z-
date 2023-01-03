@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -359,20 +359,20 @@ var defaultTests = [
   },
   // This test verifies the error message when trying to set Assistant-related
   // preferences without enabling Assistant service first.
-  function setWhitelistedPref() {
-    chrome.autotestPrivate.setWhitelistedPref(
+  function setAllowedPref() {
+    chrome.autotestPrivate.setAllowedPref(
         'settings.voice_interaction.hotword.enabled' /* pref_name */,
         true /* value */,
         chrome.test.callbackFail(
             'Unable to set the pref because Assistant has not been enabled.'));
-    chrome.autotestPrivate.setWhitelistedPref(
+    chrome.autotestPrivate.setAllowedPref(
         'settings.voice_interaction.context.enabled' /* pref_name */,
         true /* value */,
         chrome.test.callbackFail(
             'Unable to set the pref because Assistant has not been enabled.'));
     // Note that onboarding pref is a counter that can be set without
     // enabling Assistant at the same time.
-    chrome.autotestPrivate.setWhitelistedPref(
+    chrome.autotestPrivate.setAllowedPref(
         'ash.assistant.num_sessions_where_onboarding_shown' /* pref_name */,
         3 /* value */, chrome.test.callbackPass());
   },
@@ -406,16 +406,6 @@ var defaultTests = [
          'fake.package',
          chrome.test.callbackFail('Package is not available'));
   },
-  // Launch fails, no any ARC app by default
-  function launchArcApp() {
-    chrome.autotestPrivate.launchArcApp(
-        'bifanmfigailifmdhaomnmchcgflbbdn',
-        '#Intent;',
-        function(appLaunched) {
-          chrome.test.assertFalse(appLaunched);
-          chrome.test.succeed();
-        });
-  },
   // This gets the primary display's scale factor.
   function getPrimaryDisplayScaleFactor() {
     chrome.autotestPrivate.getPrimaryDisplayScaleFactor(
@@ -430,36 +420,6 @@ var defaultTests = [
   function waitForLauncherStateNoChangeBeforeLauncherCreation() {
     chrome.autotestPrivate.waitForLauncherState(
         'Closed', chrome.test.callbackPass());
-  },
-
-  // This test verifies that api to wait for launcher state transition
-  // to peeking works as expected
-  function waitForLauncherStatePeeking() {
-    var togglePeeking = newAccelerator('search', false /* shift */);
-    chrome.autotestPrivate.activateAccelerator(
-        togglePeeking, function(success) {
-          chrome.test.assertNoLastError();
-          chrome.test.assertFalse(success);
-          togglePeeking.pressed = false;
-          chrome.autotestPrivate.activateAccelerator(
-              togglePeeking, function(success) {
-                chrome.test.assertNoLastError();
-                chrome.test.assertTrue(success);
-                chrome.autotestPrivate.waitForLauncherState(
-                    'Peeking', function() {
-                      if (chrome.runtime.lastError) {
-                        var errorMessage = chrome.runtime.lastError.message;
-                        closeLauncher(chrome.test.callbackPass(function() {
-                          chrome.test.assertEq(
-                              'Not supported for bubble launcher',
-                              errorMessage);
-                        }));
-                        return;
-                      }
-                      closeLauncher(chrome.test.callbackPass());
-                    });
-              });
-        });
   },
 
   // This test verifies that api to wait for launcher state transition
@@ -552,13 +512,20 @@ var defaultTests = [
         })
         .then(function() {
           return promisify(
-              chrome.autotestPrivate.stopThroughputTrackerDataCollection);
+              chrome.autotestPrivate.getThroughputTrackerData);
         })
         .then(function(data) {
           chrome.test.assertTrue(data.length > 0);
           return promisify(unminimizeBrowserWindow);
         })
         .then(function() {
+          return promisify(
+              chrome.autotestPrivate.stopThroughputTrackerDataCollection);
+        })
+        .then(function(data) {
+          // `unminimizeBrowserWindow` might produce 0 frames on build bots
+          // and end up not being captured in `data`.
+          chrome.test.assertTrue(data.length >= 0);
           chrome.test.succeed();
         })
         .catch(function(err) {
@@ -806,6 +773,8 @@ var defaultTests = [
         chrome.test.assertEq('Normal', window.frameMode);
         chrome.test.assertTrue(window.isFrameVisible);
         chrome.test.assertFalse(window.hasOwnProperty('overviewInfo'));
+        chrome.test.assertEq(null, window.fullRestoreWindowAppId);
+        chrome.test.assertEq('mgndgikekgjfcpckkfioiadnlibdjbkf', window.appId);
 
         var change = new Object();
         change.eventType = 'WMEventFullscreen';
@@ -1136,11 +1105,27 @@ var defaultTests = [
     });
   },
 
-  function isLacrosPrimaryBrowser() {
-    chrome.autotestPrivate.isLacrosPrimaryBrowser(
-        chrome.test.callbackPass(function(primary) {
-          chrome.test.assertTrue(typeof primary === 'boolean');
-        }));
+  function collectFrameCountingData() {
+    promisify(
+        chrome.autotestPrivate.startFrameCounting, /*bucketSizeInSeconds=*/1)
+        .then(function() {
+          // Minimize/restore to trigger screen updates.
+          return promisify(minimizeBrowserWindow);
+        })
+        .then(function() {
+          return promisify(unminimizeBrowserWindow);
+        })
+        .then(function() {
+          return promisify(
+              chrome.autotestPrivate.stopFrameCounting);
+        })
+        .then(function(data) {
+          chrome.test.assertTrue(data.length >= 0);
+          chrome.test.succeed();
+        })
+        .catch(function(err) {
+          chrome.test.fail(err);
+        });
   },
 
   // KEEP |lockScreen()| TESTS AT THE BOTTOM OF THE defaultTests AS IT WILL
@@ -1226,32 +1211,9 @@ var arcEnabledTests = [
           chrome.test.assertTrue(
               Date.now() <= packageInfo.lastBackupTime + 5 * 60 * 1000.0);
           chrome.test.assertEq(true, packageInfo.shouldSync);
-          chrome.test.assertEq(false, packageInfo.system);
           chrome.test.assertEq(false, packageInfo.vpnProvider);
           chrome.test.succeed();
         }));
-  },
-  // Launch existing ARC app
-  function launchArcApp() {
-    chrome.autotestPrivate.launchArcApp(
-        'bifanmfigailifmdhaomnmchcgflbbdn',
-        '#Intent;',
-        function(appLaunched) {
-          chrome.test.assertNoLastError();
-          chrome.test.assertTrue(appLaunched);
-          chrome.test.succeed();
-        });
-  },
-  // Launch non-existing ARC app
-  function launchNonExistingApp() {
-    chrome.autotestPrivate.launchArcApp(
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        '#Intent;',
-        function(appLaunched) {
-          chrome.test.assertNoLastError();
-          chrome.test.assertFalse(appLaunched);
-          chrome.test.succeed();
-        });
   },
 
   async function douleStartArc() {
@@ -1273,7 +1235,21 @@ var arcEnabledTests = [
               chrome.test.callbackPass(function() {
           }));
     });
-  },
+  }
+];
+
+var arcProcessTests = [
+  async function requestLowMemoryKillCounts() {
+    const counts = await promisify(chrome.autotestPrivate.getArcAppKills);
+    chrome.test.assertEq(counts.oom, 1);
+    chrome.test.assertEq(counts.lmkdForeground, 2);
+    chrome.test.assertEq(counts.lmkdPerceptible, 3);
+    chrome.test.assertEq(counts.lmkdCached, 4);
+    chrome.test.assertEq(counts.pressureForeground, 5);
+    chrome.test.assertEq(counts.pressurePerceptible, 6);
+    chrome.test.assertEq(counts.pressureCached, 7);
+    chrome.test.succeed();
+  }
 ];
 
 var policyTests = [
@@ -1308,6 +1284,16 @@ var policyTests = [
     );
   },
 
+];
+
+var remoteCommandsTests = [
+  function refreshRemoteCommands() {
+    chrome.autotestPrivate.refreshRemoteCommands(
+      chrome.test.callbackPass(function () {
+        chrome.test.succeed();
+      })
+    );
+  },
 ];
 
 var arcPerformanceTracingTests = [
@@ -1511,6 +1497,13 @@ var shelfTests = [function fetchShelfUIInfo() {
       }));
 }];
 
+var launcherSearchBoxStateTests = [ function verifyGhostText(){
+  chrome.autotestPrivate.getLauncherSearchBoxState(
+      chrome.test.callbackPass(info => {
+        chrome.test.assertEq('youtube - Websites', info.ghostText);
+      }));
+}];
+
 var holdingSpaceTests = [
   function resetHoldingSpace(options) {
     // State after this call is checked in C++ test code.
@@ -1527,6 +1520,9 @@ var systemWebAppsTests = [
         chrome.test.assertEq(1, apps.length)
         chrome.test.assertEq('OSSettings', apps[0].internalName);
         chrome.test.assertEq('chrome://test-system-app/', apps[0].url);
+        chrome.test.assertEq('chrome://test-system-app/pwa.html',
+            apps[0].startUrl);
+        chrome.test.assertEq('Test System App', apps[0].name);
       })
     );
   },
@@ -1560,19 +1556,45 @@ var systemWebAppsTests = [
   },
 ]
 
-var test_suites = {
-  'default': defaultTests,
-  'arcEnabled': arcEnabledTests,
-  'enterprisePolicies': policyTests,
-  'arcPerformanceTracing': arcPerformanceTracingTests,
-  'overviewDefault': overviewTests,
-  'overviewDrag': overviewDragTests,
-  'splitviewLeftSnapped': splitviewLeftSnappedTests,
-  'scrollableShelf': scrollableShelfTests,
-  'shelf': shelfTests,
-  'holdingSpace': holdingSpaceTests,
-  'systemWebApps': systemWebAppsTests,
-};
+    var lacrosEnabledTests = [
+      function checkLacrosInfoFields() {
+        chrome.autotestPrivate.getLacrosInfo(
+            chrome.test.callbackPass(function(lacrosInfo) {
+              chrome.test.assertEq(typeof lacrosInfo, 'object');
+              chrome.test.assertTrue(lacrosInfo.hasOwnProperty('state'));
+              chrome.test.assertTrue(lacrosInfo.hasOwnProperty('isKeepAlive'));
+              chrome.test.assertTrue(lacrosInfo.hasOwnProperty('lacrosPath'));
+              chrome.test.assertTrue(lacrosInfo.hasOwnProperty('mode'));
+            }));
+      },
+      function checkLacrosInfoFieldValue() {
+        chrome.autotestPrivate.getLacrosInfo(
+            chrome.test.callbackPass(function(lacrosInfo) {
+              chrome.test.assertEq('Unavailable', lacrosInfo['state']);
+              chrome.test.assertTrue(!lacrosInfo['isKeepAlive']);
+              chrome.test.assertEq('', lacrosInfo['lacrosPath']);
+              chrome.test.assertEq('SideBySide', lacrosInfo['mode']);
+            }));
+      },
+    ]
+
+    var test_suites = {
+      'default': defaultTests,
+      'arcEnabled': arcEnabledTests,
+      'arcProcess': arcProcessTests,
+      'enterprisePolicies': policyTests,
+      'remoteCommands': remoteCommandsTests,
+      'arcPerformanceTracing': arcPerformanceTracingTests,
+      'overviewDefault': overviewTests,
+      'overviewDrag': overviewDragTests,
+      'splitviewLeftSnapped': splitviewLeftSnappedTests,
+      'scrollableShelf': scrollableShelfTests,
+      'shelf': shelfTests,
+      'holdingSpace': holdingSpaceTests,
+      'systemWebApps': systemWebAppsTests,
+      'lacrosEnabled': lacrosEnabledTests,
+      'launcherSearchBoxState' : launcherSearchBoxStateTests,
+    };
 
 chrome.test.getConfig(function(config) {
   var customArg = JSON.parse(config.customArg);

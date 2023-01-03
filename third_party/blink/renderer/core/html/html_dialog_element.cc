@@ -40,15 +40,28 @@
 #include "third_party/blink/renderer/core/html/html_frame_owner_element.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
-// https://html.spec.whatwg.org/C/#the-dialog-element
-// This function chooses the focused element when show() or showModal() is
-// invoked, as described in their spec.
-static void SetFocusForDialog(HTMLDialogElement* dialog) {
+// static
+void HTMLDialogElement::SetFocusForDialogLegacy(HTMLDialogElement* dialog) {
   Element* control = nullptr;
   Node* next = nullptr;
+
+  if (!dialog->isConnected())
+    return;
+
+  // Showing a <dialog> should hide all open popovers.
+  auto& document = dialog->GetDocument();
+  if (RuntimeEnabledFeatures::HTMLPopoverAttributeEnabled(
+          document.GetExecutionContext())) {
+    HTMLElement::HideAllPopoversUntil(
+        nullptr, document, HidePopoverFocusBehavior::kNone,
+        HidePopoverForcingLevel::kHideAfterAnimations);
+  }
+
+  dialog->previously_focused_element_ = document.FocusedElement();
 
   // TODO(kochi): How to find focusable element inside Shadow DOM is not
   // currently specified.  This may change at any time.
@@ -75,7 +88,7 @@ static void SetFocusForDialog(HTMLDialogElement* dialog) {
   if (control->IsFocusable())
     control->Focus();
   else
-    dialog->GetDocument().ClearFocusedElement();
+    document.ClearFocusedElement();
 
   // 4. Let topDocument be the active document of control's node document's
   // browsing context's top-level browsing context.
@@ -149,8 +162,7 @@ void HTMLDialogElement::close(const String& return_value) {
 
   // We should call focus() last since it will fire a focus event which could
   // modify this element.
-  if (RuntimeEnabledFeatures::DialogFocusNewSpecBehaviorEnabled() &&
-      previously_focused_element_) {
+  if (previously_focused_element_) {
     FocusOptions* focus_options = FocusOptions::Create();
     focus_options->setPreventScroll(true);
     Element* previously_focused_element = previously_focused_element_;
@@ -158,8 +170,10 @@ void HTMLDialogElement::close(const String& return_value) {
     previously_focused_element->Focus(focus_options);
   }
 
-  if (close_watcher_)
+  if (close_watcher_) {
     close_watcher_->destroy();
+    close_watcher_ = nullptr;
+  }
 }
 
 void HTMLDialogElement::SetIsModal(bool is_modal) {
@@ -174,23 +188,30 @@ void HTMLDialogElement::ScheduleCloseEvent() {
   GetDocument().EnqueueAnimationFrameEvent(event);
 }
 
-void HTMLDialogElement::show() {
+void HTMLDialogElement::show(ExceptionState& exception_state) {
   if (FastHasAttribute(html_names::kOpenAttr))
     return;
-  SetBooleanAttribute(html_names::kOpenAttr, true);
 
-  // Showing a <dialog> should hide all open popups.
-  if (RuntimeEnabledFeatures::HTMLPopupAttributeEnabled()) {
-    GetDocument().HideAllPopupsUntil(nullptr);
+  if (RuntimeEnabledFeatures::HTMLPopoverAttributeEnabled(
+          GetDocument().GetExecutionContext()) &&
+      HasPopoverAttribute() && popoverOpen()) {
+    return exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "The dialog is already open as a Popover, and therefore cannot be "
+        "opened as a non-modal dialog.");
   }
+
+  SetBooleanAttribute(html_names::kOpenAttr, true);
 
   // The layout must be updated here because setFocusForDialog calls
   // Element::isFocusable, which requires an up-to-date layout.
   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kJavaScript);
 
-  previously_focused_element_ = GetDocument().FocusedElement();
-
-  SetFocusForDialog(this);
+  if (RuntimeEnabledFeatures::DialogNewFocusBehaviorEnabled()) {
+    SetFocusForDialog();
+  } else {
+    SetFocusForDialogLegacy(this);
+  }
 }
 
 class DialogCloseWatcherEventListener : public NativeEventListener {
@@ -202,7 +223,7 @@ class DialogCloseWatcherEventListener : public NativeEventListener {
     if (!dialog_)
       return;
     if (event->type() == event_type_names::kCancel)
-      dialog_->CloseWatcherFiredCancel();
+      dialog_->CloseWatcherFiredCancel(event);
     if (event->type() == event_type_names::kClose)
       dialog_->CloseWatcherFiredClose();
   }
@@ -218,16 +239,24 @@ class DialogCloseWatcherEventListener : public NativeEventListener {
 
 void HTMLDialogElement::showModal(ExceptionState& exception_state) {
   if (FastHasAttribute(html_names::kOpenAttr)) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "The element already has an 'open' "
-                                      "attribute, and therefore cannot be "
-                                      "opened modally.");
-    return;
+    return exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "The element already has an 'open' "
+        "attribute, and therefore cannot be "
+        "opened modally.");
   }
   if (!isConnected()) {
-    exception_state.ThrowDOMException(DOMExceptionCode::kInvalidStateError,
-                                      "The element is not in a Document.");
-    return;
+    return exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "The element is not in a Document.");
+  }
+  if (RuntimeEnabledFeatures::HTMLPopoverAttributeEnabled(
+          GetDocument().GetExecutionContext()) &&
+      HasPopoverAttribute() && popoverOpen()) {
+    return exception_state.ThrowDOMException(
+        DOMExceptionCode::kInvalidStateError,
+        "The dialog is already open as a Popover, and therefore cannot be "
+        "opened as a modal dialog.");
   }
 
   Document& document = GetDocument();
@@ -239,39 +268,34 @@ void HTMLDialogElement::showModal(ExceptionState& exception_state) {
                       WebFeature::kShowModalForElementInFullscreenStack);
   }
 
-  // Showing a <dialog> should hide all open popups.
-  if (RuntimeEnabledFeatures::HTMLPopupAttributeEnabled()) {
-    document.HideAllPopupsUntil(nullptr);
-  }
-
   document.AddToTopLayer(this);
   SetBooleanAttribute(html_names::kOpenAttr, true);
 
   SetIsModal(true);
-  document.UpdateStyleAndLayout(DocumentUpdateReason::kJavaScript);
 
   // Throw away the AX cache first, so the subsequent steps don't have a chance
   // of queuing up AX events on objects that would be invalidated when the cache
   // is thrown away.
   InertSubtreesChanged(document, old_modal_dialog);
+  document.UpdateStyleAndLayout(DocumentUpdateReason::kJavaScript);
 
-  previously_focused_element_ = document.FocusedElement();
-
-  if (RuntimeEnabledFeatures::CloseWatcherEnabled()) {
-    if (LocalDOMWindow* window = GetDocument().domWindow()) {
-      close_watcher_ = CloseWatcher::Create(window, /*options=*/nullptr);
-      if (close_watcher_) {
-        auto* event_listener =
-            MakeGarbageCollected<DialogCloseWatcherEventListener>(this);
-        close_watcher_->addEventListener(event_type_names::kClose,
-                                         event_listener);
-        close_watcher_->addEventListener(event_type_names::kCancel,
-                                         event_listener);
-      }
+  if (LocalDOMWindow* window = GetDocument().domWindow()) {
+    close_watcher_ = CloseWatcher::Create(window, this);
+    if (close_watcher_) {
+      auto* event_listener =
+          MakeGarbageCollected<DialogCloseWatcherEventListener>(this);
+      close_watcher_->addEventListener(event_type_names::kClose,
+                                       event_listener);
+      close_watcher_->addEventListener(event_type_names::kCancel,
+                                       event_listener);
     }
   }
 
-  SetFocusForDialog(this);
+  if (RuntimeEnabledFeatures::DialogNewFocusBehaviorEnabled()) {
+    SetFocusForDialog();
+  } else {
+    SetFocusForDialogLegacy(this);
+  }
 }
 
 void HTMLDialogElement::RemovedFrom(ContainerNode& insertion_point) {
@@ -280,6 +304,11 @@ void HTMLDialogElement::RemovedFrom(ContainerNode& insertion_point) {
   HTMLElement::RemovedFrom(insertion_point);
   InertSubtreesChanged(document, old_modal_dialog);
   SetIsModal(false);
+
+  if (close_watcher_) {
+    close_watcher_->destroy();
+    close_watcher_ = nullptr;
+  }
 }
 
 void HTMLDialogElement::DefaultEventHandler(Event& event) {
@@ -292,23 +321,63 @@ void HTMLDialogElement::DefaultEventHandler(Event& event) {
   HTMLElement::DefaultEventHandler(event);
 }
 
-void HTMLDialogElement::CloseWatcherFiredCancel() {
-  cancel_fired_since_last_close_ = true;
+void HTMLDialogElement::CloseWatcherFiredCancel(Event* close_watcher_event) {
+  if (!RuntimeEnabledFeatures::CloseWatcherEnabled())
+    return;
+  // https://wicg.github.io/close-watcher/#patch-dialog cancelAction
+
+  Event* dialog_event = Event::CreateCancelable(event_type_names::kCancel);
+  DispatchEvent(*dialog_event);
+  if (dialog_event->defaultPrevented())
+    close_watcher_event->preventDefault();
+  dialog_event->SetDefaultHandled();
 }
 
 void HTMLDialogElement::CloseWatcherFiredClose() {
-  // https://wicg.github.io/close-watcher/#cancel-the-dialog
-  if (cancel_fired_since_last_close_) {
-    cancel_fired_since_last_close_ = false;
-
-    Event* cancel_event = Event::CreateCancelable(event_type_names::kCancel);
-    DispatchEvent(*cancel_event);
-    if (cancel_event->defaultPrevented())
-      return;
-    cancel_event->SetDefaultHandled();
-  }
+  if (!RuntimeEnabledFeatures::CloseWatcherEnabled())
+    return;
+  // https://wicg.github.io/close-watcher/#patch-dialog closeAction
 
   close();
+}
+
+// https://html.spec.whatwg.org#dialog-focusing-steps
+void HTMLDialogElement::SetFocusForDialog() {
+  previously_focused_element_ = GetDocument().FocusedElement();
+
+  // Showing a <dialog> should hide all open popovers.
+  if (RuntimeEnabledFeatures::HTMLPopoverAttributeEnabled(
+          GetDocument().GetExecutionContext())) {
+    HTMLElement::HideAllPopoversUntil(
+        nullptr, GetDocument(), HidePopoverFocusBehavior::kNone,
+        HidePopoverForcingLevel::kHideAfterAnimations);
+  }
+
+  Element* control = GetFocusDelegate(/*autofocus_only=*/false);
+  if (!control)
+    control = this;
+
+  if (control->IsFocusable())
+    control->Focus();
+  else if (is_modal_)
+    control->GetDocument().ClearFocusedElement();
+
+  // 4. Let topDocument be the active document of control's node document's
+  // browsing context's top-level browsing context.
+  // 5. If control's node document's origin is not the same as the origin of
+  // topDocument, then return.
+  Document& doc = control->GetDocument();
+  if (!doc.IsActive())
+    return;
+  if (!doc.IsInMainFrame() &&
+      !doc.TopFrameOrigin()->CanAccess(
+          doc.GetExecutionContext()->GetSecurityOrigin())) {
+    return;
+  }
+
+  // 6. Empty topDocument's autofocus candidates.
+  // 7. Set topDocument's autofocus processed flag to true.
+  doc.TopDocument().FinalizeAutofocus();
 }
 
 void HTMLDialogElement::Trace(Visitor* visitor) const {

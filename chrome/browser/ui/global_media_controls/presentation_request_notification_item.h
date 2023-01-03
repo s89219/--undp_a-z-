@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,13 @@
 #include "components/media_message_center/media_notification_item.h"
 #include "components/media_router/browser/presentation/start_presentation_context.h"
 #include "content/public/browser/presentation_request.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "services/media_session/public/mojom/media_session.mojom.h"
 #include "ui/gfx/image/image_skia.h"
+
+namespace content {
+class MediaSession;
+}  // namespace content
 
 namespace global_media_controls {
 class MediaItemManager;
@@ -63,6 +68,8 @@ class PresentationRequestNotificationItem final
     return weak_ptr_factory_.GetWeakPtr();
   }
 
+  static void SetMediaSessionForTest(content::MediaSession* media_session);
+
   const std::string& id() const { return id_; }
   media_router::StartPresentationContext* context() const {
     return context_.get();
@@ -90,6 +97,7 @@ class PresentationRequestNotificationItem final
   media_message_center::SourceType SourceType() override;
   void SetVolume(float volume) override {}
   void SetMute(bool mute) override {}
+  bool RequestMediaRemoting() override;
 
   void UpdateViewWithMetadata();
   void UpdateViewWithImages();

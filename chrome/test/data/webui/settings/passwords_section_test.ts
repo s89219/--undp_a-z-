@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,18 +7,19 @@
 // clang-format off
 import 'chrome://settings/lazy_load.js';
 
-import {isChromeOS, isLacros, webUIListenerCallback} from 'chrome://resources/js/cr.m.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {isMac, isWindows, isChromeOS, isLacros} from 'chrome://resources/js/platform.js';
+import {webUIListenerCallback} from 'chrome://resources/js/cr.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {CrDialogElement, PasswordsSectionElement} from 'chrome://settings/lazy_load.js';
-import {buildRouter, HatsBrowserProxyImpl, MultiStoreExceptionEntry, MultiStorePasswordUiEntry, PasswordCheckReferrer, PasswordManagerImpl, Router, routes, SettingsPluralStringProxyImpl,StatusAction, TrustedVaultBannerState, TrustSafetyInteraction} from 'chrome://settings/settings.js';
-import {SettingsRoutes} from 'chrome://settings/settings_routes.js';
-import {assertDeepEquals, assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {PasswordsSectionElement} from 'chrome://settings/lazy_load.js';
+import {buildRouter, HatsBrowserProxyImpl, PasswordCheckReferrer, PasswordManagerImpl, Router, routes, SettingsPluralStringProxyImpl, SettingsRoutes, StatusAction, TrustedVaultBannerState, TrustSafetyInteraction} from 'chrome://settings/settings.js';
+import {SettingsToggleButtonElement} from 'chrome://settings/settings.js';
+import {assertDeepEquals, assertEquals, assertFalse, assertTrue, assertNotEquals} from 'chrome://webui-test/chai_assert.js';
 import {TestPluralStringProxy} from 'chrome://webui-test/test_plural_string_proxy.js';
-import {eventToPromise, flushTasks, isVisible} from 'chrome://webui-test/test_util.js';
+import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 
-import {createExceptionEntry, createMultiStoreExceptionEntry, createMultiStorePasswordEntry, createPasswordEntry, makeCompromisedCredential, makePasswordCheckStatus, PasswordSectionElementFactory} from './passwords_and_autofill_fake_data.js';
-import {runCancelExportTest, runExportFlowErrorRetryTest, runExportFlowErrorTest, runExportFlowFastTest, runExportFlowSlowTest, runFireCloseEventAfterExportCompleteTest,runStartExportTest} from './passwords_export_test.js';
+import {createExceptionEntry, createPasswordEntry, makeInsecureCredential, makePasswordCheckStatus, PasswordSectionElementFactory} from './passwords_and_autofill_fake_data.js';
 import {getSyncAllPrefs, simulateStoredAccounts, simulateSyncStatus} from './sync_test_util.js';
 import {TestHatsBrowserProxy} from './test_hats_browser_proxy.js';
 import {TestPasswordManagerProxy} from './test_password_manager_proxy.js';
@@ -33,9 +34,9 @@ const PasswordCheckState = chrome.passwordsPrivate.PasswordCheckState;
  * @param passwordsSection The passwords section element that will be checked.
  * @param expectedPasswords The expected data.
  */
-function validateMultiStorePasswordList(
+function validatePasswordList(
     passwordsSection: PasswordsSectionElement,
-    expectedPasswords: MultiStorePasswordUiEntry[]) {
+    expectedPasswords: chrome.passwordsPrivate.PasswordUiEntry[]) {
   const passwordList = passwordsSection.$.passwordList;
   if (passwordList.filter) {
     // `passwordList.items` will always contain all items, even when there is a
@@ -44,8 +45,8 @@ function validateMultiStorePasswordList(
     assertDeepEquals(
         expectedPasswords,
         passwordList.items!.filter(
-            passwordList.filter as (item: MultiStorePasswordUiEntry) =>
-                boolean));
+            passwordList.filter as
+                (item: chrome.passwordsPrivate.PasswordUiEntry) => boolean));
   } else {
     assertDeepEquals(expectedPasswords, passwordList.items);
   }
@@ -58,22 +59,8 @@ function validateMultiStorePasswordList(
     assertTrue(!!listItem);
     assertEquals(expected.urls.shown, listItem.$.originUrl.textContent!.trim());
     assertEquals(expected.urls.link, listItem.$.originUrl.href);
-    assertEquals(expected.username, listItem.$.username.value);
+    assertEquals(expected.username, listItem.$.username.textContent!.trim());
   }
-}
-
-/**
- * Convenience version of validateMultiStorePasswordList() for when store
- * duplicates don't exist.
- * @param passwordsSection The passwords section element that will be checked.
- * @param passwordList The expected data.
- */
-function validatePasswordList(
-    passwordsSection: PasswordsSectionElement,
-    passwordList: chrome.passwordsPrivate.PasswordUiEntry[]) {
-  validateMultiStorePasswordList(
-      passwordsSection,
-      passwordList.map(entry => new MultiStorePasswordUiEntry(entry)));
 }
 
 /**
@@ -82,8 +69,9 @@ function validatePasswordList(
  * @param nodes The nodes that will be checked.
  * @param exceptionList The expected data.
  */
-function validateMultiStoreExceptionList(
-    nodes: NodeListOf<HTMLElement>, exceptionList: MultiStoreExceptionEntry[]) {
+function validateExceptionList(
+    nodes: NodeListOf<HTMLElement>,
+    exceptionList: chrome.passwordsPrivate.ExceptionEntry[]) {
   assertEquals(exceptionList.length, nodes.length);
   for (let index = 0; index < exceptionList.length; ++index) {
     const node = nodes[index]!;
@@ -95,19 +83,6 @@ function validateMultiStoreExceptionList(
         exception.urls.link.toLowerCase(),
         node.querySelector<HTMLAnchorElement>('#exception')!.href);
   }
-}
-
-/**
- * Convenience version of validateMultiStoreExceptionList() for when store
- * duplicates do not exist.
- * @param nodes The nodes that will be checked.
- * @param exceptionList The expected data.
- */
-function validateExceptionList(
-    nodes: NodeListOf<HTMLElement>,
-    exceptionList: chrome.passwordsPrivate.ExceptionEntry[]) {
-  validateMultiStoreExceptionList(
-      nodes, exceptionList.map(entry => new MultiStoreExceptionEntry(entry)));
 }
 
 /**
@@ -130,10 +105,9 @@ function getFirstPasswordListItem(passwordsSection: HTMLElement) {
  * @param url The URL that is being searched for.
  */
 function listContainsUrl(
-    passwordList:
-        (MultiStorePasswordUiEntry[]|chrome.passwordsPrivate.PasswordUiEntry[]),
+    passwordList: (chrome.passwordsPrivate.PasswordUiEntry[]),
     url: string): boolean {
-  return passwordList.some(item => item.urls.origin === url);
+  return passwordList.some(item => item.urls.signonRealm === url);
 }
 
 /**
@@ -141,8 +115,7 @@ function listContainsUrl(
  * @param url The URL that is being searched for.
  */
 function exceptionsListContainsUrl(
-    exceptionList:
-        (MultiStoreExceptionEntry[]|chrome.passwordsPrivate.ExceptionEntry[]),
+    exceptionList: chrome.passwordsPrivate.ExceptionEntry[],
     url: string): boolean {
   return exceptionList.some(
       item => (item.urls as unknown as {originUrl: string}).originUrl === url);
@@ -160,8 +133,8 @@ async function openPasswordEditDialogHelper(
   ];
   passwordManager.setPlaintextPassword(PASSWORD);
 
-  const passwordsSection =
-      elementFactory.createPasswordsSection(passwordManager, passwordList, []);
+  const passwordsSection = await createPasswordsSection(
+      elementFactory, passwordManager, passwordList, []);
 
   const passwordListItem = getFirstPasswordListItem(passwordsSection);
   passwordListItem.shadowRoot!
@@ -186,7 +159,6 @@ async function openPasswordEditDialogHelper(
   passwordListItem.$.moreActionsButton.click();
   passwordsSection.$.passwordsListHandler.$.menuEditPassword.click();
   flush();
-
   await passwordManager.whenCalled('requestPlaintextPassword');
   await flushTasks();
   passwordManager.resetResolver('requestPlaintextPassword');
@@ -223,6 +195,7 @@ async function openPasswordEditDialogHelper(
   // Close the dialog, verify that the list item password remains hidden.
   // Note that the password only gets hidden in the on-close handler, thus we
   // need to await this event first.
+  passwordManager.setChangeSavedPasswordResponse(1);
   passwordEditDialog.$.actionButton.click();
   await eventToPromise('close', passwordEditDialog);
 
@@ -252,6 +225,23 @@ function simulateAccountStorageUser(passwordManager: TestPasswordManagerProxy) {
   flush();
 }
 
+/**
+ * Helper function which creates a password section with the given lists and
+ * waits for queued tasks to finish.
+ */
+async function createPasswordsSection(
+    elementFactory: PasswordSectionElementFactory,
+    passwordManager: TestPasswordManagerProxy,
+    passwordList: chrome.passwordsPrivate.PasswordUiEntry[],
+    exceptionList: chrome.passwordsPrivate.ExceptionEntry[]):
+    Promise<PasswordsSectionElement> {
+  const passwordsSection = elementFactory.createPasswordsSection(
+      passwordManager, passwordList, exceptionList);
+  await passwordManager.whenCalled('getSavedPasswordList');
+  await flushTasks();
+  return passwordsSection;
+}
+
 // TODO(crbug.com/1260310): Split into multiple test suits.
 suite('PasswordsSection', function() {
   let passwordManager: TestPasswordManagerProxy;
@@ -263,7 +253,7 @@ suite('PasswordsSection', function() {
   let testHatsBrowserProxy: TestHatsBrowserProxy;
 
   setup(function() {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
     // Override the PasswordManagerImpl for testing.
     passwordManager = new TestPasswordManagerProxy();
     pluralString = new TestPluralStringProxy();
@@ -274,8 +264,8 @@ suite('PasswordsSection', function() {
     PasswordManagerImpl.setInstance(passwordManager);
     elementFactory = new PasswordSectionElementFactory(document);
     loadTimeData.overrideValues({
-      enablePasswordNotes: false,
-      unifiedPasswordManagerEnabled: false,
+      enablePasswordViewPage: false,
+      biometricAuthenticationForFilling: false,
     });
   });
 
@@ -296,9 +286,74 @@ suite('PasswordsSection', function() {
         !!element.shadowRoot!.querySelector('#passwordsExtensionIndicator'));
   });
 
-  test('verifyNoSavedPasswords', function() {
+  if (isMac || isWindows) {
+    test(
+        'testBiometricAuthenticationForFillingToggleVisibility',
+        async function() {
+          loadTimeData.overrideValues(
+              {biometricAuthenticationForFilling: false});
+          const passwordsSectionBiometricForFillingDisabled =
+              await createPasswordsSection(
+                  elementFactory, passwordManager, [], []);
+          assertFalse(
+              isVisible(passwordsSectionBiometricForFillingDisabled.shadowRoot!
+                            .querySelector<HTMLElement>(
+                                '#biometricAuthenticationForFillingToggle')));
+
+          loadTimeData.overrideValues(
+              {biometricAuthenticationForFilling: true});
+          const passwordsSectionBiometricForFillingEnabled =
+              await createPasswordsSection(
+                  elementFactory, passwordManager, [], []);
+          assertTrue(
+              isVisible(passwordsSectionBiometricForFillingEnabled.shadowRoot!
+                            .querySelector<HTMLElement>(
+                                '#biometricAuthenticationForFillingToggle')));
+        });
+
+    test('testNoSwitchBiometricAuthBeforeFillingToggle', async function() {
+      loadTimeData.overrideValues({biometricAuthenticationForFilling: true});
+      const passwordsSection =
+          await createPasswordsSection(elementFactory, passwordManager, [], []);
+      const biometricAuthenticationForFillingToggle =
+          passwordsSection.shadowRoot!
+              .querySelector<SettingsToggleButtonElement>(
+                  '#biometricAuthenticationForFillingToggle');
+      const initialState = biometricAuthenticationForFillingToggle!.checked;
+
+      biometricAuthenticationForFillingToggle!.click();
+
+      const afterClickState = biometricAuthenticationForFillingToggle!.checked;
+      assertEquals(initialState, afterClickState);
+    });
+
+    test('testSwitchBiometricAuthBeforeFillingToggle', async function() {
+      loadTimeData.overrideValues({biometricAuthenticationForFilling: true});
+      const passwordsSection =
+          await createPasswordsSection(elementFactory, passwordManager, [], []);
+      passwordsSection.set(
+          'prefs.password_manager.biometric_authentication_filling.value',
+          false);
+      const biometricAuthenticationForFillingToggle =
+          passwordsSection.shadowRoot!
+              .querySelector<SettingsToggleButtonElement>(
+                  '#biometricAuthenticationForFillingToggle');
+      const initialState = biometricAuthenticationForFillingToggle!.checked;
+
+      biometricAuthenticationForFillingToggle!.click();
+      // Simulate successful authentication
+      passwordsSection.set(
+          'prefs.password_manager.biometric_authentication_filling.value',
+          true);
+
+      const afterClickState = biometricAuthenticationForFillingToggle!.checked;
+      assertNotEquals(initialState, afterClickState);
+    });
+  }
+
+  test('verifyNoSavedPasswords', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
 
     validatePasswordList(passwordsSection, []);
 
@@ -306,7 +361,7 @@ suite('PasswordsSection', function() {
     assertTrue(passwordsSection.$.savedPasswordsHeaders.hidden);
   });
 
-  test('verifySavedPasswordEntries', function() {
+  test('verifySavedPasswordEntries', async function() {
     const passwordList = [
       createPasswordEntry({url: 'site1.com', username: 'luigi', id: 0}),
       createPasswordEntry({url: 'longwebsite.com', username: 'peach', id: 1}),
@@ -316,14 +371,12 @@ suite('PasswordsSection', function() {
       createPasswordEntry({url: 'site2.com', username: 'luigi', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     // Assert that the data is passed into the iron list. If this fails,
     // then other expectations will also fail.
-    assertDeepEquals(
-        passwordList.map(entry => new MultiStorePasswordUiEntry(entry)),
-        passwordsSection.$.passwordList.items);
+    assertDeepEquals(passwordList, passwordsSection.$.passwordList.items);
 
     validatePasswordList(passwordsSection, passwordList);
 
@@ -331,57 +384,17 @@ suite('PasswordsSection', function() {
     assertFalse(passwordsSection.$.savedPasswordsHeaders.hidden);
   });
 
-  // Test verifies that passwords duplicated across stores get properly merged
-  // in the UI.
-  test('verifySavedPasswordEntriesWithMultiStore', function() {
-    // Entries with duplicates.
-    const accountPassword1 = createPasswordEntry(
-        {username: 'user1', frontendId: 1, id: 10, fromAccountStore: true});
-    const devicePassword1 = createPasswordEntry(
-        {username: 'user1', frontendId: 1, id: 11, fromAccountStore: false});
-    const accountPassword2 = createPasswordEntry(
-        {username: 'user2', frontendId: 2, id: 20, fromAccountStore: true});
-    const devicePassword2 = createPasswordEntry(
-        {username: 'user2', frontendId: 2, id: 21, fromAccountStore: false});
-    // Entries without duplicate.
-    const devicePassword3 = createPasswordEntry(
-        {username: 'user3', frontendId: 3, id: 3, fromAccountStore: false});
-    const accountPassword4 = createPasswordEntry(
-        {username: 'user4', frontendId: 4, id: 4, fromAccountStore: true});
-
-    // Shuffle entries a little.
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager,
-        [
-          devicePassword3, accountPassword1, devicePassword2, accountPassword4,
-          devicePassword1, accountPassword2
-        ],
-        []);
-
-    // Expected list keeping relative order.
-    const expectedList = [
-      createMultiStorePasswordEntry({username: 'user3', deviceId: 3}),
-      createMultiStorePasswordEntry(
-          {username: 'user1', accountId: 10, deviceId: 11}),
-      createMultiStorePasswordEntry(
-          {username: 'user2', accountId: 20, deviceId: 21}),
-      createMultiStorePasswordEntry({username: 'user4', accountId: 4}),
-    ];
-
-    validateMultiStorePasswordList(passwordsSection, expectedList);
-  });
-
   // Test verifies that removing a password will update the elements.
-  test('verifyPasswordListRemove', function() {
+  test('verifyPasswordListRemove', async function() {
     const passwordList = [
       createPasswordEntry(
           {url: 'anotherwebsite.com', username: 'luigi', id: 0}),
       createPasswordEntry({url: 'longwebsite.com', username: 'peach', id: 1}),
-      createPasswordEntry({url: 'website.com', username: 'mario', id: 2})
+      createPasswordEntry({url: 'website.com', username: 'mario', id: 2}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     validatePasswordList(passwordsSection, passwordList);
     // Simulate 'longwebsite.com' being removed from the list.
@@ -408,8 +421,8 @@ suite('PasswordsSection', function() {
     ];
     passwordManager.setPlaintextPassword(PASSWORD);
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     const passwordListItems =
         passwordsSection.shadowRoot!.querySelectorAll('password-list-item');
@@ -454,87 +467,16 @@ suite('PasswordsSection', function() {
     await openPasswordEditDialogHelper(passwordManager, elementFactory);
   });
 
-  // Test verifies that removing the account copy of a duplicated password will
-  // still leave the device copy present.
-  test('verifyPasswordListRemoveAccountCopy', function() {
-    const passwordList = [
-      createPasswordEntry({frontendId: 0, id: 0, fromAccountStore: true}),
-      createPasswordEntry({frontendId: 0, id: 1, fromAccountStore: false}),
-    ];
-
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-
-    validateMultiStorePasswordList(
-        passwordsSection,
-        [createMultiStorePasswordEntry({accountId: 0, deviceId: 1})]);
-    // Simulate account copy being removed from the list.
-    passwordList.splice(0, 1);
-    passwordManager.lastCallback.addSavedPasswordListChangedListener!
-        (passwordList);
-    flush();
-
-    validateMultiStorePasswordList(
-        passwordsSection, [createMultiStorePasswordEntry({deviceId: 1})]);
-  });
-
-  // Test verifies that removing the device copy of a duplicated password will
-  // still leave the account copy present.
-  test('verifyPasswordListRemoveDeviceCopy', function() {
-    const passwordList = [
-      createPasswordEntry({frontendId: 0, id: 0, fromAccountStore: true}),
-      createPasswordEntry({frontendId: 0, id: 1, fromAccountStore: false}),
-    ];
-
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-
-    validateMultiStorePasswordList(
-        passwordsSection,
-        [createMultiStorePasswordEntry({accountId: 0, deviceId: 1})]);
-    // Simulate device copy being removed from the list.
-    passwordList.splice(1, 1);
-    passwordManager.lastCallback.addSavedPasswordListChangedListener!
-        (passwordList);
-    flush();
-
-    validateMultiStorePasswordList(
-        passwordsSection, [createMultiStorePasswordEntry({accountId: 0})]);
-  });
-
-  // Test verifies that removing both copies of a duplicated password will
-  // cause no password to be displayed.
-  test('verifyPasswordListRemoveBothCopies', function() {
-    const passwordList = [
-      createPasswordEntry({frontendId: 0, id: 0, fromAccountStore: true}),
-      createPasswordEntry({frontendId: 0, id: 1, fromAccountStore: false}),
-    ];
-
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-
-    validateMultiStorePasswordList(
-        passwordsSection,
-        [createMultiStorePasswordEntry({accountId: 0, deviceId: 1})]);
-    // Simulate both copies being removed from the list.
-    passwordList.splice(0, 2);
-    passwordManager.lastCallback.addSavedPasswordListChangedListener!
-        (passwordList);
-    flush();
-
-    validateMultiStorePasswordList(passwordsSection, []);
-  });
-
   // Test verifies that adding a password will update the elements.
-  test('verifyPasswordListAdd', function() {
+  test('verifyPasswordListAdd', async function() {
     const passwordList = [
       createPasswordEntry(
           {url: 'anotherwebsite.com', username: 'luigi', id: 0}),
       createPasswordEntry({url: 'longwebsite.com', username: 'peach', id: 1}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     validatePasswordList(passwordsSection, passwordList);
     // Simulate 'website.com' being added to the list.
@@ -547,64 +489,16 @@ suite('PasswordsSection', function() {
     validatePasswordList(passwordsSection, passwordList);
   });
 
-  // Test verifies that adding an account copy of an existing password will
-  // merge it with the one already in the list.
-  test('verifyPasswordListAddAccountCopy', function() {
-    const passwordList = [
-      createPasswordEntry({frontendId: 0, fromAccountStore: false, id: 0}),
-    ];
-
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-
-    validatePasswordList(passwordsSection, passwordList);
-    // Simulate account copy being added to the list.
-    passwordList.unshift(
-        createPasswordEntry({frontendId: 0, fromAccountStore: true, id: 1}));
-
-    passwordManager.lastCallback.addSavedPasswordListChangedListener!
-        (passwordList);
-    flush();
-
-    validateMultiStorePasswordList(
-        passwordsSection,
-        [createMultiStorePasswordEntry({deviceId: 0, accountId: 1})]);
-  });
-
-  // Test verifies that adding a device copy of an existing password will
-  // merge it with the one already in the list.
-  test('verifyPasswordListAddDeviceCopy', function() {
-    const passwordList = [
-      createPasswordEntry({frontendId: 0, fromAccountStore: true, id: 0}),
-    ];
-
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-
-    validatePasswordList(passwordsSection, passwordList);
-    // Simulate device copy being added to the list.
-    passwordList.unshift(
-        createPasswordEntry({frontendId: 0, fromAccountStore: false, id: 1}));
-
-    passwordManager.lastCallback.addSavedPasswordListChangedListener!
-        (passwordList);
-    flush();
-
-    validateMultiStorePasswordList(
-        passwordsSection,
-        [createMultiStorePasswordEntry({accountId: 0, deviceId: 1})]);
-  });
-
   // Test verifies that removing one out of two passwords for the same website
   // will update the elements.
-  test('verifyPasswordListRemoveSameWebsite', function() {
+  test('verifyPasswordListRemoveSameWebsite', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
 
     // Set-up initial list.
     let passwordList = [
       createPasswordEntry({url: 'website.com', username: 'mario', id: 0}),
-      createPasswordEntry({url: 'website.com', username: 'luigi', id: 1})
+      createPasswordEntry({url: 'website.com', username: 'luigi', id: 1}),
     ];
 
     passwordManager.lastCallback.addSavedPasswordListChangedListener!
@@ -639,8 +533,8 @@ suite('PasswordsSection', function() {
       createPasswordEntry({url: 'six', username: 'one', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     const firstNode = getFirstPasswordListItem(passwordsSection);
     assertTrue(!!firstNode);
@@ -650,7 +544,7 @@ suite('PasswordsSection', function() {
     firstNode.$.moreActionsButton.click();
     passwordsSection.$.passwordsListHandler.$.menuRemovePassword.click();
 
-    const id = await passwordManager.whenCalled('removeSavedPassword');
+    const {id} = await passwordManager.whenCalled('removeSavedPassword');
     // Verify that the expected value was passed to the proxy.
     assertEquals(firstPassword.id, id);
     assertEquals(
@@ -661,13 +555,13 @@ suite('PasswordsSection', function() {
 
   // Test verifies that 'Copy password' button is hidden for Federated
   // (passwordless) credentials. Does not test Copy button.
-  test('verifyCopyAbsentForFederatedPasswordInMenu', function() {
+  test('verifyCopyAbsentForFederatedPasswordInMenu', async function() {
     const passwordList = [
       createPasswordEntry({federationText: 'with chromium.org'}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
     flush();
@@ -677,12 +571,12 @@ suite('PasswordsSection', function() {
 
   // Test verifies that 'Copy password' button is not hidden for common
   // credentials. Does not test Copy button.
-  test('verifyCopyPresentInMenu', function() {
+  test('verifyCopyPresentInMenu', async function() {
     const passwordList = [
       createPasswordEntry({url: 'one.com', username: 'hey'}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
     flush();
@@ -692,30 +586,32 @@ suite('PasswordsSection', function() {
 
   // Test verifies that 'Edit' button is replaced to 'Details' for Federated
   // (passwordless) credentials. Does not test Details and Edit button.
-  test('verifyEditReplacedToDetailsForFederatedPasswordInMenu', function() {
-    const passwordList = [
-      createPasswordEntry({federationText: 'with chromium.org'}),
-    ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+  test(
+      'verifyEditReplacedToDetailsForFederatedPasswordInMenu',
+      async function() {
+        const passwordList = [
+          createPasswordEntry({federationText: 'with chromium.org'}),
+        ];
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, passwordList, []);
 
-    getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
-    flush();
-    assertEquals(
-        passwordsSection.i18n('passwordViewDetails'),
-        passwordsSection.$.passwordsListHandler.$.menuEditPassword.textContent!
-            .trim());
-  });
+        getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
+        flush();
+        assertEquals(
+            passwordsSection.i18n('passwordViewDetails'),
+            passwordsSection.$.passwordsListHandler.$.menuEditPassword
+                .textContent!.trim());
+      });
 
   // Test verifies that 'Edit' button is replaced to 'Details' for Federated
   // (passwordless) credentials.
   // Does not test Details and Edit button.
-  test('verifyDetailsForFederatedPasswordInMenu', function() {
+  test('verifyDetailsForFederatedPasswordInMenu', async function() {
     const passwordList = [
       createPasswordEntry({federationText: 'with chromium.org'}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
     flush();
@@ -728,12 +624,12 @@ suite('PasswordsSection', function() {
   // Test verifies that 'Edit' button is shown instead of 'Details' for
   // common credentials.
   // Does not test Details and Edit button.
-  test('verifyEditButtonInMenu', function() {
+  test('verifyEditButtonInMenu', async function() {
     const passwordList = [
       createPasswordEntry({url: 'one.com', username: 'hey'}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
     flush();
@@ -743,7 +639,7 @@ suite('PasswordsSection', function() {
             .trim());
   });
 
-  test('verifyFilterPasswords', function() {
+  test('verifyFilterPasswords', async function() {
     const passwordList = [
       createPasswordEntry({url: 'one.com', username: 'SHOW', id: 0}),
       createPasswordEntry({url: 'two.com', username: 'shower', id: 1}),
@@ -753,8 +649,8 @@ suite('PasswordsSection', function() {
       createPasswordEntry({url: 'six-show.com', username: 'one', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
     passwordsSection.filter = 'SHow';
     flush();
 
@@ -768,7 +664,7 @@ suite('PasswordsSection', function() {
     validatePasswordList(passwordsSection, expectedList);
   });
 
-  test('verifyFilterPasswordsWithRemoval', function() {
+  test('verifyFilterPasswordsWithRemoval', async function() {
     const passwordList = [
       createPasswordEntry({url: 'one.com', username: 'SHOW', id: 0}),
       createPasswordEntry({url: 'two.com', username: 'shower', id: 1}),
@@ -778,8 +674,8 @@ suite('PasswordsSection', function() {
       createPasswordEntry({url: 'six-show.com', username: 'one', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
     passwordsSection.filter = 'SHow';
     flush();
 
@@ -808,7 +704,7 @@ suite('PasswordsSection', function() {
     validatePasswordList(passwordsSection, expectedList);
   });
 
-  test('verifyFilterPasswordExceptions', function() {
+  test('verifyFilterPasswordExceptions', async function() {
     const exceptionList = [
       createExceptionEntry({url: 'docsshoW.google.com', id: 0}),
       createExceptionEntry({url: 'showmail.com', id: 1}),
@@ -818,8 +714,8 @@ suite('PasswordsSection', function() {
       createExceptionEntry({url: 'plus.google.comshow', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [], exceptionList);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [], exceptionList);
     passwordsSection.filter = 'shOW';
     flush();
 
@@ -835,9 +731,9 @@ suite('PasswordsSection', function() {
         expectedExceptionList);
   });
 
-  test('verifyNoPasswordExceptions', function() {
+  test('verifyNoPasswordExceptions', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
 
     validateExceptionList(
         getDomRepeatChildren(passwordsSection.$.passwordExceptionsList), []);
@@ -845,7 +741,7 @@ suite('PasswordsSection', function() {
     assertFalse(passwordsSection.$.noExceptionsLabel.hidden);
   });
 
-  test('verifyPasswordExceptions', function() {
+  test('verifyPasswordExceptions', async function() {
     const exceptionList = [
       createExceptionEntry({url: 'docs.google.com', id: 0}),
       createExceptionEntry({url: 'mail.com', id: 1}),
@@ -855,8 +751,8 @@ suite('PasswordsSection', function() {
       createExceptionEntry({url: 'plus.google.com', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [], exceptionList);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [], exceptionList);
 
     validateExceptionList(
         getDomRepeatChildren(passwordsSection.$.passwordExceptionsList),
@@ -865,50 +761,8 @@ suite('PasswordsSection', function() {
     assertTrue(passwordsSection.$.noExceptionsLabel.hidden);
   });
 
-  // Test verifies that exceptions duplicated across stores get properly merged
-  // in the UI.
-  test('verifyPasswordExceptionsWithMultiStore', function() {
-    // Entries with duplicates.
-    const accountException1 = createExceptionEntry(
-        {url: '1.com', frontendId: 1, id: 10, fromAccountStore: true});
-    const deviceException1 = createExceptionEntry(
-        {url: '1.com', frontendId: 1, id: 11, fromAccountStore: false});
-    const accountException2 = createExceptionEntry(
-        {url: '2.com', frontendId: 2, id: 20, fromAccountStore: true});
-    const deviceException2 = createExceptionEntry(
-        {url: '2.com', frontendId: 2, id: 21, fromAccountStore: false});
-    // Entries without duplicate.
-    const deviceException3 = createExceptionEntry(
-        {url: '3.com', frontendId: 3, id: 3, fromAccountStore: false});
-    const accountException4 = createExceptionEntry(
-        {url: '4.com', frontendId: 4, id: 4, fromAccountStore: true});
-
-    // Shuffle entries a little.
-    const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], [
-          deviceException3, accountException1, deviceException2,
-          accountException4, deviceException1, accountException2
-        ]);
-
-    // Expected list keeping relative order.
-    const expectedList = [
-      createMultiStoreExceptionEntry({url: '3.com', deviceId: 3}),
-      createMultiStoreExceptionEntry(
-          {url: '1.com', accountId: 10, deviceId: 11}),
-      createMultiStoreExceptionEntry(
-          {url: '2.com', accountId: 20, deviceId: 21}),
-      createMultiStoreExceptionEntry({url: '4.com', accountId: 4}),
-    ];
-
-    validateMultiStoreExceptionList(
-        getDomRepeatChildren(passwordsSection.$.passwordExceptionsList),
-        expectedList);
-
-    assertTrue(passwordsSection.$.noExceptionsLabel.hidden);
-  });
-
   // Test verifies that removing an exception will update the elements.
-  test('verifyPasswordExceptionRemove', function() {
+  test('verifyPasswordExceptionRemove', async function() {
     const exceptionList = [
       createExceptionEntry({url: 'docs.google.com', id: 0}),
       createExceptionEntry({url: 'mail.com', id: 1}),
@@ -918,8 +772,8 @@ suite('PasswordsSection', function() {
       createExceptionEntry({url: 'plus.google.com', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [], exceptionList);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [], exceptionList);
 
     validateExceptionList(
         getDomRepeatChildren(passwordsSection.$.passwordExceptionsList),
@@ -937,7 +791,7 @@ suite('PasswordsSection', function() {
       createExceptionEntry({url: 'google.com', id: 2}),
       createExceptionEntry({url: 'inbox.google.com', id: 3}),
       createExceptionEntry({url: 'maps.google.com', id: 4}),
-      createExceptionEntry({url: 'plus.google.com', id: 5})
+      createExceptionEntry({url: 'plus.google.com', id: 5}),
     ];
     validateExceptionList(
         getDomRepeatChildren(passwordsSection.$.passwordExceptionsList),
@@ -946,7 +800,7 @@ suite('PasswordsSection', function() {
 
   // Test verifies that pressing the 'remove' button will trigger a remove
   // event. Does not actually remove any exceptions.
-  test('verifyPasswordExceptionRemoveButton', function() {
+  test('verifyPasswordExceptionRemoveButton', async function() {
     const exceptionList = [
       createExceptionEntry({url: 'docs.google.com', id: 0}),
       createExceptionEntry({url: 'mail.com', id: 1}),
@@ -956,8 +810,8 @@ suite('PasswordsSection', function() {
       createExceptionEntry({url: 'plus.google.com', id: 5}),
     ];
 
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [], exceptionList);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [], exceptionList);
 
     const exceptions =
         getDomRepeatChildren(passwordsSection.$.passwordExceptionsList);
@@ -974,12 +828,12 @@ suite('PasswordsSection', function() {
     // called on |passwordManager| and continues recursively until no more items
     // exist.
     function removeNextRecursive(): Promise<void> {
-      passwordManager.resetResolver('removeExceptions');
+      passwordManager.resetResolver('removeException');
       clickRemoveButton();
-      return passwordManager.whenCalled('removeExceptions').then(ids => {
+      return passwordManager.whenCalled('removeException').then(id => {
         // Verify that the event matches the expected value.
         assertTrue(item < exceptionList.length);
-        assertDeepEquals(ids, [exceptionList[item]!.id]);
+        assertEquals(id, exceptionList[item]!.id);
 
         if (++item < exceptionList.length) {
           return removeNextRecursive();
@@ -990,28 +844,6 @@ suite('PasswordsSection', function() {
 
     // Click 'remove' on all passwords, one by one.
     return removeNextRecursive();
-  });
-
-  // Test verifies that pressing the 'remove' button for a duplicated exception
-  // will remove both the device and account copies.
-  test('verifyDuplicatedExceptionRemoveButton', async function() {
-    // Create a duplicated exception that will be merged into a single entry.
-    const deviceCopy =
-        createPasswordEntry({frontendId: 42, id: 0, fromAccountStore: false});
-    const accountCopy =
-        createPasswordEntry({frontendId: 42, id: 1, fromAccountStore: true});
-
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [], [deviceCopy, accountCopy]);
-
-    const [mergedEntry] =
-        getDomRepeatChildren(passwordsSection.$.passwordExceptionsList);
-    mergedEntry!.querySelector<HTMLElement>('#removeExceptionButton')!.click();
-
-    // Verify both ids get passed to the proxy.
-    const ids = await passwordManager.whenCalled('removeExceptions');
-    assertTrue(ids.includes(deviceCopy.id));
-    assertTrue(ids.includes(accountCopy.id));
   });
 
   test('showSavedPasswordListItem', async function() {
@@ -1068,8 +900,8 @@ suite('PasswordsSection', function() {
                 '#showPasswordButton')!.classList.contains('icon-visibility'));
   });
 
-  test('clickingTheRowOpensSubpageWhenNotesEnabled', async function() {
-    loadTimeData.overrideValues({enablePasswordNotes: true});
+  test('clickingTheRowDispatchesEventWhenViewPageEnabled', async function() {
+    loadTimeData.overrideValues({enablePasswordViewPage: true});
     Router.resetInstanceForTesting(buildRouter());
     routes.PASSWORD_VIEW =
         (Router.getInstance().getRoutes() as SettingsRoutes).PASSWORD_VIEW;
@@ -1077,8 +909,8 @@ suite('PasswordsSection', function() {
     const USERNAME = 'bart';
     const item = createPasswordEntry({url: URL, username: USERNAME, id: 1});
 
-    const passwordSection =
-        elementFactory.createPasswordsSection(passwordManager, [item], []);
+    const passwordSection = await createPasswordsSection(
+        elementFactory, passwordManager, [item], []);
     const passwordListItem = getFirstPasswordListItem(passwordSection);
 
     assertFalse(
@@ -1087,15 +919,12 @@ suite('PasswordsSection', function() {
     assertFalse(isVisible(passwordListItem.$.moreActionsButton));
     const subpageButton = passwordListItem.$.seePasswordDetails;
     assertTrue(isVisible(subpageButton));
+    passwordManager.setRequestCredentialsDetailsResponse(item);
+    const PasswordViewPageRequestedEvent =
+        eventToPromise('password-view-page-requested', passwordListItem);
     subpageButton.click();
-    await flushTasks();
-
-    const router = Router.getInstance();
-    assertEquals(routes.PASSWORD_VIEW, router.getCurrentRoute());
-    const expectedParams = new URLSearchParams();
-    expectedParams.set('username', USERNAME);
-    expectedParams.set('site', URL);
-    assertDeepEquals(expectedParams, router.getQueryParameters());
+    const event = await PasswordViewPageRequestedEvent;
+    assertDeepEquals(passwordListItem, event.detail);
   });
 
   // Tests that pressing 'Edit password' sets the corresponding password.
@@ -1104,8 +933,8 @@ suite('PasswordsSection', function() {
     const entry = createPasswordEntry({url: 'goo.gl', username: 'bart', id: 1});
     passwordManager.setPlaintextPassword(PASSWORD);
 
-    const passwordSection =
-        elementFactory.createPasswordsSection(passwordManager, [entry], []);
+    const passwordSection = await createPasswordsSection(
+        elementFactory, passwordManager, [entry], []);
 
     getFirstPasswordListItem(passwordSection).$.moreActionsButton.click();
     passwordSection.$.passwordsListHandler.$.menuEditPassword.click();
@@ -1146,43 +975,41 @@ suite('PasswordsSection', function() {
     assertEquals('password', passwordListItem.entry.password);
   });
 
-  test('onCopyPasswordListItem', function() {
+  test('onCopyPasswordListItem', async function() {
     const expectedItem =
         createPasswordEntry({url: 'goo.gl', username: 'bart', id: 1});
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [expectedItem], []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [expectedItem], []);
 
     getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
     passwordsSection.$.passwordsListHandler.$.menuCopyPassword.click();
 
-    return passwordManager.whenCalled('requestPlaintextPassword')
-        .then(({id, reason}) => {
-          assertEquals(1, id);
-          assertEquals('COPY', reason);
-        });
+    const {id, reason} =
+        await passwordManager.whenCalled('requestPlaintextPassword');
+    assertEquals(1, id);
+    assertEquals('COPY', reason);
   });
 
-  test('onEditPasswordListItem', function() {
+  test('onEditPasswordListItem', async function() {
     const expectedItem =
         createPasswordEntry({url: 'goo.gl', username: 'bart', id: 1});
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [expectedItem], []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [expectedItem], []);
 
     getFirstPasswordListItem(passwordsSection).$.moreActionsButton.click();
     passwordsSection.$.passwordsListHandler.$.menuEditPassword.click();
 
-    return passwordManager.whenCalled('requestPlaintextPassword')
-        .then(({id, reason}) => {
-          assertEquals(1, id);
-          assertEquals('EDIT', reason);
-        });
+    const {id, reason} =
+        await passwordManager.whenCalled('requestPlaintextPassword');
+    assertEquals(1, id);
+    assertEquals('EDIT', reason);
   });
 
-  test('closingPasswordsSectionHidesUndoToast', function() {
+  test('closingPasswordsSectionHidesUndoToast', async function() {
     const passwordEntry =
         createPasswordEntry({url: 'goo.gl', username: 'bart'});
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [passwordEntry], []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [passwordEntry], []);
     const toastManager = passwordsSection.$.passwordsListHandler.$.removalToast;
 
     // Click the remove button on the first password and assert that an undo
@@ -1200,12 +1027,12 @@ suite('PasswordsSection', function() {
   });
 
   // Chrome offers the export option when there are passwords.
-  test('offerExportWhenPasswords', function() {
+  test('offerExportWhenPasswords', async function() {
     const passwordList = [
       createPasswordEntry({url: 'googoo.com', username: 'Larry'}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     validatePasswordList(passwordsSection, passwordList);
     assertFalse(passwordsSection.$.menuExportPassword.hidden);
@@ -1213,163 +1040,151 @@ suite('PasswordsSection', function() {
 
   // Chrome shouldn't offer the option to export passwords if there are no
   // passwords.
-  test('noExportIfNoPasswords', function() {
+  test('noExportIfNoPasswords', async function() {
     const passwordList: chrome.passwordsPrivate.PasswordUiEntry[] = [];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
     validatePasswordList(passwordsSection, passwordList);
-    assertTrue(passwordsSection.$.menuExportPassword.hidden);
+    assertTrue(passwordsSection.$.menuExportPassword.disabled);
+  });
+
+  test(
+      'importPasswordsButtonShownOnlyWhenPasswordsImportFeatureEnabled',
+      async function() {
+        loadTimeData.overrideValues({showImportPasswords: false});
+        const passwordsSectionImportPasswordsDisabled =
+            await createPasswordsSection(
+                elementFactory, passwordManager, [], []);
+        assertTrue(
+            passwordsSectionImportPasswordsDisabled.shadowRoot!
+                .querySelector<HTMLElement>('#menuImportPassword')!.hidden);
+        loadTimeData.overrideValues({showImportPasswords: true});
+        const passwordsSectionImportPasswordsEnabled =
+            await createPasswordsSection(
+                elementFactory, passwordManager, [], []);
+        assertFalse(
+            passwordsSectionImportPasswordsEnabled.shadowRoot!
+                .querySelector<HTMLElement>('#menuImportPassword')!.hidden);
+      });
+
+  test('importButtonOpensPasswordsImportDialog', async function() {
+    loadTimeData.overrideValues({showImportPasswords: true});
+    const passwordsSection =
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
+    assertFalse(!!passwordsSection.shadowRoot!.querySelector<HTMLElement>(
+        '#importPasswordsDialog'));
+
+    passwordsSection.shadowRoot!
+        .querySelector<HTMLElement>('#menuImportPassword')!.click();
+    flush();
+    const importDialog =
+        passwordsSection.shadowRoot!.querySelector<HTMLElement>(
+            '#importPasswordsDialog');
+    assertTrue(!!importDialog);
   });
 
   // Test that clicking the Export Passwords menu item opens the export
   // dialog.
-  test('exportOpen', function(done) {
+  test('exportOpen', async function() {
     const passwordList = [
       createPasswordEntry({url: 'googoo.com', username: 'Larry'}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
 
-    // The export dialog calls requestExportProgressStatus() when opening.
-    passwordManager.requestExportProgressStatus = (callback) => {
-      callback(chrome.passwordsPrivate.ExportProgressStatus.NOT_STARTED);
-      done();
-    };
-    passwordManager.addPasswordsFileExportProgressListener = () => {};
     passwordsSection.$.menuExportPassword.click();
+    // The export dialog calls requestExportProgressStatus() when opening.
+    await passwordManager.whenCalled('requestExportProgressStatus');
   });
 
   if (!(isChromeOS || isLacros)) {
-    // Test that tapping "Export passwords..." notifies the browser.
-    test('startExport', function(done) {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      runStartExportTest(exportDialog, passwordManager, done);
-    });
-
-    // Test the export flow. If exporting is fast, we should skip the
-    // in-progress view altogether.
-    test('exportFlowFast', function(done) {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      runExportFlowFastTest(exportDialog, passwordManager, done);
-    });
-
-    // The error view is shown when an error occurs.
-    test('exportFlowError', function(done) {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      runExportFlowErrorTest(exportDialog, passwordManager, done);
-    });
-
-    // The error view allows to retry.
-    test('exportFlowErrorRetry', function(done) {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      runExportFlowErrorRetryTest(exportDialog, passwordManager, done);
-    });
-
-    // Test the export flow. If exporting is slow, Chrome should show the
-    // in-progress dialog for at least 1000ms.
-    test('exportFlowSlow', function(done) {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      runExportFlowSlowTest(exportDialog, passwordManager, done);
-    });
-
-    // Test that canceling the dialog while exporting will also cancel the
-    // export on the browser.
-    test('cancelExport', function(done) {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      runCancelExportTest(exportDialog, passwordManager, done);
-    });
-
-    test('fires close event after export complete', () => {
-      const exportDialog =
-          elementFactory.createExportPasswordsDialog(passwordManager);
-      return runFireCloseEventAfterExportCompleteTest(
-          exportDialog, passwordManager);
-    });
-
     // Test verifies that the overflow menu does not offer an option to move a
     // password to the account.
-    test('noMoveToAccountOption', function() {
+    test('noMoveToAccountOption', async function() {
       const passwordsSection =
-          elementFactory.createPasswordsSection(passwordManager, [], []);
+          await createPasswordsSection(elementFactory, passwordManager, [], []);
       assertTrue(passwordsSection.$.passwordsListHandler.$
                      .menuMovePasswordToAccount.hidden);
     });
 
     // Tests that the opt-in/opt-out buttons appear for signed-in (non-sync)
     // users and that the text content changes accordingly.
-    test('changeOptInButtonsBasedOnSignInAndAccountStorageOptIn', function() {
-      const passwordsSection =
-          elementFactory.createPasswordsSection(passwordManager, [], []);
+    test(
+        'changeOptInButtonsBasedOnSignInAndAccountStorageOptIn',
+        async function() {
+          const passwordsSection = await createPasswordsSection(
+              elementFactory, passwordManager, [], []);
 
-      // Sync is disabled and the user is initially signed out.
-      simulateSyncStatus(
-          {signedIn: false, statusAction: StatusAction.NO_ACTION});
-      function isDisplayed(element: HTMLElement): boolean {
-        return !!element && !element.hidden;
-      }
-      assertFalse(
-          isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
+          // Sync is disabled and the user is initially signed out.
+          simulateSyncStatus(
+              {signedIn: false, statusAction: StatusAction.NO_ACTION});
+          function isDisplayed(element: HTMLElement): boolean {
+            return !!element && !element.hidden;
+          }
+          assertFalse(
+              isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
 
-      // User signs in but is not opted in yet.
-      simulateStoredAccounts([{email: 'john@gmail.com'}]);
-      passwordManager.setIsOptedInForAccountStorageAndNotify(false);
-      flush();
-      assertTrue(
-          isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
-      assertTrue(isDisplayed(passwordsSection.$.optInToAccountStorageButton));
-      assertFalse(isDisplayed(passwordsSection.$.optOutOfAccountStorageButton));
-      assertTrue(isDisplayed(passwordsSection.$.accountStorageOptInBody));
-      assertFalse(isDisplayed(passwordsSection.$.accountStorageOptOutBody));
+          // User signs in but is not opted in yet.
+          simulateStoredAccounts([{email: 'john@gmail.com'}]);
+          passwordManager.setIsOptedInForAccountStorageAndNotify(false);
+          flush();
+          assertTrue(
+              isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
+          assertTrue(
+              isDisplayed(passwordsSection.$.optInToAccountStorageButton));
+          assertFalse(
+              isDisplayed(passwordsSection.$.optOutOfAccountStorageButton));
+          assertTrue(isDisplayed(passwordsSection.$.accountStorageOptInBody));
+          assertFalse(isDisplayed(passwordsSection.$.accountStorageOptOutBody));
 
-      // Opt in.
-      passwordManager.setIsOptedInForAccountStorageAndNotify(true);
-      flush();
-      assertTrue(
-          isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
-      assertFalse(isDisplayed(passwordsSection.$.optInToAccountStorageButton));
-      assertTrue(isDisplayed(passwordsSection.$.optOutOfAccountStorageButton));
-      assertTrue(isDisplayed(passwordsSection.$.accountStorageOptOutBody));
-      assertFalse(isDisplayed(passwordsSection.$.accountStorageOptInBody));
-      assertEquals('john@gmail.com', passwordsSection.$.accountEmail.innerText);
+          // Opt in.
+          passwordManager.setIsOptedInForAccountStorageAndNotify(true);
+          flush();
+          assertTrue(
+              isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
+          assertFalse(
+              isDisplayed(passwordsSection.$.optInToAccountStorageButton));
+          assertTrue(
+              isDisplayed(passwordsSection.$.optOutOfAccountStorageButton));
+          assertTrue(isDisplayed(passwordsSection.$.accountStorageOptOutBody));
+          assertFalse(isDisplayed(passwordsSection.$.accountStorageOptInBody));
+          assertEquals(
+              'john@gmail.com', passwordsSection.$.accountEmail.innerText);
 
-      // Sign out
-      simulateStoredAccounts([]);
-      assertFalse(
-          isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
-    });
+          // Sign out
+          simulateStoredAccounts([]);
+          assertFalse(
+              isDisplayed(passwordsSection.$.accountStorageButtonsContainer));
+        });
 
     // Test verifies the the account storage buttons are not shown for custom
     // passphrase users.
-    test('accountStorageButonsNotShownForCustomPassphraseUser', function() {
-      const passwordsSection =
-          elementFactory.createPasswordsSection(passwordManager, [], []);
+    test(
+        'accountStorageButonsNotShownForCustomPassphraseUser',
+        async function() {
+          const passwordsSection = await createPasswordsSection(
+              elementFactory, passwordManager, [], []);
 
-      simulateSyncStatus(
-          {signedIn: false, statusAction: StatusAction.NO_ACTION});
-      simulateStoredAccounts([{email: 'john@gmail.com'}]);
-      // Simulate custom passphrase.
-      const syncPrefs = getSyncAllPrefs();
-      syncPrefs.encryptAllData = true;
-      webUIListenerCallback('sync-prefs-changed', syncPrefs);
-      flush();
+          simulateSyncStatus(
+              {signedIn: false, statusAction: StatusAction.NO_ACTION});
+          simulateStoredAccounts([{email: 'john@gmail.com'}]);
+          // Simulate custom passphrase.
+          const syncPrefs = getSyncAllPrefs();
+          syncPrefs.encryptAllData = true;
+          webUIListenerCallback('sync-prefs-changed', syncPrefs);
+          flush();
 
-      assertTrue(
-          !passwordsSection.$.accountStorageButtonsContainer ||
-          passwordsSection.$.accountStorageButtonsContainer.hidden);
-    });
+          assertTrue(
+              !passwordsSection.$.accountStorageButtonsContainer ||
+              passwordsSection.$.accountStorageButtonsContainer.hidden);
+        });
 
     // Test verifies that enabling sync hides the buttons for account storage
     // opt-in/out and the 'device passwords' page.
-    test('enablingSyncHidesAccountStorageButtons', function() {
+    test('enablingSyncHidesAccountStorageButtons', async function() {
       const passwordsSection =
-          elementFactory.createPasswordsSection(passwordManager, [], []);
+          await createPasswordsSection(elementFactory, passwordManager, [], []);
 
       simulateAccountStorageUser(passwordManager);
       function isDisplayed(element: HTMLElement): boolean {
@@ -1387,13 +1202,13 @@ suite('PasswordsSection', function() {
 
     // Test verifies that the button linking to the 'device passwords' page is
     // only visible when there is at least one device password.
-    test('verifyDevicePasswordsButtonVisibility', function() {
+    test('verifyDevicePasswordsButtonVisibility', async function() {
       // Set up user eligible to the account-scoped password storage, not
       // opted in and with no device passwords. Button should be hidden.
       const passwordList =
-          [createPasswordEntry({fromAccountStore: true, id: 10})];
-      const passwordsSection = elementFactory.createPasswordsSection(
-          passwordManager, passwordList, []);
+          [createPasswordEntry({inAccountStore: true, id: 10})];
+      const passwordsSection = await createPasswordsSection(
+          elementFactory, passwordManager, passwordList, []);
       simulateSyncStatus(
           {signedIn: false, statusAction: StatusAction.NO_ACTION});
       simulateStoredAccounts([{email: 'john@gmail.com'}]);
@@ -1406,8 +1221,7 @@ suite('PasswordsSection', function() {
       assertTrue(passwordsSection.$.devicePasswordsLink.hidden);
 
       // Add a device password. The button shows up.
-      passwordList.unshift(
-          createPasswordEntry({fromAccountStore: false, id: 20}));
+      passwordList.unshift(createPasswordEntry({inProfileStore: true, id: 20}));
       passwordManager.lastCallback.addSavedPasswordListChangedListener!
           (passwordList);
       flush();
@@ -1419,15 +1233,15 @@ suite('PasswordsSection', function() {
     // toast manager message.
     test(
         'passwordRemovalMessageSpecifiesStoreForAccountStorageUsers',
-        function() {
+        async function() {
           const passwordList = [
             createPasswordEntry(
-                {username: 'account', id: 0, fromAccountStore: true}),
+                {username: 'account', id: 0, inAccountStore: true}),
             createPasswordEntry(
-                {username: 'local', id: 1, fromAccountStore: false}),
+                {username: 'local', id: 1, inProfileStore: true}),
           ];
-          const passwordsSection = elementFactory.createPasswordsSection(
-              passwordManager, passwordList, []);
+          const passwordsSection = await createPasswordsSection(
+              elementFactory, passwordManager, passwordList, []);
 
           simulateAccountStorageUser(passwordManager);
 
@@ -1457,12 +1271,10 @@ suite('PasswordsSection', function() {
     // Clicking the button in the dialog then removes both versions of the
     // password.
     test('verifyPasswordRemoveDialogRemoveBothCopies', async function() {
-      const accountCopy =
-          createPasswordEntry({frontendId: 42, id: 0, fromAccountStore: true});
-      const deviceCopy =
-          createPasswordEntry({frontendId: 42, id: 1, fromAccountStore: false});
-      const passwordsSection = elementFactory.createPasswordsSection(
-          passwordManager, [accountCopy, deviceCopy], []);
+      const password = createPasswordEntry(
+          {id: 0, inAccountStore: true, inProfileStore: true});
+      const passwordsSection = await createPasswordsSection(
+          elementFactory, passwordManager, [password], []);
 
       simulateAccountStorageUser(passwordManager);
 
@@ -1486,22 +1298,20 @@ suite('PasswordsSection', function() {
           removeDialog.$.removeFromAccountCheckbox.checked &&
           removeDialog.$.removeFromDeviceCheckbox.checked);
       removeDialog.$.removeButton.click();
-      const removedIds =
-          await passwordManager.whenCalled('removeSavedPasswords');
-      assertTrue(removedIds.includes(accountCopy.id));
-      assertTrue(removedIds.includes(deviceCopy.id));
+      const {id, fromStores} =
+          await passwordManager.whenCalled('removeSavedPassword');
+      assertEquals(password.id, id);
+      assertEquals('DEVICE_AND_ACCOUNT', fromStores);
     });
 
     // Test verifies that if the user attempts to remove a password stored
     // both on the device and in the account, the PasswordRemoveDialog shows up.
     // The user then chooses to remove only of the copies.
     test('verifyPasswordRemoveDialogRemoveSingleCopy', async function() {
-      const accountCopy =
-          createPasswordEntry({frontendId: 42, id: 0, fromAccountStore: true});
-      const deviceCopy =
-          createPasswordEntry({frontendId: 42, id: 1, fromAccountStore: false});
-      const passwordsSection = elementFactory.createPasswordsSection(
-          passwordManager, [accountCopy, deviceCopy], []);
+      const onAccountAndDevice = createPasswordEntry(
+          {id: 0, inAccountStore: true, inProfileStore: true});
+      const passwordsSection = await createPasswordsSection(
+          elementFactory, passwordManager, [onAccountAndDevice], []);
 
       simulateAccountStorageUser(passwordManager);
 
@@ -1527,75 +1337,16 @@ suite('PasswordsSection', function() {
           !removeDialog.$.removeFromAccountCheckbox.checked &&
           removeDialog.$.removeFromDeviceCheckbox.checked);
       removeDialog.$.removeButton.click();
-      const removedIds =
-          await passwordManager.whenCalled('removeSavedPasswords');
-      assertTrue(removedIds.includes(deviceCopy.id));
+      const {id, fromStores} =
+          await passwordManager.whenCalled('removeSavedPassword');
+      assertEquals(onAccountAndDevice.id, id);
+      assertEquals(chrome.passwordsPrivate.PasswordStoreSet.DEVICE, fromStores);
     });
   }
 
-  // The export dialog is dismissable.
-  test('exportDismissable', function() {
-    const exportDialog =
-        elementFactory.createExportPasswordsDialog(passwordManager);
-
-    assertTrue(exportDialog.shadowRoot!
-                   .querySelector<CrDialogElement>('#dialog_start')!.open);
-    exportDialog.shadowRoot!.querySelector<HTMLElement>(
-                                '#cancelButton')!.click();
-    flush();
-    assertFalse(!!exportDialog.shadowRoot!.querySelector('#dialog_start'));
-  });
-
-  test('fires close event when canceled', () => {
-    const exportDialog =
-        elementFactory.createExportPasswordsDialog(passwordManager);
-    const wait = eventToPromise('passwords-export-dialog-close', exportDialog);
-    exportDialog.shadowRoot!.querySelector<HTMLElement>(
-                                '#cancelButton')!.click();
-    return wait;
-  });
-
-  test('hideLinkToPasswordManagerWhenEncrypted', function() {
-    const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
-    const syncPrefs = getSyncAllPrefs();
-    syncPrefs.encryptAllData = true;
-    webUIListenerCallback('sync-prefs-changed', syncPrefs);
-    simulateSyncStatus({signedIn: true, statusAction: StatusAction.NO_ACTION});
-    flush();
-    assertTrue(passwordsSection.$.manageLink.hidden);
-  });
-
-  test('showLinkToPasswordManagerWhenNotEncrypted', function() {
-    const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
-    const syncPrefs = getSyncAllPrefs();
-    syncPrefs.encryptAllData = false;
-    webUIListenerCallback('sync-prefs-changed', syncPrefs);
-    flush();
-    assertFalse(passwordsSection.$.manageLink.hidden);
-  });
-
-  test('hideLinkToPasswordManagerWhenUnifiedPasswordManagerEnabled', () => {
-    loadTimeData.overrideValues({unifiedPasswordManagerEnabled: true});
-    const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
-    assertTrue(passwordsSection.$.manageLink.hidden);
-  });
-
-  test('showLinkToPasswordManagerWhenNotSignedIn', function() {
-    const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
-    const syncPrefs = getSyncAllPrefs();
-    simulateSyncStatus({signedIn: false, statusAction: StatusAction.NO_ACTION});
-    webUIListenerCallback('sync-prefs-changed', syncPrefs);
-    flush();
-    assertFalse(passwordsSection.$.manageLink.hidden);
-  });
-
   test(
       'showPasswordCheckBannerWhenNotCheckedBeforeAndSignedInAndHavePasswords',
-      function() {
+      async function() {
         // Suppose no check done initially, non-empty list of passwords,
         // signed in.
         assertEquals(
@@ -1604,14 +1355,15 @@ suite('PasswordsSection', function() {
         const passwordList = [
           createPasswordEntry({url: 'site1.com', username: 'luigi'}),
         ];
-        const passwordsSection = elementFactory.createPasswordsSection(
-            passwordManager, passwordList, []);
-        return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-          flush();
-          assertFalse(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-          assertFalse(passwordsSection.$.checkPasswordsButtonRow.hidden);
-          assertTrue(passwordsSection.$.checkPasswordsLinkRow.hidden);
-        });
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, passwordList, []);
+        await passwordManager.whenCalled('getPasswordCheckStatus');
+        simulateSyncStatus(
+            {signedIn: true, statusAction: StatusAction.NO_ACTION});
+        flush();
+        assertFalse(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+        assertFalse(passwordsSection.$.checkPasswordsButtonRow.hidden);
+        assertTrue(passwordsSection.$.checkPasswordsLinkRow.hidden);
       });
 
   test(
@@ -1627,17 +1379,17 @@ suite('PasswordsSection', function() {
           createPasswordEntry({url: 'site2.com', username: 'luigi', id: 1}),
         ];
         passwordManager.data.checkStatus.state = PasswordCheckState.CANCELED;
-        passwordManager.data.leakedCredentials = [
-          makeCompromisedCredential(
+        passwordManager.data.insecureCredentials = [
+          makeInsecureCredential(
               'site1.com', 'luigi',
-              chrome.passwordsPrivate.CompromiseType.LEAKED),
+              [chrome.passwordsPrivate.CompromiseType.LEAKED]),
         ];
         pluralString.text = '1 compromised password';
 
-        const passwordsSection = elementFactory.createPasswordsSection(
-            passwordManager, passwordList, []);
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, passwordList, []);
 
-        await passwordManager.whenCalled('getCompromisedCredentials');
+        await passwordManager.whenCalled('getInsecureCredentials');
         await pluralString.whenCalled('getPluralString');
 
         flush();
@@ -1651,169 +1403,170 @@ suite('PasswordsSection', function() {
                     '#checkPasswordLeakCount')!.innerText!.trim());
       });
 
-  test('showPasswordCheckLinkButtonWithoutWarningWhenNotSignedIn', function() {
-    // Suppose no check done initially, non-empty list of passwords,
-    // signed out.
-    assertEquals(
-        passwordManager.data.checkStatus.elapsedTimeSinceLastCheck, undefined);
-    const passwordList = [
-      createPasswordEntry({url: 'site1.com', username: 'luigi'}),
-    ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-    simulateSyncStatus({signedIn: false, statusAction: StatusAction.NO_ACTION});
-    return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-      flush();
-      assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-      assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-      assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-    });
-  });
+  test(
+      'showPasswordCheckLinkButtonWithoutWarningWhenNotSignedIn',
+      async function() {
+        // Suppose no check done initially, non-empty list of passwords,
+        // signed out.
+        assertEquals(
+            passwordManager.data.checkStatus.elapsedTimeSinceLastCheck,
+            undefined);
+        const passwordList = [
+          createPasswordEntry({url: 'site1.com', username: 'luigi'}),
+        ];
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, passwordList, []);
+        simulateSyncStatus(
+            {signedIn: false, statusAction: StatusAction.NO_ACTION});
+        await passwordManager.whenCalled('getPasswordCheckStatus');
+        flush();
+        assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+        assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+        assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
+      });
 
-  test('showPasswordCheckLinkButtonWithoutWarningWhenNoPasswords', function() {
-    // Suppose no check done initially, empty list of passwords, signed
-    // in.
-    assertEquals(
-        passwordManager.data.checkStatus.elapsedTimeSinceLastCheck, undefined);
-    const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
-    return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-      flush();
-      assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-      assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-      assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-    });
-  });
+  test(
+      'showPasswordCheckLinkButtonWithoutWarningWhenNoPasswords',
+      async function() {
+        // Suppose no check done initially, empty list of passwords, signed
+        // in.
+        assertEquals(
+            passwordManager.data.checkStatus.elapsedTimeSinceLastCheck,
+            undefined);
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, [], []);
+        await passwordManager.whenCalled('getPasswordCheckStatus');
+        flush();
+        assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+        assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+        assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
+      });
 
   test(
       'showPasswordCheckLinkButtonWithoutWarningWhenNoCredentialsLeaked',
-      function() {
+      async function() {
         // Suppose no leaks initially, non-empty list of passwords, signed in.
-        passwordManager.data.leakedCredentials = [];
+        passwordManager.data.insecureCredentials = [];
         passwordManager.data.checkStatus.elapsedTimeSinceLastCheck =
             '5 min ago';
         const passwordList = [
           createPasswordEntry({url: 'site1.com', username: 'luigi'}),
         ];
-        const passwordsSection = elementFactory.createPasswordsSection(
-            passwordManager, passwordList, []);
-        return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-          flush();
-          assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-          assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-          assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-          assertFalse(passwordsSection.$.checkPasswordLeakDescription.hidden);
-          assertTrue(passwordsSection.$.checkPasswordWarningIcon.hidden);
-          assertTrue(passwordsSection.$.checkPasswordLeakCount.hidden);
-        });
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, passwordList, []);
+        await passwordManager.whenCalled('getPasswordCheckStatus');
+        flush();
+        assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+        assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+        assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
+        assertFalse(passwordsSection.$.checkPasswordLeakDescription.hidden);
+        assertTrue(passwordsSection.$.checkPasswordWarningIcon.hidden);
+        assertTrue(passwordsSection.$.checkPasswordLeakCount.hidden);
       });
 
   test(
       'showPasswordCheckLinkButtonWithWarningWhenSomeCredentialsLeaked',
-      function() {
+      async function() {
         // Suppose no leaks initially, non-empty list of passwords, signed in.
-        passwordManager.data.leakedCredentials = [
-          makeCompromisedCredential(
+        passwordManager.data.insecureCredentials = [
+          makeInsecureCredential(
               'one.com', 'test4',
-              chrome.passwordsPrivate.CompromiseType.LEAKED),
-          makeCompromisedCredential(
+              [chrome.passwordsPrivate.CompromiseType.LEAKED]),
+          makeInsecureCredential(
               'two.com', 'test3',
-              chrome.passwordsPrivate.CompromiseType.PHISHED),
+              [chrome.passwordsPrivate.CompromiseType.PHISHED]),
         ];
         passwordManager.data.checkStatus.elapsedTimeSinceLastCheck =
             '5 min ago';
         const passwordList = [
           createPasswordEntry({url: 'site1.com', username: 'luigi'}),
         ];
-        const passwordsSection = elementFactory.createPasswordsSection(
-            passwordManager, passwordList, []);
-        return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-          flush();
-          assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-          assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-          assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-          assertTrue(passwordsSection.$.checkPasswordLeakDescription.hidden);
-          assertFalse(passwordsSection.$.checkPasswordWarningIcon.hidden);
-          assertFalse(passwordsSection.$.checkPasswordLeakCount.hidden);
-        });
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, passwordList, []);
+        await passwordManager.whenCalled('getPasswordCheckStatus');
+        flush();
+        assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+        assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+        assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
+        assertTrue(passwordsSection.$.checkPasswordLeakDescription.hidden);
+        assertFalse(passwordsSection.$.checkPasswordWarningIcon.hidden);
+        assertFalse(passwordsSection.$.checkPasswordLeakCount.hidden);
       });
 
-  test('makeWarningAppearWhenLeaksDetected', function() {
+  test('makeWarningAppearWhenLeaksDetected', async function() {
     // Suppose no leaks detected initially, non-empty list of passwords,
     // signed in.
     assertEquals(
         passwordManager.data.checkStatus.elapsedTimeSinceLastCheck, undefined);
-    passwordManager.data.leakedCredentials = [];
+    passwordManager.data.insecureCredentials = [];
     passwordManager.data.checkStatus.elapsedTimeSinceLastCheck = '5 min ago';
     const passwordList = [
       createPasswordEntry({url: 'one.com', username: 'test4', id: 0}),
       createPasswordEntry({url: 'two.com', username: 'test3', id: 1}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-    return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-      flush();
-      assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-      assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-      assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-      assertFalse(passwordsSection.$.checkPasswordLeakDescription.hidden);
-      assertTrue(passwordsSection.$.checkPasswordWarningIcon.hidden);
-      assertTrue(passwordsSection.$.checkPasswordLeakCount.hidden);
-      // Suppose two newly detected leaks come in.
-      const leakedCredentials = [
-        makeCompromisedCredential(
-            'one.com', 'test4', chrome.passwordsPrivate.CompromiseType.LEAKED),
-        makeCompromisedCredential(
-            'two.com', 'test3', chrome.passwordsPrivate.CompromiseType.PHISHED),
-      ];
-      const elapsedTimeSinceLastCheck = 'just now';
-      passwordManager.data.leakedCredentials = leakedCredentials;
-      passwordManager.data.checkStatus.elapsedTimeSinceLastCheck =
-          elapsedTimeSinceLastCheck;
-      passwordManager.lastCallback.addCompromisedCredentialsListener!
-          (leakedCredentials);
-      passwordManager.lastCallback.addPasswordCheckStatusListener!
-          (makePasswordCheckStatus(
-              /*state=*/ PasswordCheckState.RUNNING,
-              /*checked=*/ 2,
-              /*remaining=*/ 0,
-              /*elapsedTime=*/ elapsedTimeSinceLastCheck));
-      flush();
-      assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-      assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-      assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-      assertTrue(passwordsSection.$.checkPasswordLeakDescription.hidden);
-      assertFalse(passwordsSection.$.checkPasswordWarningIcon.hidden);
-      assertFalse(passwordsSection.$.checkPasswordLeakCount.hidden);
-    });
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
+    await passwordManager.whenCalled('getPasswordCheckStatus');
+    flush();
+    assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+    assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+    assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
+    assertFalse(passwordsSection.$.checkPasswordLeakDescription.hidden);
+    assertTrue(passwordsSection.$.checkPasswordWarningIcon.hidden);
+    assertTrue(passwordsSection.$.checkPasswordLeakCount.hidden);
+    // Suppose two newly detected leaks come in.
+    const insecureCredentials = [
+      makeInsecureCredential(
+          'one.com', 'test4', [chrome.passwordsPrivate.CompromiseType.LEAKED]),
+      makeInsecureCredential(
+          'two.com', 'test3', [chrome.passwordsPrivate.CompromiseType.PHISHED]),
+    ];
+    const elapsedTimeSinceLastCheck = 'just now';
+    passwordManager.data.insecureCredentials = insecureCredentials;
+    passwordManager.data.checkStatus.elapsedTimeSinceLastCheck =
+        elapsedTimeSinceLastCheck;
+    passwordManager.lastCallback.addInsecureCredentialsListener!
+        (insecureCredentials);
+    passwordManager.lastCallback.addPasswordCheckStatusListener!
+        (makePasswordCheckStatus(
+            /*state=*/ PasswordCheckState.RUNNING,
+            /*checked=*/ 2,
+            /*remaining=*/ 0,
+            /*elapsedTime=*/ elapsedTimeSinceLastCheck));
+    flush();
+    assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+    assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+    assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
+    assertTrue(passwordsSection.$.checkPasswordLeakDescription.hidden);
+    assertFalse(passwordsSection.$.checkPasswordWarningIcon.hidden);
+    assertFalse(passwordsSection.$.checkPasswordLeakCount.hidden);
   });
 
-  test('makeBannerDisappearWhenSignedOut', function() {
+  test('makeBannerDisappearWhenSignedOut', async function() {
     // Suppose no leaks detected initially, non-empty list of passwords,
     // signed in.
     const passwordList = [
       createPasswordEntry({url: 'one.com', username: 'test4', id: 0}),
       createPasswordEntry({url: 'two.com', username: 'test3', id: 1}),
     ];
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, passwordList, []);
-    return passwordManager.whenCalled('getPasswordCheckStatus').then(() => {
-      flush();
-      assertFalse(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-      assertFalse(passwordsSection.$.checkPasswordsButtonRow.hidden);
-      assertTrue(passwordsSection.$.checkPasswordsLinkRow.hidden);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
+    await passwordManager.whenCalled('getPasswordCheckStatus');
+    simulateSyncStatus({signedIn: true, statusAction: StatusAction.NO_ACTION});
+    flush();
+    assertFalse(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+    assertFalse(passwordsSection.$.checkPasswordsButtonRow.hidden);
+    assertTrue(passwordsSection.$.checkPasswordsLinkRow.hidden);
 
-      simulateSyncStatus(
-          {signedIn: false, statusAction: StatusAction.NO_ACTION});
-      assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
-      assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
-      assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
-    });
+    simulateSyncStatus({signedIn: false, statusAction: StatusAction.NO_ACTION});
+    assertTrue(passwordsSection.$.checkPasswordsBannerContainer.hidden);
+    assertTrue(passwordsSection.$.checkPasswordsButtonRow.hidden);
+    assertFalse(passwordsSection.$.checkPasswordsLinkRow.hidden);
   });
 
   test('clickingCheckPasswordsButtonStartsCheck', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
     passwordsSection.shadowRoot!
         .querySelector<HTMLElement>('#checkPasswordsButton')!.click();
     flush();
@@ -1827,7 +1580,7 @@ suite('PasswordsSection', function() {
 
   test('clickingCheckPasswordsRowStartsCheck', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
     passwordsSection.shadowRoot!
         .querySelector<HTMLElement>('#checkPasswordsLinkRow')!.click();
     flush();
@@ -1840,36 +1593,17 @@ suite('PasswordsSection', function() {
   });
 
   test('hatsInformedOnOpen', async function() {
-    elementFactory.createPasswordsSection(passwordManager, [], []);
+    await createPasswordsSection(elementFactory, passwordManager, [], []);
     const interaction =
         await testHatsBrowserProxy.whenCalled('trustSafetyInteractionOccurred');
     assertEquals(TrustSafetyInteraction.OPENED_PASSWORD_MANAGER, interaction);
   });
 
   test(
-      'addPasswordButtonShownOnlyWhenAddingPasswordsFeatureEnabled',
-      function() {
-        loadTimeData.overrideValues({addPasswordsInSettingsEnabled: false});
-        const passwordsSectionAddPasswordsDisabled =
-            elementFactory.createPasswordsSection(passwordManager, [], []);
-        assertFalse(
-            !!passwordsSectionAddPasswordsDisabled.shadowRoot!.querySelector(
-                '#addPasswordButton'));
-
-        loadTimeData.overrideValues({addPasswordsInSettingsEnabled: true});
-        const passwordsSectionAddPasswordsEnabled =
-            elementFactory.createPasswordsSection(passwordManager, [], []);
-        assertTrue(
-            !!passwordsSectionAddPasswordsEnabled.shadowRoot!.querySelector(
-                '#addPasswordButton'));
-      });
-
-  test(
       'addPasswordButtonShownOnlyWhenPasswordManagerNotDisabledByPolicy',
-      function() {
-        loadTimeData.overrideValues({addPasswordsInSettingsEnabled: true});
-        const passwordsSection =
-            elementFactory.createPasswordsSection(passwordManager, [], []);
+      async function() {
+        const passwordsSection = await createPasswordsSection(
+            elementFactory, passwordManager, [], []);
         const addButton =
             passwordsSection.shadowRoot!.querySelector<HTMLElement>(
                 '#addPasswordButton')!;
@@ -1886,10 +1620,9 @@ suite('PasswordsSection', function() {
         assertFalse(addButton.style.display === 'none');
       });
 
-  test('addPasswordButtonOpensAddPasswordDialog', function() {
-    loadTimeData.overrideValues({addPasswordsInSettingsEnabled: true});
+  test('addPasswordButtonOpensAddPasswordDialog', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
     assertFalse(!!passwordsSection.shadowRoot!.querySelector<HTMLElement>(
         '#addPasswordDialog'));
 
@@ -1901,9 +1634,9 @@ suite('PasswordsSection', function() {
     assertTrue(!!addDialog);
   });
 
-  test('trustedVaultBannerVisibilityChangesWithState', function() {
+  test('trustedVaultBannerVisibilityChangesWithState', async function() {
     const passwordsSection =
-        elementFactory.createPasswordsSection(passwordManager, [], []);
+        await createPasswordsSection(elementFactory, passwordManager, [], []);
     webUIListenerCallback(
         'trusted-vault-banner-state-changed',
         TrustedVaultBannerState.NOT_SHOWN);
@@ -1928,16 +1661,15 @@ suite('PasswordsSection', function() {
         passwordsSection.$.trustedVaultBanner.subLabel);
   });
 
-  test('routingWithRemovalParamsShowsNotification', function() {
+  test('routingWithRemovalParamsShowsNotification', async function() {
     const passwordEntry =
         createPasswordEntry({url: 'goo.gl', username: 'bart'});
-    const passwordsSection = elementFactory.createPasswordsSection(
-        passwordManager, [passwordEntry], []);
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [passwordEntry], []);
     const toastManager = passwordsSection.$.passwordsListHandler.$.removalToast;
 
     const params = new URLSearchParams();
-    params.set('removedFromAccount', 'true');
-    params.set('removedFromDevice', 'false');
+    params.set('removedFromStores', passwordEntry.storedIn);
     Router.getInstance().navigateTo(routes.PASSWORDS, params);
 
     flush();
@@ -1948,5 +1680,39 @@ suite('PasswordsSection', function() {
     document.body.removeChild(passwordsSection);
     flush();
     assertFalse(toastManager.open);
+  });
+
+  test('routingWithAuthTimeoutParamShowsRemovalDialog', async function() {
+    const passwordEntry =
+        createPasswordEntry({url: 'goo.gl', username: 'bart'});
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, [passwordEntry], []);
+    const authTimeoutDialog = passwordsSection.$.authTimeoutDialog;
+
+    const params = new URLSearchParams();
+    params.set('authTimeout', 'true');
+    Router.getInstance().navigateTo(routes.PASSWORDS, params);
+
+    flush();
+    assertTrue(authTimeoutDialog.open);
+
+    authTimeoutDialog.close();
+    flush();
+    assertFalse(authTimeoutDialog.open);
+    assertFalse(!!Router.getInstance().getQueryParameters().get('authTimeout'));
+  });
+
+  test('notAllPasswordsShownAtOnce', async function() {
+    const passwordList: chrome.passwordsPrivate.PasswordUiEntry[] = [];
+    for (let i = 0; i < 1000; i++) {
+      passwordList.push(
+          createPasswordEntry({url: `test${i}.com`, username: 'test', id: i}));
+    }
+    const passwordsSection = await createPasswordsSection(
+        elementFactory, passwordManager, passwordList, []);
+
+    assertTrue(passwordsSection.$.passwordList.hasAttribute('initial-count'));
+    assertEquals(
+        '50', passwordsSection.$.passwordList.getAttribute('initial-count'));
   });
 });

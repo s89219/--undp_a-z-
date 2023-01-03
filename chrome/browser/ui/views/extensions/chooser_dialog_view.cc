@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -117,8 +117,8 @@ void ChromeDevicePermissionsPrompt::ShowDialogViews() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   std::unique_ptr<permissions::ChooserController> chooser_controller(
-      new DevicePermissionsDialogController(web_contents()->GetMainFrame(),
-                                            prompt()));
+      new DevicePermissionsDialogController(
+          web_contents()->GetPrimaryMainFrame(), prompt()));
 
   constrained_window::ShowWebModalDialogViews(
       new ChooserDialogView(std::move(chooser_controller)), web_contents());

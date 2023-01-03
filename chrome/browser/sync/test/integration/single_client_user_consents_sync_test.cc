@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,8 +16,6 @@
 #include "components/sync/protocol/user_consent_specifics.pb.h"
 #include "content/public/test/browser_test.h"
 
-using consent_auditor::ConsentStatus;
-using consent_auditor::Feature;
 using fake_server::FakeServer;
 using sync_pb::SyncEntity;
 using sync_pb::UserConsentSpecifics;

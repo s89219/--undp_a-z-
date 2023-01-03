@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,7 +63,7 @@ AuthenticatorClientPinEntryView::AuthenticatorClientPinEntryView(
                   views::LayoutAlignment::kStart,
                   views::TableLayout::kFixedSize,
                   views::TableLayout::ColumnSize::kUsePreferred, 0, 0)
-      .AddPaddingColumn(views::GridLayout::kFixedSize, 10)
+      .AddPaddingColumn(views::TableLayout::kFixedSize, 10)
       .AddColumn(views::LayoutAlignment::kStart, views::LayoutAlignment::kStart,
                  views::TableLayout::kFixedSize,
                  views::TableLayout::ColumnSize::kUsePreferred, 0, 0)

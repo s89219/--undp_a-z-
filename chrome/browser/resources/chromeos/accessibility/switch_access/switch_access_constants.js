@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -145,7 +145,7 @@ export const SAConstants = {
       PRIMARY: 'primary',
       // The ID for the ring showing a preview of the next focus, if the user
       // selects the current element.
-      PREVIEW: 'preview'
+      PREVIEW: 'preview',
     },
 
     /**

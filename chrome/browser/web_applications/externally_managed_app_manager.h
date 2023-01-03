@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -24,11 +24,10 @@ enum class InstallResultCode;
 
 namespace web_app {
 
-class WebAppRegistrar;
+class FullSystemLock;
 class WebAppInstallFinalizer;
-class WebAppInstallManager;
+class WebAppCommandScheduler;
 class WebAppUiManager;
-class WebAppSyncBridge;
 
 enum class RegistrationResultCode { kSuccess, kAlreadyRegistered, kTimeout };
 
@@ -70,17 +69,18 @@ class ExternallyManagedAppManager {
   };
 
   using OnceInstallCallback =
-      base::OnceCallback<void(const GURL& app_url, InstallResult result)>;
+      base::OnceCallback<void(const GURL& install_url, InstallResult result)>;
   using RepeatingInstallCallback =
-      base::RepeatingCallback<void(const GURL& app_url, InstallResult result)>;
+      base::RepeatingCallback<void(const GURL& install_url,
+                                   InstallResult result)>;
   using RegistrationCallback =
       base::RepeatingCallback<void(const GURL& launch_url,
                                    RegistrationResultCode code)>;
   using UninstallCallback =
-      base::RepeatingCallback<void(const GURL& app_url, bool succeeded)>;
-  using SynchronizeCallback =
-      base::OnceCallback<void(std::map<GURL, InstallResult> install_results,
-                              std::map<GURL, bool> uninstall_results)>;
+      base::RepeatingCallback<void(const GURL& install_url, bool succeeded)>;
+  using SynchronizeCallback = base::OnceCallback<void(
+      std::map<GURL /*install_url*/, InstallResult> install_results,
+      std::map<GURL /*install_url*/, bool /*succeeded*/> uninstall_results)>;
 
   ExternallyManagedAppManager();
   ExternallyManagedAppManager(const ExternallyManagedAppManager&) = delete;
@@ -88,11 +88,9 @@ class ExternallyManagedAppManager {
       delete;
   virtual ~ExternallyManagedAppManager();
 
-  void SetSubsystems(WebAppRegistrar* registrar,
-                     WebAppUiManager* ui_manager,
+  void SetSubsystems(WebAppUiManager* ui_manager,
                      WebAppInstallFinalizer* finalizer,
-                     WebAppInstallManager* install_manager,
-                     WebAppSyncBridge* sync_bridge);
+                     WebAppCommandScheduler* command_scheduler);
 
   // Queues an installation operation with the highest priority. Essentially
   // installing the app immediately if there are no ongoing operations or
@@ -158,11 +156,9 @@ class ExternallyManagedAppManager {
   virtual void Shutdown() = 0;
 
  protected:
-  WebAppRegistrar* registrar() { return registrar_; }
   WebAppUiManager* ui_manager() { return ui_manager_; }
   WebAppInstallFinalizer* finalizer() { return finalizer_; }
-  WebAppInstallManager* install_manager() { return install_manager_; }
-  WebAppSyncBridge* sync_bridge() { return sync_bridge_; }
+  WebAppCommandScheduler* command_scheduler() { return command_scheduler_; }
 
   virtual void OnRegistrationFinished(const GURL& launch_url,
                                       RegistrationResultCode result);
@@ -189,20 +185,25 @@ class ExternallyManagedAppManager {
     std::map<GURL, bool> uninstall_results;
   };
 
+  void SynchronizeInstalledAppsOnLockAcquired(
+      std::vector<ExternalInstallOptions> desired_apps_install_options,
+      ExternalInstallSource install_source,
+      SynchronizeCallback callback,
+      FullSystemLock& lock);
+
   void InstallForSynchronizeCallback(
       ExternalInstallSource source,
-      const GURL& app_url,
+      const GURL& install_url,
       ExternallyManagedAppManager::InstallResult result);
   void UninstallForSynchronizeCallback(ExternalInstallSource source,
-                                       const GURL& app_url,
+                                       const GURL& install_url,
                                        bool succeeded);
   void ContinueOrCompleteSynchronization(ExternalInstallSource source);
 
-  raw_ptr<WebAppRegistrar> registrar_ = nullptr;
-  raw_ptr<WebAppUiManager> ui_manager_ = nullptr;
+  raw_ptr<WebAppUiManager, DanglingUntriaged> ui_manager_ = nullptr;
   raw_ptr<WebAppInstallFinalizer> finalizer_ = nullptr;
-  raw_ptr<WebAppInstallManager> install_manager_ = nullptr;
-  raw_ptr<WebAppSyncBridge> sync_bridge_ = nullptr;
+  raw_ptr<WebAppCommandScheduler, DanglingUntriaged> command_scheduler_ =
+      nullptr;
 
   base::flat_map<ExternalInstallSource, SynchronizeRequest>
       synchronize_requests_;

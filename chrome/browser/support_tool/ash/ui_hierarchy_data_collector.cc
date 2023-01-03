@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,7 +64,7 @@ bool UiHierarchyDataCollector::WriteOutputFile(
     ui_hierarchy_data = RemoveWindowTitles(ui_hierarchy_data);
   }
   return base::WriteFile(
-      target_directory.Append(FILE_PATH_LITERAL("ui_hierarchy")),
+      target_directory.Append(FILE_PATH_LITERAL("ui_hierarchy.txt")),
       ui_hierarchy_data);
 }
 

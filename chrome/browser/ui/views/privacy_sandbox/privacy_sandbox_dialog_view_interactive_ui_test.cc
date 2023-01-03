@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "chrome/browser/privacy_sandbox/privacy_sandbox_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/privacy_sandbox/privacy_sandbox_dialog.h"
+#include "chrome/browser/ui/privacy_sandbox/privacy_sandbox_prompt.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/test/test_browser_dialog.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
@@ -36,7 +36,7 @@ class PrivacySandboxDialogViewInteractiveUiTest : public InProcessBrowserTest {
   MockPrivacySandboxService* mock_service() { return mock_service_; }
 
  private:
-  raw_ptr<MockPrivacySandboxService> mock_service_;
+  raw_ptr<MockPrivacySandboxService, DanglingUntriaged> mock_service_;
 };
 
 // The build flag OZONE_PLATFORM_WAYLAND is only available on
@@ -47,8 +47,9 @@ class PrivacySandboxDialogViewInteractiveUiTest : public InProcessBrowserTest {
 #endif  // BUILDFLAG(OZONE_PLATFORM_WAYLAND)
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_ASH)
 
-// TODO(crbug.com/1315979): Flaky on ChromeOS and Wayland.
-#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(OZONE_PLATFORM_WAYLAND)
+// TODO(crbug.com/1315979): Flaky on most release builds.
+#if defined(NDEBUG) || BUILDFLAG(IS_CHROMEOS_ASH) || \
+    defined(OZONE_PLATFORM_WAYLAND)
 #define MAYBE_EscapeClosesNotice DISABLED_EscapeClosesNotice
 #else
 #define MAYBE_EscapeClosesNotice EscapeClosesNotice
@@ -58,20 +59,20 @@ IN_PROC_BROWSER_TEST_F(PrivacySandboxDialogViewInteractiveUiTest,
   // Check that when the escape key is pressed, the notice is closed.
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(PrivacySandboxService::DialogAction::kNoticeShown));
+      PromptActionOccurred(PrivacySandboxService::PromptAction::kNoticeShown));
   EXPECT_CALL(*mock_service(),
-              DialogActionOccurred(
-                  PrivacySandboxService::DialogAction::kNoticeDismiss));
+              PromptActionOccurred(
+                  PrivacySandboxService::PromptAction::kNoticeDismiss));
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(
-          PrivacySandboxService::DialogAction::kNoticeClosedNoInteraction))
+      PromptActionOccurred(
+          PrivacySandboxService::PromptAction::kNoticeClosedNoInteraction))
       .Times(0);
   views::NamedWidgetShownWaiter waiter(
       views::test::AnyWidgetTestPasskey{},
       PrivacySandboxDialogView::kViewClassName);
-  ShowPrivacySandboxDialog(browser(),
-                           PrivacySandboxService::DialogType::kNotice);
+  ShowPrivacySandboxPrompt(browser(),
+                           PrivacySandboxService::PromptType::kNotice);
   auto* dialog = waiter.WaitIfNeededAndGet();
   EXPECT_TRUE(dialog);
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(browser(), ui::VKEY_ESCAPE, false,
@@ -91,17 +92,17 @@ IN_PROC_BROWSER_TEST_F(PrivacySandboxDialogViewInteractiveUiTest,
   // Check that when the escape key is pressed, the consent is not closed.
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(PrivacySandboxService::DialogAction::kConsentShown));
+      PromptActionOccurred(PrivacySandboxService::PromptAction::kConsentShown));
   EXPECT_CALL(
       *mock_service(),
-      DialogActionOccurred(
-          PrivacySandboxService::DialogAction::kConsentClosedNoDecision))
+      PromptActionOccurred(
+          PrivacySandboxService::PromptAction::kConsentClosedNoDecision))
       .Times(0);
   views::NamedWidgetShownWaiter waiter(
       views::test::AnyWidgetTestPasskey{},
       PrivacySandboxDialogView::kViewClassName);
   ShowPrivacySandboxDialog(browser(),
-                           PrivacySandboxService::DialogType::kConsent);
+                           PrivacySandboxService::PromptType::kConsent);
   auto* dialog = waiter.WaitIfNeededAndGet();
   ASSERT_TRUE(ui_test_utils::SendKeyPressSync(browser(), ui::VKEY_ESCAPE, false,
                                               false, false, false));

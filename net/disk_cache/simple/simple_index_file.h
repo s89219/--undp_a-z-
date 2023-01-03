@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,11 +33,12 @@ struct NET_EXPORT_PRIVATE SimpleIndexLoadResult {
   ~SimpleIndexLoadResult();
   void Reset();
 
-  bool did_load;
+  bool did_load = false;
   SimpleIndex::EntrySet entries;
-  SimpleIndex::IndexWriteToDiskReason index_write_reason;
+  SimpleIndex::IndexWriteToDiskReason index_write_reason =
+      SimpleIndex::INDEX_WRITE_REASON_MAX;
   SimpleIndex::IndexInitMethod init_method;
-  bool flush_required;
+  bool flush_required = false;
 };
 
 // Simple Index File format is a pickle of IndexMetadata and EntryMetadata

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,6 +23,7 @@
 #include "components/history/core/browser/history_db_task.h"
 #include "components/history/core/browser/url_row.h"
 #include "components/history_clusters/core/history_clusters_service.h"
+#include "components/history_clusters/core/url_constants.h"
 #include "components/keyed_service/core/service_access_type.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
@@ -59,10 +60,8 @@ class GetMostRecentVisitsToUrl : public history::HistoryDBTask {
   }
 
   void DoneRunOnMainThread() override {
-    if (!visits_.empty()) {
-      DCHECK_LE(visits_.size(), 2u);
-      std::move(callback_).Run(url_row_, visits_);
-    }
+    DCHECK_LE(visits_.size(), 2u);
+    std::move(callback_).Run(url_row_, visits_);
   }
 
  private:
@@ -157,6 +156,7 @@ void HistoryClustersTabHelper::OnOmniboxUrlShared() {
 
 void HistoryClustersTabHelper::OnUpdatedHistoryForNavigation(
     int64_t navigation_id,
+    base::Time timestamp,
     const GURL& url) {
   auto* history_clusters_service = GetHistoryClustersService();
   if (!history_clusters_service)
@@ -173,7 +173,7 @@ void HistoryClustersTabHelper::OnUpdatedHistoryForNavigation(
       .is_existing_bookmark = IsPageBookmarked(web_contents(), url);
 
   if (auto* history_service = GetHistoryService()) {
-    // This `GetMostRecentVisitsToUrl` task will find at least 1 visit since
+    // This `GetMostRecentVisitsToUrl` task should find at least 1 visit since
     // `HistoryTabHelper::UpdateHistoryForNavigation()`, invoked prior to
     // `OnUpdatedHistoryForNavigation()`, will have posted a task to add the
     // visit associated to `incomplete_visit_context_annotations`.
@@ -185,15 +185,36 @@ void HistoryClustersTabHelper::OnUpdatedHistoryForNavigation(
                 [](HistoryClustersTabHelper* history_clusters_tab_helper,
                    history_clusters::HistoryClustersService*
                        history_clusters_service,
-                   int64_t navigation_id,
+                   int64_t navigation_id, base::Time timestamp,
                    history_clusters::IncompleteVisitContextAnnotations&
                        incomplete_visit_context_annotations,
                    history::URLRow url_row, history::VisitVector visits) {
                   DCHECK(history_clusters_tab_helper);
                   DCHECK(history_clusters_service);
+                  // This can happen for navigations that don't result in a
+                  // visit being added to the DB, e.g. navigations to
+                  // "chrome://" URLs.
+                  if (visits.empty()) {
+                    return;
+                  }
                   DCHECK(url_row.id());
                   DCHECK(visits[0].visit_id);
                   DCHECK_EQ(url_row.id(), visits[0].url_id);
+                  // Make sure the visit we got actually corresponds to the
+                  // navigation by comparing the timestamps.
+                  if (visits[0].visit_time != timestamp) {
+                    return;
+                  }
+                  // Make sure the latest visit (the first one in the array) is
+                  // a local one. That should almost always be the case, since
+                  // this gets called just after a local visit happened, but in
+                  // some rare cases it might not be, e.g. if another device
+                  // sent us a visit "from the future". If this turns out to be
+                  // a problem, consider implementing a
+                  // GetMostRecent*Local*VisitsForURL().
+                  if (!visits[0].originator_cache_guid.empty()) {
+                    return;
+                  }
                   incomplete_visit_context_annotations.url_row = url_row;
                   incomplete_visit_context_annotations.visit_row = visits[0];
                   if (visits.size() > 1) {
@@ -213,7 +234,7 @@ void HistoryClustersTabHelper::OnUpdatedHistoryForNavigation(
                         navigation_id);
                   }
                 },
-                this, history_clusters_service, navigation_id,
+                this, history_clusters_service, navigation_id, timestamp,
                 std::ref(incomplete_visit_context_annotations))),
         &task_tracker_);
   }
@@ -268,36 +289,17 @@ HistoryClustersTabHelper::OnUkmNavigationComplete(
 
 void HistoryClustersTabHelper::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  // Will detect:
-  // 1) When the history clusters page was toggled to the basic history page.
-  // 2) The history clusters page was refreshed.
-  // 3) A link was followed in the same web contents from the history clusters
-  //    page.
-  // And will update this page's associated `HistoryClustersMetricsLogger`.
+  // Will detect when the history clusters page was toggled to the basic history
+  // page.
 
   if (!navigation_handle->IsInPrimaryMainFrame()) {
     return;
   }
 
-  // When the user navigates back to the HistoryClusters UI after having
-  // navigated away from it to another history UI (e.g. the ChromeHistory or
-  // TabSync UIs), clear the final state that was set to `kSameDocNavigation`
-  // when they navigated away.
-  if (IsHistoryPage(navigation_handle->GetURL(),
-                    GURL(chrome::kChromeUIHistoryClustersURL))) {
-    auto* logger =
-        history_clusters::HistoryClustersMetricsLogger::GetOrCreateForPage(
-            navigation_handle->GetWebContents()->GetPrimaryPage());
-    DCHECK(!logger->get_final_state() ||
-           *logger->get_final_state() ==
-               history_clusters::HistoryClustersFinalState::kSameDocNavigation);
-    logger->clear_final_state();
-  }
-
   // The remaining logic only pertains to if the previously committed navigation
   // was the HistoryClusters UI.
   if (!IsHistoryPage(navigation_handle->GetWebContents()->GetLastCommittedURL(),
-                     GURL(chrome::kChromeUIHistoryClustersURL))) {
+                     GURL(history_clusters::kChromeUIHistoryClustersURL))) {
     return;
   }
 
@@ -314,44 +316,6 @@ void HistoryClustersTabHelper::DidStartNavigation(
                       GURL(chrome::kChromeUIHistoryURL))) {
       logger->increment_toggles_to_basic_history();
     }
-    // When the user navigates from the HistoryClusters UI to another History UI
-    // (e.g. the ChromeHistory or TabSync UIs), set the final state to
-    // `kSameDocNavigation`.
-    logger->set_final_state(
-        history_clusters::HistoryClustersFinalState::kSameDocNavigation);
-    return;
-  }
-
-  // Detect refreshes:
-  // 1) Previous committed navigation was the history clusters UI.
-  // 2) The current navigation is the history clusters UI.
-  // 3) The transition type is `kRefreshTab`.
-  if (IsHistoryPage(navigation_handle->GetURL(),
-                    GURL(chrome::kChromeUIHistoryClustersURL)) &&
-      PageTransitionCoreTypeIs(navigation_handle->GetPageTransition(),
-                               ui::PAGE_TRANSITION_RELOAD)) {
-    auto* logger =
-        history_clusters::HistoryClustersMetricsLogger::GetOrCreateForPage(
-            navigation_handle->GetWebContents()->GetPrimaryPage());
-    logger->set_final_state(
-        history_clusters::HistoryClustersFinalState::kRefreshTab);
-  }
-
-  // Detect link navigations:
-  // 1) Previous committed navigation was the history clusters UI.
-  // 2) The current navigation is not the history clusters UI.
-  // 3) The transition type is `PAGE_TRANSITION_LINK`.
-  if (!IsHistoryPage(navigation_handle->GetURL(),
-                     GURL(chrome::kChromeUIHistoryClustersURL)) &&
-      PageTransitionCoreTypeIs(navigation_handle->GetPageTransition(),
-                               ui::PAGE_TRANSITION_LINK)) {
-    auto* logger =
-        history_clusters::HistoryClustersMetricsLogger::GetOrCreateForPage(
-            navigation_handle->GetWebContents()->GetPrimaryPage());
-    logger->set_final_state(
-        history_clusters::HistoryClustersFinalState::kLinkClick);
-    if (CanAddURLToHistory(navigation_handle->GetURL()))
-      logger->IncrementLinksOpenedCount();
   }
 }
 
@@ -368,49 +332,44 @@ void HistoryClustersTabHelper::DidFinishNavigation(
   }
 
   if (!IsHistoryPage(navigation_handle->GetURL(),
-                     GURL(chrome::kChromeUIHistoryClustersURL))) {
+                     GURL(history_clusters::kChromeUIHistoryClustersURL))) {
     return;
   }
 
+  // Loggers should only record the initial state once. This code will be called
+  // again if the user subsequently switches in-page tabs between History and
+  // Journeys, or if the user makes an in-page search. We should early return in
+  // those cases because we want to preserve the state of the INITIAL arrival.
   auto* logger =
       history_clusters::HistoryClustersMetricsLogger::GetOrCreateForPage(
           navigation_handle->GetWebContents()->GetPrimaryPage());
+  if (logger->initial_state()) {
+    return;
+  }
+
   logger->set_navigation_id(navigation_handle->GetNavigationId());
 
-  // If the transition type is typed (meaning directly entered into the
-  // address bar), PAGE_TRANSITION_TYPED, or is partially typed and selected
-  // from the omnibox history, which results in PAGE_TRANSITION_RELOADS, this
-  // usage of the history clusters UI is considered a "direct" navigation.
+  // Indirect navigation is kind of our catch-all, although in practice it
+  // pretty much means the omnibox action chip.
   auto initial_state =
-      PageTransitionCoreTypeIs(navigation_handle->GetPageTransition(),
-                               ui::PAGE_TRANSITION_TYPED) ||
-              PageTransitionCoreTypeIs(navigation_handle->GetPageTransition(),
-                                       ui::PAGE_TRANSITION_RELOAD)
-          ? history_clusters::HistoryClustersInitialState::kDirectNavigation
-          : history_clusters::HistoryClustersInitialState::kIndirectNavigation;
-  logger->set_initial_state(initial_state);
-}
+      history_clusters::HistoryClustersInitialState::kIndirectNavigation;
 
-void HistoryClustersTabHelper::DidOpenRequestedURL(
-    content::WebContents* new_contents,
-    content::RenderFrameHost* source_render_frame_host,
-    const GURL& url,
-    const content::Referrer& referrer,
-    WindowOpenDisposition disposition,
-    ui::PageTransition transition,
-    bool started_from_context_menu,
-    bool renderer_initiated) {
-  // Will detect when a link was followed from the history clusters page in a
-  // new web contents (e.g. new tab or window).
-  // And will update this page's associated `HistoryClustersMetricsLogger`.
-  if (IsHistoryPage(web_contents()->GetLastCommittedURL(),
-                    GURL(chrome::kChromeUIHistoryClustersURL)) &&
-      CanAddURLToHistory(url)) {
-    auto* logger =
-        history_clusters::HistoryClustersMetricsLogger::GetOrCreateForPage(
-            web_contents()->GetPrimaryPage());
-    logger->IncrementLinksOpenedCount();
+  if (navigation_handle->IsSameDocument()) {
+    initial_state =
+        history_clusters::HistoryClustersInitialState::kSameDocument;
+  } else if (PageTransitionCoreTypeIs(navigation_handle->GetPageTransition(),
+                                      ui::PAGE_TRANSITION_TYPED) ||
+             PageTransitionCoreTypeIs(navigation_handle->GetPageTransition(),
+                                      ui::PAGE_TRANSITION_RELOAD)) {
+    // If the transition type is typed (meaning directly entered into the
+    // address bar), PAGE_TRANSITION_TYPED, or is partially typed and selected
+    // from the omnibox history, which results in PAGE_TRANSITION_RELOADS, this
+    // usage of the history clusters UI is considered a "direct" navigation.
+    initial_state =
+        history_clusters::HistoryClustersInitialState::kDirectNavigation;
   }
+
+  logger->set_initial_state(initial_state);
 }
 
 void HistoryClustersTabHelper::WebContentsDestroyed() {

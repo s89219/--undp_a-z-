@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,10 +14,8 @@
 
 AutofillInternalsUI::AutofillInternalsUI(content::WebUI* web_ui)
     : WebUIController(web_ui) {
-  Profile* profile = Profile::FromWebUI(web_ui);
-  content::WebUIDataSource::Add(profile,
-                                autofill::CreateInternalsHTMLSource(
-                                    chrome::kChromeUIAutofillInternalsHost));
+  autofill::CreateAndAddInternalsHTMLSource(
+      Profile::FromWebUI(web_ui), chrome::kChromeUIAutofillInternalsHost);
   web_ui->AddMessageHandler(std::make_unique<autofill::InternalsUIHandler>(
       "setup-autofill-internals",
       base::BindRepeating(

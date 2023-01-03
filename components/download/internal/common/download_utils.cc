@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -386,8 +386,10 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
     // cross-site URL has been visited before.
     url::Origin origin = url::Origin::Create(params->url());
     request->trusted_params->isolation_info = net::IsolationInfo::Create(
-        net::IsolationInfo::RequestType::kMainFrame, origin, origin,
-        net::SiteForCookies::FromOrigin(origin));
+        params->update_first_party_url_on_redirect()
+            ? net::IsolationInfo::RequestType::kMainFrame
+            : net::IsolationInfo::RequestType::kOther,
+        origin, origin, net::SiteForCookies::FromOrigin(origin));
     request->site_for_cookies = net::SiteForCookies::FromUrl(params->url());
   }
 
@@ -395,7 +397,8 @@ std::unique_ptr<network::ResourceRequest> CreateResourceRequest(
   request->referrer = params->referrer();
   request->referrer_policy = params->referrer_policy();
   request->is_outermost_main_frame = true;
-  request->update_first_party_url_on_redirect = true;
+  request->update_first_party_url_on_redirect =
+      params->update_first_party_url_on_redirect();
 
   // Downloads should be treated as navigations from Fetch spec perspective.
   // See also:
@@ -531,7 +534,6 @@ DownloadDBEntry CreateDownloadDBEntryFromItem(const DownloadItemImpl& item) {
   in_progress_info.total_bytes = item.GetTotalBytes();
   in_progress_info.current_path = item.GetFullPath();
   in_progress_info.target_path = item.GetTargetFilePath();
-  in_progress_info.reroute_info = item.GetRerouteInfo();
   in_progress_info.received_bytes = item.GetReceivedBytes();
   in_progress_info.start_time = item.GetStartTime();
   in_progress_info.end_time = item.GetEndTime();
@@ -545,7 +547,6 @@ DownloadDBEntry CreateDownloadDBEntryFromItem(const DownloadItemImpl& item) {
   in_progress_info.metered = item.AllowMetered();
   in_progress_info.bytes_wasted = item.GetBytesWasted();
   in_progress_info.auto_resume_count = item.GetAutoResumeCount();
-  in_progress_info.download_schedule = item.GetDownloadSchedule();
   in_progress_info.credentials_mode = item.GetCredentialsMode();
   auto range_request_offset = item.GetRangeRequestOffset();
   in_progress_info.range_request_from = range_request_offset.first;

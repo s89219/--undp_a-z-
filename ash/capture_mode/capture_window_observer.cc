@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -58,14 +58,15 @@ void CaptureWindowObserver::SetSelectedWindow(aura::Window* window) {
 
   // Stop observing the current selected window if there is one.
   StopObserving();
-  if (window)
+  if (window) {
     StartObserving(window);
+    capture_mode_session_->A11yAlertCaptureSource(/*trigger_now=*/true);
+  }
   RepaintCaptureRegion();
 
   auto* controller = CaptureModeController::Get();
-  auto* camera_controller = controller->camera_controller();
-  if (camera_controller && !controller->is_recording_in_progress())
-    camera_controller->MaybeReparentPreviewWidget();
+  if (!controller->is_recording_in_progress())
+    controller->camera_controller()->MaybeReparentPreviewWidget();
   capture_mode_session_->MaybeUpdateCaptureUisOpacity(
       display::Screen::GetScreen()->GetCursorScreenPoint());
 }
@@ -81,9 +82,8 @@ void CaptureWindowObserver::OnWindowBoundsChanged(
   // The bounds of camera preview should be updated accordingly if the bounds of
   // the selected window has been updated.
   auto* controller = CaptureModeController::Get();
-  auto* camera_controller = controller->camera_controller();
-  if (camera_controller && !controller->is_recording_in_progress())
-    camera_controller->MaybeUpdatePreviewWidget();
+  if (!controller->is_recording_in_progress())
+    controller->camera_controller()->MaybeUpdatePreviewWidget();
 }
 
 void CaptureWindowObserver::OnWindowVisibilityChanging(aura::Window* window,

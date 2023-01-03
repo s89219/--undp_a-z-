@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,11 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/timer/elapsed_timer.h"
 #include "chrome/browser/ui/side_search/side_search_metrics.h"
 #include "chrome/browser/ui/side_search/side_search_tab_contents_helper.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "ui/views/controls/label.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/focus/external_focus_tracker.h"
 #include "ui/views/view.h"
@@ -31,12 +33,6 @@ class SideSearchBrowserController
       public content::WebContentsObserver,
       public views::ViewObserver {
  public:
-  enum SideSearchViewID {
-    VIEW_ID_NONE = 0,
-    VIEW_ID_SIDE_PANEL_CLOSE_BUTTON,
-    VIEW_ID_SIDE_PANEL_TITLE_LABEL,
-  };
-
   SideSearchBrowserController(SidePanel* side_panel, BrowserView* browser_view);
   SideSearchBrowserController(const SideSearchBrowserController&) = delete;
   SideSearchBrowserController& operator=(const SideSearchBrowserController&) =
@@ -100,18 +96,32 @@ class SideSearchBrowserController
   // manager to update the visibility of its web_view_ child.
   void OnWebViewVisibilityChanged();
 
+  // Called after the side panel is toggled open to emit relevant UMA metrics.
+  void RecordSidePanelOpenedMetrics();
+
   base::CallbackListSubscription web_view_visibility_subscription_;
 
-  raw_ptr<ToolbarButton> toolbar_button_ = nullptr;
-  raw_ptr<SidePanel> const side_panel_;
-  raw_ptr<BrowserView> const browser_view_;
-  raw_ptr<views::WebView> const web_view_;
+  raw_ptr<ToolbarButton, DanglingUntriaged> toolbar_button_ = nullptr;
+  raw_ptr<SidePanel, DanglingUntriaged> const side_panel_;
+  raw_ptr<BrowserView, DanglingUntriaged> const browser_view_;
+  raw_ptr<views::Label, DanglingUntriaged> title_label_;
+  raw_ptr<views::WebView, DanglingUntriaged> web_view_;
 
   // Used to test whether or not the side panel was available the last time
   // `UpdateSidePanel()` was called. i.e. whether the ability for the user to
   // open/close the side panel has changed. This is used for metrics collection
   // purposes.
   bool was_side_panel_available_for_page_ = false;
+
+  // The side panel for a given tab can be shown by having the user toggle it
+  // open via the entrypoint or by switching to a tab that already has its side
+  // panel in an open state. This tracks whether the current side panel was
+  // shown as the result of the user toggling it open via the entrypoint.
+  bool shown_via_entrypoint_ = false;
+
+  // Time since the active tab's side panel contents was hosted in the side
+  // panel.
+  absl::optional<base::ElapsedTimer> side_panel_shown_timer_;
 
   // Tracks and stores the last focused view which is not the
   // `side_panel_` or any of its children. Used to restore focus once

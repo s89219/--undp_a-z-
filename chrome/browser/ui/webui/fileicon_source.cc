@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -123,7 +123,7 @@ void FileIconSource::StartDataRequest(
   FetchFileIcon(file_path, scale_factor, icon_size, std::move(callback));
 }
 
-std::string FileIconSource::GetMimeType(const std::string&) {
+std::string FileIconSource::GetMimeType(const GURL&) {
   // Rely on image decoder inferring the correct type.
   return std::string();
 }

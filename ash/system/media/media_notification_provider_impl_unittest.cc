@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -131,7 +131,7 @@ TEST_F(MediaNotificationProviderImplTest, NotificationListTest) {
   SimulateShowNotification(id_2);
   provider()->SetColorTheme(media_message_center::NotificationTheme());
   std::unique_ptr<views::View> view =
-      provider()->GetMediaNotificationListView(1);
+      provider()->GetMediaNotificationListView(1, /*should_clip_height=*/true);
 
   auto* notification_list_view =
       static_cast<global_media_controls::MediaItemUIListView*>(view.get());
@@ -168,7 +168,7 @@ TEST_F(MediaNotificationProviderImplTest, DontUseDeletedListView) {
 
   // Create a list view with that item.
   std::unique_ptr<views::View> view =
-      provider()->GetMediaNotificationListView(1);
+      provider()->GetMediaNotificationListView(1, /*should_clip_height=*/true);
 
   // Delete the list view.
   view.reset();

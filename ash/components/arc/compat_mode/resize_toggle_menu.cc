@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,10 +12,12 @@
 #include "base/bind.h"
 #include "base/check.h"
 #include "base/notreached.h"
+#include "base/task/sequenced_task_runner.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/chromeos/styles/cros_tokens_color_mappings.h"
 #include "ui/color/color_id.h"
 #include "ui/color/color_provider.h"
 #include "ui/gfx/geometry/insets.h"
@@ -127,21 +129,22 @@ gfx::Size ResizeToggleMenu::MenuButtonView::CalculatePreferredSize() const {
 void ResizeToggleMenu::MenuButtonView::UpdateColors() {
   if (!GetWidget())
     return;
-
   const auto* color_provider = GetColorProvider();
 
+  const ui::ColorId selection_color_id = cros_tokens::kColorSelection;
+
   const auto icon_color =
-      is_selected_ ? GetCrOSColor(cros_styles::ColorName::kIconColorSelection)
+      is_selected_ ? color_provider->GetColor(selection_color_id)
                    : color_provider->GetColor(ui::kColorLabelForeground);
   icon_view_->SetImage(gfx::CreateVectorIcon(icon_, icon_color));
 
   const auto text_color =
-      is_selected_ ? GetCrOSColor(cros_styles::ColorName::kTextColorSelection)
+      is_selected_ ? color_provider->GetColor(selection_color_id)
                    : color_provider->GetColor(ui::kColorLabelForeground);
   title_->SetEnabledColor(text_color);
 
   const auto background_color =
-      is_selected_ ? GetCrOSColor(cros_styles::ColorName::kHighlightColor)
+      is_selected_ ? color_provider->GetColor(cros_tokens::kHighlightColor)
                    : SK_ColorTRANSPARENT;
   background()->SetNativeControlColor(background_color);
 
@@ -306,7 +309,7 @@ void ResizeToggleMenu::ApplyResizeCompatMode(ResizeCompatMode mode) {
   auto_close_closure_.Reset(base::BindOnce(&ResizeToggleMenu::CloseBubble,
                                            weak_ptr_factory_.GetWeakPtr()));
   constexpr auto kAutoCloseDelay = base::Seconds(2);
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, auto_close_closure_.callback(), kAutoCloseDelay);
 }
 

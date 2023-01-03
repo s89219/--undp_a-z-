@@ -1,14 +1,17 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.chrome.browser.dom_distiller;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Matchers.eq;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -26,8 +29,6 @@ import org.mockito.Captor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import org.chromium.base.FeatureList;
-import org.chromium.base.FeatureList.TestValues;
 import org.chromium.base.UserDataHost;
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Feature;
@@ -40,6 +41,8 @@ import org.chromium.chrome.browser.infobar.ReaderModeInfoBarJni;
 import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabObserver;
 import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.chrome.test.util.browser.Features.DisableFeatures;
+import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtilsJni;
 import org.chromium.components.messages.MessageDispatcher;
@@ -56,11 +59,12 @@ import java.util.concurrent.TimeoutException;
 
 /** This class tests the behavior of the {@link ReaderModeManager}. */
 @RunWith(BaseRobolectricTestRunner.class)
-@Features.EnableFeatures({ChromeFeatureList.IMPROVE_READER_MODE_PROMPT})
+@DisableFeatures({ChromeFeatureList.CONTEXTUAL_PAGE_ACTIONS,
+        ChromeFeatureList.CONTEXTUAL_PAGE_ACTION_READER_MODE})
 public class ReaderModeManagerTest {
     private static final GURL MOCK_DISTILLER_URL =
             JUnitTestGURLs.getGURL(JUnitTestGURLs.DOM_DISILLER_URL);
-    private static final GURL MOCK_URL = JUnitTestGURLs.getGURL(JUnitTestGURLs.EXAMPLE_URL);
+    private static final GURL MOCK_URL = JUnitTestGURLs.getGURL(JUnitTestGURLs.GOOGLE_URL_CAT);
 
     @Rule
     public JniMocker jniMocker = new JniMocker();
@@ -155,18 +159,6 @@ public class ReaderModeManagerTest {
 
     @Test
     @Feature("ReaderMode")
-    @Features.DisableFeatures({ChromeFeatureList.MESSAGES_FOR_ANDROID_READER_MODE})
-    public void testUI_triggered_infobar() {
-        mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
-        assertEquals("Distillation should be possible.", DistillationStatus.POSSIBLE,
-                mManager.getDistillationStatus());
-        verify(mReaderModeInfobarJniMock).create(mTab);
-        verifyNoMoreInteractions(mMessageDispatcher);
-    }
-
-    @Test
-    @Feature("ReaderMode")
-    @Features.EnableFeatures({ChromeFeatureList.MESSAGES_FOR_ANDROID_READER_MODE})
     public void testUI_triggered_messages() {
         mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
         assertEquals("Distillation should be possible.", DistillationStatus.POSSIBLE,
@@ -174,7 +166,6 @@ public class ReaderModeManagerTest {
         verify(mMessageDispatcher)
                 .enqueueMessage(
                         any(), eq(mWebContents), eq(MessageScopeType.NAVIGATION), eq(false));
-        verifyNoMoreInteractions(mReaderModeInfobarJniMock);
     }
 
     @Test
@@ -201,31 +192,63 @@ public class ReaderModeManagerTest {
 
     @Test
     @Feature("ReaderMode")
-    @Features.DisableFeatures({ChromeFeatureList.MESSAGES_FOR_ANDROID_READER_MODE})
     public void testUI_notTriggered_afterDismiss() {
         mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
-        verify(mReaderModeInfobarJniMock).create(mTab);
+        verify(mMessageDispatcher).enqueueMessage(any(), any(), anyInt(), anyBoolean());
         mManager.onClosed();
 
         mManager.tryShowingPrompt();
-        verifyNoMoreInteractions(mReaderModeInfobarJniMock);
+        verifyNoMoreInteractions(mMessageDispatcher);
     }
 
     @Test
     @Feature("ReaderMode")
-    @Features.EnableFeatures({ChromeFeatureList.MESSAGES_FOR_ANDROID_READER_MODE})
     public void testUI_notTriggered_muted() {
-        TestValues testValues = new TestValues();
-        testValues.addFeatureFlagOverride(ChromeFeatureList.IMPROVE_READER_MODE_PROMPT, true);
-        testValues.addFeatureFlagOverride(ChromeFeatureList.MESSAGES_FOR_ANDROID_READER_MODE, true);
-        testValues.addFieldTrialParamOverride(
-                ChromeFeatureList.IMPROVE_READER_MODE_PROMPT, "reader_mode_throttling_mode", "url");
-        FeatureList.setTestValues(testValues);
         mManager.muteSiteForTesting(mTab.getUrl());
         mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
         assertEquals("Distillation should be possible.", DistillationStatus.POSSIBLE,
                 mManager.getDistillationStatus());
         verify(mMessageDispatcher, never()).enqueueMessage(any(), any(), anyInt(), anyBoolean());
+        verifyNoMoreInteractions(mReaderModeInfobarJniMock);
+    }
+
+    @Test
+    @Feature("ReaderMode")
+    public void testUI_notTriggered_mutedByDomain() {
+        mManager.muteSiteForTesting(JUnitTestGURLs.getGURL(JUnitTestGURLs.GOOGLE_URL_DOG));
+        mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
+        assertEquals("Distillation should be possible.", DistillationStatus.POSSIBLE,
+                mManager.getDistillationStatus());
+        verify(mMessageDispatcher,
+                never().description("Reader mode should be muted in this domain"))
+                .enqueueMessage(any(), any(), anyInt(), anyBoolean());
+        verifyNoMoreInteractions(mReaderModeInfobarJniMock);
+    }
+
+    @Test
+    @Feature("ReaderMode")
+    public void testUI_notTriggered_notMutedByDomain() {
+        mManager.muteSiteForTesting(JUnitTestGURLs.getGURL(JUnitTestGURLs.EXAMPLE_URL));
+        mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
+        assertEquals("Distillation should be possible.", DistillationStatus.POSSIBLE,
+                mManager.getDistillationStatus());
+        verify(mMessageDispatcher).enqueueMessage(any(), any(), anyInt(), anyBoolean());
+        verifyNoMoreInteractions(mReaderModeInfobarJniMock);
+    }
+
+    @Test
+    @Feature("ReaderMode")
+    @Features.EnableFeatures({ChromeFeatureList.CONTEXTUAL_PAGE_ACTIONS,
+            ChromeFeatureList.CONTEXTUAL_PAGE_ACTION_READER_MODE})
+    public void
+    testUI_notTriggered_contextualPageActionUiEnabled() {
+        mDistillabilityObserver.onIsPageDistillableResult(mTab, true, true, false);
+        assertEquals("Distillation should be possible.", DistillationStatus.POSSIBLE,
+                mManager.getDistillationStatus());
+        verify(mMessageDispatcher,
+                never().description("Message should be suppressed as the CPA UI will be shown"))
+                .enqueueMessage(
+                        any(), eq(mWebContents), eq(MessageScopeType.NAVIGATION), eq(false));
         verifyNoMoreInteractions(mReaderModeInfobarJniMock);
     }
 
@@ -238,13 +261,12 @@ public class ReaderModeManagerTest {
 
         // Simulate a navigation from a distilled page.
         when(mNavController.getLastCommittedEntryIndex()).thenReturn(0);
-        when(mNavigationHandle.isInPrimaryMainFrame()).thenReturn(true);
         when(mNavigationHandle.isSameDocument()).thenReturn(false);
         when(mNavigationHandle.hasCommitted()).thenReturn(true);
         when(mNavigationHandle.getUrl()).thenReturn(MOCK_URL);
 
-        mWebContentsObserver.didStartNavigation(mNavigationHandle);
-        mWebContentsObserver.didFinishNavigation(mNavigationHandle);
+        mWebContentsObserver.didStartNavigationInPrimaryMainFrame(mNavigationHandle);
+        mWebContentsObserver.didFinishNavigationInPrimaryMainFrame(mNavigationHandle);
 
         // Distiller entry should have been removed.
         verify(mNavController).removeEntryAtIndex(0);
@@ -258,12 +280,11 @@ public class ReaderModeManagerTest {
 
         // Simulate a navigation to a distilled page.
         when(mNavController.getLastCommittedEntryIndex()).thenReturn(0);
-        when(mNavigationHandle.isInPrimaryMainFrame()).thenReturn(true);
         when(mNavigationHandle.isSameDocument()).thenReturn(false);
         when(mNavigationHandle.getUrl()).thenReturn(MOCK_DISTILLER_URL);
 
-        mWebContentsObserver.didStartNavigation(mNavigationHandle);
-        mWebContentsObserver.didFinishNavigation(mNavigationHandle);
+        mWebContentsObserver.didStartNavigationInPrimaryMainFrame(mNavigationHandle);
+        mWebContentsObserver.didFinishNavigationInPrimaryMainFrame(mNavigationHandle);
 
         assertEquals("Distillation should have started.", DistillationStatus.STARTED,
                 mManager.getDistillationStatus());
@@ -276,15 +297,58 @@ public class ReaderModeManagerTest {
 
         // Simulate an same-document navigation.
         when(mNavController.getLastCommittedEntryIndex()).thenReturn(0);
-        when(mNavigationHandle.isInPrimaryMainFrame()).thenReturn(true);
         when(mNavigationHandle.isSameDocument()).thenReturn(true);
         when(mNavigationHandle.getUrl()).thenReturn(MOCK_URL);
 
-        mWebContentsObserver.didStartNavigation(mNavigationHandle);
-        mWebContentsObserver.didFinishNavigation(mNavigationHandle);
+        mWebContentsObserver.didStartNavigationInPrimaryMainFrame(mNavigationHandle);
+        mWebContentsObserver.didFinishNavigationInPrimaryMainFrame(mNavigationHandle);
 
         assertEquals("Distillation should not be possible.", DistillationStatus.NOT_POSSIBLE,
                 mManager.getDistillationStatus());
+    }
+
+    @Test
+    @Feature("ReaderMode")
+    public void testIsUiRateLimited() {
+        assertFalse(mManager.isReaderModeUiRateLimited());
+    }
+
+    @Test
+    @Feature("ReaderMode")
+    public void testIsUiRateLimited_trueWhenShown() {
+        assertFalse(mManager.isReaderModeUiRateLimited());
+        mManager.setReaderModeUiShown();
+
+        assertTrue(mManager.isReaderModeUiRateLimited());
+    }
+
+    @Test
+    @Feature("ReaderMode")
+    @EnableFeatures({"ReaderModeInCCT"})
+    public void testIsUiRateLimited_trueWhenShownInOtherTab() {
+        when(mTab.getWebContents()).thenReturn(null);
+
+        Tab secondTab = mock(Tab.class);
+        when(secondTab.getUrl()).thenReturn(MOCK_URL);
+        when(secondTab.getUserDataHost()).thenReturn(mUserDataHost);
+        ReaderModeManager secondTabManager =
+                new ReaderModeManager(secondTab, () -> mMessageDispatcher);
+        // Ensure the tab observer is attached when the manager is created.
+        verify(secondTab).addObserver(mTabObserverCaptor.capture());
+        TabObserver secondTabObserver = mTabObserverCaptor.getValue();
+        secondTabObserver.onShown(secondTab, 0);
+
+        // Show UI in second tab.
+        secondTabManager.setReaderModeUiShown();
+
+        // UI on first tab should be limited.
+        assertTrue(mManager.isReaderModeUiRateLimited());
+
+        // Use reader mode on second tab.
+        secondTabManager.activateReaderMode();
+
+        // URl should be removed from block list, we should show UI on first tab now.
+        assertFalse(mManager.isReaderModeUiRateLimited());
     }
 
     /**
@@ -293,7 +357,6 @@ public class ReaderModeManagerTest {
      * @return A new {@link NavigationEntry}.
      */
     private NavigationEntry createNavigationEntry(int index, GURL url) {
-        return new NavigationEntry(
-                index, url, url, url, url, "", null, 0, 0, /* isInitialEntry=*/false);
+        return new NavigationEntry(index, url, url, url, "", null, 0, 0, /* isInitialEntry=*/false);
     }
 }

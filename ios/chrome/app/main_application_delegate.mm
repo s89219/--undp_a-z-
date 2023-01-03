@@ -1,26 +1,36 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/app/main_application_delegate.h"
 
-#include "base/ios/ios_util.h"
-#include "base/mac/foundation_util.h"
-#include "base/metrics/user_metrics.h"
+#import <UserNotifications/UserNotifications.h>
+
+#import "base/ios/ios_util.h"
+#import "base/mac/foundation_util.h"
+#import "base/metrics/histogram_functions.h"
+#import "base/metrics/user_metrics.h"
+#import "base/strings/sys_string_conversions.h"
+#import "components/download/public/background_service/background_download_service.h"
 #import "ios/chrome/app/application_delegate/app_state.h"
 #import "ios/chrome/app/application_delegate/browser_launcher.h"
 #import "ios/chrome/app/application_delegate/memory_warning_helper.h"
 #import "ios/chrome/app/application_delegate/metrics_mediator.h"
 #import "ios/chrome/app/application_delegate/startup_information.h"
-#import "ios/chrome/app/application_delegate/tab_opening.h"
-#import "ios/chrome/app/application_delegate/tab_switching.h"
 #import "ios/chrome/app/application_delegate/url_opener.h"
 #import "ios/chrome/app/application_delegate/url_opener_params.h"
 #import "ios/chrome/app/application_delegate/user_activity_handler.h"
 #import "ios/chrome/app/chrome_overlay_window.h"
 #import "ios/chrome/app/main_application_delegate_testing.h"
 #import "ios/chrome/app/main_controller.h"
-#include "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/browser_state/chrome_browser_state.h"
+#import "ios/chrome/browser/commerce/push_notification/push_notification_feature.h"
+#import "ios/chrome/browser/crash_report/crash_keys_helper.h"
+#import "ios/chrome/browser/download/background_service/background_download_service_factory.h"
+#import "ios/chrome/browser/push_notification/push_notification_delegate.h"
+#import "ios/chrome/browser/push_notification/push_notification_util.h"
+#import "ios/chrome/browser/ui/keyboard/features.h"
+#import "ios/chrome/browser/ui/keyboard/menu_builder.h"
 #import "ios/chrome/browser/ui/main/scene_controller.h"
 #import "ios/chrome/browser/ui/main/scene_delegate.h"
 #import "ios/chrome/browser/ui/main/scene_state.h"
@@ -40,20 +50,21 @@ const int kMainIntentCheckDelay = 1;
   MainController* _mainController;
   // Memory helper used to log the number of memory warnings received.
   MemoryWarningHelper* _memoryHelper;
-  // Metrics mediator used to check and update the metrics accordingly to
-  // to the user preferences.
+  // Metrics mediator used to check and update the metrics accordingly to the
+  // user preferences.
   MetricsMediator* _metricsMediator;
   // Browser launcher to have a global launcher.
   id<BrowserLauncher> _browserLauncher;
   // Container for startup information.
   id<StartupInformation> _startupInformation;
-  // Helper to open new tabs.
-  id<TabOpening> _tabOpener;
-  // Handles tab switcher.
-  id<TabSwitching> _tabSwitcher;
   // The set of "scene sessions" that needs to be discarded. See
-  // -applicatiopn:didDiscardSceneSessions: for details.
+  // -application:didDiscardSceneSessions: for details.
   NSSet<UISceneSession*>* _sceneSessionsToDiscard;
+  // Delegate that handles delivered push notification workflow.
+  PushNotificationDelegate* _pushNotificationDelegate;
+  // YES if the application was able to successfully register itself with APNS
+  // and obtain its APNS token.
+  BOOL _didRegisterDeviceWithAPNS;
 }
 
 // YES if application:didFinishLaunchingWithOptions: was called. Used to
@@ -73,6 +84,7 @@ const int kMainIntentCheckDelay = 1;
     [_mainController setMetricsMediator:_metricsMediator];
     _browserLauncher = _mainController;
     _startupInformation = _mainController;
+    _pushNotificationDelegate = [[PushNotificationDelegate alloc] init];
     _appState = [[AppState alloc] initWithBrowserLauncher:_browserLauncher
                                        startupInformation:_startupInformation
                                       applicationDelegate:self];
@@ -102,6 +114,10 @@ const int kMainIntentCheckDelay = 1;
           forKey:metrics_mediator::kAppDidFinishLaunchingConsecutiveCallsKey];
   BOOL inBackground =
       [application applicationState] == UIApplicationStateBackground;
+  // `inBackground` is wrongly always YES, even in regular foreground launches.
+  // TODO(crbug.com/1346512): Remove this code path after some time in canary.
+  // This is meant to be easy to revert.
+  DCHECK(inBackground);
   BOOL requiresHandling =
       [_appState requiresHandlingAfterLaunchWithOptions:launchOptions
                                         stateBackground:inBackground];
@@ -136,7 +152,10 @@ const int kMainIntentCheckDelay = 1;
 }
 
 - (void)applicationWillTerminate:(UIApplication*)application {
-  // If |self.didFinishLaunching| is NO, that indicates that the app was
+  // Any report captured from this point on should be noted as after terminate.
+  crash_keys::SetCrashedAfterAppWillTerminate();
+
+  // If `self.didFinishLaunching` is NO, that indicates that the app was
   // terminated before startup could be run. In this situation, skip running
   // shutdown, since the app was never fully started.
   if (!self.didFinishLaunching)
@@ -160,8 +179,8 @@ const int kMainIntentCheckDelay = 1;
 - (void)application:(UIApplication*)application
     didDiscardSceneSessions:(NSSet<UISceneSession*>*)sceneSessions {
   // This method is invoked by iOS to inform the application that the sessions
-  // for "closed windows" is garbage collected and that any data associated with
-  // them by the application needs to be deleted.
+  // for "closed windows" are garbage collected and that any data associated
+  // with them by the application needs to be deleted.
   //
   // The documentation says that if the application is not running when the OS
   // decides to discard the sessions, then it will call this method the next
@@ -186,6 +205,70 @@ const int kMainIntentCheckDelay = 1;
   }
   // Apply a no-op mask by default.
   return UIInterfaceOrientationMaskAll;
+}
+
+- (void)application:(UIApplication*)application
+    didReceiveRemoteNotification:(NSDictionary*)userInfo
+          fetchCompletionHandler:
+              (void (^)(UIBackgroundFetchResult result))completionHandler {
+  // This method is invoked by iOS to process an incoming remote push
+  // notification for the application and fetch any additional data.
+
+  // According to the documentation, iOS invokes this function whether the
+  // application is in the foreground or background. In addition, iOS will
+  // launch the application and place it in background mode to invoke this
+  // function. However, iOS will not do this if the user has force-quit the
+  // application. In that case, the user must relaunch the application or must
+  // restart the device before the system will launch the application and invoke
+  // this function.
+  UIBackgroundFetchResult result = [_pushNotificationDelegate
+      applicationWillProcessIncomingRemoteNotification:userInfo];
+  if (completionHandler) {
+    completionHandler(result);
+  }
+}
+
+- (void)application:(UIApplication*)application
+    didRegisterForRemoteNotificationsWithDeviceToken:(NSData*)deviceToken {
+  // This method is invoked by iOS on the successful registration of the app to
+  // APNS and retrieval of the device's APNS token.
+  _didRegisterDeviceWithAPNS = YES;
+  [_pushNotificationDelegate applicationDidRegisterWithAPNS:deviceToken];
+}
+
+- (void)application:(UIApplication*)application
+    didFailToRegisterForRemoteNotificationsWithError:(NSError*)error {
+  // This method is invoked by iOS to inform the application that the attempt to
+  // obtain the device's APNS token from APNS failed
+  base::UmaHistogramBoolean("IOS.PushNotification.APNSDeviceRegistration",
+                            false);
+}
+
+- (void)application:(UIApplication*)application
+    handleEventsForBackgroundURLSession:(NSString*)identifier
+                      completionHandler:(void (^)())completionHandler {
+  if (![identifier
+          hasPrefix:base::SysUTF8ToNSString(
+                        download::kBackgroundDownloadIdentifierPrefix)]) {
+    completionHandler();
+    return;
+  }
+  ChromeBrowserState* browserState =
+      _mainController.interfaceProvider.mainInterface.browserState;
+  if (!browserState) {
+    // TODO(crbug.com/1368617): We should store the completionHandler and wait
+    // for mainInterface creation.
+    completionHandler();
+    return;
+  }
+  download::BackgroundDownloadService* download_service =
+      BackgroundDownloadServiceFactory::GetForBrowserState(browserState);
+  if (download_service) {
+    download_service->HandleEventsForBackgroundURLSession(
+        base::BindOnce(completionHandler));
+    return;
+  }
+  completionHandler();
 }
 
 #pragma mark - Scenes lifecycle
@@ -213,10 +296,6 @@ const int kMainIntentCheckDelay = 1;
   if (!sceneDelegate)
     return;
 
-  SceneController* sceneController = sceneDelegate.sceneController;
-  _tabSwitcher = sceneController;
-  _tabOpener = sceneController;
-
   // TODO(crbug.com/1060645): This should be called later, or this flow should
   // be changed completely.
   if (self.foregroundSceneCount == 0) {
@@ -234,7 +313,7 @@ const int kMainIntentCheckDelay = 1;
 }
 
 - (void)lastSceneDidEnterBackground:(NSNotification*)notification {
-  // Reset |startupHadExternalIntent| for all Scenes in case external intents
+  // Reset `startupHadExternalIntent` for all scenes in case external intents
   // were triggered while the application was in the foreground.
   for (SceneState* scene in self.appState.connectedScenes) {
     if (scene.startupHadExternalIntent) {
@@ -271,6 +350,9 @@ const int kMainIntentCheckDelay = 1;
           base::RecordAction(base::UserMetricsAction("IOSOpenByViewIntent"));
         }
       });
+
+  [self registerDeviceForPushNotifications];
+
   [_appState applicationWillEnterForeground:UIApplication.sharedApplication
                             metricsMediator:_metricsMediator
                                memoryHelper:_memoryHelper];
@@ -293,15 +375,17 @@ const int kMainIntentCheckDelay = 1;
   }
 }
 
+#pragma mark - UIResponder methods
+
+- (void)buildMenuWithBuilder:(id<UIMenuBuilder>)builder {
+  [super buildMenuWithBuilder:builder];
+
+  if (IsKeyboardShortcutsMenuEnabled()) {
+    [MenuBuilder buildMainMenuWithBuilder:builder];
+  }
+}
+
 #pragma mark - Testing methods
-
-- (MainController*)mainController {
-  return _mainController;
-}
-
-- (AppState*)appState {
-  return _appState;
-}
 
 + (AppState*)sharedAppState {
   return base::mac::ObjCCast<MainApplicationDelegate>(
@@ -313,6 +397,26 @@ const int kMainIntentCheckDelay = 1;
   return base::mac::ObjCCast<MainApplicationDelegate>(
              [[UIApplication sharedApplication] delegate])
       .mainController;
+}
+
+- (MainController*)mainController {
+  return _mainController;
+}
+
+#pragma mark - Private
+
+// Registers the device with APNS to enable receiving push notifications to the
+// device. In addition, the function sets the UNUserNotificationCenter's
+// delegate which enables the application to display push notifications that
+// were received while Chrome was open.
+- (void)registerDeviceForPushNotifications {
+  if (!_didRegisterDeviceWithAPNS && IsPriceNotificationsEnabled()) {
+    UNUserNotificationCenter* center =
+        UNUserNotificationCenter.currentNotificationCenter;
+    center.delegate = _pushNotificationDelegate;
+
+    [PushNotificationUtil registerDeviceWithAPNS];
+  }
 }
 
 @end

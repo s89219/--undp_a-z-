@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -117,12 +117,12 @@ export class MockViewportChangedCallback {
   }
 }
 
-type PageDimensions = {
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-};
+interface PageDimensions {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export class MockDocumentDimensions implements DocumentDimensions {
   width: number;

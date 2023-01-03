@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,17 +6,18 @@
 
 #import <Foundation/Foundation.h>
 
+#import "base/functional/bind.h"
 #import "base/test/ios/wait_util.h"
-#include "base/test/metrics/histogram_tester.h"
-#include "components/ui_metrics/canonical_url_share_metrics_types.h"
-#include "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
+#import "base/test/metrics/histogram_tester.h"
+#import "components/ui_metrics/canonical_url_share_metrics_types.h"
+#import "ios/chrome/browser/browser_state/test_chrome_browser_state.h"
 #import "ios/web/public/test/fakes/fake_web_client.h"
 #import "ios/web/public/test/scoped_testing_web_client.h"
 #import "ios/web/public/test/web_state_test_util.h"
 #import "ios/web/public/test/web_task_environment.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "testing/platform_test.h"
-#include "url/gurl.h"
+#import "testing/gtest/include/gtest/gtest.h"
+#import "testing/platform_test.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -41,26 +42,23 @@ class CanonicalURLRetrieverTest : public PlatformTest {
 
   ~CanonicalURLRetrieverTest() override = default;
 
-  void SetUp() override { PlatformTest::SetUp(); }
-
  protected:
-  // Retrieves the canonical URL and returns it through the |url| out parameter.
-  // Returns whether the operation was successful.
-  bool RetrieveCanonicalUrl(GURL* url) {
-    __block GURL result;
-    __block bool canonical_url_received = false;
-    activity_services::RetrieveCanonicalUrl(web_state(), ^(const GURL& url) {
-      result = url;
-      canonical_url_received = true;
-    });
-
-    bool success = base::test::ios::WaitUntilConditionOrTimeout(
-        base::test::ios::kWaitForJSCompletionTimeout, ^{
-          return canonical_url_received;
-        });
-
-    *url = result;
-    return success;
+  // Retrieves the canonical URL.
+  GURL RetrieveCanonicalUrl() {
+    GURL url;
+    base::RunLoop run_loop;
+    // Safety: The current sequence will wait for the callback to be invoked
+    // before returning, thus the pointer to `url` will outlive the callback.
+    activity_services::RetrieveCanonicalUrl(
+        web_state(), base::BindOnce(
+                         [](GURL* result, base::OnceClosure quit_closure,
+                            const GURL& canonical_url) {
+                           *result = canonical_url;
+                           std::move(quit_closure).Run();
+                         },
+                         base::Unretained(&url), run_loop.QuitClosure()));
+    run_loop.Run();
+    return url;
   }
 
   web::WebState* web_state() { return web_state_.get(); }
@@ -81,10 +79,7 @@ TEST_F(CanonicalURLRetrieverTest, TestCanonicalURLDifferentFromVisible) {
       @"<link rel=\"canonical\" href=\"https://chromium.test\">",
       GURL("https://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_EQ("https://chromium.test/", url);
   histogram_tester_.ExpectUniqueSample(
       ui_metrics::kCanonicalURLResultHistogram,
@@ -98,10 +93,7 @@ TEST_F(CanonicalURLRetrieverTest, TestCanonicalURLSameAsVisible) {
       @"<link rel=\"canonical\" href=\"https://chromium.test\">",
       GURL("https://chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_EQ("https://chromium.test/", url);
   histogram_tester_.ExpectUniqueSample(
       ui_metrics::kCanonicalURLResultHistogram,
@@ -114,10 +106,7 @@ TEST_F(CanonicalURLRetrieverTest, TestNoCanonicalURLFound) {
   web::test::LoadHtml(@"No canonical link on this page.",
                       GURL("https://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_TRUE(url.is_empty());
   histogram_tester_.ExpectUniqueSample(
       ui_metrics::kCanonicalURLResultHistogram,
@@ -130,10 +119,7 @@ TEST_F(CanonicalURLRetrieverTest, TestInvalidCanonicalFound) {
   web::test::LoadHtml(@"<link rel=\"canonical\" href=\"chromium\">",
                       GURL("https://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_TRUE(url.is_empty());
   histogram_tester_.ExpectUniqueSample(ui_metrics::kCanonicalURLResultHistogram,
                                        ui_metrics::FAILED_CANONICAL_URL_INVALID,
@@ -148,10 +134,7 @@ TEST_F(CanonicalURLRetrieverTest, TestMultipleCanonicalURLsFound) {
       @"<link rel=\"canonical\" href=\"https://chromium1.test\">",
       GURL("https://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_EQ("https://chromium.test/", url);
   histogram_tester_.ExpectUniqueSample(
       ui_metrics::kCanonicalURLResultHistogram,
@@ -164,10 +147,7 @@ TEST_F(CanonicalURLRetrieverTest, TestCanonicalURLHTTP) {
   web::test::LoadHtml(@"<link rel=\"canonical\" href=\"http://chromium.test\">",
                       GURL("http://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_TRUE(url.is_empty());
   histogram_tester_.ExpectUniqueSample(ui_metrics::kCanonicalURLResultHistogram,
                                        ui_metrics::FAILED_VISIBLE_URL_NOT_HTTPS,
@@ -181,10 +161,7 @@ TEST_F(CanonicalURLRetrieverTest, TestCanonicalURLHTTPSUpgrade) {
       @"<link rel=\"canonical\" href=\"https://chromium.test\">",
       GURL("http://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_TRUE(url.is_empty());
   histogram_tester_.ExpectUniqueSample(ui_metrics::kCanonicalURLResultHistogram,
                                        ui_metrics::FAILED_VISIBLE_URL_NOT_HTTPS,
@@ -197,10 +174,7 @@ TEST_F(CanonicalURLRetrieverTest, TestCanonicalLinkHTTPSDowngrade) {
   web::test::LoadHtml(@"<link rel=\"canonical\" href=\"http://chromium.test\">",
                       GURL("https://m.chromium.test/"), web_state());
 
-  GURL url = GURL("garbage");
-  bool success = RetrieveCanonicalUrl(&url);
-
-  ASSERT_TRUE(success);
+  GURL url = RetrieveCanonicalUrl();
   EXPECT_EQ("http://chromium.test/", url);
   histogram_tester_.ExpectUniqueSample(
       ui_metrics::kCanonicalURLResultHistogram,

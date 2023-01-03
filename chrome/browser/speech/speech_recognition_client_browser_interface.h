@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/soda/constants.h"
 #include "components/soda/soda_installer.h"
-#include "media/mojo/mojom/speech_recognition_service.mojom.h"
+#include "media/mojo/mojom/speech_recognition.mojom.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote_set.h"
 
@@ -48,7 +48,9 @@ class SpeechRecognitionClientBrowserInterface
   void OnSodaInstalled(speech::LanguageCode language_code) override;
   void OnSodaProgress(speech::LanguageCode language_code,
                       int progress) override {}
-  void OnSodaError(speech::LanguageCode language_code) override {}
+  void OnSodaInstallError(
+      speech::LanguageCode language_code,
+      speech::SodaInstaller::ErrorCode error_code) override {}
 
  private:
   void OnSpeechRecognitionAvailabilityChanged();

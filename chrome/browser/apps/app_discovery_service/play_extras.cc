@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,6 +35,10 @@ PlayExtras::~PlayExtras() = default;
 
 std::unique_ptr<SourceExtras> PlayExtras::Clone() {
   return std::make_unique<PlayExtras>(*this);
+}
+
+PlayExtras* PlayExtras::AsPlayExtras() {
+  return this;
 }
 
 const std::string& PlayExtras::GetPackageName() const {
@@ -75,10 +79,6 @@ bool PlayExtras::GetContainsAds() const {
 
 bool PlayExtras::GetOptimizedForChrome() const {
   return optimized_for_chrome_;
-}
-
-PlayExtras* PlayExtras::AsPlayExtras() {
-  return this;
 }
 
 }  // namespace apps

@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,19 +7,19 @@
 #include <string>
 #include <vector>
 
-#include "ash/components/multidevice/logging/logging.h"
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/containers/flat_map.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/web_applications/external_install_options.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/web_app_helpers.h"
 #include "chrome/browser/web_applications/web_app_install_finalizer.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chromeos/ash/components/multidevice/logging/logging.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
 #include "components/webapps/browser/install_result_code.h"
 #include "components/webapps/browser/installable/installable_metrics.h"
@@ -249,7 +249,7 @@ void AndroidSmsAppSetupControllerImpl::TryInstallApp(const GURL& install_url,
                   << "Trying to install PWA for " << install_url
                   << ". Num attempts so far # " << num_attempts_so_far;
   web_app::ExternalInstallOptions options(
-      install_url, web_app::UserDisplayMode::kStandalone,
+      install_url, web_app::mojom::UserDisplayMode::kStandalone,
       web_app::ExternalInstallSource::kInternalDefault);
   options.override_previous_user_uninstall = true;
   // The ServiceWorker does not load in time for the installability check, so
@@ -280,7 +280,7 @@ void AndroidSmsAppSetupControllerImpl::OnAppInstallResult(
         << "PWA for " << install_url << " failed to install."
         << "InstallResultCode: " << static_cast<int>(result.code)
         << " Retrying again in " << retry_delay;
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&AndroidSmsAppSetupControllerImpl::TryInstallApp,
                        weak_ptr_factory_.GetWeakPtr(), install_url, app_url,

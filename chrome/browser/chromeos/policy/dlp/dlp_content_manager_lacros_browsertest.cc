@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,7 +81,7 @@ class DlpContentManagerLacrosBrowserTest : public InProcessBrowserTest {
 
   void SetDlpInterfaceVersion(int version) {
     crosapi::mojom::BrowserInitParamsPtr init_params =
-        chromeos::BrowserInitParams::Get()->Clone();
+        chromeos::BrowserInitParams::GetForTests()->Clone();
     init_params->interface_versions.value()[crosapi::mojom::Dlp::Uuid_] =
         version;
     chromeos::BrowserInitParams::SetInitParamsForTests(std::move(init_params));

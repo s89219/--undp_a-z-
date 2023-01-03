@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,7 +29,7 @@
 #endif
 
 namespace cc {
-class DocumentTransitionRequest;
+class ViewTransitionRequest;
 }
 
 namespace blink {
@@ -39,6 +39,34 @@ class JSONObject;
 class SynthesizedClip;
 
 using CompositorScrollCallbacks = cc::ScrollCallbacks;
+
+// This enum is used for histograms and should not be renumbered (see:
+// PaintArtifactCompositorUpdateReason in tools/metrics/histograms/enums.xml).
+enum class PaintArtifactCompositorUpdateReason {
+  kTest = 0,
+  kPaintArtifactCompositorNeedsFullUpdateChunksChanged = 1,
+  kPaintArtifactCompositorNeedsFullUpdateAfterPaintingChunk = 2,
+  kPaintArtifactCompositorPrefersLCDText = 3,
+  kLocalFrameViewUpdateLayerDebugInfo = 4,
+  kLocalFrameViewBenchmarking = 5,
+  kDisplayLockContextNeedsPaintArtifactCompositorUpdate = 6,
+  kViewTransitionNotifyChanges = 7,
+  kFrameCaretSetVisible = 8,
+  kFrameCaretPaint = 9,
+  kInspectorOverlayAgentDisableFrameOverlay = 10,
+  kLinkHighlightImplNeedsCompositingUpdate = 11,
+  kPaintLayerScrollableAreaUpdateScrollOffset = 12,
+  kPaintPropertyTreeBuilderPaintPropertyChanged = 13,
+  kPaintPropertyTreeBuilderHasFixedPositionObjects = 14,
+  kPaintPropertyTreeBulderNonStackingContextScroll = 15,
+  kVisualViewportPaintPropertyTreeBuilderUpdate = 16,
+  kVideoPainterPaintReplaced = 17,
+  kPaintPropertyTreeBuilderPaintPropertyChangedOnlyNonRerasterValues = 18,
+  kPaintPropertyTreeBuilderPaintPropertyChangedOnlySimpleValues = 19,
+  kPaintPropertyTreeBuilderPaintPropertyChangedOnlyValues = 20,
+  kPaintPropertyTreeBuilderPaintPropertyAddedOrRemoved = 21,
+  kCount = 22
+};
 
 class LayerListBuilder {
  public:
@@ -77,8 +105,7 @@ class SynthesizedClip : private cc::ContentLayerClient {
       layer_->ClearClient();
   }
 
-  void UpdateLayer(bool needs_layer,
-                   const ClipPaintPropertyNode&,
+  void UpdateLayer(const ClipPaintPropertyNode&,
                    const TransformPaintPropertyNode&);
 
   cc::PictureLayer* Layer() { return layer_.get(); }
@@ -95,7 +122,7 @@ class SynthesizedClip : private cc::ContentLayerClient {
 
  private:
   scoped_refptr<cc::PictureLayer> layer_;
-  GeometryMapper::Translation2DOrMatrix translation_2d_or_matrix_;
+  gfx::Transform projection_;
   bool rrect_is_local_ = false;
   SkRRect rrect_;
   absl::optional<Path> path_;
@@ -120,7 +147,6 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
 
   struct ViewportProperties {
     const TransformPaintPropertyNode* overscroll_elasticity_transform = nullptr;
-    const EffectPaintPropertyNode* overscroll_elasticity_effect = nullptr;
     const TransformPaintPropertyNode* page_scale = nullptr;
     const TransformPaintPropertyNode* inner_scroll_translation = nullptr;
     const ClipPaintPropertyNode* outer_clip = nullptr;
@@ -138,7 +164,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
       scoped_refptr<const PaintArtifact> artifact,
       const ViewportProperties& viewport_properties,
       const Vector<const TransformPaintPropertyNode*>& scroll_translation_nodes,
-      Vector<std::unique_ptr<cc::DocumentTransitionRequest>> requests);
+      Vector<std::unique_ptr<cc::ViewTransitionRequest>> requests);
 
   // Fast-path update where the painting of existing composited layers changed,
   // but property trees and compositing decisions remain the same. See:
@@ -194,7 +220,7 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   // do not affect compositing can use a fast-path in |UpdateRepaintedLayers|
   // (see comment above that function for more information), and should not call
   // SetNeedsUpdate.
-  void SetNeedsUpdate() { needs_update_ = true; }
+  void SetNeedsUpdate(PaintArtifactCompositorUpdateReason reason);
   bool NeedsUpdate() const { return needs_update_; }
   void ClearNeedsUpdateForTesting() { needs_update_ = false; }
 
@@ -250,9 +276,15 @@ class PLATFORM_EXPORT PaintArtifactCompositor final
   // recursion, the layerization of the subgroup may be tested for merge &
   // overlap with other chunks in the parent group, if grouping requirement
   // can be satisfied (and the effect node has no direct reason).
+  // |directly_composited_transforms| is used internally to optimize the first
+  // time a paint property tree node is encountered that has direct compositing
+  // reasons. This case will always start a new layer and can skip merge tests.
+  // New values are added when transform nodes are first encountered.
   void LayerizeGroup(const PaintChunkSubset&,
                      const EffectPaintPropertyNode&,
                      PaintChunkIterator& chunk_cursor,
+                     HashSet<const TransformPaintPropertyNode*>&
+                         directly_composited_transforms,
                      bool force_draws_content);
   bool DecompositeEffect(const EffectPaintPropertyNode& parent_effect,
                          wtf_size_t first_layer_in_parent_group_index,

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,9 @@
 
 #import <utility>
 
-#include "base/check_op.h"
-#include "base/mac/foundation_util.h"
+#import "base/check_op.h"
+#import "base/mac/foundation_util.h"
+#import "ios/chrome/browser/ui/icons/symbols.h"
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/grid/grid_constants.h"
 #import "ios/chrome/browser/ui/tab_switcher/tab_grid/suggested_actions/suggested_actions_delegate.h"
 #import "ios/chrome/browser/ui/table_view/cells/table_view_image_item.h"
@@ -17,8 +18,8 @@
 #import "ios/chrome/browser/ui/table_view/chrome_table_view_styler.h"
 #import "ios/chrome/browser/ui/util/uikit_ui_util.h"
 #import "ios/chrome/common/ui/colors/semantic_color_names.h"
-#include "ios/chrome/grit/ios_strings.h"
-#include "ui/base/l10n/l10n_util.h"
+#import "ios/chrome/grit/ios_strings.h"
+#import "ui/base/l10n/l10n_util.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -85,7 +86,11 @@ typedef NS_ENUM(NSInteger, ItemType) {
   [self.tableView setTableHeaderView:[[UIView alloc] initWithFrame:frame]];
   [self.tableView setTableFooterView:[[UIView alloc] initWithFrame:frame]];
 
-  self.tableView.layer.cornerRadius = kGridCellCornerRadius;
+  if (UseSymbols()) {
+    self.tableView.layer.cornerRadius = kGridCellCornerRadius;
+  } else {
+    self.tableView.layer.cornerRadius = kLegacyGridCellCornerRadius;
+  }
   [self loadModel];
   [self.tableView reloadData];
   [self.tableView layoutIfNeeded];
@@ -109,9 +114,7 @@ typedef NS_ENUM(NSInteger, ItemType) {
 
   TableViewModel* model = self.tableViewModel;
   [model addSectionWithIdentifier:kSectionIdentifierSuggestedActions];
-  UIColor* actionsTextColor = self.styler.tintColor
-                                  ? self.styler.tintColor
-                                  : [UIColor colorNamed:kBlueColor];
+  UIColor* actionsTextColor = [UIColor colorNamed:kBlueColor];
   TableViewImageItem* searchWebItem = [[TableViewImageItem alloc]
       initWithType:ItemTypeSuggestedActionSearchWeb];
   searchWebItem.title =

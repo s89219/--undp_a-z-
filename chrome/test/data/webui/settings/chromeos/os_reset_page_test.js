@@ -1,16 +1,17 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {OsResetBrowserProxyImpl} from 'chrome://os-settings/chromeos/lazy_load.js';
 import {LifetimeBrowserProxyImpl, Router, routes} from 'chrome://os-settings/chromeos/os_settings.js';
-import {setESimManagerRemoteForTesting} from 'chrome://resources/cr_components/chromeos/cellular_setup/mojo_interface_provider.m.js';
-import {getDeepActiveElement} from 'chrome://resources/js/util.m.js';
+import {setESimManagerRemoteForTesting} from 'chrome://resources/ash/common/cellular_setup/mojo_interface_provider.js';
+import {getDeepActiveElement} from 'chrome://resources/ash/common/util.js';
+import {ESimManagerRemote, ProfileState} from 'chrome://resources/mojo/chromeos/ash/services/cellular_setup/public/mojom/esim_manager.mojom-webui.js';
 import {flush} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
-import {FakeESimManagerRemote} from 'chrome://test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.m.js';
-import {waitAfterNextRender} from 'chrome://test/test_util.js';
+import {FakeESimManagerRemote} from 'chrome://webui-test/cr_components/chromeos/cellular_setup/fake_esim_manager_remote.js';
+import {waitAfterNextRender} from 'chrome://webui-test/polymer_test_util.js';
 
-import {assertEquals, assertFalse, assertTrue} from '../../chai_assert.js';
+import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
 
 import {TestLifetimeBrowserProxy} from './test_os_lifetime_browser_proxy.js';
 import {TestOsResetBrowserProxy} from './test_os_reset_browser_proxy.js';
@@ -33,7 +34,7 @@ suite('DialogTests', function() {
   /** @type {!LifetimeBrowserProxy} */
   let lifetimeBrowserProxy = null;
 
-  /** @type {!ash.cellularSetup.mojom.ESimManagerRemote|undefined} */
+  /** @type {!ESimManagerRemote|undefined} */
   let eSimManagerRemote;
 
   setup(function() {
@@ -41,7 +42,7 @@ suite('DialogTests', function() {
     LifetimeBrowserProxyImpl.setInstance(lifetimeBrowserProxy);
 
     resetPageBrowserProxy = new TestOsResetBrowserProxy();
-    OsResetBrowserProxyImpl.instance_ = resetPageBrowserProxy;
+    OsResetBrowserProxyImpl.setInstanceForTesting(resetPageBrowserProxy);
 
     eSimManagerRemote = new FakeESimManagerRemote();
     setESimManagerRemoteForTesting(eSimManagerRemote);
@@ -72,9 +73,10 @@ suite('DialogTests', function() {
   async function testOpenClosePowerwashDialog(closeButtonFn) {
     // Open powerwash dialog.
     assertTrue(!!resetPage);
-    resetPage.$$('#powerwash').click();
+    resetPage.shadowRoot.querySelector('#powerwash').click();
     await flushAsync();
-    const dialog = resetPage.$$('os-settings-powerwash-dialog');
+    const dialog =
+        resetPage.shadowRoot.querySelector('os-settings-powerwash-dialog');
     assertOpenDialogUIState(/*shouldBeShowingESimWarning=*/ false);
     const onDialogClosed = new Promise(function(resolve, reject) {
       dialog.addEventListener('close', function() {
@@ -96,38 +98,47 @@ suite('DialogTests', function() {
     // Set the first profile's state to kActive.
     const euicc = (await eSimManagerRemote.getAvailableEuiccs()).euiccs[0];
     const profile = (await euicc.getProfileList()).profiles[0];
-    profile.properties.state = ash.cellularSetup.mojom.ProfileState.kActive;
+    profile.properties.state = ProfileState.kActive;
 
     // Click the powerwash button.
-    resetPage.$$('#powerwash').click();
+    resetPage.shadowRoot.querySelector('#powerwash').click();
     await flushAsync();
 
     // The eSIM warning should be showing.
     assertOpenDialogUIState(/*shouldBeShowingESimWarning=*/ true);
-    const dialog = resetPage.$$('os-settings-powerwash-dialog');
-    assertEquals(dialog.$$('iron-list').items.length, 1);
+    const dialog =
+        resetPage.shadowRoot.querySelector('os-settings-powerwash-dialog');
+    assertEquals(dialog.shadowRoot.querySelector('iron-list').items.length, 1);
 
     // The 'Continue' button should initially be disabled.
-    assertTrue(dialog.$$('#continue').disabled);
+    assertTrue(dialog.shadowRoot.querySelector('#continue').disabled);
   }
 
   /**
    * @param {boolean} shouldBeShowingESimWarning
    */
   function assertOpenDialogUIState(shouldBeShowingESimWarning) {
-    const dialog = resetPage.$$('os-settings-powerwash-dialog');
+    const dialog =
+        resetPage.shadowRoot.querySelector('os-settings-powerwash-dialog');
     assertTrue(!!dialog);
     assertTrue(dialog.$.dialog.open);
 
     assertEquals(
-        !!dialog.$$('#powerwashContainer'), !shouldBeShowingESimWarning);
+        !!dialog.shadowRoot.querySelector('#powerwashContainer'),
+        !shouldBeShowingESimWarning);
     assertEquals(
-        !!dialog.$$('#powerwashContainer'), !shouldBeShowingESimWarning);
-    assertEquals(!!dialog.$$('#powerwash'), !shouldBeShowingESimWarning);
+        !!dialog.shadowRoot.querySelector('#powerwashContainer'),
+        !shouldBeShowingESimWarning);
+    assertEquals(
+        !!dialog.shadowRoot.querySelector('#powerwash'),
+        !shouldBeShowingESimWarning);
 
     assertEquals(
-        !!dialog.$$('#profilesListContainer'), shouldBeShowingESimWarning);
-    assertEquals(!!dialog.$$('#continue'), shouldBeShowingESimWarning);
+        !!dialog.shadowRoot.querySelector('#profilesListContainer'),
+        shouldBeShowingESimWarning);
+    assertEquals(
+        !!dialog.shadowRoot.querySelector('#continue'),
+        shouldBeShowingESimWarning);
   }
 
   /**
@@ -159,11 +170,12 @@ suite('DialogTests', function() {
   // propagated as expected.
   test(TestNames.PowerwashDialogAction, async () => {
     // Open powerwash dialog.
-    resetPage.$$('#powerwash').click();
+    resetPage.shadowRoot.querySelector('#powerwash').click();
     await flushAsync();
-    const dialog = resetPage.$$('os-settings-powerwash-dialog');
+    const dialog =
+        resetPage.shadowRoot.querySelector('os-settings-powerwash-dialog');
     assertOpenDialogUIState(/*shouldBeShowingESimWarning=*/ false);
-    dialog.$$('#powerwash').click();
+    dialog.shadowRoot.querySelector('#powerwash').click();
     const requestTpmFirmwareUpdate =
         await lifetimeBrowserProxy.whenCalled('factoryReset');
     assertFalse(requestTpmFirmwareUpdate);
@@ -173,7 +185,8 @@ suite('DialogTests', function() {
   // powerwash, powerwash is focused.
   test(TestNames.PowerwashFocusDeepLink, async () => {
     assertTrue(
-        await isDeepLinkFocusedForSettingId(resetPage.$$('#powerwash'), '1600'),
+        await isDeepLinkFocusedForSettingId(
+            resetPage.shadowRoot.querySelector('#powerwash'), '1600'),
         'Powerwash should be focused for settingId=1600.');
   });
 
@@ -181,7 +194,8 @@ suite('DialogTests', function() {
   // to powerwash, no focusing of powerwash occurs.
   test(TestNames.PowerwashFocusDeepLinkWrongId, async () => {
     assertFalse(
-        await isDeepLinkFocusedForSettingId(resetPage.$$('#powerwash'), '1234'),
+        await isDeepLinkFocusedForSettingId(
+            resetPage.shadowRoot.querySelector('#powerwash'), '1234'),
         'Powerwash should not be focused for settingId=1234.');
   });
 
@@ -198,9 +212,10 @@ suite('DialogTests', function() {
     await openDialogWithESimWarning();
 
     // Clicking the checkbox should enable the 'Continue' button.
-    const dialog = resetPage.$$('os-settings-powerwash-dialog');
-    const continueButton = dialog.$$('#continue');
-    dialog.$$('cr-checkbox').click();
+    const dialog =
+        resetPage.shadowRoot.querySelector('os-settings-powerwash-dialog');
+    const continueButton = dialog.shadowRoot.querySelector('#continue');
+    dialog.shadowRoot.querySelector('cr-checkbox').click();
     assertFalse(continueButton.disabled);
 
     // Click the 'Continue' button.
@@ -215,9 +230,11 @@ suite('DialogTests', function() {
       async () => {
         await openDialogWithESimWarning();
 
-        const dialog = resetPage.$$('os-settings-powerwash-dialog');
+        const dialog =
+            resetPage.shadowRoot.querySelector('os-settings-powerwash-dialog');
         const mobileSettingsLink =
-            dialog.$$('localized-link').shadowRoot.querySelector('a');
+            dialog.shadowRoot.querySelector('localized-link')
+                .shadowRoot.querySelector('a');
         assertTrue(!!mobileSettingsLink);
 
         mobileSettingsLink.click();

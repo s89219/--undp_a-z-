@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@ constexpr auto vendor_map =
         {0x27c6, "Goodix"},
         {0x2a94, "G2 Touch"},
         {0x2c68, "EMRight"},
+        {0x2d1f, "Wacom Taiwan"},
     });
 }  // namespace
 

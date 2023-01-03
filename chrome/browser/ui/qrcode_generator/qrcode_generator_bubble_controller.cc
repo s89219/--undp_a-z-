@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -87,7 +87,7 @@ void QRCodeGeneratorBubbleController::OnBackButtonPressed() {
   sharing_hub::SharingHubBubbleController* controller =
       sharing_hub::SharingHubBubbleController::CreateOrGetFromWebContents(
           &GetWebContents());
-  controller->ShowBubble();
+  controller->ShowBubble(share::ShareAttempt(&GetWebContents()));
 }
 
 void QRCodeGeneratorBubbleController::UpdateIcon() {

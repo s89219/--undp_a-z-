@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -110,7 +110,7 @@ void FakePrintJobControllerAsh::StartPrinting(
   auto print_job = std::make_unique<ash::CupsPrintJob>(
       *printer, job_id_, base::UTF16ToUTF8(document->settings().title()),
       /*total_page_number=*/1, printing::PrintJob::Source::EXTENSION,
-      extension_id, chromeos::PrintSettingsToProto(document->settings()));
+      extension_id, ash::PrintSettingsToProto(document->settings()));
   print_job_manager_->CreatePrintJob(print_job.get());
   print_job_manager_->StartPrintJob(print_job.get());
   std::string id = print_job->GetUniqueId();

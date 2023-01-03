@@ -1,17 +1,17 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/list_model/list_model.h"
 
-#include "base/bind.h"
-#include "base/callback.h"
-#include "base/mac/foundation_util.h"
-#include "base/strings/string_piece.h"
+#import "base/bind.h"
+#import "base/callback.h"
+#import "base/mac/foundation_util.h"
+#import "base/strings/string_piece.h"
 #import "ios/chrome/browser/ui/list_model/list_item.h"
-#include "testing/gtest/include/gtest/gtest.h"
-#include "testing/gtest_mac.h"
-#include "testing/platform_test.h"
+#import "testing/gtest/include/gtest/gtest.h"
+#import "testing/gtest_mac.h"
+#import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -72,7 +72,7 @@ TEST_F(ListModelTest, GenericModelBoxing) {
   ListModel<TestListItemSubclass*, ListItem*>* specificModel =
       [[ListModel alloc] init];
 
-  // |generalModel| is a superclass of |specificModel|. So specificModel can be
+  // `generalModel` is a superclass of `specificModel`. So specificModel can be
   // boxed into generalModel, but not the other way around.
   // specificModel = generalModel would not compile.
   [[maybe_unused]] ListModel<ListItem*, ListItem*>* generalModel =

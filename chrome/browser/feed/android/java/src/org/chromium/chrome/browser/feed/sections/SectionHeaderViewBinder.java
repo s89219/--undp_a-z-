@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -46,8 +46,17 @@ public class SectionHeaderViewBinder
             view.setIsLogo(model.get(SectionHeaderListProperties.IS_LOGO_KEY));
         } else if (key == SectionHeaderListProperties.EXPANDING_DRAWER_VIEW_KEY) {
             view.setOptionsPanel(model.get(SectionHeaderListProperties.EXPANDING_DRAWER_VIEW_KEY));
+        } else if (key == SectionHeaderListProperties.STICKY_HEADER_EXPANDING_DRAWER_VIEW_KEY) {
+            view.setStickyHeaderOptionsPanel(
+                    model.get(SectionHeaderListProperties.STICKY_HEADER_EXPANDING_DRAWER_VIEW_KEY));
         } else if (key == SectionHeaderListProperties.TOOLBAR_HEIGHT_PX) {
             view.setToolbarHeight(model.get(SectionHeaderListProperties.TOOLBAR_HEIGHT_PX));
+        } else if (key == SectionHeaderListProperties.STICKY_HEADER_VISIBLILITY_KEY) {
+            view.setStickyHeaderVisible(
+                    model.get(SectionHeaderListProperties.STICKY_HEADER_VISIBLILITY_KEY));
+        } else if (key == SectionHeaderListProperties.STICKY_HEADER_MUTABLE_MARGIN_KEY) {
+            view.updateStickyHeaderMargin(
+                    model.get(SectionHeaderListProperties.STICKY_HEADER_MUTABLE_MARGIN_KEY));
         }
     }
 
@@ -86,7 +95,8 @@ public class SectionHeaderViewBinder
             SectionHeaderView view, int index, int count, PropertyKey payload) {
         PropertyModel header = headers.get(0);
         if (payload == null || payload == SectionHeaderProperties.HEADER_TEXT_KEY
-                || payload == SectionHeaderProperties.UNREAD_CONTENT_KEY) {
+                || payload == SectionHeaderProperties.UNREAD_CONTENT_KEY
+                || payload == SectionHeaderProperties.BADGE_TEXT_KEY) {
             // Only use 1st tab for legacy headerText;
             view.setHeaderText(header.get(SectionHeaderProperties.HEADER_TEXT_KEY));
 
@@ -95,8 +105,18 @@ public class SectionHeaderViewBinder
                 PropertyModel tabModel = headers.get(i);
                 boolean hasUnreadContent = tabModel.get(SectionHeaderProperties.UNREAD_CONTENT_KEY);
 
-                view.setHeaderAt(
-                        tabModel.get(SectionHeaderProperties.HEADER_TEXT_KEY), hasUnreadContent, i);
+                view.setHeaderAt(tabModel.get(SectionHeaderProperties.HEADER_TEXT_KEY),
+                        hasUnreadContent, tabModel.get(SectionHeaderProperties.BADGE_TEXT_KEY),
+                        tabModel.get(SectionHeaderProperties.ANIMATION_START_KEY), i);
+            }
+        }
+        if (payload == null || payload == SectionHeaderProperties.ANIMATION_START_KEY) {
+            for (int i = index; i < index + count; i++) {
+                boolean animationStart =
+                        headers.get(i).get(SectionHeaderProperties.ANIMATION_START_KEY);
+                if (animationStart) {
+                    view.startAnimationForHeader(i);
+                }
             }
         }
         if (payload == null

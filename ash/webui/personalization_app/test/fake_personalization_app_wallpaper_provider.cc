@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,16 +12,16 @@
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom.h"
 #include "ash/webui/personalization_app/proto/backdrop_wallpaper.pb.h"
 #include "base/check_op.h"
+#include "base/memory/ref_counted_memory.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/unguessable_token.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 const char kFakeCollectionId[] = "fake_collection_id";
-const char kFakeAlbumId[] = "fake_album_id";
 }  // namespace
 
 FakePersonalizationAppWallpaperProvider::
@@ -35,6 +35,15 @@ void FakePersonalizationAppWallpaperProvider::BindInterface(
         receiver) {
   wallpaper_receiver_.reset();
   wallpaper_receiver_.Bind(std::move(receiver));
+}
+
+void FakePersonalizationAppWallpaperProvider::GetWallpaperAsJpegBytes(
+    content::WebUIDataSource::GotDataCallback callback) {
+  std::move(callback).Run(base::MakeRefCounted<base::RefCountedBytes>());
+}
+
+bool FakePersonalizationAppWallpaperProvider::IsEligibleForGooglePhotos() {
+  return true;
 }
 
 void FakePersonalizationAppWallpaperProvider::FetchCollections(
@@ -72,11 +81,6 @@ void FakePersonalizationAppWallpaperProvider::FetchGooglePhotosAlbums(
       ash::personalization_app::mojom::FetchGooglePhotosAlbumsResponse::New());
 }
 
-void FakePersonalizationAppWallpaperProvider::FetchGooglePhotosCount(
-    FetchGooglePhotosCountCallback callback) {
-  std::move(callback).Run(0);
-}
-
 void FakePersonalizationAppWallpaperProvider::FetchGooglePhotosEnabled(
     FetchGooglePhotosEnabledCallback callback) {
   std::move(callback).Run(
@@ -92,6 +96,11 @@ void FakePersonalizationAppWallpaperProvider::FetchGooglePhotosPhotos(
       ash::personalization_app::mojom::FetchGooglePhotosPhotosResponse::New());
 }
 
+void FakePersonalizationAppWallpaperProvider::GetDefaultImageThumbnail(
+    GetDefaultImageThumbnailCallback callback) {
+  std::move(callback).Run(GURL());
+}
+
 void FakePersonalizationAppWallpaperProvider::GetLocalImages(
     GetLocalImagesCallback callback) {
   std::move(callback).Run({});
@@ -100,7 +109,7 @@ void FakePersonalizationAppWallpaperProvider::GetLocalImages(
 void FakePersonalizationAppWallpaperProvider::GetLocalImageThumbnail(
     const base::FilePath& path,
     GetLocalImageThumbnailCallback callback) {
-  std::move(callback).Run(std::string());
+  std::move(callback).Run(GURL());
 }
 
 void FakePersonalizationAppWallpaperProvider::SetWallpaperObserver(
@@ -111,6 +120,11 @@ void FakePersonalizationAppWallpaperProvider::SelectWallpaper(
     uint64_t image_asset_id,
     bool preview_mode,
     SelectWallpaperCallback callback) {
+  std::move(callback).Run(/*success=*/true);
+}
+
+void FakePersonalizationAppWallpaperProvider::SelectDefaultImage(
+    SelectDefaultImageCallback callback) {
   std::move(callback).Run(/*success=*/true);
 }
 
@@ -125,13 +139,14 @@ void FakePersonalizationAppWallpaperProvider::SelectGooglePhotosPhoto(
 void FakePersonalizationAppWallpaperProvider::SelectGooglePhotosAlbum(
     const std::string& id,
     SelectGooglePhotosAlbumCallback callback) {
-  std::move(callback).Run(/*success=*/true);
+  std::move(callback).Run(mojom::SetDailyRefreshResponse::New(
+      /*success=*/false, /*force_refresh=*/false));
 }
 
 void FakePersonalizationAppWallpaperProvider::
     GetGooglePhotosDailyRefreshAlbumId(
         GetGooglePhotosDailyRefreshAlbumIdCallback callback) {
-  std::move(callback).Run(kFakeAlbumId);
+  std::move(callback).Run("");
 }
 
 void FakePersonalizationAppWallpaperProvider::SelectLocalImage(
@@ -148,7 +163,8 @@ void FakePersonalizationAppWallpaperProvider::SetCurrentWallpaperLayout(
 }
 
 void FakePersonalizationAppWallpaperProvider::SetDailyRefreshCollectionId(
-    const std::string& collection_id) {
+    const std::string& collection_id,
+    SetDailyRefreshCollectionIdCallback callback) {
   return;
 }
 
@@ -175,5 +191,4 @@ void FakePersonalizationAppWallpaperProvider::CancelPreviewWallpaper() {
   return;
 }
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app

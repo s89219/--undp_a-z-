@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,21 +15,22 @@
 #include "components/viz/common/quads/picture_draw_quad.h"
 #include "components/viz/common/quads/shared_element_draw_quad.h"
 #include "components/viz/common/quads/solid_color_draw_quad.h"
-#include "components/viz/common/quads/stream_video_draw_quad.h"
 #include "components/viz/common/quads/surface_draw_quad.h"
 #include "components/viz/common/quads/texture_draw_quad.h"
 #include "components/viz/common/quads/tile_draw_quad.h"
 #include "components/viz/common/quads/video_hole_draw_quad.h"
 #include "components/viz/common/quads/yuv_video_draw_quad.h"
 #include "components/viz/common/resources/resource_id.h"
-#include "components/viz/common/shared_element_resource_id.h"
+#include "components/viz/common/view_transition_element_resource_id.h"
 #include "services/viz/public/cpp/compositing/filter_operation_mojom_traits.h"
 #include "services/viz/public/cpp/compositing/filter_operations_mojom_traits.h"
-#include "services/viz/public/cpp/compositing/shared_element_resource_id_mojom_traits.h"
 #include "services/viz/public/cpp/compositing/shared_quad_state_mojom_traits.h"
 #include "services/viz/public/cpp/compositing/surface_range_mojom_traits.h"
+#include "services/viz/public/cpp/compositing/view_transition_element_resource_id_mojom_traits.h"
 #include "services/viz/public/mojom/compositing/quads.mojom-shared.h"
+#include "skia/public/mojom/skcolor4f_mojom_traits.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/geometry/mojom/geometry_mojom_traits.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/hdr_metadata.h"
@@ -126,8 +127,6 @@ struct UnionTraits<viz::mojom::DrawQuadStateDataView, viz::DrawQuad> {
         return viz::mojom::DrawQuadStateDataView::Tag::kRenderPassQuadState;
       case viz::DrawQuad::Material::kSolidColor:
         return viz::mojom::DrawQuadStateDataView::Tag::kSolidColorQuadState;
-      case viz::DrawQuad::Material::kStreamVideoContent:
-        return viz::mojom::DrawQuadStateDataView::Tag::kStreamVideoQuadState;
       case viz::DrawQuad::Material::kSurfaceContent:
         return viz::mojom::DrawQuadStateDataView::Tag::kSurfaceQuadState;
       case viz::DrawQuad::Material::kTextureContent:
@@ -204,8 +203,6 @@ struct UnionTraits<viz::mojom::DrawQuadStateDataView, viz::DrawQuad> {
         return data.ReadTextureQuadState(out);
       case viz::mojom::DrawQuadStateDataView::Tag::kTileQuadState:
         return data.ReadTileQuadState(out);
-      case viz::mojom::DrawQuadStateDataView::Tag::kStreamVideoQuadState:
-        return data.ReadStreamVideoQuadState(out);
       case viz::mojom::DrawQuadStateDataView::Tag::kVideoHoleQuadState:
         return data.ReadVideoHoleQuadState(out);
       case viz::mojom::DrawQuadStateDataView::Tag::kYuvVideoQuadState:
@@ -220,7 +217,7 @@ struct UnionTraits<viz::mojom::DrawQuadStateDataView, viz::DrawQuad> {
 
 template <>
 struct StructTraits<viz::mojom::SharedElementQuadStateDataView, viz::DrawQuad> {
-  static const viz::SharedElementResourceId& resource_id(
+  static const viz::ViewTransitionElementResourceId& resource_id(
       const viz::DrawQuad& input) {
     const viz::SharedElementDrawQuad* quad =
         viz::SharedElementDrawQuad::MaterialCast(&input);
@@ -246,7 +243,7 @@ struct StructTraits<viz::mojom::VideoHoleQuadStateDataView, viz::DrawQuad> {
 
 template <>
 struct StructTraits<viz::mojom::DebugBorderQuadStateDataView, viz::DrawQuad> {
-  static uint32_t color(const viz::DrawQuad& input) {
+  static SkColor4f color(const viz::DrawQuad& input) {
     const viz::DebugBorderDrawQuad* quad =
         viz::DebugBorderDrawQuad::MaterialCast(&input);
     return quad->color;
@@ -333,7 +330,7 @@ struct StructTraits<viz::mojom::CompositorRenderPassQuadStateDataView,
 
 template <>
 struct StructTraits<viz::mojom::SolidColorQuadStateDataView, viz::DrawQuad> {
-  static uint32_t color(const viz::DrawQuad& input) {
+  static SkColor4f color(const viz::DrawQuad& input) {
     const viz::SolidColorDrawQuad* quad =
         viz::SolidColorDrawQuad::MaterialCast(&input);
     return quad->color;
@@ -350,36 +347,6 @@ struct StructTraits<viz::mojom::SolidColorQuadStateDataView, viz::DrawQuad> {
 };
 
 template <>
-struct StructTraits<viz::mojom::StreamVideoQuadStateDataView, viz::DrawQuad> {
-  static viz::ResourceId resource_id(const viz::DrawQuad& input) {
-    const viz::StreamVideoDrawQuad* quad =
-        viz::StreamVideoDrawQuad::MaterialCast(&input);
-    return quad->resources.ids[viz::StreamVideoDrawQuad::kResourceIdIndex];
-  }
-
-  static const gfx::Size& resource_size_in_pixels(const viz::DrawQuad& input) {
-    const viz::StreamVideoDrawQuad* quad =
-        viz::StreamVideoDrawQuad::MaterialCast(&input);
-    return quad->overlay_resources.size_in_pixels;
-  }
-
-  static const gfx::PointF& uv_top_left(const viz::DrawQuad& input) {
-    const viz::StreamVideoDrawQuad* quad =
-        viz::StreamVideoDrawQuad::MaterialCast(&input);
-    return quad->uv_top_left;
-  }
-
-  static const gfx::PointF& uv_bottom_right(const viz::DrawQuad& input) {
-    const viz::StreamVideoDrawQuad* quad =
-        viz::StreamVideoDrawQuad::MaterialCast(&input);
-    return quad->uv_bottom_right;
-  }
-
-  static bool Read(viz::mojom::StreamVideoQuadStateDataView data,
-                   viz::DrawQuad* out);
-};
-
-template <>
 struct StructTraits<viz::mojom::SurfaceQuadStateDataView, viz::DrawQuad> {
   static const viz::SurfaceRange& surface_range(const viz::DrawQuad& input) {
     const viz::SurfaceDrawQuad* quad =
@@ -387,7 +354,7 @@ struct StructTraits<viz::mojom::SurfaceQuadStateDataView, viz::DrawQuad> {
     return quad->surface_range;
   }
 
-  static uint32_t default_background_color(const viz::DrawQuad& input) {
+  static const SkColor4f default_background_color(const viz::DrawQuad& input) {
     const viz::SurfaceDrawQuad* quad =
         viz::SurfaceDrawQuad::MaterialCast(&input);
     return quad->default_background_color;
@@ -447,7 +414,7 @@ struct StructTraits<viz::mojom::TextureQuadStateDataView, viz::DrawQuad> {
     return quad->uv_bottom_right;
   }
 
-  static uint32_t background_color(const viz::DrawQuad& input) {
+  static SkColor4f background_color(const viz::DrawQuad& input) {
     const viz::TextureDrawQuad* quad =
         viz::TextureDrawQuad::MaterialCast(&input);
     return quad->background_color;
@@ -477,10 +444,29 @@ struct StructTraits<viz::mojom::TextureQuadStateDataView, viz::DrawQuad> {
     return quad->secure_output_only;
   }
 
+  static bool is_stream_video(const viz::DrawQuad& input) {
+    const viz::TextureDrawQuad* quad =
+        viz::TextureDrawQuad::MaterialCast(&input);
+    return quad->is_stream_video;
+  }
+
   static bool is_video_frame(const viz::DrawQuad& input) {
     const viz::TextureDrawQuad* quad =
         viz::TextureDrawQuad::MaterialCast(&input);
     return quad->is_video_frame;
+  }
+
+  static gfx::HDRMode hdr_mode(const viz::DrawQuad& input) {
+    const viz::TextureDrawQuad* quad =
+        viz::TextureDrawQuad::MaterialCast(&input);
+    return quad->hdr_mode;
+  }
+
+  static const absl::optional<gfx::HDRMetadata> hdr_metadata(
+      const viz::DrawQuad& input) {
+    const viz::TextureDrawQuad* quad =
+        viz::TextureDrawQuad::MaterialCast(&input);
+    return quad->hdr_metadata;
   }
 
   static gfx::ProtectedVideoType protected_video_type(
@@ -545,28 +531,28 @@ struct StructTraits<viz::mojom::TileQuadStateDataView, viz::DrawQuad> {
 
 template <>
 struct StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad> {
-  static const gfx::RectF& ya_tex_coord_rect(const viz::DrawQuad& input) {
+  static const gfx::Size& coded_size(const viz::DrawQuad& input) {
     const viz::YUVVideoDrawQuad* quad =
         viz::YUVVideoDrawQuad::MaterialCast(&input);
-    return quad->ya_tex_coord_rect;
+    return quad->coded_size;
   }
 
-  static const gfx::RectF& uv_tex_coord_rect(const viz::DrawQuad& input) {
+  static const gfx::Rect& video_visible_rect(const viz::DrawQuad& input) {
     const viz::YUVVideoDrawQuad* quad =
         viz::YUVVideoDrawQuad::MaterialCast(&input);
-    return quad->uv_tex_coord_rect;
+    return quad->video_visible_rect;
   }
 
-  static const gfx::Size& ya_tex_size(const viz::DrawQuad& input) {
+  static uint8_t u_scale(const viz::DrawQuad& input) {
     const viz::YUVVideoDrawQuad* quad =
         viz::YUVVideoDrawQuad::MaterialCast(&input);
-    return quad->ya_tex_size;
+    return quad->u_scale;
   }
 
-  static const gfx::Size& uv_tex_size(const viz::DrawQuad& input) {
+  static uint8_t v_scale(const viz::DrawQuad& input) {
     const viz::YUVVideoDrawQuad* quad =
         viz::YUVVideoDrawQuad::MaterialCast(&input);
-    return quad->uv_tex_size;
+    return quad->v_scale;
   }
 
   static viz::ResourceId y_plane_resource_id(const viz::DrawQuad& input) {
@@ -622,7 +608,8 @@ struct StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad> {
     return quad->protected_video_type;
   }
 
-  static const gfx::HDRMetadata& hdr_metadata(const viz::DrawQuad& input) {
+  static const absl::optional<gfx::HDRMetadata> hdr_metadata(
+      const viz::DrawQuad& input) {
     const viz::YUVVideoDrawQuad* quad =
         viz::YUVVideoDrawQuad::MaterialCast(&input);
     return quad->hdr_metadata;
@@ -640,8 +627,8 @@ struct StructTraits<viz::mojom::YUVVideoQuadStateDataView, viz::DrawQuad> {
 };
 
 struct DrawQuadWithSharedQuadState {
-  const viz::DrawQuad* quad;
-  const viz::SharedQuadState* shared_quad_state;
+  raw_ptr<const viz::DrawQuad> quad;
+  raw_ptr<const viz::SharedQuadState, DanglingUntriaged> shared_quad_state;
 };
 
 template <>
@@ -660,7 +647,7 @@ struct StructTraits<viz::mojom::DrawQuadDataView, DrawQuadWithSharedQuadState> {
   }
 
   static OptSharedQuadState sqs(const DrawQuadWithSharedQuadState& input) {
-    return {input.shared_quad_state};
+    return {input.shared_quad_state.get()};
   }
 
   static const viz::DrawQuad& draw_quad_state(

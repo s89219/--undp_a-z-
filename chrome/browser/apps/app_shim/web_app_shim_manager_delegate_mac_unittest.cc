@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,11 +11,11 @@
 #include "base/test/scoped_feature_list.h"
 #include "chrome/browser/apps/app_service/app_launch_params.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/web_applications/mojom/user_display_mode.mojom.h"
 #include "chrome/browser/web_applications/test/fake_os_integration_manager.h"
 #include "chrome/browser/web_applications/test/fake_web_app_provider.h"
 #include "chrome/browser/web_applications/test/web_app_install_test_utils.h"
 #include "chrome/browser/web_applications/test/web_app_test.h"
-#include "chrome/browser/web_applications/user_display_mode.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -141,10 +141,10 @@ class WebAppShimManagerDelegateTest : public WebAppTest {
       const absl::optional<GURL>& url_handler_launch_url,
       const absl::optional<GURL>& protocol_handler_launch_url,
       const GURL& override_url) {
-    apps::AppLaunchParams params(
-        app_id_, apps::mojom::LaunchContainer::kLaunchContainerWindow,
-        WindowOpenDisposition::NEW_WINDOW,
-        apps::mojom::LaunchSource::kFromCommandLine);
+    apps::AppLaunchParams params(app_id_,
+                                 apps::LaunchContainer::kLaunchContainerWindow,
+                                 WindowOpenDisposition::NEW_WINDOW,
+                                 apps::LaunchSource::kFromCommandLine);
 
     params.launch_files = launch_files;
     params.url_handler_launch_url = url_handler_launch_url;
@@ -213,8 +213,7 @@ TEST_F(WebAppShimManagerDelegateTest, LaunchApp_ProtocolWebPrefix) {
   apps::AppLaunchParams expected_results =
       CreateLaunchParams(std::vector<base::FilePath>(), absl::nullopt,
                          protocol_handler_launch_url, GURL());
-  expected_results.launch_source =
-      apps::mojom::LaunchSource::kFromProtocolHandler;
+  expected_results.launch_source = apps::LaunchSource::kFromProtocolHandler;
 
   std::unique_ptr<MockDelegate> delegate = std::make_unique<MockDelegate>();
   WebAppShimManagerDelegate shim_manager(std::move(delegate));
@@ -236,8 +235,7 @@ TEST_F(WebAppShimManagerDelegateTest, LaunchApp_ProtocolMailTo) {
   apps::AppLaunchParams expected_results =
       CreateLaunchParams(std::vector<base::FilePath>(), absl::nullopt,
                          protocol_handler_launch_url, GURL());
-  expected_results.launch_source =
-      apps::mojom::LaunchSource::kFromProtocolHandler;
+  expected_results.launch_source = apps::LaunchSource::kFromProtocolHandler;
 
   std::unique_ptr<MockDelegate> delegate = std::make_unique<MockDelegate>();
   WebAppShimManagerDelegate shim_manager(std::move(delegate));
@@ -382,8 +380,7 @@ TEST_F(WebAppShimManagerDelegateTest, LaunchApp_ProtocolAndFileHandlerMixed) {
 
   apps::AppLaunchParams expected_results = CreateLaunchParams(
       {}, absl::nullopt, protocol_handler_launch_url, GURL());
-  expected_results.launch_source =
-      apps::mojom::LaunchSource::kFromProtocolHandler;
+  expected_results.launch_source = apps::LaunchSource::kFromProtocolHandler;
 
   std::unique_ptr<MockDelegate> delegate = std::make_unique<MockDelegate>();
   WebAppShimManagerDelegate shim_manager(std::move(delegate));
@@ -409,8 +406,7 @@ TEST_F(WebAppShimManagerDelegateTest,
 
   apps::AppLaunchParams expected_results = CreateLaunchParams(
       {}, absl::nullopt, protocol_handler_launch_url, GURL());
-  expected_results.launch_source =
-      apps::mojom::LaunchSource::kFromProtocolHandler;
+  expected_results.launch_source = apps::LaunchSource::kFromProtocolHandler;
 
   std::unique_ptr<MockDelegate> delegate = std::make_unique<MockDelegate>();
   WebAppShimManagerDelegate shim_manager(std::move(delegate));
@@ -471,7 +467,8 @@ TEST_F(WebAppShimManagerDelegateTest, GetAppShortcutsMenuItemInfos) {
     web_app_info->title = u"WebAppTestWithShortcutMenuItems";
     web_app_info->scope = web_app_info->start_url;
     web_app_info->description = web_app_info->title;
-    web_app_info->user_display_mode = web_app::UserDisplayMode::kStandalone;
+    web_app_info->user_display_mode =
+        web_app::mojom::UserDisplayMode::kStandalone;
 
     shortcut_info1.name = u"shortcut_info1";
     shortcut_info1.url = GURL(".");

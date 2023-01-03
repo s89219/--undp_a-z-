@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,8 +37,13 @@ PasswordChangeSuccessTrackerFactory::GetForBrowserContext(
 
 KeyedService* PasswordChangeSuccessTrackerFactory::BuildServiceInstanceFor(
     content::BrowserContext* browser_context) const {
-  return new PasswordChangeSuccessTrackerImpl(
+  auto* tracker = new PasswordChangeSuccessTrackerImpl(
       user_prefs::UserPrefs::Get(browser_context));
+  tracker->AddMetricsRecorder(
+      std::make_unique<PasswordChangeMetricsRecorderUma>());
+  tracker->AddMetricsRecorder(
+      std::make_unique<PasswordChangeMetricsRecorderUkm>());
+  return tracker;
 }
 
 }  // namespace password_manager

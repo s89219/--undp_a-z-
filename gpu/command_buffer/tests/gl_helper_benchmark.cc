@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,16 +73,8 @@ class GLHelperBenchmark : public testing::Test {
 
     context_ = std::make_unique<GLInProcessContext>();
     auto result = context_->Initialize(
-        viz::TestGpuServiceHolder::GetInstance()->task_executor(),
-        nullptr,            /* surface */
-        true,               /* offscreen */
-        kNullSurfaceHandle, /* window */
-        attributes, SharedMemoryLimits(),
-        nullptr, /* gpu_memory_buffer_manager */
-        nullptr, /* image_factory */
-        nullptr, /* gpu_task_helper */
-        nullptr, /* display_compositor_memory_and_task_controller */
-        base::ThreadTaskRunnerHandle::Get());
+        viz::TestGpuServiceHolder::GetInstance()->task_executor(), attributes,
+        SharedMemoryLimits());
     DCHECK_EQ(result, ContextResult::kSuccess);
     gl_ = context_->GetImplementation();
     ContextSupport* support = context_->GetImplementation();

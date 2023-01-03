@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,7 @@
 #include "ash/components/arc/arc_browser_context_keyed_service_factory_base.h"
 #include "ash/components/arc/session/arc_bridge_service.h"
 #include "base/no_destructor.h"
-#include "third_party/blink/public/mojom/digital_goods/digital_goods.mojom.h"
+#include "components/digital_goods/mojom/digital_goods.mojom.h"
 
 namespace arc {
 namespace {

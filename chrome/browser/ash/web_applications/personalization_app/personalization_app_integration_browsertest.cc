@@ -1,8 +1,7 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ash/constants/ash_features.h"
 #include "ash/public/cpp/test/shell_test_api.h"
 #include "ash/public/cpp/wallpaper/wallpaper_controller.h"
 #include "ash/public/cpp/wallpaper/wallpaper_controller_observer.h"
@@ -23,11 +22,11 @@
 #include "cc/test/pixel_comparator.h"
 #include "cc/test/pixel_test_utils.h"
 #include "chrome/browser/apps/app_service/app_launch_params.h"
-#include "chrome/browser/ash/web_applications/system_web_app_integration_test.h"
+#include "chrome/browser/ash/system_web_apps/test_support/system_web_app_integration_test.h"
+#include "chrome/browser/ash/system_web_apps/types/system_web_app_type.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_test.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/web_applications/system_web_apps/system_web_app_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chromeos/ui/base/window_properties.h"
 #include "components/user_manager/user_manager.h"
@@ -46,8 +45,7 @@
 #include "ui/snapshot/snapshot_aura.h"
 #include "ui/views/widget/widget.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 
@@ -167,8 +165,8 @@ void CallJavascriptAndWaitForPropertyChange(content::WebContents* web_contents,
   WindowPropertyWaiter<bool> window_property_waiter(
       web_contents->GetTopLevelNativeWindow(),
       chromeos::kWindowManagerManagesOpacityKey);
-  web_contents->GetMainFrame()->ExecuteJavaScriptForTests(javascript,
-                                                          base::DoNothing());
+  web_contents->GetPrimaryMainFrame()->ExecuteJavaScriptForTests(
+      javascript, base::DoNothing());
   window_property_waiter.Wait();
 }
 
@@ -191,10 +189,10 @@ class WallpaperChangeWaiter : public ash::WallpaperControllerObserver {
 
     wallpaper_controller_observation_.Observe(ash::WallpaperController::Get());
 
-    ash::WallpaperController::Get()->SetCustomWallpaper(
+    ash::WallpaperController::Get()->SetDecodedCustomWallpaper(
         user_manager::UserManager::Get()->GetActiveUser()->GetAccountId(),
-        /*file_name=*/"fakename", ash::WALLPAPER_LAYOUT_CENTER_CROPPED, image,
-        /*preview_mode=*/true);
+        /*file_name=*/"fakename", ash::WALLPAPER_LAYOUT_CENTER_CROPPED,
+        /*preview_mode=*/true, base::DoNothing(), /*file_path=*/"", image);
 
     loop.Run();
   }
@@ -219,10 +217,7 @@ class WallpaperChangeWaiter : public ash::WallpaperControllerObserver {
 
 class PersonalizationAppIntegrationTest : public SystemWebAppIntegrationTest {
  public:
-  PersonalizationAppIntegrationTest() {
-    scoped_feature_list_.InitAndEnableFeature(
-        chromeos::features::kWallpaperWebUI);
-  }
+  PersonalizationAppIntegrationTest() = default;
 
   // SystemWebAppIntegrationTest:
   void SetUp() override {
@@ -234,7 +229,7 @@ class PersonalizationAppIntegrationTest : public SystemWebAppIntegrationTest {
   // the app.
   content::WebContents* LaunchAppAtWallpaperSubpage(Browser** browser) {
     apps::AppLaunchParams launch_params =
-        LaunchParamsForApp(web_app::SystemAppType::PERSONALIZATION);
+        LaunchParamsForApp(ash::SystemWebAppType::PERSONALIZATION);
     launch_params.override_url =
         GURL(std::string(kChromeUIPersonalizationAppURL) +
              kWallpaperSubpageRelativeUrl);
@@ -249,8 +244,9 @@ class PersonalizationAppIntegrationTest : public SystemWebAppIntegrationTest {
     EXPECT_FALSE(widget->IsFullscreen());
 
     FullscreenNotificationObserver waiter(browser);
-    web_contents->GetMainFrame()->ExecuteJavaScriptWithUserGestureForTests(
-        u"personalizationTestApi.enterFullscreen();", base::NullCallback());
+    web_contents->GetPrimaryMainFrame()
+        ->ExecuteJavaScriptWithUserGestureForTests(
+            u"personalizationTestApi.enterFullscreen();", base::NullCallback());
     waiter.Wait();
 
     // After the full screen change is observed, there is a significant delay
@@ -259,7 +255,7 @@ class PersonalizationAppIntegrationTest : public SystemWebAppIntegrationTest {
     // allows shelf to hide, app list to hide, and wallpaper to change.
     for (int i = 0; i < 3; i++) {
       base::RunLoop loop;
-      web_contents->GetMainFrame()->InsertVisualStateCallback(
+      web_contents->GetPrimaryMainFrame()->InsertVisualStateCallback(
           base::BindLambdaForTesting([&loop](bool visual_state_updated) {
             ASSERT_TRUE(visual_state_updated);
             loop.Quit();
@@ -269,20 +265,15 @@ class PersonalizationAppIntegrationTest : public SystemWebAppIntegrationTest {
 
     EXPECT_TRUE(widget->IsFullscreen());
   }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
 };
 
 // Test that the Personalization App installs correctly.
 IN_PROC_BROWSER_TEST_P(PersonalizationAppIntegrationTest,
                        PersonalizationAppInstalls) {
   const GURL url(kChromeUIPersonalizationAppURL);
-  std::string appTitle = (chromeos::features::IsPersonalizationHubEnabled())
-                             ? "Personalization"
-                             : "Wallpaper";
+  std::string appTitle = "Wallpaper & style";
   EXPECT_NO_FATAL_FAILURE(ExpectSystemWebAppValid(
-      web_app::SystemAppType::PERSONALIZATION, url, appTitle));
+      ash::SystemWebAppType::PERSONALIZATION, url, appTitle));
 }
 
 // Test that the widget is modified to be transparent.
@@ -381,8 +372,7 @@ IN_PROC_BROWSER_TEST_P(PersonalizationAppIntegrationTest,
   loop.Run();
 }
 
-INSTANTIATE_SYSTEM_WEB_APP_MANAGER_TEST_SUITE_GUEST_SESSION_P(
+INSTANTIATE_SYSTEM_WEB_APP_MANAGER_TEST_SUITE_REGULAR_PROFILE_P(
     PersonalizationAppIntegrationTest);
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app

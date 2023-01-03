@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -80,11 +80,11 @@ void BreadcrumbManagerBrowserAgent::OnTabStripModelChanged(
       if (selection.active_tab_changed()) {
         absl::optional<int> old_tab_id =
             selection.old_contents
-                ? absl::optional<int>(GetTabId(selection.old_contents))
+                ? absl::make_optional(GetTabId(selection.old_contents))
                 : absl::nullopt;
         absl::optional<int> new_tab_id =
             selection.new_contents
-                ? absl::optional<int>(GetTabId(selection.new_contents))
+                ? absl::make_optional(GetTabId(selection.new_contents))
                 : absl::nullopt;
         LogActiveTabChanged(old_tab_id, new_tab_id,
                             selection.new_model.active());

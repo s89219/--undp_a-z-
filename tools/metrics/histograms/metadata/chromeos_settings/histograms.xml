@@ -1,5 +1,5 @@
 <!--
-Copyright 2022 The Chromium Authors. All rights reserved.
+Copyright 2022 The Chromium Authors
 Use of this source code is governed by a BSD-style license that can be
 found in the LICENSE file.
 -->
@@ -24,7 +24,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 
 <histogram
     name="ChromeOS.Settings.Accessibility.FullscreenMagnifierFocusFollowing"
-    enum="BooleanToggled" expires_after="2022-10-29">
+    enum="BooleanToggled" expires_after="2023-10-16">
   <owner>josiahk@chromium.org</owner>
   <owner>chromium-accessibility@chromium.org</owner>
   <summary>
@@ -35,7 +35,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 
 <histogram
     name="ChromeOS.Settings.Accessibility.FullscreenMagnifierMouseFollowingMode"
-    enum="MagnifierMouseFollowingMode" expires_after="2022-12-13">
+    enum="MagnifierMouseFollowingMode" expires_after="2023-10-16">
   <owner>josiahk@chromium.org</owner>
   <owner>chromium-accessibility@chromium.org</owner>
   <summary>
@@ -46,7 +46,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.Apps.DoNotDisturbOnOff"
-    enum="BooleanToggled" expires_after="2022-09-01">
+    enum="BooleanToggled" expires_after="2023-06-04">
   <owner>hsuregan@chromium.org</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <summary>
@@ -65,17 +65,42 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.BlurredWindowDuration" units="ms"
-    expires_after="2022-09-01">
-  <owner>khorimoto@chromium.org</owner>
-  <owner>cros-customization@google.com</owner>
+    expires_after="2023-08-01">
+  <owner>wesokuhara@google.com</owner>
+  <owner>xiaohuic@chromium.org</owner>
+  <owner>cros-settings@google.com</owner>
   <summary>
     The amount of time between when the settings window becomes blurred and when
     the user focuses it again.
   </summary>
 </histogram>
 
+<histogram name="ChromeOS.Settings.Device.KeyboardAutoRepeatEnabled"
+    enum="BooleanEnabled" expires_after="2023-11-01">
+  <owner>ckincaid@chromium.org</owner>
+  <owner>dmblack@google.com</owner>
+  <owner>cros-settings@google.com</owner>
+  <summary>
+    Records value of keyboard auto-repeat Enabled setting at session startup.
+  </summary>
+</histogram>
+
+<histogram name="ChromeOS.Settings.Device.KeyboardAutoRepeat{Setting}"
+    units="ms" expires_after="2023-11-01">
+  <owner>ckincaid@chromium.org</owner>
+  <owner>dmblack@google.com</owner>
+  <owner>cros-settings@google.com</owner>
+  <summary>
+    Records value of keyboard auto-repeat {Setting} setting at session startup.
+  </summary>
+  <token key="Setting">
+    <variant name="Delay"/>
+    <variant name="Interval"/>
+  </token>
+</histogram>
+
 <histogram name="ChromeOS.Settings.Device.KeyboardFunctionKeys"
-    enum="BooleanToggled" expires_after="2023-03-15">
+    enum="BooleanToggled" expires_after="2023-05-14">
   <owner>jimmyxgong@chromium.org</owner>
   <owner>zentaro@chromium.org</owner>
   <owner>cros-peripherals@google.com</owner>
@@ -86,7 +111,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.Device.TouchpadSpeedValue"
-    enum="TouchpadSensitivity" expires_after="2023-04-17">
+    enum="TouchpadSensitivity" expires_after="2023-06-25">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -97,7 +122,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.Inputs.ShortcutReminderDismissed"
-    enum="SettingsInputsShortcutReminderState" expires_after="2022-10-12">
+    enum="SettingsInputsShortcutReminderState" expires_after="2023-06-25">
   <owner>mlcui@google.com</owner>
   <owner>cros-borders@google.com</owner>
   <summary>
@@ -108,7 +133,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.Languages.Interaction"
-    enum="SettingsLanguagesPageInteraction" expires_after="2022-10-12">
+    enum="SettingsLanguagesPageInteraction" expires_after="2023-06-18">
   <owner>myy@chromium.org</owner>
   <owner>essential-inputs-team@google.com</owner>
   <summary>
@@ -137,7 +162,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram base="true" name="ChromeOS.Settings.Languages.Toggle"
-    enum="BooleanToggled" expires_after="2022-10-12">
+    enum="BooleanToggled" expires_after="2023-06-18">
 <!-- Name completed by histogram_suffixes name="SettingsLanguagesPageToggle" -->
 
   <owner>myy@chromium.org</owner>
@@ -153,8 +178,8 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
-    The amount of time between the render frame host StartProvisionalLoad event
-    and the render frame DocumentOnLoadCompleted event for the Chrome OS
+    The amount of time between the RenderFrameHost StartProvisionalLoad event
+    and the RenderFrameHost DocumentOnLoadCompleted event for the Chrome OS
     settings page.
   </summary>
 </histogram>
@@ -164,13 +189,13 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
-    The amount of time between the render frame host StartProvisionalLoad and
+    The amount of time between the RenderFrameHost StartProvisionalLoad and
     DidFinishDocumentLoad events for the Chrome OS settings page.
   </summary>
 </histogram>
 
 <histogram name="ChromeOS.Settings.NotificationPage.PermissionOnOff"
-    enum="BooleanToggled" expires_after="2022-09-01">
+    enum="BooleanToggled" expires_after="2023-06-04">
   <owner>hsuregan@chromium.org</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <summary>
@@ -190,7 +215,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram base="true" name="ChromeOS.Settings.NumClicksUntilChange"
-    units="clicks" expires_after="2022-09-01">
+    units="clicks" expires_after="2023-06-04">
 <!-- Name completed by histogram_suffixes name="OsSettingsChangeType" -->
 
   <owner>khorimoto@chromium.org</owner>
@@ -199,7 +224,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram base="true" name="ChromeOS.Settings.NumNavigationsUntilChange"
-    units="navigations" expires_after="2022-09-01">
+    units="navigations" expires_after="2023-05-07">
 <!-- Name completed by histogram_suffixes name="OsSettingsChangeType" -->
 
   <owner>khorimoto@chromium.org</owner>
@@ -208,7 +233,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram base="true" name="ChromeOS.Settings.NumSearchesUntilChange"
-    units="searches" expires_after="2022-09-01">
+    units="searches" expires_after="2023-06-04">
 <!-- Name completed by histogram_suffixes name="OsSettingsChangeType" -->
 
   <owner>khorimoto@chromium.org</owner>
@@ -217,7 +242,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.NumSearchResultsFetched" units="results"
-    expires_after="2023-04-17">
+    expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -228,6 +253,9 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 
 <histogram name="ChromeOS.Settings.OsBannerInteraction"
     enum="CrosSettingsOsBannerInteraction" expires_after="2020-12-20">
+  <obsolete>
+    Removed as of 07/2022 (crbug/1231142).
+  </obsolete>
   <owner>jamescook@chromium.org</owner>
   <owner>cros-system-services@google.com</owner>
   <summary>
@@ -237,8 +265,8 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
   </summary>
 </histogram>
 
-<histogram name="ChromeOS.Settings.PathVisited" enum="WebUISettingsPathHashes"
-    expires_after="2023-04-17">
+<histogram name="ChromeOS.Settings.PathVisited"
+    enum="WebUIOSSettingsPathHashes" expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -270,10 +298,10 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.SearchLatency" units="ms"
-    expires_after="2022-09-01">
-  <owner>khorimoto@chromium.org</owner>
-  <owner>hsuregan@chromium.org</owner>
-  <owner>cros-customization@google.com</owner>
+    expires_after="2023-08-01">
+  <owner>wesokuhara@google.com</owner>
+  <owner>xiaohuic@chromium.org</owner>
+  <owner>cros-settings@google.com</owner>
   <summary>
     The time fetching search results from the Settings Search Mojo API. Recorded
     when getSearchHandler().search() completes.
@@ -281,7 +309,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.SearchRequests"
-    enum="OsSettingSearchRequestTypes" expires_after="2023-04-17">
+    enum="OsSettingSearchRequestTypes" expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -303,8 +331,18 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
   </summary>
 </histogram>
 
+<histogram name="ChromeOS.Settings.SearchResultPersonalizationSelected"
+    enum="PersonalizationSearchConceptId" expires_after="2023-06-25">
+  <owner>cowmoo@google.com</owner>
+  <owner>cros-settings@google.com</owner>
+  <summary>
+    External personalization search results clicked by user in the OS settings
+    search box.
+  </summary>
+</histogram>
+
 <histogram name="ChromeOS.Settings.SearchResultSectionSelected"
-    enum="OsSettingsSection" expires_after="2023-04-17">
+    enum="OsSettingsSection" expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -322,7 +360,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.SearchResultSubpageSelected"
-    enum="OsSettingsSubpage" expires_after="2023-04-17">
+    enum="OsSettingsSubpage" expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -331,7 +369,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.SearchResultTypeSelected"
-    enum="OsSettingsSearchResultType" expires_after="2023-04-17">
+    enum="OsSettingsSearchResultType" expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -340,10 +378,10 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.SettingChanged" enum="OsSetting"
-    expires_after="2022-09-01">
-  <owner>khorimoto@chromium.org</owner>
-  <owner>hsuregan@chromium.org</owner>
-  <owner>cros-customization@google.com</owner>
+    expires_after="2023-08-01">
+  <owner>wesokuhara@google.com</owner>
+  <owner>xiaohuic@chromium.org</owner>
+  <owner>cros-settings@google.com</owner>
   <summary>
     Records the the setting id when the user changes a setting. Note that some
     of the values of the OsSetting enum aren't strictly settings (such as
@@ -353,7 +391,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram base="true" name="ChromeOS.Settings.TimeUntilChange" units="ms"
-    expires_after="2022-09-01">
+    expires_after="2023-06-04">
 <!-- Name completed by histogram_suffixes name="OsSettingsChangeType" -->
 
   <owner>khorimoto@chromium.org</owner>
@@ -364,7 +402,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.UserActionOnSearchResultsShown"
-    enum="OsSettingSearchBoxUserAction" expires_after="2023-04-17">
+    enum="OsSettingSearchBoxUserAction" expires_after="2023-06-18">
   <owner>xiaohuic@chromium.org</owner>
   <owner>cros-settings@google.com</owner>
   <summary>
@@ -373,7 +411,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.Wifi.AddNetwork"
-    enum="NetworkDiscoveryState" expires_after="2023-02-13">
+    enum="NetworkDiscoveryState" expires_after="2023-06-18">
   <owner>jonmann@chromium.org</owner>
   <owner>khorimoto@chromium.org</owner>
   <owner>tnagel@chromium.org</owner>
@@ -385,7 +423,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.Wifi.Hidden" enum="BooleanToggled"
-    expires_after="2023-02-13">
+    expires_after="2023-06-25">
   <owner>jonmann@chromium.org</owner>
   <owner>khorimoto@chromium.org</owner>
   <owner>tnagel@chromium.org</owner>
@@ -398,7 +436,7 @@ incoming reviews. Googlers can read more about this at go/gwsq-gerrit.
 </histogram>
 
 <histogram name="ChromeOS.Settings.WindowOpenDuration" units="ms"
-    expires_after="2022-09-01">
+    expires_after="2023-06-04">
   <owner>khorimoto@chromium.org</owner>
   <owner>cros-customization@google.com</owner>
   <summary>

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,12 +14,12 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
-#include "components/search_engines/omnibox_focus_type.h"
 #include "components/search_engines/search_engine_type.h"
 #include "components/search_engines/template_url_data.h"
 #include "components/search_engines/template_url_id.h"
 #include "third_party/metrics_proto/chrome_searchbox_stats.pb.h"
 #include "third_party/metrics_proto/omnibox_event.pb.h"
+#include "third_party/metrics_proto/omnibox_focus_type.pb.h"
 #include "third_party/metrics_proto/omnibox_input_type.pb.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
@@ -74,6 +74,7 @@ class TemplateURLRef {
   enum RequestSource {
     SEARCHBOX,          // Omnibox or the NTP realbox. The default.
     CROS_APP_LIST,      // Chrome OS app list search box.
+    NON_SEARCHBOX_NTP,  // Suggestions for the NTP surface.
   };
 
   // This struct encapsulates arguments passed to
@@ -191,7 +192,8 @@ class TemplateURLRef {
     metrics::OmniboxInputType input_type = metrics::OmniboxInputType::EMPTY;
 
     // Specifies how the user last interacted with the searchbox UI element.
-    OmniboxFocusType focus_type = OmniboxFocusType::DEFAULT;
+    metrics::OmniboxFocusType focus_type =
+        metrics::OmniboxFocusType::INTERACTION_DEFAULT;
 
     // The optional assisted query stats, aka AQS, used for logging purposes.
     // This string contains impressions of all autocomplete matches shown
@@ -423,7 +425,6 @@ class TemplateURLRef {
     GOOGLE_SEARCH_CLIENT,
     GOOGLE_SEARCH_FIELDTRIAL_GROUP,
     GOOGLE_SEARCH_VERSION,
-    GOOGLE_SEARCHBOX_STATS,
     GOOGLE_SESSION_TOKEN,
     GOOGLE_SUGGEST_CLIENT,
     GOOGLE_SUGGEST_REQUEST_ID,
@@ -523,6 +524,7 @@ class TemplateURLRef {
   // belongs to a PostParam, the PostParam will be replaced by the term data.
   // Otherwise, the term data will be inserted at the place that the
   // replacement points to.
+  // Can be called repeatedly with the same replacement.
   void HandleReplacement(const std::string& name,
                          const std::string& value,
                          const Replacement& replacement,
@@ -716,6 +718,17 @@ class TemplateURL {
   const std::string& side_search_param() const {
     return data_.side_search_param;
   }
+  const std::string& side_image_search_param() const {
+    return data_.side_image_search_param;
+  }
+  const std::u16string& image_search_branding_label() const {
+    return !data_.image_search_branding_label.empty()
+               ? data_.image_search_branding_label
+               : short_name();
+  }
+  const std::vector<std::string>& search_intent_params() const {
+    return data_.search_intent_params;
+  }
   const std::vector<std::string>& alternate_urls() const {
     return data_.alternate_urls;
   }
@@ -801,6 +814,10 @@ class TemplateURL {
   SearchEngineType GetEngineType(
       const SearchTermsData& search_terms_data) const;
 
+  // Returns the type of this search engine, i.e. whether the engine is a
+  // prepopulated engine, starter pack engine, or not built-in.
+  BuiltinEngineType GetBuiltinEngineType() const;
+
   // Use the alternate URLs and the search URL to match the provided |url|
   // and extract |search_terms| from it. Returns false and an empty
   // |search_terms| if no search terms can be matched. The URLs are matched in
@@ -814,6 +831,19 @@ class TemplateURL {
   // could be the result of performing a search with |this|.
   bool IsSearchURL(const GURL& url,
                    const SearchTermsData& search_terms_data) const;
+
+  // Given a `url` corresponding to this TemplateURL, keeps the search terms and
+  // optionally the search intent params and removes the other params. If
+  // `normalize_search_terms` is true, the search terms in the final URL
+  // will be converted to lowercase with extra whitespace characters collapsed.
+  // If `url` is not a search URL or replacement fails, leaves `result`
+  // untouched and returns false. Used to compare normalized (aka canonical)
+  // search URLs.
+  bool KeepSearchTermsInURL(const GURL& url,
+                            const SearchTermsData& search_terms_data,
+                            const bool keep_search_intent_params,
+                            const bool normalize_search_terms,
+                            GURL* result) const;
 
   // Given a |url| corresponding to this TemplateURL, identifies the search
   // terms and replaces them with the ones in |search_terms_args|, leaving the
@@ -838,18 +868,43 @@ class TemplateURL {
       std::u16string* encoded_terms,
       std::u16string* encoded_original_query) const;
 
-  // Returns the search url for this template URL.
+  // Returns the search url for this template URL and the optional search terms.
+  // Uses something obscure as the default value for the search terms argument
+  // so that in the rare case the term replaces the URL it's unlikely another
+  // keyword would have the same url.
   // Returns an empty GURL if this template URL has no url().
-  GURL GenerateSearchURL(const SearchTermsData& search_terms_data) const;
+  GURL GenerateSearchURL(
+      const SearchTermsData& search_terms_data,
+      const std::u16string& search_terms = u"blah.blah.blah.blah.blah") const;
+
+  // Returns the suggest endpoint URL for this template URL.
+  // Returns an empty GURL if this template URL has no suggestions_url().
+  GURL GenerateSuggestionURL(const SearchTermsData& search_terms_data) const;
 
   // Returns true if this search engine supports the side search feature.
   bool IsSideSearchSupported() const;
+
+  // Returns true if this search engine supports the side image search feature.
+  bool IsSideImageSearchSupported() const;
 
   // Takes a search URL belonging to this search engine and generates the URL
   // appropriate for the side search side panel.
   GURL GenerateSideSearchURL(const GURL& search_url,
                              const std::string& version,
                              const SearchTermsData& search_terms_data) const;
+
+  // Takes a search URL that belongs to this side search in the side panel and
+  // removes the side search param from the URL.
+  GURL RemoveSideSearchParamFromURL(const GURL& side_search_url) const;
+
+  // Takes a search URL belonging to this image search engine and generates the
+  // URL appropriate for the image search in the side panel.
+  GURL GenerateSideImageSearchURL(const GURL& image_search_url,
+                                  const std::string& version) const;
+
+  // Takes a search URL that belongs to this image search in the side panel and
+  // removes the side image search param from the URL.
+  GURL RemoveSideImageSearchParamFromURL(const GURL& image_search_url) const;
 
   // TemplateURL internally caches values derived from a passed SearchTermsData
   // to make its functions quick. This method invalidates any cached values and
@@ -859,6 +914,12 @@ class TemplateURL {
   // Estimates dynamic memory usage.
   // See base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
+
+  // Returns whether |url| query contains a side search param.
+  bool ContainsSideSearchParam(const GURL& url) const;
+
+  // Returns whether |url| query contains a side image search param.
+  bool ContainsSideImageSearchParam(const GURL& url) const;
 
  private:
   friend class TemplateURLService;

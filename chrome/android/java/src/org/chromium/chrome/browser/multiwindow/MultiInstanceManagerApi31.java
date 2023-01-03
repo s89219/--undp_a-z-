@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -306,9 +306,9 @@ class MultiInstanceManagerApi31 extends MultiInstanceManager implements Activity
             }
 
             @Override
-            public void didCloseTab(Tab tab) {
-                // didCloseTab is called for both normal/incognito tabs, whereas tabClosureCommitted
-                // is called for normal tabs only.
+            public void onFinishingTabClosure(Tab tab) {
+                // onFinishingTabClosure is called for both normal/incognito tabs, whereas
+                // tabClosureCommitted is called for normal tabs only.
                 writeTabCount(mInstanceId, selector);
             }
 
@@ -546,6 +546,16 @@ class MultiInstanceManagerApi31 extends MultiInstanceManager implements Activity
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     protected void closeInstance(int instanceId, int taskId) {
         removeInstanceInfo(instanceId);
+        TabModelSelector selector =
+                TabWindowManagerSingleton.getInstance().getTabModelSelectorById(instanceId);
+        if (selector != null) {
+            // Close all tabs as the window is closing. This ensures the tabs are added to the
+            // recent tabs page.
+            //
+            // TODO(crbug/1304883): This only works for windows with live activities. It is
+            // non-trivial to add recent tab entries without an active {@link Tab} instance.
+            selector.closeAllTabs(/*uponExit=*/true);
+        }
         mTabModelOrchestratorSupplier.get().cleanupInstance(instanceId);
         Activity activity = getActivityById(instanceId);
         if (activity != null) activity.finishAndRemoveTask();

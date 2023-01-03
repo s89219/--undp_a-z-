@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,20 +6,17 @@
 #define CHROME_BROWSER_UI_WEBUI_SIDE_PANEL_READ_ANYTHING_READ_ANYTHING_PAGE_HANDLER_H_
 
 #include <string>
-#include <vector>
 
-#include "base/memory/weak_ptr.h"
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/side_panel/read_anything/read_anything_coordinator.h"
 #include "chrome/browser/ui/views/side_panel/read_anything/read_anything_model.h"
-#include "chrome/browser/ui/webui/side_panel/read_anything/read_anything.mojom.h"
+#include "chrome/common/accessibility/read_anything.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
-
-using read_anything::mojom::ContentNodePtr;
-using read_anything::mojom::Page;
-using read_anything::mojom::PageHandler;
+#include "ui/accessibility/ax_tree_update_forward.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // ReadAnythingPageHandler
@@ -29,36 +26,51 @@ using read_anything::mojom::PageHandler;
 //  This class is created and owned by ReadAnythingUI and has the same lifetime
 //  as the Side Panel view.
 //
-class ReadAnythingPageHandler : public PageHandler,
-                                public ReadAnythingModel::Observer {
+class ReadAnythingPageHandler : public read_anything::mojom::PageHandler,
+                                public ReadAnythingModel::Observer,
+                                public ReadAnythingCoordinator::Observer {
  public:
   class Delegate {
    public:
-    virtual void OnUIShown() = 0;
+    virtual void OnUIReady() = 0;
+    virtual void OnUIDestroyed() = 0;
+    virtual void OnLinkClicked(const GURL& url, bool open_in_new_tab) = 0;
   };
 
-  explicit ReadAnythingPageHandler(mojo::PendingRemote<Page> page,
-                                   mojo::PendingReceiver<PageHandler> receiver);
+  ReadAnythingPageHandler(
+      mojo::PendingRemote<read_anything::mojom::Page> page,
+      mojo::PendingReceiver<read_anything::mojom::PageHandler> receiver,
+      content::WebUI* web_ui);
   ReadAnythingPageHandler(const ReadAnythingPageHandler&) = delete;
   ReadAnythingPageHandler& operator=(const ReadAnythingPageHandler&) = delete;
   ~ReadAnythingPageHandler() override;
 
-  // PageHandler:
-  void ShowUI() override;
+  // read_anything::mojom::PageHandler:
+  void OnLinkClicked(const GURL& url, bool open_in_new_tab) override;
 
   // ReadAnythingModel::Observer:
-  void OnFontNameUpdated(const std::string& new_font_name) override;
-  void OnContentUpdated(
-      const std::vector<ContentNodePtr>& content_nodes) override;
+  void OnAXTreeSnapshotted(const ui::AXTreeUpdate& snapshot) override;
+  void OnReadAnythingThemeChanged(
+      const std::string& font_name,
+      double font_scale,
+      ui::ColorId foreground_color_id,
+      ui::ColorId background_color_id,
+      read_anything::mojom::Spacing line_spacing,
+      read_anything::mojom::Spacing letter_spacing) override;
+
+  // ReadAnythingCoordinator::Observer:
+  void OnCoordinatorDestroyed() override;
 
  private:
+  raw_ptr<ReadAnythingCoordinator> coordinator_;
   raw_ptr<ReadAnythingPageHandler::Delegate> delegate_;
 
-  Browser* browser_;
+  const raw_ptr<Browser> browser_;
 
-  mojo::Receiver<PageHandler> receiver_;
-  mojo::Remote<Page> page_;
-  base::WeakPtrFactory<ReadAnythingPageHandler> weak_pointer_factory_{this};
+  const mojo::Receiver<read_anything::mojom::PageHandler> receiver_;
+  const mojo::Remote<read_anything::mojom::Page> page_;
+
+  const raw_ptr<content::WebUI> web_ui_;
 };
 
 #endif  // CHROME_BROWSER_UI_WEBUI_SIDE_PANEL_READ_ANYTHING_READ_ANYTHING_PAGE_HANDLER_H_

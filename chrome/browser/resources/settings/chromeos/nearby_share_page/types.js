@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,17 +18,21 @@ export const NearbyShareDataUsage = {
 /**
  * Takes a string and returns a value of the NearbyShareDataUsage enum.
  * @param {string} s string representation of the data usage value
- * @return {!NearbyShareDataUsage} enum value
+ * @return {!nearbyShare.mojom.DataUsage} enum value
  */
 export function dataUsageStringToEnum(s) {
-  switch (/** @type {!NearbyShareDataUsage} */ (parseInt(s, 10))) {
+  switch ((parseInt(s, 10))) {
     case NearbyShareDataUsage.OFFLINE:
-      return NearbyShareDataUsage.OFFLINE;
+      return /** @type {!nearbyShare.mojom.DataUsage} */ (
+          NearbyShareDataUsage.OFFLINE);
     case NearbyShareDataUsage.ONLINE:
-      return NearbyShareDataUsage.ONLINE;
+      return /** @type {!nearbyShare.mojom.DataUsage} */ (
+          NearbyShareDataUsage.ONLINE);
     case NearbyShareDataUsage.WIFI_ONLY:
-      return NearbyShareDataUsage.WIFI_ONLY;
+      return /** @type {!nearbyShare.mojom.DataUsage} */ (
+          NearbyShareDataUsage.WIFI_ONLY);
     default:
-      return NearbyShareDataUsage.UNKNOWN;
+      return /** @type {!nearbyShare.mojom.DataUsage} */ (
+          NearbyShareDataUsage.UNKNOWN);
   }
 }

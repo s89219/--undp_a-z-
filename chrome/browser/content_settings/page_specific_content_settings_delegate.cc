@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,6 +14,7 @@
 #include "chrome/browser/media/webrtc/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/webrtc/media_stream_capture_indicator.h"
 #include "chrome/browser/permissions/permission_decision_auto_blocker_factory.h"
+#include "chrome/browser/picture_in_picture/picture_in_picture_window_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
@@ -132,8 +133,7 @@ void PageSpecificContentSettingsDelegate::SetDefaultRendererContentSettingRules(
       web_contents()->GetBrowserContext()->IsOffTheRecord();
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
-  if (guest_view::GuestViewBase::IsGuest(
-          content::WebContents::FromRenderFrameHost(rfh))) {
+  if (guest_view::GuestViewBase::IsGuest(rfh)) {
     GetGuestViewDefaultContentSettingRules(is_off_the_record, rules);
     return;
   }
@@ -149,15 +149,6 @@ void PageSpecificContentSettingsDelegate::SetDefaultRendererContentSettingRules(
         content_settings::ContentSettingToValue(CONTENT_SETTING_ALLOW),
         std::string(), is_off_the_record);
   }
-}
-
-ContentSetting PageSpecificContentSettingsDelegate::GetEmbargoSetting(
-    const GURL& request_origin,
-    ContentSettingsType permission) {
-  return PermissionDecisionAutoBlockerFactory::GetForProfile(
-             Profile::FromBrowserContext(web_contents()->GetBrowserContext()))
-      ->GetEmbargoResult(request_origin, permission)
-      .content_setting;
 }
 
 std::vector<storage::FileSystemType>
@@ -215,6 +206,29 @@ PageSpecificContentSettingsDelegate::GetMicrophoneCameraState() {
   return state;
 }
 
+content::WebContents* PageSpecificContentSettingsDelegate::
+    MaybeGetSyncedWebContentsForPictureInPicture(
+        content::WebContents* web_contents) {
+  DCHECK(web_contents);
+  content::WebContents* parent_web_contents =
+      PictureInPictureWindowManager::GetInstance()->GetWebContents();
+  content::WebContents* child_web_contents =
+      PictureInPictureWindowManager::GetInstance()->GetChildWebContents();
+
+  // For document picture-in-picture window, return the opener web contents.
+  if (web_contents == child_web_contents) {
+    DCHECK(parent_web_contents);
+    return parent_web_contents;
+  }
+
+  // For browser window that has opened a document picture-in-picture window,
+  // return the PiP window web contents.
+  if ((web_contents == parent_web_contents) && child_web_contents) {
+    return child_web_contents;
+  }
+  return nullptr;
+}
+
 void PageSpecificContentSettingsDelegate::OnContentAllowed(
     ContentSettingsType type) {
   if (!(type == ContentSettingsType::GEOLOCATION ||
@@ -226,8 +240,7 @@ void PageSpecificContentSettingsDelegate::OnContentAllowed(
   GetSettingsMap()->GetWebsiteSetting(web_contents()->GetLastCommittedURL(),
                                       web_contents()->GetLastCommittedURL(),
                                       type, &setting_info);
-  const base::Time grant_time = GetSettingsMap()->GetSettingLastModifiedDate(
-      setting_info.primary_pattern, setting_info.secondary_pattern, type);
+  const base::Time grant_time = setting_info.metadata.last_modified;
   if (grant_time.is_null())
     return;
   permissions::PermissionUmaUtil::RecordTimeElapsedBetweenGrantAndUse(
@@ -292,11 +305,6 @@ void PageSpecificContentSettingsDelegate::OnStorageAccessAllowed(
 void PageSpecificContentSettingsDelegate::PrimaryPageChanged(
     content::Page& page) {
   ClearPendingProtocolHandler();
-
-  if (web_contents()->GetVisibleURL().SchemeIsHTTPOrHTTPS()) {
-    content_settings::RecordPluginsAction(
-        content_settings::PLUGINS_ACTION_TOTAL_NAVIGATIONS);
-  }
 }
 
 }  // namespace chrome

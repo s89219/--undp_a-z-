@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -39,33 +39,6 @@ class MockGooglePhotosAlbumsFetcher : public GooglePhotosAlbumsFetcher {
   // Overridden to increase visibility.
   absl::optional<size_t> GetResultCount(
       const GooglePhotosAlbumsCbkArgs& result) override;
-};
-
-// Fetcher that returns a dummy value for the number of photos in a user's
-// Google Photos library. Used to avoid network requests in unit tests.
-class MockGooglePhotosCountFetcher : public GooglePhotosCountFetcher {
- public:
-  explicit MockGooglePhotosCountFetcher(Profile* profile);
-
-  MockGooglePhotosCountFetcher(const MockGooglePhotosCountFetcher&) = delete;
-  MockGooglePhotosCountFetcher& operator=(const MockGooglePhotosCountFetcher&) =
-      delete;
-
-  ~MockGooglePhotosCountFetcher() override;
-
-  // GooglePhotosCountFetcher:
-  MOCK_METHOD(void,
-              AddRequestAndStartIfNecessary,
-              (base::OnceCallback<void(int)> callback),
-              (override));
-
-  MOCK_METHOD(int,
-              ParseResponse,
-              (const base::Value::Dict* response),
-              (override));
-
-  // Overridden to increase visibility.
-  absl::optional<size_t> GetResultCount(const int& result) override;
 };
 
 // Fetcher that claims the user is allowed to access Google Photos data. Used to
@@ -116,6 +89,7 @@ class MockGooglePhotosPhotosFetcher : public GooglePhotosPhotosFetcher {
               (const absl::optional<std::string>& item_id,
                const absl::optional<std::string>& album_id,
                const absl::optional<std::string>& resume_token,
+               bool shuffle,
                base::OnceCallback<void(GooglePhotosPhotosCbkArgs)> callback),
               (override));
 

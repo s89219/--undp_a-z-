@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,16 +25,22 @@
 #include "chromeos/crosapi/mojom/account_manager.mojom.h"
 #include "chromeos/crosapi/mojom/crosapi.mojom.h"
 #include "chromeos/crosapi/mojom/device_attributes.mojom.h"
+#include "chromeos/crosapi/mojom/multi_capture_service.mojom.h"
 #include "chromeos/crosapi/mojom/structured_metrics_service.mojom.h"
 #include "chromeos/crosapi/mojom/video_capture.mojom.h"
 #include "chromeos/lacros/lacros_service_never_blocking_state.h"
 #include "chromeos/services/machine_learning/public/mojom/machine_learning_service.mojom.h"
-#include "chromeos/startup/browser_init_params.h"
 #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+
+namespace media {
+namespace stable::mojom {
+class StableVideoDecoderFactory;
+}  // namespace stable::mojom
+}  // namespace media
 
 namespace chromeos {
 
@@ -58,6 +64,8 @@ class LacrosServiceNeverBlockingState;
 // documented with threading requirements.
 class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
  public:
+  using ComponentPolicyMap =
+      base::flat_map<policy::PolicyNamespace, base::Value>;
   class Observer {
    public:
     // Called when the new policy data is received from Ash.
@@ -66,6 +74,9 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
 
     // Called when policy fetch attempt is made in Ash.
     virtual void OnPolicyFetchAttempt() {}
+
+    // Called when the new component policy is received from Ash.
+    virtual void OnComponentPolicyUpdated(const ComponentPolicyMap& policy) {}
 
    protected:
     virtual ~Observer() = default;
@@ -109,8 +120,9 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
   bool IsMediaSessionAudioFocusDebugAvailable() const;
   bool IsMediaSessionControllerAvailable() const;
   bool IsMetricsReportingAvailable() const;
-  bool IsScreenManagerAvailable() const;
+  bool IsMultiCaptureServiceAvailable() const;
   bool IsSensorHalClientAvailable() const;
+  bool IsStableVideoDecoderFactoryAvailable() const;
 
   // Methods to add/remove observer. Safe to call from any thread.
   void AddObserver(Observer* obs);
@@ -124,6 +136,10 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
 
   // Notifies that an attempt to update the device account policy has been made.
   void NotifyPolicyFetchAttempt();
+
+  // Notifies that the device account component policy is updated with the
+  // input data. Must be called on the affined sequence.
+  void NotifyComponentPolicyUpdated(ComponentPolicyMap policy);
 
   // Returns whether this interface uses the automatic registration system to be
   // available for immediate use at startup. Any crosapi interface can be
@@ -146,6 +162,9 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
   // available. This method can only be called from the affine sequence (main
   // thread). The returned remote can only be used on the affine sequence (main
   // thread).
+  // Note that the remote will not be owned by the caller, so callers should
+  // avoid calling methods that would mutate the state of the remote such as
+  // set_disconnect_handler, since only one can be set on a Remote.
   template <typename CrosapiInterface>
   mojo::Remote<CrosapiInterface>& GetRemote() {
     DCHECK_CALLED_ON_VALID_SEQUENCE(affine_sequence_checker_);
@@ -158,7 +177,14 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
   // Some clients will want to use mojo::Remotes on arbitrary sequences (e.g.
   // background threads). The following methods allow the client to construct a
   // mojo::Remote bound to an arbitrary sequence, and pass the other endpoint of
-  // the Remote (mojo::PendingReceiver) to ash to set up the interface.
+  // the Remote (mojo::PendingReceiver) to ash to set up the interface. For
+  // other interfaces, such as media::stable::mojom::StableVideoDecoderFactory,
+  // the main reason to use a Bind*() method instead of GetRemote() is not the
+  // threading model, but the fact that the browser may want to maintain
+  // multiple independent mojo::Remotes, and ash-chrome can use this behavior as
+  // useful information (for example, to start one ash-chrome utility video
+  // decoder process per lacros-chrome renderer process in order to host the
+  // implementation of a media::stable::mojom::StableVideoDecoderFactory).
   // --------------------------------------------------------------------------
 
   // This may be called on any thread.
@@ -197,6 +223,11 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
       mojo::PendingReceiver<crosapi::mojom::MetricsReporting> receiver);
 
   // This may be called on any thread.
+  void BindRemoteAppsLacrosBridge(
+      mojo::PendingReceiver<
+          chromeos::remote_apps::mojom::RemoteAppsLacrosBridge> receiver);
+
+  // This may be called on any thread.
   void BindScreenManagerReceiver(
       mojo::PendingReceiver<crosapi::mojom::ScreenManager> pending_receiver);
 
@@ -213,14 +244,18 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
       mojo::PendingReceiver<crosapi::mojom::VideoCaptureDeviceFactory>
           pending_receiver);
 
+  // This may be called on any thread.
+  void BindStableVideoDecoderFactory(
+      mojo::PendingReceiver<media::stable::mojom::StableVideoDecoderFactory>
+          receiver);
+
   // BindVideoCaptureDeviceFactory() can only be used if this method returns
   // true.
   bool IsVideoCaptureDeviceFactoryAvailable() const;
 
-  // Returns BrowserInitParams which is passed from ash-chrome.
-  // TODO(crbug.com/1315921): Change init_params() to BrowserInitParams::Get()
-  // and remove this API.
-  const crosapi::mojom::BrowserInitParams* init_params() const;
+  // Binds video conference manager to lacros-browser clients.
+  void BindVideoConferenceManager(
+      mojo::PendingReceiver<crosapi::mojom::VideoConferenceManager> receiver);
 
   // Returns SystemIdleCache, which uses IdleInfoObserver to observe idle info
   // changes and caches the results. Requires IsIdleServiceAvailable() for full
@@ -252,6 +287,17 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
             weak_sequenced_state_, std::move(pending_receiver_or_remote)));
   }
 
+  // Injects remote for a registered crosapi interface.
+  template <typename CrosapiInterface>
+  void InjectRemoteForTesting(
+      mojo::PendingRemote<CrosapiInterface> pending_remote) {
+    DCHECK(IsRegistered<CrosapiInterface>());
+    did_bind_receiver_ = true;
+
+    interfaces_.find(CrosapiInterface::Uuid_)
+        ->second->InjectRemoteForTesting(std::move(pending_remote));
+  }
+
  private:
   // This class is a wrapper around a crosapi remote, e.g.
   // mojo::Remote<crosapi::mojom::Automation>. This base class uses type erasure
@@ -272,6 +318,13 @@ class COMPONENT_EXPORT(CHROMEOS_LACROS) LacrosService {
 
     // Initialization for the remote and |available_|.
     virtual void MaybeBind(uint32_t crosapi_version, LacrosService* impl) = 0;
+
+    template <typename CrosapiInterface>
+    void InjectRemoteForTesting(
+        mojo::PendingRemote<CrosapiInterface> pending_remote) {
+      available_ = pending_remote.is_valid();
+      Get<CrosapiInterface>() = mojo::Remote(std::move(pending_remote));
+    }
 
    protected:
     InterfaceEntryBase();

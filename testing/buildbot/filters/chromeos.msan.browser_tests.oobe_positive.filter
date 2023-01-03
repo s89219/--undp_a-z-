@@ -80,13 +80,16 @@ EnterpriseEnrollmentTest.*
 EnterpriseEnrollmentTestBase.*
 EulaOfflineTest.*
 EulaTest.*
+ExistingUserControllerAuthFailureTest.*
 FamilyLinkNoticeScreenChildTest.*
 FamilyLinkNoticeScreenManagedTest.*
 FamilyLinkNoticeScreenTest.*
 FingerprintSetupTest.*
 ForceMaximizeOnFirstRunTest.*
 ForceMaximizePolicyFalseTest.*
+HIDDetectionDeviceOwnedTest.*
 HIDDetectionScreenChromebookTest.*
+HidDetectionSkipTestLegacy.*
 HidDetectionSkipTest.*
 HidDetectionTest.*
 InitialEnrollmentTest.*
@@ -130,6 +133,8 @@ ParentalHandoffScreenChildBrowserTest.*
 PolicyProvidedCertsOnUserSessionInitTest.*
 PresetPolicyDeviceDisablingTest.*
 PrimaryUserPoliciesProxiedTest.*
+QuickStartBrowserTest.*
+QuickStartNotDeterminedBrowserTest.*
 RecommendAppsScreenManagedTest.*
 RecommendAppsScreenTest.*
 ResetFirstAfterBootTest.*
@@ -160,6 +165,7 @@ UserCreationScreenLoginTest.*
 UserCreationScreenTest.*
 UserSelectionScreenBlockOfflineTest.*
 WebKioskTest.*
+WebUIWebViewBrowserTest.*
 WebviewChildLoginTest.*
 WebviewClientCertsLoginTest.*
 WebviewClientCertsLoginTestBase.*

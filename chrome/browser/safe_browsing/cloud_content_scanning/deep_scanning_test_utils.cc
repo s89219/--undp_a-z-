@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -42,6 +42,8 @@ EventReportValidator::~EventReportValidator() {
 
 void EventReportValidator::ExpectUnscannedFileEvent(
     const std::string& expected_url,
+    const absl::optional<std::string>& expected_source,
+    const absl::optional<std::string>& expected_destination,
     const std::string& expected_filename,
     const std::string& expected_sha256,
     const std::string& expected_trigger,
@@ -52,6 +54,8 @@ void EventReportValidator::ExpectUnscannedFileEvent(
     const std::string& expected_username) {
   event_key_ = SafeBrowsingPrivateEventRouter::kKeyUnscannedFileEvent;
   url_ = expected_url;
+  source_ = expected_source;
+  destination_ = expected_destination;
   filenames_and_hashes_[expected_filename] = expected_sha256;
   mimetypes_ = expected_mimetypes;
   trigger_ = expected_trigger;
@@ -104,6 +108,8 @@ void EventReportValidator::ExpectUnscannedFileEvents(
 
 void EventReportValidator::ExpectDangerousDeepScanningResult(
     const std::string& expected_url,
+    const absl::optional<std::string>& expected_source,
+    const absl::optional<std::string>& expected_destination,
     const std::string& expected_filename,
     const std::string& expected_sha256,
     const std::string& expected_threat_type,
@@ -115,6 +121,8 @@ void EventReportValidator::ExpectDangerousDeepScanningResult(
     const absl::optional<std::string>& expected_scan_id) {
   event_key_ = SafeBrowsingPrivateEventRouter::kKeyDangerousDownloadEvent;
   url_ = expected_url;
+  source_ = expected_source;
+  destination_ = expected_destination;
   filenames_and_hashes_[expected_filename] = expected_sha256;
   threat_type_ = expected_threat_type;
   mimetypes_ = expected_mimetypes;
@@ -136,6 +144,8 @@ void EventReportValidator::ExpectDangerousDeepScanningResult(
 
 void EventReportValidator::ExpectSensitiveDataEvent(
     const std::string& expected_url,
+    const absl::optional<std::string>& expected_source,
+    const absl::optional<std::string>& expected_destination,
     const std::string& expected_filename,
     const std::string& expected_sha256,
     const std::string& expected_trigger,
@@ -148,6 +158,8 @@ void EventReportValidator::ExpectSensitiveDataEvent(
     const std::string& expected_scan_id) {
   event_key_ = SafeBrowsingPrivateEventRouter::kKeySensitiveDataEvent;
   url_ = expected_url;
+  source_ = expected_source;
+  destination_ = expected_destination;
   dlp_verdicts_[expected_filename] = expected_dlp_verdict;
   filenames_and_hashes_[expected_filename] = expected_sha256;
   mimetypes_ = expected_mimetypes;
@@ -168,6 +180,8 @@ void EventReportValidator::ExpectSensitiveDataEvent(
 
 void EventReportValidator::ExpectSensitiveDataEvents(
     const std::string& expected_url,
+    const absl::optional<std::string>& expected_source,
+    const absl::optional<std::string>& expected_destination,
     const std::vector<std::string>& expected_filenames,
     const std::vector<std::string>& expected_sha256s,
     const std::string& expected_trigger,
@@ -187,6 +201,8 @@ void EventReportValidator::ExpectSensitiveDataEvents(
 
   event_key_ = SafeBrowsingPrivateEventRouter::kKeySensitiveDataEvent;
   url_ = expected_url;
+  source_ = expected_source;
+  destination_ = expected_destination;
   mimetypes_ = expected_mimetypes;
   trigger_ = expected_trigger;
   content_size_ = expected_content_size;
@@ -378,6 +394,9 @@ void EventReportValidator::ValidateReport(const base::Value::Dict* report) {
 
   // The event should match the expected values.
   ValidateField(event, SafeBrowsingPrivateEventRouter::kKeyUrl, url_);
+  ValidateField(event, SafeBrowsingPrivateEventRouter::kKeySource, source_);
+  ValidateField(event, SafeBrowsingPrivateEventRouter::kKeyDestination,
+                destination_);
   ValidateFilenameMappedAttributes(event);
   ValidateField(event, SafeBrowsingPrivateEventRouter::kKeyTrigger, trigger_);
   // `content_size_` needs a conversion since int64 are strings in base::Value.
@@ -566,10 +585,9 @@ void SetAnalysisConnector(PrefService* prefs,
                           enterprise_connectors::AnalysisConnector connector,
                           const std::string& pref_value,
                           bool machine_scope) {
-  ListPrefUpdate settings_list(prefs, ConnectorPref(connector));
-  DCHECK(settings_list.Get());
-  if (!settings_list->GetListDeprecated().empty())
-    settings_list->ClearList();
+  ScopedListPrefUpdate settings_list(prefs, ConnectorPref(connector));
+  if (!settings_list->empty())
+    settings_list->clear();
 
   settings_list->Append(*base::JSONReader::Read(pref_value));
   prefs->SetInteger(
@@ -577,21 +595,21 @@ void SetAnalysisConnector(PrefService* prefs,
       machine_scope ? policy::POLICY_SCOPE_MACHINE : policy::POLICY_SCOPE_USER);
 }
 
-base::Value CreateOptInEventsValue(
+base::Value::List CreateOptInEventsList(
     const std::map<std::string, std::vector<std::string>>&
         enabled_opt_in_events) {
-  base::Value enabled_opt_in_events_list(base::Value::Type::LIST);
+  base::Value::List enabled_opt_in_events_list;
   for (const auto& enabled_opt_in_event : enabled_opt_in_events) {
-    base::Value event_value(base::Value::Type::DICTIONARY);
-    event_value.SetStringKey(enterprise_connectors::kKeyOptInEventName,
-                             enabled_opt_in_event.first);
+    base::Value::Dict event_value;
+    event_value.Set(enterprise_connectors::kKeyOptInEventName,
+                    enabled_opt_in_event.first);
 
-    base::Value url_patterns_list(base::Value::Type::LIST);
+    base::Value::List url_patterns_list;
     for (const auto& url_pattern : enabled_opt_in_event.second) {
       url_patterns_list.Append(url_pattern);
     }
-    event_value.SetKey(enterprise_connectors::kKeyOptInEventUrlPatterns,
-                       std::move(url_patterns_list));
+    event_value.Set(enterprise_connectors::kKeyOptInEventUrlPatterns,
+                    std::move(url_patterns_list));
 
     enabled_opt_in_events_list.Append(std::move(event_value));
   }
@@ -605,32 +623,31 @@ void SetOnSecurityEventReporting(
     const std::map<std::string, std::vector<std::string>>&
         enabled_opt_in_events,
     bool machine_scope) {
-  ListPrefUpdate settings_list(prefs,
-                               enterprise_connectors::kOnSecurityEventPref);
-  DCHECK(settings_list.Get());
+  ScopedListPrefUpdate settings_list(
+      prefs, enterprise_connectors::kOnSecurityEventPref);
   if (!enabled) {
-    settings_list->ClearList();
+    settings_list->clear();
     prefs->ClearPref(enterprise_connectors::kOnSecurityEventScopePref);
     return;
   }
 
-  if (settings_list->GetListDeprecated().empty()) {
-    base::Value settings(base::Value::Type::DICTIONARY);
+  if (settings_list->empty()) {
+    base::Value::Dict settings;
 
-    settings.SetKey(enterprise_connectors::kKeyServiceProvider,
-                    base::Value("google"));
+    settings.Set(enterprise_connectors::kKeyServiceProvider,
+                 base::Value("google"));
     if (!enabled_event_names.empty()) {
-      base::Value enabled_event_name_list(base::Value::Type::LIST);
+      base::Value::List enabled_event_name_list;
       for (const auto& enabled_event_name : enabled_event_names) {
         enabled_event_name_list.Append(enabled_event_name);
       }
-      settings.SetKey(enterprise_connectors::kKeyEnabledEventNames,
-                      std::move(enabled_event_name_list));
+      settings.Set(enterprise_connectors::kKeyEnabledEventNames,
+                   std::move(enabled_event_name_list));
     }
 
     if (!enabled_opt_in_events.empty()) {
-      settings.SetKey(enterprise_connectors::kKeyEnabledOptInEvents,
-                      CreateOptInEventsValue(enabled_opt_in_events));
+      settings.Set(enterprise_connectors::kKeyEnabledOptInEvents,
+                   CreateOptInEventsList(enabled_opt_in_events));
     }
 
     settings_list->Append(std::move(settings));
@@ -643,9 +660,8 @@ void SetOnSecurityEventReporting(
 void ClearAnalysisConnector(
     PrefService* prefs,
     enterprise_connectors::AnalysisConnector connector) {
-  ListPrefUpdate settings_list(prefs, ConnectorPref(connector));
-  DCHECK(settings_list.Get());
-  settings_list->ClearList();
+  ScopedListPrefUpdate settings_list(prefs, ConnectorPref(connector));
+  settings_list->clear();
   prefs->ClearPref(ConnectorScopePref(connector));
 }
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -35,11 +35,6 @@ void ShowSingletonTab(Browser* browser, const GURL& url) {
   Navigate(&params);
 }
 
-void ShowSingletonTabRespectRef(Browser* browser, const GURL& url) {
-  NavigateParams params(GetSingletonTabNavigateParams(browser, url));
-  Navigate(&params);
-}
-
 void ShowSingletonTabOverwritingNTP(Browser* browser, NavigateParams* params) {
   DCHECK(browser);
   DCHECK_EQ(params->disposition, WindowOpenDisposition::SINGLETON_TAB);
@@ -68,7 +63,7 @@ NavigateParams GetSingletonTabNavigateParams(Browser* browser,
   params.disposition = WindowOpenDisposition::SINGLETON_TAB;
   params.window_action = NavigateParams::SHOW_WINDOW;
   params.user_gesture = true;
-  params.tabstrip_add_types |= TabStripModel::ADD_INHERIT_OPENER;
+  params.tabstrip_add_types |= AddTabTypes::ADD_INHERIT_OPENER;
   return params;
 }
 

@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,7 +27,7 @@ class RendererCommandForwarder : public media::mojom::Renderer {
   RendererCommandForwarder(
       PlaybackCommandForwardingRenderer* owning_renderer,
       mojo::PendingReceiver<media::mojom::Renderer> playback_controller,
-      scoped_refptr<base::SingleThreadTaskRunner> task_runner)
+      scoped_refptr<base::SequencedTaskRunner> task_runner)
       : owning_renderer_(owning_renderer),
         playback_controller_(this, std::move(playback_controller)) {
     DCHECK(owning_renderer_);
@@ -81,7 +81,7 @@ class RendererCommandForwarder : public media::mojom::Renderer {
 
 PlaybackCommandForwardingRenderer::PlaybackCommandForwardingRenderer(
     std::unique_ptr<media::Renderer> renderer,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner,
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
     mojo::PendingReceiver<media::mojom::Renderer> pending_renderer_controls)
     : real_renderer_(std::move(renderer)),
       pending_renderer_controls_(std::move(pending_renderer_controls)),
@@ -89,7 +89,6 @@ PlaybackCommandForwardingRenderer::PlaybackCommandForwardingRenderer(
       weak_factory_(this) {
   DCHECK(real_renderer_);
   DCHECK(pending_renderer_controls_);
-
   InitializeSendTimestampUpdateCaller();
 }
 
@@ -126,17 +125,21 @@ void PlaybackCommandForwardingRenderer::SetLatencyHint(
 void PlaybackCommandForwardingRenderer::Flush(base::OnceClosure flush_cb) {}
 
 void PlaybackCommandForwardingRenderer::StartPlayingFrom(base::TimeDelta time) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 }
 
 void PlaybackCommandForwardingRenderer::SetPlaybackRate(double playback_rate) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 }
 
 void PlaybackCommandForwardingRenderer::SetVolume(float volume) {}
 
 base::TimeDelta PlaybackCommandForwardingRenderer::GetMediaTime() {
   return real_renderer_->GetMediaTime();
+}
+
+media::RendererType PlaybackCommandForwardingRenderer::GetRendererType() {
+  return media::RendererType::kCastStreaming;
 }
 
 void PlaybackCommandForwardingRenderer::OnRealRendererInitializationComplete(
@@ -171,7 +174,7 @@ void PlaybackCommandForwardingRenderer::MojoRendererInitialize(
   // over the mojo pipe here
   DCHECK(!streams || streams.value().empty());
 
-  if (!task_runner_->BelongsToCurrentThread()) {
+  if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(
@@ -190,7 +193,7 @@ void PlaybackCommandForwardingRenderer::MojoRendererInitialize(
 
 void PlaybackCommandForwardingRenderer::MojoRendererFlush(
     media::mojom::Renderer::FlushCallback callback) {
-  if (!task_runner_->BelongsToCurrentThread()) {
+  if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(&PlaybackCommandForwardingRenderer::MojoRendererFlush,
@@ -203,7 +206,7 @@ void PlaybackCommandForwardingRenderer::MojoRendererFlush(
 
 void PlaybackCommandForwardingRenderer::MojoRendererStartPlayingFrom(
     ::base::TimeDelta time) {
-  if (!task_runner_->BelongsToCurrentThread()) {
+  if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(
@@ -217,7 +220,7 @@ void PlaybackCommandForwardingRenderer::MojoRendererStartPlayingFrom(
 
 void PlaybackCommandForwardingRenderer::MojoRendererSetPlaybackRate(
     double playback_rate) {
-  if (!task_runner_->BelongsToCurrentThread()) {
+  if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(
@@ -230,7 +233,7 @@ void PlaybackCommandForwardingRenderer::MojoRendererSetPlaybackRate(
 }
 
 void PlaybackCommandForwardingRenderer::MojoRendererSetVolume(float volume) {
-  if (!task_runner_->BelongsToCurrentThread()) {
+  if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
         FROM_HERE,
         base::BindOnce(
@@ -255,8 +258,13 @@ void PlaybackCommandForwardingRenderer::OnError(media::PipelineStatus status) {
     upstream_renderer_client_->OnError(status);
 }
 
+void PlaybackCommandForwardingRenderer::OnFallback(
+    media::PipelineStatus status) {
+  NOTREACHED();
+}
+
 void PlaybackCommandForwardingRenderer::OnEnded() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnEnded();
@@ -266,7 +274,7 @@ void PlaybackCommandForwardingRenderer::OnEnded() {
 
 void PlaybackCommandForwardingRenderer::OnStatisticsUpdate(
     const media::PipelineStatistics& stats) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnStatisticsUpdate(stats);
@@ -277,7 +285,7 @@ void PlaybackCommandForwardingRenderer::OnStatisticsUpdate(
 void PlaybackCommandForwardingRenderer::OnBufferingStateChange(
     media::BufferingState state,
     media::BufferingStateChangeReason reason) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnBufferingStateChange(state, reason);
@@ -286,7 +294,7 @@ void PlaybackCommandForwardingRenderer::OnBufferingStateChange(
 }
 
 void PlaybackCommandForwardingRenderer::OnWaiting(media::WaitingReason reason) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnWaiting(reason);
@@ -296,7 +304,7 @@ void PlaybackCommandForwardingRenderer::OnWaiting(media::WaitingReason reason) {
 
 void PlaybackCommandForwardingRenderer::OnAudioConfigChange(
     const media::AudioDecoderConfig& config) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnAudioConfigChange(config);
@@ -306,7 +314,7 @@ void PlaybackCommandForwardingRenderer::OnAudioConfigChange(
 
 void PlaybackCommandForwardingRenderer::OnVideoConfigChange(
     const media::VideoDecoderConfig& config) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnVideoConfigChange(config);
@@ -316,7 +324,7 @@ void PlaybackCommandForwardingRenderer::OnVideoConfigChange(
 
 void PlaybackCommandForwardingRenderer::OnVideoNaturalSizeChange(
     const gfx::Size& size) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnVideoNaturalSizeChange(size);
@@ -325,7 +333,7 @@ void PlaybackCommandForwardingRenderer::OnVideoNaturalSizeChange(
 }
 
 void PlaybackCommandForwardingRenderer::OnVideoOpacityChange(bool opaque) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (remote_renderer_client_)
     remote_renderer_client_->OnVideoOpacityChange(opaque);
@@ -335,7 +343,7 @@ void PlaybackCommandForwardingRenderer::OnVideoOpacityChange(bool opaque) {
 
 void PlaybackCommandForwardingRenderer::OnVideoFrameRateChange(
     absl::optional<int> fps) {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   // media::mojom::RendererClient does not support this call.
   if (upstream_renderer_client_)
@@ -343,7 +351,7 @@ void PlaybackCommandForwardingRenderer::OnVideoFrameRateChange(
 }
 
 void PlaybackCommandForwardingRenderer::SendTimestampUpdate() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   if (!remote_renderer_client_) {
     return;
@@ -357,7 +365,7 @@ void PlaybackCommandForwardingRenderer::SendTimestampUpdate() {
 }
 
 void PlaybackCommandForwardingRenderer::InitializeSendTimestampUpdateCaller() {
-  if (!task_runner_->BelongsToCurrentThread()) {
+  if (!task_runner_->RunsTasksInCurrentSequence()) {
     task_runner_->PostTask(
         FROM_HERE, base::BindOnce(&PlaybackCommandForwardingRenderer::
                                       InitializeSendTimestampUpdateCaller,
@@ -375,7 +383,7 @@ void PlaybackCommandForwardingRenderer::InitializeSendTimestampUpdateCaller() {
 }
 
 void PlaybackCommandForwardingRenderer::OnMojoDisconnect() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
 
   OnError(media::PIPELINE_ERROR_DISCONNECTED);
   real_renderer_.reset();

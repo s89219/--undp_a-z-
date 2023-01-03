@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -116,8 +116,15 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureInternalDisplay) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
-  EXPECT_EQ(GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
-                           displays_[0]->native_mode()}),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                                       displays_[0]->native_mode()})
+                            .c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                                       displays_[0]->native_mode()})
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_.GetActionsAndClear());
 }
 
@@ -137,13 +144,21 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureInternalAndOneExternalDisplays) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
-  EXPECT_EQ(JoinActions(GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                                        displays_[0]->native_mode()})
                             .c_str(),
                         GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
                                        &big_mode_60hz_})
                             .c_str(),
-                        nullptr),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                                       displays_[0]->native_mode()})
+                            .c_str(),
+                        GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
+                                       &big_mode_60hz_})
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_.GetActionsAndClear());
 }
 
@@ -162,8 +177,15 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureOneExternalDisplay) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
-  EXPECT_EQ(GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
-                           displays_[1]->native_mode()}),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
+                                       displays_[1]->native_mode()})
+                            .c_str(),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
+                                       displays_[1]->native_mode()})
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_.GetActionsAndClear());
 }
 
@@ -201,13 +223,21 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureTwoMstDisplays) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
-  EXPECT_EQ(JoinActions(GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                                        &big_mode_60hz_})
                             .c_str(),
                         GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
                                        &big_mode_60hz_})
                             .c_str(),
-                        nullptr),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                                       &big_mode_60hz_})
+                            .c_str(),
+                        GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
+                                       &big_mode_60hz_})
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_.GetActionsAndClear());
 }
 
@@ -249,7 +279,8 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureInternalAndTwoMstAndHdmiDisplays) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
-  EXPECT_EQ(JoinActions(GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                                        displays_[0]->native_mode()})
                             .c_str(),
                         GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
@@ -261,7 +292,20 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureInternalAndTwoMstAndHdmiDisplays) {
                         GetCrtcAction({displays_[3]->display_id(), gfx::Point(),
                                        &big_mode_60hz_})
                             .c_str(),
-                        nullptr),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                                       displays_[0]->native_mode()})
+                            .c_str(),
+                        GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
+                                       &big_mode_60hz_})
+                            .c_str(),
+                        GetCrtcAction({displays_[2]->display_id(), gfx::Point(),
+                                       &big_mode_60hz_})
+                            .c_str(),
+                        GetCrtcAction({displays_[3]->display_id(), gfx::Point(),
+                                       &big_mode_60hz_})
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_.GetActionsAndClear());
 }
 
@@ -283,14 +327,16 @@ TEST_F(ConfigureDisplaysTaskTest, DisableInternalDisplayFails) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::ERROR, status_);
-  EXPECT_EQ(JoinActions(
-                // Initial modeset fails. Initiate retry logic.
-                GetDisableCrtcAction(displays_[0]).c_str(),
-                GetDisableCrtcAction(displays_[0]).c_str(),
-                // There is no way to downgrade a disable request. Configuration
-                // fails.
-                GetDisableCrtcAction(displays_[0]).c_str(), nullptr),
-            log_.GetActionsAndClear());
+  EXPECT_EQ(
+      JoinActions(kTestModesetStr,
+                  // Initial test-modeset fails. Initiate retry logic.
+                  GetDisableCrtcAction(displays_[0]).c_str(),
+                  kModesetOutcomeFailure,
+                  // There is no way to downgrade a disable request.
+                  // Configuration fails.
+                  kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
+                  kModesetOutcomeFailure, nullptr),
+      log_.GetActionsAndClear());
 }
 
 // Tests that the internal display does not attempt to fallback to alternative
@@ -309,22 +355,22 @@ TEST_F(ConfigureDisplaysTaskTest, NoModeChangeAttemptWhenInternalDisplayFails) {
 
   EXPECT_TRUE(callback_called_);
   EXPECT_EQ(ConfigureDisplaysTask::ERROR, status_);
-  EXPECT_EQ(
-      JoinActions(
-          // Initial modeset fails. Initiate retry logic.
-          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
-                         displays_[0]->native_mode()})
-              .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          // Retry logic fails to modeset internal display. Since internal
-          // displays are restricted to their preferred mode, there are no
-          // other modes to try. The configuration fails completely.
-          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
-                         displays_[0]->native_mode()})
-              .c_str(),
-          nullptr),
-      log_.GetActionsAndClear());
+  EXPECT_EQ(JoinActions(
+                kTestModesetStr,
+                // Initial test-modeset fails. Initiate retry logic.
+                GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                               displays_[0]->native_mode()})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // Retry logic fails to modeset internal display. Since internal
+                // displays are restricted to their preferred mode, there are no
+                // other modes to try. The configuration fails completely.
+                kTestModesetStr,
+                GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                               displays_[0]->native_mode()})
+                    .c_str(),
+                kModesetOutcomeFailure, nullptr),
+            log_.GetActionsAndClear());
 }
 
 // Tests that an external display (with no internal display present; e.g.
@@ -347,26 +393,30 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureOneExternalNoInternalDisplayFails) {
   EXPECT_EQ(ConfigureDisplaysTask::ERROR, status_);
   EXPECT_EQ(
       JoinActions(
+          kTestModesetStr,
           // Initial modeset fails. Initiate retry logic.
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[1]).c_str(),
+          kModesetOutcomeFailure,
           // External display will fail, downgrade twice, and fail completely.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_30hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeFailure, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -408,6 +458,7 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureTwoNoneMstDisplaysNoInternalFail) {
   EXPECT_EQ(ConfigureDisplaysTask::ERROR, status_);
   EXPECT_EQ(
       JoinActions(
+          kTestModesetStr,
           // All displays will fail to modeset together. Initiate retry logic.
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &big_mode_60hz_})
@@ -415,23 +466,41 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureTwoNoneMstDisplaysNoInternalFail) {
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          // |displays_[0]| will fail, downgrade once, and pass.
+          kModesetOutcomeFailure,
+          // We first test-modeset |displays_[0] with all other displays
+          // disabled. It will fail and downgrade once before passing.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeSuccess,
           // |displays_[1]| will fail, downgrade once, and fail completely.
+          kTestModesetStr,
+          GetCrtcAction(
+              {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction(
+              {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
+          // We commit the last passing test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction(
+              {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeSuccess,
           nullptr),
       log_.GetActionsAndClear());
 }
@@ -477,45 +546,51 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureTwoMstDisplaysNoInternalFail) {
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
+          kModesetOutcomeFailure,
           // MST displays will be tested (and fail) together.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // |displays_[0]| will downgrade first. Configuration will fail.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // |displays_[1] will downgrade next. Configuration still fails.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // Since |displays_[1]| is still the largest and has one more mode, it
           // downgrades again. Configuration fails completely.
+          kTestModesetStr,
           GetCrtcAction(
               {displays_[0]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeFailure, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -543,36 +618,45 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
+          kModesetOutcomeFailure,
+          // We first attempt to modeset the internal display with all other
+          // displays disabled, which will fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeFailure,
+          // Since internal displays are restricted to their preferred mode,
+          // there are no other modes to try. Disable the internal display so we
+          // can attempt to modeset displays that are connected to other
+          // connectors. Next, the external display will attempt to modeset.
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
           GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          // Retry logic fails to modeset internal display. Since internal
-          // displays are restricted to their preferred mode, there are no other
-          // modes to try. The configuration will fail completely, but the
-          // external display will attempt to modeset as well.
-          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
-                         displays_[0]->native_mode()})
-              .c_str(),
-          // External display will fail, downgrade twice, and fail again.
-          GetCrtcAction(
-              {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_30hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeFailure, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -616,26 +700,43 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          // Internal display will succeed to modeset.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeSuccess,
           // External display fails, downgrades once, and fails completely.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
+          // We commit the last passing test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeSuccess,
           nullptr),
       log_.GetActionsAndClear());
 }
@@ -673,6 +774,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -682,51 +784,62 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
+          kModesetOutcomeFailure,
+          // We first attempt to modeset the internal display with all other
+          // displays disabled, which will fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          // Retry logic fails to modeset internal display. Since internal
-          // displays are restricted to their preferred mode, there are no other
-          // modes to try. The configuration will fail completely. The external
-          // displays will attempt to modeset next.
-          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
-                         displays_[0]->native_mode()})
-              .c_str(),
-          // MST displays will be tested (and fail) together.
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeFailure,
+          // Since internal displays are restricted to their preferred mode,
+          // there are no other modes to try. Disable the internal display so we
+          // can attempt to modeset displays that are connected to other
+          // connectors. Next, modeset the external displays which are connected
+          // to the same port via MST.
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
           // |displays_[1] & displays_[2] will cycle through all available
           // modes, but configuration will eventually completely fail.
+          GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_30hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeFailure, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -778,6 +891,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -787,36 +901,55 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          // Internal display will succeed to modeset.
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
+          // Next, MST displays will test-modeset, downgrade, and eventually
+          // fail completely.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // MST displays will be tested (and fail) together.
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // |displays_[1]| will downgrade first. Configuration will fail.
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // |displays_[2] will downgrade next and configuration fails
-          // completely.
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
+          // We commit the last successful test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
           nullptr),
       log_.GetActionsAndClear());
 }
@@ -868,6 +1001,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -880,72 +1014,105 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          GetDisableCrtcAction(displays_[3]).c_str(),
-          // Retry logic fails to modeset internal display. Since internal
-          // displays are restricted to their preferred mode, there are no other
-          // modes to try. The configuration will fail completely, but the
-          // external displays will still attempt to configure.
+          kModesetOutcomeFailure,
+          // We first attempt to modeset the internal display with all other
+          // displays disabled, which will fail.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // MST displays_[1,2] will be tested (and fail) together. displays_[1]
-          // downgrades first and fails, Then displays_[2], and the process will
-          // repeat once more before the group fails to modeset.
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          // Since internal displays are restricted to their preferred mode,
+          // there are no other modes to try. Disable the internal display so we
+          // can attempt to modeset displays that are connected to other
+          // connectors. Next, the two displays connected via MST will attempt
+          // to modeset and fail.
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_30hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          // Finally, HDMI display will attempt to modeset and cycle through its
-          // six available modes.
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          // Next, the HDMI display will attempt to modeset and cycle through
+          // its six available modes.
+          kTestModesetStr, GetDisableCrtcAction(displays_[0]).c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &medium_mode_29_98hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetDisableCrtcAction(displays_[0]).c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &small_mode_30hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeFailure, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -995,6 +1162,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1007,31 +1175,43 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          GetDisableCrtcAction(displays_[3]).c_str(),
-          // Internal display will succeed to modeset.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will pass.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // MST displays will be tested (and fail) together. displays_[1]
-          // downgrade first. Modeset fails.
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
+          // MST displays will be tested next with the HDMI display disabled.
+          // They will fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // displays_[2] downgrade next, but there are no other modes available
-          // for displays_[2], so configuration fails completely for the MST
-          // group. The HDMI display will attempt to modeset nest.
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
@@ -1039,24 +1219,60 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_30hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
           // HDMI display attempts to modeset, fails, downgrades twice, and
           // passes modeset.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess,
+          // We commit the last successful test-modeset configuration, which
+          // enables the internal display together with the HDMI display.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
+          GetCrtcAction(
+              {displays_[3]->display_id(), gfx::Point(), &medium_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -1108,6 +1324,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1120,27 +1337,57 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetDisableCrtcAction(displays_[1]).c_str(),
           GetDisableCrtcAction(displays_[2]).c_str(),
-          GetDisableCrtcAction(displays_[3]).c_str(),
-          // Internal display will succeed modeset.
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
+          // MST displays will be tested and pass together.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // MST displays will be tested and pass together.
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
           // HDMI display will fail modeset, but since there are no other modes
           // available for fallback configuration fails completely.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &medium_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &medium_mode_60hz_})
+              .c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
+          // We commit the last successful test-modeset configuration, which
+          // enables the internal display together with the two MST displays.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &medium_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &medium_mode_60hz_})
+              .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
           nullptr),
       log_.GetActionsAndClear());
 }
@@ -1186,6 +1433,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1195,23 +1443,37 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          // Internal display will succeed modeset.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
           // displays_[1] and displays_[2] will be tested and fail together
           // under connector kInvalidConnectorId. Since neither expose any
           // alternative modes to try, configuration completely fails.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
+          // We commit the last successful test-modeset configuration, which
+          // only enables the internal display.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
           nullptr),
       log_.GetActionsAndClear());
 }
@@ -1277,6 +1539,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1292,18 +1555,23 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[4]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetDisableCrtcAction(displays_[1]).c_str(),
           GetDisableCrtcAction(displays_[2]).c_str(),
           GetDisableCrtcAction(displays_[3]).c_str(),
-          GetDisableCrtcAction(displays_[4]).c_str(),
-          // Internal display will succeed modeset.
+          GetDisableCrtcAction(displays_[4]).c_str(), kModesetOutcomeSuccess,
+          // displays_[1-4] will be tested and downgraded as a group, since they
+          // share kInvalidConnectorId due to bad MST hubs.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // displays_[1-4] will be tested and downgraded as a group, since they
-          // share kInvalidConnectorId due to bad MST hubs.
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
@@ -1316,8 +1584,13 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[4]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // displays_[2] will downgrade first, since it is the next largest
           // display with available alternative modes.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
@@ -1330,7 +1603,12 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[4]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // displays_[3] will downgrade next, and fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
@@ -1343,8 +1621,13 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[4]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // Same downgrade process as above will repeat for displays_[2] and
           // displays_[3] before failing completely.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
@@ -1356,6 +1639,10 @@ TEST_F(ConfigureDisplaysTaskTest,
               .c_str(),
           GetCrtcAction(
               {displays_[4]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
@@ -1369,6 +1656,17 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[4]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
+          // We commit the last successful test-modeset configuration, which
+          // only enables the internal display.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(),
+          GetDisableCrtcAction(displays_[4]).c_str(), kModesetOutcomeSuccess,
           nullptr),
       log_.GetActionsAndClear());
 }
@@ -1398,30 +1696,53 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureLastDisplayPartialSuccess) {
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          // Internal display will succeed to modeset.
+          kModesetOutcomeFailure,
+          // We first attempt to modeset the internal display with all other
+          // displays disabled, which will succeed.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeSuccess,
           // Last display will fail, downgrade twice, and pass.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess,
+          // Commit the last successful test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -1454,6 +1775,7 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureMiddleDisplayPartialSuccess) {
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1463,29 +1785,64 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureMiddleDisplayPartialSuccess) {
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          // Internal display will succeed to modeset.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // Second display will fail once, downgrade, and pass.
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
+          // Second display will downgrade twice and pass.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeFailure,
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
           // Third external display will succeed to modeset on first attempt.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess,
+          // Commit the last successful test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -1521,6 +1878,7 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureTwoMstDisplaysPartialSuccess) {
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1530,43 +1888,75 @@ TEST_F(ConfigureDisplaysTaskTest, ConfigureTwoMstDisplaysPartialSuccess) {
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other
+          // displays disabled, which will succeed.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          // Internal display will succeed modeset.
+          GetDisableCrtcAction(displays_[2]).c_str(), kModesetOutcomeSuccess,
+          // MST displays will be tested (and fail) together.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
-          // MST displays will be tested (and fail) together.
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // |displays_[1]| will downgrade first. Configuration will fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          kModesetOutcomeFailure,
           // |displays_[2] will downgrade next. Configuration will fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          // |displays_[1]| will downgrade again. Configuration succeeds.
+          kModesetOutcomeFailure,
+          // |displays_[1]| will downgrade again and pass test-modeset.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess,
+          // Commit the last successful test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -1614,6 +2004,7 @@ TEST_F(ConfigureDisplaysTaskTest,
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together. Initiate retry logic.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
@@ -1626,52 +2017,107 @@ TEST_F(ConfigureDisplaysTaskTest,
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          GetDisableCrtcAction(displays_[2]).c_str(),
-          GetDisableCrtcAction(displays_[3]).c_str(),
-          // Internal display will succeed modeset.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other displays
+          // disabled, which will succeed.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(),
+          GetDisableCrtcAction(displays_[2]).c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
           // Both MST displays will be tested (and fail) together.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
           // |displays_[1]| will downgrade first. Configuration will fail.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
           // |displays_[2] will downgrade next. Configuration still fails.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          // |displays_[1]| will downgrade again. Configuration succeeds.
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeFailure,
+          // |displays_[1]| will downgrade again and pass test-modeset.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          // HDMI display will fail modeset and downgrade once. Configuration
-          // will then succeed.
+          GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
+          // HDMI display will fail test-modeset, downgrade once and pass.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
           GetCrtcAction(
               {displays_[3]->display_id(), gfx::Point(), &medium_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess,
+          // Commit the last successful test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[3]->display_id(), gfx::Point(), &medium_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -1710,7 +2156,8 @@ TEST_F(ConfigureDisplaysTaskTest,
     EXPECT_TRUE(callback_called_);
     EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
     EXPECT_EQ(
-        JoinActions(GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+        JoinActions(kTestModesetStr,
+                    GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                                    displays_[0]->native_mode()})
                         .c_str(),
                     GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
@@ -1719,7 +2166,17 @@ TEST_F(ConfigureDisplaysTaskTest,
                     GetCrtcAction({displays_[2]->display_id(), gfx::Point(),
                                    &big_mode_60hz_})
                         .c_str(),
-                    nullptr),
+                    kModesetOutcomeSuccess, kCommitModesetStr,
+                    GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                                   displays_[0]->native_mode()})
+                        .c_str(),
+                    GetCrtcAction({displays_[1]->display_id(), gfx::Point(),
+                                   &big_mode_60hz_})
+                        .c_str(),
+                    GetCrtcAction({displays_[2]->display_id(), gfx::Point(),
+                                   &big_mode_60hz_})
+                        .c_str(),
+                    kModesetOutcomeSuccess, nullptr),
         log_.GetActionsAndClear());
   }
 
@@ -1759,6 +2216,7 @@ TEST_F(ConfigureDisplaysTaskTest,
     EXPECT_EQ(
         JoinActions(
             // All displays will fail to modeset together. Initiate retry logic.
+            kTestModesetStr,
             GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                            displays_[0]->native_mode()})
                 .c_str(),
@@ -1771,16 +2229,21 @@ TEST_F(ConfigureDisplaysTaskTest,
             GetCrtcAction(
                 {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
                 .c_str(),
-            // Turn off all displays to reset the system resources allocation.
-            GetDisableCrtcAction(displays_[0]).c_str(),
+            kModesetOutcomeFailure,
+            // We first test-modeset the internal display with all other
+            // displays disabled, which will succeed.
+            kTestModesetStr,
+            GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                           displays_[0]->native_mode()})
+                .c_str(),
             GetDisableCrtcAction(displays_[1]).c_str(),
             GetDisableCrtcAction(displays_[2]).c_str(),
-            GetDisableCrtcAction(displays_[3]).c_str(),
-            // Internal display will succeed to modeset.
+            GetDisableCrtcAction(displays_[3]).c_str(), kModesetOutcomeSuccess,
+            // All MST displays will fail test-modeset together.
+            kTestModesetStr,
             GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                            displays_[0]->native_mode()})
                 .c_str(),
-            // All MST displays will fail modeset together.
             GetCrtcAction(
                 {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
                 .c_str(),
@@ -1790,9 +2253,14 @@ TEST_F(ConfigureDisplaysTaskTest,
             GetCrtcAction(
                 {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
                 .c_str(),
+            kModesetOutcomeFailure,
             // displays_[1] will downgrade first, then displays_[2], followed by
             // displays_[3], and finally displays_[1] will downgrade one last
-            // time. Then the configuration will pass modeset.
+            // time. Then the configuration will pass test-modeset.
+            kTestModesetStr,
+            GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                           displays_[0]->native_mode()})
+                .c_str(),
             GetCrtcAction(
                 {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
                 .c_str(),
@@ -1801,6 +2269,10 @@ TEST_F(ConfigureDisplaysTaskTest,
                 .c_str(),
             GetCrtcAction(
                 {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
+                .c_str(),
+            kModesetOutcomeFailure, kTestModesetStr,
+            GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                           displays_[0]->native_mode()})
                 .c_str(),
             GetCrtcAction(
                 {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
@@ -1810,6 +2282,10 @@ TEST_F(ConfigureDisplaysTaskTest,
                 .c_str(),
             GetCrtcAction(
                 {displays_[3]->display_id(), gfx::Point(), &big_mode_60hz_})
+                .c_str(),
+            kModesetOutcomeFailure, kTestModesetStr,
+            GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                           displays_[0]->native_mode()})
                 .c_str(),
             GetCrtcAction(
                 {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
@@ -1819,6 +2295,10 @@ TEST_F(ConfigureDisplaysTaskTest,
                 .c_str(),
             GetCrtcAction(
                 {displays_[3]->display_id(), gfx::Point(), &small_mode_60hz_})
+                .c_str(),
+            kModesetOutcomeFailure, kTestModesetStr,
+            GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                           displays_[0]->native_mode()})
                 .c_str(),
             GetCrtcAction(
                 {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
@@ -1829,7 +2309,22 @@ TEST_F(ConfigureDisplaysTaskTest,
             GetCrtcAction(
                 {displays_[3]->display_id(), gfx::Point(), &small_mode_60hz_})
                 .c_str(),
-            nullptr),
+            kModesetOutcomeSuccess,
+            // Commit the last successful test-modeset configuration.
+            kCommitModesetStr,
+            GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                           displays_[0]->native_mode()})
+                .c_str(),
+            GetCrtcAction(
+                {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+                .c_str(),
+            GetCrtcAction(
+                {displays_[2]->display_id(), gfx::Point(), &small_mode_60hz_})
+                .c_str(),
+            GetCrtcAction(
+                {displays_[3]->display_id(), gfx::Point(), &small_mode_60hz_})
+                .c_str(),
+            kModesetOutcomeSuccess, nullptr),
         log_.GetActionsAndClear());
   }
 }
@@ -1859,30 +2354,53 @@ TEST_F(ConfigureDisplaysTaskTest, AsyncConfigureWithTwoDisplaysPartialSuccess) {
   EXPECT_EQ(
       JoinActions(
           // All displays will fail to modeset together.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
               .c_str(),
-          // Turn off all displays to reset the system resources allocation.
-          GetDisableCrtcAction(displays_[0]).c_str(),
-          GetDisableCrtcAction(displays_[1]).c_str(),
-          // Internal display will succeed to modeset.
+          kModesetOutcomeFailure,
+          // We first test-modeset the internal display with all other
+          // displays disabled, which will succeed.
+          kTestModesetStr,
           GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
                          displays_[0]->native_mode()})
               .c_str(),
+          GetDisableCrtcAction(displays_[1]).c_str(), kModesetOutcomeSuccess,
           // External display will fail twice, downgrade, and pass.
+          kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
               .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &big_mode_29_97hz_})
               .c_str(),
+          kModesetOutcomeFailure, kTestModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
           GetCrtcAction(
               {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
               .c_str(),
-          nullptr),
+          kModesetOutcomeSuccess,
+          // Commit the last successful test-modeset configuration.
+          kCommitModesetStr,
+          GetCrtcAction({displays_[0]->display_id(), gfx::Point(),
+                         displays_[0]->native_mode()})
+              .c_str(),
+          GetCrtcAction(
+              {displays_[1]->display_id(), gfx::Point(), &small_mode_60hz_})
+              .c_str(),
+          kModesetOutcomeSuccess, nullptr),
       log_.GetActionsAndClear());
 }
 
@@ -1961,14 +2479,23 @@ TEST_F(ConfigureDisplaysTaskTest, CloseLidThenOpenLid) {
   ConfigureDisplaysTask close_lid(&delegate_, requests, std::move(callback));
   close_lid.Run();
   EXPECT_EQ(ConfigureDisplaysTask::SUCCESS, status_);
-  EXPECT_EQ(JoinActions(GetDisableCrtcAction(internal_display).c_str(),
+  EXPECT_EQ(JoinActions(kTestModesetStr,
+                        GetDisableCrtcAction(internal_display).c_str(),
                         GetCrtcAction({external_display1->display_id(),
                                        gfx::Point(), &big_mode_60hz_})
                             .c_str(),
                         GetCrtcAction({external_display2->display_id(),
                                        gfx::Point(), &big_mode_60hz_})
                             .c_str(),
-                        nullptr),
+                        kModesetOutcomeSuccess, kCommitModesetStr,
+                        GetDisableCrtcAction(internal_display).c_str(),
+                        GetCrtcAction({external_display1->display_id(),
+                                       gfx::Point(), &big_mode_60hz_})
+                            .c_str(),
+                        GetCrtcAction({external_display2->display_id(),
+                                       gfx::Point(), &big_mode_60hz_})
+                            .c_str(),
+                        kModesetOutcomeSuccess, nullptr),
             log_.GetActionsAndClear());
 
   // Simulate opening the lid as the 2 external displays are already running at
@@ -1985,48 +2512,75 @@ TEST_F(ConfigureDisplaysTaskTest, CloseLidThenOpenLid) {
   ConfigureDisplaysTask open_lid(&delegate_, requests, std::move(callback));
   open_lid.Run();
   ASSERT_EQ(ConfigureDisplaysTask::PARTIAL_SUCCESS, status_);
-  EXPECT_EQ(
-      JoinActions(
-          // Attempt to turn everything on with the highest mode.
-          GetCrtcAction(
-              {internal_display->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          GetCrtcAction(
-              {external_display1->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          GetCrtcAction(
-              {external_display2->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          // Turn off all displays to reset the system resources
-          GetDisableCrtcAction(internal_display).c_str(),
-          GetDisableCrtcAction(external_display1).c_str(),
-          GetDisableCrtcAction(external_display2).c_str(),
-          // Internal display will be the first to be turned on at big mode.
-          GetCrtcAction(
-              {internal_display->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          // External displays will attempt to be turned on at big mode.
-          GetCrtcAction(
-              {external_display1->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          GetCrtcAction(
-              {external_display2->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          // Fallback until success as small mode.
-          GetCrtcAction({external_display1->display_id(), gfx::Point(),
-                         &small_mode_60hz_})
-              .c_str(),
-          GetCrtcAction(
-              {external_display2->display_id(), gfx::Point(), &big_mode_60hz_})
-              .c_str(),
-          GetCrtcAction({external_display1->display_id(), gfx::Point(),
-                         &small_mode_60hz_})
-              .c_str(),
-          GetCrtcAction({external_display2->display_id(), gfx::Point(),
-                         &small_mode_60hz_})
-              .c_str(),
-          nullptr),
-      log_.GetActionsAndClear());
+  EXPECT_EQ(JoinActions(
+                // Attempt to turn everything on with the highest mode.
+                kTestModesetStr,
+                GetCrtcAction({internal_display->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display1->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display2->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // We first test-modeset the internal display with all other
+                // displays disabled, which will succeed.
+                kTestModesetStr,
+                GetCrtcAction({internal_display->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetDisableCrtcAction(external_display1).c_str(),
+                GetDisableCrtcAction(external_display2).c_str(),
+                kModesetOutcomeSuccess,
+                // External displays will attempt to be turned on at big mode.
+                kTestModesetStr,
+                GetCrtcAction({internal_display->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display1->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display2->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                kModesetOutcomeFailure,
+                // Fallback until success as small mode.
+                kTestModesetStr,
+                GetCrtcAction({internal_display->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display1->display_id(), gfx::Point(),
+                               &small_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display2->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                kModesetOutcomeFailure, kTestModesetStr,
+                GetCrtcAction({internal_display->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display1->display_id(), gfx::Point(),
+                               &small_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display2->display_id(), gfx::Point(),
+                               &small_mode_60hz_})
+                    .c_str(),
+                kModesetOutcomeSuccess,
+                // Commit the last successful test-modeset configuration.
+                kCommitModesetStr,
+                GetCrtcAction({internal_display->display_id(), gfx::Point(),
+                               &big_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display1->display_id(), gfx::Point(),
+                               &small_mode_60hz_})
+                    .c_str(),
+                GetCrtcAction({external_display2->display_id(), gfx::Point(),
+                               &small_mode_60hz_})
+                    .c_str(),
+                kModesetOutcomeSuccess, nullptr),
+            log_.GetActionsAndClear());
 }
 
 }  // namespace test

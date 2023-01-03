@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -37,7 +37,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) StorageDirectory {
   // true if creation succeeds or directory already exists.
   bool CreateBucket(const BucketLocator& bucket);
 
-  // Find and marks the storage directory for `bucket` and marks it for
+  // Finds and marks the storage directory for `bucket` and marks it for
   // deletion. Returns true on success.
   bool DoomBucket(const BucketLocator& bucket);
 

@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -157,14 +157,14 @@ class DomDistillerTabUtilsBrowserTest : public InProcessBrowserTest {
   const GURL& article_url() const { return article_url_; }
 
   std::string GetDocumentTitle(content::WebContents* web_contents) const {
-    return content::ExecuteScriptAndGetValue(web_contents->GetMainFrame(),
-                                             "document.title")
+    return content::ExecuteScriptAndGetValue(
+               web_contents->GetPrimaryMainFrame(), "document.title")
         .GetString();
   }
 
   std::string GetArticleHeading(content::WebContents* web_contents) const {
     return content::ExecuteScriptAndGetValue(
-               web_contents->GetMainFrame(),
+               web_contents->GetPrimaryMainFrame(),
                "document.getElementById('title-holder').textContent")
         .GetString();
   }
@@ -244,6 +244,36 @@ IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest, UMATimesAreLogged) {
   histogram_tester.ExpectTotalCount(kDistilledPageHistogram, 1);
   // However, there should not be a second distillable histogram.
   histogram_tester.ExpectTotalCount(kDistillablePageHistogram, 1);
+}
+
+IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest,
+                       BackForwardNavigationRegeneratesDistillabilitySignal) {
+  content::WebContents* initial_web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  TestDistillabilityObserver distillability_observer(initial_web_contents);
+  DistillabilityResult article_result;
+  article_result.is_distillable = true;
+  article_result.is_last = true;
+  article_result.is_mobile_friendly = false;
+
+  // Navigate to URL 1.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), article_url()));
+  distillability_observer.WaitForResult(article_result);
+
+  GURL non_article_url =
+      https_server_->GetURL("/dom_distiller/non_og_article.html");
+  DistillabilityResult non_article_result;
+  non_article_result.is_distillable = false;
+  non_article_result.is_last = true;
+  non_article_result.is_mobile_friendly = false;
+
+  // Navigate to URL 2.
+  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), non_article_url));
+  distillability_observer.WaitForResult(non_article_result);
+
+  // Navigate to the previous page.
+  initial_web_contents->GetController().GoBack();
+  distillability_observer.WaitForResult(article_result);
 }
 
 // TODO(crbug.com/1272152): Flaky on linux.
@@ -331,8 +361,10 @@ IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsBrowserTest,
   GURL url1(article_url());
   content::WebContents* initial_web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  content::RenderFrameHost* main_frame =
-      browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame();
+  content::RenderFrameHost* main_frame = browser()
+                                             ->tab_strip_model()
+                                             ->GetActiveWebContents()
+                                             ->GetPrimaryMainFrame();
   int process_id = main_frame->GetProcess()->GetID();
   int frame_routing_id = main_frame->GetRoutingID();
   GURL url2(https_server_->GetURL("/title1.html"));
@@ -497,7 +529,7 @@ IN_PROC_BROWSER_TEST_F(DomDistillerTabUtilsFencedFrameTest,
   const GURL fenced_frame_url =
       https_server_->GetURL("/fenced_frames/title1.html");
   ASSERT_TRUE(fenced_frame_test_helper().CreateFencedFrame(
-      source_web_contents()->GetMainFrame(), fenced_frame_url));
+      source_web_contents()->GetPrimaryMainFrame(), fenced_frame_url));
 
   // Ensure that the navigation in the fenced frame doesn't affect the
   // SelfDeletingRequestDelegate.

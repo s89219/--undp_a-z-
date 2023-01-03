@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@
 #include "chrome/browser/apps/app_service/launch_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/buildflags.h"
-#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/lifetime/application_lifetime_desktop.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
@@ -63,13 +63,17 @@
 #include "chrome/browser/ash/crostini/crostini_util.h"
 #endif
 
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#include "chrome/browser/lacros/browser_launcher.h"
+#endif
+
 #if BUILDFLAG(IS_MAC)
 #include "chrome/browser/app_controller_mac.h"
 #endif
 
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
+#if defined(TOOLKIT_VIEWS)
 #include "chrome/browser/ui/side_search/side_search_utils.h"
-#endif
+#endif  // defined(TOOLKIT_VIEWS)
 
 using content::NavigationEntry;
 using content::WebContents;
@@ -180,9 +184,14 @@ bool SessionService::ShouldRestore(Browser* browser) {
   }
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-  // Restore should trigger for lacros-chrome if handling a restart.
+  // Restore should trigger for lacros-chrome if handling a restart or if
+  // currently processing a full restore.
+  auto* primary_user_profile =
+      g_browser_process->profile_manager()->GetProfileByPath(
+          ProfileManager::GetPrimaryUserProfilePath());
   if (StartupBrowserCreator::WasRestarted() ||
-      StartupBrowserCreator::IsLaunchingBrowserForLastProfiles()) {
+      BrowserLauncher::GetForProfile(primary_user_profile)
+          ->is_launching_for_full_restore()) {
     return true;
   }
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -270,15 +279,6 @@ void SessionService::SetTabGroupMetadata(
 
   ScheduleCommand(
       sessions::CreateTabGroupMetadataUpdateCommand(group_id, visual_data));
-}
-
-void SessionService::SetPinnedState(const SessionID& window_id,
-                                    const SessionID& tab_id,
-                                    bool is_pinned) {
-  if (!ShouldTrackChangesToWindow(window_id))
-    return;
-
-  ScheduleCommand(sessions::CreatePinnedStateCommand(tab_id, is_pinned));
 }
 
 void SessionService::AddTabExtraData(const SessionID& window_id,
@@ -558,7 +558,7 @@ bool SessionService::RestoreIfNecessary(const StartupTabs& startup_tabs,
       browser_creator.LaunchBrowser(*command_line, profile(), base::FilePath(),
                                     chrome::startup::IsProcessStartup::kYes,
                                     chrome::startup::IsFirstRun::kNo,
-                                    std::make_unique<LaunchModeRecorder>());
+                                    std::make_unique<OldLaunchModeRecorder>());
       return true;
     } else {
       // If 'browser' is not null, show the crash bubble in the current browser
@@ -588,11 +588,6 @@ void SessionService::BuildCommandsForTab(
       sessions::SessionTabHelper::FromWebContents(tab);
   const SessionID& session_id(session_tab_helper->session_id());
 
-  if (is_pinned) {
-    command_storage_manager()->AppendRebuildCommand(
-        sessions::CreatePinnedStateCommand(session_id, true));
-  }
-
   const blink::UserAgentOverride& ua_override = tab->GetUserAgentOverride();
 
   if (!ua_override.ua_string_override.empty()) {
@@ -611,7 +606,7 @@ void SessionService::BuildCommandsForTab(
         sessions::CreateTabGroupCommand(session_id, std::move(group)));
   }
 
-#if BUILDFLAG(ENABLE_SIDE_SEARCH)
+#if defined(TOOLKIT_VIEWS)
   absl::optional<std::pair<std::string, std::string>> tab_restore_data =
       side_search::MaybeGetSideSearchTabRestoreData(tab);
   if (tab_restore_data.has_value()) {
@@ -619,7 +614,7 @@ void SessionService::BuildCommandsForTab(
         sessions::CreateAddTabExtraDataCommand(
             session_id, tab_restore_data->first, tab_restore_data->second));
   }
-#endif  // BUILDFLAG(ENABLE_SIDE_SEARCH)
+#endif  // defined(TOOLKIT_VIEWS)
 }
 
 void SessionService::ScheduleResetCommands() {

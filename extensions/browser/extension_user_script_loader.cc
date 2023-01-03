@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,7 @@
 
 #include <stddef.h>
 
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <memory>
@@ -21,16 +22,17 @@
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/memory/read_only_shared_memory_region.h"
+#include "base/metrics/histogram_macros.h"
 #include "base/one_shot_event.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
+#include "base/types/optional_util.h"
 #include "base/version.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
-#include "extensions/browser/api/extension_types_utils.h"
 #include "extensions/browser/api/scripting/scripting_constants.h"
 #include "extensions/browser/api/scripting/scripting_utils.h"
 #include "extensions/browser/component_extension_resource_manager.h"
@@ -50,6 +52,7 @@
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/common/utils/content_script_utils.h"
+#include "extensions/common/utils/extension_types_utils.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -109,7 +112,8 @@ struct VerifyContentInfo {
 // couldn't be read.
 std::tuple<absl::optional<std::string>, ReadScriptContentSource>
 ReadScriptContent(UserScript::File* script_file,
-                  const absl::optional<int>& script_resource_id) {
+                  const absl::optional<int>& script_resource_id,
+                  size_t& remaining_length) {
   const base::FilePath& path = ExtensionResource::GetFilePath(
       script_file->extension_root(), script_file->relative_path(),
       ExtensionResource::SYMLINKS_MUST_RESOLVE_WITHIN_ROOT);
@@ -125,11 +129,20 @@ ReadScriptContent(UserScript::File* script_file,
     return {absl::nullopt, ReadScriptContentSource::kFile};
   }
 
+  size_t max_script_length =
+      std::min(remaining_length, script_parsing::GetMaxScriptLength());
   std::string content;
-  if (!base::ReadFileToString(path, &content)) {
-    LOG(WARNING) << "Failed to load user script file: " << path.value();
+  if (!base::ReadFileToStringWithMaxSize(path, &content, max_script_length)) {
+    if (content.empty()) {
+      LOG(WARNING) << "Failed to load user script file: " << path.value();
+    } else {
+      LOG(WARNING) << "Failed to load user script file, maximum size exceeded: "
+                   << path.value();
+    }
     return {absl::nullopt, ReadScriptContentSource::kFile};
   }
+
+  remaining_length -= content.size();
   return {std::move(content), ReadScriptContentSource::kFile};
 }
 
@@ -154,14 +167,57 @@ void ForwardVerifyContentToIO(VerifyContentInfo info) {
       FROM_HERE, base::BindOnce(&VerifyContent, std::move(info)));
 }
 
+void RecordContentScriptLength(const std::string& script_content) {
+  // Max bucket at 10 GB, which is way above the reasonable maximum size of a
+  // script.
+  static constexpr int kMaxUmaLengthInKB = 1024 * 1024 * 10;
+  static constexpr int kMinUmaLengthInKB = 1;
+  static constexpr int kBucketCount = 50;
+
+  size_t content_script_length_kb = script_content.length() / 1024;
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.ContentScripts.ContentScriptLength",
+                              content_script_length_kb, kMinUmaLengthInKB,
+                              kMaxUmaLengthInKB, kBucketCount);
+}
+
+// Records the total size in kb of all manifest and dynamic scripts that were
+// loaded in a single load.
+void RecordTotalContentScriptLengthForLoad(size_t manifest_scripts_length,
+                                           size_t dynamic_scripts_length) {
+  // Max bucket at 10 GB, which is way above the reasonable maximum size of all
+  // scripts from a single extension.
+  static constexpr int kMaxUmaLengthInKB = 1024 * 1024 * 10;
+  static constexpr int kMinUmaLengthInKB = 1;
+  static constexpr int kBucketCount = 50;
+
+  // Only record a UMA entry if scripts were actually loaded, by checking if
+  // the total scripts length is positive.
+  if (manifest_scripts_length > 0u) {
+    size_t manifest_scripts_length_kb = manifest_scripts_length / 1024;
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Extensions.ContentScripts.ManifestContentScriptsLengthPerLoad",
+        manifest_scripts_length_kb, kMinUmaLengthInKB, kMaxUmaLengthInKB,
+        kBucketCount);
+  }
+  if (dynamic_scripts_length > 0u) {
+    size_t dynamic_scripts_length_kb = dynamic_scripts_length / 1024;
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "Extensions.ContentScripts.DynamicContentScriptsLengthPerLoad",
+        dynamic_scripts_length_kb, kMinUmaLengthInKB, kMaxUmaLengthInKB,
+        kBucketCount);
+  }
+}
+
 // Loads user scripts from the extension who owns these scripts.
 void LoadScriptContent(const mojom::HostID& host_id,
                        UserScript::File* script_file,
                        const absl::optional<int>& script_resource_id,
                        const SubstitutionMap* localization_messages,
-                       const scoped_refptr<ContentVerifier>& verifier) {
+                       const scoped_refptr<ContentVerifier>& verifier,
+                       size_t& remaining_length) {
   DCHECK(script_file);
-  auto [content, source] = ReadScriptContent(script_file, script_resource_id);
+  auto [content, source] =
+      ReadScriptContent(script_file, script_resource_id, remaining_length);
 
   bool needs_content_verification = source == ReadScriptContentSource::kFile;
   if (needs_content_verification && verifier.get()) {
@@ -193,8 +249,12 @@ void LoadScriptContent(const mojom::HostID& host_id,
   // Remove BOM from the content.
   if (base::StartsWith(*content, base::kUtf8ByteOrderMark,
                        base::CompareCase::SENSITIVE)) {
-    script_file->set_content(content->substr(strlen(base::kUtf8ByteOrderMark)));
+    std::string trimmed_content =
+        content->substr(strlen(base::kUtf8ByteOrderMark));
+    RecordContentScriptLength(trimmed_content);
+    script_file->set_content(trimmed_content);
   } else {
+    RecordContentScriptLength(*content);
     script_file->set_content(*content);
   }
 }
@@ -218,21 +278,60 @@ void FillScriptFileResourceIds(const UserScript::FileList& script_files,
   }
 }
 
+// Returns the total length of scripts that were previously loaded (i.e. not
+// present in `added_script_ids`).
+size_t GetTotalLoadedScriptsLength(
+    UserScriptList* user_scripts,
+    const std::set<std::string>& added_script_ids) {
+  size_t total_length = 0u;
+  for (const std::unique_ptr<UserScript>& script : *user_scripts) {
+    if (added_script_ids.count(script->id()) == 0) {
+      for (const auto& js_script : script->js_scripts())
+        total_length += js_script->GetContent().length();
+      for (const auto& js_script : script->css_scripts())
+        total_length += js_script->GetContent().length();
+    }
+  }
+  return total_length;
+}
+
 void LoadUserScripts(
     UserScriptList* user_scripts,
     ScriptResourceIds script_resource_ids,
     const ExtensionUserScriptLoader::PathAndLocaleInfo& host_info,
     const std::set<std::string>& added_script_ids,
     const scoped_refptr<ContentVerifier>& verifier) {
+  // Tracks the total size in bytes for `user_scripts` for this script load.
+  // These counts are separate for manifest and dynamic scripts. All scripts in
+  // `user_scripts` are from the same extension.
+  size_t manifest_script_length = 0u;
+  size_t dynamic_script_length = 0u;
+
+  // Calculate the remaining storage allocated for scripts for this extension by
+  // subtracting the length of all loaded scripts from the extension's max
+  // scripts length. Note that subtraction is only done if the result will be
+  // positive (to avoid unsigned wraparound).
+  size_t loaded_length =
+      GetTotalLoadedScriptsLength(user_scripts, added_script_ids);
+  size_t remaining_length =
+      loaded_length >= script_parsing::GetMaxScriptsLengthPerExtension()
+          ? 0u
+          : script_parsing::GetMaxScriptsLengthPerExtension() - loaded_length;
+
   for (const std::unique_ptr<UserScript>& script : *user_scripts) {
+    size_t script_files_length = 0u;
+
     if (added_script_ids.count(script->id()) == 0)
       continue;
     for (const std::unique_ptr<UserScript::File>& script_file :
          script->js_scripts()) {
-      if (script_file->GetContent().empty())
+      if (script_file->GetContent().empty()) {
         LoadScriptContent(script->host_id(), script_file.get(),
                           script_resource_ids[script_file.get()], nullptr,
-                          verifier);
+                          verifier, remaining_length);
+      }
+
+      script_files_length += script_file->GetContent().length();
     }
     if (script->css_scripts().size() > 0) {
       std::unique_ptr<SubstitutionMap> localization_messages(
@@ -245,11 +344,23 @@ void LoadUserScripts(
         if (script_file->GetContent().empty()) {
           LoadScriptContent(script->host_id(), script_file.get(),
                             script_resource_ids[script_file.get()],
-                            localization_messages.get(), verifier);
+                            localization_messages.get(), verifier,
+                            remaining_length);
         }
+
+        script_files_length += script_file->GetContent().length();
       }
     }
+
+    if (script->IsIDGenerated()) {
+      manifest_script_length += script_files_length;
+    } else {
+      dynamic_script_length += script_files_length;
+    }
   }
+
+  RecordTotalContentScriptLengthForLoad(manifest_script_length,
+                                        dynamic_script_length);
 }
 
 void LoadScriptsOnFileTaskRunner(
@@ -273,12 +384,12 @@ void LoadScriptsOnFileTaskRunner(
 }
 
 UserScriptList ConvertValueToScripts(const Extension& extension,
-                                     const base::Value& list) {
+                                     const base::Value::List& list) {
   const int valid_schemes = UserScript::ValidUserScriptSchemes(
       scripting::kScriptsCanExecuteEverywhere);
 
   UserScriptList scripts;
-  for (const base::Value& value : list.GetListDeprecated()) {
+  for (const base::Value& value : list) {
     std::u16string error;
     std::unique_ptr<api::content_scripts::ContentScript> content_script =
         api::content_scripts::ContentScript::FromValue(value, &error);
@@ -287,9 +398,8 @@ UserScriptList ConvertValueToScripts(const Extension& extension,
       continue;
 
     std::unique_ptr<UserScript> script = std::make_unique<UserScript>();
-    const auto* dict = static_cast<const base::DictionaryValue*>(&value);
-    const base::Value* id_value = dict->FindKey(scripting::kId);
-    auto* id = id_value->GetIfString();
+    const auto& dict = value.GetDict();
+    auto* id = dict.FindString(scripting::kId);
     if (!id)
       continue;
 
@@ -304,7 +414,8 @@ UserScriptList ConvertValueToScripts(const Extension& extension,
     script->set_execution_world(ConvertExecutionWorld(content_script->world));
 
     if (!script_parsing::ParseMatchPatterns(
-            content_script->matches, content_script->exclude_matches.get(),
+            content_script->matches,
+            base::OptionalToPtr(content_script->exclude_matches),
             /*definition_index=*/0, extension.creation_flags(),
             scripting::kScriptsCanExecuteEverywhere, valid_schemes,
             scripting::kAllUrlsIncludesChromeUrls, script.get(), &error,
@@ -313,7 +424,8 @@ UserScriptList ConvertValueToScripts(const Extension& extension,
     }
 
     if (!script_parsing::ParseFileSources(
-            &extension, content_script->js.get(), content_script->css.get(),
+            &extension, base::OptionalToPtr(content_script->js),
+            base::OptionalToPtr(content_script->css),
             /*definition_index=*/0, script.get(), &error)) {
       continue;
     }
@@ -336,8 +448,7 @@ api::content_scripts::ContentScript CreateContentScriptObject(
     content_script.matches.push_back(pattern.GetAsString());
 
   if (!script.exclude_url_patterns().is_empty()) {
-    content_script.exclude_matches =
-        std::make_unique<std::vector<std::string>>();
+    content_script.exclude_matches.emplace();
     content_script.exclude_matches->reserve(
         script.exclude_url_patterns().size());
     for (const URLPattern& pattern : script.exclude_url_patterns())
@@ -347,23 +458,23 @@ api::content_scripts::ContentScript CreateContentScriptObject(
   // File paths may be normalized in the returned object and can differ slightly
   // compared to what was originally passed into registerContentScripts.
   if (!script.js_scripts().empty()) {
-    content_script.js = std::make_unique<std::vector<std::string>>();
+    content_script.js.emplace();
     content_script.js->reserve(script.js_scripts().size());
     for (const auto& js_script : script.js_scripts())
       content_script.js->push_back(js_script->relative_path().AsUTF8Unsafe());
   }
 
   if (!script.css_scripts().empty()) {
-    content_script.css = std::make_unique<std::vector<std::string>>();
+    content_script.css.emplace();
     content_script.css->reserve(script.css_scripts().size());
     for (const auto& css_script : script.css_scripts())
       content_script.css->push_back(css_script->relative_path().AsUTF8Unsafe());
   }
 
-  content_script.all_frames = std::make_unique<bool>(script.match_all_frames());
+  content_script.all_frames = script.match_all_frames();
   content_script.match_origin_as_fallback =
-      std::make_unique<bool>(script.match_origin_as_fallback() ==
-                             MatchOriginAsFallbackBehavior::kAlways);
+      script.match_origin_as_fallback() ==
+      MatchOriginAsFallbackBehavior::kAlways;
 
   content_script.run_at =
       script_parsing::ConvertRunLocationToManifestType(script.run_location());
@@ -594,17 +705,16 @@ void ExtensionUserScriptLoader::DynamicScriptsStorageHelper::SetDynamicScripts(
   if (!state_store_)
     return;
 
-  auto scripts_value = std::make_unique<base::Value>(base::Value::Type::LIST);
+  base::Value::List scripts_value;
   URLPatternSet persistent_patterns;
   for (const std::unique_ptr<UserScript>& script : scripts) {
     if (!base::Contains(persistent_dynamic_script_ids, script->id()))
       continue;
 
-    base::DictionaryValue value =
-        std::move(*CreateContentScriptObject(*script).ToValue());
-    value.SetStringPath(scripting::kId, script->id());
+    base::Value::Dict value = CreateContentScriptObject(*script).ToValue();
+    value.Set(scripting::kId, script->id());
 
-    scripts_value->Append(std::move(value));
+    scripts_value.Append(std::move(value));
     persistent_patterns.AddPatterns(script->url_patterns());
   }
 
@@ -612,12 +722,12 @@ void ExtensionUserScriptLoader::DynamicScriptsStorageHelper::SetDynamicScripts(
                                             std::move(persistent_patterns));
   state_store_->SetExtensionValue(extension_id_,
                                   scripting::kRegisteredScriptsStorageKey,
-                                  std::move(scripts_value));
+                                  base::Value(std::move(scripts_value)));
 }
 
 void ExtensionUserScriptLoader::DynamicScriptsStorageHelper::
     OnDynamicScriptsReadFromStorage(DynamicScriptsReadCallback callback,
-                                    std::unique_ptr<base::Value> value) {
+                                    absl::optional<base::Value> value) {
   const Extension* extension = ExtensionRegistry::Get(browser_context_)
                                    ->enabled_extensions()
                                    .GetByID(extension_id_);
@@ -625,8 +735,9 @@ void ExtensionUserScriptLoader::DynamicScriptsStorageHelper::
                        "up if the extension was disabled";
 
   UserScriptList scripts;
-  if (value && value->type() == base::Value::Type::LIST) {
-    UserScriptList dynamic_scripts = ConvertValueToScripts(*extension, *value);
+  if (value && value->is_list()) {
+    UserScriptList dynamic_scripts =
+        ConvertValueToScripts(*extension, value->GetList());
     scripts.insert(scripts.end(),
                    std::make_move_iterator(dynamic_scripts.begin()),
                    std::make_move_iterator(dynamic_scripts.end()));

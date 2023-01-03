@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -32,7 +32,7 @@ using content::test::PrerenderHostRegistryObserver;
 // fallback in the NavigationThrottle.
 class BlockAllPluginServiceFilter : public content::PluginServiceFilter {
  public:
-  bool IsPluginAvailable(int render_process_id,
+  bool IsPluginAvailable(content::BrowserContext* browser_context,
                          const content::WebPluginInfo& plugin) override {
     return false;
   }
@@ -114,7 +114,7 @@ IN_PROC_BROWSER_TEST_F(PDFIFrameNavigationThrottleBrowserTest,
   // frame, we expect the navigation to be deferred during WillStartRequest
   // until the prerender is activated.
   {
-    pdf_navigation.WaitForFirstYieldAfterDidStartNavigation();
+    ASSERT_TRUE(pdf_navigation.WaitForFirstYieldAfterDidStartNavigation());
     EXPECT_FALSE(pdf_navigation.GetNavigationHandle()->HasCommitted());
     EXPECT_TRUE(pdf_navigation.GetNavigationHandle()->IsDeferredForTesting());
   }
@@ -123,7 +123,7 @@ IN_PROC_BROWSER_TEST_F(PDFIFrameNavigationThrottleBrowserTest,
   // the prerender.
   {
     PrerenderHostObserver prerender_observer(*web_contents(), kPrerenderUrl);
-    ASSERT_TRUE(ExecJs(web_contents()->GetMainFrame(),
+    ASSERT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
                        JsReplace("location = $1", kPrerenderUrl)));
     prerender_observer.WaitForActivation();
   }
@@ -132,12 +132,12 @@ IN_PROC_BROWSER_TEST_F(PDFIFrameNavigationThrottleBrowserTest,
   // finish. The initial PDF navigation should be cancelled by the throttle and
   // fallback content loaded in its place.
   {
-    pdf_navigation.WaitForNavigationFinished();
+    ASSERT_TRUE(pdf_navigation.WaitForNavigationFinished());
     EXPECT_TRUE(pdf_navigation.was_committed());
     EXPECT_TRUE(pdf_navigation.was_successful());
 
     content::RenderFrameHost* child_frame =
-        ChildFrameAt(web_contents()->GetMainFrame(), 0);
+        ChildFrameAt(web_contents()->GetPrimaryMainFrame(), 0);
     ASSERT_TRUE(child_frame);
     EXPECT_EQ(child_frame->GetLastCommittedURL(), kFallbackPdfUrl);
   }

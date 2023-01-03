@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@ namespace syncer {
 // This struct is closely tied to the AllStatus object which uses instances of
 // it to track and report on the sync engine's internal state, and the functions
 // in sync_ui_util.cc which convert the contents of this struct into a
-// DictionaryValue used to populate the chrome://sync-internals summary tab.
+// base::Value::Dict used to populate the chrome://sync-internals summary tab.
 struct SyncStatus {
   SyncStatus();
   SyncStatus(const SyncStatus& other);
@@ -36,12 +36,6 @@ struct SyncStatus {
   int notifications_received = 0;
 
   SyncProtocolError sync_protocol_error;
-
-  // Number of encryption conflicts counted during most recent sync cycle.
-  int encryption_conflicts = 0;
-
-  // Number of hierarchy conflicts counted during most recent sync cycle.
-  int hierarchy_conflicts = 0;
 
   // Number of items the server refused to commit due to conflict during most
   // recent sync cycle.

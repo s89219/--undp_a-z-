@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -13,9 +13,13 @@
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/permissions/permission_request.h"
 #include "components/permissions/permission_result.h"
-#include "components/permissions/permission_util.h"
 #include "components/permissions/prediction_service/prediction_service_messages.pb.h"
+#include "components/permissions/request_type.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+
+namespace blink {
+enum class PermissionType;
+}
 
 namespace content {
 class BrowserContext;
@@ -26,6 +30,7 @@ class GURL;
 
 namespace permissions {
 enum class PermissionRequestGestureType;
+enum class PermissionAction;
 class PermissionRequest;
 
 // Used for UMA to record the types of permission prompts shown.
@@ -65,7 +70,7 @@ enum class RequestTypeForUma {
   PERMISSION_AR = 22,
   PERMISSION_STORAGE_ACCESS = 23,
   PERMISSION_CAMERA_PAN_TILT_ZOOM = 24,
-  PERMISSION_WINDOW_PLACEMENT = 25,
+  PERMISSION_WINDOW_MANAGEMENT = 25,
   PERMISSION_LOCAL_FONTS = 26,
   PERMISSION_IDLE_DETECTION = 27,
   PERMISSION_FILE_HANDLING = 28,
@@ -256,6 +261,77 @@ enum class PermissionPredictionSource {
   kMaxValue = SERVER_SIDE,
 };
 
+// This enum backs up the 'PageInfoDialogAccessType' histogram enum.
+// It is used for collecting page info access type metrics in the context of
+// the confirmation chip.
+enum class PageInfoDialogAccessType {
+  // The user opened page info by clicking on the lock in a situation that is
+  // considered independent of the display of a confirmation chip.
+  LOCK_CLICK = 0,
+  // The user opened page info by clicking on the lock while a confirmation chip
+  // was being displayed.
+  LOCK_CLICK_DURING_CONFIRMATION_CHIP = 1,
+  // The user opened page info by clicking on the confirmation chip while it was
+  // being displayed.
+  CONFIRMATION_CHIP_CLICK = 2,
+
+  // The user opened page info by clicking on the lock within
+  // 'kConfirmationConsiderationDurationForUma' after confirmation chip has
+  // collapsed. This click may be considered influenced by the displaying of the
+  // confirmation chip.
+  LOCK_CLICK_SHORTLY_AFTER_CONFIRMATION_CHIP = 3,
+
+  // Always keep at the end.
+  kMaxValue = LOCK_CLICK_SHORTLY_AFTER_CONFIRMATION_CHIP
+};
+
+constexpr auto kConfirmationConsiderationDurationForUma = base::Seconds(20);
+
+// This enum backs up the
+// 'Permissions.PageInfo.ChangedWithin1m.{PermissionType}' histograms enum. It
+// is used for collecting page info permission change metrics following in the
+// first minute after a PermissionAction has been taken. Note that
+// PermissionActions  DISMISSED and IGNORED are not taken into account, as they
+// don't have an effect on the content settings.
+enum class PermissionChangeAction {
+  // PermissionAction was one of {GRANTED, GRANTED_ONCE} and the content
+  // setting is changed to CONTENT_SETTING_BLOCK.
+  REVOKED = 0,
+
+  // PermissionAction was DENIED and the content setting is changed to
+  // CONTENT_SETTING_ALLOW.
+  REALLOWED = 1,
+
+  // PermissionAction was one of {GRANTED, GRANTED_ONCE} and the content setting
+  // is changed to CONTENT_SETTING_DEFAULT.
+  RESET_FROM_ALLOWED = 2,
+
+  // PermissionAction was DENIED and the content setting is changed to
+  // CONTENT_SETTING_DEFAULT.
+  RESET_FROM_DENIED = 3,
+
+  // Always keep at the end.
+  kMaxValue = RESET_FROM_DENIED
+};
+
+// The reason the permission action `PermissionAction::IGNORED` was triggered.
+enum class PermissionIgnoredReason {
+  // Ignore was triggered due to closure of the browser window
+  WINDOW_CLOSED = 0,
+
+  // Ignore was triggered due to closure of the tab
+  TAB_CLOSED = 1,
+
+  // Ignore was triggered due to navigation
+  NAVIGATION = 2,
+
+  // Catches all other cases
+  UNKNOWN = 3,
+
+  // Always keep at the end
+  NUM
+};
+
 // Provides a convenient way of logging UMA for permission related operations.
 class PermissionUmaUtil {
  public:
@@ -279,8 +355,9 @@ class PermissionUmaUtil {
   PermissionUmaUtil(const PermissionUmaUtil&) = delete;
   PermissionUmaUtil& operator=(const PermissionUmaUtil&) = delete;
 
-  static void PermissionRequested(ContentSettingsType permission,
-                                  const GURL& requesting_origin);
+  static void PermissionRequested(ContentSettingsType permission);
+
+  static void PermissionRequestPreignored(blink::PermissionType permission);
 
   // Records the revocation UMA and UKM metrics for ContentSettingsTypes that
   // have user facing permission prompts. The passed in `permission` must be
@@ -297,6 +374,11 @@ class PermissionUmaUtil {
       PermissionStatusSource source);
 
   static void RecordEmbargoStatus(PermissionEmbargoStatus embargo_status);
+
+  // Recorded when a permission prompt creation is in progress.
+  static void RecordPermissionPromptAttempt(
+      const std::vector<PermissionRequest*>& requests,
+      bool IsLocationBarEditingOrEmpty);
 
   // UMA specifically for when permission prompts are shown. This should be
   // roughly equivalent to the metrics above, however it is
@@ -319,11 +401,10 @@ class PermissionUmaUtil {
       absl::optional<PermissionPromptDispositionReason> ui_reason,
       absl::optional<PredictionGrantLikelihood> predicted_grant_likelihood,
       absl::optional<bool> prediction_decision_held_back,
+      absl::optional<permissions::PermissionIgnoredReason> ignored_reason,
       bool did_show_prompt,
       bool did_click_manage,
       bool did_click_learn_more);
-
-  static void RecordWithBatteryBucket(const std::string& histogram);
 
   static void RecordInfobarDetailsExpanded(bool expanded);
 
@@ -368,6 +449,14 @@ class PermissionUmaUtil {
       bool is_on_device,
       bool is_heldback);
 
+  static void RecordPageInfoDialogAccessType(
+      PageInfoDialogAccessType access_type);
+
+  static void RecordPageInfoPermissionChangeWithin1m(
+      ContentSettingsType type,
+      PermissionAction previous_action,
+      ContentSetting setting_after);
+
   static std::string GetPermissionActionString(
       PermissionAction permission_action);
 
@@ -384,6 +473,11 @@ class PermissionUmaUtil {
 
   static bool IsPromptDispositionLoud(
       PermissionPromptDisposition prompt_disposition);
+
+  static void RecordIgnoreReason(
+      const std::vector<PermissionRequest*>& requests,
+      PermissionPromptDisposition prompt_disposition,
+      PermissionIgnoredReason reason);
 
   // A scoped class that will check the current resolved content setting on
   // construction and report a revocation metric accordingly if the revocation

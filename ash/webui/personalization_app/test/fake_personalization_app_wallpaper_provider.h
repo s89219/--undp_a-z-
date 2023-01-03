@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "ash/public/cpp/wallpaper/wallpaper_types.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom.h"
 #include "base/unguessable_token.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 
@@ -19,8 +20,7 @@ namespace content {
 class WebUI;
 }  // namespace content
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 class FakePersonalizationAppWallpaperProvider
     : public PersonalizationAppWallpaperProvider {
@@ -39,6 +39,12 @@ class FakePersonalizationAppWallpaperProvider
       mojo::PendingReceiver<ash::personalization_app::mojom::WallpaperProvider>
           receiver) override;
 
+  void GetWallpaperAsJpegBytes(
+      content::WebUIDataSource::GotDataCallback callback) override;
+
+  bool IsEligibleForGooglePhotos() override;
+
+  // ash::personalization_app::mojom::WallpaperProvider:
   void MakeTransparent() override {}
 
   void MakeOpaque() override {}
@@ -53,8 +59,6 @@ class FakePersonalizationAppWallpaperProvider
       const absl::optional<std::string>& resume_token,
       FetchGooglePhotosAlbumsCallback callback) override;
 
-  void FetchGooglePhotosCount(FetchGooglePhotosCountCallback callback) override;
-
   void FetchGooglePhotosEnabled(
       FetchGooglePhotosEnabledCallback callback) override;
 
@@ -63,6 +67,9 @@ class FakePersonalizationAppWallpaperProvider
       const absl::optional<std::string>& album_id,
       const absl::optional<std::string>& resume_token,
       FetchGooglePhotosPhotosCallback callback) override;
+
+  void GetDefaultImageThumbnail(
+      GetDefaultImageThumbnailCallback callback) override;
 
   void GetLocalImages(GetLocalImagesCallback callback) override;
 
@@ -76,6 +83,8 @@ class FakePersonalizationAppWallpaperProvider
   void SelectWallpaper(uint64_t image_asset_id,
                        bool preview_mode,
                        SelectWallpaperCallback callback) override;
+
+  void SelectDefaultImage(SelectDefaultImageCallback callback) override;
 
   void SelectGooglePhotosPhoto(
       const std::string& id,
@@ -97,7 +106,9 @@ class FakePersonalizationAppWallpaperProvider
 
   void SetCurrentWallpaperLayout(ash::WallpaperLayout layout) override;
 
-  void SetDailyRefreshCollectionId(const std::string& collection_id) override;
+  void SetDailyRefreshCollectionId(
+      const std::string& collection_id,
+      SetDailyRefreshCollectionIdCallback callback) override;
 
   void GetDailyRefreshCollectionId(
       GetDailyRefreshCollectionIdCallback callback) override;
@@ -116,7 +127,6 @@ class FakePersonalizationAppWallpaperProvider
       wallpaper_receiver_{this};
 };
 
-}  // namespace personalization_app
-}  // namespace ash
+}  // namespace ash::personalization_app
 
 #endif  // ASH_WEBUI_PERSONALIZATION_APP_TEST_FAKE_PERSONALIZATION_APP_WALLPAPER_PROVIDER_H_

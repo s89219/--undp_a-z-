@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -277,7 +277,7 @@ void RemoteCopyMessageHandler::ShowNotification(const std::u16string& title,
   TRACE_EVENT0("sharing", "RemoteCopyMessageHandler::ShowNotification");
 
   message_center::RichNotificationData rich_notification_data;
-  rich_notification_data.vector_small_image = &kSendTabToSelfIcon;
+  rich_notification_data.vector_small_image = &kLaptopAndSmartphoneIcon;
   rich_notification_data.renotify = true;
 
   ui::Accelerator paste_accelerator(ui::VKEY_V, ui::EF_PLATFORM_ACCELERATOR);

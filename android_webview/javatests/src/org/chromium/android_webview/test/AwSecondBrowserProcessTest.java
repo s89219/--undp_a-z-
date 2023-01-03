@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import org.chromium.android_webview.AwBrowserProcess;
+import org.chromium.android_webview.common.services.ServiceHelper;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.DoNotRevive;
 
@@ -106,7 +107,7 @@ public class AwSecondBrowserProcessTest {
         Intent intent = new Intent(context, SecondBrowserProcess.class);
         mSecondBrowserProcessLatch = new CountDownLatch(1);
         Assert.assertNotNull(context.startService(intent));
-        Assert.assertTrue(context.bindService(intent, mConnection, 0));
+        Assert.assertTrue(ServiceHelper.bindService(context, intent, mConnection, 0));
         Assert.assertTrue(mSecondBrowserProcessLatch.await(
                 AwActivityTestRule.SCALED_WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS));
         mSecondBrowserProcessLatch = null;

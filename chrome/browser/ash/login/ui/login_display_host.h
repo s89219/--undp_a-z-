@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,18 +12,15 @@
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list_types.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "chrome/browser/ash/customization/customization_document.h"
-// TODO(https://crbug.com/1164001): use forward declaration.
-#include "chrome/browser/ash/login/existing_user_controller.h"
+#include "chrome/browser/ash/login/oobe_quick_start/target_device_bootstrap_controller.h"
 #include "chrome/browser/ash/login/oobe_screen.h"
 #include "chrome/browser/ash/login/ui/login_display.h"
 #include "chrome/browser/ash/login/ui/signin_ui.h"
-// TODO(https://crbug.com/1164001): use forward declaration.
-#include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "components/user_manager/user_type.h"
-
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/views/widget/widget.h"
 
 class AccountId;
 
@@ -36,10 +33,13 @@ class Rect;
 }  // namespace gfx
 
 namespace ash {
+
+class ExistingUserController;
 class KioskAppId;
 class KioskLaunchController;
-class MetricsRecorder;
+class OobeUI;
 class WebUILoginView;
+class WizardContext;
 class WizardController;
 enum class OobeDialogState;
 
@@ -75,9 +75,6 @@ class LoginDisplayHost {
 
   // Returns the default LoginDisplayHost instance if it has been created.
   static LoginDisplayHost* default_host() { return default_host_; }
-
-  // Returns an owned pointer to the MetricsRecorder instance.
-  MetricsRecorder* metrics_recorder() { return metrics_recorder_.get(); }
 
   // Returns an unowned pointer to the LoginDisplay instance.
   virtual LoginDisplay* GetLoginDisplay() = 0;
@@ -167,7 +164,7 @@ class LoginDisplayHost {
   virtual void ShowGuestTosScreen() = 0;
 
   // Hide any visible oobe dialog.
-  virtual void HideOobeDialog(bool saml_video_timeout = false) = 0;
+  virtual void HideOobeDialog(bool saml_page_closed = false) = 0;
 
   // Sets whether shelf buttons are enabled.
   virtual void SetShelfButtonsEnabled(bool enabled) = 0;
@@ -245,7 +242,8 @@ class LoginDisplayHost {
 
   // Gets the keyboard remapped pref value for `pref_name` key. Returns true if
   // successful, otherwise returns false.
-  // TODO (crbug.com/1168114): Double check if this method belongs here.
+  // It provides a remapping based on currently selected user pod (as different
+  // users might have different remappings).
   virtual bool GetKeyboardRemappedPrefValue(const std::string& pref_name,
                                             int* value) const = 0;
   // Allows tests to wait for WebUI to start.
@@ -263,6 +261,9 @@ class LoginDisplayHost {
   // Browser initialization finish.
   virtual bool IsWebUIStarted() const = 0;
 
+  virtual base::WeakPtr<ash::quick_start::TargetDeviceBootstrapController>
+  GetQuickStartBootstrapController() = 0;
+
  protected:
   LoginDisplayHost();
   virtual ~LoginDisplayHost();
@@ -274,18 +275,10 @@ class LoginDisplayHost {
   // Global LoginDisplayHost instance.
   static LoginDisplayHost* default_host_;
 
-  // Owned pointer to MetricsRecorder instance.
-  std::unique_ptr<MetricsRecorder> metrics_recorder_;
-
   // Callback to be executed when WebUI is started.
   base::RepeatingClosure on_wizard_controller_created_for_tests_;
 };
 
 }  // namespace ash
-
-// TODO(https://crbug.com/1164001): remove when moved to ash.
-namespace chromeos {
-using ::ash::LoginDisplayHost;
-}
 
 #endif  // CHROME_BROWSER_ASH_LOGIN_UI_LOGIN_DISPLAY_HOST_H_

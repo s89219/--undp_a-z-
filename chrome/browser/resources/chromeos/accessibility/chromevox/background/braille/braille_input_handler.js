@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,16 @@
  * text in an input field.  This class cooperates with the Braille IME
  * that is built into Chrome OS to do the actual text editing.
  */
-import {BrailleTranslatorManager} from '/chromevox/background/braille/braille_translator_manager.js';
-import {ExpandingBrailleTranslator} from '/chromevox/background/braille/expanding_braille_translator.js';
-import {EventGenerator} from '/common/event_generator.js';
+
+import {EventGenerator} from '../../../common/event_generator.js';
+import {StringUtil} from '../../../common/string_util.js';
+import {BrailleKeyCommand, BrailleKeyEvent} from '../../common/braille/braille_key_types.js';
+import {Spannable} from '../../common/spannable.js';
+
+import {BrailleTranslatorManager} from './braille_translator_manager.js';
+import {ExpandingBrailleTranslator} from './expanding_braille_translator.js';
+import {LibLouis} from './liblouis.js';
+import {ExtraCellsSpan, ValueSelectionSpan, ValueSpan} from './spans.js';
 
 export class BrailleInputHandler {
   /**
@@ -19,39 +26,31 @@ export class BrailleInputHandler {
   constructor(translatorManager) {
     /**
      * Port of the connected IME if any.
-     * @type {Port}
-     * @private
+     * @private {Port}
      */
     this.imePort_ = null;
     /**
      * {code true} when the Braille IME is connected and has signaled that it is
      * active.
-     * @type {boolean}
-     * @private
+     * @private {boolean}
      */
     this.imeActive_ = false;
     /**
      * The input context of the current input field, as reported by the IME.
      * {@code null} if no input field has focus.
-     * @type {{contextID: number, type: string}?}
-     * @private
+     * @private {?{contextID: number, type: string}}
      */
     this.inputContext_ = null;
-    /**
-     * @type {!BrailleTranslatorManager}
-     * @private
-     */
+    /** @private {!BrailleTranslatorManager} */
     this.translatorManager_ = translatorManager;
     /**
      * Text that currently precedes the first selection end-point.
-     * @type {string}
-     * @private
+     * @private {string}
      */
     this.currentTextBefore_ = '';
     /**
      * Text that currently follows the last selection end-point.
-     * @type {string}
-     * @private
+     * @private {string}
      */
     this.currentTextAfter_ = '';
     /**
@@ -61,34 +60,27 @@ export class BrailleInputHandler {
      * braille dots command, but we'll receive the command in parallel.  To work
      * around the race, we store the cell entered until we can submit it to the
      * IME.
-     * @type {!Array<number>}
-     * @private
+     * @private {!Array<number>}
      */
     this.pendingCells_ = [];
-    /**
-     * @type {BrailleInputHandler.EntryState_}
-     * @private
-     */
+    /** @private {BrailleInputHandler.EntryState_} */
     this.entryState_ = null;
-    /**
-     * @type {ExtraCellsSpan}
-     * @private
-     */
+    /** @private {ExtraCellsSpan} */
     this.uncommittedCellsSpan_ = null;
-    /**
-     * @type {function()?}
-     * @private
-     */
+    /** @private {function()?} */
     this.uncommittedCellsChangedListener_ = null;
 
-    this.translatorManager_.addChangeListener(
-        this.commitAndClearEntryState_.bind(this));
+    this.init_();
   }
 
   /**
    * Starts to listen for connections from the Chrome OS braille IME.
+   * @private
    */
-  init() {
+  init_() {
+    this.translatorManager_.addChangeListener(
+        this.commitAndClearEntryState_.bind(this));
+
     chrome.runtime.onConnectExternal.addListener(this.onImeConnect_.bind(this));
   }
 
@@ -347,7 +339,7 @@ export class BrailleInputHandler {
         this.postImeMessage_({
           type: 'keyEventHandled',
           requestId: message['requestId'],
-          result: this.onBackspace_()
+          result: this.onBackspace_(),
         });
         break;
       case 'reset':
@@ -404,9 +396,9 @@ export class BrailleInputHandler {
         throw Error('Unknown key code in event: ' + JSON.stringify(event));
       }
       EventGenerator.sendKeyPress(numericCode, {
-        shift: !!event.shiftKey,
-        ctrl: !!event.ctrlKey,
-        alt: !!event.altKey
+        shift: Boolean(event.shiftKey),
+        ctrl: Boolean(event.ctrlKey),
+        alt: Boolean(event.altKey),
       });
     });
   }
@@ -455,43 +447,36 @@ BrailleInputHandler.EntryState_ = class {
    * @param {!LibLouis.Translator} translator
    */
   constructor(inputHandler, translator) {
-    /**
-     * @type {BrailleInputHandler}
-     * @private
-     */
+    /** @private {BrailleInputHandler} */
     this.inputHandler_ = inputHandler;
     /**
      * The translator currently used for typing, if
      * {@code this.cells_.length > 0}.
-     * @type {!LibLouis.Translator}
-     * @private
+     * @private {!LibLouis.Translator}
      */
     this.translator_ = translator;
     /**
      * Braille cells that have been typed by the user so far.
-     * @type {!Array<number>}
-     * @private
+     * @private {!Array<number>}
      */
     this.cells_ = [];
     /**
      * Text resulting from translating {@code this.cells_}.
-     * @type {string}
-     * @private
+     * @private {string}
      */
     this.text_ = '';
     /**
      * List of strings that we expect to be set as preceding text of the
-     * selection.  This is populated when we send text changes to the IME so
+     * selection. This is populated when we send text changes to the IME so
      * that our own changes don't reset the pending cells.
-     * @type {!Array<string>}
-     * @private
+     * @private {!Array<string>}
      */
     this.pendingTextsBefore_ = [];
   }
 
   /**
    * @return {!LibLouis.Translator} The translator used by this entry
-   *     state.  This doesn't change for a given object.
+   *     state. This doesn't change for a given object.
    */
   get translator() {
     return this.translator_;
@@ -647,7 +632,7 @@ BrailleInputHandler.EditsEntryState_ =
         type: 'replaceText',
         contextID: this.inputHandler_.inputContext_.contextID,
         deleteBefore: deleteLength,
-        newText: toInsert
+        newText: toInsert,
       });
     }
   }
@@ -674,7 +659,7 @@ BrailleInputHandler.LateCommitEntryState_ =
   commit() {
     this.inputHandler_.postImeMessage_({
       type: 'commitUncommitted',
-      contextID: this.inputHandler_.inputContext_.contextID
+      contextID: this.inputHandler_.inputContext_.contextID,
     });
   }
 
@@ -688,7 +673,7 @@ BrailleInputHandler.LateCommitEntryState_ =
     this.inputHandler_.postImeMessage_({
       type: 'setUncommitted',
       contextID: this.inputHandler_.inputContext_.contextID,
-      text: newText
+      text: newText,
     });
   }
 };

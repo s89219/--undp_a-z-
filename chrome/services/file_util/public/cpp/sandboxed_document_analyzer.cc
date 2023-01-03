@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,7 +9,6 @@
 #include "base/files/file_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/process/process_handle.h"
-#include "base/strings/stringprintf.h"
 #include "base/task/thread_pool.h"
 #include "chrome/common/safe_browsing/document_analyzer_results.h"
 #include "chrome/services/file_util/public/mojom/safe_document_analyzer.mojom.h"
@@ -68,8 +67,6 @@ void SandboxedDocumentAnalyzer::AnalyzeDocument(
     const base::FilePath& file_path) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  base::UmaHistogramBoolean("SBClientDownload.DocumentAnalysisRemoteValid",
-                            remote_analyzer_.is_bound());
   if (remote_analyzer_) {
     remote_analyzer_->AnalyzeDocument(
         std::move(file), target_file_path_,

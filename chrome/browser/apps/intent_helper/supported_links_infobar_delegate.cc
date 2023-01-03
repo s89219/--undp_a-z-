@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -59,6 +59,23 @@ void SupportedLinksInfoBarDelegate::MaybeShowSupportedLinksInfoBar(
   infobars::ContentInfoBarManager::FromWebContents(web_contents)
       ->AddInfoBar(CreateConfirmInfoBar(
           std::make_unique<SupportedLinksInfoBarDelegate>(profile, app_id)));
+}
+
+// static
+void SupportedLinksInfoBarDelegate::RemoveSupportedLinksInfoBar(
+    content::WebContents* web_contents) {
+  auto* infobar_manager =
+      infobars::ContentInfoBarManager::FromWebContents(web_contents);
+  for (size_t i = 0; i < infobar_manager->infobar_count(); i++) {
+    auto* infobar = infobar_manager->infobar_at(i);
+    if (infobar->delegate()->GetIdentifier() ==
+        infobars::InfoBarDelegate::SUPPORTED_LINKS_INFOBAR_DELEGATE_CHROMEOS) {
+      // There should only ever be one supported links infobar visible at a
+      // time, so we can just remove it and exit.
+      infobar_manager->RemoveInfoBar(infobar);
+      return;
+    }
+  }
 }
 
 // static

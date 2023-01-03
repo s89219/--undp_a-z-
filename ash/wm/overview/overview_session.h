@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -44,13 +44,13 @@ class Widget;
 
 namespace ash {
 
-class DesksTemplatesPresenter;
-class DesksTemplatesDialogController;
 class OverviewDelegate;
 class OverviewGrid;
 class OverviewHighlightController;
 class OverviewItem;
 class OverviewWindowDragController;
+class SavedDeskDialogController;
+class SavedDeskPresenter;
 
 // The Overview shows a grid of all of your windows, allowing to select
 // one by clicking or tapping on it.
@@ -232,9 +232,9 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
       aura::Window* gained_active,
       aura::Window* lost_active);
 
-  // Returns true when either the `DesksTemplatesGridWidget` or
-  // `DesksTemplatesDialog` is the window that is losing activation.
-  bool IsTemplatesUiLosingActivation(aura::Window* lost_active);
+  // Returns true when either the `SavedDeskLibraryView` or
+  // `SavedDeskDialog` is the window that is losing activation.
+  bool IsSavedDeskUiLosingActivation(aura::Window* lost_active);
 
   // Gets the window which keeps focus for the duration of overview mode.
   aura::Window* GetOverviewFocusWindow();
@@ -290,15 +290,22 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
   // |active_window_before_overview_|.
   bool IsWindowActiveWindowBeforeOverview(aura::Window* window) const;
 
-  // Shows the desks templates grids on all displays. If `was_zero_state` is
-  // true then we will expand the desks bars. Focuses the item which matches
+  // Shows the saved desk library. Creates the widget if needed. The desks bar
+  // will be expanded if it isn't already. Focuses the item which matches
   // `item_to_focus` on the display associated with `root_window`.
-  void ShowDesksTemplatesGrids(bool was_zero_state,
-                               const base::GUID& item_to_focus,
-                               aura::Window* const root_window);
+  void ShowSavedDeskLibrary(const base::GUID& item_to_focus,
+                            const std::u16string& saved_desk_name,
+                            aura::Window* const root_window);
 
-  void HideDesksTemplatesGrids();
-  bool IsShowingDesksTemplatesGrid() const;
+  // Hides the saved desk library and reshows the overview items. Updates the
+  // save desk button if we are not exiting overview.
+  void HideSavedDeskLibrary();
+
+  // True if the saved desk library is shown.
+  bool IsShowingSavedDeskLibrary() const;
+
+  // True if the saved desk library will be shown shortly.
+  bool WillShowSavedDeskLibrary() const;
 
   // Updates the focusable overview widgets so that they point to the correct
   // next and previous widgets for a11y purposes. Needs to be updated when a
@@ -306,15 +313,8 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
   void UpdateAccessibilityFocus();
 
   // DesksController::Observer:
-  void OnDeskAdded(const Desk* desk) override;
-  void OnDeskRemoved(const Desk* desk) override;
-  void OnDeskReordered(int old_index, int new_index) override;
   void OnDeskActivationChanged(const Desk* activated,
                                const Desk* deactivated) override;
-  void OnDeskSwitchAnimationLaunching() override;
-  void OnDeskSwitchAnimationFinished() override;
-  void OnDeskNameChanged(const Desk* desk,
-                         const std::u16string& new_name) override;
 
   // display::DisplayObserver:
   void OnDisplayAdded(const display::Display& display) override;
@@ -347,6 +347,11 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
 
   OverviewDelegate* delegate() { return delegate_; }
 
+  bool ignore_activations() const { return ignore_activations_; }
+  void set_ignore_activations(bool ignore_activations) {
+    ignore_activations_ = ignore_activations;
+  }
+
   bool is_shutting_down() const { return is_shutting_down_; }
   void set_is_shutting_down(bool is_shutting_down) {
     is_shutting_down_ = is_shutting_down;
@@ -369,16 +374,28 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
     return window_drag_controller_.get();
   }
 
+  ScopedOverviewHideWindows* hide_windows_for_saved_desks_grid() {
+    return hide_windows_for_saved_desks_grid_.get();
+  }
+
   OverviewHighlightController* highlight_controller() {
     return highlight_controller_.get();
   }
 
-  DesksTemplatesPresenter* desks_templates_presenter() {
-    return desks_templates_presenter_.get();
+  SavedDeskPresenter* saved_desk_presenter() {
+    return saved_desk_presenter_.get();
+  }
+
+  SavedDeskDialogController* saved_desk_dialog_controller() {
+    return saved_desk_dialog_controller_.get();
   }
 
   void set_auto_add_windows_enabled(bool enabled) {
     auto_add_windows_enabled_ = enabled;
+  }
+
+  void set_allow_empty_desk_without_exiting(bool enabled) {
+    allow_empty_desk_without_exiting_ = enabled;
   }
 
  private:
@@ -408,13 +425,11 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
 
   void OnItemAdded(aura::Window* window);
 
-  // Called when a window is activated or deactivated and the desks templates
-  // feature is enabled. Returns true if we should keep overview open. Overview
-  // should be kept open if |gained_active| or |lost_active| is a desks
-  // templates dialog.
-  bool ShouldKeepOverviewOpenForDesksTemplatesDialog(
-      aura::Window* gained_active,
-      aura::Window* lost_active);
+  // Called when a window is activated or deactivated and the saved desk feature
+  // is enabled. Returns true if we should keep overview open. Overview should
+  // be kept open if `gained_active` or `lost_active` is a saved desk dialog.
+  bool ShouldKeepOverviewOpenForSavedDeskDialog(aura::Window* gained_active,
+                                                aura::Window* lost_active);
 
   // Weak pointer to the overview delegate which will be called when a selection
   // is made.
@@ -473,13 +488,19 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
 
   std::unique_ptr<ScopedOverviewHideWindows> hide_overview_windows_;
 
+  // Scoped windows to hide for saved desks grid. For now, this contains the
+  // overview item window and its corresponding real window to make sure such
+  // windows are not shown via other events for saved desks grid.
+  std::unique_ptr<ScopedOverviewHideWindows> hide_windows_for_saved_desks_grid_;
+
   std::unique_ptr<OverviewHighlightController> highlight_controller_;
 
   // The object responsible to talking to the desk model.
-  std::unique_ptr<DesksTemplatesPresenter> desks_templates_presenter_;
+  std::unique_ptr<SavedDeskPresenter> saved_desk_presenter_;
 
-  std::unique_ptr<DesksTemplatesDialogController>
-      desks_templates_dialog_controller_;
+  // Controls showing and hiding dialogs associated with the saved desks
+  // feature.
+  std::unique_ptr<SavedDeskDialogController> saved_desk_dialog_controller_;
 
   absl::optional<display::ScopedDisplayObserver> display_observer_;
 
@@ -496,6 +517,10 @@ class ASH_EXPORT OverviewSession : public display::DisplayObserver,
   // When true, windows added to the observed desk are automatically added to
   // the overview session.
   bool auto_add_windows_enabled_ = true;
+
+  // When true, the overview session is not exited when the last window is
+  // removed.
+  bool allow_empty_desk_without_exiting_ = false;
 
   base::ScopedObservation<TabletModeController, TabletModeObserver>
       tablet_mode_observation_{this};

@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,7 +8,6 @@
 #include <utility>
 
 #include "base/command_line.h"
-#include "base/feature_list.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "build/build_config.h"
@@ -17,11 +16,11 @@
 #include "content/public/browser/browser_xr_runtime.h"
 #include "content/public/browser/media_stream_request.h"
 #include "content/public/browser/xr_install_helper.h"
-#include "content/public/common/content_features.h"
 #include "device/vr/buildflags/buildflags.h"
 #include "device/vr/public/cpp/vr_device_provider.h"
 #include "device/vr/public/mojom/vr_service.mojom-shared.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
+#include "third_party/blink/public/mojom/mediastream/media_stream.mojom.h"
 
 #if BUILDFLAG(IS_WIN)
 #include "chrome/browser/vr/ui_host/vr_ui_host_impl.h"
@@ -63,13 +62,14 @@ class CameraIndicationObserver : public content::BrowserXRRuntime::Observer {
     if (num_runtimes_with_camera_in_use_ && !ui_) {
       DCHECK(web_contents);
 
-      blink::MediaStreamDevice device(
+      blink::mojom::StreamDevices devices;
+      devices.video_device = blink::MediaStreamDevice(
           blink::mojom::MediaStreamType::DEVICE_VIDEO_CAPTURE,
           kWebXrVideoCaptureDeviceId, kWebXrVideoCaptureDeviceName);
 
       ui_ = MediaCaptureDevicesDispatcher::GetInstance()
                 ->GetMediaStreamCaptureIndicator()
-                ->RegisterMediaStream(web_contents, {std::move(device)});
+                ->RegisterMediaStream(web_contents, devices);
       DCHECK(ui_);
     }
 
@@ -113,16 +113,13 @@ content::XRProviderList ChromeXrIntegrationClient::GetAdditionalProviders() {
 #if BUILDFLAG(IS_ANDROID)
   providers.push_back(std::make_unique<device::GvrDeviceProvider>());
 #if BUILDFLAG(ENABLE_ARCORE)
-  if (base::FeatureList::IsEnabled(features::kWebXrArModule)) {
-    base::android::ScopedJavaLocalRef<jobject>
-        j_ar_compositor_delegate_provider =
-            vr::Java_ArCompositorDelegateProviderImpl_Constructor(
-                base::android::AttachCurrentThread());
+  base::android::ScopedJavaLocalRef<jobject> j_ar_compositor_delegate_provider =
+      vr::Java_ArCompositorDelegateProviderImpl_Constructor(
+          base::android::AttachCurrentThread());
 
-    providers.push_back(std::make_unique<webxr::ArCoreDeviceProvider>(
-        webxr::ArCompositorDelegateProvider(
-            std::move(j_ar_compositor_delegate_provider))));
-  }
+  providers.push_back(std::make_unique<webxr::ArCoreDeviceProvider>(
+      webxr::ArCompositorDelegateProvider(
+          std::move(j_ar_compositor_delegate_provider))));
 #endif  // BUILDFLAG(ENABLE_ARCORE)
 #endif  // BUILDFLAG(IS_ANDROID)
 

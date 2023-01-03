@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 
 #include "base/unguessable_token.h"
 #include "services/network/public/mojom/blocked_by_response_reason.mojom-blink.h"
-#include "third_party/blink/renderer/bindings/core/v8/source_location.h"
+#include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_security_policy_violation_event_init.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
 #include "third_party/blink/renderer/core/dom/element.h"
@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/core/inspector/protocol/audits.h"
 #include "third_party/blink/renderer/core/inspector/protocol/network.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/platform/bindings/source_location.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 
@@ -76,6 +77,18 @@ protocol::Network::CorsError RendererCorsIssueCodeToProtocol(
   }
 }
 
+protocol::Audits::GenericIssueErrorType GenericIssueErrorTypeToProtocol(
+    mojom::blink::GenericIssueErrorType error_type) {
+  switch (error_type) {
+    case mojom::blink::GenericIssueErrorType::
+        kCrossOriginPortalPostMessageError:
+      return protocol::Audits::GenericIssueErrorTypeEnum::
+          CrossOriginPortalPostMessageError;
+    case mojom::blink::GenericIssueErrorType::kFormLabelForNameError:
+      return protocol::Audits::GenericIssueErrorTypeEnum::FormLabelForNameError;
+  }
+}
+
 }  // namespace
 
 std::unique_ptr<protocol::Audits::SourceCodeLocation> CreateProtocolLocation(
@@ -118,7 +131,7 @@ void AuditsIssue::ReportCorsIssue(
           .setCorsErrorStatus(std::move(protocol_cors_error_status))
           .build();
   cors_issue_details->setInitiatorOrigin(initiator_origin);
-  auto location = SourceLocation::Capture(execution_context);
+  auto location = CaptureSourceLocation(execution_context);
   if (location) {
     cors_issue_details->setLocation(CreateProtocolLocation(*location));
   }
@@ -143,53 +156,58 @@ BuildAttributionReportingIssueType(AttributionReportingIssueType type) {
     case AttributionReportingIssueType::kPermissionPolicyDisabled:
       return protocol::Audits::AttributionReportingIssueTypeEnum::
           PermissionPolicyDisabled;
-    case AttributionReportingIssueType::kInvalidAttributionSourceEventId:
+    case AttributionReportingIssueType::kPermissionPolicyNotDelegated:
       return protocol::Audits::AttributionReportingIssueTypeEnum::
-          InvalidAttributionSourceEventId;
-    case AttributionReportingIssueType::kAttributionSourceUntrustworthyOrigin:
+          PermissionPolicyNotDelegated;
+    case AttributionReportingIssueType::kUntrustworthyReportingOrigin:
       return protocol::Audits::AttributionReportingIssueTypeEnum::
-          AttributionSourceUntrustworthyOrigin;
-    case AttributionReportingIssueType::kAttributionUntrustworthyOrigin:
+          UntrustworthyReportingOrigin;
+    case AttributionReportingIssueType::kInsecureContext:
       return protocol::Audits::AttributionReportingIssueTypeEnum::
-          AttributionUntrustworthyOrigin;
-    case AttributionReportingIssueType::kInvalidAttributionSourceExpiry:
+          InsecureContext;
+    case AttributionReportingIssueType::kInvalidRegisterSourceHeader:
+      return protocol::Audits::AttributionReportingIssueTypeEnum::InvalidHeader;
+    case AttributionReportingIssueType::kInvalidRegisterTriggerHeader:
       return protocol::Audits::AttributionReportingIssueTypeEnum::
-          InvalidAttributionSourceExpiry;
-    case AttributionReportingIssueType::kInvalidAttributionSourcePriority:
+          InvalidRegisterTriggerHeader;
+    case AttributionReportingIssueType::kInvalidEligibleHeader:
       return protocol::Audits::AttributionReportingIssueTypeEnum::
-          InvalidAttributionSourcePriority;
+          InvalidEligibleHeader;
+    case AttributionReportingIssueType::kTooManyConcurrentRequests:
+      return protocol::Audits::AttributionReportingIssueTypeEnum::
+          TooManyConcurrentRequests;
+    case AttributionReportingIssueType::kSourceAndTriggerHeaders:
+      return protocol::Audits::AttributionReportingIssueTypeEnum::
+          SourceAndTriggerHeaders;
+    case AttributionReportingIssueType::kSourceIgnored:
+      return protocol::Audits::AttributionReportingIssueTypeEnum::SourceIgnored;
+    case AttributionReportingIssueType::kTriggerIgnored:
+      return protocol::Audits::AttributionReportingIssueTypeEnum::
+          TriggerIgnored;
   }
 }
 
 }  // namespace
 
-void AuditsIssue::ReportAttributionIssue(
-    ExecutionContext* reporting_execution_context,
-    AttributionReportingIssueType type,
-    const absl::optional<base::UnguessableToken>& offending_frame_token,
-    Element* element,
-    const absl::optional<String>& request_id,
-    const absl::optional<String>& invalid_parameter) {
+void AuditsIssue::ReportAttributionIssue(ExecutionContext* execution_context,
+                                         AttributionReportingIssueType type,
+                                         Element* element,
+                                         const String& request_id,
+                                         const String& invalid_parameter) {
   auto details = protocol::Audits::AttributionReportingIssueDetails::create()
                      .setViolationType(BuildAttributionReportingIssueType(type))
                      .build();
 
-  if (offending_frame_token) {
-    details->setFrame(
-        protocol::Audits::AffectedFrame::create()
-            .setFrameId(IdentifiersFactory::IdFromToken(*offending_frame_token))
-            .build());
-  }
   if (element) {
     details->setViolatingNodeId(DOMNodeIds::IdForNode(element));
   }
-  if (request_id) {
+  if (!request_id.IsNull()) {
     details->setRequest(protocol::Audits::AffectedRequest::create()
-                            .setRequestId(*request_id)
+                            .setRequestId(request_id)
                             .build());
   }
-  if (invalid_parameter) {
-    details->setInvalidParameter(*invalid_parameter);
+  if (!invalid_parameter.IsNull()) {
+    details->setInvalidParameter(invalid_parameter);
   }
 
   auto issue_details =
@@ -201,7 +219,7 @@ void AuditsIssue::ReportAttributionIssue(
                                 AttributionReportingIssue)
                    .setDetails(std::move(issue_details))
                    .build();
-  reporting_execution_context->AddInspectorIssue(AuditsIssue(std::move(issue)));
+  execution_context->AddInspectorIssue(AuditsIssue(std::move(issue)));
 }
 
 void AuditsIssue::ReportNavigatorUserAgentAccess(
@@ -214,12 +232,12 @@ void AuditsIssue::ReportNavigatorUserAgentAccess(
 
   // Try to get only the script name quickly.
   std::unique_ptr<SourceLocation> location;
-  String script_url = GetCurrentScriptUrl();
-  if (!script_url.IsEmpty()) {
+  String script_url = GetCurrentScriptUrl(execution_context->GetIsolate());
+  if (!script_url.empty()) {
     location =
         std::make_unique<SourceLocation>(script_url, String(), 1, 0, nullptr);
   } else {
-    location = SourceLocation::Capture(execution_context);
+    location = CaptureSourceLocation(execution_context);
   }
 
   if (location) {
@@ -397,7 +415,7 @@ void AuditsIssue::ReportSharedArrayBufferIssue(
     ExecutionContext* execution_context,
     bool shared_buffer_transfer_allowed,
     SharedArrayBufferIssueType issue_type) {
-  auto source_location = SourceLocation::Capture(execution_context);
+  auto source_location = CaptureSourceLocation(execution_context);
   auto sab_issue_details =
       protocol::Audits::SharedArrayBufferIssueDetails::create()
           .setSourceCodeLocation(CreateProtocolLocation(*source_location))
@@ -463,10 +481,6 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
       type = protocol::Audits::DeprecationIssueTypeEnum::
           CSSSelectorInternalMediaControlsOverlayCastButton;
       break;
-    case DeprecationIssueType::kCustomCursorIntersectsViewport:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          CustomCursorIntersectsViewport;
-      break;
     case DeprecationIssueType::kDeprecationExample:
       type = protocol::Audits::DeprecationIssueTypeEnum::DeprecationExample;
       break;
@@ -477,6 +491,9 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
       break;
     case DeprecationIssueType::kEventPath:
       type = protocol::Audits::DeprecationIssueTypeEnum::EventPath;
+      break;
+    case DeprecationIssueType::kExpectCTHeader:
+      type = protocol::Audits::DeprecationIssueTypeEnum::ExpectCTHeader;
       break;
     case DeprecationIssueType::kGeolocationInsecureOrigin:
       type =
@@ -498,29 +515,9 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
       type = protocol::Audits::DeprecationIssueTypeEnum::
           InsecurePrivateNetworkSubresourceRequest;
       break;
-    case DeprecationIssueType::kLegacyConstraintGoogCpuOveruseDetection:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          LegacyConstraintGoogCpuOveruseDetection;
-      break;
-    case DeprecationIssueType::kLegacyConstraintGoogIPv6:
-      type =
-          protocol::Audits::DeprecationIssueTypeEnum::LegacyConstraintGoogIPv6;
-      break;
-    case DeprecationIssueType::kLegacyConstraintGoogScreencastMinBitrate:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          LegacyConstraintGoogScreencastMinBitrate;
-      break;
-    case DeprecationIssueType::kLegacyConstraintGoogSuspendBelowMinBitrate:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          LegacyConstraintGoogSuspendBelowMinBitrate;
-      break;
     case DeprecationIssueType::kLocalCSSFileExtensionRejected:
       type = protocol::Audits::DeprecationIssueTypeEnum::
           LocalCSSFileExtensionRejected;
-      break;
-    case DeprecationIssueType::kMediaElementAudioSourceNode:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          MediaElementAudioSourceNode;
       break;
     case DeprecationIssueType::kMediaSourceAbortRemove:
       type = protocol::Audits::DeprecationIssueTypeEnum::MediaSourceAbortRemove;
@@ -548,13 +545,23 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
       type =
           protocol::Audits::DeprecationIssueTypeEnum::ObsoleteWebRtcCipherSuite;
       break;
-    case DeprecationIssueType::kPaymentRequestBasicCard:
-      type =
-          protocol::Audits::DeprecationIssueTypeEnum::PaymentRequestBasicCard;
-      break;
-    case DeprecationIssueType::kPaymentRequestShowWithoutGesture:
+    case DeprecationIssueType::kOpenWebDatabaseInsecureContext:
       type = protocol::Audits::DeprecationIssueTypeEnum::
-          PaymentRequestShowWithoutGesture;
+          OpenWebDatabaseInsecureContext;
+      break;
+    case DeprecationIssueType::kOverflowVisibleOnReplacedElement:
+      type = protocol::Audits::DeprecationIssueTypeEnum::
+          OverflowVisibleOnReplacedElement;
+      break;
+    case DeprecationIssueType::kPaymentInstruments:
+      type = protocol::Audits::DeprecationIssueTypeEnum::PaymentInstruments;
+      break;
+    case DeprecationIssueType::kPaymentRequestCSPViolation:
+      type = protocol::Audits::DeprecationIssueTypeEnum::
+          PaymentRequestCSPViolation;
+      break;
+    case DeprecationIssueType::kPersistentQuotaType:
+      type = protocol::Audits::DeprecationIssueTypeEnum::PersistentQuotaType;
       break;
     case DeprecationIssueType::kPictureSourceSrc:
       type = protocol::Audits::DeprecationIssueTypeEnum::PictureSourceSrc;
@@ -614,24 +621,12 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
       type = protocol::Audits::DeprecationIssueTypeEnum::
           RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics;
       break;
-    case DeprecationIssueType::
-        kRTCPeerConnectionLegacyCreateWithMediaConstraints:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          RTCPeerConnectionLegacyCreateWithMediaConstraints;
-      break;
     case DeprecationIssueType::kRTCPeerConnectionSdpSemanticsPlanB:
       type = protocol::Audits::DeprecationIssueTypeEnum::
           RTCPeerConnectionSdpSemanticsPlanB;
       break;
     case DeprecationIssueType::kRtcpMuxPolicyNegotiate:
       type = protocol::Audits::DeprecationIssueTypeEnum::RtcpMuxPolicyNegotiate;
-      break;
-    case DeprecationIssueType::kRTPDataChannel:
-      type = protocol::Audits::DeprecationIssueTypeEnum::RTPDataChannel;
-      break;
-    case DeprecationIssueType::kSelectionAddRangeIntersect:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          SelectionAddRangeIntersect;
       break;
     case DeprecationIssueType::kSharedArrayBufferConstructedWithoutIsolation:
       type = protocol::Audits::DeprecationIssueTypeEnum::
@@ -646,10 +641,6 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
       type = protocol::Audits::DeprecationIssueTypeEnum::
           V8SharedArrayBufferConstructedInExtensionWithoutIsolation;
       break;
-    case DeprecationIssueType::kWebCodecsVideoFrameDefaultTimestamp:
-      type = protocol::Audits::DeprecationIssueTypeEnum::
-          WebCodecsVideoFrameDefaultTimestamp;
-      break;
     case DeprecationIssueType::kXHRJSONEncodingDetection:
       type =
           protocol::Audits::DeprecationIssueTypeEnum::XHRJSONEncodingDetection;
@@ -662,9 +653,13 @@ void AuditsIssue::ReportDeprecationIssue(ExecutionContext* execution_context,
     case DeprecationIssueType::kXRSupportsSession:
       type = protocol::Audits::DeprecationIssueTypeEnum::XRSupportsSession;
       break;
+    case DeprecationIssueType::kIdentityInCanMakePaymentEvent:
+      type = protocol::Audits::DeprecationIssueTypeEnum::
+          IdentityInCanMakePaymentEvent;
+      break;
   }
 
-  auto source_location = SourceLocation::Capture(execution_context);
+  auto source_location = CaptureSourceLocation(execution_context);
   auto deprecation_issue_details =
       protocol::Audits::DeprecationIssueDetails::create()
           .setSourceCodeLocation(CreateProtocolLocation(*source_location))
@@ -707,7 +702,7 @@ protocol::Audits::ClientHintIssueReason ClientHintIssueReasonToProtocol(
 // static
 void AuditsIssue::ReportClientHintIssue(LocalDOMWindow* local_dom_window,
                                         ClientHintIssueReason reason) {
-  auto source_location = SourceLocation::Capture(local_dom_window);
+  auto source_location = CaptureSourceLocation(local_dom_window);
   auto client_hint_issue_details =
       protocol::Audits::ClientHintIssueDetails::create()
           .setSourceCodeLocation(CreateProtocolLocation(*source_location))
@@ -802,6 +797,28 @@ void AuditsIssue::ReportMixedContentIssue(
       protocol::Audits::InspectorIssue::create()
           .setCode(protocol::Audits::InspectorIssueCodeEnum::MixedContentIssue)
           .setDetails(std::move(details))
+          .build();
+
+  frame->DomWindow()->AddInspectorIssue(AuditsIssue(std::move(issue)));
+}
+
+void AuditsIssue::ReportGenericIssue(
+    LocalFrame* frame,
+    mojom::blink::GenericIssueErrorType error_type,
+    int violating_node_id) {
+  auto audits_issue_details =
+      protocol::Audits::GenericIssueDetails::create()
+          .setErrorType(GenericIssueErrorTypeToProtocol(error_type))
+          .setViolatingNodeId(violating_node_id)
+          .build();
+
+  auto issue =
+      protocol::Audits::InspectorIssue::create()
+          .setCode(protocol::Audits::InspectorIssueCodeEnum::GenericIssue)
+          .setDetails(
+              protocol::Audits::InspectorIssueDetails::create()
+                  .setGenericIssueDetails(std::move(audits_issue_details))
+                  .build())
           .build();
 
   frame->DomWindow()->AddInspectorIssue(AuditsIssue(std::move(issue)));

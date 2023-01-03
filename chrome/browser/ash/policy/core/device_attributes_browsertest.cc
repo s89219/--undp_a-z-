@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,18 @@
 
 #include "base/run_loop.h"
 
-#include "ash/components/tpm/stub_install_attributes.h"
 #include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
 #include "chrome/browser/ash/policy/core/device_cloud_policy_manager_ash.h"
 #include "chrome/browser/ash/policy/core/device_cloud_policy_store_ash.h"
 #include "chrome/browser/ash/policy/core/device_policy_cros_browser_test.h"
+#include "chrome/browser/ash/settings/scoped_testing_cros_settings.h"
+#include "chrome/browser/ash/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/browser_process_platform_part_chromeos.h"
+#include "chrome/browser/browser_process_platform_part_ash.h"
+#include "chromeos/ash/components/install_attributes/stub_install_attributes.h"
+#include "chromeos/ash/components/settings/cros_settings_names.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/statistics_provider.h"
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_store.h"
 #include "components/policy/core/common/cloud/test/policy_builder.h"
@@ -20,6 +25,7 @@
 #include "content/public/test/browser_test.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 using testing::InvokeWithoutArgs;
 
@@ -27,29 +33,14 @@ namespace policy {
 
 namespace {
 
-void WaitUntilPolicyLoaded() {
-  DeviceCloudPolicyStoreAsh* policy_store = g_browser_process->platform_part()
-                                                ->browser_policy_connector_ash()
-                                                ->GetDeviceCloudPolicyManager()
-                                                ->device_store();
-  if (!policy_store->has_policy()) {
-    MockCloudPolicyStoreObserver observer;
-    base::RunLoop loop;
-    policy_store->AddObserver(&observer);
-    EXPECT_CALL(observer, OnStoreLoaded(policy_store))
-        .Times(1)
-        .WillOnce(InvokeWithoutArgs(&loop, &base::RunLoop::Quit));
-    loop.Run();
-    policy_store->RemoveObserver(&observer);
-  }
-}
-
 constexpr char kFakeDomain[] = "fake.domain.acme.corp";
 constexpr char kFakeDisplayDomain[] = "acme.corp";
 constexpr char kFakeSSOProfile[] = "fake sso profile";
 constexpr char kFakeAssetId[] = "fake asset ID";
+constexpr char kFakeSerialNumber[] = "fake serial number";
 constexpr char kFakeMachineName[] = "fake machine name";
 constexpr char kFakeAnnotatedLocation[] = "fake annotated location";
+constexpr char kFakeHostname[] = "fake-hostname";
 constexpr char kFakeDirectoryApiID[] = "fake directory API ID";
 constexpr char kFakeObfuscatedCustomerID[] = "fake obfuscated customer ID";
 constexpr char kFakeLogoURL[] = "www.fakelogo.com/url";
@@ -60,7 +51,12 @@ constexpr char kFakeDeviceID[] = "fake device ID";
 
 class DeviceAttributesTest : public DevicePolicyCrosBrowserTest {
  public:
-  DeviceAttributesTest() { device_state_.set_skip_initial_policy_setup(true); }
+  DeviceAttributesTest() {
+    device_state_.set_skip_initial_policy_setup(true);
+    fake_statistics_provider_.SetVpdStatus(
+        ash::system::StatisticsProvider::VpdStatus::kValid);
+  }
+
   ~DeviceAttributesTest() override = default;
 
  protected:
@@ -70,6 +66,8 @@ class DeviceAttributesTest : public DevicePolicyCrosBrowserTest {
 
   DeviceAttributesImpl attributes_;
   ash::ScopedStubInstallAttributes install_attributes_;
+  ash::ScopedTestingCrosSettings scoped_testing_cros_settings_;
+  ash::system::ScopedFakeStatisticsProvider fake_statistics_provider_;
 };
 
 IN_PROC_BROWSER_TEST_F(DeviceAttributesTest, ReturnsAttributes) {
@@ -79,8 +77,10 @@ IN_PROC_BROWSER_TEST_F(DeviceAttributesTest, ReturnsAttributes) {
   EXPECT_EQ("", attributes_.GetSSOProfile());
   EXPECT_EQ("", attributes_.GetRealm());
   EXPECT_EQ("", attributes_.GetDeviceAssetID());
+  EXPECT_EQ("", attributes_.GetDeviceSerialNumber());
   EXPECT_EQ("", attributes_.GetMachineName());
   EXPECT_EQ("", attributes_.GetDeviceAnnotatedLocation());
+  EXPECT_EQ(absl::nullopt, attributes_.GetDeviceHostname());
   EXPECT_EQ("", attributes_.GetDirectoryApiID());
   EXPECT_EQ("", attributes_.GetObfuscatedCustomerID());
   EXPECT_EQ("", attributes_.GetCustomerLogoURL());
@@ -100,8 +100,12 @@ IN_PROC_BROWSER_TEST_F(DeviceAttributesTest, ReturnsAttributes) {
       kFakeLogoURL);
   device_policy()->policy_data().set_market_segment(
       enterprise_management::PolicyData_MarketSegment_ENROLLED_ENTERPRISE);
-  RefreshDevicePolicy();
-  WaitUntilPolicyLoaded();
+  scoped_testing_cros_settings_.device_settings()->Set(
+      ash::kDeviceHostnameTemplate, base::Value(kFakeHostname));
+  policy_helper()->RefreshPolicyAndWaitUntilDeviceCloudPolicyUpdated();
+
+  fake_statistics_provider_.SetMachineStatistic(
+      ash::system::kSerialNumberKeyForTest, kFakeSerialNumber);
 
   // Verify returned attributes correspond to what was set.
   EXPECT_EQ(kFakeDomain, attributes_.GetEnterpriseEnrollmentDomain());
@@ -109,8 +113,10 @@ IN_PROC_BROWSER_TEST_F(DeviceAttributesTest, ReturnsAttributes) {
   EXPECT_EQ(kFakeSSOProfile, attributes_.GetSSOProfile());
   EXPECT_EQ("", attributes_.GetRealm());
   EXPECT_EQ(kFakeAssetId, attributes_.GetDeviceAssetID());
+  EXPECT_EQ(kFakeSerialNumber, attributes_.GetDeviceSerialNumber());
   EXPECT_EQ(kFakeMachineName, attributes_.GetMachineName());
   EXPECT_EQ(kFakeAnnotatedLocation, attributes_.GetDeviceAnnotatedLocation());
+  EXPECT_EQ(kFakeHostname, attributes_.GetDeviceHostname());
   EXPECT_EQ(kFakeDirectoryApiID, attributes_.GetDirectoryApiID());
   EXPECT_EQ(kFakeObfuscatedCustomerID, attributes_.GetObfuscatedCustomerID());
   EXPECT_EQ(kFakeLogoURL, attributes_.GetCustomerLogoURL());

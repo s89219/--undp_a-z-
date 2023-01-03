@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -45,6 +45,12 @@ BookmarkSyncService::GetBookmarkSyncControllerDelegate(
   }
   bookmark_model_type_processor_->SetFaviconService(favicon_service);
   return bookmark_model_type_processor_->GetWeakPtr();
+}
+
+void BookmarkSyncService::SetBookmarksLimitForTesting(size_t limit) {
+  bookmark_model_type_processor_
+      ->SetMaxBookmarksTillSyncEnabledForTest(  // IN-TEST
+          limit);
 }
 
 }  // namespace sync_bookmarks

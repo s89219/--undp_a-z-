@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -21,7 +21,7 @@ using url_matcher::URLMatcherFactory;
 namespace keys = extensions::declarative_webrequest_constants;
 
 namespace {
-static URLMatcherConditionSet::ID g_next_id = 0;
+static base::MatcherStringPattern::ID g_next_id = 0;
 
 // TODO(battre): improve error messaging to give more meaningful messages
 // to the extension developer.

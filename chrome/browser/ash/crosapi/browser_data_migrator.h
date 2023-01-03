@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -25,7 +25,7 @@ class PrefRegistrySimple;
 namespace ash {
 
 // Local state pref name, which is used to keep track of what step migration is
-// at. This ensures that ash does not get repeatedly for migration.
+// at. This ensures that ash does not get restarted repeatedly for migration.
 // 1. The user logs in and restarts ash if necessary to apply flags.
 // 2. Migration check runs.
 // 3. Restart ash to run migration.
@@ -77,9 +77,11 @@ class BrowserDataMigrator {
 
   virtual ~BrowserDataMigrator() = default;
 
-  // Carries out the migration. It needs to be called on UI thread.
-  // |callback| will be called on the end of the migration procedure.
-  virtual void Migrate(MigrateCallback callback) = 0;
+  // Carries out the migration with the mode specified by `MigrationMode`. It
+  // needs to be called on UI thread. |callback| will be called on the end of
+  // the migration procedure.
+  virtual void Migrate(crosapi::browser_util::MigrationMode mode,
+                       MigrateCallback callback) = 0;
 
   // Cancels the migration. This should be called on UI thread.
   // If this is called during the migration, it is expected that |callback|
@@ -117,17 +119,6 @@ class BrowserDataMigratorImpl : public BrowserDataMigrator {
     Result data_migration_result;
   };
 
-  // Specifies the mode of migration.
-  enum class Mode {
-    kCopy = 0,  // Copies browser related files to lacros.
-    kMove = 1,  // Moves browser related files to lacros while copying files
-                // that are needed by both ash and lacros.
-    kDeleteAndCopy = 2,  // Similar to kCopy but deletes
-                         // TargetInfo::no_copy_items to make extra space.
-    kDeleteAndMove = 3   // Similar to kMove but deletes
-                         // TargetInfo::no_copy_items to make extra space.
-  };
-
   // Delegate interface which is responsible for the actual task of setting up
   // the profile directories for ash and lacros. The class should call
   // `MigrateInternalFinishedUIThread()` once migration is completed.
@@ -159,9 +150,11 @@ class BrowserDataMigratorImpl : public BrowserDataMigrator {
   // `MaybeRestartToMigrate()` it returns true if the D-Bus call to the
   // session_manager is made and successful. The return value of true means that
   // `chrome::AttemptRestart()` has been called.
-  static bool MaybeForceResumeMoveMigration(PrefService* local_state,
-                                            const AccountId& account_id,
-                                            const std::string& user_id_hash);
+  static bool MaybeForceResumeMoveMigration(
+      PrefService* local_state,
+      const AccountId& account_id,
+      const std::string& user_id_hash,
+      crosapi::browser_util::PolicyInitState policy_init_state);
 
   // Checks if migration is required for the user identified by `user_id_hash`
   // and if it is required, calls a D-Bus method to session_manager and
@@ -187,7 +180,8 @@ class BrowserDataMigratorImpl : public BrowserDataMigrator {
       base::OnceCallback<void(bool, const absl::optional<uint64_t>&)> callback);
 
   // `BrowserDataMigrator` methods.
-  void Migrate(MigrateCallback callback) override;
+  void Migrate(crosapi::browser_util::MigrationMode mode,
+               MigrateCallback callback) override;
   void Cancel() override;
 
   // Registers boolean pref `kCheckForMigrationOnRestart` with default as false.
@@ -213,6 +207,12 @@ class BrowserDataMigratorImpl : public BrowserDataMigrator {
                            MigrateOutOfDiskForMove);
   FRIEND_TEST_ALL_PREFIXES(BrowserDataMigratorRestartTest,
                            MaybeRestartToMigrateWithMigrationStep);
+  FRIEND_TEST_ALL_PREFIXES(BrowserDataMigratorRestartTest,
+                           MaybeRestartToMigrateMoveAfterCopy);
+  FRIEND_TEST_ALL_PREFIXES(BrowserDataMigratorRestartTest,
+                           LacrosProfileMigrationForAnyUserDisabled);
+  FRIEND_TEST_ALL_PREFIXES(BrowserDataMigratorRestartTest,
+                           LacrosProfileMigrationForAnyUserDisabledForGoogler);
 
   // The common implementation of `MaybeRestartToMigrate` and
   // `MaybeRestartToMigrateWithDiskCheck`.
@@ -248,12 +248,16 @@ class BrowserDataMigratorImpl : public BrowserDataMigrator {
 
   // Called from `MaybeRestartToMigrate()` to proceed with restarting to start
   // the migration. It returns true if D-Bus call was successful.
-  static bool RestartToMigrate(const AccountId& account_id,
-                               const std::string& user_id_hash,
-                               PrefService* local_state);
+  static bool RestartToMigrate(
+      const AccountId& account_id,
+      const std::string& user_id_hash,
+      PrefService* local_state,
+      crosapi::browser_util::PolicyInitState policy_init_state);
 
   // Called on UI thread once migration is finished.
-  void MigrateInternalFinishedUIThread(MigrationResult result);
+  void MigrateInternalFinishedUIThread(
+      crosapi::browser_util::MigrationMode mode,
+      MigrationResult result);
 
   // Path to the original profile data directory, which is directly under the
   // user data directory.

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 // Coordinator for the Net export.
 @interface NetExportCoordinator : ChromeCoordinator
 
-// Creates a coordinator that uses |viewController|, |browser| and |context|.
+// Creates a coordinator that uses `viewController`, `browser` and `context`.
 - (instancetype)initWithBaseViewController:(UIViewController*)viewController
                                    browser:(Browser*)browser
                        mailComposerContext:(ShowMailComposerContext*)context;

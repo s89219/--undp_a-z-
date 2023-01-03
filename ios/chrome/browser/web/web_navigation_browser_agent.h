@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define IOS_CHROME_BROWSER_WEB_WEB_NAVIGATION_BROWSER_AGENT_H_
 
 #import "ios/chrome/browser/main/browser_user_data.h"
-#include "ios/web/common/user_agent.h"
+#import "ios/web/common/user_agent.h"
 
 class Browser;
 @protocol WebNavigationNTPDelegate;
@@ -34,10 +34,14 @@ class WebNavigationBrowserAgent
   // All of the following methods will silently no-op (or return false) if there
   // is no active web state in the assoicated browser's WebStateList.
 
+  // True if the given `web_state` can navigate back.
+  bool CanGoBack(const web::WebState* web_state);
   // True if it is possible to navigate back.
   bool CanGoBack();
   // Navigates back.
   void GoBack();
+  // True if the given `web_state` can navigate forward.
+  bool CanGoForward(const web::WebState* web_state);
   // True if it is possible to navigate forward.
   bool CanGoForward();
   // Navigates forward.
@@ -53,13 +57,14 @@ class WebNavigationBrowserAgent
 
  private:
   friend class BrowserUserData<WebNavigationBrowserAgent>;
-  explicit WebNavigationBrowserAgent(Browser* browser);
   BROWSER_USER_DATA_KEY_DECL();
 
+  explicit WebNavigationBrowserAgent(Browser* browser);
+
   // Reloads the original url of the last non-redirect item (including
-  // non-history items) with |userAgentType|.
+  // non-history items) with `userAgentType`.
   void ReloadWithUserAgentType(web::UserAgentType userAgentType);
-  // Return the UserAgentType for a given |web_state|.
+  // Return the UserAgentType for a given `web_state`.
   web::UserAgentType UserAgentType(web::WebState* web_state);
 
   // The web state list for the associated browser. This should never be

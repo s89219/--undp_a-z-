@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -28,7 +28,10 @@ ScheduledRebootDialog::ScheduledRebootDialog(const base::Time& reboot_time,
 
 ScheduledRebootDialog::~ScheduledRebootDialog() {
   if (dialog_delegate_) {
-    dialog_delegate_->GetWidget()->CloseNow();
+    views::Widget* widget = dialog_delegate_->GetWidget();
+    if (widget->HasObserver(this))
+      widget->RemoveObserver(this);
+    widget->CloseNow();
     dialog_delegate_ = nullptr;
   }
 }
@@ -40,16 +43,17 @@ void ScheduledRebootDialog::ShowBubble(const base::Time& reboot_time,
       ui::DialogModel::Builder(std::make_unique<ui::DialogModelDelegate>())
           .SetTitle(BuildTitle())
           .AddOkButton(base::OnceClosure())
-          .AddCancelButton(std::move(reboot_callback),
-                           l10n_util::GetStringUTF16(IDS_POLICY_REBOOT_BUTTON))
-          .AddBodyText(
+          .AddCancelButton(
+              std::move(reboot_callback),
+              ui::DialogModelButton::Params().SetLabel(
+                  l10n_util::GetStringUTF16(IDS_POLICY_REBOOT_BUTTON)))
+          .AddParagraph(
               ui::DialogModelLabel(
                   l10n_util::GetStringFUTF16(
                       IDS_POLICY_DEVICE_SCHEDULED_REBOOT_DIALOG_MESSAGE,
                       base::TimeFormatTimeOfDay(reboot_time),
                       base::TimeFormatShortDate(reboot_time)))
                   .set_is_secondary())
-          .OverrideShowCloseButton(false)
           .Build();
 
   auto bubble = views::BubbleDialogModelHost::CreateModal(
@@ -62,7 +66,7 @@ void ScheduledRebootDialog::ShowBubble(const base::Time& reboot_time,
   dialog_delegate_->GetWidget()->AddObserver(this);
 }
 
-void ScheduledRebootDialog::OnWidgetClosing(views::Widget* widget) {
+void ScheduledRebootDialog::OnWidgetDestroying(views::Widget* widget) {
   widget->RemoveObserver(this);
   dialog_delegate_ = nullptr;
 }

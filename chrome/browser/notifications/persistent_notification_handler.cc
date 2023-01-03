@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,13 +14,16 @@
 #include "chrome/browser/notifications/notification_permission_context.h"
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
+#include "chrome/browser/permissions/notifications_engagement_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/permissions/features.h"
 #include "components/permissions/permission_uma_util.h"
 #include "components/permissions/permission_util.h"
 #include "components/site_engagement/content/site_engagement_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_event_dispatcher.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_result.h"
 #include "content/public/common/persistent_notification_status.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "url/gurl.h"
@@ -107,9 +110,9 @@ void PersistentNotificationHandler::OnClick(
 
   blink::mojom::PermissionStatus permission_status =
       profile->GetPermissionController()
-          ->GetPermissionStatusForOriginWithoutContext(
-              blink::PermissionType::NOTIFICATIONS,
-              url::Origin::Create(origin));
+          ->GetPermissionResultForOriginWithoutContext(
+              blink::PermissionType::NOTIFICATIONS, url::Origin::Create(origin))
+          .status;
 
   // Don't process click events when the |origin| doesn't have permission. This
   // can't be a DCHECK because of potential races with native notifications.
@@ -130,6 +133,15 @@ void PersistentNotificationHandler::OnClick(
   // thus we log the interaction with the Site Engagement service.
   site_engagement::SiteEngagementService::Get(profile)
       ->HandleNotificationInteraction(origin);
+
+  if (base::FeatureList::IsEnabled(
+          permissions::features::kNotificationInteractionHistory)) {
+    auto* service =
+        NotificationsEngagementServiceFactory::GetForProfile(profile);
+    // This service might be missing for incognito profiles and in tests.
+    if (service)
+      service->RecordNotificationInteraction(origin);
+  }
 
   content::NotificationEventDispatcher::GetInstance()
       ->DispatchNotificationClickEvent(

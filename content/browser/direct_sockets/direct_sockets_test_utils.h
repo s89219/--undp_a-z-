@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,10 @@
 #include "services/network/test/test_udp_socket.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
+namespace url {
+class Origin;
+}  // namespace url
+
 namespace content::test {
 
 // Mock Host Resolver for Direct Sockets browsertests.
@@ -43,11 +47,12 @@ class MockHostResolver : public network::mojom::HostResolver {
   MockHostResolver(const MockHostResolver&) = delete;
   MockHostResolver& operator=(const MockHostResolver&) = delete;
 
-  void ResolveHost(const ::net::HostPortPair& host,
-                   const ::net::NetworkIsolationKey& network_isolation_key,
-                   network::mojom::ResolveHostParametersPtr optional_parameters,
-                   ::mojo::PendingRemote<network::mojom::ResolveHostClient>
-                       pending_response_client) override;
+  void ResolveHost(
+      network::mojom::HostResolverHostPtr host,
+      const ::net::NetworkAnonymizationKey& network_anonymization_key,
+      network::mojom::ResolveHostParametersPtr optional_parameters,
+      ::mojo::PendingRemote<network::mojom::ResolveHostClient>
+          pending_response_client) override;
 
   void MdnsListen(
       const ::net::HostPortPair& host,
@@ -191,6 +196,26 @@ class AsyncJsRunner : public WebContentsObserver {
 };
 
 std::string WrapAsync(const std::string& script);
+
+// Mock ContentBrowserClient that enableds direct sockets via permissions policy
+// for isolated apps.
+class IsolatedWebAppContentBrowserClient : public ContentBrowserClient {
+ public:
+  explicit IsolatedWebAppContentBrowserClient(
+      const url::Origin& isolated_app_origin);
+
+  bool ShouldUrlUseApplicationIsolationLevel(BrowserContext* browser_context,
+                                             const GURL& url,
+                                             bool origin_matches_flag) override;
+
+  absl::optional<blink::ParsedPermissionsPolicy>
+  GetPermissionsPolicyForIsolatedWebApp(
+      content::BrowserContext* browser_context,
+      const url::Origin& app_origin) override;
+
+ private:
+  url::Origin isolated_app_origin_;
+};
 
 }  // namespace content::test
 

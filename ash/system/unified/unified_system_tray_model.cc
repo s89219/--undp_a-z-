@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,6 @@
 #include "ash/system/brightness_control_delegate.h"
 #include "ash/system/status_area_widget.h"
 #include "base/bind.h"
-#include "base/metrics/user_metrics.h"
 #include "chromeos/dbus/power_manager/backlight.pb.h"
 
 namespace {
@@ -99,7 +98,6 @@ void UnifiedSystemTrayModel::DBusObserver::HandleInitialBrightness(
 
 void UnifiedSystemTrayModel::DBusObserver::ScreenBrightnessChanged(
     const power_manager::BacklightBrightnessChange& change) {
-  base::RecordAction(base::UserMetricsAction("StatusArea_BrightnessChanged"));
   owner_->DisplayBrightnessChanged(
       change.percent() / 100.,
       change.cause() ==

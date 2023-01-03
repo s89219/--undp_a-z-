@@ -1,10 +1,11 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 import {MultiDeviceFeature, MultiDevicePageContentData, MultiDeviceSettingsMode} from 'chrome://os-settings/chromeos/os_settings.js';
+import {webUIListenerCallback} from 'chrome://resources/ash/common/cr.m.js';
 
-import {TestBrowserProxy} from '../../test_browser_proxy.js';
+import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
 
 /**
  * Default Host device for PageContentData.
@@ -59,7 +60,11 @@ export class TestMultideviceBrowserProxy extends TestBrowserProxy {
       'cancelAppsSetup',
       'attemptCombinedFeatureSetup',
       'cancelCombinedFeatureSetup',
+      'attemptFeatureSetupConnection',
+      'cancelFeatureSetupConnection',
       'logPhoneHubPermissionSetUpScreenAction',
+      'logPhoneHubPermissionOnboardingSetupMode',
+      'logPhoneHubPermissionOnboardingSetupResult',
     ]);
     this.data = createFakePageContentData(MultiDeviceSettingsMode.NO_HOST_SET);
     this.androidSmsInfo = {origin: TEST_ANDROID_SMS_ORIGIN, enabled: true};
@@ -83,7 +88,7 @@ export class TestMultideviceBrowserProxy extends TestBrowserProxy {
         'setFeatureEnabledState', [feature, enabled, opt_authToken]);
     if (feature === MultiDeviceFeature.MESSAGES) {
       this.androidSmsInfo.enabled = enabled;
-      cr.webUIListenerCallback(
+      webUIListenerCallback(
           'settings.onAndroidSmsInfoChange', this.androidSmsInfo);
     }
   }
@@ -102,7 +107,7 @@ export class TestMultideviceBrowserProxy extends TestBrowserProxy {
   /** @override */
   setSmartLockSignInEnabled(enabled, opt_authToken) {
     this.methodCalled('setSmartLockSignInEnabled', [enabled, opt_authToken]);
-    cr.webUIListenerCallback('smart-lock-signin-enabled-changed', enabled);
+    webUIListenerCallback('smart-lock-signin-enabled-changed', enabled);
   }
 
   /** @override */
@@ -148,12 +153,22 @@ export class TestMultideviceBrowserProxy extends TestBrowserProxy {
     this.methodCalled('cancelCombinedFeatureSetup');
   }
 
+  /** @override */
+  attemptFeatureSetupConnection() {
+    this.methodCalled('attemptFeatureSetupConnection');
+  }
+
+  /** @override */
+  cancelFeatureSetupConnection() {
+    this.methodCalled('cancelFeatureSetupConnection');
+  }
+
   /**
    * @param {MultiDeviceFeature} state
    */
   setInstantTetheringStateForTest(state) {
     this.data.instantTetheringState = state;
-    cr.webUIListenerCallback(
+    webUIListenerCallback(
         'settings.updateMultidevicePageContentData',
         Object.assign({}, this.data));
   }
@@ -162,5 +177,16 @@ export class TestMultideviceBrowserProxy extends TestBrowserProxy {
   logPhoneHubPermissionSetUpScreenAction(screen, action) {
     this.methodCalled(
         'logPhoneHubPermissionSetUpScreenAction', [screen, action]);
+  }
+
+  /** @override */
+  logPhoneHubPermissionOnboardingSetupMode(setup_mode) {
+    this.methodCalled('logPhoneHubPermissionOnboardingSetupMode', [setup_mode]);
+  }
+
+  /** @override */
+  logPhoneHubPermissionOnboardingSetupResult(completed_mode) {
+    this.methodCalled(
+        'logPhoneHubPermissionOnboardingSetupResult', [completed_mode]);
   }
 }

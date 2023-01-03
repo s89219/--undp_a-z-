@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -64,11 +64,6 @@ constexpr base::TimeDelta kTabUsageReportingIntervals[] = {
     base::Seconds(30), base::Minutes(1), base::Minutes(10),
     base::Hours(1),    base::Hours(5),   base::Hours(12)};
 
-#if BUILDFLAG(IS_WIN)
-const base::TimeDelta kNativeWindowOcclusionCalculationInterval =
-    base::Minutes(10);
-#endif
-
 // The interval at which the heartbeat tab metrics should be reported.
 const base::TimeDelta kTabsHeartbeatReportingInterval = base::Minutes(5);
 
@@ -129,9 +124,6 @@ const char
 const char
     TabStatsTracker::UmaStatsReportingDelegate::kWindowWidthHistogramName[] =
         "Tabs.WindowWidth";
-const char
-    TabStatsTracker::UmaStatsReportingDelegate::kCollapsedTabHistogramName[] =
-        "TabGroups.CollapsedTabCount";
 
 // Daily discard/reload histograms.
 const char TabStatsTracker::UmaStatsReportingDelegate::
@@ -149,7 +141,6 @@ const TabStatsDataStore::TabsStats& TabStatsTracker::tab_stats() const {
 
 TabStatsTracker::TabStatsTracker(PrefService* pref_service)
     : reporting_delegate_(std::make_unique<UmaStatsReportingDelegate>()),
-      delegate_(std::make_unique<TabStatsTrackerDelegate>()),
       tab_stats_data_store_(std::make_unique<TabStatsDataStore>(pref_service)),
       daily_event_(
           std::make_unique<DailyEvent>(pref_service,
@@ -203,15 +194,6 @@ TabStatsTracker::TabStatsTracker(PrefService* pref_service)
     usage_interval_timers_.push_back(std::move(timer));
   }
 
-// The native window occlusion calculation is specific to Windows.
-#if BUILDFLAG(IS_WIN)
-  native_window_occlusion_timer_.Start(
-      FROM_HERE, kNativeWindowOcclusionCalculationInterval,
-      base::BindRepeating(
-          &TabStatsTracker::CalculateAndRecordNativeWindowVisibilities,
-          base::Unretained(this)));
-#endif
-
   heartbeat_timer_.Start(FROM_HERE, kTabsHeartbeatReportingInterval,
                          base::BindRepeating(&TabStatsTracker::OnHeartbeatEvent,
                                              base::Unretained(this)));
@@ -254,7 +236,7 @@ void TabStatsTracker::AddObserverAndSetInitialState(
         observer->OnVideoStartedPlaying(wc);
       if (wc->IsCurrentlyAudible())
         observer->OnTabIsAudibleChanged(wc);
-      if (wc->IsFullscreen() && wc->HasActiveEffectivelyFullscreenVideo())
+      if (wc->HasActiveEffectivelyFullscreenVideo())
         observer->OnMediaEffectivelyFullscreenChanged(wc, true);
     }
   }
@@ -273,11 +255,6 @@ void TabStatsTracker::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterIntegerPref(::prefs::kTabStatsReloadsUrgent, 0);
 }
 
-void TabStatsTracker::SetDelegateForTesting(
-    std::unique_ptr<TabStatsTrackerDelegate> new_delegate) {
-  delegate_ = std::move(new_delegate);
-}
-
 void TabStatsTracker::TabStatsDailyObserver::OnDailyEvent(
     DailyEvent::IntervalType type) {
   reporting_delegate_->ReportDailyMetrics(data_store_->tab_stats());
@@ -292,7 +269,8 @@ class TabStatsTracker::WebContentsUsageObserver
                            TabStatsTracker* tab_stats_tracker)
       : content::WebContentsObserver(web_contents),
         tab_stats_tracker_(tab_stats_tracker),
-        ukm_source_id_(web_contents->GetMainFrame()->GetPageUkmSourceId()) {}
+        ukm_source_id_(
+            web_contents->GetPrimaryMainFrame()->GetPageUkmSourceId()) {}
 
   WebContentsUsageObserver(const WebContentsUsageObserver&) = delete;
   WebContentsUsageObserver& operator=(const WebContentsUsageObserver&) = delete;
@@ -392,6 +370,11 @@ class TabStatsTracker::WebContentsUsageObserver
     }
   }
 
+  void MediaDestroyed(const content::MediaPlayerId& id) override {
+    for (auto& tab_stats_observer : tab_stats_tracker_->tab_stats_observers_)
+      tab_stats_observer.OnMediaDestroyed(web_contents());
+  }
+
  private:
   raw_ptr<TabStatsTracker> tab_stats_tracker_;
   // The last navigation time associated with this tab.
@@ -399,7 +382,7 @@ class TabStatsTracker::WebContentsUsageObserver
   // Updated when a navigation is finished.
   ukm::SourceId ukm_source_id_ = 0;
   // The number of video currently playing in this tab.
-  size_t video_playing_count_ = 0;
+  int video_playing_count_ = 0;
 };
 
 void TabStatsTracker::OnBrowserAdded(Browser* browser) {
@@ -559,24 +542,8 @@ void TabStatsTracker::UmaStatsReportingDelegate::ReportHeartbeatMetrics(
                                                  tab_stats.total_tab_count);
   UmaHistogramCounts10000WithBatteryStateVariant(kWindowCountHistogramName,
                                                  tab_stats.window_count);
-  int collapsed_tab_count = 0;
-
   // Record the width of all open browser windows with tabs.
   for (Browser* browser : *BrowserList::GetInstance()) {
-    // first log any collapsed tab info.
-    if (browser->tab_strip_model()->SupportsTabGroups()) {
-      TabGroupModel* const tab_group_model =
-          browser->tab_strip_model()->group_model();
-      const std::vector<tab_groups::TabGroupId>& groups =
-          tab_group_model->ListTabGroups();
-      for (const tab_groups::TabGroupId& group_id : groups) {
-        const TabGroup* const tab_group =
-            tab_group_model->GetTabGroup(group_id);
-        if (tab_group->visual_data()->is_collapsed())
-          collapsed_tab_count += tab_group->ListTabs().length();
-      }
-    }
-
     if (browser->type() != Browser::TYPE_NORMAL)
       continue;
 
@@ -601,9 +568,6 @@ void TabStatsTracker::UmaStatsReportingDelegate::ReportHeartbeatMetrics(
     UMA_HISTOGRAM_CUSTOM_COUNTS(kWindowWidthHistogramName, window_size.width(),
                                 100, 10000, 50);
   }
-
-  base::UmaHistogramCustomCounts(kCollapsedTabHistogramName,
-                                 collapsed_tab_count, 1, 200, 50);
 }
 
 void TabStatsTracker::UmaStatsReportingDelegate::ReportUsageDuringInterval(

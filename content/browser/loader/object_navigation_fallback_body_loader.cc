@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,6 +20,7 @@
 #include "mojo/public/cpp/system/data_pipe_drainer.h"
 #include "net/http/http_response_info.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
+#include "services/network/public/cpp/record_ontransfersizeupdate_utils.h"
 #include "services/network/public/mojom/early_hints.mojom.h"
 #include "services/network/public/mojom/timing_allow_origin.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
@@ -39,18 +40,20 @@ bool PassesTimingAllowCheck(
     const GURL& url,
     const GURL& next_url,
     const url::Origin& parent_origin,
-    bool& response_tainting_not_basic,
-    bool& tainted_origin_flag) {
+    bool* response_tainting_basic,
+    bool* tainted_origin_flag) {
+  DCHECK(response_tainting_basic);
+  DCHECK(tainted_origin_flag);
   const url::Origin response_origin = url::Origin::Create(url);
   const bool is_same_origin = response_origin.IsSameOriginWith(parent_origin);
   // Still same-origin and resource tainting is "basic": just return true.
-  if (!response_tainting_not_basic && is_same_origin) {
+  if (*response_tainting_basic && is_same_origin) {
     return true;
   }
 
   // Otherwise, a cross-origin response is currently (or has previously) been
   // handled, so resource tainting is no longer "basic".
-  response_tainting_not_basic = true;
+  *response_tainting_basic = false;
 
   const network::mojom::TimingAllowOriginPtr& tao =
       response_head.parsed_headers->timing_allow_origin;
@@ -70,7 +73,7 @@ bool PassesTimingAllowCheck(
   }
 
   if (!is_same_origin && !is_next_resource_same_origin) {
-    tainted_origin_flag = true;
+    *tainted_origin_flag = true;
   }
 
   return base::Contains(tao->get_serialized_origins(),
@@ -90,8 +93,8 @@ bool AllowTimingDetailsForParent(
     const url::Origin& parent_origin,
     const blink::mojom::CommonNavigationParams& common_params,
     const blink::mojom::CommitNavigationParams& commit_params,
-    const network::mojom::URLResponseHead& response_head) {
-  bool response_tainting_not_basic = false;
+    const network::mojom::URLResponseHead& response_head,
+    bool* response_tainting_basic) {
   bool tainted_origin_flag = false;
 
   DCHECK_EQ(commit_params.redirect_infos.size(),
@@ -104,14 +107,14 @@ bool AllowTimingDetailsForParent(
     if (!PassesTimingAllowCheck(
             *commit_params.redirect_response[i],
             commit_params.redirect_infos[i].new_url, next_response_url,
-            parent_origin, response_tainting_not_basic, tainted_origin_flag)) {
+            parent_origin, response_tainting_basic, &tainted_origin_flag)) {
       return false;
     }
   }
 
-  return PassesTimingAllowCheck(
-      response_head, common_params.url, common_params.url, parent_origin,
-      response_tainting_not_basic, tainted_origin_flag);
+  return PassesTimingAllowCheck(response_head, common_params.url,
+                                common_params.url, parent_origin,
+                                response_tainting_basic, &tainted_origin_flag);
 }
 
 // This logic is duplicated from Performance::GenerateResourceTiming(). Ensure
@@ -147,8 +150,16 @@ blink::mojom::ResourceTimingInfoPtr GenerateResourceTiming(
   // `response_end` will be populated after loading the body.
   timing_info->context_type = blink::mojom::RequestContextType::OBJECT;
 
-  timing_info->allow_timing_details = AllowTimingDetailsForParent(
-      parent_origin, common_params, commit_params, response_head);
+  bool response_tainting_basic = true;
+  timing_info->allow_timing_details =
+      AllowTimingDetailsForParent(parent_origin, common_params, commit_params,
+                                  response_head, &response_tainting_basic);
+
+  // Only expose the response code when the response tainting is "basic" -
+  // same-origin requests throughout the redirect chain
+  if (response_tainting_basic) {
+    timing_info->response_status = commit_params.http_response_code;
+  }
 
   DCHECK_EQ(commit_params.redirect_infos.size(),
             commit_params.redirect_response.size());
@@ -261,10 +272,13 @@ void ObjectNavigationFallbackBodyLoader::MaybeComplete() {
   timing_info_->decoded_body_size = status_->decoded_body_length;
 
   RenderFrameHostManager* render_manager =
-      navigation_request_.frame_tree_node()->render_manager();
+      navigation_request_->frame_tree_node()->render_manager();
   if (RenderFrameProxyHost* proxy = render_manager->GetProxyToParent()) {
-    proxy->GetAssociatedRemoteFrame()->RenderFallbackContentWithResourceTiming(
-        std::move(timing_info_), server_timing_value_);
+    if (proxy->is_render_frame_proxy_live()) {
+      proxy->GetAssociatedRemoteFrame()
+          ->RenderFallbackContentWithResourceTiming(std::move(timing_info_),
+                                                    server_timing_value_);
+    }
   } else {
     render_manager->current_frame_host()
         ->GetAssociatedLocalFrame()
@@ -283,7 +297,7 @@ void ObjectNavigationFallbackBodyLoader::BodyLoadFailed() {
   // The endpoint for the URL loader client was closed before the body load
   // completed. This is considered failure, so trigger the fallback content, but
   // without any timing info, since it can't be calculated.
-  navigation_request_.RenderFallbackContentForObjectTag();
+  navigation_request_->RenderFallbackContentForObjectTag();
 }
 
 void ObjectNavigationFallbackBodyLoader::OnReceiveEarlyHints(
@@ -294,7 +308,8 @@ void ObjectNavigationFallbackBodyLoader::OnReceiveEarlyHints(
 
 void ObjectNavigationFallbackBodyLoader::OnReceiveResponse(
     network::mojom::URLResponseHeadPtr,
-    mojo::ScopedDataPipeConsumerHandle body) {
+    mojo::ScopedDataPipeConsumerHandle body,
+    absl::optional<mojo_base::BigBuffer> cached_metadata) {
   // Should have already happened.
   NOTREACHED();
 }
@@ -314,20 +329,11 @@ void ObjectNavigationFallbackBodyLoader::OnUploadProgress(
   NOTREACHED();
 }
 
-void ObjectNavigationFallbackBodyLoader::OnReceiveCachedMetadata(
-    mojo_base::BigBuffer data) {
-  // Not needed so implementation omitted.
-}
-
 void ObjectNavigationFallbackBodyLoader::OnTransferSizeUpdated(
     int32_t transfer_size_diff) {
   // Not needed so implementation omitted.
-}
-
-void ObjectNavigationFallbackBodyLoader::OnStartLoadingResponseBody(
-    mojo::ScopedDataPipeConsumerHandle body) {
-  // Should have already happened.
-  NOTREACHED();
+  network::RecordOnTransferSizeUpdatedUMA(
+      network::OnTransferSizeUpdatedFrom::kObjectNavigationFallbackBodyLoader);
 }
 
 void ObjectNavigationFallbackBodyLoader::OnComplete(

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,10 +43,10 @@ const PrefixSize kMinHashPrefixLength = 4;
 const PrefixSize kMaxHashPrefixLength = 32;
 
 // A hash prefix sent by the SafeBrowsing PVer4 service.
-using HashPrefix = std::string;
+using HashPrefixStr = std::string;
 
 // A full SHA256 hash.
-using FullHash = HashPrefix;
+using FullHashStr = HashPrefixStr;
 
 using ListUpdateRequest = FetchThreatListUpdatesRequest::ListUpdateRequest;
 using ListUpdateResponse = FetchThreatListUpdatesResponse::ListUpdateResponse;
@@ -180,9 +180,15 @@ enum SBThreatType {
   SB_THREAT_TYPE_HIGH_CONFIDENCE_ALLOWLIST = 24,
 
   // List of URLs that should shown an accuracy tip.
-  SB_THREAT_TYPE_ACCURACY_TIPS = 25,
+  // DEPRECATED: SB_THREAT_TYPE_ACCURACY_TIPS = 25,
 
-  SB_THREAT_TYPE_MAX = SB_THREAT_TYPE_ACCURACY_TIPS,
+  // Managed policy indicated to warn a navigation.
+  SB_THREAT_TYPE_MANAGED_POLICY_WARN = 26,
+
+  // Managed policy indicated to block a navigation.
+  SB_THREAT_TYPE_MANAGED_POLICY_BLOCK = 27,
+
+  SB_THREAT_TYPE_MAX = SB_THREAT_TYPE_MANAGED_POLICY_BLOCK,
 };
 
 using SBThreatTypeSet = base::flat_set<SBThreatType>;
@@ -235,7 +241,6 @@ ListIdentifier GetChromeExtMalwareId();
 ListIdentifier GetChromeUrlApiId();
 ListIdentifier GetChromeUrlClientIncidentId();
 ListIdentifier GetIpMalwareId();
-ListIdentifier GetUrlAccuracyTipsId();
 ListIdentifier GetUrlBillingId();
 ListIdentifier GetUrlCsdDownloadAllowlistId();
 ListIdentifier GetUrlCsdAllowlistId();
@@ -260,9 +265,9 @@ using ParsedServerResponse = std::vector<std::unique_ptr<ListUpdateResponse>>;
 struct StoreAndHashPrefix {
  public:
   ListIdentifier list_id;
-  HashPrefix hash_prefix;
+  HashPrefixStr hash_prefix;
 
-  StoreAndHashPrefix(ListIdentifier list_id, const HashPrefix& hash_prefix);
+  StoreAndHashPrefix(ListIdentifier list_id, const HashPrefixStr& hash_prefix);
   ~StoreAndHashPrefix();
 
   bool operator==(const StoreAndHashPrefix& other) const;
@@ -343,9 +348,9 @@ class V4ProtocolManagerUtil {
   static void GeneratePatternsToCheck(const GURL& url,
                                       std::vector<std::string>* urls);
 
-  // Returns a FullHash for the basic host+path pattern for a given URL after
+  // Returns a FullHashStr for the basic host+path pattern for a given URL after
   // canonicalization. Not intended for general use.
-  static FullHash GetFullHash(const GURL& url);
+  static FullHashStr GetFullHash(const GURL& url);
 
   // Generates a Pver4 request URL and sets the appropriate header values.
   // |request_base64| is the serialized request protocol buffer encoded in
@@ -370,17 +375,17 @@ class V4ProtocolManagerUtil {
 
   // Generate the set of FullHashes to check for |url|.
   static void UrlToFullHashes(const GURL& url,
-                              std::vector<FullHash>* full_hashes);
+                              std::vector<FullHashStr>* full_hashes);
 
-  static bool FullHashToHashPrefix(const FullHash& full_hash,
+  static bool FullHashToHashPrefix(const FullHashStr& full_hash,
                                    PrefixSize prefix_size,
-                                   HashPrefix* hash_prefix);
+                                   HashPrefixStr* hash_prefix);
 
-  static bool FullHashToSmallestHashPrefix(const FullHash& full_hash,
-                                           HashPrefix* hash_prefix);
+  static bool FullHashToSmallestHashPrefix(const FullHashStr& full_hash,
+                                           HashPrefixStr* hash_prefix);
 
-  static bool FullHashMatchesHashPrefix(const FullHash& full_hash,
-                                        const HashPrefix& hash_prefix);
+  static bool FullHashMatchesHashPrefix(const FullHashStr& full_hash,
+                                        const HashPrefixStr& hash_prefix);
 
   static void SetClientInfoFromConfig(ClientInfo* client_info,
                                       const V4ProtocolConfig& config);
@@ -393,7 +398,7 @@ class V4ProtocolManagerUtil {
   // extra byte containing the value 128 at the end. This is done to match the
   // server implementation for calculating the hash prefix of an IP address.
   static bool IPAddressToEncodedIPV6Hash(const std::string& ip_address,
-                                         FullHash* hashed_encoded_ip);
+                                         FullHashStr* hashed_encoded_ip);
 
   // Stores the client state values for each of the lists in |store_state_map|
   // into |list_client_states|.

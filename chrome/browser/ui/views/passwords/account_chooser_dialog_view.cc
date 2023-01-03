@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -118,7 +118,7 @@ void AccountChooserDialogView::InitWindow() {
                 base::Unretained(this), base::Unretained(form.get())),
             titles.first, titles.second, form.get(),
             GetURLLoaderForMainFrame(web_contents_).get(),
-            web_contents_->GetMainFrame()->GetLastCommittedOrigin()));
+            web_contents_->GetPrimaryMainFrame()->GetLastCommittedOrigin()));
     credential_view->SetStoreIndicatorIcon(form->in_store);
     ChromeLayoutProvider* layout_provider = ChromeLayoutProvider::Get();
     gfx::Insets insets =

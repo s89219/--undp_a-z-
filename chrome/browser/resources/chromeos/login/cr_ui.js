@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,24 +8,22 @@
  * shared between all *two* screens here.
  */
 
-// #import {assert} from 'chrome://resources/js/assert.m.js';
-// #import {$} from 'chrome://resources/js/util.m.js';
-// #import {addSingletonGetter, sendWithPromise} from 'chrome://resources/js/cr.m.js';
+import {assert} from 'chrome://resources/ash/common/assert.js';
+import {$} from 'chrome://resources/ash/common/util.js';
+import {sendWithPromise} from 'chrome://resources/ash/common/cr.m.js';
+import {addSingletonGetter} from 'chrome://resources/ash/common/cr_deprecated.js';
 
-// #import {DisplayManager} from './display_manager.m.js';
-// #import {DISPLAY_TYPE} from './components/display_manager_types.m.js';
-// #import {DemoModeTestHelper} from './demo_mode_test_helper.m.js';
-// #import {loadTimeData} from './i18n_setup.js';
-// #import {OobeTypes} from './components/oobe_types.m.js';
+import {DisplayManager} from './display_manager.js';
+import {DISPLAY_TYPE} from './components/display_manager_types.js';
+import {loadTimeData} from './i18n_setup.js';
+import {OobeTypes} from './components/oobe_types.js';
 
-cr.define('cr.ui', function() {
-  /* #ignore */ var DisplayManager = cr.ui.login.DisplayManager;
 
   /**
    * Out of box controller. It manages initialization of screens,
    * transitions, error messages display.
    */
-  /* #export */ class Oobe extends DisplayManager {
+  export class Oobe extends DisplayManager {
     /**
      * OOBE initialization coordination. Used by tests to wait for OOBE
      * to fully load when using the HTLImports polyfill.
@@ -47,24 +45,10 @@ cr.define('cr.ui', function() {
     }
 
     /**
-     * Called when focus is returned from ash::SystemTray.
-     * @param {boolean} reverse Is focus returned in reverse order?
+     * Handle the cancel accelerator.
      */
-    static focusReturned(reverse) {
-      const screen = Oobe.getInstance().currentScreen;
-      if (screen && screen.onFocusReturned) {
-        screen.onFocusReturned(reverse);
-      }
-    }
-
-    /**
-     * Handle accelerators. These are passed from native code instead of a JS
-     * event handler in order to make sure that embedded iframes cannot swallow
-     * them.
-     * @param {string} name Accelerator name.
-     */
-    static handleAccelerator(name) {
-      Oobe.getInstance().handleAccelerator(name);
+    static handleCancel() {
+      Oobe.getInstance().handleCancel();
     }
 
     /**
@@ -77,19 +61,10 @@ cr.define('cr.ui', function() {
     }
 
     /**
-     * Updates missing API keys message visibility.
-     * @param {boolean} show True if the message should be visible.
+     * Toggles system info visibility.
      */
-    static showAPIKeysNotice(show) {
-      $('api-keys-notice-container').hidden = !show;
-    }
-
-    /**
-     * Updates version label visibility.
-     * @param {boolean} show True if version label should be visible.
-     */
-    static showVersion(show) {
-      Oobe.getInstance().showVersion(show);
+    static toggleSystemInfo() {
+      Oobe.getInstance().toggleSystemInfo();
     }
 
     /**
@@ -102,7 +77,6 @@ cr.define('cr.ui', function() {
         document.body.classList.add('oobe-display');
       } else {
         document.body.classList.remove('oobe-display');
-        Oobe.getInstance().prepareForLoginDisplay_();
       }
     }
 
@@ -143,21 +117,6 @@ cr.define('cr.ui', function() {
     }
 
     /**
-     * Sets the number of users on the views login screen.
-     * @param {number} userCount The number of users.
-     */
-    static setLoginUserCount(userCount) {
-      Oobe.getInstance().setLoginUserCount(userCount);
-    }
-
-    /**
-     * Skip to login screen for telemetry.
-     */
-    static skipToLoginForTesting() {
-      chrome.send('skipToLoginForTesting');
-    }
-
-    /**
      * Login for telemetry.
      * @param {string} username Login username.
      * @param {string} password Login password.
@@ -181,7 +140,7 @@ cr.define('cr.ui', function() {
         }
       }
 
-      chrome.send('skipToLoginForTesting');
+      chrome.send('OobeTestApi.skipToLoginForTesting');
 
       if (!enterpriseEnroll) {
         chrome.send('completeLogin', [gaia_id, username, password, false]);
@@ -201,34 +160,11 @@ cr.define('cr.ui', function() {
     }  // loginForTesting
 
     /**
-     * Guest login for telemetry.
-     */
-    static guestLoginForTesting() {
-      this.skipToLoginForTesting();
-      chrome.send('launchIncognito');
-    }
-
-    /**
-     * Gaia login screen for telemetry.
-     */
-    static addUserForTesting() {
-      this.skipToLoginForTesting();
-      chrome.send('addUser');
-    }
-
-    /**
      * Shows the add user dialog. Used in browser tests.
      */
     static showAddUserForTesting() {
       // TODO(crbug.com/1100910): migrate logic to dedicated test api.
       chrome.send('OobeTestApi.showGaiaDialog');
-    }
-
-    /**
-     * Hotrod requisition for telemetry.
-     */
-    static remoraRequisitionForTesting() {
-      chrome.send('WelcomeScreen.setDeviceRequisition', ['remora']);
     }
 
     /**
@@ -264,13 +200,6 @@ cr.define('cr.ui', function() {
       }
 
       return step === OobeTypes.EnrollmentStep.SUCCESS;
-    }
-
-    /**
-     * Starts online demo mode setup for telemetry. Is used in autotests.
-     */
-    static setUpOnlineDemoModeForTesting() {
-      DemoModeTestHelper.setUp('online');
     }
 
     /**
@@ -329,10 +258,14 @@ cr.define('cr.ui', function() {
         document.documentElement.setAttribute(attribute, localizedString);
       }
 
+      const missingApiId = 'missingAPIKeysNotice';
+      if (!loadTimeData.valueExists(missingApiId)) {
+        return;
+      }
       // Update this standalone div in the main document.
-      const notice = loadTimeData.getValue('missingAPIKeysNotice');
       const apiKeysNoticeDiv = $('api-keys-notice');
-      apiKeysNoticeDiv.textContent = notice;
+      apiKeysNoticeDiv.textContent = loadTimeData.getValue(missingApiId);
+      $('api-keys-notice-container').hidden = false;
     }
 
     /**
@@ -365,9 +298,5 @@ cr.define('cr.ui', function() {
    */
   Oobe.readyForTesting = false;
 
-  cr.addSingletonGetter(Oobe);
+  addSingletonGetter(Oobe);
 
-  // #cr_define_end
-  // Export
-  return {Oobe: Oobe};
-});

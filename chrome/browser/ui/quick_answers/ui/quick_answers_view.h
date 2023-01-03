@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include <vector>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/quick_answers/ui/quick_answers_focus_search.h"
 #include "ui/events/event_handler.h"
@@ -62,12 +63,14 @@ class QuickAnswersView : public views::View {
   void InitLayout();
   void InitWidget();
   void AddContentView();
-  void AddSettingsButton();
+  void AddFrameButtons();
   void AddPhoneticsAudioButton(
       const quick_answers::PhoneticsInfo& phonetics_info,
       View* container);
   void AddAssistantIcon();
   void AddGoogleIcon();
+  int GetBoundsWidth();
+  int GetLabelWidth();
   void ResetContentView();
   void UpdateBounds();
   void UpdateQuickAnswerResult(const quick_answers::QuickAnswer& quick_answer);
@@ -80,23 +83,27 @@ class QuickAnswersView : public views::View {
   void OnPhoneticsAudioButtonPressed(
       const quick_answers::PhoneticsInfo& phonetics_info);
 
+  // The relative position to the screen for Ash and to the toplevel window for
+  // Lacros.
   gfx::Rect anchor_view_bounds_;
+
   base::WeakPtr<QuickAnswersUiController> controller_;
   bool has_second_row_answer_ = false;
   std::string title_;
   bool is_internal_ = false;
 
-  views::View* base_view_ = nullptr;
-  views::View* main_view_ = nullptr;
-  views::View* content_view_ = nullptr;
-  views::View* report_query_view_ = nullptr;
-  views::Label* first_answer_label_ = nullptr;
-  views::LabelButton* retry_label_ = nullptr;
-  views::ImageButton* settings_button_ = nullptr;
-  views::ImageButton* phonetics_audio_button_ = nullptr;
+  raw_ptr<views::View> base_view_ = nullptr;
+  raw_ptr<views::View> main_view_ = nullptr;
+  raw_ptr<views::View> content_view_ = nullptr;
+  raw_ptr<views::View> report_query_view_ = nullptr;
+  raw_ptr<views::Label> first_answer_label_ = nullptr;
+  raw_ptr<views::LabelButton> retry_label_ = nullptr;
+  raw_ptr<views::ImageButton> dogfood_feedback_button_ = nullptr;
+  raw_ptr<views::ImageButton> settings_button_ = nullptr;
+  raw_ptr<views::ImageButton> phonetics_audio_button_ = nullptr;
 
   // Invisible web view to play phonetics audio for definition results.
-  views::WebView* phonetics_audio_web_view_ = nullptr;
+  raw_ptr<views::WebView> phonetics_audio_web_view_ = nullptr;
 
   std::unique_ptr<QuickAnswersPreTargetHandler> quick_answers_view_handler_;
   std::unique_ptr<QuickAnswersFocusSearch> focus_search_;

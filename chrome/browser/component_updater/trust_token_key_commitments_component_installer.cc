@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,7 +22,7 @@ namespace component_updater {
 
 void RegisterTrustTokenKeyCommitmentsComponentIfTrustTokensEnabled(
     ComponentUpdateService* cus) {
-  if (!base::FeatureList::IsEnabled(network::features::kTrustTokens))
+  if (!base::FeatureList::IsEnabled(network::features::kPrivateStateTokens))
     return;
 
   VLOG(1) << "Registering Trust Token Key Commitments component.";

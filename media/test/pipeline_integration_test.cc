@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,8 @@
 #include "base/run_loop.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "media/base/cdm_callback_promise.h"
@@ -196,23 +196,21 @@ class KeyProvidingApp : public FakeEncryptedMedia::AppBase {
   }
 
   std::unique_ptr<SimpleCdmPromise> CreatePromise(PromiseResult expected) {
-    std::unique_ptr<media::SimpleCdmPromise> promise(
-        new media::CdmCallbackPromise<>(
-            base::BindOnce(&KeyProvidingApp::OnResolve, base::Unretained(this),
-                           expected),
-            base::BindOnce(&KeyProvidingApp::OnReject, base::Unretained(this),
-                           expected)));
+    auto promise = std::make_unique<media::CdmCallbackPromise<>>(
+        base::BindOnce(&KeyProvidingApp::OnResolve, base::Unretained(this),
+                       expected),
+        base::BindOnce(&KeyProvidingApp::OnReject, base::Unretained(this),
+                       expected));
     return promise;
   }
 
   std::unique_ptr<NewSessionCdmPromise> CreateSessionPromise(
       PromiseResult expected) {
-    std::unique_ptr<media::NewSessionCdmPromise> promise(
-        new media::CdmCallbackPromise<std::string>(
-            base::BindOnce(&KeyProvidingApp::OnResolveWithSession,
-                           base::Unretained(this), expected),
-            base::BindOnce(&KeyProvidingApp::OnReject, base::Unretained(this),
-                           expected)));
+    auto promise = std::make_unique<media::CdmCallbackPromise<std::string>>(
+        base::BindOnce(&KeyProvidingApp::OnResolveWithSession,
+                       base::Unretained(this), expected),
+        base::BindOnce(&KeyProvidingApp::OnReject, base::Unretained(this),
+                       expected));
     return promise;
   }
 
@@ -373,7 +371,7 @@ class FailingVideoDecoder : public VideoDecoder {
   }
   void Decode(scoped_refptr<DecoderBuffer> buffer,
               DecodeCB decode_cb) override {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(decode_cb), DecoderStatus::Codes::kFailed));
   }
@@ -746,8 +744,21 @@ TEST_F(PipelineIntegrationTest, WaveLayoutChange) {
   ASSERT_TRUE(WaitUntilOnEnded());
 }
 
-TEST_F(PipelineIntegrationTest, PlaybackTooManyChannels) {
-  EXPECT_EQ(PIPELINE_ERROR_INITIALIZATION_FAILED, Start("9ch.wav"));
+// TODO(https://crbug.com/1354581): At most one of Playback9Channels48000hz and
+// Playback9Channels44100hz will pass, because for 9+ channel files the hardware
+// sample rate has to match the file's sample rate. They are both disabled
+// because different CI configurations have different hardware sample rates. To
+// run the tests, enable them both and expect at most one of them to pass.
+TEST_F(PipelineIntegrationTest, DISABLED_Playback9Channels48000hz) {
+  EXPECT_EQ(PIPELINE_OK, Start("9ch.wav"));
+}
+
+TEST_F(PipelineIntegrationTest, DISABLED_Playback9Channels44100hz) {
+  EXPECT_EQ(PIPELINE_OK, Start("9ch_44100.wav"));
+}
+
+TEST_F(PipelineIntegrationTest, PlaybackStereo48000hz) {
+  EXPECT_EQ(PIPELINE_OK, Start("stereo_48000.wav"));
 }
 
 TEST_F(PipelineIntegrationTest, PlaybackWithAudioTrackDisabledThenEnabled) {
@@ -784,7 +795,7 @@ TEST_F(PipelineIntegrationTest, PlaybackWithAudioTrackDisabledThenEnabled) {
   ASSERT_TRUE(WaitUntilOnEnded());
 
   // Verify that audio has been playing after being enabled.
-  EXPECT_HASH_EQ("-1.53,0.21,1.23,1.56,-0.34,-0.94,", GetAudioHash());
+  EXPECT_HASH_EQ("-0.04,0.42,-0.22,0.40,0.15,0.18,", GetAudioHash());
 }
 
 TEST_F(PipelineIntegrationTest, PlaybackWithVideoTrackDisabledThenEnabled) {
@@ -2636,18 +2647,8 @@ TEST_F(PipelineIntegrationTest, MSE_BasicPlayback_VideoOnly_MP4_HEVC) {
   TestMediaSource source("bear-320x240-v_frag-hevc.mp4", kMp4HevcVideoOnly,
                          kAppendWholeFile);
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
-#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
-  // HEVC is only supported through EME under this build flag. So this
-  // unencrypted track cannot be demuxed.
-  source.set_expected_append_result(
-      TestMediaSource::ExpectedAppendResult::kFailure);
-  EXPECT_EQ(
-      CHUNK_DEMUXER_ERROR_APPEND_FAILED,
-      StartPipelineWithMediaSource(&source, kExpectDemuxerFailure, nullptr));
-#else
   PipelineStatus status = StartPipelineWithMediaSource(&source);
   EXPECT_TRUE(status == PIPELINE_OK || status == DECODER_ERROR_NOT_SUPPORTED);
-#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
 #else
   EXPECT_EQ(
       DEMUXER_ERROR_COULD_NOT_OPEN,
@@ -2661,18 +2662,8 @@ TEST_F(PipelineIntegrationTest, MSE_BasicPlayback_VideoOnly_MP4_HEV1) {
   TestMediaSource source("bear-320x240-v_frag-hevc.mp4", kMp4Hev1VideoOnly,
                          kAppendWholeFile);
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
-#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
-  // HEVC is only supported through EME under this build flag. So this
-  // unencrypted track cannot be demuxed.
-  source.set_expected_append_result(
-      TestMediaSource::ExpectedAppendResult::kFailure);
-  EXPECT_EQ(
-      CHUNK_DEMUXER_ERROR_APPEND_FAILED,
-      StartPipelineWithMediaSource(&source, kExpectDemuxerFailure, nullptr));
-#else
   PipelineStatus status = StartPipelineWithMediaSource(&source);
   EXPECT_TRUE(status == PIPELINE_OK || status == DECODER_ERROR_NOT_SUPPORTED);
-#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
 #else
   EXPECT_EQ(
       DEMUXER_ERROR_COULD_NOT_OPEN,

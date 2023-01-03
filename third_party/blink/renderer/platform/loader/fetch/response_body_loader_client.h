@@ -1,11 +1,11 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESPONSE_BODY_LOADER_CLIENT_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_LOADER_FETCH_RESPONSE_BODY_LOADER_CLIENT_H_
 
-#include "third_party/blink/renderer/platform/bindings/parkable_string.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 
 namespace blink {
 
@@ -21,7 +21,7 @@ class ResponseBodyLoaderClient : public GarbageCollectedMixin {
   // be called at most once.
   virtual void DidReceiveDecodedData(
       const String& data,
-      std::unique_ptr<ParkableStringImpl::SecureDigest> digest) = 0;
+      std::unique_ptr<Resource::DecodedDataInfo> info) = 0;
 
   // Called when finishing reading the entire body. This must be the last
   // signal.

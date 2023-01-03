@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -15,8 +15,9 @@ import com.android.webview.chromium.WebViewLibraryPreloader;
 import org.chromium.android_webview.AwLocaleConfig;
 import org.chromium.android_webview.ProductConfig;
 import org.chromium.android_webview.common.CommandLineUtil;
+import org.chromium.android_webview.common.PlatformServiceBridge;
 import org.chromium.android_webview.common.SafeModeController;
-import org.chromium.android_webview.devui.util.WebViewPackageHelper;
+import org.chromium.android_webview.nonembedded_util.WebViewPackageHelper;
 import org.chromium.base.ContextUtils;
 import org.chromium.base.Log;
 import org.chromium.base.PathUtils;
@@ -29,6 +30,7 @@ import org.chromium.base.metrics.UmaRecorderHolder;
 import org.chromium.base.task.PostTask;
 import org.chromium.base.task.TaskTraits;
 import org.chromium.build.BuildConfig;
+import org.chromium.components.crash.CustomAssertionHandler;
 import org.chromium.components.crash.PureJavaExceptionHandler;
 import org.chromium.components.embedder_support.application.FontPreloadingWorkaround;
 import org.chromium.components.version_info.VersionConstants;
@@ -73,7 +75,14 @@ public class WebViewApkApplication extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        checkForAppRecovery();
         FontPreloadingWorkaround.maybeInstallWorkaround(this);
+    }
+
+    public static void checkForAppRecovery() {
+        if (ContextUtils.getProcessName().contains(":webview_service")) {
+            PlatformServiceBridge.getInstance().checkForAppRecovery();
+        }
     }
 
     /**
@@ -88,7 +97,8 @@ public class WebViewApkApplication extends Application {
             PathUtils.setPrivateDataDirectorySuffix("webview", "WebView");
             CommandLineUtil.initCommandLine();
 
-            PureJavaExceptionHandler.installHandler(() -> new AwPureJavaExceptionReporter());
+            PureJavaExceptionHandler.installHandler(AwPureJavaExceptionReporter::new);
+            CustomAssertionHandler.installPreNativeHandler(AwPureJavaExceptionReporter::new);
 
             // TODO(crbug.com/1182693): Do set up a native UMA recorder once we support recording
             // metrics from native nonembedded code.

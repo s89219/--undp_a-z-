@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -41,6 +41,16 @@ SchemePageLoadMetricsObserver::OnStart(
 }
 
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
+SchemePageLoadMetricsObserver::OnPrerenderStart(
+    content::NavigationHandle* navigation_handle,
+    const GURL& currently_committed_url) {
+  // This observer is interested in comparing performance among HTTP and HTTPS.
+  // Including prerendering cases can be another factor to differentiate
+  // performance, and it will be a noise for the original goal.
+  return STOP_OBSERVING;
+}
+
+page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 SchemePageLoadMetricsObserver::OnCommit(
     content::NavigationHandle* navigation_handle) {
   // Capture committed transition type.
@@ -52,11 +62,13 @@ SchemePageLoadMetricsObserver::OnCommit(
   return STOP_OBSERVING;
 }
 
-// TODO(https://crbug.com/1317494): Audit and use appropriate policy.
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 SchemePageLoadMetricsObserver::OnFencedFramesStart(
     content::NavigationHandle* navigation_handle,
     const GURL& currently_committed_url) {
+  // This class is interested in events that are dispatched only for the primary
+  // page or preprocessed by PageLoadTracker to be per-outermost page. So, no
+  // need to forward events at the observer layer.
   return STOP_OBSERVING;
 }
 

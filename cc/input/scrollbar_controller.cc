@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -118,23 +118,20 @@ InputHandlerPointerResult ScrollbarController::HandlePointerDown(
   if (scrollbar_part == ScrollbarPart::THUMB || perform_jump_click_on_track) {
     drag_state_ = DragState();
     bool clipped = false;
+
     drag_state_->drag_origin =
-        GetScrollbarRelativePosition(position_in_widget, &clipped);
-    // If the point were clipped we shouldn't have hit tested to a valid part.
+        perform_jump_click_on_track
+            ? DragOriginForJumpClick(scrollbar)
+            : GetScrollbarRelativePosition(position_in_widget, &clipped);
+
+    // If the point were clipped we shouldn't have hit tested to a valid
+    // part.
     DCHECK(!clipped);
 
     // Record the current scroller offset. This will be needed to snap the
     // thumb back to its original position if the pointer moves too far away
-    // from the track during a thumb drag. Additionally, if a thumb drag is
-    // being initiated *after* a jump click, scroll_position_at_start_ needs
-    // to account for that.
-    const float jump_click_thumb_drag_delta =
-        scrollbar->orientation() == ScrollbarOrientation::HORIZONTAL
-            ? scroll_result.scroll_delta.x()
-            : scroll_result.scroll_delta.y();
-    drag_state_->scroll_position_at_start_ =
-        scrollbar->current_pos() +
-        (perform_jump_click_on_track ? jump_click_thumb_drag_delta : 0);
+    // from the track during a thumb drag.
+    drag_state_->scroll_position_at_start_ = scrollbar->current_pos();
     drag_state_->scroller_length_at_previous_move =
         scrollbar->scroll_layer_length();
   }
@@ -160,6 +157,20 @@ void ScrollbarController::PostAutoscrollTask(const base::TimeDelta delay) {
           &ScrollbarController::StartAutoScroll, base::Unretained(this)));
   layer_tree_host_impl_->GetTaskRunner()->PostDelayedTask(
       FROM_HERE, cancelable_autoscroll_task_->callback(), delay);
+}
+
+gfx::PointF ScrollbarController::DragOriginForJumpClick(
+    const ScrollbarLayerImplBase* scrollbar) const {
+  // If the user initiated a jump click, create an artificial drag origin to the
+  // middle of the thumb's current position. This is to simulate a jump click as
+  // though the user had initiated a drag normally and pulled the thumb down to
+  // the jump click position. This also keeps consistency with
+  // scroll_position_at_start_ which is used both to calculate scroll positions
+  // as well as for snapping back to origin if the user moves their mouse away.
+  gfx::Rect thumb = scrollbar->ComputeThumbQuadRect();
+  return scrollbar->orientation() == ScrollbarOrientation::HORIZONTAL
+             ? gfx::PointF(thumb.x() + thumb.width() / 2, 0)
+             : gfx::PointF(0, thumb.y() + thumb.height() / 2);
 }
 
 bool ScrollbarController::SnapToDragOrigin(
@@ -453,6 +464,9 @@ float ScrollbarController::GetScrollerToScrollbarRatio() const {
           ? thumb_rect.height()
           : thumb_rect.width();
   float viewport_length = GetViewportLength();
+
+  if (scrollbar_track_length == scrollbar_thumb_length)
+    return 0;
 
   return (scroll_layer_length - viewport_length) /
          (scrollbar_track_length - scrollbar_thumb_length);
@@ -772,8 +786,7 @@ gfx::PointF ScrollbarController::GetScrollbarRelativePosition(
     return gfx::PointF(0, 0);
   }
 
-  gfx::Transform inverse_screen_space_transform(
-      gfx::Transform::kSkipInitialization);
+  gfx::Transform inverse_screen_space_transform;
 
   gfx::Transform scaled_screen_space_transform(
       scrollbar->ScreenSpaceTransform());

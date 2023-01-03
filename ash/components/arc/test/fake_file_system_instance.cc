@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,8 @@
 #include "base/files/scoped_file.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/ranges/algorithm.h"
+#include "base/task/single_thread_task_runner.h"
 #include "mojo/public/cpp/system/platform_handle.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
@@ -200,6 +201,23 @@ void FakeFileSystemInstance::AddRecentDocument(const std::string& root_id,
   recent_documents_[key].push_back(document);
 }
 
+void FakeFileSystemInstance::RemoveRecentDocument(const Document& document) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  // Unfortunately we don't know the root_id when deleting a document, so
+  // here we need to loop through all available roots to find the document.
+  for (auto const& doc : recent_documents_) {
+    const auto iter = base::ranges::find_if(
+        doc.second, [&document](const Document& recent_document) {
+          return document.authority == recent_document.authority &&
+                 document.document_id == recent_document.document_id;
+        });
+    if (iter != doc.second.end()) {
+      recent_documents_[doc.first].erase(iter);
+      return;
+    }
+  }
+}
+
 void FakeFileSystemInstance::AddRoot(const Root& root) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   roots_list_.push_back(root);
@@ -334,14 +352,14 @@ void FakeFileSystemInstance::AddWatcher(const std::string& authority,
   DocumentKey key(authority, document_id);
   auto iter = documents_.find(key);
   if (iter == documents_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), -1));
     return;
   }
   int64_t watcher_id = next_watcher_id_++;
   document_to_watchers_[key].insert(watcher_id);
   watcher_to_document_.insert(std::make_pair(watcher_id, key));
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), watcher_id));
 }
 
@@ -350,12 +368,12 @@ void FakeFileSystemInstance::GetFileSize(const std::string& url,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = files_.find(url);
   if (iter == files_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), -1));
     return;
   }
   const File& file = iter->second;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), file.size()));
 }
 
@@ -364,12 +382,12 @@ void FakeFileSystemInstance::GetMimeType(const std::string& url,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = files_.find(url);
   if (iter == files_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), absl::nullopt));
     return;
   }
   const File& file = iter->second;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), file.mime_type));
 }
 
@@ -389,7 +407,7 @@ void FakeFileSystemInstance::OpenFileSessionToWrite(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = files_.find(url.spec());
   if (iter == files_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), mojom::FileSessionPtr()));
     return;
@@ -409,7 +427,7 @@ void FakeFileSystemInstance::OpenFileSessionToWrite(
   mojom::FileSessionPtr file_session = mojom::FileSession::New();
   file_session->url_id = std::move(url_id);
   file_session->fd = std::move(wrapped_handle);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(file_session)));
 }
 
@@ -419,7 +437,7 @@ void FakeFileSystemInstance::OpenFileSessionToRead(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = files_.find(url.spec());
   if (iter == files_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(std::move(callback), mojom::FileSessionPtr()));
     return;
@@ -439,7 +457,7 @@ void FakeFileSystemInstance::OpenFileSessionToRead(
   mojom::FileSessionPtr file_session = mojom::FileSession::New();
   file_session->url_id = std::move(url_id);
   file_session->fd = std::move(wrapped_handle);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(file_session)));
 }
 
@@ -449,13 +467,13 @@ void FakeFileSystemInstance::OpenThumbnail(const std::string& url,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = files_.find(url);
   if (iter == files_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojo::ScopedHandle()));
     return;
   }
   const File& file = iter->second;
   if (file.thumbnail_content.empty()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojo::ScopedHandle()));
     return;
   }
@@ -465,7 +483,7 @@ void FakeFileSystemInstance::OpenThumbnail(const std::string& url,
   if (size_hint != kDefaultThumbnailSize) {
     LOG(ERROR) << "Unexpected thumbnail size hint: " << size_hint.width() << "x"
                << size_hint.height();
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojo::ScopedHandle()));
     return;
   }
@@ -473,7 +491,7 @@ void FakeFileSystemInstance::OpenThumbnail(const std::string& url,
   mojo::ScopedHandle wrapped_handle =
       mojo::WrapPlatformHandle(mojo::PlatformHandle(std::move(fd)));
   DCHECK(wrapped_handle.is_valid());
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), std::move(wrapped_handle)));
 }
@@ -484,11 +502,11 @@ void FakeFileSystemInstance::GetDocument(const std::string& authority,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = documents_.find(DocumentKey(authority, document_id));
   if (iter == documents_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojom::DocumentPtr()));
     return;
   }
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), MakeDocument(iter->second)));
 }
@@ -502,7 +520,7 @@ void FakeFileSystemInstance::GetChildDocuments(
   auto child_iter =
       child_documents_.find(DocumentKey(authority, parent_document_id));
   if (child_iter == child_documents_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), absl::nullopt));
     return;
   }
@@ -512,7 +530,7 @@ void FakeFileSystemInstance::GetChildDocuments(
     DCHECK(doc_iter != documents_.end());
     children.emplace_back(MakeDocument(doc_iter->second));
   }
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback),
                                 absl::make_optional(std::move(children))));
 }
@@ -524,14 +542,14 @@ void FakeFileSystemInstance::GetRecentDocuments(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto recent_iter = recent_documents_.find(RootKey(authority, root_id));
   if (recent_iter == recent_documents_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), absl::nullopt));
     return;
   }
   std::vector<mojom::DocumentPtr> recents;
   for (const Document& document : recent_iter->second)
     recents.emplace_back(MakeDocument(document));
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback),
                                 absl::make_optional(std::move(recents))));
 }
@@ -541,7 +559,7 @@ void FakeFileSystemInstance::GetRoots(GetRootsCallback callback) {
   std::vector<mojom::RootPtr> roots;
   for (const Root& root : roots_list_)
     roots.emplace_back(MakeRoot(root));
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback),
                                 absl::make_optional(std::move(roots))));
 }
@@ -552,7 +570,7 @@ void FakeFileSystemInstance::GetRootSize(const std::string& authority,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = roots_.find(RootKey(authority, root_id));
   if (iter == roots_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojom::RootSizePtr()));
     return;
   }
@@ -560,7 +578,7 @@ void FakeFileSystemInstance::GetRootSize(const std::string& authority,
   mojom::RootSizePtr root_size = mojom::RootSize::New();
   root_size->available_bytes = root.available_bytes;
   root_size->capacity_bytes = root.capacity_bytes;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(root_size)));
 }
 
@@ -571,14 +589,17 @@ void FakeFileSystemInstance::DeleteDocument(const std::string& authority,
   DocumentKey key(authority, document_id);
   auto iter = documents_.find(key);
   if (iter == documents_.end() || iter->second.supports_delete == false) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), false));
     return;
   }
+  // We also need to remove the document from the recent_documents_ if it was
+  // being added there.
+  RemoveRecentDocument(iter->second);
   documents_.erase(iter);
   size_t erased = child_documents_.erase(key);
   DCHECK_NE(0u, erased);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 
@@ -590,12 +611,12 @@ void FakeFileSystemInstance::RenameDocument(const std::string& authority,
   DocumentKey key(authority, document_id);
   auto iter = documents_.find(key);
   if (iter == documents_.end() || iter->second.supports_rename == false) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojom::DocumentPtr()));
     return;
   }
   iter->second.display_name = display_name;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), MakeDocument(iter->second)));
 }
@@ -611,7 +632,7 @@ void FakeFileSystemInstance::CreateDocument(
   auto iter = documents_.find(parent_key);
   DCHECK(iter != documents_.end());
   if (iter->second.dir_supports_create == false) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), mojom::DocumentPtr()));
     return;
   }
@@ -619,7 +640,7 @@ void FakeFileSystemInstance::CreateDocument(
   Document document(authority, document_id, parent_document_id, display_name,
                     mime_type, 0, 0);
   AddDocument(document);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), MakeDocument(document)));
 }
 
@@ -636,7 +657,7 @@ void FakeFileSystemInstance::CopyDocument(
   target_document.document_id = target_document.display_name;
   target_document.parent_document_id = target_parent_document_id;
   AddDocument(target_document);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), MakeDocument(target_document)));
 }
@@ -662,7 +683,7 @@ void FakeFileSystemInstance::MoveDocument(
   auto iter = documents_.find(source_key);
   DCHECK(iter != documents_.end());
   iter->second.parent_document_id = target_parent_document_id;
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), MakeDocument(iter->second)));
 }
@@ -682,13 +703,13 @@ void FakeFileSystemInstance::RemoveWatcher(int64_t watcher_id,
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto iter = watcher_to_document_.find(watcher_id);
   if (iter == watcher_to_document_.end()) {
-    base::ThreadTaskRunnerHandle::Get()->PostTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE, base::BindOnce(std::move(callback), false));
     return;
   }
   document_to_watchers_[iter->second].erase(watcher_id);
   watcher_to_document_.erase(iter);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), true));
 }
 

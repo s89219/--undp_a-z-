@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@ SelectToSpeakUnitTest = class extends SelectToSpeakE2ETest {
   }
 };
 
-SYNC_TEST_F('SelectToSpeakUnitTest', 'getGSuiteAppRoot', function() {
+AX_TEST_F('SelectToSpeakUnitTest', 'getGSuiteAppRoot', function() {
   const root = {url: 'https://docs.google.com/presentation/p/cats_r_awesome'};
   const div1 = {root};
   const frame1 = {url: 'about:blank', parent: div1};

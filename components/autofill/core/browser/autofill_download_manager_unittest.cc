@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,12 +20,12 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_timeouts.h"
-#include "base/threading/thread_task_runner_handle.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/autofill_type.h"
@@ -57,11 +57,12 @@
 #include "third_party/re2/src/re2/re2.h"
 #include "url/third_party/mozilla/url_parse.h"
 
-using base::UTF8ToUTF16;
-using net::test_server::BasicHttpResponse;
-using net::test_server::EmbeddedTestServer;
-using net::test_server::HttpRequest;
-using net::test_server::HttpResponse;
+using ::base::UTF8ToUTF16;
+using ::net::test_server::BasicHttpResponse;
+using ::net::test_server::EmbeddedTestServer;
+using ::net::test_server::HttpRequest;
+using ::net::test_server::HttpResponse;
+using ::testing::ElementsAre;
 namespace autofill {
 
 using mojom::SubmissionSource;
@@ -344,8 +345,8 @@ TEST_F(AutofillDownloadManagerTest, QueryAndUploadTest) {
 
   form_structures.push_back(std::make_unique<FormStructure>(form));
   for (auto& form_structure : form_structures) {
-    for (auto& field : *form_structure)
-      field->host_form_signature = form_structure->form_signature();
+    for (auto& fs_field : *form_structure)
+      fs_field->host_form_signature = form_structure->form_signature();
   }
 
   // Make download manager.
@@ -725,8 +726,8 @@ TEST_F(AutofillDownloadManagerTest, UploadToAPITest) {
 
   FormStructure form_structure(form);
   form_structure.set_submission_source(SubmissionSource::FORM_SUBMISSION);
-  for (auto& field : form_structure)
-    field->host_form_signature = form_structure.form_signature();
+  for (auto& fs_field : form_structure)
+    fs_field->host_form_signature = form_structure.form_signature();
 
   std::unique_ptr<PrefService> pref_service = test::PrefServiceForTesting();
   AutofillDownloadManager download_manager(
@@ -804,8 +805,8 @@ TEST_F(AutofillDownloadManagerTest, UploadWithRawMetadata) {
     form.fields.push_back(field);
     FormStructure form_structure(form);
     form_structure.set_submission_source(SubmissionSource::FORM_SUBMISSION);
-    for (auto& field : form_structure)
-      field->host_form_signature = form_structure.form_signature();
+    for (auto& fs_field : form_structure)
+      fs_field->host_form_signature = form_structure.form_signature();
 
     std::unique_ptr<PrefService> pref_service = test::PrefServiceForTesting();
     AutofillDownloadManager download_manager(
@@ -880,8 +881,8 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Query) {
   std::vector<std::unique_ptr<FormStructure>> form_structures;
   form_structures.push_back(std::make_unique<FormStructure>(form));
   for (auto& form_structure : form_structures) {
-    for (auto& field : *form_structure)
-      field->host_form_signature = form_structure->form_signature();
+    for (auto& fs_field : *form_structure)
+      fs_field->host_form_signature = form_structure->form_signature();
   }
 
   // Request with id 0.
@@ -902,7 +903,7 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Query) {
   EXPECT_LT(download_manager_.loader_backoff_.GetTimeUntilRelease(),
             base::Milliseconds(1100));
   base::RunLoop run_loop;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, run_loop.QuitClosure(), base::Milliseconds(1100));
   run_loop.Run();
 
@@ -953,8 +954,8 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
 
   auto form_structure = std::make_unique<FormStructure>(form);
   form_structure->set_submission_source(SubmissionSource::FORM_SUBMISSION);
-  for (auto& field : *form_structure)
-    field->host_form_signature = form_structure->form_signature();
+  for (auto& fs_field : *form_structure)
+    fs_field->host_form_signature = form_structure->form_signature();
 
   // Request with id 0.
   EXPECT_TRUE(download_manager_.StartUploadRequest(
@@ -971,7 +972,7 @@ TEST_F(AutofillDownloadManagerTest, BackoffLogic_Upload) {
   EXPECT_LT(download_manager_.loader_backoff_.GetTimeUntilRelease(),
             base::Milliseconds(1100));
   base::RunLoop run_loop;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, run_loop.QuitClosure(), base::Milliseconds(1100));
   run_loop.Run();
 
@@ -1074,7 +1075,7 @@ TEST_F(AutofillDownloadManagerTest, RetryLimit_Query) {
       break;
 
     base::RunLoop run_loop;
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE, run_loop.QuitClosure(),
         download_manager_.loader_backoff_.GetTimeUntilRelease() +
             kTimeDeltaMargin);
@@ -1122,8 +1123,8 @@ TEST_F(AutofillDownloadManagerTest, RetryLimit_Upload) {
 
   auto form_structure = std::make_unique<FormStructure>(form);
   form_structure->set_submission_source(SubmissionSource::FORM_SUBMISSION);
-  for (auto& field : *form_structure)
-    field->host_form_signature = form_structure->form_signature();
+  for (auto& fs_field : *form_structure)
+    fs_field->host_form_signature = form_structure->form_signature();
 
   // Request with id 0.
   EXPECT_TRUE(download_manager_.StartUploadRequest(
@@ -1156,7 +1157,7 @@ TEST_F(AutofillDownloadManagerTest, RetryLimit_Upload) {
     // A retry should have been scheduled with wait time on the order of
     // |delay|.
     base::RunLoop run_loop;
-    base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE, run_loop.QuitClosure(),
         download_manager_.loader_backoff_.GetTimeUntilRelease() +
             kTimeDeltaMargin);
@@ -1728,6 +1729,51 @@ TEST_P(AutofillQueryTest, SendsExperiment) {
   }
 }
 
+TEST_P(AutofillQueryTest, SendsExperimentFromFeatureParam) {
+  FormFieldData field;
+  field.label = u"First Name:";
+  field.name = u"firstname";
+  field.form_control_type = "text";
+
+  FormData form;
+  form.fields.push_back(field);
+
+  std::vector<std::unique_ptr<FormStructure>> form_structures;
+  form_structures.push_back(std::make_unique<FormStructure>(form));
+
+  {
+    SCOPED_TRACE("Query without experiment");
+    call_count_ = 0;
+    payloads_.clear();
+    ASSERT_TRUE(SendQueryRequest(form_structures));
+    EXPECT_EQ(1u, call_count_);
+
+    ASSERT_EQ(1u, payloads_.size());
+    AutofillPageQueryRequest query_contents;
+    ASSERT_TRUE(query_contents.ParseFromString(payloads_[0]));
+    EXPECT_THAT(query_contents.experiments(), ElementsAre());
+  }
+
+  {
+    SCOPED_TRACE("Query with experiment");
+
+    base::test::ScopedFeatureList features;
+    features.InitAndEnableFeatureWithParameters(
+        features::kAutofillServerBehaviors,
+        {{"server_prediction_source", "19890601"}});
+
+    call_count_ = 0;
+    payloads_.clear();
+    ASSERT_TRUE(SendQueryRequest(form_structures));
+    EXPECT_EQ(1u, call_count_);
+
+    ASSERT_EQ(1u, payloads_.size());
+    AutofillPageQueryRequest query_contents;
+    ASSERT_TRUE(query_contents.ParseFromString(payloads_[0]));
+    EXPECT_THAT(query_contents.experiments(), ElementsAre(19890601));
+  }
+}
+
 TEST_P(AutofillQueryTest, ExpiredCacheInResponse) {
   FormFieldData field;
   field.label = u"First Name:";
@@ -1760,7 +1806,7 @@ TEST_P(AutofillQueryTest, ExpiredCacheInResponse) {
   // ensures the cache expires and no request are served by cached content
   // (ie this should go to the embedded server).
   base::RunLoop run_loop;
-  base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE, run_loop.QuitClosure(), base::Milliseconds(100));
   run_loop.Run();
 
@@ -1910,8 +1956,8 @@ TEST_P(AutofillUploadTest, RichMetadata) {
   AutofillDownloadManager download_manager(driver_.get(), this);
   FormStructure form_structure(form);
   form_structure.set_current_page_language(LanguageCode("fr"));
-  for (auto& field : form_structure)
-    field->host_form_signature = form_structure.form_signature();
+  for (auto& fs_field : form_structure)
+    fs_field->host_form_signature = form_structure.form_signature();
 
   pref_service_->SetBoolean(
       RandomizedEncoder::kUrlKeyedAnonymizedDataCollectionEnabled, true);
@@ -2050,10 +2096,10 @@ TEST_P(AutofillUploadTest, ThrottlingDisabled) {
   AutofillDownloadManager download_manager(driver_.get(), this);
   FormStructure form_structure(form);
   FormStructure small_form_structure(small_form);
-  for (auto& field : form_structure)
-    field->host_form_signature = form_structure.form_signature();
-  for (auto& field : small_form_structure)
-    field->host_form_signature = small_form_structure.form_signature();
+  for (auto& fs_field : form_structure)
+    fs_field->host_form_signature = form_structure.form_signature();
+  for (auto& fs_field : small_form_structure)
+    fs_field->host_form_signature = small_form_structure.form_signature();
 
   for (int i = 0; i <= static_cast<int>(SubmissionSource::kMaxValue); ++i) {
     base::HistogramTester histogram_tester;

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,9 +8,11 @@
 #include <stddef.h>
 
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "base/containers/span.h"
+#include "base/functional/invoke.h"
 #include "base/gtest_prod_util.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/raw_ptr.h"
@@ -19,6 +21,7 @@
 #include "chrome/browser/ui/autofill/autofill_popup_controller.h"
 #include "chrome/browser/ui/autofill/popup_controller_common.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
+#include "components/autofill/core/common/aliases.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 #include "ui/gfx/geometry/rect.h"
@@ -66,7 +69,7 @@ class AutofillPopupControllerImpl : public AutofillPopupController {
 
   // Shows the popup, or updates the existing popup with the given values.
   virtual void Show(const std::vector<Suggestion>& suggestions,
-                    bool autoselect_first_suggestion,
+                    AutoselectFirstSuggestion autoselect_first_suggestion,
                     PopupType popup_type);
 
   // Updates the data list values currently shown with the popup.
@@ -121,7 +124,8 @@ class AutofillPopupControllerImpl : public AutofillPopupController {
   const Suggestion& GetSuggestionAt(int row) const override;
   std::u16string GetSuggestionMainTextAt(int row) const override;
   std::u16string GetSuggestionMinorTextAt(int row) const override;
-  const std::u16string& GetSuggestionLabelAt(int row) const override;
+  std::vector<std::vector<Suggestion::Text>> GetSuggestionLabelsAt(
+      int row) const override;
   bool GetRemovalConfirmationText(int list_index,
                                   std::u16string* title,
                                   std::u16string* body) override;
@@ -153,8 +157,6 @@ class AutofillPopupControllerImpl : public AutofillPopupController {
   // without showing the popup.
   void SetValues(const std::vector<Suggestion>& suggestions);
 
-  AutofillPopupView* view() { return view_; }
-
   base::WeakPtr<AutofillPopupControllerImpl> GetWeakPtr();
 
   // Raise an accessibility event to indicate the controls relation of the
@@ -170,8 +172,43 @@ class AutofillPopupControllerImpl : public AutofillPopupController {
   virtual void HideViewAndDie();
 
  private:
-  // TODO(crbug.com/1276850, crbug.com/1277218): Remove.
-  enum class SelfStatus { kDestroyed, kAlive };
+  // Wraps a raw AutofillPopupView pointer and checks for nullptr before any
+  // dereference. This is useful because AutofillPopupView may be synchronously
+  // deleted and set to nullptr by many calls in AutofillPopupControllerImpl,
+  // which easily leads to segfaults. See crbug.com/1277218 for the lifecycle
+  // management issue in AutofillPopupView.
+  class AutofillPopupViewPtr {
+   public:
+    AutofillPopupViewPtr() = default;
+    AutofillPopupViewPtr(const AutofillPopupViewPtr&) = delete;
+    AutofillPopupViewPtr& operator=(const AutofillPopupViewPtr&) = delete;
+
+    AutofillPopupViewPtr& operator=(AutofillPopupView* ptr) {
+      ptr_ = ptr;
+      return *this;
+    }
+
+    explicit operator bool() const { return ptr_; }
+
+    // If `ptr_ == nullptr`, returns something that converts to false.
+    // If `ptr_ != nullptr`, calls `ptr_->func(args...)` and, if that returns a
+    // value, returns this value wrapped in an `absl::optional`, otherwise
+    // returns true.
+    template <typename Func, typename... Args>
+    [[nodiscard]] auto Call(Func&& func, Args... args) {
+      using ReturnType = decltype(base::invoke(func, *ptr_, args...));
+      if constexpr (!std::is_void_v<ReturnType>) {
+        return ptr_ ? absl::optional<ReturnType>(
+                          base::invoke(func, *ptr_, args...))
+                    : absl::optional<ReturnType>();
+      } else {
+        return ptr_ ? base::invoke(func, *ptr_, args...), true : false;
+      }
+    }
+
+   private:
+    raw_ptr<AutofillPopupView, DanglingUntriaged> ptr_ = nullptr;
+  };
 
   // The user has accepted the currently selected line. Returns whether there
   // was a selection to accept.
@@ -192,19 +229,13 @@ class AutofillPopupControllerImpl : public AutofillPopupController {
                 password_manager::ContentPasswordManagerDriver*>
   GetDriver();
 
-  // Conceptually an override of AutofillPopupController::SetSelectedLine(), but
-  // additionally returns a `SelfStatus` to indicate if |this| was destroyed by
-  // this call.
-  // TODO(crbug.com/1276850, crbug.com/1277218): Replace with SetSelectedLine().
-  SelfStatus SetSelectedLineHelper(absl::optional<int> selected_line);
-
   friend class AutofillPopupControllerUnitTest;
   friend class AutofillPopupControllerAccessibilityUnitTest;
   void SetViewForTesting(AutofillPopupView* view) { view_ = view; }
 
   PopupControllerCommon controller_common_;
-  raw_ptr<content::WebContents> web_contents_;
-  raw_ptr<AutofillPopupView> view_ = nullptr;  // Weak reference.
+  raw_ptr<content::WebContents, DanglingUntriaged> web_contents_;
+  AutofillPopupViewPtr view_;
   base::WeakPtr<AutofillPopupDelegate> delegate_;
 
   // If set to true, the popup will never be hidden because of stale data or if
@@ -223,8 +254,7 @@ class AutofillPopupControllerImpl : public AutofillPopupController {
   absl::optional<int> selected_line_;
 
   // AutofillPopupControllerImpl deletes itself. To simplify memory management,
-  // we delete the object asynchronously if AutofillDelayPopupControllerDeletion
-  // is enabled (TODO(crbug.com/1277218): Remove "if" clause).
+  // we delete the object asynchronously.
   base::WeakPtrFactory<AutofillPopupControllerImpl>
       self_deletion_weak_ptr_factory_{this};
 

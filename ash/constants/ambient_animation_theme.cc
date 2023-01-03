@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,14 +6,17 @@
 
 namespace ash {
 
-std::ostream& operator<<(std::ostream& os, AmbientAnimationTheme theme) {
+base::StringPiece ToString(AmbientAnimationTheme theme) {
+  // See the "AmbientModeThemes" <variants> tag in histograms.xml. These names
+  // are currently used for metrics purposes, so they cannot be arbitrarily
+  // renamed.
   switch (theme) {
     case AmbientAnimationTheme::kSlideshow:
-      return os << "SLIDESHOW";
+      return "SlideShow";
     case AmbientAnimationTheme::kFeelTheBreeze:
-      return os << "FEEL_THE_BREZE";
+      return "FeelTheBreeze";
     case AmbientAnimationTheme::kFloatOnBy:
-      return os << "FLOAT_ON_BY";
+      return "FloatOnBy";
   }
 }
 

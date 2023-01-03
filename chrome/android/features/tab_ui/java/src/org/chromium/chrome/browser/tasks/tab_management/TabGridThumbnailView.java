@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,11 +52,6 @@ public class TabGridThumbnailView extends RoundedCornerImageView {
      * @param isSelected Whether the thumbnail is on a selected tab.
      */
     void setColorThumbnailPlaceHolder(boolean isIncognito, boolean isSelected) {
-        if (!TabUiThemeProvider.themeRefactorEnabled()) {
-            setImageResource(TabUiThemeProvider.getThumbnailPlaceHolderColorResource(isIncognito));
-            return;
-        }
-
         ColorDrawable placeHolder =
                 new ColorDrawable(TabUiThemeProvider.getMiniThumbnailPlaceHolderColor(
                         getContext(), isIncognito, isSelected));
@@ -76,7 +71,7 @@ public class TabGridThumbnailView extends RoundedCornerImageView {
             int height = (int) (getWidth() * 1.0 / expectedThumbnailAspectRatio);
             setMinimumHeight(Math.min(getHeight(), height));
         } else {
-            setMinimumHeight(getWidth());
+            setMinimumHeight(getHeight());
         }
     }
 }

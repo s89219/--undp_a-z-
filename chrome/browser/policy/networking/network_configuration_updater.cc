@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -81,12 +81,12 @@ void NetworkConfigurationUpdater::OnPolicyServiceInitialized(
 }
 
 void NetworkConfigurationUpdater::AddPolicyProvidedCertsObserver(
-    chromeos::PolicyCertificateProvider::Observer* observer) {
+    ash::PolicyCertificateProvider::Observer* observer) {
   observer_list_.AddObserver(observer);
 }
 
 void NetworkConfigurationUpdater::RemovePolicyProvidedCertsObserver(
-    chromeos::PolicyCertificateProvider::Observer* observer) {
+    ash::PolicyCertificateProvider::Observer* observer) {
   observer_list_.RemoveObserver(observer);
 }
 
@@ -170,9 +170,9 @@ void NetworkConfigurationUpdater::Init() {
 }
 
 void NetworkConfigurationUpdater::ParseCurrentPolicy(
-    base::ListValue* network_configs,
-    base::DictionaryValue* global_network_config,
-    base::ListValue* certificates) {
+    base::Value::List* network_configs,
+    base::Value::Dict* global_network_config,
+    base::Value::List* certificates) {
   const PolicyMap& policies = policy_service_->GetPolicies(
       PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()));
   const base::Value* policy_value =
@@ -202,48 +202,53 @@ void NetworkConfigurationUpdater::OnPolicyChanged(const base::Value* previous,
 }
 
 void NetworkConfigurationUpdater::ApplyPolicy() {
-  base::ListValue network_configs;
-  base::DictionaryValue global_network_config;
-  base::ListValue certificates;
+  base::Value::List network_configs;
+  base::Value::Dict global_network_config;
+  base::Value::List certificates;
   ParseCurrentPolicy(&network_configs, &global_network_config, &certificates);
 
-  ImportCertificates(certificates);
-  MarkFieldsAsRecommendedForBackwardsCompatibility(&network_configs);
-  ApplyNetworkPolicy(&network_configs, &global_network_config);
+  ImportCertificates(std::move(certificates));
+  MarkFieldsAsRecommendedForBackwardsCompatibility(network_configs);
+  ApplyNetworkPolicy(std::move(network_configs),
+                     std::move(global_network_config));
 }
 
 void NetworkConfigurationUpdater::
     MarkFieldsAsRecommendedForBackwardsCompatibility(
-        base::Value* network_configs_onc) {
-  for (auto& network_config_onc : network_configs_onc->GetListDeprecated()) {
+        base::Value::List& network_configs_onc) {
+  for (auto& network_config_onc : network_configs_onc) {
     DCHECK(network_config_onc.is_dict());
+    base::Value::Dict& network_config_onc_dict = network_config_onc.GetDict();
     const std::string* type =
-        network_config_onc.FindStringKey(::onc::network_config::kType);
+        network_config_onc_dict.FindString(::onc::network_config::kType);
     if (!type || *type != ::onc::network_type::kEthernet)
       continue;
-    const base::Value* ethernet = network_config_onc.FindKeyOfType(
-        ::onc::network_config::kEthernet, base::Value::Type::DICTIONARY);
+    const base::Value::Dict* ethernet =
+        network_config_onc_dict.FindDict(::onc::network_config::kEthernet);
     if (!ethernet)
       continue;
     const std::string* auth =
-        ethernet->FindStringKey(::onc::ethernet::kAuthentication);
+        ethernet->FindString(::onc::ethernet::kAuthentication);
     if (!auth || *auth != ::onc::ethernet::kAuthenticationNone)
       continue;
 
     // If anything has been recommended, trust the server and don't change
     // anything.
-    if (network_config_onc.FindKey(::onc::kRecommended))
+    if (network_config_onc_dict.contains(::onc::kRecommended)) {
       continue;
+    }
     base::Value* static_ip_config =
-        network_config_onc.FindKey(::onc::network_config::kStaticIPConfig);
-    if (static_ip_config && static_ip_config->FindKey(::onc::kRecommended))
+        network_config_onc_dict.Find(::onc::network_config::kStaticIPConfig);
+    if (static_ip_config && static_ip_config->is_dict() &&
+        static_ip_config->GetDict().contains(::onc::kRecommended)) {
       continue;
+    }
 
     // Ensure kStaticIPConfig exists because a "Recommended" field will be added
     // to it.
     if (!static_ip_config) {
-      static_ip_config = network_config_onc.SetKey(
-          ::onc::network_config::kStaticIPConfig, base::DictionaryValue());
+      static_ip_config = network_config_onc_dict.Set(
+          ::onc::network_config::kStaticIPConfig, base::Value::Dict());
     }
     SetRecommended(&network_config_onc,
                    {::onc::network_config::kIPAddressConfigType,
@@ -272,7 +277,7 @@ std::string NetworkConfigurationUpdater::LogHeader() const {
 }
 
 void NetworkConfigurationUpdater::ImportCertificates(
-    const base::ListValue& certificates_onc) {
+    base::Value::List certificates_onc) {
   std::unique_ptr<OncParsedCertificates> incoming_certs =
       std::make_unique<OncParsedCertificates>(certificates_onc);
 

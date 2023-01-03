@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -33,7 +33,7 @@ class ScheduledRebootDialog : public views::WidgetObserver {
 
  protected:
   // views::WidgetObserver:
-  void OnWidgetClosing(views::Widget* widget) override;
+  void OnWidgetDestroying(views::Widget* widget) override;
 
  private:
   // Show bubble dialog and set |dialog_delegate_|.
@@ -52,7 +52,7 @@ class ScheduledRebootDialog : public views::WidgetObserver {
 
   // Dialog delegate containing the view. Owned by widget created in
   // ShowBubble().
-  raw_ptr<views::DialogDelegate> dialog_delegate_ = nullptr;
+  raw_ptr<views::DialogDelegate, DanglingUntriaged> dialog_delegate_ = nullptr;
 };
 
 #endif  // CHROME_BROWSER_UI_ASH_DEVICE_SCHEDULED_REBOOT_SCHEDULED_REBOOT_DIALOG_H_

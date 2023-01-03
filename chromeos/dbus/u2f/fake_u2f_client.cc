@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/notreached.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/single_thread_task_runner.h"
 #include "third_party/cros_system_api/dbus/u2f/dbus-constants.h"
 
 namespace chromeos {
@@ -21,7 +21,7 @@ void FakeU2FClient::IsUvpaa(const u2f::IsUvpaaRequest& request,
                             DBusMethodCallback<u2f::IsUvpaaResponse> callback) {
   u2f::IsUvpaaResponse response;
   response.set_available(false);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(response)));
 }
 
@@ -30,7 +30,7 @@ void FakeU2FClient::IsU2FEnabled(
     DBusMethodCallback<u2f::IsUvpaaResponse> callback) {
   u2f::IsUvpaaResponse response;
   response.set_available(false);
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(std::move(callback), std::move(response)));
 }
 
@@ -49,7 +49,7 @@ void FakeU2FClient::GetAssertion(
 void FakeU2FClient::HasCredentials(
     const u2f::HasCredentialsRequest& request,
     DBusMethodCallback<u2f::HasCredentialsResponse> callback) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), u2f::HasCredentialsResponse()));
 }
@@ -57,7 +57,7 @@ void FakeU2FClient::HasCredentials(
 void FakeU2FClient::HasLegacyU2FCredentials(
     const u2f::HasCredentialsRequest& request,
     DBusMethodCallback<u2f::HasCredentialsResponse> callback) {
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
       base::BindOnce(std::move(callback), u2f::HasCredentialsResponse()));
 }

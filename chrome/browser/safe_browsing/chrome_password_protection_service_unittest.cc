@@ -1,9 +1,11 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "chrome/browser/safe_browsing/chrome_password_protection_service.h"
 
 #include <memory>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/memory/raw_ptr.h"
@@ -15,6 +17,7 @@
 #include "base/test/mock_callback.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
+#include "chrome/browser/enterprise/connectors/reporting/realtime_reporting_client_factory.h"
 #include "chrome/browser/password_manager/account_password_store_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/safe_browsing/chrome_safe_browsing_blocking_page_factory.h"
@@ -269,7 +272,8 @@ class ChromePasswordProtectionServiceTest
     HostContentSettingsMap::RegisterProfilePrefs(test_pref_service_.registry());
     content_setting_map_ = new HostContentSettingsMap(
         &test_pref_service_, /*is_off_the_record=*/false,
-        /*store_last_modified=*/false, /*restore_session=*/false);
+        /*store_last_modified=*/false, /*restore_session=*/false,
+        /*should_record_metrics=*/false);
 
     cache_manager_ = std::make_unique<VerdictCacheManager>(
         nullptr, content_setting_map_.get(), &test_pref_service_, nullptr);
@@ -286,6 +290,9 @@ class ChromePasswordProtectionServiceTest
         ->SetTestingFactory(
             browser_context(),
             base::BindRepeating(&BuildSafeBrowsingPrivateEventRouter));
+    enterprise_connectors::RealtimeReportingClientFactory::GetInstance()
+        ->SetTestingFactory(browser_context(),
+                            base::BindRepeating(&BuildRealtimeReportingClient));
 #endif
 
     identity_test_env_profile_adaptor_ =
@@ -397,9 +404,10 @@ class ChromePasswordProtectionServiceTest
   }
 
   int GetSizeofUnhandledSyncPasswordReuses() {
-    DictionaryPrefUpdate unhandled_sync_password_reuses(
-        profile()->GetPrefs(), prefs::kSafeBrowsingUnhandledGaiaPasswordReuses);
-    return unhandled_sync_password_reuses->DictSize();
+    return profile()
+        ->GetPrefs()
+        ->GetDict(prefs::kSafeBrowsingUnhandledGaiaPasswordReuses)
+        .size();
   }
 
   size_t GetNumberOfDeferredNavigations() {
@@ -555,10 +563,11 @@ TEST_F(ChromePasswordProtectionServiceTest,
       GURL("https://www.mydomain.com")));
 
   // Verify if match enterprise allowlist.
-  base::ListValue allowlist;
+  base::Value::List allowlist;
   allowlist.Append("mydomain.com");
   allowlist.Append("mydomain.net");
-  profile()->GetPrefs()->Set(prefs::kSafeBrowsingAllowlistDomains, allowlist);
+  profile()->GetPrefs()->SetList(prefs::kSafeBrowsingAllowlistDomains,
+                                 std::move(allowlist));
   EXPECT_TRUE(service_->IsURLAllowlistedForPasswordEntry(
       GURL("https://www.mydomain.com")));
 
@@ -577,9 +586,10 @@ TEST_F(ChromePasswordProtectionServiceTest,
   profile()->GetPrefs()->ClearPref(prefs::kPasswordProtectionChangePasswordURL);
   EXPECT_FALSE(service_->IsURLAllowlistedForPasswordEntry(
       GURL("https://www.mydomain.com")));
-  base::ListValue login_urls;
+  base::Value::List login_urls;
   login_urls.Append("https://mydomain.com/login.html");
-  profile()->GetPrefs()->Set(prefs::kPasswordProtectionLoginURLs, login_urls);
+  profile()->GetPrefs()->SetList(prefs::kPasswordProtectionLoginURLs,
+                                 std::move(login_urls));
   EXPECT_TRUE(service_->IsURLAllowlistedForPasswordEntry(
       GURL("https://mydomain.com/login.html#ref?user_name=alice")));
 }
@@ -957,6 +967,26 @@ TEST_F(ChromePasswordProtectionServiceTest,
     EXPECT_EQ("token2", reuse_lookup.verdict_token()) << t;
     t++;
   }
+
+  {
+    auto response = std::make_unique<LoginReputationClientResponse>();
+    response->set_verdict_token("token3");
+    response->set_verdict_type(LoginReputationClientResponse::PHISHING);
+    service_->MaybeLogPasswordReuseLookupEvent(
+        web_contents(), RequestOutcome::RESPONSE_ALREADY_CACHED,
+        PasswordType::PRIMARY_ACCOUNT_PASSWORD, response.get());
+    ASSERT_EQ(t + 1, GetUserEventService()->GetRecordedUserEvents().size())
+        << t;
+    PasswordReuseLookup reuse_lookup = GetUserEventService()
+                                           ->GetRecordedUserEvents()[t]
+                                           .gaia_password_reuse_event()
+                                           .reuse_lookup();
+    EXPECT_EQ(PasswordReuseLookup::CACHE_HIT, reuse_lookup.lookup_result())
+        << t;
+    EXPECT_EQ(PasswordReuseLookup::PHISHING, reuse_lookup.verdict()) << t;
+    EXPECT_EQ("token3", reuse_lookup.verdict_token()) << t;
+    t++;
+  }
 }
 
 TEST_F(ChromePasswordProtectionServiceTest, VerifyGetDefaultChangePasswordURL) {
@@ -1096,14 +1126,14 @@ TEST_F(ChromePasswordProtectionServiceTest,
   GURL url_b("https://www.phishingb.com");
   GURL url_c("https://www.phishingc.com");
 
-  DictionaryPrefUpdate update(profile()->GetPrefs(),
+  ScopedDictPrefUpdate update(profile()->GetPrefs(),
                               prefs::kSafeBrowsingUnhandledGaiaPasswordReuses);
-  update->SetKey(Origin::Create(url_a).Serialize(),
-                 base::Value("navigation_id_a"));
-  update->SetKey(Origin::Create(url_b).Serialize(),
-                 base::Value("navigation_id_b"));
-  update->SetKey(Origin::Create(url_c).Serialize(),
-                 base::Value("navigation_id_c"));
+  update->Set(Origin::Create(url_a).Serialize(),
+              base::Value("navigation_id_a"));
+  update->Set(Origin::Create(url_b).Serialize(),
+              base::Value("navigation_id_b"));
+  update->Set(Origin::Create(url_c).Serialize(),
+              base::Value("navigation_id_c"));
 
   // Delete a https://www.phishinga.com URL.
   history::URLRows deleted_urls;
@@ -1139,8 +1169,7 @@ TEST_F(ChromePasswordProtectionServiceTest,
   ASSERT_EQ(1, test_event_router_->GetEventCount(
                    OnPolicySpecifiedPasswordChanged::kEventName));
 
-  auto captured_args =
-      event_observer.PassEventArgs().GetListDeprecated()[0].Clone();
+  auto captured_args = event_observer.PassEventArgs().GetList()[0].Clone();
   EXPECT_EQ("foo@example.com", captured_args.GetString());
 
   // If user is in incognito mode, no event should be sent.
@@ -1172,11 +1201,11 @@ TEST_F(ChromePasswordProtectionServiceTest,
 
   ASSERT_EQ(1, test_event_router_->GetEventCount(
                    OnPolicySpecifiedPasswordReuseDetected::kEventName));
-  auto captured_args =
-      event_observer.PassEventArgs().GetListDeprecated()[0].Clone();
-  EXPECT_EQ(kPasswordReuseURL, captured_args.FindKey("url")->GetString());
-  EXPECT_EQ(kUserName, captured_args.FindKey("userName")->GetString());
-  EXPECT_TRUE(captured_args.FindKey("isPhishingUrl")->GetBool());
+  const auto captured_args =
+      std::move(event_observer.PassEventArgs().GetList()[0].GetDict());
+  EXPECT_EQ(kPasswordReuseURL, *captured_args.FindString("url"));
+  EXPECT_EQ(kUserName, *captured_args.FindString("userName"));
+  EXPECT_TRUE(*captured_args.FindBool("isPhishingUrl"));
 
   // If the reused password is not Enterprise password but the account is
   // GSuite, event should be sent.
@@ -1355,10 +1384,10 @@ TEST_F(ChromePasswordProtectionServiceTest, VerifyCanShowInterstitial) {
   EXPECT_TRUE(service_->CanShowInterstitial(reused_password_type, trigger_url));
 
   // Add |trigger_url| to enterprise allowlist.
-  base::ListValue allowlisted_domains;
+  base::Value::List allowlisted_domains;
   allowlisted_domains.Append(trigger_url.host());
-  profile()->GetPrefs()->Set(prefs::kSafeBrowsingAllowlistDomains,
-                             allowlisted_domains);
+  profile()->GetPrefs()->SetList(prefs::kSafeBrowsingAllowlistDomains,
+                                 std::move(allowlisted_domains));
   reused_password_type.set_account_type(
       ReusedPasswordAccountType::SAVED_PASSWORD);
   reused_password_type.set_is_account_syncing(false);
@@ -1423,10 +1452,11 @@ TEST_F(ChromePasswordProtectionServiceTest, VerifyGetPingNotSentReason) {
     reused_password_type.set_account_type(ReusedPasswordAccountType::GSUITE);
     profile()->GetPrefs()->SetInteger(prefs::kPasswordProtectionWarningTrigger,
                                       PHISHING_REUSE);
-    base::ListValue allowlist;
+    base::Value::List allowlist;
     allowlist.Append("mydomain.com");
     allowlist.Append("mydomain.net");
-    profile()->GetPrefs()->Set(prefs::kSafeBrowsingAllowlistDomains, allowlist);
+    profile()->GetPrefs()->SetList(prefs::kSafeBrowsingAllowlistDomains,
+                                   std::move(allowlist));
     EXPECT_EQ(RequestOutcome::MATCHED_ENTERPRISE_ALLOWLIST,
               service_->GetPingNotSentReason(
                   LoginReputationClientRequest::PASSWORD_REUSE_EVENT,
@@ -1457,32 +1487,7 @@ TEST_F(ChromePasswordProtectionServiceTest, VerifyGetPingNotSentReason) {
   }
 }
 
-class ChromePasswordProtectionServiceWithSBPageLoadTokenDisabledTest
-    : public ChromePasswordProtectionServiceTest {
- public:
-  ChromePasswordProtectionServiceWithSBPageLoadTokenDisabledTest() {
-    feature_list_.InitAndDisableFeature(kSafeBrowsingPageLoadToken);
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-TEST_F(ChromePasswordProtectionServiceWithSBPageLoadTokenDisabledTest,
-       VerifyPageLoadToken) {
-  auto request = std::make_unique<LoginReputationClientRequest>();
-  service_->FillUserPopulation(GURL("https:www.example.com/"), request.get());
-  ASSERT_EQ(0, request->population().page_load_tokens_size());
-}
-
-class ChromePasswordProtectionServiceWithSBPageLoadTokenEnabledTest
-    : public ChromePasswordProtectionServiceTest {
- private:
-  base::test::ScopedFeatureList feature_list_{kSafeBrowsingPageLoadToken};
-};
-
-TEST_F(ChromePasswordProtectionServiceWithSBPageLoadTokenEnabledTest,
-       VerifyPageLoadToken) {
+TEST_F(ChromePasswordProtectionServiceTest, VerifyPageLoadToken) {
   auto request = std::make_unique<LoginReputationClientRequest>();
   service_->FillUserPopulation(GURL("https:www.example.com/"), request.get());
   ASSERT_EQ(1, request->population().page_load_tokens_size());

@@ -197,6 +197,8 @@ SK_API void SkDebugf_FileLine(const char* file,
 //
 // Remove these as we update our sites.
 
+#define SK_LEGACY_LAYER_BOUNDS_EXPANSION  // skbug.com/12083, skbug.com/12303
+
 // Workaround for poor anisotropic mipmap quality,
 // pending Skia ripmap support.
 // (https://bugs.chromium.org/p/skia/issues/detail?id=4863)
@@ -212,11 +214,10 @@ SK_API void SkDebugf_FileLine(const char* file,
 
 #define SK_SUPPORT_LEGACY_DRAWLOOPER
 
-#define SK_SUPPORT_LEGACY_RUNTIME_EFFECTS
+#define SK_USE_LEGACY_MIPMAP_BUILDER
 
-#define SK_SUPPORT_LEGACY_DITHER
-
-#define SK_LEGACY_INNER_JOINS
+// Temporary until web tests can be rebaselined (skbug.com/13752)
+#define SK_DISABLE_RASTER_PIPELINE_SAMPLING_FIXES
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 

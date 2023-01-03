@@ -1,18 +1,19 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ios/public/provider/chrome/browser/signin/chrome_identity_service.h"
+#import "ios/public/provider/chrome/browser/signin/chrome_identity_service.h"
 
-#include "base/run_loop.h"
-#include "base/test/metrics/histogram_tester.h"
-#include "base/test/scoped_mock_clock_override.h"
-#include "components/signin/internal/identity_manager/account_capabilities_constants.h"
-#include "components/signin/public/base/signin_metrics.h"
-#import "ios/public/provider/chrome/browser/signin/fake_chrome_identity.h"
+#import "base/run_loop.h"
+#import "base/test/metrics/histogram_tester.h"
+#import "base/test/scoped_mock_clock_override.h"
+#import "components/signin/internal/identity_manager/account_capabilities_constants.h"
+#import "components/signin/public/base/signin_metrics.h"
+#import "ios/chrome/browser/signin/capabilities_dict.h"
+#import "ios/chrome/browser/signin/fake_system_identity.h"
 #import "testing/gmock/include/gmock/gmock.h"
 #import "testing/gtest/include/gtest/gtest.h"
-#include "testing/gtest_mac.h"
+#import "testing/gtest_mac.h"
 #import "testing/platform_test.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
@@ -32,7 +33,7 @@ class TestChromeIdentityService : public ChromeIdentityService {
  public:
   struct FetchCapabilitiesRequest {
     NSArray* capabilities;
-    ChromeIdentity* identity;
+    id<SystemIdentity> identity;
     ChromeIdentityCapabilitiesFetchCompletionBlock completion;
   };
 
@@ -40,10 +41,10 @@ class TestChromeIdentityService : public ChromeIdentityService {
   ~TestChromeIdentityService() override = default;
 
   // Defines available capabilities that can be set under test.
-  // Sets the capability |kCanOfferExtendedChromeSyncPromosCapabilityName| under
+  // Sets the capability `kCanOfferExtendedChromeSyncPromosCapabilityName` under
   // test.
   void SetCapabilityUnderTestCanOfferExtendedSyncPromos(
-      ChromeIdentity* identity) {
+      id<SystemIdentity> identity) {
     SetCapabilityUnderTest(
         @(kCanOfferExtendedChromeSyncPromosCapabilityName),
         ^(ChromeIdentityCapabilityResult* fetched_capability_result) {
@@ -54,10 +55,10 @@ class TestChromeIdentityService : public ChromeIdentityService {
         });
   }
 
-  // Sets the capability |kIsSubjectToParentalControlsCapabilityName| under
+  // Sets the capability `kIsSubjectToParentalControlsCapabilityName` under
   // test.
   void SetCapabilityUnderTestIsSubjectToParentalControls(
-      ChromeIdentity* identity) {
+      id<SystemIdentity> identity) {
     SetCapabilityUnderTest(
         @(kIsSubjectToParentalControlsCapabilityName),
         ^(ChromeIdentityCapabilityResult* fetched_capability_result) {
@@ -91,8 +92,8 @@ class TestChromeIdentityService : public ChromeIdentityService {
 
  protected:
   void FetchCapabilities(
-      NSArray* capabilities,
-      ChromeIdentity* identity,
+      id<SystemIdentity> identity,
+      NSArray<NSString*>* capabilities,
       ChromeIdentityCapabilitiesFetchCompletionBlock completion) override {
     EXPECT_FALSE(fetch_capabilities_request_.has_value());
     FetchCapabilitiesRequest request;
@@ -112,7 +113,7 @@ class TestChromeIdentityService : public ChromeIdentityService {
 
   void RunFinishCapabilitiesCompletion(NSNumber* capability_value,
                                        NSError* error) {
-    NSDictionary* capabilities =
+    CapabilitiesDict* capabilities =
         capability_value ? @{capability_name_ : capability_value} : nil;
     EXPECT_TRUE(fetch_capabilities_request_.has_value());
     EXPECT_TRUE(fetch_capabilities_request_.value().completion);
@@ -128,7 +129,7 @@ class TestChromeIdentityService : public ChromeIdentityService {
 class ChromeIdentityServiceTest : public PlatformTest {
  public:
   ChromeIdentityServiceTest() {
-    identity_ = [FakeChromeIdentity identityWithEmail:@"foo@bar.com"
+    identity_ = [FakeSystemIdentity identityWithEmail:@"foo@bar.com"
                                                gaiaID:@"foo_bar_id"
                                                  name:@"Foo"];
   }
@@ -220,7 +221,7 @@ class ChromeIdentityServiceTest : public PlatformTest {
     }
   }
 
-  FakeChromeIdentity* identity_;
+  FakeSystemIdentity* identity_;
   TestChromeIdentityService service_;
 };
 

@@ -1,4 +1,4 @@
-// Copyright 2016 The Chromium Authors. All rights reserved.
+// Copyright 2016 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,7 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/ranges/algorithm.h"
 #include "build/chromeos_buildflags.h"
 #include "chrome/app/vector_icons/vector_icons.h"
 #include "chrome/browser/apps/intent_helper/page_transition_util.h"
@@ -64,12 +65,13 @@ using IntentPickerResponseWithDevices = base::OnceCallback<void(
     apps::IntentPickerCloseReason close_reason,
     bool should_persist)>;
 
-// Creates an icon for a specific |device_type|.
+// Creates an icon for a specific |device_form_factor|.
 ui::ImageModel CreateDeviceIcon(
-    const sync_pb::SyncEnums::DeviceType device_type) {
-  const gfx::VectorIcon& icon = device_type == sync_pb::SyncEnums::TYPE_TABLET
-                                    ? kTabletIcon
-                                    : kHardwareSmartphoneIcon;
+    const syncer::DeviceInfo::FormFactor device_form_factor) {
+  const gfx::VectorIcon& icon =
+      device_form_factor == syncer::DeviceInfo::FormFactor::kTablet
+          ? kTabletIcon
+          : kHardwareSmartphoneIcon;
   return ui::ImageModel::FromVectorIcon(icon, ui::kColorIcon, kDeviceIconSize);
 }
 
@@ -84,7 +86,7 @@ std::vector<apps::IntentPickerAppInfo> AddDevices(
   std::vector<apps::IntentPickerAppInfo> all_entries;
   for (const auto& device : devices) {
     all_entries.emplace_back(apps::PickerEntryType::kDevice,
-                             CreateDeviceIcon(device->device_type()),
+                             CreateDeviceIcon(device->form_factor()),
                              device->guid(), device->client_name());
   }
 
@@ -151,7 +153,7 @@ void CloseTabIfNeeded(base::WeakPtr<WebContents> web_contents,
 
   if (web_contents->GetController().IsInitialNavigation() ||
       safe_to_bypass_ui) {
-    web_contents->Close();
+    web_contents->ClosePage();
   }
 }
 
@@ -365,10 +367,8 @@ void HandleDeviceSelection(
   if (!web_contents)
     return;
 
-  const auto it = std::find_if(devices.begin(), devices.end(),
-                               [&device_guid](const auto& device) {
-                                 return device->guid() == device_guid;
-                               });
+  const auto it =
+      base::ranges::find(devices, device_guid, &syncer::DeviceInfo::guid);
   DCHECK(it != devices.end());
   auto* device = it->get();
 
@@ -604,6 +604,7 @@ void OnAppIconsReceived(
     std::vector<ArcIntentHelperMojoDelegate::IntentHandlerInfo> handlers,
     std::unique_ptr<ArcIntentHelperMojoDelegate> mojo_delegate,
     base::OnceCallback<void(bool)> handled_cb,
+    bool show_stay_in_chrome,
     std::unique_ptr<ArcIconCacheDelegate::ActivityToIconsMap> icons) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
@@ -628,10 +629,9 @@ void OnAppIconsReceived(
   if (!browser)
     return std::move(handled_cb).Run(false);
 
-  const bool stay_in_chrome = IsChromeAnAppCandidate(handlers);
   bool handled = MaybeAddDevicesAndShowPicker(
       url, initiating_origin, web_contents.get(), std::move(app_info),
-      stay_in_chrome,
+      show_stay_in_chrome,
       /*show_remember_selection=*/true,
       base::BindOnce(OnIntentPickerClosed, web_contents, url, safe_to_bypass_ui,
                      std::move(handlers), std::move(mojo_delegate)));
@@ -702,16 +702,26 @@ void OnUrlHandlerList(
 
   // Otherwise, retrieve icons of the activities. Since this function is for
   // handling external protocols, Chrome is rarely in the list, but if the |url|
-  // is intent: with fallback or geo:, for example, it may be.
+  // is intent: with fallback or geo:, for example, it may be. In this case, we
+  // remove it from the handler list and show the "Stay in Chrome" button
+  // instead.
+  bool show_stay_in_chrome = false;
   std::vector<ArcIntentHelperMojoDelegate::ActivityName> activities;
-  for (const auto& handler : handlers) {
-    activities.emplace_back(handler.package_name, handler.activity_name);
+  auto it = handlers.begin();
+  while (it != handlers.end()) {
+    if (it->package_name == kArcIntentHelperPackageName) {
+      it = handlers.erase(it);
+      show_stay_in_chrome = true;
+    } else {
+      activities.emplace_back(it->package_name, it->activity_name);
+      ++it;
+    }
   }
   ArcIconCacheDelegate::GetInstance()->GetActivityIcons(
-      activities,
-      base::BindOnce(OnAppIconsReceived, web_contents, url, initiating_origin,
-                     safe_to_bypass_ui, std::move(handlers),
-                     std::move(mojo_delegate), std::move(handled_cb)));
+      activities, base::BindOnce(OnAppIconsReceived, web_contents, url,
+                                 initiating_origin, safe_to_bypass_ui,
+                                 std::move(handlers), std::move(mojo_delegate),
+                                 std::move(handled_cb), show_stay_in_chrome));
 }
 
 }  // namespace

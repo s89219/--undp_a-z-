@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,12 +7,14 @@
 #include "ash/constants/ash_features.h"
 #include "ash/system/message_center/ash_message_popup_collection.h"
 #include "ash/system/message_center/unified_message_center_bubble.h"
-#include "ash/system/message_center/unified_message_center_view.h"
-#include "ash/system/message_center/unified_message_list_view.h"
+#include "ash/system/notification_center/notification_center_view.h"
+#include "ash/system/notification_center/notification_list_view.h"
 #include "ash/system/unified/unified_system_tray.h"
 #include "ash/test/ash_test_base.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/task_environment.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/test/event_generator.h"
 #include "ui/gfx/image/image.h"
 #include "ui/message_center/message_center.h"
@@ -33,6 +35,27 @@ constexpr char kCountInOneGroupHistogramName[] =
 constexpr char kGroupNotificationAddedHistogramName[] =
     "Ash.Notification.GroupNotificationAdded";
 
+constexpr char kSystemNotificationAddedHistogramName[] =
+    "Ash.NotifierFramework.SystemNotification.Added";
+
+constexpr char kPinnedSystemNotificationAddedHistogramName[] =
+    "Ash.NotifierFramework.PinnedSystemNotification.Added";
+
+constexpr char kSystemNotificationPopupShownHistogramName[] =
+    "Ash.NotifierFramework.SystemNotification.Popup.ShownCount";
+
+constexpr char kSystemNotificationPopupUserJourneyTime[] =
+    "Ash.NotifierFramework.SystemNotification.Popup.UserJourneyTime";
+
+constexpr char kSystemNotificationPopupDismissedWithin1s[] =
+    "Ash.NotifierFramework.SystemNotification.Popup.Dismissed.Within1s";
+
+constexpr char kSystemNotificationPopupDismissedWithin7s[] =
+    "Ash.NotifierFramework.SystemNotification.Popup.Dismissed.Within7s";
+
+constexpr char kSystemNotificationPopupDismissedAfter7s[] =
+    "Ash.NotifierFramework.SystemNotification.Popup.Dismissed.After7s";
+
 const gfx::Image CreateTestImage() {
   SkBitmap bitmap;
   bitmap.allocN32Pixels(/*width=*/80, /*height=*/80);
@@ -52,6 +75,48 @@ void CheckNotificationViewTypeRecorded(
   histograms.ExpectBucketCount(kNotificationViewTypeHistogramName, type, 1);
 }
 
+// A blocker that blocks a notification with the given ID.
+class IdNotificationBlocker : public message_center::NotificationBlocker {
+ public:
+  explicit IdNotificationBlocker(message_center::MessageCenter* message_center)
+      : NotificationBlocker(message_center) {}
+  IdNotificationBlocker(const IdNotificationBlocker&) = delete;
+  IdNotificationBlocker& operator=(const IdNotificationBlocker&) = delete;
+  ~IdNotificationBlocker() override = default;
+
+  void SetTargetIdAndNotifyBlock(const std::string& target_id) {
+    target_id_ = target_id;
+    NotifyBlockingStateChanged();
+  }
+
+  // message_center::NotificationBlocker:
+  bool ShouldShowNotification(
+      const message_center::Notification& notification) const override {
+    return notification.id() != target_id_;
+  }
+
+  bool ShouldShowNotificationAsPopup(
+      const message_center::Notification& notification) const override {
+    return notification.id() != target_id_;
+  }
+
+ private:
+  std::string target_id_;
+};
+
+// Returns true if a notification with a given `id` is showing a notification in
+// the message center.
+bool NotificationVisible(const std::string& id) {
+  return message_center::MessageCenter::Get()->FindVisibleNotificationById(
+             id) != nullptr;
+}
+
+// Returns true if a notification with a given `id` has a pop-up.
+bool PopupVisible(const std::string& id) {
+  return message_center::MessageCenter::Get()->FindPopupNotificationById(id) !=
+         nullptr;
+}
+
 }  // namespace
 
 namespace ash {
@@ -60,7 +125,8 @@ namespace ash {
 // notification/message center.
 class MessageCenterMetricsUtilsTest : public AshTestBase {
  public:
-  MessageCenterMetricsUtilsTest() {
+  MessageCenterMetricsUtilsTest()
+      : AshTestBase(base::test::TaskEnvironment::TimeSource::MOCK_TIME) {
     scoped_feature_list_ = std::make_unique<base::test::ScopedFeatureList>();
     scoped_feature_list_->InitAndEnableFeature(features::kNotificationsRefresh);
   }
@@ -86,19 +152,41 @@ class MessageCenterMetricsUtilsTest : public AshTestBase {
     notifier_id.profile_id = "a@b.com";
     notifier_id.type = message_center::NotifierType::WEB_PAGE;
     return std::make_unique<Notification>(
-        message_center::NOTIFICATION_TYPE_BASE_FORMAT,
+        message_center::NOTIFICATION_TYPE_SIMPLE,
         base::NumberToString(current_id_++), u"title", u"message",
         ui::ImageModel(), u"display source", GURL(u"http://test-url.com"),
         notifier_id, data,
         /*delegate=*/nullptr);
   }
 
+  // Create a system notification with given `catalog_name`.
+  std::unique_ptr<Notification> CreateNotificationWithCatalogName(
+      NotificationCatalogName catalog_name) {
+    const std::string id =
+        "id" + base::NumberToString(static_cast<int>(catalog_name));
+    message_center::RichNotificationData data;
+    return std::make_unique<Notification>(
+        message_center::NOTIFICATION_TYPE_SIMPLE, id, u"title", u"message",
+        ui::ImageModel(), u"display source", GURL(u"http://test-url.com"),
+        message_center::NotifierId(
+            message_center::NotifierType::SYSTEM_COMPONENT, id, catalog_name),
+        data, /*delegate=*/nullptr);
+  }
+
+  // Create a pinned system notification with given `catalog_name`.
+  std::unique_ptr<Notification> CreatePinnedNotificationWithCatalogName(
+      NotificationCatalogName catalog_name) {
+    auto notification = CreateNotificationWithCatalogName(catalog_name);
+    notification->set_pinned(true);
+    return notification;
+  }
+
   // Get the notification view from message center associated with `id`.
   views::View* GetNotificationViewFromMessageCenter(const std::string& id) {
     return GetPrimaryUnifiedSystemTray()
         ->message_center_bubble()
-        ->message_center_view()
-        ->message_list_view()
+        ->notification_center_view()
+        ->notification_list_view()
         ->GetMessageViewForNotificationId(id);
   }
 
@@ -367,6 +455,141 @@ TEST_F(MessageCenterMetricsUtilsTest, RecordGroupNotificationAddedType) {
   histograms.ExpectBucketCount(
       kGroupNotificationAddedHistogramName,
       metrics_utils::GroupNotificationType::GROUP_CHILD, 3);
+}
+
+TEST_F(MessageCenterMetricsUtilsTest, RecordSystemNotificationAdded) {
+  base::HistogramTester histograms;
+
+  // Create a system notification with `kTestCatalogName` for its catalog name.
+  const NotificationCatalogName test_catalog_name =
+      NotificationCatalogName::kTestCatalogName;
+  auto test_notification = CreateNotificationWithCatalogName(test_catalog_name);
+  message_center::MessageCenter::Get()->AddNotification(
+      std::move(test_notification));
+
+  // Check metrics are not recorded for `kTestCatalogName`.
+  histograms.ExpectBucketCount(kSystemNotificationAddedHistogramName,
+                               test_catalog_name, 0);
+
+  // Create system notifications with a valid catalog name, one for a non-pinned
+  // notification and one for a pinned one (e.g. Full Restore and Caps Lock).
+  const NotificationCatalogName catalog_name =
+      NotificationCatalogName::kFullRestore;
+  const NotificationCatalogName pinned_catalog_name =
+      NotificationCatalogName::kCapsLock;
+  auto notification = CreateNotificationWithCatalogName(catalog_name);
+  auto pinned_notification =
+      CreatePinnedNotificationWithCatalogName(pinned_catalog_name);
+
+  // Add notifications to message center.
+  auto* message_center = message_center::MessageCenter::Get();
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*notification));
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*pinned_notification));
+
+  // Expect metric to be recorded for valid catalog names.
+  histograms.ExpectBucketCount(kSystemNotificationAddedHistogramName,
+                               catalog_name, 1);
+  histograms.ExpectBucketCount(kPinnedSystemNotificationAddedHistogramName,
+                               pinned_catalog_name, 1);
+}
+
+TEST_F(MessageCenterMetricsUtilsTest,
+       RecordSystemNotificationAddedWithNotificationBlockers) {
+  base::HistogramTester histograms;
+
+  // Create a system notification with a valid catalog name (e.g. Full Restore).
+  const NotificationCatalogName catalog_name =
+      NotificationCatalogName::kFullRestore;
+  auto notification = CreateNotificationWithCatalogName(catalog_name);
+
+  // Add notification to message center.
+  auto* message_center = message_center::MessageCenter::Get();
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*notification));
+
+  // Verify notification was shown.
+  EXPECT_TRUE(PopupVisible(notification->id()));
+  EXPECT_TRUE(NotificationVisible(notification->id()));
+
+  // Expect `Added` and `PopupShown` metrics to be recorded.
+  histograms.ExpectBucketCount(kSystemNotificationAddedHistogramName,
+                               catalog_name, 1);
+  histograms.ExpectBucketCount(kSystemNotificationPopupShownHistogramName,
+                               catalog_name, 1);
+
+  // Apply a notification blocker.
+  IdNotificationBlocker blocker(message_center);
+  blocker.SetTargetIdAndNotifyBlock(notification->id());
+
+  // Add more notification instances to the message center.
+  message_center->RemoveNotification(notification->id(), /*by_user=*/false);
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*notification));
+
+  // Verify notification wasn't shown with notification blockers.
+  EXPECT_FALSE(PopupVisible(notification->id()));
+  EXPECT_FALSE(NotificationVisible(notification->id()));
+
+  // Verify the `Added` metric is recorded even with notification blockers.
+  histograms.ExpectBucketCount(kSystemNotificationAddedHistogramName,
+                               catalog_name, 2);
+
+  // Verify `Popup Shown` metric is not recorded with notification blockers.
+  histograms.ExpectBucketCount(kSystemNotificationPopupShownHistogramName,
+                               catalog_name, 1);
+}
+
+TEST_F(MessageCenterMetricsUtilsTest, RecordPopupUserJourneyTime) {
+  base::HistogramTester histograms;
+
+  // Create a non-pinned system notification with a valid catalog name.
+  const NotificationCatalogName catalog_name =
+      NotificationCatalogName::kFullRestore;
+  auto notification = CreateNotificationWithCatalogName(catalog_name);
+
+  // Add notification to message center. Use the normal duration for adding the
+  // notification so that the recorded popup duration is expected.
+  auto* message_center = message_center::MessageCenter::Get();
+  absl::optional<ui::ScopedAnimationDurationScaleMode> mode(
+      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*notification));
+
+  // Wait for notification popup to time out.
+  constexpr base::TimeDelta kPopupTimeOutDuration(base::Seconds(7));
+  task_environment()->FastForwardBy(kPopupTimeOutDuration);
+
+  // Expect user journey time metric to record the popup duration due to timeout
+  // (value is between 6 and 7 seconds).
+  auto buckets =
+      histograms.GetAllSamples(kSystemNotificationPopupUserJourneyTime);
+  EXPECT_TRUE(buckets[0].min >= 6000 && buckets[0].min <= 7000);
+  histograms.ExpectBucketCount(kSystemNotificationPopupDismissedWithin7s,
+                               catalog_name, 1);
+  mode.reset();
+  message_center->RemoveNotification(notification->id(), /*by_user=*/true);
+
+  // Dismiss popup within 1s.
+  notification->set_timestamp(base::Time::Now());
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*notification));
+  message_center->RemoveNotification(notification->id(), /*by_user=*/true);
+  task_environment()->FastForwardBy(kPopupTimeOutDuration);
+  histograms.ExpectBucketCount(kSystemNotificationPopupDismissedWithin1s,
+                               catalog_name, 1);
+
+  // Dismiss "never timeout" popup after 7s.
+  notification->set_timestamp(base::Time::Now());
+  notification->set_never_timeout(true);
+  message_center->AddNotification(
+      std::make_unique<message_center::Notification>(*notification));
+  task_environment()->FastForwardBy(kPopupTimeOutDuration + base::Seconds(1));
+  message_center->RemoveNotification(notification->id(), /*by_user=*/true);
+  task_environment()->FastForwardBy(kPopupTimeOutDuration);
+  histograms.ExpectBucketCount(kSystemNotificationPopupDismissedAfter7s,
+                               catalog_name, 1);
 }
 
 }  // namespace ash

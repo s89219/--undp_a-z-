@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "ash/quick_pair/common/protocol.h"
 #include "ash/quick_pair/proto/fastpair.pb.h"
 #include "ash/quick_pair/ui/actions.h"
 #include "ash/quick_pair/ui/fast_pair/fast_pair_notification_controller.h"
@@ -63,6 +64,7 @@ class FastPairPresenterImpl : public FastPairPresenter {
   void ShowCompanionApp(scoped_refptr<Device> device,
                         CompanionAppCallback callback) override;
   void RemoveNotifications() override;
+  void ExtendNotification() override;
 
  private:
   FastPairPresenterImpl(const FastPairPresenterImpl&) = delete;
@@ -79,18 +81,25 @@ class FastPairPresenterImpl : public FastPairPresenter {
   void ShowGuestDiscoveryNotification(scoped_refptr<Device> device,
                                       DiscoveryCallback callback,
                                       DeviceMetadata* device_metadata);
+  void ShowSubsequentDiscoveryNotification(scoped_refptr<Device> device,
+                                           DiscoveryCallback callback,
+                                           DeviceMetadata* device_metadata);
   void OnDiscoveryClicked(DiscoveryCallback action_callback);
-  void OnDiscoveryDismissed(DiscoveryCallback callback, bool user_dismissed);
+  void OnDiscoveryDismissed(scoped_refptr<Device> device,
+                            DiscoveryCallback callback,
+                            FastPairNotificationDismissReason dismiss_reason);
   void OnDiscoveryLearnMoreClicked(DiscoveryCallback action_callback);
 
   void OnNavigateToSettings(PairingFailedCallback callback);
-  void OnPairingFailedDismissed(PairingFailedCallback callback,
-                                bool user_dismissed);
+  void OnPairingFailedDismissed(
+      PairingFailedCallback callback,
+      FastPairNotificationDismissReason dismiss_reason);
 
   void OnAssociateAccountActionClicked(AssociateAccountCallback callback);
   void OnAssociateAccountLearnMoreClicked(AssociateAccountCallback callback);
-  void OnAssociateAccountDismissed(AssociateAccountCallback callback,
-                                   bool user_dismissed);
+  void OnAssociateAccountDismissed(
+      AssociateAccountCallback callback,
+      FastPairNotificationDismissReason dismiss_reason);
 
   void OnDiscoveryMetadataRetrieved(scoped_refptr<Device> device,
                                     DiscoveryCallback callback,

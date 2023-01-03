@@ -1,15 +1,22 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/dips/dips_state.h"
 
 #include "chrome/browser/dips/dips_storage.h"
+#include "chrome/browser/dips/dips_utils.h"
 
-class DIPSStorage;
+DIPSState::DIPSState(DIPSStorage* storage, std::string site)
+    : storage_(storage), site_(std::move(site)), was_loaded_(false) {}
 
-DIPSState::DIPSState(DIPSStorage* storage, std::string site, bool was_loaded)
-    : storage_(storage), site_(site), was_loaded_(was_loaded) {}
+DIPSState::DIPSState(DIPSStorage* storage,
+                     std::string site,
+                     const StateValue& state)
+    : storage_(storage),
+      site_(std::move(site)),
+      was_loaded_(true),
+      state_(state) {}
 
 DIPSState::DIPSState(DIPSState&&) = default;
 
@@ -19,20 +26,18 @@ DIPSState::~DIPSState() {
   }
 }
 
-void DIPSState::set_site_storage_time(absl::optional<base::Time> time) {
-  if (time == site_storage_time_) {
-    return;
-  }
-
-  site_storage_time_ = time;
-  dirty_ = true;
+void DIPSState::update_site_storage_time(base::Time time) {
+  dirty_ |= state_.site_storage_times.Update(time);
 }
 
-void DIPSState::set_user_interaction_time(absl::optional<base::Time> time) {
-  if (time == user_interaction_time_) {
-    return;
-  }
+void DIPSState::update_user_interaction_time(base::Time time) {
+  dirty_ |= state_.user_interaction_times.Update(time);
+}
 
-  user_interaction_time_ = time;
-  dirty_ = true;
+void DIPSState::update_stateful_bounce_time(base::Time time) {
+  dirty_ |= state_.stateful_bounce_times.Update(time);
+}
+
+void DIPSState::update_bounce_time(base::Time time) {
+  dirty_ |= state_.bounce_times.Update(time);
 }

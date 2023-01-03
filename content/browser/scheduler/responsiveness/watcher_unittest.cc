@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -275,7 +275,7 @@ TEST_F(ResponsivenessWatcherTest, BlockedOrLowPriorityTask) {
 // Test that the queue duration of a delayed task is zero.
 TEST_F(ResponsivenessWatcherTest, DelayedTask) {
   base::PendingTask task(FROM_HERE, base::OnceClosure(),
-                         /*queue_time=*/base::TimeTicks(),
+                         /*queue_time=*/base::TimeTicks::Now(),
                          /*delayed_run_time=*/base::TimeTicks::Now());
   task_environment_.FastForwardBy(base::Seconds(1));
 

@@ -1,4 +1,4 @@
-# Copyright 2022 The Chromium Authors. All rights reserved.
+# Copyright 2022 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -134,4 +134,3 @@ def log_skia_gold_status_code(skia_gold_session, image_name, status, error):
         'Given unhandled SkiaGoldSession StatusCode %s with error %s', status,
         error)
   return triage_link
-

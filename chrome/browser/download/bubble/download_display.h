@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -22,6 +22,13 @@ class DownloadDisplay {
   // Shows detailed information on the download display. It can be a popup or
   // dialog or partial view, essentially anything other than the main view.
   virtual void ShowDetails() = 0;
+  // Hide the detailed information on the download display.
+  virtual void HideDetails() = 0;
+  // Returns whether the details are visible.
+  virtual bool IsShowingDetails() = 0;
+  // Returns whether it is currently in fullscreen and the view that hosts the
+  // download display is hidden.
+  virtual bool IsFullscreenWithParentViewHidden() = 0;
 
  protected:
   virtual ~DownloadDisplay();

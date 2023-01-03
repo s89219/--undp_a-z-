@@ -1,9 +1,10 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "media/gpu/v4l2/test/v4l2_ioctl_shim.h"
 
+#include <fcntl.h>
 #include <linux/media.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -13,6 +14,8 @@
 #include "base/containers/contains.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/logging.h"
+#include "base/notreached.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/base/video_types.h"
 
 namespace media {
@@ -24,12 +27,13 @@ constexpr int kIoctlOk = 0;
 // Trogdor when a decode stalls.
 constexpr int kMaxRetryCount = 1 << 24;
 
-// TODO(stevecho): this might need to be changed for other platforms.
-static const base::FilePath kDecodeDevice("/dev/video-dec0");
-static const base::FilePath kMediaDevice("/dev/media-dec0");
-
 #define V4L2_REQUEST_CODE_AND_STRING(x) \
   { x, #x }
+
+constexpr uint32_t kMaximumDeviceNumber = 10;
+
+constexpr std::string_view kDecoderDevicePrefix = "/dev/video-dec";
+constexpr std::string_view kMediaDevicePrefix = "/dev/media-dec";
 
 // This map maintains a table with pairs of V4L2 request code
 // and corresponding name. New pair has to be added here
@@ -48,6 +52,7 @@ static const std::unordered_map<int, std::string>
         V4L2_REQUEST_CODE_AND_STRING(VIDIOC_QBUF),
         V4L2_REQUEST_CODE_AND_STRING(VIDIOC_DQBUF),
         V4L2_REQUEST_CODE_AND_STRING(VIDIOC_STREAMON),
+        V4L2_REQUEST_CODE_AND_STRING(VIDIOC_STREAMOFF),
         V4L2_REQUEST_CODE_AND_STRING(VIDIOC_S_EXT_CTRLS),
         V4L2_REQUEST_CODE_AND_STRING(MEDIA_IOC_REQUEST_ALLOC),
         V4L2_REQUEST_CODE_AND_STRING(MEDIA_REQUEST_IOC_QUEUE),
@@ -113,8 +118,8 @@ MmapedBuffer::MmapedBuffer(const base::PlatformFile ioctl_fd,
 }
 
 MmapedBuffer::~MmapedBuffer() {
-  for (const auto& plane : mmaped_planes_)
-    munmap(plane.start_addr, plane.length);
+  for (const auto& [start_addr, length, bytes_used] : mmaped_planes_)
+    munmap(start_addr, length);
 }
 
 V4L2Queue::V4L2Queue(enum v4l2_buf_type type,
@@ -138,15 +143,32 @@ scoped_refptr<MmapedBuffer> V4L2Queue::GetBuffer(const size_t index) const {
   return buffers_[index];
 }
 
-V4L2IoctlShim::V4L2IoctlShim()
-    : decode_fd_(kDecodeDevice,
-                 base::File::FLAG_OPEN | base::File::FLAG_READ |
-                     base::File::FLAG_WRITE),
-      media_fd_(kMediaDevice,
-                base::File::FLAG_OPEN | base::File::FLAG_READ |
-                    base::File::FLAG_WRITE) {
-  PCHECK(decode_fd_.IsValid()) << "Failed to open " << kDecodeDevice;
-  PCHECK(media_fd_.IsValid()) << "Failed to open " << kMediaDevice;
+V4L2IoctlShim::V4L2IoctlShim(const uint32_t coded_fourcc) {
+  uint32_t i;
+
+  for (i = 0; i < kMaximumDeviceNumber; ++i) {
+    std::string path =
+        std::string(kDecoderDevicePrefix) + base::NumberToString(i);
+    decode_fd_ = base::File(base::FilePath(path), base::File::FLAG_OPEN |
+                                                      base::File::FLAG_READ |
+                                                      base::File::FLAG_WRITE);
+
+    // Check if the device supports the requested coded format
+    if (QueryFormat(V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, coded_fourcc))
+      break;
+
+    // Close file descriptor on failure
+    decode_fd_.Close();
+  }
+
+  // TODO(wenst) media devices should be matched by their driver name or bus
+  // info
+  media_fd_ = base::File(
+      base::FilePath(std::string(kMediaDevicePrefix) + base::NumberToString(i)),
+      base::File::FLAG_OPEN | base::File::FLAG_READ | base::File::FLAG_WRITE);
+
+  PCHECK(decode_fd_.IsValid()) << "Failed to find available decode device.";
+  PCHECK(media_fd_.IsValid()) << "Failed to find available media device.";
 }
 
 V4L2IoctlShim::~V4L2IoctlShim() = default;
@@ -246,6 +268,7 @@ bool V4L2IoctlShim::Ioctl(int request_code, struct v4l2_buffer* buffer) const {
 template <>
 bool V4L2IoctlShim::Ioctl(int request_code, int* arg) const {
   DCHECK(request_code == static_cast<int>(VIDIOC_STREAMON) ||
+         request_code == static_cast<int>(VIDIOC_STREAMOFF) ||
          request_code == static_cast<int>(MEDIA_IOC_REQUEST_ALLOC));
   LOG_ASSERT(arg != nullptr) << "|arg| check failed.";
 
@@ -380,6 +403,30 @@ bool V4L2IoctlShim::ReqBufs(std::unique_ptr<V4L2Queue>& queue) const {
   return ret;
 }
 
+bool V4L2IoctlShim::ReqBufsWithCount(std::unique_ptr<V4L2Queue>& queue,
+                                     uint32_t count) const {
+  struct v4l2_requestbuffers reqbuf;
+
+  memset(&reqbuf, 0, sizeof(reqbuf));
+  reqbuf.count = count;
+  reqbuf.type = queue->type();
+  reqbuf.memory = queue->memory();
+
+  const bool ret = Ioctl(VIDIOC_REQBUFS, &reqbuf);
+
+  queue->set_num_buffers(reqbuf.count);
+
+  if (count == 0) {
+    LOG(INFO) << "Requested to free all buffers in " << queue->type()
+              << "with a buffer count of 0.";
+  } else {
+    LOG(INFO) << queue->num_buffers() << " buffers requested, " << reqbuf.count
+              << " buffers returned for " << queue->type() << ".";
+  }
+
+  return ret;
+}
+
 bool V4L2IoctlShim::QBuf(const std::unique_ptr<V4L2Queue>& queue,
                          const uint32_t index) const {
   LOG_ASSERT(queue->memory() == V4L2_MEMORY_MMAP)
@@ -399,7 +446,7 @@ bool V4L2IoctlShim::QBuf(const std::unique_ptr<V4L2Queue>& queue,
 
   for (uint32_t i = 0; i < queue->num_planes(); ++i) {
     v4l2_buffer.m.planes[i].length = buffer->mmaped_planes()[i].length;
-    v4l2_buffer.m.planes[i].bytesused = buffer->mmaped_planes()[i].length;
+    v4l2_buffer.m.planes[i].bytesused = buffer->mmaped_planes()[i].bytes_used;
     v4l2_buffer.m.planes[i].data_offset = 0;
   }
 
@@ -480,12 +527,14 @@ bool V4L2IoctlShim::StreamOn(const enum v4l2_buf_type type) const {
   return Ioctl(VIDIOC_STREAMON, &arg);
 }
 
-bool V4L2IoctlShim::SetExtCtrls(const std::unique_ptr<V4L2Queue>& queue,
-                                v4l2_ctrl_vp9_frame& v4l2_frame_params) const {
-  struct v4l2_ext_control ctrl = {.id = V4L2_CID_STATELESS_VP9_FRAME,
-                                  .size = sizeof(v4l2_frame_params),
-                                  .ptr = &v4l2_frame_params};
+bool V4L2IoctlShim::StreamOff(const enum v4l2_buf_type type) const {
+  int arg = static_cast<int>(type);
 
+  return Ioctl(VIDIOC_STREAMOFF, &arg);
+}
+
+bool V4L2IoctlShim::SetExtCtrls(const std::unique_ptr<V4L2Queue>& queue,
+                                v4l2_ext_controls* ext_ctrls) const {
   // TODO(b/230021497): add compressed header probability related change
   // when V4L2_CID_STATELESS_VP9_COMPRESSED_HDR is supported
 
@@ -495,12 +544,10 @@ bool V4L2IoctlShim::SetExtCtrls(const std::unique_ptr<V4L2Queue>& queue,
   // instead are applied by the driver for the buffer associated with
   // the same request.", see:
   // https://www.kernel.org/doc/html/v5.10/userspace-api/media/v4l/vidioc-g-ext-ctrls.html#description
-  struct v4l2_ext_controls ctrls = {.which = V4L2_CTRL_WHICH_REQUEST_VAL,
-                                    .count = 1,
-                                    .request_fd = queue->media_request_fd(),
-                                    .controls = &ctrl};
+  ext_ctrls->which = V4L2_CTRL_WHICH_REQUEST_VAL;
+  ext_ctrls->request_fd = queue->media_request_fd();
 
-  const bool ret = Ioctl(VIDIOC_S_EXT_CTRLS, &ctrls);
+  const bool ret = Ioctl(VIDIOC_S_EXT_CTRLS, ext_ctrls);
 
   return ret;
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -20,8 +20,9 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
-#include "components/services/storage/indexed_db/locks/leveled_lock_manager.h"
+#include "components/services/storage/indexed_db/locks/partitioned_lock_manager.h"
 #include "components/services/storage/public/cpp/buckets/bucket_locator.h"
 #include "content/browser/indexed_db/indexed_db.h"
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
@@ -81,8 +82,8 @@ class CONTENT_EXPORT IndexedDBDatabase {
   }
   const blink::IndexedDBDatabaseMetadata& metadata() const { return metadata_; }
 
-  LeveledLockManager* transaction_lock_manager() { return lock_manager_; }
-  const LeveledLockManager* transaction_lock_manager() const {
+  PartitionedLockManager* transaction_lock_manager() { return lock_manager_; }
+  const PartitionedLockManager* transaction_lock_manager() const {
     return lock_manager_;
   }
 
@@ -113,7 +114,9 @@ class CONTENT_EXPORT IndexedDBDatabase {
 
   void ScheduleOpenConnection(
       IndexedDBBucketStateHandle bucket_state_handle,
-      std::unique_ptr<IndexedDBPendingConnection> connection);
+      std::unique_ptr<IndexedDBPendingConnection> connection,
+      scoped_refptr<IndexedDBClientStateCheckerWrapper> client_state_checker);
+
   void ScheduleDeleteDatabase(IndexedDBBucketStateHandle bucket_state_handle,
                               scoped_refptr<IndexedDBCallbacks> callbacks,
                               base::OnceClosure on_deletion_complete);
@@ -324,7 +327,7 @@ class CONTENT_EXPORT IndexedDBDatabase {
                     TasksAvailableCallback tasks_available_callback,
                     std::unique_ptr<IndexedDBMetadataCoding> metadata_coding,
                     const Identifier& unique_identifier,
-                    LeveledLockManager* transaction_lock_manager);
+                    PartitionedLockManager* transaction_lock_manager);
 
   // May be overridden in tests.
   virtual size_t GetUsableMessageSizeInBytes() const;
@@ -354,7 +357,8 @@ class CONTENT_EXPORT IndexedDBDatabase {
 
   std::unique_ptr<IndexedDBConnection> CreateConnection(
       IndexedDBBucketStateHandle bucket_state_handle,
-      scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks);
+      scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks,
+      scoped_refptr<IndexedDBClientStateCheckerWrapper> client_state_checker);
 
   // Ack that one of the connections notified with a "versionchange" event did
   // not promptly close. Therefore a "blocked" event should be fired at the
@@ -383,7 +387,7 @@ class CONTENT_EXPORT IndexedDBDatabase {
   const raw_ptr<IndexedDBClassFactory> class_factory_;
   std::unique_ptr<IndexedDBMetadataCoding> metadata_coding_;
 
-  raw_ptr<LeveledLockManager> lock_manager_;
+  raw_ptr<PartitionedLockManager> lock_manager_;
   int64_t transaction_count_ = 0;
 
   list_set<IndexedDBConnection*> connections_;

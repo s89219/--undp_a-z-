@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -51,9 +51,6 @@ blink::mojom::FetchAPIRequestPtr CreateFetchAPIRequest(
 // Deprecated: Use RunLoop::Run(). Use RunLoop::Type::kNestableTasksAllowed to
 // force nesting in browser tests.
 void RunMessageLoop();
-
-// Deprecated: Invoke |run_loop->Run()| directly.
-void RunThisRunLoop(base::RunLoop* run_loop);
 
 // Turns on nestable tasks, runs all pending tasks in the message loop, then
 // resets nestable tasks to what they were originally. Can only be called from
@@ -209,7 +206,7 @@ class MessageLoopRunner : public base::RefCountedThreadSafe<MessageLoopRunner> {
   // True after closure returned by |QuitClosure| has been called.
   bool quit_closure_called_ = false;
 
-  base::RunLoop run_loop_;
+  base::RunLoop run_loop_{base::RunLoop::Type::kNestableTasksAllowed};
 
   base::ThreadChecker thread_checker_;
 };
@@ -419,7 +416,7 @@ class RenderFrameHostWrapper {
   // See RenderFrameDeletedObserver for notes on the difference between
   // RenderFrame being deleted and RenderFrameHost being destroyed.
   // Returns true if the frame was deleted before the timeout.
-  [[nodiscard]] bool WaitUntilRenderFrameDeleted();
+  [[nodiscard]] bool WaitUntilRenderFrameDeleted() const;
   bool IsRenderFrameDeleted() const;
 
   // Pointerish operators. Feel free to add more if you need them.

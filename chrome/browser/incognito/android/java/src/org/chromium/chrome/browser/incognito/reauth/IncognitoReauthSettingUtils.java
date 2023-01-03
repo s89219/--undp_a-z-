@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,12 +8,10 @@ import android.app.Activity;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 
-import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
 
 import org.chromium.base.ContextUtils;
@@ -30,7 +28,6 @@ public class IncognitoReauthSettingUtils {
     /**
      * @return A boolean indicating if the screen lock is enabled in device or not.
      */
-    @RequiresApi(Build.VERSION_CODES.M)
     public static boolean isDeviceScreenLockEnabled() {
         if (sIsDeviceScreenLockEnabledForTesting != null) {
             return sIsDeviceScreenLockEnabledForTesting;

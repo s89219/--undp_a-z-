@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,14 +11,13 @@
 #include "base/memory/read_only_shared_memory_region.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "components/page_load_metrics/browser/page_load_metrics_observer_delegate.h"
 #include "components/page_load_metrics/common/page_load_metrics.mojom.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/canonical_cookie.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
-#include "third_party/blink/public/common/mobile_metrics/mobile_friendliness.h"
 #include "third_party/blink/public/common/use_counter/use_counter_feature.h"
-#include "third_party/blink/public/mojom/frame/frame.mojom.h"
 #include "third_party/blink/public/mojom/loader/resource_load_info.mojom.h"
 
 #include "url/gurl.h"
@@ -47,7 +46,7 @@ enum class StorageType {
 // load.
 struct ExtraRequestCompleteInfo {
   ExtraRequestCompleteInfo(
-      const url::Origin& origin_of_final_url,
+      const url::SchemeHostPort& final_url,
       const net::IPEndPoint& remote_endpoint,
       int frame_tree_node_id,
       bool was_cached,
@@ -61,11 +60,12 @@ struct ExtraRequestCompleteInfo {
 
   ~ExtraRequestCompleteInfo();
 
-  // The origin of the final URL for the request (final = after redirects).
+  // The scheme/host/port of the final URL for the request
+  // (final = after redirects).
   //
   // The full URL is not available, because in some cases the path and query
-  // be sanitized away - see https://crbug.com/973885.
-  const url::Origin origin_of_final_url;
+  // may be sanitized away - see https://crbug.com/973885.
+  const url::SchemeHostPort final_url;
 
   // The host (IP address) and port for the request.
   const net::IPEndPoint remote_endpoint;
@@ -131,10 +131,29 @@ class PageLoadMetricsObserverInterface {
   // receives forward metrics via FORWARD_OBSERVING, and returns STOP_OBSERVING,
   // It just stop observing forward metrics, and still see other callbacks for
   // the orinally bound page.
+  // Most events requiring preprocesses, such as lifecycle events, are forwarded
+  // to the outer page at the PageLoadTracker layer, and only events that are
+  // directly delivered to the observers need FORWARD_OBSERVING. See
+  // PageLoadMetricsForwardObserver to know which events need the observer layer
+  // forwarding. Eventually, we may treat all forwarding at the PageLoadTracker
+  // layer to deprecate the FORWARD_OBSERVING for simplicity. FORWARD_OBSERVING
+  // is available only for OnFencedFramesStart().
+  //
+  // FORWARD_OBSERVING was introduced to migrate existing observers to support
+  // FencedFrames. Some events need to use this policy to correct metrics that
+  // need observer level forwarding, but most metrics can be gathered by
+  // CONTINUE_OBSERVING. You can check PageLoadMetricsForwardObserver's
+  // implementation. If it does nothing, CONTINUE_OBSERVING just works for the
+  // event. We track FORWARD_OBSERVING users in the following sheet. Please
+  // contact toyoshim@chromium.org or kenoss@chromium.org when you need
+  // FORWARD_OBSERVING. We will replace the observer level forwarding with the
+  // tracker level forwarding so that CONTINUE_OBSERVING just works for all
+  // events.
+  // https://docs.google.com/spreadsheets/d/1ftmGPs5Q9iqSUKLJiS_hAU3m41iDXFq9p7zfGODmKGg/edit#gid=0
   enum ObservePolicy {
     CONTINUE_OBSERVING,
     STOP_OBSERVING,
-    FORWARD_OBSERVING,
+    FORWARD_OBSERVING,  // Deprecated. See the detailed comments above.
   };
 
   using FrameTreeNodeId = int;
@@ -158,6 +177,12 @@ class PageLoadMetricsObserverInterface {
   // TODO(https://crbug.com/1301880): Make all inheritances override this method
   // and make it pure virtual method.
   virtual const char* GetObserverName() const = 0;
+
+  // Gets/Sets the delegate. The delegate must outlive the observer and is
+  // normally set when the observer is first registered for the page load. The
+  // delegate can only be set once.
+  virtual const PageLoadMetricsObserverDelegate& GetDelegate() const = 0;
+  virtual void SetDelegate(PageLoadMetricsObserverDelegate*) = 0;
 
   // The page load started, with the given navigation handle.
   // currently_committed_url contains the URL of the committed page load at the
@@ -306,8 +331,9 @@ class PageLoadMetricsObserverInterface {
   virtual void OnTimingUpdate(content::RenderFrameHost* subframe_rfh,
                               const mojom::PageLoadTiming& timing) = 0;
 
-  virtual void OnMobileFriendlinessUpdate(
-      const blink::MobileFriendliness& mobile_friendliness) = 0;
+  // The callback is invoked when a soft navigation is detected.
+  // See https://bit.ly/soft-navigation for more details.
+  virtual void OnSoftNavigationCountUpdated() = 0;
 
   // OnInputTimingUpdate is triggered when an updated InputTiming is available
   // at the subframe level. This method may be called multiple times over the
@@ -315,6 +341,18 @@ class PageLoadMetricsObserverInterface {
   virtual void OnInputTimingUpdate(
       content::RenderFrameHost* subframe_rfh,
       const mojom::InputTiming& input_timing_delta) = 0;
+
+  // OnPageInputTimingUpdate is triggered when an updated InputTiming is
+  // available at the page level.
+  virtual void OnPageInputTimingUpdate(uint64_t num_interactions,
+                                       uint64_t num_input_events) = 0;
+
+  // OnPageRenderDataChanged is triggered when an updated PageRenderData is
+  // available at the page level. This method may be called multiple times over
+  // the course of the page load.
+  virtual void OnPageRenderDataUpdate(
+      const mojom::FrameRenderDataUpdate& render_data,
+      bool is_main_frame) = 0;
 
   // OnRenderDataUpdate is triggered when an updated PageRenderData is available
   // at the subframe level. This method may be called multiple times over the
@@ -339,7 +377,6 @@ class PageLoadMetricsObserverInterface {
   virtual void OnDomContentLoadedEventStart(
       const mojom::PageLoadTiming& timing) = 0;
   virtual void OnLoadEventStart(const mojom::PageLoadTiming& timing) = 0;
-  virtual void OnFirstLayout(const mojom::PageLoadTiming& timing) = 0;
   virtual void OnParseStart(const mojom::PageLoadTiming& timing) = 0;
   virtual void OnParseStop(const mojom::PageLoadTiming& timing) = 0;
 
@@ -391,7 +428,7 @@ class PageLoadMetricsObserverInterface {
       const base::ReadOnlySharedMemoryRegion& shared_memory) = 0;
 
   // Invoked when there is data use for loading a resource on the page
-  // for a given render frame host. This only contains resources that have had
+  // for a given RenderFrameHost. This only contains resources that have had
   // new data use since the last callback. Resources loaded from the cache only
   // receive a single update. Multiple updates can be received for the same
   // resource if it is loaded in multiple documents.
@@ -404,13 +441,31 @@ class PageLoadMetricsObserverInterface {
       const content::WebContentsObserver::MediaPlayerInfo& video_type,
       content::RenderFrameHost* render_frame_host) = 0;
 
-  // Invoked when a frame's intersections with page elements changes and an
-  // update is received. The `main_frame_intersection_rect` is an empty rect for
-  // out of view subframes and is the root document size for the main frame.
+  // For the main frame, called when the main frame's dimensions have changed,
+  // e.g. resizing a tab causes the document width to change; loading additional
+  // content causes the document height to increase; explicitly changing the
+  // height of the body element.
+  //
+  // For a subframe, called when the intersection rect between the main frame
+  // and the subframe has changed, e.g. the subframe is initially added; the
+  // subframe's position is updated explicitly or inherently (e.g. sticky
+  // position while the page is being scrolled).
+  //
   // TODO(crbug/1048175): Expose intersections to observers via shared delegate.
   virtual void OnMainFrameIntersectionRectChanged(
       content::RenderFrameHost* rfh,
       const gfx::Rect& main_frame_intersection_rect) = 0;
+
+  // Called when the main frame's viewport rectangle (the viewport dimensions
+  // and the scroll position) changed, e.g. the user scrolled the main frame or
+  // the viewport dimensions themselves changed. Only invoked on the main frame.
+  virtual void OnMainFrameViewportRectChanged(
+      const gfx::Rect& main_frame_viewport_rect) = 0;
+
+  // Called when an image ad rectangle changed. An empty `image_ad_rect` is used
+  // to signal the removal of the rectangle. Only invoked on the main frame.
+  virtual void OnMainFrameImageAdRectsChanged(
+      const base::flat_map<int, gfx::Rect>& main_frame_image_ad_rects) = 0;
 
   // Invoked when the UMA metrics subsystem is persisting metrics as the
   // application goes into the background, on platforms where the browser
@@ -428,24 +483,23 @@ class PageLoadMetricsObserverInterface {
   virtual ObservePolicy FlushMetricsOnAppEnterBackground(
       const mojom::PageLoadTiming& timing) = 0;
 
-  // One of OnComplete or OnFailedProvisionalLoad is invoked for tracked page
-  // loads, immediately before the observer is deleted. These callbacks will not
-  // be invoked for page loads that did not meet the criteria for being tracked
-  // at the time the navigation completed. The PageLoadTiming struct contains
-  // timing data. Other useful data collected over the course of the page load
-  // is exposed by the observer delegate API. Most observers should not need
-  // to implement these callbacks, and should implement the On* timing callbacks
-  // instead.
-
-  // OnComplete is invoked for tracked page loads that committed, immediately
-  // before the observer is deleted. Observers that implement OnComplete may
-  // also want to implement FlushMetricsOnAppEnterBackground, to avoid loss of
-  // data if the application is killed while in the background (this happens
-  // frequently on Android).
+  // A destructor of observer is invoked in the following mutually exclusive
+  // paths:
+  //
+  // - (If an ovserver doesn't override OnEnterBackForwardCache) When
+  //   OnEnterBackForwardCache is invoked, it calls OnComplete and returns
+  //   STOP_OBSERVING, then the ovserver is pruned.
+  // - When some callback returned STOP_OBSERVING, the observer is pruned with
+  //   no more callback.
+  // - When PageLoadTracker destructed, OnComplete is invoked just before
+  //   destruction if the load is committed.
+  // - When PageLoadTracker destructed, OnFailedProvisionalLoad is invoked just
+  //   before destruction if the load is not committed.
+  //
+  // Observers that implement OnComplete may also want to implement
+  // FlushMetricsOnAppEnterBackground, to avoid loss of data if the application
+  // is killed while in the background (this happens frequently on Android).
   virtual void OnComplete(const mojom::PageLoadTiming& timing) = 0;
-
-  // OnFailedProvisionalLoad is invoked for tracked page loads that did not
-  // commit, immediately before the observer is deleted.
   virtual void OnFailedProvisionalLoad(
       const FailedProvisionalLoadInfo& failed_provisional_load_info) = 0;
 
@@ -466,6 +520,21 @@ class PageLoadMetricsObserverInterface {
   virtual void FrameSizeChanged(content::RenderFrameHost* render_frame_host,
                                 const gfx::Size& frame_size) = 0;
 
+  // OnRenderFrameDeleted is called when RenderFrameHost for a frame is deleted.
+  // OnSubFrameDeleted is called when FrameTreeNode for a subframe is deleted.
+  // The differences are:
+  //
+  // - OnRenderFrameDeleted is called for all frames. OnSubFrameDeleted is not
+  //   called for main frames. This is because PageLoadTracker is bound with
+  //   RenderFrameHost of the main frame and destruction of PageLoadTracker is
+  //   earlier than one of FrameTreeNode.
+  // - OnRenderFrameDeleted can be called in navigation commit to discard the
+  //   previous RenderFrameHost. At that timing, there are two RenderFrameHost
+  //   that have the same RenderFrameHost::GetFrameNodeId.
+  //
+  // Note that navigation may not trigger deletion of RenderFrameHost, e.g. in
+  // the case of the page entered to Back/Forward cache. If observer only wants
+  // to observe deletion of node, OnSubFrameDeleted is more relevant.
   virtual void OnRenderFrameDeleted(
       content::RenderFrameHost* render_frame_host) = 0;
   virtual void OnSubFrameDeleted(int frame_tree_node_id) = 0;
@@ -507,6 +576,9 @@ class PageLoadMetricsObserverInterface {
   // change in bytes used.
   virtual void OnV8MemoryChanged(
       const std::vector<MemoryUpdate>& memory_updates) = 0;
+
+  // Called when a `SharedStorageWorkletHost` is created.
+  virtual void OnSharedStorageWorkletHostCreated() = 0;
 
  private:
   base::WeakPtrFactory<PageLoadMetricsObserverInterface> weak_factory_{this};

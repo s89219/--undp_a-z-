@@ -1,22 +1,24 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ash/web_applications/personalization_app/personalization_app_ambient_provider_impl.h"
 
-#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "ash/ambient/ambient_controller.h"
 #include "ash/constants/ambient_animation_theme.h"
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/ambient/ambient_backend_controller.h"
 #include "ash/public/cpp/ambient/ambient_client.h"
 #include "ash/public/cpp/ambient/ambient_metrics.h"
 #include "ash/public/cpp/ambient/ambient_prefs.h"
+#include "ash/public/cpp/ambient/ambient_ui_model.h"
 #include "ash/public/cpp/ambient/common/ambient_settings.h"
 #include "ash/public/cpp/image_downloader.h"
+#include "ash/shell.h"
 #include "ash/webui/personalization_app/mojom/personalization_app.mojom.h"
 #include "ash/webui/personalization_app/mojom/personalization_app_mojom_traits.h"
 #include "base/barrier_closure.h"
@@ -26,6 +28,8 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/notreached.h"
+#include "base/ranges/algorithm.h"
+#include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/ash/web_applications/personalization_app/personalization_app_manager.h"
 #include "chrome/browser/ash/web_applications/personalization_app/personalization_app_manager_factory.h"
 #include "chrome/browser/ash/web_applications/personalization_app/personalization_app_metrics.h"
@@ -38,8 +42,7 @@
 #include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
-namespace ash {
-namespace personalization_app {
+namespace ash::personalization_app {
 
 namespace {
 
@@ -48,8 +51,6 @@ constexpr int kBannerWidthPx = 160;
 constexpr int kBannerHeightPx = 160;
 
 constexpr int kMaxRetries = 3;
-
-constexpr char kRecentHighlightsPhotoContainerId[] = "RECENT_PHOTOS";
 
 constexpr net::BackoffEntry::Policy kRetryBackoffPolicy = {
     0,          // Number of initial errors to ignore.
@@ -79,6 +80,8 @@ PersonalizationAppAmbientProviderImpl::PersonalizationAppAmbientProviderImpl(
       base::BindRepeating(
           &PersonalizationAppAmbientProviderImpl::OnAnimationThemeChanged,
           base::Unretained(this)));
+  ambient_ui_model_observer_.Observe(
+      Shell::Get()->ambient_controller()->ambient_ui_model());
 }
 
 PersonalizationAppAmbientProviderImpl::
@@ -120,8 +123,6 @@ void PersonalizationAppAmbientProviderImpl::SetAmbientObserver(
   OnAnimationThemeChanged();
 
   ResetLocalSettings();
-  // Will notify WebUI when fetches successfully.
-  FetchSettingsAndAlbums();
 }
 
 void PersonalizationAppAmbientProviderImpl::SetAmbientModeEnabled(
@@ -174,25 +175,19 @@ void PersonalizationAppAmbientProviderImpl::SetAlbumSelected(
     bool selected) {
   switch (topic_source) {
     case (ash::AmbientModeTopicSource::kGooglePhotos): {
-      ash::PersonalAlbum* personal_album = FindPersonalAlbumById(id);
-      if (!personal_album) {
-        mojo::ReportBadMessage("Invalid album id.");
+      ash::PersonalAlbum* target_personal_album = FindPersonalAlbumById(id);
+      if (!target_personal_album) {
+        ambient_receiver_.ReportBadMessage("Invalid album id.");
         return;
       }
-      personal_album->selected = selected;
+      target_personal_album->selected = selected;
 
       // For Google Photos, we will populate the |selected_album_ids| with IDs
       // of selected albums.
       settings_->selected_album_ids.clear();
       for (const auto& personal_album : personal_albums_.albums) {
         if (personal_album.selected) {
-          std::string album_id = personal_album.album_id;
-
-          // Convert the fake album ID back to actual ID from IMAX so we can
-          // download the previews.
-          if (album_id == ash::kAmbientModeRecentHighlightsAlbumId)
-            album_id = kRecentHighlightsPhotoContainerId;
-          settings_->selected_album_ids.emplace_back(album_id);
+          settings_->selected_album_ids.push_back(personal_album.album_id);
         }
       }
 
@@ -214,7 +209,7 @@ void PersonalizationAppAmbientProviderImpl::SetAlbumSelected(
       // based on the selections.
       auto* art_setting = FindArtAlbumById(id);
       if (!art_setting || !art_setting->visible) {
-        mojo::ReportBadMessage("Invalid album id.");
+        ambient_receiver_.ReportBadMessage("Invalid album id.");
         return;
       }
       art_setting->enabled = selected;
@@ -228,6 +223,24 @@ void PersonalizationAppAmbientProviderImpl::SetAlbumSelected(
 
 void PersonalizationAppAmbientProviderImpl::SetPageViewed() {
   page_viewed_ = true;
+}
+
+void PersonalizationAppAmbientProviderImpl::FetchSettingsAndAlbums() {
+  // If there is an ongoing update, do not fetch. If update succeeds, it will
+  // update the UI with the new settings. If update fails, it will restore
+  // previous settings and update UI.
+  if (is_updating_backend_) {
+    has_pending_fetch_request_ = true;
+    return;
+  }
+
+  // TODO(b/161044021): Add a helper function to get all the albums. Currently
+  // only load 100 latest modified albums.
+  ash::AmbientBackendController::Get()->FetchSettingsAndAlbums(
+      kBannerWidthPx, kBannerHeightPx, /*num_albums=*/100,
+      base::BindOnce(
+          &PersonalizationAppAmbientProviderImpl::OnSettingsAndAlbumsFetched,
+          read_weak_factory_.GetWeakPtr()));
 }
 
 void PersonalizationAppAmbientProviderImpl::OnAmbientModeEnabledChanged() {
@@ -393,7 +406,7 @@ bool PersonalizationAppAmbientProviderImpl::MaybeScheduleNewUpdateSettings(
 
   const base::TimeDelta kDelay =
       update_settings_retry_backoff_.GetTimeUntilRelease();
-  base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+  base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PersonalizationAppAmbientProviderImpl::UpdateSettings,
                      write_weak_factory_.GetWeakPtr()),
@@ -420,24 +433,6 @@ void PersonalizationAppAmbientProviderImpl::UpdateUIWithCachedSettings(
   has_pending_fetch_request_ = false;
 }
 
-void PersonalizationAppAmbientProviderImpl::FetchSettingsAndAlbums() {
-  // If there is an ongoing update, do not fetch. If update succeeds, it will
-  // update the UI with the new settings. If update fails, it will restore
-  // previous settings and update UI.
-  if (is_updating_backend_) {
-    has_pending_fetch_request_ = true;
-    return;
-  }
-
-  // TODO(b/161044021): Add a helper function to get all the albums. Currently
-  // only load 100 latest modified albums.
-  ash::AmbientBackendController::Get()->FetchSettingsAndAlbums(
-      kBannerWidthPx, kBannerHeightPx, /*num_albums=*/100,
-      base::BindOnce(
-          &PersonalizationAppAmbientProviderImpl::OnSettingsAndAlbumsFetched,
-          read_weak_factory_.GetWeakPtr()));
-}
-
 void PersonalizationAppAmbientProviderImpl::OnSettingsAndAlbumsFetched(
     const absl::optional<ash::AmbientSettings>& settings,
     ash::PersonalAlbums personal_albums) {
@@ -449,7 +444,7 @@ void PersonalizationAppAmbientProviderImpl::OnSettingsAndAlbumsFetched(
 
     const base::TimeDelta kDelay =
         fetch_settings_retry_backoff_.GetTimeUntilRelease();
-    base::SequencedTaskRunnerHandle::Get()->PostDelayedTask(
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(
             &PersonalizationAppAmbientProviderImpl::FetchSettingsAndAlbums,
@@ -509,7 +504,10 @@ void PersonalizationAppAmbientProviderImpl::MaybeUpdateTopicSource(
   // If the setting is the same, no need to update.
   if (settings_->topic_source != topic_source) {
     settings_->topic_source = topic_source;
-    UpdateSettings();
+    if (IsAmbientModeEnabled()) {
+      // Only send update to server if ambient mode is currently enabled.
+      UpdateSettings();
+    }
   }
 
   OnTopicSourceChanged();
@@ -517,11 +515,15 @@ void PersonalizationAppAmbientProviderImpl::MaybeUpdateTopicSource(
 
 void PersonalizationAppAmbientProviderImpl::FetchGooglePhotosAlbumsPreviews(
     const std::vector<std::string>& album_ids) {
+  const int num_previews = features::IsAmbientSubpageUIChangeEnabled() ? 3 : 4;
+  const int preview_width =
+      features::IsAmbientSubpageUIChangeEnabled() ? 360 : kBannerWidthPx;
+  const int preview_height =
+      features::IsAmbientSubpageUIChangeEnabled() ? 130 : kBannerHeightPx;
   DCHECK(!album_ids.empty());
   google_photos_albums_previews_weak_factory_.InvalidateWeakPtrs();
   ash::AmbientBackendController::Get()->GetGooglePhotosAlbumsPreview(
-      album_ids, kBannerWidthPx, kBannerHeightPx,
-      /*num_previews=*/4,
+      album_ids, preview_width, preview_height, num_previews,
       base::BindOnce(&PersonalizationAppAmbientProviderImpl::
                          OnGooglePhotosAlbumsPreviewsFetched,
                      google_photos_albums_previews_weak_factory_.GetWeakPtr()));
@@ -536,9 +538,8 @@ void PersonalizationAppAmbientProviderImpl::OnGooglePhotosAlbumsPreviewsFetched(
 ash::PersonalAlbum*
 PersonalizationAppAmbientProviderImpl::FindPersonalAlbumById(
     const std::string& album_id) {
-  auto it = std::find_if(
-      personal_albums_.albums.begin(), personal_albums_.albums.end(),
-      [&album_id](const auto& album) { return album.album_id == album_id; });
+  auto it = base::ranges::find(personal_albums_.albums, album_id,
+                               &ash::PersonalAlbum::album_id);
 
   if (it == personal_albums_.albums.end())
     return nullptr;
@@ -548,9 +549,8 @@ PersonalizationAppAmbientProviderImpl::FindPersonalAlbumById(
 
 ash::ArtSetting* PersonalizationAppAmbientProviderImpl::FindArtAlbumById(
     const std::string& album_id) {
-  auto it = std::find_if(
-      settings_->art_settings.begin(), settings_->art_settings.end(),
-      [&album_id](const auto& album) { return album.album_id == album_id; });
+  auto it = base::ranges::find(settings_->art_settings, album_id,
+                               &ash::ArtSetting::album_id);
   // Album does not exist any more.
   if (it == settings_->art_settings.end())
     return nullptr;
@@ -571,5 +571,15 @@ void PersonalizationAppAmbientProviderImpl::ResetLocalSettings() {
   has_pending_updates_for_backend_ = false;
 }
 
-}  // namespace personalization_app
-}  // namespace ash
+void PersonalizationAppAmbientProviderImpl::StartScreenSaverPreview() {
+  Shell::Get()->ambient_controller()->StartScreenSaverPreview();
+}
+
+void PersonalizationAppAmbientProviderImpl::OnAmbientUiVisibilityChanged(
+    ash::AmbientUiVisibility visibility) {
+  if (ambient_observer_remote_.is_bound()) {
+    ambient_observer_remote_->OnAmbientUiVisibilityChanged(visibility);
+  }
+}
+
+}  // namespace ash::personalization_app

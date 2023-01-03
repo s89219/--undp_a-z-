@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -56,12 +56,13 @@ class TestChromeBrowserState final : public ChromeBrowserState {
   ChromeBrowserState* GetOffTheRecordChromeBrowserState() override;
   PrefProxyConfigTracker* GetProxyConfigTracker() override;
   BrowserStatePolicyConnector* GetPolicyConnector() override;
-  PrefService* GetPrefs() override;
+  sync_preferences::PrefServiceSyncable* GetSyncablePrefs() override;
   ChromeBrowserStateIOData* GetIOData() override;
   void ClearNetworkingHistorySince(base::Time time,
                                    base::OnceClosure completion) override;
   net::URLRequestContextGetter* CreateRequestContext(
       ProtocolHandlerMap* protocol_handlers) override;
+  base::WeakPtr<ChromeBrowserState> AsWeakPtr() override;
   scoped_refptr<network::SharedURLLoaderFactory> GetSharedURLLoaderFactory()
       override;
   policy::UserCloudPolicyManager* GetUserCloudPolicyManager() override;
@@ -83,9 +84,6 @@ class TestChromeBrowserState final : public ChromeBrowserState {
   // this object.
   TestChromeBrowserState* CreateOffTheRecordBrowserStateWithTestingFactories(
       TestingFactories testing_factories = {});
-
-  // Creates a WebDataService. If not invoked, the web data service is null.
-  void CreateWebDataService();
 
   // Returns the preferences as a TestingPrefServiceSyncable if possible or
   // null. Returns null for off-the-record TestChromeBrowserState and also
@@ -177,8 +175,8 @@ class TestChromeBrowserState final : public ChromeBrowserState {
   // The path to this browser state.
   base::FilePath state_path_;
 
-  // If non-null, |testing_prefs_| points to |prefs_|. It is there to avoid
-  // casting as |prefs_| may not be a TestingPrefServiceSyncable.
+  // If non-null, `testing_prefs_` points to `prefs_`. It is there to avoid
+  // casting as `prefs_` may not be a TestingPrefServiceSyncable.
   std::unique_ptr<sync_preferences::PrefServiceSyncable> prefs_;
   sync_preferences::TestingPrefServiceSyncable* testing_prefs_;
 
@@ -193,6 +191,8 @@ class TestChromeBrowserState final : public ChromeBrowserState {
   // non-incognito ChromeBrowserState instance.
   std::unique_ptr<TestChromeBrowserState> otr_browser_state_;
   TestChromeBrowserState* original_browser_state_;
+
+  base::WeakPtrFactory<TestChromeBrowserState> weak_ptr_factory_{this};
 };
 
 #endif  // IOS_CHROME_BROWSER_BROWSER_STATE_TEST_CHROME_BROWSER_STATE_H_

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,7 @@ API_AVAILABLE(ios(15.0))
 
 - (instancetype)init NS_UNAVAILABLE;
 
-// Designated initializer that reads information from |webState| to establish
+// Designated initializer that reads information from `webState` to establish
 // the property.
 - (instancetype)initWithWebState:(web::WebState*)webState;
 

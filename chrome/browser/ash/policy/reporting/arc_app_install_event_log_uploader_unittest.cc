@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,7 @@
 #include "base/values.h"
 #include "chrome/browser/ash/policy/reporting/install_event_log_util.h"
 #include "chrome/browser/profiles/reporting_util.h"
-#include "chromeos/system/fake_statistics_provider.h"
+#include "chromeos/ash/components/system/fake_statistics_provider.h"
 #include "components/policy/core/common/cloud/mock_cloud_policy_client.h"
 #include "components/policy/core/common/cloud/realtime_reporting_job_configuration.h"
 #include "components/policy/proto/device_management_backend.pb.h"
@@ -170,8 +170,7 @@ class ArcAppInstallEventLogUploaderTest : public testing::Test {
   MockArcAppInstallEventLogUploaderDelegate delegate_;
   std::unique_ptr<ArcAppInstallEventLogUploader> uploader_;
 
-  chromeos::system::ScopedFakeStatisticsProvider
-      scoped_fake_statistics_provider_;
+  ash::system::ScopedFakeStatisticsProvider scoped_fake_statistics_provider_;
 };
 
 // Make a log upload request. Have serialization and log upload succeed. Verify

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
 #include "chrome/browser/media/media_engagement_contents_observer.h"
 #include "chrome/browser/media/media_engagement_score.h"
 #include "chrome/browser/media/media_engagement_service_factory.h"
-#include "chrome/browser/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
+#include "chrome/browser/preloading/prefetch/no_state_prefetch/chrome_no_state_prefetch_contents_delegate.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/browser/host_content_settings_map.h"
@@ -364,12 +364,11 @@ std::vector<MediaEngagementScore> MediaEngagementService::GetAllStoredScores()
     const auto& origin = it.first;
     auto* const site = it.second;
 
-    std::unique_ptr<base::Value> clone =
-        base::Value::ToUniquePtrValue(site->setting_value.Clone());
+    base::Value clone = site->setting_value.Clone();
+    DCHECK(clone.is_dict());
 
-    data.push_back(MediaEngagementScore(
-        clock_, origin, base::DictionaryValue::From(std::move(clone)),
-        settings));
+    data.push_back(MediaEngagementScore(clock_, origin,
+                                        std::move(clone).TakeDict(), settings));
   }
 
   return data;

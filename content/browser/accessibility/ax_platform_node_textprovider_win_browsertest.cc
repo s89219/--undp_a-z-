@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -63,7 +63,7 @@ class AXPlatformNodeTextProviderWinBrowserTest : public ContentBrowserTest {
                                            accessibility_mode,
                                            ax::mojom::Event::kLoadComplete);
     EXPECT_TRUE(NavigateToURL(shell(), url));
-    waiter.WaitForNotification();
+    ASSERT_TRUE(waiter.WaitForNotification());
   }
 
   void LoadInitialAccessibilityTreeFromHtmlFilePath(
@@ -104,7 +104,7 @@ class AXPlatformNodeTextProviderWinBrowserTest : public ContentBrowserTest {
   BrowserAccessibility* GetRootAndAssertNonNull() {
     auto GetRootAndAssertNonNull = [this](BrowserAccessibility** result) {
       BrowserAccessibility* root_browser_accessibility =
-          GetManagerAndAssertNonNull()->GetRoot();
+          GetManagerAndAssertNonNull()->GetBrowserAccessibilityRoot();
       ASSERT_NE(nullptr, result);
       *result = root_browser_accessibility;
     };

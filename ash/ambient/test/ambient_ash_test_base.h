@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -98,6 +98,9 @@ class AmbientAshTestBase : public AshTestBase {
   // Wait until the event has been processed.
   void SetScreenIdleStateAndWait(bool is_screen_dimmed, bool is_off);
 
+  // Simulates clicking the power button.
+  void SimulatePowerButtonClick();
+
   void SimulateMediaMetadataChanged(media_session::MediaMetadata metadata);
 
   void SimulateMediaPlaybackStateChanged(
@@ -164,6 +167,8 @@ class AmbientAshTestBase : public AshTestBase {
   AmbientPhotoController* photo_controller();
 
   AmbientPhotoCache* photo_cache();
+
+  AmbientWeatherController* weather_controller();
 
   // Returns the top-level views which contains all the ambient components.
   std::vector<AmbientContainerView*> GetContainerViews();

@@ -1,4 +1,4 @@
-// Copyright 2017 The Chromium Authors. All rights reserved.
+// Copyright 2017 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,7 +7,30 @@
  * screen.
  */
 
-/* #js_imports_placeholder */
+import '//resources/polymer/v3_0/iron-icon/iron-icon.js';
+
+// <if expr="_google_chrome">
+import '//oobe/sync-consent-icons.m.js';
+// </if>
+
+import '../../components/buttons/oobe_text_button.js';
+import '../../components/dialogs/oobe_adaptive_dialog.js';
+import '../../components/hd_iron_icon.js';
+import '../../components/common_styles/oobe_common_styles.css.js';
+import '../../components/common_styles/oobe_dialog_host_styles.css.js';
+import '../../components/dialogs/oobe_loading_dialog.js';
+
+import {CrCheckboxElement} from '//resources/cr_elements/cr_checkbox/cr_checkbox.js';
+import {assert, assertNotReached} from '//resources/ash/common/assert.js';
+import {afterNextRender, html, mixinBehaviors, PolymerElement} from '//resources/polymer/v3_0/polymer/polymer_bundled.min.js';
+
+import {LoginScreenBehavior, LoginScreenBehaviorInterface} from '../../components/behaviors/login_screen_behavior.js';
+import {MultiStepBehavior, MultiStepBehaviorInterface} from '../../components/behaviors/multi_step_behavior.js';
+import {OobeI18nBehavior, OobeI18nBehaviorInterface} from '../../components/behaviors/oobe_i18n_behavior.js';
+
+
+import {OOBE_UI_STATE, SCREEN_GAIA_SIGNIN} from '../../components/display_manager_types.js';
+
 
 /**
  * UI mode for the dialog.
@@ -25,13 +48,12 @@ const SyncUIState = {
  * @implements {OobeI18nBehaviorInterface}
  * @implements {MultiStepBehaviorInterface}
  */
-const SyncConsentScreenElementBase = Polymer.mixinBehaviors(
-    [OobeI18nBehavior, MultiStepBehavior, LoginScreenBehavior],
-    Polymer.Element);
+const SyncConsentScreenElementBase = mixinBehaviors(
+    [OobeI18nBehavior, MultiStepBehavior, LoginScreenBehavior], PolymerElement);
 
 /**
  * @typedef {{
- *   reviewSettingsBox:  CrCheckboxElement,
+ *   reviewSettingsBox:  HTMLElement,
  * }}
  */
 SyncConsentScreenElementBase.$;
@@ -41,15 +63,12 @@ class SyncConsentScreen extends SyncConsentScreenElementBase {
     return 'sync-consent-element';
   }
 
-  /* #html_template_placeholder */
+  static get template() {
+    return html`{__html_template__}`;
+  }
 
   static get properties() {
     return {
-      /**
-       * Flag that determines whether current account type is supervised or not.
-       */
-      isChildAccount_: Boolean,
-
       /**
        * Indicates whether user is minor mode user (e.g. under age of 18).
        * @private
@@ -71,7 +90,7 @@ class SyncConsentScreen extends SyncConsentScreenElementBase {
       optInButtonTextKey_: {
         type: String,
         computed: 'getOptInButtonTextKey_(isMinorMode_)',
-      }
+      },
     };
   }
 
@@ -79,7 +98,6 @@ class SyncConsentScreen extends SyncConsentScreenElementBase {
     super();
     this.UI_STEPS = SyncUIState;
 
-    this.isChildAccount_ = false;
     this.isMinorMode_ = false;
     this.isArcRestricted_ = false;
   }
@@ -98,7 +116,6 @@ class SyncConsentScreen extends SyncConsentScreenElementBase {
    * @param {Object} data Screen init payload.
    */
   onBeforeShow(data) {
-    this.setIsChildAccount(data['isChildAccount']);
     this.isArcRestricted_ = data['isArcRestricted'];
   }
 
@@ -106,20 +123,10 @@ class SyncConsentScreen extends SyncConsentScreenElementBase {
     return SyncUIState.LOADING;
   }
 
-  /**
-   * Set flag isChildAccount_ value.
-   * @param is_child_account Boolean
-   */
-  setIsChildAccount(is_child_account) {
-    this.isChildAccount_ = is_child_account;
-  }
-
   /** @override */
   ready() {
     super.ready();
-    this.initializeLoginScreen('SyncConsentScreen', {
-      resetAllowed: true,
-    });
+    this.initializeLoginScreen('SyncConsentScreen');
 
     if (this.locale === '') {
       // Update the locale just in case the locale switched between the element
@@ -156,10 +163,14 @@ class SyncConsentScreen extends SyncConsentScreenElementBase {
    * @private
    */
   onSettingsSaveAndContinue_(e, opted_in) {
-    assert(e.path);
-    chrome.send('login.SyncConsentScreen.continue', [
-      opted_in, this.$.reviewSettingsBox.checked, this.getConsentDescription_(),
-      this.getConsentConfirmation_(e.path)
+    assert(e.composedPath());
+    this.userActed([
+      'continue',
+      opted_in,
+      this.$.reviewSettingsBox.checked,
+      this.getConsentDescription_(),
+      this.getConsentConfirmation_(
+          /** @type {!Array<!HTMLElement>} */ (e.composedPath())),
     ]);
   }
 

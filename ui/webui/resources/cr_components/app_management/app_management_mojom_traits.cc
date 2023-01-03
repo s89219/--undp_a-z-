@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -40,6 +40,8 @@ AppType EnumTraits<AppType, apps::AppType>::ToMojom(apps::AppType input) {
       return AppType::kExtension;
     case apps::AppType::kStandaloneBrowserExtension:
       return AppType::kStandaloneBrowserExtension;
+    case apps::AppType::kBruschetta:
+      return AppType::kBruschetta;
   }
 }
 
@@ -91,6 +93,9 @@ bool EnumTraits<AppType, apps::AppType>::FromMojom(AppType input,
     case AppType::kStandaloneBrowserExtension:
       *output = apps::AppType::kStandaloneBrowserExtension;
       return true;
+    case AppType::kBruschetta:
+      *output = apps::AppType::kBruschetta;
+      return true;
   }
 }
 
@@ -129,6 +134,8 @@ PermissionType EnumTraits<PermissionType, apps::PermissionType>::ToMojom(
       return PermissionType::kStorage;
     case apps::PermissionType::kPrinting:
       return PermissionType::kPrinting;
+    case apps::PermissionType::kFileHandling:
+      return PermissionType::kFileHandling;
   }
 }
 
@@ -159,6 +166,9 @@ bool EnumTraits<PermissionType, apps::PermissionType>::FromMojom(
       return true;
     case PermissionType::kPrinting:
       *output = apps::PermissionType::kPrinting;
+      return true;
+    case PermissionType::kFileHandling:
+      *output = apps::PermissionType::kFileHandling;
       return true;
   }
 }
@@ -192,9 +202,9 @@ bool EnumTraits<TriState, apps::TriState>::FromMojom(TriState input,
 PermissionValueDataView::Tag
 UnionTraits<PermissionValueDataView, apps::PermissionValuePtr>::GetTag(
     const apps::PermissionValuePtr& r) {
-  if (r->bool_value.has_value()) {
+  if (absl::holds_alternative<bool>(r->value)) {
     return PermissionValueDataView::Tag::kBoolValue;
-  } else if (r->tristate_value.has_value()) {
+  } else if (absl::holds_alternative<apps::TriState>(r->value)) {
     return PermissionValueDataView::Tag::kTristateValue;
   }
   NOTREACHED();
@@ -240,6 +250,10 @@ InstallReason EnumTraits<InstallReason, apps::InstallReason>::ToMojom(
       return InstallReason::kUser;
     case apps::InstallReason::kSubApp:
       return InstallReason::kSubApp;
+    case apps::InstallReason::kKiosk:
+      return InstallReason::kKiosk;
+    case apps::InstallReason::kCommandLine:
+      return InstallReason::kCommandLine;
   }
 }
 
@@ -270,6 +284,12 @@ bool EnumTraits<InstallReason, apps::InstallReason>::FromMojom(
       return true;
     case InstallReason::kSubApp:
       *output = apps::InstallReason::kSubApp;
+      return true;
+    case InstallReason::kKiosk:
+      *output = apps::InstallReason::kKiosk;
+      return true;
+    case InstallReason::kCommandLine:
+      *output = apps::InstallReason::kCommandLine;
       return true;
   }
 }

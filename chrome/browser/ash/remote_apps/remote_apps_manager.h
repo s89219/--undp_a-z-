@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,31 +14,40 @@
 #include "base/observer_list.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/apps/app_service/publishers/remote_apps.h"
+#include "chrome/browser/ash/app_list/app_list_model_updater_observer.h"
+#include "chrome/browser/ash/app_list/app_list_syncable_service.h"
+#include "chrome/browser/ash/app_list/chrome_app_list_model_updater.h"
 #include "chrome/browser/ash/remote_apps/remote_apps_impl.h"
 #include "chrome/browser/ash/remote_apps/remote_apps_model.h"
 #include "chrome/browser/ash/remote_apps/remote_apps_types.h"
-#include "chrome/browser/ui/app_list/app_list_model_updater_observer.h"
-#include "chrome/browser/ui/app_list/app_list_syncable_service.h"
-#include "chrome/browser/ui/app_list/chrome_app_list_model_updater.h"
 #include "chromeos/components/remote_apps/mojom/remote_apps.mojom.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class AppListModelUpdater;
 class ChromeAppListItem;
 class Profile;
 
+namespace apps {
+struct MenuItems;
+}  // namespace apps
+
 namespace gfx {
 class ImageSkia;
 }  // namespace gfx
+
+namespace extensions {
+class EventRouter;
+}  // namespace extensions
 
 namespace ash {
 
 class RemoteAppsImpl;
 
 // KeyedService which manages the logic for |AppType::kRemote| in AppService.
-// This service is only created for Managed Guest Sessions.
+// This service is created for Managed Guest Sessions and Regular User Sessions.
 // The IDs of the added apps and folders are GUIDs generated using
 // |base::GenerateGUID()|.
 // See crbug.com/1101208 for more details on Remote Apps.
@@ -47,7 +56,8 @@ class RemoteAppsManager
       public apps::RemoteApps::Delegate,
       public app_list::AppListSyncableService::Observer,
       public AppListModelUpdaterObserver,
-      public chromeos::remote_apps::mojom::RemoteAppsFactory {
+      public chromeos::remote_apps::mojom::RemoteAppsFactory,
+      public chromeos::remote_apps::mojom::RemoteAppsLacrosBridge {
  public:
   class Observer : public base::CheckedObserver {
    public:
@@ -72,9 +82,14 @@ class RemoteAppsManager
 
   bool is_initialized() const { return is_initialized_; }
 
-  void BindInterface(
+  void BindFactoryInterface(
       mojo::PendingReceiver<chromeos::remote_apps::mojom::RemoteAppsFactory>
           pending_remote_apps_factory);
+
+  void BindLacrosBridgeInterface(
+      mojo::PendingReceiver<
+          chromeos::remote_apps::mojom::RemoteAppsLacrosBridge>
+          pending_remote_apps_lacros_bridge);
 
   using AddAppCallback =
       base::OnceCallback<void(const std::string& id, RemoteAppsError error)>;
@@ -109,6 +124,10 @@ class RemoteAppsManager
   // Deleting a non-existent app will result in an error.
   RemoteAppsError DeleteApp(const std::string& id);
 
+  // Sorts the launcher items with the custom kAlphabeticalEphemeralAppFirst
+  // sort order which moves the remote apps to the front of the launcher.
+  void SortLauncherWithRemoteAppsFirst();
+
   // Adds a folder with |folder_name|. Note that empty folders are not shown in
   // the launcher. Returns the ID for the added folder. If |add_to_front| is
   // true, the folder will be added to the front of the app item list.
@@ -126,9 +145,16 @@ class RemoteAppsManager
   // KeyedService:
   void Shutdown() override;
 
-  // remote_apps::mojom::RemoteAppsFactory:
-  void Get(
+  // chromeos::remote_apps::mojom::RemoteAppsFactory:
+  void BindRemoteAppsAndAppLaunchObserver(
       const std::string& source_id,
+      mojo::PendingReceiver<chromeos::remote_apps::mojom::RemoteApps>
+          pending_remote_apps,
+      mojo::PendingRemote<chromeos::remote_apps::mojom::RemoteAppLaunchObserver>
+          pending_observer) override;
+
+  // chromeos::remote_apps::mojom::RemoteAppsLacrosBridge:
+  void BindRemoteAppsAndAppLaunchObserverForLacros(
       mojo::PendingReceiver<chromeos::remote_apps::mojom::RemoteApps>
           pending_remote_apps,
       mojo::PendingRemote<chromeos::remote_apps::mojom::RemoteAppLaunchObserver>
@@ -136,11 +162,11 @@ class RemoteAppsManager
 
   // apps::RemoteApps::Delegate:
   const std::map<std::string, RemoteAppsModel::AppInfo>& GetApps() override;
-  void LaunchApp(const std::string& id) override;
+  void LaunchApp(const std::string& app_id) override;
   gfx::ImageSkia GetIcon(const std::string& id) override;
   gfx::ImageSkia GetPlaceholderIcon(const std::string& id,
                                     int32_t size_hint_in_dip) override;
-  apps::mojom::MenuItemsPtr GetMenuModel(const std::string& id) override;
+  apps::MenuItems GetMenuModel(const std::string& id) override;
 
   // app_list::AppListSyncableService::Observer:
   void OnSyncModelUpdated() override;
@@ -152,6 +178,8 @@ class RemoteAppsManager
       std::unique_ptr<ImageDownloader> image_downloader);
 
   RemoteAppsModel* GetModelForTesting();
+
+  RemoteAppsImpl& GetRemoteAppsImpl() { return remote_apps_impl_; }
 
   void SetIsInitializedForTesting(bool is_initialized);
 
@@ -170,20 +198,22 @@ class RemoteAppsManager
   bool is_initialized_ = false;
   app_list::AppListSyncableService* app_list_syncable_service_ = nullptr;
   AppListModelUpdater* model_updater_ = nullptr;
+  extensions::EventRouter* event_router_ = nullptr;
   std::unique_ptr<apps::RemoteApps> remote_apps_;
   RemoteAppsImpl remote_apps_impl_{this};
   std::unique_ptr<RemoteAppsModel> model_;
   std::unique_ptr<ImageDownloader> image_downloader_;
   base::ObserverList<Observer> observer_list_;
-  mojo::ReceiverSet<chromeos::remote_apps::mojom::RemoteAppsFactory> receivers_;
+  mojo::ReceiverSet<chromeos::remote_apps::mojom::RemoteAppsFactory>
+      factory_receivers_;
+  mojo::ReceiverSet<chromeos::remote_apps::mojom::RemoteAppsLacrosBridge>
+      bridge_receivers_;
   // Map from id to callback. The callback is run after |OnAppUpdate| for the
   // app has been observed.
   std::map<std::string, AddAppCallback> add_app_callback_map_;
   std::map<std::string, std::string> app_id_to_source_id_map_;
-  base::ScopedObservation<
-      app_list::AppListSyncableService,
-      app_list::AppListSyncableService::Observer,
-      &app_list::AppListSyncableService::AddObserverAndStart>
+  base::ScopedObservation<app_list::AppListSyncableService,
+                          app_list::AppListSyncableService::Observer>
       app_list_syncable_service_observation_{this};
   base::ScopedObservation<AppListModelUpdater, AppListModelUpdaterObserver>
       app_list_model_updater_observation_{this};

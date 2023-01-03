@@ -1,13 +1,13 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "ios/chrome/browser/ui/omnibox/popup/omnibox_popup_row_cell.h"
 
 #import "ios/chrome/browser/ui/omnibox/popup/autocomplete_suggestion.h"
-#include "testing/gtest_mac.h"
-#include "testing/platform_test.h"
-#include "url/gurl.h"
+#import "testing/gtest_mac.h"
+#import "testing/platform_test.h"
+#import "url/gurl.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
@@ -28,6 +28,12 @@
 @property(nonatomic, assign) BOOL isTailSuggestion;
 @property(nonatomic, assign) NSString* commonPrefix;
 @property(nonatomic, assign) id<OmniboxPedal, OmniboxIcon> pedal;
+@property(nonatomic, strong) NSAttributedString* omniboxPreviewText;
+@property(nonatomic, strong) UIImage* matchTypeIcon;
+@property(nonatomic, getter=isMatchTypeSearch) BOOL matchTypeSearch;
+@property(nonatomic, strong) CrURL* destinationUrl;
+@property(nonatomic, strong) NSNumber* suggestionGroupId;
+@property(nonatomic, strong) NSNumber* suggestionSectionId;
 @end
 
 @implementation FakeAutocompleteMatch

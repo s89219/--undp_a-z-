@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,13 +23,15 @@
 #include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/enterprise/connectors/connectors_service.h"
+#include "chrome/browser/enterprise/connectors/reporting/realtime_reporting_client_factory.h"
 #include "chrome/browser/extensions/api/safe_browsing_private/safe_browsing_private_event_router.h"
 #include "chrome/browser/extensions/api/safe_browsing_private/safe_browsing_private_event_router_factory.h"
 #include "chrome/browser/policy/dm_token_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/binary_fcm_service.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/binary_upload_service.h"
-#include "chrome/browser/safe_browsing/cloud_content_scanning/binary_upload_service_factory.h"
+#include "chrome/browser/safe_browsing/cloud_content_scanning/cloud_binary_upload_service.h"
+#include "chrome/browser/safe_browsing/cloud_content_scanning/cloud_binary_upload_service_factory.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/deep_scanning_browsertest_base.h"
 #include "chrome/browser/safe_browsing/cloud_content_scanning/deep_scanning_test_utils.h"
 #include "chrome/browser/safe_browsing/download_protection/deep_scanning_request.h"
@@ -157,16 +159,16 @@ class DownloadDeepScanningBrowserTestBase
     client_->SetDMToken("dm_token");
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-    extensions::SafeBrowsingPrivateEventRouterFactory::GetForProfile(
+    enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
         browser()->profile())
         ->SetBrowserCloudPolicyClientForTesting(client_.get());
 #else
     if (connectors_machine_scope()) {
-      extensions::SafeBrowsingPrivateEventRouterFactory::GetForProfile(
+      enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
           browser()->profile())
           ->SetBrowserCloudPolicyClientForTesting(client_.get());
     } else {
-      extensions::SafeBrowsingPrivateEventRouterFactory::GetForProfile(
+      enterprise_connectors::RealtimeReportingClientFactory::GetForProfile(
           browser()->profile())
           ->SetProfileCloudPolicyClientForTesting(client_.get());
     }
@@ -324,7 +326,7 @@ class DownloadDeepScanningBrowserTestBase
   }
 
   void SetBinaryUploadServiceTestFactory() {
-    BinaryUploadServiceFactory::GetInstance()->SetTestingFactory(
+    CloudBinaryUploadServiceFactory::GetInstance()->SetTestingFactory(
         browser()->profile(),
         base::BindRepeating(
             &DownloadDeepScanningBrowserTestBase::CreateBinaryUploadService,
@@ -358,7 +360,8 @@ class DownloadDeepScanningBrowserTestBase
   }
 
   void AuthorizeForDeepScanning() {
-    BinaryUploadServiceFactory::GetForProfile(browser()->profile())
+    static_cast<safe_browsing::CloudBinaryUploadService*>(
+        CloudBinaryUploadServiceFactory::GetForProfile(browser()->profile()))
         ->SetAuthForTesting("dm_token", /*authorized=*/true);
   }
 
@@ -371,7 +374,7 @@ class DownloadDeepScanningBrowserTestBase
         std::make_unique<FakeBinaryFCMService>();
     binary_fcm_service_ = binary_fcm_service.get();
     Profile* profile = Profile::FromBrowserContext(browser_context);
-    return std::make_unique<BinaryUploadService>(
+    return std::make_unique<safe_browsing::CloudBinaryUploadService>(
         g_browser_process->safe_browsing_service()->GetURLLoaderFactory(
             profile),
         profile, std::move(binary_fcm_service));
@@ -424,7 +427,7 @@ class DownloadDeepScanningBrowserTestBase
 
   void InterceptRequest(const network::ResourceRequest& request) {
     if (is_consumer_) {
-      if (request.url == BinaryUploadService::GetUploadUrl(
+      if (request.url == safe_browsing::CloudBinaryUploadService::GetUploadUrl(
                              /*is_consumer_scan_eligible=*/true)) {
         ASSERT_TRUE(
             GetUploadMetadata(GetDataPipeUploadData(request), &last_request_));
@@ -432,7 +435,7 @@ class DownloadDeepScanningBrowserTestBase
           std::move(waiting_for_upload_closure_).Run();
       }
     } else {
-      if (request.url == BinaryUploadService::GetUploadUrl(
+      if (request.url == safe_browsing::CloudBinaryUploadService::GetUploadUrl(
                              /*is_consumer_scan_eligible=*/false)) {
         ASSERT_TRUE(
             GetUploadMetadata(GetDataPipeUploadData(request), &last_request_));
@@ -457,7 +460,7 @@ class DownloadDeepScanningBrowserTestBase
   bool is_consumer_;
 
   std::unique_ptr<TestSafeBrowsingServiceFactory> test_sb_factory_;
-  raw_ptr<FakeBinaryFCMService> binary_fcm_service_;
+  raw_ptr<FakeBinaryFCMService, DanglingUntriaged> binary_fcm_service_;
 
   enterprise_connectors::ContentAnalysisRequest last_request_;
 
@@ -786,6 +789,8 @@ IN_PROC_BROWSER_TEST_P(DownloadDeepScanningBrowserTest, MultipleFCMResponses) {
   EventReportValidator validator(client());
   validator.ExpectDangerousDeepScanningResult(
       /*url*/ url.spec(),
+      /*source*/ absl::nullopt,
+      /*destination*/ absl::nullopt,
       /*filename*/ "zipfile_two_archives.zip",
       // sha256sum chrome/test/data/safe_browsing/download_protection/\
       // zipfile_two_archives.zip |  tr '[:lower:]' '[:upper:]'
@@ -1010,10 +1015,10 @@ class AllowlistedUrlDeepScanningBrowserTest
   void SetUpOnMainThread() override {
     DownloadDeepScanningBrowserTestBase::SetUpOnMainThread();
 
-    base::ListValue domain_list;
+    base::Value::List domain_list;
     domain_list.Append(embedded_test_server()->base_url().host_piece());
-    browser()->profile()->GetPrefs()->Set(prefs::kSafeBrowsingAllowlistDomains,
-                                          domain_list);
+    browser()->profile()->GetPrefs()->SetList(
+        prefs::kSafeBrowsingAllowlistDomains, std::move(domain_list));
   }
 };
 
@@ -1261,6 +1266,8 @@ IN_PROC_BROWSER_TEST_P(MetadataCheckAndDeepScanningBrowserTest, Test) {
 
     validator.ExpectDangerousDeepScanningResult(
         /*url*/ url.spec(),
+        /*source*/ absl::nullopt,
+        /*destination*/ absl::nullopt,
         /*filename*/ "zipfile_two_archives.zip",
         // sha256sum chrome/test/data/safe_browsing/download_protection/\
         // zipfile_two_archives.zip |  tr '[:lower:]' '[:upper:]'
@@ -1593,6 +1600,8 @@ IN_PROC_BROWSER_TEST_F(SavePackageDeepScanningBrowserTest, Blocked) {
   std::set<std::string> mimetypes = {"text/plain"};
   validator.ExpectSensitiveDataEvent(
       /*url*/ url.spec(),
+      /*source*/ absl::nullopt,
+      /*destination*/ absl::nullopt,
       /*filename*/ "text.htm",
       // sha256sum chrome/test/data/save_page/text.txt | tr a-f A-F
       "9789A2E12D50EFA4B891D4EF95C5189FA4C98E34C84E1F8017CD8F574CA035DD",
@@ -1657,6 +1666,8 @@ IN_PROC_BROWSER_TEST_F(SavePackageDeepScanningBrowserTest, KeepAfterWarning) {
   std::set<std::string> mimetypes = {"text/plain"};
   validator.ExpectSensitiveDataEvent(
       /*url*/ url.spec(),
+      /*source*/ absl::nullopt,
+      /*destination*/ absl::nullopt,
       /*filename*/ "text.htm",
       // sha256sum chrome/test/data/save_page/text.txt | tr a-f A-F
       "9789A2E12D50EFA4B891D4EF95C5189FA4C98E34C84E1F8017CD8F574CA035DD",
@@ -1690,6 +1701,8 @@ IN_PROC_BROWSER_TEST_F(SavePackageDeepScanningBrowserTest, KeepAfterWarning) {
   // download and move the file to its final destination.
   validator.ExpectSensitiveDataEvent(
       /*url*/ url.spec(),
+      /*source*/ absl::nullopt,
+      /*destination*/ absl::nullopt,
       /*filename*/ "text.htm",
       // sha256sum chrome/test/data/save_page/text.txt | tr a-f A-F
       "9789A2E12D50EFA4B891D4EF95C5189FA4C98E34C84E1F8017CD8F574CA035DD",
@@ -1754,6 +1767,8 @@ IN_PROC_BROWSER_TEST_F(SavePackageDeepScanningBrowserTest,
   std::set<std::string> mimetypes = {"text/plain"};
   validator.ExpectSensitiveDataEvent(
       /*url*/ url.spec(),
+      /*source*/ absl::nullopt,
+      /*destination*/ absl::nullopt,
       /*filename*/ "text.htm",
       // sha256sum chrome/test/data/save_page/text.txt | tr a-f A-F
       "9789A2E12D50EFA4B891D4EF95C5189FA4C98E34C84E1F8017CD8F574CA035DD",
@@ -1849,6 +1864,8 @@ IN_PROC_BROWSER_TEST_F(SavePackageDeepScanningBrowserTest, OpenNow) {
   std::set<std::string> mimetypes = {"text/plain"};
   validator.ExpectSensitiveDataEvent(
       /*url*/ url.spec(),
+      /*source*/ absl::nullopt,
+      /*destination*/ absl::nullopt,
       /*filename*/ "text.htm",
       // sha256sum chrome/test/data/save_page/text.txt | tr a-f A-F
       "9789A2E12D50EFA4B891D4EF95C5189FA4C98E34C84E1F8017CD8F574CA035DD",

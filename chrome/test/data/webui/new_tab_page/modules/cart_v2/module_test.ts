@@ -1,4 +1,4 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,20 +7,21 @@ import 'chrome://webui-test/mojo_webui_test_support.js';
 import {CartHandlerRemote} from 'chrome://new-tab-page/chrome_cart.mojom-webui.js';
 import {ChromeCartProxy, chromeCartV2Descriptor, ChromeCartV2ModuleElement, ModuleHeight} from 'chrome://new-tab-page/lazy_load.js';
 import {$$, CrAutoImgElement} from 'chrome://new-tab-page/new_tab_page.js';
-import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
+import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
 import {assertEquals, assertFalse, assertTrue} from 'chrome://webui-test/chai_assert.js';
+import {flushTasks} from 'chrome://webui-test/polymer_test_util.js';
 import {TestBrowserProxy} from 'chrome://webui-test/test_browser_proxy.js';
-import {eventToPromise, flushTasks, isVisible} from 'chrome://webui-test/test_util.js';
+import {eventToPromise, isVisible} from 'chrome://webui-test/test_util.js';
 
-import {fakeMetricsPrivate, MetricsTracker} from '../../metrics_test_support.js';
+import {fakeMetricsPrivate, MetricsTracker} from '../../../metrics_test_support.js';
 import {assertNotStyle, installMock} from '../../test_support.js';
 
 suite('NewTabPageModulesChromeCartModuleTest', () => {
-  let handler: TestBrowserProxy;
+  let handler: TestBrowserProxy<CartHandlerRemote>;
   let metrics: MetricsTracker;
 
   setup(() => {
-    document.body.innerHTML = '';
+    document.body.innerHTML = window.trustedTypes!.emptyHTML;
 
     handler = installMock(CartHandlerRemote, ChromeCartProxy.setHandler);
     metrics = fakeMetricsPrivate();
@@ -57,8 +58,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
         },
         {
@@ -76,8 +78,10 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Walmart',
           cartUrl: {url: 'https://walmart.com'},
           productImageUrls: [
-            {url: 'https://image6.com'}, {url: 'https://image7.com'},
-            {url: 'https://image8.com'}, {url: 'https://image9.com'}
+            {url: 'https://image6.com'},
+            {url: 'https://image7.com'},
+            {url: 'https://image8.com'},
+            {url: 'https://image9.com'},
           ],
         },
         {
@@ -796,8 +800,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
         },
         {
@@ -892,8 +897,9 @@ suite('NewTabPageModulesChromeCartModuleTest', () => {
           merchant: 'Amazon',
           cartUrl: {url: 'https://amazon.com'},
           productImageUrls: [
-            {url: 'https://image1.com'}, {url: 'https://image2.com'},
-            {url: 'https://image3.com'}
+            {url: 'https://image1.com'},
+            {url: 'https://image2.com'},
+            {url: 'https://image3.com'},
           ],
         },
         {

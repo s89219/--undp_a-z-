@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -31,7 +31,6 @@ import org.chromium.chrome.browser.customtabs.CustomTabIntentDataProvider;
 import org.chromium.chrome.browser.customtabs.IncognitoCustomTabIntentDataProvider;
 import org.chromium.chrome.browser.document.ChromeLauncherActivity;
 import org.chromium.chrome.browser.dom_distiller.TabDistillabilityProvider.DistillabilityObserver;
-import org.chromium.chrome.browser.flags.ChromeFeatureList;
 import org.chromium.chrome.browser.flags.ChromeSwitches;
 import org.chromium.chrome.browser.fullscreen.BrowserControlsManager;
 import org.chromium.chrome.browser.fullscreen.BrowserControlsManagerSupplier;
@@ -44,6 +43,7 @@ import org.chromium.chrome.browser.tab.Tab;
 import org.chromium.chrome.browser.tab.TabHidingType;
 import org.chromium.chrome.browser.tab.TabSelectionType;
 import org.chromium.chrome.browser.tab.TabUtils;
+import org.chromium.chrome.browser.toolbar.adaptive.AdaptiveToolbarFeatures;
 import org.chromium.components.dom_distiller.core.DomDistillerUrlUtils;
 import org.chromium.components.messages.DismissReason;
 import org.chromium.components.messages.MessageBannerProperties;
@@ -172,27 +172,10 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
     /** Whether the messages UI was requested for a navigation. */
     private boolean mMessageRequestedForNavigation;
 
-    @IntDef({ThrottleMode.URL, ThrottleMode.DOMAIN, ThrottleMode.DISABLED, ThrottleMode.PER_TAB})
-    @Retention(RetentionPolicy.SOURCE)
-    private @interface ThrottleMode {
-        int URL = 0;
-        int DOMAIN = 1;
-        int DISABLED = 2;
-        int PER_TAB = 3;
-    }
-
     // Record the sites which users refuse to view in reader mode.
     // If the size is larger than the capacity, remove the earliest added site first.
     private static final LinkedHashSet<Integer> sMutedSites = new LinkedHashSet<>();
     private static final int MAX_SIZE_OF_DECLINED_SITES = 100;
-    // Three modes:
-    //   - url: save url (host + path) of sites which user refuses to view in a reader mode
-    //   - domain: save host only
-    //   - disabled: no throttle at all
-    private static final String THROTTLING_MODE_PARAM = "reader_mode_throttling_mode";
-    private static final String THROTTLING_MODE_URL = "url";
-    private static final String THROTTLING_MODE_DOMAIN = "domain";
-    private static final String THROTTLING_MODE_DISABLED = "disabled";
 
     /** Whether the message ui is being shown or has already been shown. */
     private boolean mMessageShown;
@@ -423,8 +406,8 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
             private int mLastDistillerPageIndex;
 
             @Override
-            public void didStartNavigation(NavigationHandle navigation) {
-                if (!navigation.isInPrimaryMainFrame() || navigation.isSameDocument()) return;
+            public void didStartNavigationInPrimaryMainFrame(NavigationHandle navigation) {
+                if (navigation.isSameDocument()) return;
 
                 // Reader Mode should not pollute the navigation stack. To avoid this, watch for
                 // navigations and prepare to remove any that are "chrome-distiller" urls.
@@ -447,11 +430,15 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
             }
 
             @Override
-            public void didFinishNavigation(NavigationHandle navigation) {
+            public void didStartNavigationNoop(NavigationHandle navigation) {
+                if (!navigation.isInPrimaryMainFrame()) return;
+            }
+
+            @Override
+            public void didFinishNavigationInPrimaryMainFrame(NavigationHandle navigation) {
                 // TODO(cjhopman): This should possibly ignore navigations that replace the entry
                 // (like those from history.replaceState()).
-                if (!navigation.hasCommitted() || !navigation.isInPrimaryMainFrame()
-                        || navigation.isSameDocument()) {
+                if (!navigation.hasCommitted() || navigation.isSameDocument()) {
                     return;
                 }
 
@@ -476,6 +463,11 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
                 mReaderModePageUrl = null;
 
                 if (mDistillationStatus == DistillationStatus.POSSIBLE) tryShowingPrompt();
+            }
+
+            @Override
+            public void didFinishNavigationNoop(NavigationHandle navigation) {
+                if (!navigation.isInPrimaryMainFrame()) return;
             }
 
             @Override
@@ -514,6 +506,9 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
     void tryShowingPrompt() {
         if (mTab == null || mTab.getWebContents() == null) return;
 
+        // If a reader mode button will be shown on the toolbar then don't show a message.
+        if (AdaptiveToolbarFeatures.isReaderModePageActionEnabled()) return;
+
         // Test if the user is requesting the desktop site. Ignore this if distiller is set to
         // ALWAYS_TRUE.
         boolean usingRequestDesktopSite =
@@ -525,17 +520,15 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
             return;
         }
 
-        int throttleMode = getThrottleMode();
-        if ((throttleMode == ThrottleMode.URL || throttleMode == ThrottleMode.DOMAIN)
-                && sMutedSites.contains(urlToHash(mDistillerUrl))) {
+        if (sMutedSites.contains(urlToHash(mDistillerUrl))) {
             return;
         }
 
         MessageDispatcher messageDispatcher = mMessageDispatcherSupplier.get();
-        if (messageDispatcher != null && DomDistillerTabUtils.useMessagesForReaderModePrompt()) {
+        if (messageDispatcher != null) {
             if (!mMessageRequestedForNavigation) {
                 // If feature is disabled, reader mode message ui is only shown once per tab.
-                if (mMessageShown && throttleMode == ThrottleMode.PER_TAB) {
+                if (mMessageShown) {
                     return;
                 }
                 showReaderModeMessage(messageDispatcher);
@@ -585,19 +578,30 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
 
         recordDismissalConditions(dismissReason);
 
-        int mode = getThrottleMode();
-        if (dismissReason != DismissReason.PRIMARY_ACTION
-                && (mode == ThrottleMode.URL || mode == ThrottleMode.DOMAIN)) {
-            sMutedSites.add(urlToHash(url));
-            while (sMutedSites.size() > MAX_SIZE_OF_DECLINED_SITES) {
-                int v = sMutedSites.iterator().next();
-                sMutedSites.remove(v);
-            }
+        if (dismissReason != DismissReason.PRIMARY_ACTION) {
+            addUrlToMutedSites(url);
         }
+    }
+
+    private void addUrlToMutedSites(GURL url) {
+        sMutedSites.add(urlToHash(url));
+        while (sMutedSites.size() > MAX_SIZE_OF_DECLINED_SITES) {
+            int v = sMutedSites.iterator().next();
+            sMutedSites.remove(v);
+        }
+    }
+
+    private void removeUrlFromMutedSites(GURL url) {
+        sMutedSites.remove(urlToHash(url));
     }
 
     public void activateReaderMode() {
         RecordHistogram.recordBooleanHistogram("DomDistiller.InfoBarUsage", true);
+        // Contextual page action buttons can't be dismissed, instead we consider a shown but unused
+        // button as "dismissed" and mute the site on setReaderModeUiShown(). When the button gets
+        // clicked we un-mute the site to prevent the rate limiting logic from showing the CPA
+        // button for this site on other tabs.
+        removeUrlFromMutedSites(mDistillerUrl);
 
         if (DomDistillerTabUtils.isCctMode() && !SysUtils.isLowEndDevice()) {
             distillInCustomTab();
@@ -715,26 +719,8 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         TabDistillabilityProvider.get(tabToObserve).addObserver(mDistillabilityObserver);
     }
 
-    // The output is dependent on the experiment arm.
     private int urlToHash(GURL url) {
-        int mode = getThrottleMode();
-        assert mode == ThrottleMode.DOMAIN || mode == ThrottleMode.URL;
-        String str = url.getHost();
-        if (mode == ThrottleMode.URL) {
-            str += url.getPath();
-        }
-        return str.hashCode();
-    }
-
-    private @ThrottleMode int getThrottleMode() {
-        if (!ChromeFeatureList.isEnabled(ChromeFeatureList.IMPROVE_READER_MODE_PROMPT)) {
-            return ThrottleMode.PER_TAB;
-        }
-        String mode = ChromeFeatureList.getFieldTrialParamByFeature(
-                ChromeFeatureList.IMPROVE_READER_MODE_PROMPT, THROTTLING_MODE_PARAM);
-        if (mode.equals(THROTTLING_MODE_URL)) return ThrottleMode.URL;
-        if (mode.equals(THROTTLING_MODE_DOMAIN)) return ThrottleMode.DOMAIN;
-        return ThrottleMode.DISABLED;
+        return url.getHost().hashCode();
     }
 
     @VisibleForTesting
@@ -770,5 +756,25 @@ public class ReaderModeManager extends EmptyTabObserver implements UserData {
         int readerParentId = IntentUtils.safeGetInt(
                 intent.getExtras(), ReaderModeManager.EXTRA_READER_MODE_PARENT, Tab.INVALID_TAB_ID);
         return readerParentId != Tab.INVALID_TAB_ID;
+    }
+
+    /**
+     * Determine if a reader mode UI should be shown for the current tab and URL. Used when the
+     * contextual page action UI is enabled to replicate the rate limiting of the messages UI.
+     * @return True if the CPA UI should be suppressed.
+     */
+    public boolean isReaderModeUiRateLimited() {
+        return mMessageShown || sMutedSites.contains(urlToHash(mDistillerUrl));
+    }
+
+    /**
+     * Notify that a reader mode UI was shown for the current tab and URL. Used when the contextual
+     * page action UI is enabled to update the rate limiting logic.
+     */
+    public void setReaderModeUiShown() {
+        // Contextual page actions can't be dismissed, so we consider an unused button as
+        // "dismissed". Interacting with the button will undo this "mute" logic.
+        addUrlToMutedSites(mDistillerUrl);
+        mMessageShown = true;
     }
 }

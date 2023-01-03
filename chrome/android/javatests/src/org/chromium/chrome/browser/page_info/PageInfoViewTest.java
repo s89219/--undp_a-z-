@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -55,6 +55,7 @@ import org.chromium.base.test.util.CallbackHelper;
 import org.chromium.base.test.util.CommandLineFlags;
 import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.R;
+import org.chromium.chrome.browser.FederatedIdentityTestUtils;
 import org.chromium.chrome.browser.app.ChromeActivity;
 import org.chromium.chrome.browser.browsing_data.BrowsingDataBridge;
 import org.chromium.chrome.browser.browsing_data.BrowsingDataType;
@@ -72,6 +73,8 @@ import org.chromium.chrome.test.ChromeJUnit4RunnerDelegate;
 import org.chromium.chrome.test.ChromeTabbedActivityTestRule;
 import org.chromium.chrome.test.batch.BlankCTATabInitialStateRule;
 import org.chromium.chrome.test.util.browser.Features;
+import org.chromium.chrome.test.util.browser.Features.EnableFeatures;
+import org.chromium.components.browser_ui.site_settings.ContentSettingException;
 import org.chromium.components.browser_ui.site_settings.WebsitePreferenceBridge;
 import org.chromium.components.browser_ui.site_settings.WebsitePreferenceBridgeJni;
 import org.chromium.components.browser_ui.util.date.CalendarUtils;
@@ -82,13 +85,13 @@ import org.chromium.components.content_settings.CookieControlsMode;
 import org.chromium.components.location.LocationUtils;
 import org.chromium.components.page_info.PageInfoAdPersonalizationController;
 import org.chromium.components.page_info.PageInfoController;
-import org.chromium.components.page_info.PageInfoFeatures;
 import org.chromium.components.user_prefs.UserPrefs;
 import org.chromium.content_public.browser.NavigationHandle;
 import org.chromium.content_public.browser.WebContentsObserver;
 import org.chromium.content_public.browser.test.util.JavaScriptUtils;
 import org.chromium.content_public.browser.test.util.TestThreadUtils;
 import org.chromium.content_public.common.ContentSwitches;
+import org.chromium.net.GURLUtils;
 import org.chromium.net.test.EmbeddedTestServerRule;
 import org.chromium.net.test.ServerCertificate;
 import org.chromium.ui.test.util.RenderTestRule;
@@ -98,6 +101,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeoutException;
@@ -210,7 +214,7 @@ public class PageInfoViewTest {
         Tab tab = activity.getActivityTab();
         TestThreadUtils.runOnUiThreadBlocking(() -> {
             new ChromePageInfo(activity.getModalDialogManagerSupplier(), null,
-                    PageInfoController.OpenedFromSource.TOOLBAR, null)
+                    PageInfoController.OpenedFromSource.TOOLBAR, null, null)
                     .show(tab, ChromePageInfoHighlight.forPermission(highlightedPermission));
         });
         onViewWaiting(allOf(withId(R.id.page_info_url_wrapper), isDisplayed()));
@@ -297,6 +301,25 @@ public class PageInfoViewTest {
                     new int[] {BrowsingDataType.SITE_SETTINGS}, TimePeriod.ALL_TIME);
         });
         helper.waitForCallback(0);
+    }
+
+    private List<ContentSettingException> getNonWildcardContentSettingExceptions(
+            @ContentSettingsType int type) {
+        return TestThreadUtils.runOnUiThreadBlockingNoException(() -> {
+            List<ContentSettingException> exceptions = new ArrayList<ContentSettingException>();
+            WebsitePreferenceBridgeJni.get().getContentSettingsExceptions(
+                    Profile.getLastUsedRegularProfile(), type, exceptions);
+            Iterator<ContentSettingException> exceptionIt = exceptions.iterator();
+            while (exceptionIt.hasNext()) {
+                ContentSettingException exception = exceptionIt.next();
+                if (WebsitePreferenceBridge.SITE_WILDCARD.equals(exception.getPrimaryPattern())
+                        && WebsitePreferenceBridge.SITE_WILDCARD.equals(
+                                exception.getSecondaryPattern())) {
+                    exceptionIt.remove();
+                }
+            }
+            return exceptions;
+        });
     }
 
     private void addSomeHistoryEntries() {
@@ -551,7 +574,6 @@ public class PageInfoViewTest {
     @Test
     @MediumTest
     @Feature({"RenderTest"})
-    @Features.EnableFeatures(PageInfoFeatures.PAGE_INFO_HISTORY_NAME)
     public void testShowHistorySubpage() throws IOException {
         addSomeHistoryEntries();
         loadUrlAndOpenPageInfo(
@@ -592,7 +614,7 @@ public class PageInfoViewTest {
         onViewWaiting(allOf(withText(containsString("stored data")), isDisplayed()));
         // Clear cookies in page info.
         onView(withText(containsString("stored data"))).perform(click());
-        onView(withText("Clear")).perform(click());
+        onView(withText("Delete")).perform(click());
         // Wait until the UI navigates back and check cookies are deleted.
         onViewWaiting(allOf(withId(R.id.page_info_cookies_row), isDisplayed()));
         expectHasCookies(false);
@@ -625,6 +647,44 @@ public class PageInfoViewTest {
     }
 
     /**
+     * Test that enabling the federated identity permission in the PageInfo UI clears the embargo.
+     */
+    @Test
+    @MediumTest
+    public void testClearFederatedIdentityEmbargoOnSubpage() throws Exception {
+        String rpUrl = mTestServerRule.getServer().getURL(sSimpleHtml);
+        sActivityTestRule.loadUrl(rpUrl);
+
+        assertTrue(
+                getNonWildcardContentSettingExceptions(ContentSettingsType.FEDERATED_IDENTITY_API)
+                        .isEmpty());
+        TestThreadUtils.runOnUiThreadBlocking(
+                () -> { FederatedIdentityTestUtils.embargoFedCmForRelyingParty(new GURL(rpUrl)); });
+        {
+            List<ContentSettingException> exceptions = getNonWildcardContentSettingExceptions(
+                    ContentSettingsType.FEDERATED_IDENTITY_API);
+            assertEquals(1, exceptions.size());
+            assertEquals(GURLUtils.getOrigin(rpUrl), exceptions.get(0).getPrimaryPattern() + "/");
+            assertEquals(
+                    ContentSettingValues.BLOCK, exceptions.get(0).getContentSetting().intValue());
+        }
+
+        // Toggle the federated identity permission.
+        openPageInfo(PageInfoController.NO_HIGHLIGHTED_PERMISSION);
+        onView(withId(R.id.page_info_permissions_row)).perform(click());
+        onView(withId(R.id.switchWidget)).perform(click());
+
+        {
+            List<ContentSettingException> exceptions = getNonWildcardContentSettingExceptions(
+                    ContentSettingsType.FEDERATED_IDENTITY_API);
+            assertEquals(1, exceptions.size());
+            assertEquals(GURLUtils.getOrigin(rpUrl), exceptions.get(0).getPrimaryPattern() + "/");
+            assertEquals(
+                    ContentSettingValues.ALLOW, exceptions.get(0).getContentSetting().intValue());
+        }
+    }
+
+    /**
      * Tests that page info view is shown correctly for paint preview pages.
      */
     @Test
@@ -636,7 +696,7 @@ public class PageInfoViewTest {
             ChromePageInfoControllerDelegate pageInfoControllerDelegate =
                     new ChromePageInfoControllerDelegate(activity, tab.getWebContents(),
                             activity::getModalDialogManager,
-                            new OfflinePageUtils.TabOfflinePageLoadUrlDelegate(tab), null,
+                            new OfflinePageUtils.TabOfflinePageLoadUrlDelegate(tab), null, null,
                             ChromePageInfoHighlight.noHighlight()) {
                         @Override
                         public boolean isShowingPaintPreviewPage() {
@@ -702,7 +762,13 @@ public class PageInfoViewTest {
      */
     @Test
     @MediumTest
+    // When both START_SURFACE_ANDROID and TAB_GROUPS_CONTINUATION_ANDROID are enabled, changing
+    // accessibility status won't recreate ChromeTabbedActivity.
+    @EnableFeatures({ChromeFeatureList.START_SURFACE_ANDROID,
+            ChromeFeatureList.TAB_GROUPS_CONTINUATION_ANDROID})
+    // clang-format off
     public void testCloseButton() {
+        // clang-format on
         TestThreadUtils.runOnUiThreadBlocking(
                 () -> { ChromeAccessibilityUtil.get().setAccessibilityEnabledForTesting(true); });
         loadUrlAndOpenPageInfo(mTestServerRule.getServer().getURL(sSimpleHtml));
@@ -719,7 +785,6 @@ public class PageInfoViewTest {
      */
     @Test
     @MediumTest
-    @Features.EnableFeatures(PageInfoFeatures.PAGE_INFO_HISTORY_NAME)
     @ParameterAnnotations.UseMethodParameter(HistorySummaryTestParams.class)
     public void testHistorySummaryText(long timestamp, String expectedSummary) throws IOException {
         StubbedHistoryProvider historyProvider = new StubbedHistoryProvider();
@@ -737,7 +802,6 @@ public class PageInfoViewTest {
      */
     @Test
     @MediumTest
-    @Features.EnableFeatures(PageInfoFeatures.PAGE_INFO_HISTORY_NAME)
     public void testHistorySubpageItemClick() throws Exception {
         StubbedHistoryProvider historyProvider = new StubbedHistoryProvider();
         historyProvider.addItem(StubbedHistoryProvider.createHistoryItem(1, sTimestampJune4));
@@ -750,7 +814,8 @@ public class PageInfoViewTest {
         final WebContentsObserver observer = TestThreadUtils.runOnUiThreadBlocking(() -> {
             return new WebContentsObserver(sActivityTestRule.getWebContents()) {
                 @Override
-                public void didStartNavigation(NavigationHandle navigationHandle) {
+                public void didStartNavigationInPrimaryMainFrame(
+                        NavigationHandle navigationHandle) {
                     if (navigationHandle.getUrl().getHost().equals("www.example.com")) {
                         onDidStartNavigationHelper.notifyCalled();
                     }

@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -43,6 +43,8 @@ void FindWebFeedInfoForPage(
       [](base::WeakPtr<content::WebContents> web_contents,
          base::OnceCallback<void(WebFeedMetadata)> callback,
          WebFeedPageInformation page_info) {
+        if (!web_contents)
+          return;
         Profile* profile =
             Profile::FromBrowserContext(web_contents->GetBrowserContext());
         if (!profile) {
@@ -68,14 +70,16 @@ void FindWebFeedInfoForPage(
 
 void FollowWebFeed(
     content::WebContents* web_contents,
+    feedwire::webfeed::WebFeedChangeReason change_reason,
     base::OnceCallback<void(WebFeedSubscriptions::FollowWebFeedResult)>
         callback) {
   auto on_page_info_fetched =
-      [](base::WeakPtr<content::WebContents> web_contents,
+      [](feedwire::webfeed::WebFeedChangeReason change_reason,
+         base::WeakPtr<content::WebContents> web_contents,
          base::OnceCallback<void(WebFeedSubscriptions::FollowWebFeedResult)>
              callback,
          WebFeedPageInformation page_info) {
-        if (page_info.url().is_empty())
+        if (page_info.url().is_empty() || !web_contents)
           return;
 
         Profile* profile =
@@ -92,19 +96,21 @@ void FollowWebFeed(
           return;
         }
 
-        subscriptions->FollowWebFeed(page_info, std::move(callback));
+        subscriptions->FollowWebFeed(page_info, change_reason,
+                                     std::move(callback));
       };
 
   WebFeedPageInformationFetcher::Start(
       ConstructPageInformation(web_contents),
       WebFeedPageInformationRequestReason::kUserRequestedFollow,
-      base::BindOnce(on_page_info_fetched, web_contents->GetWeakPtr(),
-                     std::move(callback)));
+      base::BindOnce(on_page_info_fetched, change_reason,
+                     web_contents->GetWeakPtr(), std::move(callback)));
 }
 
 void UnfollowWebFeed(
     const std::string& web_feed_id,
     bool is_durable_request,
+    feedwire::webfeed::WebFeedChangeReason change_reason,
     base::OnceCallback<void(WebFeedSubscriptions::UnfollowWebFeedResult)>
         callback) {
   Profile* profile = ProfileManager::GetLastUsedProfile();
@@ -114,7 +120,7 @@ void UnfollowWebFeed(
     return;
   }
 
-  subscriptions->UnfollowWebFeed(web_feed_id, is_durable_request,
+  subscriptions->UnfollowWebFeed(web_feed_id, is_durable_request, change_reason,
                                  std::move(callback));
 }
 

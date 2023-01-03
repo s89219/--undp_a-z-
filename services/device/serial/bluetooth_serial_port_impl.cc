@@ -1,10 +1,11 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "services/device/serial/bluetooth_serial_port_impl.h"
 
 #include <limits.h>
+
 #include <algorithm>
 
 #include "base/callback_helpers.h"
@@ -134,12 +135,12 @@ void BluetoothSerialPortImpl::StartReading(
     mojo::ScopedDataPipeProducerHandle producer) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (out_stream_) {
-    mojo::ReportBadMessage("Data pipe producer still open.");
+    receiver_.ReportBadMessage("Data pipe producer still open.");
     return;
   }
 
   if (!bluetooth_socket_) {
-    mojo::ReportBadMessage("No Bluetooth socket.");
+    receiver_.ReportBadMessage("No Bluetooth socket.");
     return;
   }
 

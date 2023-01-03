@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -16,7 +16,7 @@
 #include "base/win/embedded_i18n/language_selector.h"
 #include "base/win/i18n.h"
 #include "chrome/updater/tag.h"
-#include "chrome/updater/util.h"
+#include "chrome/updater/util/util.h"
 #include "chrome/updater/win/ui/resources/updater_installer_strings.h"
 
 namespace updater {
@@ -47,27 +47,25 @@ const base::win::i18n::LanguageSelector& GetLanguageSelector() {
 
 }  // namespace
 
-std::wstring GetLocalizedString(int base_message_id) {
+std::wstring GetLocalizedString(UINT base_message_id) {
   // Map `base_message_id` to the base id for the current install mode.
-  std::wstring localized_string;
-  int message_id = base_message_id + GetLanguageSelector().offset();
+  UINT message_id =
+      static_cast<UINT>(base_message_id + GetLanguageSelector().offset());
   const ATLSTRINGRESOURCEIMAGE* image =
       AtlGetStringResourceImage(_AtlBaseModule.GetModuleInstance(), message_id);
-  if (image) {
-    localized_string = std::wstring(image->achString, image->nLength);
-  } else {
-    NOTREACHED() << "Unable to find resource id " << message_id;
-  }
-  return localized_string;
+  if (image)
+    return std::wstring(image->achString, image->nLength);
+  NOTREACHED() << "Unable to find resource id " << message_id;
+  return std::wstring();
 }
 
-std::wstring GetLocalizedStringF(int base_message_id,
+std::wstring GetLocalizedStringF(UINT base_message_id,
                                  const std::wstring& replacement) {
   return GetLocalizedStringF(base_message_id,
                              std::vector<std::wstring>{replacement});
 }
 
-std::wstring GetLocalizedStringF(int base_message_id,
+std::wstring GetLocalizedStringF(UINT base_message_id,
                                  std::vector<std::wstring> replacements) {
   // Replacements start at index 1 because the implementation of
   // ReplaceStringPlaceholders does i+1, so the first placeholder would be `$1`.
@@ -75,6 +73,17 @@ std::wstring GetLocalizedStringF(int base_message_id,
   replacements.insert(replacements.begin(), {});
   return base::ReplaceStringPlaceholders(GetLocalizedString(base_message_id),
                                          replacements, nullptr);
+}
+
+std::wstring GetLocalizedErrorString(DWORD exit_code) {
+  switch (exit_code) {
+    case updater::UNSUPPORTED_WINDOWS_VERSION:
+      return GetLocalizedString(IDS_INSTALL_OS_NOT_SUPPORTED_BASE);
+    default:
+      std::wstring error = L"Updater error ";
+      error.append(std::to_wstring(exit_code));
+      return error;
+  }
 }
 
 }  // namespace updater

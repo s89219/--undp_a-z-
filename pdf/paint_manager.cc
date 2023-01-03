@@ -1,4 +1,4 @@
-// Copyright (c) 2010 The Chromium Authors. All rights reserved.
+// Copyright 2010 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,8 +17,8 @@
 #include "base/check.h"
 #include "base/location.h"
 #include "base/notreached.h"
-#include "base/threading/sequenced_task_runner_handle.h"
-#include "base/threading/thread_task_runner_handle.h"
+#include "base/task/sequenced_task_runner.h"
+#include "base/task/single_thread_task_runner.h"
 #include "pdf/paint_ready_rect.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -181,7 +181,7 @@ void PaintManager::EnsureCallbackPending() {
   if (manual_callback_pending_)
     return;
 
-  base::ThreadTaskRunnerHandle::Get()->PostTask(
+  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&PaintManager::OnManualCallbackComplete,
                                 weak_factory_.GetWeakPtr()));
   manual_callback_pending_ = true;
@@ -305,8 +305,8 @@ void PaintManager::Flush() {
                                    SkSamplingOptions(), /*paint=*/nullptr);
   client_->UpdateSnapshot(std::move(snapshot));
 
-  // TODO(crbug.com/1302059): Complete flush synchronously.
-  base::SequencedTaskRunnerHandle::Get()->PostTask(
+  // TODO(crbug.com/1403311): Complete flush synchronously.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE, base::BindOnce(&PaintManager::OnFlushComplete,
                                 weak_factory_.GetWeakPtr()));
   flush_pending_ = true;

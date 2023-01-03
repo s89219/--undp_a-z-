@@ -1,4 +1,4 @@
-// Copyright 2022 The Chromium Authors. All rights reserved.
+// Copyright 2022 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,12 +11,31 @@
 namespace ios {
 namespace provider {
 
-bool AddContextMenuElements(NSMutableArray<UIMenuElement*>* menu_elements,
-                            ChromeBrowserState* browser_state,
-                            web::WebState* web_state,
-                            web::ContextMenuParams params) {
-  // Chromium does not add elements to the context menu.
-  return false;
+ElementsToAddToContextMenu* GetContextMenuElementsToAdd(
+    ChromeBrowserState* browser_state,
+    web::WebState* web_state,
+    web::ContextMenuParams params,
+    UIViewController* presenting_view_controller) {
+  return nil;
+}
+
+NSTextCheckingType GetHandledIntentTypes(web::WebState* web_state) {
+  return 0;
+}
+
+NSArray<CRWContextMenuItem*>* GetContextMenuElementsToAdd(
+    web::WebState* web_state,
+    NSTextCheckingResult* match,
+    NSString* text,
+    UIViewController* presenting_view_controller) {
+  return @[];
+}
+
+absl::optional<base::Value> ExtractDataElementsFromText(
+    const std::string& text,
+    NSTextCheckingType handled_types,
+    const base::FilePath& model_path) {
+  return absl::nullopt;
 }
 
 }  // namespace provider

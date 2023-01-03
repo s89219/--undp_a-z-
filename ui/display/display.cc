@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -34,7 +34,7 @@ int g_has_forced_device_scale_factor = -1;
 // -1.0, we read the forced device scale factor again.
 float g_forced_device_scale_factor = -1.0;
 
-// An alloance error epsilon cauesd by fractional scale factor to produce
+// An allowance error epsilon caused by fractional scale factor to produce
 // expected DP display size.
 constexpr float kDisplaySizeAllowanceEpsilon = 0.01f;
 
@@ -55,34 +55,6 @@ float GetForcedDeviceScaleFactorImpl() {
     }
   }
   return static_cast<float>(scale_in_double);
-}
-
-gfx::ColorSpace ForcedColorProfileStringToColorSpace(const std::string& value) {
-  if (value == "srgb")
-    return gfx::ColorSpace::CreateSRGB();
-  if (value == "display-p3-d65")
-    return gfx::ColorSpace::CreateDisplayP3D65();
-  if (value == "scrgb-linear")
-    return gfx::ColorSpace::CreateSCRGBLinear();
-  if (value == "hdr10")
-    return gfx::ColorSpace::CreateHDR10();
-  if (value == "extended-srgb")
-    return gfx::ColorSpace::CreateExtendedSRGB();
-  if (value == "generic-rgb") {
-    return gfx::ColorSpace(gfx::ColorSpace::PrimaryID::APPLE_GENERIC_RGB,
-                           gfx::ColorSpace::TransferID::GAMMA18);
-  }
-  if (value == "color-spin-gamma24") {
-    // Run this color profile through an ICC profile. The resulting color space
-    // is slightly different from the input color space, and removing the ICC
-    // profile would require rebaselineing many layout tests.
-    gfx::ColorSpace color_space(
-        gfx::ColorSpace::PrimaryID::WIDE_GAMUT_COLOR_SPIN,
-        gfx::ColorSpace::TransferID::GAMMA24);
-    return gfx::ICCProfile::FromColorSpace(color_space).GetColorSpace();
-  }
-  LOG(ERROR) << "Invalid forced color profile: \"" << value << "\"";
-  return gfx::ColorSpace::CreateSRGB();
 }
 
 const char* ToRotationString(display::Display::Rotation rotation) {
@@ -130,21 +102,6 @@ void Display::SetForceDeviceScaleFactor(double dsf) {
 
   base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
       switches::kForceDeviceScaleFactor, base::StringPrintf("%.2f", dsf));
-}
-
-// static
-gfx::ColorSpace Display::GetForcedDisplayColorProfile() {
-  DCHECK(HasForceDisplayColorProfile());
-  std::string value =
-      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kForceDisplayColorProfile);
-  return ForcedColorProfileStringToColorSpace(value);
-}
-
-// static
-bool Display::HasForceDisplayColorProfile() {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kForceDisplayColorProfile);
 }
 
 // static
@@ -261,6 +218,17 @@ int Display::RotationAsDegree() const {
   return 0;
 }
 
+void Display::set_color_spaces(const gfx::DisplayColorSpaces& color_spaces) {
+  color_spaces_ = color_spaces;
+  if (color_spaces.SupportsHDR()) {
+    color_depth_ = kHDR10BitsPerPixel;
+    depth_per_component_ = kHDR10BitsPerComponent;
+  } else {
+    color_depth_ = kDefaultBitsPerPixel;
+    depth_per_component_ = kDefaultBitsPerComponent;
+  }
+}
+
 void Display::SetRotationAsDegree(int rotation) {
   switch (rotation) {
     case 0:
@@ -295,6 +263,16 @@ gfx::Insets Display::GetWorkAreaInsets() const {
 void Display::SetScaleAndBounds(float device_scale_factor,
                                 const gfx::Rect& bounds_in_pixel) {
   gfx::Insets insets = bounds_.InsetsFrom(work_area_);
+  SetScale(device_scale_factor);
+
+  gfx::RectF f(bounds_in_pixel);
+  f.InvScale(device_scale_factor_);
+  bounds_ = gfx::ToEnclosedRectIgnoringError(f, kDisplaySizeAllowanceEpsilon);
+  size_in_pixels_ = bounds_in_pixel.size();
+  UpdateWorkAreaFromInsets(insets);
+}
+
+void Display::SetScale(float device_scale_factor) {
   if (!HasForceDeviceScaleFactor()) {
 #if BUILDFLAG(IS_APPLE)
     // Unless an explicit scale factor was provided for testing, ensure the
@@ -304,12 +282,6 @@ void Display::SetScaleAndBounds(float device_scale_factor,
     device_scale_factor_ = device_scale_factor;
   }
   device_scale_factor_ = std::max(0.5f, device_scale_factor_);
-
-  gfx::RectF f(bounds_in_pixel);
-  f.Scale(1.f / device_scale_factor_);
-  bounds_ = gfx::ToEnclosedRectIgnoringError(f, kDisplaySizeAllowanceEpsilon);
-  size_in_pixels_ = bounds_in_pixel.size();
-  UpdateWorkAreaFromInsets(insets);
 }
 
 void Display::SetSize(const gfx::Size& size_in_pixel) {
@@ -364,7 +336,7 @@ bool Display::operator==(const Display& rhs) const {
          color_depth_ == rhs.color_depth_ &&
          depth_per_component_ == rhs.depth_per_component_ &&
          is_monochrome_ == rhs.is_monochrome_ &&
-         display_frequency_ == rhs.display_frequency_;
+         display_frequency_ == rhs.display_frequency_ && label_ == rhs.label_;
 }
 
 }  // namespace display

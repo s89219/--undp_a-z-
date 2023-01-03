@@ -1,4 +1,4 @@
-// Copyright 2015 The Chromium Authors. All rights reserved.
+// Copyright 2015 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -23,7 +23,7 @@ void CanvasCaptureMediaStreamTrack::requestFrame() {
 }
 
 CanvasCaptureMediaStreamTrack* CanvasCaptureMediaStreamTrack::clone(
-    ScriptState* script_state) {
+    ExecutionContext* script_state) {
   MediaStreamComponent* cloned_component =
       Component()->Clone(std::make_unique<blink::MediaStreamVideoTrack>(
           MediaStreamVideoSource::GetVideoSource(Component()->Source()),

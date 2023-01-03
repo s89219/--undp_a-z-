@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,6 +29,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_navigation_handle.h"
 #include "content/public/test/navigation_simulator.h"
+#include "content/public/test/prerender_test_util.h"
 #include "content/public/test/web_contents_tester.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -77,12 +78,13 @@ class HistoryTabHelperTest : public ChromeRenderViewHostTestHarness {
         profile(), ServiceAccessType::IMPLICIT_ACCESS);
     ASSERT_TRUE(history_service_);
     history_service_->AddPage(
-        page_url_, base::Time::Now(), /*context_id=*/nullptr,
+        page_url_, base::Time::Now(), /*context_id=*/0,
         /*nav_entry_id=*/0,
         /*referrer=*/GURL(), history::RedirectList(), ui::PAGE_TRANSITION_TYPED,
-        history::SOURCE_BROWSED, /*did_replace_entry=*/false,
-        /*floc_allowed=*/true);
+        history::SOURCE_BROWSED, /*did_replace_entry=*/false);
     HistoryTabHelper::CreateForWebContents(web_contents());
+    HistoryTabHelper::FromWebContents(web_contents())
+        ->SetForceEligibleTabForTesting(true);
   }
 
   TestingProfile::TestingFactories GetTestingFactories() const override {
@@ -113,12 +115,29 @@ class HistoryTabHelperTest : public ChromeRenderViewHostTestHarness {
     return title;
   }
 
+  base::TimeDelta QueryLastVisitDurationFromHistory(const GURL& url) {
+    base::TimeDelta visit_duration;
+    base::RunLoop loop;
+    history_service_->QueryURL(
+        url, /*want_visits=*/true,
+        base::BindLambdaForTesting([&](history::QueryURLResult result) {
+          EXPECT_TRUE(result.success);
+          if (!result.visits.empty()) {
+            visit_duration = result.visits.back().visit_duration;
+          }
+          loop.Quit();
+        }),
+        &tracker_);
+    loop.Run();
+    return visit_duration;
+  }
+
   history::MostVisitedURLList QueryMostVisitedURLs() {
     history::MostVisitedURLList result;
     std::string title;
     base::RunLoop loop;
     history_service_->QueryMostVisitedURLs(
-        /*result_count=*/10, /*days_back=*/1,
+        /*result_count=*/10,
         base::BindLambdaForTesting([&](history::MostVisitedURLList v) {
           result = v;
           loop.Quit();
@@ -178,10 +197,30 @@ TEST_F(HistoryTabHelperTest, ShouldLimitTitleUpdatesPerPage) {
   EXPECT_EQ("title10", QueryPageTitleFromHistory(page_url_));
 }
 
+TEST_F(HistoryTabHelperTest, ShouldUpdateVisitDurationInHistory) {
+  const GURL url1("https://url1.com");
+  const GURL url2("https://url2.com");
+
+  web_contents_tester()->NavigateAndCommit(url1);
+  // The duration shouldn't be set yet, since the visit is still open.
+  EXPECT_TRUE(QueryLastVisitDurationFromHistory(url1).is_zero());
+
+  // Once the user navigates on, the duration of the first visit should be
+  // populated.
+  web_contents_tester()->NavigateAndCommit(url2);
+  EXPECT_FALSE(QueryLastVisitDurationFromHistory(url1).is_zero());
+  EXPECT_TRUE(QueryLastVisitDurationFromHistory(url2).is_zero());
+
+  // Closing the tab should finish the second visit and populate its duration.
+  DeleteContents();
+  EXPECT_FALSE(QueryLastVisitDurationFromHistory(url2).is_zero());
+}
+
 TEST_F(HistoryTabHelperTest, CreateAddPageArgsReferringURLMainFrameNoReferrer) {
   NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://previousurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://previousurl.com"));
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
           GURL("http://someurl.com"), base::Time(), 1, &navigation_handle);
@@ -192,7 +231,8 @@ TEST_F(HistoryTabHelperTest, CreateAddPageArgsReferringURLMainFrameNoReferrer) {
 TEST_F(HistoryTabHelperTest, CreateAddPageArgsHistoryTitleAfterPageReload) {
   NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://previousurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://previousurl.com"));
   navigation_handle.set_reload_type(content::ReloadType::NORMAL);
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
@@ -205,7 +245,8 @@ TEST_F(HistoryTabHelperTest,
        CreateAddPageArgsHistoryTitleAfterPageReloadBypassingCache) {
   NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://previousurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://previousurl.com"));
   navigation_handle.set_reload_type(content::ReloadType::BYPASSING_CACHE);
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
@@ -218,11 +259,11 @@ TEST_F(HistoryTabHelperTest,
        CreateAddPageArgsReferringURLMainFrameSameOriginReferrer) {
   NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(
+  navigation_handle.set_previous_primary_main_frame_url(
       GURL("http://previousurl.com/abc"));
   auto referrer = blink::mojom::Referrer::New();
-  referrer->url =
-      navigation_handle.GetPreviousMainFrameURL().DeprecatedGetOriginAsURL();
+  referrer->url = navigation_handle.GetPreviousPrimaryMainFrameURL()
+                      .DeprecatedGetOriginAsURL();
   referrer->policy = network::mojom::ReferrerPolicy::kDefault;
   navigation_handle.SetReferrer(std::move(referrer));
   history::HistoryAddPageArgs args =
@@ -236,7 +277,7 @@ TEST_F(HistoryTabHelperTest,
        CreateAddPageArgsReferringURLMainFrameSameOriginReferrerDifferentPath) {
   NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(
+  navigation_handle.set_previous_primary_main_frame_url(
       GURL("http://previousurl.com/def"));
   auto referrer = blink::mojom::Referrer::New();
   referrer->url = GURL("http://previousurl.com/abc");
@@ -257,7 +298,8 @@ TEST_F(HistoryTabHelperTest,
   referrer->policy = network::mojom::ReferrerPolicy::kDefault;
   navigation_handle.SetReferrer(std::move(referrer));
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://previousurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://previousurl.com"));
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
           GURL("http://someurl.com"), base::Time(), 1, &navigation_handle);
@@ -273,7 +315,8 @@ TEST_F(HistoryTabHelperTest, CreateAddPageArgsReferringURLNotMainFrame) {
   NiceMock<content::MockNavigationHandle> navigation_handle(
       GURL("http://someurl.com"), subframe);
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://previousurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://previousurl.com"));
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
           GURL("http://someurl.com"), base::Time(), 1, &navigation_handle);
@@ -320,7 +363,8 @@ TEST_F(HistoryTabHelperTest, CreateAddPageArgsSameDocNavigationUsesOpener) {
   NiceMock<content::MockNavigationHandle> navigation_handle(
       GURL("http://someurl.com"), subframe);
   navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://previousurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://previousurl.com"));
   navigation_handle.set_is_same_document(true);
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
@@ -353,12 +397,37 @@ TEST_F(HistoryTabHelperTest,
   NiceMock<content::MockNavigationHandle> navigation_handle(
       GURL("http://someurl.com/2"), subframe);
   navigation_handle.set_redirect_chain({GURL("http://someurl.com/2")});
-  navigation_handle.set_previous_main_frame_url(GURL("http://someurl.com"));
+  navigation_handle.set_previous_primary_main_frame_url(
+      GURL("http://someurl.com"));
   history::HistoryAddPageArgs args =
       history_tab_helper()->CreateHistoryAddPageArgs(
           GURL("http://someurl.com"), base::Time(), 1, &navigation_handle);
 
   EXPECT_FALSE(args.opener.has_value());
+}
+
+TEST_F(HistoryTabHelperTest,
+       CreateAddPageArgsPopulatesOnVisitContextAnnotations) {
+  NiceMock<content::MockNavigationHandle> navigation_handle(web_contents());
+  navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
+
+  std::string raw_response_headers = "HTTP/1.1 234 OK\r\n\r\n";
+  scoped_refptr<net::HttpResponseHeaders> response_headers =
+      net::HttpResponseHeaders::TryToCreate(raw_response_headers);
+  DCHECK(response_headers);
+  navigation_handle.set_response_headers(response_headers);
+
+  history::HistoryAddPageArgs args =
+      history_tab_helper()->CreateHistoryAddPageArgs(
+          GURL("https://someurl.com"), base::Time(), 1, &navigation_handle);
+
+  // Make sure the `context_annotations` are populated.
+  ASSERT_TRUE(args.context_annotations.has_value());
+  // Most of the actual fields can't be verified here, because the corresponding
+  // data sources don't exist in this unit test (e.g. there's no Browser, no
+  // other TabHelpers, etc). At least check the response code that was set up
+  // above.
+  EXPECT_EQ(args.context_annotations->response_code, 234);
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -386,48 +455,6 @@ TEST_F(HistoryTabHelperTest, FeedNavigationsDoNotContributeToMostVisited) {
 
 #endif
 
-class HistoryTabHelperFencedFramesTest : public HistoryTabHelperTest {
- public:
-  HistoryTabHelperFencedFramesTest() {
-    scoped_feature_list_.InitAndEnableFeatureWithParameters(
-        blink::features::kFencedFrames, {{"implementation_type", "mparch"}});
-  }
-  ~HistoryTabHelperFencedFramesTest() override = default;
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-TEST_F(HistoryTabHelperFencedFramesTest,
-       CreateAddPageArgsReferringURLInFencedFrame) {
-  content::RenderFrameHostTester* main_rfh_tester =
-      content::RenderFrameHostTester::For(main_rfh());
-  main_rfh_tester->InitializeRenderFrameIfNeeded();
-
-  content::RenderFrameHost* fenced_frame_root =
-      content::RenderFrameHostTester::For(main_rfh())->AppendFencedFrame();
-
-  NiceMock<content::MockNavigationHandle> navigation_handle(
-      GURL("http://someurl.com"), fenced_frame_root);
-  navigation_handle.set_is_in_primary_main_frame(false);
-  navigation_handle.set_redirect_chain({GURL("https://someurl.com")});
-  navigation_handle.set_previous_main_frame_url(
-      GURL("http://previousurl.com/abc"));
-  auto referrer = blink::mojom::Referrer::New();
-  referrer->url =
-      navigation_handle.GetPreviousMainFrameURL().DeprecatedGetOriginAsURL();
-  referrer->policy = network::mojom::ReferrerPolicy::kDefault;
-  navigation_handle.SetReferrer(std::move(referrer));
-
-  history::HistoryAddPageArgs args =
-      history_tab_helper()->CreateHistoryAddPageArgs(
-          GURL("http://someurl.com"), base::Time(), 1, &navigation_handle);
-
-  // Should default to referrer if not in main frame and the referrer should not
-  // be sent to the arbitrary previous URL that is set.
-  EXPECT_NE(args.referrer, GURL("http://previousurl.com/abc"));
-}
-
 enum class MPArchType {
   kFencedFrame,
   kPrerender,
@@ -444,11 +471,10 @@ class HistoryTabHelperMPArchTest
             {{"implementation_type", "mparch"}});
         break;
       case MPArchType::kPrerender:
-        scoped_feature_list_.InitWithFeatures(
-            {blink::features::kPrerender2},
+        scoped_feature_list_.InitAndDisableFeature(
             // Disable the memory requirement of Prerender2 so the test can run
             // on any bot.
-            {blink::features::kPrerender2MemoryControls});
+            blink::features::kPrerender2MemoryControls);
         break;
     }
   }
@@ -464,6 +490,9 @@ INSTANTIATE_TEST_SUITE_P(All,
                                          MPArchType::kPrerender));
 
 TEST_P(HistoryTabHelperMPArchTest, DoNotAffectToLimitTitleUpdates) {
+  content::test::ScopedPrerenderWebContentsDelegate web_contents_delegate(
+      *web_contents());
+
   web_contents_tester()->NavigateAndCommit(page_url_);
 
   content::NavigationEntry* entry =
@@ -489,7 +518,7 @@ TEST_P(HistoryTabHelperMPArchTest, DoNotAffectToLimitTitleUpdates) {
     GURL fenced_frame_url = GURL("https://fencedframe.com");
     content::RenderFrameHost* fenced_frame_root =
         content::RenderFrameHostTester::For(main_rfh())->AppendFencedFrame();
-    simulator = content::NavigationSimulator::CreateForFencedFrame(
+    simulator = content::NavigationSimulator::CreateRendererInitiated(
         fenced_frame_url, fenced_frame_root);
   } else if (GetParam() == MPArchType::kPrerender) {
     // Navigate a prerendering page.

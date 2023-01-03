@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2019 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -52,7 +52,10 @@ export class Resolution {
    * @param resolution Resolution to be compared with.
    * @return Whether width/height of resolutions are equal.
    */
-  equals(resolution: Resolution): boolean {
+  equals(resolution: Resolution|null): boolean {
+    if (resolution === null) {
+      return false;
+    }
     return this.width === resolution.width && this.height === resolution.height;
   }
 
@@ -125,15 +128,16 @@ export enum Facing {
   VIRTUAL_USER = 'virtual_user',
   VIRTUAL_ENV = 'virtual_environment',
   VIRTUAL_EXT = 'virtual_external',
-  UNKNOWN = 'unknown',
 }
 
 export enum ViewName {
   CAMERA = 'view-camera',
   CROP_DOCUMENT = 'view-crop-document',
   DOCUMENT_MODE_DIALOG = 'view-document-mode-dialog',
+  DOCUMENT_REVIEW = 'view-document-review',
   EXPERT_SETTINGS = 'view-expert-settings',
   FLASH = 'view-flash',
+  LOW_STORAGE_DIALOG = 'view-low-storage-dialog',
   MESSAGE_DIALOG = 'view-message-dialog',
   OPTION_PANEL = 'view-option-panel',
   PHOTO_ASPECT_RATIO_SETTINGS = 'view-photo-aspect-ratio-settings',
@@ -165,6 +169,7 @@ export enum VideoResolutionLevel {
   FULL_HD = 'Full HD',
   HD = 'HD',
   UNKNOWN = 'unknown',
+  THREE_SIXTY_P = '360p',
 }
 
 export enum AspectRatioSet {
@@ -174,18 +179,16 @@ export enum AspectRatioSet {
   RATIO_SQUARE = 1.0000,
 }
 
-export const NON_CROP_ASPECT_RATIO_SETS = [
-  AspectRatioSet.RATIO_4_3,
-  AspectRatioSet.RATIO_16_9,
-  AspectRatioSet.RATIO_OTHER,
-];
-
 export enum Rotation {
   ANGLE_0 = 0,
   ANGLE_90 = 90,
   ANGLE_180 = 180,
   ANGLE_270 = 270,
 }
+// `ROTATION_ORDER` is used for document scanning fix mode to show/crop images.
+// The length must be fixed at 4.
+export const ROTATION_ORDER =
+    Object.values(Rotation).filter((r): r is Rotation => typeof r === 'number');
 
 export interface VideoConfig {
   width: number;
@@ -329,6 +332,7 @@ export interface ErrorInfo {
  */
 export enum ErrorType {
   BROKEN_THUMBNAIL = 'broken-thumbnail',
+  CHECK_COVER_FAILURE = 'check-cover-failed',
   DEVICE_INFO_UPDATE_FAILURE = 'device-info-update-failure',
   DEVICE_NOT_EXIST = 'device-not-exist',
   EMPTY_FILE = 'empty-file',
@@ -346,8 +350,8 @@ export enum ErrorType {
   START_CAMERA_FAILURE = 'start-camera-failure',
   START_CAPTURE_FAILURE = 'start-capture-failure',
   STOP_CAPTURE_FAILURE = 'stop-capture-failure',
+  UNCAUGHT_ERROR = 'uncaught-error',
   UNCAUGHT_PROMISE = 'uncaught-promise',
-  UNKNOWN_FACING = 'unknown-facing',
   UNSAFE_INTEGER = 'unsafe-integer',
   UNSUPPORTED_PROTOCOL = 'unsupported-protocol',
 }
@@ -420,11 +424,29 @@ export class EmptyThumbnailError extends Error {
   }
 }
 
+export class LowStorageError extends Error {
+  constructor() {
+    const message = 'Cannot start recording due to low storage.';
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
 /**
  * Throws when the recording is ended with no chunk returned.
  */
 export class NoChunkError extends Error {
   constructor(message = 'No chunk is received during recording session') {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+/**
+ * Throws when the GIF recording is ended with no frame captured.
+ */
+export class NoFrameError extends Error {
+  constructor(message = 'No frames captured during GIF recording') {
     super(message);
     this.name = this.constructor.name;
   }
@@ -438,4 +460,41 @@ export class PortraitModeProcessError extends Error {
     super(message);
     this.name = this.constructor.name;
   }
+}
+
+/**
+ * Types of local storage key.
+ */
+export enum LocalStorageKey {
+  CUSTOM_VIDEO_PARAMETERS = 'customVideoParameters',
+  DOC_MODE_DIALOG_SHOWN = 'isDocModeDialogShown',
+  DOC_MODE_MULTI_PAGE_TOAST_SHOWN = 'isDocModeMultiPageToastShown',
+  DOC_MODE_TOAST_SHOWN = 'isDocModeToastShown',
+  ENABLE_FPS_PICKER = 'enableFPSPicker',
+  ENABLE_FULL_SIZED_VIDEO_SNAPSHOT = 'enableFullSizedVideoSnapshot',
+  ENABLE_MULTISTREAM_RECORDING = 'enableMultistreamRecording',
+  ENABLE_PTZ_FOR_BUILTIN = 'enablePTZForBuiltin',
+  EXPERT_MODE = 'expert',
+  GA_USER_ID = 'google-analytics.analytics.user-id',
+  MIRRORING_TOGGLES = 'mirroringToggles',
+  PREF_DEVICE_PHOTO_ASPECT_RATIO_SET = 'devicePhotoAspectRatioSet',
+  PREF_DEVICE_PHOTO_RESOLUTION_EXPERT = 'devicePhotoResolutionExpert',
+  PREF_DEVICE_PHOTO_RESOLUTION_LEVEL = 'devicePhotoResolutionLevel',
+  PREF_DEVICE_VIDEO_RESOLUTION_EXPERT = 'deviceVideoResolutionExpert',
+  PREF_DEVICE_VIDEO_RESOLUTION_FPS = 'deviceVideoResolutionFps',
+  PREF_DEVICE_VIDEO_RESOLUTION_LEVEL = 'deviceVideoResolutionLevel',
+  PRINT_PERFORMANCE_LOGS = 'printPerformanceLogs',
+  PTZ_TOAST_SHOWN = 'isPTZToastShown',
+  SAVE_METADATA = 'saveMetadata',
+  SHOW_ALL_RESOLUTIONS = 'showAllResolutions',
+  SHOW_METADATA = 'showMetadata',
+  TOGGLE_MIC = 'toggleMic',
+}
+
+/**
+ * Type of low storage dialog.
+ */
+export enum LowStorageDialogType {
+  AUTO_STOP = 'auto-stop',
+  CANNOT_START = 'cannot-start',
 }

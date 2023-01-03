@@ -1,10 +1,9 @@
-// Copyright 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/services/sharing/nearby/platform/wifi_lan_medium.h"
 
-#include "ash/services/nearby/public/cpp/tcp_server_socket_port.h"
 #include "base/bind.h"
 #include "base/check.h"
 #include "base/logging.h"
@@ -15,6 +14,7 @@
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
+#include "chromeos/ash/services/nearby/public/cpp/tcp_server_socket_port.h"
 #include "chromeos/services/network_config/public/mojom/cros_network_config.mojom.h"
 #include "net/base/net_errors.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
@@ -96,6 +96,15 @@ WifiLanMedium::~WifiLanMedium() {
                                                    base::Unretained(this),
                                                    &shutdown_waitable_event));
   shutdown_waitable_event.Wait();
+}
+
+bool WifiLanMedium::IsNetworkConnected() const {
+  // This is not used by ChromeOS. A virtual function was created in the base
+  // class to support Windows, so this implementation only exists to override
+  // that function. This may be implemented correctly at a later date if
+  // Wi-Fi LAN would need similar functionality.
+  // Context: cl/452402734
+  return true;
 }
 
 /*============================================================================*/
